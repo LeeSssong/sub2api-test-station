@@ -166,6 +166,23 @@ class UpstreamBenchmarkV2Test < Minitest::Test
     assert_equal 8, result.dig("recommendation", "concurrency")
   end
 
+  def test_capacity_stops_when_latency_is_clearly_queued
+    calls = 0
+    probe = UpstreamBenchmarkV2::CapacityProbe.new(
+      invoke: lambda {
+        calls += 1
+        { "status" => 200, "duration_ms" => calls == 1 ? 1.0 : 5.0 }
+      },
+      profile: UpstreamBenchmarkV2::Profile.new(profile_document),
+      sleeper: ->(_seconds) {}
+    )
+
+    result = probe.run
+
+    assert_equal 1, result.dig("concurrency", "last_stable")
+    assert_equal "queueing_detected", result.dig("concurrency", "stop_reason")
+  end
+
   def neko_pricing_evidence
     {
       "schema_version" => 1,
@@ -222,6 +239,14 @@ class UpstreamBenchmarkV2Test < Minitest::Test
 
     refute_includes result.fetch("openable_models"), "gpt-unknown"
     assert_equal "unknown", result.dig("models", "gpt-unknown", "status")
+  end
+
+  def test_pricing_scenario_rejects_non_numeric_internal_multiplier
+    invalid = pricing_scenario.merge("internal_group_multiplier" => "1.0")
+
+    assert_raises(UpstreamBenchmark::ValidationError) do
+      UpstreamBenchmarkV2::Scenario.validate!(invalid)
+    end
   end
 
   def test_proposal_builder_is_secret_free_and_contains_requested_billing

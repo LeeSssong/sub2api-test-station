@@ -175,6 +175,7 @@ module UpstreamBenchmarkV2
       records = {}
       last_stable = nil
       stop_reason = nil
+      baseline_duration_ms = nil
       levels.each do |level|
         started = @clock.call
         batch = parallel(level)
@@ -187,6 +188,11 @@ module UpstreamBenchmarkV2
           stop_reason = batch.map { |result| failure_reason(result) }.compact.first || "capacity_failure"
           break
         end
+        if baseline_duration_ms && batch.any? { |result| result["duration_ms"].to_f > baseline_duration_ms * 3.0 }
+          stop_reason = "queueing_detected"
+          break
+        end
+        baseline_duration_ms ||= average_duration(batch)
         last_stable = level
       end
       records.merge(
@@ -255,6 +261,13 @@ module UpstreamBenchmarkV2
       return "request_rejected" if status >= 400
 
       "transport_error"
+    end
+
+    def average_duration(results)
+      durations = results.map { |result| result["duration_ms"] }.compact.map(&:to_f)
+      return nil if durations.empty?
+
+      durations.sum / durations.length
     end
 
     def safe_value(value)
@@ -482,7 +495,7 @@ module UpstreamBenchmarkV2
     def validate!(document)
       raise UpstreamBenchmark::ValidationError, "pricing scenario must be a mapping" unless document.is_a?(Hash)
       REQUIRED.each { |key| raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} is required" unless document.key?(key) }
-      (REQUIRED - ["internal_group_multiplier"]).each do |key|
+      REQUIRED.each do |key|
         value = document[key]
         unless value.is_a?(Numeric) && value.finite? && value >= 0
           raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} must be a finite non-negative number"

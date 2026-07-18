@@ -2,6 +2,8 @@
 
 require "json"
 require "minitest/autorun"
+require "stringio"
+require "tmpdir"
 require "yaml"
 require_relative "../../ops/upstream-benchmark-v2"
 
@@ -248,5 +250,71 @@ class UpstreamBenchmarkV2Test < Minitest::Test
     assert_equal ["gpt-a"], proposal.fetch("models").map { |model| model.fetch("public_name") }
     assert_match(/\A[0-9a-f]{64}\z/, proposal.fetch("proposal_hash"))
     refute_match(/key|authorization|secret/i, JSON.generate(proposal))
+  end
+
+  def test_cli_dry_run_does_not_send_network
+    Dir.mktmpdir do |dir|
+      channels = File.join(dir, "channels.yaml")
+      profile = File.join(dir, "profile.yaml")
+      File.write(channels, YAML.dump(
+        "schema_version" => 1,
+        "channels" => [{
+          "id" => "neko", "display_name" => "Neko", "base_url" => "https://api.example.com/v1",
+          "protocol" => "openai_compatible", "resale_permission" => "unknown", "lifecycle" => "candidate"
+        }]
+      ))
+      File.write(profile, YAML.dump(profile_document))
+      output = StringIO.new
+      error = StringIO.new
+
+      assert_equal 0, UpstreamBenchmarkV2::CLI.run([
+        "run", "--channels", channels, "--profile", profile,
+        "--channel", "neko", "--key-env", "UNUSED", "--dry-run"
+      ], out: output, err: error)
+      result = JSON.parse(output.string)
+      assert_equal false, result.fetch("network_sent")
+      assert_equal true, result.fetch("capacity_probe_bounded")
+      assert_empty error.string
+    end
+  end
+
+  def test_cli_validates_example_inputs
+    output = StringIO.new
+    error = StringIO.new
+
+    assert_equal 0, UpstreamBenchmarkV2::CLI.run([
+      "validate",
+      "--profile", File.expand_path("../../config/upstream-benchmarks/mvp-text-v2.yaml", __dir__),
+      "--pricing", File.expand_path("../../config/upstream-benchmarks/pricing-evidence.example.yaml", __dir__),
+      "--scenario", File.expand_path("../../config/upstream-benchmarks/v2-scenario-neko.example.yaml", __dir__)
+    ], out: output, err: error)
+    assert_match(/valid/, output.string)
+    assert_empty error.string
+  end
+
+  def test_cli_writes_secret_free_proposal
+    Dir.mktmpdir do |dir|
+      pricing_path = File.join(dir, "pricing.yaml")
+      scenario_path = File.join(dir, "scenario.yaml")
+      run_path = File.join(dir, "run.json")
+      output_path = File.join(dir, "proposal.json")
+      File.write(pricing_path, YAML.dump(neko_pricing_evidence))
+      File.write(scenario_path, YAML.dump(pricing_scenario))
+      File.write(run_path, JSON.generate(
+        "channel_id" => "neko", "run_id" => "run-v2",
+        "metrics" => { "capacity" => { "recommendation" => { "concurrency" => 2, "rpm" => 20 } } }
+      ))
+      output = StringIO.new
+      error = StringIO.new
+
+      assert_equal 0, UpstreamBenchmarkV2::CLI.run([
+        "proposal", "--pricing", pricing_path, "--scenario", scenario_path,
+        "--run", run_path, "--output", output_path
+      ], out: output, err: error)
+      proposal = JSON.parse(File.read(output_path))
+      assert_match(/\A[0-9a-f]{64}\z/, proposal.fetch("proposal_hash"))
+      refute_match(/authorization|api_key|secret/i, File.read(output_path))
+      assert_empty error.string
+    end
   end
 end

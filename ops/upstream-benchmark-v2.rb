@@ -4,6 +4,7 @@
 require "bigdecimal"
 require "date"
 require "digest"
+require "fileutils"
 require "json"
 require "optparse"
 require "securerandom"
@@ -457,17 +458,7 @@ module UpstreamBenchmarkV2
     end
 
     def validate_scenario!
-      required = %w[failure_reserve_rate target_margin_rate payment_fee_rate recommendation_increment recommendation_buffer monthly_fixed_cost_usd monthly_standard_usage_usd internal_group_multiplier]
-      required.each { |key| raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} is required" unless @scenario.key?(key) }
-      numeric_keys = required - ["internal_group_multiplier"]
-      numeric_keys.each do |key|
-        value = @scenario[key]
-        raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} must be a finite non-negative number" unless value.is_a?(Numeric) && value.finite? && value >= 0
-      end
-      if @scenario["target_margin_rate"] + @scenario["payment_fee_rate"] >= 1
-        raise UpstreamBenchmark::ValidationError, "pricing scenario margin plus payment fee must be less than 1"
-      end
-      raise UpstreamBenchmark::ValidationError, "pricing scenario monthly_standard_usage_usd must be positive" unless @scenario["monthly_standard_usage_usd"].positive?
+      Scenario.validate!(@scenario)
     end
 
     def decimal(value)
@@ -480,6 +471,30 @@ module UpstreamBenchmarkV2
 
     def ceil_to_increment(value, increment)
       (value / increment).ceil * increment
+    end
+  end
+
+  module Scenario
+    module_function
+
+    REQUIRED = %w[failure_reserve_rate target_margin_rate payment_fee_rate recommendation_increment recommendation_buffer monthly_fixed_cost_usd monthly_standard_usage_usd internal_group_multiplier].freeze
+
+    def validate!(document)
+      raise UpstreamBenchmark::ValidationError, "pricing scenario must be a mapping" unless document.is_a?(Hash)
+      REQUIRED.each { |key| raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} is required" unless document.key?(key) }
+      (REQUIRED - ["internal_group_multiplier"]).each do |key|
+        value = document[key]
+        unless value.is_a?(Numeric) && value.finite? && value >= 0
+          raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} must be a finite non-negative number"
+        end
+      end
+      if document["target_margin_rate"] + document["payment_fee_rate"] >= 1
+        raise UpstreamBenchmark::ValidationError, "pricing scenario margin plus payment fee must be less than 1"
+      end
+      unless document["monthly_standard_usage_usd"].positive?
+        raise UpstreamBenchmark::ValidationError, "pricing scenario monthly_standard_usage_usd must be positive"
+      end
+      true
     end
   end
 
@@ -555,9 +570,146 @@ module UpstreamBenchmarkV2
       lines.join("\n") + "\n"
     end
   end
+
+  class CLI
+    ROOT = File.expand_path("..", __dir__).freeze
+    DEFAULTS = {
+      channels: File.join(ROOT, "config/upstream-benchmarks/channels.yaml"),
+      profile: File.join(ROOT, "config/upstream-benchmarks/mvp-text-v2.yaml"),
+      pricing: File.join(ROOT, "config/upstream-benchmarks/pricing-evidence.example.yaml"),
+      scenario: File.join(ROOT, "config/upstream-benchmarks/v2-scenario-neko.example.yaml"),
+      runs: File.join(ROOT, "config/upstream-benchmarks/ledger/runs.jsonl"),
+      decisions: File.join(ROOT, "config/upstream-benchmarks/ledger/decisions.jsonl")
+    }.freeze
+
+    def self.run(argv, out: $stdout, err: $stderr, env: ENV)
+      command = argv.shift
+      raise UpstreamBenchmark::ValidationError, "command must be one of: validate, run, advise, proposal" unless command
+      options = DEFAULTS.dup
+      option_parser(command, options).parse!(argv)
+      raise UpstreamBenchmark::ValidationError, "unexpected arguments: #{argv.join(' ')}" unless argv.empty?
+
+      case command
+      when "validate" then validate_command(options, out)
+      when "run" then run_command(options, out, env)
+      when "advise" then advise_command(options, out)
+      when "proposal" then proposal_command(options, out)
+      end
+      0
+    rescue UpstreamBenchmark::ValidationError, OptionParser::ParseError, Errno::ENOENT, Psych::Exception => error
+      err.puts("ERROR: #{error.message}")
+      2
+    end
+
+    def self.option_parser(command, options)
+      OptionParser.new do |parser|
+        parser.banner = "Usage: upstream-benchmark-v2.rb #{command} [options]"
+        parser.on("--channels PATH") { |value| options[:channels] = value }
+        parser.on("--profile PATH") { |value| options[:profile] = value }
+        parser.on("--pricing PATH") { |value| options[:pricing] = value }
+        parser.on("--scenario PATH") { |value| options[:scenario] = value }
+        parser.on("--runs PATH") { |value| options[:runs] = value }
+        parser.on("--decisions PATH") { |value| options[:decisions] = value }
+        parser.on("--channel ID") { |value| options[:channel] = value }
+        parser.on("--key-env NAME") { |value| options[:key_env] = value }
+        parser.on("--run PATH") { |value| options[:run] = value }
+        parser.on("--output PATH") { |value| options[:output] = value }
+        parser.on("--format FORMAT") { |value| options[:format] = value }
+        parser.on("--dry-run") { options[:dry_run] = true }
+      end
+    end
+
+    def self.validate_command(options, out)
+      UpstreamBenchmarkV2::Profile.new(load_yaml(options[:profile]))
+      UpstreamBenchmarkV2::PricingEvidence.validate!(load_yaml(options[:pricing]))
+      UpstreamBenchmarkV2::Scenario.validate!(load_yaml(options[:scenario]))
+      out.puts("valid: profile mvp-text-v2, pricing evidence and scenario")
+    end
+
+    def self.run_command(options, out, env)
+      raise UpstreamBenchmark::ValidationError, "--channel is required" unless options[:channel]
+      raise UpstreamBenchmark::ValidationError, "--key-env is required" unless options[:key_env]
+      registry = UpstreamBenchmark::Registry.new(load_yaml(options[:channels]))
+      profile = UpstreamBenchmarkV2::Profile.new(load_yaml(options[:profile]))
+      channel = registry.fetch(options[:channel])
+      if options[:dry_run]
+        out.puts(JSON.pretty_generate(
+          "channel_id" => channel["id"],
+          "profile_id" => profile["id"],
+          "model_discovery" => "live_required",
+          "request_estimate" => {
+            "per_text_model" => 2,
+            "concurrency_levels" => profile.concurrency_levels,
+            "rpm_levels" => profile.rpm_levels,
+            "rpm_window_seconds" => profile.rpm_window_seconds
+          },
+          "capacity_probe_bounded" => true,
+          "key_env" => options[:key_env],
+          "network_sent" => false
+        ))
+        return
+      end
+      client = UpstreamBenchmark::HttpClient.new(
+        base_url: channel.fetch("base_url"),
+        api_key: env[options[:key_env]],
+        timeout_seconds: profile["timeout_seconds"]
+      )
+      record = UpstreamBenchmarkV2::Runner.new(client: client, profile: profile).run(channel_id: channel.fetch("id"))
+      UpstreamBenchmark::Ledger.new(options[:runs], options[:decisions]).append_run(record)
+      out.puts(JSON.pretty_generate(UpstreamBenchmark::Redactor.clean(record)))
+    end
+
+    def self.advise_command(options, out)
+      pricing = UpstreamBenchmarkV2::PricingAdvisor.new(
+        evidence: load_yaml(options[:pricing]),
+        scenario: load_yaml(options[:scenario])
+      ).calculate
+      run = load_data(options.fetch(:run))
+      if options[:format] == "markdown"
+        out.puts("# Upstream Pricing Advice")
+        out.puts
+        out.puts("- Channel: `#{run.fetch('channel_id')}`")
+        out.puts("- Openable models: `#{pricing.fetch('openable_models').join(', ')}`")
+        out.puts("- Internal multiplier: `#{pricing.dig('internal', 'group_multiplier')}`")
+        out.puts("- Recommended commercial multiplier: `#{pricing.dig('commercial', 'recommended_multiplier')}`")
+      else
+        out.puts(JSON.pretty_generate(pricing))
+      end
+    end
+
+    def self.proposal_command(options, out)
+      raise UpstreamBenchmark::ValidationError, "--output is required" unless options[:output]
+      pricing = UpstreamBenchmarkV2::PricingAdvisor.new(
+        evidence: load_yaml(options[:pricing]),
+        scenario: load_yaml(options[:scenario])
+      ).calculate
+      run = load_data(options.fetch(:run))
+      proposal = UpstreamBenchmarkV2::ProposalBuilder.build(
+        run: run,
+        pricing: pricing,
+        proposal_id: "proposal-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}",
+        generated_at: Time.now.utc.iso8601
+      )
+      FileUtils.mkdir_p(File.dirname(options[:output]))
+      if File.extname(options[:output]) == ".yaml"
+        File.write(options[:output], YAML.dump(proposal))
+      else
+        File.write(options[:output], JSON.pretty_generate(proposal) + "\n")
+      end
+      out.puts("wrote proposal #{proposal['proposal_id']} #{proposal['proposal_hash']}")
+    end
+
+    def self.load_yaml(path)
+      YAML.safe_load(File.read(path), permitted_classes: [Date, Time], permitted_symbols: [], aliases: false, filename: path)
+    end
+
+    def self.load_data(path)
+      raw = File.read(path)
+      File.extname(path) == ".yaml" ? YAML.safe_load(raw, permitted_classes: [Date, Time], permitted_symbols: [], aliases: false, filename: path) : JSON.parse(raw)
+    end
+  end
 end
 
 if $PROGRAM_NAME == __FILE__
-  warn "V2 implementation is available through the project CLI after Task 4."
-  exit 0
+  exit UpstreamBenchmarkV2::CLI.run(ARGV)
 end

@@ -6,6 +6,32 @@ require "yaml"
 require_relative "../../ops/upstream-benchmark-v2"
 
 class UpstreamBenchmarkV2Test < Minitest::Test
+  class ScriptedClient
+    attr_reader :calls
+
+    def initialize(models:, stream_complete: true)
+      @models = models
+      @stream_complete = stream_complete
+      @calls = []
+      @mutex = Mutex.new
+    end
+
+    def models
+      { "status" => 200, "models" => @models, "duration_ms" => 1.0 }
+    end
+
+    def chat(model:, prompt:, max_output_tokens:, stream:)
+      @mutex.synchronize { @calls << { "model" => model, "stream" => stream } }
+      {
+        "status" => 200,
+        "duration_ms" => 1.0,
+        "first_event_ms" => stream ? 0.5 : nil,
+        "stream_complete" => stream ? @stream_complete : nil,
+        "usage" => { "prompt_tokens" => 4, "completion_tokens" => 1, "total_tokens" => 5 }
+      }.compact
+    end
+  end
+
   def profile_document
     {
       "schema_version" => 2,
@@ -76,5 +102,65 @@ class UpstreamBenchmarkV2Test < Minitest::Test
     assert_raises(UpstreamBenchmark::ValidationError) do
       UpstreamBenchmarkV2::PricingEvidence.validate!("api_key" => "temporary")
     end
+  end
+
+  def test_runner_tests_each_text_model_sync_and_stream
+    client = ScriptedClient.new(models: ["gpt-a", "gpt-b", "dall-e-3"])
+    runner = UpstreamBenchmarkV2::Runner.new(
+      client: client,
+      profile: UpstreamBenchmarkV2::Profile.new(profile_document),
+      clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
+      sleeper: ->(_seconds) {}
+    )
+
+    record = runner.run(channel_id: "neko")
+
+    assert_equal %w[gpt-a gpt-b], record.dig("metrics", "text_models")
+    assert_equal 1, record.dig("metrics", "per_model", "gpt-a", "sync", "success_count")
+    assert_equal true, record.dig("metrics", "per_model", "gpt-b", "stream", "complete")
+    assert_equal "image", record.dig("metrics", "catalog", "dall-e-3", "kind")
+    assert_operator client.calls.count { |call| call["model"] == "gpt-a" }, :>=, 2
+  end
+
+  def test_runner_marks_incomplete_stream_as_partial
+    record = UpstreamBenchmarkV2::Runner.new(
+      client: ScriptedClient.new(models: ["gpt-a"], stream_complete: false),
+      profile: UpstreamBenchmarkV2::Profile.new(profile_document),
+      sleeper: ->(_seconds) {}
+    ).run(channel_id: "neko")
+
+    assert_equal "partial", record.fetch("status")
+    assert_equal false, record.dig("metrics", "per_model", "gpt-a", "stream", "complete")
+  end
+
+  def test_capacity_stops_after_rate_limit_and_keeps_previous_stable_level
+    calls = 0
+    probe = UpstreamBenchmarkV2::CapacityProbe.new(
+      invoke: lambda {
+        calls += 1
+        calls > 6 ? { "status" => 429, "duration_ms" => 1.0 } : { "status" => 200, "duration_ms" => 1.0 }
+      },
+      profile: UpstreamBenchmarkV2::Profile.new(profile_document),
+      sleeper: ->(_seconds) {}
+    )
+
+    result = probe.run
+
+    assert_equal 3, result.dig("concurrency", "last_stable")
+    assert_equal "rate_limited", result.dig("concurrency", "stop_reason")
+  end
+
+  def test_capacity_reports_at_least_when_highest_concurrency_passes
+    probe = UpstreamBenchmarkV2::CapacityProbe.new(
+      invoke: -> { { "status" => 200, "duration_ms" => 1.0 } },
+      profile: UpstreamBenchmarkV2::Profile.new(profile_document),
+      sleeper: ->(_seconds) {}
+    )
+
+    result = probe.run
+
+    assert_equal 10, result.dig("concurrency", "last_stable")
+    assert_equal "at_least", result.dig("concurrency", "limit")
+    assert_equal 8, result.dig("recommendation", "concurrency")
   end
 end

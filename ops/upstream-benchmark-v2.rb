@@ -3,6 +3,7 @@
 
 require "bigdecimal"
 require "date"
+require "digest"
 require "json"
 require "optparse"
 require "securerandom"
@@ -120,8 +121,8 @@ module UpstreamBenchmarkV2
         unless prices.is_a?(Hash)
           raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id} must be a mapping"
         end
-        %w[input output source verified_at].each do |key|
-          raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.#{key} is required" if prices[key].nil?
+        %w[input output].each do |key|
+          raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.#{key} is required" unless prices.key?(key)
         end
         %w[input output cache_read cache_write].each do |key|
           next if prices[key].nil?
@@ -129,7 +130,8 @@ module UpstreamBenchmarkV2
             raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.#{key} must be a non-negative number"
           end
         end
-        raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.source must be non-empty" unless prices["source"].is_a?(String) && !prices["source"].strip.empty?
+        raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.source is required" unless prices["source"].is_a?(String) && !prices["source"].strip.empty?
+        raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.verified_at is required" if prices["verified_at"].nil?
         parse_evidence_date(prices["verified_at"])
       rescue ArgumentError
         raise UpstreamBenchmark::ValidationError, "pricing evidence.#{model_id}.verified_at must be ISO 8601"
@@ -382,6 +384,175 @@ module UpstreamBenchmarkV2
       return result["error"] if result["error"]
 
       status >= 400 ? "request_rejected" : "transport_error"
+    end
+  end
+
+  class PricingAdvisor
+    def initialize(evidence:, scenario:)
+      @evidence = evidence
+      @scenario = scenario
+    end
+
+    def calculate
+      PricingEvidence.validate!(@evidence)
+      validate_scenario!
+      models = build_models
+      openable = models.select { |_id, item| item["status"] == "verified" }.keys
+      multipliers = models.values.select { |item| item["status"] == "verified" }.map { |item| item["cost_multiplier"] }
+      account_multiplier = multipliers.max
+      raise UpstreamBenchmark::ValidationError, "pricing evidence has no verified model multiplier" if account_multiplier.nil?
+
+      reserve = decimal(@scenario.fetch("failure_reserve_rate"))
+      margin = decimal(@scenario.fetch("target_margin_rate"))
+      fee = decimal(@scenario.fetch("payment_fee_rate"))
+      denominator = decimal(1) - fee - margin
+      risk_adjusted = decimal(account_multiplier) * (decimal(1) + reserve)
+      fixed_per_standard_dollar = decimal(@scenario.fetch("monthly_fixed_cost_usd")) / decimal(@scenario.fetch("monthly_standard_usage_usd"))
+      variable_floor = risk_adjusted / (decimal(1) - margin)
+      payment_adjusted_floor = risk_adjusted / denominator
+      full_cost_floor = (risk_adjusted + fixed_per_standard_dollar) / denominator
+      recommended = ceil_to_increment(full_cost_floor + decimal(@scenario.fetch("recommendation_buffer")), decimal(@scenario.fetch("recommendation_increment")))
+
+      {
+        "channel_id" => @evidence.fetch("channel_id"),
+        "models" => models,
+        "openable_models" => openable,
+        "account_cost_multiplier" => number(account_multiplier),
+        "internal" => { "group_multiplier" => @scenario.fetch("internal_group_multiplier") },
+        "commercial" => {
+          "failure_reserve_rate" => @scenario.fetch("failure_reserve_rate"),
+          "target_margin_rate" => @scenario.fetch("target_margin_rate"),
+          "payment_fee_rate" => @scenario.fetch("payment_fee_rate"),
+          "risk_adjusted_cost_multiplier" => number(risk_adjusted),
+          "fixed_cost_per_standard_dollar" => number(fixed_per_standard_dollar),
+          "variable_floor" => number(variable_floor),
+          "payment_adjusted_floor" => number(payment_adjusted_floor),
+          "full_cost_floor" => number(full_cost_floor),
+          "recommended_multiplier" => number(recommended)
+        }
+      }
+    end
+
+    private
+
+    def build_models
+      @evidence.fetch("models").each_with_object({}) do |(model_id, prices), result|
+        multiplier = prices["actual_multiplier"]
+        price_ready = prices["input"].is_a?(Numeric) && prices["output"].is_a?(Numeric)
+        billing_ready = multiplier.is_a?(Numeric) && prices["billing_reconciliation"] == "verified"
+        status = price_ready && billing_ready ? "verified" : "unknown"
+        result[model_id] = {
+          "status" => status,
+          "openable" => status == "verified",
+          "cost_multiplier" => multiplier,
+          "prices" => {
+            "input" => prices["input"],
+            "output" => prices["output"],
+            "cache_read" => prices["cache_read"],
+            "cache_write" => prices["cache_write"]
+          },
+          "reason" => status == "verified" ? nil : "price_or_billing_evidence_unknown"
+        }.compact
+      end
+    end
+
+    def validate_scenario!
+      required = %w[failure_reserve_rate target_margin_rate payment_fee_rate recommendation_increment recommendation_buffer monthly_fixed_cost_usd monthly_standard_usage_usd internal_group_multiplier]
+      required.each { |key| raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} is required" unless @scenario.key?(key) }
+      numeric_keys = required - ["internal_group_multiplier"]
+      numeric_keys.each do |key|
+        value = @scenario[key]
+        raise UpstreamBenchmark::ValidationError, "pricing scenario.#{key} must be a finite non-negative number" unless value.is_a?(Numeric) && value.finite? && value >= 0
+      end
+      if @scenario["target_margin_rate"] + @scenario["payment_fee_rate"] >= 1
+        raise UpstreamBenchmark::ValidationError, "pricing scenario margin plus payment fee must be less than 1"
+      end
+      raise UpstreamBenchmark::ValidationError, "pricing scenario monthly_standard_usage_usd must be positive" unless @scenario["monthly_standard_usage_usd"].positive?
+    end
+
+    def decimal(value)
+      BigDecimal(value.to_s)
+    end
+
+    def number(value)
+      value.to_f
+    end
+
+    def ceil_to_increment(value, increment)
+      (value / increment).ceil * increment
+    end
+  end
+
+  module ProposalBuilder
+    module_function
+
+    def build(run:, pricing:, proposal_id:, generated_at:)
+      capacity = run.dig("metrics", "capacity") || {}
+      models = pricing.fetch("openable_models").map do |model_id|
+        item = pricing.fetch("models").fetch(model_id)
+        {
+          "public_name" => model_id,
+          "upstream_name" => model_id,
+          "status" => item.fetch("status"),
+          "prices" => item.fetch("prices")
+        }
+      end
+      proposal = {
+        "schema_version" => 1,
+        "proposal_id" => proposal_id,
+        "generated_at" => generated_at,
+        "channel_id" => run.fetch("channel_id"),
+        "source_run_id" => run.fetch("run_id"),
+        "models" => models,
+        "pricing" => {
+          "account_cost_multiplier" => pricing.fetch("account_cost_multiplier"),
+          "internal_group_multiplier" => pricing.dig("internal", "group_multiplier"),
+          "commercial_group_multiplier" => pricing.dig("commercial", "recommended_multiplier")
+        },
+        "capacity" => {
+          "concurrency" => capacity.dig("recommendation", "concurrency"),
+          "rpm" => capacity.dig("recommendation", "rpm")
+        },
+        "sub2api" => {
+          "billing_model_source" => "requested",
+          "restrict_models" => true,
+          "model_mapping" => models.each_with_object({}) { |model, mapping| mapping[model["public_name"]] = model["upstream_name"] },
+          "model_pricing" => models.map do |model|
+            {
+              "models" => [model["public_name"]],
+              "input_price" => model.dig("prices", "input"),
+              "output_price" => model.dig("prices", "output"),
+              "cache_read_price" => model.dig("prices", "cache_read"),
+              "cache_write_price" => model.dig("prices", "cache_write")
+            }
+          end
+        }
+      }
+      proposal["proposal_hash"] = Digest::SHA256.hexdigest(JSON.generate(proposal))
+      proposal
+    end
+
+    def markdown(proposal)
+      lines = [
+        "# Upstream Proposal #{proposal.fetch('proposal_id')}",
+        "",
+        "- Channel: `#{proposal.fetch('channel_id')}`",
+        "- Source run: `#{proposal.fetch('source_run_id')}`",
+        "- Proposal hash: `#{proposal.fetch('proposal_hash')}`",
+        "- Account cost multiplier: `#{proposal.dig('pricing', 'account_cost_multiplier')}`",
+        "- Internal group multiplier: `#{proposal.dig('pricing', 'internal_group_multiplier')}`",
+        "- Commercial group multiplier: `#{proposal.dig('pricing', 'commercial_group_multiplier')}`",
+        "- Recommended concurrency: `#{proposal.dig('capacity', 'concurrency')}`",
+        "- Recommended RPM: `#{proposal.dig('capacity', 'rpm')}`",
+        "",
+        "| Model | Input | Output | Cache read | Cache write |",
+        "|---|---:|---:|---:|---:|"
+      ]
+      proposal.fetch("models").each do |model|
+        prices = model.fetch("prices")
+        lines << "| #{model.fetch('public_name')} | #{prices['input']} | #{prices['output']} | #{prices['cache_read']} | #{prices['cache_write']} |"
+      end
+      lines.join("\n") + "\n"
     end
   end
 end

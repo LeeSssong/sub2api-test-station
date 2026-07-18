@@ -163,4 +163,90 @@ class UpstreamBenchmarkV2Test < Minitest::Test
     assert_equal "at_least", result.dig("concurrency", "limit")
     assert_equal 8, result.dig("recommendation", "concurrency")
   end
+
+  def neko_pricing_evidence
+    {
+      "schema_version" => 1,
+      "channel_id" => "neko",
+      "currency" => "USD",
+      "models" => {
+        "gpt-a" => {
+          "input" => 1.25e-6,
+          "output" => 10.0e-6,
+          "cache_read" => 0.125e-6,
+          "cache_write" => nil,
+          "source" => "provider-dashboard",
+          "verified_at" => "2026-07-19",
+          "actual_multiplier" => 0.07,
+          "billing_reconciliation" => "verified"
+        }
+      }
+    }
+  end
+
+  def pricing_scenario
+    {
+      "failure_reserve_rate" => 0.10,
+      "target_margin_rate" => 0.50,
+      "payment_fee_rate" => 0.03,
+      "recommendation_increment" => 0.01,
+      "recommendation_buffer" => 0.01,
+      "monthly_fixed_cost_usd" => 0.0,
+      "monthly_standard_usage_usd" => 1.0,
+      "internal_group_multiplier" => 1.0
+    }
+  end
+
+  def test_pricing_advisor_recommends_neko_point_eighteen
+    result = UpstreamBenchmarkV2::PricingAdvisor.new(
+      evidence: neko_pricing_evidence,
+      scenario: pricing_scenario
+    ).calculate
+
+    assert_in_delta 0.154, result.fetch("commercial").fetch("variable_floor"), 0.0001
+    assert_in_delta 0.18, result.fetch("commercial").fetch("recommended_multiplier"), 0.0001
+    assert_equal 1.0, result.fetch("internal").fetch("group_multiplier")
+    assert_equal ["gpt-a"], result.fetch("openable_models")
+  end
+
+  def test_unknown_input_price_blocks_model_from_proposal
+    evidence = neko_pricing_evidence
+    evidence["models"]["gpt-unknown"] = evidence["models"]["gpt-a"].merge("input" => nil)
+
+    result = UpstreamBenchmarkV2::PricingAdvisor.new(
+      evidence: evidence,
+      scenario: pricing_scenario
+    ).calculate
+
+    refute_includes result.fetch("openable_models"), "gpt-unknown"
+    assert_equal "unknown", result.dig("models", "gpt-unknown", "status")
+  end
+
+  def test_proposal_builder_is_secret_free_and_contains_requested_billing
+    pricing = UpstreamBenchmarkV2::PricingAdvisor.new(
+      evidence: neko_pricing_evidence,
+      scenario: pricing_scenario
+    ).calculate
+    run = {
+      "channel_id" => "neko",
+      "run_id" => "run-v2",
+      "metrics" => {
+        "catalog" => { "gpt-a" => { "kind" => "text", "testable" => true } },
+        "capacity" => { "recommendation" => { "concurrency" => 2, "rpm" => 20 } }
+      }
+    }
+
+    proposal = UpstreamBenchmarkV2::ProposalBuilder.build(
+      run: run,
+      pricing: pricing,
+      proposal_id: "proposal-v2",
+      generated_at: "2026-07-19T12:00:00Z"
+    )
+
+    assert_equal "requested", proposal.dig("sub2api", "billing_model_source")
+    assert_equal true, proposal.dig("sub2api", "restrict_models")
+    assert_equal ["gpt-a"], proposal.fetch("models").map { |model| model.fetch("public_name") }
+    assert_match(/\A[0-9a-f]{64}\z/, proposal.fetch("proposal_hash"))
+    refute_match(/key|authorization|secret/i, JSON.generate(proposal))
+  end
 end

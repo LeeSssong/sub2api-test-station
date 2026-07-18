@@ -1,0 +1,11 @@
+schema_version: 1
+channel_id: example
+currency: USD
+models:
+  example-text-model:
+    input: 0.000001
+    output: 0.000004
+    cache_read: 0.0000001
+    cache_write: null
+    source: example-only
+    verified_at: 2026-07-19

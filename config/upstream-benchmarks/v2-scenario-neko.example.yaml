@@ -1,0 +1,11 @@
+schema_version: 1
+scenario_id: neko-v2-example
+channel_id: neko
+failure_reserve_rate: 0.10
+target_margin_rate: 0.50
+payment_fee_rate: 0.00
+recommendation_increment: 0.01
+recommendation_buffer: 0.01
+monthly_fixed_cost_usd: 0.00
+monthly_standard_usage_usd: 1.00
+internal_group_multiplier: 1.0

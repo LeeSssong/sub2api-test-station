@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/sub2api"
@@ -176,6 +177,49 @@ func TestListAndDisableCandidatePersistOnlyStateAndAudit(t *testing.T) {
 	var auditCount int
 	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.audit_events WHERE actor_user_id = 99 AND action = 'candidate.disable'`).Scan(&auditCount); err != nil || auditCount != 1 {
 		t.Fatalf("audit count=%d err=%v", auditCount, err)
+	}
+}
+
+func TestUsageSessionNotificationsSuppressForTwentyFourHoursAndCostsAppend(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.CreateUpstream(ctx, Upstream{Name: "usage-upstream", Role: "candidate", BaseURL: "https://usage-upstream.example/v1", AdapterType: "newapi", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope) VALUES ($1, 'file:/secret', 'cookie', 'active', 'https://usage-upstream.example/login', 'usage_read')`, id); err != nil {
+		t.Fatal(err)
+	}
+	observed := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	notify, err := st.RecordExpired(ctx, id, "https://usage-upstream.example/login", observed)
+	if err != nil || !notify {
+		t.Fatalf("first expired notify=%v err=%v", notify, err)
+	}
+	notify, err = st.RecordExpired(ctx, id, "https://usage-upstream.example/login", observed.Add(time.Hour))
+	if err != nil || notify {
+		t.Fatalf("suppressed expired notify=%v err=%v", notify, err)
+	}
+	notify, err = st.RecordExpired(ctx, id, "https://usage-upstream.example/login", observed.Add(25*time.Hour))
+	if err != nil || !notify {
+		t.Fatalf("next-day expired notify=%v err=%v", notify, err)
+	}
+	if err := st.RecordHealthy(ctx, id, observed.Add(26*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	evidence := billing.UsageEvidence{UpstreamID: id, ObservedAt: observed, StandardCost: 10_000_000, ActualCost: 1_000_000, HasActualCost: true, EffectiveMultiplier: 1_000, Note: "辅助证据"}
+	if err := st.AppendCostObservation(ctx, evidence); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var costCount int
+	if err := st.pool.QueryRow(ctx, `SELECT status FROM relay_ops.auth_sessions WHERE upstream_id=$1`, id).Scan(&status); err != nil || status != "active" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.cost_observations WHERE upstream_id=$1`, id).Scan(&costCount); err != nil || costCount != 1 {
+		t.Fatalf("cost count=%d err=%v", costCount, err)
 	}
 }
 

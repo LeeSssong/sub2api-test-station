@@ -40,6 +40,10 @@ type Fetcher struct {
 func IsUnsafeURL(err error) bool    { return errors.Is(err, errUnsafeURL) }
 func IsBodyTooLarge(err error) bool { return errors.Is(err, errBodyTooLarge) }
 
+func ValidateRemoteURL(ctx context.Context, resolver Resolver, rawURL string) error {
+	return validateRemoteURL(ctx, resolver, rawURL)
+}
+
 func (f Fetcher) Fetch(ctx context.Context, rawURL, previousHash string) (FetchResult, bool, error) {
 	resolver := f.Resolver
 	if resolver == nil {

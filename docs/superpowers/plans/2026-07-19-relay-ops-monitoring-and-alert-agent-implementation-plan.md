@@ -227,13 +227,13 @@ func (s *SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (Usage
 func EstimateEffectiveMultiplier(standard, actual domain.MicroUSD) (domain.MultiplierBPS, error)
 ```
 
-- [ ] Write failing tests for bearer/cookie secret files, permission checks, redirects/SSRF, 401/session-expired classification, usage-page schema changes, optional standard/actual cost extraction, login URL retention, and absence of passwords/cookies in SQL, logs, Agent input, or Feishu.
-- [ ] Run `go test ./internal/billing -count=1`; expect missing implementation failures.
-- [ ] Implement read-only usage collection with a server-side cookie/token file populated during initial administrator authorization. Persist only session status, expiry/last-success timestamps, failure reason, and secret reference; do not store account passwords.
-- [ ] Store valid standard/actual cost as auxiliary `cost_observations`. Missing or stale evidence must display “按公开定价估算” and must not block routing, probing, or public availability.
-- [ ] Emit one session-expired incident with the exact upstream login link, retry once after 401, suppress repeated reminders for 24 hours, and recover automatically after the secret file is refreshed.
-- [ ] Run focused tests; expect an expired session to pause only cost reconciliation while quality and public-price collection continue.
-- [ ] Commit with `git commit -m "feat: track upstream usage sessions"`.
+- [x] Write failing tests for bearer/cookie secret files, permission checks, redirects/SSRF, 401/session-expired classification, usage-page schema changes, optional standard/actual cost extraction, login URL retention, and absence of passwords/cookies in SQL, logs, Agent input, or Feishu.
+- [x] Run `go test ./internal/billing -count=1`; expect missing implementation failures.
+- [x] Implement read-only usage collection with a server-side cookie/token file populated during initial administrator authorization. Persist only session status, expiry/last-success timestamps, failure reason, and secret reference; do not store account passwords.
+- [x] Store valid standard/actual cost as auxiliary `cost_observations`. Missing or stale evidence must display “按公开定价估算” and must not block routing, probing, or public availability.
+- [x] Emit one session-expired incident with the exact upstream login link, retry once after 401, suppress repeated reminders for 24 hours, and recover automatically after the secret file is refreshed.
+- [x] Run focused tests; expect an expired session to pause only cost reconciliation while quality and public-price collection continue.
+- [x] Commit with `git commit -m "feat: track upstream usage sessions"`.
 
 ### Task 7: Comparison Windows and Incident State Machine
 

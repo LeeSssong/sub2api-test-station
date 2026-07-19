@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/sub2api"
@@ -221,6 +223,73 @@ func (s *Store) DisableCandidate(ctx context.Context, upstreamID domain.Upstream
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit candidate disable: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RecordExpired(ctx context.Context, upstreamID domain.UpstreamID, loginURL string, observedAt time.Time) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin usage session update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var storedLoginURL string
+	var lastNotified sql.NullTime
+	if err := tx.QueryRow(ctx, `SELECT login_url, last_notified_at FROM relay_ops.auth_sessions WHERE upstream_id=$1 FOR UPDATE`, upstreamID).Scan(&storedLoginURL, &lastNotified); err != nil {
+		return false, fmt.Errorf("find usage session: %w", err)
+	}
+	if storedLoginURL != loginURL {
+		return false, fmt.Errorf("usage session login URL does not match configuration")
+	}
+	observedAt = observedAt.UTC()
+	notify := !lastNotified.Valid || observedAt.Sub(lastNotified.Time) >= 24*time.Hour
+	var notifiedAt any
+	if notify {
+		notifiedAt = observedAt
+	} else {
+		notifiedAt = lastNotified.Time
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE relay_ops.auth_sessions
+		SET status='expired', last_failure_reason='unauthorized', last_notified_at=$2
+		WHERE upstream_id=$1`, upstreamID, notifiedAt); err != nil {
+		return false, fmt.Errorf("record expired usage session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit usage session update: %w", err)
+	}
+	return notify, nil
+}
+
+func (s *Store) RecordHealthy(ctx context.Context, upstreamID domain.UpstreamID, observedAt time.Time) error {
+	command, err := s.pool.Exec(ctx, `
+		UPDATE relay_ops.auth_sessions
+		SET status='active', last_success_at=$2, last_failure_reason=NULL
+		WHERE upstream_id=$1`, upstreamID, observedAt.UTC())
+	if err != nil {
+		return fmt.Errorf("record healthy usage session: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("usage session not found")
+	}
+	return nil
+}
+
+func (s *Store) AppendCostObservation(ctx context.Context, evidence billing.UsageEvidence) error {
+	var actual any
+	var multiplier any
+	if evidence.HasActualCost {
+		actual = evidence.ActualCost
+		multiplier = evidence.EffectiveMultiplier
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.cost_observations
+			(upstream_id, source, standard_cost_microusd, actual_cost_microusd, effective_multiplier_bps, confidence, comparison_note, observed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		evidence.UpstreamID, "provider_reported", evidence.StandardCost, actual, multiplier,
+		"auxiliary", nullString(evidence.Note), evidence.ObservedAt.UTC())
+	if err != nil {
+		return fmt.Errorf("append cost observation: %w", err)
 	}
 	return nil
 }

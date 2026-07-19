@@ -152,16 +152,16 @@ func (c *HTTPReader) GetUsageStats(ctx context.Context, query UsageQuery) (Usage
 	return stats, nil
 }
 
-func (c *HTTPReader) VerifyAdminSession(ctx context.Context, bearer string) (adminauth.Identity, error) {
+func (c *HTTPReader) VerifyAdminSession(ctx context.Context, session adminauth.Session) (adminauth.Identity, error) {
 	var identity struct {
 		UserID int64  `json:"id"`
 		Role   string `json:"role"`
 		Status string `json:"status"`
 	}
-	if strings.TrimSpace(bearer) == "" {
+	if strings.TrimSpace(session.Bearer) == "" {
 		return adminauth.Identity{}, fmt.Errorf("Sub2API session token is empty")
 	}
-	if err := c.getWithBearer(ctx, "/api/v1/auth/me", bearer, &identity); err != nil {
+	if err := c.getWithBearer(ctx, "/api/v1/auth/me", session, &identity); err != nil {
 		return adminauth.Identity{}, err
 	}
 	if identity.UserID <= 0 || identity.Role == "" || identity.Status == "" {
@@ -184,13 +184,20 @@ func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out
 	return c.do(req, out)
 }
 
-func (c *HTTPReader) getWithBearer(ctx context.Context, path, bearer string, out any) error {
+func (c *HTTPReader) getWithBearer(ctx context.Context, path string, session adminauth.Session, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("build Sub2API request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Authorization", "Bearer "+session.Bearer)
+	req.Header["User-Agent"] = []string{session.UserAgent}
+	if session.ForwardedFor != "" {
+		req.Header.Set("X-Forwarded-For", session.ForwardedFor)
+	}
+	if session.RealIP != "" {
+		req.Header.Set("X-Real-IP", session.RealIP)
+	}
 	return c.do(req, out)
 }
 

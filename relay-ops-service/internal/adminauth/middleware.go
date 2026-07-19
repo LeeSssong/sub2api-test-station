@@ -14,8 +14,15 @@ type Identity struct {
 	Status string
 }
 
+type Session struct {
+	Bearer       string
+	UserAgent    string
+	ForwardedFor string
+	RealIP       string
+}
+
 type Verifier interface {
-	VerifyAdminSession(context.Context, string) (Identity, error)
+	VerifyAdminSession(context.Context, Session) (Identity, error)
 }
 
 type actorContextKey struct{}
@@ -27,7 +34,12 @@ func RequireAdmin(verifier Verifier, next http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
-		identity, err := verifier.VerifyAdminSession(r.Context(), bearer)
+		identity, err := verifier.VerifyAdminSession(r.Context(), Session{
+			Bearer:       bearer,
+			UserAgent:    r.UserAgent(),
+			ForwardedFor: strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
+			RealIP:       strings.TrimSpace(r.Header.Get("X-Real-IP")),
+		})
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return

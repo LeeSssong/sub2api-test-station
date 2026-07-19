@@ -22,10 +22,17 @@ func TestRequireAdminAuthenticatesThroughSub2API(t *testing.T) {
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
 	req.Header.Set("Authorization", "Bearer browser-token")
+	req.Header.Set("User-Agent", "Mozilla/5.0 session-browser")
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	req.Header.Set("X-Real-IP", "203.0.113.9")
+	req.Header.Set("Cookie", "must-not-be-forwarded=1")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusNoContent || verifier.bearer != "browser-token" {
-		t.Fatalf("status=%d bearer=%q", recorder.Code, verifier.bearer)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", recorder.Code)
+	}
+	if verifier.session.Bearer != "browser-token" || verifier.session.UserAgent != "Mozilla/5.0 session-browser" || verifier.session.ForwardedFor != "203.0.113.9" || verifier.session.RealIP != "203.0.113.9" {
+		t.Fatalf("session = %#v", verifier.session)
 	}
 }
 
@@ -63,12 +70,12 @@ func TestRequireAdminRejectsMissingAndNonAdminSessions(t *testing.T) {
 
 type fakeVerifier struct {
 	identity Identity
-	bearer   string
+	session  Session
 	err      error
 }
 
-func (f *fakeVerifier) VerifyAdminSession(_ context.Context, bearer string) (Identity, error) {
-	f.bearer = bearer
+func (f *fakeVerifier) VerifyAdminSession(_ context.Context, session Session) (Identity, error) {
+	f.session = session
 	return f.identity, f.err
 }
 

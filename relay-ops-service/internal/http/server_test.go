@@ -131,8 +131,8 @@ func newTestServer() http.Handler {
 
 type fakeVerifier struct{}
 
-func (fakeVerifier) VerifyAdminSession(_ context.Context, bearer string) (adminauth.Identity, error) {
-	if bearer == "admin" {
+func (fakeVerifier) VerifyAdminSession(_ context.Context, session adminauth.Session) (adminauth.Identity, error) {
+	if session.Bearer == "admin" {
 		return adminauth.Identity{UserID: 42, Role: "admin", Status: "active"}, nil
 	}
 	return adminauth.Identity{}, nil

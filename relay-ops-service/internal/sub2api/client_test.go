@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"example.invalid/relay-ops-service/internal/adminauth"
 )
 
 func TestReaderUsesGETAdminKeyAndDecodesNativeResources(t *testing.T) {
@@ -107,10 +109,30 @@ func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer browser-token" {
 			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
 		}
+		if got := r.Header.Get("User-Agent"); got != "Mozilla/5.0 session-browser" {
+			t.Errorf("User-Agent = %q", got)
+		}
+		if got := r.Header.Get("X-Forwarded-For"); got != "203.0.113.9" {
+			t.Errorf("X-Forwarded-For = %q", got)
+		}
+		if got := r.Header.Get("X-Real-IP"); got != "203.0.113.9" {
+			t.Errorf("X-Real-IP = %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "" {
+			t.Errorf("Cookie must not be forwarded: %q", got)
+		}
+		if got := r.Header.Get("x-api-key"); got != "" {
+			t.Errorf("admin key must not be forwarded: %q", got)
+		}
 		fmt.Fprint(w, `{"data":{"id":42,"role":"admin","status":"active"}}`)
 	}))
 	defer server.Close()
-	identity, err := newTestReader(t, server.URL).VerifyAdminSession(context.Background(), "browser-token")
+	identity, err := newTestReader(t, server.URL).VerifyAdminSession(context.Background(), adminauth.Session{
+		Bearer:       "browser-token",
+		UserAgent:    "Mozilla/5.0 session-browser",
+		ForwardedFor: "203.0.113.9",
+		RealIP:       "203.0.113.9",
+	})
 	if err != nil || identity.UserID != 42 {
 		t.Fatalf("VerifyAdminSession = %#v, %v", identity, err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/agent"
@@ -11,6 +12,7 @@ import (
 	"example.invalid/relay-ops-service/internal/config"
 	"example.invalid/relay-ops-service/internal/domain"
 	httpserver "example.invalid/relay-ops-service/internal/http"
+	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/probes"
@@ -50,7 +52,19 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	syncer := sub2api.Synchronizer{Reader: reader, Sink: database}
 	candidateService := candidates.Service{Repository: database}
 	probeRunner := &probes.V2Executor{RubyPath: cfg.RubyPath, ScriptPath: cfg.V2ScriptPath, ProfilePath: cfg.CandidateProfilePath, QualificationProfilePath: cfg.QualificationProfilePath, MaxOutputBytes: 2 << 20, MaxRequestCost: domain.MicroUSD(1_000)}
-	collector := &candidateCollector{Store: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner}
+	var analysisService *agent.Service
+	if cfg.AgentBaseURL != "" && cfg.AgentAPIKeyFile != "" && cfg.AgentModel != "" {
+		client := &agent.Client{BaseURL: cfg.AgentBaseURL, APIKeyFile: cfg.AgentAPIKeyFile, Model: cfg.AgentModel}
+		analysisService = &agent.Service{Analyzer: client, Repository: database}
+	}
+	var feishu *notify.Client
+	if cfg.FeishuWebhookFile != "" {
+		feishu = &notify.Client{WebhookFile: cfg.FeishuWebhookFile}
+	}
+	collector := &candidateCollector{
+		Store: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
+		Incidents: &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}, Agent: analysisService, Notifier: feishu,
+	}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,
 		Production: func(runCtx context.Context) error {
@@ -83,15 +97,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/healthz", HealthHandler(readiness))
 	root.Handle("/readyz", HealthHandler(readiness))
 	root.Handle("/", operations)
-	var analysisService *agent.Service
-	if cfg.AgentBaseURL != "" && cfg.AgentAPIKeyFile != "" && cfg.AgentModel != "" {
-		client := &agent.Client{BaseURL: cfg.AgentBaseURL, APIKeyFile: cfg.AgentAPIKeyFile, Model: cfg.AgentModel}
-		analysisService = &agent.Service{Analyzer: client, Repository: database}
-	}
-	var feishu *notify.Client
-	if cfg.FeishuWebhookFile != "" {
-		feishu = &notify.Client{WebhookFile: cfg.FeishuWebhookFile}
-	}
 	failed = false
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Feishu: feishu}, nil
 }
@@ -106,7 +111,22 @@ type candidateCollector struct {
 	Store     *store.Store
 	Fetcher   pricing.Fetcher
 	Extractor pricing.Extractor
-	Probes    *probes.V2Executor
+	Probes    ProbeRunner
+	Incidents *incidents.Machine
+	Agent     AnalysisRunner
+	Notifier  MessageSender
+}
+
+type ProbeRunner interface {
+	Watch(context.Context, candidates.Candidate) (probes.ProbeRun, error)
+}
+
+type AnalysisRunner interface {
+	AnalyzeOnce(context.Context, agent.IncidentContractV1) (agent.Analysis, error)
+}
+
+type MessageSender interface {
+	Send(context.Context, notify.FeishuMessage) error
 }
 
 func (c *candidateCollector) Run(ctx context.Context, upstreamID domain.UpstreamID, paidProbe bool) error {
@@ -150,8 +170,14 @@ func (c *candidateCollector) Run(ctx context.Context, upstreamID domain.Upstream
 			}
 		}
 		diff, _ := json.Marshal(semantic)
-		if _, err := c.Store.AppendPricingSnapshot(ctx, store.PricingSnapshot{UpstreamID: upstreamID, SourceURL: fetched.URL, SourceType: "public_page", FetchedAt: fetched.FetchedAt, ContentHash: fetched.ContentHash, NormalizedJSON: normalized, DiffSummary: diff, EvidenceLevel: evidence.Confidence}); err != nil {
+		snapshotID, err := c.Store.AppendPricingSnapshot(ctx, store.PricingSnapshot{UpstreamID: upstreamID, SourceURL: fetched.URL, SourceType: "public_page", FetchedAt: fetched.FetchedAt, ContentHash: fetched.ContentHash, NormalizedJSON: normalized, DiffSummary: diff, EvidenceLevel: evidence.Confidence})
+		if err != nil {
 			return err
+		}
+		if semantic.Multiplier != nil {
+			if err := c.notifyMultiplierChange(ctx, candidate, snapshotID, fetched.ContentHash, *semantic.Multiplier); err != nil {
+				return err
+			}
 		}
 	}
 	if !paidProbe {
@@ -162,4 +188,43 @@ func (c *candidateCollector) Run(ctx context.Context, upstreamID domain.Upstream
 		return err
 	}
 	return c.Store.AppendProbeRun(ctx, upstreamID, run, time.Now().UTC())
+}
+
+func (c *candidateCollector) notifyMultiplierChange(ctx context.Context, candidate candidates.Candidate, snapshotID int64, evidenceHash string, change pricing.MultiplierChange) error {
+	if c.Incidents == nil {
+		return nil
+	}
+	key := "upstream:" + strconv.FormatInt(int64(candidate.ID), 10) + ":advertised_multiplier"
+	transition, err := c.Incidents.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P1", Failing: true, EvidenceHash: evidenceHash,
+		CurrentValue: strconv.FormatInt(int64(change.After), 10), ConfirmationWindows: 1,
+	})
+	if err != nil || !transition.Notify {
+		return err
+	}
+	contract := agent.IncidentContractV1{
+		ContractVersion: "relay-ops-incident-v1", IncidentID: key, Severity: "P1", Upstream: candidate.Name,
+		MetricName: "advertised_multiplier_bps", BaselineValue: strconv.FormatInt(int64(change.Before), 10), CurrentValue: strconv.FormatInt(int64(change.After), 10), Samples: 1,
+		EvidenceRefs: []string{"pricing_snapshot:" + strconv.FormatInt(snapshotID, 10)}, AllowedActions: []string{"observe", "request_human_review"},
+	}
+	analysis := agent.Fallback(contract)
+	if c.Agent != nil {
+		if generated, analyzeErr := c.Agent.AnalyzeOnce(ctx, contract); analyzeErr == nil {
+			analysis = generated
+		}
+	}
+	if c.Notifier == nil {
+		return nil
+	}
+	message := notify.RenderFeishu(notify.IncidentView{
+		Title:       candidate.Name + " 上游倍率变化",
+		WhatWasDone: []string{"读取公开价格页 1 次", "比较前后归一化价格快照"},
+		Results:     []string{"倍率由 " + bpsText(change.Before) + " 调整为 " + bpsText(change.After)},
+		Change:      analysis.Change, Focus: analysis.Focus, Links: []notify.Link{{Label: "运维后台", URL: "/ops"}},
+	})
+	return c.Notifier.Send(ctx, message)
+}
+
+func bpsText(value domain.MultiplierBPS) string {
+	return strconv.FormatFloat(float64(value)/10_000, 'f', -1, 64) + "x"
 }

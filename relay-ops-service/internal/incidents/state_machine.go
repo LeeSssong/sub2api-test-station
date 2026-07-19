@@ -6,11 +6,12 @@ import (
 )
 
 type Observation struct {
-	Key          string
-	Severity     string
-	Failing      bool
-	EvidenceHash string
-	CurrentValue string
+	Key                 string
+	Severity            string
+	Failing             bool
+	EvidenceHash        string
+	CurrentValue        string
+	ConfirmationWindows int
 }
 
 type Record struct {
@@ -54,6 +55,9 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 	required, ok := m.Policy.ConfirmWindows[observation.Severity]
 	if !ok {
 		return Transition{}, fmt.Errorf("incident severity is invalid")
+	}
+	if observation.ConfirmationWindows > 0 {
+		required = observation.ConfirmationWindows
 	}
 	record, exists, err := m.Repository.Get(ctx, observation.Key)
 	if err != nil {

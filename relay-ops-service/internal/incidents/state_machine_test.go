@@ -56,6 +56,15 @@ func TestMachineUsesSeveritySpecificConfirmationWindows(t *testing.T) {
 	}
 }
 
+func TestMachineAllowsHighConfidenceSingleWindowConfirmation(t *testing.T) {
+	t.Parallel()
+	machine := Machine{Repository: newMemoryRepository(), Policy: DefaultPolicy()}
+	transition, err := machine.Observe(context.Background(), Observation{Key: "price-change", Severity: "P1", Failing: true, EvidenceHash: "snapshot", ConfirmationWindows: 1})
+	if err != nil || !transition.Notify || transition.Kind != "confirmed" {
+		t.Fatalf("transition=%#v err=%v", transition, err)
+	}
+}
+
 type memoryRepository struct{ records map[string]Record }
 
 func newMemoryRepository() *memoryRepository { return &memoryRepository{records: map[string]Record{}} }

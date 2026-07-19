@@ -135,6 +135,44 @@ class UpstreamBenchmarkV2Test < Minitest::Test
     assert_equal false, record.dig("metrics", "per_model", "gpt-a", "stream", "complete")
   end
 
+  def test_candidate_watch_uses_only_configured_representative_models_without_capacity
+	client = ScriptedClient.new(models: ["gpt-a", "gpt-b", "dall-e-3"])
+	profile = UpstreamBenchmarkV2::Profile.new(
+	  profile_document.merge("representative_models" => ["gpt-b"])
+	)
+
+	record = UpstreamBenchmarkV2::CandidateWatchRunner.new(client: client, profile: profile).run(channel_id: "candidate")
+
+	assert_equal %w[gpt-a gpt-b], record.dig("metrics", "text_models")
+	assert_equal ["gpt-b"], record.dig("metrics", "probed_models")
+	assert_equal [{ "model" => "gpt-b", "stream" => false }, { "model" => "gpt-b", "stream" => true }], client.calls
+	assert_equal 1, record.dig("metrics", "per_model", "gpt-b", "sync", "success_count")
+	assert_equal true, record.dig("metrics", "per_model", "gpt-b", "stream", "complete")
+	assert_in_delta 0.5, record.dig("metrics", "per_model", "gpt-b", "stream", "first_event_ms"), 0.001
+	assert_equal 10, record.dig("metrics", "usage", "total_tokens")
+	refute record.dig("metrics").key?("capacity")
+	refute_match(/concurrency|rpm/i, JSON.generate(record))
+  end
+
+  def test_candidate_watch_redacts_secret_shaped_failures
+	client = Class.new do
+	  def models
+		{ "status" => 200, "models" => ["gpt-a"] }
+	  end
+
+	  def chat(**)
+		raise "Authorization: Bearer sk-secret-value"
+	  end
+	end.new
+	profile = UpstreamBenchmarkV2::Profile.new(profile_document.merge("representative_models" => ["gpt-a"]))
+
+	record = UpstreamBenchmarkV2::CandidateWatchRunner.new(client: client, profile: profile).run(channel_id: "candidate")
+	clean = JSON.generate(UpstreamBenchmark::Redactor.clean(record))
+
+	refute_includes clean, "sk-secret-value"
+	assert_equal "failed", record.fetch("status")
+  end
+
   def test_capacity_stops_after_rate_limit_and_keeps_previous_stable_level
     calls = 0
     probe = UpstreamBenchmarkV2::CapacityProbe.new(
@@ -301,6 +339,34 @@ class UpstreamBenchmarkV2Test < Minitest::Test
       assert_equal true, result.fetch("capacity_probe_bounded")
       assert_empty error.string
     end
+  end
+
+  def test_cli_watch_dry_run_has_fixed_bounded_request_estimate
+	Dir.mktmpdir do |dir|
+	  channels = File.join(dir, "channels.yaml")
+	  profile = File.join(dir, "profile.yaml")
+	  File.write(channels, YAML.dump(
+		"schema_version" => 1,
+		"channels" => [{
+		  "id" => "candidate", "display_name" => "Candidate", "base_url" => "https://api.example.com/v1",
+		  "protocol" => "openai_compatible", "resale_permission" => "unknown", "lifecycle" => "candidate"
+		}]
+	  ))
+	  File.write(profile, YAML.dump(profile_document.merge("representative_models" => ["gpt-a", "gpt-b"])))
+	  output = StringIO.new
+	  error = StringIO.new
+
+	  assert_equal 0, UpstreamBenchmarkV2::CLI.run([
+		"watch", "--channels", channels, "--profile", profile,
+		"--channel", "candidate", "--key-env", "CANDIDATE_KEY", "--dry-run"
+	  ], out: output, err: error)
+	  result = JSON.parse(output.string)
+	  assert_equal 4, result.dig("request_estimate", "maximum_chat_requests")
+	  assert_equal false, result.fetch("network_sent")
+	  refute result.key?("capacity_probe_bounded")
+	  refute_match(/concurrency|rpm/i, output.string)
+	  assert_empty error.string
+	end
   end
 
   def test_cli_validates_example_inputs

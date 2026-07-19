@@ -37,6 +37,10 @@ module UpstreamBenchmarkV2
       @document.fetch("rpm_window_seconds")
     end
 
+    def representative_models
+	  Array(@document["representative_models"])
+	end
+
     private
 
     def validate!
@@ -53,6 +57,7 @@ module UpstreamBenchmarkV2
       bounded_integer!("rpm_window_seconds", 1, 60)
       validate_levels!("concurrency_levels", 1, 10)
       validate_levels!("rpm_levels", 1, 120)
+	  validate_representative_models!
       UpstreamBenchmark::SecretGuard.validate!(@document)
     end
 
@@ -70,6 +75,16 @@ module UpstreamBenchmarkV2
       end
       raise UpstreamBenchmark::ValidationError, "v2 profile #{key} must be strictly increasing" unless values.each_cons(2).all? { |left, right| left < right }
     end
+
+	def validate_representative_models!
+	  models = @document["representative_models"]
+	  return if models.nil?
+
+	  unless models.is_a?(Array) && models.length.between?(1, 3) && models.all? { |model| model.is_a?(String) && !model.strip.empty? }
+		raise UpstreamBenchmark::ValidationError, "v2 profile representative_models must contain 1-3 model ids"
+	  end
+	  raise UpstreamBenchmark::ValidationError, "v2 profile representative_models must be unique" unless models.uniq.length == models.length
+	end
   end
 
   module ModelCatalog
@@ -401,6 +416,63 @@ module UpstreamBenchmarkV2
     end
   end
 
+  class CandidateWatchRunner < Runner
+	def run(channel_id:)
+	  model_result = @client.models
+	  catalog = ModelCatalog.discover(model_result["models"])
+	  text_models = catalog.values.select { |item| item["testable"] }.map { |item| item["id"] }
+	  configured = @profile.representative_models
+	  probed_models = if configured.empty?
+					  text_models.first(1)
+					else
+					  configured.select { |model| text_models.include?(model) }
+					end
+	  per_model = {}
+	  results = []
+	  probed_models.each do |model|
+		sync = invoke(model, false)
+		stream = invoke(model, true)
+		per_model[model] = {
+		  "sync" => summarize([sync]),
+		  "stream" => summarize([stream]).merge("complete" => stream["stream_complete"] == true),
+		  "usage" => aggregate_usage([sync, stream])
+		}
+		results.concat([sync, stream])
+	  end
+
+	  errors = []
+	  errors << { "stage" => "models", "category" => error_for(model_result) } unless model_result["status"] == 200
+	  errors << { "stage" => "representative_models", "category" => "no_matching_text_model" } if probed_models.empty?
+	  probed_models.each do |model|
+		sync = per_model.fetch(model).fetch("sync")
+		stream = per_model.fetch(model).fetch("stream")
+		errors << { "stage" => "#{model}.sync", "category" => "request_failed" } unless sync["success_count"] == 1
+		errors << { "stage" => "#{model}.stream", "category" => "request_failed" } unless stream["success_count"] == 1
+		errors << { "stage" => "#{model}.stream", "category" => "incomplete_sse" } unless stream["complete"]
+	  end
+	  failed = model_result["status"] != 200 || probed_models.empty? || results.any? { |result| result["status"] != 200 }
+	  status = failed ? "failed" : (errors.empty? ? "passed" : "partial")
+
+	  {
+		"schema_version" => 1,
+		"run_id" => SecureRandom.uuid,
+		"channel_id" => channel_id,
+		"profile_id" => @profile["id"],
+		"recorded_at" => Time.now.utc.iso8601,
+		"status" => status,
+		"evidence_source" => "candidate_watch",
+		"metrics" => {
+		  "catalog" => catalog,
+		  "text_models" => text_models,
+		  "probed_models" => probed_models,
+		  "per_model" => per_model,
+		  "usage" => aggregate_usage(results)
+		},
+		"errors" => errors
+	  }
+	end
+  end
+
   class PricingAdvisor
     def initialize(evidence:, scenario:)
       @evidence = evidence
@@ -597,7 +669,7 @@ module UpstreamBenchmarkV2
 
     def self.run(argv, out: $stdout, err: $stderr, env: ENV)
       command = argv.shift
-      raise UpstreamBenchmark::ValidationError, "command must be one of: validate, run, advise, proposal" unless command
+	  raise UpstreamBenchmark::ValidationError, "command must be one of: validate, run, watch, advise, proposal" unless command
       options = DEFAULTS.dup
       option_parser(command, options).parse!(argv)
       raise UpstreamBenchmark::ValidationError, "unexpected arguments: #{argv.join(' ')}" unless argv.empty?
@@ -605,6 +677,7 @@ module UpstreamBenchmarkV2
       case command
       when "validate" then validate_command(options, out)
       when "run" then run_command(options, out, env)
+	  when "watch" then watch_command(options, out, env)
       when "advise" then advise_command(options, out)
       when "proposal" then proposal_command(options, out)
       end
@@ -671,6 +744,38 @@ module UpstreamBenchmarkV2
       UpstreamBenchmark::Ledger.new(options[:runs], options[:decisions]).append_run(record)
       out.puts(JSON.pretty_generate(UpstreamBenchmark::Redactor.clean(record)))
     end
+
+	def self.watch_command(options, out, env)
+	  raise UpstreamBenchmark::ValidationError, "--channel is required" unless options[:channel]
+	  raise UpstreamBenchmark::ValidationError, "--key-env is required" unless options[:key_env]
+	  registry = UpstreamBenchmark::Registry.new(load_yaml(options[:channels]))
+	  profile = UpstreamBenchmarkV2::Profile.new(load_yaml(options[:profile]))
+	  channel = registry.fetch(options[:channel])
+	  if options[:dry_run]
+		out.puts(JSON.pretty_generate(
+		  "channel_id" => channel["id"],
+		  "profile_id" => profile["id"],
+		  "model_discovery" => "live_required",
+		  "representative_models" => profile.representative_models,
+		  "request_estimate" => {
+			"model_discovery_requests" => 1,
+			"maximum_chat_requests" => [profile.representative_models.length, 1].max * 2
+		  },
+		  "key_env" => options[:key_env],
+		  "network_sent" => false
+		))
+		return
+	  end
+	  key = env[options[:key_env]]
+	  raise UpstreamBenchmark::ValidationError, "candidate key environment variable is empty" if key.to_s.empty?
+	  client = UpstreamBenchmark::HttpClient.new(
+		base_url: channel.fetch("base_url"),
+		api_key: key,
+		timeout_seconds: profile["timeout_seconds"]
+	  )
+	  record = UpstreamBenchmarkV2::CandidateWatchRunner.new(client: client, profile: profile).run(channel_id: channel.fetch("id"))
+	  out.puts(JSON.pretty_generate(UpstreamBenchmark::Redactor.clean(record)))
+	end
 
     def self.advise_command(options, out)
       pricing = UpstreamBenchmarkV2::PricingAdvisor.new(

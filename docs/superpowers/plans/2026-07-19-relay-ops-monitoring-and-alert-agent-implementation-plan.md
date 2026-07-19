@@ -182,12 +182,12 @@ type V2Runner interface {
 }
 ```
 
-- [ ] Add failing Ruby tests proving `watch` discovers all models, chooses configured representative text models, performs one sync and one SSE per chosen model, records TTFT/total latency/usage/`[DONE]`, redacts secrets, and never invokes concurrency/RPM probes.
-- [ ] Run `ruby -Itest tests/upstream_benchmarks/upstream_benchmark_v2_test.rb`; expect watch-command failures.
-- [ ] Implement `watch --channel ID --key-env NAME --profile PATH` using existing `Registry`, `HttpClient`, `ModelCatalog`, request metrics, and redactor. The key remains in an environment variable created from the mounted secret file and never appears in argv or output.
-- [ ] Add Go executor tests for deadline, output cap, malformed JSON, non-zero exit, expense estimate, and environment scrubbing; implement `exec.CommandContext` with a fixed Ruby/script path and allowlisted environment.
-- [ ] Run Ruby and Go tests; expect watch mode to pass with no capacity fields and full qualification to remain backward compatible.
-- [ ] Commit with `git commit -m "feat: add bounded candidate watch mode"`.
+- [x] Add failing Ruby tests proving `watch` discovers all models, chooses configured representative text models, performs one sync and one SSE per chosen model, records TTFT/total latency/usage/`[DONE]`, redacts secrets, and never invokes concurrency/RPM probes.
+- [x] Run `ruby -Itest tests/upstream_benchmarks/upstream_benchmark_v2_test.rb`; expect watch-command failures.
+- [x] Implement `watch --channel ID --key-env NAME --profile PATH` using existing `Registry`, `HttpClient`, `ModelCatalog`, request metrics, and redactor. The key remains in an environment variable created from the mounted secret file and never appears in argv or output.
+- [x] Add Go executor tests for deadline, output cap, malformed JSON, non-zero exit, expense estimate, and environment scrubbing; implement `exec.CommandContext` with a fixed Ruby/script path and allowlisted environment.
+- [x] Run Ruby and Go tests; expect watch mode to pass with no capacity fields and full qualification to remain backward compatible.
+- [x] Commit with `git commit -m "feat: add bounded candidate watch mode"`.
 
 ### Task 5: Structured Price and Multiplier Collection
 

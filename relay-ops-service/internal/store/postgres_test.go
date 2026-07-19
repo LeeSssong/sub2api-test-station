@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -242,6 +243,45 @@ func TestIncidentMachineStatePersistsInPostgreSQL(t *testing.T) {
 	record, ok, err := st.Get(ctx, observation.Key)
 	if err != nil || !ok || record.State != "confirmed" || record.SampleCount != 2 {
 		t.Fatalf("record=%#v ok=%v err=%v", record, ok, err)
+	}
+}
+
+func TestSchedulerClaimIsConcurrentAndRestartSafe(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	results := make(chan bool, 2)
+	var wait sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			claimed, err := st.Claim(ctx, "candidate-cycle:17", now, 6*time.Hour)
+			if err != nil {
+				t.Errorf("Claim: %v", err)
+			}
+			results <- claimed
+		}()
+	}
+	wait.Wait()
+	close(results)
+	claimedCount := 0
+	for claimed := range results {
+		if claimed {
+			claimedCount++
+		}
+	}
+	if claimedCount != 1 {
+		t.Fatalf("claimed count=%d", claimedCount)
+	}
+	if claimed, err := st.Claim(ctx, "candidate-cycle:17", now.Add(5*time.Hour), 6*time.Hour); err != nil || claimed {
+		t.Fatalf("early claim=%v err=%v", claimed, err)
+	}
+	if claimed, err := st.Claim(ctx, "candidate-cycle:17", now.Add(6*time.Hour), 6*time.Hour); err != nil || !claimed {
+		t.Fatalf("due claim=%v err=%v", claimed, err)
 	}
 }
 

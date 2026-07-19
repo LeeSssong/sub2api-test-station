@@ -285,12 +285,12 @@ func (s *Scheduler) RunCandidateCycle(context.Context, int64) error
 func New(ctx context.Context, cfg config.Config) (*App, error)
 ```
 
-- [ ] Write failing fake-clock tests for 5-minute production pages, exactly 6-hour candidate cycles, no paid probes in `read_only`, one-cycle locks, restart-safe due times, no extra probe on page diff, daily report time, and isolated per-upstream failures.
-- [ ] Run `go test ./internal/scheduler ./internal/app -count=1`; expect failures.
-- [ ] Implement database-backed due times and PostgreSQL advisory locks. `read_only` fetches Sub2API/native metrics and public pages but skips candidate API calls; `probe` enables bounded V2 watch; `closed` serves historical pages and health only.
-- [ ] Assemble store, Sub2API reader, candidates, pricing, probe runner, comparison, incidents, Feishu, Agent, scheduler, and HTTP server. Health checks process liveness; readiness checks PostgreSQL and last successful Sub2API read without requiring Agent/Feishu.
-- [ ] Run scheduler/app tests with race detection; expect no duplicate cycles under concurrent scheduler starts.
-- [ ] Commit with `git commit -m "feat: schedule relay ops collection"`.
+- [x] Write failing fake-clock tests for 5-minute production pages, exactly 6-hour candidate cycles, no paid probes in `read_only`, one-cycle locks, restart-safe due times, no extra probe on page diff, daily report time, and isolated per-upstream failures.
+- [x] Run `go test ./internal/scheduler ./internal/app -count=1`; expect failures.
+- [x] Implement database-backed due times and PostgreSQL advisory locks. `read_only` fetches Sub2API/native metrics and public pages but skips candidate API calls; `probe` enables bounded V2 watch; `closed` serves historical pages and health only.
+- [x] Assemble store, Sub2API reader, candidates, pricing, probe runner, comparison, incidents, Feishu, Agent, scheduler, and HTTP server. Health checks process liveness; readiness checks PostgreSQL and last successful Sub2API read without requiring Agent/Feishu.
+- [x] Run scheduler/app tests with race detection; expect no duplicate cycles under concurrent scheduler starts.
+- [x] Commit with `git commit -m "feat: schedule relay ops collection"`.
 
 ### Task 10: Public Pricing and Administrator Operations UI
 

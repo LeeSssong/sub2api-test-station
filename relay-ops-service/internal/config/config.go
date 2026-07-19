@@ -15,19 +15,24 @@ const (
 )
 
 type Config struct {
-	Mode                   string
-	ListenAddress          string
-	Timezone               *time.Location
-	TimezoneName           string
-	DatabaseURLFile        string
-	Sub2APIBaseURL         string
-	Sub2APIAdminKeyFile    string
-	FeishuWebhookFile      string
-	AgentBaseURL           string
-	AgentAPIKeyFile        string
-	AgentModel             string
-	ProductionPageInterval time.Duration
-	CandidateInterval      time.Duration
+	Mode                     string
+	ListenAddress            string
+	Timezone                 *time.Location
+	TimezoneName             string
+	DatabaseURLFile          string
+	Sub2APIBaseURL           string
+	Sub2APIAdminKeyFile      string
+	FeishuWebhookFile        string
+	AgentBaseURL             string
+	AgentAPIKeyFile          string
+	AgentModel               string
+	ProductionPageInterval   time.Duration
+	CandidateInterval        time.Duration
+	PublicBaseURL            string
+	RubyPath                 string
+	V2ScriptPath             string
+	CandidateProfilePath     string
+	QualificationProfilePath string
 }
 
 func Load(env func(string) string) (Config, error) {
@@ -73,19 +78,24 @@ func Load(env func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_URL is required")
 	}
 	return Config{
-		Mode:                   mode,
-		ListenAddress:          get("RELAY_OPS_LISTEN_ADDRESS", ":8100"),
-		Timezone:               timezone,
-		TimezoneName:           timezoneName,
-		DatabaseURLFile:        databaseURLFile,
-		Sub2APIBaseURL:         baseURL,
-		Sub2APIAdminKeyFile:    adminKeyFile,
-		FeishuWebhookFile:      feishuFile,
-		AgentBaseURL:           strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
-		AgentAPIKeyFile:        agentKeyFile,
-		AgentModel:             get("RELAY_OPS_AGENT_MODEL", ""),
-		ProductionPageInterval: 5 * time.Minute,
-		CandidateInterval:      6 * time.Hour,
+		Mode:                     mode,
+		ListenAddress:            get("RELAY_OPS_LISTEN_ADDRESS", ":8100"),
+		Timezone:                 timezone,
+		TimezoneName:             timezoneName,
+		DatabaseURLFile:          databaseURLFile,
+		Sub2APIBaseURL:           baseURL,
+		Sub2APIAdminKeyFile:      adminKeyFile,
+		FeishuWebhookFile:        feishuFile,
+		AgentBaseURL:             strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
+		AgentAPIKeyFile:          agentKeyFile,
+		AgentModel:               get("RELAY_OPS_AGENT_MODEL", ""),
+		ProductionPageInterval:   5 * time.Minute,
+		CandidateInterval:        6 * time.Hour,
+		PublicBaseURL:            strings.TrimRight(get("RELAY_OPS_PUBLIC_BASE_URL", "https://api.xingqiaolab.top"), "/"),
+		RubyPath:                 get("RELAY_OPS_RUBY_PATH", "/usr/bin/ruby"),
+		V2ScriptPath:             get("RELAY_OPS_V2_SCRIPT_PATH", "/app/ops/upstream-benchmark-v2.rb"),
+		CandidateProfilePath:     get("RELAY_OPS_CANDIDATE_PROFILE_PATH", "/app/config/upstream-benchmarks/candidate-watch-v2.yaml"),
+		QualificationProfilePath: get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
 	}, nil
 }
 
@@ -97,8 +107,9 @@ func validateSecretFile(path string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("must be a regular file")
 	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("must not be writable by group or other")
+	permissions := info.Mode().Perm()
+	if permissions != 0o600 && permissions != 0o640 {
+		return fmt.Errorf("permissions must be 0600 or 0640")
 	}
 	if info.Size() == 0 {
 		return fmt.Errorf("must not be empty")

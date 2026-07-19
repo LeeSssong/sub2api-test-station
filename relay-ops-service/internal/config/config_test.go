@@ -58,6 +58,17 @@ func TestLoadRejectsWritableSecretFiles(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsWorldReadableSecretFiles(t *testing.T) {
+	t.Parallel()
+	env := validEnv(t)
+	if err := os.Chmod(env["RELAY_OPS_SUB2API_ADMIN_KEY_FILE"], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("world-readable admin key unexpectedly accepted")
+	}
+}
+
 func validEnv(t *testing.T) map[string]string {
 	t.Helper()
 	dir := t.TempDir()

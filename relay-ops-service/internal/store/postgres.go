@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -93,6 +97,8 @@ func (s *Store) Close() {
 		s.pool.Close()
 	}
 }
+
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.pool.Exec(ctx, initialMigration); err != nil {
@@ -191,6 +197,26 @@ func (s *Store) ListCandidates(ctx context.Context) ([]candidates.Candidate, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate candidates: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) ListPublicGroupNames(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT name FROM relay_ops.public_groups WHERE enabled=TRUE AND customer_visible=TRUE ORDER BY name, group_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list public group names: %w", err)
+	}
+	defer rows.Close()
+	result := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan public group name: %w", err)
+		}
+		result = append(result, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate public group names: %w", err)
 	}
 	return result, nil
 }
@@ -327,6 +353,37 @@ func (s *Store) CountPricingSnapshots(ctx context.Context, upstreamID domain.Ups
 	return count, nil
 }
 
+func (s *Store) LatestPricingSnapshot(ctx context.Context, upstreamID domain.UpstreamID) (PricingSnapshot, bool, error) {
+	var snapshot PricingSnapshot
+	snapshot.UpstreamID = upstreamID
+	err := s.pool.QueryRow(ctx, `SELECT source_url, source_type, fetched_at, content_hash, normalized_payload, COALESCE(diff_summary, '{}'::jsonb), evidence_level FROM relay_ops.pricing_snapshots WHERE upstream_id=$1 ORDER BY fetched_at DESC, id DESC LIMIT 1`, upstreamID).Scan(&snapshot.SourceURL, &snapshot.SourceType, &snapshot.FetchedAt, &snapshot.ContentHash, &snapshot.NormalizedJSON, &snapshot.DiffSummary, &snapshot.EvidenceLevel)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PricingSnapshot{}, false, nil
+	}
+	if err != nil {
+		return PricingSnapshot{}, false, fmt.Errorf("latest pricing snapshot: %w", err)
+	}
+	return snapshot, true, nil
+}
+
+func (s *Store) AppendProbeRun(ctx context.Context, upstreamID domain.UpstreamID, run probes.ProbeRun, observedAt time.Time) error {
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+	fingerprintBytes := sha256.Sum256([]byte(run.RunID))
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.probe_runs
+			(run_id, upstream_id, probe_kind, status, input_tokens, output_tokens,
+			 estimated_standard_cost_microusd, evidence_level, request_fingerprint, redaction_version, started_at, finished_at)
+		VALUES ($1, $2, 'candidate_watch', $3, $4, $5, $6, 'live_probe', $7, 'v1', $8, $8)`,
+		run.RunID, upstreamID, run.Status, run.Metrics.Usage.PromptTokens, run.Metrics.Usage.CompletionTokens,
+		run.ExpenseUpperBound, hex.EncodeToString(fingerprintBytes[:]), observedAt.UTC())
+	if err != nil {
+		return fmt.Errorf("append candidate probe run: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpsertIncident(ctx context.Context, incident Incident) (int64, bool, error) {
 	if incident.SampleCount == 0 {
 		incident.SampleCount = 1
@@ -402,6 +459,111 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 		record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, evidenceJSON)
 	if err != nil {
 		return fmt.Errorf("put incident state: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) Claim(ctx context.Context, key string, now time.Time, interval time.Duration) (bool, error) {
+	if key == "" || interval <= 0 {
+		return false, fmt.Errorf("scheduler claim is invalid")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin scheduler claim: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var locked bool
+	if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`, key).Scan(&locked); err != nil {
+		return false, fmt.Errorf("lock scheduler job: %w", err)
+	}
+	if !locked {
+		return false, nil
+	}
+	var nextDue time.Time
+	err = tx.QueryRow(ctx, `SELECT next_due_at FROM relay_ops.scheduler_jobs WHERE job_key=$1 FOR UPDATE`, key).Scan(&nextDue)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("read scheduler due time: %w", err)
+	}
+	now = now.UTC()
+	if err == nil && now.Before(nextDue) {
+		if err := tx.Commit(ctx); err != nil {
+			return false, fmt.Errorf("commit scheduler skip: %w", err)
+		}
+		return false, nil
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO relay_ops.scheduler_jobs (job_key, next_due_at, last_started_at, last_status)
+		VALUES ($1, $2, $3, 'running')
+		ON CONFLICT (job_key) DO UPDATE SET next_due_at=EXCLUDED.next_due_at, last_started_at=EXCLUDED.last_started_at, last_status='running', last_error_code=NULL`,
+		key, now.Add(interval), now)
+	if err != nil {
+		return false, fmt.Errorf("claim scheduler job: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit scheduler claim: %w", err)
+	}
+	return true, nil
+}
+
+func (s *Store) Finish(ctx context.Context, key string, finishedAt time.Time, runErr error) error {
+	status := "passed"
+	var errorCode any
+	if runErr != nil {
+		status = "failed"
+		errorCode = "job_failed"
+	}
+	command, err := s.pool.Exec(ctx, `UPDATE relay_ops.scheduler_jobs SET last_finished_at=$2, last_status=$3, last_error_code=$4 WHERE job_key=$1`, key, finishedAt.UTC(), status, errorCode)
+	if err != nil {
+		return fmt.Errorf("finish scheduler job: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("scheduler job not found")
+	}
+	return nil
+}
+
+func (s *Store) Find(ctx context.Context, incidentKey string) (agent.Analysis, bool, error) {
+	var payload []byte
+	err := s.pool.QueryRow(ctx, `SELECT analysis.result FROM relay_ops.agent_analyses analysis JOIN relay_ops.incidents incident ON incident.id=analysis.incident_id WHERE incident.incident_key=$1 ORDER BY analysis.id DESC LIMIT 1`, incidentKey).Scan(&payload)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return agent.Analysis{}, false, nil
+	}
+	if err != nil {
+		return agent.Analysis{}, false, fmt.Errorf("find agent analysis: %w", err)
+	}
+	var result agent.Analysis
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return agent.Analysis{}, false, fmt.Errorf("decode agent analysis: %w", err)
+	}
+	return result, true, nil
+}
+
+func (s *Store) Save(ctx context.Context, incidentKey string, analysis agent.Analysis, fallback bool) error {
+	payload, err := json.Marshal(analysis)
+	if err != nil {
+		return fmt.Errorf("encode agent analysis: %w", err)
+	}
+	hashBytes := sha256.Sum256(payload)
+	analysisIDBytes := sha256.Sum256([]byte("relay-ops-analysis:" + incidentKey))
+	provider := "agent"
+	delivery := "ready"
+	if fallback {
+		provider = "deterministic"
+		delivery = "fallback"
+	}
+	command, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.agent_analyses
+			(analysis_id, incident_id, model_provider, prompt_contract_version, result, confidence, requires_human_approval, delivery_status, output_hash)
+		SELECT $2, id, $3, 'relay-ops-incident-v1', $4, $5, $6, $7, $8
+		FROM relay_ops.incidents WHERE incident_key=$1
+		ON CONFLICT (analysis_id) DO NOTHING`, incidentKey, hex.EncodeToString(analysisIDBytes[:]), provider, payload, analysis.Confidence, analysis.RequiresHumanApproval, delivery, hex.EncodeToString(hashBytes[:]))
+	if err != nil {
+		return fmt.Errorf("save agent analysis: %w", err)
+	}
+	if command.RowsAffected() == 0 {
+		if _, found, findErr := s.Find(ctx, incidentKey); findErr != nil || !found {
+			return fmt.Errorf("agent incident not found")
+		}
 	}
 	return nil
 }

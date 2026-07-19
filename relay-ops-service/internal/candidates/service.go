@@ -211,8 +211,9 @@ func inspectSecretFile(path, owner string) (SecretRef, error) {
 	if err != nil {
 		return SecretRef{}, fmt.Errorf("probe key file: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 {
-		return SecretRef{}, fmt.Errorf("probe key file must be regular and not writable by group or other")
+	permissions := info.Mode().Perm()
+	if !info.Mode().IsRegular() || (permissions != 0o600 && permissions != 0o640) {
+		return SecretRef{}, fmt.Errorf("probe key file must be regular with permissions 0600 or 0640")
 	}
 	if info.Size() <= 0 || info.Size() > maxProbeKeyBytes {
 		return SecretRef{}, fmt.Errorf("probe key file size is invalid")

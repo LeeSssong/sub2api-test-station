@@ -213,7 +213,8 @@ func readSecret(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("candidate probe key unavailable")
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 || info.Size() <= 0 || info.Size() > maxProbeKeyBytes {
+	permissions := info.Mode().Perm()
+	if !info.Mode().IsRegular() || (permissions != 0o600 && permissions != 0o640) || info.Size() <= 0 || info.Size() > maxProbeKeyBytes {
 		return nil, fmt.Errorf("candidate probe key permissions or size are invalid")
 	}
 	value, err := os.ReadFile(path)

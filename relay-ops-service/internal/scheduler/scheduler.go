@@ -1,0 +1,116 @@
+package scheduler
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"time"
+
+	"example.invalid/relay-ops-service/internal/config"
+	"example.invalid/relay-ops-service/internal/domain"
+)
+
+type JobStore interface {
+	Claim(context.Context, string, time.Time, time.Duration) (bool, error)
+	Finish(context.Context, string, time.Time, error) error
+}
+
+type Scheduler struct {
+	Mode        string
+	Store       JobStore
+	Timezone    *time.Location
+	Clock       func() time.Time
+	Production  func(context.Context) error
+	Candidates  func(context.Context) ([]domain.UpstreamID, error)
+	Candidate   func(context.Context, domain.UpstreamID, bool) error
+	DailyReport func(context.Context) error
+}
+
+func (s *Scheduler) Run(ctx context.Context) error {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if err := s.Tick(ctx); err != nil && ctx.Err() == nil {
+			// Individual failures are persisted by Finish; later jobs still run.
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Scheduler) Tick(ctx context.Context) error {
+	if s.Mode == config.ModeClosed {
+		return nil
+	}
+	if s.Store == nil {
+		return fmt.Errorf("scheduler store is required")
+	}
+	now := time.Now().UTC()
+	if s.Clock != nil {
+		now = s.Clock().UTC()
+	}
+	var failures []error
+	if err := s.runDue(ctx, "production-collection", now, 5*time.Minute, s.RunProductionCollection); err != nil {
+		failures = append(failures, err)
+	}
+	if s.Candidates != nil {
+		ids, err := s.Candidates(ctx)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("list candidates: %w", err))
+		} else {
+			for _, id := range ids {
+				candidateID := id
+				key := "candidate-cycle:" + strconv.FormatInt(int64(candidateID), 10)
+				if err := s.runDue(ctx, key, now, 6*time.Hour, func(runCtx context.Context) error { return s.RunCandidateCycle(runCtx, candidateID) }); err != nil {
+					failures = append(failures, err)
+				}
+			}
+		}
+	}
+	location := s.Timezone
+	if location == nil {
+		location = time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	if s.DailyReport != nil && now.In(location).Hour() >= 9 {
+		if err := s.runDue(ctx, "daily-report", now, 24*time.Hour, s.DailyReport); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func (s *Scheduler) RunProductionCollection(ctx context.Context) error {
+	if s.Production == nil {
+		return nil
+	}
+	return s.Production(ctx)
+}
+
+func (s *Scheduler) RunCandidateCycle(ctx context.Context, upstreamID domain.UpstreamID) error {
+	if s.Candidate == nil {
+		return nil
+	}
+	return s.Candidate(ctx, upstreamID, s.Mode == config.ModeProbe)
+}
+
+func (s *Scheduler) runDue(ctx context.Context, key string, now time.Time, interval time.Duration, run func(context.Context) error) error {
+	claimed, err := s.Store.Claim(ctx, key, now, interval)
+	if err != nil {
+		return fmt.Errorf("claim %s: %w", key, err)
+	}
+	if !claimed {
+		return nil
+	}
+	runErr := run(ctx)
+	if finishErr := s.Store.Finish(ctx, key, now, runErr); finishErr != nil {
+		return fmt.Errorf("finish %s: %w", key, finishErr)
+	}
+	if runErr != nil {
+		return fmt.Errorf("run %s: %w", key, runErr)
+	}
+	return nil
+}

@@ -201,12 +201,12 @@ type Evidence struct { Models []ModelPrice; AdvertisedMultiplier *domain.Multipl
 type Extractor interface { Match(FetchResult) bool; Extract(FetchResult) (Evidence, error) }
 ```
 
-- [ ] Write failing tests with Sub2API/NewAPI/generic HTML and JSON fixtures for model prices, tier prices, `0.1x`/`0.05x` multiplier extraction, gzip/body limits, redirect/SSRF rejection, unchanged hashes, parser failure, and stale snapshots.
-- [ ] Run `go test ./internal/pricing -count=1`; expect missing implementation failures.
-- [ ] Implement HTTP fetching with DNS/IP validation before every redirect, 10-second timeout, 2 MiB cap, structured JSON parsing, `goquery` DOM text extraction, adapter-specific selectors, normalized evidence JSON, and append-only snapshots.
-- [ ] Diff consecutive snapshots into added/removed models, price changes, multiplier changes, and unparseable-field events. A hash change without a semantic diff remains informational and sends no alert.
-- [ ] Run focused tests; expect exact `0.07 -> 0.10` and model-price fixtures to produce semantic diffs without storing HTML.
-- [ ] Commit with `git commit -m "feat: detect upstream pricing changes"`.
+- [x] Write failing tests with Sub2API/NewAPI/generic HTML and JSON fixtures for model prices, tier prices, `0.1x`/`0.05x` multiplier extraction, gzip/body limits, redirect/SSRF rejection, unchanged hashes, parser failure, and stale snapshots.
+- [x] Run `go test ./internal/pricing -count=1`; expect missing implementation failures.
+- [x] Implement HTTP fetching with DNS/IP validation before every redirect, 10-second timeout, 2 MiB cap, structured JSON parsing, `goquery` DOM text extraction, adapter-specific selectors, normalized evidence JSON, and append-only snapshots.
+- [x] Diff consecutive snapshots into added/removed models, price changes, multiplier changes, and unparseable-field events. A hash change without a semantic diff remains informational and sends no alert.
+- [x] Run focused tests; expect exact `0.07 -> 0.10` and model-price fixtures to produce semantic diffs without storing HTML.
+- [x] Commit with `git commit -m "feat: detect upstream pricing changes"`.
 
 ### Task 6: Upstream Usage Sessions and Auxiliary Cost Evidence
 

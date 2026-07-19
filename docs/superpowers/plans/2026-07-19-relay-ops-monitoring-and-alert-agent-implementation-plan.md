@@ -265,12 +265,12 @@ func (c *AgentClient) Analyze(ctx context.Context, input IncidentContractV1) (Ag
 func ValidateAgentOutput([]byte) (AgentAnalysis, error)
 ```
 
-- [ ] Write failing tests for the five message sections, notification triggers only on confirm/escalate/recover/new evidence, daily summary, auth-session-expired login link, webhook/LLM failure fallback, Agent JSON schema, secret/PII rejection, one-analysis-per-event, token/output caps, and deterministic fallback text.
-- [ ] Run `go test ./internal/notify ./internal/agent -count=1`; expect failures.
-- [ ] Implement Feishu webhook delivery from a separate secret file. Messages state what ran, results, change versus baseline, required attention, and internal/native links; normal repeated probes do not notify.
-- [ ] Implement an OpenAI-compatible Agent client that receives only the versioned incident contract, has no tool for external requests or secrets, validates JSON output, and falls back to the deterministic message when unavailable.
-- [ ] Run focused tests and scan captured requests; expect no key, cookie, prompt, response body, email, IP, or raw HTML.
-- [ ] Commit with `git commit -m "feat: add relay ops alerts and analysis"`.
+- [x] Write failing tests for the five message sections, notification triggers only on confirm/escalate/recover/new evidence, daily summary, auth-session-expired login link, webhook/LLM failure fallback, Agent JSON schema, secret/PII rejection, one-analysis-per-event, token/output caps, and deterministic fallback text.
+- [x] Run `go test ./internal/notify ./internal/agent -count=1`; expect failures.
+- [x] Implement Feishu webhook delivery from a separate secret file. Messages state what ran, results, change versus baseline, required attention, and internal/native links; normal repeated probes do not notify.
+- [x] Implement an OpenAI-compatible Agent client that receives only the versioned incident contract, has no tool for external requests or secrets, validates JSON output, and falls back to the deterministic message when unavailable.
+- [x] Run focused tests and scan captured requests; expect no key, cookie, prompt, response body, email, IP, or raw HTML.
+- [x] Commit with `git commit -m "feat: add relay ops alerts and analysis"`.
 
 ### Task 9: Scheduler and Application Assembly
 

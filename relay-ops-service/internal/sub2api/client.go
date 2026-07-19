@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"example.invalid/relay-ops-service/internal/adminauth"
 )
 
 const maxResponseBytes = 2 << 20
@@ -150,6 +152,24 @@ func (c *HTTPReader) GetUsageStats(ctx context.Context, query UsageQuery) (Usage
 	return stats, nil
 }
 
+func (c *HTTPReader) VerifyAdminSession(ctx context.Context, bearer string) (adminauth.Identity, error) {
+	var identity struct {
+		UserID int64  `json:"id"`
+		Role   string `json:"role"`
+		Status string `json:"status"`
+	}
+	if strings.TrimSpace(bearer) == "" {
+		return adminauth.Identity{}, fmt.Errorf("Sub2API session token is empty")
+	}
+	if err := c.getWithBearer(ctx, "/api/v1/auth/me", bearer, &identity); err != nil {
+		return adminauth.Identity{}, err
+	}
+	if identity.UserID <= 0 || identity.Role == "" || identity.Status == "" {
+		return adminauth.Identity{}, errSchemaMismatch
+	}
+	return adminauth.Identity{UserID: identity.UserID, Role: identity.Role, Status: identity.Status}, nil
+}
+
 func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out any) error {
 	requestURL := c.baseURL + path
 	if len(query) > 0 {
@@ -161,6 +181,20 @@ func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-api-key", c.adminKey)
+	return c.do(req, out)
+}
+
+func (c *HTTPReader) getWithBearer(ctx context.Context, path, bearer string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("build Sub2API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	return c.do(req, out)
+}
+
+func (c *HTTPReader) do(req *http.Request, out any) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("Sub2API request failed: %w", err)

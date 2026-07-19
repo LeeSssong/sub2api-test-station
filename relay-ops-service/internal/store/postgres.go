@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"github.com/jackc/pgx/v5"
@@ -110,6 +112,117 @@ func (s *Store) CreateUpstream(ctx context.Context, upstream Upstream) (domain.U
 		return 0, fmt.Errorf("create upstream: %w", err)
 	}
 	return domain.UpstreamID(id), nil
+}
+
+func (s *Store) CreateCandidate(ctx context.Context, record candidates.CreateRecord) (domain.UpstreamID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin candidate transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO relay_ops.secret_refs (secret_ref, kind, owner_scope, fingerprint, last_four)
+		VALUES ($1, $2, $3, $4, $5)`,
+		record.SecretRef.SecretRef, record.SecretRef.Kind, record.SecretRef.OwnerScope, record.SecretRef.Fingerprint, record.SecretRef.LastFour)
+	if err != nil {
+		return 0, candidateCreateError(err)
+	}
+	var id int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO relay_ops.upstreams
+			(display_name, role, base_url, pricing_url, usage_url, performance_url, adapter_type, candidate_probe_secret_ref, enabled)
+		VALUES ($1, 'candidate', $2, $3, $4, NULLIF($5, ''), 'unknown', $6, TRUE)
+		RETURNING id`,
+		record.Candidate.Name, record.Candidate.BaseURL, record.Candidate.PricingURL, record.Candidate.UsageURL,
+		record.Candidate.PerformanceURL, record.SecretRef.SecretRef).Scan(&id)
+	if err != nil {
+		return 0, candidateCreateError(err)
+	}
+	afterSummary, err := json.Marshal(record.Audit.AfterSummary)
+	if err != nil {
+		return 0, fmt.Errorf("encode candidate audit summary: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events
+			(actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`,
+		record.Audit.ActorUserID, record.Audit.Action, record.Audit.ObjectType, strconv.FormatInt(id, 10), afterSummary)
+	if err != nil {
+		return 0, fmt.Errorf("insert candidate audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit candidate: %w", err)
+	}
+	return domain.UpstreamID(id), nil
+}
+
+func candidateCreateError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return candidates.ErrConflict
+	}
+	return fmt.Errorf("create candidate: %w", err)
+}
+
+func (s *Store) ListCandidates(ctx context.Context) ([]candidates.Candidate, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, display_name, base_url, COALESCE(pricing_url, ''), COALESCE(usage_url, ''),
+			COALESCE(performance_url, ''), COALESCE(candidate_probe_secret_ref, ''), enabled
+		FROM relay_ops.upstreams
+		WHERE role = 'candidate'
+		ORDER BY display_name, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list candidates: %w", err)
+	}
+	defer rows.Close()
+	result := make([]candidates.Candidate, 0)
+	for rows.Next() {
+		var candidate candidates.Candidate
+		if err := rows.Scan(
+			&candidate.ID, &candidate.Name, &candidate.BaseURL, &candidate.PricingURL,
+			&candidate.UsageURL, &candidate.PerformanceURL, &candidate.ProbeSecretRef, &candidate.Enabled,
+		); err != nil {
+			return nil, fmt.Errorf("scan candidate: %w", err)
+		}
+		result = append(result, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate candidates: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) DisableCandidate(ctx context.Context, upstreamID domain.UpstreamID, audit candidates.AuditEvent) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin candidate disable: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	command, err := tx.Exec(ctx, `
+		UPDATE relay_ops.upstreams
+		SET enabled = FALSE, updated_at = NOW()
+		WHERE id = $1 AND role = 'candidate'`, upstreamID)
+	if err != nil {
+		return fmt.Errorf("disable candidate: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return candidates.ErrNotFound
+	}
+	afterSummary, err := json.Marshal(audit.AfterSummary)
+	if err != nil {
+		return fmt.Errorf("encode candidate audit summary: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events
+			(actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`,
+		audit.ActorUserID, audit.Action, audit.ObjectType, strconv.FormatInt(int64(upstreamID), 10), afterSummary); err != nil {
+		return fmt.Errorf("insert candidate disable audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit candidate disable: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) AppendPricingSnapshot(ctx context.Context, snapshot PricingSnapshot) (int64, error) {

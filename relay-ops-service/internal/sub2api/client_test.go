@@ -96,6 +96,26 @@ func TestReaderDecodesOpsAndUsageWithoutUserDetails(t *testing.T) {
 	}
 }
 
+func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/me" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer browser-token" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		fmt.Fprint(w, `{"data":{"id":42,"role":"admin","status":"active"}}`)
+	}))
+	defer server.Close()
+	identity, err := newTestReader(t, server.URL).VerifyAdminSession(context.Background(), "browser-token")
+	if err != nil || identity.UserID != 42 {
+		t.Fatalf("VerifyAdminSession = %#v, %v", identity, err)
+	}
+}
+
 func TestReaderRedactsErrorBodiesAndCapsResponses(t *testing.T) {
 	t.Parallel()
 

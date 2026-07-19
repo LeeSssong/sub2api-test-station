@@ -158,12 +158,12 @@ func (s *Service) Disable(ctx context.Context, actor AdminActor, upstreamID int6
 func (a *Authenticator) RequireAdmin(next http.Handler) http.Handler
 ```
 
-- [ ] Write failing tests for minimum input, HTTPS-only URLs, SSRF/private-host rejection, canonical Base URL uniqueness, probe-key fingerprint/last-four storage, absence of key plaintext in SQL/log/API, and Sub2API admin-session verification.
-- [ ] Run `go test ./internal/candidates ./internal/http -run 'Candidate|Admin' -count=1`; expect failures.
-- [ ] Implement candidate create/list/disable APIs. Read the probe key only when a probe starts; persist its server file reference, fingerprint, and last four characters. Write audit events for every administrator action.
-- [ ] Implement `/ops` authentication by forwarding the presented bearer token to Sub2API `/api/v1/auth/me` and requiring an administrator role; do not create a second password database.
-- [ ] Run focused tests; expect unauthorized users, private URLs, writable secret files, and duplicate candidates to be rejected.
-- [ ] Commit with `git commit -m "feat: register candidate upstreams safely"`.
+- [x] Write failing tests for minimum input, HTTPS-only URLs, SSRF/private-host rejection, canonical Base URL uniqueness, probe-key fingerprint/last-four storage, absence of key plaintext in SQL/log/API, and Sub2API admin-session verification.
+- [x] Run `go test ./internal/candidates ./internal/http -run 'Candidate|Admin' -count=1`; expect failures.
+- [x] Implement candidate create/list/disable APIs. Read the probe key only when a probe starts; persist its server file reference, fingerprint, and last four characters. Write audit events for every administrator action.
+- [x] Implement `/ops` authentication by forwarding the presented bearer token to Sub2API `/api/v1/auth/me` and requiring an administrator role; do not create a second password database.
+- [x] Run focused tests; expect unauthorized users, private URLs, writable secret files, and duplicate candidates to be rejected.
+- [x] Commit with `git commit -m "feat: register candidate upstreams safely"`.
 
 ### Task 4: Bounded V2 Candidate Watch and Qualification Orchestration
 

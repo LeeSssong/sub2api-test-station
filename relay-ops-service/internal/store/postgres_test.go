@@ -11,6 +11,7 @@ import (
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
@@ -220,6 +221,27 @@ func TestUsageSessionNotificationsSuppressForTwentyFourHoursAndCostsAppend(t *te
 	}
 	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.cost_observations WHERE upstream_id=$1`, id).Scan(&costCount); err != nil || costCount != 1 {
 		t.Fatalf("cost count=%d err=%v", costCount, err)
+	}
+}
+
+func TestIncidentMachineStatePersistsInPostgreSQL(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	observation := incidents.Observation{Key: "upstream:17:price", Severity: "P1", Failing: true, EvidenceHash: "snapshot:1", CurrentValue: "0.10"}
+	if _, err := machine.Observe(ctx, observation); err != nil {
+		t.Fatal(err)
+	}
+	transition, err := machine.Observe(ctx, observation)
+	if err != nil || !transition.Notify || transition.Kind != "confirmed" {
+		t.Fatalf("transition=%#v err=%v", transition, err)
+	}
+	record, ok, err := st.Get(ctx, observation.Key)
+	if err != nil || !ok || record.State != "confirmed" || record.SampleCount != 2 {
+		t.Fatalf("record=%#v ok=%v err=%v", record, ok, err)
 	}
 }
 

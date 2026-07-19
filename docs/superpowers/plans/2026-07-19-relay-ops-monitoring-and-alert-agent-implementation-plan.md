@@ -247,11 +247,11 @@ func Classify(window ComparisonWindow, policy Policy) CandidateComparison
 func (m *Machine) Observe(ctx context.Context, observation Observation) (Transition, error)
 ```
 
-- [ ] Write failing tests for separate real/native-synthetic/candidate sources, incompatible models/windows, TTFT P95 improvement >=20%, cost improvement >=10%, no service-quality regression, P0/P1/P2 transitions, consecutive-window confirmation, duplicate suppression, escalation, recovery, and evidence changes.
-- [ ] Run `go test ./internal/compare ./internal/incidents -count=1`; expect failures.
-- [ ] Implement deterministic comparison labels and an incident state machine with stable keys. Never average real and synthetic traffic into one rate; persist the metric schema version and evidence references.
-- [ ] Run focused tests; expect identical repeated observations to create no new delivery and recovered events to link to the original incident.
-- [ ] Commit with `git commit -m "feat: compare upstreams and deduplicate incidents"`.
+- [x] Write failing tests for separate real/native-synthetic/candidate sources, incompatible models/windows, TTFT P95 improvement >=20%, cost improvement >=10%, no service-quality regression, P0/P1/P2 transitions, consecutive-window confirmation, duplicate suppression, escalation, recovery, and evidence changes.
+- [x] Run `go test ./internal/compare ./internal/incidents -count=1`; expect failures.
+- [x] Implement deterministic comparison labels and an incident state machine with stable keys. Never average real and synthetic traffic into one rate; persist the metric schema version and evidence references.
+- [x] Run focused tests; expect identical repeated observations to create no new delivery and recovered events to link to the original incident.
+- [x] Commit with `git commit -m "feat: compare upstreams and deduplicate incidents"`.
 
 ### Task 8: Feishu Notifications and Read-Only Alert Agent
 

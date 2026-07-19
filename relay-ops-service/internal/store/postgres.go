@@ -15,6 +15,7 @@ import (
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -351,6 +352,58 @@ func (s *Store) UpsertIncident(ctx context.Context, incident Incident) (int64, b
 		return 0, false, fmt.Errorf("find existing incident: %w", err)
 	}
 	return id, false, nil
+}
+
+func (s *Store) Get(ctx context.Context, key string) (incidents.Record, bool, error) {
+	var record incidents.Record
+	var evidenceJSON []byte
+	record.Key = key
+	err := s.pool.QueryRow(ctx, `
+		SELECT severity, state, sample_count, COALESCE(current_value, ''), evidence_refs
+		FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(
+		&record.Severity, &record.State, &record.SampleCount, &record.CurrentValue, &evidenceJSON,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return incidents.Record{}, false, nil
+	}
+	if err != nil {
+		return incidents.Record{}, false, fmt.Errorf("get incident state: %w", err)
+	}
+	var evidence []string
+	if err := json.Unmarshal(evidenceJSON, &evidence); err != nil {
+		return incidents.Record{}, false, fmt.Errorf("decode incident evidence: %w", err)
+	}
+	if len(evidence) > 0 {
+		record.EvidenceHash = evidence[0]
+	}
+	return record, true, nil
+}
+
+func (s *Store) Put(ctx context.Context, record incidents.Record) error {
+	evidence := []string{}
+	if record.EvidenceHash != "" {
+		evidence = append(evidence, record.EvidenceHash)
+	}
+	evidenceJSON, err := json.Marshal(evidence)
+	if err != nil {
+		return fmt.Errorf("encode incident state evidence: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.incidents
+			(incident_key, severity, state, current_value, sample_count, evidence_refs)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6)
+		ON CONFLICT (incident_key) DO UPDATE SET
+			severity=EXCLUDED.severity,
+			state=EXCLUDED.state,
+			current_value=EXCLUDED.current_value,
+			sample_count=EXCLUDED.sample_count,
+			evidence_refs=EXCLUDED.evidence_refs,
+			last_seen_at=NOW()`,
+		record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, evidenceJSON)
+	if err != nil {
+		return fmt.Errorf("put incident state: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) UpsertPublicGroup(ctx context.Context, group sub2api.PublicGroupRecord) error {

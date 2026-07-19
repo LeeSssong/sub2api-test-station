@@ -130,12 +130,12 @@ type MetricRef struct {
 }
 ```
 
-- [ ] Write failing `httptest` cases for `/api/v1/admin/channels`, `/groups`, `/channel-monitors`, monitor history, `/ops/dashboard/snapshot-v2`, and `/usage/stats`; assert timeouts, 401/403 classification, response size caps, schema drift errors, and no response-body logging.
-- [ ] Run `go test ./internal/sub2api ./internal/testsupport -count=1`; expect missing package failures.
-- [ ] Implement a GET-only client that reads its admin key from a `0600`/`0640` secret file, sends `x-api-key`, redacts errors, normalizes existing Sub2API response wrappers, and exposes no mutation method.
-- [ ] Implement public-group synchronization: active customer-visible groups link to channel IDs and native monitor IDs; production raw histories are not copied, only `MetricRef` rows and comparison materializations are stored.
-- [ ] Run focused tests and the fake Sub2API contract suite; expect all calls to be GET and all secret/body leakage assertions to pass.
-- [ ] Commit with `git commit -m "feat: read native sub2api operations data"`.
+- [x] Write failing `httptest` cases for `/api/v1/admin/channels`, `/groups`, `/channel-monitors`, monitor history, `/ops/dashboard/snapshot-v2`, and `/usage/stats`; assert timeouts, 401/403 classification, response size caps, schema drift errors, and no response-body logging.
+- [x] Run `go test ./internal/sub2api ./internal/testsupport -count=1`; expect missing package failures.
+- [x] Implement a GET-only client that reads its admin key from a `0600`/`0640` secret file, sends `x-api-key`, redacts errors, normalizes existing Sub2API response wrappers, and exposes no mutation method.
+- [x] Implement public-group synchronization: active customer-visible groups link to channel IDs and native monitor IDs; production raw histories are not copied, only `MetricRef` rows and comparison materializations are stored.
+- [x] Run focused tests and the fake Sub2API contract suite; expect all calls to be GET and all secret/body leakage assertions to pass.
+- [x] Commit with `git commit -m "feat: read native sub2api operations data"`.
 
 ### Task 3: Candidate Registry, Admin Authentication, and Secret References
 

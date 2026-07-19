@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
 func TestMigrateIsIdempotentAndUpstreamIdentityIsUnique(t *testing.T) {
@@ -64,6 +65,52 @@ func TestPricingSnapshotsAreAppendOnlyAndIncidentsDeduplicate(t *testing.T) {
 	secondID, inserted, err := st.UpsertIncident(ctx, incident)
 	if err != nil || inserted || secondID != firstID {
 		t.Fatalf("second UpsertIncident = id %d inserted %v err %v", secondID, inserted, err)
+	}
+}
+
+func TestNativeSyncPreservesQualificationAndDeduplicatesMetricRefs(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	seenAt := time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC)
+	record := sub2api.PublicGroupRecord{
+		GroupID: 3, Name: "GPT-Pro", Platform: "openai", Enabled: true, CustomerVisible: true,
+		UserMultiplierBPS: 10_000, ChannelIDs: []int64{7}, MonitorIDs: []int64{9},
+		HealthGate: "pending", SourceRevision: "revision-one", LastSeenAt: seenAt,
+	}
+	if err := st.UpsertPublicGroup(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `UPDATE relay_ops.public_groups SET health_gate = 'qualified' WHERE group_id = 3`); err != nil {
+		t.Fatal(err)
+	}
+	record.SourceRevision = "revision-two"
+	if err := st.UpsertPublicGroup(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	var gate, revision string
+	if err := st.pool.QueryRow(ctx, `SELECT health_gate, source_revision FROM relay_ops.public_groups WHERE group_id = 3`).Scan(&gate, &revision); err != nil {
+		t.Fatal(err)
+	}
+	if gate != "qualified" || revision != "revision-two" {
+		t.Fatalf("gate=%q revision=%q", gate, revision)
+	}
+
+	ref := sub2api.MetricRef{SourceKind: "sub2api_native_monitor", ExternalID: "monitor:9", WindowStart: seenAt, WindowEnd: seenAt.Add(time.Minute), PayloadHash: "abc", SchemaVersion: sub2api.NativeMetricSchemaV1}
+	if err := st.AppendMetricRef(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AppendMetricRef(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.metric_refs`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("metric ref count = %d", count)
 	}
 }
 

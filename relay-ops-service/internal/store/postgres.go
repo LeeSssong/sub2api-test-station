@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/sub2api"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -168,6 +169,50 @@ func (s *Store) UpsertIncident(ctx context.Context, incident Incident) (int64, b
 		return 0, false, fmt.Errorf("find existing incident: %w", err)
 	}
 	return id, false, nil
+}
+
+func (s *Store) UpsertPublicGroup(ctx context.Context, group sub2api.PublicGroupRecord) error {
+	channels, err := json.Marshal(group.ChannelIDs)
+	if err != nil {
+		return fmt.Errorf("encode public group channels: %w", err)
+	}
+	monitors, err := json.Marshal(group.MonitorIDs)
+	if err != nil {
+		return fmt.Errorf("encode public group monitors: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.public_groups
+			(group_id, name, enabled, customer_visible, user_multiplier_bps, model_allowlist,
+			 upstream_route_refs, sub2api_channel_monitor_ids, health_gate, source_revision, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, '[]'::jsonb, $6, $7, $8, $9, $10)
+		ON CONFLICT (group_id) DO UPDATE SET
+			name = EXCLUDED.name,
+			enabled = EXCLUDED.enabled,
+			customer_visible = EXCLUDED.customer_visible,
+			user_multiplier_bps = EXCLUDED.user_multiplier_bps,
+			upstream_route_refs = EXCLUDED.upstream_route_refs,
+			sub2api_channel_monitor_ids = EXCLUDED.sub2api_channel_monitor_ids,
+			source_revision = EXCLUDED.source_revision,
+			last_seen_at = EXCLUDED.last_seen_at`,
+		group.GroupID, group.Name, group.Enabled, group.CustomerVisible, group.UserMultiplierBPS,
+		channels, monitors, group.HealthGate, group.SourceRevision, group.LastSeenAt.UTC())
+	if err != nil {
+		return fmt.Errorf("upsert public group: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) AppendMetricRef(ctx context.Context, ref sub2api.MetricRef) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.metric_refs
+			(source_kind, external_id, window_start, window_end, payload_hash, schema_version)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (source_kind, external_id, window_start, window_end, payload_hash) DO NOTHING`,
+		ref.SourceKind, ref.ExternalID, ref.WindowStart.UTC(), ref.WindowEnd.UTC(), ref.PayloadHash, ref.SchemaVersion)
+	if err != nil {
+		return fmt.Errorf("append metric reference: %w", err)
+	}
+	return nil
 }
 
 func nullString(value string) any {

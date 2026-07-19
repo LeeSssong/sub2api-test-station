@@ -22,9 +22,21 @@ type Channel struct {
 }
 
 type ChannelModelPrice struct {
-	Platform        string   `json:"platform"`
-	Models          []string `json:"models"`
-	BillingMode     string   `json:"billing_mode"`
+	Platform        string                      `json:"platform"`
+	Models          []string                    `json:"models"`
+	BillingMode     string                      `json:"billing_mode"`
+	InputPrice      *float64                    `json:"input_price"`
+	OutputPrice     *float64                    `json:"output_price"`
+	CacheWritePrice *float64                    `json:"cache_write_price"`
+	CacheReadPrice  *float64                    `json:"cache_read_price"`
+	PerRequestPrice *float64                    `json:"per_request_price"`
+	Intervals       []ChannelModelPriceInterval `json:"intervals"`
+}
+
+type ChannelModelPriceInterval struct {
+	MinTokens       int64    `json:"min_tokens"`
+	MaxTokens       *int64   `json:"max_tokens"`
+	TierLabel       string   `json:"tier_label"`
 	InputPrice      *float64 `json:"input_price"`
 	OutputPrice     *float64 `json:"output_price"`
 	CacheWritePrice *float64 `json:"cache_write_price"`

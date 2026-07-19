@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/candidates"
@@ -53,6 +54,13 @@ func (s NativePricingSource) PublicPricing(ctx context.Context) ([]PublicGroup, 
 			for _, price := range channel.ModelPricing {
 				for _, modelID := range price.Models {
 					group.Models = append(group.Models, PublicModel{ModelID: modelID, Input: priceValue(price.InputPrice), Output: priceValue(price.OutputPrice), CacheRead: priceValue(price.CacheReadPrice), CacheWrite: priceValue(price.CacheWritePrice)})
+					for _, interval := range price.Intervals {
+						group.Models = append(group.Models, PublicModel{
+							ModelID: modelID, Tier: intervalLabel(interval),
+							Input: priceValue(interval.InputPrice), Output: priceValue(interval.OutputPrice),
+							CacheRead: priceValue(interval.CacheReadPrice), CacheWrite: priceValue(interval.CacheWritePrice),
+						})
+					}
 				}
 			}
 		}
@@ -68,7 +76,40 @@ func priceValue(value *float64) string {
 	if value == nil {
 		return ""
 	}
-	return strconv.FormatFloat(*value, 'f', -1, 64)
+	formatted := strconv.FormatFloat(*value*1_000_000, 'f', 6, 64)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	if !strings.Contains(formatted, ".") {
+		return formatted + ".00"
+	}
+	if len(formatted)-strings.IndexByte(formatted, '.')-1 == 1 {
+		return formatted + "0"
+	}
+	return formatted
+}
+
+func intervalLabel(interval sub2api.ChannelModelPriceInterval) string {
+	if label := strings.TrimSpace(interval.TierLabel); label != "" {
+		return label
+	}
+	min := compactTokens(interval.MinTokens)
+	if interval.MaxTokens == nil {
+		return ">" + min
+	}
+	max := compactTokens(*interval.MaxTokens)
+	if interval.MinTokens == 0 {
+		return "<=" + max
+	}
+	return ">" + min + "-<=" + max
+}
+
+func compactTokens(value int64) string {
+	if value%1_000_000 == 0 && value >= 1_000_000 {
+		return strconv.FormatInt(value/1_000_000, 10) + "m"
+	}
+	if value%1_000 == 0 && value >= 1_000 {
+		return strconv.FormatInt(value/1_000, 10) + "k"
+	}
+	return strconv.FormatInt(value, 10)
 }
 
 type OpsRepository interface {

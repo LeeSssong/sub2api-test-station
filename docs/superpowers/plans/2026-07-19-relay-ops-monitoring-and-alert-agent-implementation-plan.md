@@ -310,12 +310,12 @@ GET  /relay-ops/api/incidents
 GET  /relay-ops/api/comparisons
 ```
 
-- [ ] Write failing handler tests for anonymous `/pricing`, customer-visible filtering, tier/model prices, no upstream/cost leakage, admin-only `/ops`, CSRF/origin checks, candidate form errors, empty/loading/stale states, and no `/performance` route.
-- [ ] Run `go test ./internal/http -count=1`; expect failures.
-- [ ] Implement `/pricing` as a dense searchable table sourced from Sub2API channel pricing snapshots. Implement `/ops` as a quiet operations workspace with native Sub2API links, current public groups, price diffs, candidate status, comparisons, incidents, auth status, and Agent reports; avoid duplicating native QPS/SLA/Usage dashboards.
-- [ ] Add stable responsive dimensions, accessible labels, clear status colors, and no nested cards. User-facing `/pricing` contains no operator terminology; `/ops` is optimized for scanning and repeated action.
-- [ ] Run handler tests, start the local stack, and use Playwright at desktop/mobile sizes to verify no overlap, clipped text, auth leakage, blank states, or broken links. Confirm Sub2API `/monitor` remains untouched.
-- [ ] Commit with `git commit -m "feat: serve relay pricing and operations views"`.
+- [x] Write failing handler tests for anonymous `/pricing`, customer-visible filtering, tier/model prices, no upstream/cost leakage, admin-only `/ops`, CSRF/origin checks, candidate form errors, empty/loading/stale states, and no `/performance` route.
+- [x] Run `go test ./internal/http -count=1`; expect failures.
+- [x] Implement `/pricing` as a dense searchable table sourced from Sub2API channel pricing snapshots. Implement `/ops` as a quiet operations workspace with native Sub2API links, current public groups, price diffs, candidate status, comparisons, incidents, auth status, and Agent reports; avoid duplicating native QPS/SLA/Usage dashboards.
+- [x] Add stable responsive dimensions, accessible labels, clear status colors, and no nested cards. User-facing `/pricing` contains no operator terminology; `/ops` is optimized for scanning and repeated action.
+- [x] Run handler tests, start the local stack, and use Playwright at desktop/mobile sizes to verify no overlap, clipped text, auth leakage, blank states, or broken links. Confirm Sub2API `/monitor` remains untouched.
+- [x] Commit with `git commit -m "feat: serve relay pricing and operations views"`.
 
 ### Task 11: Hardened Container and Reverse-Proxy Integration
 

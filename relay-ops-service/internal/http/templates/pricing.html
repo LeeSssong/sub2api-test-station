@@ -1,0 +1,8 @@
+{{define "pricing.html"}}<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>模型定价</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/relay-ops/static/app.css"></head>
+<body><header class="public-header"><div><p class="kicker">MODEL PRICING</p><h1>模型定价</h1><p class="subtle">价格按公开分组展示，实际扣费以请求记录为准。</p></div><a class="native-link" href="/monitor">渠道状态</a></header>
+<main><form class="search" method="get" action="/pricing"><label for="q">搜索模型或分组</label><div class="search-row"><input id="q" name="q" value="{{.Query}}" placeholder="例如 gpt-5.6-sol"><button type="submit">搜索</button></div></form>
+<div class="source-strip"><span>数据来源</span><strong>本站渠道定价</strong><span>价格变化会自动更新</span></div>
+<div class="table-wrap"><table><thead><tr><th>分组</th><th>模型</th><th>阶梯</th><th>输入 / 1M</th><th>输出 / 1M</th><th>缓存读 / 1M</th><th>缓存写 / 1M</th><th>更新时间</th></tr></thead><tbody>
+{{range .Rows}}<tr><td><span class="group-mark">{{.Group}}</span></td><td class="model">{{.ModelID}}</td><td>{{or .Tier "-"}}</td><td>{{if .Input}}${{.Input}}{{else}}-{{end}}</td><td>{{if .Output}}${{.Output}}{{else}}-{{end}}</td><td>{{if .CacheRead}}${{.CacheRead}}{{else}}-{{end}}</td><td>{{if .CacheWrite}}${{.CacheWrite}}{{else}}-{{end}}</td><td class="subtle">{{.UpdatedAt}}</td></tr>{{else}}<tr><td colspan="8" class="empty">没有匹配的模型</td></tr>{{end}}
+</tbody></table></div></main></body></html>{{end}}

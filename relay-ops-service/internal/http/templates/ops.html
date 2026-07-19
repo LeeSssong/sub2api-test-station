@@ -1,0 +1,9 @@
+{{define "ops.html"}}<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>中转站运维</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/relay-ops/static/app.css"></head>
+<body><header class="ops-header"><div><p class="kicker">RELAY OPERATIONS</p><h1>中转站运维</h1></div><nav><a href="{{.NativeMonitorURL}}">原生渠道状态</a><a href="/pricing">模型定价</a></nav></header>
+<main class="ops-main"><div class="source-strip"><span>证据来源</span><strong>Sub2API 原生监控</strong><span>公开价格页</span><span>候选探测</span></div>
+<section><div class="section-head"><h2>公开分组</h2><a href="{{.NativeMonitorURL}}">查看监控历史</a></div><div class="inline-list">{{range .PublicGroups}}<span class="group-mark">{{.}}</span>{{else}}<span class="empty-inline">暂无公开分组</span>{{end}}</div></section>
+<section><div class="section-head"><h2>候选上游</h2><span class="subtle">每 6 小时采集</span></div><div class="table-wrap"><table><thead><tr><th>名称</th><th>状态</th><th>最近检查</th><th>价格变化</th></tr></thead><tbody>{{range .Candidates}}<tr><td class="model">{{.Name}}</td><td><span class="status">{{.Status}}</span></td><td>{{.LastCheck}}</td><td>{{.PriceChange}}</td></tr>{{else}}<tr><td colspan="4" class="empty">尚未录入候选上游</td></tr>{{end}}</tbody></table></div></section>
+<section><div class="section-head"><h2>事件</h2></div><ul class="event-list">{{range .Incidents}}<li>{{.}}</li>{{else}}<li class="empty-inline">当前没有需要处理的事件</li>{{end}}</ul></section>
+<section><div class="section-head"><h2>Agent 分析</h2></div><ul class="event-list">{{range .AgentReports}}<li>{{.}}</li>{{else}}<li class="empty-inline">尚无分析报告</li>{{end}}</ul></section>
+</main></body></html>{{end}}

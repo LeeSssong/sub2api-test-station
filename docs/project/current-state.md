@@ -5,20 +5,20 @@
 
 ## 当前指针
 
-- 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成；Sub2API、PostgreSQL、Redis、Caddy 正在生产主机健康运行。
+- 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成；Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 正在生产主机健康运行。
 - 已完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。
-- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭和邀请制；D03 方案一已切换到 Neko 生产，GPT 用户组 `0.15x`，Neko 账号倍率 `0.07`、并发 `3`。D04 内测覆盖最多 15 个注册用户，站内倍率 `1.0x`，每日签到 `$20` 不累计，推荐奖励 `$5`；Aliu 调度已关闭，保留为暂停候选和回滚对象。
-- 当前阻塞：Neko 的长期稳定性、首尔生产机与大陆真实链路、长流错误率和商业再分发授权仍未验证；供应商仍可调整价格、模型和容量；正式域名尚未购买。六模型定价和受控计费已通过，但不构成 SLA 或商业授权。
-- 下一步：D02 候选已收敛为 `xingqiaolab.top`，待用户亲自购买并在结算页核对最终价、续费、实名和自动续费；随后配置 DNS、Caddy TLS 和 Sub2API 站点 URL，完成正式入口健康、登录和 API 验收。`GPT-内测` 分组已提前准备，但签到/推荐额度账本、邀请用户和容量提升均排在正式域名之后。当前不启动支付或公开注册。
+- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭和邀请制。`relay-ops` 已以 `read_only` 部署，`/pricing` 公开、`/ops` 复用 Sub2API 管理员登录、`/monitor` 保持原生；候选付费探测关闭。目标分组已确认为 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`，Neko 目标成本倍率 `0.10x`、wawazz 目标成本倍率 `0.05x`，但该生产切换尚未执行。
+- 当前阻塞：正式域名尚未完成注册审核；生产实际仍是公开 `GPT 0.15x`、旧专属分组 `1.0x`、Neko 账号倍率 `0.07x`，wawazz 尚未接入 Sub2API。relay-ops 的飞书 Webhook、Agent API Key和候选上游记录尚未安装，`probe_runs=0`；真实候选 probe 仍需单独低成本批准。Neko/wawazz 的长期稳定性、首尔到大陆真实链路和长流错误率仍未验证。
+- 下一步：域名审核期间并行完成生产分组/账号切换和隔离验收，把 Neko/wawazz 的公开页面与秘密引用录入 relay-ops 但保持 `read_only`，再安装飞书/Agent 独立凭据并验证假事件通知。只有报告预计请求数与费用并取得明确批准后才切换 `probe` 做一次真实同步/SSE；域名通过后再配置正式 DNS/TLS。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-15-operations-baseline-verification.md`。
+最新验证：`docs/superpowers/reports/2026-07-19-relay-ops-read-only-verification.md`。
 
 ## 产品
 
 - 目标：先用现有上游 API 跑通可售卖闭环，再接入 K12、Plus、Pro 等订阅账号池和其他上游中转 API。
 - 首条闭环：境外服务器 → Sub2API/PostgreSQL/Redis/Caddy → 现有上游 API → 测试 Key → 请求日志和扣费 → 人工充值。
-- MVP 用户：D04 内测最多 15 个注册用户；每个用户每天签到获得 `$20`，额度不累计，推荐奖励独立记账。
+- 首批用户：最多 15 个邀请注册用户；每个用户每天签到获得 `$20`，每个成功推荐获得 `$5`，两者进入同一累计余额并保留来源审计。该规则属于正式产品的受控首发策略，用户界面不展示“内测”标签。
 - 当前不做：多节点高可用、自动支付、昂贵优化线路和复杂营销功能。
 
 ## 已确认决策
@@ -27,9 +27,9 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 |---|---|---|
 | D01 | USD 20/月是硬上限而非默认支出；首选腾讯云国际站东京 2C2G USD 10.08/年，按已定义顺序回退，2 GiB 达阈值后再扩容 | 已确认 |
 | D13 | 所有外部支出只做选型和报告，不执行真实付款；后续按“未购买/假定配置”继续准备 | 已确认 |
-| D03 | 首版采用方案一：Neko 作为生产上游，GPT 用户组 `0.15x`，Neko 账号倍率 `0.07`、并发 `3`；Aliu 暂停保留为候选 | 已确认并已切换 |
-| D04 | 内测最多 15 个注册用户，站内 `1.0x`；每日签到 `$20` 不累计，推荐奖励 `$5`，个人推荐不限但总注册数封顶 | 已确认；分组已建，待实现签到与额度账本 |
-| D02 | 内测阶段先用 `xingqiaolab.top`，API 子域为 `api.xingqiaolab.top`；商业化前再评估 `.com` | 候选已确认，待用户购买 |
+| D03 | 目标调整为 `GPT-Pro` / `GPT-Plus` 公开分组、站内 `1.0x`；Pro 接 Neko `0.10x`，Plus 接 wawazz `0.05x`，两池独立测量且不自动切换 | 新方案已确认；生产切换待执行 |
+| D04 | 首批最多 15 个邀请注册用户，站内 `1.0x`；每日签到 `$20` 和每个成功推荐获得 `$5`，邀请、签到和推荐属于受控首发策略，不展示“内测”标签 | 旧自动化本地基线完成；relay-ops 只读生产部署完成 |
+| D02 | 首发阶段先用 `xingqiaolab.top`，API 子域为 `api.xingqiaolab.top`；规模化商业化前再评估 `.com` | 信息模板审核中，域名尚未注册 |
 
 2026-07-16 新事实覆盖 D01 的旧服务器选型：用户已亲自购买腾讯云中国站 Lighthouse 首尔节点，2 vCPU / 4 GiB / 60 GB SSD / 30 Mbps / 1536 GB 月流量，Ubuntu Server 24.04 LTS，1 年 CNY 199，自动续费关闭。
 
@@ -40,12 +40,15 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
 - 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。尚未执行生产备份。
-- 生产主机：腾讯云首尔二区实例运行中；SSH、Docker、日志轮转、自动安全更新、swap 和 `vm.overcommit_memory=1` 已生效。Sub2API `v0.1.161`、PostgreSQL、Redis、Caddy 健康运行，仅 Caddy 发布 80/443；尚未购买正式域名。
+- 生产主机：腾讯云首尔二区实例运行中；SSH、Docker、日志轮转、自动安全更新、swap 和 `vm.overcommit_memory=1` 已生效。Sub2API `v0.1.161`、PostgreSQL、Redis、Caddy 和 relay-ops 健康运行，仅 Caddy 发布 80/443；尚未购买正式域名。
 - 外部服务：Neko 的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`；生产账号 `neko-production-primary` 已同步 8 个模型，连接测试和生产网关同步/SSE 冒烟均成功。生产 GPT 分组为 `0.15x`，Aliu 账号仍保留但调度关闭。
 - 容量证据：Neko Pro 池短测同步并发 1–50 路全部 200，SSE 并发 3/5/10 全部完成，60/120/180 RPM 一分钟窗口全部 200；240 RPM 出现 1 次超时。生产账号当前并发 `3` 未改动；详细报告见 `docs/superpowers/reports/2026-07-19-neko-capacity-verification.md`。
-- 2026-07-19：腾讯云域名公开查询确认 `xingqiaolab.top` 可注册，首年约 CNY 14、旁列续费约 CNY 32；用户选择它作为内测低成本候选，尚未购买或修改 DNS。`.com` 仍保留为商业化升级候选。
+- 2026-07-19：直接核对 Sub2API `v0.1.161` 源码：原生支持一次性邀请码、邀请关系、管理员 API Key、用量/余额读取和强制幂等余额调整；不支持每日签到、固定首次使用奖励或数值型全站注册上限。D04 因此采用原生能力加独立自动化服务，不维护 Sub2API 私有分支。
+- 2026-07-19：腾讯云域名公开查询确认 `xingqiaolab.top` 可注册，首年约 CNY 14、旁列续费约 CNY 32；用户选择它作为首发低成本候选，尚未购买或修改 DNS。`.com` 仍保留为规模化商业化升级候选。
 - 网关扩容研究：LiteLLM 和 New API 均采用同模型多 deployment/渠道、健康路由、失败重试和用户级限流；第二个 Neko Key 应作为第二个 Sub2API 账号对象加入同一逻辑组，不能假设容量线性翻倍。详见 `docs/superpowers/reports/2026-07-19-gateway-scaling-practices.md`。
 - 生产凭据：未记录；密钥、Cookie、OAuth 凭据、2FA 恢复码和支付密钥禁止进入 Git 和普通文档。
+- 首发用户自动化：旧 `internal-test-service` 使用 Go 1.24、SQLite WAL 和独立 Admin API 客户端；Caddy 只把受控首发路径和注册 POST 转给该服务，OAuth 建号路径在首发阶段返回 403。容器无宿主机端口、只读根文件系统、非 root、仅 `/var/lib/internal-test` 可写；默认 `D04_MODE=read_only`。该旧基线不等于新的 `relay-ops` 监控实现。
+- relay-ops：生产镜像 `sub2api-relay-ops:665fa0a` 以 `read_only` 运行；独立 PostgreSQL、UID `10002`、只读根文件系统、无宿主机端口。`/pricing` 已按 USD/1M 正确显示 6 个模型和 3 个 `>272k` 阶梯；`/ops` 已通过真实管理员会话绑定验收；`/monitor` 仍由 Sub2API 原生提供。
 
 ## 已核验证据
 
@@ -109,9 +112,12 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - [x] D03 方案一已由用户确认并切换；生产 GPT 分组为 `0.15x`，Neko 账号倍率 `0.07`、并发 `3`；Aliu 调度关闭并保留候选。
 - [x] 完成 NekoAPI Pro 池统一验收及生产切换冒烟：目标模型、非流式、流式、`0.07x` 实际扣费、至少 3 路并发、生产网关同步/SSE 均通过；临时测试账号和 Key 已清理。长期稳定性、网络和商业授权仍待观察。
 - [x] 完成 Neko 容量短测：同步并发至少 50、SSE 并发至少 10、稳定 RPM 至少 180；240 RPM 出现一次超时。临时容量测试 Key 已删除，生产路由未修改。
-- [ ] D04 内测入口：`GPT-内测` 专属分组已建立并复核（OpenAI、`1.0x`、每用户 RPM `3`）；2026-07-19 控制台复核确认当前仅绑定 Neko、可用 1 个账号，Aliu 未绑定且调度暂停。仍需实现 15 人注册上限、每日 `$20` 非累计签到、`$5` 推荐奖励及独立额度账本。
+- [x] D04 首发入口自动化基线：旧专用用户组（站内 `1.0x`、每用户 RPM `3`）已建立并复核，当前仅绑定 Neko。独立服务已实现注册入口原子 15 人上限、用户自助邀请码、每日 `$20` 与每个成功推荐 `$5` 的统一累计余额、总预算核对、日报和飞书告警；默认只读，待域名和隔离低额验收后再启用写入。产品展示不使用“内测”命名。
 - [x] 2026-07-19：生产升级到 `v0.1.161` 后因 `gateway.text_max_body_size` 默认 32 MiB 超过 16 MiB 上限短暂返回 502；固定 `GATEWAY_TEXT_MAX_BODY_SIZE=16777216` 后仅重建 Sub2API，健康检查恢复 200，其他三项服务未重建。
 - [x] 2026-07-19：Neko 六模型受控验证：6 次同步、1 次 `gpt-5.6-sol` SSE 均 200，SSE 含 `[DONE]`；未知模型 404；7 条记录 Token 均 `8/5`，用户扣费约 `$0.000125`，符合标准价乘 `0.15x`。
+- [x] 2026-07-19：relay-ops 只读生产部署完成；Go race/vet、PostgreSQL E2E、Ruby `118/472`、三组 Compose/Caddy 契约、真实 `/ops` 登录复用和 `/pricing` 单位/阶梯价验收通过；生产 `probe_runs=0`。
+- [ ] 执行已确认但尚未落地的分组切换：公开 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`，Neko `0.10x`，wawazz `0.05x`；完成后重新跑同步/SSE、计费、TTFT 和原生 Channel Monitor 验收。
+- [ ] 为 relay-ops 安装飞书/Agent 独立凭据并录入 Neko/wawazz；保持 `read_only` 直到管理员单独批准每候选最多 2 请求、费用上限 `$0.002` 的首次 probe。
 - [x] 建立人工充值、余额调整、退款/反向流水和每日用量成本的追加式模拟账本与对账摘要。
 - [ ] 用户确认 D05 后，在真实小额订单上验证外部收款、Sub2API 余额历史和账本三方一致。
 - [x] 建立订阅账号非敏感候选模板、硬淘汰、评分、首样推荐、Sub2API 映射和单账号验收清单。
@@ -132,3 +138,10 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 3. 遵守 D13：在用户审阅完整报告前，不执行任何真实付款、充值、购买、收款或商户开通。
 4. 所有后续工作可按推荐资产继续离线准备，但必须标记为假定配置；真实验收保持未完成。
 5. 收到实际实例、域名或其他资产的非敏感信息后，再更新资产台账并执行真实环境复验。
+
+## D04 本地实施验收（2026-07-19）
+
+- Go 1.24 服务已建立：SQLite WAL 账本、Admin API 幂等客户端、Fake Provider、注册网关、JWT 路由、加入页、签到/推荐统一余额、总预算、用量游标、余额漂移只读降级、调度日报和飞书告警。
+- 规则已固定：最多 15 名首发邀请用户；专用首发用户组站内倍率 `1.0x`；每个上海日 `$20` 签到；每个被推荐用户首次成功计费请求触发一次 `$5`；奖励累计且不跨日清空；多个未使用邀请码可并存。产品和后台不展示“内测”命名。
+- 默认部署模式是 `D04_MODE=read_only`。服务未读取生产 `infra/.env`，未安装真实 Admin API Key、Webhook、JWT 或用户 Key，也未改变生产余额。
+- 验证通过：`go test ./... -race`、`go vet ./...`、本地镜像构建、只读非 root 容器 `/healthz` 冒烟、Compose/Caddy D04 契约、基础设施基线和既有 Ruby 回归；当前本地镜像 ID 为 `sha256:b5945deb71fdf3d03da878730eb84774007c529f0fa7e55f0263658cf31f0a07`，约 5.6 MB。

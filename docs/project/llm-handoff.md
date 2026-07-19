@@ -2,8 +2,8 @@
 
 **交接日期：** 2026-07-19  
 **用途：** 新 Codex 窗口的唯一恢复入口  
-**当前主线：** D02 正式域名与外部内测入口
-**当前节点：** M1、D03 上游/定价和 D04 内测规则准备已完成；Neko 为生产上游，`GPT-内测` 分组已提前创建。首位外部内测用户加入前必须购买正式域名，完成 DNS、TLS、站点 URL 和公开入口验收；Aliu 调度关闭并保留为暂停候选
+**当前主线：** D03 GPT-Pro/GPT-Plus 生产切换、relay-ops 上游录入与 D02 正式域名审核并行推进
+**当前节点：** relay-ops 已以 `read_only` 部署，公开 `/pricing`、管理员 `/ops` 和 Sub2API 原生 `/monitor` 已验收；生产付费探测为 0。目标分组设计已确认为 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`、Neko `0.10x`、wawazz `0.05x`，但生产实际仍是 `GPT 0.15x`、旧专属分组 `1.0x`、Neko `0.07x`，wawazz 尚未接入。飞书、Agent 和候选记录尚未配置；域名信息模板仍在审核，Aliu 调度关闭
 
 ## 1. 新窗口先做什么
 
@@ -234,12 +234,37 @@ NekoAPI 隔离网关与计费闭环随后于 2026-07-18 完成，覆盖上述 bl
 ## 9. 新窗口可直接使用的 Loop Brief
 
 ```text
-Goal: 完成 D02 正式域名购买后的 DNS、TLS 和 Sub2API 正式入口迁移验收，为首位外部内测用户建立可公开访问的稳定入口。
-Context: M1 已验收；NekoAPI Pro 池已切为生产，GPT 用户组 `0.15x`，Neko 账号倍率 `0.07`、并发 `3`；`GPT-内测` 已提前建立但尚未邀请用户；当前仍使用只限内部技术验证的临时域名。
-Constraints: 不重谈服务器选型或大框架；不读取或输出 `infra/.env`；任何 Key、密码、2FA 恢复信息不得进入 Git、普通文档或聊天；临时域名不提供给外部用户。
-Plan: 记录 `xingqiaolab.top` 的可注册状态、首年与续费价；用户亲自购买后，配置 `api` 子域解析并迁移 Caddy/Sub2API 对外 URL；商业化前再复核 `.com` 升级选项。
-Implement: 只在域名实际归属确认后修改 DNS 和服务器配置；保留临时域名到正式 HTTPS 与登录/API 验收全部通过，再停止把临时入口作为恢复路径。
-Validate: 验证公共 DNS、HTTP 到 HTTPS 跳转、证书 SAN、`/health`、管理员登录、模型目录和一条低额同步/SSE 请求；确认没有暴露数据库、Redis 或应用内部端口。
-Review: 域名实时库存和价格会变化；迁移期间需避免证书签发失败、回调/站点 URL 遗漏或把临时域名泄露给外部用户。D04 签到、推荐和容量扩展在 D02 完成后继续。
-Done when: 正式域名由用户持有，`api.<正式域名>` DNS 和可信 HTTPS 生效，健康、登录与 API 验收通过，项目文档不记录凭据或实例地址；随后主线推进到内测用户入口和额度账本。
+Goal: 完成 GPT-Pro/GPT-Plus 生产配置和 relay-ops 的 Neko/wawazz 只读录入，再准备一次明确报价的低成本候选 probe。
+Context: relay-ops 镜像 `665fa0a` 已在生产 `read_only` 运行，`/pricing`、`/ops`、`/monitor` 已验收，`probe_runs=0`。目标是 GPT-Pro/GPT-Plus 站内 `1.0x`、Neko `0.10x`、wawazz `0.05x`；当前实际仍是 GPT `0.15x`、旧专属分组 `1.0x`、Neko `0.07x`，wawazz 未接入。域名审核并行进行。
+Constraints: 项目是副业，日常流程必须无人值守；不读取或输出 `infra/.env`；任何 JWT、Admin API Key、用户 Key、密码或 2FA 信息不得进入 Git、普通文档、日志或聊天；不直接写 Sub2API 数据库，不维护私有 Sub2API 分支，域名和自动化验收前不邀请外部用户。
+Plan: 先对现有 Sub2API 分组/账号做快照；创建或重命名分组并设置目标倍率，wawazz 用独立账号/Key 接入；逐分组完成模型、同步、SSE、计费和原生监控验收。随后把公开价格/用量页和服务器秘密引用录入 relay-ops，仍保持 `read_only`。
+Implement: 仅通过 Sub2API 官方管理/API 和 relay-ops 管理 API 操作，不直接写数据库；飞书/Agent 使用独立秘密文件。首次 probe 前单独报告每候选 2 请求、最多 `$0.002` 的费用并等待明确批准。
+Validate: 核对公开组名/倍率/绑定账号、Neko/wawazz 成本倍率、模型价格、同步/SSE、TTFT、用户扣费与上游成本；确认 `/pricing` 只显示公开组，`/monitor` 有有效样本，`probe_runs` 在批准前仍为 0。
+Review: Admin API Key、候选监测 Key 和上游会话必须分离；账单真实倍率只是辅助证据，无法读取时不得伪装成已验证；任何 Agent 输出都不能直接修改路由、价格、余额、Key 或数据库。
+Done when: GPT-Pro/GPT-Plus 在生产按目标配置通过隔离验收，Neko/wawazz 已进入 relay-ops 只读监控，飞书/Agent 假事件通过；真实 probe 只在用户明确批准后执行，域名审核不被阻塞。
 ```
+## D04 首发自动化历史基线（2026-07-19）
+
+本地实现已完成，代码入口为 `internal-test-service/`，Compose/Caddy 集成为 `infra/compose.yaml`、`infra/Caddyfile` 和 `infra/Dockerfile.internal-test`。
+
+- 规则：最多 15 名注册用户；旧专用分组站内倍率 `1.0x`；每个上海日 `$20` 签到；每个被推荐用户首次成功计费请求奖励 `$5`；签到和推荐进入同一累计余额，余额不跨日清空；多个未使用邀请码可并存。`internal-test-service` 和 `D04_*` 仅是既有内部代码标识，产品页面和后台不展示“内测”命名。
+- 服务：Go 1.24 + SQLite WAL；JWT 通过 Sub2API `/api/v1/auth/me` 验证；Admin API 只用只读挂载的 `x-api-key` 文件；所有余额写入固定幂等键，超时后先查余额历史；余额漂移自动进入只读并告警。
+- 入口：Caddy 将 `POST /api/v1/auth/register` 和 `/internal-test/*` 交给独立服务，OAuth 建号路径返回 403；服务没有宿主机端口，根文件系统只读，默认 `D04_MODE=read_only`。
+- 验证：`go test ./... -race`、`go vet ./...`、Docker 镜像构建、Compose/Caddy D04 契约、基础设施基线和既有 Ruby 回归均通过。真实 Admin API Key、飞书 Webhook、JWT、用户 Key 和生产余额均未触碰。
+
+该基线尚未启用生产写入。启用首发用户自动化前仍需：完成正式域名和 GPT-Pro/GPT-Plus 切换，以只读模式运行一个调度周期，安装权限受限的真实 Admin API Key/Webhook，再使用隔离低额用户验证签到、重复签到、首次推荐奖励和余额三方对账。只有这些通过且用户明确批准，才把 `D04_MODE` 改为 `write` 并签发首个外部邀请码；这些门禁不阻塞当前 relay-ops 和上游分组工作。
+
+## relay-ops 监控与预警 Agent 设计（2026-07-19）
+
+设计文件：`docs/superpowers/specs/2026-07-19-relay-ops-monitoring-and-alert-agent-design.md`。
+
+- 架构已确认：独立 `relay-ops` 服务与 Sub2API 并行，Caddy 提供 `/pricing`、`/performance`、`/ops` 路径；不 fork Sub2API，不直接写其 PostgreSQL。
+- 监控范围：所有已启用且对客户公开的 Sub2API 分组；候选站由管理员录入名称、Base URL、低额度 Key、定价/倍率页和用量/账单页。
+- 采集策略：生产质量每分钟、生产价格/倍率每 5 分钟、候选页面每 15 分钟、候选同步/SSE 每 6 小时；全局探测预算一次配置，所有上游继承。
+- 告警机制：原始探测全量入库；事件状态机确认后才发飞书，采用状态变化、持续恶化、恢复、价格/倍率变化、候选综合变优和每日摘要，避免重复消息。
+- Agent：只读、事件触发、输入为脱敏结构化 JSON，只能查询质量窗口/探测/价格/候选证据；不可读取秘密或执行路由、价格、余额、Key、数据库写操作。
+- 真实账单：默认相信上游标注倍率和定价；能读取则作为辅助证据，不能读取时保留质量/价格监控并明确显示“真实倍率未验证”，不反复要求管理员授权。
+- 页面：`/pricing` 无需登录；`/performance` 仅登录用户可见；`/ops` 仅管理员可见。生产和候选上游名称、采购倍率和内部告警不向客户暴露。
+- 当前状态：实现、本地 Fake Provider 验证和生产 `read_only` 部署已完成。生产镜像为 `665fa0a`；真实 `/ops` 管理员登录、`/pricing` USD/1M 与阶梯价、原生 `/monitor` 均通过。飞书/Agent 真实凭据、Neko/wawazz 记录和首次真实 probe 尚未配置。
+
+详细运维与回滚见 `docs/runbooks/relay-ops-monitoring.md`；验证证据见 `docs/superpowers/reports/2026-07-19-relay-ops-read-only-verification.md`。

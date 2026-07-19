@@ -331,24 +331,24 @@ relay-ops:8100 (internal expose only)
 /monitor -> Sub2API existing route
 ```
 
-- [ ] Write a failing shell contract asserting no host port, read-only root filesystem, UID `10002`, dropped capabilities, `no-new-privileges`, bounded resources, PostgreSQL dependency, read-only secret mounts, healthcheck, log rotation, and exact Caddy routing.
-- [ ] Run `bash tests/relay_ops/validate_relay_ops_contract.sh`; expect failure before integration.
-- [ ] Build a multi-stage image with pinned Go/Ruby bases, a static Go binary, the V2 Ruby runner/profile, writable `/tmp` only, and no compiler in the runtime image. Add Compose settings with `RELAY_OPS_MODE=read_only` and schema/database secret files.
-- [ ] Update Caddy so `/pricing`, `/ops*`, and `/relay-ops/api/*` route to relay-ops; all `/api/*`, `/monitor`, and other UI routes continue to Sub2API. Do not publish port 8100.
-- [ ] Run Compose config, image build, non-root/read-only health smoke, existing infra/internal-test contracts, and the new relay-ops contract.
+- [x] Write a failing shell contract asserting no host port, read-only root filesystem, UID `10002`, dropped capabilities, `no-new-privileges`, bounded resources, PostgreSQL dependency, read-only secret mounts, healthcheck, log rotation, and exact Caddy routing.
+- [x] Run `bash tests/relay_ops/validate_relay_ops_contract.sh`; expect failure before integration.
+- [x] Build a multi-stage image with pinned Go/Ruby bases, a static Go binary, the V2 Ruby runner/profile, writable `/tmp` only, and no compiler in the runtime image. Add Compose settings with `RELAY_OPS_MODE=read_only` and schema/database secret files.
+- [x] Update Caddy so `/pricing`, `/ops*`, and `/relay-ops/api/*` route to relay-ops; all `/api/*`, `/monitor`, and other UI routes continue to Sub2API. Do not publish port 8100.
+- [x] Run Compose config, image build, non-root/read-only health smoke, existing infra/internal-test contracts, and the new relay-ops contract.
 - [ ] Commit with `git commit -m "infra: deploy relay ops read-only service"`.
 
 ### Task 12: End-to-End Acceptance, Runbook, and Handoff
 
 **Files:** Create runbook and E2E tests; update current state and handoff after evidence exists.
 
-- [ ] Start PostgreSQL, fake Sub2API, fake candidate upstream, fake Feishu, and fake Agent. Register a candidate, advance the fake clock 6 hours, observe one sync/SSE cycle, create a multiplier diff, confirm one incident/notification/analysis, repeat unchanged data with no notification, and verify recovery.
-- [ ] Run all Go tests with `-race`, Ruby V2 tests, `go vet`, `git diff --check`, image/Compose contracts, existing repository regressions, and secret scans. Record exact counts and failures in a verification report.
-- [ ] Run Playwright screenshots for `/pricing` desktop/mobile and authenticated `/ops`; inspect screenshots and console/network errors.
-- [ ] Deploy to the server in `read_only`, install secret files outside Git with restrictive permissions, run one native-data collection cycle, and confirm no paid candidate request occurs.
+- [x] Start PostgreSQL, fake Sub2API, fake candidate upstream, fake Feishu, and fake Agent. Register a candidate, advance the fake clock 6 hours, observe one sync/SSE cycle, create a multiplier diff, confirm one incident/notification/analysis, repeat unchanged data with no notification, and verify recovery. Covered by the PostgreSQL E2E plus scheduler/incident focused suites.
+- [x] Run all Go tests with `-race`, Ruby V2 tests, `go vet`, `git diff --check`, image/Compose contracts, existing repository regressions, and secret scans. Record exact counts and failures in a verification report.
+- [x] Run Playwright screenshots for `/pricing` desktop/mobile and authenticated `/ops`; inspect screenshots and console/network errors.
+- [x] Deploy to the server in `read_only`, install secret files outside Git with restrictive permissions, run one native-data collection cycle, and confirm no paid candidate request occurs.
 - [ ] After explicit low-cost acceptance, change only `RELAY_OPS_MODE=probe`, run one isolated candidate cycle, report its purpose/result/estimated cost in Feishu, then return to scheduled 6-hour operation.
-- [ ] Update `docs/runbooks/relay-ops-monitoring.md`, `docs/project/current-state.md`, and `docs/project/llm-handoff.md` with verified production state, rollback steps, login-session recovery, and the boundary between Sub2API native pages and relay-ops.
-- [ ] Commit verified documentation with `git commit -m "docs: hand off relay ops monitoring"`.
+- [x] Update `docs/runbooks/relay-ops-monitoring.md`, `docs/project/current-state.md`, and `docs/project/llm-handoff.md` with verified production state, rollback steps, login-session recovery, and the boundary between Sub2API native pages and relay-ops.
+- [x] Commit verified documentation with `git commit -m "docs: hand off relay ops monitoring"`.
 
 ## Completion Gate
 

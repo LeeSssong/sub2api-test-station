@@ -1,0 +1,178 @@
+package store
+
+import (
+	"context"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"example.invalid/relay-ops-service/internal/domain"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+//go:embed migrations/001_init.sql
+var initialMigration string
+
+var ErrConflict = errors.New("record conflicts with existing identity")
+
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+type Upstream struct {
+	ID          domain.UpstreamID
+	Name        string
+	Role        string
+	BaseURL     string
+	AdapterType string
+	Enabled     bool
+}
+
+type PricingSnapshot struct {
+	UpstreamID     domain.UpstreamID
+	SourceURL      string
+	SourceType     string
+	FetchedAt      time.Time
+	ContentHash    string
+	NormalizedJSON []byte
+	DiffSummary    []byte
+	EvidenceLevel  string
+}
+
+type Incident struct {
+	IncidentKey   string
+	Severity      string
+	State         string
+	BaselineValue string
+	CurrentValue  string
+	SampleCount   int64
+	EvidenceRefs  []string
+}
+
+func Open(ctx context.Context, databaseURLFile string) (*Store, error) {
+	data, err := os.ReadFile(databaseURLFile)
+	if err != nil {
+		return nil, fmt.Errorf("read database URL: %w", err)
+	}
+	databaseURL := strings.TrimSpace(string(data))
+	if databaseURL == "" {
+		return nil, fmt.Errorf("database URL is empty")
+	}
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database URL: %w", err)
+	}
+	config.MaxConns = 5
+	config.MinConns = 0
+	config.MaxConnIdleTime = 5 * time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open relay ops database: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping relay ops database: %w", err)
+	}
+	return &Store{pool: pool}, nil
+}
+
+func (s *Store) Close() {
+	if s != nil && s.pool != nil {
+		s.pool.Close()
+	}
+}
+
+func (s *Store) Migrate(ctx context.Context) error {
+	if _, err := s.pool.Exec(ctx, initialMigration); err != nil {
+		return fmt.Errorf("migrate relay ops schema: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CreateUpstream(ctx context.Context, upstream Upstream) (domain.UpstreamID, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO relay_ops.upstreams (display_name, role, base_url, adapter_type, enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`, upstream.Name, upstream.Role, upstream.BaseURL, upstream.AdapterType, upstream.Enabled).Scan(&id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return 0, ErrConflict
+		}
+		return 0, fmt.Errorf("create upstream: %w", err)
+	}
+	return domain.UpstreamID(id), nil
+}
+
+func (s *Store) AppendPricingSnapshot(ctx context.Context, snapshot PricingSnapshot) (int64, error) {
+	normalized := json.RawMessage(snapshot.NormalizedJSON)
+	if !json.Valid(normalized) {
+		return 0, fmt.Errorf("normalized pricing payload is invalid JSON")
+	}
+	var diff any
+	if len(snapshot.DiffSummary) > 0 {
+		if !json.Valid(snapshot.DiffSummary) {
+			return 0, fmt.Errorf("pricing diff is invalid JSON")
+		}
+		diff = json.RawMessage(snapshot.DiffSummary)
+	}
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO relay_ops.pricing_snapshots
+			(upstream_id, source_url, source_type, fetched_at, content_hash, normalized_payload, diff_summary, evidence_level)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id`, snapshot.UpstreamID, snapshot.SourceURL, snapshot.SourceType, snapshot.FetchedAt.UTC(), snapshot.ContentHash, normalized, diff, snapshot.EvidenceLevel).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("append pricing snapshot: %w", err)
+	}
+	return id, nil
+}
+
+func (s *Store) CountPricingSnapshots(ctx context.Context, upstreamID domain.UpstreamID) (int, error) {
+	var count int
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.pricing_snapshots WHERE upstream_id = $1`, upstreamID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count pricing snapshots: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) UpsertIncident(ctx context.Context, incident Incident) (int64, bool, error) {
+	if incident.SampleCount == 0 {
+		incident.SampleCount = 1
+	}
+	evidence, err := json.Marshal(incident.EvidenceRefs)
+	if err != nil {
+		return 0, false, fmt.Errorf("encode incident evidence: %w", err)
+	}
+	var id int64
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO relay_ops.incidents
+			(incident_key, severity, state, baseline_value, current_value, sample_count, evidence_refs)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (incident_key) DO NOTHING
+		RETURNING id`, incident.IncidentKey, incident.Severity, incident.State, nullString(incident.BaselineValue), nullString(incident.CurrentValue), incident.SampleCount, evidence).Scan(&id)
+	if err == nil {
+		return id, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, fmt.Errorf("insert incident: %w", err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM relay_ops.incidents WHERE incident_key = $1`, incident.IncidentKey).Scan(&id); err != nil {
+		return 0, false, fmt.Errorf("find existing incident: %w", err)
+	}
+	return id, false, nil
+}
+
+func nullString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}

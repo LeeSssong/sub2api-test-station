@@ -98,11 +98,11 @@ func Open(ctx context.Context, databaseURLFile string) (*Store, error)
 func (s *Store) Migrate(ctx context.Context) error
 ```
 
-- [ ] Write failing tests for exact modes (`read_only`, `probe`, `closed`), fixed 5-minute and 6-hour intervals, secret-file permissions, UTC persistence, migrations, unique candidate names/base URLs, append-only snapshots, and incident deduplication.
-- [ ] Run `docker run --rm -v "$PWD/relay-ops-service:/src" -w /src golang:1.24-alpine go test ./internal/config ./internal/domain ./internal/store -count=1`; expect failure because the module and packages do not exist.
-- [ ] Implement the module with `github.com/jackc/pgx/v5@v5.7.6`, decimal money as integer micro-USD, embedded migrations, connection timeouts, and schema-qualified tables: `upstreams`, `secret_refs`, `public_groups`, `pricing_snapshots`, `probe_runs`, `metric_refs`, `comparison_windows`, `cost_observations`, `candidate_comparisons`, `incidents`, `notification_deliveries`, `auth_sessions`, `agent_analyses`, and `audit_events`.
-- [ ] Run the focused tests against `postgres:18-alpine`; expect all Task 1 tests to pass and migrations to be idempotent.
-- [ ] Commit only Task 1 files with `git commit -m "feat: scaffold relay ops service"`.
+- [x] Write failing tests for exact modes (`read_only`, `probe`, `closed`), fixed 5-minute and 6-hour intervals, secret-file permissions, UTC persistence, migrations, unique candidate names/base URLs, append-only snapshots, and incident deduplication.
+- [x] Run `docker run --rm -v "$PWD/relay-ops-service:/src" -w /src golang:1.24-alpine go test ./internal/config ./internal/domain ./internal/store -count=1`; expect failure because the module and packages do not exist.
+- [x] Implement the module with `github.com/jackc/pgx/v5@v5.7.6`, decimal money as integer micro-USD, embedded migrations, connection timeouts, and schema-qualified tables: `upstreams`, `secret_refs`, `public_groups`, `pricing_snapshots`, `probe_runs`, `metric_refs`, `comparison_windows`, `cost_observations`, `candidate_comparisons`, `incidents`, `notification_deliveries`, `auth_sessions`, `agent_analyses`, and `audit_events`.
+- [x] Run the focused tests against `postgres:18-alpine`; expect all Task 1 tests to pass and migrations to be idempotent.
+- [x] Commit only Task 1 files with `git commit -m "feat: scaffold relay ops service"`.
 
 ### Task 2: Read-Only Sub2API Adapter and Native Metric References
 

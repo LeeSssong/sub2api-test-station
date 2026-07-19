@@ -40,10 +40,19 @@ func TestOpsAndCandidateAPIsRequireAdminAndCSRF(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/ops", nil)
 	recorder := httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous ops=%d", recorder.Code)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "/relay-ops/static/ops.js") {
+		t.Fatalf("ops bootstrap=%d %s", recorder.Code, recorder.Body.String())
 	}
-	request = httptest.NewRequest(http.MethodGet, "/ops", nil)
+	if strings.Contains(recorder.Body.String(), "GPT-Pro") || strings.Contains(recorder.Body.String(), "公开分组") {
+		t.Fatalf("ops bootstrap leaked protected data: %s", recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/relay-ops/api/ops-view", nil)
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous ops view=%d", recorder.Code)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/relay-ops/api/ops-view", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	recorder = httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
@@ -71,6 +80,27 @@ func TestOpsAndCandidateAPIsRequireAdminAndCSRF(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "probe_key") || strings.Contains(recorder.Body.String(), "/run/secrets") {
 		t.Fatalf("secret ref leaked: %s", recorder.Body.String())
+	}
+}
+
+func TestOpsBootstrapUsesExistingSub2APITokenWithoutExposingIt(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/relay-ops/static/ops.js", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d", recorder.Code)
+	}
+	script := recorder.Body.String()
+	for _, required := range []string{`localStorage.getItem('auth_token')`, `Authorization`, `Bearer`, `/relay-ops/api/ops-view`} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("missing %q in ops bootstrap", required)
+		}
+	}
+	for _, leak := range []string{"console.log", "document.cookie", "location.search"} {
+		if strings.Contains(script, leak) {
+			t.Fatalf("unsafe token handling %q", leak)
+		}
 	}
 }
 

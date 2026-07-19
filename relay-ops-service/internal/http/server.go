@@ -16,7 +16,7 @@ import (
 	"example.invalid/relay-ops-service/internal/domain"
 )
 
-//go:embed templates/*.html static/*.css
+//go:embed templates/*.html static/*.css static/*.js
 var assets embed.FS
 
 type PublicModel struct{ ModelID, Tier, Input, Output, CacheRead, CacheWrite string }
@@ -60,6 +60,7 @@ type server struct {
 	dependencies Dependencies
 	templates    *template.Template
 	css          []byte
+	opsJS        []byte
 }
 
 func NewServer(dependencies Dependencies) (http.Handler, error) {
@@ -74,15 +75,27 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read CSS: %w", err)
 	}
-	s := &server{dependencies: dependencies, templates: templates, css: css}
+	opsJS, err := assets.ReadFile("static/ops.js")
+	if err != nil {
+		return nil, fmt.Errorf("read ops bootstrap: %w", err)
+	}
+	s := &server{dependencies: dependencies, templates: templates, css: css, opsJS: opsJS}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)
+	mux.HandleFunc("GET /relay-ops/static/ops.js", s.opsScript)
 	mux.HandleFunc("GET /pricing", s.pricing)
-	mux.Handle("GET /ops", adminauth.RequireAdmin(dependencies.Auth, http.HandlerFunc(s.ops)))
+	mux.HandleFunc("GET /ops", s.opsBootstrap)
+	mux.Handle("GET /relay-ops/api/ops-view", adminauth.RequireAdmin(dependencies.Auth, http.HandlerFunc(s.ops)))
 	mux.Handle("GET /relay-ops/api/candidates", adminauth.RequireAdmin(dependencies.Auth, http.HandlerFunc(s.listCandidates)))
 	mux.Handle("POST /relay-ops/api/candidates", adminauth.RequireAdmin(dependencies.Auth, http.HandlerFunc(s.createCandidate)))
 	mux.Handle("POST /relay-ops/api/candidates/{id}/disable", adminauth.RequireAdmin(dependencies.Auth, http.HandlerFunc(s.disableCandidate)))
 	return mux, nil
+}
+
+func (s *server) opsScript(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write(s.opsJS)
 }
 
 func (s *server) styles(w http.ResponseWriter, _ *http.Request) {
@@ -109,6 +122,13 @@ func (s *server) pricing(w http.ResponseWriter, request *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.templates.ExecuteTemplate(w, "pricing.html", map[string]any{"Rows": rows, "Query": request.URL.Query().Get("q")})
+}
+
+func (s *server) opsBootstrap(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	_ = s.templates.ExecuteTemplate(w, "ops-bootstrap.html", nil)
 }
 
 type pricingRow struct {

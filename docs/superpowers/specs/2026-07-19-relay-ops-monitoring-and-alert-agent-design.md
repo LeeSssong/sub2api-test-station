@@ -2,7 +2,7 @@
 
 ## 状态
 
-设计已由用户确认（2026-07-19）。本文件定义服务器端 `relay-ops` 的核心数据对象和预警 Agent 边界；尚未实施、部署或修改生产配置。
+设计已由用户确认并根据 Sub2API 原生能力完成第一轮修订（2026-07-19）。本文件定义服务器端 `relay-ops` 的核心数据对象、Sub2API 复用边界和预警 Agent 边界；尚未实施、部署或修改生产配置。
 
 ## 主线与范围
 
@@ -22,7 +22,7 @@
 - 监控生产上游、模型目录、公开价格、实际请求质量和估算成本。
 - 管理员手动录入候选中转站，并用独立低额度 Key 探测。
 - 用统一指标比较候选站与当前公开分组。
-- 提供公开模型定价页、登录用户性能页和管理员运维后台。
+- 提供公开模型定价页，复用 Sub2API 登录用户渠道状态页，并补充管理员运维后台。
 - 事件状态机、飞书通知、每日摘要和只读预警 Agent。
 
 ### 不包含
@@ -30,8 +30,43 @@
 - 自动切换上游、自动改价格、自动充值或自动修改用户余额。
 - 让 Agent 读取或操作 API Key、Cookie、密码、提示词、响应正文或数据库写权限。
 - Fork 或重写 Sub2API 核心代码。
+- 重做 Sub2API 已有的渠道监控、用户渠道状态页、Ops 指标、Usage 账单字段或后台任务监控。
 - 把真实账单核对做成用户上线或生产路由切换的硬阻塞。
 - 支付、公开无限注册、复杂推荐系统和多节点高可用。
+
+## Sub2API 原生复用边界
+
+截图中的“渠道状态”界面来自 Sub2API `v0.1.161` 原生实现，不是另一个需要引入的开源项目。原生功能已经具备：
+
+- 用户侧 `/monitor`：状态卡、对话延迟、端点 PING、7/15/30 天可用率和近 60 次记录。
+- 管理侧 Channel Monitor：名称、供应商、端点、API Key、主模型、附加模型、分组名、Chat Completions/Responses、间隔、抖动、自定义请求头/正文、立即运行和历史聚合。
+- 管理侧 Ops：QPS/WebSocket、SLA、错误与上游错误、首 Token 延迟 P50/P90/P95/P99、总延迟、CPU/内存/健康评分、错误趋势/分布/详情、后台任务和分组可用性。
+- Usage/计费：标准费用、实际费用、账号成本、用户扣费、账号扣费以及模型/分组/错误分类等现有数据。
+- 可用渠道：登录用户可查看自己可访问的渠道、模型和定价；首版公开 `/pricing` 可以复用同一份 Sub2API 渠道定价数据，但匿名公开投影仍由 `relay-ops` 提供，不能假设原生页面支持免登录。
+
+因此职责固定如下：
+
+| 能力 | 事实来源与界面 | `relay-ops` 的职责 |
+|---|---|---|
+| 生产分组合成监控与历史 | Sub2API Channel Monitor | 保存 `monitor_id` 引用、读取聚合结果、触发跨来源告警，不复制原始历史 |
+| 用户性能页 | Sub2API `/monitor` | 不重做页面，只控制哪些已合格监控可对用户显示 |
+| 本站真实流量、TTFT、延迟、SLA、错误、资源和后台任务 | Sub2API Ops/Usage | 读取已有只读聚合或 API，生成跨站比较与飞书摘要 |
+| 公开模型定价 | Sub2API 渠道定价为事实来源 | 输出脱敏、免登录的只读 `/pricing` 投影和变更时间 |
+| 候选站、价格/倍率页变化、跨站机会比较 | 无原生完整能力 | 由 `relay-ops` 采集、归一化和持久化 |
+| 事件去重、飞书、Agent 分析 | 无原生完整能力 | 由 `relay-ops` 状态机负责 |
+
+原生实现证据：
+
+- [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api/tree/v0.1.161)
+- [用户渠道状态页面](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/frontend/src/views/user/ChannelStatusView.vue)
+- [渠道状态卡片](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/frontend/src/components/user/monitor/MonitorCardGrid.vue)
+- [渠道状态中文文案](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/frontend/src/i18n/locales/zh/dashboard.ts)
+- [渠道监控用户 API](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/frontend/src/api/channelMonitor.ts)
+- [渠道监控管理页面](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/frontend/src/views/admin/ChannelMonitorView.vue)
+- [渠道监控服务](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/backend/internal/service/channel_monitor_service.go)
+- [调度器与历史聚合](https://github.com/Wei-Shaw/sub2api/blob/v0.1.161/backend/internal/service/channel_monitor_runner.go)
+
+Sub2API 原生 Channel Monitor 的间隔范围是 15 至 3600 秒，无法表达候选站每 6 小时一次。因此生产公开分组使用原生监控，候选站仍由 `relay-ops` 独立调度；这是补足能力，不是重复实现。
 
 ## 总体架构
 
@@ -40,23 +75,31 @@
 ```text
 Caddy
 |- /api/*           -> Sub2API
+|- /monitor         -> Sub2API 原生登录用户渠道状态页
 |- /pricing         -> relay-ops 公共模型定价页
-|- /performance     -> relay-ops 登录用户性能页
 `- /ops             -> relay-ops 管理后台
 
+Sub2API
+|- native-channel-monitor
+|- native-user-monitor-ui
+|- native-ops-and-usage
+`- native-channel-pricing
+
 relay-ops
-|- public-group-discovery
+|- sub2api-read-model
+|- v2-qualification-orchestrator
 |- upstream-adapters
 |- candidate-probes
 |- pricing-and-cost-normalizer
-|- quality-window-aggregator
+|- comparison-window-materializer
 |- incident-state-machine
 |- feishu-notifier
 |- read-only-alert-agent
 `- web-and-admin-api
 ```
 
-- 通过 Sub2API Admin API 读取公开分组、用户用量聚合和配置快照，不直接写 Sub2API PostgreSQL。
+- 通过 Sub2API 现有 Admin/Monitor/Ops/Usage API 读取公开分组、原生监控聚合、用户用量聚合和配置快照，不直接读写 Sub2API PostgreSQL。
+- `relay-ops` 不保存 Sub2API 已有的逐次生产监控历史，只保存稳定外部引用、价格快照、候选探测、事件和为跨来源比较生成的物化窗口。
 - `relay_ops` 使用独立 PostgreSQL database 或 schema 保存监控数据；不复用 D04 SQLite 账本。
 - 首版单实例内部调度即可；需要多进程时再使用 Redis 锁，不能因此改变监控语义。
 - 所有真实凭据通过服务器秘密文件或等效秘密存储注入，禁止出现在 Git、URL、命令参数、日志和 Agent 输入中。
@@ -77,10 +120,19 @@ relay-ops
 - `user_multiplier`：本站对用户的计费倍率。
 - `model_allowlist`：允许对客户开放的模型。
 - `upstream_route_refs`：关联的上游账号或路由引用，不保存 Key 原文。
+- `sub2api_channel_monitor_ids`：关联的 Sub2API 原生 Channel Monitor ID；生产探测历史仍由 Sub2API 持有。
+- `qualification_run_id`、`qualified_at`：最近一次完整 V2 准入结果及时间。
 - `health_gate`：`pending`、`qualified`、`degraded`、`blocked`。
 - `last_seen_at`、`source_revision`。
 
-规则：只有 `enabled=true` 且 `customer_visible=true` 的分组进入公开页面和公开分组质量告警。新分组必须先有合成请求和有效样本，才能出现在公开性能页。
+规则：只有 `enabled=true` 且 `customer_visible=true` 的分组才有资格进入用户渠道状态页和公开分组质量告警，但不能仅凭这两个开关直接公开。新分组必须依次完成：
+
+1. 使用现有 `ops/upstream-benchmark-v2.rb` 和 `mvp-text-v2` profile 完成模型发现、逐文本模型同步/SSE、TTFT/总耗时、容量阶梯和价格证据验收。
+2. V2 结果达到 `verified`，或仅因非计费、非同步/SSE 的次要证据缺口成为 `partial` 且管理员明确接受，并绑定已批准的 proposal。模型价格未知、同步失败或 SSE 不完整的 `partial` 不得公开。
+3. 在 Sub2API 原生 Channel Monitor 中配置该公开分组的主模型和必要附加模型。
+4. 原生监控至少产生一条有效成功样本后，才允许出现在 `/monitor`。
+
+完整 V2 是新分组准入和重大变更后的重新验收工具，不作为每分钟或每 6 小时的常规在线监控。`relay-ops` 只编排 V2、保存结果引用和控制 `health_gate`，不重写 V2 evaluator。
 
 ### 2. `upstreams`
 
@@ -92,13 +144,14 @@ relay-ops
 - `base_url`：规范化后的 OpenAI-compatible Base URL。
 - `site_url`、`pricing_url`、`usage_url`、`performance_url`：公开或管理员参考页面。
 - `adapter_type`：`sub2api`、`newapi`、`openai_compatible` 或 `unknown`。
-- `monitor_key_secret_ref`：秘密引用、指纹和末四位，不保存原文。
+- `candidate_probe_key_secret_ref`：仅候选站使用；指向管理员在该上游创建的专用低额度 API Key，保存秘密引用、指纹和末四位，不保存原文。
+- `sub2api_channel_monitor_id`：生产/公开分组使用；指向由 Sub2API 原生 Channel Monitor 加密保存的探测 Key 和配置，`relay-ops` 不再保存第二份 Key。
 - `billing_auth_secret_ref`：可选；只用于有稳定机器接口或授权会话的站点。
 - `advertised_multiplier`、`multiplier_source`、`multiplier_observed_at`。
 - `billing_evidence_status`：`not_requested`、`estimated_only`、`verified`、`stale`。
 - `monitor_status`、`last_success_at`、`last_error_code`。
 
-最小候选录入字段是名称、Base URL、低额度监测 Key、模型定价/倍率页 URL、用量/账单页 URL。站点类型、模型、端点、可比较公开分组和探测计划自动发现。
+最小候选录入字段是名称、Base URL、低额度监测 Key、模型定价/倍率页 URL、用量/账单页 URL。这里的低额度监测 Key 就是管理员在候选上游创建的 API Key；它应独立于将来可能接入生产的 Key。站点类型、模型、端点、可比较公开分组和探测计划自动发现。
 
 ### 3. `secret_refs`
 
@@ -108,7 +161,7 @@ relay-ops
 - `created_at`、`expires_at`、`last_used_at`、`status`。
 - 凭据内容只存在服务器秘密存储或只读挂载文件中。
 
-监测 Key 与账单会话必须分开。监测 Key 只能用于低消耗 API 探测；账单会话如果不存在，不影响质量监控。
+候选监测 Key 与账单会话必须分开。候选监测 Key 只能用于低消耗 API 探测；账单会话如果不存在，不影响质量监控。生产/公开分组的探测 Key 由 Sub2API 原生 Channel Monitor 加密保管，`relay-ops` 的 `secret_refs` 不再复制它。
 
 ### 4. `model_catalog` 与 `pricing_snapshots`
 
@@ -130,12 +183,13 @@ relay-ops
 
 ### 5. `probe_profiles` 与 `probe_runs`
 
-`probe_profiles` 保存全局探测策略，所有生产上游和候选站默认继承：
+`probe_profiles` 只保存 `relay-ops` 自有的页面变化和候选探测策略；生产分组在线质量调度由 Sub2API 原生 Channel Monitor 配置：
 
-- 页面/倍率采集：每 5 分钟（候选站页面每 15 分钟）。
-- 生产质量与健康：每分钟轻量检查。
-- 候选同步 + SSE：每 6 小时，默认每日最多 8 个模型请求。
-- 无真实用户流量时，生产池每小时执行一次低消耗探测。
+- 生产价格/倍率页：每 5 分钟采集一次；内容 hash 未变化时不重复解析和通知。
+- 候选站：固定每 6 小时执行一个采集周期，周期内完成价格/倍率页、`/models` 和受限同步/SSE 探测。
+- 候选站日常周期复用 V2 的模型发现、请求、指标和脱敏组件，但使用低成本 `candidate-watch` profile；不运行完整容量/RPM 阶梯。
+- 候选站准备转为公开分组，或已公开分组的模型/协议发生重大变化时，单独运行完整 V2 准入验收；仅录入候选站不会自动运行昂贵的容量/RPM 阶梯。
+- 生产质量与健康、无真实流量时的合成样本均由 Sub2API 原生 Channel Monitor 负责，`relay-ops` 不重复发请求。
 - 单次最大输出 Token、单站每日费用上限和全部候选站总预算上限。
 
 `probe_runs` 记录一次可重放的探测批次：
@@ -149,17 +203,18 @@ relay-ops
 
 探测结果全部入库，但不逐条发送飞书。飞书只消费经过状态机确认的事件。
 
-### 6. `quality_windows`
+### 6. `metric_refs` 与 `comparison_windows`
 
-把真实用户请求和合成请求按来源分开聚合，按上游、公开分组、模型和时间窗口保存：
+Sub2API 已经保存生产合成历史、日聚合和本站真实流量 Ops/Usage 指标，`relay-ops` 不复制这些原始数据。`metric_refs` 保存查询范围、原生 monitor ID、Ops/Usage 查询版本、窗口结束时间和内容 hash；`comparison_windows` 只物化跨来源比较所需的统一口径：
 
 - `window_start`、`window_end`、`sample_count`。
 - `success_rate`、`sse_completion_rate`、`rate_429`、`rate_5xx`、`timeout_rate`。
 - `ttft_p50_ms`、`ttft_p95_ms`、`latency_p50_ms`、`latency_p95_ms`、`tps_p50`。
 - `concurrency_peak`、`queue_time_p95_ms`、`cache_hit_rate`。
-- `source_mix`：`real_traffic`、`synthetic` 或两者分别的统计。
+- `source_kind`：`sub2api_real_traffic`、`sub2api_native_monitor` 或 `relay_ops_candidate_probe`，三者分别统计，不能混成一个成功率。
+- `source_ref`：Sub2API 原生查询引用、Channel Monitor ID/窗口或候选 `probe_run` 引用。
 
-用户错误，例如错误 Key、错误模型和参数错误，不计入平台成功率，但保留独立计数。
+用户错误，例如错误 Key、错误模型和参数错误，沿用 Sub2API SLA 口径，不计入平台成功率；跨站比较必须记录使用的口径版本。只有需要与候选站对齐的时间窗口才物化，其他管理查看直接读取 Sub2API 原生 Ops/Usage 页面。
 
 ### 7. `cost_observations`
 
@@ -219,13 +274,15 @@ relay-ops
 
 ## 采集与数据流
 
-1. 每分钟执行健康检查和轻量用户链路探测，记录真实流量与合成流量的独立结果。
-2. 每 5 分钟抓取生产上游的倍率、模型目录和公开定价；候选站每 15 分钟抓取。
-3. 每 6 小时对候选站执行低成本同步/SSE；发现页面或模型变化时立即追加一次受限复核。
-4. 每次请求只记录 Token、延迟、结果和估算费用，不记录提示词、响应正文或认证头。
-5. 聚合器生成质量窗口、成本观察和候选比较。
-6. 状态机确认事件后，先写 `incidents`，再调用 Feishu 和只读 Agent。
-7. 每天发送一次价格、稳定性、延迟、成本估算、候选站和授权状态摘要。
+1. Sub2API 原生 Channel Monitor 按生产配置持续探测公开分组，原生 Ops/Usage 持续汇总真实用户请求、TTFT、总延迟、SLA、错误、资源和计费。
+2. `relay-ops` 只读同步公开分组配置、Channel Monitor 聚合、Ops/Usage 窗口和渠道定价；保存引用与 hash，不复制原始生产监控历史。
+3. 生产上游价格/倍率页每 5 分钟抓取；内容 hash 未变化时结束本轮，不解析、不告警。
+4. 候选站严格每 6 小时执行一次周期：抓取价格/倍率页、发现模型，并使用 V2 共用组件执行受限同步/SSE。页面变化只进入本周期结果，不额外插入一次付费探测。
+5. 新公开分组先运行完整 V2；通过后创建或关联 Sub2API 原生 Channel Monitor；原生监控产生有效样本后再公开。
+6. 每次候选请求只记录 Token、延迟、结果和估算费用，不记录提示词、响应正文或认证头。
+7. 比较器把 Sub2API 原生真实流量、原生合成监控和候选探测按来源分别对齐，生成必要的比较窗口、成本观察和候选标签。
+8. 状态机确认事件后，先写 `incidents`，再调用 Feishu 和只读 Agent。
+9. 每天发送一次价格、稳定性、延迟、成本估算、候选站和授权状态摘要。
 
 ## 预警 Agent 章节
 
@@ -264,7 +321,7 @@ Agent 输入必须是版本化 JSON，示例：
   "window": {"minutes": 15, "samples": 126},
   "metric": {"name": "ttft_p95_ms", "baseline": 2400, "current": 3800},
   "related_rates": {"success": 0.987, "sse_completion": 0.992, "rate_429": 0.012},
-  "evidence_refs": ["quality_window:...", "probe_run:..."],
+  "evidence_refs": ["sub2api_ops_window:...", "sub2api_monitor_window:...", "probe_run:..."],
   "allowed_actions": ["observe", "recommend_recheck", "request_human_review"]
 }
 ```
@@ -275,7 +332,7 @@ Agent 输入必须是版本化 JSON，示例：
 
 Agent 只能调用以下本地只读工具：
 
-- 查询指定时间窗口的 `quality_windows`。
+- 查询指定时间窗口的 `metric_refs`、`comparison_windows` 和对应 Sub2API 原生只读聚合。
 - 查询指定上游/模型的 `probe_runs` 摘要。
 - 查询价格快照差异和倍率观察。
 - 查询公开分组当前配置摘要和历史配置 hash。
@@ -301,7 +358,7 @@ Agent 必须返回可解析 JSON，之后再渲染成人类消息：
   "change": "相对基线 2.4s 上升 58%，连续 3 个窗口",
   "focus": "继续观察；未达到切换条件",
   "hypotheses": [
-    {"cause": "上游高峰排队", "confidence": 0.62, "evidence_refs": ["quality_window:..."]}
+    {"cause": "上游高峰排队", "confidence": 0.62, "evidence_refs": ["sub2api_ops_window:..."]}
   ],
   "recommended_action": "observe",
   "requires_human_approval": false,
@@ -319,7 +376,7 @@ Agent 必须返回可解析 JSON，之后再渲染成人类消息：
 2. 得到什么：成功率、SSE、TTFT P50/P95、错误率、成本估算或实际费用证据。
 3. 发生什么变化：当前值、基线、持续时间和变化幅度。
 4. 需要关注什么：无须操作、继续观察、重新登录、建议复测或需要人工决定。
-5. 链接：内部事件详情、公开性能页或上游重新登录地址。
+5. 链接：内部事件详情、Sub2API `/monitor` 或上游重新登录地址。
 
 正常探测不逐条发送。只在状态变化、升级、恢复、价格/倍率变化、候选综合变优、授权失效或预算阈值触发时通知；每天固定发一次汇总日报。
 
@@ -363,15 +420,17 @@ Agent 可以提出：继续观察、增加一次复测、重新授权、保留�
 
 ### `/pricing`
 
-无需登录。只显示客户可购买的正式模型和价格：输入、输出、缓存、端点能力、公开分组和更新时间。隐藏上游名称、采购倍率、余额、候选站和内部告警。
+无需登录。以 Sub2API 渠道定价/可用渠道数据为事实来源，生成只读、脱敏的匿名投影；只显示客户可购买的正式模型和价格：输入、输出、缓存、端点能力、公开分组和更新时间。隐藏上游名称、采购倍率、余额、候选站和内部告警。首版不重写 Sub2API 定价管理逻辑，只补匿名公开读取和适合用户查看的页面。
 
-### `/performance`
+### `/monitor`
 
-要求用户登录。按公开分组和模型显示 24 小时/7 天可用率、TTFT P50/P95、总延迟 P50/P95、TPS、SSE 完整率和样本量。真实用户与合成探测可以在后台分开，页面只显示经过定义的聚合结果。
+直接使用 Sub2API 原生登录用户“渠道状态”页面，不再建设自定义 `/performance`。用户侧保持截图中的简单信息层级：状态、对话延迟、端点 PING、7/15/30 天可用率和近期状态时间线。P50/P90/P95/P99、SLA 口径、错误分类、真实/合成来源和样本细节只在管理员 Ops/`/ops` 中展示。
+
+新分组只有完成 V2 准入、关联原生 Channel Monitor 且产生有效样本后才可见；停用或取消客户可见的分组从用户页移除，但历史证据保留。
 
 ### `/ops`
 
-仅管理员可见。显示生产和候选上游、页面/模型变化、估算或真实成本证据、授权状态、事件时间线、候选分项标签、Agent 分析和配置审计。
+仅管理员可见。本站 QPS、SLA、TTFT、错误、资源、任务和生产 Channel Monitor 详情优先链接或嵌入 Sub2API 原生管理能力；`relay-ops` 只新增生产/候选价格与模型变化、候选探测、跨站比较、估算或真实成本证据、授权状态、事件时间线、候选标签、Agent 分析和配置审计。
 
 ## 安全与降级
 
@@ -384,15 +443,17 @@ Agent 可以提出：继续观察、增加一次复测、重新授权、保留�
 
 ## 分阶段验收
 
-1. 使用 Fake Provider 验证公开分组自动发现、价格快照 diff、探测预算、质量窗口、事件去重和恢复通知。
-2. 使用候选站假数据验证分项标签、综合门槛、候选失败隔离和每日摘要。
-3. 使用真实生产只读 API 验证所有公开分组被发现，且不会读取或修改 Sub2API 密钥和用户正文。
-4. 使用一条低额度候选 Key 验证同步/SSE 费用估算、飞书状态机和超预算暂停。
-5. 验证账单授权失效只影响账单状态，重新授权后自动恢复，不需要重新录入上游。
-6. 验证 Agent 收到脱敏 JSON、只能使用只读工具、输出不可解析时回退模板，任何写操作均被拒绝。
-7. 验证 `/pricing` 无需登录、`/performance` 需要登录、`/ops` 只允许管理员。
-8. 通过域名/TLS、服务器资源和日志泄露检查后，才进入生产只读部署。
+1. 使用 Fake Provider 验证价格快照 diff、候选探测预算、比较窗口、事件去重和恢复通知。
+2. 运行现有 V2 测试与 fixture，验证新分组必须经过完整模型发现、逐模型同步/SSE、容量和价格证据门禁，`relay-ops` 不复制 evaluator。
+3. 使用候选站假数据验证严格 6 小时调度、分项标签、综合门槛、候选失败隔离和每日摘要；页面变化不得额外触发付费探测。
+4. 使用真实生产只读 API 验证所有公开分组、Channel Monitor、Ops/Usage 和渠道定价可被引用，且不会读取或修改 Sub2API 密钥、原始 PostgreSQL 或用户正文。
+5. 验证生产分组只使用 Sub2API 加密保存的 Channel Monitor Key，`relay-ops` 不保留副本；候选站只使用专用低额度上游 API Key 的秘密引用。
+6. 使用一条低额度候选 Key 验证同步/SSE 费用估算、飞书状态机和超预算暂停。
+7. 验证账单授权失效只影响账单状态，重新授权后自动恢复，不需要重新录入上游。
+8. 验证 Agent 收到脱敏 JSON、只能使用只读工具、输出不可解析时回退模板，任何写操作均被拒绝。
+9. 验证 `/pricing` 无需登录、Sub2API 原生 `/monitor` 需要登录、`/ops` 只允许管理员；用户 `/monitor` 不出现高级运维术语。
+10. 通过域名/TLS、服务器资源和日志泄露检查后，才进入生产只读部署。
 
 ## 与主线的关系
 
-本设计不改变 Neko/wawazz 的生产选择，不执行价格或路由变更，也不阻塞正式域名审核。它是“正式入口 → 真实用户 → 每日服务质量优化”之间的服务器端运营基础设施。实现顺序应保持：先完成 relay-ops 只读监控和页面，再做低额度验收，最后才开启首批真实用户入口。
+本设计不改变 Neko/wawazz 的生产选择，不执行价格或路由变更，也不阻塞正式域名审核。它是“正式入口 → 真实用户 → 每日服务质量优化”之间的服务器端运营基础设施。实现顺序应保持：先启用并验证 Sub2API 原生 Channel Monitor/`/monitor`，再实现 relay-ops 补充能力和公开 `/pricing`，然后做低额度候选验收，最后才开启首批真实用户入口。

@@ -42,6 +42,26 @@ func TestReadinessFailsWhenDatabaseUnavailable(t *testing.T) {
 	}
 }
 
+func TestBootstrapNativeReadinessMarksOnlySuccessfulSync(t *testing.T) {
+	t.Parallel()
+	ready := &Readiness{Database: fakePinger{}}
+	if err := BootstrapNativeReadiness(context.Background(), func(context.Context) error { return nil }, ready); err != nil {
+		t.Fatal(err)
+	}
+	if !ready.Ready(context.Background()) {
+		t.Fatal("successful bootstrap did not mark readiness")
+	}
+
+	notReady := &Readiness{Database: fakePinger{}}
+	wantErr := errors.New("native unavailable")
+	if err := BootstrapNativeReadiness(context.Background(), func(context.Context) error { return wantErr }, notReady); !errors.Is(err, wantErr) {
+		t.Fatalf("err=%v", err)
+	}
+	if notReady.Ready(context.Background()) {
+		t.Fatal("failed bootstrap marked readiness")
+	}
+}
+
 type fakePinger struct{ err error }
 
 func (p fakePinger) Ping(context.Context) error { return p.err }

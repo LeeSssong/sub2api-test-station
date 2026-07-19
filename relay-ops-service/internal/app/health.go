@@ -16,6 +16,14 @@ type Readiness struct {
 
 func (r *Readiness) MarkNativeSuccess() { r.nativeSuccess.Store(true) }
 
+func BootstrapNativeReadiness(ctx context.Context, sync func(context.Context) error, readiness *Readiness) error {
+	if err := sync(ctx); err != nil {
+		return err
+	}
+	readiness.MarkNativeSuccess()
+	return nil
+}
+
 func (r *Readiness) Ready(ctx context.Context) bool {
 	return r != nil && r.Database != nil && r.nativeSuccess.Load() && r.Database.Ping(ctx) == nil
 }

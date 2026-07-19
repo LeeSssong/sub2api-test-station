@@ -50,6 +50,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	readiness := &Readiness{Database: database}
 	syncer := sub2api.Synchronizer{Reader: reader, Sink: database}
+	if cfg.Mode != config.ModeClosed {
+		bootstrapCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_ = BootstrapNativeReadiness(bootstrapCtx, syncer.Sync, readiness)
+		cancel()
+	}
 	candidateService := candidates.Service{Repository: database}
 	probeRunner := &probes.V2Executor{RubyPath: cfg.RubyPath, ScriptPath: cfg.V2ScriptPath, ProfilePath: cfg.CandidateProfilePath, QualificationProfilePath: cfg.QualificationProfilePath, MaxOutputBytes: 2 << 20, MaxRequestCost: domain.MicroUSD(1_000)}
 	var analysisService *agent.Service

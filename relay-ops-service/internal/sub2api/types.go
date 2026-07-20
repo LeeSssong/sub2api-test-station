@@ -1,6 +1,9 @@
 package sub2api
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Reader interface {
 	ListChannels(context.Context) ([]Channel, error)
@@ -20,13 +23,19 @@ type Controller interface {
 }
 
 type Account struct {
-	ID                int64           `json:"id"`
-	Name              string          `json:"name"`
-	Platform          string          `json:"platform"`
-	Status            string          `json:"status"`
-	Schedulable       bool            `json:"schedulable"`
-	GroupIDs          []int64         `json:"group_ids"`
-	CredentialsStatus map[string]bool `json:"credentials_status"`
+	ID                      int64           `json:"id"`
+	Name                    string          `json:"name"`
+	Platform                string          `json:"platform"`
+	Status                  string          `json:"status"`
+	Schedulable             bool            `json:"schedulable"`
+	GroupIDs                []int64         `json:"group_ids"`
+	CredentialsStatus       map[string]bool `json:"credentials_status"`
+	ExpiresAt               *int64          `json:"expires_at"`
+	AutoPauseOnExpired      bool            `json:"auto_pause_on_expired"`
+	RateLimitResetAt        *time.Time      `json:"rate_limit_reset_at"`
+	OverloadUntil           *time.Time      `json:"overload_until"`
+	TempUnschedulableUntil  *time.Time      `json:"temp_unschedulable_until"`
+	TempUnschedulableReason string          `json:"temp_unschedulable_reason"`
 }
 
 type Model struct {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"example.invalid/relay-ops-service/internal/feishuevents"
 )
@@ -16,6 +17,14 @@ const (
 
 	ErrorUnknownCommand = "unknown_command"
 	ErrorInvalidEvent   = "invalid_event"
+
+	StatusReceived  = "received"
+	StatusRunning   = "running"
+	StatusSucceeded = "succeeded"
+	StatusNoOp      = "no_op"
+	StatusPartial   = "partial"
+	StatusFailed    = "failed"
+	StatusRejected  = "rejected"
 )
 
 type ActionKind string
@@ -37,6 +46,32 @@ type Decision struct {
 	Command   string
 	Action    Action
 	ErrorCode string
+}
+
+type Record struct {
+	EventID        string
+	MessageID      string
+	ChatID         string
+	SenderOpenID   string
+	Command        string
+	ActionKind     ActionKind
+	GroupName      string
+	TargetRole     string
+	Status         string
+	ErrorCode      string
+	ReceivedAt     time.Time
+	LeaseExpiresAt *time.Time
+	ReplyAttempts  int
+}
+
+type Completion struct {
+	EventID     string
+	Status      string
+	ErrorCode   string
+	BeforeState json.RawMessage
+	AfterState  json.RawMessage
+	CompletedAt time.Time
+	Duration    time.Duration
 }
 
 func Parse(event feishuevents.MessageEvent) Decision {

@@ -27,6 +27,76 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	if cfg.TimezoneName != "Asia/Shanghai" {
 		t.Fatalf("TimezoneName = %q", cfg.TimezoneName)
 	}
+	if cfg.FeishuCommandMode != FeishuCommandDisabled {
+		t.Fatalf("FeishuCommandMode = %q, want %q", cfg.FeishuCommandMode, FeishuCommandDisabled)
+	}
+}
+
+func TestLoadAcceptsKnownFeishuCommandModesWithCompleteFiles(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{FeishuCommandDisabled, FeishuCommandDryRun, FeishuCommandEnabled} {
+		env := validEnv(t)
+		addFeishuCommandFiles(t, env)
+		env["RELAY_OPS_FEISHU_COMMAND_MODE"] = mode
+		cfg, err := Load(func(key string) string { return env[key] })
+		if err != nil {
+			t.Fatalf("mode %q rejected: %v", mode, err)
+		}
+		if cfg.FeishuCommandMode != mode {
+			t.Fatalf("mode = %q, want %q", cfg.FeishuCommandMode, mode)
+		}
+	}
+}
+
+func TestLoadRejectsUnknownFeishuCommandMode(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCommandFiles(t, env)
+	env["RELAY_OPS_FEISHU_COMMAND_MODE"] = "write"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("unknown Feishu command mode unexpectedly accepted")
+	}
+}
+
+func TestLoadRequiresCompleteFeishuCommandFiles(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{FeishuCommandDryRun, FeishuCommandEnabled} {
+		env := validEnv(t)
+		addFeishuCommandFiles(t, env)
+		env["RELAY_OPS_FEISHU_COMMAND_MODE"] = mode
+		delete(env, "RELAY_OPS_FEISHU_APP_SECRET_FILE")
+		if _, err := Load(func(key string) string { return env[key] }); err == nil {
+			t.Fatalf("mode %q accepted an incomplete file set", mode)
+		}
+	}
+}
+
+func TestLoadDisabledRejectsPartialFeishuCommandFiles(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCommandFiles(t, env)
+	delete(env, "RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE")
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("disabled mode accepted a partial file set")
+	}
+}
+
+func TestLoadRejectsInsecureFeishuCommandFile(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCommandFiles(t, env)
+	env["RELAY_OPS_FEISHU_COMMAND_MODE"] = FeishuCommandDryRun
+	if err := os.Chmod(env["RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE"], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("world-readable Feishu secret unexpectedly accepted")
+	}
 }
 
 func TestLoadAcceptsOnlyKnownModes(t *testing.T) {
@@ -86,5 +156,24 @@ func validEnv(t *testing.T) map[string]string {
 		"RELAY_OPS_SUB2API_URL":            "http://sub2api:8080",
 		"RELAY_OPS_TIMEZONE":               "Asia/Shanghai",
 		"RELAY_OPS_LISTEN_ADDRESS":         ":8100",
+	}
+}
+
+func addFeishuCommandFiles(t *testing.T, env map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"RELAY_OPS_FEISHU_APP_ID_FILE":             "cli_test_app",
+		"RELAY_OPS_FEISHU_APP_SECRET_FILE":         "app-secret",
+		"RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE": "verification-token",
+		"RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE":        "encrypt-key",
+		"RELAY_OPS_FEISHU_ROUTING_FILE":            `{"groups":[]}`,
+	}
+	for key, value := range files {
+		path := filepath.Join(dir, key)
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		env[key] = path
 	}
 }

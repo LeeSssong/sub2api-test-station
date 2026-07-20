@@ -1,0 +1,22 @@
+{
+  "groups": [
+    {
+      "name": "GPT-Pro",
+      "public_group_id": 900001,
+      "primary_account_id": 910001,
+      "backup_account_id": 910002,
+      "required_models": [
+        "gpt-5.6-sol"
+      ]
+    },
+    {
+      "name": "GPT-Plus",
+      "public_group_id": 900002,
+      "primary_account_id": 920001,
+      "backup_account_id": 920002,
+      "required_models": [
+        "gpt-5.6-terra"
+      ]
+    }
+  ]
+}

@@ -26,8 +26,15 @@ func main() {
 		log.Fatal("relay-ops startup failed")
 	}
 	defer application.Close()
-	server := &http.Server{Addr: cfg.ListenAddress, Handler: application.Handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	commandRuntime, err := app.ConfigureFeishuCommandsForStore(cfg, application.Store, application.Handler)
+	if err != nil {
+		log.Fatal("relay-ops command control startup failed")
+	}
+	server := &http.Server{Addr: cfg.ListenAddress, Handler: commandRuntime.Handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { _ = application.Scheduler.Run(ctx) }()
+	if commandRuntime.Worker != nil {
+		go func() { _ = commandRuntime.Worker.Run(ctx) }()
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -2,6 +2,7 @@ package sub2api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +15,101 @@ import (
 
 	"example.invalid/relay-ops-service/internal/adminauth"
 )
+
+func TestReaderAccountRoutingContract(t *testing.T) {
+	t.Parallel()
+
+	requests := make([]string, 0, 5)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("x-api-key"); got != "admin-test-key" {
+			t.Errorf("x-api-key = %q", got)
+		}
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/admin/groups/3":
+			fmt.Fprint(w, `{"data":{"id":3,"name":"GPT-Pro","platform":"openai","rate_multiplier":1,"is_exclusive":false,"status":"active"}}`)
+		case "GET /api/v1/admin/accounts/11":
+			fmt.Fprint(w, `{"data":{"id":11,"name":"GPT-Pro primary","platform":"openai","status":"active","schedulable":true,"group_ids":[3,8],"credentials_status":{"has_api_key":true}}}`)
+		case "GET /api/v1/admin/accounts/11/models":
+			fmt.Fprint(w, `{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-5.6-terra"}]}`)
+		case "PUT /api/v1/admin/accounts/12":
+			assertOnlyJSONField(t, r, "group_ids", []any{float64(3), float64(9)})
+			fmt.Fprint(w, `{"data":{"id":12,"name":"GPT-Pro backup","platform":"openai","status":"active","schedulable":true,"group_ids":[3,9],"credentials_status":{"has_api_key":true}}}`)
+		case "POST /api/v1/admin/accounts/12/schedulable":
+			assertOnlyJSONField(t, r, "schedulable", true)
+			fmt.Fprint(w, `{"data":{"id":12,"name":"GPT-Pro backup","platform":"openai","status":"active","schedulable":true,"group_ids":[9],"credentials_status":{"has_api_key":true}}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	reader := newTestReader(t, server.URL)
+	ctx := context.Background()
+	group, err := reader.GetGroup(ctx, 3)
+	if err != nil || group.Name != "GPT-Pro" {
+		t.Fatalf("GetGroup = %#v, %v", group, err)
+	}
+	account, err := reader.GetAccount(ctx, 11)
+	if err != nil || account.ID != 11 || len(account.GroupIDs) != 2 || !account.CredentialsStatus["has_api_key"] {
+		t.Fatalf("GetAccount = %#v, %v", account, err)
+	}
+	models, err := reader.GetAccountModels(ctx, 11)
+	if err != nil || len(models) != 2 || models[0].ID != "gpt-5.6-sol" {
+		t.Fatalf("GetAccountModels = %#v, %v", models, err)
+	}
+	updated, err := reader.SetAccountGroups(ctx, 12, []int64{3, 9})
+	if err != nil || len(updated.GroupIDs) != 2 {
+		t.Fatalf("SetAccountGroups = %#v, %v", updated, err)
+	}
+	schedulable, err := reader.SetAccountSchedulable(ctx, 12, true)
+	if err != nil || !schedulable.Schedulable {
+		t.Fatalf("SetAccountSchedulable = %#v, %v", schedulable, err)
+	}
+	want := []string{
+		"GET /api/v1/admin/groups/3",
+		"GET /api/v1/admin/accounts/11",
+		"GET /api/v1/admin/accounts/11/models",
+		"PUT /api/v1/admin/accounts/12",
+		"POST /api/v1/admin/accounts/12/schedulable",
+	}
+	if fmt.Sprint(requests) != fmt.Sprint(want) {
+		t.Fatalf("requests = %v, want %v", requests, want)
+	}
+}
+
+func TestReaderAccountRoutingRejectsConflictWithoutLeakingBody(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"error":"mixed_channel_warning","secret":"must-not-leak"}`)
+	}))
+	defer server.Close()
+
+	_, err := newTestReader(t, server.URL).SetAccountGroups(context.Background(), 12, []int64{3})
+	if status, ok := HTTPStatus(err); !ok || status != http.StatusConflict {
+		t.Fatalf("HTTPStatus = %d, %v, error %v", status, ok, err)
+	}
+	if strings.Contains(err.Error(), "must-not-leak") {
+		t.Fatalf("error leaked body: %v", err)
+	}
+}
+
+func assertOnlyJSONField(t *testing.T, r *http.Request, key string, want any) {
+	t.Helper()
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("body = %#v, want exactly one field", body)
+	}
+	if fmt.Sprint(body[key]) != fmt.Sprint(want) {
+		t.Fatalf("body[%q] = %#v, want %#v", key, body[key], want)
+	}
+}
 
 func TestReaderUsesGETAdminKeyAndDecodesNativeResources(t *testing.T) {
 	t.Parallel()

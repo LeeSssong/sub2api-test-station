@@ -11,6 +11,28 @@ type Reader interface {
 	GetUsageStats(context.Context, UsageQuery) (UsageStats, error)
 }
 
+type Controller interface {
+	GetGroup(context.Context, int64) (Group, error)
+	GetAccount(context.Context, int64) (Account, error)
+	GetAccountModels(context.Context, int64) ([]Model, error)
+	SetAccountGroups(context.Context, int64, []int64) (Account, error)
+	SetAccountSchedulable(context.Context, int64, bool) (Account, error)
+}
+
+type Account struct {
+	ID                int64           `json:"id"`
+	Name              string          `json:"name"`
+	Platform          string          `json:"platform"`
+	Status            string          `json:"status"`
+	Schedulable       bool            `json:"schedulable"`
+	GroupIDs          []int64         `json:"group_ids"`
+	CredentialsStatus map[string]bool `json:"credentials_status"`
+}
+
+type Model struct {
+	ID string `json:"id"`
+}
+
 type Channel struct {
 	ID           int64                        `json:"id"`
 	Name         string                       `json:"name"`

@@ -91,6 +91,57 @@ func (c *HTTPReader) ListGroups(ctx context.Context) ([]Group, error) {
 	return groups, nil
 }
 
+func (c *HTTPReader) GetGroup(ctx context.Context, id int64) (Group, error) {
+	var group Group
+	path := "/api/v1/admin/groups/" + strconv.FormatInt(id, 10)
+	if err := c.get(ctx, path, nil, &group); err != nil {
+		return Group{}, err
+	}
+	return group, nil
+}
+
+func (c *HTTPReader) GetAccount(ctx context.Context, id int64) (Account, error) {
+	var account Account
+	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10)
+	if err := c.get(ctx, path, nil, &account); err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
+func (c *HTTPReader) GetAccountModels(ctx context.Context, id int64) ([]Model, error) {
+	var models []Model
+	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10) + "/models"
+	if err := c.get(ctx, path, nil, &models); err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func (c *HTTPReader) SetAccountGroups(ctx context.Context, id int64, groupIDs []int64) (Account, error) {
+	var account Account
+	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10)
+	body := struct {
+		GroupIDs []int64 `json:"group_ids"`
+	}{GroupIDs: groupIDs}
+	if err := c.jsonRequest(ctx, http.MethodPut, path, body, &account); err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
+func (c *HTTPReader) SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (Account, error) {
+	var account Account
+	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10) + "/schedulable"
+	body := struct {
+		Schedulable bool `json:"schedulable"`
+	}{Schedulable: schedulable}
+	if err := c.jsonRequest(ctx, http.MethodPost, path, body, &account); err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
 func (c *HTTPReader) ListChannelMonitors(ctx context.Context) ([]ChannelMonitor, error) {
 	var response struct {
 		Items *[]ChannelMonitor `json:"items"`
@@ -180,6 +231,21 @@ func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out
 		return fmt.Errorf("build Sub2API request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	return c.do(req, out)
+}
+
+func (c *HTTPReader) jsonRequest(ctx context.Context, method, path string, body, out any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encode Sub2API request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("build Sub2API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.adminKey)
 	return c.do(req, out)
 }

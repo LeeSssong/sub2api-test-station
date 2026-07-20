@@ -22,7 +22,18 @@ CREATE TABLE IF NOT EXISTS relay_ops.feishu_command_events (
     received_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (target_role IS NULL OR target_role IN ('primary', 'backup'))
+    CHECK (command_text IS NULL OR command_text IN (
+        '切换 GPT-Pro 到灾备',
+        '切换 GPT-Plus 到灾备',
+        '恢复 GPT-Pro 主分组',
+        '恢复 GPT-Plus 主分组',
+        '查询当前分组状态'
+    )),
+    CHECK (action_kind IS NULL OR action_kind IN ('switch', 'status')),
+    CHECK (group_name IS NULL OR group_name IN ('GPT-Pro', 'GPT-Plus')),
+    CHECK (target_role IS NULL OR target_role IN ('primary', 'backup')),
+    CHECK (error_code IS NULL OR error_code ~ '^[a-z][a-z0-9_]{0,63}$'),
+    CHECK (reply_error_code IS NULL OR reply_error_code ~ '^[a-z][a-z0-9_]{0,63}$')
 );
 
 CREATE INDEX IF NOT EXISTS idx_feishu_command_events_pending

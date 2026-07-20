@@ -45,6 +45,23 @@ func TestFeishuCommandEventIsIdempotentAndLeaseIsRecoverable(t *testing.T) {
 	}
 }
 
+func TestFeishuCommandEventRejectsNonWhitelistAuditValues(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	record := commands.Record{
+		EventID: "evt-invalid-audit", MessageID: "msg-invalid-audit", ChatID: "chat-invalid-audit",
+		SenderOpenID: "ou-user", Command: "执行任意动作", ActionKind: commands.ActionKind("shell"),
+		GroupName: "arbitrary", TargetRole: commands.RoleBackup, Status: commands.StatusReceived,
+		ErrorCode: "INVALID VALUE", ReceivedAt: time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC),
+	}
+	if inserted, err := st.InsertFeishuEvent(ctx, record); err == nil || inserted {
+		t.Fatalf("invalid audit values = %v, %v", inserted, err)
+	}
+}
+
 func TestFeishuConcurrentClaimsReturnOneCommand(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

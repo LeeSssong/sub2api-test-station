@@ -140,6 +140,17 @@ func TestClientCapsResponsesAndRedactsErrors(t *testing.T) {
 	}
 }
 
+func TestClientConstructionDoesNotExposeSecretFilePaths(t *testing.T) {
+	secretPath := filepath.Join(t.TempDir(), "sensitive-secret-file-name")
+	_, err := NewClient("https://open.feishu.cn", secretPath, secretPath)
+	if err == nil {
+		t.Fatal("missing secret files were accepted")
+	}
+	if strings.Contains(err.Error(), secretPath) || strings.Contains(err.Error(), "sensitive-secret-file-name") {
+		t.Fatalf("construction error leaked secret path: %v", err)
+	}
+}
+
 func newTestClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
 	dir := t.TempDir()

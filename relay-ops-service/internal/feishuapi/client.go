@@ -40,11 +40,11 @@ func NewClient(baseURL, appIDFile, appSecretFile string) (*Client, error) {
 	}
 	appID, err := readSecret(appIDFile)
 	if err != nil {
-		return nil, fmt.Errorf("read Feishu App ID: %w", err)
+		return nil, errors.New("Feishu App ID is unavailable")
 	}
 	appSecret, err := readSecret(appSecretFile)
 	if err != nil {
-		return nil, fmt.Errorf("read Feishu App Secret: %w", err)
+		return nil, errors.New("Feishu App Secret is unavailable")
 	}
 	return &Client{
 		baseURL: baseURL, appID: appID, appSecret: appSecret,

@@ -131,6 +131,15 @@ func TestWorkerRunStopsWhenContextIsCancelled(t *testing.T) {
 	}
 }
 
+func TestShortHashIsStableOnlyForTheSameProcessKey(t *testing.T) {
+	first := shortHashWithKey("ou-user", []byte("process-key-one"))
+	repeated := shortHashWithKey("ou-user", []byte("process-key-one"))
+	otherKey := shortHashWithKey("ou-user", []byte("process-key-two"))
+	if first != repeated || first == otherKey || len(first) != 12 {
+		t.Fatalf("first=%q repeated=%q other=%q", first, repeated, otherKey)
+	}
+}
+
 func TestWorkerRunStopsWhenContextIsCanceled(t *testing.T) {
 	repository := &fakeWorkerRepository{}
 	worker := testWorker(repository, &fakeRouter{}, &fakeSender{repository: repository}, ModeDisabled)

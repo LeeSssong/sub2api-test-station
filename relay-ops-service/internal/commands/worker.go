@@ -2,6 +2,8 @@ package commands
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -200,6 +202,19 @@ func renderReply(record Record, completion Completion) string {
 }
 
 func shortHash(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(digest[:6])
+	return shortHashWithKey(value, processHashKey)
 }
+
+func shortHashWithKey(value string, key []byte) string {
+	digest := hmac.New(sha256.New, key)
+	_, _ = digest.Write([]byte(value))
+	return hex.EncodeToString(digest.Sum(nil)[:6])
+}
+
+var processHashKey = func() []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic("Feishu command hash key is unavailable")
+	}
+	return key
+}()

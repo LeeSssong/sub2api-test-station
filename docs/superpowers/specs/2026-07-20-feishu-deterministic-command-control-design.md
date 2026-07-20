@@ -159,6 +159,19 @@ backup_account_id
 
 实现前必须针对生产正在运行的 Sub2API 版本确认实际管理 API 契约，并用本地 fake server 固定请求与响应测试。不得为绕过缺少的 API 直接修改生产数据库。
 
+### 已核验的 v0.1.161 原生契约
+
+实现依据已固定到官方仓库 `Wei-Shaw/sub2api` 的 `v0.1.161`（commit `19149ca196eeae4a4482e5299dc6fa4ba0b06c8c`）。该版本确认支持：
+
+- `GET /api/v1/admin/groups/:id` 读取公开分组。
+- `GET /api/v1/admin/accounts/:id` 读取账号及其 `group_ids`、`status`、`schedulable` 和凭据存在性状态。
+- `GET /api/v1/admin/accounts/:id/models` 读取账号当前可用模型集。
+- `PUT /api/v1/admin/accounts/:id` 仅提交 `{"group_ids":[...]}` 时，未提供的名称、凭据、优先级、倍率和状态保持不变；服务先验证分组存在性与混合渠道风险，再通过 `BindGroups` 原子替换该账号的完整分组绑定。
+- `POST /api/v1/admin/accounts/:id/schedulable` 以 `{"schedulable":true}` 设置账号全局可调度状态。
+- 上述管理路由同一 Admin 中间件保护，支持现有 `x-api-key` 管理密钥。
+
+官方网关在 standard 模式下通过 `ListSchedulableByGroupIDAndPlatform` 选择账号，其权威条件是账号已绑定该 `group_id`、`status=active`、`schedulable=true`，且不处于临时不可调度、过期、过载或限流窗口。因此本设计不修改 Channel，不直连 Sub2API 数据库，而是保留两个账号现有的其他 `group_ids`，使用上述原生 API 完成先目标、后源账号的绑定替换。若 Sub2API 返回 HTTP 409 `mixed_channel_warning`，命令必须失败，不得自动提交 `confirm_mixed_channel_risk`。
+
 ## 运行模式与安全门
 
 新增独立模式：

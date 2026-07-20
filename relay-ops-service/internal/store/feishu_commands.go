@@ -1,11 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/commands"
@@ -87,10 +89,10 @@ func (s *Store) ClaimFeishuCommand(ctx context.Context, now time.Time, lease tim
 }
 
 func (s *Store) CompleteFeishuCommand(ctx context.Context, completion commands.Completion) error {
-	if len(completion.BeforeState) > 0 && !json.Valid(completion.BeforeState) {
+	if !validRouteSnapshot(completion.BeforeState) {
 		return errors.New("Feishu command before state is invalid JSON")
 	}
-	if len(completion.AfterState) > 0 && !json.Valid(completion.AfterState) {
+	if !validRouteSnapshot(completion.AfterState) {
 		return errors.New("Feishu command after state is invalid JSON")
 	}
 	command, err := s.pool.Exec(ctx, `
@@ -148,4 +150,57 @@ func nullableJSON(value json.RawMessage) any {
 		return nil
 	}
 	return []byte(value)
+}
+
+type routeSnapshot struct {
+	Groups []routeSnapshotGroup `json:"groups"`
+}
+
+type routeSnapshotGroup struct {
+	GroupName       string  `json:"group_name"`
+	GroupID         int64   `json:"group_id,omitempty"`
+	CurrentRole     string  `json:"current_role"`
+	PrimaryBound    bool    `json:"primary_bound,omitempty"`
+	BackupBound     bool    `json:"backup_bound,omitempty"`
+	PrimaryEligible bool    `json:"primary_eligible,omitempty"`
+	BackupEligible  bool    `json:"backup_eligible,omitempty"`
+	RateMultiplier  float64 `json:"rate_multiplier,omitempty"`
+}
+
+func validRouteSnapshot(value json.RawMessage) bool {
+	if len(value) == 0 {
+		return true
+	}
+	if len(value) > 32<<10 {
+		return false
+	}
+	var snapshot routeSnapshot
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
+		return false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return false
+	}
+	if len(snapshot.Groups) == 0 || len(snapshot.Groups) > 2 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(snapshot.Groups))
+	for _, group := range snapshot.Groups {
+		if group.GroupName != "GPT-Pro" && group.GroupName != "GPT-Plus" {
+			return false
+		}
+		if _, exists := seen[group.GroupName]; exists {
+			return false
+		}
+		seen[group.GroupName] = struct{}{}
+		switch group.CurrentRole {
+		case "primary", "backup", "mixed", "none":
+		default:
+			return false
+		}
+	}
+	return true
 }

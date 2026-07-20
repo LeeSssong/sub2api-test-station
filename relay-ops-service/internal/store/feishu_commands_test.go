@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,56 @@ func TestFeishuCommandEventIsIdempotentAndLeaseIsRecoverable(t *testing.T) {
 	recovered, err := st.ClaimFeishuCommand(ctx, receivedAt.Add(61*time.Second), time.Minute)
 	if err != nil || recovered == nil || recovered.EventID != record.EventID {
 		t.Fatalf("expired lease claim = %#v, %v", recovered, err)
+	}
+}
+
+func TestFeishuConcurrentClaimsReturnOneCommand(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC)
+	inserted, err := st.InsertFeishuEvent(ctx, commands.Record{
+		EventID: "evt-concurrent", MessageID: "msg-concurrent", ChatID: "chat-concurrent",
+		SenderOpenID: "ou-user", Command: "查询当前分组状态", ActionKind: commands.ActionStatus,
+		Status: commands.StatusReceived, ReceivedAt: now,
+	})
+	if err != nil || !inserted {
+		t.Fatalf("InsertFeishuEvent = %v, %v", inserted, err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan *commands.Record, 2)
+	errors := make(chan error, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for range 2 {
+		go func() {
+			ready.Done()
+			<-start
+			record, claimErr := st.ClaimFeishuCommand(ctx, now, time.Minute)
+			results <- record
+			errors <- claimErr
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	claimed := 0
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+		if record := <-results; record != nil {
+			claimed++
+			if record.EventID != "evt-concurrent" {
+				t.Fatalf("claimed event = %q", record.EventID)
+			}
+		}
+	}
+	if claimed != 1 {
+		t.Fatalf("claimed count = %d, want 1", claimed)
 	}
 }
 
@@ -92,6 +143,38 @@ func TestFeishuCommandCompletionAndReplyAreAudited(t *testing.T) {
 	}
 }
 
+func TestFeishuCompletionRejectsUnknownSnapshotFields(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC)
+	inserted, err := st.InsertFeishuEvent(ctx, commands.Record{
+		EventID: "evt-sensitive", MessageID: "msg-sensitive", ChatID: "chat-sensitive",
+		SenderOpenID: "ou-user", Command: "查询当前分组状态", ActionKind: commands.ActionStatus,
+		Status: commands.StatusReceived, ReceivedAt: now,
+	})
+	if err != nil || !inserted {
+		t.Fatalf("InsertFeishuEvent = %v, %v", inserted, err)
+	}
+	if _, err := st.ClaimFeishuCommand(ctx, now, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := json.RawMessage(`{"groups":[{"group_name":"GPT-Pro","current_role":"primary","api_key":"must-not-be-stored"}]}`)
+	err = st.CompleteFeishuCommand(ctx, commands.Completion{
+		EventID: "evt-sensitive", Status: commands.StatusSucceeded,
+		BeforeState: snapshot, AfterState: snapshot, CompletedAt: now.Add(time.Second), Duration: time.Second,
+	})
+	if err == nil {
+		t.Fatal("CompleteFeishuCommand accepted an unknown snapshot field")
+	}
+	if got := err.Error(); got == "" || contains(got, "must-not-be-stored") {
+		t.Fatalf("unsafe completion error = %q", got)
+	}
+}
+
 func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	st := openTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -132,6 +215,24 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 		t.Fatal("second same-group command entered before first released")
 	case <-time.After(100 * time.Millisecond):
 	}
+
+	differentEntered := make(chan struct{})
+	differentDone := make(chan error, 1)
+	go func() {
+		_, err := st.WithFeishuGroupLock(ctx, 4, func(context.Context) commands.Completion {
+			close(differentEntered)
+			return commands.Completion{Status: commands.StatusSucceeded}
+		})
+		differentDone <- err
+	}()
+	select {
+	case <-differentEntered:
+	case <-ctx.Done():
+		t.Fatal("different group lock was blocked by another group")
+	}
+	if err := <-differentDone; err != nil {
+		t.Fatal(err)
+	}
 	close(releaseFirst)
 	if err := <-firstDone; err != nil {
 		t.Fatal(err)
@@ -144,4 +245,13 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	if err := <-secondDone; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func contains(value, needle string) bool {
+	for index := 0; index+len(needle) <= len(value); index++ {
+		if value[index:index+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
 }

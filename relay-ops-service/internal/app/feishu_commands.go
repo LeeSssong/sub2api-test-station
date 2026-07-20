@@ -60,7 +60,7 @@ func ConfigureFeishuCommands(cfg config.Config, dependencies *FeishuCommandDepen
 		}
 		return FeishuCommandRuntime{Handler: fallback}, nil
 	}
-	if dependencies == nil || dependencies.Repository == nil || dependencies.Sub2API == nil {
+	if dependencies == nil || dependencies.Repository == nil || (cfg.FeishuCommandMode != config.FeishuCommandDisabled && dependencies.Sub2API == nil) {
 		return FeishuCommandRuntime{}, errors.New("Feishu command dependencies are unavailable")
 	}
 	verificationToken, err := readFeishuCommandSecret(cfg.FeishuVerificationFile)
@@ -75,18 +75,22 @@ func ConfigureFeishuCommands(cfg config.Config, dependencies *FeishuCommandDepen
 	if err != nil {
 		return FeishuCommandRuntime{}, errors.New("Feishu callback verifier is unavailable")
 	}
-	routingConfig, err := routingcontrol.LoadConfig(cfg.FeishuRoutingFile)
-	if err != nil {
-		return FeishuCommandRuntime{}, errors.New("Feishu routing configuration is invalid")
-	}
 	sender, err := feishuapi.NewClient(feishuOpenAPIBaseURL, cfg.FeishuAppIDFile, cfg.FeishuAppSecretFile)
 	if err != nil {
 		return FeishuCommandRuntime{}, errors.New("Feishu reply client is unavailable")
 	}
-	router := &routingcontrol.Controller{Client: dependencies.Sub2API, Config: routingConfig}
-	groupIDs := make(map[string]int64, len(routingConfig.Groups))
-	for _, group := range routingConfig.Groups {
-		groupIDs[group.Name] = group.PublicGroupID
+	var router commands.Router
+	var groupIDs map[string]int64
+	if cfg.FeishuCommandMode != config.FeishuCommandDisabled {
+		routingConfig, err := routingcontrol.LoadConfig(cfg.FeishuRoutingFile)
+		if err != nil {
+			return FeishuCommandRuntime{}, errors.New("Feishu routing configuration is invalid")
+		}
+		router = &routingcontrol.Controller{Client: dependencies.Sub2API, Config: routingConfig}
+		groupIDs = make(map[string]int64, len(routingConfig.Groups))
+		for _, group := range routingConfig.Groups {
+			groupIDs[group.Name] = group.PublicGroupID
+		}
 	}
 	callback := commands.NewHTTPHandler(verifier, dependencies.Repository, time.Now)
 	worker := &commands.Worker{
@@ -99,6 +103,9 @@ func ConfigureFeishuCommands(cfg config.Config, dependencies *FeishuCommandDepen
 func ConfigureFeishuCommandsForStore(cfg config.Config, repository FeishuCommandRepository, fallback http.Handler) (FeishuCommandRuntime, error) {
 	if cfg.FeishuAppIDFile == "" && cfg.FeishuAppSecretFile == "" && cfg.FeishuVerificationFile == "" && cfg.FeishuEncryptKeyFile == "" && cfg.FeishuRoutingFile == "" {
 		return ConfigureFeishuCommands(cfg, nil, fallback)
+	}
+	if cfg.FeishuCommandMode == config.FeishuCommandDisabled {
+		return ConfigureFeishuCommands(cfg, &FeishuCommandDependencies{Repository: repository}, fallback)
 	}
 	reader, err := sub2api.NewHTTPReader(cfg.Sub2APIBaseURL, cfg.Sub2APIAdminKeyFile)
 	if err != nil {

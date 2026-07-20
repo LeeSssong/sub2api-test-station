@@ -72,7 +72,7 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
-	if w.Repository == nil || w.Router == nil || w.Sender == nil {
+	if w.Repository == nil || w.Sender == nil || (w.Mode != ModeDisabled && w.Router == nil) {
 		return false, errors.New("Feishu command worker dependencies are unavailable")
 	}
 	now := time.Now

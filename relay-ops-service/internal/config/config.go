@@ -87,27 +87,40 @@ func Load(env func(string) string) (Config, error) {
 	if feishuCommandMode != FeishuCommandDisabled && feishuCommandMode != FeishuCommandDryRun && feishuCommandMode != FeishuCommandEnabled {
 		return Config{}, fmt.Errorf("RELAY_OPS_FEISHU_COMMAND_MODE must be disabled, dry_run, or enabled")
 	}
-	feishuCommandFiles := map[string]string{
+	feishuCallbackFiles := map[string]string{
 		"Feishu App ID":             get("RELAY_OPS_FEISHU_APP_ID_FILE", ""),
 		"Feishu App Secret":         get("RELAY_OPS_FEISHU_APP_SECRET_FILE", ""),
 		"Feishu verification token": get("RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE", ""),
 		"Feishu Encrypt Key":        get("RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE", ""),
-		"Feishu routing config":     get("RELAY_OPS_FEISHU_ROUTING_FILE", ""),
 	}
-	configuredFeishuFiles := 0
-	for _, path := range feishuCommandFiles {
+	feishuRoutingFile := get("RELAY_OPS_FEISHU_ROUTING_FILE", "")
+	configuredCallbackFiles := 0
+	for _, path := range feishuCallbackFiles {
 		if path != "" {
-			configuredFeishuFiles++
+			configuredCallbackFiles++
 		}
 	}
-	if feishuCommandMode != FeishuCommandDisabled || configuredFeishuFiles > 0 {
-		if configuredFeishuFiles != len(feishuCommandFiles) {
+	if configuredCallbackFiles > 0 && configuredCallbackFiles != len(feishuCallbackFiles) {
+		return Config{}, fmt.Errorf("Feishu callback files must be configured as a complete set")
+	}
+	if feishuCommandMode != FeishuCommandDisabled {
+		if configuredCallbackFiles != len(feishuCallbackFiles) || feishuRoutingFile == "" {
 			return Config{}, fmt.Errorf("Feishu command files must be configured as a complete set")
 		}
-		for label, path := range feishuCommandFiles {
+	}
+	if feishuRoutingFile != "" && configuredCallbackFiles != len(feishuCallbackFiles) {
+		return Config{}, fmt.Errorf("Feishu routing config requires callback files")
+	}
+	if configuredCallbackFiles == len(feishuCallbackFiles) {
+		for label, path := range feishuCallbackFiles {
 			if err := validateSecretFile(path); err != nil {
 				return Config{}, fmt.Errorf("%s file: %w", label, err)
 			}
+		}
+	}
+	if feishuRoutingFile != "" {
+		if err := validateSecretFile(feishuRoutingFile); err != nil {
+			return Config{}, fmt.Errorf("Feishu routing config file: %w", err)
 		}
 	}
 	baseURL := strings.TrimRight(get("RELAY_OPS_SUB2API_URL", "http://sub2api:8080"), "/")
@@ -124,11 +137,11 @@ func Load(env func(string) string) (Config, error) {
 		Sub2APIAdminKeyFile:      adminKeyFile,
 		FeishuWebhookFile:        feishuFile,
 		FeishuCommandMode:        feishuCommandMode,
-		FeishuAppIDFile:          feishuCommandFiles["Feishu App ID"],
-		FeishuAppSecretFile:      feishuCommandFiles["Feishu App Secret"],
-		FeishuVerificationFile:   feishuCommandFiles["Feishu verification token"],
-		FeishuEncryptKeyFile:     feishuCommandFiles["Feishu Encrypt Key"],
-		FeishuRoutingFile:        feishuCommandFiles["Feishu routing config"],
+		FeishuAppIDFile:          feishuCallbackFiles["Feishu App ID"],
+		FeishuAppSecretFile:      feishuCallbackFiles["Feishu App Secret"],
+		FeishuVerificationFile:   feishuCallbackFiles["Feishu verification token"],
+		FeishuEncryptKeyFile:     feishuCallbackFiles["Feishu Encrypt Key"],
+		FeishuRoutingFile:        feishuRoutingFile,
 		AgentBaseURL:             strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
 		AgentAPIKeyFile:          agentKeyFile,
 		AgentModel:               get("RELAY_OPS_AGENT_MODEL", ""),

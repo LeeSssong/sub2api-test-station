@@ -49,6 +49,20 @@ func TestLoadAcceptsKnownFeishuCommandModesWithCompleteFiles(t *testing.T) {
 	}
 }
 
+func TestLoadDisabledAcceptsCallbackFilesWithoutRouting(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCallbackFiles(t, env)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("disabled callback configuration rejected: %v", err)
+	}
+	if cfg.FeishuRoutingFile != "" {
+		t.Fatalf("routing file = %q, want empty", cfg.FeishuRoutingFile)
+	}
+}
+
 func TestLoadRejectsUnknownFeishuCommandMode(t *testing.T) {
 	t.Parallel()
 
@@ -161,13 +175,23 @@ func validEnv(t *testing.T) map[string]string {
 
 func addFeishuCommandFiles(t *testing.T, env map[string]string) {
 	t.Helper()
+	addFeishuCallbackFiles(t, env)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "RELAY_OPS_FEISHU_ROUTING_FILE")
+	if err := os.WriteFile(path, []byte(`{"groups":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ROUTING_FILE"] = path
+}
+
+func addFeishuCallbackFiles(t *testing.T, env map[string]string) {
+	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
 		"RELAY_OPS_FEISHU_APP_ID_FILE":             "cli_test_app",
 		"RELAY_OPS_FEISHU_APP_SECRET_FILE":         "app-secret",
 		"RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE": "verification-token",
 		"RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE":        "encrypt-key",
-		"RELAY_OPS_FEISHU_ROUTING_FILE":            `{"groups":[]}`,
 	}
 	for key, value := range files {
 		path := filepath.Join(dir, key)

@@ -46,6 +46,21 @@ func TestWorkerEnforcesCommandMode(t *testing.T) {
 	}
 }
 
+func TestDisabledWorkerDoesNotRequireRouter(t *testing.T) {
+	repository := &fakeWorkerRepository{next: switchRecord()}
+	sender := &fakeSender{repository: repository}
+	worker := testWorker(repository, &fakeRouter{}, sender, ModeDisabled)
+	worker.Router = nil
+
+	worked, err := worker.RunOnce(context.Background())
+	if err != nil || !worked {
+		t.Fatalf("RunOnce = %v, %v", worked, err)
+	}
+	if repository.completion.Status != StatusRejected || repository.completion.ErrorCode != ErrorCommandDisabled {
+		t.Fatalf("completion = %#v", repository.completion)
+	}
+}
+
 func TestWorkerStatusIsReadOnlyAndUnknownCommandIsRejected(t *testing.T) {
 	t.Run("status", func(t *testing.T) {
 		record := switchRecord()

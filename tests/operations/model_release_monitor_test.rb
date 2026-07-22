@@ -7,6 +7,9 @@ require "fileutils"
 
 ROOT = File.expand_path("../..", __dir__)
 WRAPPER = File.join(ROOT, "ops/run-model-release-monitor.sh")
+SERVICE = File.join(ROOT, "infra/systemd/sub2api-model-release-monitor.service")
+TIMER = File.join(ROOT, "infra/systemd/sub2api-model-release-monitor.timer")
+ENVIRONMENT = File.join(ROOT, "infra/systemd/model-release-monitor.env.example")
 
 class ModelReleaseMonitorTest < Minitest::Test
   def test_wrapper_runs_only_hardened_read_only_collection_and_evaluation
@@ -46,6 +49,37 @@ class ModelReleaseMonitorTest < Minitest::Test
       assert_equal "model_release_monitor status=failed\n", output
       refute_includes output, fixture.fetch(:secret)
     end
+  end
+
+  def test_systemd_units_and_environment_are_restricted_and_secret_free
+    [SERVICE, TIMER, ENVIRONMENT].each { |path| assert File.file?(path), "missing template: #{path}" }
+    service = File.read(SERVICE)
+    timer = File.read(TIMER)
+    environment = File.read(ENVIRONMENT)
+
+    assert_includes service, "User=ubuntu"
+    assert_includes service, "Group=ubuntu"
+    assert_includes service, "EnvironmentFile=/etc/sub2api/model-release-monitor.env"
+    assert_includes service, "ExecStart=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh"
+    %w[
+      NoNewPrivileges=true
+      PrivateTmp=true
+      ProtectHome=true
+      ProtectSystem=full
+      ProtectKernelTunables=true
+      ProtectControlGroups=true
+      RestrictSUIDSGID=true
+    ].each { |setting| assert_includes service, setting }
+    assert_includes timer, "OnUnitActiveSec=15m"
+    assert_includes timer, "RandomizedDelaySec=2m"
+    assert_includes timer, "Persistent=true"
+    assert_includes timer, "Unit=sub2api-model-release-monitor.service"
+    assert_includes environment, "MODEL_RELEASE_ROOT=/opt/sub2api/production/ops/model-release"
+    assert_includes environment, "MODEL_RELEASE_ADMIN_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key"
+    assert_includes environment, "MODEL_RELEASE_EVIDENCE_DIR=/opt/sub2api/production/evidence/model-release-20260722"
+    assert_includes environment, "MODEL_RELEASE_RUNNER_IMAGE=sub2api-relay-ops:model-release-read-only-20260722-v1"
+    assert_includes environment, "MODEL_RELEASE_DOCKER_NETWORK=sub2api_default"
+    refute_match(/(?:api[_-]?key|token|secret|password)\s*=\s*[^\s#]+/i, environment)
   end
 
   private

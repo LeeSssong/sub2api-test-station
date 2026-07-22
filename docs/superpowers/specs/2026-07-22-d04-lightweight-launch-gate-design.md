@@ -1,7 +1,7 @@
 # D04 Lightweight Launch Gate Design
 
 **Date:** 2026-07-22 (Asia/Shanghai)
-**Status:** Approved design, pending written-spec review
+**Status:** Implemented and verified; production opening remains `NO-GO`
 **Policy ID:** `D04-LIGHTWEIGHT-LAUNCH-v2`
 
 ## Problem
@@ -255,16 +255,16 @@ Production acceptance remains read-only until the single explicit approval is re
 
 ## Acceptance Criteria
 
-- [ ] V1 policy and reports remain unchanged and clearly labeled historical.
-- [ ] V2 policy, snapshot, evaluator, reason codes, actions, tests, and runtime output contain no provider-specific names.
-- [ ] A current active upstream must have at least the configured minimum balance and fresh natural-traffic quality evidence.
-- [ ] A verified server-local backup no older than 24 hours includes the complete Sub2API PostgreSQL database and a consistent D04 SQLite snapshot.
-- [ ] No off-site backup, retention-days, restore-drill, spend-rate, or balance-runway requirement exists in v2.
-- [ ] One explicit `launch_approved` value replaces separate budget and opening-window approvals.
-- [ ] D04 configuration matches the 15-user, USD 20 daily credit, USD 100 budget, and 1000-bps policy values.
-- [ ] D04 is healthy, `read_only`, and registration is closed during evaluation; rollback remains validated.
-- [ ] Relay-ops remains `read_only`, Feishu commands remain `dry_run`, and the evaluator performs no external action.
-- [ ] Current-state, handoff, runbook, and verification report identify v2 as the active launch gate and the next mainline as the controlled D04 opening.
+- [x] V1 policy and reports remain unchanged and clearly labeled historical.
+- [x] V2 policy, snapshot, evaluator, reason codes, actions, tests, and runtime output contain no provider-specific names.
+- [x] A current active upstream must have at least the configured minimum balance and fresh natural-traffic quality evidence.
+- [x] A verified server-local backup no older than 24 hours includes the complete Sub2API PostgreSQL database and a consistent D04 SQLite snapshot.
+- [x] No off-site backup, retention-days, restore-drill, spend-rate, or balance-runway requirement exists in v2.
+- [x] One explicit `launch_approved` value replaces separate budget and opening-window approvals.
+- [x] D04 configuration matches the 15-user, USD 20 daily credit, USD 100 budget, and 1000-bps policy values.
+- [x] D04 is healthy, `read_only`, and registration is closed during evaluation; rollback remains validated.
+- [x] Relay-ops remains `read_only`, Feishu commands remain `dry_run`, and the evaluator performs no external action.
+- [x] Current-state, handoff, runbook, and verification report identify v2 as the active launch gate and the next mainline as the controlled D04 opening.
 
 ## Residual Risks
 

@@ -1,24 +1,25 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-19
+**更新日期：** 2026-07-22
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
 
 ## 当前指针
 
 - 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成；Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 正在生产主机健康运行。
 - 已完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。
-- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭和邀请制。`relay-ops` 已以 `read_only` 部署，`/pricing` 公开、`/ops` 复用 Sub2API 管理员登录、`/monitor` 保持原生；候选付费探测关闭。目标分组已确认为 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`，Neko 目标成本倍率 `0.10x`、wawazz 目标成本倍率 `0.05x`，但该生产切换尚未执行。
-- 当前阻塞：正式域名尚未完成注册审核；生产实际仍是公开 `GPT 0.15x`、旧专属分组 `1.0x`、Neko 账号倍率 `0.07x`，wawazz 尚未接入 Sub2API。relay-ops 的飞书 Webhook、Agent API Key和候选上游记录尚未安装，`probe_runs=0`；真实候选 probe 仍需单独低成本批准。Neko/wawazz 的长期稳定性、首尔到大陆真实链路和长流错误率仍未验证。
-- 下一步：域名审核期间并行完成生产分组/账号切换和隔离验收，把 Neko/wawazz 的公开页面与秘密引用录入 relay-ops 但保持 `read_only`，再安装飞书/Agent 独立凭据并验证假事件通知。只有报告预计请求数与费用并取得明确批准后才切换 `probe` 做一次真实同步/SSE；域名通过后再配置正式 DNS/TLS。
+- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。D04 单用户低额生产验收已创建 1 个隔离首发用户并发放且对账 1 次 `$20`，同日再次登录没有第二次余额效果；随后已用 `compose.d04-read-only.yaml` 回滚，当前 `D04_MODE=read_only`、`D04_REGISTRATION_OPEN=false`。用户已明确当前使用 Wawazz 作为上游，Neko 余额不处理。生产配置未被静默修改：公开分组仍为 `GPT-Pro`（Neko，`0.10x`）和 `GPT-Plus`（Wawazz，`0.05x`），两组站内费率均为 `1.0x`，真实绑定仍分别是主账号 `7/8`，Aliu `2` 是共享灾备。`relay-ops` 保持 `read_only + dry_run`，飞书五条固定命令不执行真实切换。
+- 当前风险：Wawazz 的余额、原生监控、Node/Python 同步/SSE、账号级 UA 兼容修复和约 `0.05x` 真实计费均已通过。2026-07-21 最新供应商页面只读样本为近 24 小时 `5067` 请求、`842.00M` Token、标准 `$764.4187`、实际 `$39.8276`、平均总耗时 `14.13s`，页面余额约 `$10.85`；可见样本仍有 TTFT `34.49s`、总耗时 `37.62s` 的长尾。用户已确认该高负载为预期状态，不再作为业务归属异常；仍需持续监控余额、错误率、TTFT P95 和总耗时 P95。Neko 只保留历史证据和现有配置事实，不纳入当前上游健康收口。`/ops` 候选录入、停用和一次性低额度 Key 托管已上线；当前不创建真实候选，付费 probe 仍关闭。真实路由切换未获批准，`enabled` 不得进入。
+- 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
+- 下一步：上游 `73/74/75` 质量优先评测、D04 首发开放准备和质量报告/飞书监测部署已按顺序收口。D04 当前活动门禁已切换为 provider-neutral `D04-LIGHTWEIGHT-LAUNCH-v2`，旧 v1 七项结果只保留为历史证据。最新离线复评正确保持 `NO-GO`：尚缺一次明确开放批准、达到 USD 10 的当前活动上游余额、新鲜财务证据、新鲜质量指标和至少 20 个自然生产样本。下一实施主线只补齐这些实际 v2 阻塞项并重跑报告型评估器；在 `decision=go` 之前不应用 launch overlay。质量报告已部署，不再扩展飞书功能；告警/恢复卡只等待自然事件视觉观察。`73/74` 保持 blocked，`75` 保持 `needs_evidence`，不创建候选、不启用 probe、不切路由；Neko 余额不处理。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-19-relay-ops-read-only-verification.md`。
+最新验证：`docs/superpowers/reports/2026-07-22-d04-lightweight-launch-gate-verification.md`；上游明细见 `docs/superpowers/reports/2026-07-22-local-sub-account-quality-first-verification.md`，D04 v1 历史准入见 `docs/superpowers/reports/2026-07-22-d04-launch-readiness-verification.md`，质量报告生产验收见 `docs/superpowers/reports/2026-07-22-quality-report-feishu-production-verification.md`。
 
 ## 产品
 
 - 目标：先用现有上游 API 跑通可售卖闭环，再接入 K12、Plus、Pro 等订阅账号池和其他上游中转 API。
 - 首条闭环：境外服务器 → Sub2API/PostgreSQL/Redis/Caddy → 现有上游 API → 测试 Key → 请求日志和扣费 → 人工充值。
-- 首批用户：最多 15 个邀请注册用户；每个用户每天签到获得 `$20`，每个成功推荐获得 `$5`，两者进入同一累计余额并保留来源审计。该规则属于正式产品的受控首发策略，用户界面不展示“内测”标签。
+- 首批用户：网站注册由 `D04_REGISTRATION_OPEN` 控制；最多 15 个成功注册的首发用户，达到 15 人后即使配置开放也自动拒绝。注册成功并由 Sub2API 自动登录时立即获得当天 `$20`；此后每个上海日首次成功登录自动获得 `$20`。首发期间不开放邀请、推荐、affiliate 奖励或手动签到。
 - 当前不做：多节点高可用、自动支付、昂贵优化线路和复杂营销功能。
 
 ## 已确认决策
@@ -27,9 +28,9 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 |---|---|---|
 | D01 | USD 20/月是硬上限而非默认支出；首选腾讯云国际站东京 2C2G USD 10.08/年，按已定义顺序回退，2 GiB 达阈值后再扩容 | 已确认 |
 | D13 | 所有外部支出只做选型和报告，不执行真实付款；后续按“未购买/假定配置”继续准备 | 已确认 |
-| D03 | 目标调整为 `GPT-Pro` / `GPT-Plus` 公开分组、站内 `1.0x`；Pro 接 Neko `0.10x`，Plus 接 wawazz `0.05x`，两池独立测量且不自动切换 | 新方案已确认；生产切换待执行 |
-| D04 | 首批最多 15 个邀请注册用户，站内 `1.0x`；每日签到 `$20` 和每个成功推荐获得 `$5`，邀请、签到和推荐属于受控首发策略，不展示“内测”标签 | 旧自动化本地基线完成；relay-ops 只读生产部署完成 |
-| D02 | 首发阶段先用 `xingqiaolab.top`，API 子域为 `api.xingqiaolab.top`；规模化商业化前再评估 `.com` | 信息模板审核中，域名尚未注册 |
+| D03 | 现有生产配置仍为 `GPT-Pro` / `GPT-Plus` 公开分组、站内 `1.0x`；Pro 绑定 Neko `0.10x`，Plus 绑定 Wawazz `0.05x` | 当前业务上游明确以 Wawazz 为准，Neko 余额不处理；未授权改绑或隐藏现有分组 |
+| D04 | 复用 Sub2API 原生用户中心；公开注册可配置，15 人硬上限；注册自动登录算当天首次登录，此后每上海日首次登录自动发 `$20`；首发期间无邀请、推荐、affiliate 奖励或手动签到 | 单用户低额 write 验收通过并恢复 `read_only/registration=false`；下一门禁是受控开放批准 |
+| D02 | 首发阶段先用 `xingqiaolab.top`，API 子域为 `api.xingqiaolab.top`；规模化商业化前再评估 `.com` | 已注册、已解析并启用 HTTPS |
 
 2026-07-16 新事实覆盖 D01 的旧服务器选型：用户已亲自购买腾讯云中国站 Lighthouse 首尔节点，2 vCPU / 4 GiB / 60 GB SSD / 30 Mbps / 1536 GB 月流量，Ubuntu Server 24.04 LTS，1 年 CNY 199，自动续费关闭。
 
@@ -39,16 +40,48 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
-- 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。尚未执行生产备份。
-- 生产主机：腾讯云首尔二区实例运行中；SSH、Docker、日志轮转、自动安全更新、swap 和 `vm.overcommit_memory=1` 已生效。Sub2API `v0.1.161`、PostgreSQL、Redis、Caddy 和 relay-ops 健康运行，仅 Caddy 发布 80/443；尚未购买正式域名。
-- 外部服务：Neko 的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`；生产账号 `neko-production-primary` 已同步 8 个模型，连接测试和生产网关同步/SSE 冒烟均成功。生产 GPT 分组为 `0.15x`，Aliu 账号仍保留但调度关闭。
-- 容量证据：Neko Pro 池短测同步并发 1–50 路全部 200，SSE 并发 3/5/10 全部完成，60/120/180 RPM 一分钟窗口全部 200；240 RPM 出现 1 次超时。生产账号当前并发 `3` 未改动；详细报告见 `docs/superpowers/reports/2026-07-19-neko-capacity-verification.md`。
-- 2026-07-19：直接核对 Sub2API `v0.1.161` 源码：原生支持一次性邀请码、邀请关系、管理员 API Key、用量/余额读取和强制幂等余额调整；不支持每日签到、固定首次使用奖励或数值型全站注册上限。D04 因此采用原生能力加独立自动化服务，不维护 Sub2API 私有分支。
-- 2026-07-19：腾讯云域名公开查询确认 `xingqiaolab.top` 可注册，首年约 CNY 14、旁列续费约 CNY 32；用户选择它作为首发低成本候选，尚未购买或修改 DNS。`.com` 仍保留为规模化商业化升级候选。
+- 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 轻量开放另已建立服务器本地账户备份，完整覆盖 Sub2API PostgreSQL 与 D04 SQLite；当前方案接受主机整体丢失风险，不建设异地备份，也不把按天留存或周期恢复作为开放门禁。
+- 生产主机：腾讯云首尔二区实例运行中；SSH、Docker、日志轮转、自动安全更新、swap 和 `vm.overcommit_memory=1` 已生效。Sub2API `v0.1.161`、PostgreSQL、Redis、Caddy 和 relay-ops 正常运行，仅 Caddy 发布 80/443；正式入口为 `https://api.xingqiaolab.top`。
+- 外部服务：Wawazz 是当前业务上游；Base URL 为 `https://wawazz.xyz`，生产账号 `wawazz-production-primary` 绑定 `GPT-Plus`、账号成本倍率 `0.05x`、并发 `1`，账号级 `User-Agent` 固定为 `node`，原生监控和 Node/Python 同步/SSE 已通过。Neko 的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`；生产账号 `neko-production-primary` 仍绑定 `GPT-Pro`、账号成本倍率 `0.10x`、并发 `2`，余额不足只作为历史/配置事实保留，不安排处理。隔离复制账号 `9` 保留但未绑定、不可调度；Aliu `2` 未绑定、不可调度、总并发 `1`，现作为 Pro/Plus 共享灾备。
+- 容量证据：Neko Pro 池短测同步并发 1–50 路全部 200，SSE 并发 3/5/10 全部完成，60/120/180 RPM 一分钟窗口全部 200；240 RPM 出现 1 次超时。生产主/备账号配置并发为 `2 + 1 = 3`，未超过已验证共享 Key 上限；详细报告见 `docs/superpowers/reports/2026-07-19-neko-capacity-verification.md`。
+- 2026-07-19：直接核对 Sub2API `v0.1.161` 源码：原生支持注册、登录、2FA、用户中心、邀请关系、管理员 API Key、用量/余额读取和强制幂等余额调整；不支持数值型全站注册上限或每日首次登录奖励。D04 因此只以有界 sidecar 叠加注册上限和每日登录额度，不维护 Sub2API 私有分支或第二套用户中心。
+- 2026-07-20：用户完成 `xingqiaolab.top` 注册；`api` A 记录已指向首尔实例公网地址，Caddy 已为 `api.xingqiaolab.top` 签发公开信任证书，HTTP 308、HTTPS `/health` 200、`/pricing` 200 和 `/ops` 200 均已复验。`.com` 仍保留为规模化商业化升级候选。
 - 网关扩容研究：LiteLLM 和 New API 均采用同模型多 deployment/渠道、健康路由、失败重试和用户级限流；第二个 Neko Key 应作为第二个 Sub2API 账号对象加入同一逻辑组，不能假设容量线性翻倍。详见 `docs/superpowers/reports/2026-07-19-gateway-scaling-practices.md`。
 - 生产凭据：未记录；密钥、Cookie、OAuth 凭据、2FA 恢复码和支付密钥禁止进入 Git 和普通文档。
-- 首发用户自动化：旧 `internal-test-service` 使用 Go 1.24、SQLite WAL 和独立 Admin API 客户端；Caddy 只把受控首发路径和注册 POST 转给该服务，OAuth 建号路径在首发阶段返回 403。容器无宿主机端口、只读根文件系统、非 root、仅 `/var/lib/internal-test` 可写；默认 `D04_MODE=read_only`。该旧基线不等于新的 `relay-ops` 监控实现。
-- relay-ops：生产镜像 `sub2api-relay-ops:665fa0a` 以 `read_only` 运行；独立 PostgreSQL、UID `10002`、只读根文件系统、无宿主机端口。`/pricing` 已按 USD/1M 正确显示 6 个模型和 3 个 `>272k` 阶梯；`/ops` 已通过真实管理员会话绑定验收；`/monitor` 仍由 Sub2API 原生提供。
+- 首发用户自动化：`internal-test-service` 使用 Go 1.24、SQLite WAL 和独立 Admin API 客户端；新代码只代理原生 register/login/login-2fa 和 public-settings，1 MiB/20 秒有界且不存储认证内容。有效注册开关是“Sub2API 原生开关 AND D04 模式/配置/15 人/预算门禁”；历史邀请/推荐表保留只读兼容，旧 join、邀请、推荐发奖和手动签到不再属于活动路径。容器继续无宿主机端口、只读根文件系统、非 root、仅 `/var/lib/internal-test` 可写。生产运行 `sub2api-internal-test:d04-public-registration-20260721-v1`，healthy、重启 `0`，`D04_MODE=read_only` 且 `D04_REGISTRATION_OPEN=false`。生产已有 1 个隔离首发用户、1 条 `daily_login_credit` 成功 grant 和 1 条匹配的 `$20` provider balance history；当前余额 `$20`，provider/D04 usage 均为 `0`。详见本轮 D04 验收报告。
+- relay-ops：生产镜像 `sub2api-relay-ops:quality-report-read-only-20260722-v1`（AMD64 image ID `sha256:b7977f9cb850d020dba66443a920c186772649edecd12d80023825552dd84b8e`）以 `read_only + dry_run` 运行；共享 backup 锁、原生监控事件、恢复通知、日报、App Bot 投递、只读 Agent 确定性回退、候选站管理员录入和质量报告闭环均已装配。fast result 会先入库，再写稳定 incident 并通过现有持久化去重器投递无切换按钮的 Interactive Card；等价报告不因 run ID/时间变化刷屏，`failed` 投递可原位重试。独立 PostgreSQL、UID `10002`、只读根文件系统和无宿主机端口边界不变；唯一可写秘密挂载仍是 `/var/lib/relay-ops/candidate-keys`。当前 `quality_reports=0`、`probe_runs=0`、候选数为 0，且没有 `candidate-fast:*` 调度任务。
+- 2026-07-20：生产 URL allowlist 仅追加 `wawazz.xyz`，只重建 Sub2API，其他容器未重建。GPT-Pro 隔离同步/SSE 均 HTTP 200、SSE 含 `[DONE]`；两条记录各 `10/5` Token，Sub2API 各扣 `$0.000200`，Neko 各实际 `$0.000020`，实测倍率 `0.10x`；测试用户/Key 已清理。Neko 原生监控样本为 `100%`、`1396 ms`。Wawazz 原有监控 Key 返回 `INVALID_API_KEY`，已删除并替换为新低额 Key；替换 Key 有效但上游账户余额不足，监控返回 `INSUFFICIENT_BALANCE`，当前 `/monitor` 为 `DEGRADED`。
+- 2026-07-20：Wawazz 补余额后的原生监控连续恢复为 `operational`（`1754 ms`、`2293 ms`）。Node UA 下 GPT-Plus 同步/SSE 均 HTTP 200，SSE 含 `[DONE]`；两条 Sub2API 记录各扣 `$0.002410`，Wawazz 各实际 `$0.000121`，实测约 `0.0502x`。同请求改为 `Python-urllib` 或 `OpenAI/Python` UA 时上游返回 403 且零扣费，说明原生 Go 监控不能覆盖客户 UA 兼容性；临时用户/Key 已清理，路由和模式未修改。详见 `docs/superpowers/reports/2026-07-20-wawazz-balance-recovery-verification.md`。
+- 2026-07-20：Wawazz Python 兼容修复完成。源码和同请求对照确认 Chat Completions 直转会透传客户 UA，Wawazz 拒绝 Python UA；账号 `8` 增加 `credentials.user_agent=node` 后，`Python-urllib` 同步 HTTP 200/`4869 ms`，`OpenAI/Python` SSE HTTP 200、TTFT `1942 ms`、总耗时 `1989 ms`、含 `[DONE]`。两条 Sub2API 各扣 `$0.002410`，Wawazz 各实际 `$0.000121`；所有临时对象删除，五个容器 ID 未变。一次中间请求因并行高负载持续 `69s`，测试客户端过早清理导致一条 `USER_NOT_FOUND` 用量写入错误；修正清理时序后的最终回归通过。
+- 2026-07-20：Neko 原生监控最新 8 条均为 `INSUFFICIENT_BALANCE`，最近一条为 22:55、`570 ms`；该实时失败覆盖“余额已经恢复”的旧操作假设，但不否定此前 `0.10x` 同请求计费证据。未自动切换到 Aliu。
+- 2026-07-20：飞书确定性分组控制已完成 `disabled -> dry_run` 生产验收。真实 Feishu challenge、事件收发和 `mentioned_type=bot` 解析通过；两条切换返回 dry-run `succeeded`，两条恢复返回 `no_op`，查询确认两组仍为 `primary`，未知命令固定拒绝。前后证据文件 SHA-256 均为 `3a3f2abd72e64fd088d31b20971794762152e4bff814ba23e08847975571f8ef`，规范化 canonical SHA-256 均为 `225777ef5a2f73b9bcbe276a43a52129a335c894c37dfb269d26c64fec5f18ff`；最终基础容器 ID 为 `sub2api=5fd8adccdb9e`、`postgres=2db52788ad73`、`redis=c45202c0d9e6`、`caddy=7c28088cd9fe`，relay-ops 健康且重启计数为 0。生产停在 `dry_run`，未进入 `enabled`；私聊权限未额外开启，自动化测试覆盖其拒绝边界。详见 `docs/superpowers/reports/2026-07-20-feishu-production-dry-run-verification.md`。
+- 2026-07-20：Aliu `2` 已改为 Pro/Plus 共享灾备；配置只允许 backup 复用，主账号唯一且不能兼任灾备。worker 切换同时锁定分组、主账号和灾备账号，真实 PostgreSQL 并发测试通过。仅重建 relay-ops，四个基础容器 ID 未变；新容器 `1e7194b56bb8` 健康、重启计数 `0`。Sub2API 前后快照 SHA-256 均为 `bb12c7da55fbee4d05746bd2e8ed5d10e56c5b8b85e226e3579f7c25689e6275`。群邀请和上线后的群内 dry-run 命令按用户要求暂缓。详见 `docs/superpowers/reports/2026-07-20-feishu-shared-aliu-dry-run-verification.md`。
+- 2026-07-21：飞书主动通知闭环完成。原生 Monitor P1 两窗口确认、重复/新证据抑制、恢复通知、所有客户公开分组的 24h 日报和只读 Agent 确定性回退已通过测试与真实群验收。最终 relay-ops 容器 `866dbae4eb75` 健康、重启计数 `0`；四个基础容器未变，前/后/最终路由快照 canonical SHA-256 均为 `0346b79d19cffdca58898e6db6490d62df89b1f0d889cc9fbaa22946b1163433`。数据库保留日报 `1` 条、合成异常/恢复 `2` 条成功投递，重复调用未增加投递。详见 `docs/superpowers/reports/2026-07-21-feishu-proactive-alert-production-verification.md`。
+- 2026-07-21：Wawazz 高负载仍在持续。与前次 `2251` 请求、`370.53M` Token、实际 `$16.89` 相比，02:26 样本增长至 `3458`、`579.22M`、`$25.3222`，分别增加约 `53.6%`、`56.3%`、`49.9%`；`gpt-5.6-sol` 占 `3362/3458` 请求和 `569.73M/579.22M` Token。页面未提供足够错误聚合证据，不能把高吞吐直接等同于稳定容量。
+- 2026-07-21：用户确认 Wawazz 上述高负载为预期业务状态，不再追查 `test` Key 用途；但高负载不等于 SLA 或容量已验证，余额、错误率、TTFT P95 和总耗时 P95 仍按生产风险持续监控。Neko 余额明确不处理。
+- 2026-07-21：飞书专业卡片与运维消息主线完成关闭。日报卡片在群内显示结构化分区和“运维后台”按钮；02:32 发送唯一一条 `查询当前分组状态` 后，机器人返回 Interactive Card，结果为 `succeeded` 并明确 `dry-run，仅预测，未写入路由`。告警/恢复模板、30 KB 门禁、脱敏、官方稳定卡片元素和共用 App Bot `interactive` 传输已通过自动化验证；其下一次真实视觉证据等待自然事件，属于非阻塞观察项。收口复核时生产镜像 `candidate-admin-intake-20260721-v2` 健康、重启计数 `0`，五个公网入口均为 HTTP 200，模式仍为 `read_only + dry_run`，飞书路由哈希仍为 `3262403ac7e948e9453e1487922ac538e066f60fd7d23474e66f4ee917f7435e`，未重建服务或制造合成事件。详见 `docs/superpowers/reports/2026-07-21-feishu-professional-card-production-verification.md`。
+- 2026-07-21：候选上游管理员录入已部署并完成安全复审收紧。`/ops` 可一次性提交站点资料和独立低额度 Key；Key 只写入 `0700` 托管目录中的 `0600` 文件，PostgreSQL 只保存 `file:` 引用、SHA-256 指纹和末四位。无效私网 URL + 非秘密 Key 的生产回滚验收通过：页面清空 Key，候选列表、数据库和托管目录均无残留。`v2` 启动迁移已建立候选 Key 指纹部分唯一索引；候选、秘密引用和创建审计计数仍为 `0 0 0`。前后路由 canonical SHA-256 均为 `4791b8f093077dc50316daa8e0f5c16aaf18d0d402aa47ca1b9bc0380020e1e3`，飞书路由文件哈希均为 `3262403ac7e948e9453e1487922ac538e066f60fd7d23474e66f4ee917f7435e`；四个基础容器未变。详见 `docs/superpowers/reports/2026-07-21-candidate-upstream-admin-intake-production-verification.md`。
+- 2026-07-21：D04 注册安全/恢复增量完成。邀请码由 AES-256-GCM 认证加密，`join_id` 作为附加认证数据；配置要求独立权限受限密钥文件，未提供明文兼容回退。新增错误 method 405、余额历史分页、pending grant provider 证据收敛。`go test ./... -count=1`、单独 `-race`、`go vet ./...`、D04 Compose/Caddy 契约和 `git diff --check` 均通过。生产独立 D04 镜像 `sub2api-internal-test:d04-read-only-20260721-v3`（AMD64 manifest `sha256:3b52f06d3ca6cd2d0cf256bbf1e21463a2f7516f3b97ee307d5aba1fc8395dbc`），模式仍 `read_only` 且成本策略未认证；调度健康、重启 `0`、`audit_events/credit_grants/internal_users/invitations/jobs/usage_cursors/usage_records` 全为 `0`。正式域名 Caddy 已重新挂载 D04 路由，GET `/internal-test/api/checkin` 返回 `405`，加入链接不存在返回 D04 `404`，注册 POST 在只读模式返回 `403`。详见 `docs/superpowers/reports/2026-07-21-d04-controlled-launch-v2-verification.md`。
+- 2026-07-21：D04 非功能第一阶段基线完成但保留容量边界。TLS/HTTP、入口 GET 健康、登录/注册页面可达、资源和容器健康均通过；未发起模型请求、上游费用为 `0`。对先前缺完整分母的 TLS 信号补做 5 路并发 × 12 次复测，`60/60` 为 HTTP 200、其他状态 `0`、传输错误 `0`，P50 `1.779s`、P95 `4.779s`。该结果只代表单地点入口健康，不代表模型容量或用户 SLA；XM PLUS/PRO 付费兼容与并发阶梯仍等待凭据、模型映射、预算和清理批准。详见 `docs/superpowers/reports/2026-07-21-d04-nonfunctional-baseline.md`。
+- 2026-07-21：D04 新业务口径已完成本地实现与验证。Caddy 契约接管原生 register/login/login-2fa/public-settings；有效注册开关为原生开关与 D04 模式、配置、15 人硬上限、预算门禁的合取。20 路并发注册只有 15 个成功，12 路同日登录只有 1 次余额效果；注册自动登录立即获得当天 `$20`，上海次日可再次获得。旧 join/邀请/手动签到入口 404，usage 不再触发推荐奖励，D04 日报不再显示签到或推荐。随后曾短暂应用隔离 write overlay，但未注册用户、未写入余额，已用 `compose.d04-read-only.yaml` 重建回滚；当前生产 `read_only/registration=false`。详见 `docs/superpowers/reports/2026-07-21-d04-public-registration-daily-login-verification.md`。
+- 2026-07-21：D04 独立审查缺口已完成本地修复并复验：SQLite 持久化 registration slot 在原生注册转发前占位，两个 service/store 实例只允许一个剩余名额进入上游；uncertain daily grant 即使系统已进入只读也能用 provider history 收敛；认证代理不跟随重定向，POST 强制同源，余额工作最多等待 2 秒；`D04_MAX_USERS` 限定 `1..15`，write 模式必须明确总预算。生产未部署，模式仍保持旧 `read_only`。
+- 2026-07-21：D04 新版已以 `sub2api-internal-test:d04-public-registration-20260721-v1` 部署到生产，保持 `D04_MODE=read_only` 与 `D04_REGISTRATION_OPEN=false`，健康且重启计数 `0`。正式域名下五个公网入口均为 HTTP 200，公开设置强制关闭注册/邀请/affiliate，旧 `/internal-test/*` 显式 404，无 Origin 认证请求 403，同源空注册请求 403 `D04_REGISTRATION_CLOSED`。Sub2API、PostgreSQL、Redis 和 relay-ops 未重建；Caddy 因文件级 bind mount 重新挂载一次，最终重启计数 `0`。未创建用户、未发放余额、未改路由。
+- 2026-07-21：XM PLUS/PRO 完成供应商页面只读发现并加入 registry，状态均为 `discovered`。页面确认共用 Base URL `https://api3.xmhbao.cn`、标称倍率 `0.045x/0.07x`，客户端示例使用 `responses` 且默认 `gpt-5.5`；Pro 有 1 条既有同步历史样本。公共评测器已增加 Chat Completions/Responses 强类型适配器、可配置安全路径、usage 归一化、SSE 终止和脱敏错误分类；XM Plus/Pro 对同一 Responses profile 的 dry-run 均为 `requests_sent=0/network_sent=false`。完整目录、逐模型同步/SSE、价格、容量、条款和三方账单仍未知。未复制 Key、创建候选、发付费请求或生成 proposal。详见 `docs/superpowers/reports/2026-07-21-upstream-benchmark-protocol-adapters-verification.md`。
+- 2026-07-21：公共协议适配器的独立审查缺口已本地修复：同步与 SSE 总响应上限为 1 MiB，CRLF/LF 事件均可解析，URL 解码后仍含 traversal 的路径被拒绝，上游错误 `type/code` 只映射到固定类别，不再进入报告；V2 `validate` 输出实际解析的 profile ID。Chat、Responses 和 V2 全套 Ruby 回归以及 XM Plus/Pro 零请求 dry-run 均通过。
+- 2026-07-21 22:13：规格通过后的功能/非功能收口复核完成。D04 全量 Go race、`go vet`、Compose/Caddy 契约、基础设施契约、Ruby benchmark/registry 和 `git diff --check` fresh 通过；生产 D04 镜像仍为 `d04-public-registration-20260721-v1`，healthy、restart `0`、OOM false，Caddy restart `0`，五个公网入口 HTTP 200。新版入口 `GET /healthz` 的 5 路 x 12 次样本为 `60/60` HTTP 200、P50 `1.747s`、P95 `2.182s`，但响应属于总站/Caddy HTML，不能作为 D04 handler 或模型容量证据。XM live 评测改为先各 1 次 `/models` 目录发现，再按文本模型数 `M` 审批；当时记录的 V2 `2M+42/2M+41` 已由随后获批的 v3 独立 sync/SSE 预算 `2M+71+K / 2M+70+K` 取代，当前仍为零 live 请求。
+- 2026-07-21 22:20：XM 已登录 Key 管理页只读确认支持按分组创建 Key，并配置美元额度、速率、有效期、IP 限制和启用/禁用状态。后续 Plus/Pro 评测应各用独立低额临时 Key，不复用现有 Key。现有两把 Key 只观察到活跃、永久有效的脱敏行；未读取或复制 Key 原文，未创建、编辑、禁用或提交任何表单。
+- 2026-07-21：公共非功能 v3 规格获批并完成离线实现。新 profile 分离 sync/SSE 并发阶梯与 RPM，样本绑定渠道、角色、分组、账号证据引用、模型、profile 和测量位置；共享 backup 通过通用 `shared_capacity_pool` 表达，禁止主账号复用或用聚合指标掩盖成员缺证据。默认阶梯的精确短测上界为 HTTP `2M+71+K`、生成 `2M+70+K`；旧 V2 的 `2M+42/2M+41` 只描述旧同步容量流程。`capacity-dry-run` 实测 `M=3/K=4` 得到 `81/80` 且 `requests_sent=0/network_sent=false`。本轮没有 live 请求、Key、候选、probe、部署或生产写入；目标拓扑仍为 `NOT_READY / NONFUNCTIONAL_EVIDENCE_INCOMPLETE`。详见 `docs/superpowers/reports/2026-07-21-upstream-sse-capacity-and-topology-nonfunctional-verification.md`。
+- 2026-07-21：上述离线实现收口时只读复核生产：relay-ops 与 D04 均 running/healthy、重启 `0`；模式分别为 `read_only + dry_run` 与 `read_only + registration false`；五个公网入口均为 HTTP 200。没有重建服务、发送合成事件、调用 Admin API 或修改生产状态。
+- 2026-07-21 23:34：独立审查发现 v3 初版对共享池身份/三阶段并发、观察窗口健康度、drill 读后写与 sync/SSE 证据、执行预算和 RPM 启动节奏的 P0 门禁不足；已按 TDD 加固，v3 回归增至 `31 runs / 142 assertions`，V2/协议/V1 仍为 `32/194`、`10/44`、`18/63`。Stage 0 新鲜只读复核通过：五个公网入口 200，模式仍为 D04 `read_only/registration=false` 与 relay-ops `read_only/dry_run`；新鲜 Admin API allowlist canonical 与保存基线均为 `b2a2a6ce...aaf82`，飞书路由哈希仍为 `3262403a...f7435e`。Sub2API healthy、restart `1`、OOM false，其余容器 restart `0`、OOM false。未发送模型请求、未改路由或生产数据；下一门禁仍是两项分别授权的 D04 单用户 write 验收与 XM 两次目录发现。
+- 2026-07-21：授权前门禁进一步固化。新增 secret-free `compose.d04-acceptance.yaml`，与只读生产基线叠加后固定 `write/registration=true/15 users/$20/$2/1000 BPS/qualified policy`，Compose 和部署契约通过，但未应用到生产。D04 公开设置 fresh 显示注册/邀请/affiliate 均关闭，同源空注册返回 `D04_REGISTRATION_CLOSED`，内部调度健康。XM Plus/Pro 两条目录 dry-run fresh 均为 1 次 `/models`、0 生成、0 网络；仍等待创建临时 Key 和真实目录 GET 的单独授权。
+- 2026-07-22：用户明确目标拓扑为 `GPT-Plus -> XM API Plus primary -> Wawazz backup`、`GPT-Pro -> XM API Pro primary -> Wawazz backup`。该目标已进入功能性/非功能性评测主线，但尚未应用生产路由；必须先完成公共 `discover -> compatibility -> gateway -> billing -> capacity -> proposal` 证据和隔离回验。非功能子 Agent 已补齐 v3 的 shared-pool、观察窗口、drill scenario 绑定门禁；当前目标状态仍 `NOT_READY`。
+- 2026-07-22：质量优先轻量评测已在本地 Sub2API 账号 `73/74/75` 完成。三者 pulse 均为 `6/6`；全目录分别为 `14/16`、`14/26`、`18/18`。`73` 的 `gpt-5.6` 与 `74` 的六个模型未通过同步/SSE 硬门禁；只有 `75` 进入容量阶梯并完成 `129/129`，观察下界为并发 `10`、RPM 目标 `30`，保守建议 `8/24`。三者隔离 gateway 同步/SSE 均 200，但价格、provider debit、余额与商业条款未知，且 Token 计数存在异常差异，因此没有任何账号可晋级或切换。临时 Key/绑定已清理，账号均恢复 group `5`、`schedulable=false`，最终状态哈希 `145ba7085e8da2d319a05fe293ef1b488a7a38295a96e92cfb06cf41547d0ef1`。
+- 2026-07-22：质量报告闭环审查补齐三项缺口：fast run 入库后先持久化稳定 incident 状态，再通过现有外键去重投递器生成无切换按钮的 Interactive Card；去重证据排除 run ID/时间，只绑定归一化质量结论；真实 PostgreSQL 的 `failed` notification row 可原位重新预留，而 `delivered/reserved` 仍抑制重复。生产已单独重建 relay-ops 到 `quality-report-read-only-20260722-v1`，启动迁移只新增空 `quality_reports` 表；容器 healthy/重启 0，`read_only + dry_run`，候选/probe/report 数均为 0，通知仍为 3，不存在 `candidate-fast:*` job。未发送合成事件或飞书消息，基础容器、D04 容器和飞书路由哈希未变。
+- 2026-07-22：D04 v1 首发开放准备曾完成可执行清单、离线 fail-closed 评估器、准备专用 launch overlay、只读回滚和生产备份/隔离恢复演练；05:38 的七项 `NO-GO` 结果保留为历史证据，不再作为当前开放任务单。
+- 2026-07-22：生产 `sub2api` 和 `relay_ops` 逻辑备份已通过 SHA-256、`pg_restore --list`、隔离 PostgreSQL 18 恢复和逐表行数哈希对比，全流程 10 秒，临时容器/网络/卷余留数为 0。该历史恢复证据仍有效；当前 D04 轻量门禁只要求服务器本地完整账户备份，不要求异地副本、七天留存或周期恢复演练。
+- 2026-07-22：D04 单用户低额生产验收通过。隔离用户 provider ID `17` 仅有 1 条 `daily_login_credit` 成功 grant（`20,000,000` micro-USD）、1 条 `$20` provider balance history 和当前 `$20` 余额；同日重新登录未产生第二条 effect，provider/D04 usage 均为 `0`，未请求模型。最终恢复 `D04_MODE=read_only`、`D04_REGISTRATION_OPEN=false`，同源注册返回 `403 D04_REGISTRATION_CLOSED`，验收前后窄路由哈希均为 `b6e6ee12f484a2a919d993da56fa293904672ff2c16b65afef5caa6398832ec4`。
+- 2026-07-22：D04 验收期间的 Admin API 方法发现曾误发空 settings PUT，导致 21 项设置归零/默认；日志发现后立即停止，并依据 Sub2API `v0.1.161` 官方 DTO 和审计 `283` 通过官方 Admin API 恢复，未直接写 PostgreSQL。TOTP、OIDC 与站点设置均复原，其他 243 项保持 hash-identical，恢复审计为 `289`，最终设置哈希 `52eff24fce0338ee4f8f81ad12a5d1406c46b6de050c99587035cdfd1f71a28e`。后续禁止用空对象 PUT 探索设置接口。
+- 2026-07-22：D04 轻量开放门禁 v2 已完成实现和生产只读准备。策略、快照、阻塞码与动作统一使用 `active_upstream`，不绑定具体供应商；服务器本地账户备份集 `20260722T015202Z` 以 `0700/0600` 保存完整 `sub2api.dump` 与一致性 `d04.sqlite`，两者 SHA-256、`pg_restore --list` 和 SQLite integrity 均通过。新 AMD64 镜像 `d04-lightweight-launch-20260722-v2` 已构建但未部署，运行 D04 未重建，仍为 `read_only/registration=false`。02:28 最终离线复评为 `NO-GO`，当前阻塞码是 `launch_not_approved`、`upstream_balance_below_minimum`、`upstream_financial_evidence_stale`、`upstream_quality_metrics_stale` 和 `upstream_samples_insufficient`；评估器未执行真实动作或联系外部系统。
 
 ## 已核验证据
 
@@ -109,15 +142,20 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - [x] 部署并验证 Sub2API、PostgreSQL、Redis、Caddy 核心站点，完成 HTTPS、管理员初始化和重启持久性验收。
 - [x] 部署并验证首条真实请求、日志和计费闭环；测试 Key 已在验收后禁用。
 - [x] 建立不依赖真实价格的 CNY 成本、USD 内部余额、支付费率、异常准备和固定成本试算机制。
-- [x] D03 方案一已由用户确认并切换；生产 GPT 分组为 `0.15x`，Neko 账号倍率 `0.07`、并发 `3`；Aliu 调度关闭并保留候选。
+- [x] D03 双上游方案已由用户确认并切换；生产 `GPT-Pro` / `GPT-Plus` 站内倍率均 `1.0x`，Neko 主账号倍率 `0.10`、并发 `2`（隔离复制账号并发 `1`），Wawazz 账号倍率 `0.05`、并发 `1`；Aliu 调度关闭并保留灾备。
 - [x] 完成 NekoAPI Pro 池统一验收及生产切换冒烟：目标模型、非流式、流式、`0.07x` 实际扣费、至少 3 路并发、生产网关同步/SSE 均通过；临时测试账号和 Key 已清理。长期稳定性、网络和商业授权仍待观察。
 - [x] 完成 Neko 容量短测：同步并发至少 50、SSE 并发至少 10、稳定 RPM 至少 180；240 RPM 出现一次超时。临时容量测试 Key 已删除，生产路由未修改。
-- [x] D04 首发入口自动化基线：旧专用用户组（站内 `1.0x`、每用户 RPM `3`）已建立并复核，当前仅绑定 Neko。独立服务已实现注册入口原子 15 人上限、用户自助邀请码、每日 `$20` 与每个成功推荐 `$5` 的统一累计余额、总预算核对、日报和飞书告警；默认只读，待域名和隔离低额验收后再启用写入。产品展示不使用“内测”命名。
+- [x] D04 首发入口新功能和单用户生产低额验收：复用 Sub2API 原生用户中心，独立服务实现可配置公开注册、原子 15 人上限、注册即当日首次登录、每上海日首次登录 `$20`、总预算核对、日报和飞书告警；邀请/推荐/affiliate 奖励/手动签到已从活动路径退役。一个隔离用户的一次 `$20`、同日幂等和三方对账已通过，最终恢复只读和注册关闭。
 - [x] 2026-07-19：生产升级到 `v0.1.161` 后因 `gateway.text_max_body_size` 默认 32 MiB 超过 16 MiB 上限短暂返回 502；固定 `GATEWAY_TEXT_MAX_BODY_SIZE=16777216` 后仅重建 Sub2API，健康检查恢复 200，其他三项服务未重建。
 - [x] 2026-07-19：Neko 六模型受控验证：6 次同步、1 次 `gpt-5.6-sol` SSE 均 200，SSE 含 `[DONE]`；未知模型 404；7 条记录 Token 均 `8/5`，用户扣费约 `$0.000125`，符合标准价乘 `0.15x`。
 - [x] 2026-07-19：relay-ops 只读生产部署完成；Go race/vet、PostgreSQL E2E、Ruby `118/472`、三组 Compose/Caddy 契约、真实 `/ops` 登录复用和 `/pricing` 单位/阶梯价验收通过；生产 `probe_runs=0`。
-- [ ] 执行已确认但尚未落地的分组切换：公开 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`，Neko `0.10x`，wawazz `0.05x`；完成后重新跑同步/SSE、计费、TTFT 和原生 Channel Monitor 验收。
-- [ ] 为 relay-ops 安装飞书/Agent 独立凭据并录入 Neko/wawazz；保持 `read_only` 直到管理员单独批准每候选最多 2 请求、费用上限 `$0.002` 的首次 probe。
+- [x] 执行已确认的分组切换：公开 `GPT-Pro` / `GPT-Plus`、站内 `1.0x`，Neko `0.10x`，Wawazz `0.05x`；两池同步/SSE/计费均有有效历史样本。当前业务上游使用 Wawazz；Neko 余额不处理，不再作为当前上线收口。
+- [x] 为 Neko 创建独立低额监控 Key 并完成 GPT-Pro 原生样本；relay-ops 保持 `read_only`，候选真实 probe 仍需单独批准（每候选最多 2 请求、费用上限 `$0.002`）。
+- [x] 2026-07-20：relay-ops 完成生产来源录入与 UI 部署；Neko 绑定 `GPT-Pro`，价格页 `/pricing`、用量页 `/usage`、性能页 `/monitor`；Wawazz 绑定 `GPT-Plus`，公开页面 `/home`、用量页 `/usage`、性能页 `/monitor`。Wawazz 当前没有公开价格页，relay-ops 不把主页当作已验证模型价格，仅保留页面证据并等待后续补充。
+- [x] 2026-07-20：账单会话能力接入调度器；管理员可登记 `/run/secrets/upstream-sessions/` 下的 Cookie/Bearer 秘密文件，系统每小时读取用量页并记录辅助成本证据，登录页/401 会生成去重会话失效事件和登录链接。未安装真实会话时，质量与公开价格监控继续运行。
+- [x] 2026-07-20：飞书确定性命令新镜像已在生产以 `read_only + disabled` 部署；五个飞书文件只读挂载、Caddy 精确 POST 路由、事件订阅、challenge、真实群解析/回复和 PostgreSQL `command_disabled` 审计均通过；四个基础容器未重建。
+- [x] 2026-07-20：Aliu `2` 已配置为 GPT-Pro/GPT-Plus 共享灾备，总并发保持 `1`，覆盖六个必需模型；Neko 隔离复制账号 `9` 保留但未绑定、不可调度。共享账号级锁、全量 race/vet/契约、生产健康和零写快照均通过。
+- [x] 2026-07-21：现有飞书 App Bot 已接通原生监控主动告警、重复抑制、恢复通知、每日运营摘要和只读 Agent 确定性回退；真实群、数据库投递计数、调度、零上游访问和零路由写入均通过。
 - [x] 建立人工充值、余额调整、退款/反向流水和每日用量成本的追加式模拟账本与对账摘要。
 - [ ] 用户确认 D05 后，在真实小额订单上验证外部收款、Sub2API 余额历史和账本三方一致。
 - [x] 建立订阅账号非敏感候选模板、硬淘汰、评分、首样推荐、Sub2API 映射和单账号验收清单。
@@ -139,9 +177,9 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 4. 所有后续工作可按推荐资产继续离线准备，但必须标记为假定配置；真实验收保持未完成。
 5. 收到实际实例、域名或其他资产的非敏感信息后，再更新资产台账并执行真实环境复验。
 
-## D04 本地实施验收（2026-07-19）
+## D04 历史本地基线（2026-07-19，已被 2026-07-21 新口径覆盖）
 
-- Go 1.24 服务已建立：SQLite WAL 账本、Admin API 幂等客户端、Fake Provider、注册网关、JWT 路由、加入页、签到/推荐统一余额、总预算、用量游标、余额漂移只读降级、调度日报和飞书告警。
-- 规则已固定：最多 15 名首发邀请用户；专用首发用户组站内倍率 `1.0x`；每个上海日 `$20` 签到；每个被推荐用户首次成功计费请求触发一次 `$5`；奖励累计且不跨日清空；多个未使用邀请码可并存。产品和后台不展示“内测”命名。
+- Go 1.24 服务最初建立了 SQLite WAL 账本、Admin API 幂等客户端、Fake Provider、邀请/签到/推荐基线、总预算、用量游标、余额漂移只读降级、调度日报和飞书告警。
+- 该节的邀请、签到和推荐规则已由 2026-07-21 的公开注册/每日首次登录规则覆盖，只保留为历史实现事实，不得作为下一任务的业务口径。
 - 默认部署模式是 `D04_MODE=read_only`。服务未读取生产 `infra/.env`，未安装真实 Admin API Key、Webhook、JWT 或用户 Key，也未改变生产余额。
 - 验证通过：`go test ./... -race`、`go vet ./...`、本地镜像构建、只读非 root 容器 `/healthz` 冒烟、Compose/Caddy D04 契约、基础设施基线和既有 Ruby 回归；当前本地镜像 ID 为 `sha256:b5945deb71fdf3d03da878730eb84774007c529f0fa7e55f0263658cf31f0a07`，约 5.6 MB。

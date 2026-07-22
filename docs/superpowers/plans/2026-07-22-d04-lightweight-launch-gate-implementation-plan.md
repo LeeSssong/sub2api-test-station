@@ -35,7 +35,7 @@
 - Consumes: two secret-free YAML documents and optional `D04_LAUNCH_NOW` ISO-8601 timestamp.
 - Produces: `D04LightweightLaunchReadiness::Evaluator#evaluate(snapshot) -> Hash` and CLI JSON with `decision`, `blocking_reasons`, `required_actions`, `policy`, `derived`, `real_action_executed`, and `external_system_contacted`.
 
-- [ ] **Step 1: Write the provider-neutral policy and snapshot fixtures**
+- [x] **Step 1: Write the provider-neutral policy and snapshot fixtures**
 
 Create the exact schema from the approved design. The snapshot must use only these top-level keys:
 
@@ -48,7 +48,7 @@ Create the exact schema from the approved design. The snapshot must use only the
 
 Use `launch_approved` as the only approval and `quality_source: natural_production_traffic` as the only accepted quality source.
 
-- [ ] **Step 2: Write failing validator and evaluator tests**
+- [x] **Step 2: Write failing validator and evaluator tests**
 
 The healthy fixture must produce `go` and use generic sections:
 
@@ -64,7 +64,7 @@ end
 
 Add focused tests for every v2 reason code, strict unknown-key rejection, future timestamps, forbidden credential keys/values, D04 configuration mismatch, user-limit overflow, natural-source enforcement, insufficient-sample percentile suppression, backup freshness/hash/scope, CLI output, and provider-neutral source scanning.
 
-- [ ] **Step 3: Run the new tests and verify RED**
+- [x] **Step 3: Run the new tests and verify RED**
 
 Run:
 
@@ -74,7 +74,7 @@ ruby tests/operations/evaluate_d04_lightweight_launch_readiness_test.rb
 
 Expected: failure because `ops/evaluate-d04-lightweight-launch-readiness.rb` and the v2 module do not exist.
 
-- [ ] **Step 4: Implement strict validators and the report-only evaluator**
+- [x] **Step 4: Implement strict validators and the report-only evaluator**
 
 Implement a separate module:
 
@@ -105,7 +105,7 @@ ACTIONS = {
 }.freeze
 ```
 
-- [ ] **Step 5: Run v2 and historical v1 tests**
+- [x] **Step 5: Run v2 and historical v1 tests**
 
 ```bash
 ruby tests/operations/evaluate_d04_lightweight_launch_readiness_test.rb
@@ -114,7 +114,7 @@ ruby tests/operations/evaluate_d04_launch_readiness_test.rb
 
 Expected: both suites pass; v1 historical behavior remains unchanged.
 
-- [ ] **Step 6: Commit the evaluator slice**
+- [x] **Step 6: Commit the evaluator slice**
 
 ```bash
 git add config/operations/D04-lightweight-launch-readiness-v2.yaml \
@@ -137,7 +137,7 @@ git commit -m "feat: add lightweight D04 launch evaluator"
 - Produces: `runBackupCommand(args []string, getenv func(string) string, stderr io.Writer) (handled bool, exitCode int)` for a testable pre-config CLI branch.
 - Produces CLI: `internal-test-service backup-sqlite SOURCE DESTINATION`; it exits nonzero without starting the HTTP service when backup fails.
 
-- [ ] **Step 1: Write a failing WAL-consistency test**
+- [x] **Step 1: Write a failing WAL-consistency test**
 
 Create a source database in WAL mode, insert a committed row without manually checkpointing the WAL, call `BackupSQLite`, then open the destination and require `PRAGMA integrity_check = ok` and the inserted row to exist:
 
@@ -151,7 +151,7 @@ func TestBackupSQLiteIncludesCommittedWALState(t *testing.T) {
 
 Also require failure when destination already exists so a backup cannot overwrite a verified artifact.
 
-- [ ] **Step 2: Run focused Go tests and verify RED**
+- [x] **Step 2: Run focused Go tests and verify RED**
 
 ```bash
 go test ./internal/store ./cmd/internal-test-service -count=1
@@ -159,7 +159,7 @@ go test ./internal/store ./cmd/internal-test-service -count=1
 
 Expected: compile failure because `BackupSQLite` and the backup CLI branch do not exist. Use the repository's fixed Go 1.24 container if local Go is unavailable.
 
-- [ ] **Step 3: Implement SQLite online backup**
+- [x] **Step 3: Implement SQLite online backup**
 
 Open the source through the existing SQLite driver with a read-only connection and busy timeout, reject an existing destination, and execute SQLite's consistent backup operation:
 
@@ -210,7 +210,7 @@ func BackupSQLite(ctx context.Context, sourcePath, destinationPath string) error
 
 The command path must run before `config.Load`, accept exactly two path arguments, and print only a generic error unless `D04_DEBUG=1`. `main` calls `runBackupCommand(os.Args[1:], os.Getenv, os.Stderr)` first; when `handled` is true it exits with the returned code and never constructs the HTTP application.
 
-- [ ] **Step 4: Run focused and full D04 tests**
+- [x] **Step 4: Run focused and full D04 tests**
 
 ```bash
 go test ./internal/store ./cmd/internal-test-service -count=1
@@ -221,7 +221,7 @@ go vet ./...
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit the SQLite backup slice**
+- [x] **Step 5: Commit the SQLite backup slice**
 
 ```bash
 git add internal-test-service/internal/store/sqlite.go \
@@ -242,7 +242,7 @@ git commit -m "feat: add consistent D04 SQLite backup"
 - Consumes environment: `D04_BACKUP_ROOT`, `SUB2API_COMPOSE_FILE`, `D04_IMAGE`, and `D04_VOLUME`; defaults target `/opt/sub2api/production` resources.
 - Produces one promoted directory named by UTC timestamp containing `sub2api.dump`, `d04.sqlite`, `SHA256SUMS`, and `metadata.json`.
 
-- [ ] **Step 1: Write a fake-Docker shell test**
+- [x] **Step 1: Write a fake-Docker shell test**
 
 Put a fake `docker` executable first in `PATH`. It must emit deterministic PostgreSQL dump bytes for `docker compose ... exec -T postgres` and deterministic SQLite bytes for `docker run ... backup-sqlite`. Assert:
 
@@ -258,7 +258,7 @@ Put a fake `docker` executable first in `PATH`. It must emit deterministic Postg
 
 Add cases for Docker failure leaving no promoted directory, existing lock refusal, and four verified fixtures being pruned to the newest three without touching unrelated files.
 
-- [ ] **Step 2: Run the shell test and verify RED**
+- [x] **Step 2: Run the shell test and verify RED**
 
 ```bash
 bash tests/operations/backup_d04_account_data_test.sh
@@ -266,7 +266,7 @@ bash tests/operations/backup_d04_account_data_test.sh
 
 Expected: failure because `ops/backup-d04-account-data.sh` does not exist.
 
-- [ ] **Step 3: Implement the portable backup command**
+- [x] **Step 3: Implement the portable backup command**
 
 Use `set -euo pipefail`, `umask 077`, and a `mkdir` lock directory instead of platform-specific `flock`. Create the set under a validated temporary child of the configured backup root. Run:
 
@@ -284,7 +284,7 @@ docker run --rm --network none --read-only --cap-drop ALL \
 
 Generate and verify `SHA256SUMS`, write secret-free metadata, atomically rename the temporary set, and only then remove validated timestamp directories beyond the newest three. Never use the backup root, a volume path, or an unresolved variable as a deletion target.
 
-- [ ] **Step 4: Add local snapshot ignore rule and rerun tests**
+- [x] **Step 4: Add local snapshot ignore rule and rerun tests**
 
 Add:
 
@@ -301,7 +301,7 @@ bash -n ops/backup-d04-account-data.sh
 
 Expected: pass.
 
-- [ ] **Step 5: Commit the backup orchestration slice**
+- [x] **Step 5: Commit the backup orchestration slice**
 
 ```bash
 git add .gitignore ops/backup-d04-account-data.sh \
@@ -321,7 +321,7 @@ git commit -m "feat: add lightweight local account backup"
 - Consumes: v2 policy/evaluator and local backup command from Tasks 1-3.
 - Produces: a launch overlay with generic `D04_COST_POLICY_ID` and an operator flow that invokes only v2.
 
-- [ ] **Step 1: Write failing contract assertions**
+- [x] **Step 1: Write failing contract assertions**
 
 Require:
 
@@ -333,7 +333,7 @@ require 'backup-d04-account-data.sh' docs/runbooks/operations-and-incident-respo
 
 Reject concrete provider names in `infra/compose.d04-launch.yaml`, the v2 policy/snapshot/evaluator, and the active D04 launch sections of the runbook/checklist. Do not scan historical v1 evidence.
 
-- [ ] **Step 2: Run the contract and verify RED**
+- [x] **Step 2: Run the contract and verify RED**
 
 ```bash
 bash tests/internal_test/validate_internal_test_contract.sh
@@ -341,7 +341,7 @@ bash tests/internal_test/validate_internal_test_contract.sh
 
 Expected: failure on the historical provider-specific cost-policy ID and v1 runbook command.
 
-- [ ] **Step 3: Migrate the launch overlay and runbook/checklist**
+- [x] **Step 3: Migrate the launch overlay and runbook/checklist**
 
 Change the cost-policy ID to:
 
@@ -351,7 +351,7 @@ D04_COST_POLICY_ID: d04-active-upstream-conservative-1000bps-v2
 
 Replace v1 opening instructions with the v2 evaluator, one `launch_approved` value, a fresh verified local account backup, generic active-upstream balance/quality, and no spend-runway/off-site/restore-drill gates. Keep rollback commands and all production safety boundaries.
 
-- [ ] **Step 4: Run deployment and documentation contracts**
+- [x] **Step 4: Run deployment and documentation contracts**
 
 ```bash
 bash tests/internal_test/validate_internal_test_contract.sh
@@ -362,7 +362,7 @@ rg -n 'D04_COST_POLICY_ID:.*(wawazz|neko|xm|aliu)' infra/compose.d04-launch.yaml
 
 Expected: contracts pass; the final search has no output.
 
-- [ ] **Step 5: Commit runtime and operator migration**
+- [x] **Step 5: Commit runtime and operator migration**
 
 ```bash
 git add infra/compose.d04-launch.yaml \
@@ -383,7 +383,7 @@ git commit -m "docs: migrate D04 opening to lightweight gate"
 - Consumes: verified v2 files, D04 image containing `backup-sqlite`, current production health, and naturally collected upstream evidence.
 - Produces: a secret-free v2 live snapshot, evaluator output, production backup evidence, and authoritative project status.
 
-- [ ] **Step 1: Run all local gates**
+- [x] **Step 1: Run all local gates**
 
 ```bash
 ruby tests/operations/evaluate_d04_lightweight_launch_readiness_test.rb
@@ -398,11 +398,11 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 2: Build the D04 image and verify the backup subcommand locally**
+- [x] **Step 2: Build the D04 image and verify the backup subcommand locally**
 
 Build the pinned AMD64 production image on the production host, record its image ID, and invoke `backup-sqlite` against a disposable fixture volume. Do not recreate production yet. Require a readable destination with SQLite `integrity_check=ok`.
 
-- [ ] **Step 3: Deploy only the D04 read-only image when required**
+- [x] **Step 3: Deploy only the D04 read-only image when required**
 
 Update only the independent D04 Compose image tag, recreate only `internal-test-service`, and keep:
 
@@ -415,11 +415,11 @@ Feishu command mode=dry_run
 
 Verify D04 healthy/restart `0`, same-origin registration `403 D04_REGISTRATION_CLOSED`, one existing user, one existing grant, zero usage, and unchanged route/configuration hashes. If the one-shot backup can use the new image without recreating D04, leave the running D04 image unchanged and record that narrower path instead.
 
-- [ ] **Step 4: Create one fresh production account backup set**
+- [x] **Step 4: Create one fresh production account backup set**
 
 Install the backup command under the restricted production directory and execute it once. Record only timestamp, sizes, SHA-256 verification status, permissions, scope flags, and count of retained sets. Do not print archives, rows, credentials, or secret file contents.
 
-- [ ] **Step 5: Generate and evaluate the v2 live snapshot**
+- [x] **Step 5: Generate and evaluate the v2 live snapshot**
 
 Populate `config/operations/d04-lightweight-launch-snapshot.local.yaml` from current production health and natural traffic only. Keep `launch_approved: false` unless the user's approval explicitly covers actual opening, then run:
 
@@ -431,7 +431,7 @@ ruby ops/evaluate-d04-lightweight-launch-readiness.rb evaluate \
 
 Record the actual `go` or `no_go` result without lowering thresholds or manufacturing samples. Regardless of the result, keep registration closed during this task.
 
-- [ ] **Step 6: Update authority documents and verification report**
+- [x] **Step 6: Update authority documents and verification report**
 
 Document:
 
@@ -445,7 +445,7 @@ next action = resolve only actual v2 blockers, then controlled D04 opening
 
 Include production modes, health, zero route/configuration writes, backup verification, evaluator result, and exact remaining blockers. Do not replace concrete historical evidence in dated reports.
 
-- [ ] **Step 7: Final verification and commit**
+- [x] **Step 7: Final verification and commit**
 
 Rerun the full commands from Step 1 plus:
 

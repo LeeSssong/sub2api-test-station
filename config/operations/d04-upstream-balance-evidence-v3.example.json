@@ -1,0 +1,11 @@
+{
+  "schema_version": 3,
+  "records": [
+    {
+      "account_id": 101,
+      "balance_usd": 20.0,
+      "recorded_at": "2026-07-22T10:00:00Z",
+      "evidence_ref": "local-balance-observation-20260722"
+    }
+  ]
+}

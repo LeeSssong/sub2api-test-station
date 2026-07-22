@@ -85,13 +85,13 @@ Expected: exit `0`.
 - Create: `relay-ops-service/cmd/d04-readiness-snapshot/main.go`
 - Create: `config/operations/d04-upstream-balance-evidence-v3.example.json`
 - Create: `config/operations/d04-upstream-quality-evidence-v3.example.json`
+- Create: `config/operations/d04-lightweight-launch-base-v3.example.json`
 - Create: `config/operations/d04-lightweight-launch-snapshot-v3.example.json`
-- Modify: `.gitignore`
 
 **Interfaces:**
 - `Collector{Accounts AccountLister, Clock func() time.Time}.Collect(context.Context, Inputs) (Snapshot, error)`.
 - `Snapshot.ActiveUpstreams []ActiveUpstream` is sorted by `AccountID`.
-- `Snapshot.UpstreamDiscovery.AccountSetSHA256` hashes canonical JSON of ID, status, schedulable, group IDs, and runtime scheduling fields.
+- `Snapshot.UpstreamDiscovery.AccountSetSHA256` hashes canonical JSON of ID, status, schedulable, and sorted group IDs.
 - Evidence inputs are strict JSON arrays keyed by `account_id`; they never define membership.
 
 - [ ] **Step 1: Write failing discovery tests.**

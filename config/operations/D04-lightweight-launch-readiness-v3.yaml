@@ -1,0 +1,33 @@
+schema_version: 3
+policy_id: D04-LIGHTWEIGHT-LAUNCH-v3
+status: preparation_policy
+action_execution_mode: report_only
+
+launch:
+  max_users: 15
+  daily_login_credit_usd: 20.0
+  total_budget_usd: 100.0
+  budget_cost_bps: 1000
+  active_upstream_balance_min_usd: 10.0
+  discovery_evidence_max_age_minutes: 20
+  financial_evidence_max_age_minutes: 20
+  quality_window_minutes: 15
+  quality_evidence_max_age_minutes: 20
+  samples_min: 20
+  success_rate_min: 0.95
+  error_rate_max: 0.05
+  ttft_p95_ms_max: 5000
+  total_latency_p95_ms_max: 45000
+  account_backup_age_hours_max: 24
+  disk_used_ratio_max: 0.80
+
+required_modes:
+  d04_mode: read_only
+  registration_open: false
+  relay_ops_mode: read_only
+  feishu_command_mode: dry_run
+
+evidence:
+  discovery_source: sub2api_admin_accounts
+  quality_source: sub2api_account_attributed_natural_traffic
+  notes: Report-only multi-account launch gate. Membership comes only from Sub2API scheduling state.

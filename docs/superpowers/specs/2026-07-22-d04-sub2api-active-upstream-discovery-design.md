@@ -39,7 +39,7 @@ schedulable == true
 
 No provider-name or public-group allowlist participates in membership. Accounts with scheduling disabled are excluded. A schedulable account remains in the set while temporarily rate-limited, overloaded, expired, or temporarily unschedulable because it may automatically resume without a configuration change; that runtime condition is recorded and blocks opening until healthy.
 
-The discovery result is sorted by `account_id` and includes the account's current `group_ids` for explanation and quality attribution. An empty group list does not make a schedulable account disappear; it remains visible and fails closed because no natural routed quality can be attributed to it.
+The discovery result is sorted by `account_id` and includes the account's current `group_ids` for explanation and quality attribution. The canonical account-set hash covers `account_id`, `status`, `schedulable`, and sorted `group_ids`; temporary availability remains a separately evaluated field. An empty group list does not make a schedulable account disappear; it remains visible and fails closed because no natural routed quality can be attributed to it.
 
 If Sub2API returns zero active accounts, duplicate account IDs, incomplete pagination, malformed state, or an account set that changes during capture, the collector returns no valid launch snapshot.
 

@@ -1,5 +1,6 @@
 import { ArrowUpRight, Check, CircleDot, Copy, Cpu, Globe2, Network, Radio, ShieldCheck, Sparkles } from 'lucide-react'
 import { CopyControl } from '../components/CopyControl'
+import { Reveal } from '../components/Reveal'
 import type { SiteConfig } from '../domain/siteConfig'
 
 interface ValueSectionsProps {
@@ -12,13 +13,13 @@ export function ValueSections({ config }: ValueSectionsProps) {
   return (
     <section className="value-band grid-surface" id="value" aria-labelledby="value-title">
       <div className="section-inner">
-        <header className="section-intro">
+        <Reveal as="header" className="section-intro">
           <p className="eyebrow"><span />全球模型 · 一座星桥</p>
           <h2 id="value-title">国内直连、透明价格、真实模型</h2>
           <p>不绕远路，不隐藏倍率。每一条承诺都写清楚边界。</p>
-        </header>
+        </Reveal>
 
-        <div className="value-grid">
+        <Reveal className="value-grid">
           <article className="value-card value-card--wide model-card">
             <div className="card-heading">
               <Network aria-hidden="true" />
@@ -88,7 +89,7 @@ export function ValueSections({ config }: ValueSectionsProps) {
             <div className="card-heading"><Copy aria-hidden="true" /><div><h3>QQ群支持</h3><p>公开支持渠道只保留 QQ 群，反馈路径简单明确。</p></div></div>
             <div className="qq-row"><span>QQ群</span><strong>{config.support.qqGroup}</strong><CopyControl value={config.support.qqGroup} label="复制 QQ 群号" /></div>
           </article>
-        </div>
+        </Reveal>
       </div>
     </section>
   )

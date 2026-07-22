@@ -1,4 +1,5 @@
 import { Gauge, Scale, TriangleAlert } from 'lucide-react'
+import { Reveal } from '../components/Reveal'
 
 const boundaries = [
   {
@@ -25,12 +26,12 @@ export function BoundarySection() {
   return (
     <section className="boundary-band" id="about" aria-labelledby="boundary-title" tabIndex={-1}>
       <div className="section-inner">
-        <header className="section-intro section-intro--light">
+        <Reveal as="header" className="section-intro section-intro--light">
           <p className="eyebrow"><span />服务边界</p>
           <h2 id="boundary-title">边界清晰，承诺才有意义</h2>
           <p>商业服务需要明确规则。这里写清楚我们保障什么，也写清楚哪些风险不在星桥控制范围内。</p>
-        </header>
-        <div className="boundary-grid">
+        </Reveal>
+        <Reveal className="boundary-grid">
           {boundaries.map(({ icon: Icon, title, lead, items }, index) => (
             <article key={title}>
               <div className="boundary-index">0{index + 1}</div>
@@ -40,7 +41,7 @@ export function BoundarySection() {
               <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
             </article>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   )

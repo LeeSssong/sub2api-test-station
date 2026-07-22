@@ -1,6 +1,8 @@
 import { ArrowDown, ArrowRight, Braces } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { CopyControl } from '../components/CopyControl'
 import type { SessionState } from '../domain/session'
+import { useReducedMotionPreference } from '../hooks/useReducedMotion'
 
 const signalText = `A9K4 >_ AI ROUTE 09/CORE {TOKEN} BRIDGE 84F2 :: OPENAI / ANTHROPIC
 7ZD1 REQUEST 21B MODEL LINK WORLD 53AC > RESPONSE 200 STREAM
@@ -17,8 +19,18 @@ interface HeroSectionProps {
 }
 
 export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
+  const reduced = useReducedMotionPreference()
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 48)
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    return () => window.removeEventListener('scroll', update)
+  }, [])
+
   return (
-    <section className="hero" aria-labelledby="hero-title">
+    <section className="hero" aria-labelledby="hero-title" data-motion-state={reduced ? 'final' : 'active'}>
       <pre className="hero-signal" aria-hidden="true">{signalText.repeat(10)}</pre>
       <div className="hero-shade" aria-hidden="true" />
       <div className="hero-inner">
@@ -56,7 +68,7 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
           </div>
         </div>
       </div>
-      <a className="scroll-cue" href="#value" aria-label="向下探索更多内容">
+      <a className={`scroll-cue${scrolled ? ' is-dismissed' : ''}`} href="#value" aria-label="向下探索更多内容">
         <span>向下探索</span>
         <ArrowDown aria-hidden="true" />
       </a>

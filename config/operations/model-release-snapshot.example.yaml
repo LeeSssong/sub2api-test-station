@@ -1,0 +1,50 @@
+schema_version: 1
+snapshot_id: MODEL-RELEASE-EXAMPLE
+captured_at: "2026-07-22T12:05:00Z"
+account_set_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+base_config_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+modes:
+  relay_ops_mode: read_only
+  feishu_command_mode: dry_run
+  d04_mode: read_only
+  registration_open: false
+published:
+  families: ["5.5", "5.6"]
+  models: [gpt-5.5, gpt-5.6, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra]
+public_groups:
+  - group_id: 2
+    name: GPT-Plus
+accounts:
+  - account_id: 10
+    status: active
+    schedulable: true
+    group_ids: [2]
+    discovery_recorded_at: "2026-07-22T12:05:00Z"
+    discovered_models: [gpt-5.6, gpt-5.7]
+    balance_usd: 5.0
+    financial_recorded_at: "2026-07-22T12:05:00Z"
+    quality_source: sub2api_account_attributed_natural_traffic
+    quality_recorded_at: "2026-07-22T12:05:00Z"
+    sample_count: 20
+    success_rate: 0.95
+    error_rate: 0.05
+    ttft_p95_ms: 5000
+    total_latency_p95_ms: 45000
+    qualifications:
+      gpt-5.7:
+        sync_attempts: 3
+        sync_successes: 3
+        sse_attempts: 3
+        sse_successes: 3
+        sse_terminal_events: 3
+pricing:
+  - model_id: gpt-5.7
+    complete: true
+base_configuration:
+  accounts:
+    - account_id: 10
+      model_mapping: [gpt-5.5, gpt-5.6]
+  channels:
+    - channel_id: 20
+      group_ids: [2]
+      models: [gpt-5.5, gpt-5.6]

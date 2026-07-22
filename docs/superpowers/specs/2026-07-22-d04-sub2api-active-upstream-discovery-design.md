@@ -1,7 +1,7 @@
 # D04 Sub2API-Sourced Active Upstream Discovery Design
 
-**Date:** 2026-07-22 (Asia/Shanghai)  
-**Status:** Ready for review  
+**Date:** 2026-07-22 (Asia/Shanghai)
+**Status:** Approved for implementation
 **Target policy:** `D04-LIGHTWEIGHT-LAUNCH-v3`
 
 ## Problem

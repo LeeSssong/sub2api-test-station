@@ -1,0 +1,11 @@
+services:
+  internal-test-service:
+    environment:
+      D04_MODE: write
+      D04_REGISTRATION_OPEN: "true"
+      D04_MAX_USERS: "15"
+      D04_DAILY_LOGIN_CREDIT_USD: "20"
+      D04_TOTAL_BUDGET_USD: "100.00"
+      D04_BUDGET_COST_BPS: "1000"
+      D04_COST_POLICY_QUALIFIED: "true"
+      D04_COST_POLICY_ID: d04-active-upstream-conservative-1000bps-v2

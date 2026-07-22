@@ -120,7 +120,7 @@ class EvaluateD04LightweightLaunchReadinessTest < Minitest::Test
       "oom_killed" => true, "disk_used_ratio" => 0.81
     )
     snapshot["d04"].merge!(
-      "configured_total_budget_usd" => 101.0,
+      "launch_overlay_total_budget_usd" => 101.0,
       "registered_users" => 16,
       "balance_drift_usd" => 0.01,
       "read_only_reason" => "drift"

@@ -234,15 +234,15 @@ module D04LightweightLaunchReadiness
 
     def validate_d04
       d04 = section("d04", %w[
-        configured_max_users configured_daily_login_credit_usd configured_total_budget_usd
-        configured_budget_cost_bps registered_users balance_drift_usd read_only_reason
+        launch_overlay_max_users launch_overlay_daily_login_credit_usd launch_overlay_total_budget_usd
+        launch_overlay_budget_cost_bps registered_users balance_drift_usd read_only_reason
       ])
       return unless d04
 
-      integer(d04["configured_max_users"], "d04.configured_max_users", min: 1)
-      number(d04["configured_daily_login_credit_usd"], "d04.configured_daily_login_credit_usd", min: 0)
-      number(d04["configured_total_budget_usd"], "d04.configured_total_budget_usd", min: 0)
-      integer(d04["configured_budget_cost_bps"], "d04.configured_budget_cost_bps", min: 1)
+      integer(d04["launch_overlay_max_users"], "d04.launch_overlay_max_users", min: 1)
+      number(d04["launch_overlay_daily_login_credit_usd"], "d04.launch_overlay_daily_login_credit_usd", min: 0)
+      number(d04["launch_overlay_total_budget_usd"], "d04.launch_overlay_total_budget_usd", min: 0)
+      integer(d04["launch_overlay_budget_cost_bps"], "d04.launch_overlay_budget_cost_bps", min: 1)
       integer(d04["registered_users"], "d04.registered_users", min: 0)
       number(d04["balance_drift_usd"], "d04.balance_drift_usd")
       string(d04["read_only_reason"], "d04.read_only_reason", allow_empty: true)
@@ -418,13 +418,13 @@ module D04LightweightLaunchReadiness
 
     def d04_reasons(d04, launch, reasons)
       expected = {
-        "configured_max_users" => launch.fetch("max_users"),
-        "configured_daily_login_credit_usd" => launch.fetch("daily_login_credit_usd"),
-        "configured_total_budget_usd" => launch.fetch("total_budget_usd"),
-        "configured_budget_cost_bps" => launch.fetch("budget_cost_bps")
+        "launch_overlay_max_users" => launch.fetch("max_users"),
+        "launch_overlay_daily_login_credit_usd" => launch.fetch("daily_login_credit_usd"),
+        "launch_overlay_total_budget_usd" => launch.fetch("total_budget_usd"),
+        "launch_overlay_budget_cost_bps" => launch.fetch("budget_cost_bps")
       }
       reasons << "d04_configuration_mismatch" unless expected.all? { |key, value| d04.fetch(key) == value }
-      if d04.fetch("registered_users") > d04.fetch("configured_max_users")
+      if d04.fetch("registered_users") > d04.fetch("launch_overlay_max_users")
         reasons << "d04_user_limit_exceeded"
       end
       reasons << "d04_balance_drift" unless d04.fetch("balance_drift_usd").abs < 0.000_001

@@ -101,10 +101,10 @@ services:
   disk_used_ratio: 0.30
 
 d04:
-  configured_max_users: 15
-  configured_daily_login_credit_usd: 20.0
-  configured_total_budget_usd: 100.0
-  configured_budget_cost_bps: 1000
+  launch_overlay_max_users: 15
+  launch_overlay_daily_login_credit_usd: 20.0
+  launch_overlay_total_budget_usd: 100.0
+  launch_overlay_budget_cost_bps: 1000
   registered_users: 1
   balance_drift_usd: 0.0
   read_only_reason: ""
@@ -196,7 +196,7 @@ rollback_unverified
 
 Quality thresholds are evaluated only when `sample_count` meets the minimum. An insufficient sample count produces `upstream_samples_insufficient`; it does not produce misleading percentile pass/fail results. Samples must come from the declared natural-production-traffic window. Missing, malformed, future-dated, stale, or credential-bearing evidence fails closed.
 
-The four configured D04 launch values must exactly match the tracked policy, and `registered_users` must not exceed `configured_max_users`. These checks keep the simplified approval from authorizing a different user cap, credit, risk budget, or cost factor.
+The four `launch_overlay_*` values come from rendering the prepared launch overlay, not from the currently running read-only container. They must exactly match the tracked policy, while the separate `modes` fields prove current production remains read-only with registration closed. `registered_users` must not exceed `launch_overlay_max_users`. These checks keep the simplified approval from authorizing a different user cap, credit, risk budget, or cost factor without making a safe read-only preflight impossible.
 
 The JSON result includes:
 
@@ -241,7 +241,7 @@ Automated tests must cover:
 - every blocking reason and its provider-neutral action;
 - nil balance, stale finance, stale quality, insufficient samples, and each quality threshold;
 - a strict schema allowlist proving any provider-specific top-level section is rejected as unknown and only `active_upstream` can carry upstream evidence;
-- exact D04 launch-configuration matching;
+- exact prepared launch-overlay matching while current D04 remains read-only;
 - registered-user count not exceeding the configured maximum;
 - account-backup freshness, checksum status, and both required data stores;
 - unknown fields or credential-shaped input rejection;

@@ -358,3 +358,12 @@ Done when: 包含单次明确开放批准的新鲜快照生成 `decision=go`，�
 - 新 AMD64 镜像 `sub2api-internal-test:d04-lightweight-launch-20260722-v2` 已构建，image ID 为 `sha256:89bd28421f8002091f7d5411ae6da92d058f767db625e77bc65ce958c759a290`，但没有部署或重建运行 D04。生产继续 `read_only/registration=false`，relay-ops 继续 `read_only/dry_run`。
 - 02:28 离线复评为 `NO-GO`：`launch_not_approved`、`upstream_balance_below_minimum`、`upstream_financial_evidence_stale`、`upstream_quality_metrics_stale`、`upstream_samples_insufficient`。质量证据过期是时间自然流逝导致；15 分钟窗口没有自然样本，不人为制造流量。
 - 当前入口：`docs/superpowers/reports/2026-07-22-d04-lightweight-launch-gate-verification.md`。下一次只在明确开放批准、余额达到 USD 10 且财务证据新鲜、自然样本至少 20 且成功率/错误率/TTFT P95/总耗时 P95 都新鲜后重跑 v2；同一快照返回 `go` 前不应用 launch overlay。
+
+## 19. GPT/Codex 缓存让利只读基线（2026-07-22）
+
+- 商业口径：缓存相对普通输入的价格差额全部让利，用户组倍率保持不变，上游账号采购折扣仍作为站点经营空间。
+- Sub2API `v0.1.161` 继续是请求转发、四类 Token 计费、余额、用户用量页、`prompt_cache_key` 和粘性会话的唯一权威；不维护私有网关分支或第二套用户账单。
+- relay-ops 新增只读缓存字段存在性、命中率和公开价格门禁；日报只展示聚合证据和脱敏门禁代码，不读取提示词、响应或原始缓存键，也不自动改价。
+- 本地聚焦测试、全量测试、全量 race、vet、Compose 和差异检查已通过。没有部署、模型请求、价格/路由/倍率/余额/Key/用户/数据库写入。
+- 恢复入口：等待 `GPT-Pro`、`GPT-Plus` 各至少 24 小时且 20 个成功自然请求，随后逐笔核对用户扣费、Sub2API Token 分类和上游账单；成功率下降须不超过 0.5 个百分点，TTFT P95 上升须不超过 10%。此前不得宣称生产让利验收完成。
+- 权威证据：`docs/superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md`。

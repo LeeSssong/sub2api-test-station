@@ -1,10 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RequestJourney } from './RequestJourney'
+import { phaseForProgress, RequestJourney } from './RequestJourney'
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('RequestJourney', () => {
+  it('maps scroll progress in both directions to the matching phase', () => {
+    expect(phaseForProgress(.12)).toBe('send')
+    expect(phaseForProgress(.5)).toBe('route')
+    expect(phaseForProgress(.91)).toBe('observe')
+    expect(phaseForProgress(.28)).toBe('send')
+  })
+
   it('renders all phases and final metrics without scroll scrubbing in reduced motion', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true,

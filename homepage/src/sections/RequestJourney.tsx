@@ -11,6 +11,10 @@ const steps = [
   { id: 'observe' as const, number: '03', title: '观测', text: '延迟、Token 与结果状态，每一次调用都有迹可循。' },
 ]
 
+export function phaseForProgress(progress: number): Phase {
+  return progress < .34 ? 'send' : progress < .68 ? 'route' : 'observe'
+}
+
 export function RequestJourney() {
   const root = useRef<HTMLElement>(null)
   const reduced = useReducedMotionPreference()
@@ -21,7 +25,7 @@ export function RequestJourney() {
   useMotionValueEvent(scrollYProgress, 'change', (value) => {
     if (reduced) return
     setProgress(value)
-    const next: Phase = value < .34 ? 'send' : value < .68 ? 'route' : 'observe'
+    const next = phaseForProgress(value)
     setPhase((current) => current === next ? current : next)
   })
 

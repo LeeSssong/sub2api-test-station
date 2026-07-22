@@ -30,6 +30,7 @@ describe('HeroSection', () => {
 
     expect(screen.getByLabelText('星桥首页首屏')).toHaveAttribute('data-entry-state', 'final')
     expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-canvas-active', 'false')
+    expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-travel-direction', 'left')
   })
 })
 

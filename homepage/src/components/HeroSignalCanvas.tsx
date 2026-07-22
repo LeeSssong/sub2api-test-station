@@ -40,8 +40,9 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
     let width = 1
     let height = 1
     let dpr = 1
-    let pointerX = -1000
-    let pointerY = -1000
+    let pointerX = 0
+    let velocity = .85
+    let targetVelocity = .85
 
     const build = () => {
       const rect = container.getBoundingClientRect()
@@ -56,23 +57,23 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       const count = Math.max(12, Math.ceil(height / 34) + 4)
       rows = Array.from({ length: count }, (_, index) => ({
         text: `${rowSeeds[index % rowSeeds.length]}  ${String(index * 73 + 19).padStart(4, '0')}`,
-        x: -40 - ((index * 83) % 260),
-        y: index * 34 - 56,
-        speed: .18 + (index % 5) * .055,
-        alpha: .075 + (index % 4) * .022,
+        x: -(Math.random() * width),
+        y: index * 20,
+        speed: -(.44 * Math.random() + .34),
+        alpha: .22 * Math.random() + .05,
       }))
     }
 
     const draw = () => {
       context.clearRect(0, 0, width, height)
-      context.font = '600 13px ui-monospace, SFMono-Regular, Menlo, monospace'
+      context.font = '500 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
       context.textBaseline = 'middle'
+      velocity += (targetVelocity - velocity) * .055
       for (const row of rows) {
-        const distance = Math.hypot(pointerX - width * .5, pointerY - row.y)
-        const influence = Math.max(0, 1 - distance / 320)
-        row.x += row.speed * (1 + influence * 2.6)
-        if (row.x > 40) row.x = -Math.max(360, context.measureText(row.text).width * .48)
-        context.fillStyle = `rgba(157, 174, 198, ${row.alpha + influence * .16})`
+        row.x += row.speed * velocity
+        const textWidth = context.measureText(row.text).width
+        if (row.x < -textWidth) row.x += textWidth
+        context.fillStyle = `rgba(157, 174, 198, ${row.alpha})`
         context.fillText(`${row.text}   ${row.text}`, row.x, row.y)
       }
     }
@@ -94,11 +95,11 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
     const onPointerMove = (event: PointerEvent) => {
       const rect = container.getBoundingClientRect()
       pointerX = event.clientX - rect.left
-      pointerY = event.clientY - rect.top
+      const center = width / 2
+      targetVelocity = .55 + 2.6 * Math.abs((pointerX - center) / center)
     }
     const onPointerLeave = () => {
-      pointerX = -1000
-      pointerY = -1000
+      targetVelocity = .85
     }
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry?.isIntersecting ?? true
@@ -136,6 +137,7 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       role="img"
       aria-label="星桥实时信号背景"
       data-canvas-active={canvasActive ? 'true' : 'false'}
+      data-travel-direction="left"
     >
       <canvas ref={canvas} aria-hidden="true" />
       <span aria-hidden="true">XQ / OPENAI / ANTHROPIC / SEOUL DIRECT / API READY</span>

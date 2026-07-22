@@ -29,7 +29,7 @@
 - Modify: `relay-ops-service/internal/sub2api/client_test.go`
 
 **Interfaces:**
-- Add `ListAccounts(context.Context) ([]Account, error)` to `sub2api.Reader`.
+- Add `ListAccounts(context.Context) ([]Account, error)` to the new narrow `sub2api.AccountReader` contract.
 - Use `GET /api/v1/admin/accounts?page=<n>&page_size=100`, with at most 20 pages and 2,000 accounts.
 - Decode only `data.items`, `data.total`, `data.page`, and `data.page_size`; reject absent or inconsistent pagination, duplicate IDs, and no-progress pages.
 
@@ -325,4 +325,3 @@ Record the discovered-set definition, same-snapshot requirement, current decisio
 - Scope: no routing, scheduling, candidate, probe, Feishu, upstream model, or D04 write behavior is added.
 - Contract consistency: `account_id`, `active_upstreams`, and `account_set_sha256` are the collector-to-evaluator-to-UI identity contract.
 - No evidence file can define membership or let one account mask another.
-

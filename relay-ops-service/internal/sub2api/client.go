@@ -17,7 +17,12 @@ import (
 	"example.invalid/relay-ops-service/internal/adminauth"
 )
 
-const maxResponseBytes = 2 << 20
+const (
+	maxResponseBytes = 2 << 20
+	accountPageSize = 100
+	maxAccountPages = 20
+	maxAccounts     = accountPageSize * maxAccountPages
+)
 
 var errResponseTooLarge = errors.New("Sub2API response exceeds size limit")
 var errSchemaMismatch = errors.New("Sub2API response schema mismatch")
@@ -81,6 +86,52 @@ func (c *HTTPReader) ListChannels(ctx context.Context) ([]Channel, error) {
 		return nil, errSchemaMismatch
 	}
 	return *response.Items, nil
+}
+
+func (c *HTTPReader) ListAccounts(ctx context.Context) ([]Account, error) {
+	type accountPage struct {
+		Items    *[]Account `json:"items"`
+		Total    *int       `json:"total"`
+		Page     *int       `json:"page"`
+		PageSize *int       `json:"page_size"`
+	}
+
+	accounts := make([]Account, 0, accountPageSize)
+	seen := make(map[int64]struct{})
+	expectedTotal := -1
+	for page := 1; page <= maxAccountPages; page++ {
+		var response accountPage
+		query := url.Values{"page": {strconv.Itoa(page)}, "page_size": {strconv.Itoa(accountPageSize)}}
+		if err := c.get(ctx, "/api/v1/admin/accounts", query, &response); err != nil {
+			return nil, err
+		}
+		if response.Items == nil || response.Total == nil || response.Page == nil || response.PageSize == nil ||
+			*response.Page != page || *response.PageSize != accountPageSize || *response.Total < 0 || *response.Total > maxAccounts {
+			return nil, errSchemaMismatch
+		}
+		if expectedTotal == -1 {
+			expectedTotal = *response.Total
+		} else if *response.Total != expectedTotal {
+			return nil, errSchemaMismatch
+		}
+		for _, account := range *response.Items {
+			if account.ID <= 0 {
+				return nil, errSchemaMismatch
+			}
+			if _, duplicate := seen[account.ID]; duplicate {
+				return nil, errSchemaMismatch
+			}
+			seen[account.ID] = struct{}{}
+			accounts = append(accounts, account)
+		}
+		if len(accounts) == expectedTotal {
+			return accounts, nil
+		}
+		if len(*response.Items) == 0 || len(accounts) > expectedTotal {
+			return nil, errSchemaMismatch
+		}
+	}
+	return nil, errSchemaMismatch
 }
 
 func (c *HTTPReader) ListGroups(ctx context.Context) ([]Group, error) {

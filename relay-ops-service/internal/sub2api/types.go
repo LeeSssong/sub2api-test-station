@@ -14,6 +14,10 @@ type Reader interface {
 	GetUsageStats(context.Context, UsageQuery) (UsageStats, error)
 }
 
+type AccountReader interface {
+	ListAccounts(context.Context) ([]Account, error)
+}
+
 type Controller interface {
 	GetGroup(context.Context, int64) (Group, error)
 	GetAccount(context.Context, int64) (Account, error)

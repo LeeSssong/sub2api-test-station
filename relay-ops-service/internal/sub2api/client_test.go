@@ -79,6 +79,94 @@ func TestReaderAccountRoutingContract(t *testing.T) {
 	}
 }
 
+func TestReaderListsAccountsAcrossPages(t *testing.T) {
+	t.Parallel()
+
+	requests := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("x-api-key"); got != "admin-test-key" {
+			t.Errorf("x-api-key = %q", got)
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/accounts" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("page_size"); got != "100" {
+			t.Errorf("page_size = %q", got)
+		}
+		requests = append(requests, r.URL.Query().Get("page"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			fmt.Fprint(w, `{"data":{"items":[{"id":11,"status":"active","schedulable":true}],"total":2,"page":1,"page_size":100}}`)
+		case "2":
+			fmt.Fprint(w, `{"data":{"items":[{"id":12,"status":"disabled","schedulable":false}],"total":2,"page":2,"page_size":100}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	accounts, err := newTestReader(t, server.URL).ListAccounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 2 || accounts[0].ID != 11 || accounts[1].ID != 12 {
+		t.Fatalf("accounts = %#v, want IDs 11,12", accounts)
+	}
+	if got, want := strings.Join(requests, ","), "1,2"; got != want {
+		t.Fatalf("pages = %q, want %q", got, want)
+	}
+}
+
+func TestReaderRejectsInvalidAccountPagination(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body func(page string) string
+	}{
+		{
+			name: "missing total",
+			body: func(string) string {
+				return `{"data":{"items":[],"page":1,"page_size":100}}`
+			},
+		},
+		{
+			name: "duplicate account",
+			body: func(page string) string {
+				if page == "1" {
+					return `{"data":{"items":[{"id":11,"status":"active","schedulable":true}],"total":2,"page":1,"page_size":100}}`
+				}
+				return `{"data":{"items":[{"id":11,"status":"active","schedulable":true}],"total":2,"page":2,"page_size":100}}`
+			},
+		},
+		{
+			name: "empty page before total",
+			body: func(string) string {
+				return `{"data":{"items":[],"total":1,"page":1,"page_size":100}}`
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/accounts" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, test.body(r.URL.Query().Get("page")))
+			}))
+			defer server.Close()
+			_, err := newTestReader(t, server.URL).ListAccounts(context.Background())
+			if !IsSchemaMismatch(err) {
+				t.Fatalf("ListAccounts error = %v, want schema mismatch", err)
+			}
+		})
+	}
+}
+
 func TestReaderAccountRoutingRejectsConflictWithoutLeakingBody(t *testing.T) {
 	t.Parallel()
 

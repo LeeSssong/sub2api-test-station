@@ -264,7 +264,7 @@ func TestReaderDecodesOpsAndUsageWithoutUserDetails(t *testing.T) {
 			}
 			fmt.Fprint(w, `{"data":{"generated_at":"2026-07-19T08:00:00Z","overview":{"start_time":"2026-07-18T08:00:00Z","end_time":"2026-07-19T08:00:00Z","success_count":99,"error_count_total":1,"request_count_total":100,"request_count_sla":100,"sla":99,"error_rate":1,"upstream_error_rate":0,"duration":{"p50_ms":1200,"p95_ms":3200},"ttft":{"p50_ms":500,"p95_ms":1400}}}}`)
 		case "/api/v1/admin/usage/stats":
-			fmt.Fprint(w, `{"data":{"total_requests":100,"total_input_tokens":1000,"total_output_tokens":500,"total_cost":1.5,"total_actual_cost":0.15,"total_account_cost":0.1,"average_duration_ms":1600}}`)
+			fmt.Fprint(w, `{"data":{"total_requests":100,"total_input_tokens":1000,"total_output_tokens":500,"total_cache_tokens":3500,"total_cache_creation_tokens":500,"total_cache_read_tokens":3000,"total_tokens":5000,"total_cost":1.5,"total_actual_cost":0.15,"total_account_cost":0.1,"average_duration_ms":1600}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -277,8 +277,27 @@ func TestReaderDecodesOpsAndUsageWithoutUserDetails(t *testing.T) {
 		t.Fatalf("GetOpsSnapshot = %#v, %v", ops, err)
 	}
 	usage, err := reader.GetUsageStats(context.Background(), UsageQuery{GroupID: 3, Period: "24h"})
-	if err != nil || usage.TotalActualCost != 0.15 || usage.TotalAccountCost != 0.1 {
+	if err != nil || usage.TotalActualCost != 0.15 || usage.TotalAccountCost != 0.1 || !usage.CacheMetricsPresent ||
+		usage.TotalCacheCreationTokens != 500 || usage.TotalCacheReadTokens != 3000 || usage.TotalTokens != 5000 {
 		t.Fatalf("GetUsageStats = %#v, %v", usage, err)
+	}
+}
+
+func TestReaderMarksMissingCacheUsageFieldsUnconfirmed(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"total_requests":1,"total_input_tokens":10,"total_output_tokens":5,"total_cost":0.1,"total_actual_cost":0.1,"total_account_cost":0.01,"average_duration_ms":100}}`)
+	}))
+	defer server.Close()
+
+	usage, err := newTestReader(t, server.URL).GetUsageStats(context.Background(), UsageQuery{Period: "24h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.CacheMetricsPresent {
+		t.Fatalf("missing cache fields reported as confirmed: %#v", usage)
 	}
 }
 

@@ -2,6 +2,7 @@ package sub2api
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -155,11 +156,36 @@ type UsageQuery struct {
 }
 
 type UsageStats struct {
-	TotalRequests     int64   `json:"total_requests"`
-	TotalInputTokens  int64   `json:"total_input_tokens"`
-	TotalOutputTokens int64   `json:"total_output_tokens"`
-	TotalCost         float64 `json:"total_cost"`
-	TotalActualCost   float64 `json:"total_actual_cost"`
-	TotalAccountCost  float64 `json:"total_account_cost"`
-	AverageDurationMS float64 `json:"average_duration_ms"`
+	TotalRequests            int64   `json:"total_requests"`
+	TotalInputTokens         int64   `json:"total_input_tokens"`
+	TotalOutputTokens        int64   `json:"total_output_tokens"`
+	TotalCacheTokens         int64   `json:"total_cache_tokens"`
+	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
+	TotalTokens              int64   `json:"total_tokens"`
+	TotalCost                float64 `json:"total_cost"`
+	TotalActualCost          float64 `json:"total_actual_cost"`
+	TotalAccountCost         float64 `json:"total_account_cost"`
+	AverageDurationMS        float64 `json:"average_duration_ms"`
+	CacheMetricsPresent      bool    `json:"-"`
+}
+
+func (s *UsageStats) UnmarshalJSON(data []byte) error {
+	type alias UsageStats
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*s = UsageStats(decoded)
+	for _, name := range []string{"total_cache_tokens", "total_cache_creation_tokens", "total_cache_read_tokens", "total_tokens"} {
+		if _, ok := fields[name]; !ok {
+			return nil
+		}
+	}
+	s.CacheMetricsPresent = true
+	return nil
 }

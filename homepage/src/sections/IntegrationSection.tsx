@@ -20,7 +20,7 @@ export function IntegrationSection() {
             <article key={item.label} className="integration-item">
               <div className="integration-label"><Braces aria-hidden="true" /><span>{item.label}</span><ArrowRight aria-hidden="true" /></div>
               <div className="terminal-block">
-                <div className="terminal-bar"><Terminal aria-hidden="true" /><span>{item.path}</span></div>
+                <div className="terminal-bar"><Terminal aria-hidden="true" /><span>{item.path}</span><b className="terminal-cursor" aria-hidden="true">|</b></div>
                 <code>{item.sdk}=https://你的星桥域名</code>
               </div>
             </article>

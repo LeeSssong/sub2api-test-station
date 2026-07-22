@@ -1,17 +1,10 @@
 import { ArrowDown, ArrowRight, Braces } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { motion, useScroll, useTransform } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
 import { CopyControl } from '../components/CopyControl'
+import { HeroSignalCanvas } from '../components/HeroSignalCanvas'
 import type { SessionState } from '../domain/session'
-import { useReducedMotionPreference } from '../hooks/useReducedMotion'
-
-const signalText = `A9K4 >_ AI ROUTE 09/CORE {TOKEN} BRIDGE 84F2 :: OPENAI / ANTHROPIC
-7ZD1 REQUEST 21B MODEL LINK WORLD 53AC > RESPONSE 200 STREAM
-K3M7 Claude GPT KEY PATH SEOUL DIRECT CN 8B12 :: LATENCY ROUTE
-XQ-01 STAR BRIDGE GATEWAY /V1/ MESSAGES COMPLETIONS 73FD
-API MODEL TOKEN 09AF CONNECT GLOBAL SIGNAL 42B8 OPENAI ANTHROPIC
-5D91 REQUEST 21B MODEL LINK WORLD 53AC > RESPONSE 200 STREAM
-K3M7 Claude GPT KEY PATH SEOUL DIRECT CN 8B12 :: LATENCY ROUTE
-XQ-01 STAR BRIDGE GATEWAY /V1/ MESSAGES COMPLETIONS 73FD`
+import { useHeroEntry } from '../hooks/useHeroEntry'
 
 interface HeroSectionProps {
   apiOrigin: string
@@ -19,8 +12,14 @@ interface HeroSectionProps {
 }
 
 export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
-  const reduced = useReducedMotionPreference()
+  const root = useRef<HTMLElement>(null)
+  const entry = useHeroEntry()
   const [scrolled, setScrolled] = useState(false)
+  const { scrollYProgress } = useScroll({ target: root, offset: ['start start', 'end start'] })
+  const contentY = useTransform(scrollYProgress, [0, 1], [0, -96])
+  const contentOpacity = useTransform(scrollYProgress, [0, .72, 1], [1, 0, 0])
+  const contentScale = useTransform(scrollYProgress, [0, 1], [1, .94])
+  const signalY = useTransform(scrollYProgress, [0, 1], [0, 120])
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 48)
@@ -30,10 +29,31 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
   }, [])
 
   return (
-    <section className="hero" aria-labelledby="hero-title" data-motion-state={reduced ? 'final' : 'active'}>
-      <pre className="hero-signal" aria-hidden="true">{signalText.repeat(10)}</pre>
+    <motion.section
+      ref={root}
+      className={`hero${entry.started ? ' hero-entry-started' : ''}`}
+      aria-labelledby="hero-title"
+      aria-label="星桥首页首屏"
+      data-entry-state={entry.reduced ? 'final' : entry.started ? 'started' : 'waiting'}
+      style={{ '--hero-entry-x': entry.origin.x, '--hero-entry-y': entry.origin.y } as React.CSSProperties}
+      onPointerMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        entry.updateOrigin(event.clientX - rect.left, event.clientY - rect.top)
+        entry.start()
+      }}
+      onFocusCapture={entry.start}
+    >
+      <motion.div className="hero-signal-layer" style={entry.reduced ? undefined : { y: signalY }}>
+        <HeroSignalCanvas active={entry.started} />
+      </motion.div>
+      <div className="hero-ambient" aria-hidden="true" />
+      <div className="hero-grid-layer" aria-hidden="true" />
+      <div className="hero-ripple" aria-hidden="true" />
       <div className="hero-shade" aria-hidden="true" />
-      <div className="hero-inner">
+      <motion.div
+        className="hero-inner"
+        style={entry.reduced ? undefined : { y: contentY, opacity: contentOpacity, scale: contentScale }}
+      >
         <div className="endpoint-kicker">
           <span className="status-dot" aria-hidden="true" />
           <span>韩国首尔 · 国内直连</span>
@@ -44,6 +64,7 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
           <div className="protocol-cycle" aria-label="兼容接口路径">
             <code>/v1/chat/completions</code>
             <code>/v1/messages</code>
+            <span className="terminal-cursor" aria-hidden="true">|</span>
           </div>
         </div>
         <div className="hero-grid">
@@ -67,11 +88,11 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
       <a className={`scroll-cue${scrolled ? ' is-dismissed' : ''}`} href="#value" aria-label="向下探索更多内容">
         <span>向下探索</span>
         <ArrowDown aria-hidden="true" />
       </a>
-    </section>
+    </motion.section>
   )
 }

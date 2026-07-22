@@ -1,13 +1,12 @@
-import { ArrowUpRight, Check, CircleDot, Copy, Cpu, Globe2, Network, Radio, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowUpRight, Check, CircleDot, Copy, Cpu, Globe2, Network, ShieldCheck, Sparkles } from 'lucide-react'
 import { CopyControl } from '../components/CopyControl'
 import { Reveal } from '../components/Reveal'
 import type { SiteConfig } from '../domain/siteConfig'
+import { ModelFlow } from './ModelFlow'
 
 interface ValueSectionsProps {
   config: SiteConfig
 }
-
-const models = ['OpenAI', 'Claude', 'Gemini', 'DeepSeek', 'Qwen', 'GLM']
 
 export function ValueSections({ config }: ValueSectionsProps) {
   return (
@@ -25,13 +24,7 @@ export function ValueSections({ config }: ValueSectionsProps) {
               <Network aria-hidden="true" />
               <div><h3>一条 API，接住所有模型</h3><p>请求通过星桥网关路由到健康上游，接口与官方 SDK 保持兼容。</p></div>
             </div>
-            <div className="model-flow" aria-label="模型路由示意">
-              <span className="request-chip"><Radio aria-hidden="true" />你的请求</span>
-              <span className="flow-line" aria-hidden="true" />
-              <span className="gateway-chip"><img src="/home-assets/xingqiao-logo.png" alt="" />星桥</span>
-              <span className="flow-line" aria-hidden="true" />
-              <div className="model-chips">{models.map((model) => <span key={model}>{model}</span>)}</div>
-            </div>
+            <ModelFlow />
           </article>
 
           {config.thirdPartyReports.length > 0 && (

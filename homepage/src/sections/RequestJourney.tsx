@@ -35,6 +35,7 @@ export function RequestJourney() {
       className="request-journey grid-surface"
       aria-label="一次 API 请求的完整旅程"
       data-journey-phase={visiblePhase}
+      data-journey-mode={reduced ? 'static' : 'scroll'}
     >
       <div className="journey-stage">
         <div className="journey-content">

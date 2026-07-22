@@ -20,5 +20,6 @@ describe('RequestJourney', () => {
     expect(screen.getByText('187')).toBeVisible()
     expect(screen.getByText('2,148')).toBeVisible()
     expect(screen.getByLabelText('一次 API 请求的完整旅程')).toHaveAttribute('data-journey-phase', 'static')
+    expect(screen.getByLabelText('一次 API 请求的完整旅程')).toHaveAttribute('data-journey-mode', 'static')
   })
 })

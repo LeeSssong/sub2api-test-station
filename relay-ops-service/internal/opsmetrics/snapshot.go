@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -20,6 +21,11 @@ const (
 
 	ErrorCodeOpsSnapshotUnavailable = "ops_snapshot_unavailable"
 	minimumRequestCount             = 20
+)
+
+var (
+	ErrGroupsSourceUnavailable   = errors.New("ops metrics groups source unavailable")
+	ErrAccountsSourceUnavailable = errors.New("ops metrics accounts source unavailable")
 )
 
 type Reader interface {
@@ -67,11 +73,11 @@ func Collect(ctx context.Context, reader Reader, now time.Time) (Snapshot, error
 	}
 	groups, err := reader.ListGroups(ctx)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("list groups: %w", err)
+		return Snapshot{}, ErrGroupsSourceUnavailable
 	}
 	accounts, err := reader.ListAccounts(ctx)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("list accounts: %w", err)
+		return Snapshot{}, ErrAccountsSourceUnavailable
 	}
 
 	snapshot := Snapshot{CapturedAt: now.UTC()}
@@ -99,7 +105,9 @@ func Collect(ctx context.Context, reader Reader, now time.Time) (Snapshot, error
 	}
 	sort.SliceStable(active, func(i, j int) bool { return active[i].ID < active[j].ID })
 	for _, account := range active {
-		row := AccountRuntime{ID: account.ID, Name: account.Name, GroupIDs: append([]int64(nil), account.GroupIDs...)}
+		groupIDs := append([]int64(nil), account.GroupIDs...)
+		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+		row := AccountRuntime{ID: account.ID, Name: account.Name, GroupIDs: groupIDs}
 		ops, readErr := reader.GetOpsSnapshot(ctx, sub2api.OpsQuery{TimeRange: "15m", AccountID: account.ID})
 		if readErr != nil {
 			row.Status = StatusReadFailed

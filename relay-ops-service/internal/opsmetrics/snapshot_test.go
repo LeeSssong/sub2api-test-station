@@ -64,13 +64,60 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 }
 
 func TestCollectReturnsSourceErrorWhenGroupOrAccountListFails(t *testing.T) {
-	_, err := Collect(context.Background(), &fakeReader{groupErr: errors.New("groups unavailable")}, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "list groups") {
-		t.Fatalf("group list error = %v", err)
+	for _, test := range []struct {
+		name   string
+		reader fakeReader
+		want   error
+	}{
+		{
+			name:   "groups",
+			reader: fakeReader{groupErr: errors.New("reader response contains secret-group-token")},
+			want:   ErrGroupsSourceUnavailable,
+		},
+		{
+			name:   "accounts",
+			reader: fakeReader{accountErr: errors.New("reader response contains secret-account-token")},
+			want:   ErrAccountsSourceUnavailable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Collect(context.Background(), &test.reader, time.Now())
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if strings.Contains(err.Error(), "secret-") {
+				t.Fatalf("source error leaks native reader message: %q", err)
+			}
+		})
 	}
-	_, err = Collect(context.Background(), &fakeReader{accountErr: errors.New("accounts unavailable")}, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "list accounts") {
-		t.Fatalf("account list error = %v", err)
+}
+
+func TestCollectCanonicalizesAccountGroupIDsForOrderingAndEvidence(t *testing.T) {
+	first := fakeReader{accountRows: []sub2api.Account{
+		{ID: 30, Name: "Later", Status: "active", Schedulable: true, GroupIDs: []int64{9, 2, 4}},
+		{ID: 10, Name: "First", Status: "active", Schedulable: true, GroupIDs: []int64{4, 2, 9}},
+	}}
+	second := fakeReader{accountRows: []sub2api.Account{
+		{ID: 30, Name: "Later", Status: "active", Schedulable: true, GroupIDs: []int64{2, 9, 4}},
+		{ID: 10, Name: "First", Status: "active", Schedulable: true, GroupIDs: []int64{9, 4, 2}},
+	}}
+
+	firstSnapshot, err := Collect(context.Background(), &first, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSnapshot, err := Collect(context.Background(), &second, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstSnapshot.Accounts) != 2 || firstSnapshot.Accounts[0].ID != 10 || firstSnapshot.Accounts[1].ID != 30 {
+		t.Fatalf("accounts = %#v", firstSnapshot.Accounts)
+	}
+	if got := firstSnapshot.Accounts[0].GroupIDs; len(got) != 3 || got[0] != 2 || got[1] != 4 || got[2] != 9 {
+		t.Fatalf("group IDs = %#v", got)
+	}
+	if firstSnapshot.Accounts[0].EvidenceHash != secondSnapshot.Accounts[0].EvidenceHash || firstSnapshot.Accounts[1].EvidenceHash != secondSnapshot.Accounts[1].EvidenceHash {
+		t.Fatalf("evidence hashes vary with source group order: %#v != %#v", firstSnapshot.Accounts, secondSnapshot.Accounts)
 	}
 }
 

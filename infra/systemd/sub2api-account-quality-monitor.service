@@ -1,0 +1,27 @@
+[Unit]
+Description=Sub2API read-only account quality monitor
+Wants=docker.service
+After=docker.service network-online.target
+ConditionPathExists=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/etc/sub2api/account-quality-monitor.env
+Environment=DOCKER_CONFIG=/run/account-quality-monitor
+ExecStart=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
+RuntimeDirectory=account-quality-monitor
+UMask=0077
+TimeoutStartSec=4min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

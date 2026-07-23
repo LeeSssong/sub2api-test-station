@@ -283,6 +283,38 @@ func TestReaderDecodesOpsAndUsageWithoutUserDetails(t *testing.T) {
 	}
 }
 
+func TestReaderAddsAccountIDFilterToNativeAggregates(t *testing.T) {
+	queries := make(map[string]string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/admin/ops/dashboard/snapshot-v2":
+			queries["ops"] = r.URL.Query().Get("account_id")
+			fmt.Fprint(w, `{"data":{"generated_at":"2026-07-23T00:00:00Z","overview":{}}}`)
+		case "/api/v1/admin/usage/stats":
+			queries["usage"] = r.URL.Query().Get("account_id")
+			fmt.Fprint(w, `{"data":{}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	reader := newTestReader(t, server.URL)
+	if _, err := reader.GetOpsSnapshot(context.Background(), OpsQuery{TimeRange: "15m", AccountID: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.GetUsageStats(context.Background(), UsageQuery{Period: "24h", AccountID: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := queries["ops"], "42"; got != want {
+		t.Fatalf("ops account_id = %q, want %q", got, want)
+	}
+	if got, want := queries["usage"], "42"; got != want {
+		t.Fatalf("usage account_id = %q, want %q", got, want)
+	}
+}
+
 func TestReaderMarksMissingCacheUsageFieldsUnconfirmed(t *testing.T) {
 	t.Parallel()
 

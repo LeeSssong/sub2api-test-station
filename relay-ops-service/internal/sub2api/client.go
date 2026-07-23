@@ -230,6 +230,9 @@ func (c *HTTPReader) GetOpsSnapshot(ctx context.Context, query OpsQuery) (OpsSna
 	if query.GroupID > 0 {
 		values.Set("group_id", strconv.FormatInt(query.GroupID, 10))
 	}
+	if query.AccountID > 0 {
+		values.Set("account_id", strconv.FormatInt(query.AccountID, 10))
+	}
 	var snapshot OpsSnapshot
 	if err := c.get(ctx, "/api/v1/admin/ops/dashboard/snapshot-v2", values, &snapshot); err != nil {
 		return OpsSnapshot{}, err
@@ -241,6 +244,9 @@ func (c *HTTPReader) GetUsageStats(ctx context.Context, query UsageQuery) (Usage
 	values := url.Values{}
 	if query.GroupID > 0 {
 		values.Set("group_id", strconv.FormatInt(query.GroupID, 10))
+	}
+	if query.AccountID > 0 {
+		values.Set("account_id", strconv.FormatInt(query.AccountID, 10))
 	}
 	setIf(values, "model", query.Model)
 	setIf(values, "period", query.Period)

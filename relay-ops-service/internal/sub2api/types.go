@@ -116,6 +116,7 @@ type MonitorHistory struct {
 type OpsQuery struct {
 	TimeRange string
 	GroupID   int64
+	AccountID int64
 	Platform  string
 	Mode      string
 }
@@ -148,6 +149,7 @@ type OpsSnapshot struct {
 
 type UsageQuery struct {
 	GroupID   int64
+	AccountID int64
 	Model     string
 	Period    string
 	StartDate string

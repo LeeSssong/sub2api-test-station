@@ -85,6 +85,29 @@ printf '%s' '{"schema_version":1,"run_id":"qualification-1","channel_id":"candid
 	}
 }
 
+func TestV2FastRunsBoundedJobWithScrubbedEnvironment(t *testing.T) {
+	helper := writeHelper(t, `
+if env | grep -q '^SHOULD_NOT_LEAK='; then exit 41; fi
+if [ -z "$RELAY_OPS_CANDIDATE_KEY" ]; then exit 42; fi
+if [ "$1" != "fast" ]; then exit 43; fi
+printf '%s' '{"schema_version":1,"run_id":"fast-1","channel_id":"candidate-17","profile_id":"quality-first-fast-v1","job_kind":"health_pulse","recorded_at":"2026-07-22T03:00:00Z","status":"passed","evidence_source":"live_direct","metrics":{"selected_models":["gpt-a"],"direct":{"request_count":2,"success_count":2,"success_rate":1,"latency":{"p95_ms":1200},"ttft":{"p95_ms":500}},"gateway":{"status":"unknown","reason":"not_measured"},"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}},"errors":[]}'
+`)
+	t.Setenv("SHOULD_NOT_LEAK", "sensitive-parent-value")
+	runner := testRunner(helper)
+	runner.FastProfilePath = "/fixed/quality-first-fast-v1.yaml"
+
+	result, err := runner.Fast(context.Background(), candidate(writeProbeKey(t, "sk-candidate-secret-fast")), "health_pulse")
+	if err != nil {
+		t.Fatalf("Fast: %v", err)
+	}
+	if result.RunID != "fast-1" || result.JobKind != "health_pulse" || result.Status != "passed" {
+		t.Fatalf("result = %#v", result)
+	}
+	if strings.Contains(string(result.Record), "candidate-secret") {
+		t.Fatal("fast record leaked the candidate key")
+	}
+}
+
 func testRunner(helper string) *V2Executor {
 	return &V2Executor{
 		RubyPath: helper, ScriptPath: "/fixed/upstream-benchmark-v2.rb", ProfilePath: "/fixed/candidate-watch-v2.yaml",

@@ -15,6 +15,7 @@ import (
 
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
+	"example.invalid/relay-ops-service/internal/collection"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
@@ -53,15 +54,16 @@ func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *t
 	probe := &fakeProbeRunner{runID: "e2e-probe-" + testID}
 	analysis := &fakeAnalysisRunner{}
 	notifier := &fakeMessageSender{}
-	collector := &candidateCollector{Store: database, Fetcher: pricing.Fetcher{Client: &http.Client{Transport: pages}, Resolver: e2eResolver{}}, Extractor: pricing.CompositeExtractor{}, Probes: probe, Incidents: &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}, Agent: analysis, Notifier: notifier}
+	collector := &collection.Collector{Repository: database, Fetcher: pricing.Fetcher{Client: &http.Client{Transport: pages}, Resolver: e2eResolver{}}, Extractor: pricing.CompositeExtractor{}, Probes: probe, Incidents: &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}, Agent: analysis, Notifier: notifier}
+	source := collection.Source{ID: id, Name: name, Role: collection.RoleCandidate, BaseURL: "https://" + host + "/v1", PricingURL: "https://" + host + "/pricing", UsageURL: "https://" + host + "/usage", ProbeSecretRef: record.SecretRef.SecretRef, Enabled: true}
 	ctx := context.Background()
-	if err := collector.Run(ctx, id, false); err != nil {
+	if err := collector.Run(ctx, source, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := collector.Run(ctx, id, false); err != nil {
+	if err := collector.Run(ctx, source, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := collector.Run(ctx, id, false); err != nil {
+	if err := collector.Run(ctx, source, false); err != nil {
 		t.Fatal(err)
 	}
 	if analysis.calls != 1 || len(notifier.messages) != 1 || probe.calls != 0 {
@@ -70,7 +72,7 @@ func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *t
 	if !strings.Contains(notifier.messages[0].Content.Text, "0.07x") || !strings.Contains(notifier.messages[0].Content.Text, "0.1x") {
 		t.Fatalf("message=%s", notifier.messages[0].Content.Text)
 	}
-	if err := collector.Run(ctx, id, true); err != nil {
+	if err := collector.Run(ctx, source, true); err != nil {
 		t.Fatal(err)
 	}
 	if probe.calls != 1 || len(notifier.messages) != 1 {
@@ -123,7 +125,7 @@ func (a *fakeAnalysisRunner) AnalyzeOnce(_ context.Context, contract agent.Incid
 
 type fakeMessageSender struct{ messages []notify.FeishuMessage }
 
-func (s *fakeMessageSender) Send(_ context.Context, message notify.FeishuMessage) error {
+func (s *fakeMessageSender) SendIncident(_ context.Context, _, _ string, message notify.FeishuMessage) error {
 	s.messages = append(s.messages, message)
 	return nil
 }

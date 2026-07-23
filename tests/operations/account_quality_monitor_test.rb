@@ -103,6 +103,8 @@ class AccountQualityMonitorTest < Minitest::Test
       File.write(docker, <<~SH)
         #!/bin/sh
         printf '%s\n' "$@" > "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
+        printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET"
+        printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET" >&2
         exit "$ACCOUNT_QUALITY_TEST_EXIT"
       SH
       File.chmod(0o755, docker)
@@ -123,7 +125,8 @@ class AccountQualityMonitorTest < Minitest::Test
       "ACCOUNT_QUALITY_DOCKER_NETWORK" => "sub2api_default",
       "ACCOUNT_QUALITY_DOCKER_BIN" => fixture.fetch(:docker),
       "ACCOUNT_QUALITY_TEST_ARGUMENTS" => fixture.fetch(:arguments),
-      "ACCOUNT_QUALITY_TEST_EXIT" => fixture.fetch(:exit_code).to_s
+      "ACCOUNT_QUALITY_TEST_EXIT" => fixture.fetch(:exit_code).to_s,
+      "ACCOUNT_QUALITY_TEST_SECRET" => fixture.fetch(:secret)
     }
     stdout, stderr, status = Open3.capture3(env, WRAPPER)
     [status, stdout + stderr]

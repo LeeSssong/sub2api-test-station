@@ -68,6 +68,18 @@ RELAY_OPS_FEISHU_ENCRYPT_KEY_HOST_FILE
 RELAY_OPS_FEISHU_ROUTING_HOST_FILE
 ```
 
+安装完成后还必须把下列容器内路径写入生产 `.env`；默认留空时即使模式为 `disabled` 也不会加载命令子系统：
+
+```text
+RELAY_OPS_FEISHU_APP_ID_FILE=/run/secrets/feishu-app-id
+RELAY_OPS_FEISHU_APP_SECRET_FILE=/run/secrets/feishu-app-secret
+RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE=/run/secrets/feishu-verification-token
+RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE=/run/secrets/feishu-encrypt-key
+RELAY_OPS_FEISHU_ROUTING_FILE=/run/secrets/feishu-routing.json
+```
+
+没有安装飞书凭据时，五个宿主机路径和五个容器路径都保持为空；Compose 会把占位目标只读绑定到 `/dev/null`，relay-ops 可继续以 `disabled` 启动且不会创建回调 worker。
+
 文件必须是普通文件，权限只能是 `0600` 或 `0640`。应用错误和日志不得包含值、完整 `chat_id`、完整 `open_id`、服务器路径或原始飞书响应。
 
 ## 4. 只读发现路由 ID
@@ -76,12 +88,12 @@ RELAY_OPS_FEISHU_ROUTING_HOST_FILE
 
 - 两个公开分组的 ID、名称、平台和倍率
 - 每组主账号与灾备账号 ID
-- 四个账号的状态、`schedulable`、现有完整 `group_ids`
+- 所有被引用账号的状态、`schedulable`、现有完整 `group_ids`
 - 目标账号具备的必要模型
 
 不得查询或输出账号凭据字段。不得直接修改 Sub2API PostgreSQL。使用 [示例路由文件](../../config/operations/feishu-routing.example.json) 建立真实的 `0600/0640` 文件；真实 ID 不写入仓库。
 
-每个账号只能出现在一个主/灾备位置。`GPT-Pro` 与 `GPT-Plus` 的分组 ID 必须不同，主账号和灾备账号必须不同。所需模型列表不能为空。
+两个主账号必须唯一，且主账号不能兼任任何灾备账号。同一个灾备账号可以被两个分组复用；此时切换命令会按账号串行执行。`GPT-Pro` 与 `GPT-Plus` 的分组 ID 必须不同，每组主账号和灾备账号必须不同，所需模型列表不能为空。
 
 ## 5. disabled 验收
 
@@ -91,15 +103,18 @@ RELAY_OPS_FEISHU_ROUTING_HOST_FILE
 RELAY_OPS_FEISHU_COMMAND_MODE=disabled
 ```
 
+2026-07-20 已完成无凭据禁用态部署：生产镜像为 `sub2api-relay-ops:feishu-command-disabled-20260720-v1`，五个容器文件变量为空，五个占位挂载均为只读 `/dev/null`。该状态不会创建回调处理器或命令 worker；Caddy 已热加载精确 POST 路由，Sub2API、PostgreSQL、Redis 和 Caddy 容器均未重建。
+
 先验证配置和服务：
 
 ```bash
-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker compose --env-file infra/.env -f infra/compose.yaml up -d --build relay-ops caddy
-curl -fsS https://<正式域名>/healthz
+cd /opt/sub2api/production
+docker compose --env-file .env -f compose.yaml config --quiet
+docker compose --env-file .env -f compose.yaml up -d --no-deps --force-recreate relay-ops
+docker compose --env-file .env -f compose.yaml ps relay-ops
 ```
 
-在飞书后台完成 challenge。随后在群聊发送五条命令中的任意一条，预期收到“命令功能未启用”，Sub2API 的账号绑定和 `schedulable` 均无变化。未知命令只返回固定帮助，不执行路由操作。
+未安装五个真实文件时，外部回调路径应保持不可用，内部 `/healthz` 和 `/readyz` 必须正常。安装完整文件并保持模式为 `disabled` 后，在飞书后台完成 challenge；随后在群聊发送五条命令中的任意一条，预期收到“命令功能未启用”，Sub2API 的账号绑定和 `schedulable` 均无变化。未知命令只返回固定帮助，不执行路由操作。
 
 ## 6. dry-run 验收
 

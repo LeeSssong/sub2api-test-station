@@ -14,12 +14,13 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 	reader := fakeReader{
 		groups: []sub2api.Group{
 			{ID: 2, Name: "Public Pro", Status: "active"},
+			{ID: 3, Name: "Private Internal", Status: "active", IsExclusive: true},
 			{ID: 4, Name: "Public Plus", Status: "active"},
 		},
 		accountRows: []sub2api.Account{
 			{ID: 11, Name: "Disabled", Status: "disabled", Schedulable: true},
 			{ID: 12, Name: "Paused", Status: "active", Schedulable: false},
-			{ID: 30, Name: "Current", Status: "active", Schedulable: true, GroupIDs: []int64{2, 4}},
+			{ID: 30, Name: "Current", Status: "active", Schedulable: true, GroupIDs: []int64{4, 3, 2, 4}},
 		},
 		ops: map[object]sub2api.OpsSnapshot{
 			{groupID: 2}: opsSnapshot(20),
@@ -49,6 +50,9 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 	if account := snapshot.Accounts[0]; account.Status != "read_failed" || account.ErrorCode != "ops_snapshot_unavailable" {
 		t.Fatalf("account = %#v", account)
 	}
+	if got := snapshot.Accounts[0].PublicGroupNames; len(got) != 2 || got[0] != "Public Pro" || got[1] != "Public Plus" {
+		t.Fatalf("public group names = %#v", got)
+	}
 	for _, row := range snapshot.Groups {
 		assertEvidenceHash(t, row.EvidenceHash)
 	}
@@ -60,6 +64,19 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 		if query.TimeRange != "15m" {
 			t.Fatalf("query = %#v, want 15m window", query)
 		}
+	}
+}
+
+func TestRuntimePercentageDisplaysUseTheirSourceScales(t *testing.T) {
+	t.Parallel()
+
+	group := GroupRuntime{ErrorRate: 0.075, SLA: 97.5}
+	account := AccountRuntime{ErrorRate: 0.2, SLA: 99.5}
+	if group.ErrorRateDisplay() != "7.50%" || group.SLADisplay() != "97.50%" {
+		t.Fatalf("group displays = %q, %q", group.ErrorRateDisplay(), group.SLADisplay())
+	}
+	if account.ErrorRateDisplay() != "20.00%" || account.SLADisplay() != "99.50%" {
+		t.Fatalf("account displays = %q, %q", account.ErrorRateDisplay(), account.SLADisplay())
 	}
 }
 

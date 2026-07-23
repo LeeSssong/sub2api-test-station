@@ -11,6 +11,7 @@ import (
 
 	"example.invalid/relay-ops-service/internal/commands"
 	"example.invalid/relay-ops-service/internal/config"
+	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
 func TestAttachFeishuCommandHandlerExposesOnlyExactPOSTPath(t *testing.T) {
@@ -91,7 +92,68 @@ func TestConfigureDisabledFeishuCommandsDoesNotRequireRoutingOrSub2API(t *testin
 	}
 }
 
+func TestConfigureFeishuCommandsBuildsSharedRouteLocks(t *testing.T) {
+	dir := t.TempDir()
+	secret := func(name, value string) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cfg := config.Config{
+		FeishuCommandMode:      config.FeishuCommandDryRun,
+		FeishuAppIDFile:        secret("app-id", "cli_test_app"),
+		FeishuAppSecretFile:    secret("app-secret", "app-secret"),
+		FeishuVerificationFile: secret("verification-token", "verification-token"),
+		FeishuEncryptKeyFile:   secret("encrypt-key", "encrypt-key"),
+		FeishuRoutingFile: secret("routing.json", `{"groups":[
+            {"name":"GPT-Pro","public_group_id":2,"primary_account_id":7,"backup_account_id":2,"required_models":["gpt-5.6-sol"]},
+            {"name":"GPT-Plus","public_group_id":6,"primary_account_id":8,"backup_account_id":2,"required_models":["gpt-5.6-terra"]}
+        ]}`),
+	}
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	runtime, err := ConfigureFeishuCommands(cfg, &FeishuCommandDependencies{
+		Repository: disabledFeishuRepository{}, Sub2API: noopFeishuController{},
+	}, fallback)
+	if err != nil {
+		t.Fatalf("ConfigureFeishuCommands: %v", err)
+	}
+	want := map[string]commands.RouteLockIDs{
+		"GPT-Pro":  {GroupID: 2, PrimaryAccountID: 7, BackupAccountID: 2},
+		"GPT-Plus": {GroupID: 6, PrimaryAccountID: 8, BackupAccountID: 2},
+	}
+	for name, locks := range want {
+		if got := runtime.Worker.RouteLocks[name]; got != locks {
+			t.Fatalf("%s route locks = %#v, want %#v", name, got, locks)
+		}
+	}
+}
+
 type disabledFeishuRepository struct{}
+
+type noopFeishuController struct{}
+
+func (noopFeishuController) GetGroup(context.Context, int64) (sub2api.Group, error) {
+	return sub2api.Group{}, nil
+}
+
+func (noopFeishuController) GetAccount(context.Context, int64) (sub2api.Account, error) {
+	return sub2api.Account{}, nil
+}
+
+func (noopFeishuController) GetAccountModels(context.Context, int64) ([]sub2api.Model, error) {
+	return nil, nil
+}
+
+func (noopFeishuController) SetAccountGroups(context.Context, int64, []int64) (sub2api.Account, error) {
+	return sub2api.Account{}, nil
+}
+
+func (noopFeishuController) SetAccountSchedulable(context.Context, int64, bool) (sub2api.Account, error) {
+	return sub2api.Account{}, nil
+}
 
 func (disabledFeishuRepository) InsertFeishuEvent(context.Context, commands.Record) (bool, error) {
 	return true, nil
@@ -109,6 +171,6 @@ func (disabledFeishuRepository) RecordFeishuReply(context.Context, string, strin
 	return nil
 }
 
-func (disabledFeishuRepository) WithFeishuGroupLock(ctx context.Context, _ int64, fn func(context.Context) commands.Completion) (commands.Completion, error) {
+func (disabledFeishuRepository) WithFeishuRouteLock(ctx context.Context, _ commands.RouteLockIDs, fn func(context.Context) commands.Completion) (commands.Completion, error) {
 	return fn(ctx), nil
 }

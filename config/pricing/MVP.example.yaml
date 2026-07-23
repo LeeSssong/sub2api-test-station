@@ -1,0 +1,28 @@
+# Fictional worked example only. Do not publish these model prices.
+schema_version: 1
+scenario_id: MVP-EXAMPLE
+status: fictional
+source_upstream_id: UP01
+
+currencies:
+  public: CNY
+  sub2api_balance: USD
+  cny_per_usd: 7.2
+
+assumptions:
+  target_fully_loaded_margin_rate: 0.25
+  payment_fee_rate: 0.0
+  failure_compensation_rate: 0.05
+  rounding_increment_cny_per_1m: 0.01
+
+monthly_fixed_costs:
+  - id: fictional-infrastructure
+    amount_cny: 10.0
+
+model_mix:
+  - public_name: example-chat-model
+    monthly_tokens:
+      input: 80000000
+      output: 20000000
+      cached_input: 0
+      cache_write: 0

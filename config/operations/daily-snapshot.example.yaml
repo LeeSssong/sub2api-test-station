@@ -1,0 +1,50 @@
+schema_version: 1
+snapshot_id: OPS-SIM-20260715
+status: fictional
+captured_at: "2026-07-15T09:00:00+08:00"
+
+system:
+  services:
+    sub2api: true
+    postgres: true
+    redis: true
+    caddy: true
+  certificate_days_remaining: 60
+  disk_used_ratio: 0.35
+  backup_age_hours: 8
+  restore_drill_age_days: 10
+  failed_admin_logins_1h: 0
+  credential_exposure_detected: false
+
+billing:
+  balance_difference_usd: 0.0
+  duplicate_credit_count: 0
+  unexplained_adjustment_count: 0
+  daily_total_cost_usd: 4.0
+  max_user_daily_cost_usd: 1.0
+
+traffic:
+  request_count: 100
+  request_id_coverage_ratio: 1.0
+
+profit:
+  weekly_revenue_cny: 100.0
+  weekly_full_cost_cny: 70.0
+
+upstreams:
+  - upstream_id: UP01
+    status: fictional
+    available: true
+    balance_days_remaining: 10.0
+    success_rate: 0.99
+    rate_limit_ratio: 0.02
+    server_error_ratio: 0.01
+    ttft_p95_ms: 1200
+    stream_interruption_ratio: 0.0
+
+account_pools:
+  - pool_id: ACC01
+    status: fictional
+    available_accounts: 1
+    error_accounts: 0
+    minimum_expiry_hours: 720

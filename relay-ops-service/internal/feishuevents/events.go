@@ -79,22 +79,6 @@ func (v *Verifier) Decode(req *http.Request, maxBodyBytes int64) (Envelope, erro
 	if int64(len(rawBody)) > maxBodyBytes {
 		return Envelope{}, ErrTooLarge
 	}
-	timestamp := req.Header.Get("X-Lark-Request-Timestamp")
-	nonce := req.Header.Get("X-Lark-Request-Nonce")
-	signature := req.Header.Get("X-Lark-Signature")
-	seconds, err := strconv.ParseInt(timestamp, 10, 64)
-	if err != nil || nonce == "" || len(signature) != sha256.Size*2 {
-		return Envelope{}, ErrUnauthorized
-	}
-	delta := v.now().Sub(time.Unix(seconds, 0))
-	if delta < -maxClockSkew || delta > maxClockSkew {
-		return Envelope{}, ErrExpired
-	}
-	digest := sha256.Sum256([]byte(timestamp + nonce + v.encryptKey + string(rawBody)))
-	expected := hex.EncodeToString(digest[:])
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
-		return Envelope{}, ErrUnauthorized
-	}
 
 	var wrapper struct {
 		Encrypt string `json:"encrypt"`
@@ -107,11 +91,38 @@ func (v *Verifier) Decode(req *http.Request, maxBodyBytes int64) (Envelope, erro
 	if err := ensureJSONEOF(decoder); err != nil {
 		return Envelope{}, ErrMalformed
 	}
+
+	timestamp := req.Header.Get("X-Lark-Request-Timestamp")
+	nonce := req.Header.Get("X-Lark-Request-Nonce")
+	signature := req.Header.Get("X-Lark-Signature")
+	unsigned := timestamp == "" && nonce == "" && signature == ""
+	if !unsigned {
+		seconds, err := strconv.ParseInt(timestamp, 10, 64)
+		if err != nil || nonce == "" || len(signature) != sha256.Size*2 {
+			return Envelope{}, ErrUnauthorized
+		}
+		delta := v.now().Sub(time.Unix(seconds, 0))
+		if delta < -maxClockSkew || delta > maxClockSkew {
+			return Envelope{}, ErrExpired
+		}
+		digest := sha256.Sum256([]byte(timestamp + nonce + v.encryptKey + string(rawBody)))
+		expected := hex.EncodeToString(digest[:])
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
+			return Envelope{}, ErrUnauthorized
+		}
+	}
 	plain, err := decrypt(wrapper.Encrypt, v.encryptKey)
 	if err != nil {
 		return Envelope{}, ErrMalformed
 	}
-	return v.decodePlain(plain)
+	envelope, err := v.decodePlain(plain)
+	if err != nil {
+		return Envelope{}, err
+	}
+	if unsigned && envelope.Challenge == "" {
+		return Envelope{}, ErrUnauthorized
+	}
+	return envelope, nil
 }
 
 func (v *Verifier) decodePlain(plain []byte) (Envelope, error) {

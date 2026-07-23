@@ -24,9 +24,9 @@ const boundaries = [
 
 export function BoundarySection() {
   return (
-    <section className="boundary-band" id="about" aria-labelledby="boundary-title" tabIndex={-1}>
+    <section className="boundary-band grid-surface" id="about" aria-labelledby="boundary-title" tabIndex={-1}>
       <div className="section-inner">
-        <Reveal as="header" className="section-intro section-intro--light">
+        <Reveal as="header" className="section-intro">
           <p className="eyebrow"><span />服务边界</p>
           <h2 id="boundary-title">边界清晰，承诺才有意义</h2>
           <p>商业服务需要明确规则。这里写清楚我们保障什么，也写清楚哪些风险不在星桥控制范围内。</p>

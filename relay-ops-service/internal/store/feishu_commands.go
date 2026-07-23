@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/commands"
@@ -126,21 +127,32 @@ func (s *Store) RecordFeishuReply(ctx context.Context, eventID, messageID string
 	return nil
 }
 
-func (s *Store) WithFeishuGroupLock(ctx context.Context, groupID int64, fn func(context.Context) commands.Completion) (commands.Completion, error) {
-	if groupID <= 0 || fn == nil {
-		return commands.Completion{}, errors.New("Feishu command group lock input is invalid")
+func (s *Store) WithFeishuRouteLock(ctx context.Context, ids commands.RouteLockIDs, fn func(context.Context) commands.Completion) (commands.Completion, error) {
+	if ids.GroupID <= 0 || ids.PrimaryAccountID <= 0 || ids.BackupAccountID <= 0 || fn == nil {
+		return commands.Completion{}, errors.New("Feishu command route lock input is invalid")
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return commands.Completion{}, fmt.Errorf("begin Feishu command group lock: %w", err)
+		return commands.Completion{}, fmt.Errorf("begin Feishu command route lock: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('relay_ops_feishu_group:' || ($1::bigint)::text, 0))`, groupID); err != nil {
-		return commands.Completion{}, fmt.Errorf("acquire Feishu command group lock: %w", err)
+	keys := []string{
+		fmt.Sprintf("relay_ops_feishu_group:%d", ids.GroupID),
+		fmt.Sprintf("relay_ops_feishu_account:%d", ids.PrimaryAccountID),
+		fmt.Sprintf("relay_ops_feishu_account:%d", ids.BackupAccountID),
+	}
+	sort.Strings(keys)
+	for index, key := range keys {
+		if index > 0 && key == keys[index-1] {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
+			return commands.Completion{}, fmt.Errorf("acquire Feishu command route lock: %w", err)
+		}
 	}
 	completion := fn(ctx)
 	if err := tx.Commit(ctx); err != nil {
-		return commands.Completion{}, fmt.Errorf("release Feishu command group lock: %w", err)
+		return commands.Completion{}, fmt.Errorf("release Feishu command route lock: %w", err)
 	}
 	return completion, nil
 }

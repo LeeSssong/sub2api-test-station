@@ -23,7 +23,7 @@ type FeishuCommandRepository interface {
 	ClaimFeishuCommand(context.Context, time.Time, time.Duration) (*commands.Record, error)
 	CompleteFeishuCommand(context.Context, commands.Completion) error
 	RecordFeishuReply(context.Context, string, string, bool, string) error
-	WithFeishuGroupLock(context.Context, int64, func(context.Context) commands.Completion) (commands.Completion, error)
+	WithFeishuRouteLock(context.Context, commands.RouteLockIDs, func(context.Context) commands.Completion) (commands.Completion, error)
 }
 
 type FeishuCommandDependencies struct {
@@ -80,22 +80,24 @@ func ConfigureFeishuCommands(cfg config.Config, dependencies *FeishuCommandDepen
 		return FeishuCommandRuntime{}, errors.New("Feishu reply client is unavailable")
 	}
 	var router commands.Router
-	var groupIDs map[string]int64
+	var routeLocks map[string]commands.RouteLockIDs
 	if cfg.FeishuCommandMode != config.FeishuCommandDisabled {
 		routingConfig, err := routingcontrol.LoadConfig(cfg.FeishuRoutingFile)
 		if err != nil {
 			return FeishuCommandRuntime{}, errors.New("Feishu routing configuration is invalid")
 		}
 		router = &routingcontrol.Controller{Client: dependencies.Sub2API, Config: routingConfig}
-		groupIDs = make(map[string]int64, len(routingConfig.Groups))
+		routeLocks = make(map[string]commands.RouteLockIDs, len(routingConfig.Groups))
 		for _, group := range routingConfig.Groups {
-			groupIDs[group.Name] = group.PublicGroupID
+			routeLocks[group.Name] = commands.RouteLockIDs{
+				GroupID: group.PublicGroupID, PrimaryAccountID: group.PrimaryAccountID, BackupAccountID: group.BackupAccountID,
+			}
 		}
 	}
 	callback := commands.NewHTTPHandler(verifier, dependencies.Repository, time.Now)
 	worker := &commands.Worker{
 		Mode: cfg.FeishuCommandMode, Repository: dependencies.Repository, Router: router,
-		Sender: sender, GroupIDs: groupIDs,
+		Sender: sender, RouteLocks: routeLocks,
 	}
 	return FeishuCommandRuntime{Handler: AttachFeishuCommandHandler(fallback, callback), Worker: worker}, nil
 }

@@ -61,6 +61,10 @@ class ModelReleaseMonitorTest < Minitest::Test
     assert_includes service, "Group=ubuntu"
     assert_includes service, "EnvironmentFile=/etc/sub2api/model-release-monitor.env"
     assert_includes service, "ExecStart=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh"
+    assert_includes service, "ConditionPathExists=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh"
+    assert_includes service, "RuntimeDirectory=model-release-monitor"
+    assert_includes service, "Environment=DOCKER_CONFIG=/run/model-release-monitor"
+    refute_includes service, "ConditionPathIsExecutable="
     %w[
       NoNewPrivileges=true
       PrivateTmp=true

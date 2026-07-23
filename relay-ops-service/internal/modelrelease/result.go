@@ -90,6 +90,14 @@ type View struct {
 	Blockers          []string
 }
 
+type FileSource struct {
+	Path string
+}
+
+func (s FileSource) Read(now time.Time) (Result, error) {
+	return Load(s.Path, now)
+}
+
 type GroupView struct {
 	GroupID, Name, Coverage, MissingModels string
 }
@@ -152,14 +160,46 @@ func (r Result) View(now time.Time) View {
 			QualifiedModels: strings.Join(account.QualifiedModels, ", "),
 		})
 	}
+	blockers := make([]string, 0, len(r.Blockers))
+	for _, blocker := range r.Blockers {
+		blockers = append(blockers, blockerLabel(blocker))
+	}
 	return View{
 		Available: true, Stale: now.UTC().Sub(r.EvaluatedAt) > 20*time.Minute,
 		Status: r.Status, ProposalID: r.ProposalID, EvaluatedAt: r.EvaluatedAt.UTC().Format(time.RFC3339),
 		PublishedFamilies: strings.Join(r.Published.Families, ", "), PublishedModels: strings.Join(r.Published.Models, ", "),
 		CandidateFamilies: strings.Join(r.Candidate.Families, ", "), CandidateModels: strings.Join(r.Candidate.Models, ", "),
 		ReviewModels: strings.Join(r.Candidate.ReviewModels, ", "), AccountSetSHA256: r.AccountSetSHA256,
-		BaseConfigSHA256: r.BaseConfigSHA256, Groups: groups, Accounts: accounts, Blockers: append([]string(nil), r.Blockers...),
+		BaseConfigSHA256: r.BaseConfigSHA256, Groups: groups, Accounts: accounts, Blockers: blockers,
 	}
+}
+
+func blockerLabel(code string) string {
+	labels := map[string]string{
+		"account_set_hash_mismatch":        "活动上游集合已变化",
+		"base_config_hash_mismatch":        "模型配置已变化",
+		"unsafe_operating_mode":            "运行模式不符合只读门禁",
+		"discovery_evidence_stale":         "模型目录证据已过期",
+		"financial_evidence_missing":       "缺少上游余额证据",
+		"financial_evidence_stale":         "上游余额证据已过期",
+		"balance_below_minimum":            "上游余额低于最低门槛",
+		"quality_evidence_missing":         "缺少自然质量证据",
+		"quality_evidence_stale":           "自然质量证据已过期",
+		"quality_samples_insufficient":     "自然质量样本不足",
+		"quality_success_rate_low":         "成功率低于门槛",
+		"quality_error_rate_high":          "错误率高于门槛",
+		"quality_ttft_p95_high":            "首字延迟 P95 高于门槛",
+		"quality_total_latency_p95_high":   "总耗时 P95 高于门槛",
+		"group_model_coverage_incomplete":  "公开分组模型覆盖不完整",
+		"model_pricing_incomplete":         "模型价格不完整",
+		"bootstrap_qualification_required": "首版模型尚未完成兼容测试",
+		"candidate_qualification_required": "候选模型尚未完成兼容测试",
+		"unknown_model_suffix":             "发现需要人工确认的模型",
+	}
+	if label, ok := labels[code]; ok {
+		return label
+	}
+	return code
 }
 
 func validate(result Result, now time.Time) error {

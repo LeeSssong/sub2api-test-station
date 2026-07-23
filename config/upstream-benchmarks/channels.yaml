@@ -1,0 +1,49 @@
+schema_version: 1
+channels:
+  - id: aliu
+    display_name: Aliu
+    base_url: https://aliuapi.top/v1
+    protocol: openai_compatible
+    advertised_multiplier:
+    resale_permission: unknown
+    lifecycle: paused
+    evidence:
+      - docs/superpowers/reports/2026-07-17-d03-pricing-verification.md
+      - docs/project/llm-handoff.md
+  - id: neko
+    display_name: NekoAPI Pro
+    base_url: https://api.999555999.com/v1
+    protocol: openai_compatible
+    advertised_multiplier: 0.10
+    resale_permission: unknown
+    lifecycle: production
+    evidence:
+      - docs/superpowers/reports/2026-07-18-neko-upstream-short-verification.md
+      - docs/superpowers/reports/2026-07-20-neko-wawazz-production-split-verification.md
+  - id: wawazz
+    display_name: Wawazz Plus
+    base_url: https://wawazz.xyz
+    protocol: openai_compatible
+    advertised_multiplier: 0.05
+    resale_permission: unknown
+    lifecycle: production
+    evidence:
+      - docs/superpowers/reports/2026-07-20-neko-wawazz-production-split-verification.md
+  - id: xm-plus
+    display_name: XM API Plus
+    base_url: https://api3.xmhbao.cn
+    protocol: openai_compatible
+    advertised_multiplier: 0.045
+    resale_permission: unknown
+    lifecycle: discovered
+    evidence:
+      - docs/superpowers/reports/2026-07-21-xm-upstream-discovery.md
+  - id: xm-pro
+    display_name: XM API Pro20x
+    base_url: https://api3.xmhbao.cn
+    protocol: openai_compatible
+    advertised_multiplier: 0.07
+    resale_permission: unknown
+    lifecycle: discovered
+    evidence:
+      - docs/superpowers/reports/2026-07-21-xm-upstream-discovery.md

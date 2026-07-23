@@ -1,0 +1,33 @@
+channel_id: neko
+recorded_at: "2026-07-18T18:00:00+08:00"
+status: partial
+metrics:
+  models:
+    available_count: 8
+    verified_models:
+      - gpt-5.6-sol
+      - gpt-5.6-terra
+      - gpt-5.6-luna
+      - gpt-5.5
+      - gpt-5.4-mini
+    target_models_present: true
+  sync:
+    complete: true
+  stream:
+    complete: true
+    first_event_ms: 2060
+    total_ms: 6270
+  max_verified_concurrency: 3
+  billing:
+    actual_multiplier: 0.07
+    reconciliation: upstream_direct_only
+    api_usage_vs_upstream_billing_tokens: different
+    gateway_debit: unknown
+  network:
+    production_host: unknown
+    mainland_users: unknown
+  long_stream: unknown
+  resale_permission: unknown
+notes:
+  - Imported from the existing isolated Neko direct short verification.
+  - Historical import is not a new standardized benchmark run.

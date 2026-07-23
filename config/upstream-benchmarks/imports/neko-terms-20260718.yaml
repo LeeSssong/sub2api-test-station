@@ -1,0 +1,17 @@
+channel_id: neko
+recorded_at: "2026-07-18T20:55:00+08:00"
+status: partial
+evidence_source: manual_terms
+metrics:
+  terms:
+    updated_at: "2026-03-31"
+    resale_permission: unknown
+    price_change_right: provider_may_adjust
+    model_and_quota_change_right: provider_may_adjust
+    third_party_dependency: explicit
+    permanent_availability_promised: false
+    resale_loss_allocation: user_bears_loss
+  source_url: https://www.999555999.com/legal/terms
+notes:
+  - Terms mention sharing and resale risk but do not explicitly grant commercial resale permission.
+  - Provider reserves the right to adjust price, region, models, quota, and rules.

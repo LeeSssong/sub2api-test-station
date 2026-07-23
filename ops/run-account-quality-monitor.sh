@@ -55,7 +55,7 @@ if "$docker_bin" run --rm --network "$docker_network" \
       --base-url http://sub2api:8080 \
       --admin-key-file /run/secrets/sub2api-admin-api-key \
       --output /var/lib/account-quality/account-quality-result.json
-  '
+  ' >/dev/null 2>&1
 then
   printf '%s\n' "account_quality_monitor status=succeeded"
 else

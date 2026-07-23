@@ -1,0 +1,226 @@
+name: sub2api
+
+services:
+  sub2api:
+    image: weishaw/sub2api@sha256:4467f888bc37bcb297220e3246b22cb55861aea40e319307bf4512b98eac2ce8
+    restart: unless-stopped
+    expose: ["8080"]
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_MODE: release
+      RUN_MODE: standard
+      SERVER_TRUSTED_PROXIES: ${SERVER_TRUSTED_PROXIES:-172.16.0.0/12}
+      SERVER_MAX_REQUEST_BODY_SIZE: ${SERVER_MAX_REQUEST_BODY_SIZE:-16777216}
+      GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-16777216}
+      GATEWAY_TEXT_MAX_BODY_SIZE: ${GATEWAY_TEXT_MAX_BODY_SIZE:-16777216}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      DATABASE_DBNAME: ${POSTGRES_DB}
+      DATABASE_SSLMODE: disable
+      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      REDIS_DB: "0"
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-64}
+      REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?required}
+      JWT_SECRET: ${JWT_SECRET:?required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
+      TZ: ${TZ:-Asia/Shanghai}
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:?required}
+    volumes:
+      - sub2api_data:/app/data
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    logging: &logging
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
+
+  postgres:
+    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-60}", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}", "-c", "effective_cache_size=512MB", "-c", "maintenance_work_mem=32MB"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *logging
+
+  internal-test-service:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.internal-test
+    restart: unless-stopped
+    expose: ["8090"]
+    environment:
+      D04_MAX_USERS: ${D04_MAX_USERS:-15}
+      D04_TOTAL_BUDGET_USD: ${D04_TOTAL_BUDGET_USD}
+      D04_REGISTRATION_OPEN: ${D04_REGISTRATION_OPEN:-false}
+      D04_DAILY_LOGIN_CREDIT_USD: ${D04_DAILY_LOGIN_CREDIT_USD:-20}
+      D04_TIMEZONE: ${D04_TIMEZONE:-Asia/Shanghai}
+      D04_SUB2API_URL: ${D04_SUB2API_URL:-http://sub2api:8080}
+      D04_ADMIN_API_KEY_FILE: /run/secrets/sub2api-admin-api-key
+      D04_FEISHU_BASE_URL: ${D04_FEISHU_BASE_URL:-https://open.feishu.cn}
+      D04_FEISHU_APP_ID_FILE: ${D04_FEISHU_APP_ID_FILE:-}
+      D04_FEISHU_APP_SECRET_FILE: ${D04_FEISHU_APP_SECRET_FILE:-}
+      D04_FEISHU_ALERT_CHAT_ID_FILE: ${D04_FEISHU_ALERT_CHAT_ID_FILE:-}
+      D04_COST_POLICY_ID: ${D04_COST_POLICY_ID:-}
+      D04_BUDGET_COST_BPS: ${D04_BUDGET_COST_BPS:-}
+      D04_COST_POLICY_QUALIFIED: ${D04_COST_POLICY_QUALIFIED:-false}
+      D04_MODE: ${D04_MODE:-read_only}
+      D04_DATA_PATH: /var/lib/internal-test/internal-test.db
+      D04_LISTEN_ADDRESS: :8090
+    volumes:
+      - internal_test_data:/var/lib/internal-test
+      - ${D04_ADMIN_API_KEY_HOST_FILE:-./secrets/sub2api-admin-api-key}:/run/secrets/sub2api-admin-api-key:ro
+      - ${D04_INVITATION_KEY_HOST_FILE:-./secrets/d04-invitation-key}:/run/secrets/d04-invitation-key:ro
+      - ${D04_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro
+      - ${D04_FEISHU_APP_SECRET_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-secret:ro
+      - ${D04_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro
+    read_only: true
+    tmpfs: [/tmp]
+    user: "10001:0"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      sub2api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/internal-test-service", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+
+  relay-ops:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.relay-ops
+    restart: unless-stopped
+    expose: ["8100"]
+    environment:
+      RELAY_OPS_MODE: ${RELAY_OPS_MODE:-read_only}
+      RELAY_OPS_CANDIDATE_SECRET_DIR: /var/lib/relay-ops/candidate-keys
+      RELAY_OPS_LISTEN_ADDRESS: :8100
+      RELAY_OPS_TIMEZONE: Asia/Shanghai
+      RELAY_OPS_PUBLIC_BASE_URL: https://${SITE_ADDRESS}
+      RELAY_OPS_DATABASE_URL_FILE: /run/secrets/relay-ops-database-url
+      RELAY_OPS_SUB2API_URL: http://sub2api:8080
+      RELAY_OPS_SUB2API_ADMIN_KEY_FILE: /run/secrets/sub2api-admin-api-key
+      RELAY_OPS_D04_READINESS_RESULT_FILE: /run/relay-ops/d04-readiness-result.json
+      RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE: /run/relay-ops/account-quality/account-quality-result.json
+      RELAY_OPS_FEISHU_WEBHOOK_FILE: ${RELAY_OPS_FEISHU_WEBHOOK_FILE:-}
+      RELAY_OPS_FEISHU_COMMAND_MODE: ${RELAY_OPS_FEISHU_COMMAND_MODE:-disabled}
+      RELAY_OPS_FEISHU_APP_ID_FILE: ${RELAY_OPS_FEISHU_APP_ID_FILE:-}
+      RELAY_OPS_FEISHU_APP_SECRET_FILE: ${RELAY_OPS_FEISHU_APP_SECRET_FILE:-}
+      RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE: ${RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE:-}
+      RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE: ${RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE:-}
+      RELAY_OPS_FEISHU_ROUTING_FILE: ${RELAY_OPS_FEISHU_ROUTING_FILE:-}
+      RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE: ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE:-}
+      RELAY_OPS_AGENT_BASE_URL: ${RELAY_OPS_AGENT_BASE_URL:-}
+      RELAY_OPS_AGENT_API_KEY_FILE: /run/secrets/agent-api-key
+      RELAY_OPS_AGENT_MODEL: ${RELAY_OPS_AGENT_MODEL:-}
+    volumes:
+      - ${RELAY_OPS_DATABASE_URL_HOST_FILE:-./secrets/relay-ops-database-url}:/run/secrets/relay-ops-database-url:ro
+      - ${RELAY_OPS_SUB2API_ADMIN_KEY_HOST_FILE:-./secrets/sub2api-admin-api-key}:/run/secrets/sub2api-admin-api-key:ro
+      - ${RELAY_OPS_D04_READINESS_RESULT_HOST_FILE:-/dev/null}:/run/relay-ops/d04-readiness-result.json:ro
+      - ${RELAY_OPS_ACCOUNT_QUALITY_RESULT_HOST_DIR:-/dev/null}:/run/relay-ops/account-quality:ro
+      - ${RELAY_OPS_FEISHU_WEBHOOK_HOST_FILE:-/dev/null}:/run/secrets/feishu-webhook:ro
+      - ${RELAY_OPS_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro
+      - ${RELAY_OPS_FEISHU_APP_SECRET_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-secret:ro
+      - ${RELAY_OPS_FEISHU_VERIFICATION_TOKEN_HOST_FILE:-/dev/null}:/run/secrets/feishu-verification-token:ro
+      - ${RELAY_OPS_FEISHU_ENCRYPT_KEY_HOST_FILE:-/dev/null}:/run/secrets/feishu-encrypt-key:ro
+      - ${RELAY_OPS_FEISHU_ROUTING_HOST_FILE:-/dev/null}:/run/secrets/feishu-routing.json:ro
+      - ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro
+      - ${RELAY_OPS_AGENT_API_KEY_HOST_FILE:-./secrets/agent-api-key}:/run/secrets/agent-api-key:ro
+      - ${RELAY_OPS_CANDIDATE_KEYS_HOST_DIR:-./secrets/candidate-keys}:/run/secrets/candidates:ro
+      - ${RELAY_OPS_CANDIDATE_MANAGED_KEYS_HOST_DIR:-./secrets/candidate-managed-keys}:/var/lib/relay-ops/candidate-keys:rw
+      - ${RELAY_OPS_USAGE_SESSIONS_HOST_DIR:-./secrets/upstream-sessions}:/run/secrets/upstream-sessions:ro
+    read_only: true
+    tmpfs: [/tmp]
+    user: "10002:10002"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 384m
+    cpus: 0.75
+    depends_on:
+      postgres: {condition: service_healthy}
+      sub2api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8100/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *logging
+
+  redis:
+    image: redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --save 60 1 --appendonly yes --appendfsync everysec --maxclients ${REDIS_MAXCLIENTS:-1000} --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?required}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.caddy
+    image: xingqiao-caddy:homepage-20260723-v2-headline-spacing
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?required}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      sub2api: {condition: service_healthy}
+      relay-ops: {condition: service_healthy}
+    logging: *logging
+
+volumes:
+  sub2api_data:
+  internal_test_data:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

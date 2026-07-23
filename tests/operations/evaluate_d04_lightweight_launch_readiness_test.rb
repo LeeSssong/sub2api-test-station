@@ -82,6 +82,15 @@ class EvaluateD04LightweightLaunchReadinessTest < Minitest::Test
     ].each { |reason| assert_includes reasons, reason }
   end
 
+  def test_negative_active_upstream_balance_is_valid_but_blocks_opening
+    snapshot = healthy_snapshot
+    snapshot["active_upstream"]["balance_usd"] = -0.01
+
+    reasons = evaluate(snapshot).fetch("blocking_reasons")
+
+    assert_includes reasons, "upstream_balance_below_minimum"
+  end
+
   def test_stale_or_non_natural_quality_and_insufficient_samples_fail_closed
     snapshot = healthy_snapshot
     snapshot["active_upstream"].merge!(

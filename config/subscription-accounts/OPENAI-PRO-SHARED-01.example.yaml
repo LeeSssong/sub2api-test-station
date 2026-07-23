@@ -1,0 +1,52 @@
+schema_version: 1
+candidate_id: ACC-CANDIDATE-OPENAI-PRO-SHARED-01
+status: fictional
+reviewed_at: "2026-07-15"
+
+seller:
+  public_name: Fictional shared-access seller
+  storefront_reference: fictional-listing-openai-pro-shared-01
+  support_days: 3
+  replacement_policy: unknown
+
+listing:
+  public_label: Fictional shared OpenAI ChatGPT Pro access
+  price_cny: 80.0
+  currency: CNY
+  quantity: 1
+  remaining_days: 30
+
+entitlement:
+  platform: openai
+  official_product: chatgpt
+  official_tier: pro
+  ownership_mode: shared
+  account_origin: transferred
+  organization_managed: false
+
+control:
+  buyer_controls_primary_email: false
+  buyer_controls_recovery: false
+  buyer_controls_password: false
+  buyer_controls_2fa: false
+  seller_retains_recovery: true
+
+authorization:
+  sub2api_platform: openai
+  sub2api_account_type: oauth
+  normal_authorization_only: false
+  delivery_mode: token_only
+  requires_credential_extraction: true
+  requires_bypass: false
+
+operations:
+  isolated_group: true
+  individually_disableable: true
+  cost_traceable: true
+  auto_pause_on_expiry: true
+  initial_concurrency: 1
+
+evidence:
+  listing_snapshot_ref: fictional-snapshot-openai-pro-shared-01
+  terms_snapshot_ref: unknown
+  notes: Fictional rejected example. No token, cookie, credential, purchase, login, or authorization exists.

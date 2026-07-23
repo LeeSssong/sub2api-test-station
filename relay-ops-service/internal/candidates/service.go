@@ -18,8 +18,9 @@ import (
 
 var ErrConflict = errors.New("candidate already exists")
 var ErrNotFound = errors.New("candidate not found")
+var ErrCreateFailed = errors.New("candidate create failed")
 
-const maxProbeKeyBytes = 8 << 10
+const MaxProbeKeyBytes = 8 << 10
 
 type Resolver interface {
 	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
@@ -32,6 +33,15 @@ type CandidateInput struct {
 	UsageURL       string
 	PerformanceURL string
 	ProbeKeyFile   string
+}
+
+type CandidateIntakeInput struct {
+	Name           string
+	BaseURL        string
+	PricingURL     string
+	UsageURL       string
+	PerformanceURL string
+	ProbeKey       []byte
 }
 
 type Candidate struct {
@@ -103,8 +113,41 @@ func (s Service) Disable(ctx context.Context, actor domain.AdminActor, upstreamI
 }
 
 type Service struct {
-	Repository Repository
-	Resolver   Resolver
+	Repository  Repository
+	Resolver    Resolver
+	SecretStore SecretStore
+}
+
+type secretCleanupError struct{ cause error }
+
+func (e secretCleanupError) Error() string { return "candidate secret cleanup failed" }
+func (e secretCleanupError) Unwrap() error { return e.cause }
+
+type createOperationError struct{ cause error }
+
+func (e createOperationError) Error() string   { return ErrCreateFailed.Error() }
+func (e createOperationError) Unwrap() []error { return []error{ErrCreateFailed, e.cause} }
+
+func (s Service) CreateWithKey(ctx context.Context, actor domain.AdminActor, input CandidateIntakeInput) (Candidate, error) {
+	defer clear(input.ProbeKey)
+	if s.SecretStore == nil {
+		return Candidate{}, fmt.Errorf("candidate secret store is required")
+	}
+	path, err := s.SecretStore.Install(input.Name, input.ProbeKey)
+	if err != nil {
+		return Candidate{}, err
+	}
+	created, err := s.Create(ctx, actor, CandidateInput{
+		Name: input.Name, BaseURL: input.BaseURL, PricingURL: input.PricingURL,
+		UsageURL: input.UsageURL, PerformanceURL: input.PerformanceURL, ProbeKeyFile: path,
+	})
+	if err == nil {
+		return created, nil
+	}
+	if cleanupErr := s.SecretStore.Remove(path); cleanupErr != nil {
+		return Candidate{}, secretCleanupError{cause: err}
+	}
+	return Candidate{}, err
 }
 
 func (s Service) Create(ctx context.Context, actor domain.AdminActor, input CandidateInput) (Candidate, error) {
@@ -147,7 +190,7 @@ func (s Service) Create(ctx context.Context, actor domain.AdminActor, input Cand
 	}
 	candidate := Candidate{
 		Name: name, BaseURL: baseURL, PricingURL: pricingURL, UsageURL: usageURL,
-		PerformanceURL: performanceURL, ProbeSecretRef: secretRef.SecretRef,
+		PerformanceURL: performanceURL, ProbeSecretRef: secretRef.SecretRef, Enabled: true,
 	}
 	record := CreateRecord{
 		Candidate: candidate,
@@ -159,7 +202,10 @@ func (s Service) Create(ctx context.Context, actor domain.AdminActor, input Cand
 	}
 	id, err := s.Repository.CreateCandidate(ctx, record)
 	if err != nil {
-		return Candidate{}, err
+		if errors.Is(err, ErrConflict) {
+			return Candidate{}, ErrConflict
+		}
+		return Candidate{}, createOperationError{cause: err}
 	}
 	candidate.ID = id
 	return candidate, nil
@@ -215,7 +261,7 @@ func inspectSecretFile(path, owner string) (SecretRef, error) {
 	if !info.Mode().IsRegular() || (permissions != 0o600 && permissions != 0o640) {
 		return SecretRef{}, fmt.Errorf("probe key file must be regular with permissions 0600 or 0640")
 	}
-	if info.Size() <= 0 || info.Size() > maxProbeKeyBytes {
+	if info.Size() <= 0 || info.Size() > MaxProbeKeyBytes {
 		return SecretRef{}, fmt.Errorf("probe key file size is invalid")
 	}
 	rawKey, err := os.ReadFile(path)

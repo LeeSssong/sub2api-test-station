@@ -72,6 +72,48 @@ func TestClientCachesTokenAndSendsTextToExactChat(t *testing.T) {
 	}
 }
 
+func TestClientSendsInteractiveCardAsJSONString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			fmt.Fprint(w, `{"code":0,"tenant_access_token":"tenant-token-value","expire":7200}`)
+			return
+		}
+		var body struct {
+			MsgType string `json:"msg_type"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.MsgType != "interactive" {
+			t.Errorf("msg_type = %q", body.MsgType)
+		}
+		var card map[string]any
+		if err := json.Unmarshal([]byte(body.Content), &card); err != nil || card["header"] == nil || card["elements"] == nil {
+			t.Errorf("content is not card JSON: %q err=%v", body.Content, err)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"message_id":"om-card"}}`)
+	}))
+	defer server.Close()
+	messageID, err := newTestClient(t, server.URL).SendMessage(t.Context(), "chat-secret-id", OutboundMessage{MsgType: "interactive", Content: json.RawMessage(`{"header":{},"elements":[]}`)})
+	if err != nil || messageID != "om-card" {
+		t.Fatalf("message=%q err=%v", messageID, err)
+	}
+}
+
+func TestClientRejectsOversizedInteractiveCardBeforeNetwork(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("network request made for oversized card")
+	}))
+	defer server.Close()
+	content := json.RawMessage(`{"value":"` + strings.Repeat("x", maxMessageContentBytes) + `"}`)
+	_, err := newTestClient(t, server.URL).SendMessage(t.Context(), "chat-secret-id", OutboundMessage{MsgType: "interactive", Content: content})
+	if err == nil {
+		t.Fatal("oversized card was accepted")
+	}
+}
+
 func TestClientRefreshesTokenOnceAfterUnauthorized(t *testing.T) {
 	tokenCalls := 0
 	messageCalls := 0

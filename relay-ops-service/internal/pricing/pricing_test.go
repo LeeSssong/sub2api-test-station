@@ -84,6 +84,26 @@ func TestExtractorReadsStructuredJSONAndCommonHTML(t *testing.T) {
 	}
 }
 
+func TestHTMLMultiplierRequiresExplicitPricingContext(t *testing.T) {
+	t.Parallel()
+	htmlResult := FetchResult{URL: "https://example.com/pricing", ContentType: "text/html", Body: []byte(`
+		<html><body>
+		<div>bash - 80x24</div><script>window.payload = "0x14x66x"</script>
+		<table><thead><tr><th>模型</th><th>输入价格</th><th>输出价格</th></tr></thead>
+		<tbody><tr><td>gpt-5.5</td><td>$2.00</td><td>$8.00</td></tr></tbody></table>
+		</body></html>`)}
+	evidence, err := (CompositeExtractor{}).Extract(htmlResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.AdvertisedMultiplier != nil {
+		t.Fatalf("decorative text parsed as multiplier: %d", *evidence.AdvertisedMultiplier)
+	}
+	if len(evidence.Models) != 1 || evidence.Models[0].ModelID != "gpt-5.5" {
+		t.Fatalf("models = %#v", evidence.Models)
+	}
+}
+
 func TestSemanticDiffDetectsMultiplierAndModelPriceChanges(t *testing.T) {
 	t.Parallel()
 	oldMultiplier := domain.MultiplierBPS(700)
@@ -100,6 +120,26 @@ func TestSemanticDiffDetectsMultiplierAndModelPriceChanges(t *testing.T) {
 	}
 	if !diff.SemanticChange() {
 		t.Fatal("semantic change not detected")
+	}
+}
+
+func TestSemanticDiffDetectsMultiplierAppearanceAndLoss(t *testing.T) {
+	t.Parallel()
+	multiplier := domain.MultiplierBPS(1_000)
+	appeared := Diff(Evidence{Models: []ModelPrice{{ModelID: "gpt-a", Input: "1"}}}, Evidence{
+		AdvertisedMultiplier: &multiplier,
+		Models:               []ModelPrice{{ModelID: "gpt-a", Input: "1"}},
+	})
+	if appeared.Multiplier == nil || appeared.Multiplier.BeforePresent || !appeared.Multiplier.AfterPresent || appeared.Multiplier.After != 1_000 {
+		t.Fatalf("appeared multiplier diff = %#v", appeared.Multiplier)
+	}
+
+	lost := Diff(Evidence{AdvertisedMultiplier: &multiplier}, Evidence{Confidence: "unparseable"})
+	if lost.Multiplier == nil || !lost.Multiplier.BeforePresent || lost.Multiplier.AfterPresent || lost.Multiplier.Before != 1_000 {
+		t.Fatalf("lost multiplier diff = %#v", lost.Multiplier)
+	}
+	if len(lost.UnparseableFields) != 1 || lost.UnparseableFields[0] != "pricing_evidence" {
+		t.Fatalf("lost evidence fields = %#v", lost.UnparseableFields)
 	}
 }
 

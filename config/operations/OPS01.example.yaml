@@ -1,0 +1,68 @@
+schema_version: 1
+ops_id: OPS01
+status: fictional
+reviewed_at: "2026-07-15"
+external_actions_deferred: true
+action_execution_mode: report_only
+
+cadence:
+  daily_review_time: "09:00 Asia/Shanghai"
+  weekly_review_day: monday
+  monthly_restore_day: 1
+
+thresholds:
+  balance_difference_usd_abs_max: 0.01
+  backup_age_hours_max: 24
+  restore_drill_age_days_max: 31
+  certificate_days_min: 14
+  disk_used_ratio_max: 0.80
+  failed_admin_logins_1h_max: 5
+  upstream_balance_days_min: 3.0
+  upstream_success_rate_min: 0.95
+  upstream_rate_limit_ratio_max: 0.15
+  upstream_5xx_ratio_max: 0.05
+  upstream_ttft_p95_ms_max: 5000
+  stream_interruption_ratio_max: 0.01
+  daily_total_cost_usd_max: 20.0
+  per_user_daily_cost_usd_max: 5.0
+  request_id_coverage_ratio_min: 1.0
+  gross_margin_percent_min: 20.0
+  account_expiry_warning_hours: 72
+
+backup_policy:
+  postgres_format: custom_pg_dump_fc
+  offsite_provider: cloudflare_r2_standard
+  offsite_tool: restic
+  local_retention_days: 7
+  offsite_retention_days: 30
+  encrypted_offsite_required: true
+  restore_drill_interval_days: 31
+  dry_run_only: true
+
+stop_loss_actions:
+  credential_exposure:
+    - disable_affected_channel
+    - revoke_exposed_credential
+    - rotate_credential
+    - preserve_evidence
+  billing_integrity:
+    - disable_recharge
+    - freeze_balance_adjustments
+    - disable_affected_channel
+    - preserve_evidence
+    - reconcile_ledger
+  all_upstreams_down:
+    - disable_registration
+    - disable_affected_models
+    - publish_status_notice
+    - preserve_evidence
+  core_service_down:
+    - disable_registration
+    - disable_affected_models
+    - publish_status_notice
+    - preserve_evidence
+
+evidence:
+  sub2api_version: v0.1.155
+  sub2api_commit: 41cec0db059ffb82d0efdcfcf07a24ab51fbfe97
+  notes: Fictional report-only operations policy. No external action is enabled.

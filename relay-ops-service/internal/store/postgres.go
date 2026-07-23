@@ -21,6 +21,7 @@ import (
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/sub2api"
+	"example.invalid/relay-ops-service/internal/upstreams"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -165,6 +166,167 @@ func (s *Store) CreateCandidate(ctx context.Context, record candidates.CreateRec
 	return domain.UpstreamID(id), nil
 }
 
+func (s *Store) CreateProduction(ctx context.Context, record upstreams.ProductionRecord) (domain.UpstreamID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin production upstream transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var id int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO relay_ops.upstreams
+			(display_name, role, base_url, pricing_url, usage_url, performance_url, adapter_type, sub2api_channel_monitor_id, enabled)
+		VALUES ($1, 'production', $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, NULLIF($7, 0), TRUE)
+		RETURNING id`,
+		record.Source.Name, record.Source.BaseURL, record.Source.PricingURL, record.Source.UsageURL,
+		record.Source.PerformanceURL, record.Source.AdapterType, record.Source.MonitorID,
+	).Scan(&id)
+	if err != nil {
+		return 0, productionCreateError(err)
+	}
+	for _, groupID := range record.Source.GroupIDs {
+		command, err := tx.Exec(ctx, `
+			INSERT INTO relay_ops.upstream_public_groups (upstream_id, group_id)
+			SELECT $1, group_id FROM relay_ops.public_groups
+			WHERE group_id=$2 AND enabled=TRUE AND customer_visible=TRUE`, id, groupID)
+		if err != nil {
+			return 0, fmt.Errorf("link production public group: %w", err)
+		}
+		if command.RowsAffected() != 1 {
+			return 0, upstreams.ErrGroupUnavailable
+		}
+	}
+	afterSummary, err := json.Marshal(record.Audit.AfterSummary)
+	if err != nil {
+		return 0, fmt.Errorf("encode production audit summary: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events
+			(actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`,
+		record.Audit.ActorUserID, record.Audit.Action, record.Audit.ObjectType, strconv.FormatInt(id, 10), afterSummary,
+	); err != nil {
+		return 0, fmt.Errorf("insert production upstream audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit production upstream: %w", err)
+	}
+	return domain.UpstreamID(id), nil
+}
+
+func (s *Store) ResolvePublicGroupIDs(ctx context.Context, names []string) ([]int64, error) {
+	clean := make([]string, 0, len(names))
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		clean = append(clean, name)
+	}
+	if len(clean) == 0 {
+		return nil, upstreams.ErrGroupRequired
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT group_id FROM relay_ops.public_groups
+		WHERE name = ANY($1::text[]) AND enabled=TRUE AND customer_visible=TRUE
+		ORDER BY group_id`, clean)
+	if err != nil {
+		return nil, fmt.Errorf("resolve public group names: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]int64, 0, len(clean))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan public group ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate public group IDs: %w", err)
+	}
+	if len(ids) != len(clean) {
+		return nil, upstreams.ErrGroupUnavailable
+	}
+	return ids, nil
+}
+
+func productionCreateError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return upstreams.ErrConflict
+	}
+	return fmt.Errorf("create production upstream: %w", err)
+}
+
+func (s *Store) ListProduction(ctx context.Context) ([]upstreams.Source, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT u.id, u.display_name, u.role, u.base_url, COALESCE(u.pricing_url, ''),
+			COALESCE(u.usage_url, ''), COALESCE(u.performance_url, ''), u.adapter_type,
+			COALESCE(u.sub2api_channel_monitor_id, 0), u.enabled,
+			COALESCE(array_agg(link.group_id ORDER BY link.group_id) FILTER (WHERE link.group_id IS NOT NULL), '{}')
+		FROM relay_ops.upstreams u
+		LEFT JOIN relay_ops.upstream_public_groups link ON link.upstream_id=u.id
+		WHERE u.role='production'
+		GROUP BY u.id
+		ORDER BY u.display_name, u.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list production upstreams: %w", err)
+	}
+	defer rows.Close()
+	result := make([]upstreams.Source, 0)
+	for rows.Next() {
+		var source upstreams.Source
+		if err := rows.Scan(
+			&source.ID, &source.Name, &source.Role, &source.BaseURL, &source.PricingURL,
+			&source.UsageURL, &source.PerformanceURL, &source.AdapterType, &source.MonitorID,
+			&source.Enabled, &source.GroupIDs,
+		); err != nil {
+			return nil, fmt.Errorf("scan production upstream: %w", err)
+		}
+		result = append(result, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate production upstreams: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) DisableProduction(ctx context.Context, upstreamID domain.UpstreamID, audit upstreams.AuditEvent) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin production upstream disable: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	command, err := tx.Exec(ctx, `UPDATE relay_ops.upstreams SET enabled=FALSE, updated_at=NOW() WHERE id=$1 AND role='production'`, upstreamID)
+	if err != nil {
+		return fmt.Errorf("disable production upstream: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return upstreams.ErrNotFound
+	}
+	afterSummary, err := json.Marshal(audit.AfterSummary)
+	if err != nil {
+		return fmt.Errorf("encode production disable audit: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events (actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`, audit.ActorUserID, audit.Action, audit.ObjectType,
+		strconv.FormatInt(int64(upstreamID), 10), afterSummary,
+	); err != nil {
+		return fmt.Errorf("insert production disable audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit production disable: %w", err)
+	}
+	return nil
+}
+
 func candidateCreateError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -286,6 +448,80 @@ func (s *Store) RecordExpired(ctx context.Context, upstreamID domain.UpstreamID,
 		return false, fmt.Errorf("commit usage session update: %w", err)
 	}
 	return notify, nil
+}
+
+func (s *Store) UpsertUsageSession(ctx context.Context, record billing.SessionRecord) (billing.SessionConfig, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("begin usage session configuration: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var name, usageURL string
+	if err := tx.QueryRow(ctx, `
+		SELECT display_name, COALESCE(usage_url, '') FROM relay_ops.upstreams
+		WHERE id=$1 AND role='production' AND enabled=TRUE`, record.Config.UpstreamID).Scan(&name, &usageURL); err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("find production upstream for usage session: %w", err)
+	}
+	if usageURL == "" {
+		return billing.SessionConfig{}, fmt.Errorf("production upstream has no usage URL")
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.secret_refs (secret_ref, kind, owner_scope, fingerprint, last_four)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (secret_ref) DO UPDATE SET kind=EXCLUDED.kind, owner_scope=EXCLUDED.owner_scope,
+			fingerprint=EXCLUDED.fingerprint, last_four=EXCLUDED.last_four, status='active'`,
+		record.Secret.SecretRef, record.Secret.Kind, record.Secret.OwnerScope, record.Secret.Fingerprint, record.Secret.LastFour); err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("store usage session secret reference: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope)
+		VALUES ($1, $2, $3, 'active', $4, 'usage_read')
+		ON CONFLICT (upstream_id) DO UPDATE SET secret_ref=EXCLUDED.secret_ref, auth_mode=EXCLUDED.auth_mode,
+			status='active', login_url=EXCLUDED.login_url, last_failure_reason=NULL`,
+		record.Config.UpstreamID, record.Secret.SecretRef, record.Config.AuthMode, record.Config.LoginURL); err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("store usage session: %w", err)
+	}
+	afterSummary, err := json.Marshal(record.Audit.AfterSummary)
+	if err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("encode usage session audit: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events (actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`, record.Audit.ActorUserID, record.Audit.Action, record.Audit.ObjectType,
+		strconv.FormatInt(int64(record.Config.UpstreamID), 10), afterSummary); err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("insert usage session audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return billing.SessionConfig{}, fmt.Errorf("commit usage session: %w", err)
+	}
+	record.Config.UpstreamName = name
+	record.Config.UsageURL = usageURL
+	return record.Config, nil
+}
+
+func (s *Store) ListUsageSessions(ctx context.Context) ([]billing.SessionConfig, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.upstream_id, u.display_name, u.usage_url, a.login_url, a.auth_mode, a.secret_ref
+		FROM relay_ops.auth_sessions a
+		JOIN relay_ops.upstreams u ON u.id=a.upstream_id
+		WHERE u.role='production' AND u.enabled=TRUE AND COALESCE(u.usage_url, '') <> ''
+		ORDER BY u.display_name, a.upstream_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list usage sessions: %w", err)
+	}
+	defer rows.Close()
+	result := make([]billing.SessionConfig, 0)
+	for rows.Next() {
+		var config billing.SessionConfig
+		if err := rows.Scan(&config.UpstreamID, &config.UpstreamName, &config.UsageURL, &config.LoginURL, &config.AuthMode, &config.SecretRef); err != nil {
+			return nil, fmt.Errorf("scan usage session: %w", err)
+		}
+		result = append(result, config)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate usage sessions: %w", err)
+	}
+	return result, nil
 }
 
 func (s *Store) RecordHealthy(ctx context.Context, upstreamID domain.UpstreamID, observedAt time.Time) error {
@@ -564,6 +800,134 @@ func (s *Store) Save(ctx context.Context, incidentKey string, analysis agent.Ana
 		if _, found, findErr := s.Find(ctx, incidentKey); findErr != nil || !found {
 			return fmt.Errorf("agent incident not found")
 		}
+	}
+	return nil
+}
+
+func (s *Store) ListIncidentSummaries(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT severity, state, incident_key, COALESCE(current_value, '')
+		FROM relay_ops.incidents
+		WHERE state NOT IN ('recovered', 'muted')
+		ORDER BY last_seen_at DESC, id DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list incident summaries: %w", err)
+	}
+	defer rows.Close()
+	result := make([]string, 0)
+	for rows.Next() {
+		var severity, state, key, current string
+		if err := rows.Scan(&severity, &state, &key, &current); err != nil {
+			return nil, fmt.Errorf("scan incident summary: %w", err)
+		}
+		if current == "" {
+			result = append(result, severity+" "+state+" "+key)
+		} else {
+			result = append(result, severity+" "+state+" "+key+"："+current)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate incident summaries: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) ListAgentSummaries(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT incident.incident_key, analysis.result
+		FROM relay_ops.agent_analyses analysis
+		JOIN relay_ops.incidents incident ON incident.id=analysis.incident_id
+		ORDER BY analysis.created_at DESC, analysis.id DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list Agent summaries: %w", err)
+	}
+	defer rows.Close()
+	result := make([]string, 0)
+	for rows.Next() {
+		var key string
+		var payload []byte
+		if err := rows.Scan(&key, &payload); err != nil {
+			return nil, fmt.Errorf("scan Agent summary: %w", err)
+		}
+		var analysis agent.Analysis
+		if err := json.Unmarshal(payload, &analysis); err != nil {
+			continue
+		}
+		text := analysis.Summary
+		if text == "" {
+			text = analysis.RecommendedAction
+		}
+		result = append(result, key+"："+text)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Agent summaries: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) ReserveNotification(ctx context.Context, incidentKey, dedupKey, messageHash string) (int64, bool, error) {
+	if incidentKey == "" || dedupKey == "" || messageHash == "" {
+		return 0, false, fmt.Errorf("notification identity is incomplete")
+	}
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO relay_ops.notification_deliveries
+			(incident_id, dedup_key, message_hash, delivery_status)
+		SELECT id, $2, $3, 'reserved'
+		FROM relay_ops.incidents WHERE incident_key=$1
+		ON CONFLICT (dedup_key) DO UPDATE
+		SET message_hash=EXCLUDED.message_hash,
+		    delivery_status='reserved',
+		    response_code=NULL,
+		    delivered_at=NULL,
+		    created_at=NOW()
+		WHERE notification_deliveries.delivery_status='failed'
+		RETURNING id`, incidentKey, dedupKey, messageHash).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var exists bool
+		if scanErr := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM relay_ops.notification_deliveries WHERE dedup_key=$1)`, dedupKey).Scan(&exists); scanErr != nil {
+			return 0, false, fmt.Errorf("check notification reservation: %w", scanErr)
+		}
+		if exists {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("incident not found for notification")
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("reserve notification: %w", err)
+	}
+	return id, true, nil
+}
+
+func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, status string, responseCode int) error {
+	if deliveryID <= 0 || (status != "delivered" && status != "failed") {
+		return fmt.Errorf("notification delivery status is invalid")
+	}
+	var code any
+	if responseCode > 0 {
+		code = responseCode
+	}
+	var deliveredAt any
+	if status == "delivered" {
+		deliveredAt = time.Now().UTC()
+	}
+	command, err := s.pool.Exec(ctx, `
+		UPDATE relay_ops.notification_deliveries
+		SET delivery_status=$2, response_code=$3, delivered_at=$4
+		WHERE id=$1`, deliveryID, status, code, deliveredAt)
+	if err != nil {
+		return fmt.Errorf("finish notification delivery: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("notification delivery not found")
 	}
 	return nil
 }

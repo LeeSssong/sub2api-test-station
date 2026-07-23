@@ -2,6 +2,8 @@
 
 require "digest"
 require "json"
+require "optparse"
+require "tempfile"
 require "time"
 require_relative "model-release-policy"
 
@@ -15,6 +17,7 @@ module ModelRelease
       "registration_open" => false
     }.freeze
     FORBIDDEN_KEY = /\A(?:api[_-]?key|token|cookie|authorization|password|secret|credentials?|model[_-]?output)\z/i
+    MODEL_ID = /\A[a-z0-9][a-z0-9._-]{0,127}\z/
     ROOT_KEYS = %w[
       account_set_sha256
       accounts
@@ -79,7 +82,7 @@ module ModelRelease
       blockers << "unsafe_operating_mode" unless snapshot.fetch("modes") == REQUIRED_MODES
 
       account_views = accounts.map do |account|
-        account_blockers(account).each { |reason| blockers << reason }
+        account_blockers(account).each { |reason| blockers << reason } unless candidate_models.empty?
         qualified_models = candidate_models.select { |model_id| qualified?(account, model_id) }
         {
           "account_id" => account.fetch("account_id"),
@@ -103,7 +106,12 @@ module ModelRelease
 
       priced = snapshot.fetch("pricing").select { |item| item.fetch("complete") }.map { |item| item.fetch("model_id") }
       blockers << "model_pricing_incomplete" unless (candidate_models - priced).empty?
-      blockers.concat(decision.reason_codes) if decision.status == "待确认"
+      qualification_attempted = accounts.any? do |account|
+        !(account.fetch("qualifications").keys & candidate_models).empty?
+      end
+      if decision.status == "待确认" || (decision.status == "待测试" && !qualification_attempted)
+        blockers.concat(decision.reason_codes)
+      end
       blockers = blockers.uniq.sort
 
       result = {
@@ -111,7 +119,7 @@ module ModelRelease
         "proposal_id" => "",
         "snapshot_id" => snapshot.fetch("snapshot_id"),
         "evaluated_at" => @now.iso8601,
-        "status" => result_status(decision, blockers),
+        "status" => result_status(decision, blockers, qualification_attempted: qualification_attempted),
         "account_set_sha256" => snapshot.fetch("account_set_sha256"),
         "base_config_sha256" => snapshot.fetch("base_config_sha256"),
         "published" => {
@@ -182,13 +190,10 @@ module ModelRelease
         raise ValidationError, "#{path} is not active and schedulable" unless account["status"] == "active" && account["schedulable"] == true
         integer_list!(account["group_ids"], "#{path}.group_ids")
         string_list!(account["discovered_models"], "#{path}.discovered_models", allow_empty: false)
-        %w[discovery_recorded_at financial_recorded_at quality_recorded_at].each do |field|
-          timestamp!(account[field], "#{path}.#{field}")
-        end
-        raise ValidationError, "#{path}.quality_source is invalid" unless account["quality_source"] == "sub2api_account_attributed_natural_traffic"
-        number!(account["balance_usd"], "#{path}.balance_usd")
-        positive_integer!(account["sample_count"], "#{path}.sample_count")
-        %w[success_rate error_rate ttft_p95_ms total_latency_p95_ms].each { |field| number!(account[field], "#{path}.#{field}") }
+        timestamp!(account["discovery_recorded_at"], "#{path}.discovery_recorded_at")
+        optional_timestamp!(account["financial_recorded_at"], "#{path}.financial_recorded_at")
+        optional_number!(account["balance_usd"], "#{path}.balance_usd")
+        validate_optional_quality!(account, path)
         validate_qualifications!(account["qualifications"], "#{path}.qualifications")
         account["account_id"]
       end
@@ -205,7 +210,7 @@ module ModelRelease
     end
 
     def validate_pricing!(pricing)
-      array!(pricing, "pricing", allow_empty: false, max: 512)
+      array!(pricing, "pricing", allow_empty: true, max: 512)
       models = pricing.map.with_index do |item, index|
         exact_keys!(item, %w[complete model_id], "pricing[#{index}]")
         text!(item["model_id"], "pricing[#{index}].model_id")
@@ -216,22 +221,63 @@ module ModelRelease
     end
 
     def validate_base_configuration!(configuration)
-      exact_keys!(configuration, %w[accounts channels], "base_configuration")
+      exact_keys!(configuration, %w[accounts groups], "base_configuration")
       array!(configuration["accounts"], "base_configuration.accounts", allow_empty: false, max: 2000)
-      array!(configuration["channels"], "base_configuration.channels", allow_empty: false, max: 100)
+      account_ids = configuration["accounts"].map.with_index do |account, index|
+        path = "base_configuration.accounts[#{index}]"
+        exact_keys!(account, %w[account_id model_mapping], path)
+        positive_integer!(account["account_id"], "#{path}.account_id")
+        model_mapping!(account["model_mapping"], "#{path}.model_mapping")
+        account["account_id"]
+      end
+      raise ValidationError, "base_configuration.accounts contains duplicate IDs" unless account_ids.uniq.length == account_ids.length
+
+      array!(configuration["groups"], "base_configuration.groups", allow_empty: false, max: 100)
+      group_ids = configuration["groups"].map.with_index do |group, index|
+        path = "base_configuration.groups[#{index}]"
+        exact_keys!(group, %w[group_id models_list_config], path)
+        positive_integer!(group["group_id"], "#{path}.group_id")
+        config = group["models_list_config"]
+        exact_keys!(config, %w[enabled models], "#{path}.models_list_config")
+        unless [true, false].include?(config["enabled"])
+          raise ValidationError, "#{path}.models_list_config.enabled must be boolean"
+        end
+        string_list!(config["models"], "#{path}.models_list_config.models", allow_empty: true)
+        unless config["models"].all? { |model_id| model_id.match?(MODEL_ID) }
+          raise ValidationError, "#{path}.models_list_config.models contains invalid model IDs"
+        end
+        group["group_id"]
+      end
+      raise ValidationError, "base_configuration.groups contains duplicate IDs" unless group_ids.uniq.length == group_ids.length
+    end
+
+    def model_mapping!(value, path)
+      unless value.is_a?(Hash) && value.length <= 4096 && value.all? do |source, target|
+               source.is_a?(String) && source.match?(MODEL_ID) && target.is_a?(String) && target.match?(MODEL_ID)
+             end
+        raise ValidationError, "#{path} is invalid"
+      end
     end
 
     def account_blockers(account)
       reasons = []
       reasons << "discovery_evidence_stale" if stale?(account.fetch("discovery_recorded_at"))
-      reasons << "financial_evidence_stale" if stale?(account.fetch("financial_recorded_at"))
-      reasons << "quality_evidence_stale" if stale?(account.fetch("quality_recorded_at"))
-      reasons << "balance_below_minimum" if account.fetch("balance_usd") < 5.0
-      reasons << "quality_samples_insufficient" if account.fetch("sample_count") < 20
-      reasons << "quality_success_rate_low" if account.fetch("success_rate") < 0.95
-      reasons << "quality_error_rate_high" if account.fetch("error_rate") > 0.05
-      reasons << "quality_ttft_p95_high" if account.fetch("ttft_p95_ms") > 5000
-      reasons << "quality_total_latency_p95_high" if account.fetch("total_latency_p95_ms") > 45_000
+      if account["balance_usd"].nil? || account["financial_recorded_at"].nil?
+        reasons << "financial_evidence_missing"
+      else
+        reasons << "financial_evidence_stale" if stale?(account.fetch("financial_recorded_at"))
+        reasons << "balance_below_minimum" if account.fetch("balance_usd") < 5.0
+      end
+      if account["quality_recorded_at"].nil?
+        reasons << "quality_evidence_missing"
+      else
+        reasons << "quality_evidence_stale" if stale?(account.fetch("quality_recorded_at"))
+        reasons << "quality_samples_insufficient" if account.fetch("sample_count") < 20
+        reasons << "quality_success_rate_low" if account.fetch("success_rate") < 0.95
+        reasons << "quality_error_rate_high" if account.fetch("error_rate") > 0.05
+        reasons << "quality_ttft_p95_high" if account.fetch("ttft_p95_ms") > 5000
+        reasons << "quality_total_latency_p95_high" if account.fetch("total_latency_p95_ms") > 45_000
+      end
       reasons
     end
 
@@ -246,9 +292,10 @@ module ModelRelease
         evidence.fetch("sse_terminal_events") == 3
     end
 
-    def result_status(decision, blockers)
+    def result_status(decision, blockers, qualification_attempted:)
       return "待确认" if decision.status == "待确认"
       return "未发现更新" if decision.status == "未发现更新" && blockers.empty?
+      return "待测试" if decision.status == "待测试" && !qualification_attempted
       return "可升级" if blockers.empty?
 
       "测试未通过"
@@ -274,6 +321,25 @@ module ModelRelease
       raise ValidationError, "#{path} is in the future" if parsed > @now
     rescue ArgumentError, TypeError
       raise ValidationError, "#{path} must be an ISO8601 timestamp"
+    end
+
+    def optional_timestamp!(value, path)
+      timestamp!(value, path) unless value.nil?
+    end
+
+    def validate_optional_quality!(account, path)
+      fields = %w[quality_source quality_recorded_at sample_count success_rate error_rate ttft_p95_ms total_latency_p95_ms]
+      return if fields.all? { |field| account[field].nil? }
+
+      raise ValidationError, "#{path}.quality evidence is incomplete" if fields.any? { |field| account[field].nil? }
+      unless account["quality_source"] == "sub2api_account_attributed_natural_traffic"
+        raise ValidationError, "#{path}.quality_source is invalid"
+      end
+      timestamp!(account["quality_recorded_at"], "#{path}.quality_recorded_at")
+      non_negative_integer!(account["sample_count"], "#{path}.sample_count")
+      %w[success_rate error_rate ttft_p95_ms total_latency_p95_ms].each do |field|
+        number!(account[field], "#{path}.#{field}")
+      end
     end
 
     def reject_forbidden_keys!(value, path = "snapshot")
@@ -318,8 +384,16 @@ module ModelRelease
       raise ValidationError, "#{path} must be a positive integer" unless value.is_a?(Integer) && value.positive?
     end
 
+    def non_negative_integer!(value, path)
+      raise ValidationError, "#{path} must be a non-negative integer" unless value.is_a?(Integer) && value >= 0
+    end
+
     def number!(value, path)
       raise ValidationError, "#{path} must be a finite non-negative number" unless value.is_a?(Numeric) && value.finite? && value >= 0
+    end
+
+    def optional_number!(value, path)
+      number!(value, path) unless value.nil?
     end
 
     def text!(value, path)
@@ -350,8 +424,8 @@ module ModelRelease
         items = value.map { |item| normalize(item) }
         if items.all? { |item| item.is_a?(Hash) && item.key?("account_id") }
           items.sort_by { |item| item.fetch("account_id") }
-        elsif items.all? { |item| item.is_a?(Hash) && item.key?("channel_id") }
-          items.sort_by { |item| item.fetch("channel_id") }
+        elsif items.all? { |item| item.is_a?(Hash) && item.key?("group_id") }
+          items.sort_by { |item| item.fetch("group_id") }
         elsif items.all? { |item| item.is_a?(String) || item.is_a?(Numeric) }
           items.sort
         else
@@ -362,4 +436,48 @@ module ModelRelease
       end
     end
   end
+
+  class ReadinessCLI
+    def self.run(argv, out: $stdout, err: $stderr)
+      command = argv.shift
+      options = {}
+      OptionParser.new do |parser|
+        parser.on("--policy PATH") { |value| options[:policy] = value }
+        parser.on("--snapshot PATH") { |value| options[:snapshot] = value }
+        parser.on("--output PATH") { |value| options[:output] = value }
+        parser.on("--now TIME") { |value| options[:now] = value }
+      end.parse!(argv)
+      raise ValidationError, "command must be evaluate" unless command == "evaluate"
+      raise ValidationError, "unexpected arguments" unless argv.empty?
+      %i[policy snapshot output].each { |key| raise ValidationError, "missing required option" unless options[key] }
+      raise ValidationError, "output path must be absolute" unless File.absolute_path(options[:output]) == options[:output]
+      raise ValidationError, "snapshot is too large" if File.size(options[:snapshot]) > 2 << 20
+
+      snapshot = JSON.parse(File.read(options[:snapshot], 2 << 20))
+      now = options[:now] ? Time.iso8601(options[:now]).utc : Time.now.utc
+      result = Evaluator.new(policy: Policy.load(options[:policy]), now: now).evaluate(snapshot)
+      write_atomic(options[:output], JSON.pretty_generate(result))
+      out.puts(JSON.generate("status" => result.fetch("status"), "proposal_id" => result.fetch("proposal_id")))
+      0
+    rescue ValidationError, JSON::ParserError, OptionParser::ParseError, Errno::ENOENT, Errno::EACCES, ArgumentError
+      err.puts("ERROR: model release readiness evaluation rejected")
+      2
+    end
+
+    def self.write_atomic(path, content)
+      directory = File.dirname(path)
+      Tempfile.create([".model-release-result-", ".json"], directory) do |file|
+        file.chmod(0o640)
+        file.write(content)
+        file.flush
+        file.fsync
+        File.rename(file.path, path)
+      end
+    end
+    private_class_method :write_atomic
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  exit ModelRelease::ReadinessCLI.run(ARGV)
 end

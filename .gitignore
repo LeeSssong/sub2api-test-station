@@ -1,0 +1,19 @@
+infra/.env
+backups/
+config/upstreams/*.local.yaml
+config/pricing/*.local.yaml
+config/ledger/*.local.json
+config/ledger/*.local.jsonl
+config/subscription-accounts/*.local.yaml
+config/payments/*.local.yaml
+config/routing/*.local.yaml
+config/operations/*.local.yaml
+ops-data/
+.superpowers/
+*.local
+
+# Local OS, browser, editor, and generated artifacts
+**/.DS_Store
+**/.playwright-cli/
+**/.obsidian/
+output/

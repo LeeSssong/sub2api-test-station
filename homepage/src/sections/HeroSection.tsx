@@ -68,9 +68,9 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
           </div>
         </div>
         <div className="hero-grid">
-          <h1 id="hero-title">
+          <h1 id="hero-title" className="hero-title">
             <span className="hero-brand">星桥</span>
-            <span>链接世界顶尖模型</span>
+            <span className="hero-tagline">链接世界顶尖模型</span>
           </h1>
           <div className="hero-pitch">
             <p>

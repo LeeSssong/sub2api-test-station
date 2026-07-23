@@ -192,7 +192,7 @@ func TestFeishuCompletionRejectsUnknownSnapshotFields(t *testing.T) {
 	}
 }
 
-func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
+func TestFeishuRouteLockSerializesSharedAccount(t *testing.T) {
 	st := openTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -203,7 +203,7 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := st.WithFeishuGroupLock(ctx, 3, func(context.Context) commands.Completion {
+		_, err := st.WithFeishuRouteLock(ctx, commands.RouteLockIDs{GroupID: 3, PrimaryAccountID: 11, BackupAccountID: 12}, func(context.Context) commands.Completion {
 			close(firstEntered)
 			<-releaseFirst
 			return commands.Completion{Status: commands.StatusSucceeded}
@@ -221,7 +221,7 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	secondEntered := make(chan struct{})
 	secondDone := make(chan error, 1)
 	go func() {
-		_, err := st.WithFeishuGroupLock(ctx, 3, func(context.Context) commands.Completion {
+		_, err := st.WithFeishuRouteLock(ctx, commands.RouteLockIDs{GroupID: 4, PrimaryAccountID: 21, BackupAccountID: 12}, func(context.Context) commands.Completion {
 			close(secondEntered)
 			return commands.Completion{Status: commands.StatusSucceeded}
 		})
@@ -229,14 +229,14 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	}()
 	select {
 	case <-secondEntered:
-		t.Fatal("second same-group command entered before first released")
+		t.Fatal("second shared-account command entered before first released")
 	case <-time.After(100 * time.Millisecond):
 	}
 
 	differentEntered := make(chan struct{})
 	differentDone := make(chan error, 1)
 	go func() {
-		_, err := st.WithFeishuGroupLock(ctx, 4, func(context.Context) commands.Completion {
+		_, err := st.WithFeishuRouteLock(ctx, commands.RouteLockIDs{GroupID: 5, PrimaryAccountID: 31, BackupAccountID: 32}, func(context.Context) commands.Completion {
 			close(differentEntered)
 			return commands.Completion{Status: commands.StatusSucceeded}
 		})
@@ -245,7 +245,7 @@ func TestFeishuGroupLockSerializesSameGroup(t *testing.T) {
 	select {
 	case <-differentEntered:
 	case <-ctx.Done():
-		t.Fatal("different group lock was blocked by another group")
+		t.Fatal("unrelated route lock was blocked by another route")
 	}
 	if err := <-differentDone; err != nil {
 		t.Fatal(err)

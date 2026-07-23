@@ -14,12 +14,12 @@ class PromoteModelReleaseTest < Minitest::Test
 
   class FakeClient
     attr_reader :writes
-    attr_accessor :fail_channel_once
+    attr_accessor :fail_group_once
 
     def initialize(state)
       @state = Marshal.load(Marshal.dump(state))
       @writes = []
-      @fail_channel_once = false
+      @fail_group_once = false
     end
 
     def active_accounts
@@ -30,8 +30,8 @@ class PromoteModelReleaseTest < Minitest::Test
       Marshal.load(Marshal.dump(@state.fetch("accounts").fetch(account_id)))
     end
 
-    def channel_config(channel_id)
-      Marshal.load(Marshal.dump(@state.fetch("channels").fetch(channel_id)))
+    def group_config(group_id)
+      Marshal.load(Marshal.dump(@state.fetch("groups").fetch(group_id)))
     end
 
     def update_account_mapping(account_id, mapping)
@@ -39,13 +39,13 @@ class PromoteModelReleaseTest < Minitest::Test
       @state.fetch("accounts")[account_id] = Marshal.load(Marshal.dump(mapping))
     end
 
-    def update_channel_config(channel_id, config)
-      @writes << ["channel", channel_id, Marshal.load(Marshal.dump(config))]
-      if @fail_channel_once
-        @fail_channel_once = false
-        raise ModelRelease::PromotionError, "native channel update failed"
+    def update_group_config(group_id, config)
+      @writes << ["group", group_id, Marshal.load(Marshal.dump(config))]
+      if @fail_group_once
+        @fail_group_once = false
+        raise ModelRelease::PromotionError, "native group update failed"
       end
-      @state.fetch("channels")[channel_id] = Marshal.load(Marshal.dump(config))
+      @state.fetch("groups")[group_id] = Marshal.load(Marshal.dump(config))
     end
   end
 
@@ -67,7 +67,7 @@ class PromoteModelReleaseTest < Minitest::Test
     assert_empty client.writes
   end
 
-  def test_apply_writes_only_model_mappings_and_channel_model_configuration
+  def test_apply_writes_only_model_mappings_and_group_models_list
     client = FakeClient.new(native_state)
     proposal = valid_proposal
 
@@ -78,7 +78,7 @@ class PromoteModelReleaseTest < Minitest::Test
       assert_equal [
         ["account", 10, { "gpt-5.6" => "gpt-5.6", "gpt-5.7" => "gpt-5.7" }],
         ["account", 11, { "gpt-5.6" => "gpt-5.6", "gpt-5.7-sol" => "gpt-5.7-sol" }],
-        ["channel", 20, after_channel]
+        ["group", 2, after_group]
       ], client.writes
       snapshot_path = result.fetch("snapshot_path")
       assert_equal dir, File.dirname(snapshot_path)
@@ -91,7 +91,7 @@ class PromoteModelReleaseTest < Minitest::Test
 
   def test_partial_failure_restores_prior_native_configuration
     client = FakeClient.new(native_state)
-    client.fail_channel_once = true
+    client.fail_group_once = true
 
     Dir.mktmpdir do |dir|
       error = assert_raises(ModelRelease::PromotionError) do
@@ -102,8 +102,26 @@ class PromoteModelReleaseTest < Minitest::Test
 
     assert_equal before_account_10, client.account_mapping(10)
     assert_equal before_account_11, client.account_mapping(11)
-    assert_equal before_channel, client.channel_config(20)
-    assert_equal ["account", "account", "channel", "account", "account"], client.writes.map(&:first)
+    assert_equal before_group, client.group_config(2)
+    assert_equal ["account", "account", "group", "account", "account"], client.writes.map(&:first)
+  end
+
+  def test_bootstrap_skips_unchanged_account_mappings
+    client = FakeClient.new(native_state)
+    proposal = valid_proposal
+    proposal.fetch("accounts").each { |account| account["after_mapping"] = account.fetch("before_mapping") }
+    target = {
+      "accounts" => proposal.fetch("accounts").map do |account|
+        { "account_id" => account.fetch("account_id"), "model_mapping" => account.fetch("after_mapping") }
+      end,
+      "groups" => [{ "group_id" => 2 }.merge(after_group)]
+    }
+    proposal["target_config_sha256"] = sha256(target)
+    rehash!(proposal)
+
+    Dir.mktmpdir { |dir| promoter(client).apply(proposal, snapshot_dir: dir) }
+
+    assert_equal [["group", 2, after_group]], client.writes
   end
 
   def test_native_client_uses_only_official_admin_write_shapes
@@ -113,8 +131,8 @@ class PromoteModelReleaseTest < Minitest::Test
       case path
       when "/api/v1/admin/accounts/bulk-update"
         { "success" => 1, "failed" => 0, "success_ids" => [10], "results" => [] }
-      when "/api/v1/admin/channels/20"
-        after_channel.merge("id" => 20)
+      when "/api/v1/admin/groups/2"
+        after_group.merge("id" => 2)
       else
         raise "unexpected request"
       end
@@ -127,14 +145,14 @@ class PromoteModelReleaseTest < Minitest::Test
         base_url: "https://sub2api.example.test", admin_key_file: key_path, transport: transport
       )
       client.update_account_mapping(10, { "gpt-5.7" => "gpt-5.7" })
-      client.update_channel_config(20, after_channel)
+      client.update_group_config(2, after_group)
     end
 
     assert_equal({
       "account_ids" => [10],
       "credentials" => { "model_mapping" => { "gpt-5.7" => "gpt-5.7" } }
     }, requests[0].fetch(:body))
-    assert_equal after_channel, requests[1].fetch(:body)
+    assert_equal after_group, requests[1].fetch(:body)
     assert requests.all? { |request| request.fetch(:headers).fetch("x-api-key") == "admin-test-key" }
     assert_equal %w[POST PUT], requests.map { |request| request.fetch(:method) }
   end
@@ -155,21 +173,15 @@ class PromoteModelReleaseTest < Minitest::Test
     { "gpt-5.5" => "gpt-5.5", "gpt-5.6" => "gpt-5.6" }
   end
 
-  def before_channel
+  def before_group
     {
-      "model_mapping" => { "openai" => { "gpt-5.5" => "gpt-5.5", "gpt-5.6" => "gpt-5.6" } },
-      "model_pricing" => [{ "platform" => "openai", "models" => %w[gpt-5.5 gpt-5.6], "billing_mode" => "token", "input_price" => 1.0, "output_price" => 2.0 }],
-      "billing_model_source" => "requested",
-      "restrict_models" => true
+      "models_list_config" => { "enabled" => true, "models" => %w[gpt-5.5 gpt-5.6] }
     }
   end
 
-  def after_channel
+  def after_group
     {
-      "model_mapping" => { "openai" => { "gpt-5.6" => "gpt-5.6", "gpt-5.7" => "gpt-5.7", "gpt-5.7-sol" => "gpt-5.7-sol" } },
-      "model_pricing" => [{ "platform" => "openai", "models" => %w[gpt-5.6 gpt-5.7 gpt-5.7-sol], "billing_mode" => "token", "input_price" => 1.0, "output_price" => 2.0 }],
-      "billing_model_source" => "requested",
-      "restrict_models" => true
+      "models_list_config" => { "enabled" => true, "models" => %w[gpt-5.6 gpt-5.7 gpt-5.7-sol] }
     }
   end
 
@@ -180,7 +192,7 @@ class PromoteModelReleaseTest < Minitest::Test
         { "account_id" => 11, "status" => "active", "schedulable" => true, "group_ids" => [3] }
       ],
       "accounts" => { 10 => before_account_10, 11 => before_account_11 },
-      "channels" => { 20 => before_channel }
+      "groups" => { 2 => before_group }
     }
   end
 
@@ -201,7 +213,7 @@ class PromoteModelReleaseTest < Minitest::Test
         { "account_id" => 10, "before_mapping" => before_account_10, "after_mapping" => { "gpt-5.6" => "gpt-5.6", "gpt-5.7" => "gpt-5.7" } },
         { "account_id" => 11, "before_mapping" => before_account_11, "after_mapping" => { "gpt-5.6" => "gpt-5.6", "gpt-5.7-sol" => "gpt-5.7-sol" } }
       ],
-      "channels" => [{ "channel_id" => 20, "before" => before_channel, "after" => after_channel }]
+      "groups" => [{ "group_id" => 2, "before" => before_group, "after" => after_group }]
     }
     rehash!(document)
   end
@@ -209,7 +221,7 @@ class PromoteModelReleaseTest < Minitest::Test
   def before_configuration
     {
       "accounts" => [{ "account_id" => 10, "model_mapping" => before_account_10 }, { "account_id" => 11, "model_mapping" => before_account_11 }],
-      "channels" => [{ "channel_id" => 20 }.merge(before_channel)]
+      "groups" => [{ "group_id" => 2 }.merge(before_group)]
     }
   end
 
@@ -218,7 +230,7 @@ class PromoteModelReleaseTest < Minitest::Test
       { "account_id" => 10, "model_mapping" => { "gpt-5.6" => "gpt-5.6", "gpt-5.7" => "gpt-5.7" } },
       { "account_id" => 11, "model_mapping" => { "gpt-5.6" => "gpt-5.6", "gpt-5.7-sol" => "gpt-5.7-sol" } }
     ]
-    { "accounts" => proposal_accounts, "channels" => [{ "channel_id" => 20 }.merge(after_channel)] }
+    { "accounts" => proposal_accounts, "groups" => [{ "group_id" => 2 }.merge(after_group)] }
   end
 
   def rehash!(document)
@@ -238,8 +250,8 @@ class PromoteModelReleaseTest < Minitest::Test
       items = value.map { |item| canonical(item) }
       if items.all? { |item| item.is_a?(Hash) && item.key?("account_id") }
         items.sort_by { |item| item.fetch("account_id") }
-      elsif items.all? { |item| item.is_a?(Hash) && item.key?("channel_id") }
-        items.sort_by { |item| item.fetch("channel_id") }
+      elsif items.all? { |item| item.is_a?(Hash) && item.key?("group_id") }
+        items.sort_by { |item| item.fetch("group_id") }
       else
         items
       end

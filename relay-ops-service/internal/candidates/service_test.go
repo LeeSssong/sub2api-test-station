@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -87,6 +88,123 @@ func TestCreateReturnsRepositoryConflict(t *testing.T) {
 	}
 }
 
+func TestCreateClassifiesRepositoryFailureWithoutExposingDetails(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeRepository{err: errors.New("database unavailable at /sensitive/socket")}
+	service := Service{Repository: repo, Resolver: fakeResolver{ips: []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}}}
+	_, err := service.Create(context.Background(), domain.AdminActor{UserID: 1}, validInput(t))
+	if !errors.Is(err, ErrCreateFailed) {
+		t.Fatalf("error = %v, want ErrCreateFailed", err)
+	}
+	if err.Error() != "candidate create failed" {
+		t.Fatalf("error text = %q", err.Error())
+	}
+}
+
+func TestCreateWithKeyInstallsSecretAndStoresOnlyMetadata(t *testing.T) {
+	t.Parallel()
+
+	directory := secureDirectory(t)
+	repo := &fakeRepository{}
+	service := Service{
+		Repository:  repo,
+		Resolver:    fakeResolver{ips: []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}},
+		SecretStore: FileSecretStore{Directory: directory},
+	}
+	key := []byte("candidate-secret-9012")
+	created, err := service.CreateWithKey(context.Background(), domain.AdminActor{UserID: 42}, CandidateIntakeInput{
+		Name: "candidate", BaseURL: "https://candidate.example/v1", PricingURL: "https://candidate.example/pricing",
+		UsageURL: "https://candidate.example/usage", PerformanceURL: "https://candidate.example/performance", ProbeKey: key,
+	})
+	if err != nil {
+		t.Fatalf("CreateWithKey: %v", err)
+	}
+	if created.ID != 17 || !strings.HasPrefix(created.ProbeSecretRef, "file:"+directory+string(filepath.Separator)) {
+		t.Fatalf("created = %#v", created)
+	}
+	if repo.input.SecretRef.LastFour != "9012" || repo.input.SecretRef.Fingerprint == "" {
+		t.Fatalf("secret metadata = %#v", repo.input.SecretRef)
+	}
+	if strings.Contains(repo.serialized(), "candidate-secret-9012") {
+		t.Fatal("repository input leaked candidate key")
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("managed files = %d, %v", len(entries), err)
+	}
+	assertZeroed(t, key)
+}
+
+func TestCreateWithKeyRemovesSecretWhenRepositoryFails(t *testing.T) {
+	t.Parallel()
+
+	directory := secureDirectory(t)
+	repo := &fakeRepository{err: errors.New("database unavailable")}
+	service := Service{
+		Repository:  repo,
+		Resolver:    fakeResolver{ips: []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}},
+		SecretStore: FileSecretStore{Directory: directory},
+	}
+	key := []byte("rollback-secret-3456")
+	_, err := service.CreateWithKey(context.Background(), domain.AdminActor{UserID: 42}, CandidateIntakeInput{
+		Name: "rollback", BaseURL: "https://candidate.example/v1", PricingURL: "https://candidate.example/pricing",
+		UsageURL: "https://candidate.example/usage", ProbeKey: key,
+	})
+	if err == nil {
+		t.Fatal("CreateWithKey unexpectedly succeeded")
+	}
+	if strings.Contains(err.Error(), "rollback-secret-3456") || strings.Contains(err.Error(), directory) {
+		t.Fatalf("error leaked secret detail: %v", err)
+	}
+	entries, readErr := os.ReadDir(directory)
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("rollback left managed files = %d, %v", len(entries), readErr)
+	}
+	assertZeroed(t, key)
+}
+
+func TestCreateWithKeyHidesOriginalErrorWhenSecretCleanupFails(t *testing.T) {
+	t.Parallel()
+
+	directory := secureDirectory(t)
+	service := Service{
+		Repository: &fakeRepository{err: fmt.Errorf("%w: /sensitive/repository/path", ErrConflict)},
+		Resolver:   fakeResolver{ips: []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}},
+		SecretStore: failingRemoveSecretStore{
+			FileSecretStore: FileSecretStore{Directory: directory},
+			err:             errors.New("remove /sensitive/managed/path"),
+		},
+	}
+	key := []byte("cleanup-failure-secret")
+	_, err := service.CreateWithKey(context.Background(), domain.AdminActor{UserID: 42}, CandidateIntakeInput{
+		Name: "cleanup-failure", BaseURL: "https://candidate.example/v1", PricingURL: "https://candidate.example/pricing",
+		UsageURL: "https://candidate.example/usage", ProbeKey: key,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("error = %v, want ErrConflict", err)
+	}
+	if err.Error() != "candidate secret cleanup failed" {
+		t.Fatalf("error text = %q", err.Error())
+	}
+	assertZeroed(t, key)
+}
+
+func TestCreateWithKeyRejectsMissingStoreAndClearsOwnedBuffer(t *testing.T) {
+	t.Parallel()
+
+	key := []byte("missing-store-secret")
+	service := Service{Repository: &fakeRepository{}, Resolver: fakeResolver{ips: []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}}}
+	_, err := service.CreateWithKey(context.Background(), domain.AdminActor{UserID: 42}, CandidateIntakeInput{
+		Name: "candidate", BaseURL: "https://candidate.example/v1", PricingURL: "https://candidate.example/pricing",
+		UsageURL: "https://candidate.example/usage", ProbeKey: key,
+	})
+	if err == nil {
+		t.Fatal("CreateWithKey accepted a missing secret store")
+	}
+	assertZeroed(t, key)
+}
+
 func TestListReturnsCandidateMetadataWithoutSecretValues(t *testing.T) {
 	t.Parallel()
 
@@ -136,9 +254,25 @@ func writeKey(t *testing.T, mode os.FileMode, value string) string {
 	return path
 }
 
+func assertZeroed(t *testing.T, value []byte) {
+	t.Helper()
+	for index, item := range value {
+		if item != 0 {
+			t.Fatalf("byte %d was not cleared", index)
+		}
+	}
+}
+
 type fakeResolver struct{ ips []net.IPAddr }
 
 func (r fakeResolver) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) { return r.ips, nil }
+
+type failingRemoveSecretStore struct {
+	FileSecretStore
+	err error
+}
+
+func (s failingRemoveSecretStore) Remove(string) error { return s.err }
 
 type fakeRepository struct {
 	input        CreateRecord

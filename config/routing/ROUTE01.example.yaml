@@ -1,0 +1,151 @@
+schema_version: 1
+routing_id: ROUTE01
+status: fictional
+reviewed_at: "2026-07-15"
+external_actions_deferred: true
+traffic_stage: private_test
+
+policy:
+  weights:
+    success_rate: 0.30
+    cost: 0.25
+    ttft: 0.20
+    capacity_headroom: 0.15
+    support_response: 0.10
+  thresholds:
+    min_observations: 20
+    min_balance_days: 2.0
+    min_concurrency_headroom_ratio: 0.10
+    max_rate_limit_ratio: 0.15
+    switch_margin_points: 8.0
+    switch_confirmation_windows: 3
+  normalization:
+    success_rate_bad: 0.90
+    success_rate_good: 0.995
+    cost_usd_per_million_low: 1.5
+    cost_usd_per_million_high: 4.0
+    ttft_ms_good: 500
+    ttft_ms_bad: 2500
+    headroom_ratio_low: 0.10
+    headroom_ratio_high: 0.80
+    support_minutes_good: 30
+    support_minutes_bad: 240
+
+retry_policy:
+  max_additional_attempts: 1
+  retryable_failure_types:
+    - connect_error
+    - tls_error
+    - timeout
+  retryable_status_codes: [408, 429, 500, 502, 503, 504, 529]
+  never_retry_status_codes: [400, 401, 402, 403, 404, 409, 422]
+  require_response_not_started: true
+  require_charge_not_observed: true
+
+circuit_breaker:
+  window_size: 20
+  minimum_samples: 20
+  consecutive_failures_to_open: 5
+  failure_ratio_to_open: 0.50
+  base_cooldown_seconds: 60
+  max_cooldown_seconds: 900
+  half_open_probe_interval_seconds: 30
+  half_open_successes_to_close: 2
+  rate_limit_fallback_cooldown_seconds: 30
+  overload_529_cooldown_seconds: 600
+
+capacity_policy:
+  vertical:
+    oom_restarts_24h: 1
+    mem_available_mib_below: 300
+    swap_used_mib_above: 512
+    cpu_percent_above: 70
+    postgres_connection_ratio_above: 0.80
+    sustained_minutes: 15
+  network:
+    minimum_samples_per_grid: 20
+    entry_latency_p95_ms_above: 220
+    entry_packet_loss_percent_above: 2.0
+  second_node:
+    minimum_memory_gib: 4
+    entry_availability_7d_below: 99.5
+    sustained_sse_concurrency_above: 30
+    loss_to_cost_ratio: 1.5
+
+upstreams:
+  - upstream_id: UP01
+    status: fictional
+    enabled: true
+    manual_disabled: false
+    terms_status: unknown
+    models: [gpt-test]
+    circuit_state: closed
+    metrics:
+      observations: 50
+      success_rate: 0.98
+      unit_cost_usd_per_million_tokens: 2.0
+      ttft_p95_ms: 1300
+      rate_limit_ratio: 0.02
+      balance_days_remaining: 10.0
+      concurrency_headroom_ratio: 0.70
+      support_response_minutes: 30
+    secret_ref: sub2api-admin://upstreams/UP01
+  - upstream_id: UP02
+    status: fictional
+    enabled: true
+    manual_disabled: false
+    terms_status: confirmed
+    models: [gpt-test]
+    circuit_state: closed
+    metrics:
+      observations: 50
+      success_rate: 0.995
+      unit_cost_usd_per_million_tokens: 3.0
+      ttft_p95_ms: 900
+      rate_limit_ratio: 0.01
+      balance_days_remaining: 14.0
+      concurrency_headroom_ratio: 0.60
+      support_response_minutes: 90
+    secret_ref: sub2api-admin://upstreams/UP02
+  - upstream_id: UP03
+    status: fictional
+    enabled: true
+    manual_disabled: true
+    terms_status: confirmed
+    models: [gpt-test]
+    circuit_state: closed
+    metrics:
+      observations: 50
+      success_rate: 0.98
+      unit_cost_usd_per_million_tokens: 2.4
+      ttft_p95_ms: 1200
+      rate_limit_ratio: 0.02
+      balance_days_remaining: 10.0
+      concurrency_headroom_ratio: 0.50
+      support_response_minutes: 60
+    secret_ref: sub2api-admin://upstreams/UP03
+  - upstream_id: UP04
+    status: fictional
+    enabled: true
+    manual_disabled: false
+    terms_status: confirmed
+    models: [gpt-test]
+    circuit_state: half_open
+    metrics:
+      observations: 50
+      success_rate: 0.98
+      unit_cost_usd_per_million_tokens: 2.4
+      ttft_p95_ms: 1200
+      rate_limit_ratio: 0.02
+      balance_days_remaining: 10.0
+      concurrency_headroom_ratio: 0.50
+      support_response_minutes: 60
+    secret_ref: sub2api-admin://upstreams/UP04
+
+# Real measurements stay empty until SRV01, DOM01 and carrier probes exist.
+network_measurements: []
+
+evidence:
+  sub2api_version: v0.1.155
+  sub2api_commit: 41cec0db059ffb82d0efdcfcf07a24ab51fbfe97
+  notes: Fictional offline routing baseline. No real traffic or purchase exists.

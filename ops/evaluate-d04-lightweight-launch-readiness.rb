@@ -256,7 +256,9 @@ module D04LightweightLaunchReadiness
       return unless upstream
 
       add("active_upstream.role", "must equal active_upstream") unless upstream["role"] == "active_upstream"
-      number(upstream["balance_usd"], "active_upstream.balance_usd", min: 0, nullable: true)
+      # Provider dashboards may expose a small negative balance after usage posts.
+      # Preserve that evidence so the evaluator can return the explicit minimum-balance block.
+      number(upstream["balance_usd"], "active_upstream.balance_usd", nullable: true)
       timestamp(upstream["financial_recorded_at"], "active_upstream.financial_recorded_at")
       string(upstream["quality_source"], "active_upstream.quality_source")
       timestamp(upstream["quality_recorded_at"], "active_upstream.quality_recorded_at")

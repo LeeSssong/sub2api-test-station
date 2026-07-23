@@ -2,14 +2,16 @@
 Description=Sub2API read-only model release monitor
 Wants=docker.service
 After=docker.service network-online.target
-ConditionPathIsExecutable=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh
+ConditionPathExists=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh
 
 [Service]
 Type=oneshot
 User=ubuntu
 Group=ubuntu
 EnvironmentFile=/etc/sub2api/model-release-monitor.env
+Environment=DOCKER_CONFIG=/run/model-release-monitor
 ExecStart=/opt/sub2api/production/ops/model-release/run-model-release-monitor.sh
+RuntimeDirectory=model-release-monitor
 UMask=0077
 TimeoutStartSec=4min
 NoNewPrivileges=true

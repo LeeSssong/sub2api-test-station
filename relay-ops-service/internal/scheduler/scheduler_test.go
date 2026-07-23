@@ -86,6 +86,71 @@ func TestCandidateFailuresAreIsolated(t *testing.T) {
 	}
 }
 
+func TestProbeModeUsesQualityFirstCandidateCadence(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	store := newFakeJobStore()
+	calls := map[string]int{}
+	s := Scheduler{
+		Mode: config.ModeProbe, Store: store, Clock: func() time.Time { return now },
+		Candidates: func(context.Context) ([]domain.UpstreamID, error) { return []domain.UpstreamID{73}, nil },
+		FastCandidate: func(_ context.Context, id domain.UpstreamID, job string, paid bool) error {
+			if id != 73 || !paid {
+				t.Fatalf("id=%d paid=%v", id, paid)
+			}
+			calls[job]++
+			return nil
+		},
+	}
+
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []string{JobHealthPulse, JobCatalogQuick, JobCapacityCheck} {
+		if calls[job] != 1 {
+			t.Fatalf("initial calls=%v", calls)
+		}
+	}
+	now = now.Add(14 * time.Minute)
+	_ = s.Tick(context.Background())
+	if calls[JobHealthPulse] != 1 || calls[JobCatalogQuick] != 1 || calls[JobCapacityCheck] != 1 {
+		t.Fatalf("fourteen-minute calls=%v", calls)
+	}
+	now = now.Add(time.Minute)
+	_ = s.Tick(context.Background())
+	if calls[JobHealthPulse] != 2 || calls[JobCatalogQuick] != 1 || calls[JobCapacityCheck] != 1 {
+		t.Fatalf("fifteen-minute calls=%v", calls)
+	}
+	now = time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC)
+	_ = s.Tick(context.Background())
+	if calls[JobCatalogQuick] != 2 || calls[JobCapacityCheck] != 1 {
+		t.Fatalf("six-hour calls=%v", calls)
+	}
+	now = time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+	_ = s.Tick(context.Background())
+	if calls[JobCapacityCheck] != 2 {
+		t.Fatalf("daily calls=%v", calls)
+	}
+}
+
+func TestReadOnlyNeverRunsPaidFastCandidateJobs(t *testing.T) {
+	t.Parallel()
+	fastCalls := 0
+	legacyCalls := 0
+	s := Scheduler{
+		Mode: config.ModeReadOnly, Store: newFakeJobStore(), Clock: time.Now,
+		Candidates:    func(context.Context) ([]domain.UpstreamID, error) { return []domain.UpstreamID{73}, nil },
+		Candidate:     func(context.Context, domain.UpstreamID, bool) error { legacyCalls++; return nil },
+		FastCandidate: func(context.Context, domain.UpstreamID, string, bool) error { fastCalls++; return nil },
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fastCalls != 0 || legacyCalls != 1 {
+		t.Fatalf("fast=%d legacy=%d", fastCalls, legacyCalls)
+	}
+}
+
 type fakeJobStore struct {
 	mu  sync.Mutex
 	due map[string]time.Time

@@ -38,6 +38,20 @@ func TestVerifierDecodesEncryptedChallenge(t *testing.T) {
 	}
 }
 
+func TestVerifierDecodesUnsignedEncryptedChallenge(t *testing.T) {
+	verifier := newTestVerifier(t)
+	req := encryptedRequest(t, testNow, `{"challenge":"challenge-value","token":"verification-token","type":"url_verification"}`)
+	removeSignatureHeaders(req)
+
+	envelope, err := verifier.Decode(req, maxTestBodyBytes)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if envelope.Challenge != "challenge-value" || envelope.Event != nil {
+		t.Fatalf("envelope = %#v", envelope)
+	}
+}
+
 func TestVerifierDecodesEncryptedMessageEvent(t *testing.T) {
 	verifier := newTestVerifier(t)
 	req := encryptedRequest(t, testNow, validMessageJSON(`{"text":"@_user_1 切换 GPT-Pro 到灾备"}`))
@@ -66,6 +80,15 @@ func TestVerifierRejectsUntrustedOrMalformedRequests(t *testing.T) {
 			request: func(t *testing.T) *http.Request {
 				req := encryptedRequest(t, testNow, validMessageJSON(`{"text":"查询当前分组状态"}`))
 				req.Header.Set("X-Lark-Signature", strings.Repeat("0", 64))
+				return req
+			},
+			want: ErrUnauthorized,
+		},
+		{
+			name: "unsigned message event",
+			request: func(t *testing.T) *http.Request {
+				req := encryptedRequest(t, testNow, validMessageJSON(`{"text":"查询当前分组状态"}`))
+				removeSignatureHeaders(req)
 				return req
 			},
 			want: ErrUnauthorized,
@@ -208,4 +231,10 @@ func signedRequest(timestamp time.Time, body []byte) *http.Request {
 	req.Header.Set("X-Lark-Request-Nonce", nonce)
 	req.Header.Set("X-Lark-Signature", hex.EncodeToString(digest[:]))
 	return req
+}
+
+func removeSignatureHeaders(req *http.Request) {
+	req.Header.Del("X-Lark-Request-Timestamp")
+	req.Header.Del("X-Lark-Request-Nonce")
+	req.Header.Del("X-Lark-Signature")
 }

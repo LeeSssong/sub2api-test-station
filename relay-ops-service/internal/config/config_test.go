@@ -30,6 +30,36 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	if cfg.FeishuCommandMode != FeishuCommandDisabled {
 		t.Fatalf("FeishuCommandMode = %q, want %q", cfg.FeishuCommandMode, FeishuCommandDisabled)
 	}
+	if cfg.CandidateSecretDir != "/var/lib/relay-ops/candidate-keys" {
+		t.Fatalf("CandidateSecretDir = %q", cfg.CandidateSecretDir)
+	}
+	if cfg.FastProfilePath != "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml" {
+		t.Fatalf("FastProfilePath = %q", cfg.FastProfilePath)
+	}
+}
+
+func TestLoadAcceptsAbsoluteCandidateSecretDirectory(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_CANDIDATE_SECRET_DIR"] = "/srv/relay-ops/managed-candidate-keys"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CandidateSecretDir != env["RELAY_OPS_CANDIDATE_SECRET_DIR"] {
+		t.Fatalf("CandidateSecretDir = %q", cfg.CandidateSecretDir)
+	}
+}
+
+func TestLoadRejectsRelativeCandidateSecretDirectory(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_CANDIDATE_SECRET_DIR"] = "secrets/candidate-keys"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("Load accepted a relative candidate secret directory")
+	}
 }
 
 func TestLoadAcceptsKnownFeishuCommandModesWithCompleteFiles(t *testing.T) {
@@ -60,6 +90,39 @@ func TestLoadDisabledAcceptsCallbackFilesWithoutRouting(t *testing.T) {
 	}
 	if cfg.FeishuRoutingFile != "" {
 		t.Fatalf("routing file = %q, want empty", cfg.FeishuRoutingFile)
+	}
+}
+
+func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCallbackFiles(t, env)
+	chatIDFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
+	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("alert configuration rejected: %v", err)
+	}
+	if cfg.FeishuAlertChatIDFile != chatIDFile {
+		t.Fatalf("alert chat file = %q, want %q", cfg.FeishuAlertChatIDFile, chatIDFile)
+	}
+}
+
+func TestLoadRejectsFeishuAlertChatWithoutCompleteAppFiles(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	chatIDFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
+	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("alert chat without Feishu App files unexpectedly accepted")
 	}
 }
 
@@ -150,6 +213,44 @@ func TestLoadRejectsWorldReadableSecretFiles(t *testing.T) {
 	}
 	if _, err := Load(func(key string) string { return env[key] }); err == nil {
 		t.Fatal("world-readable admin key unexpectedly accepted")
+	}
+}
+
+func TestLoadAcceptsOptionalAbsoluteD04ReadinessResultPath(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_D04_READINESS_RESULT_FILE"] = "/run/relay-ops/d04-readiness-result.json"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.D04ReadinessResultFile != env["RELAY_OPS_D04_READINESS_RESULT_FILE"] {
+		t.Fatalf("readiness result file = %q", cfg.D04ReadinessResultFile)
+	}
+
+	env["RELAY_OPS_D04_READINESS_RESULT_FILE"] = "relative.json"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("relative readiness result path was accepted")
+	}
+}
+
+func TestLoadAcceptsOnlyAbsoluteAccountQualityResultPath(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE"] = "/run/relay-ops/account-quality/account-quality-result.json"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccountQualityResultFile != env["RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE"] {
+		t.Fatalf("account quality result file = %q", cfg.AccountQualityResultFile)
+	}
+
+	env["RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE"] = "relative.json"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("relative account quality result path was accepted")
 	}
 }
 

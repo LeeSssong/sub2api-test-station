@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/feishuapi"
 	"example.invalid/relay-ops-service/internal/routingcontrol"
 )
 
@@ -39,8 +40,9 @@ func TestWorkerEnforcesCommandMode(t *testing.T) {
 			if tt.wantRouting == 1 && router.switchDryRuns[0] != tt.wantDryRun {
 				t.Fatalf("dry run = %v", router.switchDryRuns)
 			}
-			if tt.wantRouting == 1 && repository.lockedGroupID != 3 {
-				t.Fatalf("locked group = %d", repository.lockedGroupID)
+			wantLocks := RouteLockIDs{GroupID: 3, PrimaryAccountID: 11, BackupAccountID: 12}
+			if tt.wantRouting == 1 && repository.lockedRoute != wantLocks {
+				t.Fatalf("locked route = %#v, want %#v", repository.lockedRoute, wantLocks)
 			}
 		})
 	}
@@ -58,6 +60,21 @@ func TestDisabledWorkerDoesNotRequireRouter(t *testing.T) {
 	}
 	if repository.completion.Status != StatusRejected || repository.completion.ErrorCode != ErrorCommandDisabled {
 		t.Fatalf("completion = %#v", repository.completion)
+	}
+}
+
+func TestWorkerSendsStructuredCommandCardWithoutTextFallback(t *testing.T) {
+	repository := &fakeWorkerRepository{next: switchRecord()}
+	sender := &fakeSender{repository: repository}
+	worker := testWorker(repository, &fakeRouter{}, sender, ModeDisabled)
+	if worked, err := worker.RunOnce(context.Background()); err != nil || !worked {
+		t.Fatalf("RunOnce=%v err=%v", worked, err)
+	}
+	if sender.message.MsgType != "interactive" || !json.Valid(sender.message.Content) {
+		t.Fatalf("message=%#v", sender.message)
+	}
+	if sender.textCalls != 0 {
+		t.Fatalf("text fallback calls=%d", sender.textCalls)
 	}
 }
 
@@ -177,7 +194,7 @@ type fakeWorkerRepository struct {
 	claimed       bool
 	completion    Completion
 	completed     bool
-	lockedGroupID int64
+	lockedRoute   RouteLockIDs
 	replyCalls    int
 	lastDelivered bool
 }
@@ -204,8 +221,8 @@ func (f *fakeWorkerRepository) RecordFeishuReply(_ context.Context, _ string, _ 
 	return nil
 }
 
-func (f *fakeWorkerRepository) WithFeishuGroupLock(ctx context.Context, groupID int64, fn func(context.Context) Completion) (Completion, error) {
-	f.lockedGroupID = groupID
+func (f *fakeWorkerRepository) WithFeishuRouteLock(ctx context.Context, route RouteLockIDs, fn func(context.Context) Completion) (Completion, error) {
+	f.lockedRoute = route
 	return fn(ctx), nil
 }
 
@@ -235,10 +252,13 @@ type fakeSender struct {
 	repository *fakeWorkerRepository
 	failures   int
 	calls      int
+	message    feishuapi.OutboundMessage
+	textCalls  int
 }
 
-func (f *fakeSender) SendText(context.Context, string, string) (string, error) {
+func (f *fakeSender) SendMessage(_ context.Context, _ string, message feishuapi.OutboundMessage) (string, error) {
 	f.calls++
+	f.message = message
 	if !f.repository.completed {
 		return "", errors.New("reply attempted before completion")
 	}
@@ -259,7 +279,11 @@ func switchRecord() Record {
 func testWorker(repository *fakeWorkerRepository, router *fakeRouter, sender *fakeSender, mode string) *Worker {
 	return &Worker{
 		Mode: mode, Repository: repository, Router: router, Sender: sender,
-		GroupIDs: map[string]int64{"GPT-Pro": 3, "GPT-Plus": 4}, Now: fixedNow,
+		RouteLocks: map[string]RouteLockIDs{
+			"GPT-Pro":  {GroupID: 3, PrimaryAccountID: 11, BackupAccountID: 12},
+			"GPT-Plus": {GroupID: 4, PrimaryAccountID: 21, BackupAccountID: 22},
+		},
+		Now:   fixedNow,
 		Lease: time.Minute, PollInterval: time.Millisecond,
 	}
 }

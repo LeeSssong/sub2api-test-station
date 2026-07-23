@@ -29,10 +29,11 @@ standard proxy identity headers produced by Caddy:
 - `X-Forwarded-For`
 - `X-Forwarded-Proto`
 - `X-Forwarded-Host`
-- `X-Real-IP`
 
 The service does not accept public traffic directly and has no host port.
-Caddy is the only public ingress and constructs the forwarded client identity.
+Caddy is the only public ingress and constructs these three forwarded headers.
+Client-supplied `X-Real-IP` is not forwarded because Caddy does not reconstruct
+that header and Sub2API treats D04 as a trusted proxy.
 Sub2API independently applies its trusted-proxy configuration before using the
 forwarded address. The D04 service continues to reject unknown auth endpoints,
 cross-origin writes, redirects, and oversized bodies.
@@ -50,8 +51,10 @@ D04 would violate service ownership and create a private platform behavior.
 
 ## Validation
 
-Add a focused forwarder test that supplies the four proxy identity headers and
-asserts that the native Sub2API request receives them unchanged. First run the
+Add a focused forwarder test that supplies the three Caddy-derived proxy
+identity headers plus a client-supplied `X-Real-IP`. Assert that Sub2API
+receives the three trusted headers unchanged and does not receive
+`X-Real-IP`. First run the
 test against the current implementation and confirm it fails, then implement
 the allowlist change and rerun the focused test plus the full
 `internal-test-service` test, race, and vet suites.

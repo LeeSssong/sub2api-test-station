@@ -1,0 +1,52 @@
+schema_version: 3
+id: two-group-shared-backup-v3
+roles:
+  - group: group-a
+    role: gateway_primary
+    channel: primary-a
+    account_evidence_ref: sha256:primary-a
+    model_id: model-a
+    profile_id: bounded-text-capacity-v3
+    profile_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    measurement_location: production-edge
+    required_request_kinds: [sync, sse]
+  - group: group-a
+    role: gateway_backup
+    channel: backup-channel
+    account_evidence_ref: sha256:shared-backup
+    model_id: model-a
+    profile_id: bounded-text-capacity-v3
+    profile_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    measurement_location: production-edge
+    required_request_kinds: [sync, sse]
+  - group: group-b
+    role: gateway_primary
+    channel: primary-b
+    account_evidence_ref: sha256:primary-b
+    model_id: model-b
+    profile_id: bounded-text-capacity-v3
+    profile_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    measurement_location: production-edge
+    required_request_kinds: [sync, sse]
+  - group: group-b
+    role: gateway_backup
+    channel: backup-channel
+    account_evidence_ref: sha256:shared-backup
+    model_id: model-b
+    profile_id: bounded-text-capacity-v3
+    profile_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    measurement_location: production-edge
+    required_request_kinds: [sync, sse]
+shared_capacity_pools:
+  - id: shared-backup-pool-1
+    members:
+      - group: group-a
+        role: gateway_backup
+        channel: backup-channel
+        requested_concurrency: 1
+      - group: group-b
+        role: gateway_backup
+        channel: backup-channel
+        requested_concurrency: 1
+    aggregate_concurrency_limit: 2
+    allocation_policy: equal_demand

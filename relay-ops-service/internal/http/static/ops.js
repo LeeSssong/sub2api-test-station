@@ -1,14 +1,15 @@
 (() => {
   const status = document.getElementById('ops-status')
   const token = localStorage.getItem('auth_token')
-  const loginURL = '/login?redirect=%2Fops'
+  const notFound = () => window.location.replace('/404')
 
   if (!token) {
-    window.location.replace(loginURL)
+    notFound()
     return
   }
 
   fetch('/relay-ops/api/ops-view', {
+    cache: 'no-store',
     credentials: 'same-origin',
     headers: {
       Accept: 'text/html',
@@ -16,13 +17,11 @@
     },
   })
     .then((response) => {
-      if (response.status === 401 || response.status === 403) {
-        window.location.replace(loginURL)
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        notFound()
         return null
       }
-      if (!response.ok) {
-        throw new Error('ops view unavailable')
-      }
+      if (!response.ok) throw new Error('ops view unavailable')
       return response.text()
     })
     .then((html) => {
@@ -32,6 +31,6 @@
       document.close()
     })
     .catch(() => {
-      if (status) status.textContent = '运维数据暂时不可用，请刷新重试'
+      if (status) status.textContent = '页面暂时不可用，请刷新重试'
     })
 })()

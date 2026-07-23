@@ -8,7 +8,7 @@ launch:
   daily_login_credit_usd: 20.0
   total_budget_usd: 100.0
   budget_cost_bps: 1000
-  active_upstream_balance_min_usd: 10.0
+  active_upstream_balance_min_usd: 5.0
   discovery_evidence_max_age_minutes: 20
   financial_evidence_max_age_minutes: 20
   quality_window_minutes: 15

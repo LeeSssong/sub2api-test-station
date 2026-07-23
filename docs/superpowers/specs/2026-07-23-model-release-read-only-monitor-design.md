@@ -74,8 +74,10 @@ evaluator, and service-specific environment file under
 The environment file will contain only a local Sub2API URL and the path to the
 existing restricted Admin-Key file. It will be mode `0600` and never printed.
 The service will write only to the restricted existing model-release evidence
-directory. The relay-ops result mount remains read-only; no container rebuild
-is needed for each timer run.
+directory. Relay-ops mounts that directory read-only and reads the result
+inside it, so the evaluator's atomic replacement is visible without a service
+restart. The one-time migration from the former single-file mount requires only
+one relay-ops recreation; no container rebuild is needed for each timer run.
 
 Logs contain only start/finish status, timestamps, snapshot/proposal hashes,
 and stable failure codes. They must not contain credentials, Base URLs, model

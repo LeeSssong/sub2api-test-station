@@ -8,9 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/feishuapi"
+	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/routingcontrol"
 )
 
@@ -28,7 +29,13 @@ type WorkerRepository interface {
 	ClaimFeishuCommand(context.Context, time.Time, time.Duration) (*Record, error)
 	CompleteFeishuCommand(context.Context, Completion) error
 	RecordFeishuReply(context.Context, string, string, bool, string) error
-	WithFeishuGroupLock(context.Context, int64, func(context.Context) Completion) (Completion, error)
+	WithFeishuRouteLock(context.Context, RouteLockIDs, func(context.Context) Completion) (Completion, error)
+}
+
+type RouteLockIDs struct {
+	GroupID          int64
+	PrimaryAccountID int64
+	BackupAccountID  int64
 }
 
 type Router interface {
@@ -36,16 +43,16 @@ type Router interface {
 	ReadAll(context.Context) ([]routingcontrol.GroupState, error)
 }
 
-type TextSender interface {
-	SendText(context.Context, string, string) (string, error)
+type MessageSender interface {
+	SendMessage(context.Context, string, feishuapi.OutboundMessage) (string, error)
 }
 
 type Worker struct {
 	Mode         string
 	Repository   WorkerRepository
 	Router       Router
-	Sender       TextSender
-	GroupIDs     map[string]int64
+	Sender       MessageSender
+	RouteLocks   map[string]RouteLockIDs
 	Now          func() time.Time
 	Lease        time.Duration
 	PollInterval time.Duration
@@ -101,10 +108,14 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	if err := w.Repository.CompleteFeishuCommand(ctx, completion); err != nil {
 		return true, err
 	}
-	text := renderReply(*record, completion)
+	message := renderReply(*record, completion, w.Mode == ModeDryRun)
+	payload, err := message.Outbound()
+	if err != nil {
+		return true, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		messageID, sendErr := w.Sender.SendText(ctx, record.ChatID, text)
+		messageID, sendErr := w.Sender.SendMessage(ctx, record.ChatID, payload)
 		delivered := sendErr == nil
 		errorCode := ""
 		if !delivered {
@@ -148,11 +159,11 @@ func (w *Worker) execute(ctx context.Context, record Record) (Completion, error)
 	if record.ActionKind != ActionSwitch {
 		return Completion{Status: StatusRejected, ErrorCode: ErrorUnknownCommand}, nil
 	}
-	groupID := w.GroupIDs[record.GroupName]
-	if groupID <= 0 {
+	locks, exists := w.RouteLocks[record.GroupName]
+	if !exists || locks.GroupID <= 0 || locks.PrimaryAccountID <= 0 || locks.BackupAccountID <= 0 {
 		return Completion{Status: StatusRejected, ErrorCode: routingcontrol.ErrorConfigMismatch}, nil
 	}
-	completion, err := w.Repository.WithFeishuGroupLock(ctx, groupID, func(lockCtx context.Context) Completion {
+	completion, err := w.Repository.WithFeishuRouteLock(ctx, locks, func(lockCtx context.Context) Completion {
 		result := w.Router.Switch(lockCtx, record.GroupName, routingcontrol.Role(record.TargetRole), w.Mode == ModeDryRun)
 		return routingCompletion(result)
 	})
@@ -174,31 +185,13 @@ func routingCompletion(result routingcontrol.Result) Completion {
 	}
 }
 
-func renderReply(record Record, completion Completion) string {
+func renderReply(record Record, completion Completion, dryRun bool) notify.FeishuMessage {
 	auditID := shortHash(record.EventID)
-	actorID := shortHash(record.SenderOpenID)
-	switch completion.ErrorCode {
-	case ErrorUnknownCommand:
-		return "未识别命令。可用命令：\n切换 GPT-Pro 到灾备\n切换 GPT-Plus 到灾备\n恢复 GPT-Pro 主分组\n恢复 GPT-Plus 主分组\n查询当前分组状态\n审计：" + auditID
-	case ErrorCommandDisabled:
-		return "命令功能未启用。结果：rejected\n审计：" + auditID
-	}
-	parts := []string{
-		"命令：" + record.Command,
-		"执行者：" + actorID,
-		"结果：" + completion.Status,
-	}
-	if record.GroupName != "" {
-		parts = append(parts, "分组："+record.GroupName, "目标："+record.TargetRole)
-	}
-	if completion.ErrorCode != "" {
-		parts = append(parts, "错误码："+completion.ErrorCode)
-	}
-	if completion.Status == StatusPartial {
-		parts = append(parts, "需要人工复核当前账号绑定。")
-	}
-	parts = append(parts, "审计："+auditID)
-	return strings.Join(parts, "\n")
+	return notify.RenderCommand(notify.CommandView{
+		Command: record.Command, ActorID: record.SenderOpenID, Status: completion.Status,
+		ErrorCode: completion.ErrorCode, GroupName: record.GroupName, TargetRole: record.TargetRole,
+		AuditID: auditID, DryRun: dryRun, Unknown: completion.ErrorCode == ErrorUnknownCommand,
+	})
 }
 
 func shortHash(value string) string {

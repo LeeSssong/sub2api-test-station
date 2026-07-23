@@ -1,0 +1,37 @@
+schema_version: 1
+measurement_id: NET01
+status: template
+external_actions_deferred: true
+
+targets:
+  entry_ref: SRV01/DOM01
+  upstream_ref: UP01
+  target_urls_stored_outside_git: true
+
+required_grid:
+  carriers: [china_telecom, china_unicom, china_mobile]
+  periods: [daytime, peak_20_23]
+  segments: [client_to_entry, entry_to_upstream]
+  minimum_samples_per_cell: 20
+
+sample_fields:
+  - captured_at
+  - probe_region
+  - carrier
+  - period
+  - segment
+  - sample_count
+  - rtt_p50_ms
+  - rtt_p95_ms
+  - packet_loss_percent
+  - dns_p95_ms
+  - tcp_connect_p95_ms
+  - tls_p95_ms
+  - ttfb_p95_ms
+  - ttft_p95_ms
+  - stream_interruptions
+  - notes
+
+# Copy this file to network-measurement.local.yaml after real assets exist.
+# Local routing YAML files are Git-ignored. Do not record authorization headers.
+samples: []

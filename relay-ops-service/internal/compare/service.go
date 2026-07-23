@@ -76,6 +76,95 @@ type CandidateComparison struct {
 	Status        string
 }
 
+const (
+	StatusBlocked                 = "blocked"
+	StatusNeedsEvidence           = "needs_evidence"
+	StatusNotBetter               = "not_better"
+	StatusReviewRecommended       = "review_recommended"
+	StatusEligibleForManualSwitch = "eligible_for_manual_switch"
+)
+
+type QualityEvidence struct {
+	TechnicalPassed       bool
+	EvidenceFresh         bool
+	BaselineKnown         bool
+	GatewayKnown          bool
+	PricingKnown          bool
+	ReliabilityScore      int
+	LatencyScore          int
+	GenerationScore       int
+	CapacityScore         int
+	PriceScore            int
+	ReliabilityRegression bool
+	LatencyRegression     bool
+	MaterialImprovement   bool
+}
+
+type QualityDecision struct {
+	Status          string
+	Eligible        bool
+	HardGateReasons []string
+	MissingEvidence []string
+	QualityScore    int
+	TotalScore      int
+}
+
+func EvaluateQualityFirst(evidence QualityEvidence) QualityDecision {
+	reasons := make([]string, 0, 3)
+	if !evidence.TechnicalPassed {
+		reasons = append(reasons, "technical_failure")
+	}
+	if !evidence.EvidenceFresh {
+		reasons = append(reasons, "stale_evidence")
+	}
+	if evidence.ReliabilityRegression {
+		reasons = append(reasons, "reliability_regression")
+	}
+	if evidence.LatencyRegression {
+		reasons = append(reasons, "latency_regression")
+	}
+	missing := make([]string, 0, 3)
+	if !evidence.BaselineKnown {
+		missing = append(missing, "production_baseline")
+	}
+	if !evidence.GatewayKnown {
+		missing = append(missing, "gateway_measurement")
+	}
+	if !evidence.PricingKnown {
+		missing = append(missing, "verified_pricing")
+	}
+	quality := bounded(evidence.ReliabilityScore, 40) + bounded(evidence.LatencyScore, 25) +
+		bounded(evidence.GenerationScore, 10) + bounded(evidence.CapacityScore, 15)
+	total := quality + bounded(evidence.PriceScore, 10)
+	status := StatusNotBetter
+	switch {
+	case len(reasons) > 0:
+		status = StatusBlocked
+	case quality < 80:
+		status = StatusNotBetter
+	case len(missing) > 0:
+		status = StatusNeedsEvidence
+	case !evidence.MaterialImprovement:
+		status = StatusNotBetter
+	default:
+		status = StatusEligibleForManualSwitch
+	}
+	return QualityDecision{
+		Status: status, Eligible: status == StatusEligibleForManualSwitch,
+		HardGateReasons: reasons, MissingEvidence: missing, QualityScore: quality, TotalScore: total,
+	}
+}
+
+func bounded(value, maximum int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
 func Classify(window ComparisonWindow, policy Policy) CandidateComparison {
 	production := window.Production
 	candidate := window.Candidate

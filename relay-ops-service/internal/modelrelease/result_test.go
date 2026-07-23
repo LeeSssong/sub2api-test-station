@@ -91,6 +91,32 @@ func TestViewMarksResultStaleAfterTwentyMinutes(t *testing.T) {
 	}
 }
 
+func TestFileSourceReadsThroughTheBoundedLoader(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 22, 12, 10, 0, 0, time.UTC)
+	result, err := (FileSource{Path: writeResult(t, validDocument())}).Read(now)
+	if err != nil || result.Status != "可升级" {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
+
+func TestViewTranslatesStableBlockerCodesForOperators(t *testing.T) {
+	t.Parallel()
+
+	view := (Result{Blockers: []string{
+		"bootstrap_qualification_required", "financial_evidence_missing",
+		"quality_evidence_missing", "group_model_coverage_incomplete",
+	}}).View(time.Date(2026, 7, 22, 12, 10, 0, 0, time.UTC))
+
+	got := strings.Join(view.Blockers, "|")
+	for _, label := range []string{"首版模型尚未完成兼容测试", "缺少上游余额证据", "缺少自然质量证据", "公开分组模型覆盖不完整"} {
+		if !strings.Contains(got, label) {
+			t.Fatalf("blockers = %q, missing %q", got, label)
+		}
+	}
+}
+
 func validDocument() map[string]any {
 	return map[string]any{
 		"schema_version":     float64(1),

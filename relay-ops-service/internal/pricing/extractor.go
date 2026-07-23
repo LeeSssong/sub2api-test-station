@@ -16,7 +16,13 @@ import (
 
 var errUnparseable = errors.New("pricing evidence is unparseable")
 
+const EvidenceSchemaVersion = "pricing-evidence-v2"
+
 var multiplierPattern = regexp.MustCompile(`(?i)([0-9]+(?:\.[0-9]+)?)\s*(?:x|倍)`)
+var labeledMultiplierPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(?:倍率|multiplier|(?:cost\s+)?rate)\s*[:：=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:x|倍)`),
+	regexp.MustCompile(`(?i)([0-9]+(?:\.[0-9]+)?)\s*(?:x|倍)\s*(?:倍率|multiplier|(?:cost\s+)?rate)`),
+}
 var decimalPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?$`)
 
 type ModelPrice struct {
@@ -33,6 +39,7 @@ type Evidence struct {
 	AdvertisedMultiplier *domain.MultiplierBPS `json:"advertised_multiplier_bps,omitempty"`
 	SourceURL            string                `json:"source_url"`
 	Confidence           string                `json:"confidence"`
+	SchemaVersion        string                `json:"schema_version"`
 }
 
 type Extractor interface {
@@ -64,7 +71,7 @@ func extractJSON(result FetchResult) (Evidence, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return Evidence{}, errUnparseable
 	}
-	evidence := Evidence{SourceURL: result.URL, Confidence: "structured_json"}
+	evidence := Evidence{SourceURL: result.URL, Confidence: "structured_json", SchemaVersion: EvidenceSchemaVersion}
 	evidence.AdvertisedMultiplier = findMultiplier(document)
 	evidence.Models = findJSONModels(document)
 	if evidence.AdvertisedMultiplier == nil && len(evidence.Models) == 0 {
@@ -108,7 +115,7 @@ func parseMultiplier(raw string) *domain.MultiplierBPS {
 		value = match[1]
 	}
 	parsed, err := domain.ParseMultiplierBPS(value)
-	if err != nil {
+	if err != nil || parsed <= 0 {
 		return nil
 	}
 	return &parsed
@@ -186,8 +193,9 @@ func extractHTML(result FetchResult) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, errUnparseable
 	}
-	evidence := Evidence{SourceURL: result.URL, Confidence: "common_html"}
-	evidence.AdvertisedMultiplier = parseMultiplier(document.Text())
+	document.Find("script,style,noscript,template").Remove()
+	evidence := Evidence{SourceURL: result.URL, Confidence: "common_html", SchemaVersion: EvidenceSchemaVersion}
+	evidence.AdvertisedMultiplier = extractHTMLMultiplier(document)
 	document.Find("[data-model]").Each(func(_ int, selection *goquery.Selection) {
 		model := ModelPrice{ModelID: strings.TrimSpace(selection.AttrOr("data-model", "")), Tier: strings.TrimSpace(selection.AttrOr("data-tier", ""))}
 		model.Input = normalizeDecimal(selection.AttrOr("data-input-price", ""))
@@ -223,6 +231,38 @@ func extractHTML(result FetchResult) (Evidence, error) {
 	}
 	sortModelPrices(evidence.Models)
 	return evidence, nil
+}
+
+func NewUnparseableEvidence(sourceURL string) Evidence {
+	return Evidence{SourceURL: sourceURL, Confidence: "unparseable", SchemaVersion: EvidenceSchemaVersion}
+}
+
+func extractHTMLMultiplier(document *goquery.Document) *domain.MultiplierBPS {
+	var result *domain.MultiplierBPS
+	document.Find("[data-multiplier], [data-rate]").EachWithBreak(func(_ int, selection *goquery.Selection) bool {
+		for _, attribute := range []string{"data-multiplier", "data-rate"} {
+			if value, exists := selection.Attr(attribute); exists {
+				if parsed := parseMultiplier(value); parsed != nil {
+					result = parsed
+					return false
+				}
+			}
+		}
+		return true
+	})
+	if result != nil {
+		return result
+	}
+	text := strings.Join(strings.Fields(document.Text()), " ")
+	for _, pattern := range labeledMultiplierPatterns {
+		match := pattern.FindStringSubmatch(text)
+		if len(match) == 2 {
+			if parsed := parseMultiplier(match[1]); parsed != nil {
+				return parsed
+			}
+		}
+	}
+	return nil
 }
 
 func normalizeHeader(value string) string {
@@ -276,8 +316,10 @@ func sortModelPrices(models []ModelPrice) {
 }
 
 type MultiplierChange struct {
-	Before domain.MultiplierBPS `json:"before_bps"`
-	After  domain.MultiplierBPS `json:"after_bps"`
+	Before        domain.MultiplierBPS `json:"before_bps"`
+	After         domain.MultiplierBPS `json:"after_bps"`
+	BeforePresent bool                 `json:"before_present"`
+	AfterPresent  bool                 `json:"after_present"`
 }
 
 type PriceChange struct {
@@ -297,8 +339,16 @@ type SemanticDiff struct {
 
 func Diff(previous, current Evidence) SemanticDiff {
 	diff := SemanticDiff{}
-	if previous.AdvertisedMultiplier != nil && current.AdvertisedMultiplier != nil && *previous.AdvertisedMultiplier != *current.AdvertisedMultiplier {
-		diff.Multiplier = &MultiplierChange{Before: *previous.AdvertisedMultiplier, After: *current.AdvertisedMultiplier}
+	beforeMultiplier, beforePresent := optionalMultiplier(previous.AdvertisedMultiplier)
+	afterMultiplier, afterPresent := optionalMultiplier(current.AdvertisedMultiplier)
+	if beforePresent != afterPresent || (beforePresent && beforeMultiplier != afterMultiplier) {
+		diff.Multiplier = &MultiplierChange{
+			Before: beforeMultiplier, After: afterMultiplier,
+			BeforePresent: beforePresent, AfterPresent: afterPresent,
+		}
+	}
+	if current.Confidence == "unparseable" && hasPricingEvidence(previous) {
+		diff.UnparseableFields = append(diff.UnparseableFields, "pricing_evidence")
 	}
 	before := indexModels(previous.Models)
 	after := indexModels(current.Models)
@@ -321,6 +371,17 @@ func Diff(previous, current Evidence) SemanticDiff {
 		return modelKey(diff.PriceChanges[left].After) < modelKey(diff.PriceChanges[right].After)
 	})
 	return diff
+}
+
+func optionalMultiplier(value *domain.MultiplierBPS) (domain.MultiplierBPS, bool) {
+	if value == nil {
+		return 0, false
+	}
+	return *value, true
+}
+
+func hasPricingEvidence(evidence Evidence) bool {
+	return evidence.AdvertisedMultiplier != nil || len(evidence.Models) > 0
 }
 
 func (diff SemanticDiff) SemanticChange() bool {

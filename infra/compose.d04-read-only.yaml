@@ -1,0 +1,63 @@
+name: sub2api-d04
+
+services:
+  internal-test-service:
+    image: sub2api-internal-test:d04-public-registration-20260721-v1
+    restart: unless-stopped
+    expose: ["8090"]
+    networks: [production]
+    environment:
+      D04_MAX_USERS: "15"
+      D04_TOTAL_BUDGET_USD: "100"
+      D04_REGISTRATION_OPEN: "false"
+      D04_DAILY_LOGIN_CREDIT_USD: "20"
+      D04_TIMEZONE: Asia/Shanghai
+      D04_SUB2API_URL: http://sub2api:8080
+      D04_ADMIN_API_KEY_FILE: /run/secrets/sub2api-admin-api-key
+      D04_FEISHU_BASE_URL: https://open.feishu.cn
+      D04_FEISHU_APP_ID_FILE: /run/secrets/feishu-app-id
+      D04_FEISHU_APP_SECRET_FILE: /run/secrets/feishu-app-secret
+      D04_FEISHU_ALERT_CHAT_ID_FILE: /run/secrets/feishu-alert-chat-id
+      D04_COST_POLICY_ID: ""
+      D04_BUDGET_COST_BPS: ""
+      D04_COST_POLICY_QUALIFIED: "false"
+      D04_MODE: read_only
+      D04_DATA_PATH: /var/lib/internal-test/internal-test.db
+      D04_LISTEN_ADDRESS: :8090
+    volumes:
+      - type: volume
+        source: d04_internal_test_data
+        target: /var/lib/internal-test
+        volume:
+          nocopy: true
+      - ./secrets/d04-sub2api-admin-api-key:/run/secrets/sub2api-admin-api-key:ro
+      - ./secrets/d04-invitation-key:/run/secrets/d04-invitation-key:ro
+      - ./secrets/d04-feishu-app-id:/run/secrets/feishu-app-id:ro
+      - ./secrets/d04-feishu-app-secret:/run/secrets/feishu-app-secret:ro
+      - ./secrets/d04-feishu-alert-chat-id:/run/secrets/feishu-alert-chat-id:ro
+    read_only: true
+    tmpfs: [/tmp]
+    user: "10001:0"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 192m
+    cpus: 0.35
+    healthcheck:
+      test: ["CMD", "/internal-test-service", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  d04_internal_test_data:
+    name: sub2api_d04_internal_test_data
+    external: true
+
+networks:
+  production:
+    external: true
+    name: sub2api_default

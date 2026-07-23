@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
@@ -32,6 +33,7 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 			2: {Overview: sub2api.OpsOverview{SuccessCount: 99, ErrorCountTotal: 1, RequestCountTotal: 100, SLA: 99, TTFT: sub2api.Percentiles{P95MS: 1400}, Duration: sub2api.Percentiles{P95MS: 3200}}},
 			6: {Overview: sub2api.OpsOverview{SuccessCount: 198, ErrorCountTotal: 2, RequestCountTotal: 200, SLA: 99, TTFT: sub2api.Percentiles{P95MS: 1900}, Duration: sub2api.Percentiles{P95MS: 4100}}},
 		},
+		accounts: []sub2api.Account{{ID: 10, Name: "active account", Status: "active", Schedulable: true, GroupIDs: []int64{2, 6}}},
 		usage: map[int64]sub2api.UsageStats{
 			2: {TotalRequests: 100, TotalInputTokens: 1_000_000, TotalCacheReadTokens: 3_000_000, TotalCacheCreationTokens: 500_000, CacheMetricsPresent: true, TotalCost: 1.2, TotalActualCost: 0.12, TotalAccountCost: 0.12},
 			6: {TotalRequests: 200, TotalInputTokens: 2_000_000, CacheMetricsPresent: true, TotalCost: 2.4, TotalActualCost: 0.12, TotalAccountCost: 0.12},
@@ -44,10 +46,14 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 		Reader:     reader,
 		Candidates: reportCandidates{items: []candidates.Candidate{{ID: domain.UpstreamID(17), Name: "candidate-a", Enabled: true}}},
 		Incidents:  incidentStore,
-		Agent:      analyzer,
-		Notifier:   notifier,
-		Timezone:   time.FixedZone("Asia/Shanghai", 8*60*60),
-		Now:        func() time.Time { return time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC) },
+		AccountQuality: reportQualitySource{result: accountquality.Result{
+			SchemaVersion: 1, SnapshotID: "quality-20260720", ObservedAt: time.Date(2026, 7, 20, 1, 20, 0, 0, time.UTC), AccountSetSHA256: strings.Repeat("a", 64),
+			Accounts: []accountquality.Account{{AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: 0.1, SampleCount: 6, SuccessCount: 6, SuccessRate: 1, TTFTP50MS: float64ptr(180), TTFTP95MS: float64ptr(260), LastResult: "passed", LastObservedAt: time.Date(2026, 7, 20, 1, 19, 0, 0, time.UTC)}},
+		}},
+		Agent:    analyzer,
+		Notifier: notifier,
+		Timezone: time.FixedZone("Asia/Shanghai", 8*60*60),
+		Now:      func() time.Time { return time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC) },
 	}
 
 	first, err := service.Run(context.Background())
@@ -67,8 +73,12 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 	if notifier.delivered != 1 || notifier.attempts != 2 || len(analyzer.contracts) != 2 {
 		t.Fatalf("delivered=%d attempts=%d analyses=%d", notifier.delivered, notifier.attempts, len(analyzer.contracts))
 	}
-	text := notifier.messages[0].Content.Text
-	for _, required := range []string{"GPT-Pro", "GPT-Plus", "SLA 99.00%", "错误 1/100", "TTFT P95 1400ms", "总延迟 P95 3200ms", "本站费用 $1.200000", "上游成本 $0.120000", "缓存读取 3.00M，写入 500.00K，命中率 75.00%，缓存优惠 1/1 模型", "候选站 1", "活动事件 1"} {
+	card, cardErr := notifier.messages[0].CardJSON()
+	if cardErr != nil {
+		t.Fatal(cardErr)
+	}
+	text := string(card)
+	for _, required := range []string{"站内运行", "公开分组", "GPT-Pro", "GPT-Plus", "当前调度账号", "账号 10", "上游账号质量", "倍率 0.1x", "TTFT P95 260ms", "候选站 1", "活动事件 1", "运维后台"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("report missing %q: %s", required, text)
 		}
@@ -102,6 +112,7 @@ func TestCacheReportLineMarksUnconfirmedAndPricingBlockers(t *testing.T) {
 type reportReader struct {
 	channels []sub2api.Channel
 	groups   []sub2api.Group
+	accounts []sub2api.Account
 	ops      map[int64]sub2api.OpsSnapshot
 	usage    map[int64]sub2api.UsageStats
 }
@@ -110,6 +121,9 @@ func (r reportReader) ListChannels(context.Context) ([]sub2api.Channel, error) {
 	return r.channels, nil
 }
 func (r reportReader) ListGroups(context.Context) ([]sub2api.Group, error) { return r.groups, nil }
+func (r reportReader) ListAccounts(context.Context) ([]sub2api.Account, error) {
+	return r.accounts, nil
+}
 func (r reportReader) ListChannelMonitors(context.Context) ([]sub2api.ChannelMonitor, error) {
 	return nil, nil
 }
@@ -133,6 +147,14 @@ type reportCandidates struct{ items []candidates.Candidate }
 func (r reportCandidates) ListCandidates(context.Context) ([]candidates.Candidate, error) {
 	return r.items, nil
 }
+
+type reportQualitySource struct{ result accountquality.Result }
+
+func (source reportQualitySource) Read(time.Time) (accountquality.Result, error) {
+	return source.result, nil
+}
+
+func float64ptr(value float64) *float64 { return &value }
 
 type reportIncidentStore struct {
 	items    []string

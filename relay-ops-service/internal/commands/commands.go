@@ -89,9 +89,9 @@ func Parse(event feishuevents.MessageEvent) Decision {
 		return Decision{Ignore: true, ErrorCode: ErrorInvalidEvent}
 	}
 	text := content.Text
-	if len(event.Mentions) > 0 {
+	if len(event.Mentions) == 1 {
 		mention := event.Mentions[0]
-		if mention.Key != "" && mention.MentionedType == "app" && strings.HasPrefix(text, mention.Key) {
+		if mention.Key != "" && (mention.MentionedType == "app" || mention.MentionedType == "bot") && strings.HasPrefix(text, mention.Key) {
 			text = strings.TrimPrefix(text, mention.Key)
 		}
 	}

@@ -1,0 +1,17 @@
+FROM golang@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+WORKDIR /src
+COPY relay-ops-service/go.mod relay-ops-service/go.sum ./
+RUN go mod download
+COPY relay-ops-service/ ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/relay-ops ./cmd/relay-ops
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/d04-readiness-snapshot ./cmd/d04-readiness-snapshot
+
+FROM ruby:3.3-alpine@sha256:a687aa0ca4793e421273bfa26068a5505a8a09bc7b11ccb7ad98ed9d8abb1604
+RUN addgroup -S -g 10002 relayops && adduser -S -D -H -u 10002 -G relayops relayops
+WORKDIR /app
+COPY --from=build /out/relay-ops /relay-ops
+COPY --from=build /out/d04-readiness-snapshot /d04-readiness-snapshot
+COPY ops/collect-account-quality-pulse.rb ops/upstream-benchmark.rb ops/upstream-benchmark-nonfunctional.rb ops/upstream-benchmark-protocols.rb ops/upstream-benchmark-v2.rb /app/ops/
+COPY config/upstream-benchmarks/candidate-watch-v2.yaml config/upstream-benchmarks/mvp-text-v2.yaml config/upstream-benchmarks/quality-first-fast-v1.yaml /app/config/upstream-benchmarks/
+USER 10002:10002
+ENTRYPOINT ["/relay-ops"]

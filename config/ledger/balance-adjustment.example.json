@@ -1,0 +1,15 @@
+{
+  "event_id": "EVT-BAL-0001",
+  "event_type": "balance_adjustment",
+  "occurred_at": "2026-07-15T00:02:00Z",
+  "operator_ref": "operator-example",
+  "user_ref": "USR-EXAMPLE-01",
+  "reference_event_id": "EVT-PAY-0001",
+  "sub2api_user_id": 1001,
+  "operation": "add",
+  "amount_usd": 10.0,
+  "idempotency_key": "ledger-ord-sim-0001-add-01",
+  "status": "simulated",
+  "result_reference": "SIMULATED-RESULT-0001",
+  "notes": "No API request sent."
+}

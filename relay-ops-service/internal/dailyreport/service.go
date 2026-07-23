@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/cachepolicy"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
+	"example.invalid/relay-ops-service/internal/opsmetrics"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
@@ -37,6 +39,10 @@ type MessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
 
+type AccountQualitySource interface {
+	Read(time.Time) (accountquality.Result, error)
+}
+
 type Result struct {
 	ReportDate   string `json:"report_date"`
 	Groups       int    `json:"groups"`
@@ -45,13 +51,14 @@ type Result struct {
 }
 
 type Service struct {
-	Reader     sub2api.Reader
-	Candidates CandidateReader
-	Incidents  IncidentReader
-	Agent      AnalysisRunner
-	Notifier   MessageSender
-	Timezone   *time.Location
-	Now        func() time.Time
+	Reader         opsmetrics.Reader
+	Candidates     CandidateReader
+	Incidents      IncidentReader
+	AccountQuality AccountQualitySource
+	Agent          AnalysisRunner
+	Notifier       MessageSender
+	Timezone       *time.Location
+	Now            func() time.Time
 }
 
 func (s Service) Run(ctx context.Context) (Result, error) {
@@ -67,47 +74,22 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		now = s.Now().UTC()
 	}
 	date := now.In(location).Format("2006-01-02")
-	groups, err := s.Reader.ListGroups(ctx)
+	runtime, err := opsmetrics.Collect(ctx, s.Reader, now)
 	if err != nil {
-		return Result{}, fmt.Errorf("list public groups: %w", err)
+		return Result{}, fmt.Errorf("collect site runtime: %w", err)
 	}
-	channels, err := s.Reader.ListChannels(ctx)
-	if err != nil {
-		return Result{}, fmt.Errorf("list public channels: %w", err)
+	evidenceRefs := make([]string, 0, len(runtime.Groups)+3)
+	for _, group := range runtime.Groups {
+		evidenceRefs = append(evidenceRefs, "group:"+strconv.FormatInt(group.ID, 10)+":ops15m")
 	}
-	lines := make([]string, 0, len(groups))
-	evidenceRefs := make([]string, 0, len(groups))
-	publicGroups := 0
-	for _, group := range groups {
-		if !group.CustomerVisible() {
-			continue
-		}
-		ops, err := s.Reader.GetOpsSnapshot(ctx, sub2api.OpsQuery{TimeRange: "24h", GroupID: group.ID})
-		if err != nil {
-			return Result{}, fmt.Errorf("get Ops for group %d: %w", group.ID, err)
-		}
-		usage, err := s.Reader.GetUsageStats(ctx, sub2api.UsageQuery{GroupID: group.ID, Period: "24h", Timezone: "Asia/Shanghai"})
-		if err != nil {
-			return Result{}, fmt.Errorf("get usage for group %d: %w", group.ID, err)
-		}
-		publicGroups++
-		line := fmt.Sprintf("%s：SLA %.2f%%，错误 %d/%d，TTFT P95 %.0fms，总延迟 P95 %.0fms，本站费用 $%.6f，上游成本 $%.6f",
-			group.Name, ops.Overview.SLA, ops.Overview.ErrorCountTotal, ops.Overview.RequestCountTotal,
-			ops.Overview.TTFT.P95MS, ops.Overview.Duration.P95MS, usage.TotalCost, usage.TotalAccountCost)
-		if strings.EqualFold(strings.TrimSpace(group.Platform), "openai") {
-			policy := cachepolicy.Evaluate([]sub2api.Group{group}, channels)
-			line += "，" + cacheReportLine(usage, policy.Ready, policy.EligibleModels, policy.DiscountedModels, policy.Blockers)
-			evidenceRefs = append(evidenceRefs, "group:"+strconv.FormatInt(group.ID, 10)+":cache24h")
-		}
-		lines = append(lines, line)
-		evidenceRefs = append(evidenceRefs, "group:"+strconv.FormatInt(group.ID, 10)+":ops24h")
-	}
+	publicGroups := len(runtime.Groups)
+	footer := make([]string, 0, 3)
 	if s.Candidates != nil {
 		items, err := s.Candidates.ListCandidates(ctx)
 		if err != nil {
 			return Result{}, fmt.Errorf("list candidates: %w", err)
 		}
-		lines = append(lines, "候选站 "+strconv.Itoa(len(items)))
+		footer = append(footer, "候选站 "+strconv.Itoa(len(items)))
 		evidenceRefs = append(evidenceRefs, "candidates:summary")
 	}
 	if s.Incidents != nil {
@@ -115,7 +97,7 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("list incidents: %w", err)
 		}
-		lines = append(lines, "活动事件 "+strconv.Itoa(len(items)))
+		footer = append(footer, "活动事件 "+strconv.Itoa(len(items)))
 		evidenceRefs = append(evidenceRefs, "incidents:recent")
 	}
 	contract := agent.IncidentContractV1{
@@ -139,13 +121,17 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 			result.AgentStatus = "fallback_after_error"
 		}
 	}
-	message := notify.RenderFeishu(notify.IncidentView{
-		Title:       "relay-ops 每日运营摘要 " + date,
-		WhatWasDone: []string{"读取所有客户公开分组的 24 小时 Ops/Usage 聚合", "汇总候选站和近期事件", "执行只读 Agent 分析（如已配置）"},
-		Results:     append(lines, "分析："+analysis.Summary),
-		Change:      analysis.Change,
-		Focus:       analysis.Focus,
-		Links:       []notify.Link{{Label: "运维后台", URL: "/ops"}},
+	footer = append(footer, "只读分析："+analysis.Summary)
+	quality := accountquality.View{}
+	if s.AccountQuality != nil {
+		if evidence, readErr := s.AccountQuality.Read(now); readErr == nil {
+			quality = evidence.View(now)
+		} else {
+			quality = accountquality.View{Available: true, Stale: true}
+		}
+	}
+	message := notify.RenderOperationsDigest(notify.OperationsDigestView{
+		Date: date, Runtime: runtime, AccountQuality: quality, Footer: footer,
 	})
 	if s.Notifier == nil {
 		return result, nil

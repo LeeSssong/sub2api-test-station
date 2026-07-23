@@ -1,0 +1,102 @@
+schema_version: 1
+payment_id: PAY01
+status: fictional
+reviewed_at: "2026-07-15"
+
+merchant_context:
+  current_state: unknown
+  assumed_primary_market: mainland_china
+  settlement_currency: CNY
+  external_actions_deferred: true
+
+decision:
+  current_mode: manual_ledger_simulation
+  mainland_primary: alipay
+  mainland_secondary: wxpay
+  overseas_primary: stripe
+  aggregation_fallback: easypay
+  public_registration: invitation_only
+
+settings:
+  payment_enabled: false
+  enabled_payment_types: []
+  payment_min_amount_cny: 20.0
+  payment_max_amount_cny: 200.0
+  payment_daily_limit_cny: 200.0
+  payment_order_timeout_minutes: 15
+  payment_max_pending_orders: 2
+  cny_per_usd: 7.2
+  balance_recharge_multiplier_usd_per_cny: 0.1388888888888889
+  payment_recharge_fee_rate: 0.0
+  payment_load_balance_strategy: round_robin
+  cancel_rate_limit:
+    enabled: true
+    max_cancels: 3
+    window: 1
+    unit: hour
+    mode: rolling
+
+providers:
+  - provider_key: alipay
+    role: mainland_primary
+    readiness: recommended_conditional
+    required_condition: Eligible mainland merchant and accurate product description accepted
+    callback_url: https://api.example.invalid/api/v1/payment/webhook/alipay
+    capabilities:
+      signature_verification: true
+      active_query: true
+      refund: true
+      reconciliation: true
+    secret_ref: sub2api-admin://payment/providers/PAY01-alipay
+    enabled: false
+
+  - provider_key: wxpay
+    role: mainland_secondary
+    readiness: recommended_conditional
+    required_condition: Eligible mainland merchant and APIv3 materials accepted
+    callback_url: https://api.example.invalid/api/v1/payment/webhook/wxpay
+    capabilities:
+      signature_verification: true
+      active_query: true
+      refund: true
+      reconciliation: true
+    secret_ref: sub2api-admin://payment/providers/PAY01-wxpay
+    enabled: false
+
+  - provider_key: stripe
+    role: overseas_primary
+    readiness: recommended_conditional
+    required_condition: Eligible overseas merchant and target settlement country supported
+    callback_url: https://api.example.invalid/api/v1/payment/webhook/stripe
+    capabilities:
+      signature_verification: true
+      active_query: true
+      refund: true
+      reconciliation: true
+    secret_ref: sub2api-admin://payment/providers/PAY01-stripe
+    enabled: false
+
+  - provider_key: easypay
+    role: aggregation_fallback
+    readiness: deferred_due_diligence
+    required_condition: Provider-specific funding, settlement, freeze, refund, and continuity review passed
+    callback_url: https://api.example.invalid/api/v1/payment/webhook/easypay
+    capabilities:
+      signature_verification: true
+      active_query: true
+      refund: true
+      reconciliation: true
+    secret_ref: sub2api-admin://payment/providers/PAY01-easypay
+    enabled: false
+    due_diligence:
+      funds_flow_verified: false
+      settlement_verified: false
+      freeze_and_refund_verified: false
+      reconciliation_verified: false
+      continuity_verified: false
+
+evidence:
+  sub2api_version: v0.1.155
+  sub2api_commit: 41cec0db059ffb82d0efdcfcf07a24ab51fbfe97
+  source_reference: Sub2API docs/PAYMENT.md and backend payment types at the pinned commit
+  notes: Fictional disabled configuration. No merchant, real key, payment, collection, or refund exists.

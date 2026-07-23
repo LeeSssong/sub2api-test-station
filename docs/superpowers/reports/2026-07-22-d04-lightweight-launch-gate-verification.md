@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22 (Asia/Shanghai)
 **Result:** `PASS` for lightweight-gate implementation and read-only production preparation
-**Opening decision:** `NO-GO`
+**Opening decision:** `NO-GO` (approval recorded; current evidence is still blocked)
 **Policy:** `D04-LIGHTWEIGHT-LAUNCH-v2`
 
 ## Scope
@@ -57,6 +57,8 @@ The backup command was installed at `/opt/sub2api/production/ops/backup-d04-acco
 /opt/sub2api/production/backups/d04-account-data/20260722T015202Z
 ```
 
+For the approved opening attempt, the same server-local backup command produced a newer verified set at `/opt/sub2api/production/backups/d04-account-data/20260722T033408Z`; no off-site copy or additional retention gate was introduced.
+
 Backup evidence:
 
 | Item | Evidence |
@@ -95,7 +97,7 @@ The final worktree was verified with:
 
 ```text
 ruby tests/operations/evaluate_d04_lightweight_launch_readiness_test.rb
-  8 runs, 89 assertions, 0 failures
+  9 runs, 91 assertions, 0 failures
 ruby tests/operations/evaluate_d04_launch_readiness_test.rb
   11 runs, 91 assertions, 0 failures
 bash tests/operations/backup_d04_account_data_test.sh
@@ -148,12 +150,85 @@ Derived ages at that re-evaluation were `939.08` minutes for financial evidence,
 
 ## Decision And Next Action
 
-The lightweight gate itself is implemented and production preparation is complete. Registration must remain closed because the current evidence does not authorize opening.
+The lightweight gate itself is implemented and production preparation is complete. The user approved the actual controlled opening, and that approval is recorded as the single `approvals.launch_approved: true` input in the fresh snapshot. The current evidence still does not authorize opening, so registration remains closed.
+
+## Latest Approved Opening Attempt
+
+At `2026-07-22T03:53:01Z`, a new Git-ignored snapshot recorded the current read-only production state and the user's approval:
+
+```text
+snapshot_id=D04-LIGHTWEIGHT-LAUNCH-20260722T035301Z
+launch_approved=true
+active_upstream.balance_usd=-0.01
+active_upstream.financial_recorded_at=2026-07-22T03:53:01Z
+active_upstream.quality_recorded_at=2026-07-22T03:52:11Z
+active_upstream.sample_count=0
+account_backup.archive_created_at=2026-07-22T03:34:08Z
+```
+
+The same report-only evaluator returned:
+
+```json
+{
+  "decision": "no_go",
+  "blocking_reasons": [
+    "upstream_balance_below_minimum",
+    "upstream_samples_insufficient"
+  ],
+  "real_action_executed": false,
+  "external_system_contacted": false
+}
+```
+
+The server-local backup was refreshed at `/opt/sub2api/production/backups/d04-account-data/20260722T033408Z`. The production operations dashboard refreshed at `03:52:11Z` and showed zero requests, zero Token, zero errors, and no latency/TTFT samples in the selected recent window. Production remained D04 `read_only` with registration closed, relay-ops `read_only + dry_run`, and `/healthz`, `/readyz`, `/ops` all HTTP `200`. No launch overlay was applied, no model traffic or Feishu event was manufactured, and no route, multiplier, price, balance, Key, candidate, probe, or database state was changed.
+
+The evaluator now accepts a negative active-upstream balance as valid evidence and emits the explicit minimum-balance blocker instead of rejecting the snapshot format; this regression is covered by the focused test.
+
+## Latest Read-only Recheck
+
+At `2026-07-22T04:09:19Z`, the approved opening attempt was rechecked without changing production. The D04 container remained `healthy`, restart count `0`, OOM `false`, using `sub2api-internal-test:d04-public-registration-20260721-v1`; relay-ops remained `healthy`, restart count `0`, OOM `false`, using `sub2api-relay-ops:quality-report-read-only-20260722-v1`. Selected runtime modes were still `D04_MODE=read_only`, `D04_REGISTRATION_OPEN=false`, `RELAY_OPS_MODE=read_only`, and `RELAY_OPS_FEISHU_COMMAND_MODE=dry_run`. `/healthz`, `/readyz`, and `/ops` returned `200`, while same-origin empty registration returned `403`.
+
+Running the report-only evaluator against the same Git-ignored snapshot again returned:
+
+```json
+{
+  "decision": "no_go",
+  "blocking_reasons": [
+    "upstream_balance_below_minimum",
+    "upstream_samples_insufficient"
+  ],
+  "real_action_executed": false,
+  "external_system_contacted": false
+}
+```
+
+The approval is therefore valid but not sufficient to open registration. No launch overlay was applied, and no model request, synthetic Feishu event, route write, multiplier, price, balance, Key, candidate, probe, or database change was made during this recheck.
+
+At `2026-07-22T04:11:27Z`, a further read-only evaluator run against the same snapshot still returned `decision=no_go` with exactly `upstream_balance_below_minimum` and `upstream_samples_insufficient`. Production remained healthy and unchanged; the quality evidence was approaching the 20-minute freshness limit. No synthetic traffic or external action was used to refresh it.
+
+## Final Fresh External-state Audit
+
+At `2026-07-22T04:25:07Z`, authenticated read-only pages were used to refresh both external inputs without submitting any form or creating traffic. The active-upstream dashboard still showed a balance of `-$0.01`. The Sub2API operations dashboard refreshed at `2026-07-22 12:22:32` Asia/Shanghai and showed zero requests, zero Token, zero errors, and no TTFT or total-latency samples in the selected one-hour window.
+
+The Git-ignored snapshot was refreshed as `D04-LIGHTWEIGHT-LAUNCH-20260722T042507Z`. At evaluation time, financial evidence age was approximately `1.43` minutes and quality evidence age was approximately `3.40` minutes. The evaluator returned:
+
+```json
+{
+  "decision": "no_go",
+  "blocking_reasons": [
+    "upstream_balance_below_minimum",
+    "upstream_samples_insufficient"
+  ],
+  "real_action_executed": false,
+  "external_system_contacted": false
+}
+```
+
+The same external blockers have now repeated for three consecutive goal turns. All safe work that does not recharge an upstream, manufacture model traffic, or change production has been completed. The opening goal is therefore paused as externally blocked and should resume only after the active-upstream balance and natural-production sample window actually change. Repeated polling is not useful evidence.
 
 The next evaluation should occur only after:
 
-1. the user explicitly approves the actual controlled opening;
-2. the current active-upstream balance is at or above the configured USD 10 minimum and its evidence is fresh;
-3. at least 20 natural samples provide fresh success rate, error rate, TTFT P95, and total-latency P95 evidence.
+1. the current active-upstream balance is at or above the configured USD 10 minimum and its evidence is fresh;
+2. at least 20 natural samples provide fresh success rate, error rate, TTFT P95, and total-latency P95 evidence.
 
 Then rerun the report-only v2 evaluator. Apply the launch overlay only when the same current snapshot returns `decision=go`. The built image is preparation evidence, not evidence that D04 was deployed or registration was opened.

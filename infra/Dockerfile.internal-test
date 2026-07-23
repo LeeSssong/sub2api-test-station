@@ -1,0 +1,16 @@
+FROM golang@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+WORKDIR /src
+COPY internal-test-service/go.mod internal-test-service/go.sum ./
+RUN go mod download
+COPY internal-test-service/ ./
+RUN GOMAXPROCS=1 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -p=1 -trimpath -ldflags='-s -w' -o /out/internal-test-service ./cmd/internal-test-service
+RUN mkdir -p /var/lib/internal-test /run/secrets && touch /run/secrets/sub2api-admin-api-key && chown 10001:0 /var/lib/internal-test /run/secrets/sub2api-admin-api-key
+
+FROM scratch
+COPY --from=build /out/internal-test-service /internal-test-service
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/local/go/lib/time/zoneinfo.zip /usr/local/go/lib/time/zoneinfo.zip
+COPY --from=build /var/lib/internal-test /var/lib/internal-test
+COPY --from=build /run/secrets /run/secrets
+USER 10001:0
+ENTRYPOINT ["/internal-test-service"]

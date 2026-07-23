@@ -22,6 +22,19 @@ describe('ValueSections', () => {
     expect(screen.getByText('OpenAI')).toHaveStyle({ '--flow-stagger': '0s' })
     expect(screen.getByText('GLM')).toHaveStyle({ '--flow-stagger': '2.25s' })
   })
+
+  it('routes through the gateway before drawing the model-side connection', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    render(<ValueSections config={DEFAULT_SITE_CONFIG} />)
+
+    const route = screen.getByLabelText('模型路由示意')
+    const segments = route.querySelectorAll('.flow-line')
+
+    expect(segments[0]).toHaveAttribute('data-flow-segment', 'request-to-gateway')
+    expect(segments[0]).toHaveAttribute('data-scroll-range', '0-0.42')
+    expect(segments[1]).toHaveAttribute('data-flow-segment', 'gateway-to-models')
+    expect(segments[1]).toHaveAttribute('data-scroll-range', '0.58-1')
+  })
 })
 
 afterEach(() => {

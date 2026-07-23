@@ -42,10 +42,15 @@ type SyncSink interface {
 	AppendMetricRef(context.Context, MetricRef) error
 }
 
+type MonitorObserver interface {
+	ObserveMonitor(context.Context, ChannelMonitor, MonitorHistory) error
+}
+
 type Synchronizer struct {
-	Reader Reader
-	Sink   SyncSink
-	Now    func() time.Time
+	Reader   Reader
+	Sink     SyncSink
+	Observer MonitorObserver
+	Now      func() time.Time
 }
 
 func (s Synchronizer) Sync(ctx context.Context) error {
@@ -136,10 +141,22 @@ func (s Synchronizer) collectMonitorRef(ctx context.Context, monitor ChannelMoni
 	if err != nil {
 		return fmt.Errorf("monitor %d history time malformed", monitor.ID)
 	}
-	return s.Sink.AppendMetricRef(ctx, MetricRef{
+	if err := s.Sink.AppendMetricRef(ctx, MetricRef{
 		SourceKind: "sub2api_native_monitor", ExternalID: "monitor:" + strconv.FormatInt(monitor.ID, 10),
 		WindowStart: start, WindowEnd: end, PayloadHash: payloadHash(history), SchemaVersion: NativeMetricSchemaV1,
-	})
+	}); err != nil {
+		return err
+	}
+	if s.Observer != nil {
+		latest, err := latestHistory(history)
+		if err != nil {
+			return fmt.Errorf("monitor %d latest history malformed", monitor.ID)
+		}
+		if err := s.Observer.ObserveMonitor(ctx, monitor, latest); err != nil {
+			return fmt.Errorf("observe monitor %d: %w", monitor.ID, err)
+		}
+	}
+	return nil
 }
 
 func activeChannelIDs(groupID int64, channels []Channel) []int64 {
@@ -186,6 +203,28 @@ func historyWindow(history []MonitorHistory) (time.Time, time.Time, error) {
 		}
 	}
 	return start, end, nil
+}
+
+func latestHistory(history []MonitorHistory) (MonitorHistory, error) {
+	if len(history) == 0 {
+		return MonitorHistory{}, fmt.Errorf("empty history")
+	}
+	latest := history[0]
+	latestTime, err := time.Parse(time.RFC3339, latest.CheckedAt)
+	if err != nil {
+		return MonitorHistory{}, err
+	}
+	for _, item := range history[1:] {
+		checkedAt, err := time.Parse(time.RFC3339, item.CheckedAt)
+		if err != nil {
+			return MonitorHistory{}, err
+		}
+		if checkedAt.After(latestTime) {
+			latest = item
+			latestTime = checkedAt
+		}
+	}
+	return latest, nil
 }
 
 func payloadHash(value any) string {

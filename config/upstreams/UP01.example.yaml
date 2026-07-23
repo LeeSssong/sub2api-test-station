@@ -1,0 +1,85 @@
+# Fictional values only. Copy to UP01.local.yaml before entering real
+# non-sensitive supplier facts. Never put an API key or token in this file.
+schema_version: 1
+upstream_id: UP01
+display_name: Example OpenAI-compatible relay
+readiness: draft
+reviewed_at: "2026-07-15"
+
+connection:
+  protocol: openai_compatible
+  base_url: https://api.example-upstream.com/v1
+  allowlist_host: api.example-upstream.com
+  auth_scheme: bearer
+  secret_ref: sub2api-admin://accounts/UP01
+
+# These fields map to the Sub2API v0.1.155 account form. They are not an
+# import payload; the real API key is entered separately in the admin UI.
+sub2api:
+  platform: openai
+  account_type: apikey
+  account_name: UP01-existing-relay
+  group_name: up01-openai
+  priority: 50
+  concurrency: 2
+  rate_multiplier: 1.0
+  pool_mode:
+    enabled: false
+    retry_count: 1
+    retry_status_codes: [429, 500, 502, 503, 504]
+
+# Keep this as a verified whitelist. Values below are schema examples, not
+# real model availability or supplier prices.
+models:
+  - public_name: example-chat-model
+    upstream_name: example-chat-model
+    enabled: true
+    capabilities: [models, chat_completions, streaming]
+    pricing:
+      currency: CNY
+      unit: per_1m_tokens
+      input: 1.0
+      output: 4.0
+      cached_input:
+      cache_write:
+
+# Supplier facts used for operating limits. Only concurrency maps directly
+# to this Sub2API account; RPM, TPM, timeout, and daily cap need separate
+# enforcement or monitoring until verified in the deployed version.
+limits:
+  max_concurrency: 2
+  rpm: 60
+  tpm: 100000
+  request_timeout_seconds: 120
+  daily_cost_cap:
+    currency: CNY
+    amount: 20.0
+
+rate_limit:
+  status_code: 429
+  retry_after: honor_when_present
+  retryable: true
+  max_attempts: 1
+  reset_behavior: supplier_documented
+
+balance:
+  query_method: dashboard
+  query_reference: supplier dashboard balance page
+  minimum_top_up:
+    currency: CNY
+    amount: 50.0
+  low_balance_alert:
+    currency: CNY
+    amount: 20.0
+
+commercial:
+  resale_permission: unknown
+  terms_reference: https://www.example-upstream.com/terms
+  refund_policy: unknown
+  support_reference: supplier support ticket portal
+  risk_acknowledged: true
+
+evidence:
+  checked_by: user_or_operator
+  checked_at: "2026-07-15T00:00:00Z"
+  notes: Fictional values for schema validation only.

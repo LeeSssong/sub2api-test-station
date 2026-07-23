@@ -1,0 +1,119 @@
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	@homepage_index {
+		path / /home /home/
+		file {
+			root /srv/home
+			try_files /index.html
+		}
+	}
+	handle @homepage_index {
+		root * /srv/home
+		rewrite * /index.html
+		header Cache-Control "no-store, max-age=0"
+		file_server
+	}
+
+	@homepage_config path /home-assets/site-config.json
+	handle @homepage_config {
+		root * /srv/home
+		header Cache-Control "no-store, max-age=0"
+		file_server
+	}
+
+	@homepage_assets path /home-assets/*
+	handle @homepage_assets {
+		root * /srv/home
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	@d04_auth {
+		method POST
+		path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa
+	}
+	reverse_proxy @d04_auth internal-test-service:8090
+
+	@d04_public_settings {
+		method GET
+		path /api/v1/settings/public
+	}
+	reverse_proxy @d04_public_settings internal-test-service:8090
+
+	@d04_retired path /internal-test/*
+	respond @d04_retired 404
+
+	@d04_oauth_account_creation {
+		method POST
+		path /api/v1/auth/oauth/*/complete-registration /api/v1/auth/oauth/*/create-account /api/v1/auth/pending/create-account /api/v1/auth/oauth/*/pending/create-account
+	}
+	respond @d04_oauth_account_creation `{"code":"D04_REGISTRATION_METHOD_DISABLED","message":"首发计划仅开放邮箱密码注册"}` 403
+
+	@relay_ops_public {
+		path /pricing /relay-ops/static/*
+	}
+	reverse_proxy @relay_ops_public relay-ops:8100
+
+	@relay_ops_feishu_command {
+		method POST
+		path /relay-ops/api/feishu/events
+	}
+	reverse_proxy @relay_ops_feishu_command relay-ops:8100
+
+	@relay_ops_admin {
+		path /ops /ops/* /relay-ops/api/*
+		not {
+			method POST
+			path /relay-ops/api/feishu/events
+		}
+	}
+	reverse_proxy @relay_ops_admin relay-ops:8100
+
+	reverse_proxy sub2api:8080 {
+		flush_interval -1
+		header_down Content-Security-Policy "frame-src " "frame-src https://shop.xingqiaolab.top https://catfk.com "
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 300s
+			keepalive 30s
+		}
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$STOREFRONT_SITE_ADDRESS:https://shop.xingqiaolab.top} {
+	encode zstd gzip
+
+	@catfk_storefront_entry {
+		path / /shop/DLK8SNUJ /shop/DLK8SNUJ/
+	}
+	handle @catfk_storefront_entry {
+		route {
+			# Match WAWA: CatFK receives the complete authenticated storefront query.
+			header Cache-Control "no-store, max-age=0"
+			header Content-Type "text/html; charset=utf-8"
+			header Referrer-Policy "no-referrer"
+			redir https://catfk.com/shop/DLK8SNUJ?{http.request.uri.query} 302
+		}
+	}
+
+	respond 404
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Content-Security-Policy "default-src 'none'; frame-ancestors https://api.xingqiaolab.top; base-uri 'none'; form-action 'none'"
+	}
+}

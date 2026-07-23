@@ -90,11 +90,11 @@ relay-ops-service/internal/http/server_test.go
 - Produces: `copyText(value, clipboard, document): Promise<"copied" | "selected">`.
 - Produces: `DEFAULT_SITE_CONFIG`, including QQ group `1080152144` and no reports.
 
-- [ ] **Step 1: Scaffold the isolated package and test runner**
+- [x] **Step 1: Scaffold the isolated package and test runner**
 
 Create scripts `dev`, `build`, `test`, `test:run`, `typecheck`, and `preview`. Configure Vite with `build.assetsDir = "home-assets"`, React plugin, jsdom, `src/test/setup.ts`, and strict TypeScript. Pin the versions from the plan header, run `npm install`, and retain the generated lockfile.
 
-- [ ] **Step 2: Write failing public-config tests**
+- [x] **Step 2: Write failing public-config tests**
 
 ```ts
 import { describe, expect, it, vi } from 'vitest'
@@ -125,13 +125,13 @@ describe('loadSiteConfig', () => {
 })
 ```
 
-- [ ] **Step 3: Run the config tests and verify failure**
+- [x] **Step 3: Run the config tests and verify failure**
 
 Run: `cd homepage && npm run test:run -- src/domain/siteConfig.test.ts`
 
 Expected: FAIL because `siteConfig.ts` and its exports do not exist.
 
-- [ ] **Step 4: Implement strict public-config parsing**
+- [x] **Step 4: Implement strict public-config parsing**
 
 Define these types and defaults:
 
@@ -144,7 +144,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = { version: 1, apiOrigin: '', supp
 
 `loadSiteConfig` fetches `/home-assets/site-config.json` with no-store caching, accepts only version `1`, trims strings, resolves empty origin to the browser origin, requires a ten-digit QQ group, accepts only HTTPS reports, and clones defaults on errors.
 
-- [ ] **Step 5: Write failing session tests**
+- [x] **Step 5: Write failing session tests**
 
 Cover no token, cached user plus successful `/auth/me`, expired access token plus one refresh and retry, failed refresh, and network failure retaining a cached role. Assert:
 
@@ -154,27 +154,27 @@ expect(await resolveSession(userStorage, fetcher)).toMatchObject({ kind: 'user',
 expect(await resolveSession(adminStorage, fetcher)).toMatchObject({ kind: 'admin', ctaLabel: '前往控制台', ctaHref: '/admin/dashboard' })
 ```
 
-- [ ] **Step 6: Run the session tests and verify failure**
+- [x] **Step 6: Run the session tests and verify failure**
 
 Run: `cd homepage && npm run test:run -- src/domain/session.test.ts`
 
 Expected: FAIL because `resolveSession` does not exist.
 
-- [ ] **Step 7: Implement the bounded Sub2API session flow**
+- [x] **Step 7: Implement the bounded Sub2API session flow**
 
 Use `auth_token`, `refresh_token`, `auth_user`, and `token_expires_at`. Send Bearer auth to `/api/v1/auth/me`. On the first 401 only, POST `{refresh_token}` to `/api/v1/auth/refresh`, unwrap standard or direct response bodies, persist returned tokens/user, then retry `/auth/me` once. Never recurse or log token values.
 
-- [ ] **Step 8: Add clipboard tests and implementation**
+- [x] **Step 8: Add clipboard tests and implementation**
 
 Test successful `navigator.clipboard.writeText` and a rejected clipboard result that selects a temporary readonly input and returns `selected`. Always remove the temporary input.
 
-- [ ] **Step 9: Run the domain suite**
+- [x] **Step 9: Run the domain suite**
 
 Run `cd homepage && npm run test:run -- src/domain && npm run typecheck`.
 
 Expected: all domain tests pass and TypeScript emits no errors.
 
-- [ ] **Step 10: Commit isolated files when safe**
+- [x] **Step 10: Commit isolated files when safe**
 
 Stage only Task 1 `homepage/` paths and commit `feat: add Xingqiao homepage domain core`. Do not commit if the staged list includes pre-existing paths.
 
@@ -206,7 +206,7 @@ Stage only Task 1 `homepage/` paths and commit `feat: add Xingqiao homepage doma
 - Produces: semantic anchors `#docs` and `#about`.
 - Produces: stable section shells consumed by Task 3.
 
-- [ ] **Step 1: Write failing content and conditional-render tests**
+- [x] **Step 1: Write failing content and conditional-render tests**
 
 Render with injectable config/session props. Assert exact hero copy, both protocol paths, six navigation items, role-aware CTA, QQ group, fixed price strings, and the report rule:
 
@@ -217,29 +217,29 @@ rerender(<App config={{...DEFAULT_SITE_CONFIG, apiOrigin: 'https://api.example.c
 expect(screen.getByText('MODELOC')).toBeInTheDocument()
 ```
 
-- [ ] **Step 2: Run component tests and verify failure**
+- [x] **Step 2: Run component tests and verify failure**
 
 Run: `cd homepage && npm run test:run -- src/App.test.tsx src/sections`
 
 Expected: FAIL because the page components do not exist.
 
-- [ ] **Step 3: Install the approved logo and public config**
+- [x] **Step 3: Install the approved logo and public config**
 
 Copy `output/imagegen/xingqiao-brand/xingqiao-logo-master.png` to `homepage/public/home-assets/xingqiao-logo.png`. Create JSON with empty `apiOrigin`, QQ `1080152144`, and `thirdPartyReports: []`.
 
-- [ ] **Step 4: Implement semantic composition**
+- [x] **Step 4: Implement semantic composition**
 
 Compose Header, Hero, value grid, optional reports, transparent price, real channels, Seoul direct-connect, QQ support, boundaries, statement, request journey, integration, footer, and brand reveal in the approved order. Render no empty report wrapper.
 
-- [ ] **Step 5: Implement visual system and responsive layout**
+- [x] **Step 5: Implement visual system and responsive layout**
 
 Use neutral light/dark surfaces, deep ink text, cyan-blue accent, and restrained warm gold from the logo. Match the reference maximum width `80rem`, 8px-or-less radii, hairline borders, compact navigation, full-width bands, and stable responsive type. Do not create nested cards or decorative gradient orbs.
 
-- [ ] **Step 6: Implement hooks and interactions**
+- [x] **Step 6: Implement hooks and interactions**
 
 Load config once with unmount cancellation. Expose cached session immediately, then validated state. Give copy controls stable dimensions, Lucide copy/check icons, `aria-live` feedback, and fallback. Mobile navigation uses an icon, `aria-expanded`, and closes after selection.
 
-- [ ] **Step 7: Run component, type, and build checks**
+- [x] **Step 7: Run component, type, and build checks**
 
 ```bash
 cd homepage
@@ -252,7 +252,7 @@ test -f dist/home-assets/site-config.json
 
 Expected: tests pass and Vite emits the entry, hashed assets, and runtime JSON.
 
-- [ ] **Step 8: Commit isolated UI files when safe**
+- [x] **Step 8: Commit isolated UI files when safe**
 
 Stage only Task 2 paths, exclude `homepage/dist/`, and commit `feat: build Xingqiao homepage content`.
 
@@ -275,43 +275,43 @@ Stage only Task 2 paths, exclude `homepage/dist/`, and commit `feat: build Xingq
 - Consumes: Task 2 section shells.
 - Produces: `data-motion-state`, `data-journey-phase`, and `data-canvas-active` observability.
 
-- [ ] **Step 1: Write failing reduced-motion and fallback tests**
+- [x] **Step 1: Write failing reduced-motion and fallback tests**
 
 Mock reduced motion and assert all words, send/route/observe phases, `187`, `2,148`, and static `星桥` are visible without an animation frame or opacity-zero content.
 
-- [ ] **Step 2: Run motion tests and verify failure**
+- [x] **Step 2: Run motion tests and verify failure**
 
 Run: `cd homepage && npm run test:run -- src/sections/StatementSection.test.tsx src/sections/RequestJourney.test.tsx src/sections/BrandReveal.test.tsx`
 
 Expected: FAIL because the motion components do not exist.
 
-- [ ] **Step 3: Implement entrance and smooth-scroll behavior**
+- [x] **Step 3: Implement entrance and smooth-scroll behavior**
 
 Initialize one Lenis instance only when reduced motion is off, connect it to `requestAnimationFrame`, and destroy/cancel on unmount. `Reveal` uses IntersectionObserver, shows final content when unsupported, and cannot strand content at opacity zero.
 
-- [ ] **Step 4: Implement hero and section choreography**
+- [x] **Step 4: Implement hero and section choreography**
 
 Reproduce the full-viewport cover, hero mask reveal, staggered headline/support/CTA/terminal, floating scroll cue and dismissal, mask-rise headings, staggered cards, flow dashes, terminal cursor, and hover translations. Expose durations and delays as CSS custom properties for fixed-time checks.
 
-- [ ] **Step 5: Implement word-by-word statement**
+- [x] **Step 5: Implement word-by-word statement**
 
 Use Motion `useScroll` with `offset: ['start 0.9', 'start 0.35']`. Map stable keyed words to staggered ranges; animate opacity `0.15 -> 1` and Y `18 -> 0`. Show final text immediately for reduced motion.
 
-- [ ] **Step 6: Implement request journey**
+- [x] **Step 6: Implement request journey**
 
 Desktop uses `340svh` with a sticky `100svh` stage. Reproduce send/route/observe text, line drawing, outbound and green return dots, gateway pulse, OpenAI/Claude/Gemini activation, and count-up to `187 ms` and `2,148`. Mobile renders three numbered rows without scroll scrubbing.
 
-- [ ] **Step 7: Implement interactive brand reveal**
+- [x] **Step 7: Implement interactive brand reveal**
 
 Use a DPR-capped canvas and offscreen centered `星桥`. Split into 14-30 CSS pixel cells. Pointer movement displaces nearby cells with radial falloff; multiply offsets by `0.88` per frame and stop below `0.04`. Repaint on resize/theme, pause outside viewport, set `data-canvas-active="true"`, and retain static fallback text.
 
-- [ ] **Step 8: Run tests and build**
+- [x] **Step 8: Run tests and build**
 
 Run `cd homepage && npm run test:run && npm run typecheck && npm run build`.
 
 Expected: all checks pass without unhandled timers.
 
-- [ ] **Step 9: Commit the motion slice when safe**
+- [x] **Step 9: Commit the motion slice when safe**
 
 Stage only Task 3 files and commit `feat: reproduce Xingqiao homepage motion`.
 
@@ -329,25 +329,25 @@ Stage only Task 3 files and commit `feat: reproduce Xingqiao homepage motion`.
 - Consumes: `/home-assets/site-config.json`.
 - Produces: `#modeloc-reminder`, hidden only when a valid HTTPS MODELOC report exists.
 
-- [ ] **Step 1: Inspect overlapping diffs**
+- [x] **Step 1: Inspect overlapping diffs**
 
 Run `git diff --` for all four files and preserve every existing change. Do not replace whole files or normalize unrelated formatting.
 
-- [ ] **Step 2: Write failing Go/template tests**
+- [x] **Step 2: Write failing Go/template tests**
 
 Require the administrator page to contain `modeloc-reminder`, visible text `MODELOC 真实性报告尚未配置`, and `/home-assets/site-config.json`. Require the static script to reference `thirdPartyReports`, compare provider `MODELOC`, validate HTTPS, and fail visibly closed.
 
-- [ ] **Step 3: Run focused test and verify failure**
+- [x] **Step 3: Run focused test and verify failure**
 
 Run: `cd relay-ops-service && go test ./internal/http -run TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes -count=1`
 
 Expected: FAIL because the reminder is absent.
 
-- [ ] **Step 4: Implement the non-blocking reminder**
+- [x] **Step 4: Implement the non-blocking reminder**
 
 Add a status section to `ops.html`. In `ops-admin.js`, fetch the config with no-store caching; hide only when a report's trimmed provider uppercases to MODELOC and its URL parses as HTTPS. On 404, malformed JSON, or network failure, leave the reminder visible. Never insert config values as HTML.
 
-- [ ] **Step 5: Update contracts and run tests**
+- [x] **Step 5: Update contracts and run tests**
 
 ```bash
 cd relay-ops-service && go test ./internal/http -count=1
@@ -356,7 +356,7 @@ cd .. && tests/relay_ops/validate_relay_ops_contract.sh
 
 Expected: Go HTTP tests and shell contract pass.
 
-- [ ] **Step 6: Recheck overlapping diffs**
+- [x] **Step 6: Recheck overlapping diffs**
 
 Verify only MODELOC reminder hunks were added. Do not stage shared files if unrelated pre-existing hunks cannot be isolated safely.
 
@@ -375,11 +375,11 @@ Verify only MODELOC reminder hunks were added. Do not stage shared files if unre
 - Consumes: the `homepage/` production build.
 - Produces: `/srv/home/index.html` and `/srv/home/home-assets/*` in `xingqiao-caddy:homepage-20260722`.
 
-- [ ] **Step 1: Inspect infrastructure diffs**
+- [x] **Step 1: Inspect infrastructure diffs**
 
 Run `git diff --` for all shared files. Preserve every matcher, proxy, timeout, volume, and security rule.
 
-- [ ] **Step 2: Write failing image and route contracts**
+- [x] **Step 2: Write failing image and route contracts**
 
 Require:
 
@@ -399,25 +399,25 @@ Cache-Control "public, max-age=31536000, immutable"
 
 Also require the existing final Sub2API proxy and `flush_interval -1`.
 
-- [ ] **Step 3: Run contracts and verify failure**
+- [x] **Step 3: Run contracts and verify failure**
 
 Run: `tests/infra/validate-baseline.sh`
 
 Expected: FAIL because the custom Caddy build and handlers do not exist.
 
-- [ ] **Step 4: Implement multi-stage image**
+- [x] **Step 4: Implement multi-stage image**
 
 Copy package manifests first, run `npm ci`, copy homepage source, run tests/typecheck/build, then copy only `dist` into pinned Caddy at `/srv/home`. The runtime contains no Node modules or source tree.
 
-- [ ] **Step 5: Add exact Caddy handlers**
+- [x] **Step 5: Add exact Caddy handlers**
 
 Use an existence-aware matcher for `/` and `/srv/home/index.html`, rewrite to index, apply no-store, and serve. Add specific no-store config handling, then immutable `/home-assets/*`. Missing homepage falls through to Sub2API; missing assets return a static 404.
 
-- [ ] **Step 6: Switch only production Caddy**
+- [x] **Step 6: Switch only production Caddy**
 
 Add build context `..`, Dockerfile `infra/Dockerfile.caddy`, and image `xingqiao-caddy:homepage-20260722`. Preserve ports, volumes, dependencies, and logging. Do not change bootstrap Caddy.
 
-- [ ] **Step 7: Run config, contract, and image checks**
+- [x] **Step 7: Run config, contract, and image checks**
 
 ```bash
 docker compose --env-file infra/.env.example -f infra/compose.yaml config --quiet
@@ -428,7 +428,7 @@ docker build -f infra/Dockerfile.caddy -t xingqiao-caddy:homepage-test .
 
 Expected: all checks pass and the image builds.
 
-- [ ] **Step 8: Inspect final infrastructure diffs**
+- [x] **Step 8: Inspect final infrastructure diffs**
 
 Confirm every existing proxy remains, only exact homepage paths changed owner, and no unrelated compose setting changed.
 
@@ -437,53 +437,50 @@ Confirm every existing proxy remains, only exact homepage paths changed owner, a
 ### Task 6: Add Browser Flows And Visual/Motion Acceptance
 
 **Files:**
-- Create: `homepage/playwright.config.ts`
-- Create: `homepage/e2e/homepage.spec.ts`
-- Create: `homepage/e2e/fixtures/session.ts`
-- Modify: `homepage/package.json`
 - Output only: `output/playwright/xingqiao-homepage-*`
 
 **Interfaces:**
 - Consumes: production Vite build and mocked `/api/v1/auth/*` contracts.
 - Produces: guest/user/admin, mobile, reduced-motion, canvas, and overflow evidence.
 
-- [ ] **Step 1: Write failing identity browser tests**
+- [x] **Step 1: Start the production preview and inspect identity states with Playwright CLI**
 
-Start preview on `127.0.0.1:4173`. Mock `/api/v1/auth/me` per test and assert CTA label/href for guest, user, and admin. Assert navigation, API origin, both protocol strings, QQ, price copy, and absent MODELOC.
+Start preview on `127.0.0.1:4173`. Use the bundled `playwright-cli` wrapper to inspect the guest state, then seed local storage and route responses for user and administrator states. Assert CTA label/href, navigation, API origin, both protocol strings, QQ, price copy, and absent MODELOC by taking snapshots and evaluating the visible DOM.
 
-- [ ] **Step 2: Run browser test and verify failure**
+- [x] **Step 2: Verify the first CLI acceptance pass and resolve the CLI capture syntax issue**
 
-Run: `cd homepage && npx playwright test e2e/homepage.spec.ts --project=chromium`
+Run the saved Playwright CLI command sequence against the preview before motion tuning.
 
-Expected: FAIL until preview and page selectors are complete.
+Expected: at least one visual or state assertion remains incomplete until preview and page selectors are complete; record it in the browser evidence notes.
 
-- [ ] **Step 3: Add responsive and reduced-motion assertions**
+- [x] **Step 3: Add responsive and reduced-motion assertions**
 
 At `1440x900`, `1920x1080`, and `390x844`, assert document width does not exceed viewport, primary controls have nonzero boxes, the next section intersects the first viewport, and text boxes do not overlap incoherently. With reduced motion, every section is visible and the journey uses non-scrubbed content.
 
-- [ ] **Step 4: Add fixed-progress motion assertions**
+- [x] **Step 4: Add fixed-progress motion assertions**
 
 Scroll by section bounding boxes and fixed ratios. Assert journey phases send -> route -> observe, final counts, nontransparent brand canvas pixels, pointer-driven canvas change, and decay back toward rest.
 
-- [ ] **Step 5: Capture comparison evidence**
+- [x] **Step 5: Capture comparison evidence**
 
 Capture reference and local screenshots at approved viewports and scroll frames under `output/playwright/`. Mask changed copy/logo content only, never containers or paths.
 
-- [ ] **Step 6: Iterate until comparison passes**
+- [x] **Step 6: Iterate until comparison passes**
 
 Adjust homepage-only geometry and motion constants until section rhythm, entry order, sticky release, request path, mobile fallback, and canvas behavior match the reference.
 
-- [ ] **Step 7: Run complete frontend verification**
+- [x] **Step 7: Run complete frontend verification**
 
 ```bash
 cd homepage
 npm run test:run
 npm run typecheck
 npm run build
-npx playwright test --project=chromium
+"$PWCLI" open http://127.0.0.1:4173
+"$PWCLI" snapshot
 ```
 
-Expected: all checks pass.
+Expected: automated unit/build checks pass and the saved CLI/browser evidence covers guest/user/admin, desktop/mobile, reduced motion, sticky phases, canvas activity, and overflow.
 
 ---
 
@@ -497,17 +494,17 @@ Expected: all checks pass.
 - Consumes: all prior tasks.
 - Produces: verified local implementation ready for a separately authorized production deployment.
 
-- [ ] **Step 1: Run focused verification**
+- [x] **Step 1: Run focused verification**
 
 ```bash
-cd homepage && npm run test:run && npm run typecheck && npm run build && npx playwright test --project=chromium
+cd homepage && npm run test:run && npm run typecheck && npm run build
 cd .. && tests/infra/validate-baseline.sh
 tests/relay_ops/validate_relay_ops_contract.sh
 ```
 
 Expected: all commands pass.
 
-- [ ] **Step 2: Run relay-ops regression**
+- [x] **Step 2: Run relay-ops regression**
 
 ```bash
 cd relay-ops-service
@@ -517,22 +514,22 @@ go vet ./...
 
 Expected: tests and vet pass. Widen to `go test ./...` if focused failures indicate shared behavior.
 
-- [ ] **Step 3: Validate local route matrix**
+- [x] **Step 3: Validate local route matrix**
 
 Build the image, start a non-production test stack on unused ports, verify `/`, config, `/register`, `/pricing`, `/monitor`, `/ops`, `/health`, and representative streaming ownership, then stop only that test stack.
 
-- [ ] **Step 4: Review security and scope**
+- [x] **Step 4: Review security and scope**
 
 Search for secret-shaped tokens and reference branding. Confirm no remote scripts, bundled reference assets, token logs, unsanitized config HTML, or mutations to registration, balances, routing, pricing configuration, multipliers, users, accounts, or keys.
 
-- [ ] **Step 5: Perform final diff review**
+- [x] **Step 5: Perform final diff review**
 
 List every modified path, identify pre-existing work in overlapping files, and ensure no user change was reverted. Stage only separable task changes. Leave overlapping untracked files unstaged rather than capturing unrelated work.
 
-- [ ] **Step 6: Request code review and address findings**
+- [x] **Step 6: Request code review and address findings**
 
 Use `superpowers:requesting-code-review` on the complete implementation. Fix correctness, isolation, session, accessibility, responsive, motion, and test findings.
 
-- [ ] **Step 7: Verify before completion**
+- [x] **Step 7: Verify before completion**
 
 Use `superpowers:verification-before-completion`, rerun every relevant command, and report fresh outputs. Do not deploy to production under this plan; production deployment remains a separately authorized action.

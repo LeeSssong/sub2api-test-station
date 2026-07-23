@@ -19,6 +19,15 @@ describe('HeroSection', () => {
     expect(screen.getByText('向下探索')).toBeInTheDocument()
   })
 
+  it('separates the two headline rows for cross-platform font metrics', () => {
+    render(<HeroSection apiOrigin="https://api.example.com" session={{ kind: 'guest', ctaLabel: '立即获取密钥', ctaHref: '/register' }} />)
+
+    const heading = screen.getByRole('heading', { name: '星桥链接世界顶尖模型' })
+    expect(heading).toHaveClass('hero-title')
+    expect(screen.getByText('星桥')).toHaveClass('hero-brand')
+    expect(screen.getByText('链接世界顶尖模型')).toHaveClass('hero-tagline')
+  })
+
   it('uses semantic static fallbacks when reduced motion is requested', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true,

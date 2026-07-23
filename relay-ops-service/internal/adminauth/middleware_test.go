@@ -68,6 +68,39 @@ func TestRequireAdminRejectsMissingAndNonAdminSessions(t *testing.T) {
 	}
 }
 
+func TestRequireHiddenAdminMasksEveryUnauthorizedStateAsNotFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		identity Identity
+		bearer   string
+		err      error
+	}{
+		{name: "missing"},
+		{name: "invalid", bearer: "invalid", err: context.Canceled},
+		{name: "user", bearer: "user", identity: Identity{UserID: 7, Role: "user", Status: "active"}},
+		{name: "disabled admin", bearer: "disabled", identity: Identity{UserID: 8, Role: "admin", Status: "disabled"}},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			verifier := &fakeVerifier{identity: test.identity, err: test.err}
+			handler := RequireHiddenAdmin(verifier, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("next called") }))
+			req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+			if test.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+test.bearer)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("status=%d want=%d", recorder.Code, http.StatusNotFound)
+			}
+		})
+	}
+}
+
 type fakeVerifier struct {
 	identity Identity
 	session  Session

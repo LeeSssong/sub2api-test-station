@@ -1,0 +1,31 @@
+channel_id: aliu
+recorded_at: "2026-07-17T00:30:00+08:00"
+status: partial
+metrics:
+  models:
+    available_count: 20
+    verified_models:
+      - gpt-5.4-mini
+    target_models_present: unknown
+  sync:
+    complete: true
+    verified_models:
+      - gpt-5.4-mini
+  stream:
+    complete: true
+    verified_models:
+      - gpt-5.4-mini
+  max_verified_concurrency: 1
+  billing:
+    actual_multiplier: 0.04
+    reconciliation: partial
+    api_usage_vs_gateway_debit: matched
+    upstream_dashboard: matched_at_display_precision
+  network:
+    production_host: verified
+    mainland_users: unknown
+  long_stream: unknown
+  resale_permission: unknown
+notes:
+  - Imported from existing production Sub2API and upstream dashboard evidence.
+  - Historical import is not a new standardized benchmark run.

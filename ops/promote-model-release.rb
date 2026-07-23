@@ -22,8 +22,8 @@ module ModelRelease
         items = value.map { |item| normalize(item) }
         if items.all? { |item| item.is_a?(Hash) && item.key?("account_id") }
           items.sort_by { |item| item.fetch("account_id") }
-        elsif items.all? { |item| item.is_a?(Hash) && item.key?("channel_id") }
-          items.sort_by { |item| item.fetch("channel_id") }
+        elsif items.all? { |item| item.is_a?(Hash) && item.key?("group_id") }
+          items.sort_by { |item| item.fetch("group_id") }
         else
           items
         end
@@ -39,7 +39,7 @@ module ModelRelease
 
   class NativeClient
     PAGE_SIZE = 100
-    CHANNEL_FIELDS = %w[billing_model_source model_mapping model_pricing restrict_models].freeze
+    GROUP_FIELDS = %w[models_list_config].freeze
 
     def initialize(base_url:, admin_key_file:, transport: nil)
       @base_url = validate_base_url(base_url)
@@ -85,12 +85,12 @@ module ModelRelease
       raise PromotionError, "native account mapping is invalid"
     end
 
-    def channel_config(channel_id)
-      data = request("GET", "/api/v1/admin/channels/#{Integer(channel_id)}")
-      config = CHANNEL_FIELDS.to_h { |field| [field, data.fetch(field)] }
-      validate_channel_config!(config)
+    def group_config(group_id)
+      data = request("GET", "/api/v1/admin/groups/#{Integer(group_id)}")
+      config = GROUP_FIELDS.to_h { |field| [field, data.fetch(field)] }
+      validate_group_config!(config)
     rescue KeyError, ArgumentError, TypeError
-      raise PromotionError, "native channel configuration is invalid"
+      raise PromotionError, "native group model configuration is invalid"
     end
 
     def update_account_mapping(account_id, mapping)
@@ -105,8 +105,8 @@ module ModelRelease
       nil
     end
 
-    def update_channel_config(channel_id, config)
-      request("PUT", "/api/v1/admin/channels/#{Integer(channel_id)}", validate_channel_config!(config))
+    def update_group_config(group_id, config)
+      request("PUT", "/api/v1/admin/groups/#{Integer(group_id)}", validate_group_config!(config))
       nil
     end
 
@@ -168,14 +168,20 @@ module ModelRelease
       mapping.keys.sort.to_h { |key| [key, mapping.fetch(key)] }
     end
 
-    def validate_channel_config!(config)
-      unless config.is_a?(Hash) && config.keys.sort == CHANNEL_FIELDS &&
-             [true, false].include?(config["restrict_models"]) &&
-             %w[requested upstream channel_mapped].include?(config["billing_model_source"]) &&
-             config["model_mapping"].is_a?(Hash) && config["model_pricing"].is_a?(Array)
-        raise PromotionError, "channel model configuration is invalid"
+    def validate_group_config!(config)
+      unless config.is_a?(Hash) && config.keys.sort == GROUP_FIELDS
+        raise PromotionError, "group model configuration is invalid"
       end
-      JSON.parse(JSON.generate(config))
+      models_list = config["models_list_config"]
+      unless models_list.is_a?(Hash) && models_list.keys.sort == %w[enabled models] &&
+             [true, false].include?(models_list["enabled"]) && models_list["models"].is_a?(Array) &&
+             models_list["models"].length <= 256 && models_list["models"].uniq.length == models_list["models"].length &&
+             models_list["models"].all? { |model_id| valid_model_id?(model_id) }
+        raise PromotionError, "group model configuration is invalid"
+      end
+      JSON.parse(JSON.generate("models_list_config" => {
+        "enabled" => models_list.fetch("enabled"), "models" => models_list.fetch("models").sort
+      }))
     end
 
     def valid_model_id?(value)
@@ -194,7 +200,7 @@ module ModelRelease
       account_set_sha256
       accounts
       base_config_sha256
-      channels
+      groups
       evaluated_at
       modes
       proposal_id
@@ -202,7 +208,7 @@ module ModelRelease
       status
       target_config_sha256
     ].freeze
-    CHANNEL_FIELDS = NativeClient::CHANNEL_FIELDS
+    GROUP_FIELDS = NativeClient::GROUP_FIELDS
     HASH_PATTERN = /\A[0-9a-f]{64}\z/
     FORBIDDEN_KEY = /\A(?:api[_-]?key|token|cookie|authorization|password|secret|credentials?|model[_-]?output)\z/i
 
@@ -232,12 +238,16 @@ module ModelRelease
       changed = []
       begin
         proposal.fetch("accounts").each do |account|
+          next if account.fetch("before_mapping") == account.fetch("after_mapping")
+
           @client.update_account_mapping(account.fetch("account_id"), account.fetch("after_mapping"))
           changed << ["account", account]
         end
-        proposal.fetch("channels").each do |channel|
-          @client.update_channel_config(channel.fetch("channel_id"), channel.fetch("after"))
-          changed << ["channel", channel]
+        proposal.fetch("groups").each do |group|
+          next if group.fetch("before") == group.fetch("after")
+
+          @client.update_group_config(group.fetch("group_id"), group.fetch("after"))
+          changed << ["group", group]
         end
         after = read_configuration(proposal)
         unless secure_hash_equal?(proposal.fetch("target_config_sha256"), PromotionCanonical.sha256(after))
@@ -276,8 +286,8 @@ module ModelRelease
 
     def validate_changes!(proposal)
       accounts = proposal.fetch("accounts")
-      channels = proposal.fetch("channels")
-      unless accounts.is_a?(Array) && !accounts.empty? && channels.is_a?(Array) && !channels.empty?
+      groups = proposal.fetch("groups")
+      unless accounts.is_a?(Array) && !accounts.empty? && groups.is_a?(Array) && !groups.empty?
         raise PromotionError, "proposal changes are empty"
       end
       account_ids = accounts.map do |account|
@@ -287,15 +297,15 @@ module ModelRelease
         validate_mapping!(account.fetch("after_mapping"))
         id
       end
-      channel_ids = channels.map do |channel|
-        exact_keys!(channel, %w[after before channel_id], "channel change")
-        id = Integer(channel.fetch("channel_id"))
-        validate_channel!(channel.fetch("before"))
-        validate_channel!(channel.fetch("after"))
+      group_ids = groups.map do |group|
+        exact_keys!(group, %w[after before group_id], "group change")
+        id = Integer(group.fetch("group_id"))
+        validate_group!(group.fetch("before"))
+        validate_group!(group.fetch("after"))
         id
       end
       unless account_ids.all?(&:positive?) && account_ids == account_ids.uniq.sort &&
-             channel_ids.all?(&:positive?) && channel_ids == channel_ids.uniq.sort
+             group_ids.all?(&:positive?) && group_ids == group_ids.uniq.sort
         raise PromotionError, "proposal change IDs are invalid"
       end
     end
@@ -305,8 +315,8 @@ module ModelRelease
         "accounts" => proposal.fetch("accounts").map do |account|
           { "account_id" => account.fetch("account_id"), "model_mapping" => @client.account_mapping(account.fetch("account_id")) }
         end,
-        "channels" => proposal.fetch("channels").map do |channel|
-          { "channel_id" => channel.fetch("channel_id") }.merge(@client.channel_config(channel.fetch("channel_id")))
+        "groups" => proposal.fetch("groups").map do |group|
+          { "group_id" => group.fetch("group_id") }.merge(@client.group_config(group.fetch("group_id")))
         end
       }
     end
@@ -316,8 +326,8 @@ module ModelRelease
         "accounts" => proposal.fetch("accounts").map do |account|
           { "account_id" => account.fetch("account_id"), "model_mapping" => account.fetch("#{side}_mapping") }
         end,
-        "channels" => proposal.fetch("channels").map do |channel|
-          { "channel_id" => channel.fetch("channel_id") }.merge(channel.fetch(side))
+        "groups" => proposal.fetch("groups").map do |group|
+          { "group_id" => group.fetch("group_id") }.merge(group.fetch(side))
         end
       }
     end
@@ -327,7 +337,7 @@ module ModelRelease
         if kind == "account"
           @client.update_account_mapping(item.fetch("account_id"), item.fetch("before_mapping"))
         else
-          @client.update_channel_config(item.fetch("channel_id"), item.fetch("before"))
+          @client.update_group_config(item.fetch("group_id"), item.fetch("before"))
         end
       end
       restored = read_configuration(proposal)
@@ -363,12 +373,14 @@ module ModelRelease
       end
     end
 
-    def validate_channel!(config)
-      exact_keys!(config, CHANNEL_FIELDS, "channel model configuration")
-      unless config["model_mapping"].is_a?(Hash) && config["model_pricing"].is_a?(Array) &&
-             [true, false].include?(config["restrict_models"]) &&
-             %w[requested upstream channel_mapped].include?(config["billing_model_source"])
-        raise PromotionError, "channel model configuration is invalid"
+    def validate_group!(config)
+      exact_keys!(config, GROUP_FIELDS, "group model configuration")
+      models_list = config["models_list_config"]
+      unless models_list.is_a?(Hash) && models_list.keys.sort == %w[enabled models] &&
+             [true, false].include?(models_list["enabled"]) && models_list["models"].is_a?(Array) &&
+             models_list["models"].length <= 256 && models_list["models"].uniq.length == models_list["models"].length &&
+             models_list["models"].all? { |model_id| model_id.is_a?(String) && model_id.match?(/\A[a-z0-9][a-z0-9._-]{0,127}\z/) }
+        raise PromotionError, "group model configuration is invalid"
       end
     end
 

@@ -120,9 +120,6 @@ func (c Collector) Collect(ctx context.Context, input Inputs) (Snapshot, error) 
 			active = append(active, account)
 		}
 	}
-	if len(active) == 0 {
-		return Snapshot{}, fmt.Errorf("no active schedulable Sub2API accounts")
-	}
 	sort.Slice(active, func(i, j int) bool { return active[i].ID < active[j].ID })
 
 	canonical := make([]canonicalAccount, 0, len(active))

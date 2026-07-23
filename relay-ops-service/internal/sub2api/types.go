@@ -19,6 +19,10 @@ type AccountReader interface {
 	ListAccounts(context.Context) ([]Account, error)
 }
 
+type ModelDiscoveryReader interface {
+	SyncUpstreamModels(context.Context, int64) ([]Model, error)
+}
+
 type Controller interface {
 	GetGroup(context.Context, int64) (Group, error)
 	GetAccount(context.Context, int64) (Account, error)

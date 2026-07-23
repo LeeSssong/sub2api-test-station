@@ -118,7 +118,8 @@ func validateConfig(cfg *Config) error {
 	}
 	byName := make(map[string]GroupRoute, 2)
 	groupIDs := map[int64]struct{}{}
-	accountIDs := map[int64]struct{}{}
+	primaryAccountIDs := map[int64]struct{}{}
+	backupAccountIDs := map[int64]struct{}{}
 	for _, route := range cfg.Groups {
 		if route.Name != "GPT-Pro" && route.Name != "GPT-Plus" {
 			return fmt.Errorf("unsupported routing group %q", route.Name)
@@ -133,12 +134,11 @@ func validateConfig(cfg *Config) error {
 			return errors.New("routing group IDs must be unique")
 		}
 		groupIDs[route.PublicGroupID] = struct{}{}
-		for _, id := range []int64{route.PrimaryAccountID, route.BackupAccountID} {
-			if _, exists := accountIDs[id]; exists {
-				return errors.New("routing account IDs must not be reused")
-			}
-			accountIDs[id] = struct{}{}
+		if _, exists := primaryAccountIDs[route.PrimaryAccountID]; exists {
+			return errors.New("routing primary account IDs must be unique")
 		}
+		primaryAccountIDs[route.PrimaryAccountID] = struct{}{}
+		backupAccountIDs[route.BackupAccountID] = struct{}{}
 		if len(route.RequiredModels) == 0 {
 			return fmt.Errorf("required models are missing for %s", route.Name)
 		}
@@ -151,6 +151,11 @@ func validateConfig(cfg *Config) error {
 		}
 		route.RequiredModels = models
 		byName[route.Name] = route
+	}
+	for id := range primaryAccountIDs {
+		if _, exists := backupAccountIDs[id]; exists {
+			return errors.New("routing primary accounts must not be reused as backups")
+		}
 	}
 	pro, hasPro := byName["GPT-Pro"]
 	plus, hasPlus := byName["GPT-Plus"]

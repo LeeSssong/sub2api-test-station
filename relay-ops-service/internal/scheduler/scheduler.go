@@ -7,8 +7,15 @@ import (
 	"strconv"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/config"
 	"example.invalid/relay-ops-service/internal/domain"
+)
+
+const (
+	JobHealthPulse   = "health_pulse"
+	JobCatalogQuick  = "catalog_quick"
+	JobCapacityCheck = "capacity_check"
 )
 
 type JobStore interface {
@@ -17,14 +24,17 @@ type JobStore interface {
 }
 
 type Scheduler struct {
-	Mode        string
-	Store       JobStore
-	Timezone    *time.Location
-	Clock       func() time.Time
-	Production  func(context.Context) error
-	Candidates  func(context.Context) ([]domain.UpstreamID, error)
-	Candidate   func(context.Context, domain.UpstreamID, bool) error
-	DailyReport func(context.Context) error
+	Mode          string
+	Store         JobStore
+	Timezone      *time.Location
+	Clock         func() time.Time
+	Production    func(context.Context) error
+	Candidates    func(context.Context) ([]domain.UpstreamID, error)
+	Candidate     func(context.Context, domain.UpstreamID, bool) error
+	FastCandidate func(context.Context, domain.UpstreamID, string, bool) error
+	UsageSessions func(context.Context) ([]billing.SessionConfig, error)
+	Usage         func(context.Context, billing.SessionConfig) error
+	DailyReport   func(context.Context) error
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
@@ -64,8 +74,42 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		} else {
 			for _, id := range ids {
 				candidateID := id
-				key := "candidate-cycle:" + strconv.FormatInt(int64(candidateID), 10)
-				if err := s.runDue(ctx, key, now, 6*time.Hour, func(runCtx context.Context) error { return s.RunCandidateCycle(runCtx, candidateID) }); err != nil {
+				if s.Mode == config.ModeProbe && s.FastCandidate != nil {
+					jobs := []struct {
+						kind     string
+						interval time.Duration
+					}{
+						{JobHealthPulse, 15 * time.Minute},
+						{JobCatalogQuick, 6 * time.Hour},
+						{JobCapacityCheck, 24 * time.Hour},
+					}
+					for _, job := range jobs {
+						current := job
+						key := "candidate-fast:" + strconv.FormatInt(int64(candidateID), 10) + ":" + current.kind
+						if err := s.runDue(ctx, key, now, current.interval, func(runCtx context.Context) error {
+							return s.FastCandidate(runCtx, candidateID, current.kind, true)
+						}); err != nil {
+							failures = append(failures, err)
+						}
+					}
+				} else {
+					key := "candidate-cycle:" + strconv.FormatInt(int64(candidateID), 10)
+					if err := s.runDue(ctx, key, now, 6*time.Hour, func(runCtx context.Context) error { return s.RunCandidateCycle(runCtx, candidateID) }); err != nil {
+						failures = append(failures, err)
+					}
+				}
+			}
+		}
+	}
+	if s.UsageSessions != nil && s.Usage != nil {
+		sessions, err := s.UsageSessions(ctx)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("list usage sessions: %w", err))
+		} else {
+			for _, session := range sessions {
+				current := session
+				key := "usage-session:" + strconv.FormatInt(int64(session.UpstreamID), 10)
+				if err := s.runDue(ctx, key, now, time.Hour, func(runCtx context.Context) error { return s.Usage(runCtx, current) }); err != nil {
 					failures = append(failures, err)
 				}
 			}

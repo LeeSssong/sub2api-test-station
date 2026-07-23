@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -26,6 +27,8 @@ type Config struct {
 	DatabaseURLFile          string
 	Sub2APIBaseURL           string
 	Sub2APIAdminKeyFile      string
+	D04ReadinessResultFile   string
+	AccountQualityResultFile string
 	FeishuWebhookFile        string
 	FeishuCommandMode        string
 	FeishuAppIDFile          string
@@ -33,6 +36,7 @@ type Config struct {
 	FeishuVerificationFile   string
 	FeishuEncryptKeyFile     string
 	FeishuRoutingFile        string
+	FeishuAlertChatIDFile    string
 	AgentBaseURL             string
 	AgentAPIKeyFile          string
 	AgentModel               string
@@ -42,6 +46,8 @@ type Config struct {
 	RubyPath                 string
 	V2ScriptPath             string
 	CandidateProfilePath     string
+	FastProfilePath          string
+	CandidateSecretDir       string
 	QualificationProfilePath string
 }
 
@@ -94,6 +100,7 @@ func Load(env func(string) string) (Config, error) {
 		"Feishu Encrypt Key":        get("RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE", ""),
 	}
 	feishuRoutingFile := get("RELAY_OPS_FEISHU_ROUTING_FILE", "")
+	feishuAlertChatIDFile := get("RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE", "")
 	configuredCallbackFiles := 0
 	for _, path := range feishuCallbackFiles {
 		if path != "" {
@@ -111,6 +118,9 @@ func Load(env func(string) string) (Config, error) {
 	if feishuRoutingFile != "" && configuredCallbackFiles != len(feishuCallbackFiles) {
 		return Config{}, fmt.Errorf("Feishu routing config requires callback files")
 	}
+	if feishuAlertChatIDFile != "" && configuredCallbackFiles != len(feishuCallbackFiles) {
+		return Config{}, fmt.Errorf("Feishu alert chat requires callback files")
+	}
 	if configuredCallbackFiles == len(feishuCallbackFiles) {
 		for label, path := range feishuCallbackFiles {
 			if err := validateSecretFile(path); err != nil {
@@ -123,9 +133,26 @@ func Load(env func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("Feishu routing config file: %w", err)
 		}
 	}
+	if feishuAlertChatIDFile != "" {
+		if err := validateSecretFile(feishuAlertChatIDFile); err != nil {
+			return Config{}, fmt.Errorf("Feishu alert chat ID file: %w", err)
+		}
+	}
 	baseURL := strings.TrimRight(get("RELAY_OPS_SUB2API_URL", "http://sub2api:8080"), "/")
 	if baseURL == "" {
 		return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_URL is required")
+	}
+	d04ReadinessResultFile := get("RELAY_OPS_D04_READINESS_RESULT_FILE", "")
+	if d04ReadinessResultFile != "" && !filepath.IsAbs(d04ReadinessResultFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_D04_READINESS_RESULT_FILE must be an absolute path")
+	}
+	accountQualityResultFile := get("RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE", "")
+	if accountQualityResultFile != "" && !filepath.IsAbs(accountQualityResultFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE must be an absolute path")
+	}
+	candidateSecretDir := filepath.Clean(get("RELAY_OPS_CANDIDATE_SECRET_DIR", "/var/lib/relay-ops/candidate-keys"))
+	if !filepath.IsAbs(candidateSecretDir) {
+		return Config{}, fmt.Errorf("RELAY_OPS_CANDIDATE_SECRET_DIR must be an absolute path")
 	}
 	return Config{
 		Mode:                     mode,
@@ -135,6 +162,8 @@ func Load(env func(string) string) (Config, error) {
 		DatabaseURLFile:          databaseURLFile,
 		Sub2APIBaseURL:           baseURL,
 		Sub2APIAdminKeyFile:      adminKeyFile,
+		D04ReadinessResultFile:   d04ReadinessResultFile,
+		AccountQualityResultFile: accountQualityResultFile,
 		FeishuWebhookFile:        feishuFile,
 		FeishuCommandMode:        feishuCommandMode,
 		FeishuAppIDFile:          feishuCallbackFiles["Feishu App ID"],
@@ -142,6 +171,7 @@ func Load(env func(string) string) (Config, error) {
 		FeishuVerificationFile:   feishuCallbackFiles["Feishu verification token"],
 		FeishuEncryptKeyFile:     feishuCallbackFiles["Feishu Encrypt Key"],
 		FeishuRoutingFile:        feishuRoutingFile,
+		FeishuAlertChatIDFile:    feishuAlertChatIDFile,
 		AgentBaseURL:             strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
 		AgentAPIKeyFile:          agentKeyFile,
 		AgentModel:               get("RELAY_OPS_AGENT_MODEL", ""),
@@ -151,6 +181,8 @@ func Load(env func(string) string) (Config, error) {
 		RubyPath:                 get("RELAY_OPS_RUBY_PATH", "/usr/bin/ruby"),
 		V2ScriptPath:             get("RELAY_OPS_V2_SCRIPT_PATH", "/app/ops/upstream-benchmark-v2.rb"),
 		CandidateProfilePath:     get("RELAY_OPS_CANDIDATE_PROFILE_PATH", "/app/config/upstream-benchmarks/candidate-watch-v2.yaml"),
+		FastProfilePath:          get("RELAY_OPS_FAST_PROFILE_PATH", "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml"),
+		CandidateSecretDir:       candidateSecretDir,
 		QualificationProfilePath: get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
 	}, nil
 }

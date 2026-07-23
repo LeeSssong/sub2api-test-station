@@ -67,7 +67,7 @@ class EvaluateD04LightweightLaunchReadinessV3Test < Minitest::Test
 
   def test_one_passing_account_cannot_mask_one_failing_account
     snapshot = healthy_snapshot
-    snapshot["active_upstreams"].last["balance_usd"] = 9.99
+    snapshot["active_upstreams"].last["balance_usd"] = 4.99
 
     result = evaluate(snapshot)
     first, second = result.fetch("upstreams")
@@ -77,6 +77,15 @@ class EvaluateD04LightweightLaunchReadinessV3Test < Minitest::Test
     assert_includes second.fetch("blocking_reasons"), "upstream_balance_below_minimum"
     assert_includes result.fetch("blocking_reasons"), "upstream_balance_below_minimum"
     assert_equal "no_go", result.fetch("decision")
+  end
+
+  def test_minimum_balance_is_inclusive_at_five_dollars
+    snapshot = healthy_snapshot
+    snapshot["active_upstreams"].each { |account| account["balance_usd"] = 5.0 }
+
+    result = evaluate(snapshot)
+
+    refute_includes result.fetch("blocking_reasons"), "upstream_balance_below_minimum"
   end
 
   def test_missing_account_evidence_and_runtime_block_fail_closed
@@ -123,4 +132,3 @@ class EvaluateD04LightweightLaunchReadinessV3Test < Minitest::Test
     assert_empty result.fetch("upstreams")
   end
 end
-

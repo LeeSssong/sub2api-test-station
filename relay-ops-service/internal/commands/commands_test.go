@@ -44,6 +44,16 @@ func TestParseNormalizesOnlyLeadingAppMentionAndOuterWhitespace(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesLeadingBotMention(t *testing.T) {
+	event := validEvent("@_bot_1 查询当前分组状态")
+	event.Mentions = []feishuevents.Mention{{Key: "@_bot_1", OpenID: "ou-bot", MentionedType: "bot", Name: "星桥AI监控Agent"}}
+
+	decision := Parse(event)
+	if !decision.Accepted || decision.Command != "查询当前分组状态" {
+		t.Fatalf("decision = %#v", decision)
+	}
+}
+
 func TestParseRejectsUnknownCombinedOrParameterizedText(t *testing.T) {
 	tests := []string{
 		"切换GPT-Pro到灾备",
@@ -74,6 +84,14 @@ func TestParseDoesNotRemoveUserOrNonLeadingMention(t *testing.T) {
 		func() feishuevents.MessageEvent {
 			event := validEvent("切换 GPT-Pro 到灾备 @_user_1")
 			event.Mentions = []feishuevents.Mention{{Key: "@_user_1", MentionedType: "app"}}
+			return event
+		}(),
+		func() feishuevents.MessageEvent {
+			event := validEvent("@_bot_1 切换 GPT-Pro 到灾备")
+			event.Mentions = []feishuevents.Mention{
+				{Key: "@_bot_1", MentionedType: "bot"},
+				{Key: "@_user_1", MentionedType: "user"},
+			}
 			return event
 		}(),
 	}

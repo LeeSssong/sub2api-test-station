@@ -16,7 +16,7 @@
 - Evidence files may only augment a discovered `account_id`; they cannot add, remove, or select accounts.
 - Use Admin GET only. Do not invoke a model endpoint, paid probe, route/scheduling mutation, balance mutation, candidate intake, Feishu send, or D04 write path.
 - Keep D04 `read_only` with registration closed and relay-ops `read_only + dry_run`.
-- Do not process Neko balance. Historic v1/v2 files and reports remain untouched.
+- Do not make provider-specific balance changes or exceptions. Historic v1/v2 files and reports remain untouched.
 - Preserve unrelated dirty worktree changes. Only stage files explicitly changed for this v3 feature.
 
 ---
@@ -159,7 +159,7 @@ Expected: exit `0`, with no secret values in output.
 - Create: `tests/operations/evaluate_d04_lightweight_launch_readiness_v3_test.rb`
 
 **Interfaces:**
-- CLI: `ruby ops/evaluate-d04-lightweight-launch-readiness-v3.rb evaluate POLICY SNAPSHOT [--now ISO8601]`.
+- CLI: `ruby ops/evaluate-d04-lightweight-launch-readiness-v3.rb evaluate POLICY SNAPSHOT`. Deterministic test or replay time is supplied through `D04_LAUNCH_NOW`; the CLI has no `--now` flag.
 - Result fields: `policy_id`, `snapshot_id`, `account_set_sha256`, `evaluated_at`, `decision`, `blocking_reasons`, `upstreams`, `real_action_executed:false`, and `external_system_contacted:false`.
 - Each upstream result contains only `account_id`, `decision`, and sorted generic blockers.
 

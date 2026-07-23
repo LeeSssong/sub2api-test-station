@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,8 +15,48 @@ import (
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/sub2api"
+	"example.invalid/relay-ops-service/internal/upstreams"
 )
+
+func TestQualityReportsAreAppendOnlyAndRetrievable(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	upstreamID, err := st.CreateUpstream(ctx, Upstream{Name: "candidate", Role: "candidate", BaseURL: "https://candidate.example/v1", AdapterType: "openai", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := qualityreports.Report{
+		ReportID: "fast-1", ReportHash: strings.Repeat("a", 64), UpstreamID: upstreamID, UpstreamName: "candidate",
+		JobKind: "health_pulse", Status: "needs_evidence", QualityScore: 85, TotalScore: 85,
+		Direct: "6/6", Gateway: "unknown", Models: "3 selected", Pricing: "unknown", Capacity: "unknown",
+		Record: json.RawMessage(`{"run_id":"fast-1"}`), RecordedAt: time.Date(2026, 7, 22, 3, 0, 0, 0, time.UTC),
+		ExpiresAt: time.Date(2026, 7, 22, 3, 30, 0, 0, time.UTC),
+	}
+	if err := st.PutQualityReport(ctx, report); err != nil {
+		t.Fatalf("PutQualityReport: %v", err)
+	}
+	if err := st.PutQualityReport(ctx, report); err != nil {
+		t.Fatalf("idempotent PutQualityReport: %v", err)
+	}
+	changed := report
+	changed.ReportHash = strings.Repeat("b", 64)
+	if err := st.PutQualityReport(ctx, changed); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed report error = %v", err)
+	}
+	got, found, err := st.GetQualityReport(ctx, report.ReportID)
+	if err != nil || !found || got.ReportHash != report.ReportHash || got.QualityScore != 85 {
+		t.Fatalf("GetQualityReport = %#v, %v, %v", got, found, err)
+	}
+	items, err := st.ListQualityReports(ctx, 10)
+	if err != nil || len(items) != 1 || items[0].ReportID != report.ReportID {
+		t.Fatalf("ListQualityReports = %#v, %v", items, err)
+	}
+}
 
 func TestMigrateIsIdempotentAndUpstreamIdentityIsUnique(t *testing.T) {
 	st := openTestStore(t)
@@ -69,6 +111,36 @@ func TestPricingSnapshotsAreAppendOnlyAndIncidentsDeduplicate(t *testing.T) {
 	secondID, inserted, err := st.UpsertIncident(ctx, incident)
 	if err != nil || inserted || secondID != firstID {
 		t.Fatalf("second UpsertIncident = id %d inserted %v err %v", secondID, inserted, err)
+	}
+}
+
+func TestNotificationDeliveryRetriesFailedButNotDeliveredEvidence(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	incidentKey := "quality-report:17:health_pulse"
+	if _, _, err := st.UpsertIncident(ctx, Incident{IncidentKey: incidentKey, Severity: "P2", State: "confirmed"}); err != nil {
+		t.Fatal(err)
+	}
+
+	firstID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-one")
+	if err != nil || !reserved {
+		t.Fatalf("first reservation = %d %v %v", firstID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, firstID, "failed", 0); err != nil {
+		t.Fatal(err)
+	}
+	secondID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-two")
+	if err != nil || !reserved || secondID != firstID {
+		t.Fatalf("failed retry = %d %v %v", secondID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, secondID, "delivered", 200); err != nil {
+		t.Fatal(err)
+	}
+	if _, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-three"); err != nil || reserved {
+		t.Fatalf("delivered duplicate = %v %v", reserved, err)
 	}
 }
 
@@ -146,6 +218,59 @@ func TestCreateCandidatePersistsSecretMetadataAndAuditAtomically(t *testing.T) {
 	}
 	if _, err := st.CreateCandidate(ctx, record); !errors.Is(err, candidates.ErrConflict) {
 		t.Fatalf("duplicate error = %v", err)
+	}
+	second := record
+	second.Candidate.Name = "candidate-with-reused-key"
+	second.Candidate.BaseURL = "https://candidate-2.example/v1"
+	second.Candidate.ProbeSecretRef = "file:/run/secrets/candidate-2"
+	second.SecretRef.SecretRef = "file:/run/secrets/candidate-2"
+	second.SecretRef.OwnerScope = "candidate-with-reused-key"
+	second.Audit.AfterSummary = map[string]string{"name": second.Candidate.Name}
+	if _, err := st.CreateCandidate(ctx, second); !errors.Is(err, candidates.ErrConflict) {
+		t.Fatalf("reused fingerprint error = %v, want ErrConflict", err)
+	}
+}
+
+func TestCreateProductionUpstreamLinksOnlyCustomerVisibleGroups(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	visible := sub2api.PublicGroupRecord{
+		GroupID: 3, Name: "GPT-Pro", Platform: "openai", Enabled: true, CustomerVisible: true,
+		UserMultiplierBPS: 10_000, ChannelIDs: []int64{7}, MonitorIDs: []int64{9},
+		HealthGate: "qualified", SourceRevision: "visible", LastSeenAt: time.Now().UTC(),
+	}
+	if err := st.UpsertPublicGroup(ctx, visible); err != nil {
+		t.Fatal(err)
+	}
+	record := upstreams.ProductionRecord{
+		Source: upstreams.Source{
+			Name: "Neko", Role: upstreams.RoleProduction, BaseURL: "https://neko.example/v1",
+			PricingURL: "https://neko.example/pricing", UsageURL: "https://neko.example/usage",
+			MonitorID: 9, GroupIDs: []int64{3}, Enabled: true,
+		},
+		Audit: upstreams.AuditEvent{ActorUserID: 42, Action: "upstream.production.create", ObjectType: "upstream", AfterSummary: map[string]string{"name": "Neko"}},
+	}
+	id, err := st.CreateProduction(ctx, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := st.ListProduction(ctx)
+	if err != nil || len(sources) != 1 || sources[0].ID != id || len(sources[0].GroupIDs) != 1 || sources[0].GroupIDs[0] != 3 {
+		t.Fatalf("sources = %#v, err = %v", sources, err)
+	}
+	var secretCount int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.secret_refs WHERE owner_scope = 'Neko'`).Scan(&secretCount); err != nil || secretCount != 0 {
+		t.Fatalf("secret count = %d, err = %v", secretCount, err)
+	}
+
+	record.Source.Name = "Missing group"
+	record.Source.BaseURL = "https://missing.example/v1"
+	record.Source.GroupIDs = []int64{404}
+	if _, err := st.CreateProduction(ctx, record); !errors.Is(err, upstreams.ErrGroupUnavailable) {
+		t.Fatalf("missing group error = %v", err)
 	}
 }
 

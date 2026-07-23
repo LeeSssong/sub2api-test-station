@@ -22,11 +22,12 @@ import (
 var ErrUsageSchema = errors.New("upstream usage page schema changed")
 
 type SessionConfig struct {
-	UpstreamID domain.UpstreamID
-	UsageURL   string
-	LoginURL   string
-	AuthMode   string
-	SecretRef  string
+	UpstreamID   domain.UpstreamID
+	UpstreamName string
+	UsageURL     string
+	LoginURL     string
+	AuthMode     string
+	SecretRef    string
 }
 
 type UsageEvidence struct {
@@ -42,6 +43,7 @@ type UsageEvidence struct {
 type SessionExpiredError struct {
 	UpstreamID domain.UpstreamID
 	LoginURL   string
+	Notify     bool
 }
 
 func (e *SessionExpiredError) Error() string {
@@ -90,18 +92,19 @@ func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageE
 
 	var responseBody []byte
 	for attempt := 0; attempt < 2; attempt++ {
-		status, body, err := s.request(ctx, resolver, cfg, secret)
+		status, body, finalURL, err := s.request(ctx, resolver, cfg, secret)
 		if err != nil {
 			return UsageEvidence{}, err
 		}
-		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		if status == http.StatusUnauthorized || status == http.StatusForbidden || looksLikeLoginPage(finalURL, cfg.LoginURL, body) {
 			if attempt == 0 {
 				continue
 			}
+			notify := false
 			if s.Reporter != nil {
-				_, _ = s.Reporter.RecordExpired(ctx, cfg.UpstreamID, cfg.LoginURL, now)
+				notify, _ = s.Reporter.RecordExpired(ctx, cfg.UpstreamID, cfg.LoginURL, now)
 			}
-			return UsageEvidence{}, &SessionExpiredError{UpstreamID: cfg.UpstreamID, LoginURL: cfg.LoginURL}
+			return UsageEvidence{}, &SessionExpiredError{UpstreamID: cfg.UpstreamID, LoginURL: cfg.LoginURL, Notify: notify}
 		}
 		if status < 200 || status >= 300 {
 			return UsageEvidence{}, fmt.Errorf("upstream usage page returned HTTP %d", status)
@@ -129,7 +132,7 @@ func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageE
 	return evidence, nil
 }
 
-func (s SessionReader) request(ctx context.Context, resolver pricing.Resolver, cfg SessionConfig, secret []byte) (int, []byte, error) {
+func (s SessionReader) request(ctx context.Context, resolver pricing.Resolver, cfg SessionConfig, secret []byte) (int, []byte, string, error) {
 	base := s.Client
 	if base == nil {
 		base = http.DefaultClient
@@ -144,7 +147,7 @@ func (s SessionReader) request(ctx context.Context, resolver pricing.Resolver, c
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.UsageURL, nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("build usage request: %w", err)
+		return 0, nil, "", fmt.Errorf("build usage request: %w", err)
 	}
 	switch cfg.AuthMode {
 	case "bearer":
@@ -152,18 +155,34 @@ func (s SessionReader) request(ctx context.Context, resolver pricing.Resolver, c
 	case "cookie":
 		req.Header.Set("Cookie", string(secret))
 	default:
-		return 0, nil, fmt.Errorf("unsupported usage auth mode")
+		return 0, nil, "", fmt.Errorf("unsupported usage auth mode")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("read upstream usage page")
+		return 0, nil, "", fmt.Errorf("read upstream usage page")
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (2<<20)+1))
 	if err != nil || len(body) > 2<<20 {
-		return 0, nil, fmt.Errorf("read upstream usage page")
+		finalURL := cfg.UsageURL
+		if resp.Request != nil && resp.Request.URL != nil {
+			finalURL = resp.Request.URL.String()
+		}
+		return 0, nil, finalURL, fmt.Errorf("read upstream usage page")
 	}
-	return resp.StatusCode, body, nil
+	finalURL := cfg.UsageURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+	return resp.StatusCode, body, finalURL, nil
+}
+
+func looksLikeLoginPage(finalURL, loginURL string, body []byte) bool {
+	if strings.TrimRight(finalURL, "/") == strings.TrimRight(loginURL, "/") {
+		return true
+	}
+	text := strings.ToLower(string(body))
+	return strings.Contains(text, "type=\"password\"") || strings.Contains(text, "type='password'")
 }
 
 func parseUsage(body []byte) (domain.MicroUSD, domain.MicroUSD, bool, error) {

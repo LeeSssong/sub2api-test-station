@@ -1,0 +1,23 @@
+schema_version: 1
+channels:
+  - id: local-sub-73
+    display_name: Local Sub account 73
+    base_url: https://api.shuaiapi.com/v1
+    protocol: openai_compatible
+    advertised_multiplier:
+    resale_permission: unknown
+    lifecycle: candidate
+  - id: local-sub-74
+    display_name: Local Sub account 74
+    base_url: https://newapi.sharedchat.top/v1
+    protocol: openai_compatible
+    advertised_multiplier:
+    resale_permission: unknown
+    lifecycle: candidate
+  - id: local-sub-75
+    display_name: Local Sub account 75
+    base_url: https://api.ikuncode.cc/v1
+    protocol: openai_compatible
+    advertised_multiplier:
+    resale_permission: unknown
+    lifecycle: candidate

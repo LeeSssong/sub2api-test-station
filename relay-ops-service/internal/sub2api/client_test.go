@@ -79,6 +79,64 @@ func TestReaderAccountRoutingContract(t *testing.T) {
 	}
 }
 
+func TestHTTPReaderSyncUpstreamModelsUsesNativeAdminEndpoint(t *testing.T) {
+	t.Parallel()
+
+	requests := make([]string, 0, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/admin/accounts/17/models/sync-upstream" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("x-api-key"); got != "admin-test-key" {
+			t.Errorf("x-api-key = %q", got)
+		}
+		if r.ContentLength > 0 {
+			t.Errorf("content length = %d, want empty request", r.ContentLength)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"models":["gpt-5.7-sol","gpt-5.7"]}}`)
+	}))
+	defer server.Close()
+
+	models, err := newTestReader(t, server.URL).SyncUpstreamModels(context.Background(), 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprint(models), fmt.Sprint([]Model{{ID: "gpt-5.7"}, {ID: "gpt-5.7-sol"}}); got != want {
+		t.Fatalf("models = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(requests), "[POST /api/v1/admin/accounts/17/models/sync-upstream]"; got != want {
+		t.Fatalf("requests = %s, want %s", got, want)
+	}
+}
+
+func TestHTTPReaderSyncUpstreamModelsRejectsInvalidDirectory(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{
+		`{"data":{}}`,
+		`{"data":{"models":[]}}`,
+		`{"data":{"models":["gpt-5.7","gpt-5.7"]}}`,
+		`{"data":{"models":[" gpt-5.7"]}}`,
+	} {
+		body := body
+		t.Run(body, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, body)
+			}))
+			defer server.Close()
+
+			_, err := newTestReader(t, server.URL).SyncUpstreamModels(context.Background(), 17)
+			if !IsSchemaMismatch(err) {
+				t.Fatalf("error = %v, want schema mismatch", err)
+			}
+		})
+	}
+}
+
 func TestReaderListsAccountsAcrossPages(t *testing.T) {
 	t.Parallel()
 

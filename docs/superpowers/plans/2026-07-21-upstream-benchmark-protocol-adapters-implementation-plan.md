@@ -95,8 +95,8 @@ Use `URI.parse`; require one leading slash, reject `//`, scheme, host, query, fr
 
 ```bash
 ruby -Itest tests/upstream_benchmarks/upstream_benchmark_test.rb --name '/profile.*(protocol|path)|normalizes_legacy/'
-ruby ops/upstream-benchmark-v2.rb validate --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-v1.yaml
-ruby ops/upstream-benchmark-v2.rb validate --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml
+ruby ops/upstream-benchmark.rb validate
+ruby ops/upstream-benchmark-v2.rb validate --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml --pricing config/upstream-benchmarks/pricing-evidence.example.yaml --scenario config/upstream-benchmarks/v2-scenario-neko.example.yaml
 ```
 
 - [ ] **Step 5: Commit**
@@ -349,7 +349,7 @@ Replace V2 `chat` calls with `generate`. Dry-run reports protocol, paths, and ze
 ```bash
 ruby -Itest tests/upstream_benchmarks/upstream_benchmark_test.rb
 ruby -Itest tests/upstream_benchmarks/upstream_benchmark_protocols_test.rb
-ruby ops/upstream-benchmark-v2.rb validate --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml
+ruby ops/upstream-benchmark-v2.rb validate --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml --pricing config/upstream-benchmarks/pricing-evidence.example.yaml --scenario config/upstream-benchmarks/v2-scenario-neko.example.yaml
 ruby ops/upstream-benchmark-v2.rb run --channel xm-plus --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml --dry-run
 ```
 
@@ -374,8 +374,8 @@ git commit -m "feat: run V2 benchmarks through protocol adapters"
 ```bash
 ruby -Itest tests/upstream_benchmarks/upstream_benchmark_test.rb
 ruby -Itest tests/upstream_benchmarks/upstream_benchmark_protocols_test.rb
-ruby ops/upstream-benchmark-v2.rb validate --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-v1.yaml
-ruby ops/upstream-benchmark-v2.rb validate --channels config/upstream-benchmarks/channels.yaml --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml
+ruby ops/upstream-benchmark.rb validate
+ruby ops/upstream-benchmark-v2.rb validate --profile config/upstream-benchmarks/mvp-text-responses-v2.yaml --pricing config/upstream-benchmarks/pricing-evidence.example.yaml --scenario config/upstream-benchmarks/v2-scenario-neko.example.yaml
 bash tests/upstreams/validate-upstream-registry.sh
 git diff --check
 ```

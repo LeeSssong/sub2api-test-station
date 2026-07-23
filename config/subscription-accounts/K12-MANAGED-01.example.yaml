@@ -1,0 +1,52 @@
+schema_version: 1
+candidate_id: ACC-CANDIDATE-K12-MANAGED-01
+status: fictional
+reviewed_at: "2026-07-15"
+
+seller:
+  public_name: Fictional managed-account seller
+  storefront_reference: fictional-listing-k12-managed-01
+  support_days: 7
+  replacement_policy: replace_only
+
+listing:
+  public_label: Fictional K12 organization-managed account
+  price_cny: 30.0
+  currency: CNY
+  quantity: 1
+  remaining_days: 180
+
+entitlement:
+  platform: gemini
+  official_product: google_workspace_for_education
+  official_tier: education_managed
+  ownership_mode: managed
+  account_origin: invited
+  organization_managed: true
+
+control:
+  buyer_controls_primary_email: false
+  buyer_controls_recovery: false
+  buyer_controls_password: true
+  buyer_controls_2fa: false
+  seller_retains_recovery: true
+
+authorization:
+  sub2api_platform: gemini
+  sub2api_account_type: oauth
+  normal_authorization_only: true
+  delivery_mode: account_control
+  requires_credential_extraction: false
+  requires_bypass: false
+
+operations:
+  isolated_group: true
+  individually_disableable: true
+  cost_traceable: true
+  auto_pause_on_expiry: true
+  initial_concurrency: 1
+
+evidence:
+  listing_snapshot_ref: fictional-snapshot-k12-managed-01
+  terms_snapshot_ref: fictional-terms-k12-managed-01
+  notes: Fictional rejected example. K12 is a seller label, not a verified independent entitlement.

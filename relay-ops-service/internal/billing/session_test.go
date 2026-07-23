@@ -54,6 +54,22 @@ func TestSessionReaderClassifiesExpiredSessionAfterOneRetry(t *testing.T) {
 	}
 }
 
+func TestSessionReaderClassifiesLoginHTMLAsExpired(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	client := &http.Client{Transport: billingTransport(func(*http.Request) *http.Response {
+		calls++
+		return billingResponse(http.StatusOK, `<form action="/login"><input type="password"></form>`)
+	})}
+	reporter := &fakeSessionReporter{notify: true}
+	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }}
+	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 10, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + writeSessionSecret(t, 0o600, "session=opaque")})
+	var expired *SessionExpiredError
+	if !errors.As(err, &expired) || !expired.Notify || calls != 2 {
+		t.Fatalf("error=%v calls=%d expired=%#v", err, calls, expired)
+	}
+}
+
 func TestSessionReaderRejectsUnsafeURLsWritableSecretsAndSchemaChanges(t *testing.T) {
 	t.Parallel()
 	base := SessionConfig{UpstreamID: 9, UsageURL: "https://127.0.0.1/usage", LoginURL: "https://usage.example/login", AuthMode: "bearer", SecretRef: "file:" + writeSessionSecret(t, 0o600, "token-value")}

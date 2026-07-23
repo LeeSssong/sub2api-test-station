@@ -27,7 +27,7 @@
 ## B. Single Approval And Active-upstream Evidence
 
 - [ ] The one explicit launch approval is recorded as `approvals.launch_approved: true`.
-- [ ] Current active-upstream balance is at least the configured USD 10 minimum.
+- [ ] Current active-upstream balance is at least the configured USD 5 minimum.
 - [ ] Financial evidence is no more than 20 minutes old.
 - [ ] The latest 15-minute natural-production-traffic window has at least 20 requests.
 - [ ] Quality evidence is no more than 20 minutes old.

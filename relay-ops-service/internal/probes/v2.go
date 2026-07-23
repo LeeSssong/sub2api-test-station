@@ -55,9 +55,18 @@ type V2Executor struct {
 	RubyPath                 string
 	ScriptPath               string
 	ProfilePath              string
+	FastProfilePath          string
 	QualificationProfilePath string
 	MaxOutputBytes           int
 	MaxRequestCost           domain.MicroUSD
+}
+
+type FastResult struct {
+	RunID      string
+	JobKind    string
+	Status     string
+	RecordedAt time.Time
+	Record     json.RawMessage
 }
 
 type QualificationRequest struct {
@@ -171,6 +180,58 @@ func (e *V2Executor) Qualify(ctx context.Context, candidate candidates.Candidate
 		return QualificationResult{}, ErrMalformedOutput
 	}
 	return QualificationResult{RunID: envelope.RunID, Status: envelope.Status, Record: append(json.RawMessage(nil), stdout...)}, nil
+}
+
+func (e *V2Executor) Fast(ctx context.Context, candidate candidates.Candidate, jobKind string) (FastResult, error) {
+	if !candidate.Enabled || candidate.ID <= 0 || candidate.BaseURL == "" {
+		return FastResult{}, fmt.Errorf("candidate is not probeable")
+	}
+	if e.FastProfilePath == "" {
+		return FastResult{}, fmt.Errorf("fast profile is unavailable")
+	}
+	if jobKind != "health_pulse" && jobKind != "catalog_quick" && jobKind != "capacity_check" {
+		return FastResult{}, fmt.Errorf("fast job kind is invalid")
+	}
+	keyPath, err := secretPath(candidate.ProbeSecretRef)
+	if err != nil {
+		return FastResult{}, err
+	}
+	key, err := readSecret(keyPath)
+	if err != nil {
+		return FastResult{}, err
+	}
+	defer clear(key)
+	channelsPath, cleanup, err := writeChannelRegistry(candidate)
+	if err != nil {
+		return FastResult{}, err
+	}
+	defer cleanup()
+	workdir := filepath.Dir(channelsPath)
+	channelID := fmt.Sprintf("candidate-%d", candidate.ID)
+	stdout, err := e.execute(ctx, key, []string{
+		e.ScriptPath, "fast", "--channels", channelsPath, "--profile", e.FastProfilePath,
+		"--runs", filepath.Join(workdir, "runs.jsonl"), "--decisions", filepath.Join(workdir, "decisions.jsonl"),
+		"--channel", channelID, "--job", jobKind, "--key-env", candidateKeyEnv,
+	})
+	if err != nil {
+		return FastResult{}, err
+	}
+	var envelope struct {
+		SchemaVersion int       `json:"schema_version"`
+		RunID         string    `json:"run_id"`
+		ChannelID     string    `json:"channel_id"`
+		JobKind       string    `json:"job_kind"`
+		RecordedAt    time.Time `json:"recorded_at"`
+		Status        string    `json:"status"`
+	}
+	if err := json.Unmarshal(stdout, &envelope); err != nil || envelope.SchemaVersion != 1 || envelope.RunID == "" ||
+		envelope.ChannelID != channelID || envelope.JobKind != jobKind || envelope.RecordedAt.IsZero() || envelope.Status == "" {
+		return FastResult{}, ErrMalformedOutput
+	}
+	return FastResult{
+		RunID: envelope.RunID, JobKind: envelope.JobKind, Status: envelope.Status,
+		RecordedAt: envelope.RecordedAt.UTC(), Record: append(json.RawMessage(nil), bytes.TrimSpace(stdout)...),
+	}, nil
 }
 
 func (e *V2Executor) execute(ctx context.Context, key []byte, args []string) ([]byte, error) {

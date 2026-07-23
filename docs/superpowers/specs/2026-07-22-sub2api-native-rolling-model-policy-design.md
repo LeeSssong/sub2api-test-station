@@ -28,7 +28,7 @@ The initial controlled-test catalog covers the approved official GPT-5.5 and GPT
 - Sub2API native active/schedulable accounts and account-to-group relationships.
 - Sub2API native upstream model sync, including account headers, proxy, TLS profile, Base URL normalization, and credential handling.
 - Sub2API account `model_mapping` as a model whitelist. In `v0.1.161`, scheduling calls `Account.IsModelSupported` and filters OpenAI-compatible accounts that do not map the requested model.
-- Sub2API channel `restrict_models`, channel model mapping, and channel model pricing for the customer-facing catalog.
+- Sub2API public-group `models_list_config` for the customer-facing catalog, plus the native model-pricing lookup as the price authority.
 - Existing upstream benchmark protocol adapters, bounded sync/SSE request execution, content-free evidence ledger, and cleanup discipline.
 - Existing D04 lightweight balance and fresh quality thresholds.
 - Existing `/ops` hidden-admin authentication and read-only projection.
@@ -44,7 +44,7 @@ The initial controlled-test catalog covers the approved official GPT-5.5 and GPT
 
 - A provider-neutral rolling GPT family policy.
 - A secret-free upgrade proposal with optimistic concurrency hashes.
-- A controlled promoter that updates only Sub2API-native model mappings and pricing, then re-reads or restores the previous snapshot.
+- A controlled promoter that updates only Sub2API-native account model mappings and public-group `models_list_config`, then re-reads or restores the previous snapshot. Pricing must already exist and is never written by the promoter.
 
 ## Model Lifecycle
 
@@ -55,7 +55,7 @@ Each model has one of the following states:
 3. `qualified`: passed the bounded compatibility checks on a specific account.
 4. `covered`: at least one qualified current account in each required public group can serve it.
 5. `ready`: covered, priced, and accompanied by fresh account-level balance and quality evidence.
-6. `published`: present in the verified Sub2API account mappings and restricted public channel catalog.
+6. `published`: present in the verified Sub2API account mappings and enabled public-group `models_list_config` catalog.
 7. `retired`: removed only after a newer family is successfully published and the post-write re-read passes.
 
 State progression is monotonic within one evidence snapshot. A later discovery or test failure creates a new blocked snapshot; it does not silently rewrite old evidence.
@@ -121,10 +121,10 @@ The section contains no form control or command button. Missing, invalid, inacti
 
 Promotion is a separate, explicit operation. It cannot run from the `/ops` browser page or a scheduler.
 
-1. Re-read modes, current accounts, groups, account mappings, channel restrictions, channel mappings, and pricing.
+1. Re-read modes, current accounts, groups, account mappings, public-group `models_list_config`, and native pricing completeness.
 2. Require exact matches for the proposal ID, account-set hash, base configuration hash, candidate set, and `ready` result.
-3. Save a server-local, permission-restricted snapshot of the affected Sub2API account and channel configuration. No encrypted offsite backup is required.
-4. Through Sub2API's native Admin API, update only the affected account model mappings and the restricted public channel catalog/pricing.
+3. Save a server-local, permission-restricted snapshot of the affected Sub2API account mappings and public-group model-list configuration. No encrypted offsite backup is required.
+4. Through Sub2API's native Admin API, update only the affected account model mappings and public-group `models_list_config`. Native pricing is a read-only prerequisite and is not changed.
 5. Re-read all affected objects and compare them with the proposal.
 6. If any write or verification is partial, restore the pre-promotion snapshot through the native Admin API and report failure.
 7. After successful verification, mark the new family published and the displaced oldest family retired in evidence.

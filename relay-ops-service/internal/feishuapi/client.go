@@ -17,6 +17,7 @@ import (
 )
 
 const maxResponseBytes = 1 << 20
+const maxMessageContentBytes = 30 << 10
 
 var errUnauthorized = errors.New("Feishu OpenAPI token was rejected")
 
@@ -30,6 +31,11 @@ type Client struct {
 	mu        sync.Mutex
 	token     string
 	expiresAt time.Time
+}
+
+type OutboundMessage struct {
+	MsgType string
+	Content []byte
 }
 
 func NewClient(baseURL, appIDFile, appSecretFile string) (*Client, error) {
@@ -56,12 +62,25 @@ func (c *Client) SendText(ctx context.Context, chatID, text string) (string, err
 	if chatID == "" || len(chatID) > 256 || text == "" || len([]byte(text)) > 16<<10 {
 		return "", errors.New("invalid Feishu message input")
 	}
+	content, err := json.Marshal(struct {
+		Text string `json:"text"`
+	}{Text: text})
+	if err != nil {
+		return "", errors.New("encode Feishu message content")
+	}
+	return c.SendMessage(ctx, chatID, OutboundMessage{MsgType: "text", Content: content})
+}
+
+func (c *Client) SendMessage(ctx context.Context, chatID string, message OutboundMessage) (string, error) {
+	if chatID == "" || len(chatID) > 256 || (message.MsgType != "text" && message.MsgType != "interactive") || len(message.Content) == 0 || len(message.Content) > maxMessageContentBytes || !json.Valid(message.Content) {
+		return "", errors.New("invalid Feishu message input")
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := c.tenantToken(ctx)
 		if err != nil {
 			return "", err
 		}
-		messageID, err := c.sendText(ctx, token, chatID, text)
+		messageID, err := c.sendMessage(ctx, token, chatID, message)
 		if !errors.Is(err, errUnauthorized) {
 			return messageID, err
 		}
@@ -100,18 +119,12 @@ func (c *Client) tenantToken(ctx context.Context) (string, error) {
 	return c.token, nil
 }
 
-func (c *Client) sendText(ctx context.Context, token, chatID, text string) (string, error) {
-	content, err := json.Marshal(struct {
-		Text string `json:"text"`
-	}{Text: text})
-	if err != nil {
-		return "", errors.New("encode Feishu message content")
-	}
+func (c *Client) sendMessage(ctx context.Context, token, chatID string, message OutboundMessage) (string, error) {
 	body := struct {
 		ReceiveID string `json:"receive_id"`
 		MsgType   string `json:"msg_type"`
 		Content   string `json:"content"`
-	}{ReceiveID: chatID, MsgType: "text", Content: string(content)}
+	}{ReceiveID: chatID, MsgType: message.MsgType, Content: string(message.Content)}
 	var response struct {
 		Code int `json:"code"`
 		Data struct {

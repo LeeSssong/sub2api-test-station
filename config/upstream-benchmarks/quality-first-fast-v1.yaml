@@ -1,0 +1,23 @@
+schema_version: 2
+id: quality-first-fast-v1
+endpoint: chat_completions
+prompt: Reply with OK only.
+max_output_tokens: 8
+timeout_seconds: 45
+representative_roles:
+  common: gpt-5.6-sol
+  expensive: gpt-5.5
+  new: gpt-5.6-terra
+concurrency_levels:
+  - 1
+  - 2
+  - 3
+  - 5
+  - 8
+  - 10
+rpm_levels:
+  - 6
+  - 12
+  - 20
+  - 30
+rpm_window_seconds: 10

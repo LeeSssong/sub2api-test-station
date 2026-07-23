@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS relay_ops.secret_refs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS secret_refs_candidate_probe_fingerprint_uidx
+    ON relay_ops.secret_refs (fingerprint)
+    WHERE kind = 'candidate_probe_key';
+
 CREATE TABLE IF NOT EXISTS relay_ops.public_groups (
     group_id BIGINT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -48,6 +52,13 @@ CREATE TABLE IF NOT EXISTS relay_ops.public_groups (
     health_gate TEXT NOT NULL DEFAULT 'pending',
     source_revision TEXT NOT NULL,
     last_seen_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS relay_ops.upstream_public_groups (
+    upstream_id BIGINT NOT NULL REFERENCES relay_ops.upstreams(id) ON DELETE CASCADE,
+    group_id BIGINT NOT NULL REFERENCES relay_ops.public_groups(group_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (upstream_id, group_id)
 );
 
 CREATE TABLE IF NOT EXISTS relay_ops.pricing_snapshots (

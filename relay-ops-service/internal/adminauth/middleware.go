@@ -28,10 +28,25 @@ type Verifier interface {
 type actorContextKey struct{}
 
 func RequireAdmin(verifier Verifier, next http.Handler) http.Handler {
+	return requireAdmin(verifier, next, false)
+}
+
+func RequireHiddenAdmin(verifier Verifier, next http.Handler) http.Handler {
+	return requireAdmin(verifier, next, true)
+}
+
+func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reject := func(status int) {
+			if hidden {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, http.StatusText(status), status)
+		}
 		bearer, ok := bearerToken(r.Header.Get("Authorization"))
 		if !ok {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			reject(http.StatusUnauthorized)
 			return
 		}
 		identity, err := verifier.VerifyAdminSession(r.Context(), Session{
@@ -41,11 +56,11 @@ func RequireAdmin(verifier Verifier, next http.Handler) http.Handler {
 			RealIP:       strings.TrimSpace(r.Header.Get("X-Real-IP")),
 		})
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			reject(http.StatusUnauthorized)
 			return
 		}
 		if identity.UserID <= 0 || identity.Role != "admin" || identity.Status != "active" {
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			reject(http.StatusForbidden)
 			return
 		}
 		actor := domain.AdminActor{UserID: identity.UserID}

@@ -31,6 +31,22 @@ func TestLoadConfigAcceptsExactlyApprovedGroups(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsAccountReusedOnlyAsBackup(t *testing.T) {
+	path := writeRoutingConfig(t, `{
+  "groups": [
+    {"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":12,"required_models":["gpt-a"]},
+    {"name":"GPT-Plus","public_group_id":4,"primary_account_id":21,"backup_account_id":12,"required_models":["gpt-c"]}
+  ]
+}`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig shared backup: %v", err)
+	}
+	if cfg.Groups[0].BackupAccountID != 12 || cfg.Groups[1].BackupAccountID != 12 {
+		t.Fatalf("shared backup was not preserved: %#v", cfg.Groups)
+	}
+}
+
 func TestLoadConfigRejectsUnsafeOrAmbiguousConfiguration(t *testing.T) {
 	validPlus := `{"name":"GPT-Plus","public_group_id":4,"primary_account_id":21,"backup_account_id":22,"required_models":["gpt-c"]}`
 	tests := []struct {
@@ -42,7 +58,8 @@ func TestLoadConfigRejectsUnsafeOrAmbiguousConfiguration(t *testing.T) {
 		{"missing group", `{"groups":[` + validPlus + `]}`},
 		{"duplicate group id", `{"groups":[{"name":"GPT-Pro","public_group_id":4,"primary_account_id":11,"backup_account_id":12,"required_models":["gpt-a"]},` + validPlus + `]}`},
 		{"same role account", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":11,"required_models":["gpt-a"]},` + validPlus + `]}`},
-		{"account reused", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":21,"required_models":["gpt-a"]},` + validPlus + `]}`},
+		{"duplicate primary", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":21,"backup_account_id":12,"required_models":["gpt-a"]},` + validPlus + `]}`},
+		{"primary reused as backup", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":21,"required_models":["gpt-a"]},` + validPlus + `]}`},
 		{"no models", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":12,"required_models":[]},` + validPlus + `]}`},
 		{"duplicate model", `{"groups":[{"name":"GPT-Pro","public_group_id":3,"primary_account_id":11,"backup_account_id":12,"required_models":["gpt-a","gpt-a"]},` + validPlus + `]}`},
 		{"nonpositive id", `{"groups":[{"name":"GPT-Pro","public_group_id":0,"primary_account_id":11,"backup_account_id":12,"required_models":["gpt-a"]},` + validPlus + `]}`},
@@ -85,6 +102,31 @@ func TestSwitchAddsAndVerifiesTargetBeforeRemovingSource(t *testing.T) {
 	sourceWrite := indexOf(fake.calls, "set-groups:11:[8]")
 	if targetWrite < 0 || targetVerify < targetWrite || sourceWrite < targetVerify {
 		t.Fatalf("unsafe call order: %v", fake.calls)
+	}
+}
+
+func TestSwitchSharedBackupPreservesOtherGroupBinding(t *testing.T) {
+	fake := baseFake()
+	backup := fake.accounts[12]
+	backup.GroupIDs = []int64{3, 9}
+	fake.accounts[12] = backup
+	fake.models[12] = append(fake.models[12], sub2api.Model{ID: "gpt-c"})
+	controller := &Controller{
+		Client: fake,
+		Config: Config{Groups: []GroupRoute{
+			{Name: "GPT-Pro", PublicGroupID: 3, PrimaryAccountID: 11, BackupAccountID: 12, RequiredModels: []string{"gpt-a", "gpt-b"}},
+			{Name: "GPT-Plus", PublicGroupID: 4, PrimaryAccountID: 21, BackupAccountID: 12, RequiredModels: []string{"gpt-c"}},
+		}},
+		Now: func() time.Time { return time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC) },
+	}
+
+	switched := controller.Switch(context.Background(), "GPT-Plus", RoleBackup, false)
+	if switched.Status != StatusSucceeded || !reflect.DeepEqual(fake.accounts[12].GroupIDs, []int64{3, 4, 9}) {
+		t.Fatalf("switch result=%#v shared groups=%v", switched, fake.accounts[12].GroupIDs)
+	}
+	restored := controller.Switch(context.Background(), "GPT-Plus", RolePrimary, false)
+	if restored.Status != StatusSucceeded || !reflect.DeepEqual(fake.accounts[12].GroupIDs, []int64{3, 9}) {
+		t.Fatalf("restore result=%#v shared groups=%v", restored, fake.accounts[12].GroupIDs)
 	}
 }
 

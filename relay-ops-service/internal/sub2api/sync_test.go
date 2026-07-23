@@ -17,10 +17,14 @@ func TestSynchronizerKeepsOnlyCustomerVisibleGroupsAndNativeReferences(t *testin
 		},
 		monitors: []ChannelMonitor{{ID: 9, Name: "GPT-Pro", GroupName: "GPT-Pro", Enabled: true, PrimaryModel: "gpt-5.6-sol"}},
 		ops:      OpsSnapshot{GeneratedAt: "2026-07-19T08:00:00Z", Overview: OpsOverview{StartTime: "2026-07-18T08:00:00Z", EndTime: "2026-07-19T08:00:00Z", SLA: 99, TTFT: Percentiles{P95MS: 1400}}},
-		history:  []MonitorHistory{{ID: 11, Model: "gpt-5.6-sol", Status: "operational", CheckedAt: "2026-07-19T08:00:00Z"}},
+		history: []MonitorHistory{
+			{ID: 10, Model: "gpt-5.6-sol", Status: "operational", CheckedAt: "2026-07-19T07:55:00Z"},
+			{ID: 11, Model: "gpt-5.6-sol", Status: "error", CheckedAt: "2026-07-19T08:00:00Z"},
+		},
 	}
 	sink := &fakeSink{}
-	syncer := Synchronizer{Reader: reader, Sink: sink, Now: func() time.Time { return time.Date(2026, 7, 19, 8, 5, 0, 0, time.UTC) }}
+	observer := &fakeMonitorObserver{}
+	syncer := Synchronizer{Reader: reader, Sink: sink, Observer: observer, Now: func() time.Time { return time.Date(2026, 7, 19, 8, 5, 0, 0, time.UTC) }}
 	if err := syncer.Sync(context.Background()); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -41,6 +45,9 @@ func TestSynchronizerKeepsOnlyCustomerVisibleGroupsAndNativeReferences(t *testin
 		if ref.PayloadHash == "" || ref.WindowStart.IsZero() || ref.WindowEnd.IsZero() || ref.SchemaVersion != NativeMetricSchemaV1 {
 			t.Fatalf("invalid metric ref: %#v", ref)
 		}
+	}
+	if observer.calls != 1 || observer.monitor.ID != 9 || observer.history.ID != 11 || observer.history.Status != "error" {
+		t.Fatalf("observer=%#v", observer)
 	}
 }
 
@@ -79,5 +86,18 @@ func (f *fakeSink) UpsertPublicGroup(_ context.Context, group PublicGroupRecord)
 
 func (f *fakeSink) AppendMetricRef(_ context.Context, ref MetricRef) error {
 	f.refs = append(f.refs, ref)
+	return nil
+}
+
+type fakeMonitorObserver struct {
+	calls   int
+	monitor ChannelMonitor
+	history MonitorHistory
+}
+
+func (f *fakeMonitorObserver) ObserveMonitor(_ context.Context, monitor ChannelMonitor, history MonitorHistory) error {
+	f.calls++
+	f.monitor = monitor
+	f.history = history
 	return nil
 }

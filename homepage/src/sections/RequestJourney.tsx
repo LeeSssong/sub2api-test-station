@@ -1,6 +1,6 @@
 import { AppWindow, Bot, CircleGauge, Route, Send, Sparkles } from 'lucide-react'
 import { useMotionValueEvent, useScroll } from 'motion/react'
-import { useRef, useState } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
 
 type Phase = 'send' | 'route' | 'observe'
@@ -12,7 +12,7 @@ const steps = [
 ]
 
 export function phaseForProgress(progress: number): Phase {
-  return progress < .34 ? 'send' : progress < .68 ? 'route' : 'observe'
+  return progress < .3 ? 'send' : progress < .55 ? 'route' : 'observe'
 }
 
 export function RequestJourney() {
@@ -30,8 +30,15 @@ export function RequestJourney() {
   })
 
   const visiblePhase = reduced ? 'static' : phase
+  const boundedProgress = Math.max(0, Math.min(1, progress))
+  const outgoingProgress = reduced ? 1 : Math.min(1, boundedProgress / .3)
+  const routedProgress = reduced ? 1 : Math.max(0, Math.min(1, (boundedProgress - .55) / .25))
   const latency = reduced ? 187 : Math.round(187 * Math.max(0, (progress - .55) / .45))
   const tokens = reduced ? 2148 : Math.round(2148 * Math.max(0, (progress - .58) / .42))
+  const trackStyle = (trackProgress: number) => ({
+    '--track-progress': trackProgress,
+    '--track-position': `${trackProgress * 100}%`,
+  } as CSSProperties)
 
   return (
     <section
@@ -40,6 +47,7 @@ export function RequestJourney() {
       aria-label="一次 API 请求的完整旅程"
       data-journey-phase={visiblePhase}
       data-journey-mode={reduced ? 'static' : 'scroll'}
+      data-scroll-density="compact"
     >
       <div className="journey-stage">
         <div className="journey-content">
@@ -56,9 +64,9 @@ export function RequestJourney() {
 
           <div className="request-map" aria-label="应用经星桥连接模型通道">
             <div className="map-node app-node"><AppWindow aria-hidden="true" /><span>你的应用</span></div>
-            <div className="map-track map-track--out" aria-hidden="true"><i /></div>
+            <div className="map-track map-track--out" data-flow-direction="forward" style={trackStyle(outgoingProgress)} aria-hidden="true"><i /></div>
             <div className="map-node gateway-node"><img src="/home-assets/xingqiao-logo.png" alt="" /><span>星桥</span><i /></div>
-            <div className="map-track map-track--return" aria-hidden="true"><i /></div>
+            <div className="map-track map-track--route" data-flow-direction="forward" style={trackStyle(routedProgress)} aria-hidden="true"><i /></div>
             <div className="provider-stack">
               <span><Bot aria-hidden="true" />OpenAI</span>
               <span><Sparkles aria-hidden="true" />Claude</span>

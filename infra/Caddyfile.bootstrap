@@ -1,0 +1,16 @@
+{$SITE_ADDRESS} {
+	@health path /health
+	respond @health `{"status":"ok","phase":"bootstrap"}` 200
+	respond "Not Found" 404
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

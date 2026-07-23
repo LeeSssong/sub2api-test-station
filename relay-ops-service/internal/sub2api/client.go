@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,9 +20,9 @@ import (
 
 const (
 	maxResponseBytes = 2 << 20
-	accountPageSize = 100
-	maxAccountPages = 20
-	maxAccounts     = accountPageSize * maxAccountPages
+	accountPageSize  = 100
+	maxAccountPages  = 20
+	maxAccounts      = accountPageSize * maxAccountPages
 )
 
 var errResponseTooLarge = errors.New("Sub2API response exceeds size limit")
@@ -169,6 +170,36 @@ func (c *HTTPReader) GetAccountModels(ctx context.Context, id int64) ([]Model, e
 	return models, nil
 }
 
+func (c *HTTPReader) SyncUpstreamModels(ctx context.Context, id int64) ([]Model, error) {
+	if id <= 0 {
+		return nil, errSchemaMismatch
+	}
+	var response struct {
+		Models *[]string `json:"models"`
+	}
+	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10) + "/models/sync-upstream"
+	if err := c.emptyPost(ctx, path, &response); err != nil {
+		return nil, err
+	}
+	if response.Models == nil || len(*response.Models) == 0 || len(*response.Models) > 4096 {
+		return nil, errSchemaMismatch
+	}
+	seen := make(map[string]struct{}, len(*response.Models))
+	models := make([]Model, 0, len(*response.Models))
+	for _, modelID := range *response.Models {
+		if !validModelID(modelID) {
+			return nil, errSchemaMismatch
+		}
+		if _, duplicate := seen[modelID]; duplicate {
+			return nil, errSchemaMismatch
+		}
+		seen[modelID] = struct{}{}
+		models = append(models, Model{ID: modelID})
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	return models, nil
+}
+
 func (c *HTTPReader) SetAccountGroups(ctx context.Context, id int64, groupIDs []int64) (Account, error) {
 	var account Account
 	path := "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10)
@@ -307,6 +338,16 @@ func (c *HTTPReader) jsonRequest(ctx context.Context, method, path string, body,
 	return c.do(req, out)
 }
 
+func (c *HTTPReader) emptyPost(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("build Sub2API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	return c.do(req, out)
+}
+
 func (c *HTTPReader) getWithBearer(ctx context.Context, path string, session adminauth.Session, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -366,4 +407,16 @@ func setIf(values url.Values, key, value string) {
 	if value != "" {
 		values.Set(key, value)
 	}
+}
+
+func validModelID(value string) bool {
+	if value == "" || len(value) > 256 || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, char := range value {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return true
 }

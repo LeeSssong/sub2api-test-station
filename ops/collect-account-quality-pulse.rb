@@ -8,7 +8,10 @@ require "optparse"
 require "tempfile"
 require "time"
 require "uri"
-require_relative "upstream-benchmark-v2"
+
+catalog_path = File.expand_path("upstream-benchmark-v2.rb", __dir__)
+catalog_path = "/app/ops/upstream-benchmark-v2.rb" unless File.file?(catalog_path)
+require catalog_path
 
 module AccountQualityPulse
   PAGE_SIZE = 100

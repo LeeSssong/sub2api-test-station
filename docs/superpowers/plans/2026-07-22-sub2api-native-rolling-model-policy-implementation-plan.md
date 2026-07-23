@@ -4,7 +4,7 @@
 
 **Goal:** Reuse Sub2API native model discovery and model-aware scheduling to qualify only approved rolling GPT candidates, show a read-only `可升级` decision in `/ops`, and provide a separately invoked, rollback-capable native promotion command.
 
-**Architecture:** Ruby owns the secret-free policy, candidate benchmark, readiness proposal, and explicit promotion workflow because the existing benchmark/evidence toolchain already lives there. Relay-ops only reads a bounded signed-by-hash JSON result and projects it through the existing hidden-admin `/ops` page. Sub2API remains the only production authority for accounts, credentials, mappings, channels, pricing, and scheduling.
+**Architecture:** Ruby owns the secret-free policy, candidate benchmark, readiness proposal, and explicit promotion workflow because the existing benchmark/evidence toolchain already lives there. Relay-ops only reads a bounded signed-by-hash JSON result and projects it through the existing hidden-admin `/ops` page. Sub2API remains the only production authority for accounts, credentials, mappings, public groups, pricing, and scheduling.
 
 **Tech Stack:** Ruby 3 standard library and Minitest; Go 1.24 standard library and `net/http`; existing relay-ops HTML/CSS; Docker Compose deployment contracts; Sub2API `v0.1.161` Admin API.
 
@@ -18,7 +18,7 @@
 - Balance must be at least USD `5.00`; discovery, financial, and quality evidence must be no older than `20 minutes`; quality requires at least `20` samples, success `>= 95%`, error `<= 5%`, TTFT P95 `<= 5s`, and total latency P95 `<= 45s`.
 - `/ops` stays read-only, contains no form/input/select/button, and operational data returns HTTP `404` to non-admin callers.
 - Proposal generation requires relay-ops `read_only`, Feishu commands `dry_run`, and D04 registration closed.
-- Promotion is never callable from `/ops` or a scheduler. It updates only native account model mappings and restricted channel model catalog/pricing.
+- Promotion is never callable from `/ops` or a scheduler. It updates only native account model mappings and public-group `models_list_config`; native pricing is a read-only prerequisite.
 - Promotion uses optimistic concurrency and a local permission-restricted pre-change snapshot; no encrypted or offsite backup is required.
 - Never change account status, schedulable state, groups, route roles, multipliers, balances, credentials, Keys, D04 mode, registration, probe mode, or Feishu mode.
 - Preserve unrelated dirty-worktree changes. Stage and commit only files explicitly listed in each task.
@@ -337,12 +337,8 @@ git commit -m "feat: show model upgrade readiness in ops"
 **Files:**
 - Create: `ops/promote-model-release.rb`
 - Create: `tests/operations/promote_model_release_test.rb`
-- Modify: `relay-ops-service/internal/sub2api/types.go`
-- Modify: `relay-ops-service/internal/sub2api/client.go`
-- Modify: `relay-ops-service/internal/sub2api/client_test.go`
 
 **Interfaces:**
-- Adds Go DTO helpers for exact native Admin API requests used by the standalone command contract tests.
 - Ruby CLI: `ruby ops/promote-model-release.rb apply --proposal PATH --snapshot-dir DIR --base-url URL --admin-key-file PATH`
 - Optional safe mode: `preflight` performs all re-reads and zero writes.
 
@@ -354,7 +350,7 @@ Tests must prove:
 - non-ready/stale/hash-mismatched proposal => zero writes
 - preflight => zero writes
 - snapshot file is mode 0600 and contains only affected native objects
-- apply calls only account bulk-update and affected channel PUT endpoints
+- apply calls only account bulk-update and affected group PUT endpoints
 - partial native write => restore every changed object and re-read old hash
 - successful apply => re-read exact proposal hash
 - request/log/output contains no Admin key, upstream key, Base URL credential, or model output
@@ -365,13 +361,11 @@ Tests must prove:
 
 Run: `ruby -Itest tests/operations/promote_model_release_test.rb`
 
-Run: `cd relay-ops-service && go test ./internal/sub2api -run 'BulkUpdate|UpdateChannel' -count=1`
-
-Expected: FAIL because controlled promotion APIs do not exist.
+Expected: FAIL because the controlled native promoter does not exist.
 
 - [ ] **Step 3: Implement exact native write methods and the standalone promoter**
 
-Use `POST /api/v1/admin/accounts/bulk-update` with credentials merge limited to `model_mapping`, and `PUT /api/v1/admin/channels/:id` limited to the current channel object plus `restrict_models`, `model_mapping`, `model_pricing`, and `billing_model_source`. Before writing, re-read current accounts/groups/channels/mappings/pricing and recompute both hashes. Create the local snapshot with `O_CREAT|O_EXCL`, mode `0600`, and `fsync` before the first native mutation.
+Use `POST /api/v1/admin/accounts/bulk-update` with credentials merge limited to `model_mapping`, and `PUT /api/v1/admin/groups/:id` limited to `models_list_config`. Before writing, re-read current accounts, groups, mappings, public-group model lists, and native price completeness, then recompute both hashes. Create the local snapshot with `O_CREAT|O_EXCL`, mode `0600`, and `fsync` before the first native mutation.
 
 On any write or verification failure, restore changed objects in reverse order, re-read the old canonical hash, and exit non-zero. Never mark evidence published unless the final re-read exactly matches the proposal.
 
@@ -379,14 +373,12 @@ On any write or verification failure, restore changed objects in reverse order, 
 
 Run: `ruby -Itest tests/operations/promote_model_release_test.rb`
 
-Run: `cd relay-ops-service && go test ./internal/sub2api -count=1`
-
 Expected: PASS.
 
 - [ ] **Step 5: Commit only Task 6 files**
 
 ```bash
-git add ops/promote-model-release.rb tests/operations/promote_model_release_test.rb relay-ops-service/internal/sub2api/types.go relay-ops-service/internal/sub2api/client.go relay-ops-service/internal/sub2api/client_test.go
+git add ops/promote-model-release.rb tests/operations/promote_model_release_test.rb
 git commit -m "feat: add controlled native model promoter"
 ```
 
@@ -394,7 +386,6 @@ git commit -m "feat: add controlled native model promoter"
 
 **Files:**
 - Modify: `infra/compose.yaml`
-- Modify: `infra/Dockerfile.relay-ops`
 - Modify: `tests/relay_ops/validate_relay_ops_contract.sh`
 - Create: `docs/superpowers/reports/2026-07-22-sub2api-native-rolling-model-policy-verification.md`
 - Modify: `docs/project/current-state.md`
@@ -406,7 +397,7 @@ git commit -m "feat: add controlled native model promoter"
 
 - [ ] **Step 1: Add deployment-contract tests before changing Compose**
 
-Require `RELAY_OPS_MODEL_RELEASE_RESULT_FILE`, a read-only result mount, inclusion of policy/evaluator assets in the image, no writable model directory, and no browser mutation route.
+Require `RELAY_OPS_MODEL_RELEASE_RESULT_FILE`, a read-only result mount, no collector/evaluator/promoter runtime in relay-ops, no writable model directory, and no browser mutation route.
 
 - [ ] **Step 2: Run the contract and confirm RED**
 
@@ -416,7 +407,7 @@ Expected: FAIL on the missing model-release mount/assets.
 
 - [ ] **Step 3: Add the minimal read-only deployment wiring**
 
-Copy only policy/evaluator/runtime assets into the image and mount only the secret-free result. Do not mount Sub2API Admin credentials into a new process or add a scheduler that can promote.
+Keep discovery, evaluation, and promotion as separately invoked operator tools outside the relay-ops runtime. Mount only the secret-free result; do not add a scheduler or browser route that can discover, test, or promote.
 
 - [ ] **Step 4: Run complete local verification**
 
@@ -437,7 +428,7 @@ git diff --check
 
 - [ ] **Step 5: Perform bounded read-only production acceptance**
 
-Before discovery, record redacted canonical hashes for active/schedulable accounts, account mappings, public channel mappings/pricing, routes, relay-ops/Feishu/D04 modes, and container IDs. Use native sync for current accounts, evaluate only the policy-selected candidates, and publish only the secret-free result to relay-ops. Do not promote in this step.
+Before discovery, record redacted canonical hashes for active/schedulable accounts, account mappings, public-group `models_list_config`, price completeness, routes, relay-ops/Feishu/D04 modes, and container IDs. Use native sync for current accounts, evaluate only the policy-selected candidates, and publish only the secret-free result to relay-ops. Do not promote in this step.
 
 Afterward, require the same configuration hashes, routes, balances, Keys, modes, registration state, and unaffected container IDs. Verify `/ops` renders the exact evaluator state and unauthorized access remains `404`. If the state is not `可升级`, record blockers and stop without production writes.
 
@@ -448,7 +439,7 @@ The report must list discovered/current/candidate families, exact tested candida
 - [ ] **Step 7: Commit deployment and documentation files**
 
 ```bash
-git add infra/compose.yaml infra/Dockerfile.relay-ops tests/relay_ops/validate_relay_ops_contract.sh docs/superpowers/reports/2026-07-22-sub2api-native-rolling-model-policy-verification.md docs/project/current-state.md docs/project/llm-handoff.md
+git add infra/compose.yaml tests/relay_ops/validate_relay_ops_contract.sh docs/superpowers/reports/2026-07-22-sub2api-native-rolling-model-policy-verification.md docs/project/current-state.md docs/project/llm-handoff.md
 git commit -m "docs: verify rolling model release readiness"
 ```
 
@@ -473,7 +464,7 @@ Create the local `0600` snapshot and invoke the standalone command once. Do not 
 
 - [ ] **Step 3: Verify native and gateway behavior**
 
-Re-read account model subsets and channel restriction/mapping/pricing; verify the new canonical hash, public model list, and one minimal sync plus one terminal-complete SSE gateway request for each newly published public model. Confirm displaced oldest family is absent only after the new family is present and verified.
+Re-read account model subsets, public-group `models_list_config`, and native pricing; verify the new canonical hash, public model list, and one minimal sync plus one terminal-complete SSE gateway request for each newly published public model. Confirm displaced oldest family is absent only after the new family is present and verified.
 
 - [ ] **Step 4: Prove all unrelated state stayed unchanged**
 

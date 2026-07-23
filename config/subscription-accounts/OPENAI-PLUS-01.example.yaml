@@ -1,0 +1,52 @@
+schema_version: 1
+candidate_id: ACC-CANDIDATE-OPENAI-PLUS-01
+status: fictional
+reviewed_at: "2026-07-15"
+
+seller:
+  public_name: Fictional independent-account seller
+  storefront_reference: fictional-listing-openai-plus-01
+  support_days: 14
+  replacement_policy: refund_or_replace
+
+listing:
+  public_label: Fictional independent OpenAI ChatGPT Plus account
+  price_cny: 160.0
+  currency: CNY
+  quantity: 1
+  remaining_days: 30
+
+entitlement:
+  platform: openai
+  official_product: chatgpt
+  official_tier: plus
+  ownership_mode: independent
+  account_origin: new
+  organization_managed: false
+
+control:
+  buyer_controls_primary_email: true
+  buyer_controls_recovery: true
+  buyer_controls_password: true
+  buyer_controls_2fa: true
+  seller_retains_recovery: false
+
+authorization:
+  sub2api_platform: openai
+  sub2api_account_type: oauth
+  normal_authorization_only: true
+  delivery_mode: account_control
+  requires_credential_extraction: false
+  requires_bypass: false
+
+operations:
+  isolated_group: true
+  individually_disableable: true
+  cost_traceable: true
+  auto_pause_on_expiry: true
+  initial_concurrency: 1
+
+evidence:
+  listing_snapshot_ref: fictional-snapshot-openai-plus-01
+  terms_snapshot_ref: fictional-terms-openai-plus-01
+  notes: Fictional comparison only. No seller, product, payment, login, or authorization exists.

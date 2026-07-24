@@ -209,7 +209,7 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.caddy
-    image: xingqiao-caddy:homepage-20260724-v6-full-width-signal
+    image: xingqiao-caddy:homepage-20260725-v7-beginner-guide
     restart: unless-stopped
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}

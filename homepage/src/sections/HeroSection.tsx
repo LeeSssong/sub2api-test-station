@@ -71,7 +71,7 @@ export function HeroSection({ session }: HeroSectionProps) {
                 {session.ctaLabel}
                 <ArrowRight aria-hidden="true" />
               </a>
-              {session.kind !== 'guest' && <a className="secondary-cta" href="#docs">查看文档</a>}
+              {session.kind !== 'guest' && <a className="secondary-cta" href="/docs/">查看文档</a>}
             </div>
           </div>
         </div>

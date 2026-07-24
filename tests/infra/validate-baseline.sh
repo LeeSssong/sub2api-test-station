@@ -50,6 +50,20 @@ require_file tests/relay_ops/validate_relay_ops_contract.sh
 require_file config/releases/sub2api.env
 require_file infra/compose.sub2api-release.yaml
 require_file tests/infra/validate-official-sub2api-release.sh
+require_file tests/infra/audit-public-links.sh
+test -x tests/infra/audit-public-links.sh || fail 'public link audit must be executable'
+
+require_fixed '@docs_root path /docs' infra/Caddyfile
+require_fixed 'redir @docs_root /docs/ 308' infra/Caddyfile
+require_fixed '@docs_index path /docs/' infra/Caddyfile
+require_fixed 'rewrite * /docs/index.html' infra/Caddyfile
+require_fixed '@docs_assets path /docs/*' infra/Caddyfile
+require_fixed "script-src 'none'" infra/Caddyfile
+
+docs_line=$(rg -n -F '@docs_root path /docs' infra/Caddyfile | head -n1 | cut -d: -f1)
+proxy_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | head -n1 | cut -d: -f1)
+[[ -n "$docs_line" && -n "$proxy_line" && "$docs_line" -lt "$proxy_line" ]] || \
+  fail 'docs handlers must appear before the Sub2API fallback proxy'
 
 docker compose \
   --project-name sub2api-deploy \
@@ -69,7 +83,7 @@ SITE_ADDRESS=api.example.com docker compose \
 images=(
   'postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
   'redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005'
-  'xingqiao-caddy:homepage-20260724-v6-full-width-signal'
+  'xingqiao-caddy:homepage-20260725-v7-beginner-guide'
 )
 
 for image in "${images[@]}"; do

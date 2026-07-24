@@ -27,6 +27,12 @@ describe('HeroSection', () => {
     expect(screen.getByText('向下探索')).toBeInTheDocument()
   })
 
+  it('routes signed-in users to the local documentation guide', () => {
+    render(<HeroSection session={{ kind: 'admin', ctaLabel: '进入控制台', ctaHref: '/admin/dashboard', user: { id: 1, role: 'admin' } }} />)
+
+    expect(screen.getByRole('link', { name: '查看文档' })).toHaveAttribute('href', '/docs/')
+  })
+
   it('keeps the signal field dense and fast without adding a heavy hero image', () => {
     render(<HeroSection session={{ kind: 'guest', ctaLabel: '立即开始', ctaHref: '/dashboard' }} />)
 

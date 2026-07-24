@@ -32,6 +32,7 @@ expected="compose --project-name $project --project-directory $fixture/project -
 printf '%s\n' "$*" >> "$fixture/docker-invocations"
 invocation=$(wc -l < "$fixture/docker-invocations" | tr -d ' ')
 cat > "$fixture/sql.$invocation"
+printf '%s\n' 'BEGIN' 'SET' ' pg_advisory_xact_lock' 'INSERT 0 2' 'COMMIT'
 jq '.settings.doc_url = "https://api.xingqiaolab.top/docs/" | .settings.balance_low_notify_recharge_url = "https://api.xingqiaolab.top/custom/xingqiao-storefront"' "$fixture/db.json" > "$fixture/db.next.json"
 mv "$fixture/db.next.json" "$fixture/db.json"
 EOF

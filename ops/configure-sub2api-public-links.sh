@@ -48,7 +48,7 @@ compose=(docker compose
 
 run_database_transaction() {
   "${compose[@]}" exec -T postgres \
-    sh -c 'exec psql -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+    sh -c 'exec psql -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null <<'SQL'
 \set VERBOSITY verbose
 
 BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;

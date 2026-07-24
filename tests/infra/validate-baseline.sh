@@ -51,6 +51,18 @@ require_file config/releases/sub2api.env
 require_file infra/compose.sub2api-release.yaml
 require_file tests/infra/validate-official-sub2api-release.sh
 
+require_fixed '@docs_root path /docs' infra/Caddyfile
+require_fixed 'redir @docs_root /docs/ 308' infra/Caddyfile
+require_fixed '@docs_index path /docs/' infra/Caddyfile
+require_fixed 'rewrite * /docs/index.html' infra/Caddyfile
+require_fixed '@docs_assets path /docs/*' infra/Caddyfile
+require_fixed "script-src 'none'" infra/Caddyfile
+
+docs_line=$(rg -n -F '@docs_root path /docs' infra/Caddyfile | head -n1 | cut -d: -f1)
+proxy_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | head -n1 | cut -d: -f1)
+[[ -n "$docs_line" && -n "$proxy_line" && "$docs_line" -lt "$proxy_line" ]] || \
+  fail 'docs handlers must appear before the Sub2API fallback proxy'
+
 docker compose \
   --project-name sub2api-deploy \
   --project-directory "$ROOT" \

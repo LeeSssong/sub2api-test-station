@@ -29,6 +29,28 @@
 		file_server
 	}
 
+	@docs_root path /docs
+	redir @docs_root /docs/ 308
+
+	@docs_index path /docs/
+	handle @docs_index {
+		root * /srv/home
+		rewrite * /docs/index.html
+		header Cache-Control "no-store, max-age=0"
+		header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+		header X-Frame-Options SAMEORIGIN
+		file_server
+	}
+
+	@docs_assets path /docs/*
+	handle @docs_assets {
+		root * /srv/home
+		header Cache-Control "public, max-age=86400"
+		header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+		header X-Frame-Options SAMEORIGIN
+		file_server
+	}
+
 	@support_index path /support /support/
 	handle @support_index {
 		root * /srv/home

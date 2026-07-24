@@ -1,4 +1,3 @@
-import { BoundarySection } from './sections/BoundarySection'
 import { Header } from './components/Header'
 import { HeroSection } from './sections/HeroSection'
 import { IntegrationSection } from './sections/IntegrationSection'
@@ -20,9 +19,8 @@ export function App({ config, session }: AppProps) {
       <a className="skip-link" href="#main-content">跳到主内容</a>
       <Header session={session} />
       <main id="main-content">
-        <HeroSection apiOrigin={config.apiOrigin || window.location.origin} session={session} />
+        <HeroSection session={session} />
         <ValueSections config={config} />
-        <BoundarySection />
         <StatementSection />
         <RequestJourney />
         <IntegrationSection />

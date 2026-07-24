@@ -1,6 +1,5 @@
 import { AppWindow, Bot, CircleGauge, Route, Send, Sparkles } from 'lucide-react'
-import { useMotionValueEvent, useScroll } from 'motion/react'
-import { useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
 
 type Phase = 'send' | 'route' | 'observe'
@@ -11,7 +10,9 @@ const steps = [
   { id: 'observe' as const, number: '03', title: '观测', text: '延迟、Token 与结果状态，每一次调用都有迹可循。' },
 ]
 
-export function phaseForProgress(progress: number): Phase {
+const PLAYBACK_DURATION = 6200
+
+export function phaseForCycleProgress(progress: number): Phase {
   return progress < .3 ? 'send' : progress < .55 ? 'route' : 'observe'
 }
 
@@ -20,14 +21,49 @@ export function RequestJourney() {
   const reduced = useReducedMotionPreference()
   const [phase, setPhase] = useState<Phase>('send')
   const [progress, setProgress] = useState(reduced ? 1 : 0)
-  const { scrollYProgress } = useScroll({ target: root, offset: ['start start', 'end end'] })
+  const [playing, setPlaying] = useState(false)
 
-  useMotionValueEvent(scrollYProgress, 'change', (value) => {
-    if (reduced) return
-    setProgress(value)
-    const next = phaseForProgress(value)
-    setPhase((current) => current === next ? current : next)
-  })
+  useEffect(() => {
+    const element = root.current
+    if (reduced || !element) return
+
+    let frame: number | null = null
+    let startedAt = 0
+
+    const stop = () => {
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      frame = null
+      setPlaying(false)
+      setProgress(0)
+      setPhase('send')
+    }
+
+    const tick = (now: number) => {
+      const cycleProgress = ((now - startedAt) % PLAYBACK_DURATION) / PLAYBACK_DURATION
+      setProgress(cycleProgress)
+      const next = phaseForCycleProgress(cycleProgress)
+      setPhase((current) => current === next ? current : next)
+      frame = window.requestAnimationFrame(tick)
+    }
+
+    const start = () => {
+      if (frame !== null) return
+      startedAt = window.performance.now()
+      setPlaying(true)
+      frame = window.requestAnimationFrame(tick)
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) start()
+      else stop()
+    }, { threshold: .35 })
+
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+      stop()
+    }
+  }, [reduced])
 
   const visiblePhase = reduced ? 'static' : phase
   const boundedProgress = Math.max(0, Math.min(1, progress))
@@ -46,8 +82,8 @@ export function RequestJourney() {
       className="request-journey grid-surface"
       aria-label="一次 API 请求的完整旅程"
       data-journey-phase={visiblePhase}
-      data-journey-mode={reduced ? 'static' : 'scroll'}
-      data-scroll-density="compact"
+      data-journey-mode={reduced ? 'static' : 'auto'}
+      data-playback-state={reduced ? 'static' : playing ? 'playing' : 'paused'}
     >
       <div className="journey-stage">
         <div className="journey-content">

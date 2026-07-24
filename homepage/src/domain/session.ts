@@ -6,9 +6,9 @@ export interface SessionUser {
 }
 
 export type SessionState =
-  | { kind: 'guest'; ctaLabel: '立即获取密钥'; ctaHref: '/register' }
-  | { kind: 'user'; ctaLabel: '前往控制台'; ctaHref: '/dashboard'; user: SessionUser }
-  | { kind: 'admin'; ctaLabel: '前往控制台'; ctaHref: '/admin/dashboard'; user: SessionUser }
+  | { kind: 'guest'; ctaLabel: '立即开始'; ctaHref: '/dashboard' }
+  | { kind: 'user'; ctaLabel: '进入控制台'; ctaHref: '/dashboard'; user: SessionUser }
+  | { kind: 'admin'; ctaLabel: '进入控制台'; ctaHref: '/admin/dashboard'; user: SessionUser }
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -20,8 +20,8 @@ interface TokenPair {
 
 const GUEST: SessionState = {
   kind: 'guest',
-  ctaLabel: '立即获取密钥',
-  ctaHref: '/register',
+  ctaLabel: '立即开始',
+  ctaHref: '/dashboard',
 }
 
 function parseUser(value: unknown): SessionUser | null {
@@ -75,8 +75,8 @@ function parseTokenPair(value: unknown): TokenPair | null {
 
 function stateFor(user: SessionUser): SessionState {
   return user.role === 'admin'
-    ? { kind: 'admin', ctaLabel: '前往控制台', ctaHref: '/admin/dashboard', user }
-    : { kind: 'user', ctaLabel: '前往控制台', ctaHref: '/dashboard', user }
+    ? { kind: 'admin', ctaLabel: '进入控制台', ctaHref: '/admin/dashboard', user }
+    : { kind: 'user', ctaLabel: '进入控制台', ctaHref: '/dashboard', user }
 }
 
 function clearCredentials(storage: Storage) {

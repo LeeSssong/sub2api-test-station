@@ -4,23 +4,39 @@ import { HeroSection } from './HeroSection'
 import type { SessionState } from '../domain/session'
 
 describe('HeroSection', () => {
-  it('shows the exact direct-connect promise and both compatible paths', () => {
+  it('gives guests one native dashboard entry in plain language', () => {
     const session: SessionState = {
       kind: 'guest',
-      ctaLabel: '立即获取密钥',
-      ctaHref: '/register',
+      ctaLabel: '立即开始',
+      ctaHref: '/dashboard',
     }
 
-    render(<HeroSection apiOrigin="https://api.example.com" session={session} />)
+    render(<HeroSection session={session} />)
 
-    expect(screen.getByText('https://api.example.com')).toBeInTheDocument()
-    expect(screen.getByText('/v1/chat/completions')).toBeInTheDocument()
-    expect(screen.getByText('/v1/messages')).toBeInTheDocument()
+    expect(screen.getByText('GPT、Claude、Gemini 一站接入。')).toBeInTheDocument()
+    expect(screen.getByText('国内网络直接连接，注册即可使用。')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '立即开始' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: '立即开始' }).querySelectorAll('svg')).toHaveLength(1)
+    expect(screen.queryByRole('link', { name: '登录' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('星桥首页首屏').querySelector('.hero-grid')).toHaveAttribute('data-layout', 'diagonal')
+    expect(screen.queryByText(/基础 URL/)).not.toBeInTheDocument()
+    expect(screen.queryByText('https://api.example.com')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '复制 API 地址' })).not.toBeInTheDocument()
+    expect(screen.queryByText('/v1/chat/completions')).not.toBeInTheDocument()
+    expect(screen.queryByText('/v1/messages')).not.toBeInTheDocument()
     expect(screen.getByText('向下探索')).toBeInTheDocument()
   })
 
+  it('keeps the signal field dense and fast without adding a heavy hero image', () => {
+    render(<HeroSection session={{ kind: 'guest', ctaLabel: '立即开始', ctaHref: '/dashboard' }} />)
+
+    expect(screen.queryByRole('img', { name: '首尔边缘节点示意' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-signal-density', 'dense')
+    expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-signal-speed', 'fast')
+  })
+
   it('separates the two headline rows for cross-platform font metrics', () => {
-    render(<HeroSection apiOrigin="https://api.example.com" session={{ kind: 'guest', ctaLabel: '立即获取密钥', ctaHref: '/register' }} />)
+    render(<HeroSection session={{ kind: 'guest', ctaLabel: '立即开始', ctaHref: '/dashboard' }} />)
 
     const heading = screen.getByRole('heading', { name: '星桥链接世界顶尖模型' })
     expect(heading).toHaveClass('hero-title')
@@ -35,7 +51,7 @@ describe('HeroSection', () => {
       removeEventListener: vi.fn(),
     }))
 
-    render(<HeroSection apiOrigin="https://api.example.com" session={{ kind: 'guest', ctaLabel: '立即获取密钥', ctaHref: '/register' }} />)
+    render(<HeroSection session={{ kind: 'guest', ctaLabel: '立即开始', ctaHref: '/dashboard' }} />)
 
     expect(screen.getByLabelText('星桥首页首屏')).toHaveAttribute('data-entry-state', 'final')
     expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-canvas-active', 'false')

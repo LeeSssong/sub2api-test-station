@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
+import { buildSignalTile } from '../domain/signalTiling'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
+
+const SIGNAL_FONT = '500 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
 
 const rowSeeds = [
   'XQ ROUTE 09 CORE TOKEN BRIDGE OPENAI ANTHROPIC RESPONSE 200 STREAM',
   'SEOUL DIRECT CN MODEL LINK GLOBAL LATENCY HEALTHY UPSTREAM',
   'V1 CHAT COMPLETIONS MESSAGES EMBEDDINGS TOOLS MODELS',
   'REQUEST TRACE STAR BRIDGE GATEWAY TOKEN COST STATUS READY',
+  'GPT CLAUDE GEMINI ROUTE CONNECT STREAM CACHE EDGE ONLINE',
+  'TLS ENCRYPTED NO TRACKING REQUEST HEALTH VERIFIED SECURE',
+  'LATENCY PACKET UPLINK DOWNLINK SESSION ACTIVE RELAY STABLE',
+  'MODEL RESPONSE TOOL CALL JSON EVENT SOURCE COMPLETE OK',
 ]
 
 interface SignalRow {
   text: string
+  segmentWidth: number
   x: number
   y: number
   speed: number
@@ -41,8 +49,8 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
     let height = 1
     let dpr = 1
     let pointerX = 0
-    let velocity = .85
-    let targetVelocity = .85
+    let velocity = 1.35
+    let targetVelocity = 1.35
 
     const build = () => {
       const rect = container.getBoundingClientRect()
@@ -54,27 +62,34 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       element.style.width = `${width}px`
       element.style.height = `${height}px`
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const count = Math.max(12, Math.ceil(height / 34) + 4)
-      rows = Array.from({ length: count }, (_, index) => ({
-        text: `${rowSeeds[index % rowSeeds.length]}  ${String(index * 73 + 19).padStart(4, '0')}`,
-        x: -(Math.random() * width),
-        y: index * 20,
-        speed: -(.44 * Math.random() + .34),
-        alpha: .22 * Math.random() + .05,
-      }))
+      context.font = SIGNAL_FONT
+      const count = Math.max(18, Math.ceil(height / 22) + 6)
+      rows = Array.from({ length: count }, (_, index) => {
+        const rowText = `${rowSeeds[index % rowSeeds.length]}  ${String(index * 73 + 19).padStart(4, '0')}`
+        const segment = `${rowText}   `
+        const tile = buildSignalTile(segment, context.measureText(segment).width, width)
+
+        return {
+          text: tile.text,
+          segmentWidth: tile.segmentWidth,
+          x: -(Math.random() * tile.segmentWidth),
+          y: index * 20,
+          speed: -(.62 * Math.random() + .48),
+          alpha: .22 * Math.random() + .05,
+        }
+      })
     }
 
     const draw = () => {
       context.clearRect(0, 0, width, height)
-      context.font = '500 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+      context.font = SIGNAL_FONT
       context.textBaseline = 'middle'
       velocity += (targetVelocity - velocity) * .055
       for (const row of rows) {
         row.x += row.speed * velocity
-        const textWidth = context.measureText(row.text).width
-        if (row.x < -textWidth) row.x += textWidth
+        if (row.x < -row.segmentWidth) row.x += row.segmentWidth
         context.fillStyle = `rgba(157, 174, 198, ${row.alpha})`
-        context.fillText(`${row.text}   ${row.text}`, row.x, row.y)
+        context.fillText(row.text, row.x, row.y)
       }
     }
 
@@ -96,10 +111,10 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       const rect = container.getBoundingClientRect()
       pointerX = event.clientX - rect.left
       const center = width / 2
-      targetVelocity = .55 + 2.6 * Math.abs((pointerX - center) / center)
+      targetVelocity = .9 + 3.4 * Math.abs((pointerX - center) / center)
     }
     const onPointerLeave = () => {
-      targetVelocity = .85
+      targetVelocity = 1.35
     }
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry?.isIntersecting ?? true
@@ -138,6 +153,8 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       aria-label="星桥实时信号背景"
       data-canvas-active={canvasActive ? 'true' : 'false'}
       data-travel-direction="left"
+      data-signal-density="dense"
+      data-signal-speed="fast"
     >
       <canvas ref={canvas} aria-hidden="true" />
       <span aria-hidden="true">XQ / OPENAI / ANTHROPIC / SEOUL DIRECT / API READY</span>

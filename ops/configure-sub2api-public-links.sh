@@ -25,9 +25,9 @@ require_readable_directory() {
 }
 
 case "$SUB2API_COMPOSE_PROJECT" in
-  sub2api-deploy|sub2api-official-rehearsal) ;;
+  sub2api|sub2api-deploy|sub2api-official-rehearsal) ;;
   *)
-    printf 'Compose project identity must be sub2api-deploy or sub2api-official-rehearsal\n' >&2
+    printf 'Compose project identity must be sub2api, sub2api-deploy or sub2api-official-rehearsal\n' >&2
     exit 1
     ;;
 esac

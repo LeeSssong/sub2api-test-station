@@ -23,7 +23,7 @@ set -euo pipefail
 
 fixture=${PUBLIC_LINKS_TEST_FIXTURE:?}
 project=${SUB2API_COMPOSE_PROJECT:?}
-[[ "$project" == 'sub2api-deploy' || "$project" == 'sub2api-official-rehearsal' ]] || exit 89
+[[ "$project" == 'sub2api' || "$project" == 'sub2api-deploy' || "$project" == 'sub2api-official-rehearsal' ]] || exit 89
 expected="compose --project-name $project --project-directory $fixture/project --env-file $fixture/secret.env --env-file $fixture/release.env -f $fixture/compose.yaml -f $fixture/compose.image.yaml exec -T postgres sh -c exec psql -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\""
 [[ "$*" == "$expected" ]] || {
   printf 'unexpected Compose identity: %s\n' "$*" >&2

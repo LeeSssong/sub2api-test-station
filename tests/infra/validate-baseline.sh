@@ -83,7 +83,7 @@ SITE_ADDRESS=api.example.com docker compose \
 images=(
   'postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
   'redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005'
-  'xingqiao-caddy:homepage-20260724-v6-full-width-signal'
+  'xingqiao-caddy:homepage-20260725-v7-beginner-guide'
 )
 
 for image in "${images[@]}"; do

@@ -71,7 +71,8 @@ The inventory must include frontend navigation and contact entry changes, backen
 - Public homepage and brand presentation remain in the independent homepage/Caddy deployment.
 - Contact support moves from the patched Sub2API top bar to an independent same-origin `/support` page owned by the Xingqiao homepage/Caddy deployment.
 - The `/support` page retains the QQ group QR code, group number `1080152144`, copy action, responsive layout, and light/dark presentation without depending on Sub2API frontend code.
-- Sub2API's official `custom_menu_items` setting adds the user-visible `联系客服` entry to the supported sidebar and points it to the `/support` URL. The setting remains in PostgreSQL across official-image upgrades.
+- Sub2API's official `custom_menu_items` setting adds the user-visible `联系客服` entry to the supported sidebar in `md:support` mode. The setting remains in PostgreSQL across official-image upgrades.
+- The persistent `/app/data/pages/support.md` page embeds only the same-origin `/support` route. This avoids official URL-mode behavior that appends the current login token to iframe query parameters and could expose it in access logs.
 - The current `AppHeader.vue` contact button, embedded dialog component, and related custom frontend tests retire when the official image is promoted. Caddy HTML or JavaScript injection is prohibited.
 - D04 behavior remains in internal-test-service.
 - Read-only operations projection, reporting, quality monitoring, and Feishu behavior remain in relay-ops and its existing scheduler boundary.
@@ -153,7 +154,7 @@ Rollback restores the previous image against the same persistent stores. Databas
 - Existing administrator, user, account, group, pricing, balance, usage, and API-key records remain present after cutover.
 - Existing downstream synchronous and streaming gateway smoke checks pass without creating uncontrolled spend.
 - Homepage, `/support`, D04, relay-ops, monitoring, reports, and approved Caddy routes retain their required behavior without modifying the Sub2API image.
-- Logged-in users can open `联系客服` from the official custom-menu sidebar and reach the same-origin support page; the QR code, `1080152144`, copy success/fallback, and mobile layout pass browser acceptance.
+- Logged-in users can open `联系客服` from the official `md:support` custom-menu sidebar and reach the same-origin support page without a token query parameter; the QR code, `1080152144`, copy success/fallback, and mobile layout pass browser acceptance.
 - No production Sub2API top-bar patch, support-dialog component, frontend overlay, or response-body injection remains after cutover.
 - The Caddy guard rejects in-application update and rollback requests with the documented error.
 - A rehearsed rollback recreates the previous image without deleting or replacing production storage.

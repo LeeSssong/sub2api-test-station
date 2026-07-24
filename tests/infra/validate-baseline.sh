@@ -50,6 +50,8 @@ require_file tests/relay_ops/validate_relay_ops_contract.sh
 require_file config/releases/sub2api.env
 require_file infra/compose.sub2api-release.yaml
 require_file tests/infra/validate-official-sub2api-release.sh
+require_file tests/infra/audit-public-links.sh
+test -x tests/infra/audit-public-links.sh || fail 'public link audit must be executable'
 
 require_fixed '@docs_root path /docs' infra/Caddyfile
 require_fixed 'redir @docs_root /docs/ 308' infra/Caddyfile

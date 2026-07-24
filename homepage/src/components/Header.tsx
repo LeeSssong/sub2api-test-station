@@ -14,7 +14,7 @@ export function Header({ session }: HeaderProps) {
     { label: '控制台', href: dashboardHref },
     { label: '模型', href: '/admin/channels/pricing' },
     { label: '状态', href: '/monitor' },
-    { label: '文档', href: '#docs' },
+    { label: '文档', href: '/docs/' },
   ]
 
   return (

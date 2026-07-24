@@ -1,0 +1,164 @@
+package updater
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const (
+	codeConfirmationRequired = "UPDATE_CONFIRMATION_REQUIRED"
+	codeAuthRequired         = "UPDATE_AUTH_REQUIRED"
+	codeForbidden            = "UPDATE_FORBIDDEN"
+	codeAlreadyScheduled     = "UPDATE_ALREADY_SCHEDULED"
+	codeInProgress           = "UPDATE_IN_PROGRESS"
+	codeInvalidTime          = "UPDATE_INVALID_TIME"
+	codeTargetChanged        = "UPDATE_TARGET_CHANGED"
+	codeServiceError         = "UPDATE_SERVICE_ERROR"
+)
+
+type updateHTTP struct {
+	service        *Service
+	identity       IdentityVerifier
+	expectedOrigin string
+	now            func() time.Time
+}
+
+// NewHTTP exposes only the host-controlled update endpoints.
+func NewHTTP(service *Service, identity IdentityVerifier, expectedOrigin string, clocks ...func() time.Time) http.Handler {
+	now := time.Now
+	if len(clocks) > 0 && clocks[0] != nil {
+		now = clocks[0]
+	}
+	h := &updateHTTP{service: service, identity: identity, expectedOrigin: expectedOrigin, now: now}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/admin/system/update", h.update)
+	mux.HandleFunc("GET /api/v1/admin/system/host-update/status", h.status)
+	mux.HandleFunc("DELETE /api/v1/admin/system/host-update/schedule", h.cancel)
+	return mux
+}
+
+func (h *updateHTTP) update(w http.ResponseWriter, r *http.Request) {
+	identity, ok := h.authorize(w, r, true)
+	if !ok {
+		return
+	}
+	var request struct {
+		Mode          string    `json:"mode"`
+		TargetVersion string    `json:"target_version"`
+		ScheduledAt   time.Time `json:"scheduled_at"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || decoder.More() {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return
+	}
+	if request.Mode != "now" && request.Mode != "schedule" || strings.TrimSpace(request.TargetVersion) == "" {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return
+	}
+	if request.Mode == "schedule" {
+		now := h.now().UTC()
+		if request.ScheduledAt.IsZero() || request.ScheduledAt.Before(now.Add(2*time.Minute)) || request.ScheduledAt.After(now.Add(30*24*time.Hour)) {
+			writeError(w, http.StatusBadRequest, codeInvalidTime)
+			return
+		}
+	}
+	op, err := h.service.Schedule(r.Context(), identity.ID, request.Mode, request.TargetVersion, request.ScheduledAt)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]string{"operation_id": op.OperationID, "stage": op.Stage})
+}
+
+func (h *updateHTTP) status(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorize(w, r, false); !ok {
+		return
+	}
+	op, err := h.service.Status()
+	if errors.Is(err, ErrNoOperation) {
+		writeData(w, http.StatusOK, nil)
+		return
+	}
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, op)
+}
+
+func (h *updateHTTP) cancel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorize(w, r, true); !ok {
+		return
+	}
+	if err := h.service.Cancel(); err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]string{"stage": "cancelled"})
+}
+
+func (h *updateHTTP) authorize(w http.ResponseWriter, r *http.Request, mutation bool) (Identity, bool) {
+	token, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeError(w, http.StatusUnauthorized, codeAuthRequired)
+		return Identity{}, false
+	}
+	if r.Header.Get("X-Admin-UI-Request") != "1" {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return Identity{}, false
+	}
+	if mutation && !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return Identity{}, false
+	}
+	if r.Header.Get("Origin") != h.expectedOrigin {
+		writeError(w, http.StatusForbidden, codeForbidden)
+		return Identity{}, false
+	}
+	if fetchSite := r.Header.Get("Sec-Fetch-Site"); fetchSite != "" && fetchSite != "same-origin" {
+		writeError(w, http.StatusForbidden, codeForbidden)
+		return Identity{}, false
+	}
+	identity, err := h.identity.Verify(r.Context(), token, r.Header)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, codeAuthRequired)
+		return Identity{}, false
+	}
+	if !isActiveAdmin(identity) {
+		writeError(w, http.StatusForbidden, codeForbidden)
+		return Identity{}, false
+	}
+	return identity, true
+}
+
+func (h *updateHTTP) writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrOperationRunning):
+		writeError(w, http.StatusConflict, codeInProgress)
+	case errors.Is(err, ErrOperationExists):
+		writeError(w, http.StatusConflict, codeAlreadyScheduled)
+	case errors.Is(err, ErrTargetChanged):
+		writeError(w, http.StatusConflict, codeTargetChanged)
+	case errors.Is(err, ErrNoOperation):
+		writeError(w, http.StatusNotFound, codeServiceError)
+	default:
+		writeError(w, http.StatusInternalServerError, codeServiceError)
+	}
+}
+
+func writeData(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
+}
+
+func writeError(w http.ResponseWriter, status int, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
+}

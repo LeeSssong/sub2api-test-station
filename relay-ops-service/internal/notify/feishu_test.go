@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,170 @@ func TestRenderOperationsDigestSeparatesStableDomainsAndRedactsSensitiveValues(t
 	for _, forbidden := range []string{"https://upstream.example", "api_key=secret", "model response text", "ou-full-user-identity"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("digest leaked %q in %s", forbidden, text)
+		}
+	}
+}
+
+func TestRenderOperationsDigestShowsGenerationAndQualityEvidenceTimes(t *testing.T) {
+	t.Parallel()
+	message := RenderOperationsDigest(OperationsDigestView{
+		Date:        "2026-07-23",
+		GeneratedAt: time.Date(2026, 7, 23, 8, 5, 0, 0, time.UTC),
+		Runtime: opsmetrics.Snapshot{
+			CapturedAt: time.Date(2026, 7, 23, 8, 0, 0, 0, time.UTC),
+		},
+		AccountQuality: accountquality.View{
+			Available:  true,
+			SnapshotID: "quality-20260723-0800",
+			ObservedAt: "2026-07-23T08:00:00Z",
+		},
+	})
+
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{
+		"报告生成时间 2026-07-23 08:05 UTC",
+		"站内采集时间 2026-07-23 08:00 UTC",
+		"质量证据快照 quality-2026...0800",
+		"质量证据时间 2026-07-23T08:00:00Z",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("digest missing %q: %s", required, text)
+		}
+	}
+	if strings.Contains(text, "quality-20260723-0800") {
+		t.Fatalf("digest exposed full evidence snapshot ID: %s", text)
+	}
+}
+
+func TestRenderOperationsDigestDoesNotFabricateZeroRuntimeMetrics(t *testing.T) {
+	t.Parallel()
+
+	message := RenderOperationsDigest(OperationsDigestView{Runtime: opsmetrics.Snapshot{
+		Groups: []opsmetrics.GroupRuntime{{
+			ID: 2, Name: "空分组", RequestCount: 0, SuccessCount: 0, Status: opsmetrics.StatusSampleInsufficient,
+		}, {
+			ID: 3, Name: "全失败分组", RequestCount: 3, SuccessCount: 0, ErrorRate: 1, SLA: 50,
+			DurationP95MS: 500, Status: opsmetrics.StatusSampleInsufficient,
+		}},
+	}})
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"错误率 未知", "SLA 未知", "TTFT P95 无成功样本"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("digest missing %q: %s", required, text)
+		}
+	}
+	if strings.Contains(text, "错误率 0.00%") || strings.Contains(text, "SLA 0.00%") || strings.Contains(text, "TTFT P95 0ms") {
+		t.Fatalf("digest fabricated zero metrics: %s", text)
+	}
+}
+
+func TestRenderOperationsDigestPreservesNativePublicGroupOrder(t *testing.T) {
+	t.Parallel()
+	message := RenderOperationsDigest(OperationsDigestView{Runtime: opsmetrics.Snapshot{Groups: []opsmetrics.GroupRuntime{
+		{ID: 99, Name: "原生顺序-先", RequestCount: 20, Status: opsmetrics.StatusOK},
+		{ID: 2, Name: "原生顺序-后", RequestCount: 20, Status: opsmetrics.StatusOK},
+	}}})
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.Index(string(data), "原生顺序-先")
+	second := strings.Index(string(data), "原生顺序-后")
+	if first < 0 || second < 0 || first >= second {
+		t.Fatalf("native group order was not preserved: %s", data)
+	}
+}
+
+func TestRenderOperationsDigestDeterministicallyTruncatesAndRetainsAbnormalities(t *testing.T) {
+	t.Parallel()
+	groups := make([]opsmetrics.GroupRuntime, 0, 128)
+	for id := int64(1); id <= 127; id++ {
+		groups = append(groups, opsmetrics.GroupRuntime{
+			ID: id, Name: strings.Repeat("普通分组", 180), RequestCount: 20, Status: opsmetrics.StatusOK,
+		})
+	}
+	groups = append(groups, opsmetrics.GroupRuntime{
+		ID: 128, Name: "末尾异常分组", Status: opsmetrics.StatusReadFailed,
+	})
+	view := OperationsDigestView{Runtime: opsmetrics.Snapshot{Groups: groups}}
+	first := RenderOperationsDigest(view)
+	second := RenderOperationsDigest(view)
+	firstData, err := first.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondData, err := second.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstData) >= maxCardBytes {
+		t.Fatalf("card size = %d", len(firstData))
+	}
+	if string(firstData) != string(secondData) {
+		t.Fatal("digest truncation is not deterministic")
+	}
+	for _, required := range []string{"末尾异常分组", "读取失败", "其余对象请在 /ops 查看"} {
+		if !strings.Contains(string(firstData), required) {
+			t.Fatalf("truncated digest missing %q: %s", required, firstData)
+		}
+	}
+}
+
+func TestRenderOperationsDigestBoundsEscapedPayloadBelowCardLimit(t *testing.T) {
+	t.Parallel()
+	escaped := strings.Repeat("<>&", 250)
+	groups := make([]opsmetrics.GroupRuntime, 12)
+	quality := make([]accountquality.AccountView, 12)
+	footer := make([]string, 12)
+	for index := range groups {
+		groups[index] = opsmetrics.GroupRuntime{ID: int64(index + 1), Name: escaped, RequestCount: 20, Status: opsmetrics.StatusOK}
+		quality[index] = accountquality.AccountView{AccountID: strings.Repeat("<>&", 250), Stability: escaped, Multiplier: "0.1x", TTFTP95: "200ms", LastResult: "通过"}
+		footer[index] = escaped
+	}
+	message := RenderOperationsDigest(OperationsDigestView{
+		Date: "2026-07-23", Runtime: opsmetrics.Snapshot{Groups: groups}, AccountQuality: accountquality.View{Available: true, Accounts: quality}, Footer: footer,
+	})
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatalf("escaped digest must remain deliverable: %v", err)
+	}
+	if len(data) >= maxCardBytes {
+		t.Fatalf("escaped card size = %d", len(data))
+	}
+	if len(message.Card.Elements) == 0 || message.Card.Elements[len(message.Card.Elements)-1].Tag != "action" {
+		t.Fatalf("card lost its action: %#v", message.Card.Elements)
+	}
+}
+
+func TestRenderOperationsDigestRetainsAccountQualityFailuresDuringTruncation(t *testing.T) {
+	t.Parallel()
+	accounts := make([]accountquality.AccountView, 0, 130)
+	for id := 1; id <= 128; id++ {
+		accounts = append(accounts, accountquality.AccountView{
+			AccountID: strconv.Itoa(id), Stability: strings.Repeat("稳定", 220), Multiplier: "0.1x", TTFTP95: "200ms", LastResult: "通过",
+		})
+	}
+	accounts = append(accounts,
+		accountquality.AccountView{AccountID: "129", Stability: "成功 0/1", Multiplier: "0.1x", TTFTP95: "无成功样本", LastResult: "HTTP 错误"},
+		accountquality.AccountView{AccountID: "130", Stability: "成功 0/1", Multiplier: "0.1x", TTFTP95: "无成功样本", LastResult: "超时"},
+	)
+	message := RenderOperationsDigest(OperationsDigestView{AccountQuality: accountquality.View{Available: true, Accounts: accounts}})
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"账号 129", "HTTP 错误", "账号 130", "超时", "其余对象请在 /ops 查看"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("truncated quality digest missing %q: %s", required, text)
 		}
 	}
 }

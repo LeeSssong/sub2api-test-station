@@ -1,17 +1,15 @@
-import { ArrowDown, ArrowRight, Braces } from 'lucide-react'
+import { ArrowDown, ArrowRight } from 'lucide-react'
 import { motion, useScroll, useTransform } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { CopyControl } from '../components/CopyControl'
 import { HeroSignalCanvas } from '../components/HeroSignalCanvas'
 import type { SessionState } from '../domain/session'
 import { useHeroEntry } from '../hooks/useHeroEntry'
 
 interface HeroSectionProps {
-  apiOrigin: string
   session: SessionState
 }
 
-export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
+export function HeroSection({ session }: HeroSectionProps) {
   const root = useRef<HTMLElement>(null)
   const entry = useHeroEntry()
   const [scrolled, setScrolled] = useState(false)
@@ -56,35 +54,24 @@ export function HeroSection({ apiOrigin, session }: HeroSectionProps) {
       >
         <div className="endpoint-kicker">
           <span className="status-dot" aria-hidden="true" />
-          <span>韩国首尔 · 国内直连</span>
+          <span>首尔节点 · 稳定运行</span>
         </div>
-        <div className="endpoint-row">
-          <code>{apiOrigin}</code>
-          <CopyControl value={apiOrigin} label="复制 API 地址" compact />
-          <div className="protocol-cycle" aria-label="兼容接口路径">
-            <code>/v1/chat/completions</code>
-            <code>/v1/messages</code>
-            <span className="terminal-cursor" aria-hidden="true">|</span>
-          </div>
-        </div>
-        <div className="hero-grid">
+        <div className="hero-grid" data-layout="diagonal">
           <h1 id="hero-title" className="hero-title">
             <span className="hero-brand">星桥</span>
             <span className="hero-tagline">链接世界顶尖模型</span>
           </h1>
           <div className="hero-pitch">
             <p>
-              <span>韩国首尔节点，国内直连。</span>
-              <span>兼容 OpenAI 与 Anthropic API。</span>
-              <span>无需翻墙，只需更改基础 URL。</span>
+              <span>GPT、Claude、Gemini 一站接入。</span>
+              <span>国内网络直接连接，注册即可使用。</span>
             </p>
             <div className="hero-actions">
               <a className="primary-cta" href={session.ctaHref}>
-                <Braces aria-hidden="true" />
                 {session.ctaLabel}
                 <ArrowRight aria-hidden="true" />
               </a>
-              <a className="secondary-cta" href="#docs">查看文档</a>
+              {session.kind !== 'guest' && <a className="secondary-cta" href="#docs">查看文档</a>}
             </div>
           </div>
         </div>

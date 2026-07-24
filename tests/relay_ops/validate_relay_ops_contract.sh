@@ -75,20 +75,24 @@ require 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile
 require 'reverse_proxy sub2api:8080' infra/Caddyfile
 require '内测开放状态' relay-ops-service/internal/http/templates/ops.html
 require '当前活动上游' relay-ops-service/internal/http/templates/ops.html
-require '账号池质量' relay-ops-service/internal/http/templates/ops.html
+require '站内运行' relay-ops-service/internal/http/templates/ops.html
+require '公开分组' relay-ops-service/internal/http/templates/ops.html
+require '当前调度账号' relay-ops-service/internal/http/templates/ops.html
+require '上游账号质量' relay-ops-service/internal/http/templates/ops.html
+require '错误率' relay-ops-service/internal/http/templates/ops.html
 require '稳定性' relay-ops-service/internal/http/templates/ops.html
 require 'TTFT P95' relay-ops-service/internal/http/templates/ops.html
 require '倍率' relay-ops-service/internal/http/templates/ops.html
 forbid '模型版本' relay-ops-service/internal/http/templates/ops.html
 require '<details class="technical-details">' relay-ops-service/internal/http/templates/ops.html
 require '.ops-main section{border-top:1px solid var(--rule);padding-top:16px;min-width:0}' relay-ops-service/internal/http/static/app.css
-require '/relay-ops/static/app.css?v=20260722-native-ops-1' relay-ops-service/internal/http/templates/ops.html
-require '/relay-ops/static/ops-admin.js?v=20260722-native-ops-1' relay-ops-service/internal/http/templates/ops.html
+require '/relay-ops/static/app.css?v=20260723-site-runtime-1' relay-ops-service/internal/http/templates/ops.html
+require '/relay-ops/static/ops-admin.js?v=20260723-site-runtime-1' relay-ops-service/internal/http/templates/ops.html
 require 'id="modeloc-reminder"' relay-ops-service/internal/http/templates/ops.html
 require 'MODELOC 真实性报告尚未配置' relay-ops-service/internal/http/templates/ops.html
 require '/home-assets/site-config.json' relay-ops-service/internal/http/templates/ops.html
-require '/relay-ops/static/app.css?v=20260722-native-ops-1' relay-ops-service/internal/http/templates/ops-bootstrap.html
-require '/relay-ops/static/ops.js?v=20260722-native-ops-1' relay-ops-service/internal/http/templates/ops-bootstrap.html
+require '/relay-ops/static/app.css?v=20260723-site-runtime-1' relay-ops-service/internal/http/templates/ops-bootstrap.html
+require '/relay-ops/static/ops.js?v=20260723-site-runtime-1' relay-ops-service/internal/http/templates/ops-bootstrap.html
 require "cache: 'no-store'" relay-ops-service/internal/http/static/ops.js
 require 'window.setTimeout(refresh, 30000)' relay-ops-service/internal/http/static/ops-admin.js
 require '/home-assets/site-config.json' relay-ops-service/internal/http/static/ops-admin.js

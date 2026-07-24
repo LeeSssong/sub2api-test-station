@@ -12,10 +12,9 @@ export function Header({ session }: HeaderProps) {
   const links = [
     { label: '首页', href: '/' },
     { label: '控制台', href: dashboardHref },
-    { label: '模型', href: '/pricing' },
+    { label: '模型', href: '/admin/channels/pricing' },
     { label: '状态', href: '/monitor' },
     { label: '文档', href: '#docs' },
-    { label: '关于', href: '#about' },
   ]
 
   return (
@@ -32,9 +31,6 @@ export function Header({ session }: HeaderProps) {
           <button className="icon-button theme-indicator" type="button" aria-label="深色主题" title="深色主题">
             <Moon aria-hidden="true" />
           </button>
-          <a className="login-link" href={session.kind === 'guest' ? '/login' : dashboardHref}>
-            {session.kind === 'guest' ? '登录' : '控制台'}
-          </a>
           <button
             className="icon-button menu-button"
             type="button"
@@ -51,9 +47,6 @@ export function Header({ session }: HeaderProps) {
           {links.map((link) => (
             <a key={link.label} href={link.href} onClick={() => setOpen(false)}>{link.label}</a>
           ))}
-          <a className="mobile-login" href={session.kind === 'guest' ? '/login' : dashboardHref}>
-            {session.kind === 'guest' ? '登录' : '控制台'}
-          </a>
         </nav>
       )}
     </header>

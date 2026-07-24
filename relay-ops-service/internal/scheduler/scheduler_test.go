@@ -151,6 +151,62 @@ func TestReadOnlyNeverRunsPaidFastCandidateJobs(t *testing.T) {
 	}
 }
 
+func TestTickRunsSiteMonitorEveryFifteenMinutesInReadOnlyMode(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+	store := newFakeJobStore()
+	calls := 0
+	s := Scheduler{
+		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
+		SiteMonitor: func(context.Context) error { calls++; return nil },
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(14 * time.Minute)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("site monitor calls = %d, want 2", calls)
+	}
+}
+
+func TestSiteMonitorDoesNotChangeClosedOrExistingJobScheduling(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name           string
+		mode           string
+		wantSiteCalls  int
+		wantProduction int
+	}{
+		{name: "closed", mode: config.ModeClosed, wantSiteCalls: 0, wantProduction: 0},
+		{name: "read_only", mode: config.ModeReadOnly, wantSiteCalls: 1, wantProduction: 1},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			siteCalls := 0
+			productionCalls := 0
+			s := Scheduler{
+				Mode: test.mode, Store: newFakeJobStore(), Clock: func() time.Time { return now },
+				Production:  func(context.Context) error { productionCalls++; return nil },
+				SiteMonitor: func(context.Context) error { siteCalls++; return nil },
+			}
+			if err := s.Tick(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if siteCalls != test.wantSiteCalls || productionCalls != test.wantProduction {
+				t.Fatalf("site=%d production=%d", siteCalls, productionCalls)
+			}
+		})
+	}
+}
+
 type fakeJobStore struct {
 	mu  sync.Mutex
 	due map[string]time.Time

@@ -43,7 +43,7 @@
 | 网关  | Sub2API v0.1.155，镜像 digest 已锁定                               |
 | 数据  | PostgreSQL 18 Alpine + Redis 8 Alpine，命名卷                    |
 | 入口  | Caddy 2.10.2，SSE `flush_interval -1`，16 MiB 请求体上限            |
-| 安全  | 上游 URL allowlist、私网/HTTP 禁止、管理员 2FA、秘密只进受控位置                 |
+| 安全  | 管理员 2FA、秘密只进受控位置；URL 策略当前恢复 Sub2API 默认值（无 allowlist/私网限制） |
 | 用户  | 3–10 人邀请制，注册保持关闭，先支持一个主客户端                                   |
 | 充值  | 人工账本；PAY01 自动支付关闭                                            |
 | 路由  | 成功率 30%、成本 25%、TTFT 20%、容量 15%、支持 10%                        |

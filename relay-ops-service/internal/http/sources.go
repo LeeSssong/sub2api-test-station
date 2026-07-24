@@ -213,7 +213,7 @@ func (s DatabaseOpsSource) Snapshot(ctx context.Context) (OpsView, error) {
 	accountQualityView := accountquality.View{}
 	if s.AccountQuality != nil {
 		if result, readErr := s.AccountQuality.Read(now); readErr == nil {
-			accountQualityView = result.View(now)
+			accountQualityView = result.ViewForAccountSet(now, siteRuntime.AccountSetSHA256)
 		} else {
 			accountQualityView = accountquality.View{Available: true, Stale: true}
 		}

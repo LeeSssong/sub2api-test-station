@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$ROOT"
+
+fail() {
+  printf 'FAIL: %s\n' "$1" >&2
+  exit 1
+}
+
+require_file() {
+  [[ -f "$1" ]] || fail "missing $1"
+}
+
+require_fixed() {
+  local needle=$1
+  local file=$2
+  rg -Fq -- "$needle" "$file" || fail "missing expected value in $file: $needle"
+}
+
+require_file infra/sub2api-update-ui/index.html
+require_file infra/sub2api-update-ui/update-ui.js
+require_file infra/sub2api-update-ui/update-ui.css
+require_file infra/Caddyfile
+require_file infra/compose.yaml
+
+require_fixed '@sub2api_official_index path /__sub2api-official-index' infra/Caddyfile
+require_fixed 'reverse_proxy sub2api:8080' infra/Caddyfile
+require_fixed 'templates' infra/Caddyfile
+require_fixed 'httpInclude "/__sub2api-official-index"' infra/sub2api-update-ui/index.html
+require_fixed '@sub2api_update {' infra/Caddyfile
+require_fixed $'\t\tmethod POST' infra/Caddyfile
+require_fixed $'\t\tpath /api/v1/admin/system/update' infra/Caddyfile
+require_fixed 'reverse_proxy @sub2api_update unix//run/sub2api-updater/updater.sock' infra/Caddyfile
+require_fixed 'response_header_timeout 15m' infra/Caddyfile
+require_fixed 'reverse_proxy @sub2api_host_update_status unix//run/sub2api-updater/updater.sock' infra/Caddyfile
+require_fixed 'reverse_proxy @sub2api_host_update_schedule unix//run/sub2api-updater/updater.sock' infra/Caddyfile
+require_fixed 'path /api/v1/admin/system/check-updates' infra/Caddyfile
+require_fixed 'path /api/v1/admin/system/rollback' infra/Caddyfile
+require_fixed 'path /api/v1/admin/system/restart' infra/Caddyfile
+require_fixed 'path / /home /home/' infra/Caddyfile
+require_fixed 'path /support /support/' infra/Caddyfile
+require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
+require_fixed 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile
+require_fixed 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' infra/Caddyfile
+require_fixed 'path /api/v1/settings/public' infra/Caddyfile
+require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
+require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
+require_fixed 'rewrite * /update-ui.js' infra/Caddyfile
+require_fixed 'rewrite * /update-ui.css' infra/Caddyfile
+
+if rg -n '/(var/)?run/docker\.sock|docker\.sock' infra/compose.yaml infra/Caddyfile; then
+  fail 'Docker socket must not be mounted'
+fi
+
+update_line=$(rg -n -F '@sub2api_update {' infra/Caddyfile | head -n1 | cut -d: -f1)
+fallback_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | tail -n1 | cut -d: -f1)
+[[ "$update_line" -lt "$fallback_line" ]] || fail 'update route must precede the generic Sub2API proxy'
+
+printf 'PASS: Sub2API update UI and routing contracts\n'

@@ -2,7 +2,7 @@ name: sub2api
 
 services:
   sub2api:
-    image: weishaw/sub2api@sha256:4467f888bc37bcb297220e3246b22cb55861aea40e319307bf4512b98eac2ce8
+    image: ${SUB2API_IMAGE:?SUB2API_IMAGE is required}
     restart: unless-stopped
     expose: ["8080"]
     environment:
@@ -34,12 +34,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?required}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
       TZ: ${TZ:-Asia/Shanghai}
-      SECURITY_URL_ALLOWLIST_ENABLED: "true"
-      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
-      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
-      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:?required}
+      SECURITY_URL_ALLOWLIST_ENABLED: ${SECURITY_URL_ALLOWLIST_ENABLED:-false}
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: ${SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP:-true}
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: ${SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS:-true}
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:-}
     volumes:
-      - sub2api_data:/app/data
+      - type: bind
+        source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
+        target: /app/data
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -64,7 +66,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - type: bind
+        source: ${POSTGRES_DATA_DIR:?POSTGRES_DATA_DIR is required}
+        target: /var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -190,7 +194,9 @@ services:
       REDISCLI_AUTH: ${REDIS_PASSWORD:?required}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - redis_data:/data
+      - type: bind
+        source: ${REDIS_DATA_DIR:?REDIS_DATA_DIR is required}
+        target: /data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -203,13 +209,15 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.caddy
-    image: xingqiao-caddy:homepage-20260723-v2-headline-spacing
+    image: xingqiao-caddy:homepage-20260724-v6-full-width-signal
     restart: unless-stopped
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}
     ports: ["80:80", "443:443"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sub2api-update-ui:/srv/sub2api-update-ui:ro
+      - /run/sub2api-updater:/run/sub2api-updater:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -218,9 +226,6 @@ services:
     logging: *logging
 
 volumes:
-  sub2api_data:
   internal_test_data:
-  postgres_data:
-  redis_data:
   caddy_data:
   caddy_config:

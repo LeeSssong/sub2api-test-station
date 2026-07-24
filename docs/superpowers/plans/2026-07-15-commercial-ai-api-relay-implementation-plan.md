@@ -342,7 +342,7 @@ Sub2API 当前官方 Compose 使用 PostgreSQL 18 Alpine 和 Redis 8 Alpine。�
 
 - [x] **L4-2.2.1** 密钥生成器可生成并固定 PostgreSQL、Redis、管理员、`JWT_SECRET` 和 `TOTP_ENCRYPTION_KEY`；生产部署时重新生成。
 - [x] **L4-2.2.2** `.env` 权限 600、被 Git 忽略，生成器不输出密钥且拒绝覆盖。
-- [x] **L4-2.2.3** 启用 URL allowlist，关闭不安全 HTTP 和私网主机访问。
+- [ ] **L4-2.2.3** 启用 URL allowlist，关闭不安全 HTTP 和私网主机访问。2026-07-24 按用户要求恢复 Sub2API 默认值，当前未启用该防护。
 - [x] **L4-2.2.4** 配置 Docker 私网可信代理、Caddy 安全响应头和 16 MiB 请求体上限。
 - [ ] **L4-2.2.5** 配置并验证计费 fail-closed/熔断保护。
 - [ ] **L4-2.2.6** 创建管理员并开启 TOTP 2FA，恢复码存入密码管理器。

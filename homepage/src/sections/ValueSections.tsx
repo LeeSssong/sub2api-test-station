@@ -1,5 +1,4 @@
-import { ArrowUpRight, Check, CircleDot, Copy, Cpu, Globe2, Network, ShieldCheck, Sparkles } from 'lucide-react'
-import { CopyControl } from '../components/CopyControl'
+import { Check, CircleDot, Cpu, EyeOff, Globe2, LockKeyhole, Network, ShieldCheck, Sparkles } from 'lucide-react'
 import { Reveal } from '../components/Reveal'
 import type { SiteConfig } from '../domain/siteConfig'
 import { ModelFlow } from './ModelFlow'
@@ -8,14 +7,14 @@ interface ValueSectionsProps {
   config: SiteConfig
 }
 
-export function ValueSections({ config }: ValueSectionsProps) {
+export function ValueSections({ config: _config }: ValueSectionsProps) {
   return (
     <section className="value-band grid-surface" id="value" aria-labelledby="value-title">
       <div className="section-inner">
         <Reveal as="header" className="section-intro">
           <p className="eyebrow"><span />全球模型 · 一座星桥</p>
           <h2 id="value-title">国内直连、透明价格、真实模型</h2>
-          <p>不绕远路，不隐藏倍率。每一条承诺都写清楚边界。</p>
+          <p>不绕远路，不隐藏折扣。每一条承诺都写清楚边界。</p>
         </Reveal>
 
         <Reveal className="value-grid">
@@ -27,35 +26,31 @@ export function ValueSections({ config }: ValueSectionsProps) {
             <ModelFlow />
           </article>
 
-          {config.thirdPartyReports.length > 0 && (
-            <article className="value-card value-card--wide report-card">
-              <div className="card-heading">
+          <article className="value-card value-card--wide security-card">
+            <div className="card-heading">
+              <ShieldCheck aria-hidden="true" />
+              <div><h3>安全与透明</h3><p>传输、隐私与模型真实性，都给出明确的公开说明。</p></div>
+            </div>
+            <div className="security-proof-grid">
+              <div className="security-proof">
+                <LockKeyhole aria-hidden="true" />
+                <span><strong>HTTPS 加密传输</strong><small>API 请求全程通过 TLS 加密，密钥不会写入首页配置。</small></span>
+              </div>
+              <div className="security-proof">
+                <EyeOff aria-hidden="true" />
+                <span><strong>无第三方追踪</strong><small>首页不加载第三方脚本、追踪器或远程字体。</small></span>
+              </div>
+              <div className="security-proof security-proof--report">
                 <ShieldCheck aria-hidden="true" />
-                <div><h3>第三方报告</h3><p>独立验证链接，仅在真实报告配置后公开。</p></div>
+                <span><strong>已获得 MODELOC 真实性验证</strong><small>模型真实性已通过第三方验证。</small><b className="report-status report-status--verified">已验证</b></span>
               </div>
-              <div className="report-list">
-                {config.thirdPartyReports.map((report) => (
-                  <a
-                    key={report.id}
-                    href={report.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`查看${report.title}`}
-                  >
-                    <span className="report-provider">{report.provider}</span>
-                    <span><strong>{report.title}</strong><small>{report.description ?? '已配置第三方验证报告'}</small></span>
-                    <ArrowUpRight aria-hidden="true" />
-                  </a>
-                ))}
-              </div>
-            </article>
-          )}
+            </div>
+          </article>
 
           <article className="value-card price-card">
-            <div className="card-heading"><Sparkles aria-hidden="true" /><div><h3>透明定价</h3><p>公开展示，不用营销倍率掩盖真实换算。</p></div></div>
+            <div className="card-heading"><Sparkles aria-hidden="true" /><div><h3>透明定价</h3><p>公开展示，不用复杂换算掩盖实际折扣。</p></div></div>
             <dl className="price-table">
-              <div><dt>官方价格</dt><dd>100%</dd><span className="sr-only">官方价格 100%</span></div>
-              <div><dt>星桥价格</dt><dd>官方价格的 0.1–0.3 倍</dd><span className="sr-only">星桥价格 官方价格的 0.1–0.3 倍</span></div>
+              <div><dt>星桥价格</dt><dd>官方价格的0.1——0.3折</dd><span className="sr-only">星桥价格 官方价格的0.1——0.3折</span></div>
               <div><dt>额度换算</dt><dd>1 元 = 1 美元额度</dd><span className="sr-only">额度换算 1 元 = 1 美元额度</span></div>
             </dl>
           </article>
@@ -69,18 +64,13 @@ export function ValueSections({ config }: ValueSectionsProps) {
             </ul>
           </article>
 
-          <article className="value-card network-card">
-            <div className="card-heading"><Globe2 aria-hidden="true" /><div><h3>面向国内的稳定线路</h3><p>韩国首尔节点，缩短国内用户访问世界模型的网络路径。</p></div></div>
+          <article className="value-card value-card--wide network-card">
+            <div className="card-heading"><Globe2 aria-hidden="true" /><div><h3>面向国内的稳定线路</h3><p>星桥，缩短国内用户访问世界模型的网络路径。</p></div></div>
             <ul className="check-list">
               <li><CircleDot aria-hidden="true" />韩国首尔服务器，国内无需翻墙即可直连</li>
               <li><CircleDot aria-hidden="true" />减少跨区域中转与不必要跳数</li>
               <li><CircleDot aria-hidden="true" />优先保障稳定性与响应质量</li>
             </ul>
-          </article>
-
-          <article className="value-card support-card">
-            <div className="card-heading"><Copy aria-hidden="true" /><div><h3>QQ群支持</h3><p>公开支持渠道只保留 QQ 群，反馈路径简单明确。</p></div></div>
-            <div className="qq-row"><span>QQ群</span><strong>{config.support.qqGroup}</strong><CopyControl value={config.support.qqGroup} label="复制 QQ 群号" /></div>
           </article>
         </Reveal>
       </div>

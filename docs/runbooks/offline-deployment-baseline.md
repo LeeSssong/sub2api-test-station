@@ -82,7 +82,7 @@ SITE_ADDRESS=http://localhost \
 
 - [ ] `SITE_ADDRESS`：真实 `api` 子域，不能保留 `api.example.com`。
 - [ ] `ADMIN_EMAIL`：项目管理员邮箱，不能保留 `admin@example.com`。
-- [ ] `SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS`：仅列真实上游域名，不写路径、Key 或私网地址。
+- [ ] URL 策略与已批准部署目标一致；Sub2API 默认值为 allowlist 关闭、允许 HTTP/私网主机、上游域名名单为空。
 - [ ] 五个密钥均由 `ops/generate-env.sh` 生成，`.env` 权限为 600。
 - [ ] SRV01 已实际购买并登记实例 ID、公网 IP、区域、到期日和自动续费状态。
 - [ ] Ubuntu 24.04 LTS 已重装或确认无未知预装环境。
@@ -113,7 +113,7 @@ sysctl vm.overcommit_memory
 
 资产到位后按顺序验证：
 
-1. 服务器出站能访问现有上游域名，且 URL allowlist 只包含实际域名。
+1. 服务器出站能访问现有上游域名，且运行时 URL 策略与 `.env` 和 Compose 中的批准值一致。
 2. 国内外 DNS 都解析到当前实例；80/443 可达，22 的来源限制生效。
 3. `docker compose ps` 四个服务状态正常，重启后数据和管理员会话所需固定密钥仍有效。
 4. 用管理员测试 Key 分别发送非流式和流式请求；检查 SSE 不被缓冲或中断。

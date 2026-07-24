@@ -34,6 +34,7 @@ type Scheduler struct {
 	FastCandidate func(context.Context, domain.UpstreamID, string, bool) error
 	UsageSessions func(context.Context) ([]billing.SessionConfig, error)
 	Usage         func(context.Context, billing.SessionConfig) error
+	SiteMonitor   func(context.Context) error
 	DailyReport   func(context.Context) error
 }
 
@@ -113,6 +114,11 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 					failures = append(failures, err)
 				}
 			}
+		}
+	}
+	if s.SiteMonitor != nil {
+		if err := s.runDue(ctx, "site-monitor", now, 15*time.Minute, s.SiteMonitor); err != nil {
+			failures = append(failures, err)
 		}
 	}
 	location := s.Timezone

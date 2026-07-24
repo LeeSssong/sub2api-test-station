@@ -12,7 +12,7 @@ CADDY=infra/Caddyfile
 reject '@embedded_storefront_purchase' "$CADDY"
 reject '/purchase.html' "$CADDY"
 require '{$STOREFRONT_SITE_ADDRESS:https://shop.xingqiaolab.top} {' "$CADDY"
-require 'header_down Content-Security-Policy "frame-src " "frame-src https://shop.xingqiaolab.top https://catfk.com "' "$CADDY"
+require "header_down Content-Security-Policy \"frame-src \" \"frame-src 'self' https://shop.xingqiaolab.top https://catfk.com \"" "$CADDY"
 require '@catfk_storefront_entry {' "$CADDY"
 require 'path / /shop/DLK8SNUJ /shop/DLK8SNUJ/' "$CADDY"
 require 'route {' "$CADDY"

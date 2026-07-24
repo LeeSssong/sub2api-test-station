@@ -2,16 +2,16 @@
 
 **交接日期：** 2026-07-23
 **用途：** 新 Codex 窗口的唯一恢复入口  
-**当前主线：** 轻量账号池质量巡检已完成生产安装，下一步进入 D04 首发用户受控开放准备。巡检只从 Sub2API 原生 `status=active && schedulable=true` 账号动态发现集合，由服务器每 15 分钟复用原生账号测试记录稳定性、TTFT、倍率和明确余额不足；不建立第二套路由、灾备、模型发布或付费 probe。
-**当前节点：** 最新动态集合为 `10/11/12/13`，账号集合哈希为 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`。生产 `sub2api-account-quality-monitor.timer` 已启用，旧 model-release timer 已停用但 unit、脚本和证据保留。三个样本中 `10=2/3` 且最近通过、`11=2/3` 且最近普通错误、`12=0/3` 普通错误、`13=2/3` 且最近超时；没有误标为余额不足，也未阻断后续账号。relay-ops 保持 `read_only + dry_run`；D04 保持 `read_only` 且注册关闭。生产已有 1 个隔离首发用户和一次成功对账的 `$20` daily-login grant，不重复发放。
-**供应商页面历史覆盖：** 18:49 只读复核时旧供应商页面余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`，GPT-Plus 供应商监控 7 天可用性 `94.70%`且近 60 次有多次约 `30s` 错误/降级。该证据只用于历史监控，不定义当前上游集合。当前账号 `10/11` 已有上述 `26/30` 与 `13/30` 直连复测，账号 `12` 尚无新鲜资格证据。
-**上游质量决策：** `health_pulse/catalog_quick/capacity_check`、质量评分、模型发布提案和飞书质量卡属于已停止的复杂方案，只保留历史测试证据。当前活动循环只有一件事：每 15 分钟按账号 ID 顺序测试所有 `active + schedulable` 账号，记录稳定性、TTFT、配置倍率和明确余额不足；单账号失败继续后续账号，不排序、不切路由、不发布模型、不发送飞书。
+**当前主线：** 双区运维监测与飞书集成已部署并完成生产只读验收；下一步进入 D04 首发用户受控开放准备，但必须先等待动态活动账号集合的最低余额和新鲜质量指标达到轻量门禁。站内运行仅复用 Sub2API 原生聚合，账号质量仅复用已有 15 分钟定时巡检；不建立第二套路由、灾备、模型发布或付费 probe。
+**当前节点：** 生产 `/ops` 已分为“站内运行”（公开分组、动态 `active && schedulable` 调度账号、请求量、错误率、SLA、TTFT 和总耗时）与“上游账号质量”（倍率、稳定性、TTFT、最近结果和明确余额不足）；日报及 15 分钟告警/恢复复用同一投影和既有 Interactive Card/去重机制。运行镜像为 `sub2api-relay-ops:ops-dual-domain-20260723-v1`，healthy/restart `0`，模式仍为 `read_only + dry_run`。`/monitor` 未修改，匿名 `/relay-ops/api/ops-view` 为 404；五个公网入口均为 200。一次新版 systemd 巡检成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，动态集合 `[10,11,12,13]` 与规范 hash `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7` 匹配；timer 已恢复 `enabled/active`。D04 仍 healthy、`read_only/registration=false`。本次未发送合成飞书事件，也未改路由、账号、倍率、价格、余额、Key、候选、probe、D04 或业务数据库。
+**供应商页面历史覆盖：** 18:49 只读复核时旧供应商页面余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`，GPT-Plus 供应商监控 7 天可用性 `94.70%`且近 60 次有多次约 `30s` 错误/降级。该证据只用于历史监控，不定义当前上游集合。当前集合已由 Sub2API 原生读取为 `[10,11,12,13]`；是否允许 D04 开放仍以同一动态集合的新鲜最低余额和质量证据为准。
+**上游质量决策：** `health_pulse/catalog_quick/capacity_check`、质量评分、模型发布提案和飞书质量卡属于已停止的复杂方案，只保留历史测试证据。活动循环每 15 分钟按账号 ID 顺序测试所有 `active + schedulable` 账号，记录稳定性、TTFT、配置倍率和明确余额不足；单账号失败继续后续账号，不排序、不切路由、不发布模型、不逐次发送飞书。最新 45 样本中账号 `10/11/12/13` 成功数为 `27/12/0/30`，TTFT P95 约 `12.27s/11.92s/无成功样本/14.28s`，最新一轮均为普通 `account_test_error`，因此 D04 仍不可开放。
 
-**最新门禁证据：** 账号质量 collector `11/47`、timer `4/103`、relay-ops contract、全量 Go race/vet、AMD64 镜像依赖和差异检查通过。生产首轮、Persistent 补跑和下一次自然 timer 均成功，四个账号各留下三个无秘密样本；自然运行 journal 只有 started/succeeded。结果文件宿主/容器 SHA-256 同为 `f9eef0c81e79109ba10a6009c0756275632d1858100bea9116fda0ec7ea8034c`。新 timer `enabled/active`，旧 timer `disabled/inactive`；五个公网入口 200，匿名 ops-view 404，Caddy 与飞书路由哈希不变，除 relay-ops 外的容器 ID 均未变化。
+**最新部署证据：** `relay-ops` 已更新为 `ops-dual-domain-20260723-v1`，container `84ad983a6be4`，healthy/restart `0`，仍为 `read_only + dry_run`。collector SHA-256 为 `20452b9218af79fb6ba19895d7f250b6754011a828eaf3e3f77f69faf8e90ea9`；一次 systemd 验收成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，结果 SHA-256 为 `4677925dbbcee85f4881c155c513bdb8f7fee2460bb851420b545fc3bd181536`。timer 为 `enabled/active`，五个公网入口为 200，匿名 ops-view 为 404，除 relay-ops 外的容器 ID 未变。旧 model-release timer 仍 `disabled/inactive`，其一次性 service 的既有 `exit-code` 历史状态不属于本次部署且未被重启。
 **非功能子 Agent 收口：** 公共 v3 又补齐了 shared-pool 的 `topology_phase/wave_id/TTFT/总耗时` 证据、观察窗口的 sync/SSE 指标以及 topology evidence 的 `scenario_id/scenario_hash` 绑定；非功能测试 `32/160`、V2 `32/194`、protocol `10/44`、V1 `18/63` 全部通过。XM/Wawazz 目标角色仍没有 live 资格证据，目标状态为 `NOT_READY`，详见 `docs/superpowers/reports/2026-07-22-nonfunctional-baseline-subagent.md`。
 
 **D04 验收与事故边界：** `infra/compose.d04-acceptance.yaml` 的单用户窗口已完成 1 个隔离用户和 1 次 `$20`，随后恢复 `read_only/registration=false`；同源注册返回 `403 D04_REGISTRATION_CLOSED`，窄路由哈希前后一致为 `b6e6ee12...8832ec4`。方法发现期间误发空 settings PUT，21 项设置被立即依据官方 DTO 和审计通过 Admin API 恢复；未直接写 PostgreSQL，最终设置哈希为 `52eff24fce0338ee4f8f81ad12a5d1406c46b6de050c99587035cdfd1f71a28e`。禁止再用空对象 PUT 探索设置接口。
-**飞书边界：** 告警、恢复、日报、Interactive Card、命令卡、去重、App Bot 投递和确定性只读分析均已收口，并随当前 `account-quality-monitor-v1` 镜像保留。账号质量巡检不新增飞书消息。当前 probe/report 均为 0，历史通知为 4；本轮不发消息、不制造事件。告警/恢复卡真实视觉仅等待自然事件，属于非阻塞观察；不删除去重记录、不制造故障。生产继续 `read_only + dry_run`。
+**飞书边界：** 告警、恢复、日报、Interactive Card、命令卡、去重、App Bot 投递和确定性只读分析均已收口，并保留在当前 `ops-dual-domain-20260723-v1` 镜像中。账号质量巡检不逐次发送飞书消息；本轮没有发送合成消息或制造事件。告警/恢复卡真实视觉仅等待自然事件，属于非阻塞观察；不删除去重记录、不制造故障。
 
 ## 1. 新窗口先做什么
 
@@ -261,14 +261,14 @@ NekoAPI 隔离网关与计费闭环随后于 2026-07-18 完成，覆盖上述 bl
 ## 11. 新窗口可直接使用的 Loop Brief
 
 ```text
-Goal: 使用已安装的轻量账号池质量证据完成 D04 首发用户受控开放准备，最终在明确开关下开放不超过 15 人注册。
-Context: `/ops` 已显示账号池稳定性、TTFT、倍率和明确余额不足。服务器 `sub2api-account-quality-monitor.timer` 每 15 分钟以受限瞬时容器动态发现 `active + schedulable` 集合，并按账号 ID 顺序调用 Sub2API 原生账号测试；旧 model-release timer 已停用。最新集合为 `10/11/12/13`，集合哈希 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`；三个样本中 `10=2/3` 且最近通过、`11=2/3` 且最近普通错误、`12=0/3` 普通错误、`13=2/3` 且最近超时。D04 保持 `read_only/registration=false`，已有一个隔离用户和一次 `$20` 对账；relay-ops 保持 `read_only + dry_run`。
+Goal: 使用新鲜轻量账号池质量和最低余额证据完成 D04 首发用户受控开放准备。
+Context: 双区 `/ops`、日报和告警集成已部署为 `ops-dual-domain-20260723-v1`；`sub2api-account-quality-monitor.timer` 每 15 分钟动态发现 `active + schedulable` 集合并顺序调用 Sub2API 原生账号测试。当前集合为 `[10,11,12,13]`，集合哈希为 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`。最新 45 样本中成功数为 `27/12/0/30`，TTFT P95 约 `12.27s/11.92s/无成功样本/14.28s`，最新一轮均为 `account_test_error`。D04 为 `read_only/registration=false`，relay-ops 为 `read_only + dry_run`。
 Constraints: 不读取或输出生产 `.env`、App Secret、verification token、Encrypt Key、Admin API Key、上游 Key、Cookie 或密码；不直接写 Sub2API PostgreSQL；不按供应商名称或固定账号 ID 设置例外，不改任何上游余额、路由、倍率、价格、Key、模型或调度。飞书不进入 `enabled`，不恢复复杂模型资格、容量、排序或发布任务。
-Plan: 让 systemd 巡检自然累积质量窗口；复用 Sub2API 原生账户和余额能力，为最新动态集合补齐轻量 D04 门禁证据，先确认账号 `12` 持续错误及每个活动账号最低余额。门禁通过后再准备 D04 launch overlay，并在执行前复核注册开关、15 人上限、预算和回滚路径。
-Implement: 只更新无秘密账号质量与 D04 准入证据；不手工调用账号测试、不重复 D04 grant、不扩展飞书、不创建候选或启用 probe。
-Validate: 核对 timer、结果新鲜度、集合 hash、各账号最新结果和最低余额；复核 D04 403/只读、账户备份、relay-ops `read_only + dry_run`、零候选/probe、路由哈希和注册关闭。
+Plan: 让 systemd 巡检自然累积质量窗口，复用 Sub2API 原生账户和余额能力补齐 D04 门禁证据；先确认账号 `12` 的持续零成功及其余账号高 TTFT/错误，再判断是否达到轻量门禁。门禁通过后再申请新的 D04 行动批准。
+Implement: 只更新无秘密账号质量、最低余额与 D04 准入证据；不由 LLM 手工逐账号测试、不重复 D04 grant、不扩展飞书、不创建候选或启用 probe。
+Validate: 核对 timer、结果新鲜度、集合 hash、各账号最新结果和最低余额；复核 D04 403/只读、账户备份、relay-ops `read_only + dry_run`、零候选/probe、路由哈希和注册关闭。任何历史值都不得替代 SSH 新鲜证据。
 Review: 重点审查账户集合漂移、单账号失败隔离、余额分类是否明确、样本新鲜度、首发总预算和注册关闭回滚。
-Done when: 最新动态活动账号满足批准的轻量最低余额与新鲜质量条件，D04 准入结果允许开放，并在明确行动批准下打开注册；此前继续关闭注册。
+Done when: 动态活动账号满足轻量最低余额与新鲜质量条件，D04 准入结果允许开放，并在新的明确行动批准下打开注册；此前继续关闭注册。
 ```
 ## D04 首发自动化历史基线（2026-07-19，已被 2026-07-21 新口径覆盖）
 
@@ -292,7 +292,7 @@ Done when: 最新动态活动账号满足批准的轻量最低余额与新鲜质
 - Agent：只读、事件触发、输入为脱敏结构化 JSON，只能查询质量窗口/探测/价格/候选证据；不可读取秘密或执行路由、价格、余额、Key、数据库写操作。
 - 真实账单：默认相信上游标注倍率和定价；能读取则作为辅助证据，不能读取时保留质量/价格监控并明确显示“真实倍率未验证”，不反复要求管理员授权。
 - 页面：`/pricing` 无需登录；`/performance` 仅登录用户可见；`/ops` 为数据为空的 bootstrap 加 Sub2API 管理员令牌验证后的只读投影。缺失、无效、非管理员或停用管理员访问数据接口均按 404 隐藏。
-- 当前状态：原生 Monitor 异常/恢复、日报、重复抑制、App Bot 投递、Agent 确定性回退和质量报告闭环仍保留。候选录入是历史已验收能力，但当前 `/ops` 已移除候选/Base URL/Key/账单会话/验收写界面与浏览器路由；新上游统一在 Sub2API 原生管理端维护。生产镜像为 `sub2api-native-ops-20260722-v1`，当前 probe 和质量报告均为 0，飞书 `enabled` 未批准。
+- 历史状态：原生 Monitor 异常/恢复、日报、重复抑制、App Bot 投递、Agent 确定性回退和质量报告闭环已保留。候选录入是历史已验收能力；后续 `/ops` 历史版本已移除候选/Base URL/Key/账单会话/验收写界面与浏览器路由，新上游统一在 Sub2API 原生管理端维护。该节验收镜像为 `sub2api-native-ops-20260722-v1`，当时 probe 和质量报告均为 0，飞书 `enabled` 未批准；这些值不得当作当前生产状态。
 
 详细运维与回滚见 `docs/runbooks/relay-ops-monitoring.md`；验证证据见 `docs/superpowers/reports/2026-07-20-relay-ops-production-source-monitoring-verification.md`。
 
@@ -369,20 +369,20 @@ Done when: 最新动态活动账号满足批准的轻量最低余额与新鲜质
 
 **Goal:** 等待 Sub2API 动态发现的全部活动账号具备可信最低余额和足够新鲜自然质量样本，再生成 v3 同快照 `GO` 并准备受控开放。
 
-**Context:** 最新 Sub2API 动态账户投影为 `10/11/12/13`，账号质量集合哈希 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`；旧 `7/8` 与 `10/11/12` 固定集合结果不再加入。`/ops` 显示只读账号池质量，无表单、输入、按钮或秘密字段。生产 relay-ops 镜像 `sub2api-relay-ops:account-quality-monitor-v1` 健康、重启 `0`。
+**Context:** 当前 Sub2API 动态账户投影为 `10/11/12/13`，账号质量集合哈希为 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`；旧 `7/8` 与固定集合结果不再加入。生产 `/ops` 显示只读双区监测且无表单、输入、按钮或秘密字段，relay-ops 镜像 `sub2api-relay-ops:ops-dual-domain-20260723-v1` 健康、重启 `0`。最新质量结果已新鲜发布，但当前成功率和 TTFT 不满足开放门禁。
 
 **Constraints:** 当前活动上游只等于 Sub2API `status=active && schedulable=true` 账号集合。不得硬编码供应商或账号 ID；每个发现账号独立通过余额和账户归属自然质量门禁。不得按供应商名称设例外，不得创建候选、启用 probe、制造流量/飞书事件、改路由/倍率/价格/余额/Key/数据库、进入 `enabled` 或打开 D04 注册。
 
-**Plan:** 不再开发第二套上游管理。质量由已安装 systemd timer 自动产生；复用 Sub2API 原生账户与余额能力，为每次最新动态集合补齐轻量 D04 证据。所有后续功能先检查 Sub2API 并明确“直接复用、改造复用或新增”。
+**Plan:** 不再开发第二套上游管理。复用已部署的 systemd timer、Sub2API 原生账户和余额能力，为真实动态集合补齐轻量 D04 证据。所有后续功能先检查 Sub2API 并明确“直接复用、改造复用或新增”。
 
 **Done when:** 同一新鲜 v3 快照中所有动态活动账号均通过最低余额、样本、成功率、错误率、TTFT P95 和总耗时 P95 门槛并返回 `GO`；只有此时才进入 D04 受控开放。飞书功能继续关闭主线。
 
 ## 18. Sub2API 原生 `/ops` 收口（2026-07-22，历史基线）
 
 - `/ops` 已从重复的上游/候选管理页简化为只读内测状态页。Base URL、Key、Cookie/Bearer、候选、生产来源、验收、合成事件和质量预览写控件均已移除。
-- 当前活动上游只取 Sub2API 未删除且 `status=active && schedulable=true` 的账户。该节验收时为 `10/11/12`；最新生产集合已动态变化为 `10/11/12/13`，软删除历史账号不参与集合。
+- 活动上游定义只取 Sub2API 未删除且 `status=active && schedulable=true` 的账户。该节验收时为 `10/11/12`；本轮 SSH 重新发现的实时集合为 `10/11/12/13`，软删除历史账号不参与集合，后续仍须动态读取而不是写死。
 - 有效管理员看到当前账号、公开分组、只读报告、事件和 Agent 摘要；匿名或无效令牌访问投影返回 404，公开 `/ops` 只返回 477 字节无业务数据 bootstrap。
-- 该节生产镜像曾为 `sub2api-relay-ops:sub2api-native-ops-20260722-v1`；已由 `account-quality-monitor-v1` 替换。模式仍为 `read_only + dry_run`，D04 仍 `read_only/registration=false`。
+- 该节生产镜像曾为 `sub2api-relay-ops:sub2api-native-ops-20260722-v1`，随后由 `account-quality-monitor-v1` 替换；当前镜像为 `ops-dual-domain-20260723-v1`，模式为 `read_only + dry_run`，D04 为 `read_only/registration=false`。
 - 权威证据：`docs/superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md`。
 
 ## 19. GPT/Codex 缓存让利只读基线（2026-07-22）

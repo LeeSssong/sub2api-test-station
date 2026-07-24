@@ -22,13 +22,13 @@ function makeStorage(initial: Record<string, string> = {}): Storage {
 }
 
 describe('resolveSession', () => {
-  it('returns the registration CTA when no access token exists', async () => {
+  it('returns the native dashboard entry when no access token exists', async () => {
     const fetcher = vi.fn()
 
     await expect(resolveSession(makeStorage(), fetcher)).resolves.toEqual({
       kind: 'guest',
-      ctaLabel: '立即获取密钥',
-      ctaHref: '/register',
+      ctaLabel: '立即开始',
+      ctaHref: '/dashboard',
     })
     expect(fetcher).not.toHaveBeenCalled()
   })
@@ -45,7 +45,7 @@ describe('resolveSession', () => {
 
     await expect(resolveSession(storage, fetcher)).resolves.toMatchObject({
       kind: 'user',
-      ctaLabel: '前往控制台',
+      ctaLabel: '进入控制台',
       ctaHref: '/dashboard',
     })
   })
@@ -56,7 +56,7 @@ describe('resolveSession', () => {
 
     await expect(resolveSession(storage, fetcher)).resolves.toMatchObject({
       kind: 'admin',
-      ctaLabel: '前往控制台',
+      ctaLabel: '进入控制台',
       ctaHref: '/admin/dashboard',
     })
   })

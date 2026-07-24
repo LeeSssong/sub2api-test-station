@@ -2,12 +2,15 @@ package accountquality
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +38,7 @@ type Result struct {
 type Account struct {
 	AccountID      int64     `json:"account_id"`
 	ModelID        string    `json:"model_id"`
-	RateMultiplier float64   `json:"rate_multiplier"`
+	RateMultiplier *float64  `json:"rate_multiplier"`
 	SampleCount    int64     `json:"sample_count"`
 	SuccessCount   int64     `json:"success_count"`
 	SuccessRate    float64   `json:"success_rate"`
@@ -47,12 +50,13 @@ type Account struct {
 }
 
 type View struct {
-	Available        bool
-	Stale            bool
-	SnapshotID       string
-	ObservedAt       string
-	AccountSetSHA256 string
-	Accounts         []AccountView
+	Available          bool
+	Stale              bool
+	AccountSetMismatch bool
+	SnapshotID         string
+	ObservedAt         string
+	AccountSetSHA256   string
+	Accounts           []AccountView
 }
 
 type AccountView struct {
@@ -108,7 +112,7 @@ func (r Result) View(now time.Time) View {
 			SuccessRate: fmt.Sprintf("%.1f%%", account.SuccessRate*100),
 			TTFTP50:     formatMS(account.TTFTP50MS),
 			TTFTP95:     formatMS(account.TTFTP95MS),
-			Multiplier:  strconv.FormatFloat(account.RateMultiplier, 'f', -1, 64) + "x",
+			Multiplier:  formatMultiplier(account.RateMultiplier),
 			LastResult:  resultLabel(account.LastResult),
 		})
 	}
@@ -119,15 +123,47 @@ func (r Result) View(now time.Time) View {
 	}
 }
 
+func (r Result) ViewForAccountSet(now time.Time, currentAccountSetSHA256 string) View {
+	view := r.View(now)
+	if r.AccountSetSHA256 == currentAccountSetSHA256 {
+		return view
+	}
+	view.Available = false
+	view.AccountSetMismatch = true
+	view.Accounts = nil
+	return view
+}
+
+// CanonicalAccountSetSHA256 matches the collector's SHA-256 of a compact,
+// sorted JSON array of positive unique account IDs.
+func CanonicalAccountSetSHA256(accountIDs []int64) (string, error) {
+	ids := append([]int64{}, accountIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	var previous int64
+	for index, id := range ids {
+		if id <= 0 || (index > 0 && id == previous) {
+			return "", fmt.Errorf("account set is invalid")
+		}
+		previous = id
+	}
+	data, err := json.Marshal(ids)
+	if err != nil {
+		return "", fmt.Errorf("marshal account set: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func validate(result Result, now time.Time) error {
 	if result.SchemaVersion != 1 || strings.TrimSpace(result.SnapshotID) == "" || result.ObservedAt.IsZero() ||
 		result.ObservedAt.After(now) || !lowercaseSHA256.MatchString(result.AccountSetSHA256) {
 		return fmt.Errorf("metadata is invalid")
 	}
 	previousID := int64(0)
+	accountIDs := make([]int64, 0, len(result.Accounts))
 	for _, account := range result.Accounts {
 		if account.AccountID <= previousID || !validModelID(account.ModelID, account.LastResult) ||
-			!finiteNonNegative(account.RateMultiplier) || account.SampleCount <= 0 || account.SuccessCount < 0 ||
+			(account.RateMultiplier != nil && !finiteNonNegative(*account.RateMultiplier)) || account.SampleCount <= 0 || account.SuccessCount < 0 ||
 			account.SuccessCount > account.SampleCount || account.SuccessRate < 0 || account.SuccessRate > 1 ||
 			!finite(account.SuccessRate) || !allowedResult(account.LastResult) || account.LastObservedAt.IsZero() ||
 			account.LastObservedAt.After(result.ObservedAt) || !validErrorCode(account.LastErrorCode, account.LastResult) ||
@@ -139,6 +175,11 @@ func validate(result Result, now time.Time) error {
 			return fmt.Errorf("account is invalid")
 		}
 		previousID = account.AccountID
+		accountIDs = append(accountIDs, account.AccountID)
+	}
+	accountSetSHA256, err := CanonicalAccountSetSHA256(accountIDs)
+	if err != nil || result.AccountSetSHA256 != accountSetSHA256 {
+		return fmt.Errorf("account set is invalid")
 	}
 	return nil
 }
@@ -180,6 +221,13 @@ func formatMS(value *float64) string {
 		return "无成功样本"
 	}
 	return fmt.Sprintf("%.0fms", *value)
+}
+
+func formatMultiplier(value *float64) string {
+	if value == nil {
+		return "未提供"
+	}
+	return strconv.FormatFloat(*value, 'f', -1, 64) + "x"
 }
 
 func resultLabel(value string) string {

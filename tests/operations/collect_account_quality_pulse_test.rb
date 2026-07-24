@@ -98,6 +98,51 @@ class CollectAccountQualityPulseTest < Minitest::Test
     assert_equal [1, 2], client.probe_calls.map(&:first)
   end
 
+  def test_account_detail_failure_marks_multiplier_unavailable_and_preserves_known_zero
+    client = FakeClient.new(
+      accounts: [
+        {"id" => 1, "status" => "active", "schedulable" => true},
+        {"id" => 2, "status" => "active", "schedulable" => true}
+      ],
+      details: {
+        2 => {"id" => 2, "rate_multiplier" => 0}
+      },
+      models: {2 => ["gpt-5.6"]},
+      probes: {
+        2 => AccountQualityPulse::ProbeResult.new(result: "passed", ttft_ms: 80, error_code: "")
+      }
+    )
+
+    output = AccountQualityPulse::Collector.new(client: client, now: NOW).collect(history: [])
+    accounts = output.fetch("result").fetch("accounts")
+    history = output.fetch("history")
+
+    assert_nil accounts[0].fetch("rate_multiplier")
+    assert_nil history.find { |sample| sample.fetch("account_id") == 1 }.fetch("rate_multiplier")
+    assert_equal 0.0, accounts[1].fetch("rate_multiplier")
+    assert_equal [2], client.probe_calls.map(&:first)
+  end
+
+  def test_account_set_hash_is_sha256_of_sorted_id_json_array
+    client = FakeClient.new(
+      accounts: [
+        {"id" => 22, "status" => "active", "schedulable" => true},
+        {"id" => 21, "status" => "active", "schedulable" => true}
+      ],
+      details: {
+        21 => {"id" => 21, "rate_multiplier" => 0.05},
+        22 => {"id" => 22, "rate_multiplier" => 0.10}
+      },
+      models: {21 => [], 22 => []},
+      probes: {}
+    )
+
+    result = AccountQualityPulse::Collector.new(client: client, now: NOW).collect(history: []).fetch("result")
+
+    assert_equal "16f2380a3e0b5e5b1c2d4f701b94a23cff01b0676f32c88b60f22fcd84a26da8",
+                 result.fetch("account_set_sha256")
+  end
+
   def test_model_selection_is_numeric_deterministic_and_provider_neutral
     assert_equal "gpt-5.10-alpha", AccountQualityPulse::ModelSelector.select([
       "gpt-5.9-sol", "gpt-5.10-zeta", "gpt-5.10-alpha", "dall-e-3"

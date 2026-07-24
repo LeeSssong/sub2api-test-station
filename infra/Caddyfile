@@ -29,6 +29,70 @@
 		file_server
 	}
 
+	@support_index path /support /support/
+	handle @support_index {
+		root * /srv/home
+		rewrite * /index.html
+		header Cache-Control "no-store, max-age=0"
+		header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+		header X-Frame-Options SAMEORIGIN
+		file_server
+	}
+
+	@support_assets path /support/*
+	handle @support_assets {
+		root * /srv/home
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	@sub2api_update_js path /xingqiao-update-ui.js
+	handle @sub2api_update_js {
+		root * /srv/sub2api-update-ui
+		rewrite * /update-ui.js
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	@sub2api_update_css path /xingqiao-update-ui.css
+	handle @sub2api_update_css {
+		root * /srv/sub2api-update-ui
+		rewrite * /update-ui.css
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	@sub2api_binary_mutation {
+		method POST
+		path /api/v1/admin/system/rollback
+	}
+	respond @sub2api_binary_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
+
+	@sub2api_official_index path /__sub2api-official-index
+	handle @sub2api_official_index {
+		rewrite * /
+		reverse_proxy sub2api:8080
+	}
+
+	@sub2api_html {
+		header Accept *text/html*
+		not {
+			path /api/* /relay-ops/* /ops /ops/* /health /home-assets/* /xingqiao-update-ui.* /__sub2api-official-index
+		}
+	}
+	handle @sub2api_html {
+		root * /srv/sub2api-update-ui
+		templates
+		rewrite * /index.html
+		file_server
+	}
+
+	@sub2api_version_check {
+		method GET
+		path /api/v1/admin/system/check-updates
+	}
+	reverse_proxy @sub2api_version_check sub2api:8080
+
 	@d04_auth {
 		method POST
 		path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa
@@ -49,6 +113,35 @@
 		path /api/v1/auth/oauth/*/complete-registration /api/v1/auth/oauth/*/create-account /api/v1/auth/pending/create-account /api/v1/auth/oauth/*/pending/create-account
 	}
 	respond @d04_oauth_account_creation `{"code":"D04_REGISTRATION_METHOD_DISABLED","message":"首发计划仅开放邮箱密码注册"}` 403
+
+	@sub2api_update {
+		method POST
+		path /api/v1/admin/system/update
+	}
+	reverse_proxy @sub2api_update unix//run/sub2api-updater/updater.sock {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 15m
+		}
+	}
+
+	@sub2api_host_update_status {
+		method GET
+		path /api/v1/admin/system/host-update/status
+	}
+	reverse_proxy @sub2api_host_update_status unix//run/sub2api-updater/updater.sock
+
+	@sub2api_host_update_schedule {
+		method DELETE
+		path /api/v1/admin/system/host-update/schedule
+	}
+	reverse_proxy @sub2api_host_update_schedule unix//run/sub2api-updater/updater.sock
+
+	@sub2api_restart_mutation {
+		method POST
+		path /api/v1/admin/system/restart
+	}
+	respond @sub2api_restart_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
 
 	@relay_ops_public {
 		path /pricing /relay-ops/static/*
@@ -72,7 +165,7 @@
 
 	reverse_proxy sub2api:8080 {
 		flush_interval -1
-		header_down Content-Security-Policy "frame-src " "frame-src https://shop.xingqiaolab.top https://catfk.com "
+		header_down Content-Security-Policy "frame-src " "frame-src 'self' https://shop.xingqiaolab.top https://catfk.com "
 		transport http {
 			dial_timeout 10s
 			response_header_timeout 300s

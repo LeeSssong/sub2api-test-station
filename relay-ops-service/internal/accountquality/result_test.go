@@ -32,6 +32,124 @@ func TestLoadAcceptsStrictSecretFreeAccountQualityResult(t *testing.T) {
 	}
 }
 
+func TestLoadAndViewDistinguishUnavailableAndKnownZeroMultiplier(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 23, 0, 10, 0, 0, time.UTC)
+	document := validDocument()
+	accounts := document["accounts"].([]any)
+	accounts[0].(map[string]any)["rate_multiplier"] = nil
+	accounts[1].(map[string]any)["rate_multiplier"] = 0.0
+
+	result, err := Load(writeDocument(t, document), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Accounts[0].RateMultiplier != nil {
+		t.Fatalf("unavailable multiplier = %#v", result.Accounts[0].RateMultiplier)
+	}
+	if result.Accounts[1].RateMultiplier == nil || *result.Accounts[1].RateMultiplier != 0 {
+		t.Fatalf("known zero multiplier = %#v", result.Accounts[1].RateMultiplier)
+	}
+	view := result.View(now)
+	if view.Accounts[0].Multiplier != "未提供" || view.Accounts[1].Multiplier != "0x" {
+		t.Fatalf("multiplier views = %#v", view.Accounts)
+	}
+}
+
+func TestCanonicalAccountSetSHA256MatchesCollectorAlgorithm(t *testing.T) {
+	t.Parallel()
+
+	got, err := CanonicalAccountSetSHA256([]int64{22, 21})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "16f2380a3e0b5e5b1c2d4f701b94a23cff01b0676f32c88b60f22fcd84a26da8" {
+		t.Fatalf("hash = %q", got)
+	}
+	if _, err := CanonicalAccountSetSHA256([]int64{21, 21}); err == nil {
+		t.Fatal("duplicate account IDs were accepted")
+	}
+	empty, err := CanonicalAccountSetSHA256(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty != "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945" {
+		t.Fatalf("empty account set hash = %q", empty)
+	}
+}
+
+func TestViewForAccountSetRejectsMismatchedEvidence(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 23, 0, 10, 0, 0, time.UTC)
+	result, err := Load(writeDocument(t, validDocument()), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := result.ViewForAccountSet(now, "3db4e2d15128484c18e33cde50510caf0a36044278b0f9e265f49f31e9bb1ee0")
+	if view.Available || !view.AccountSetMismatch || len(view.Accounts) != 0 {
+		t.Fatalf("mismatched view = %#v", view)
+	}
+}
+
+func TestLoadRejectsAccountSetHashThatDoesNotDescribeResultAccounts(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 23, 0, 10, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name: "missing account",
+			mutate: func(document map[string]any) {
+				document["accounts"] = document["accounts"].([]any)[:1]
+			},
+		},
+		{
+			name: "extra account",
+			mutate: func(document map[string]any) {
+				accounts := document["accounts"].([]any)
+				extra := map[string]any{
+					"account_id": float64(23), "model_id": "gpt-5.6-luna", "rate_multiplier": 0.10,
+					"sample_count": float64(1), "success_count": float64(1), "success_rate": 1.0,
+					"ttft_p50_ms": 100.0, "ttft_p95_ms": 100.0, "last_result": "passed", "last_error_code": "",
+					"last_observed_at": "2026-07-23T00:00:00Z",
+				}
+				document["accounts"] = append(accounts, extra)
+			},
+		},
+		{
+			name: "empty accounts with nonempty hash",
+			mutate: func(document map[string]any) {
+				document["accounts"] = []any{}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := validDocument()
+			test.mutate(document)
+			if _, err := Load(writeDocument(t, document), now); err == nil {
+				t.Fatal("forged account set was accepted")
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsOnlyCanonicalEmptyAccountSetHash(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 23, 0, 10, 0, 0, time.UTC)
+	document := validDocument()
+	document["accounts"] = []any{}
+	document["account_set_sha256"] = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+	if _, err := Load(writeDocument(t, document), now); err != nil {
+		t.Fatalf("canonical empty account set was rejected: %v", err)
+	}
+}
+
 func TestLoadRejectsUnknownForbiddenMalformedAndOversizedDocuments(t *testing.T) {
 	t.Parallel()
 
@@ -67,6 +185,10 @@ func TestLoadRejectsFutureDuplicateAndInvalidMetrics(t *testing.T) {
 		{name: "duplicate", mutate: func(document map[string]any) {
 			accounts := document["accounts"].([]any)
 			accounts[1].(map[string]any)["account_id"] = float64(21)
+		}},
+		{name: "out of order", mutate: func(document map[string]any) {
+			accounts := document["accounts"].([]any)
+			document["accounts"] = []any{accounts[1], accounts[0]}
 		}},
 		{name: "count", mutate: func(document map[string]any) {
 			document["accounts"].([]any)[0].(map[string]any)["success_count"] = float64(5)
@@ -113,6 +235,7 @@ func TestViewPreservesNumericAccountOrder(t *testing.T) {
 	accounts := document["accounts"].([]any)
 	accounts[0].(map[string]any)["account_id"] = float64(2)
 	accounts[1].(map[string]any)["account_id"] = float64(10)
+	document["account_set_sha256"] = "1caa7b7fab4b45ed400402da320f45411f7a2616e3937bf02d964572436164e0"
 	result, err := Load(writeDocument(t, document), now)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +261,7 @@ func validDocument() map[string]any {
 		"schema_version":     float64(1),
 		"snapshot_id":        "ACCOUNT-QUALITY-20260723T000000Z",
 		"observed_at":        "2026-07-23T00:00:00Z",
-		"account_set_sha256": strings.Repeat("a", 64),
+		"account_set_sha256": "16f2380a3e0b5e5b1c2d4f701b94a23cff01b0676f32c88b60f22fcd84a26da8",
 		"accounts": []any{
 			map[string]any{
 				"account_id": float64(21), "model_id": "gpt-5.6-sol", "rate_multiplier": 0.05,

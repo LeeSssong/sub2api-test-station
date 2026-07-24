@@ -26,6 +26,8 @@ import (
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/nativealerts"
 	"example.invalid/relay-ops-service/internal/notify"
+	"example.invalid/relay-ops-service/internal/opsmetrics"
+	"example.invalid/relay-ops-service/internal/opsmonitor"
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -195,6 +197,10 @@ func operationalAnalysisRunners(service *agent.Service) (nativealerts.AnalysisRu
 	return service, service
 }
 
+func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualitySource, state *incidents.Machine, notifier opsmonitor.MessageSender) opsmonitor.Service {
+	return opsmonitor.Service{Reader: reader, Quality: quality, Incidents: state, Notifier: notifier}
+}
+
 func notificationClient(cfg config.Config, appSender notify.MessageSender) (notify.MessageClient, error) {
 	if cfg.FeishuAlertChatIDFile != "" {
 		if appSender == nil {
@@ -268,10 +274,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	syncer.Observer = nativeAlertService
 	var dailyAccountQualitySource dailyreport.AccountQualitySource
 	var accountQualitySource httpserver.AccountQualitySource
+	var siteAccountQualitySource opsmonitor.QualitySource
 	if cfg.AccountQualityResultFile != "" {
 		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
 		dailyAccountQualitySource = source
 		accountQualitySource = source
+		siteAccountQualitySource = source
 	}
 	dailyReportService := dailyreport.Service{
 		Reader: reader, Candidates: database, Incidents: dailyReportIncidents{Store: database, state: incidentMachine},
@@ -281,6 +289,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
 		Incidents: incidentMachine, Agent: collectorAnalysis, Notifier: notifier,
 	}
+	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, incidentMachine, notifier)
 	usageReader := billing.SessionReader{Reporter: database}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,
@@ -374,6 +383,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			_, err := dailyReportService.Run(runCtx)
 			return err
 		},
+		SiteMonitor: siteMonitor.Run,
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}

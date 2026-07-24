@@ -62,6 +62,14 @@ func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
 	var _ dailyreport.AnalysisRunner = reportRunner
 }
 
+func TestConfiguredSiteMonitorSharesTheIncidentMachine(t *testing.T) {
+	machine := &incidents.Machine{}
+	monitor := configuredSiteMonitor(nil, nil, machine, nil)
+	if monitor.Incidents != machine {
+		t.Fatalf("incident machine = %p, want %p", monitor.Incidents, machine)
+	}
+}
+
 func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {
 	chatFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
 	if err := os.WriteFile(chatFile, []byte("oc_alert_group\n"), 0o600); err != nil {

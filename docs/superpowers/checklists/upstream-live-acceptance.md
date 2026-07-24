@@ -9,7 +9,7 @@
 - [ ] `UP01.local.yaml` 普通校验和 `--live-ready` 校验均通过。
 - [ ] 上游余额、价格、最低充值和退款规则已重新核对；本清单不执行充值。
 - [ ] 再分发状态不是 `prohibited`；若为 `unknown`，风险已经登记且渠道可快速停用。
-- [ ] Base URL 使用 HTTPS，host 已加入 `SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS`，没有 URL 用户信息、查询串或片段。
+- [ ] Base URL 符合当前 URL 策略，没有 URL 用户信息、查询串或片段；若启用 allowlist，host 已加入 `SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS`。
 - [ ] 真实 Key 已直接进入 Sub2API 管理界面或受控密钥存储，未进入文件或聊天。
 - [ ] 账号使用独立名称和分组，初始并发不超过 2，模型只开放已核对白名单。
 

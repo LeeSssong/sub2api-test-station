@@ -39,7 +39,7 @@ ruby ops/validate-upstream.rb --live-ready config/upstreams/UP01.local.yaml
 
 | YAML 字段 | Sub2API 位置 | 注意事项 |
 |---|---|---|
-| `connection.base_url` | 新建账号 → API Key → Base URL | 必须与 Caddy/应用 URL allowlist 的 host 一致；路径按上游文档填写 |
+| `connection.base_url` | 新建账号 → API Key → Base URL | 路径按上游文档填写；只有启用 URL allowlist 时才需将 host 加入名单 |
 | `connection.secret_ref` | 不直接录入 | 根据引用位置取得真实 Key，只粘贴到管理界面的 API Key 输入框 |
 | `sub2api.platform` | 平台 | OpenAI 兼容上游通常选 `openai`；按真实协议选择，不按模型品牌猜测 |
 | `sub2api.account_type` | 账号类型 | 本模板固定为后端值 `apikey`，界面显示 API Key |

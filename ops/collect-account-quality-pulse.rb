@@ -331,6 +331,7 @@ module AccountQualityPulse
     end
 
     def collect_account(account_id, history)
+      multiplier = nil
       multiplier = rate_multiplier(@client.account(account_id))
       model_id = ModelSelector.select(@client.models(account_id))
       probe = if model_id
@@ -349,7 +350,7 @@ module AccountQualityPulse
       }
       { "sample" => sample }
     rescue StandardError
-      { "sample" => failure_sample(account_id) }
+      { "sample" => failure_sample(account_id, multiplier) }
     end
 
     def rate_multiplier(detail)
@@ -362,9 +363,9 @@ module AccountQualityPulse
       raise ValidationError, "account multiplier is invalid"
     end
 
-    def failure_sample(account_id)
+    def failure_sample(account_id, multiplier = nil)
       {
-        "account_id" => account_id, "model_id" => "", "rate_multiplier" => 0.0,
+        "account_id" => account_id, "model_id" => "", "rate_multiplier" => multiplier,
         "result" => "account_test_error", "error_code" => "account_test_error", "ttft_ms" => nil,
         "observed_at" => @now.iso8601
       }

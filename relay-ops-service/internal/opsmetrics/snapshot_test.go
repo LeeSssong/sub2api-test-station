@@ -47,6 +47,9 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 	if len(snapshot.Accounts) != 1 || snapshot.Accounts[0].ID != 30 || snapshot.Accounts[0].Name != "Current" {
 		t.Fatalf("accounts = %#v", snapshot.Accounts)
 	}
+	if snapshot.AccountSetSHA256 != "5436cc4750cf070868dc8194674f290f21aa7d184577bb0b5b694093da216ecd" {
+		t.Fatalf("account set hash = %q", snapshot.AccountSetSHA256)
+	}
 	if account := snapshot.Accounts[0]; account.Status != "read_failed" || account.ErrorCode != "ops_snapshot_unavailable" {
 		t.Fatalf("account = %#v", account)
 	}
@@ -70,13 +73,29 @@ func TestCollectProjectsPublicGroupsAndActiveSchedulableAccounts(t *testing.T) {
 func TestRuntimePercentageDisplaysUseTheirSourceScales(t *testing.T) {
 	t.Parallel()
 
-	group := GroupRuntime{ErrorRate: 0.075, SLA: 97.5}
-	account := AccountRuntime{ErrorRate: 0.2, SLA: 99.5}
+	group := GroupRuntime{RequestCount: 20, ErrorRate: 0.075, SLA: 97.5}
+	account := AccountRuntime{RequestCount: 20, ErrorRate: 0.2, SLA: 99.5}
 	if group.ErrorRateDisplay() != "7.50%" || group.SLADisplay() != "97.50%" {
 		t.Fatalf("group displays = %q, %q", group.ErrorRateDisplay(), group.SLADisplay())
 	}
 	if account.ErrorRateDisplay() != "20.00%" || account.SLADisplay() != "99.50%" {
 		t.Fatalf("account displays = %q, %q", account.ErrorRateDisplay(), account.SLADisplay())
+	}
+}
+
+func TestRuntimeDisplaysUnknownValuesWithoutRequestsOrSuccessfulSamples(t *testing.T) {
+	t.Parallel()
+
+	group := GroupRuntime{RequestCount: 0, SuccessCount: 0}
+	account := AccountRuntime{RequestCount: 3, SuccessCount: 0, ErrorRate: 1, SLA: 0}
+	if group.ErrorRateDisplay() != "未知" || group.SLADisplay() != "未知" || group.DurationP95Display() != "未知" {
+		t.Fatalf("empty group displays = %q, %q, %q", group.ErrorRateDisplay(), group.SLADisplay(), group.DurationP95Display())
+	}
+	if group.TTFTP95Display() != "无成功样本" || account.TTFTP95Display() != "无成功样本" {
+		t.Fatalf("TTFT displays = %q, %q", group.TTFTP95Display(), account.TTFTP95Display())
+	}
+	if account.ErrorRateDisplay() != "100.00%" || account.SLADisplay() != "0.00%" {
+		t.Fatalf("observed account displays = %q, %q", account.ErrorRateDisplay(), account.SLADisplay())
 	}
 }
 

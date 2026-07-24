@@ -125,13 +125,13 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	quality := accountquality.View{}
 	if s.AccountQuality != nil {
 		if evidence, readErr := s.AccountQuality.Read(now); readErr == nil {
-			quality = evidence.View(now)
+			quality = evidence.ViewForAccountSet(now, runtime.AccountSetSHA256)
 		} else {
 			quality = accountquality.View{Available: true, Stale: true}
 		}
 	}
 	message := notify.RenderOperationsDigest(notify.OperationsDigestView{
-		Date: date, Runtime: runtime, AccountQuality: quality, Footer: footer,
+		Date: date, GeneratedAt: now, Runtime: runtime, AccountQuality: quality, Footer: footer,
 	})
 	if s.Notifier == nil {
 		return result, nil

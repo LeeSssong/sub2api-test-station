@@ -180,14 +180,20 @@ func TestDatabaseOpsSourceProjectsAccountQualityResult(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	accountSetHash, hashErr := accountquality.CanonicalAccountSetSHA256([]int64{10})
+	if hashErr != nil {
+		t.Fatal(hashErr)
+	}
 	source := DatabaseOpsSource{
 		Repository: qualityOpsRepository{},
-		Native:     opsNativeReader{},
+		Native: opsNativeReader{accounts: []sub2api.Account{{
+			ID: 10, Status: "active", Schedulable: true,
+		}}},
 		AccountQuality: staticAccountQualitySource{result: accountquality.Result{
 			SchemaVersion: 1, SnapshotID: "ACCOUNT-QUALITY-1", ObservedAt: now,
-			AccountSetSHA256: strings.Repeat("a", 64),
+			AccountSetSHA256: accountSetHash,
 			Accounts: []accountquality.Account{{
-				AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: 0.05,
+				AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64Pointer(0.05),
 				SampleCount: 4, SuccessCount: 3, SuccessRate: 0.75, LastResult: "passed", LastObservedAt: now,
 			}},
 		}},
@@ -200,6 +206,35 @@ func TestDatabaseOpsSourceProjectsAccountQualityResult(t *testing.T) {
 	}
 	if !view.AccountQuality.Available || len(view.AccountQuality.Accounts) != 1 || view.AccountQuality.Accounts[0].AccountID != "10" {
 		t.Fatalf("account quality = %#v", view.AccountQuality)
+	}
+}
+
+func TestDatabaseOpsSourceRejectsAccountQualityForDifferentActiveAccountSet(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	source := DatabaseOpsSource{
+		Repository: qualityOpsRepository{},
+		Native: opsNativeReader{accounts: []sub2api.Account{{
+			ID: 10, Status: "active", Schedulable: true,
+		}}},
+		AccountQuality: staticAccountQualitySource{result: accountquality.Result{
+			SchemaVersion: 1, SnapshotID: "ACCOUNT-QUALITY-OLD", ObservedAt: now,
+			AccountSetSHA256: "95bce61a71a78185f4b6f8f25fc6986108043727fe9d9c19dbe44b0081ef928a",
+			Accounts: []accountquality.Account{{
+				AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64Pointer(0.05),
+				SampleCount: 1, SuccessCount: 1, SuccessRate: 1, LastResult: "passed", LastObservedAt: now,
+			}},
+		}},
+		Clock: func() time.Time { return now },
+	}
+
+	view, err := source.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.AccountQuality.Available || !view.AccountQuality.AccountSetMismatch || len(view.AccountQuality.Accounts) != 0 {
+		t.Fatalf("mismatched quality = %#v", view.AccountQuality)
 	}
 }
 
@@ -225,8 +260,11 @@ func TestDatabaseOpsSourceProjectsSiteRuntime(t *testing.T) {
 	}
 	source := DatabaseOpsSource{
 		Repository: qualityOpsRepository{}, Native: native,
-		AccountQuality: staticAccountQualitySource{result: accountquality.Result{SchemaVersion: 1, SnapshotID: "quality", ObservedAt: now}},
-		Clock:          func() time.Time { return now },
+		AccountQuality: staticAccountQualitySource{result: accountquality.Result{
+			SchemaVersion: 1, SnapshotID: "quality", ObservedAt: now,
+			AccountSetSHA256: "41164c427f4cf681cc1b50eaf1a175e3574a1d015c6c90fbdaf77aea39d24086",
+		}},
+		Clock: func() time.Time { return now },
 	}
 
 	view, err := source.Snapshot(context.Background())
@@ -312,8 +350,10 @@ func (r runtimeNativeReader) GetOpsSnapshot(_ context.Context, query sub2api.Ops
 }
 
 func runtimeOpsSnapshot(requestCount int64) sub2api.OpsSnapshot {
-	return sub2api.OpsSnapshot{Overview: sub2api.OpsOverview{RequestCountTotal: requestCount, SLA: 99, TTFT: sub2api.Percentiles{P95MS: 1200}, Duration: sub2api.Percentiles{P95MS: 2400}}}
+	return sub2api.OpsSnapshot{Overview: sub2api.OpsOverview{RequestCountTotal: requestCount, SuccessCount: requestCount, SLA: 99, TTFT: sub2api.Percentiles{P95MS: 1200}, Duration: sub2api.Percentiles{P95MS: 2400}}}
 }
+
+func float64Pointer(value float64) *float64 { return &value }
 
 type pricingReader struct {
 	channels []sub2api.Channel

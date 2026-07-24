@@ -74,6 +74,7 @@ type UpstreamReportView struct {
 // operations domains shown in the daily report.
 type OperationsDigestView struct {
 	Date           string
+	GeneratedAt    time.Time
 	Runtime        opsmetrics.Snapshot
 	AccountQuality accountquality.View
 	Footer         []string
@@ -238,9 +239,13 @@ func RenderOperationsDigest(view OperationsDigestView) FeishuMessage {
 	if date == "" {
 		date = "未提供日期"
 	}
+	date = trimDigestText(date, 128)
 	siteLines := []string{"**站内运行**"}
+	if !view.GeneratedAt.IsZero() {
+		siteLines = append(siteLines, "报告生成时间 "+digestTimestamp(view.GeneratedAt))
+	}
 	if !view.Runtime.CapturedAt.IsZero() {
-		siteLines = append(siteLines, "采集时间 "+view.Runtime.CapturedAt.UTC().Format("2006-01-02 15:04 UTC"))
+		siteLines = append(siteLines, "站内采集时间 "+digestTimestamp(view.Runtime.CapturedAt))
 	}
 	siteLines = append(siteLines, "**公开分组**")
 	siteLines = append(siteLines, digestGroupLines(view.Runtime.Groups)...)
@@ -248,8 +253,11 @@ func RenderOperationsDigest(view OperationsDigestView) FeishuMessage {
 	siteLines = append(siteLines, digestAccountLines(view.Runtime.Accounts)...)
 
 	qualityLines := []string{"**上游账号质量**", "数据状态 " + qualityStatus(view.AccountQuality)}
+	if view.AccountQuality.SnapshotID != "" {
+		qualityLines = append(qualityLines, "质量证据快照 "+shortHash(digestValue(view.AccountQuality.SnapshotID)))
+	}
 	if view.AccountQuality.ObservedAt != "" {
-		qualityLines = append(qualityLines, "采样时间 "+digestValue(view.AccountQuality.ObservedAt))
+		qualityLines = append(qualityLines, "质量证据时间 "+digestValue(view.AccountQuality.ObservedAt))
 	}
 	qualityLines = append(qualityLines, digestQualityLines(view.AccountQuality.Accounts)...)
 
@@ -276,21 +284,14 @@ func RenderOperationsDigest(view OperationsDigestView) FeishuMessage {
 }
 
 func digestGroupLines(groups []opsmetrics.GroupRuntime) []string {
-	rows := append([]opsmetrics.GroupRuntime(nil), groups...)
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].ID != rows[j].ID {
-			return rows[i].ID < rows[j].ID
-		}
-		return rows[i].Name < rows[j].Name
-	})
-	lines := make([]string, 0, len(rows))
-	for _, row := range rows {
+	lines := make([]string, 0, len(groups))
+	for _, row := range groups {
 		if row.Status == opsmetrics.StatusReadFailed {
 			lines = append(lines, fmt.Sprintf("- %s：读取失败", digestValue(row.Name)))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("- %s：请求 %d，错误率 %.2f%%，SLA %.2f%%，TTFT P95 %.0fms，%s",
-			digestValue(row.Name), row.RequestCount, row.ErrorRate*100, row.SLA, row.TTFTP95MS, runtimeStatus(row.Status)))
+		lines = append(lines, fmt.Sprintf("- %s：请求 %d，错误率 %s，SLA %s，TTFT P95 %s，%s",
+			digestValue(row.Name), row.RequestCount, row.ErrorRateDisplay(), row.SLADisplay(), row.TTFTP95Display(), runtimeStatus(row.Status)))
 	}
 	if len(lines) == 0 {
 		return []string{"- 暂无公开分组运行数据"}
@@ -308,8 +309,8 @@ func digestAccountLines(accounts []opsmetrics.AccountRuntime) []string {
 			lines = append(lines, label+"：读取失败")
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("- %s：请求 %d，错误率 %.2f%%，SLA %.2f%%，TTFT P95 %.0fms，%s",
-			label, row.RequestCount, row.ErrorRate*100, row.SLA, row.TTFTP95MS, runtimeStatus(row.Status)))
+		lines = append(lines, fmt.Sprintf("- %s：请求 %d，错误率 %s，SLA %s，TTFT P95 %s，%s",
+			label, row.RequestCount, row.ErrorRateDisplay(), row.SLADisplay(), row.TTFTP95Display(), runtimeStatus(row.Status)))
 	}
 	if len(lines) == 0 {
 		return []string{"- 当前没有调度账号"}
@@ -365,6 +366,9 @@ func runtimeStatus(status string) string {
 }
 
 func qualityStatus(view accountquality.View) string {
+	if view.AccountSetMismatch {
+		return "账号集合不匹配"
+	}
 	if view.Stale {
 		return "证据已过期"
 	}
@@ -374,36 +378,104 @@ func qualityStatus(view accountquality.View) string {
 	return "巡检正常"
 }
 
-const maxDigestSectionBytes = 8 << 10
+// Three digest sections, measured after JSON escaping, must still fit the 30
+// KiB Feishu card limit. Keeping each encoded section bounded at 4 KiB leaves
+// room for the card structure, header, and action.
+const maxDigestSectionBytes = 4 << 10
 
 func fitDigestSection(lines []string) string {
-	var builder strings.Builder
+	const remainder = "- 其余对象请在 /ops 查看"
+	clean := make([]string, len(lines))
 	for index, line := range lines {
-		line = trimDigestText(line, 768)
-		addition := len(line)
-		if index > 0 {
-			addition++
+		clean[index] = trimDigestText(line, 768)
+	}
+	// Reserve the suffix up front. This makes the result deterministic and lets
+	// later abnormal rows displace ordinary rows without changing native order.
+	budget := maxDigestSectionBytes - digestLineBytes(remainder)
+	criticalBytes := make([]int, len(clean))
+	for index, line := range clean {
+		if digestLineIsAbnormal(line) {
+			criticalBytes[index] = digestLineBytes(line)
 		}
-		if builder.Len()+addition > maxDigestSectionBytes {
-			if builder.Len() > 0 {
-				builder.WriteString("\n")
+	}
+	selected := make([]bool, len(clean))
+	remainingCritical := make([]int, len(clean)+1)
+	for index := len(clean) - 1; index >= 0; index-- {
+		remainingCritical[index] = remainingCritical[index+1] + criticalBytes[index]
+	}
+	used := 0
+	for index, line := range clean {
+		addition := digestLineBytes(line)
+		if criticalBytes[index] > 0 || !strings.HasPrefix(line, "-") || used+addition+remainingCritical[index+1] <= budget {
+			if used+addition <= budget {
+				selected[index] = true
+				used += addition
 			}
-			builder.WriteString("- 其余对象请在 /ops 查看")
-			break
 		}
-		if index > 0 {
-			builder.WriteString("\n")
+	}
+	var builder strings.Builder
+	skipped := false
+	for index, line := range clean {
+		if !selected[index] {
+			skipped = true
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
 		}
 		builder.WriteString(line)
 	}
+	if skipped {
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(remainder)
+	}
 	return builder.String()
+}
+
+func digestLineBytes(line string) int {
+	// The newline becomes a two-byte JSON escape sequence. This intentionally
+	// over-counts the first line so section bounds remain safe and deterministic.
+	encoded, err := json.Marshal(line)
+	if err != nil {
+		return maxDigestSectionBytes + 1
+	}
+	return len(encoded)
+}
+
+func digestLineIsAbnormal(line string) bool {
+	// Account quality stores result labels in the public projection. Every
+	// non-passed supported result stays eligible during truncation, alongside
+	// native read/sample and stale-evidence states.
+	for _, marker := range []string{
+		"读取失败", "样本不足", "证据已过期", "余额不足", "未通过", "异常",
+		"账号测试错误", "HTTP 错误", "超时", "流格式错误", "无可用文本模型",
+		"account_test_error", "http_error", "timeout", "malformed_stream", "model_unavailable",
+	} {
+		if strings.Contains(line, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func trimDigestText(value string, maximum int) string {
 	if len(value) <= maximum {
 		return value
 	}
+	maximum -= len("...")
+	if maximum <= 0 {
+		return "..."
+	}
+	for maximum > 0 && (value[maximum]&0xc0) == 0x80 {
+		maximum--
+	}
 	return value[:maximum] + "..."
+}
+
+func digestTimestamp(value time.Time) string {
+	return value.UTC().Format("2006-01-02 15:04 UTC")
 }
 
 func digestValue(value string) string {

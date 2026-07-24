@@ -171,6 +171,36 @@ func TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes(t *testing.T) {
 	}
 }
 
+func TestOpsPageDoesNotFabricateMetricsForZeroRuntimeSamples(t *testing.T) {
+	t.Parallel()
+
+	view := OpsView{SiteRuntime: opsmetrics.Snapshot{
+		Groups: []opsmetrics.GroupRuntime{{
+			ID: 2, Name: "空分组", RequestCount: 0, SuccessCount: 0, Status: opsmetrics.StatusSampleInsufficient,
+		}, {
+			ID: 3, Name: "全失败分组", RequestCount: 3, SuccessCount: 0, ErrorRate: 1, SLA: 50,
+			DurationP95MS: 500, Status: opsmetrics.StatusSampleInsufficient,
+		}},
+	}}
+	server := newTestServer(fakeOps{view: view})
+	request := httptest.NewRequest(http.MethodGet, "/relay-ops/api/ops-view", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, required := range []string{"空分组", "全失败分组", "未知", "无成功样本"} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("ops missing %q: %s", required, body)
+		}
+	}
+	if strings.Contains(body, ">0.00%<") || strings.Contains(body, ">0ms<") {
+		t.Fatalf("ops fabricated zero metrics: %s", body)
+	}
+}
+
 func TestNoPerformanceRouteAndResponsivePricingStateExist(t *testing.T) {
 	t.Parallel()
 	server := newTestServer(fakeOps{})

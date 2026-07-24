@@ -42,13 +42,17 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 	incidentStore := &reportIncidentStore{items: []string{"P1 confirmed GPT-Pro monitor error"}, observed: map[string]bool{}}
 	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
 	analyzer := &reportAnalyzer{}
+	accountSetHash, hashErr := accountquality.CanonicalAccountSetSHA256([]int64{10})
+	if hashErr != nil {
+		t.Fatal(hashErr)
+	}
 	service := Service{
 		Reader:     reader,
 		Candidates: reportCandidates{items: []candidates.Candidate{{ID: domain.UpstreamID(17), Name: "candidate-a", Enabled: true}}},
 		Incidents:  incidentStore,
 		AccountQuality: reportQualitySource{result: accountquality.Result{
-			SchemaVersion: 1, SnapshotID: "quality-20260720", ObservedAt: time.Date(2026, 7, 20, 1, 20, 0, 0, time.UTC), AccountSetSHA256: strings.Repeat("a", 64),
-			Accounts: []accountquality.Account{{AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: 0.1, SampleCount: 6, SuccessCount: 6, SuccessRate: 1, TTFTP50MS: float64ptr(180), TTFTP95MS: float64ptr(260), LastResult: "passed", LastObservedAt: time.Date(2026, 7, 20, 1, 19, 0, 0, time.UTC)}},
+			SchemaVersion: 1, SnapshotID: "quality-20260720", ObservedAt: time.Date(2026, 7, 20, 1, 20, 0, 0, time.UTC), AccountSetSHA256: accountSetHash,
+			Accounts: []accountquality.Account{{AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64ptr(0.1), SampleCount: 6, SuccessCount: 6, SuccessRate: 1, TTFTP50MS: float64ptr(180), TTFTP95MS: float64ptr(260), LastResult: "passed", LastObservedAt: time.Date(2026, 7, 20, 1, 19, 0, 0, time.UTC)}},
 		}},
 		Agent:    analyzer,
 		Notifier: notifier,
@@ -92,6 +96,50 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 	}
 	if analyzer.contracts[1].IncidentID != contract.IncidentID {
 		t.Fatalf("daily report key changed: %#v", analyzer.contracts)
+	}
+}
+
+func TestServiceMarksMismatchedAccountQualityUnavailableInDigest(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC)
+	reader := reportReader{
+		groups: []sub2api.Group{{ID: 2, Name: "Public", Status: "active"}},
+		accounts: []sub2api.Account{{
+			ID: 10, Status: "active", Schedulable: true,
+		}},
+		ops: map[int64]sub2api.OpsSnapshot{},
+	}
+	incidentStore := &reportIncidentStore{observed: map[string]bool{}}
+	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
+	service := Service{
+		Reader: reader, Incidents: incidentStore, Notifier: notifier,
+		AccountQuality: reportQualitySource{result: accountquality.Result{
+			SchemaVersion: 1, SnapshotID: "old-quality", ObservedAt: now,
+			AccountSetSHA256: "95bce61a71a78185f4b6f8f25fc6986108043727fe9d9c19dbe44b0081ef928a",
+			Accounts: []accountquality.Account{{
+				AccountID: 10, ModelID: "gpt", RateMultiplier: float64ptr(0.1),
+				SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
+				TTFTP50MS: float64ptr(100), TTFTP95MS: float64ptr(100),
+				LastResult: "passed", LastObservedAt: now,
+			}},
+		}},
+		Now: func() time.Time { return now },
+	}
+
+	if _, err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifier.messages) != 1 {
+		t.Fatalf("messages = %#v", notifier.messages)
+	}
+	data, err := notifier.messages[0].CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "账号集合不匹配") || strings.Contains(text, "倍率 0.1x") {
+		t.Fatalf("mismatched quality was presented as current: %s", text)
 	}
 }
 

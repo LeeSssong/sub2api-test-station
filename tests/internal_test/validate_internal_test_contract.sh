@@ -38,7 +38,11 @@ require 'flush_interval -1' infra/Caddyfile
 ports_owner=$(awk '/^  [a-zA-Z0-9_-]+:/{service=$1} /^    ports:/{print service}' infra/compose.yaml)
 [[ "$ports_owner" == 'caddy:' ]] || fail 'only caddy may publish host ports'
 
-docker compose --env-file infra/.env.example -f infra/compose.yaml config --quiet || fail 'compose config failed'
+docker compose \
+  --env-file infra/.env.example \
+  --env-file config/releases/sub2api.env \
+  -f infra/compose.yaml \
+  config --quiet || fail 'compose config failed'
 docker compose -f infra/compose.d04-read-only.yaml config --quiet || fail 'D04 read-only deployment config failed'
 docker compose -f infra/compose.d04-read-only.yaml -f infra/compose.d04-acceptance.yaml config --quiet || fail 'D04 acceptance overlay config failed'
 docker compose -f infra/compose.d04-read-only.yaml -f infra/compose.d04-launch.yaml config --quiet || fail 'D04 launch overlay config failed'

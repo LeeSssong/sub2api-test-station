@@ -150,5 +150,9 @@ NODE
 
 ports_owner=$(awk '/^  [a-zA-Z0-9_-]+:/{service=$1} /^    ports:/{print service}' "$COMPOSE_FILE")
 [[ "$ports_owner" == 'caddy:' ]] || fail 'only caddy may publish host ports'
-docker compose --env-file infra/.env.example -f "$COMPOSE_FILE" config --quiet || fail 'compose config failed'
+docker compose \
+  --env-file infra/.env.example \
+  --env-file config/releases/sub2api.env \
+  -f "$COMPOSE_FILE" \
+  config --quiet || fail 'compose config failed'
 printf 'PASS: relay-ops container and routing contracts\n'

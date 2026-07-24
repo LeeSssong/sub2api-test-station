@@ -17,3 +17,4 @@ ops-data/
 **/.playwright-cli/
 **/.obsidian/
 output/
+.worktrees/

@@ -31,29 +31,31 @@ describe('Xingqiao beginner guide', () => {
       '1080152144',
       '适合第一次使用 API、Codex 和 CC Switch 的用户',
       '充值并确认余额',
-      '创建 API 密钥',
-      '一键导入 CC Switch',
-      '启动 Codex 并完成首次测试',
-      '查看 Token 和扣费',
-      '六、常见报错',
+      '五、创建 API 密钥',
+      '三、安装 Codex',
+      '四、安装 CC Switch',
+      'Codex 离线安装包（夸克网盘）',
+      'CC Switch 安装说明与安装包入口',
+      'https://pan.quark.cn/s/bce0263339be#/list/share',
+      'https://tkapi.fun/api-beginner-guide/',
+      '六、一键导入 CC Switch',
+      '七、启动 Codex 并完成首次测试',
+      '八、查看 Token 和扣费',
+      '九、常见报错',
       '密钥安全建议',
-      '八、完成检查',
+      '十一、完成检查',
       '输入 Token',
       '用户扣费',
     ]) expect(html).toContain(required)
 
     for (const forbidden of [
-      'tkapi.fun',
       'xmhbao.cn',
       'sslip.io',
       '邮箱验证码',
       '邮箱验证',
       '一、注册',
-      '安装 Codex',
-      '安装 CC Switch',
       '邀请好友',
       '20% 返利',
-      'pan.quark.cn',
     ]) expect(html).not.toContain(forbidden)
   })
 
@@ -77,14 +79,29 @@ describe('Xingqiao beginner guide', () => {
       '/usage',
       '/support',
     ])
+    const approvedInstallLinks = new Set([
+      'https://pan.quark.cn/s/bce0263339be#/list/share',
+      'https://tkapi.fun/api-beginner-guide/',
+    ])
     const hrefs = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('a[href]')]
       .map((anchor) => anchor.getAttribute('href'))
     expect(hrefs.length).toBeGreaterThan(5)
     for (const href of hrefs) {
       expect(href).toBeTruthy()
-      expect(href === '/' || href?.startsWith('#') || allowed.has(href ?? '')).toBe(true)
+      expect(
+        href === '/' ||
+          href?.startsWith('#') ||
+          allowed.has(href ?? '') ||
+          approvedInstallLinks.has(href ?? ''),
+      ).toBe(true)
     }
 
-    expect(dom.window.document.querySelectorAll('#toc-links a')).toHaveLength(16)
+    expect(dom.window.document.querySelectorAll('#toc-links a')).toHaveLength(18)
+
+    for (const href of approvedInstallLinks) {
+      const link = dom.window.document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)
+      expect(link?.target).toBe('_blank')
+      expect(link?.rel).toContain('noopener')
+    }
   })
 })

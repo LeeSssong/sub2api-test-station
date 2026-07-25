@@ -29,7 +29,7 @@ Date: 2026-07-25
 | `/docs/does-not-exist` | 404 |
 | `/`, `/login`, `/pricing`, `/healthz`, `/readyz`, `/ops` | 200 |
 
-The live HTML contains `星桥AI 小白使用教程` and does not contain `tkapi.fun`, `xmhbao.cn`, email-registration text, or referral text.
+The live HTML contains `星桥AI 小白使用教程` and does not contain `xmhbao.cn`, email-registration text, or referral text. The two explicitly approved installation links are present: the Codex Quark link and the CC Switch guide link at `https://tkapi.fun/api-beginner-guide/`.
 
 ## Container preservation
 
@@ -43,3 +43,11 @@ The following IDs were unchanged across the deployment:
 
 Only Caddy was recreated, now with container ID `d1db0f185967`.
 
+## Follow-up installation links
+
+The guide was subsequently updated and deployed as `xingqiao-caddy:homepage-20260725-v9-install-links` (image digest `sha256:507efe1e5795de27b87805ff7c1ee55147653f69f008a9d68d76bad0168c6cfc`). The live page now includes:
+
+- Codex offline package: `https://pan.quark.cn/s/bce0263339be#/list/share`
+- CC Switch installation entry: `https://tkapi.fun/api-beginner-guide/`
+
+Both links open in a new tab with `noopener noreferrer`. The final Caddy container ID is `f3b89102e000`; all non-Caddy container IDs remain unchanged.

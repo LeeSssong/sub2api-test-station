@@ -212,20 +212,22 @@
       <div id="toc-links">
         <a href="#section-1" class="level-2">开始前先了解</a>
         <a href="#section-2" class="level-2">一、充值并确认余额</a>
-        <a href="#section-3" class="level-2">二、创建 API 密钥</a>
-        <a href="#section-4" class="level-2">三、一键导入 CC Switch</a>
-        <a href="#section-5" class="level-3">一键导入没有反应怎么办</a>
-        <a href="#section-6" class="level-3">手动配置位置</a>
-        <a href="#section-7" class="level-2">四、启动 Codex 并完成首次测试</a>
-        <a href="#section-8" class="level-2">五、查看 Token 和扣费</a>
-        <a href="#section-9" class="level-2">六、常见报错</a>
-        <a href="#section-10" class="level-3">401、Unauthorized 或 invalid_api_key</a>
-        <a href="#section-11" class="level-3">余额不足或无法继续调用</a>
-        <a href="#section-12" class="level-3">429、请求过多或并发已满</a>
-        <a href="#section-13" class="level-3">模型不可用或 model not supported</a>
-        <a href="#section-14" class="level-3">超时、长时间没有首字</a>
-        <a href="#section-15" class="level-2">七、密钥安全建议</a>
-        <a href="#section-16" class="level-2">八、完成检查</a>
+        <a href="#section-3" class="level-2">三、安装 Codex</a>
+        <a href="#section-4" class="level-2">四、安装 CC Switch</a>
+        <a href="#section-5" class="level-2">五、创建 API 密钥</a>
+        <a href="#section-6" class="level-2">六、一键导入 CC Switch</a>
+        <a href="#section-7" class="level-3">一键导入没有反应怎么办</a>
+        <a href="#section-8" class="level-3">手动配置位置</a>
+        <a href="#section-9" class="level-2">七、启动 Codex 并完成首次测试</a>
+        <a href="#section-10" class="level-2">八、查看 Token 和扣费</a>
+        <a href="#section-11" class="level-2">九、常见报错</a>
+        <a href="#section-12" class="level-3">401、Unauthorized 或 invalid_api_key</a>
+        <a href="#section-13" class="level-3">余额不足或无法继续调用</a>
+        <a href="#section-14" class="level-3">429、请求过多或并发已满</a>
+        <a href="#section-15" class="level-3">模型不可用或 model not supported</a>
+        <a href="#section-16" class="level-3">超时、长时间没有首字</a>
+        <a href="#section-17" class="level-2">十、密钥安全建议</a>
+        <a href="#section-18" class="level-2">十一、完成检查</a>
       </div>
     </nav>
     <article id="article"><h1>星桥AI 小白使用教程</h1>
@@ -256,7 +258,22 @@
 <blockquote>
 <p>余额、赠送额度、优惠和退款规则以星桥AI 当前控制台和公告为准。不要根据其他网站的汇率或宣传推算本站余额。</p>
 </blockquote>
-<h2 id="section-3">二、创建 API 密钥</h2>
+<h2 id="section-3">三、安装 Codex</h2>
+<p>如果电脑还没有安装 Codex，可以使用星桥AI 提供的离线安装包：</p>
+<ul>
+<li><a href="https://pan.quark.cn/s/bce0263339be#/list/share" target="_blank" rel="noopener noreferrer">Codex 离线安装包（夸克网盘）</a></li>
+</ul>
+<p>下载后完成安装。首次安装建议先不要启动 Codex；如果 Codex 已经打开，请先完全退出，再继续安装和配置 CC Switch。</p>
+<blockquote>
+<p>夸克网盘是第三方下载入口，星桥AI 不控制网盘内容。链接失效或安装过程中遇到问题时，请联系 QQ <code>1080152144</code>。</p>
+</blockquote>
+<h2 id="section-4">四、安装 CC Switch</h2>
+<p>CC Switch 用于把 Codex 的服务地址和 API 密钥切换到星桥AI。请打开下面的安装说明和安装包入口，下载并完成安装：</p>
+<ul>
+<li><a href="https://tkapi.fun/api-beginner-guide/" target="_blank" rel="noopener noreferrer">CC Switch 安装说明与安装包入口</a></li>
+</ul>
+<p>安装完成后保持 CC Switch 打开，再回到本文继续操作。</p>
+<h2 id="section-5">五、创建 API 密钥</h2>
 <p>打开 <a href="/keys">API 密钥页面</a>，点击右上角「创建密钥」。</p>
 <p><img src="./assets/01-create-key.png" alt="创建星桥AI API 密钥"></p>
 <p>新手建议这样填写：</p>
@@ -277,7 +294,7 @@
 <li>不同请求可能因模型、缓存和调用方式产生不同费用，以使用记录为准。</li>
 </ul>
 <p>确认后点击「创建」。密钥创建成功后，只在自己的设备上使用。</p>
-<h2 id="section-4">三、一键导入 CC Switch</h2>
+<h2 id="section-6">六、一键导入 CC Switch</h2>
 <p>在密钥列表右侧找到刚创建的密钥：</p>
 <ol>
 <li>点击「导入到 CCS」。</li>
@@ -291,26 +308,26 @@
 <blockquote>
 <p>「导入到 CCS」会把当前密钥交给本机 CC Switch。只应在自己的可信设备上执行，不要在网吧、共享电脑或远程陌生设备上导入。</p>
 </blockquote>
-<h3 id="section-5">一键导入没有反应怎么办</h3>
+<h3 id="section-7">一键导入没有反应怎么办</h3>
 <ol>
 <li>确认 CC Switch 已安装并正在运行。</li>
 <li>换用 Safari、Chrome 或 Edge 再点击一次「导入到 CCS」。</li>
 <li>浏览器弹出“是否打开 CC Switch”时选择允许。</li>
 <li>仍然失败时，在密钥列表点击「使用密钥」，按页面生成的 Codex 配置逐项复制。</li>
 </ol>
-<h3 id="section-6">手动配置位置</h3>
+<h3 id="section-8">手动配置位置</h3>
 <ul>
 <li>Windows：<code>%USERPROFILE%\.codex\config.toml</code> 和 <code>%USERPROFILE%\.codex\auth.json</code></li>
 <li>macOS / Linux：<code>~/.codex/config.toml</code> 和 <code>~/.codex/auth.json</code></li>
 </ul>
 <p>不要照抄其他网站的地址和密钥。最稳妥的方法是点击星桥AI 页面里的「使用密钥」，复制系统为当前密钥生成的最新配置。</p>
-<h2 id="section-7">四、启动 Codex 并完成首次测试</h2>
+<h2 id="section-9">七、启动 Codex 并完成首次测试</h2>
 <p>确认 CC Switch 已显示星桥AI「使用中」后，再启动 Codex。新建一个任务，输入：</p>
 <pre><code class="language-text">你好，请只回复：星桥AI 配置成功
 </code></pre>
 <p>能够正常返回内容，说明配置基本完成。随后回到星桥AI 的「使用记录」页面，确认刚才的请求已经出现。</p>
 <p>如果 Codex 仍要求登录官方账户，或请求没有出现在星桥AI 使用记录里，通常表示 CC Switch 尚未启用星桥AI。完全退出 Codex，重新启用星桥AI 后再打开。</p>
-<h2 id="section-8">五、查看 Token 和扣费</h2>
+<h2 id="section-10">八、查看 Token 和扣费</h2>
 <p>进入 <a href="/usage">使用记录</a>，可以查看每一次请求的模型、端点、分组、Token、费用、延迟和时间。</p>
 <p><img src="./assets/05-usage-and-billing.png" alt="星桥AI 使用记录与费用明细"></p>
 <p>阅读一条记录时重点看这些字段：</p>
@@ -326,39 +343,39 @@
 <blockquote>
 <p>页面金额可能经过小数位显示处理，账户余额以系统高精度账本和该笔记录的「用户扣费」为准。</p>
 </blockquote>
-<h2 id="section-9">六、常见报错</h2>
-<h3 id="section-10"><code>401</code>、<code>Unauthorized</code> 或 <code>invalid_api_key</code></h3>
+<h2 id="section-11">九、常见报错</h2>
+<h3 id="section-12"><code>401</code>、<code>Unauthorized</code> 或 <code>invalid_api_key</code></h3>
 <ul>
 <li>密钥复制不完整、已禁用或已经删除。</li>
 <li>回到「API 密钥」确认状态为「活跃」，重新导入 CC Switch。</li>
 <li>如果密钥曾经发给别人，立即禁用并创建新密钥。</li>
 </ul>
-<h3 id="section-11">余额不足或无法继续调用</h3>
+<h3 id="section-13">余额不足或无法继续调用</h3>
 <ul>
 <li>检查页面右上角余额。</li>
 <li>检查密钥是否设置了额度上限，以及额度是否已经用完。</li>
 <li>充值后刷新星桥AI 和 CC Switch 的余额。</li>
 </ul>
-<h3 id="section-12"><code>429</code>、请求过多或并发已满</h3>
+<h3 id="section-14"><code>429</code>、请求过多或并发已满</h3>
 <ul>
 <li>等待正在运行的请求结束后再试。</li>
 <li>不要同时开太多 Codex 任务。</li>
 <li>必要时切换到页面说明中并发或稳定性更高的分组。</li>
 </ul>
-<h3 id="section-13">模型不可用或 <code>model not supported</code></h3>
+<h3 id="section-15">模型不可用或 <code>model not supported</code></h3>
 <ul>
 <li>先使用星桥AI「使用密钥」页面生成的默认模型配置。</li>
 <li>不要随意填写网上看到的模型名。</li>
 <li>切换分组后重新查看该分组当前支持的模型。</li>
 </ul>
-<h3 id="section-14">超时、长时间没有首字</h3>
+<h3 id="section-16">超时、长时间没有首字</h3>
 <ul>
 <li>先发送一句简短测试语句，排除上下文过大的问题。</li>
 <li>在密钥列表切换分组后再试。</li>
 <li>检查本地网络，关闭可能冲突的代理规则。</li>
 <li>记录请求时间和报错内容，联系 QQ <code>1080152144</code>。</li>
 </ul>
-<h2 id="section-15">七、密钥安全建议</h2>
+<h2 id="section-17">十、密钥安全建议</h2>
 <ol>
 <li>一个设备或一个用途使用一个独立密钥，方便排查和停用。</li>
 <li>给测试密钥设置小额度，正式使用后再调整。</li>
@@ -366,7 +383,7 @@
 <li>怀疑泄露时立即禁用旧密钥，并创建新密钥。</li>
 <li>定期检查「使用记录」，发现陌生 IP 或异常消费及时处理。</li>
 </ol>
-<h2 id="section-16">八、完成检查</h2>
+<h2 id="section-18">十一、完成检查</h2>
 <p>首次配置结束前，逐项确认：</p>
 <ul>
 <li><input disabled="" type="checkbox"> 账户余额足够完成小额测试。</li>

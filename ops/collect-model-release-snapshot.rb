@@ -161,8 +161,7 @@ module ModelRelease
 
   class SnapshotCollector
     SAFE_MODES = {
-      "relay_ops_mode" => "read_only", "feishu_command_mode" => "dry_run",
-      "d04_mode" => "read_only", "registration_open" => false
+      "relay_ops_mode" => "read_only", "feishu_command_mode" => "dry_run"
     }.freeze
 
     def initialize(reader:, policy:, now: Time.now.utc)

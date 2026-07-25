@@ -1,18 +1,18 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-23
+**更新日期：** 2026-07-26
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
 
 ## 当前指针
 
-> 2026-07-23 运维监测与飞书双区实现已部署生产：`relay-ops` 运行 `sub2api-relay-ops:ops-dual-domain-20260723-v1`，healthy/restart `0`，继续 `read_only + dry_run`。管理员 `/ops` 已真实显示“站内运行”（Sub2API 原生公开分组与当前调度账号）和“上游账号质量”（既有定时巡检结果）；日报与 15 分钟告警/恢复复用同一数据边界，`/monitor` 保持 Sub2API 原生页面。当前上游只由 `active + schedulable` 动态集合定义，不写死供应商。一次新版 systemd 巡检成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，集合 `[10,11,12,13]` 与规范 hash `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7` 匹配；timer 已恢复 `enabled/active`。公网五个入口均为 200，匿名 `ops-view` 为隐藏 404；D04 仍 healthy、`read_only/registration=false`。未发送合成飞书事件，未改路由、账号、倍率、价格、余额、Key、候选、probe、D04 或业务数据库。
+> 2026-07-26 起，D04 内测服务、注册代理、人数与预算门禁、每日额度及其运行开关全部退役。网站采用 Sub2API 原生“开放注册 + 邀请码”能力：管理员在 Sub2API 管理后台启用注册和邀请码，Caddy 直接将认证与公开设置请求转发给 Sub2API。`relay-ops` 继续仅提供只读运维观测，不控制注册、邀请码、路由、账号或额度。
 
-- 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成。Sub2API、PostgreSQL、Redis、Caddy、D04 和只读 relay-ops 已在本轮重新核对；除批准重建的 relay-ops 外，其他容器 ID 未变。
+- 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成。Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 是当前运行边界。
 - 已完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。
-- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。D04 单用户低额生产验收已创建 1 个隔离首发用户并发放且对账 1 次 `$20`，随后恢复 `D04_MODE=read_only`、`D04_REGISTRATION_OPEN=false`。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；本轮集合为 `10/11/12/13`。服务器每 15 分钟顺序运行账号质量脚本，结果经只读证据目录进入 `/ops`，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
-- 当前风险：最新 45 样本窗口中，账号 `10/11/12/13` 成功数分别为 `27/12/0/30`，TTFT P95 分别约 `12.27s/11.92s/无成功样本/14.28s`，最新一轮四个账号均为普通 `account_test_error`。系统没有把普通错误猜成余额不足，任一失败也没有中止后续账号。该证据不满足 D04 开放所需的稳定性门禁；仍需核对每个动态账号的最低余额并等待持续质量恢复。付费 probe、模型发布和飞书 `enabled` 继续关闭。
+- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果经只读证据目录进入 `/ops`，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
+- 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe、模型发布和飞书 `enabled` 继续关闭。
 - 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
-- 下一步：让 systemd 巡检自然累积质量窗口，处理或确认账号 `12` 持续零成功及其余账号的高 TTFT/错误，再进入 D04 首发用户受控开放准备。D04 只复用动态 `active + schedulable` 集合、上游最低余额和新鲜质量指标门禁，不写死供应商或账号 ID；达到轻量门禁后再单独批准打开注册。当前不应用模型发布或 D04 launch overlay，不扩展第二套监控或飞书写能力。
+- 下一步：管理员按业务需要在 Sub2API 后台维护开放注册和邀请码；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不扩展飞书写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
 最新验证：`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
@@ -21,7 +21,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 目标：先用现有上游 API 跑通可售卖闭环，再接入 K12、Plus、Pro 等订阅账号池和其他上游中转 API。
 - 首条闭环：境外服务器 → Sub2API/PostgreSQL/Redis/Caddy → 现有上游 API → 测试 Key → 请求日志和扣费 → 人工充值。
-- 首批用户：网站注册由 `D04_REGISTRATION_OPEN` 控制；最多 15 个成功注册的首发用户，达到 15 人后即使配置开放也自动拒绝。注册成功并由 Sub2API 自动登录时立即获得当天 `$20`；此后每个上海日首次成功登录自动获得 `$20`。首发期间不开放邀请、推荐、affiliate 奖励或手动签到。
+- 用户注册：网站注册与邀请码均遵循 Sub2API 原生设置。没有独立的内测人数上限、预算门禁、每日额度或注册代理。
 - 当前不做：多节点高可用、自动支付、昂贵优化线路和复杂营销功能。
 
 ## 已确认决策
@@ -31,7 +31,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 | D01 | USD 20/月是硬上限而非默认支出；首选腾讯云国际站东京 2C2G USD 10.08/年，按已定义顺序回退，2 GiB 达阈值后再扩容 | 已确认 |
 | D13 | 所有外部支出只做选型和报告，不执行真实付款；后续按“未购买/假定配置”继续准备 | 已确认 |
 | D03 | 生产公开分组和账号关系从 Sub2API 原生能力读取，不按供应商名称定义当前上游 | 当前活动集合为未删除且 `active + schedulable` 的 `10/11/12/13`；未授权改绑或隐藏现有分组 |
-| D04 | 复用 Sub2API 原生用户中心；公开注册可配置，15 人硬上限；注册自动登录算当天首次登录，此后每上海日首次登录自动发 `$20`；首发期间无邀请、推荐、affiliate 奖励或手动签到 | 单用户低额 write 历史验收通过；当前 `read_only/registration=false`，下一门禁是动态账号最低余额、新鲜质量条件和新的受控开放批准 |
+| D04 | 历史内测自动化已退役 | 注册和邀请码由 Sub2API 原生设置直接控制；没有人数、预算或每日额度门禁 |
 | D02 | 首发阶段先用 `xingqiaolab.top`，API 子域为 `api.xingqiaolab.top`；规模化商业化前再评估 `.com` | 已注册、已解析并启用 HTTPS |
 
 2026-07-16 新事实覆盖 D01 的旧服务器选型：用户已亲自购买腾讯云中国站 Lighthouse 首尔节点，2 vCPU / 4 GiB / 60 GB SSD / 30 Mbps / 1536 GB 月流量，Ubuntu Server 24.04 LTS，1 年 CNY 199，自动续费关闭。
@@ -42,11 +42,11 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
-- 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 轻量开放另已建立服务器本地账户备份，完整覆盖 Sub2API PostgreSQL 与 D04 SQLite；当前方案接受主机整体丢失风险，不建设异地备份，也不把按天留存或周期恢复作为开放门禁。
-- 生产主机：腾讯云首尔二区实例本轮 SSH 复核和部署成功；Sub2API `v0.1.161`、PostgreSQL、Redis、Caddy、D04 和 relay-ops 均运行，正式入口为 `https://api.xingqiaolab.top`，五个公网入口 HTTP 200。
+- 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 SQLite 备份仅保留为历史证据，不再属于当前备份或恢复范围。
+- 生产主机：腾讯云首尔二区实例运行 Sub2API、PostgreSQL、Redis、Caddy 和 relay-ops；正式入口为 `https://api.xingqiaolab.top`。
 - 外部服务配置事实：账号 `8` 对应上游的 Base URL 为 `https://wawazz.xyz`，绑定 `GPT-Plus`、成本倍率 `0.05x`、并发 `1`，账号级 `User-Agent` 固定为 `node`，原生监控和 Node/Python 同步/SSE 已通过。账号 `7` 对应上游的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`，绑定 `GPT-Pro`、成本倍率 `0.10x`、并发 `2`。隔离复制账号 `9` 保留但未绑定、不可调度；Aliu `2` 未绑定、不可调度、总并发 `1`，现作为 Pro/Plus 共享灾备。上述名称和地址只记录配置事实，不定义“当前活动上游”。
 - 容量证据：Neko Pro 池短测同步并发 1–50 路全部 200，SSE 并发 3/5/10 全部完成，60/120/180 RPM 一分钟窗口全部 200；240 RPM 出现 1 次超时。生产主/备账号配置并发为 `2 + 1 = 3`，未超过已验证共享 Key 上限；详细报告见 `docs/superpowers/reports/2026-07-19-neko-capacity-verification.md`。
-- 2026-07-19：直接核对 Sub2API `v0.1.161` 源码：原生支持注册、登录、2FA、用户中心、邀请关系、管理员 API Key、用量/余额读取和强制幂等余额调整；不支持数值型全站注册上限或每日首次登录奖励。D04 因此只以有界 sidecar 叠加注册上限和每日登录额度，不维护 Sub2API 私有分支或第二套用户中心。
+- 2026-07-19：直接核对 Sub2API `v0.1.161` 源码：原生支持注册、登录、2FA、用户中心、邀请码、管理员 API Key、用量/余额读取和强制幂等余额调整。当前只使用这些原生注册与邀请码能力。
 - 2026-07-20：用户完成 `xingqiaolab.top` 注册；`api` A 记录已指向首尔实例公网地址，Caddy 已为 `api.xingqiaolab.top` 签发公开信任证书，HTTP 308、HTTPS `/health` 200、`/pricing` 200 和 `/ops` 200 均已复验。`.com` 仍保留为规模化商业化升级候选。
 - 网关扩容研究：LiteLLM 和 New API 均采用同模型多 deployment/渠道、健康路由、失败重试和用户级限流；第二个 Neko Key 应作为第二个 Sub2API 账号对象加入同一逻辑组，不能假设容量线性翻倍。详见 `docs/superpowers/reports/2026-07-19-gateway-scaling-practices.md`。
 - 生产凭据：未记录；密钥、Cookie、OAuth 凭据、2FA 恢复码和支付密钥禁止进入 Git 和普通文档。
@@ -154,8 +154,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - [x] D03 双上游方案已由用户确认并切换；生产 `GPT-Pro` / `GPT-Plus` 站内倍率均 `1.0x`，Neko 主账号倍率 `0.10`、并发 `2`（隔离复制账号并发 `1`），Wawazz 账号倍率 `0.05`、并发 `1`；Aliu 调度关闭并保留灾备。
 - [x] 完成 NekoAPI Pro 池统一验收及生产切换冒烟：目标模型、非流式、流式、`0.07x` 实际扣费、至少 3 路并发、生产网关同步/SSE 均通过；临时测试账号和 Key 已清理。长期稳定性、网络和商业授权仍待观察。
 - [x] 完成 Neko 容量短测：同步并发至少 50、SSE 并发至少 10、稳定 RPM 至少 180；240 RPM 出现一次超时。临时容量测试 Key 已删除，生产路由未修改。
-- [x] D04 首发入口新功能和单用户生产低额验收：复用 Sub2API 原生用户中心，独立服务实现可配置公开注册、原子 15 人上限、注册即当日首次登录、每上海日首次登录 `$20`、总预算核对、日报和飞书告警；邀请/推荐/affiliate 奖励/手动签到已从活动路径退役。一个隔离用户的一次 `$20`、同日幂等和三方对账已通过，最终恢复只读和注册关闭。
-- [ ] D04 实际首发开放：此前批准记录仅覆盖当时的受控尝试，不能替代新鲜门禁与新的行动批准。先通过 SSH 无写复核读取届时真实的 `active + schedulable` 集合；`10/11/12/13` 仅是最后历史集合。再核对每个活动账号的最低余额和新鲜质量条件，并确认 timer 实际状态；门禁通过且取得新的行动批准前，不应用 launch overlay、不开放注册、不创建候选或启用 probe。
+- [x] D04 内测自动化已退役：独立注册服务、人数上限、预算门禁、每日额度和受控开放流程均不再属于活动路径；注册和邀请码仅由 Sub2API 原生设置管理。
 - [x] 2026-07-19：生产升级到 `v0.1.161` 后因 `gateway.text_max_body_size` 默认 32 MiB 超过 16 MiB 上限短暂返回 502；固定 `GATEWAY_TEXT_MAX_BODY_SIZE=16777216` 后仅重建 Sub2API，健康检查恢复 200，其他三项服务未重建。
 - [x] 2026-07-19：Neko 六模型受控验证：6 次同步、1 次 `gpt-5.6-sol` SSE 均 200，SSE 含 `[DONE]`；未知模型 404；7 条记录 Token 均 `8/5`，用户扣费约 `$0.000125`，符合标准价乘 `0.15x`。
 - [x] 2026-07-19：relay-ops 只读生产部署完成；Go race/vet、PostgreSQL E2E、Ruby `118/472`、三组 Compose/Caddy 契约、真实 `/ops` 登录复用和 `/pricing` 单位/阶梯价验收通过；生产 `probe_runs=0`。

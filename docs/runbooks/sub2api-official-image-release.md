@@ -1,10 +1,9 @@
 # Sub2API Official Image Release Runbook
 
 This runbook promotes a pinned official Sub2API image by recreating only the
-`sub2api` service. PostgreSQL, Redis, Caddy, relay-ops, and the internal-test
-service are not recreated. The CLI path and the official admin UI update button
-both end at the same root-owned host executor; neither path invokes the
-in-container Docker updater.
+`sub2api` service. PostgreSQL, Redis, Caddy, and relay-ops are not recreated.
+The CLI path and the official admin UI update button both end at the same
+root-owned host executor; neither path invokes the in-container Docker updater.
 
 Production commands must start with `ssh sub2api-prod` and run from
 `/opt/sub2api/production`. A `/Users/...` path, Docker context `colima`, or

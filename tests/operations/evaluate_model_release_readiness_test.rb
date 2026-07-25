@@ -31,9 +31,7 @@ class EvaluateModelReleaseReadinessTest < Minitest::Test
       "captured_at" => "2026-07-22T12:05:00Z",
       "modes" => {
         "relay_ops_mode" => "read_only",
-        "feishu_command_mode" => "dry_run",
-        "d04_mode" => "read_only",
-        "registration_open" => false
+        "feishu_command_mode" => "dry_run"
       },
       "published" => { "families" => [], "models" => [] },
       "public_groups" => [

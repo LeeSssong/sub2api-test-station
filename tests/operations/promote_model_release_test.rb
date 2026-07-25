@@ -204,7 +204,6 @@ class PromoteModelReleaseTest < Minitest::Test
       "status" => "可升级",
       "modes" => {
         "relay_ops_mode" => "read_only", "feishu_command_mode" => "dry_run",
-        "d04_mode" => "read_only", "registration_open" => false
       },
       "account_set_sha256" => sha256(native_state.fetch("active_accounts")),
       "base_config_sha256" => sha256(before_configuration),

@@ -2,15 +2,13 @@
 
 **交接日期：** 2026-07-23
 **用途：** 新 Codex 窗口的唯一恢复入口  
-**当前主线：** 双区运维监测与飞书集成已部署并完成生产只读验收；下一步进入 D04 首发用户受控开放准备，但必须先等待动态活动账号集合的最低余额和新鲜质量指标达到轻量门禁。站内运行仅复用 Sub2API 原生聚合，账号质量仅复用已有 15 分钟定时巡检；不建立第二套路由、灾备、模型发布或付费 probe。
-**当前节点：** 生产 `/ops` 已分为“站内运行”（公开分组、动态 `active && schedulable` 调度账号、请求量、错误率、SLA、TTFT 和总耗时）与“上游账号质量”（倍率、稳定性、TTFT、最近结果和明确余额不足）；日报及 15 分钟告警/恢复复用同一投影和既有 Interactive Card/去重机制。运行镜像为 `sub2api-relay-ops:ops-dual-domain-20260723-v1`，healthy/restart `0`，模式仍为 `read_only + dry_run`。`/monitor` 未修改，匿名 `/relay-ops/api/ops-view` 为 404；五个公网入口均为 200。一次新版 systemd 巡检成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，动态集合 `[10,11,12,13]` 与规范 hash `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7` 匹配；timer 已恢复 `enabled/active`。D04 仍 healthy、`read_only/registration=false`。本次未发送合成飞书事件，也未改路由、账号、倍率、价格、余额、Key、候选、probe、D04 或业务数据库。
-**供应商页面历史覆盖：** 18:49 只读复核时旧供应商页面余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`，GPT-Plus 供应商监控 7 天可用性 `94.70%`且近 60 次有多次约 `30s` 错误/降级。该证据只用于历史监控，不定义当前上游集合。当前集合已由 Sub2API 原生读取为 `[10,11,12,13]`；是否允许 D04 开放仍以同一动态集合的新鲜最低余额和质量证据为准。
-**上游质量决策：** `health_pulse/catalog_quick/capacity_check`、质量评分、模型发布提案和飞书质量卡属于已停止的复杂方案，只保留历史测试证据。活动循环每 15 分钟按账号 ID 顺序测试所有 `active + schedulable` 账号，记录稳定性、TTFT、配置倍率和明确余额不足；单账号失败继续后续账号，不排序、不切路由、不发布模型、不逐次发送飞书。最新 45 样本中账号 `10/11/12/13` 成功数为 `27/12/0/30`，TTFT P95 约 `12.27s/11.92s/无成功样本/14.28s`，最新一轮均为普通 `account_test_error`，因此 D04 仍不可开放。
+**当前政策（2026-07-26）：** D04 / internal-test 运行时、部署文件和受控开放流程已退役。注册与邀请码仅由 Sub2API 原生管理；Caddy 不再拦截认证或公开设置接口。内测人数上限、预算门禁、每日额度和独立注册代理均不得恢复。
+**当前主线：** 账号质量巡检和 relay-ops 继续只读观测 `active + schedulable` 的动态账号集合，不控制注册、邀请码、路由、账号、额度或余额。后文所有 D04 段落均为历史证据，不能作为当前操作说明。
 
 **最新部署证据：** `relay-ops` 已更新为 `ops-dual-domain-20260723-v1`，container `84ad983a6be4`，healthy/restart `0`，仍为 `read_only + dry_run`。collector SHA-256 为 `20452b9218af79fb6ba19895d7f250b6754011a828eaf3e3f77f69faf8e90ea9`；一次 systemd 验收成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，结果 SHA-256 为 `4677925dbbcee85f4881c155c513bdb8f7fee2460bb851420b545fc3bd181536`。timer 为 `enabled/active`，五个公网入口为 200，匿名 ops-view 为 404，除 relay-ops 外的容器 ID 未变。旧 model-release timer 仍 `disabled/inactive`，其一次性 service 的既有 `exit-code` 历史状态不属于本次部署且未被重启。
 **非功能子 Agent 收口：** 公共 v3 又补齐了 shared-pool 的 `topology_phase/wave_id/TTFT/总耗时` 证据、观察窗口的 sync/SSE 指标以及 topology evidence 的 `scenario_id/scenario_hash` 绑定；非功能测试 `32/160`、V2 `32/194`、protocol `10/44`、V1 `18/63` 全部通过。XM/Wawazz 目标角色仍没有 live 资格证据，目标状态为 `NOT_READY`，详见 `docs/superpowers/reports/2026-07-22-nonfunctional-baseline-subagent.md`。
 
-**D04 验收与事故边界：** `infra/compose.d04-acceptance.yaml` 的单用户窗口已完成 1 个隔离用户和 1 次 `$20`，随后恢复 `read_only/registration=false`；同源注册返回 `403 D04_REGISTRATION_CLOSED`，窄路由哈希前后一致为 `b6e6ee12...8832ec4`。方法发现期间误发空 settings PUT，21 项设置被立即依据官方 DTO 和审计通过 Admin API 恢复；未直接写 PostgreSQL，最终设置哈希为 `52eff24fce0338ee4f8f81ad12a5d1406c46b6de050c99587035cdfd1f71a28e`。禁止再用空对象 PUT 探索设置接口。
+**历史 D04 验收：** 单用户窗口、`403 D04_REGISTRATION_CLOSED` 和相关设置恢复只保留为历史审计证据；D04 文件与运行时现已退役。禁止再用空对象 PUT 探索设置接口。
 **飞书边界：** 告警、恢复、日报、Interactive Card、命令卡、去重、App Bot 投递和确定性只读分析均已收口，并保留在当前 `ops-dual-domain-20260723-v1` 镜像中。账号质量巡检不逐次发送飞书消息；本轮没有发送合成消息或制造事件。告警/恢复卡真实视觉仅等待自然事件，属于非阻塞观察；不删除去重记录、不制造故障。
 
 ## 1. 新窗口先做什么

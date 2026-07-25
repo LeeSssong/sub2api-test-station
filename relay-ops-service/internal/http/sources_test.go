@@ -9,7 +9,6 @@ import (
 
 	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/candidates"
-	"example.invalid/relay-ops-service/internal/d04readiness"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/sub2api"
@@ -71,100 +70,6 @@ func TestDatabaseOpsSourceIncludesStoredQualityReports(t *testing.T) {
 	}
 	if len(view.QualityReports) != 1 || view.QualityReports[0].ReportID != "fast-1" || view.QualityReports[0].QualityScore != 85 {
 		t.Fatalf("quality reports = %#v", view.QualityReports)
-	}
-}
-
-func TestDatabaseOpsSourceProjectsD04ReadinessAndFailsStaleClosed(t *testing.T) {
-	t.Parallel()
-
-	evaluatedAt := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
-	balance := 9.99
-	native := opsNativeReader{
-		accounts: []sub2api.Account{{ID: 7, Name: "Account", Platform: "openai", Status: "active", Schedulable: true, GroupIDs: []int64{2}}},
-		groups:   []sub2api.Group{{ID: 2, Name: "GPT-Pro", Status: "active"}},
-	}
-	live, err := (d04readiness.Collector{Accounts: native, Clock: func() time.Time { return evaluatedAt }}).Collect(context.Background(), d04readiness.Inputs{SnapshotID: "live"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := DatabaseOpsSource{
-		Repository: qualityOpsRepository{},
-		Native:     native,
-		Readiness: staticReadinessSource{result: d04readiness.Result{
-			PolicyID: "D04-LIGHTWEIGHT-LAUNCH-v3", SnapshotID: "snapshot-1",
-			AccountSetSHA256: live.UpstreamDiscovery.AccountSetSHA256,
-			EvaluatedAt:      evaluatedAt, Decision: "go",
-			BlockingReasons: []string{"upstream_balance_below_minimum"},
-			Upstreams: []d04readiness.ResultUpstream{{
-				AccountID: 7, DisplayName: "Account", GroupIDs: []int64{2}, Status: "active", Schedulable: true,
-				RuntimeAvailable: true, BalanceUSD: &balance, Decision: "no_go",
-				BlockingReasons: []string{"upstream_balance_below_minimum"},
-			}},
-		}},
-		Clock: func() time.Time { return evaluatedAt.Add(21 * time.Minute) },
-	}
-
-	view, err := source.Snapshot(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.D04LaunchReadiness.Decision != "NO-GO" || !view.D04LaunchReadiness.Stale || len(view.D04LaunchReadiness.Upstreams) != 1 {
-		t.Fatalf("D04 readiness = %#v", view.D04LaunchReadiness)
-	}
-	if got := view.D04LaunchReadiness.Upstreams[0].Blockers; got != "余额低于最低门槛" {
-		t.Fatalf("blockers = %q", got)
-	}
-	if got := view.D04LaunchReadiness.Upstreams[0].BlockerCodes; got != "upstream_balance_below_minimum" {
-		t.Fatalf("blocker codes = %q", got)
-	}
-	if got := view.D04LaunchReadiness.Blockers; got != "余额低于最低门槛；门禁结果已过期" {
-		t.Fatalf("top-level blockers = %q", got)
-	}
-}
-
-func TestDatabaseOpsSourceUsesLiveAccountsWhenReadinessSetChanged(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 7, 22, 16, 30, 0, 0, time.UTC)
-	native := opsNativeReader{
-		accounts: []sub2api.Account{
-			{ID: 11, Name: "XM PRO", Platform: "openai", Status: "active", Schedulable: true, GroupIDs: []int64{2}},
-			{ID: 7, Name: "disabled old", Platform: "openai", Status: "disabled", Schedulable: false, GroupIDs: []int64{2}},
-			{ID: 10, Name: "XM PLUS", Platform: "openai", Status: "active", Schedulable: true, GroupIDs: []int64{6}},
-			{ID: 12, Name: "paused", Platform: "openai", Status: "active", Schedulable: false, GroupIDs: []int64{6}},
-		},
-		groups: []sub2api.Group{{ID: 2, Name: "GPT-Pro", Status: "active"}, {ID: 6, Name: "GPT-Plus", Status: "active"}},
-	}
-	expected, err := (d04readiness.Collector{Accounts: native, Clock: func() time.Time { return now }}).Collect(context.Background(), d04readiness.Inputs{SnapshotID: "live"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := DatabaseOpsSource{
-		Repository: qualityOpsRepository{}, Native: native,
-		Readiness: staticReadinessSource{result: d04readiness.Result{
-			PolicyID: "D04-LIGHTWEIGHT-LAUNCH-v3", SnapshotID: "old",
-			AccountSetSHA256: strings.Repeat("a", 64), EvaluatedAt: now.Add(-time.Minute), Decision: "go",
-			Upstreams: []d04readiness.ResultUpstream{{AccountID: 7, DisplayName: "old", GroupIDs: []int64{2}, Status: "active", Schedulable: true, RuntimeAvailable: true, Decision: "go"}},
-		}},
-		Clock: func() time.Time { return now },
-	}
-
-	view, err := source.Snapshot(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	readiness := view.D04LaunchReadiness
-	if readiness.Decision != "NO-GO" || readiness.AccountSetSHA256 != expected.UpstreamDiscovery.AccountSetSHA256 || len(readiness.Upstreams) != 2 {
-		t.Fatalf("readiness = %#v", readiness)
-	}
-	if readiness.Upstreams[0].AccountID != "10" || readiness.Upstreams[0].DisplayName != "XM PLUS" || readiness.Upstreams[0].Groups != "GPT-Plus" || readiness.Upstreams[1].AccountID != "11" || readiness.Upstreams[1].Groups != "GPT-Pro" {
-		t.Fatalf("live upstreams = %#v", readiness.Upstreams)
-	}
-	if strings.Contains(readiness.Blockers, "old") || !strings.Contains(readiness.BlockerCodes, "upstream_account_set_changed") {
-		t.Fatalf("blockers=%q codes=%q", readiness.Blockers, readiness.BlockerCodes)
-	}
-	if view.RefreshedAt != "2026-07-22 16:30 UTC" {
-		t.Fatalf("refreshed_at=%q", view.RefreshedAt)
 	}
 }
 
@@ -277,17 +182,10 @@ func TestDatabaseOpsSourceProjectsSiteRuntime(t *testing.T) {
 	if len(view.SiteRuntime.Accounts) != 1 || view.SiteRuntime.Accounts[0].ID != 10 || view.SiteRuntime.Accounts[0].Status != opsmetrics.StatusOK {
 		t.Fatalf("site runtime accounts = %#v", view.SiteRuntime.Accounts)
 	}
-	if view.D04LaunchReadiness.Available != true || view.AccountQuality.Available != true {
-		t.Fatalf("existing projections = readiness:%#v quality:%#v", view.D04LaunchReadiness, view.AccountQuality)
+	if view.AccountQuality.Available != true {
+		t.Fatalf("account quality = %#v", view.AccountQuality)
 	}
 }
-
-type staticReadinessSource struct {
-	result d04readiness.Result
-	err    error
-}
-
-func (s staticReadinessSource) Read() (d04readiness.Result, error) { return s.result, s.err }
 
 type staticAccountQualitySource struct {
 	result accountquality.Result

@@ -19,9 +19,11 @@ type adminUsageDetailRepo struct {
 	record *service.UsageLog
 	err    error
 	gotID  int64
+	calls  int
 }
 
 func (r *adminUsageDetailRepo) GetByID(_ context.Context, id int64) (*service.UsageLog, error) {
+	r.calls++
 	r.gotID = id
 	return r.record, r.err
 }
@@ -74,6 +76,7 @@ func TestAdminUsageGetByIDReturnsAdminProjection(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
 	require.Equal(t, 0, body.Code)
 	require.Equal(t, "success", body.Message)
+	require.Equal(t, 1, repo.calls)
 	require.Equal(t, int64(42), repo.gotID)
 	require.Equal(t, "req-admin-detail", body.Data.RequestID)
 	require.NotNil(t, body.Data.InboundEndpoint)
@@ -100,19 +103,23 @@ func TestAdminUsageGetByIDRejectsInvalidID(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Zero(t, repo.gotID)
+	require.Zero(t, repo.calls)
 }
 
 func TestAdminUsageGetByIDRejectsNonPositiveID(t *testing.T) {
-	repo := &adminUsageDetailRepo{}
-	router := newAdminUsageDetailTestRouter(repo)
+	for _, id := range []string{"0", "-1"} {
+		t.Run(id, func(t *testing.T) {
+			repo := &adminUsageDetailRepo{}
+			router := newAdminUsageDetailTestRouter(repo)
 
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/admin/usage/0", nil)
-	router.ServeHTTP(recorder, request)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/admin/usage/"+id, nil)
+			router.ServeHTTP(recorder, request)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Zero(t, repo.gotID)
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Zero(t, repo.calls)
+		})
+	}
 }
 
 func TestAdminUsageGetByIDPreservesNotFound(t *testing.T) {
@@ -124,6 +131,7 @@ func TestAdminUsageGetByIDPreservesNotFound(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusNotFound, recorder.Code)
+	require.Equal(t, 1, repo.calls)
 	require.Equal(t, int64(404), repo.gotID)
 	var body response.Response
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))

@@ -36,6 +36,9 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	if cfg.FastProfilePath != "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml" {
 		t.Fatalf("FastProfilePath = %q", cfg.FastProfilePath)
 	}
+	if cfg.AnalyzerCommandPath != "/app/ops/analyze-account-monitor.rb" {
+		t.Fatalf("AnalyzerCommandPath = %q", cfg.AnalyzerCommandPath)
+	}
 }
 
 func TestLoadAcceptsAbsoluteCandidateSecretDirectory(t *testing.T) {

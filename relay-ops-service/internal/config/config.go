@@ -49,6 +49,7 @@ type Config struct {
 	FastProfilePath          string
 	CandidateSecretDir       string
 	QualificationProfilePath string
+	AnalyzerCommandPath      string
 }
 
 func Load(env func(string) string) (Config, error) {
@@ -154,6 +155,7 @@ func Load(env func(string) string) (Config, error) {
 	if !filepath.IsAbs(candidateSecretDir) {
 		return Config{}, fmt.Errorf("RELAY_OPS_CANDIDATE_SECRET_DIR must be an absolute path")
 	}
+	analyzerCommandPath := get("RELAY_OPS_ACCOUNT_MONITOR_ANALYZER_PATH", "/app/ops/analyze-account-monitor.rb")
 	return Config{
 		Mode:                     mode,
 		ListenAddress:            get("RELAY_OPS_LISTEN_ADDRESS", ":8100"),
@@ -184,6 +186,7 @@ func Load(env func(string) string) (Config, error) {
 		FastProfilePath:          get("RELAY_OPS_FAST_PROFILE_PATH", "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml"),
 		CandidateSecretDir:       candidateSecretDir,
 		QualificationProfilePath: get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
+		AnalyzerCommandPath:      analyzerCommandPath,
 	}, nil
 }
 

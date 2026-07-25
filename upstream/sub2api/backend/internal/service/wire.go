@@ -785,6 +785,8 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
+	ProvideAccountMonitorService,
+	ProvideAccountMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
@@ -842,4 +844,19 @@ func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *Set
 	svc.SetScheduler(r)
 	r.Start()
 	return r
+}
+
+func ProvideAccountMonitorService(
+	repo AccountMonitorRepository,
+	accountRepo AccountMonitorAccountRepository,
+	accountTestService *AccountTestService,
+	accountUsageService *AccountUsageService,
+) *AccountMonitorService {
+	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService)
+}
+
+func ProvideAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {
+	runner := NewAccountMonitorRunner(svc)
+	runner.Start()
+	return runner
 }

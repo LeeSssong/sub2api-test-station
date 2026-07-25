@@ -1894,6 +1894,11 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 }
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
+	if c != nil && c.Request != nil {
+		if observer, ok := c.Request.Context().Value(accountMonitorProbeObserverKey{}).(*accountMonitorProbeObserver); ok {
+			observer.observe(event, time.Now())
+		}
+	}
 	eventJSON, _ := json.Marshal(event)
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON); err != nil {
 		log.Printf("failed to write SSE event: %v", err)

@@ -63,6 +63,7 @@ require 'USER 10002:10002' infra/Dockerfile.relay-ops
 require 'ENTRYPOINT ["/relay-ops"]' infra/Dockerfile.relay-ops
 require 'd04-readiness-snapshot' infra/Dockerfile.relay-ops
 require 'ops/collect-account-quality-pulse.rb' infra/Dockerfile.relay-ops
+require 'ops/analyze-account-monitor.rb' infra/Dockerfile.relay-ops
 require 'config/upstream-benchmarks/quality-first-fast-v1.yaml' infra/Dockerfile.relay-ops
 require 'path /pricing /relay-ops/static/*' infra/Caddyfile
 require 'path /ops /ops/* /relay-ops/api/*' infra/Caddyfile
@@ -102,6 +103,8 @@ require "protocol === 'https:'" relay-ops-service/internal/http/static/ops-admin
 require "window.location.replace('/404')" relay-ops-service/internal/http/static/ops.js
 require 'RequireHiddenAdmin(dependencies.Auth' relay-ops-service/internal/http/server.go
 require 'Native: reader' relay-ops-service/internal/app/app.go
+require 'ListAccountMonitors' relay-ops-service/internal/sub2api/client.go
+require '/api/v1/admin/account-monitors' relay-ops-service/internal/sub2api/client.go
 forbid '<form' relay-ops-service/internal/http/templates/ops.html
 forbid '<input' relay-ops-service/internal/http/templates/ops.html
 forbid '<select' relay-ops-service/internal/http/templates/ops.html

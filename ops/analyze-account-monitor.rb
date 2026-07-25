@@ -29,8 +29,10 @@ def clamp(value)
 end
 
 def max_utilization(account)
-  windows = account.fetch("usage_windows", {})
-  windows.values.map { |window| window.fetch("utilization", 0.0).to_f }.max.to_f.clamp(0.0, 1.0)
+  windows = account.fetch("usage_windows", [])
+  raise TypeError, "usage_windows must be an array" unless windows.is_a?(Array)
+
+  windows.map { |window| window.fetch("utilization", 0.0).to_f }.max.to_f.clamp(0.0, 1.0)
 end
 
 def score(account)
@@ -50,9 +52,17 @@ def usable_latest_status?(account)
   account.fetch("error_code", "").to_s.empty?
 end
 
+def required_metrics?(account)
+  !account["ttft_p95_ms"].nil? && !account["latency_p95_ms"].nil?
+end
+
 def account_view(account)
-  windows = account.fetch("usage_windows", {})
-  usage = windows.keys.sort.map { |name| "#{name} #{format('%.1f%%', windows.fetch(name).fetch('utilization').to_f * 100)}" }.join("、")
+  windows = account.fetch("usage_windows", [])
+  raise TypeError, "usage_windows must be an array" unless windows.is_a?(Array)
+
+  usage = windows.sort_by { |window| window.fetch("name") }
+    .map { |window| "#{window.fetch('name')} #{format('%.1f%%', window.fetch('utilization').to_f * 100)}" }
+    .join("、")
   usage = "无" if usage.empty?
   {
     "account_id" => account.fetch("account_id"),
@@ -117,6 +127,9 @@ def analyze(document)
       elsif current.fetch("model_id").to_s.empty? || item.fetch("model_id") != current.fetch("model_id")
         candidate_state = "incompatible_model"
         break
+      elsif !required_metrics?(current) || !required_metrics?(item)
+        candidate_state = "missing_metrics"
+        break
       elsif !usable_latest_status?(current) || !usable_latest_status?(item)
         candidate_state = "recent_failure"
         break
@@ -130,7 +143,8 @@ def analyze(document)
 
     eligible = current_rows.drop(1).select do |item|
       item.fetch("status") == "active" && item.fetch("schedulable") && !item.fetch("stale", false) &&
-        item.fetch("sample_count") >= 3 && item.fetch("model_id") == current.fetch("model_id") && usable_latest_status?(item)
+        item.fetch("sample_count") >= 3 && item.fetch("model_id") == current.fetch("model_id") &&
+        required_metrics?(current) && required_metrics?(item) && usable_latest_status?(item)
     end
     if eligible.empty?
       group["reasons"] = ["没有满足证据条件的候选账号"]

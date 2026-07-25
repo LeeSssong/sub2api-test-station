@@ -503,11 +503,12 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 			"schema_version":1,
 			"observed_at":"2026-07-25T07:00:00Z",
 			"stale":false,
-			"settings":{"interval_seconds":300},
+			"settings":{"interval_seconds":300,"updated_by":7,"updated_at":"2026-07-25T06:58:00Z"},
 			"accounts":[{
 				"account_id":11,
 				"name":"账号 A",
 				"platform":"openai",
+				"account_type":"oauth",
 				"status":"active",
 				"schedulable":true,
 				"group_ids":[3],
@@ -523,15 +524,18 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 				"multiplier":0.1,
 				"request_count":100,
 				"error_count":2,
-				"usage_windows":{
-					"daily":{"name":"daily","utilization":0.42,"resets_at":"2026-07-26T00:00:00Z","requests":12,"tokens":340}
-				},
+				"today_stats":{"requests":100,"tokens":3400,"cost":1.2,"standard_cost":2.4,"user_cost":1.8},
+				"usage_windows":[
+					{"name":"daily","utilization":0.42,"resets_at":"2026-07-26T00:00:00Z","requests":12,"tokens":340}
+				],
+				"latest":{"status":"success","ttft_ms":150,"latency_ms":740,"checked_at":"2026-07-25T06:59:00Z"},
 				"checked_at":"2026-07-25T06:59:00Z",
 				"stale":false
 			},{
 				"account_id":12,
 				"name":"账号 B",
 				"platform":"openai",
+				"account_type":"oauth",
 				"status":"active",
 				"schedulable":true,
 				"group_ids":[3],
@@ -547,8 +551,7 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 				"multiplier":0.08,
 				"request_count":60,
 				"error_count":0,
-				"usage_windows":{},
-				"checked_at":"2026-07-25T06:59:00Z",
+				"usage_windows":[],
 				"stale":false
 			}]
 		}}`)
@@ -563,15 +566,27 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 		projection.ObservedAt.Format(time.RFC3339) != "2026-07-25T07:00:00Z" || projection.Stale {
 		t.Fatalf("projection metadata = %#v", projection)
 	}
+	if projection.Settings.UpdatedBy != 7 || projection.Settings.UpdatedAt == nil ||
+		projection.Settings.UpdatedAt.Format(time.RFC3339) != "2026-07-25T06:58:00Z" {
+		t.Fatalf("settings = %#v", projection.Settings)
+	}
 	if len(projection.Accounts) != 2 || projection.Accounts[1].AccountID != 12 {
 		t.Fatalf("accounts = %#v", projection.Accounts)
+	}
+	if projection.Accounts[0].AccountType != "oauth" || projection.Accounts[0].TodayStats == nil ||
+		projection.Accounts[0].TodayStats.Tokens != 3400 {
+		t.Fatalf("account usage projection = %#v", projection.Accounts[0])
 	}
 	if len(projection.Accounts[0].UsageWindows) != 1 {
 		t.Fatalf("usage windows = %#v", projection.Accounts[0].UsageWindows)
 	}
-	window := projection.Accounts[0].UsageWindows["daily"]
+	window := projection.Accounts[0].UsageWindows[0]
 	if window.Name != "daily" || window.Utilization != 0.42 || window.ResetsAt == nil || window.Requests != 12 || window.Tokens != 340 {
 		t.Fatalf("usage window = %#v", window)
+	}
+	if projection.Accounts[0].Latest == nil || projection.Accounts[0].Latest.Status != "success" ||
+		projection.Accounts[0].CheckedAt == nil || projection.Accounts[1].CheckedAt != nil {
+		t.Fatalf("latest/check times = %#v / %#v", projection.Accounts[0], projection.Accounts[1])
 	}
 	if projection.Accounts[1].TTFTP95MS == nil || *projection.Accounts[1].TTFTP95MS != 120 {
 		t.Fatalf("ttft = %#v", projection.Accounts[1].TTFTP95MS)

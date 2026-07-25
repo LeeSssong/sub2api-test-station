@@ -11,7 +11,7 @@ RUN addgroup -S -g 10002 relayops && adduser -S -D -H -u 10002 -G relayops relay
 WORKDIR /app
 COPY --from=build /out/relay-ops /relay-ops
 COPY --from=build /out/d04-readiness-snapshot /d04-readiness-snapshot
-COPY ops/collect-account-quality-pulse.rb ops/upstream-benchmark.rb ops/upstream-benchmark-nonfunctional.rb ops/upstream-benchmark-protocols.rb ops/upstream-benchmark-v2.rb /app/ops/
+COPY ops/analyze-account-monitor.rb ops/collect-account-quality-pulse.rb ops/upstream-benchmark.rb ops/upstream-benchmark-nonfunctional.rb ops/upstream-benchmark-protocols.rb ops/upstream-benchmark-v2.rb /app/ops/
 COPY config/upstream-benchmarks/candidate-watch-v2.yaml config/upstream-benchmarks/mvp-text-v2.yaml config/upstream-benchmarks/quality-first-fast-v1.yaml /app/config/upstream-benchmarks/
 USER 10002:10002
 ENTRYPOINT ["/relay-ops"]

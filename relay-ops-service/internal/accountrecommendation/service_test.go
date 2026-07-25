@@ -124,9 +124,10 @@ func accountWithGroups(id int64, name, model string, success, ttft, latency, mul
 		GroupIDs: groupIDs, GroupNames: []string{"GPT-Pro"}, ModelID: model, LatestStatus: "passed",
 		SampleCount: 4, SuccessRate: success, TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency),
 		Multiplier: multiplier, RequestCount: 40, ErrorCount: 0,
-		CheckedAt:    time.Date(2026, 7, 25, 6, 59, 0, 0, time.UTC),
-		UsageWindows: map[string]sub2api.AccountMonitorUsageWindow{"daily": {Name: "daily", Utilization: 0.2}},
+		CheckedAt:    timePtr(time.Date(2026, 7, 25, 6, 59, 0, 0, time.UTC)),
+		UsageWindows: []sub2api.AccountMonitorUsageWindow{{Name: "daily", Utilization: 0.2}},
 	}
 }
 
-func float64ptr(value float64) *float64 { return &value }
+func float64ptr(value float64) *float64  { return &value }
+func timePtr(value time.Time) *time.Time { return &value }

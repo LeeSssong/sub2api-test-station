@@ -517,9 +517,10 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 	seen := make(map[int64]struct{}, len(projection.Accounts))
 	for _, account := range projection.Accounts {
 		if account.AccountID <= 0 || strings.TrimSpace(account.Name) == "" || strings.TrimSpace(account.Platform) == "" ||
+			strings.TrimSpace(account.AccountType) == "" ||
 			account.SampleCount < 0 || account.SuccessRate < 0 || account.SuccessRate > 1 ||
 			account.Multiplier < 0 || account.RequestCount < 0 || account.ErrorCount < 0 ||
-			account.CheckedAt.IsZero() || !finiteNumber(account.SuccessRate) || !finiteNumber(account.Multiplier) {
+			!finiteNumber(account.SuccessRate) || !finiteNumber(account.Multiplier) {
 			return errSchemaMismatch
 		}
 		if _, ok := seen[account.AccountID]; ok {
@@ -535,8 +536,23 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 		if account.LatencyP95MS != nil && (!finiteNumber(*account.LatencyP95MS) || *account.LatencyP95MS < 0) {
 			return errSchemaMismatch
 		}
+		if account.CheckedAt != nil && account.CheckedAt.IsZero() {
+			return errSchemaMismatch
+		}
+		if account.Latest != nil {
+			if strings.TrimSpace(account.Latest.Status) == "" || account.Latest.CheckedAt.IsZero() ||
+				(account.Latest.TTFTMS != nil && (!finiteNumber(*account.Latest.TTFTMS) || *account.Latest.TTFTMS < 0)) ||
+				(account.Latest.LatencyMS != nil && (!finiteNumber(*account.Latest.LatencyMS) || *account.Latest.LatencyMS < 0)) {
+				return errSchemaMismatch
+			}
+		}
+		if account.TodayStats != nil && (account.TodayStats.Requests < 0 || account.TodayStats.Tokens < 0 ||
+			!finiteNumber(account.TodayStats.Cost) || !finiteNumber(account.TodayStats.StandardCost) ||
+			!finiteNumber(account.TodayStats.UserCost)) {
+			return errSchemaMismatch
+		}
 		for _, window := range account.UsageWindows {
-			if window.Utilization < 0 || window.Utilization > 1 || !finiteNumber(window.Utilization) ||
+			if strings.TrimSpace(window.Name) == "" || window.Utilization < 0 || !finiteNumber(window.Utilization) ||
 				window.Requests < 0 || window.Tokens < 0 {
 				return errSchemaMismatch
 			}

@@ -37,6 +37,20 @@ class AnalyzeAccountMonitorTest < Minitest::Test
     refute output.fetch(:status).success?
   end
 
+  def test_suppresses_recommendation_when_required_metrics_are_missing
+    input = projection(
+      account(11, "账号 A", 0.70, 450, 1_600, 0.12, 100, 8),
+      account(12, "账号 B", 0.99, 120, 500, 0.08, 40, 0)
+    )
+    input.fetch("accounts")[1]["ttft_p95_ms"] = nil
+
+    output = run_analyzer(input)
+    assert output.fetch(:status).success?, output
+    group = JSON.parse(output.fetch(:file)).fetch("groups").first
+    refute_equal "candidate_better", group.fetch("decision")
+    assert_equal "missing_metrics", group.fetch("evidence_state")
+  end
+
   private
 
   def run_analyzer(document)
@@ -69,7 +83,7 @@ class AnalyzeAccountMonitorTest < Minitest::Test
       "sample_count" => 4, "success_rate" => success, "ttft_p50_ms" => ttft / 2.0,
       "ttft_p95_ms" => ttft, "latency_p95_ms" => latency, "multiplier" => multiplier,
       "request_count" => requests, "error_count" => errors,
-      "usage_windows" => { "daily" => { "name" => "daily", "utilization" => 0.2, "requests" => 1, "tokens" => 2 } },
+      "usage_windows" => [{ "name" => "daily", "utilization" => 0.2, "requests" => 1, "tokens" => 2 }],
       "checked_at" => "2026-07-25T06:59:00Z", "stale" => false
     }
   end

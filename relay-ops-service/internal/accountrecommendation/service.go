@@ -267,19 +267,11 @@ func usageWindows(account sub2api.AccountMonitorAccount) string {
 	if len(account.UsageWindows) == 0 {
 		return "无"
 	}
-	names := make([]string, 0, len(account.UsageWindows))
-	for name := range account.UsageWindows {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
-		window := account.UsageWindows[name]
-		label := window.Name
-		if strings.TrimSpace(label) == "" {
-			label = name
-		}
-		parts = append(parts, label+" "+formatPercent(window.Utilization))
+	windows := append([]sub2api.AccountMonitorUsageWindow(nil), account.UsageWindows...)
+	sort.Slice(windows, func(i, j int) bool { return windows[i].Name < windows[j].Name })
+	parts := make([]string, 0, len(windows))
+	for _, window := range windows {
+		parts = append(parts, window.Name+" "+formatPercent(window.Utilization))
 	}
 	return strings.Join(parts, "、")
 }

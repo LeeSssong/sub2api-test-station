@@ -105,6 +105,9 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 
+		// 账号监控
+		registerAccountMonitorRoutes(admin, h)
+
 		// 风控中心
 		registerContentModerationRoutes(admin, h)
 
@@ -743,6 +746,17 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		templates.DELETE("/:id", h.Admin.ChannelMonitorTemplate.Delete)
 		templates.GET("/:id/monitors", h.Admin.ChannelMonitorTemplate.AssociatedMonitors)
 		templates.POST("/:id/apply", h.Admin.ChannelMonitorTemplate.Apply)
+	}
+}
+
+func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	monitors := admin.Group("/account-monitors")
+	{
+		monitors.GET("", h.Admin.AccountMonitor.List)
+		monitors.PUT("/settings", h.Admin.AccountMonitor.UpdateSettings)
+		monitors.POST("/run", h.Admin.AccountMonitor.Run)
+		monitors.POST("/:account_id/run", h.Admin.AccountMonitor.RunOne)
+		monitors.GET("/:account_id/history", h.Admin.AccountMonitor.History)
 	}
 }
 

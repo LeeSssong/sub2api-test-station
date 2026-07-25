@@ -52,7 +52,9 @@ type Account struct {
 }
 
 type AccountMonitorSettings struct {
-	IntervalSeconds int `json:"interval_seconds"`
+	IntervalSeconds int        `json:"interval_seconds"`
+	UpdatedBy       int64      `json:"updated_by,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 }
 
 type AccountMonitorUsageWindow struct {
@@ -63,28 +65,48 @@ type AccountMonitorUsageWindow struct {
 	Tokens      int64      `json:"tokens"`
 }
 
+type AccountMonitorLatest struct {
+	Status     string    `json:"status"`
+	ErrorCode  string    `json:"error_code,omitempty"`
+	HTTPStatus *int      `json:"http_status,omitempty"`
+	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
+	LatencyMS  *float64  `json:"latency_ms,omitempty"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
+type AccountMonitorTodayStats struct {
+	Requests     int64   `json:"requests"`
+	Tokens       int64   `json:"tokens"`
+	Cost         float64 `json:"cost"`
+	StandardCost float64 `json:"standard_cost"`
+	UserCost     float64 `json:"user_cost"`
+}
+
 type AccountMonitorAccount struct {
-	AccountID    int64                                `json:"account_id"`
-	Name         string                               `json:"name"`
-	Platform     string                               `json:"platform"`
-	Status       string                               `json:"status"`
-	Schedulable  bool                                 `json:"schedulable"`
-	GroupIDs     []int64                              `json:"group_ids"`
-	GroupNames   []string                             `json:"group_names"`
-	ModelID      string                               `json:"model_id"`
-	LatestStatus string                               `json:"latest_status"`
-	ErrorCode    string                               `json:"error_code"`
-	SampleCount  int                                  `json:"sample_count"`
-	SuccessRate  float64                              `json:"success_rate"`
-	TTFTP50MS    *float64                             `json:"ttft_p50_ms"`
-	TTFTP95MS    *float64                             `json:"ttft_p95_ms"`
-	LatencyP95MS *float64                             `json:"latency_p95_ms"`
-	Multiplier   float64                              `json:"multiplier"`
-	RequestCount int64                                `json:"request_count"`
-	ErrorCount   int64                                `json:"error_count"`
-	UsageWindows map[string]AccountMonitorUsageWindow `json:"usage_windows"`
-	CheckedAt    time.Time                            `json:"checked_at"`
-	Stale        bool                                 `json:"stale"`
+	AccountID    int64                       `json:"account_id"`
+	Name         string                      `json:"name"`
+	Platform     string                      `json:"platform"`
+	AccountType  string                      `json:"account_type"`
+	Status       string                      `json:"status"`
+	Schedulable  bool                        `json:"schedulable"`
+	GroupIDs     []int64                     `json:"group_ids"`
+	GroupNames   []string                    `json:"group_names"`
+	ModelID      string                      `json:"model_id"`
+	LatestStatus string                      `json:"latest_status"`
+	ErrorCode    string                      `json:"error_code"`
+	SampleCount  int                         `json:"sample_count"`
+	SuccessRate  float64                     `json:"success_rate"`
+	TTFTP50MS    *float64                    `json:"ttft_p50_ms"`
+	TTFTP95MS    *float64                    `json:"ttft_p95_ms"`
+	LatencyP95MS *float64                    `json:"latency_p95_ms"`
+	Multiplier   float64                     `json:"multiplier"`
+	RequestCount int64                       `json:"request_count"`
+	ErrorCount   int64                       `json:"error_count"`
+	TodayStats   *AccountMonitorTodayStats   `json:"today_stats,omitempty"`
+	UsageWindows []AccountMonitorUsageWindow `json:"usage_windows"`
+	Latest       *AccountMonitorLatest       `json:"latest,omitempty"`
+	CheckedAt    *time.Time                  `json:"checked_at,omitempty"`
+	Stale        bool                        `json:"stale"`
 }
 type AccountMonitorProjection struct {
 	SchemaVersion int                     `json:"schema_version"`

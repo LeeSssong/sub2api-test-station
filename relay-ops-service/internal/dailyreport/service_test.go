@@ -251,10 +251,12 @@ func monitorAccount(id int64, name string, success, ttft, latency, multiplier fl
 		GroupIDs: []int64{3}, GroupNames: []string{"GPT-Pro"}, ModelID: "gpt-5.6-sol",
 		LatestStatus: "passed", SampleCount: 4, SuccessRate: success,
 		TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency), Multiplier: multiplier,
-		CheckedAt:    time.Date(2026, 7, 25, 7, 29, 0, 0, time.UTC),
-		UsageWindows: map[string]sub2api.AccountMonitorUsageWindow{"daily": {Name: "daily", Utilization: 0.2}},
+		CheckedAt:    timePtr(time.Date(2026, 7, 25, 7, 29, 0, 0, time.UTC)),
+		UsageWindows: []sub2api.AccountMonitorUsageWindow{{Name: "daily", Utilization: 0.2}},
 	}
 }
+
+func timePtr(value time.Time) *time.Time { return &value }
 
 type reportIncidentStore struct {
 	items    []string

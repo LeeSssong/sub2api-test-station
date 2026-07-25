@@ -56,7 +56,7 @@ export function HeroSection({ session }: HeroSectionProps) {
           <span className="status-dot" aria-hidden="true" />
           <span>首尔节点 · 稳定运行</span>
         </div>
-        <div className="hero-grid" data-layout="diagonal">
+        <div className="hero-grid" data-layout="diagonal" data-composition="raised-diagonal">
           <h1 id="hero-title" className="hero-title">
             <span className="hero-brand">星桥</span>
             <span className="hero-tagline">链接世界顶尖模型</span>

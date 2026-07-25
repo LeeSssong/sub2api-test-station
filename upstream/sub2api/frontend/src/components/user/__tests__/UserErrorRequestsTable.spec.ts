@@ -18,8 +18,8 @@ const DataTableStub = {
   props: ['columns', 'data'],
   emits: ['rowClick', 'sort'],
   template: `
-    <div>
-      <button data-testid="error-row" @click="$emit('rowClick', data[0])">row</button>
+    <div data-testid="error-row" @click="$emit('rowClick', data[0])">
+      <span>row</span>
       <slot name="cell-detail" :row="data[0]" />
     </div>
   `,
@@ -86,9 +86,11 @@ describe('UserErrorRequestsTable', () => {
     expect(detailAction.classes()).toEqual(expect.arrayContaining(['min-h-9', 'min-w-24']))
 
     await detailAction.trigger('click')
+    expect(wrapper.getComponent({ name: 'DataTable' }).emitted('rowClick')).toBeUndefined()
     expect(wrapper.getComponent({ name: 'UserErrorDetailModal' }).props('errorId')).toBe(7)
 
     await wrapper.get('[data-testid="error-row"]').trigger('click')
+    expect(wrapper.getComponent({ name: 'DataTable' }).emitted('rowClick')).toHaveLength(1)
     expect(wrapper.getComponent({ name: 'UserErrorDetailModal' }).props('errorId')).toBe(7)
   })
 

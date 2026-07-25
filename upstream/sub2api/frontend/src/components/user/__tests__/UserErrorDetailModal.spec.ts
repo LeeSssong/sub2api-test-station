@@ -60,6 +60,16 @@ const detail = {
   user_agent: 'test-agent',
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function mountModal() {
   return mount(UserErrorDetailModal, {
     props: {
@@ -135,5 +145,110 @@ describe('UserErrorDetailModal', () => {
     expect(wrapper.find('[data-testid="user-error-request-id"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="copy-user-error-request-id"]').exists()).toBe(false)
     consoleError.mockRestore()
+  })
+
+  it('allows only the latest changed-ID success to render and be copied', async () => {
+    const first = deferred<typeof detail>()
+    const second = deferred<typeof detail>()
+    getMyErrorDetail
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    await wrapper.setProps({ errorId: 8 })
+    first.resolve({ ...detail, request_id: 'req-stale-error-7' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="user-error-request-id"]').exists()).toBe(false)
+    expect(wrapper.find('.animate-spin').exists()).toBe(true)
+
+    second.resolve({ ...detail, id: 8, request_id: 'req-current-error-8' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="user-error-request-id"]').text()).toBe('req-current-error-8')
+
+    await wrapper.get('[data-testid="copy-user-error-request-id"]').trigger('click')
+    expect(copyToClipboard).toHaveBeenCalledWith('req-current-error-8', 'Copied')
+  })
+
+  it('ignores a stale rejection while the latest changed ID is loading', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const first = deferred<typeof detail>()
+    const second = deferred<typeof detail>()
+    getMyErrorDetail
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    await wrapper.setProps({ errorId: 8 })
+    first.reject(new Error('stale request failed'))
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Failed to load detail')
+    expect(wrapper.find('.animate-spin').exists()).toBe(true)
+
+    second.resolve({ ...detail, id: 8, request_id: 'req-current-error-8' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="user-error-request-id"]').text()).toBe('req-current-error-8')
+    consoleError.mockRestore()
+  })
+
+  it('invalidates a pending request across close and reopen', async () => {
+    const first = deferred<typeof detail>()
+    const second = deferred<typeof detail>()
+    getMyErrorDetail
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    wrapper.getComponent({ name: 'BaseDialog' }).vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.emitted('update:show')).toEqual([[false]])
+    expect(wrapper.find('.animate-spin').exists()).toBe(false)
+
+    await wrapper.setProps({ show: false, errorId: 8 })
+    await wrapper.setProps({ show: true })
+    first.resolve({ ...detail, request_id: 'req-pre-close-error-7' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="user-error-request-id"]').exists()).toBe(false)
+    expect(wrapper.find('.animate-spin').exists()).toBe(true)
+
+    second.resolve({ ...detail, id: 8, request_id: 'req-reopened-error-8' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="user-error-request-id"]').text()).toBe('req-reopened-error-8')
+  })
+
+  it('invalidates a pending request when the open dialog loses its valid ID', async () => {
+    const pending = deferred<typeof detail>()
+    getMyErrorDetail.mockReturnValueOnce(pending.promise)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    await wrapper.setProps({ errorId: 0 })
+    pending.resolve({ ...detail, request_id: 'req-invalidated-error-7' })
+    await flushPromises()
+
+    expect(getMyErrorDetail).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.animate-spin').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="user-error-request-id"]').exists()).toBe(false)
+  })
+
+  it('invalidates a pending request before unmount', async () => {
+    const pending = deferred<typeof detail>()
+    getMyErrorDetail.mockReturnValueOnce(pending.promise)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    const vm = wrapper.vm as unknown as {
+      detail: typeof detail | null
+    }
+    wrapper.unmount()
+    pending.resolve({ ...detail, request_id: 'req-after-unmount-error-7' })
+    await flushPromises()
+
+    expect(vm.detail).toBeNull()
   })
 })

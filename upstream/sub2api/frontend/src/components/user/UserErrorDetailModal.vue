@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog :show="show" :title="t('usage.errors.detail.title')" width="wide" @close="emit('update:show', false)">
+  <BaseDialog :show="show" :title="t('usage.errors.detail.title')" width="wide" @close="handleClose">
     <!-- Loading -->
     <div v-if="loading" class="flex justify-center py-10">
       <svg class="h-7 w-7 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -115,31 +115,52 @@ const { copyToClipboard } = useClipboard()
 const loading = ref(false)
 const loadError = ref(false)
 const detail = ref<UserErrorRequestDetail | null>(null)
+let requestSequence = 0
+
+function clearState() {
+  loading.value = false
+  loadError.value = false
+  detail.value = null
+}
 
 watch(
   () => [props.show, props.errorId] as const,
   ([show, id]) => {
-    if (show && id != null) {
-      fetchDetail(id)
-    } else if (!show) {
-      detail.value = null
-      loadError.value = false
+    if (!show || id == null || id <= 0) {
+      requestSequence += 1
+      clearState()
+      return
     }
+    void fetchDetail(id)
   }
 )
 
 async function fetchDetail(id: number) {
+  const sequence = ++requestSequence
   loading.value = true
   loadError.value = false
   detail.value = null
   try {
-    detail.value = await getMyErrorDetail(id)
+    const result = await getMyErrorDetail(id)
+    if (sequence === requestSequence && props.show) {
+      detail.value = result
+    }
   } catch (e) {
-    console.error('[UserErrorDetailModal] Failed to load error detail:', e)
-    loadError.value = true
+    if (sequence === requestSequence && props.show) {
+      console.error('[UserErrorDetailModal] Failed to load error detail:', e)
+      loadError.value = true
+    }
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) {
+      loading.value = false
+    }
   }
+}
+
+function handleClose() {
+  requestSequence += 1
+  clearState()
+  emit('update:show', false)
 }
 
 async function copyRequestId() {
@@ -152,4 +173,8 @@ function statusClass(code: number) {
   if (code === 429) return 'badge-warning'
   return 'badge-gray'
 }
+
+onBeforeUnmount(() => {
+  requestSequence += 1
+})
 </script>

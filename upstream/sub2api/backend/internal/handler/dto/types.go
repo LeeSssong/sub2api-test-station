@@ -536,6 +536,72 @@ type UsageLog struct {
 	Subscription *UserSubscription `json:"subscription,omitempty"`
 }
 
+// UsageLogReference 是使用详情中可安全展示的关联摘要。
+// 它刻意不复用 APIKey / Group 等完整 DTO，避免把密钥或内部配置带到普通用户响应中。
+type UsageLogReference struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// UserUsageDetail 是普通用户查看单条使用记录时的专用 DTO。
+// 不返回上游账号、渠道、上游请求路径、账号成本或任何 API Key 凭据。
+type UserUsageDetail struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	APIKeyID  int64  `json:"api_key_id"`
+	RequestID string `json:"request_id"`
+	Model     string `json:"model"`
+
+	ServiceTier     *string `json:"service_tier,omitempty"`
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+	InboundEndpoint *string `json:"inbound_endpoint,omitempty"`
+	GroupID         *int64  `json:"group_id"`
+
+	InputTokens           int `json:"input_tokens"`
+	OutputTokens          int `json:"output_tokens"`
+	CacheCreationTokens   int `json:"cache_creation_tokens"`
+	CacheReadTokens       int `json:"cache_read_tokens"`
+	CacheCreation5mTokens int `json:"cache_creation_5m_tokens"`
+	CacheCreation1hTokens int `json:"cache_creation_1h_tokens"`
+
+	InputCost                 float64 `json:"input_cost"`
+	OutputCost                float64 `json:"output_cost"`
+	CacheCreationCost         float64 `json:"cache_creation_cost"`
+	CacheReadCost             float64 `json:"cache_read_cost"`
+	TotalCost                 float64 `json:"total_cost"`
+	ActualCost                float64 `json:"actual_cost"`
+	RateMultiplier            float64 `json:"rate_multiplier"`
+	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
+
+	BillingType  int8   `json:"billing_type"`
+	RequestType  string `json:"request_type"`
+	Stream       bool   `json:"stream"`
+	OpenAIWSMode bool   `json:"openai_ws_mode"`
+	DurationMs   *int   `json:"duration_ms"`
+	FirstTokenMs *int   `json:"first_token_ms"`
+
+	ImageCount         int            `json:"image_count"`
+	ImageSize          *string        `json:"image_size"`
+	ImageInputSize     *string        `json:"image_input_size"`
+	ImageOutputSize    *string        `json:"image_output_size"`
+	ImageInputTokens   int            `json:"image_input_tokens"`
+	ImageInputCost     float64        `json:"image_input_cost"`
+	ImageOutputTokens  int            `json:"image_output_tokens"`
+	ImageOutputCost    float64        `json:"image_output_cost"`
+	ImageSizeSource    *string        `json:"image_size_source"`
+	ImageSizeBreakdown map[string]int `json:"image_size_breakdown"`
+	MediaType          *string        `json:"media_type"`
+
+	UserAgent          *string   `json:"user_agent"`
+	IPAddress          *string   `json:"ip_address,omitempty"`
+	CacheTTLOverridden bool      `json:"cache_ttl_overridden"`
+	BillingMode        *string   `json:"billing_mode,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+
+	APIKey *UsageLogReference `json:"api_key,omitempty"`
+	Group  *UsageLogReference `json:"group,omitempty"`
+}
+
 // AdminUsageLog 是管理员接口使用的 usage log DTO（包含管理员字段）。
 type AdminUsageLog struct {
 	UsageLog

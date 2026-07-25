@@ -6,6 +6,7 @@
 import { apiClient } from './client'
 import type {
   UsageLog,
+  UserUsageDetail,
   UsageQueryParams,
   UsageStatsResponse,
   PaginatedResponse,
@@ -245,8 +246,8 @@ export async function getByDateRange(
  * @param id - Usage log ID
  * @returns Usage log details
  */
-export async function getById(id: number): Promise<UsageLog> {
-  const { data } = await apiClient.get<UsageLog>(`/usage/${id}`)
+export async function getById(id: number): Promise<UserUsageDetail> {
+  const { data } = await apiClient.get<UserUsageDetail>(`/usage/${id}`)
   return data
 }
 

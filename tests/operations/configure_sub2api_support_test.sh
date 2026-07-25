@@ -71,8 +71,11 @@ output=$(run_configure)
 cmp "$ROOT/config/sub2api/support.md" "$fixture/data/pages/support.md"
 cmp "$ROOT/homepage/public/support/qq-group-1080152144.png" "$fixture/data/pages/support/qq-group-1080152144.png"
 ! rg -n -i 'token|user_id|src_url|https?://' "$fixture/data/pages/support.md"
-rg -Fq '![QQ群 1080152144 二维码](qq-group-1080152144.png)' "$fixture/data/pages/support.md"
-rg -Fq 'QQ群号：1080152144' "$fixture/data/pages/support.md"
+rg -Fq '<img src="qq-group-1080152144.png" alt="QQ群 1080152144 二维码">' "$fixture/data/pages/support.md"
+rg -Fq '<strong class="support-group-number">1080152144</strong>' "$fixture/data/pages/support.md"
+rg -Fq 'class="support-contact-card"' "$fixture/data/pages/support.md"
+rg -Fq 'data-copy-text="1080152144"' "$fixture/data/pages/support.md"
+rg -Fq 'data-image-preview' "$fixture/data/pages/support.md"
 ! rg -n -i '<iframe|/support' "$fixture/data/pages/support.md"
 [[ "$(sha256sum "$fixture/data/pages/support/qq-group-1080152144.png" | awk '{print $1}')" == '35b84b14ab472e117fa413ed5f91357becd01199eeaf3fed469a2d9d3d987c16' ]]
 [[ $(wc -l < "$fixture/docker-invocations" | tr -d ' ') == 1 ]]

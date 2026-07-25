@@ -46,6 +46,7 @@ require_file infra/Caddyfile
 require_file infra/Dockerfile.caddy
 require_file infra/Caddyfile.bootstrap
 require_file infra/Dockerfile.relay-ops
+require_file upstream/sub2api/Dockerfile
 require_file tests/relay_ops/validate_relay_ops_contract.sh
 require_file config/releases/sub2api.env
 require_file infra/compose.sub2api-release.yaml
@@ -188,6 +189,8 @@ require_fixed 'FROM node:22-alpine@sha256:b74031e546d7f4faf561d797ac1b76beccac85
 require_fixed 'FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d' infra/Dockerfile.caddy
 require_fixed 'COPY --from=homepage-build /src/dist /srv/home' infra/Dockerfile.caddy
 require_fixed 'dockerfile: infra/Dockerfile.caddy' infra/compose.yaml
+require_fixed 'ARG FRONTEND_NODE_MAX_OLD_SPACE_SIZE=1536' upstream/sub2api/Dockerfile
+require_fixed 'ENV NODE_OPTIONS=--max-old-space-size=${FRONTEND_NODE_MAX_OLD_SPACE_SIZE}' upstream/sub2api/Dockerfile
 
 require_fixed 'image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d' infra/compose.bootstrap.yaml
 require_fixed 'ports: ["80:80", "443:443"]' infra/compose.bootstrap.yaml

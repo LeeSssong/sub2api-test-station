@@ -10,6 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -23,7 +28,15 @@ type AccountMonitorService struct {
 }
 
 type AccountMonitorAccountRepository interface {
-	ListSchedulable(ctx context.Context) ([]Account, error)
+	ListAllWithFilters(
+		ctx context.Context,
+		platform string,
+		accountType string,
+		status string,
+		search string,
+		groupID int64,
+		privacyMode string,
+	) ([]Account, error)
 }
 
 func NewAccountMonitorService(
@@ -241,7 +254,7 @@ func (s *AccountMonitorService) loadSettings(ctx context.Context) (AccountMonito
 }
 
 func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error) {
-	accounts, err := s.accountRepo.ListSchedulable(ctx)
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", StatusActive, "", 0, "")
 	if err != nil {
 		return nil, fmt.Errorf("list active schedulable accounts: %w", err)
 	}
@@ -346,20 +359,165 @@ func accountGroupNames(account Account) []string {
 
 func monitorModelForAccount(account *Account) string {
 	if account == nil {
-		return "claude-sonnet-4-5"
+		return claude.DefaultTestModel
 	}
-	switch strings.ToLower(strings.TrimSpace(account.Platform)) {
+	mapping := account.GetModelMapping()
+	candidates := make([]string, 0, len(mapping))
+	for modelID := range mapping {
+		modelID = strings.TrimSpace(modelID)
+		if isAccountMonitorTextModel(modelID) {
+			candidates = append(candidates, modelID)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return naturalModelCompare(candidates[i], candidates[j]) > 0
+	})
+
+	platform := strings.ToLower(strings.TrimSpace(account.Platform))
+	switch platform {
 	case PlatformOpenAI:
-		return "gpt-4o-mini"
-	case PlatformGemini:
-		return "gemini-2.5-flash"
+		for _, modelID := range candidates {
+			if strings.HasPrefix(strings.ToLower(modelID), "gpt-") {
+				return modelID
+			}
+		}
 	case PlatformGrok:
-		return "grok-3-mini"
+		if modelID := firstCuratedMonitorModel(candidates, xai.DefaultModelIDs()); modelID != "" {
+			return modelID
+		}
 	case PlatformAntigravity:
-		return "claude-sonnet-4-5"
-	default:
-		return "claude-sonnet-4-5"
+		defaults := antigravity.DefaultModels()
+		defaultIDs := make([]string, 0, len(defaults))
+		for _, model := range defaults {
+			if isAccountMonitorTextModel(model.ID) {
+				defaultIDs = append(defaultIDs, model.ID)
+			}
+		}
+		if modelID := firstCuratedMonitorModel(candidates, defaultIDs); modelID != "" {
+			return modelID
+		}
 	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+
+	switch platform {
+	case PlatformOpenAI:
+		return openai.DefaultTestModel
+	case PlatformGemini:
+		return geminicli.DefaultTestModel
+	case PlatformGrok:
+		models := xai.DefaultModels()
+		if len(models) > 0 {
+			return models[0].ID
+		}
+	case PlatformAntigravity:
+		for _, model := range antigravity.DefaultModels() {
+			if isAccountMonitorTextModel(model.ID) {
+				return model.ID
+			}
+		}
+	default:
+		return claude.DefaultTestModel
+	}
+	return claude.DefaultTestModel
+}
+
+func isAccountMonitorTextModel(modelID string) bool {
+	modelID = strings.ToLower(strings.TrimSpace(modelID))
+	if modelID == "" || strings.Contains(modelID, "*") {
+		return false
+	}
+	for _, marker := range []string{
+		"audio",
+		"embedding",
+		"image",
+		"moderation",
+		"realtime",
+		"transcri",
+		"tts",
+		"video",
+		"whisper",
+	} {
+		if strings.Contains(modelID, marker) {
+			return false
+		}
+	}
+	return true
+}
+
+func firstCuratedMonitorModel(candidates []string, curated []string) string {
+	available := make(map[string]string, len(candidates))
+	for _, modelID := range candidates {
+		available[strings.ToLower(modelID)] = modelID
+	}
+	for _, modelID := range curated {
+		if candidate, ok := available[strings.ToLower(modelID)]; ok {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func naturalModelCompare(left string, right string) int {
+	left = strings.ToLower(left)
+	right = strings.ToLower(right)
+	for left != "" && right != "" {
+		leftDigit := left[0] >= '0' && left[0] <= '9'
+		rightDigit := right[0] >= '0' && right[0] <= '9'
+		if leftDigit && rightDigit {
+			leftEnd := leadingDigits(left)
+			rightEnd := leadingDigits(right)
+			leftNumber := strings.TrimLeft(left[:leftEnd], "0")
+			rightNumber := strings.TrimLeft(right[:rightEnd], "0")
+			if leftNumber == "" {
+				leftNumber = "0"
+			}
+			if rightNumber == "" {
+				rightNumber = "0"
+			}
+			if len(leftNumber) != len(rightNumber) {
+				if len(leftNumber) > len(rightNumber) {
+					return 1
+				}
+				return -1
+			}
+			if leftNumber != rightNumber {
+				if leftNumber > rightNumber {
+					return 1
+				}
+				return -1
+			}
+			left = left[leftEnd:]
+			right = right[rightEnd:]
+			continue
+		}
+		if left[0] != right[0] {
+			if left[0] > right[0] {
+				return 1
+			}
+			return -1
+		}
+		left = left[1:]
+		right = right[1:]
+	}
+	switch {
+	case left != "":
+		return 1
+	case right != "":
+		return -1
+	default:
+		return 0
+	}
+}
+
+func leadingDigits(value string) int {
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return i
+		}
+	}
+	return len(value)
 }
 
 func anyMonitorRowStale(rows []AccountMonitorAccount) bool {

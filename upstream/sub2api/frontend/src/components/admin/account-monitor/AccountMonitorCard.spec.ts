@@ -27,7 +27,12 @@ const account = {
   ttft_p50_ms: 80,
   ttft_p95_ms: 100,
   latency_p95_ms: 240,
-  multiplier: 0.1,
+  multiplier: {
+    value: 0.1,
+    source: 'declared',
+    status: 'ok',
+    observed_at: '2026-07-25T08:00:00Z',
+  },
   request_count: 12,
   error_count: 0,
   today_stats: { requests: 12, tokens: 3400, cost: 0.4, standard_cost: 1, user_cost: 0.6 },
@@ -57,5 +62,30 @@ describe('AccountMonitorCard', () => {
 
     expect(wrapper.get('[data-test="today-stats"]').text()).toBe('12/3400')
     expect(wrapper.get('[data-test="usage-cell"]').text()).toBe('7:oauth:12')
+  })
+
+  it.each([
+    [{ value: 0.07, source: 'declared', status: 'ok' }, '0.07x', 'admin.accountMonitor.multiplier.declared'],
+    [{ value: 0.25, source: 'measured', status: 'ok' }, '0.25x', 'admin.accountMonitor.multiplier.measured'],
+    [{ source: 'measured', status: 'stale' }, 'admin.accountMonitor.multiplier.stale', ''],
+    [{ status: 'unsupported' }, 'admin.accountMonitor.multiplier.unsupported', ''],
+    [{ source: 'measured', status: 'failed' }, 'admin.accountMonitor.multiplier.failed', ''],
+    [{ status: 'unavailable' }, 'admin.accountMonitor.multiplier.unavailable', ''],
+  ])('renders trusted multiplier state %#', (multiplier, value, source) => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: { account: { ...account, multiplier } },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    const metric = wrapper.get('[data-test="multiplier-metric"]')
+    expect(metric.text()).toContain(value)
+    if (source) expect(metric.text()).toContain(source)
+    if (multiplier.status !== 'ok') expect(metric.text()).not.toContain('1.00x')
   })
 })

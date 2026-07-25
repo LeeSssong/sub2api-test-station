@@ -30,7 +30,12 @@
       <Metric :label="t('admin.accountMonitor.metrics.successRate')" :value="formatPercent(account.success_rate)" />
       <Metric :label="t('admin.accountMonitor.metrics.ttft')" :value="formatMs(account.ttft_p50_ms)" />
       <Metric :label="t('admin.accountMonitor.metrics.latency')" :value="formatMs(account.latency_p95_ms)" />
-      <Metric :label="t('admin.accountMonitor.metrics.multiplier')" :value="`${account.multiplier.toFixed(2)}x`" />
+      <Metric
+        data-test="multiplier-metric"
+        :label="t('admin.accountMonitor.metrics.multiplier')"
+        :value="multiplierValue"
+        :hint="multiplierHint"
+      />
     </div>
 
     <div class="mt-4 grid grid-cols-2 gap-3 border-y border-gray-100 py-3 dark:border-dark-700">
@@ -138,6 +143,31 @@ const status = computed(() => {
 
 const statusLabel = computed(() => t(`admin.accountMonitor.status.${status.value}`))
 
+const multiplierValue = computed(() => {
+  const multiplier = props.account.multiplier
+  if (multiplier.status === 'ok' && typeof multiplier.value === 'number' && Number.isFinite(multiplier.value)) {
+    return `${new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(multiplier.value)}x`
+  }
+  const knownStatus = ['stale', 'unsupported', 'failed', 'unavailable'].includes(multiplier.status)
+    ? multiplier.status
+    : 'unavailable'
+  return t(`admin.accountMonitor.multiplier.${knownStatus}`)
+})
+
+const multiplierHint = computed(() => {
+  if (props.account.multiplier.status !== 'ok') return ''
+  if (props.account.multiplier.source === 'declared') {
+    return t('admin.accountMonitor.multiplier.declared')
+  }
+  if (props.account.multiplier.source === 'measured') {
+    return t('admin.accountMonitor.multiplier.measured')
+  }
+  return ''
+})
+
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300': status.value === 'success',
   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': status.value === 'failed',
@@ -170,11 +200,15 @@ const Metric = defineComponent({
   props: {
     label: { type: String, required: true },
     value: { type: String, required: true },
+    hint: { type: String, default: '' },
   },
   setup(metricProps) {
     return () => h('div', { class: 'rounded bg-gray-50 p-2 dark:bg-dark-800/70' }, [
       h('div', { class: 'text-[11px] text-gray-500 dark:text-gray-400' }, metricProps.label),
       h('div', { class: 'mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white' }, metricProps.value),
+      metricProps.hint
+        ? h('div', { class: 'mt-0.5 text-[10px] font-medium text-gray-400 dark:text-gray-500' }, metricProps.hint)
+        : null,
     ])
   },
 })

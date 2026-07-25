@@ -46,6 +46,14 @@ export default {
       latency: 'Latency P95',
       multiplier: 'Multiplier',
     },
+    multiplier: {
+      declared: 'Declared upstream',
+      measured: 'Measured from quota',
+      stale: 'Multiplier expired',
+      unsupported: 'Not declared upstream',
+      failed: 'Measurement failed',
+      unavailable: 'No multiplier probe',
+    },
     today: {
       title: 'Today',
       requests: '{count} requests',
@@ -60,6 +68,8 @@ export default {
       searchPlaceholder: 'Search account, platform, model, or group',
       platform: 'Platform',
       status: 'Status',
+      group: 'Group',
+      allGroups: 'All groups',
     },
     settings: {
       title: 'Account monitor settings',

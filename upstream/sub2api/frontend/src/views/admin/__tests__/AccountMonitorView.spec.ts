@@ -63,7 +63,7 @@ const account = {
   ttft_p50_ms: 120,
   ttft_p95_ms: 190,
   latency_p95_ms: 840,
-  multiplier: 0.1,
+  multiplier: { value: 0.1, source: 'declared', status: 'ok' },
   request_count: 12,
   error_count: 1,
   today_stats: { requests: 12, tokens: 100, cost: 0.1, standard_cost: 0.2, user_cost: 0.15 },
@@ -73,7 +73,7 @@ const account = {
 }
 
 const projection = () => ({
-  schema_version: 1,
+  schema_version: 2,
   observed_at: '2026-07-25T08:01:00Z',
   stale: false,
   settings: {
@@ -95,7 +95,7 @@ function mountView() {
           template: `
             <article data-test="monitor-card">
               <span>{{ account.name }}</span>
-              <span>{{ account.multiplier.toFixed(2) }}x</span>
+              <span>{{ account.multiplier.value?.toFixed(2) }}x</span>
               <span>{{ account.latest_status }}</span>
               <span>{{ account.error_code }}</span>
               <button data-test="card-refresh" @click="$emit('refresh', account.account_id)">refresh</button>
@@ -105,9 +105,15 @@ function mountView() {
           `,
         },
         AccountMonitorFilters: {
-          props: ['search', 'platform', 'status'],
-          emits: ['update:search', 'update:platform', 'update:status'],
-          template: '<div data-test="filters" />',
+          props: ['search', 'platform', 'status', 'groupId'],
+          emits: ['update:search', 'update:platform', 'update:status', 'update:groupId'],
+          template: `
+            <div data-test="filters">
+              <button data-test="select-group-3" @click="$emit('update:groupId', '3')">group 3</button>
+              <button data-test="select-group-5" @click="$emit('update:groupId', '5')">group 5</button>
+              <button data-test="search-backup" @click="$emit('update:search', 'backup')">search backup</button>
+            </div>
+          `,
         },
         AccountMonitorSettingsDialog: {
           props: ['show', 'intervalSeconds'],
@@ -193,5 +199,40 @@ describe('admin account monitor view', () => {
     expect(wrapper.find('[data-test="monitor-card"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('failed')
     expect(wrapper.text()).toContain('timeout')
+  })
+
+  it('filters multi-group accounts and composes with search', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: [
+        account,
+        {
+          ...account,
+          account_id: 8,
+          name: 'Backup Claude',
+          group_ids: [3, 5],
+          group_names: ['Production', 'Overflow'],
+        },
+        {
+          ...account,
+          account_id: 9,
+          name: 'Other Claude',
+          group_ids: [5],
+          group_names: ['Overflow'],
+        },
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="select-group-5"]').trigger('click')
+    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Backup Claude')
+    expect(wrapper.text()).toContain('Other Claude')
+    expect(wrapper.text()).not.toContain('Primary Claude')
+
+    await wrapper.get('[data-test="search-backup"]').trigger('click')
+    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Backup Claude')
   })
 })

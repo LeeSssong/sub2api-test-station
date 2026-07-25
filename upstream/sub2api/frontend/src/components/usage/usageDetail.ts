@@ -1,4 +1,4 @@
-import type { AdminUsageLog, UsageLog } from '@/types'
+import type { AdminUsageLog, UsageLog, UserUsageDetail } from '@/types'
 
 export type UsageDetailScope = 'user' | 'admin'
 
@@ -23,7 +23,7 @@ const adminUsageFields = [
   'account',
 ] as const
 
-export function hasAdminUsageFields(row: UsageLog | AdminUsageLog): row is AdminUsageLog {
+export function hasAdminUsageFields(row: UsageLog | UserUsageDetail | AdminUsageLog): row is AdminUsageLog {
   return adminUsageFields.some((field) => Object.prototype.hasOwnProperty.call(row, field))
 }
 

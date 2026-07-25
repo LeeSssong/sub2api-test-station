@@ -64,6 +64,16 @@ func TestAnalyzeFailsClosedForRecommendationEvidenceGates(t *testing.T) {
 			wantState: "candidate_inactive_or_unschedulable",
 		},
 		{
+			name: "failed multiplier evidence",
+			mutate: func(value *sub2api.AccountMonitorProjection) {
+				value.Accounts[1].Multiplier = sub2api.AccountMonitorMultiplier{
+					Source: "measured",
+					Status: "failed",
+				}
+			},
+			wantState: "multiplier_unavailable",
+		},
+		{
 			name: "tie within margin",
 			mutate: func(value *sub2api.AccountMonitorProjection) {
 				value.Accounts[1] = value.Accounts[0]
@@ -107,7 +117,7 @@ func TestAnalyzeSortsGroupsAndAccountsDeterministically(t *testing.T) {
 
 func projection(accounts ...sub2api.AccountMonitorAccount) sub2api.AccountMonitorProjection {
 	return sub2api.AccountMonitorProjection{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		ObservedAt:    time.Date(2026, 7, 25, 7, 0, 0, 0, time.UTC),
 		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
 		Accounts:      accounts,
@@ -123,7 +133,13 @@ func accountWithGroups(id int64, name, model string, success, ttft, latency, mul
 		AccountID: id, Name: name, Platform: "openai", Status: "active", Schedulable: true,
 		GroupIDs: groupIDs, GroupNames: []string{"GPT-Pro"}, ModelID: model, LatestStatus: "passed",
 		SampleCount: 4, SuccessRate: success, TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency),
-		Multiplier: multiplier, RequestCount: 40, ErrorCount: 0,
+		Multiplier: sub2api.AccountMonitorMultiplier{
+			Value:      float64ptr(multiplier),
+			Source:     "declared",
+			Status:     "ok",
+			ObservedAt: timePtr(time.Date(2026, 7, 25, 6, 58, 0, 0, time.UTC)),
+		},
+		RequestCount: 40, ErrorCount: 0,
 		CheckedAt:    timePtr(time.Date(2026, 7, 25, 6, 59, 0, 0, time.UTC)),
 		UsageWindows: []sub2api.AccountMonitorUsageWindow{{Name: "daily", Utilization: 0.2}},
 	}

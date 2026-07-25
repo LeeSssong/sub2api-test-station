@@ -48,6 +48,9 @@ func (r *usageLogRepository) GetByID(ctx context.Context, id int64) (log *servic
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+	if err = r.hydrateUsageLogDetailAssociations(ctx, log); err != nil {
+		return nil, err
+	}
 	return log, nil
 }
 
@@ -305,6 +308,33 @@ func (r *usageLogRepository) hydrateUsageLogAssociations(ctx context.Context, lo
 				logs[i].Subscription = sub
 			}
 		}
+	}
+	return nil
+}
+
+// hydrateUsageLogDetailAssociations 只加载详情弹窗需要的关联摘要。
+// API key、分组和账号会在各自 DTO mapper 中进一步裁剪，不能直接序列化实体。
+func (r *usageLogRepository) hydrateUsageLogDetailAssociations(ctx context.Context, log *service.UsageLog) error {
+	if log == nil {
+		return nil
+	}
+	ids := collectUsageLogIDs([]service.UsageLog{*log})
+	apiKeys, err := r.loadAPIKeys(mixins.SkipSoftDelete(ctx), ids.apiKeyIDs)
+	if err != nil {
+		return err
+	}
+	accounts, err := r.loadAccounts(mixins.SkipSoftDelete(ctx), ids.accountIDs)
+	if err != nil {
+		return err
+	}
+	groups, err := r.loadGroups(mixins.SkipSoftDelete(ctx), ids.groupIDs)
+	if err != nil {
+		return err
+	}
+	log.APIKey = apiKeys[log.APIKeyID]
+	log.Account = accounts[log.AccountID]
+	if log.GroupID != nil {
+		log.Group = groups[*log.GroupID]
 	}
 	return nil
 }

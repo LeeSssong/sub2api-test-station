@@ -82,6 +82,13 @@ type AccountMonitorTodayStats struct {
 	UserCost     float64 `json:"user_cost"`
 }
 
+type AccountMonitorMultiplier struct {
+	Value      *float64   `json:"value,omitempty"`
+	Source     string     `json:"source,omitempty"`
+	Status     string     `json:"status"`
+	ObservedAt *time.Time `json:"observed_at,omitempty"`
+}
+
 type AccountMonitorAccount struct {
 	AccountID    int64                       `json:"account_id"`
 	Name         string                      `json:"name"`
@@ -99,7 +106,7 @@ type AccountMonitorAccount struct {
 	TTFTP50MS    *float64                    `json:"ttft_p50_ms"`
 	TTFTP95MS    *float64                    `json:"ttft_p95_ms"`
 	LatencyP95MS *float64                    `json:"latency_p95_ms"`
-	Multiplier   float64                     `json:"multiplier"`
+	Multiplier   AccountMonitorMultiplier    `json:"multiplier"`
 	RequestCount int64                       `json:"request_count"`
 	ErrorCount   int64                       `json:"error_count"`
 	TodayStats   *AccountMonitorTodayStats   `json:"today_stats,omitempty"`

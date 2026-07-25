@@ -1,7 +1,7 @@
 import { defineComponent, nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AdminUsageLog, UsageLog } from '@/types'
+import type { AdminUsageLog, UserUsageDetail } from '@/types'
 
 const { adminGetById, copyToClipboard, userGetById } = vi.hoisted(() => ({
   adminGetById: vi.fn(),
@@ -63,19 +63,16 @@ const BaseDialogStub = defineComponent({
   `,
 })
 
-const userRecord: UsageLog = {
+const userRecord: UserUsageDetail = {
   id: 42,
   user_id: 5,
   api_key_id: 9,
-  account_id: null,
   request_id: 'req-user-42',
   model: 'claude-sonnet-4',
   service_tier: 'priority',
   reasoning_effort: 'high',
   inbound_endpoint: '/v1/messages',
-  upstream_endpoint: null,
   group_id: 3,
-  subscription_id: null,
   input_tokens: 1000,
   output_tokens: 250,
   cache_creation_tokens: 50,
@@ -106,17 +103,20 @@ const userRecord: UsageLog = {
   image_input_cost: 0,
   image_output_tokens: 0,
   image_output_cost: 0,
+  media_type: null,
   user_agent: 'usage-detail-test-agent',
   ip_address: '203.0.113.8',
   cache_ttl_overridden: false,
   billing_mode: 'token',
   created_at: '2026-07-25T08:30:00Z',
-  api_key: { id: 9, name: 'Primary key' } as UsageLog['api_key'],
-  group: { id: 3, name: 'Production group' } as UsageLog['group'],
+  api_key: { id: 9, name: 'Primary key' },
+  group: { id: 3, name: 'Production group' },
 }
 
 const adminRecord: AdminUsageLog = {
   ...userRecord,
+  account_id: 11,
+  subscription_id: null,
   request_id: 'req-admin-42',
   upstream_endpoint: 'https://relay.example.com/v1/messages',
   upstream_model: 'claude-sonnet-4-20250514',
@@ -287,7 +287,7 @@ describe('UsageDetailDialog', () => {
   })
 
   it('clears the previous record while a changed ID is loading', async () => {
-    const nextRecord = deferred<UsageLog>()
+    const nextRecord = deferred<UserUsageDetail>()
     userGetById
       .mockResolvedValueOnce(userRecord)
       .mockReturnValueOnce(nextRecord.promise)
@@ -317,7 +317,7 @@ describe('UsageDetailDialog', () => {
   })
 
   it('emits close, clears state, and ignores a late response', async () => {
-    const pending = deferred<UsageLog>()
+    const pending = deferred<UserUsageDetail>()
     userGetById.mockReturnValue(pending.promise)
     const wrapper = mountDialog()
     await nextTick()
@@ -331,8 +331,8 @@ describe('UsageDetailDialog', () => {
   })
 
   it('does not let a pre-close response populate a reopened dialog', async () => {
-    const beforeClose = deferred<UsageLog>()
-    const afterReopen = deferred<UsageLog>()
+    const beforeClose = deferred<UserUsageDetail>()
+    const afterReopen = deferred<UserUsageDetail>()
     userGetById
       .mockReturnValueOnce(beforeClose.promise)
       .mockReturnValueOnce(afterReopen.promise)
@@ -355,7 +355,7 @@ describe('UsageDetailDialog', () => {
 
   it('does not let an old admin response appear after switching to user scope', async () => {
     const oldAdminRequest = deferred<AdminUsageLog>()
-    const currentUserRequest = deferred<UsageLog>()
+    const currentUserRequest = deferred<UserUsageDetail>()
     adminGetById.mockReturnValue(oldAdminRequest.promise)
     userGetById.mockReturnValue(currentUserRequest.promise)
     const wrapper = mountDialog({ scope: 'admin' })
@@ -379,8 +379,8 @@ describe('UsageDetailDialog', () => {
   })
 
   it('allows only the latest changed-ID response to render', async () => {
-    const first = deferred<UsageLog>()
-    const second = deferred<UsageLog>()
+    const first = deferred<UserUsageDetail>()
+    const second = deferred<UserUsageDetail>()
     userGetById
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise)
@@ -398,7 +398,7 @@ describe('UsageDetailDialog', () => {
   })
 
   it('invalidates an in-flight response when the open dialog loses its ID', async () => {
-    const pending = deferred<UsageLog>()
+    const pending = deferred<UserUsageDetail>()
     userGetById.mockReturnValue(pending.promise)
     const wrapper = mountDialog()
     await nextTick()

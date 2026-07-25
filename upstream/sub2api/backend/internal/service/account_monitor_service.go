@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -19,12 +20,19 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const accountMonitorMultiplierRefreshTimeout = 2 * time.Minute
+
+type accountMonitorMultiplierResolver interface {
+	Resolve(*Account, time.Time) AccountMonitorMultiplier
+	Refresh(context.Context, *Account, bool) error
+}
+
 type AccountMonitorService struct {
 	repo        AccountMonitorRepository
 	accountRepo AccountMonitorAccountRepository
 	testService *AccountTestService
 	usage       *AccountUsageService
-	multiplier  *AccountMultiplierService
+	multiplier  accountMonitorMultiplierResolver
 	runMu       sync.Mutex
 }
 
@@ -45,7 +53,7 @@ func NewAccountMonitorService(
 	accountRepo AccountMonitorAccountRepository,
 	testService *AccountTestService,
 	usage *AccountUsageService,
-	multiplier *AccountMultiplierService,
+	multiplier accountMonitorMultiplierResolver,
 ) *AccountMonitorService {
 	return &AccountMonitorService{
 		repo:        repo,
@@ -161,6 +169,7 @@ func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int,
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
+			s.refreshMultiplier(gctx, &account, false)
 			mu.Lock()
 			completed++
 			mu.Unlock()
@@ -205,9 +214,24 @@ func (s *AccountMonitorService) RunOne(
 	if err := s.repo.InsertResult(ctx, result, uuid.NewString()); err != nil {
 		return AccountMonitorProbeResult{}, err
 	}
+	s.refreshMultiplier(ctx, target, true)
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID
 	return result, nil
+}
+
+func (s *AccountMonitorService) refreshMultiplier(ctx context.Context, account *Account, force bool) {
+	if s == nil || s.multiplier == nil || account == nil {
+		return
+	}
+	refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
+	defer cancel()
+	if err := s.multiplier.Refresh(refreshCtx, account, force); err != nil {
+		slog.Warn("account_monitor: multiplier refresh failed",
+			"account_id", account.ID,
+			"error", err,
+		)
+	}
 }
 
 func (s *AccountMonitorService) UpdateSettings(

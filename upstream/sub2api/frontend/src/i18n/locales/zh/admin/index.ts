@@ -46,6 +46,14 @@ export default {
       latency: '延迟 P95',
       multiplier: '倍率',
     },
+    multiplier: {
+      declared: '上游声明',
+      measured: '额度测算',
+      stale: '倍率已过期',
+      unsupported: '上游未声明',
+      failed: '测算失败',
+      unavailable: '暂无倍率探测',
+    },
     today: {
       title: '今日调用',
       requests: '请求 {count} 次',
@@ -60,6 +68,8 @@ export default {
       searchPlaceholder: '搜索账号、平台、模型或分组',
       platform: '平台',
       status: '状态',
+      group: '分组',
+      allGroups: '全部分组',
     },
     settings: {
       title: '账号监控设置',

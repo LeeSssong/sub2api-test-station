@@ -853,8 +853,10 @@ func ProvideAccountMonitorService(
 	accountTestService *AccountTestService,
 	accountUsageService *AccountUsageService,
 	billingService *BillingService,
+	upstreamBillingProbeService *UpstreamBillingProbeService,
 ) *AccountMonitorService {
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
+	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
 	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
 }
 

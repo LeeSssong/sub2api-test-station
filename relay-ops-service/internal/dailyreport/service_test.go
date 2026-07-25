@@ -151,7 +151,7 @@ func TestServiceConsumesNativeAccountMonitorProjectionWithoutBreakingLegacyQuali
 		groups: []sub2api.Group{{ID: 3, Name: "GPT-Pro", Status: "active"}},
 		ops:    map[int64]sub2api.OpsSnapshot{},
 		monitor: sub2api.AccountMonitorProjection{
-			SchemaVersion: 1, ObservedAt: now.Add(-time.Minute),
+			SchemaVersion: 2, ObservedAt: now.Add(-time.Minute),
 			Settings: sub2api.AccountMonitorSettings{IntervalSeconds: 300},
 			Accounts: []sub2api.AccountMonitorAccount{
 				monitorAccount(11, "账号 A", 0.70, 450, 1600, 0.12),
@@ -250,7 +250,13 @@ func monitorAccount(id int64, name string, success, ttft, latency, multiplier fl
 		AccountID: id, Name: name, Platform: "openai", Status: "active", Schedulable: true,
 		GroupIDs: []int64{3}, GroupNames: []string{"GPT-Pro"}, ModelID: "gpt-5.6-sol",
 		LatestStatus: "passed", SampleCount: 4, SuccessRate: success,
-		TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency), Multiplier: multiplier,
+		TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency),
+		Multiplier: sub2api.AccountMonitorMultiplier{
+			Value:      float64ptr(multiplier),
+			Source:     "declared",
+			Status:     "ok",
+			ObservedAt: timePtr(time.Date(2026, 7, 25, 7, 28, 0, 0, time.UTC)),
+		},
 		CheckedAt:    timePtr(time.Date(2026, 7, 25, 7, 29, 0, 0, time.UTC)),
 		UsageWindows: []sub2api.AccountMonitorUsageWindow{{Name: "daily", Utilization: 0.2}},
 	}

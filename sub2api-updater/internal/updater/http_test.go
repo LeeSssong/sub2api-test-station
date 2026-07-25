@@ -208,3 +208,39 @@ func TestHTTPStatusRequiresAdminAuth(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestHTTPStatusAllowsBrowserGETWithoutOrigin(t *testing.T) {
+	ts, _, _ := admissionServer(t)
+	defer ts.Close()
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/admin/system/host-update/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d code=%s", res.StatusCode, responseCodeFromBody(t, res.Body))
+	}
+	var envelope struct {
+		Code int `json:"code"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&envelope); err != nil || envelope.Code != 0 {
+		t.Fatalf("envelope=%#v err=%v", envelope, err)
+	}
+}
+
+func responseCodeFromBody(t *testing.T, body io.Reader) string {
+	t.Helper()
+	var envelope struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	return envelope.Code
+}

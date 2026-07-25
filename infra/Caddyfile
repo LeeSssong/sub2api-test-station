@@ -1,3 +1,10 @@
+{
+	servers {
+		trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.18.0.1/32}
+		trusted_proxies_strict
+	}
+}
+
 {$SITE_ADDRESS} {
 	encode zstd gzip
 

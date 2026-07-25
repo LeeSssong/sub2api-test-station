@@ -25,10 +25,13 @@ require_file infra/sub2api-update-ui/update-ui.css
 require_file infra/Caddyfile
 require_file infra/compose.yaml
 
+require_fixed 'trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.18.0.1/32}' infra/Caddyfile
+require_fixed 'trusted_proxies_strict' infra/Caddyfile
 require_fixed '@sub2api_official_index path /__sub2api-official-index' infra/Caddyfile
 require_fixed 'reverse_proxy sub2api:8080' infra/Caddyfile
 require_fixed 'templates' infra/Caddyfile
 require_fixed 'httpInclude "/__sub2api-official-index"' infra/sub2api-update-ui/index.html
+require_fixed 'src="/xingqiao-update-ui.js?v=20260725-2"' infra/sub2api-update-ui/index.html
 require_fixed '@sub2api_update {' infra/Caddyfile
 require_fixed $'\t\tmethod POST' infra/Caddyfile
 require_fixed $'\t\tpath /api/v1/admin/system/update' infra/Caddyfile
@@ -47,6 +50,7 @@ require_fixed 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/
 require_fixed 'path /api/v1/settings/public' infra/Caddyfile
 require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
 require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
+require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}' infra/compose.yaml
 require_fixed 'rewrite * /update-ui.js' infra/Caddyfile
 require_fixed 'rewrite * /update-ui.css' infra/Caddyfile
 

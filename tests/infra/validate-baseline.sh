@@ -54,6 +54,8 @@ require_file tests/infra/validate-official-sub2api-release.sh
 require_file tests/infra/audit-public-links.sh
 test -x tests/infra/audit-public-links.sh || fail 'public link audit must be executable'
 
+require_fixed 'trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.18.0.1/32}' infra/Caddyfile
+require_fixed 'trusted_proxies_strict' infra/Caddyfile
 require_fixed '@docs_root path /docs' infra/Caddyfile
 require_fixed 'redir @docs_root /docs/ 308' infra/Caddyfile
 require_fixed '@docs_index path /docs/' infra/Caddyfile
@@ -92,6 +94,7 @@ for image in "${images[@]}"; do
 done
 
 require_fixed 'image: ${SUB2API_IMAGE:?SUB2API_IMAGE is required}' infra/compose.yaml
+require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}' infra/compose.yaml
 require_fixed 'SUB2API_IMAGE=weishaw/sub2api:0.1.164@sha256:a94c25fb4c50c3bf21155142d745ff11a8d9199e4cf72d9a2424d75ccbfc1659' config/releases/sub2api.env
 
 if rg -n '^[[:space:]]*SUB2API_IMAGE[[:space:]]*=' infra/.env.example; then

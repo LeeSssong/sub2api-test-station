@@ -338,7 +338,10 @@
     state.pending = true
     updateSubmitState()
     try {
-      await apiRequest(SCHEDULE_PATH, { method: 'DELETE' })
+      await apiRequest(SCHEDULE_PATH, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
       setMessage('定时升级已取消。', 'success')
       renderExistingSchedule(null)
     } catch (error) {
@@ -367,7 +370,10 @@
     setMessage('正在提交受控升级请求。')
     try {
       if (mode === 'schedule' && state.replacing) {
-        await apiRequest(SCHEDULE_PATH, { method: 'DELETE' })
+        await apiRequest(SCHEDULE_PATH, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+        })
         state.replacing = false
         renderExistingSchedule(null)
       }

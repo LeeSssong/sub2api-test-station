@@ -50,6 +50,21 @@ async function createBrowser({ fetchImpl } = {}) {
   return { dom, window, requests, ui: window.__XingqiaoUpdateUI__ }
 }
 
+function scheduledFetch(requests, fallback) {
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    if (url.endsWith('/host-update/status')) {
+      requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+      return response({ code: 0, data: { operation_id: 'old-op', stage: 'scheduled', target_version: '1.2.3', scheduled_at: '2026-07-26T04:00:00Z' } })
+    }
+    if (url.endsWith('/host-update/schedule') && (init.method || 'GET') === 'DELETE') {
+      requests.push({ url, method: 'DELETE', body: init.body, headers: init.headers })
+      return response({ code: 0, data: { cancelled: true } })
+    }
+    return fallback(input, init)
+  }
+}
+
 test('captures the localized official update button before its Vue handler', async () => {
   const browser = await createBrowser()
   let officialHandlerCalled = false
@@ -91,21 +106,8 @@ test('requires explicit confirmation and converts Beijing time to UTC RFC3339', 
   browser.ui.stopPolling()
 })
 
-test('shows an existing schedule and supports replacement and cancellation', async () => {
-  const browser = await createBrowser({
-    fetchImpl: (requests, fallback) => async (input, init = {}) => {
-      const url = typeof input === 'string' ? input : input.url
-      if (url.endsWith('/host-update/status')) {
-        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
-        return response({ code: 0, data: { operation_id: 'old-op', stage: 'scheduled', target_version: '1.2.3', scheduled_at: '2026-07-26T04:00:00Z' } })
-      }
-      if (url.endsWith('/host-update/schedule') && (init.method || 'GET') === 'DELETE') {
-        requests.push({ url, method: 'DELETE', body: init.body, headers: init.headers })
-        return response({ code: 0, data: { cancelled: true } })
-      }
-      return fallback(input, init)
-    },
-  })
+test('replaces an existing schedule with a JSON DELETE request', async () => {
+  const browser = await createBrowser({ fetchImpl: scheduledFetch })
   await browser.ui.openConfirmation()
   const dialog = browser.window.document.querySelector('[role="dialog"]')
   assert.match(dialog.textContent, /已有定时升级/)
@@ -115,10 +117,30 @@ test('shows an existing schedule and supports replacement and cancellation', asy
   dialog.querySelector('[data-action="replace"]').click()
   assert.equal(dialog.querySelector('[data-action="replace"]').hidden, true)
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  dialog.querySelector('input[type="datetime-local"]').value = '2026-07-26T13:00'
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+  browser.ui.stopPolling()
 
+  const replacementDelete = browser.requests.find(
+    (request) => request.url.endsWith('/host-update/schedule') && request.method === 'DELETE',
+  )
+  assert.ok(replacementDelete)
+  assert.equal(replacementDelete.headers['Content-Type'], 'application/json')
+})
+
+test('cancels an existing schedule with a JSON DELETE request', async () => {
+  const browser = await createBrowser({ fetchImpl: scheduledFetch })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
   dialog.querySelector('[data-action="cancel-schedule"]').click()
   await flush()
-  assert.equal(browser.requests.some((request) => request.method === 'DELETE'), true)
+  const cancelRequest = browser.requests.find(
+    (request) => request.url.endsWith('/host-update/schedule') && request.method === 'DELETE',
+  )
+  assert.ok(cancelRequest)
+  assert.equal(cancelRequest.headers['Content-Type'], 'application/json')
 })
 
 test('starts status polling after an accepted operation', async () => {
@@ -155,6 +177,6 @@ test('serves a template shell with external UI assets only', async () => {
   const html = await readFile(UI_HTML, 'utf8')
   assert.match(html, /\{\{\s*httpInclude\s+"\/__sub2api-official-index"\s*\}\}/)
   assert.match(html, /href="\/xingqiao-update-ui\.css"/)
-  assert.match(html, /src="\/xingqiao-update-ui\.js"/)
+  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260725-2"/)
   assert.doesNotMatch(html, /<script[^>]*>[^<]+<\/script>/)
 })

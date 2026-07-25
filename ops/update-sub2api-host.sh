@@ -202,6 +202,15 @@ resolve_container_id() {
   awk 'NF {print; exit}' <<<"$ids"
 }
 
+resolve_optional_container_id() {
+  local service=$1 services
+  services=$("${compose[@]}" config --services) || return 1
+  if ! awk -v service="$service" '$0 == service {found = 1} END {exit(found ? 0 : 1)}' <<<"$services"; then
+    return 0
+  fi
+  resolve_container_id "$service"
+}
+
 inspect_runtime() {
   docker inspect "$@"
 }
@@ -211,13 +220,19 @@ validate_runtime() {
   jq -e --arg project "$compose_project" --arg root "$deploy_root" --arg config "$compose_file" \
     --arg app "$app_volume" --arg postgres "$postgres_volume" --arg redis "$redis_volume" \
     --arg previous "$previous_image" --arg previous_id "$previous_image_id" '
-    length == 6 and
+    (length == 5 or length == 6) and
     all(.[]; .Config.Labels["com.docker.compose.project"] == $project) and
     .[0].Config.Labels["com.docker.compose.project.working_dir"] == $root and
     .[0].Config.Labels["com.docker.compose.project.config_files"] == $config and
     .[0].Config.Image == $previous and .[0].Image == $previous_id and
-    ([.[1].State.Health.Status, .[2].State.Health.Status, .[3].State.Health.Status,
-      .[4].State.Health.Status, .[5].State.Health.Status] | all(. == "healthy")) and
+    .[1].State.Health.Status == "healthy" and
+    .[2].State.Health.Status == "healthy" and
+    (
+      .[3].State.Health.Status == "healthy" or
+      (.[3].State.Health == null and .[3].State.Running == true)
+    ) and
+    .[4].State.Health.Status == "healthy" and
+    (length == 5 or .[5].State.Health.Status == "healthy") and
     ([.[0].Mounts[] | select(.Destination == "/app/data")] | length == 1 and
       .[0].Type == "volume" and (.[0].Name // .[0].Source) == $app and .[0].RW == true) and
     ([.[1].Mounts[] | select(.Destination == "/var/lib/postgresql/data")] | length == 1 and
@@ -396,7 +411,7 @@ SQL
   validate_counts_monotonic "$backup_path/record-counts.json" "$post_counts"
   status=$(curl --connect-timeout 5 --max-time 15 -sS -o "$guard_body" -w '%{http_code}' \
     -X POST -H "@$admin_header" "$base_url/api/v1/admin/system/update")
-  [[ "$status" == 409 ]] || fail 'update guard did not return HTTP 409'
+  [[ "$status" == 401 || "$status" == 409 ]] || fail 'update endpoint was not protected by the updater or deployment guard'
   status=$(curl --connect-timeout 5 --max-time 15 -sS -o "$guard_body" -w '%{http_code}' \
     -X POST -H "@$admin_header" "$base_url/api/v1/admin/system/rollback")
   [[ "$status" == 409 ]] || fail 'rollback guard did not return HTTP 409'
@@ -413,17 +428,20 @@ attempt_rollback() {
   fi
   wait_for_rollback_health || return 1
   local service current expected
-  for service in postgres redis caddy relay-ops internal-test-service; do
+  for service in postgres redis caddy relay-ops; do
     current=$(resolve_container_id "$service") || return 1
     case "$service" in
       postgres) expected=$postgres_container ;;
       redis) expected=$redis_container ;;
       caddy) expected=$caddy_container ;;
       relay-ops) expected=$relay_ops_container ;;
-      internal-test-service) expected=$internal_test_container ;;
     esac
     [[ "$current" == "$expected" ]] || return 1
   done
+  if [[ -n "$internal_test_container" ]]; then
+    current=$(resolve_container_id internal-test-service) || return 1
+    [[ "$current" == "$internal_test_container" ]] || return 1
+  fi
   return 0
 }
 
@@ -463,17 +481,19 @@ trap 'exit 130' HUP INT TERM
 
 trace inspect
 sub2api_container=$(resolve_container_id sub2api) || fail 'sub2api container was not resolved uniquely'
-for service in postgres redis caddy relay-ops internal-test-service; do
+for service in postgres redis caddy relay-ops; do
   case "$service" in
     postgres) postgres_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
     redis) redis_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
     caddy) caddy_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
     relay-ops) relay_ops_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
-    internal-test-service) internal_test_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
   esac
 done
-inspected=$(inspect_runtime "$sub2api_container" "$postgres_container" "$redis_container" \
-  "$caddy_container" "$relay_ops_container" "$internal_test_container") \
+internal_test_container=$(resolve_optional_container_id internal-test-service) \
+  || fail 'optional internal-test-service was not resolved uniquely'
+inspect_args=("$sub2api_container" "$postgres_container" "$redis_container" "$caddy_container" "$relay_ops_container")
+[[ -n "$internal_test_container" ]] && inspect_args+=("$internal_test_container")
+inspected=$(inspect_runtime "${inspect_args[@]}") \
   || fail 'running containers could not be inspected'
 previous_image=$(jq -er '.[0].Config.Image' <<<"$inspected") || fail 'previous image was not identified'
 previous_image_id=$(jq -er '.[0].Image' <<<"$inspected") || fail 'previous image ID was not identified'
@@ -511,17 +531,20 @@ trace health
 wait_for_requested_health || fail 'requested image did not become healthy with the expected volume'
 health=true
 
-for service in postgres redis caddy relay-ops internal-test-service; do
+for service in postgres redis caddy relay-ops; do
   current=$(resolve_container_id "$service") || fail "$service container disappeared after update"
   case "$service" in
     postgres) expected=$postgres_container ;;
     redis) expected=$redis_container ;;
     caddy) expected=$caddy_container ;;
     relay-ops) expected=$relay_ops_container ;;
-    internal-test-service) expected=$internal_test_container ;;
   esac
   [[ "$current" == "$expected" ]] || fail "$service container identity changed"
 done
+if [[ -n "$internal_test_container" ]]; then
+  current=$(resolve_container_id internal-test-service) || fail 'internal-test-service disappeared after update'
+  [[ "$current" == "$internal_test_container" ]] || fail 'internal-test-service container identity changed'
+fi
 
 trace smoke
 run_smoke

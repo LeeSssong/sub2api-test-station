@@ -116,7 +116,8 @@ func (h *updateHTTP) authorize(w http.ResponseWriter, r *http.Request, mutation 
 		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
 		return Identity{}, false
 	}
-	if r.Header.Get("Origin") != h.expectedOrigin {
+	origin := r.Header.Get("Origin")
+	if mutation && origin != h.expectedOrigin || !mutation && origin != "" && origin != h.expectedOrigin {
 		writeError(w, http.StatusForbidden, codeForbidden)
 		return Identity{}, false
 	}

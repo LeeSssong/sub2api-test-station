@@ -31,6 +31,7 @@ for setting in \
   'EnvironmentFile=/etc/sub2api/sub2api-updater.env' \
   'RuntimeDirectory=sub2api-updater' \
   'RuntimeDirectoryMode=0755' \
+  'RuntimeDirectoryPreserve=restart' \
   'StateDirectory=sub2api-updater' \
   'StateDirectoryMode=0700' \
   'UMask=0077' \
@@ -59,9 +60,10 @@ for setting in \
   'SUB2API_UPDATER_SOCKET=/run/sub2api-updater/updater.sock' \
   'SUB2API_UPDATER_STATE=/var/lib/sub2api-updater/state.json' \
   'SUB2API_UPDATER_EXECUTOR=/opt/sub2api/production/ops/update-sub2api-host.sh' \
-  'SUB2API_UPDATER_OFFICIAL_API=' \
-  'SUB2API_UPDATER_ORIGIN=https://api.xingqialab.top' \
-  'SUB2API_BASE_URL=https://api.xingqialab.top' \
+  'SUB2API_UPDATER_OFFICIAL_API=https://api.xingqiaolab.top' \
+  'SUB2API_UPDATER_OFFICIAL_DIAL_ADDRESS=127.0.0.1:443' \
+  'SUB2API_UPDATER_ORIGIN=https://api.xingqiaolab.top' \
+  'SUB2API_BASE_URL=https://api.xingqiaolab.top' \
   'SUB2API_ADMIN_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key' \
   'SUB2API_GATEWAY_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-gateway-api-key' \
   'SUB2API_UPDATER_GITHUB_LATEST_RELEASE='; do
@@ -82,6 +84,8 @@ rg -Fq 'install -d -o root -g root -m 0755 "$runtime_path"' "$INSTALLER" \
   || fail 'installer does not create the runtime directory without a host caddy group'
 rg -Fq 'WriteTimeout:      16 * time.Minute' "$MAIN" \
   || fail 'updater HTTP write timeout is shorter than the Caddy update response window'
+rg -Fq -- '--official-dial-address ${SUB2API_UPDATER_OFFICIAL_DIAL_ADDRESS}' "$SERVICE" \
+  || fail 'updater service does not pin official authentication to loopback Caddy'
 rg -Fq 'uname -s' "$INSTALLER" || fail 'installer does not enforce the Linux host boundary'
 rg -Fq '/opt/sub2api/production' "$INSTALLER" \
   || fail 'installer does not enforce the production directory boundary'

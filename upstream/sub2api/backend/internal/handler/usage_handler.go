@@ -389,7 +389,7 @@ func (h *UsageHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, dto.UsageLogFromService(record))
+	response.Success(c, dto.UserUsageDetailFromService(record))
 }
 
 // Stats handles getting usage statistics

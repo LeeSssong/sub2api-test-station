@@ -1564,6 +1564,7 @@ export interface UsageLog {
   image_input_cost: number
   image_output_tokens: number
   image_output_cost: number
+  media_type?: string | null
 
   // User-Agent
   user_agent: string | null
@@ -1586,6 +1587,15 @@ export interface UsageLog {
 export interface UsageLogAccountSummary {
   id: number
   name: string
+}
+
+// 普通用户单条使用详情使用安全摘要，避免把 API Key 内容和上游账号信息带入客户端。
+export type UserUsageDetail = Omit<
+  UsageLog,
+  'account_id' | 'upstream_endpoint' | 'subscription_id' | 'user' | 'api_key' | 'group' | 'subscription'
+> & {
+  api_key?: UsageLogAccountSummary
+  group?: UsageLogAccountSummary
 }
 
 export interface AdminUsageLog extends UsageLog {

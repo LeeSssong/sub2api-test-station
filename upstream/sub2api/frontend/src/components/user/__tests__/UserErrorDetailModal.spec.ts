@@ -25,6 +25,8 @@ vi.mock('vue-i18n', async () => {
         'usage.detail.requestId': 'Request ID',
         'usage.detail.copyRequestId': 'Copy request ID',
         'usage.detail.copied': 'Copied',
+        'usage.detail.loading': 'Loading detail',
+        'usage.detail.retry': 'Retry',
         'usage.errors.detail.loadFailed': 'Failed to load detail',
       })[key] ?? key,
     }),
@@ -144,6 +146,26 @@ describe('UserErrorDetailModal', () => {
     expect(wrapper.text()).toContain('Failed to load detail')
     expect(wrapper.find('[data-testid="user-error-request-id"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="copy-user-error-request-id"]').exists()).toBe(false)
+    consoleError.mockRestore()
+  })
+
+  it('announces a load failure and lets the user retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    getMyErrorDetail
+      .mockRejectedValueOnce(new Error('network failed'))
+      .mockResolvedValueOnce(detail)
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('Failed to load detail')
+    await wrapper.get('[data-testid="retry-user-error-detail"]').trigger('click')
+    await flushPromises()
+
+    expect(getMyErrorDetail).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="user-error-request-id"]').text()).toBe('req-user-error-7')
     consoleError.mockRestore()
   })
 

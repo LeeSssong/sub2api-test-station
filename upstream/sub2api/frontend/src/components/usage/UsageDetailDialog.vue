@@ -307,7 +307,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { adminUsageAPI } from '@/api/admin/usage'
 import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
-import type { AdminUsageLog, UsageLog } from '@/types'
+import type { AdminUsageLog, UserUsageDetail } from '@/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatMultiplier } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
@@ -373,7 +373,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
-const detail = ref<UsageLog | AdminUsageLog | null>(null)
+type UsageDetailRecord = UserUsageDetail | AdminUsageLog
+
+const detail = ref<UsageDetailRecord | null>(null)
 const loading = ref(false)
 const loadError = ref(false)
 let requestSequence = 0
@@ -480,7 +482,7 @@ function formatCost(value: number | null | undefined): string {
   return `$${(Number.isFinite(value) ? value as number : 0).toFixed(6)}`
 }
 
-function requestTypeLabel(row: UsageLog): string {
+function requestTypeLabel(row: Pick<UsageDetailRecord, 'request_type' | 'stream' | 'openai_ws_mode'>): string {
   const type = resolveUsageRequestType(row)
   if (type === 'cyber') return t('usage.cyber')
   if (type === 'ws_v2') return t('usage.ws')
@@ -489,7 +491,7 @@ function requestTypeLabel(row: UsageLog): string {
   return t('usage.unknown')
 }
 
-function billingModeLabel(row: UsageLog): string {
+function billingModeLabel(row: Pick<UsageDetailRecord, 'billing_mode' | 'image_count'>): string {
   return getBillingModeLabel(getDisplayBillingMode(row), t)
 }
 

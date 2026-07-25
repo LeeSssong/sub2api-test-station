@@ -1,16 +1,25 @@
 <template>
   <BaseDialog :show="show" :title="t('usage.errors.detail.title')" width="wide" @close="handleClose">
     <!-- Loading -->
-    <div v-if="loading" class="flex justify-center py-10">
+    <div v-if="loading" class="flex justify-center py-10" role="status" aria-live="polite">
       <svg class="h-7 w-7 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
       </svg>
+      <span class="sr-only">{{ t('usage.detail.loading') }}</span>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="loadError" class="py-8 text-center text-sm text-red-500">
-      {{ t('usage.errors.detail.loadFailed') }}
+    <div v-else-if="loadError" class="py-8 text-center text-sm text-red-500" role="alert">
+      <p>{{ t('usage.errors.detail.loadFailed') }}</p>
+      <button
+        type="button"
+        data-testid="retry-user-error-detail"
+        class="mt-3 rounded-md border border-red-300 px-3 py-1.5 font-medium text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30"
+        @click="retryDetail"
+      >
+        {{ t('usage.detail.retry') }}
+      </button>
     </div>
 
     <!-- Detail content -->
@@ -155,6 +164,12 @@ async function fetchDetail(id: number) {
       loading.value = false
     }
   }
+}
+
+function retryDetail() {
+  const id = props.errorId
+  if (id == null || id <= 0 || !props.show) return
+  void fetchDetail(id)
 }
 
 function handleClose() {

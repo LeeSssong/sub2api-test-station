@@ -689,6 +689,75 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 	return &u
 }
 
+// UserUsageDetailFromService converts a usage log into the narrow projection
+// returned by GET /usage/:id. Keeping this separate from UsageLog prevents a
+// future relation preload from exposing an API key value or upstream metadata.
+func UserUsageDetailFromService(l *service.UsageLog) *UserUsageDetail {
+	if l == nil {
+		return nil
+	}
+	requestType := l.EffectiveRequestType()
+	stream, openAIWSMode := service.ApplyLegacyRequestFields(requestType, l.Stream, l.OpenAIWSMode)
+	model := l.RequestedModel
+	if model == "" {
+		model = l.Model
+	}
+	detail := &UserUsageDetail{
+		ID:                        l.ID,
+		UserID:                    l.UserID,
+		APIKeyID:                  l.APIKeyID,
+		RequestID:                 l.RequestID,
+		Model:                     model,
+		ServiceTier:               l.ServiceTier,
+		ReasoningEffort:           l.ReasoningEffort,
+		InboundEndpoint:           l.InboundEndpoint,
+		GroupID:                   l.GroupID,
+		InputTokens:               l.InputTokens,
+		OutputTokens:              l.OutputTokens,
+		CacheCreationTokens:       l.CacheCreationTokens,
+		CacheReadTokens:           l.CacheReadTokens,
+		CacheCreation5mTokens:     l.CacheCreation5mTokens,
+		CacheCreation1hTokens:     l.CacheCreation1hTokens,
+		InputCost:                 l.InputCost,
+		OutputCost:                l.OutputCost,
+		CacheCreationCost:         l.CacheCreationCost,
+		CacheReadCost:             l.CacheReadCost,
+		TotalCost:                 l.TotalCost,
+		ActualCost:                l.ActualCost,
+		RateMultiplier:            l.RateMultiplier,
+		LongContextBillingApplied: l.LongContextBillingApplied,
+		BillingType:               l.BillingType,
+		RequestType:               requestType.String(),
+		Stream:                    stream,
+		OpenAIWSMode:              openAIWSMode,
+		DurationMs:                l.DurationMs,
+		FirstTokenMs:              l.FirstTokenMs,
+		ImageCount:                l.ImageCount,
+		ImageSize:                 l.ImageSize,
+		ImageInputSize:            l.ImageInputSize,
+		ImageOutputSize:           l.ImageOutputSize,
+		ImageInputTokens:          l.ImageInputTokens,
+		ImageInputCost:            l.ImageInputCost,
+		ImageOutputTokens:         l.ImageOutputTokens,
+		ImageOutputCost:           l.ImageOutputCost,
+		ImageSizeSource:           l.ImageSizeSource,
+		ImageSizeBreakdown:        l.ImageSizeBreakdown,
+		MediaType:                 l.MediaType,
+		UserAgent:                 l.UserAgent,
+		IPAddress:                 l.IPAddress,
+		CacheTTLOverridden:        l.CacheTTLOverridden,
+		BillingMode:               l.BillingMode,
+		CreatedAt:                 l.CreatedAt,
+	}
+	if l.APIKey != nil {
+		detail.APIKey = &UsageLogReference{ID: l.APIKey.ID, Name: l.APIKey.Name}
+	}
+	if l.Group != nil {
+		detail.Group = &UsageLogReference{ID: l.Group.ID, Name: l.Group.Name}
+	}
+	return detail
+}
+
 // UsageLogFromServiceAdmin converts a service UsageLog to DTO for admin users.
 // It includes minimal Account info (ID, Name only) and IP address.
 func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {

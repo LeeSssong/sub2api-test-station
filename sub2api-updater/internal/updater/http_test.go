@@ -52,9 +52,10 @@ func admissionServer(t *testing.T) (*httptest.Server, *fakeResolver, *fakeExecut
 	t.Helper()
 	r := &fakeResolver{image: "weishaw/sub2api:1.2.3@sha256:" + strings.Repeat("a", 64)}
 	e := &fakeExecutor{}
-	s := NewService(NewStore(t.TempDir()+"/state.json"), r, e)
+	now := func() time.Time { return time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC) }
+	s := NewService(NewStore(t.TempDir()+"/state.json"), r, e, now)
 	t.Cleanup(s.Close)
-	h := NewHTTP(s, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", func() time.Time { return time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC) })
+	h := NewHTTP(s, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", now)
 	return httptest.NewServer(h), r, e
 }
 func updateRequest(t *testing.T, url string, mutate func(*http.Request)) *http.Response {

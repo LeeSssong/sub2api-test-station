@@ -20,11 +20,17 @@ describe('Xingqiao beginner guide', () => {
       '星桥AI 小白使用教程',
       'https://api.xingqiaolab.top/',
       '1080152144',
+      '适合第一次使用 API、Codex 和 CC Switch 的用户',
       '充值并确认余额',
       '创建 API 密钥',
-      '导入 CC Switch',
+      '一键导入 CC Switch',
+      '启动 Codex 并完成首次测试',
       '查看 Token 和扣费',
+      '六、常见报错',
       '密钥安全建议',
+      '八、完成检查',
+      '输入 Token',
+      '用户扣费',
     ]) expect(html).toContain(required)
 
     for (const forbidden of [
@@ -32,6 +38,10 @@ describe('Xingqiao beginner guide', () => {
       'xmhbao.cn',
       'sslip.io',
       '邮箱验证码',
+      '邮箱验证',
+      '一、注册',
+      '安装 Codex',
+      '安装 CC Switch',
       '邀请好友',
       '20% 返利',
       'pan.quark.cn',
@@ -50,7 +60,6 @@ describe('Xingqiao beginner guide', () => {
       '/',
       '/keys',
       '/usage',
-      '/custom/xingqiao-storefront',
       '/support',
     ])
     const hrefs = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('a[href]')]
@@ -60,5 +69,7 @@ describe('Xingqiao beginner guide', () => {
       expect(href).toBeTruthy()
       expect(href === '/' || href?.startsWith('#') || allowed.has(href ?? '')).toBe(true)
     }
+
+    expect(dom.window.document.querySelectorAll('#toc-links a')).toHaveLength(16)
   })
 })

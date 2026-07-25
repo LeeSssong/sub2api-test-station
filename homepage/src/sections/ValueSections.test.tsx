@@ -7,9 +7,9 @@ describe('ValueSections', () => {
   it('renders the approved pricing multiplier copy', () => {
     render(<ValueSections config={DEFAULT_SITE_CONFIG} />)
 
-    expect(screen.getAllByText('官方价格的0.1——0。3倍')).toHaveLength(2)
+    expect(screen.getAllByText('官方价格的 0.1—0.3 倍')).toHaveLength(2)
     expect(screen.queryByText('官方价格 100%')).not.toBeInTheDocument()
-    expect(screen.queryByText(/0.1–0.3 倍/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/0。3|——/)).not.toBeInTheDocument()
     expect(screen.queryByText(/倍率/)).not.toBeInTheDocument()
     expect(screen.getByText('额度换算 1 元 = 1 美元额度')).toBeInTheDocument()
   })

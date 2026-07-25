@@ -50,7 +50,7 @@ export function ValueSections({ config: _config }: ValueSectionsProps) {
           <article className="value-card price-card">
             <div className="card-heading"><Sparkles aria-hidden="true" /><div><h3>透明定价</h3><p>公开展示，不用复杂换算掩盖实际折扣。</p></div></div>
             <dl className="price-table">
-              <div><dt>星桥价格</dt><dd>官方价格的0.1——0。3倍</dd><span className="sr-only">官方价格的0.1——0。3倍</span></div>
+              <div><dt>星桥价格</dt><dd>官方价格的 0.1—0.3 倍</dd><span className="sr-only">官方价格的 0.1—0.3 倍</span></div>
               <div><dt>额度换算</dt><dd>1 元 = 1 美元额度</dd><span className="sr-only">额度换算 1 元 = 1 美元额度</span></div>
             </dl>
           </article>

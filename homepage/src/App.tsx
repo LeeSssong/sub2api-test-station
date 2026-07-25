@@ -23,7 +23,7 @@ export function App({ config, session }: AppProps) {
         <ValueSections config={config} />
         <StatementSection />
         <RequestJourney />
-        <IntegrationSection />
+        <IntegrationSection config={config} />
       </main>
       <footer className="site-footer">
         <div><span>© 2026 星桥</span><span>世界顶尖模型触手可及</span></div>

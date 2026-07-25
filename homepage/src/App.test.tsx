@@ -38,6 +38,8 @@ describe('App', () => {
     expect(screen.getByText('首尔节点 · 稳定运行')).toBeInTheDocument()
     expect(screen.getByText('GPT、Claude、Gemini 一站接入。')).toBeInTheDocument()
     expect(screen.getByText('国内网络直接连接，注册即可使用。')).toBeInTheDocument()
+    expect(screen.getByText('OPENAI_BASE_URL=https://api.example.com')).toBeVisible()
+    expect(screen.getByText('ANTHROPIC_BASE_URL=https://api.example.com')).toBeVisible()
     expect(screen.getByRole('link', { name: '立即开始' })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByRole('link', { name: '登录' })).not.toBeInTheDocument()
     expect(within(navigation).queryByRole('link', { name: '登录' })).not.toBeInTheDocument()

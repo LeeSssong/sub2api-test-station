@@ -511,7 +511,7 @@ func containsForbiddenProjectionKey(data []byte) bool {
 }
 
 func validateAccountMonitorProjection(projection AccountMonitorProjection) error {
-	if projection.SchemaVersion != 1 || projection.ObservedAt.IsZero() || projection.Settings.IntervalSeconds <= 0 || projection.Accounts == nil {
+	if projection.SchemaVersion != 2 || projection.ObservedAt.IsZero() || projection.Settings.IntervalSeconds <= 0 || projection.Accounts == nil {
 		return errSchemaMismatch
 	}
 	seen := make(map[int64]struct{}, len(projection.Accounts))
@@ -519,8 +519,8 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 		if account.AccountID <= 0 || strings.TrimSpace(account.Name) == "" || strings.TrimSpace(account.Platform) == "" ||
 			strings.TrimSpace(account.AccountType) == "" ||
 			account.SampleCount < 0 || account.SuccessRate < 0 || account.SuccessRate > 1 ||
-			account.Multiplier < 0 || account.RequestCount < 0 || account.ErrorCount < 0 ||
-			!finiteNumber(account.SuccessRate) || !finiteNumber(account.Multiplier) {
+			account.RequestCount < 0 || account.ErrorCount < 0 ||
+			!finiteNumber(account.SuccessRate) || !validAccountMonitorMultiplier(account.Multiplier, projection.ObservedAt) {
 			return errSchemaMismatch
 		}
 		if _, ok := seen[account.AccountID]; ok {
@@ -559,6 +559,25 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 		}
 	}
 	return nil
+}
+
+func validAccountMonitorMultiplier(multiplier AccountMonitorMultiplier, projectionObservedAt time.Time) bool {
+	switch multiplier.Status {
+	case "ok":
+		if multiplier.Source != "declared" && multiplier.Source != "measured" {
+			return false
+		}
+		if multiplier.Value == nil || *multiplier.Value < 0 || !finiteNumber(*multiplier.Value) ||
+			multiplier.ObservedAt == nil || multiplier.ObservedAt.IsZero() ||
+			multiplier.ObservedAt.After(projectionObservedAt) {
+			return false
+		}
+		return true
+	case "stale", "unsupported", "failed", "unavailable":
+		return multiplier.Value == nil
+	default:
+		return false
+	}
 }
 
 func finiteNumber(value float64) bool {

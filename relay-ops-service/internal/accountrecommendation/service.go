@@ -5,11 +5,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-const minimumScoreDelta = 0.05
+const (
+	minimumScoreDelta        = 0.05
+	maxMultiplierEvidenceAge = 24 * time.Hour
+)
 
 type Result struct {
 	EvidenceState string        `json:"evidence_state"`
@@ -77,15 +81,21 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 		}
 		current := currentRows[0]
 		group.CurrentAccountID = current.AccountID
-		group.Current = accountView(current)
+		group.Current = accountView(current, projection.ObservedAt)
 		if result.EvidenceState != "fresh" {
 			group.Reasons = []string{"监控证据" + evidenceLabel(result.EvidenceState) + "，暂不建议更换"}
 			result.Groups = append(result.Groups, group)
 			continue
 		}
+		if _, ok := trustedMultiplier(current, projection.ObservedAt); !ok {
+			group.EvidenceState = "multiplier_unavailable"
+			group.Reasons = []string{candidateReason("multiplier_unavailable")}
+			result.Groups = append(result.Groups, group)
+			continue
+		}
 		if len(currentRows) == 1 {
 			if len(rows) > 1 {
-				if _, candidateState := bestCandidate(current, rows[1:]); candidateState != "" {
+				if _, candidateState := bestCandidate(current, rows[1:], projection.ObservedAt); candidateState != "" {
 					group.EvidenceState = candidateState
 					group.Reasons = []string{candidateReason(candidateState)}
 					result.Groups = append(result.Groups, group)
@@ -98,7 +108,7 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 			result.Groups = append(result.Groups, group)
 			continue
 		}
-		candidate, candidateState := bestCandidate(current, currentRows[1:])
+		candidate, candidateState := bestCandidate(current, currentRows[1:], projection.ObservedAt)
 		if candidateState != "" {
 			group.EvidenceState = candidateState
 			group.Reasons = []string{candidateReason(candidateState)}
@@ -106,15 +116,15 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 			continue
 		}
 		group.CandidateAccountID = candidate.AccountID
-		group.Candidate = accountView(candidate)
-		currentScore := score(current)
-		candidateScore := score(candidate)
+		group.Candidate = accountView(candidate, projection.ObservedAt)
+		currentScore := score(current, projection.ObservedAt)
+		candidateScore := score(candidate, projection.ObservedAt)
 		group.ScoreDelta = round(candidateScore - currentScore)
 		switch {
 		case group.ScoreDelta >= minimumScoreDelta:
 			group.Decision = "candidate_better"
 			group.EvidenceState = "fresh"
-			group.Reasons = recommendationReasons(current, candidate)
+			group.Reasons = recommendationReasons(current, candidate, projection.ObservedAt)
 		default:
 			group.Decision = "current_ok"
 			group.EvidenceState = "margin_below_threshold"
@@ -126,13 +136,13 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 }
 
 func projectionEvidenceState(projection sub2api.AccountMonitorProjection) string {
-	if projection.SchemaVersion != 1 || projection.Stale {
+	if projection.SchemaVersion != 2 || projection.Stale {
 		return "stale"
 	}
 	return "fresh"
 }
 
-func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.AccountMonitorAccount) (sub2api.AccountMonitorAccount, string) {
+func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.AccountMonitorAccount, observedAt time.Time) (sub2api.AccountMonitorAccount, string) {
 	eligible := make([]sub2api.AccountMonitorAccount, 0, len(rows))
 	for _, candidate := range rows {
 		if candidate.Status != "active" || !candidate.Schedulable {
@@ -153,6 +163,9 @@ func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.Account
 		if candidate.TTFTP95MS == nil || candidate.LatencyP95MS == nil || current.TTFTP95MS == nil || current.LatencyP95MS == nil {
 			continue
 		}
+		if _, ok := trustedMultiplier(candidate, observedAt); !ok {
+			continue
+		}
 		eligible = append(eligible, candidate)
 	}
 	if len(eligible) == 0 {
@@ -171,12 +184,14 @@ func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.Account
 				return sub2api.AccountMonitorAccount{}, "incompatible_model"
 			case !usableLatestStatus(candidate):
 				return sub2api.AccountMonitorAccount{}, "recent_failure"
+			case !hasTrustedMultiplier(candidate, observedAt):
+				return sub2api.AccountMonitorAccount{}, "multiplier_unavailable"
 			}
 		}
 		return sub2api.AccountMonitorAccount{}, "no_eligible_candidate"
 	}
 	sort.Slice(eligible, func(i, j int) bool {
-		left, right := score(eligible[i]), score(eligible[j])
+		left, right := score(eligible[i], observedAt), score(eligible[j], observedAt)
 		if left != right {
 			return left > right
 		}
@@ -194,13 +209,17 @@ func usableLatestStatus(account sub2api.AccountMonitorAccount) bool {
 	}
 }
 
-func score(account sub2api.AccountMonitorAccount) float64 {
+func score(account sub2api.AccountMonitorAccount, observedAt time.Time) float64 {
 	stability := clamp(account.SuccessRate)
 	performance := 0.0
 	if account.TTFTP95MS != nil && account.LatencyP95MS != nil {
 		performance = clamp(1 - ((*account.TTFTP95MS + *account.LatencyP95MS) / 2 / 2000))
 	}
-	multiplier := 1 / (1 + math.Max(account.Multiplier, 0))
+	multiplierValue, ok := trustedMultiplier(account, observedAt)
+	if !ok {
+		return 0
+	}
+	multiplier := 1 / (1 + math.Max(multiplierValue, 0))
 	headroom := 1 - maxUtilization(account)
 	recentLoad := 1 - math.Min(float64(account.RequestCount)/1000, 1)
 	headroom = (headroom + recentLoad) / 2
@@ -217,7 +236,7 @@ func maxUtilization(account sub2api.AccountMonitorAccount) float64 {
 	return clamp(maximum)
 }
 
-func recommendationReasons(current, candidate sub2api.AccountMonitorAccount) []string {
+func recommendationReasons(current, candidate sub2api.AccountMonitorAccount, observedAt time.Time) []string {
 	reasons := make([]string, 0, 4)
 	if candidate.SuccessRate > current.SuccessRate {
 		reasons = append(reasons, "稳定性更高："+formatPercent(candidate.SuccessRate)+" vs "+formatPercent(current.SuccessRate))
@@ -225,8 +244,10 @@ func recommendationReasons(current, candidate sub2api.AccountMonitorAccount) []s
 	if candidate.TTFTP95MS != nil && current.TTFTP95MS != nil && *candidate.TTFTP95MS < *current.TTFTP95MS {
 		reasons = append(reasons, "TTFT 更低："+formatMS(*candidate.TTFTP95MS)+" vs "+formatMS(*current.TTFTP95MS))
 	}
-	if candidate.Multiplier < current.Multiplier {
-		reasons = append(reasons, "倍率更低："+formatMultiplier(candidate.Multiplier)+" vs "+formatMultiplier(current.Multiplier))
+	currentMultiplier, currentOK := trustedMultiplier(current, observedAt)
+	candidateMultiplier, candidateOK := trustedMultiplier(candidate, observedAt)
+	if currentOK && candidateOK && candidateMultiplier < currentMultiplier {
+		reasons = append(reasons, "倍率更低："+formatMultiplier(candidateMultiplier)+" vs "+formatMultiplier(currentMultiplier))
 	}
 	if maxUtilization(candidate) < maxUtilization(current) {
 		reasons = append(reasons, "用量窗口余量更高")
@@ -249,18 +270,43 @@ func candidateReason(state string) string {
 		return "候选账号当前不可调度，暂不建议"
 	case "recent_failure":
 		return "最近探测失败，暂不建议"
+	case "multiplier_unavailable":
+		return "倍率证据不可用，暂不建议"
 	default:
 		return "没有满足证据条件的候选账号"
 	}
 }
 
-func accountView(account sub2api.AccountMonitorAccount) AccountView {
+func accountView(account sub2api.AccountMonitorAccount, observedAt time.Time) AccountView {
+	multiplier := "未知"
+	if value, ok := trustedMultiplier(account, observedAt); ok {
+		multiplier = formatMultiplier(value)
+	}
 	return AccountView{
 		AccountID: account.AccountID, Name: account.Name, ModelID: emptyAs(account.ModelID, "未选择模型"),
 		SuccessRate: formatPercent(account.SuccessRate), TTFT: formatMetric(account.TTFTP95MS),
-		Latency: formatMetric(account.LatencyP95MS), Multiplier: formatMultiplier(account.Multiplier),
+		Latency: formatMetric(account.LatencyP95MS), Multiplier: multiplier,
 		UsageWindows: usageWindows(account), Status: accountStatus(account),
 	}
+}
+
+func hasTrustedMultiplier(account sub2api.AccountMonitorAccount, observedAt time.Time) bool {
+	_, ok := trustedMultiplier(account, observedAt)
+	return ok
+}
+
+func trustedMultiplier(account sub2api.AccountMonitorAccount, observedAt time.Time) (float64, bool) {
+	multiplier := account.Multiplier
+	if multiplier.Status != "ok" ||
+		(multiplier.Source != "declared" && multiplier.Source != "measured") ||
+		multiplier.Value == nil || *multiplier.Value < 0 ||
+		math.IsNaN(*multiplier.Value) || math.IsInf(*multiplier.Value, 0) ||
+		multiplier.ObservedAt == nil || multiplier.ObservedAt.IsZero() ||
+		observedAt.IsZero() || multiplier.ObservedAt.After(observedAt) ||
+		observedAt.Sub(*multiplier.ObservedAt) > maxMultiplierEvidenceAge {
+		return 0, false
+	}
+	return *multiplier.Value, true
 }
 
 func usageWindows(account sub2api.AccountMonitorAccount) string {

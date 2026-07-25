@@ -500,7 +500,7 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":{
-			"schema_version":1,
+			"schema_version":2,
 			"observed_at":"2026-07-25T07:00:00Z",
 			"stale":false,
 			"settings":{"interval_seconds":300,"updated_by":7,"updated_at":"2026-07-25T06:58:00Z"},
@@ -521,7 +521,7 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 				"ttft_p50_ms":150,
 				"ttft_p95_ms":210,
 				"latency_p95_ms":900,
-				"multiplier":0.1,
+				"multiplier":{"value":0.1,"source":"declared","status":"ok","observed_at":"2026-07-25T06:58:00Z"},
 				"request_count":100,
 				"error_count":2,
 				"today_stats":{"requests":100,"tokens":3400,"cost":1.2,"standard_cost":2.4,"user_cost":1.8},
@@ -548,7 +548,7 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 				"ttft_p50_ms":100,
 				"ttft_p95_ms":120,
 				"latency_p95_ms":500,
-				"multiplier":0.08,
+				"multiplier":{"value":0.08,"source":"measured","status":"ok","observed_at":"2026-07-25T06:58:30Z"},
 				"request_count":60,
 				"error_count":0,
 				"usage_windows":[],
@@ -562,7 +562,7 @@ func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests != 1 || projection.SchemaVersion != 1 || projection.Settings.IntervalSeconds != 300 ||
+	if requests != 1 || projection.SchemaVersion != 2 || projection.Settings.IntervalSeconds != 300 ||
 		projection.ObservedAt.Format(time.RFC3339) != "2026-07-25T07:00:00Z" || projection.Stale {
 		t.Fatalf("projection metadata = %#v", projection)
 	}
@@ -602,19 +602,19 @@ func TestHTTPReaderListAccountMonitorsRejectsSchemaDriftAndSecretKeys(t *testing
 	}{
 		{
 			name: "missing accounts",
-			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300}}}`,
+			body: `{"data":{"schema_version":2,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300}}}`,
 		},
 		{
 			name: "wrong schema version",
-			body: `{"data":{"schema_version":2,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[]}}`,
+			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[]}}`,
 		},
 		{
 			name: "unknown field",
-			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"unexpected":true}}`,
+			body: `{"data":{"schema_version":2,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"unexpected":true}}`,
 		},
 		{
 			name: "secret-shaped key",
-			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"api_key":"must-not-leak"}}`,
+			body: `{"data":{"schema_version":2,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"api_key":"must-not-leak"}}`,
 		},
 	}
 	for _, test := range tests {

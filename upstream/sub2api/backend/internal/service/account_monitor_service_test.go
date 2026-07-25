@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +21,46 @@ type accountMonitorAccountRepoStub struct {
 	listAllStatus         string
 	listAllCalled         bool
 	listSchedulableCalled bool
+}
+
+type accountMonitorRepoStub struct {
+	AccountMonitorRepository
+	mu      sync.Mutex
+	results []AccountMonitorProbeResult
+}
+
+func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.results = append(s.results, result)
+	return nil
+}
+
+func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error {
+	return nil
+}
+
+type accountMonitorMultiplierStub struct {
+	mu     sync.Mutex
+	calls  []accountMonitorMultiplierCall
+	err    error
+	result AccountMonitorMultiplier
+}
+
+type accountMonitorMultiplierCall struct {
+	accountID int64
+	force     bool
+}
+
+func (s *accountMonitorMultiplierStub) Resolve(*Account, time.Time) AccountMonitorMultiplier {
+	return s.result
+}
+
+func (s *accountMonitorMultiplierStub) Refresh(_ context.Context, account *Account, force bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, accountMonitorMultiplierCall{accountID: account.ID, force: force})
+	return s.err
 }
 
 func (s *accountMonitorAccountRepoStub) ListSchedulable(context.Context) ([]Account, error) {
@@ -169,5 +211,51 @@ func TestAccountMonitorProjectionIncludesReusableTodayStatsWithoutSecrets(t *tes
 		if strings.Contains(strings.ToLower(text), forbidden) {
 			t.Fatalf("projection contains forbidden field %q: %s", forbidden, text)
 		}
+	}
+}
+
+func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnectivity(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          21,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	multiplier := &accountMonitorMultiplierStub{err: errors.New("measurement failed")}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, multiplier)
+
+	completed, err := service.RunAll(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed != 1 || len(monitorRepo.results) != 1 {
+		t.Fatalf("completed=%d results=%#v", completed, monitorRepo.results)
+	}
+	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 21, force: false}) {
+		t.Fatalf("multiplier calls = %#v", multiplier.calls)
+	}
+}
+
+func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          23,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	multiplier := &accountMonitorMultiplierStub{err: errors.New("measurement failed")}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, multiplier)
+
+	result, err := service.RunOne(context.Background(), 1, 23)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccountID != 23 || len(monitorRepo.results) != 1 {
+		t.Fatalf("result=%#v persisted=%#v", result, monitorRepo.results)
+	}
+	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 23, force: true}) {
+		t.Fatalf("multiplier calls = %#v", multiplier.calls)
 	}
 }

@@ -198,6 +198,17 @@ type accountMultiplierRepoStub struct {
 	*upstreamBillingProbeAccountRepo
 }
 
+type accountMultiplierDeclarationProbeStub struct {
+	calls    []int64
+	snapshot *UpstreamBillingProbeSnapshot
+	err      error
+}
+
+func (s *accountMultiplierDeclarationProbeStub) ProbeAccount(_ context.Context, accountID int64) (*UpstreamBillingProbeSnapshot, error) {
+	s.calls = append(s.calls, accountID)
+	return s.snapshot, s.err
+}
+
 func (r *accountMultiplierRepoStub) UpdateAccountMultiplierMeasurement(
 	_ context.Context,
 	expected *Account,
@@ -424,6 +435,55 @@ func TestAccountMultiplierRefreshReusesFreshMeasurementUnlessForced(t *testing.T
 
 	if err := svc.Refresh(context.Background(), account, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAccountMultiplierRefreshDoesNotRetryRecentFailureAutomatically(t *testing.T) {
+	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
+	account := &Account{Extra: map[string]any{
+		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
+			Version:       AccountMultiplierMeasurementVersion,
+			Status:        AccountMonitorMultiplierStatusFailed,
+			Source:        AccountMonitorMultiplierSourceMeasured,
+			LastAttemptAt: now.Add(-time.Hour),
+		},
+	}}
+	svc := NewAccountMultiplierService(nil, nil, nil)
+	svc.now = func() time.Time { return now }
+
+	if err := svc.Refresh(context.Background(), account, false); err != nil {
+		t.Fatalf("recent automatic failure must be throttled: %v", err)
+	}
+}
+
+func TestAccountMultiplierRefreshForceReprobesNativeDeclaration(t *testing.T) {
+	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
+	account := &Account{
+		ID: 24,
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data: map[string]any{
+					"billing_scope":            "token",
+					"resolved_rate_multiplier": 0.16,
+					"peak_rate_enabled":        false,
+				},
+				FreshUntil: probeTimePtr(now.Add(time.Hour)),
+			},
+		},
+	}
+	probe := &accountMultiplierDeclarationProbeStub{snapshot: &UpstreamBillingProbeSnapshot{
+		Status: UpstreamBillingProbeStatusOK,
+	}}
+	svc := NewAccountMultiplierService(nil, nil, nil)
+	svc.SetDeclarationProbe(probe)
+
+	if err := svc.Refresh(context.Background(), account, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(probe.calls) != 1 || probe.calls[0] != account.ID {
+		t.Fatalf("declaration probe calls = %#v", probe.calls)
 	}
 }
 

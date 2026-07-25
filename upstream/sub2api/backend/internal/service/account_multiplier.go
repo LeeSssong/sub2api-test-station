@@ -53,7 +53,12 @@ type AccountMultiplierService struct {
 	accountRepo        AccountRepository
 	accountTestService *AccountTestService
 	billingService     *BillingService
+	declarationProbe   accountMultiplierDeclarationProbe
 	now                func() time.Time
+}
+
+type accountMultiplierDeclarationProbe interface {
+	ProbeAccount(context.Context, int64) (*UpstreamBillingProbeSnapshot, error)
 }
 
 func NewAccountMultiplierService(
@@ -66,6 +71,12 @@ func NewAccountMultiplierService(
 		accountTestService: accountTestService,
 		billingService:     billingService,
 		now:                time.Now,
+	}
+}
+
+func (s *AccountMultiplierService) SetDeclarationProbe(probe accountMultiplierDeclarationProbe) {
+	if s != nil {
+		s.declarationProbe = probe
 	}
 }
 
@@ -88,14 +99,30 @@ func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account
 		return ErrAccountNilInput
 	}
 	declaration := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	if force && s.declarationProbe != nil {
+		probed, err := s.declarationProbe.ProbeAccount(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		if probed != nil {
+			declaration = probed
+		}
+	}
 	if declaration == nil || declaration.Status != UpstreamBillingProbeStatusUnsupported {
 		return nil
 	}
 	now := s.currentTime().UTC()
 	measurement := decodeAccountMultiplierMeasurementSnapshot(account.Extra)
-	if !force && measurement != nil && measurement.Status == AccountMonitorMultiplierStatusOK &&
-		measurement.FreshUntil != nil && now.Before(*measurement.FreshUntil) {
-		return nil
+	if !force && measurement != nil {
+		if measurement.Status == AccountMonitorMultiplierStatusOK &&
+			measurement.FreshUntil != nil && now.Before(*measurement.FreshUntil) {
+			return nil
+		}
+		if !measurement.LastAttemptAt.IsZero() &&
+			now.Sub(measurement.LastAttemptAt) >= 0 &&
+			now.Sub(measurement.LastAttemptAt) < AccountMultiplierMeasurementTTL {
+			return nil
+		}
 	}
 	if s.accountRepo == nil || s.accountTestService == nil ||
 		s.accountTestService.httpUpstream == nil || s.billingService == nil {

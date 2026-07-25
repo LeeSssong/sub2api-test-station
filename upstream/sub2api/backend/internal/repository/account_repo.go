@@ -2555,6 +2555,98 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 	return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
 }
 
+// UpdateAccountMultiplierMeasurement stores sanitized monitor evidence only
+// while the account identity, persisted state, and previous measurement still
+// match the snapshot used by the probe.
+func (r *accountRepository) UpdateAccountMultiplierMeasurement(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.AccountMultiplierMeasurementSnapshot,
+) error {
+	if account == nil || snapshot == nil {
+		return service.ErrAccountNilInput
+	}
+	if dbent.TxFromContext(ctx) != nil {
+		return r.updateAccountMultiplierMeasurementInTx(ctx, account, snapshot)
+	}
+	tx, err := r.client.Tx(ctx)
+	if errors.Is(err, dbent.ErrTxStarted) {
+		return r.updateAccountMultiplierMeasurementInTx(ctx, account, snapshot)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.updateAccountMultiplierMeasurementInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.syncSchedulerAccountSnapshot(ctx, account.ID)
+	return nil
+}
+
+func (r *accountRepository) updateAccountMultiplierMeasurementInTx(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.AccountMultiplierMeasurementSnapshot,
+) error {
+	payload, err := json.Marshal(map[string]any{service.AccountMultiplierMeasurementExtraKey: snapshot})
+	if err != nil {
+		return err
+	}
+	credentials, err := json.Marshal(account.Credentials)
+	if err != nil {
+		return err
+	}
+	var expectedMeasurement any
+	if account.Extra != nil {
+		expectedMeasurement = account.Extra[service.AccountMultiplierMeasurementExtraKey]
+	}
+	expectedMeasurementJSON, err := json.Marshal(expectedMeasurement)
+	if err != nil {
+		return err
+	}
+	client := clientFromContext(ctx, r.client)
+	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
+	if err != nil {
+		return err
+	}
+	if !proxyMatches {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	var proxyID any
+	if account.ProxyID != nil {
+		proxyID = *account.ProxyID
+	}
+	result, err := client.ExecContext(ctx, `
+		UPDATE accounts
+		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+		WHERE id = $2
+			AND platform = $3
+			AND type = $4
+			AND credentials = $5::jsonb
+			AND proxy_id IS NOT DISTINCT FROM $6
+			AND status = $7
+			AND schedulable = $8
+			AND COALESCE(extra -> 'account_monitor_multiplier_measurement', 'null'::jsonb) = $9::jsonb
+			AND deleted_at IS NULL
+	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID,
+		account.Status, account.Schedulable, string(expectedMeasurementJSON))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	return nil
+}
+
 func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	ctx context.Context,
 	account *service.Account,

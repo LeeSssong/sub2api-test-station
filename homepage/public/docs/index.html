@@ -3,71 +3,384 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="星桥AI 小白使用教程：充值、创建密钥、导入 CC Switch 和查看用量。">
+  <meta name="description" content="星桥AI 小白使用教程：充值、创建 API 密钥、导入 CC Switch、配置 Codex 以及查看 Token 和扣费。">
   <title>星桥AI 小白使用教程</title>
   <style>
-    :root { color-scheme: light; --ink: #14231f; --muted: #60716b; --line: #dce6e2; --brand: #0d6f5d; --brand-dark: #102b25; --brand-soft: #e8f6f1; --link: #075ea8; --warning: #8a3f08; --warning-bg: #fff7e8; --code: #10211d; }
+    :root {
+      color-scheme: light;
+      --ink: #14231f;
+      --muted: #60716b;
+      --line: #dce6e2;
+      --brand: #0d6f5d;
+      --brand-dark: #102b25;
+      --brand-soft: #e8f6f1;
+      --link: #075ea8;
+      --warning: #8a3f08;
+      --warning-bg: #fff7e8;
+      --code: #10211d;
+    }
+
     * { box-sizing: border-box; }
+
     html { scroll-behavior: smooth; }
-    body { margin: 0; color: var(--ink); background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.78; }
-    a { color: var(--link); text-underline-offset: 3px; }
-    .topbar { position: sticky; top: 0; z-index: 10; height: 58px; background: var(--brand-dark); color: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.14); }
-    .topbar-inner { width: min(1240px, calc(100% - 36px)); height: 100%; margin: auto; display: flex; justify-content: space-between; align-items: center; }
-    .brandmark { display: flex; align-items: baseline; gap: 10px; color: #fff; font-weight: 700; text-decoration: none; letter-spacing: .01em; }
-    .brandmark small { color: #b8d1c9; font-size: 13px; font-weight: 500; }
-    .topbar-return { color: #e4f4ef; font-size: 14px; text-decoration: none; border: 1px solid rgba(228,244,239,.4); border-radius: 5px; padding: 4px 10px; }
-    .topbar-return:hover { background: rgba(255,255,255,.1); }
-    .shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 44px; width: min(1240px, calc(100% - 36px)); margin: 0 auto; padding: 46px 0 72px; }
-    .toc { position: sticky; top: 82px; align-self: start; max-height: calc(100vh - 104px); overflow: auto; padding-right: 16px; }
-    .toc-title { color: var(--brand); margin: 0 0 12px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    .toc a { display: block; color: var(--muted); font-size: 14px; line-height: 1.4; padding: 6px 0; text-decoration: none; }
-    .toc a:hover { color: var(--brand); }
-    .toc .sub { padding-left: 12px; font-size: 13px; }
-    main { max-width: 860px; min-width: 0; }
-    h1, h2, h3 { color: var(--ink); line-height: 1.28; scroll-margin-top: 78px; }
-    h1 { margin: 0 0 13px; font-size: clamp(30px, 4vw, 42px); }
-    h2 { margin: 54px 0 18px; padding-top: 5px; font-size: 25px; border-top: 1px solid var(--line); }
-    h2:first-of-type { margin-top: 42px; }
-    h3 { margin: 31px 0 10px; font-size: 19px; }
-    p { margin: 0 0 16px; }
-    .lead { color: var(--muted); font-size: 18px; line-height: 1.7; }
-    .eyebrow { margin-bottom: 7px; color: var(--brand); font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-    .callout { margin: 21px 0; border: 1px solid #cfe8df; border-left: 4px solid var(--brand); border-radius: 6px; background: var(--brand-soft); padding: 15px 18px; }
-    .warning { border-color: #f3d7a8; border-left-color: #c66a16; background: var(--warning-bg); color: var(--warning); }
-    .callout p:last-child { margin-bottom: 0; }
-    ol, ul { margin: 0 0 17px; padding-left: 24px; }
-    li { padding-left: 3px; margin: 5px 0; }
-    code { padding: 2px 5px; border-radius: 4px; color: #fff; background: var(--code); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
-    pre { overflow: auto; margin: 18px 0 21px; border-radius: 6px; background: var(--code); color: #e7f4ef; padding: 16px 18px; line-height: 1.65; }
-    pre code { padding: 0; }
-    .shot { display: block; width: 100%; margin: 22px 0 26px; border: 1px solid var(--line); border-radius: 6px; background: #f6f9f8; box-shadow: 0 5px 18px rgba(16,43,37,.08); }
-    .caption { margin-top: -15px; margin-bottom: 25px; color: var(--muted); font-size: 13px; text-align: center; }
-    .checklist { padding: 18px 20px 15px; border: 1px solid var(--line); border-radius: 6px; background: #fbfdfc; }
-    .checklist li::marker { color: var(--brand); }
-    footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
-    footer div { width: min(1240px, calc(100% - 36px)); margin: auto; padding: 25px 0 34px; }
-    @media (max-width: 820px) { .topbar-inner, .shell, footer div { width: min(100% - 32px, 640px); } .topbar { height: 54px; } .brandmark small { display: none; } .shell { display: block; padding-top: 31px; } .toc { display: none; } h1 { font-size: 31px; } h2 { margin-top: 42px; font-size: 23px; } h3 { font-size: 18px; } .lead { font-size: 16px; } }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #f7faf9;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.75;
+      letter-spacing: 0;
+    }
+
+    a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover { color: #034c89; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      height: 58px;
+      color: white;
+      background: var(--brand-dark);
+      border-bottom: 3px solid #24b994;
+    }
+
+    .topbar-inner {
+      width: min(1240px, calc(100% - 36px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+    .brand strong { font-size: 19px; }
+    .brand span { color: #b8d8ce; font-size: 14px; white-space: nowrap; }
+    .topbar a { color: white; text-decoration: none; font-size: 14px; }
+
+    .layout {
+      width: min(1240px, calc(100% - 36px));
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+      gap: 44px;
+      align-items: start;
+    }
+
+    .toc {
+      position: sticky;
+      top: 86px;
+      max-height: calc(100vh - 112px);
+      overflow: auto;
+      padding: 28px 0 32px;
+    }
+
+    .toc-title {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .toc a {
+      display: block;
+      padding: 5px 10px;
+      border-left: 2px solid transparent;
+      color: #465a53;
+      font-size: 14px;
+      line-height: 1.45;
+      text-decoration: none;
+    }
+
+    .toc a:hover { color: var(--brand); border-left-color: #85cfba; }
+    .toc a.level-3 { padding-left: 22px; color: #667871; font-size: 13px; }
+
+    article {
+      min-width: 0;
+      padding: 52px 0 80px;
+    }
+
+    article > h1 {
+      margin: 0 0 18px;
+      font-size: 38px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      scroll-margin-top: 80px;
+      margin: 58px 0 18px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      font-size: 27px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      scroll-margin-top: 80px;
+      margin: 34px 0 12px;
+      font-size: 20px;
+      line-height: 1.4;
+      letter-spacing: 0;
+    }
+
+    p, ul, ol { margin: 12px 0; }
+    li + li { margin-top: 5px; }
+    strong { font-weight: 700; }
+
+    blockquote {
+      margin: 20px 0;
+      padding: 14px 18px;
+      border-left: 4px solid #e29336;
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    blockquote p { margin: 0; }
+
+    code {
+      padding: 2px 5px;
+      border: 1px solid #d7e2de;
+      border-radius: 4px;
+      background: #edf3f1;
+      color: #183a31;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      word-break: break-word;
+    }
+
+    pre {
+      overflow: auto;
+      padding: 18px;
+      border-radius: 6px;
+      background: var(--code);
+      color: #e6f3ee;
+      line-height: 1.6;
+    }
+
+    pre code { padding: 0; border: 0; background: transparent; color: inherit; }
+
+    article img {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin: 24px 0 30px;
+      border: 1px solid #cfdbd7;
+      border-radius: 6px;
+      background: white;
+    }
+
+    input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
+    hr { margin: 52px 0 24px; border: 0; border-top: 1px solid var(--line); }
+
+    .footer {
+      padding: 20px 18px 36px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 820px) {
+      .topbar-inner, .layout { width: min(100% - 28px, 760px); }
+      .brand span { display: none; }
+      .layout { display: block; }
+      .toc { display: none; }
+      article { padding-top: 34px; }
+      article > h1 { font-size: 31px; }
+      h2 { margin-top: 44px; font-size: 24px; }
+      h3 { font-size: 19px; }
+      article img { margin-left: 0; margin-right: 0; }
+    }
   </style>
 </head>
 <body>
-  <header class="topbar"><div class="topbar-inner"><a class="brandmark" href="/"><span>星桥AI</span><small>帮助中心</small></a><a class="topbar-return" href="/">返回星桥AI</a></div></header>
-  <div class="shell">
-    <nav class="toc" aria-label="教程目录"><p class="toc-title">目录</p>
-      <a href="#before">开始前先了解</a><a href="#recharge">一、充值并确认余额</a><a href="#key">二、创建 API 密钥</a><a href="#ccswitch">三、导入 CC Switch</a><a class="sub" href="#no-response">一键导入没有反应怎么办</a><a class="sub" href="#manual">手动配置位置</a><a href="#codex">四、启动 Codex 并完成首次测试</a><a href="#usage">五、查看 Token 和扣费</a><a href="#errors">六、常见报错</a><a class="sub" href="#error-401">401 与 invalid_api_key</a><a class="sub" href="#error-balance">余额不足</a><a class="sub" href="#error-429">429 与并发</a><a class="sub" href="#error-model">模型不可用</a><a class="sub" href="#error-timeout">超时</a><a href="#security">七、密钥安全建议</a><a href="#finish">八、完成检查与联系客服</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><strong>星桥AI</strong><span>帮助中心</span></div>
+      <a href="/">返回星桥AI</a>
+    </div>
+  </header>
+  <main class="layout">
+    <nav class="toc" aria-label="文档目录">
+      <p class="toc-title">本文目录</p>
+      <div id="toc-links">
+        <a href="#section-1" class="level-2">开始前先了解</a>
+        <a href="#section-2" class="level-2">一、充值并确认余额</a>
+        <a href="#section-3" class="level-2">二、创建 API 密钥</a>
+        <a href="#section-4" class="level-2">三、一键导入 CC Switch</a>
+        <a href="#section-5" class="level-3">一键导入没有反应怎么办</a>
+        <a href="#section-6" class="level-3">手动配置位置</a>
+        <a href="#section-7" class="level-2">四、启动 Codex 并完成首次测试</a>
+        <a href="#section-8" class="level-2">五、查看 Token 和扣费</a>
+        <a href="#section-9" class="level-2">六、常见报错</a>
+        <a href="#section-10" class="level-3">401、Unauthorized 或 invalid_api_key</a>
+        <a href="#section-11" class="level-3">余额不足或无法继续调用</a>
+        <a href="#section-12" class="level-3">429、请求过多或并发已满</a>
+        <a href="#section-13" class="level-3">模型不可用或 model not supported</a>
+        <a href="#section-14" class="level-3">超时、长时间没有首字</a>
+        <a href="#section-15" class="level-2">七、密钥安全建议</a>
+        <a href="#section-16" class="level-2">八、完成检查</a>
+      </div>
     </nav>
-    <main>
-      <p class="eyebrow">Xingqiao AI · Getting started</p><h1>星桥AI 小白使用教程</h1><p class="lead">从充值、创建 API 密钥到接入 CC Switch 和检查账单，用这一页完成首次调用。控制台入口：<a href="/">https://api.xingqiaolab.top/</a>。</p>
-      <section id="before"><h2>开始前先了解</h2><p>星桥AI 通过 API 密钥识别调用。请先完成小额充值并创建一个独立密钥，再开始测试；可用模型、分组、价格与倍率以控制台当前展示为准。</p><div class="callout"><p><strong>首次使用建议：</strong>先用低频、小请求验证连通性。不要把密钥贴到聊天记录、截图、公开仓库或前端网页中。</p></div></section>
-      <section id="recharge"><h2>一、充值并确认余额</h2><p>在控制台打开 <a href="/custom/xingqiao-storefront">充值/订阅</a>，按页面流程完成充值。回到控制台刷新后确认余额变化；如果订单完成后余额仍未更新，请保留订单号并联系支持。</p><ol><li>进入充值页面，选择适合的金额。</li><li>支付完成后回到控制台刷新余额。</li><li>用一笔小测试请求确认扣费记录正常出现。</li></ol></section>
-      <section id="key"><h2>二、创建 API 密钥</h2><p>前往 <a href="/keys">API 密钥</a> 页面，点击创建。为不同项目使用不同名称，便于后续停用、统计和排查。</p><img class="shot" src="/docs/assets/01-create-key.png" alt="星桥AI 创建 API 密钥窗口"><p class="caption">创建密钥：填写名称并按项目需要设置限制。</p><p>创建时可按控制台提供的选项选择调用分组、设置自定义密钥、IP 限制、额度、速率或有效期。限制项没有统一推荐值：测试阶段应保持可控，生产项目应按实际来源和预算收紧。</p><img class="shot" src="/docs/assets/02-select-group.png" alt="星桥AI 选择调用分组"><p class="caption">选择可用调用分组。</p><p>创建完成后请立即复制密钥并妥善保存。密钥完整内容通常只在创建时显示；遗失时请新建密钥并停用旧密钥。</p><img class="shot" src="/docs/assets/03-key-actions.png" alt="星桥AI 密钥列表操作入口"><p class="caption">在密钥列表中查看、编辑或停用密钥。</p></section>
-      <section id="ccswitch"><h2>三、导入 CC Switch</h2><p>在密钥详情或列表中使用控制台提供的“使用密钥”或导入能力，将星桥配置带入 CC Switch。导入后检查 Base URL 是否为 <code>https://api.xingqiaolab.top/</code>，并确认选择的是刚创建的密钥。</p><img class="shot" src="/docs/assets/04-ccswitch.png" alt="CC Switch 中启用星桥配置"><p class="caption">CC Switch 中启用星桥配置后的状态。</p><h3 id="no-response">一键导入没有反应怎么办</h3><p>先确认浏览器允许打开 CC Switch 的协议链接或扩展调用。仍没有反应时，复制控制台显示的连接信息，按下方手动方式填写；不要从不明网页下载配置文件。</p><h3 id="manual">手动配置位置</h3><p>在 CC Switch 的供应商或 API 配置页填写 Base URL、API Key 与可用模型。保存后回到配置列表，确保星桥条目处于启用状态。</p></section>
-      <section id="codex"><h2>四、启动 Codex 并完成首次测试</h2><p>选择已启用的星桥配置后，启动 Codex 并发起一个简短任务，例如让它解释一段文本。首次测试的目标是确认认证、模型选择和首字返回都正常。</p><pre><code>请用三句话概括下面的内容，并标出一个关键结论。</code></pre><div class="callout warning"><p><strong>提示：</strong>出现错误时不要反复高并发重试。先检查密钥状态、余额、模型和配置地址，再根据错误信息逐项处理。</p></div></section>
-      <section id="usage"><h2>五、查看 Token 和扣费</h2><p>前往 <a href="/usage">用量记录</a> 查看请求时间、模型、Token 与费用明细。输入、输出、缓存 Token 可能采用不同倍率，最终扣费以该页面记录和控制台实时规则为准。</p><img class="shot" src="/docs/assets/05-usage-and-billing.png" alt="星桥AI 使用记录与费用明细"><p class="caption">使用记录可用于核对调用量和最终扣费。</p><p>建议为每个环境使用单独的密钥。出现异常消耗时，先停用对应密钥，再从用量记录定位请求来源。</p></section>
-      <section id="errors"><h2>六、常见报错</h2><h3 id="error-401">401、Unauthorized 或 invalid_api_key</h3><p>通常表示密钥无效、复制不完整、已停用或请求未正确携带认证信息。重新复制密钥，确认当前配置使用的是对应项目的有效密钥。</p><h3 id="error-balance">余额不足或无法继续调用</h3><p>刷新控制台余额并检查 <a href="/usage">用量记录</a>。余额确实不足时，前往 <a href="/custom/xingqiao-storefront">充值/订阅</a> 完成充值后再测试。</p><h3 id="error-429">429、请求过多或并发已满</h3><p>降低并发和重试频率，给失败请求加入退避等待；同时检查密钥的速率限制及当前分组可用状态。</p><h3 id="error-model">模型不可用或 model not supported</h3><p>在控制台确认该分组支持目标模型，并检查 CC Switch 中填写的模型名称。不要猜测模型标识，以当前控制台展示为准。</p><h3 id="error-timeout">超时、长时间没有首字</h3><p>先用短提示词和较小输出测试，再检查网络、并发和模型状态。长上下文或高峰时段可能需要更长等待时间。</p></section>
-      <section id="security"><h2>七、密钥安全建议</h2><ul><li>每个项目、环境和人员使用独立密钥。</li><li>只在服务端环境变量或受管密钥库中保存密钥。</li><li>设置必要的 IP、额度、速率与有效期限制。</li><li>怀疑泄露时立即停用该密钥并新建替代密钥。</li><li>定期查看 <a href="/usage">用量记录</a>，关注异常调用。</li></ul></section>
-      <section id="finish"><h2>八、完成检查与联系客服</h2><div class="checklist"><ul><li>余额已确认，且小额测试已成功。</li><li>已创建独立 API 密钥并安全保存。</li><li>CC Switch 中的星桥配置已启用。</li><li>已在用量记录中确认 Token 和扣费。</li></ul></div><p>如果问题仍未解决，请通过 <a href="/support">支持页面</a> 联系客服，并附上错误时间、模型名称、请求 ID（如有）和脱敏后的报错内容。星桥AI QQ群：1080152144。</p></section>
-    </main>
-  </div>
-  <footer><div>星桥AI · api.xingqiaolab.top · QQ群 1080152144</div></footer>
+    <article id="article"><h1>星桥AI 小白使用教程</h1>
+<blockquote>
+<p>适合第一次使用 API、Codex 和 CC Switch 的用户。按本文操作，通常 10 分钟左右即可完成充值、创建密钥、导入配置和首次调用。</p>
+</blockquote>
+<ul>
+<li>网站：<a href="/">https://api.xingqiaolab.top/</a></li>
+<li>API 地址：<code>https://api.xingqiaolab.top/</code></li>
+<li>客服 QQ：<code>1080152144</code></li>
+<li>本文更新日期：2026 年 7 月 25 日</li>
+</ul>
+      <h2 id="section-1">开始前先了解</h2>
+<ol>
+<li><strong>API 密钥相当于账户密码。</strong> 不要发给陌生人，不要放在截图、聊天记录或公开代码仓库中。</li>
+<li><strong>先小额充值、先小请求测试。</strong> 确认配置和扣费正常后再正式使用。</li>
+<li><strong>倍率、模型、线路和价格可能调整。</strong> 以创建密钥时的分组说明，以及每一笔「使用记录」显示的数据为准。</li>
+<li>本教程以 <strong>Codex + CC Switch</strong> 为主。已经在使用 Codex 的用户，请先完全退出 Codex，再进行配置。</li>
+</ol>
+<h2 id="section-2">一、充值并确认余额</h2>
+<p>登录后，从左侧菜单进入「充值/订阅」或「充值中心」，根据页面提示完成充值。首次使用建议只充值够测试的金额。</p>
+<p>充值完成后，页面右上角余额会更新。若支付成功但余额没有变化：</p>
+<ol>
+<li>刷新页面并等待 1 至 3 分钟。</li>
+<li>保留订单号和支付截图。</li>
+<li>联系客服 QQ <code>1080152144</code> 核查。</li>
+</ol>
+<blockquote>
+<p>余额、赠送额度、优惠和退款规则以星桥AI 当前控制台和公告为准。不要根据其他网站的汇率或宣传推算本站余额。</p>
+</blockquote>
+<h2 id="section-3">二、创建 API 密钥</h2>
+<p>打开 <a href="/keys">API 密钥页面</a>，点击右上角「创建密钥」。</p>
+<p><img src="./assets/01-create-key.png" alt="创建星桥AI API 密钥"></p>
+<p>新手建议这样填写：</p>
+<ol>
+<li><strong>名称</strong>：填写容易识别的名称，例如 <code>我的 Codex</code>。</li>
+<li><strong>分组</strong>：根据页面上的稳定性、速度、适用模型和倍率选择。</li>
+<li><strong>自定义密钥</strong>：保持关闭，由系统自动生成更安全。</li>
+<li><strong>IP 限制</strong>：第一次使用保持关闭；确认固定出口 IP 后再设置。</li>
+<li><strong>额度限制</strong>：建议先设置一个小额度，避免配置错误造成连续消耗；<code>0</code> 表示不限制。</li>
+<li><strong>速率限制、有效期</strong>：不熟悉时保持默认。</li>
+</ol>
+<p><img src="./assets/02-select-group.png" alt="选择星桥AI 调用分组"></p>
+<p>选择分组时不要只看倍率：</p>
+<ul>
+<li>想先低成本测试，可以选择页面说明中价格较低的通道。</li>
+<li>更在意速度和稳定性时，选择快速通道或专用通道。</li>
+<li>某个通道暂时不可用时，可以回到密钥列表切换分组，无需重新打开 Codex。</li>
+<li>不同请求可能因模型、缓存和调用方式产生不同费用，以使用记录为准。</li>
+</ul>
+<p>确认后点击「创建」。密钥创建成功后，只在自己的设备上使用。</p>
+<h2 id="section-4">三、一键导入 CC Switch</h2>
+<p>在密钥列表右侧找到刚创建的密钥：</p>
+<ol>
+<li>点击「导入到 CCS」。</li>
+<li>浏览器询问是否打开 CC Switch 时，选择允许打开。</li>
+<li>在 CC Switch 导入窗口中核对名称为 <code>星桥AI</code>、地址为 <code>https://api.xingqiaolab.top/</code>、应用为 <code>Codex</code>。</li>
+<li>确认导入或添加，然后点击该提供商的「启用」。</li>
+</ol>
+<p><img src="./assets/03-key-actions.png" alt="星桥AI API 密钥操作入口"></p>
+<p>当 CC Switch 中的星桥AI 卡片高亮，并显示「使用中」时，切换完成。</p>
+<p><img src="./assets/04-ccswitch.png" alt="在 CC Switch 中启用星桥AI"></p>
+<blockquote>
+<p>「导入到 CCS」会把当前密钥交给本机 CC Switch。只应在自己的可信设备上执行，不要在网吧、共享电脑或远程陌生设备上导入。</p>
+</blockquote>
+<h3 id="section-5">一键导入没有反应怎么办</h3>
+<ol>
+<li>确认 CC Switch 已安装并正在运行。</li>
+<li>换用 Safari、Chrome 或 Edge 再点击一次「导入到 CCS」。</li>
+<li>浏览器弹出“是否打开 CC Switch”时选择允许。</li>
+<li>仍然失败时，在密钥列表点击「使用密钥」，按页面生成的 Codex 配置逐项复制。</li>
+</ol>
+<h3 id="section-6">手动配置位置</h3>
+<ul>
+<li>Windows：<code>%USERPROFILE%\.codex\config.toml</code> 和 <code>%USERPROFILE%\.codex\auth.json</code></li>
+<li>macOS / Linux：<code>~/.codex/config.toml</code> 和 <code>~/.codex/auth.json</code></li>
+</ul>
+<p>不要照抄其他网站的地址和密钥。最稳妥的方法是点击星桥AI 页面里的「使用密钥」，复制系统为当前密钥生成的最新配置。</p>
+<h2 id="section-7">四、启动 Codex 并完成首次测试</h2>
+<p>确认 CC Switch 已显示星桥AI「使用中」后，再启动 Codex。新建一个任务，输入：</p>
+<pre><code class="language-text">你好，请只回复：星桥AI 配置成功
+</code></pre>
+<p>能够正常返回内容，说明配置基本完成。随后回到星桥AI 的「使用记录」页面，确认刚才的请求已经出现。</p>
+<p>如果 Codex 仍要求登录官方账户，或请求没有出现在星桥AI 使用记录里，通常表示 CC Switch 尚未启用星桥AI。完全退出 Codex，重新启用星桥AI 后再打开。</p>
+<h2 id="section-8">五、查看 Token 和扣费</h2>
+<p>进入 <a href="/usage">使用记录</a>，可以查看每一次请求的模型、端点、分组、Token、费用、延迟和时间。</p>
+<p><img src="./assets/05-usage-and-billing.png" alt="星桥AI 使用记录与费用明细"></p>
+<p>阅读一条记录时重点看这些字段：</p>
+<ul>
+<li><strong>输入 Token</strong>：发送给模型的提示词、历史上下文和工具结果。</li>
+<li><strong>输出 Token</strong>：模型生成的回答。</li>
+<li><strong>缓存 Token</strong>：复用上下文时产生的缓存创建或缓存读取用量。</li>
+<li><strong>倍率</strong>：该笔请求记录的分组倍率。</li>
+<li><strong>原始费用</strong>：按照该笔请求的模型用量和价格计算的原始金额。</li>
+<li><strong>用户扣费</strong>：该笔请求最终从账户余额扣除的金额。</li>
+</ul>
+<p>将鼠标停在费用旁的信息图标上，可以展开输入费用、输出费用、输入单价、输出单价、缓存读取费用、倍率、原始费用和用户扣费。</p>
+<blockquote>
+<p>页面金额可能经过小数位显示处理，账户余额以系统高精度账本和该笔记录的「用户扣费」为准。</p>
+</blockquote>
+<h2 id="section-9">六、常见报错</h2>
+<h3 id="section-10"><code>401</code>、<code>Unauthorized</code> 或 <code>invalid_api_key</code></h3>
+<ul>
+<li>密钥复制不完整、已禁用或已经删除。</li>
+<li>回到「API 密钥」确认状态为「活跃」，重新导入 CC Switch。</li>
+<li>如果密钥曾经发给别人，立即禁用并创建新密钥。</li>
+</ul>
+<h3 id="section-11">余额不足或无法继续调用</h3>
+<ul>
+<li>检查页面右上角余额。</li>
+<li>检查密钥是否设置了额度上限，以及额度是否已经用完。</li>
+<li>充值后刷新星桥AI 和 CC Switch 的余额。</li>
+</ul>
+<h3 id="section-12"><code>429</code>、请求过多或并发已满</h3>
+<ul>
+<li>等待正在运行的请求结束后再试。</li>
+<li>不要同时开太多 Codex 任务。</li>
+<li>必要时切换到页面说明中并发或稳定性更高的分组。</li>
+</ul>
+<h3 id="section-13">模型不可用或 <code>model not supported</code></h3>
+<ul>
+<li>先使用星桥AI「使用密钥」页面生成的默认模型配置。</li>
+<li>不要随意填写网上看到的模型名。</li>
+<li>切换分组后重新查看该分组当前支持的模型。</li>
+</ul>
+<h3 id="section-14">超时、长时间没有首字</h3>
+<ul>
+<li>先发送一句简短测试语句，排除上下文过大的问题。</li>
+<li>在密钥列表切换分组后再试。</li>
+<li>检查本地网络，关闭可能冲突的代理规则。</li>
+<li>记录请求时间和报错内容，联系 QQ <code>1080152144</code>。</li>
+</ul>
+<h2 id="section-15">七、密钥安全建议</h2>
+<ol>
+<li>一个设备或一个用途使用一个独立密钥，方便排查和停用。</li>
+<li>给测试密钥设置小额度，正式使用后再调整。</li>
+<li>不在聊天、截图、视频、直播或 GitHub 中展示完整密钥。</li>
+<li>怀疑泄露时立即禁用旧密钥，并创建新密钥。</li>
+<li>定期检查「使用记录」，发现陌生 IP 或异常消费及时处理。</li>
+</ol>
+<h2 id="section-16">八、完成检查</h2>
+<p>首次配置结束前，逐项确认：</p>
+<ul>
+<li><input disabled="" type="checkbox"> 账户余额足够完成小额测试。</li>
+<li><input disabled="" type="checkbox"> 已创建独立 API 密钥并选择分组。</li>
+<li><input disabled="" type="checkbox"> CC Switch 中星桥AI 显示「使用中」。</li>
+<li><input disabled="" type="checkbox"> Codex 能正常回复测试消息。</li>
+<li><input disabled="" type="checkbox"> 星桥AI「使用记录」中能看到该请求和最终扣费。</li>
+<li><input disabled="" type="checkbox"> 完整 API 密钥没有发送给任何人。</li>
+</ul>
+<p>遇到问题时，请提供报错文字、发生时间、所选分组和使用记录截图；<strong>不要提供完整 API 密钥或账户密码</strong>。客服 QQ：<code>1080152144</code>。</p>
+<hr>
+<p>本文为星桥AI 专属教程。站点功能、线路、模型、倍率和价格可能随服务更新，实际以 <a href="/">星桥AI</a> 当前页面和公告为准。</p>
+</article>
+  </main>
+  <footer class="footer">星桥AI · https://api.xingqiaolab.top · 客服 QQ 1080152144</footer>
 </body>
 </html>

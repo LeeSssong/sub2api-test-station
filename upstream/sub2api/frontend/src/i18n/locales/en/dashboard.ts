@@ -373,6 +373,7 @@ export default {
       consumption: 'Consumption',
       requestInfo: 'Request Information',
       requestId: 'Request ID',
+      copyRequestId: 'Copy request ID',
       requestTime: 'Request Time',
       apiKey: 'API Key',
       group: 'Group',

@@ -11,7 +11,7 @@ const { adminGetById, copyToClipboard, userGetById } = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key,
+    t: (key: string) => key === 'usage.detail.copyRequestId' ? 'Copy request ID' : key,
   }),
 }))
 
@@ -43,6 +43,8 @@ vi.mock('@/composables/useClipboard', () => ({
 }))
 
 import UsageDetailDialog from '../UsageDetailDialog.vue'
+import enDashboard from '@/i18n/locales/en/dashboard'
+import zhDashboard from '@/i18n/locales/zh/dashboard'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -167,6 +169,10 @@ function valueForLabel(wrapper: ReturnType<typeof mountDialog>, label: string): 
   return term!.element.nextElementSibling?.textContent?.trim() ?? ''
 }
 
+function usageDetailMessages(locale: unknown): Record<string, string> {
+  return (locale as { usage: { detail: Record<string, string> } }).usage.detail
+}
+
 describe('UsageDetailDialog', () => {
   beforeEach(() => {
     adminGetById.mockReset()
@@ -214,6 +220,16 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).toContain('$5.000000')
   })
 
+  it('leaves vertical scrolling to BaseDialog', async () => {
+    userGetById.mockResolvedValue(userRecord)
+
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    expect(wrapper.find('[class*="overflow-y-auto"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="max-h-"]').exists()).toBe(false)
+  })
+
   it('never renders administrator fields in user scope even when the payload is malicious', async () => {
     userGetById.mockResolvedValue({
       ...adminRecord,
@@ -222,6 +238,8 @@ describe('UsageDetailDialog', () => {
       upstream_endpoint: 'https://secret-upstream.invalid',
       upstream_model: 'secret-upstream-model',
       model_mapping_chain: 'secret-model-mapping',
+      billing_tier: 'secret-billing-tier',
+      account_rate_multiplier: 9.75,
       account_stats_cost: 123,
     } as AdminUsageLog)
 
@@ -235,11 +253,15 @@ describe('UsageDetailDialog', () => {
       'usage.detail.upstreamEndpoint',
       'usage.detail.upstreamModel',
       'usage.detail.modelMappingChain',
+      'usage.detail.billingTier',
+      'usage.detail.accountMultiplier',
       'usage.detail.accountCost',
       'secret-admin-account',
       'https://secret-upstream.invalid',
       'secret-upstream-model',
       'secret-model-mapping',
+      'secret-billing-tier',
+      '9.75x',
     ]) {
       expect(wrapper.text()).not.toContain(hiddenText)
     }
@@ -308,6 +330,54 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).not.toContain('req-user-42')
   })
 
+  it('does not let a pre-close response populate a reopened dialog', async () => {
+    const beforeClose = deferred<UsageLog>()
+    const afterReopen = deferred<UsageLog>()
+    userGetById
+      .mockReturnValueOnce(beforeClose.promise)
+      .mockReturnValueOnce(afterReopen.promise)
+    const wrapper = mountDialog()
+    await nextTick()
+
+    await wrapper.get('[data-testid="dialog-close"]').trigger('click')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+
+    beforeClose.resolve({ ...userRecord, request_id: 'pre-close-request' })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('pre-close-request')
+    expect(wrapper.text()).toContain('usage.detail.loading')
+
+    afterReopen.resolve({ ...userRecord, request_id: 'reopened-request' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('reopened-request')
+  })
+
+  it('does not let an old admin response appear after switching to user scope', async () => {
+    const oldAdminRequest = deferred<AdminUsageLog>()
+    const currentUserRequest = deferred<UsageLog>()
+    adminGetById.mockReturnValue(oldAdminRequest.promise)
+    userGetById.mockReturnValue(currentUserRequest.promise)
+    const wrapper = mountDialog({ scope: 'admin' })
+    await nextTick()
+
+    await wrapper.setProps({ scope: 'user' })
+    oldAdminRequest.resolve({
+      ...adminRecord,
+      account: { id: 999, name: 'stale-admin-account' },
+      billing_tier: 'stale-admin-tier',
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('stale-admin-account')
+    expect(wrapper.text()).not.toContain('stale-admin-tier')
+    expect(wrapper.text()).toContain('usage.detail.loading')
+
+    currentUserRequest.resolve({ ...userRecord, request_id: 'current-user-request' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('current-user-request')
+    expect(wrapper.text()).not.toContain('usage.detail.adminSection')
+  })
+
   it('allows only the latest changed-ID response to render', async () => {
     const first = deferred<UsageLog>()
     const second = deferred<UsageLog>()
@@ -341,13 +411,21 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).toContain('usage.noRecords')
   })
 
-  it('copies the exact request ID through the existing clipboard behavior', async () => {
+  it('uses a localized request-ID name and copies the exact identifier', async () => {
     userGetById.mockResolvedValue(userRecord)
     const wrapper = mountDialog()
     await flushPromises()
 
-    await wrapper.get('[data-testid="usage-detail-copy-request-id"]').trigger('click')
+    const copyButton = wrapper.get('[data-testid="usage-detail-copy-request-id"]')
+    expect(copyButton.attributes('title')).toBe('Copy request ID')
+    expect(copyButton.attributes('aria-label')).toBe('Copy request ID')
+    await copyButton.trigger('click')
 
     expect(copyToClipboard).toHaveBeenCalledWith('req-user-42', 'usage.detail.copied')
+  })
+
+  it('defines request-ID copy labels in both supported locales', () => {
+    expect(usageDetailMessages(enDashboard).copyRequestId).toBe('Copy request ID')
+    expect(usageDetailMessages(zhDashboard).copyRequestId).toBe('复制请求 ID')
   })
 })

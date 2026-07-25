@@ -378,6 +378,7 @@ export default {
       consumption: '消耗',
       requestInfo: '请求信息',
       requestId: '请求 ID',
+      copyRequestId: '复制请求 ID',
       requestTime: '请求时间',
       apiKey: 'API 密钥',
       group: '分组',

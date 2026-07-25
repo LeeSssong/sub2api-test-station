@@ -5,7 +5,7 @@
     width="wide"
     @close="handleClose"
   >
-    <div class="max-h-[72vh] min-h-40 overflow-y-auto pr-1">
+    <div class="min-h-40 pr-1">
       <div
         v-if="loading"
         class="flex min-h-40 items-center justify-center gap-3 text-sm text-gray-500 dark:text-dark-400"
@@ -73,8 +73,8 @@
                   type="button"
                   data-testid="usage-detail-copy-request-id"
                   class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-200"
-                  :title="t('common.copy')"
-                  :aria-label="t('common.copy')"
+                  :title="t('usage.detail.copyRequestId')"
+                  :aria-label="t('usage.detail.copyRequestId')"
                   @click="copyRequestId"
                 >
                   <Icon name="copy" size="sm" />

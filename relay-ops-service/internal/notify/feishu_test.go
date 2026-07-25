@@ -57,6 +57,50 @@ func TestRenderOperationsDigestSeparatesStableDomainsAndRedactsSensitiveValues(t
 	}
 }
 
+func TestRenderOperationsDigestIncludesNativeUpstreamAccountStatus(t *testing.T) {
+	t.Parallel()
+
+	message := RenderOperationsDigest(OperationsDigestView{
+		UpstreamAccountStatus: UpstreamAccountStatusView{
+			Available:     true,
+			ObservedAt:    "2026-07-25T07:00:00Z",
+			EvidenceState: "fresh",
+			Groups: []AccountGroupStatusView{{
+				GroupID:            3,
+				GroupName:          "GPT-Pro",
+				CurrentAccountID:   11,
+				CandidateAccountID: 12,
+				Decision:           "candidate_better",
+				ScoreDelta:         0.128,
+				Reasons:            []string{"稳定性更高：96.0% vs 70.0%"},
+				Current: AccountStatusView{
+					AccountID: 11, Name: "账号 A", SuccessRate: "70.0%", TTFT: "450ms",
+					Latency: "1600ms", Multiplier: "0.12x", UsageWindows: "daily 20.0%", Status: "正常",
+				},
+				Candidate: AccountStatusView{
+					AccountID: 12, Name: "账号 B", SuccessRate: "96.0%", TTFT: "120ms",
+					Latency: "500ms", Multiplier: "0.08x", UsageWindows: "daily 5.0%", Status: "正常",
+				},
+			}},
+		},
+	})
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"上游账号情况", "B 账号综合更佳", "成功率", "TTFT", "倍率", "用量窗口", "账号监控", "只读", "不执行切换"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("native account section missing %q: %s", required, text)
+		}
+	}
+	for _, forbidden := range []string{"切换账号", "确认切换", "schedulable", "api_key"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("native account section contains mutation or secret text %q: %s", forbidden, text)
+		}
+	}
+}
+
 func TestRenderOperationsDigestShowsGenerationAndQualityEvidenceTimes(t *testing.T) {
 	t.Parallel()
 	message := RenderOperationsDigest(OperationsDigestView{

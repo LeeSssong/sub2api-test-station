@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accountquality"
+	"example.invalid/relay-ops-service/internal/accountrecommendation"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/cachepolicy"
 	"example.invalid/relay-ops-service/internal/candidates"
@@ -130,8 +131,15 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 			quality = accountquality.View{Available: true, Stale: true}
 		}
 	}
+	accountStatus := notify.UpstreamAccountStatusView{}
+	if monitorReader, ok := s.Reader.(sub2api.AccountMonitorReader); ok {
+		if projection, readErr := monitorReader.ListAccountMonitors(ctx); readErr == nil {
+			analysis := accountrecommendation.Analyze(projection)
+			accountStatus = upstreamAccountStatusView(projection, analysis)
+		}
+	}
 	message := notify.RenderOperationsDigest(notify.OperationsDigestView{
-		Date: date, GeneratedAt: now, Runtime: runtime, AccountQuality: quality, Footer: footer,
+		Date: date, GeneratedAt: now, Runtime: runtime, AccountQuality: quality, UpstreamAccountStatus: accountStatus, Footer: footer,
 	})
 	if s.Notifier == nil {
 		return result, nil
@@ -157,6 +165,33 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	}
 	result.Notification = "delivered"
 	return result, nil
+}
+
+func upstreamAccountStatusView(projection sub2api.AccountMonitorProjection, analysis accountrecommendation.Result) notify.UpstreamAccountStatusView {
+	view := notify.UpstreamAccountStatusView{
+		Available: true, ObservedAt: projection.ObservedAt.UTC().Format(time.RFC3339),
+		EvidenceState: analysis.EvidenceState,
+		Groups:        make([]notify.AccountGroupStatusView, 0, len(analysis.Groups)),
+	}
+	for _, group := range analysis.Groups {
+		view.Groups = append(view.Groups, notify.AccountGroupStatusView{
+			GroupID: group.GroupID, GroupName: group.GroupName,
+			CurrentAccountID: group.CurrentAccountID, CandidateAccountID: group.CandidateAccountID,
+			Decision: group.Decision, ScoreDelta: group.ScoreDelta, Reasons: append([]string(nil), group.Reasons...),
+			EvidenceState: group.EvidenceState,
+			Current: notify.AccountStatusView{
+				AccountID: group.Current.AccountID, Name: group.Current.Name, ModelID: group.Current.ModelID,
+				SuccessRate: group.Current.SuccessRate, TTFT: group.Current.TTFT, Latency: group.Current.Latency,
+				Multiplier: group.Current.Multiplier, UsageWindows: group.Current.UsageWindows, Status: group.Current.Status,
+			},
+			Candidate: notify.AccountStatusView{
+				AccountID: group.Candidate.AccountID, Name: group.Candidate.Name, ModelID: group.Candidate.ModelID,
+				SuccessRate: group.Candidate.SuccessRate, TTFT: group.Candidate.TTFT, Latency: group.Candidate.Latency,
+				Multiplier: group.Candidate.Multiplier, UsageWindows: group.Candidate.UsageWindows, Status: group.Candidate.Status,
+			},
+		})
+	}
+	return view
 }
 
 func cacheReportLine(usage sub2api.UsageStats, ready bool, eligible, discounted int, blockers []string) string {

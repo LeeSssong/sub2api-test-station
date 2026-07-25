@@ -143,6 +143,43 @@ func TestServiceMarksMismatchedAccountQualityUnavailableInDigest(t *testing.T) {
 	}
 }
 
+func TestServiceConsumesNativeAccountMonitorProjectionWithoutBreakingLegacyQuality(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 25, 7, 30, 0, 0, time.UTC)
+	reader := reportReader{
+		groups: []sub2api.Group{{ID: 3, Name: "GPT-Pro", Status: "active"}},
+		ops:    map[int64]sub2api.OpsSnapshot{},
+		monitor: sub2api.AccountMonitorProjection{
+			SchemaVersion: 1, ObservedAt: now.Add(-time.Minute),
+			Settings: sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+			Accounts: []sub2api.AccountMonitorAccount{
+				monitorAccount(11, "账号 A", 0.70, 450, 1600, 0.12),
+				monitorAccount(12, "账号 B", 0.96, 120, 500, 0.08),
+			},
+		},
+	}
+	incidentStore := &reportIncidentStore{observed: map[string]bool{}}
+	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
+	service := Service{
+		Reader: reader, Incidents: incidentStore, Notifier: notifier, Now: func() time.Time { return now },
+	}
+
+	if _, err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := notifier.messages[0].CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"上游账号情况", "B 账号综合更佳", "账号监控"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("native projection missing %q: %s", required, text)
+		}
+	}
+}
+
 func TestCacheReportLineMarksUnconfirmedAndPricingBlockers(t *testing.T) {
 	t.Parallel()
 
@@ -163,6 +200,7 @@ type reportReader struct {
 	accounts []sub2api.Account
 	ops      map[int64]sub2api.OpsSnapshot
 	usage    map[int64]sub2api.UsageStats
+	monitor  sub2api.AccountMonitorProjection
 }
 
 func (r reportReader) ListChannels(context.Context) ([]sub2api.Channel, error) {
@@ -184,6 +222,9 @@ func (r reportReader) GetOpsSnapshot(_ context.Context, query sub2api.OpsQuery) 
 func (r reportReader) GetUsageStats(_ context.Context, query sub2api.UsageQuery) (sub2api.UsageStats, error) {
 	return r.usage[query.GroupID], nil
 }
+func (r reportReader) ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error) {
+	return r.monitor, nil
+}
 
 func cacheDiscountPricing(model string) sub2api.ChannelModelPrice {
 	input, read, write := 5e-6, 0.5e-6, 6.25e-6
@@ -203,6 +244,17 @@ func (source reportQualitySource) Read(time.Time) (accountquality.Result, error)
 }
 
 func float64ptr(value float64) *float64 { return &value }
+
+func monitorAccount(id int64, name string, success, ttft, latency, multiplier float64) sub2api.AccountMonitorAccount {
+	return sub2api.AccountMonitorAccount{
+		AccountID: id, Name: name, Platform: "openai", Status: "active", Schedulable: true,
+		GroupIDs: []int64{3}, GroupNames: []string{"GPT-Pro"}, ModelID: "gpt-5.6-sol",
+		LatestStatus: "passed", SampleCount: 4, SuccessRate: success,
+		TTFTP95MS: float64ptr(ttft), LatencyP95MS: float64ptr(latency), Multiplier: multiplier,
+		CheckedAt:    time.Date(2026, 7, 25, 7, 29, 0, 0, time.UTC),
+		UsageWindows: map[string]sub2api.AccountMonitorUsageWindow{"daily": {Name: "daily", Utilization: 0.2}},
+	}
+}
 
 type reportIncidentStore struct {
 	items    []string

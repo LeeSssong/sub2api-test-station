@@ -19,6 +19,10 @@ type AccountReader interface {
 	ListAccounts(context.Context) ([]Account, error)
 }
 
+type AccountMonitorReader interface {
+	ListAccountMonitors(context.Context) (AccountMonitorProjection, error)
+}
+
 type ModelDiscoveryReader interface {
 	SyncUpstreamModels(context.Context, int64) ([]Model, error)
 }
@@ -45,6 +49,49 @@ type Account struct {
 	OverloadUntil           *time.Time      `json:"overload_until"`
 	TempUnschedulableUntil  *time.Time      `json:"temp_unschedulable_until"`
 	TempUnschedulableReason string          `json:"temp_unschedulable_reason"`
+}
+
+type AccountMonitorSettings struct {
+	IntervalSeconds int `json:"interval_seconds"`
+}
+
+type AccountMonitorUsageWindow struct {
+	Name        string     `json:"name"`
+	Utilization float64    `json:"utilization"`
+	ResetsAt    *time.Time `json:"resets_at,omitempty"`
+	Requests    int64      `json:"requests"`
+	Tokens      int64      `json:"tokens"`
+}
+
+type AccountMonitorAccount struct {
+	AccountID    int64                                `json:"account_id"`
+	Name         string                               `json:"name"`
+	Platform     string                               `json:"platform"`
+	Status       string                               `json:"status"`
+	Schedulable  bool                                 `json:"schedulable"`
+	GroupIDs     []int64                              `json:"group_ids"`
+	GroupNames   []string                             `json:"group_names"`
+	ModelID      string                               `json:"model_id"`
+	LatestStatus string                               `json:"latest_status"`
+	ErrorCode    string                               `json:"error_code"`
+	SampleCount  int                                  `json:"sample_count"`
+	SuccessRate  float64                              `json:"success_rate"`
+	TTFTP50MS    *float64                             `json:"ttft_p50_ms"`
+	TTFTP95MS    *float64                             `json:"ttft_p95_ms"`
+	LatencyP95MS *float64                             `json:"latency_p95_ms"`
+	Multiplier   float64                              `json:"multiplier"`
+	RequestCount int64                                `json:"request_count"`
+	ErrorCount   int64                                `json:"error_count"`
+	UsageWindows map[string]AccountMonitorUsageWindow `json:"usage_windows"`
+	CheckedAt    time.Time                            `json:"checked_at"`
+	Stale        bool                                 `json:"stale"`
+}
+type AccountMonitorProjection struct {
+	SchemaVersion int                     `json:"schema_version"`
+	ObservedAt    time.Time               `json:"observed_at"`
+	Stale         bool                    `json:"stale"`
+	Settings      AccountMonitorSettings  `json:"settings"`
+	Accounts      []AccountMonitorAccount `json:"accounts"`
 }
 
 type Model struct {

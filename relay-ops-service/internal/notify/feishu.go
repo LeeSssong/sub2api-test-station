@@ -73,11 +73,44 @@ type UpstreamReportView struct {
 // OperationsDigestView is a secret-free projection of the two read-only
 // operations domains shown in the daily report.
 type OperationsDigestView struct {
-	Date           string
-	GeneratedAt    time.Time
-	Runtime        opsmetrics.Snapshot
-	AccountQuality accountquality.View
-	Footer         []string
+	Date                  string
+	GeneratedAt           time.Time
+	Runtime               opsmetrics.Snapshot
+	AccountQuality        accountquality.View
+	UpstreamAccountStatus UpstreamAccountStatusView
+	Footer                []string
+}
+
+type UpstreamAccountStatusView struct {
+	Available     bool
+	ObservedAt    string
+	EvidenceState string
+	Groups        []AccountGroupStatusView
+}
+
+type AccountGroupStatusView struct {
+	GroupID            int64
+	GroupName          string
+	CurrentAccountID   int64
+	CandidateAccountID int64
+	Decision           string
+	ScoreDelta         float64
+	Reasons            []string
+	EvidenceState      string
+	Current            AccountStatusView
+	Candidate          AccountStatusView
+}
+
+type AccountStatusView struct {
+	AccountID    int64
+	Name         string
+	ModelID      string
+	SuccessRate  string
+	TTFT         string
+	Latency      string
+	Multiplier   string
+	UsageWindows string
+	Status       string
 }
 
 type CardText struct {
@@ -263,6 +296,7 @@ func RenderOperationsDigest(view OperationsDigestView) FeishuMessage {
 
 	elements := []CardElement{
 		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(siteLines)}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(accountStatusLines(view.UpstreamAccountStatus))}},
 		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(qualityLines)}},
 	}
 	if len(view.Footer) > 0 {
@@ -281,6 +315,76 @@ func RenderOperationsDigest(view OperationsDigestView) FeishuMessage {
 	// TextProjection is only a local inspection aid; delivery always serializes CardJSON.
 	message.Content.Text = message.Card.Header.Title.Content
 	return message
+}
+
+func accountStatusLines(view UpstreamAccountStatusView) []string {
+	lines := []string{"**上游账号情况**"}
+	if !view.Available {
+		lines = append(lines, "数据状态 暂无可用的原生账号监控证据")
+		lines = append(lines, "操作边界 只读展示，不执行切换")
+		return lines
+	}
+	if view.ObservedAt != "" {
+		lines = append(lines, "监控时间 "+digestValue(view.ObservedAt))
+	}
+	lines = append(lines, "证据状态 "+accountEvidenceStatus(view.EvidenceState))
+	rows := append([]AccountGroupStatusView(nil), view.Groups...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].GroupID != rows[j].GroupID {
+			return rows[i].GroupID < rows[j].GroupID
+		}
+		return rows[i].GroupName < rows[j].GroupName
+	})
+	for _, group := range rows {
+		groupName := digestValue(group.GroupName)
+		if groupName == "" {
+			groupName = "分组 " + strconv.FormatInt(group.GroupID, 10)
+		}
+		lines = append(lines, "**"+groupName+"**")
+		lines = append(lines, accountStatusLine("当前账号", group.Current))
+		if group.CandidateAccountID > 0 {
+			prefix := "候选账号"
+			if group.Decision == "candidate_better" {
+				prefix = "B 账号综合更佳"
+			}
+			lines = append(lines, accountStatusLine(prefix, group.Candidate))
+			if group.Decision == "candidate_better" {
+				lines = append(lines, "推荐理由 "+joinItems(group.Reasons)+"；评分差值 "+formatDigestScore(group.ScoreDelta))
+			}
+		} else if len(group.Reasons) > 0 {
+			lines = append(lines, "证据说明 "+joinItems(group.Reasons))
+		}
+	}
+	lines = append(lines, "账号监控 只读展示；本通知不执行切换")
+	return lines
+}
+
+func accountStatusLine(label string, account AccountStatusView) string {
+	name := digestValue(account.Name)
+	if name == "" {
+		name = "账号 " + strconv.FormatInt(account.AccountID, 10)
+	}
+	return fmt.Sprintf("- %s：成功率 %s，TTFT %s，延迟 P95 %s，倍率 %s，用量窗口 %s，状态 %s",
+		label+" "+name, digestValue(account.SuccessRate), digestValue(account.TTFT),
+		digestValue(account.Latency), digestValue(account.Multiplier), digestValue(account.UsageWindows),
+		digestValue(account.Status))
+}
+
+func accountEvidenceStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "fresh":
+		return "新鲜"
+	case "stale":
+		return "已过期"
+	case "insufficient_samples":
+		return "样本不足"
+	default:
+		return "待核对"
+	}
+}
+
+func formatDigestScore(value float64) string {
+	return strconv.FormatFloat(value, 'f', 4, 64)
 }
 
 func digestGroupLines(groups []opsmetrics.GroupRuntime) []string {

@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +29,7 @@ const (
 
 var errResponseTooLarge = errors.New("Sub2API response exceeds size limit")
 var errSchemaMismatch = errors.New("Sub2API response schema mismatch")
+var forbiddenProjectionKey = regexp.MustCompile(`(?i)^(api[_-]?key|access[_-]?token|auth[_-]?token|cookie|authorization|password|secret|credential|raw[_-]?response|response[_-]?body|base[_-]?url|request[_-]?header)$`)
 
 type HTTPError struct {
 	StatusCode int
@@ -133,6 +136,17 @@ func (c *HTTPReader) ListAccounts(ctx context.Context) ([]Account, error) {
 		}
 	}
 	return nil, errSchemaMismatch
+}
+
+func (c *HTTPReader) ListAccountMonitors(ctx context.Context) (AccountMonitorProjection, error) {
+	var projection AccountMonitorProjection
+	if err := c.getStrict(ctx, "/api/v1/admin/account-monitors", nil, &projection); err != nil {
+		return AccountMonitorProjection{}, err
+	}
+	if err := validateAccountMonitorProjection(projection); err != nil {
+		return AccountMonitorProjection{}, errSchemaMismatch
+	}
+	return projection, nil
 }
 
 func (c *HTTPReader) ListGroups(ctx context.Context) ([]Group, error) {
@@ -323,6 +337,20 @@ func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out
 	return c.do(req, out)
 }
 
+func (c *HTTPReader) getStrict(ctx context.Context, path string, query url.Values, out any) error {
+	requestURL := c.baseURL + path
+	if len(query) > 0 {
+		requestURL += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return fmt.Errorf("build Sub2API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	return c.doStrict(req, out)
+}
+
 func (c *HTTPReader) jsonRequest(ctx context.Context, method, path string, body, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -387,6 +415,31 @@ func (c *HTTPReader) do(req *http.Request, out any) error {
 	return nil
 }
 
+func (c *HTTPReader) doStrict(req *http.Request, out any) error {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("Sub2API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read Sub2API response")
+	}
+	if len(data) > maxResponseBytes {
+		return errResponseTooLarge
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &HTTPError{StatusCode: resp.StatusCode}
+	}
+	if containsForbiddenProjectionKey(data) {
+		return errSchemaMismatch
+	}
+	if err := decodeStrictResponse(data, out); err != nil {
+		return errSchemaMismatch
+	}
+	return nil
+}
+
 func decodeResponse(data []byte, out any) error {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
@@ -401,6 +454,99 @@ func decodeResponse(data []byte, out any) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
 	return decoder.Decode(out)
+}
+
+func decodeStrictResponse(data []byte, out any) error {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+	payload := data
+	if len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		payload = envelope.Data
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return errors.New("trailing JSON")
+	}
+	return nil
+}
+
+func containsForbiddenProjectionKey(data []byte) bool {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if decoder.Decode(&value) != nil {
+		return true
+	}
+	var walk func(any) bool
+	walk = func(item any) bool {
+		switch typed := item.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if forbiddenProjectionKey.MatchString(strings.TrimSpace(key)) {
+					return true
+				}
+				if walk(child) {
+					return true
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if walk(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(value)
+}
+
+func validateAccountMonitorProjection(projection AccountMonitorProjection) error {
+	if projection.SchemaVersion != 1 || projection.ObservedAt.IsZero() || projection.Settings.IntervalSeconds <= 0 || projection.Accounts == nil {
+		return errSchemaMismatch
+	}
+	seen := make(map[int64]struct{}, len(projection.Accounts))
+	for _, account := range projection.Accounts {
+		if account.AccountID <= 0 || strings.TrimSpace(account.Name) == "" || strings.TrimSpace(account.Platform) == "" ||
+			account.SampleCount < 0 || account.SuccessRate < 0 || account.SuccessRate > 1 ||
+			account.Multiplier < 0 || account.RequestCount < 0 || account.ErrorCount < 0 ||
+			account.CheckedAt.IsZero() || !finiteNumber(account.SuccessRate) || !finiteNumber(account.Multiplier) {
+			return errSchemaMismatch
+		}
+		if _, ok := seen[account.AccountID]; ok {
+			return errSchemaMismatch
+		}
+		seen[account.AccountID] = struct{}{}
+		if account.TTFTP50MS != nil && (!finiteNumber(*account.TTFTP50MS) || *account.TTFTP50MS < 0) {
+			return errSchemaMismatch
+		}
+		if account.TTFTP95MS != nil && (!finiteNumber(*account.TTFTP95MS) || *account.TTFTP95MS < 0) {
+			return errSchemaMismatch
+		}
+		if account.LatencyP95MS != nil && (!finiteNumber(*account.LatencyP95MS) || *account.LatencyP95MS < 0) {
+			return errSchemaMismatch
+		}
+		for _, window := range account.UsageWindows {
+			if window.Utilization < 0 || window.Utilization > 1 || !finiteNumber(window.Utilization) ||
+				window.Requests < 0 || window.Tokens < 0 {
+				return errSchemaMismatch
+			}
+		}
+	}
+	return nil
+}
+
+func finiteNumber(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func setIf(values url.Values, key, value string) {

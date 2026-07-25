@@ -485,6 +485,140 @@ func TestReaderRedactsErrorBodiesAndCapsResponses(t *testing.T) {
 	})
 }
 
+func TestHTTPReaderListAccountMonitorsDecodesNativeProjection(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/account-monitors" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("x-api-key"); got != "admin-test-key" {
+			t.Errorf("x-api-key = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{
+			"schema_version":1,
+			"observed_at":"2026-07-25T07:00:00Z",
+			"stale":false,
+			"settings":{"interval_seconds":300},
+			"accounts":[{
+				"account_id":11,
+				"name":"账号 A",
+				"platform":"openai",
+				"status":"active",
+				"schedulable":true,
+				"group_ids":[3],
+				"group_names":["GPT-Pro"],
+				"model_id":"gpt-5.6-sol",
+				"latest_status":"passed",
+				"error_code":"",
+				"sample_count":4,
+				"success_rate":0.75,
+				"ttft_p50_ms":150,
+				"ttft_p95_ms":210,
+				"latency_p95_ms":900,
+				"multiplier":0.1,
+				"request_count":100,
+				"error_count":2,
+				"usage_windows":{
+					"daily":{"name":"daily","utilization":0.42,"resets_at":"2026-07-26T00:00:00Z","requests":12,"tokens":340}
+				},
+				"checked_at":"2026-07-25T06:59:00Z",
+				"stale":false
+			},{
+				"account_id":12,
+				"name":"账号 B",
+				"platform":"openai",
+				"status":"active",
+				"schedulable":true,
+				"group_ids":[3],
+				"group_names":["GPT-Pro"],
+				"model_id":"gpt-5.6-sol",
+				"latest_status":"passed",
+				"error_code":"",
+				"sample_count":4,
+				"success_rate":0.95,
+				"ttft_p50_ms":100,
+				"ttft_p95_ms":120,
+				"latency_p95_ms":500,
+				"multiplier":0.08,
+				"request_count":60,
+				"error_count":0,
+				"usage_windows":{},
+				"checked_at":"2026-07-25T06:59:00Z",
+				"stale":false
+			}]
+		}}`)
+	}))
+	defer server.Close()
+
+	projection, err := newTestReader(t, server.URL).ListAccountMonitors(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || projection.SchemaVersion != 1 || projection.Settings.IntervalSeconds != 300 ||
+		projection.ObservedAt.Format(time.RFC3339) != "2026-07-25T07:00:00Z" || projection.Stale {
+		t.Fatalf("projection metadata = %#v", projection)
+	}
+	if len(projection.Accounts) != 2 || projection.Accounts[1].AccountID != 12 {
+		t.Fatalf("accounts = %#v", projection.Accounts)
+	}
+	if len(projection.Accounts[0].UsageWindows) != 1 {
+		t.Fatalf("usage windows = %#v", projection.Accounts[0].UsageWindows)
+	}
+	window := projection.Accounts[0].UsageWindows["daily"]
+	if window.Name != "daily" || window.Utilization != 0.42 || window.ResetsAt == nil || window.Requests != 12 || window.Tokens != 340 {
+		t.Fatalf("usage window = %#v", window)
+	}
+	if projection.Accounts[1].TTFTP95MS == nil || *projection.Accounts[1].TTFTP95MS != 120 {
+		t.Fatalf("ttft = %#v", projection.Accounts[1].TTFTP95MS)
+	}
+}
+
+func TestHTTPReaderListAccountMonitorsRejectsSchemaDriftAndSecretKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing accounts",
+			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300}}}`,
+		},
+		{
+			name: "wrong schema version",
+			body: `{"data":{"schema_version":2,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[]}}`,
+		},
+		{
+			name: "unknown field",
+			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"unexpected":true}}`,
+		},
+		{
+			name: "secret-shaped key",
+			body: `{"data":{"schema_version":1,"observed_at":"2026-07-25T07:00:00Z","stale":false,"settings":{"interval_seconds":300},"accounts":[],"api_key":"must-not-leak"}}`,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, test.body)
+			}))
+			defer server.Close()
+
+			_, err := newTestReader(t, server.URL).ListAccountMonitors(context.Background())
+			if !IsSchemaMismatch(err) {
+				t.Fatalf("error = %v, want schema mismatch", err)
+			}
+		})
+	}
+}
+
 func newTestReader(t *testing.T, baseURL string) *HTTPReader {
 	t.Helper()
 	keyFile := filepath.Join(t.TempDir(), "admin-key")

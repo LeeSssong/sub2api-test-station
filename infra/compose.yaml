@@ -77,52 +77,6 @@ services:
       start_period: 15s
     logging: *logging
 
-  internal-test-service:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.internal-test
-    restart: unless-stopped
-    expose: ["8090"]
-    environment:
-      D04_MAX_USERS: ${D04_MAX_USERS:-15}
-      D04_TOTAL_BUDGET_USD: ${D04_TOTAL_BUDGET_USD}
-      D04_REGISTRATION_OPEN: ${D04_REGISTRATION_OPEN:-false}
-      D04_DAILY_LOGIN_CREDIT_USD: ${D04_DAILY_LOGIN_CREDIT_USD:-20}
-      D04_TIMEZONE: ${D04_TIMEZONE:-Asia/Shanghai}
-      D04_SUB2API_URL: ${D04_SUB2API_URL:-http://sub2api:8080}
-      D04_ADMIN_API_KEY_FILE: /run/secrets/sub2api-admin-api-key
-      D04_FEISHU_BASE_URL: ${D04_FEISHU_BASE_URL:-https://open.feishu.cn}
-      D04_FEISHU_APP_ID_FILE: ${D04_FEISHU_APP_ID_FILE:-}
-      D04_FEISHU_APP_SECRET_FILE: ${D04_FEISHU_APP_SECRET_FILE:-}
-      D04_FEISHU_ALERT_CHAT_ID_FILE: ${D04_FEISHU_ALERT_CHAT_ID_FILE:-}
-      D04_COST_POLICY_ID: ${D04_COST_POLICY_ID:-}
-      D04_BUDGET_COST_BPS: ${D04_BUDGET_COST_BPS:-}
-      D04_COST_POLICY_QUALIFIED: ${D04_COST_POLICY_QUALIFIED:-false}
-      D04_MODE: ${D04_MODE:-read_only}
-      D04_DATA_PATH: /var/lib/internal-test/internal-test.db
-      D04_LISTEN_ADDRESS: :8090
-    volumes:
-      - internal_test_data:/var/lib/internal-test
-      - ${D04_ADMIN_API_KEY_HOST_FILE:-./secrets/sub2api-admin-api-key}:/run/secrets/sub2api-admin-api-key:ro
-      - ${D04_INVITATION_KEY_HOST_FILE:-./secrets/d04-invitation-key}:/run/secrets/d04-invitation-key:ro
-      - ${D04_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro
-      - ${D04_FEISHU_APP_SECRET_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-secret:ro
-      - ${D04_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro
-    read_only: true
-    tmpfs: [/tmp]
-    user: "10001:0"
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    depends_on:
-      sub2api: {condition: service_healthy}
-    healthcheck:
-      test: ["CMD", "/internal-test-service", "healthcheck"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging: *logging
-
   relay-ops:
     build:
       context: ..
@@ -138,7 +92,6 @@ services:
       RELAY_OPS_DATABASE_URL_FILE: /run/secrets/relay-ops-database-url
       RELAY_OPS_SUB2API_URL: http://sub2api:8080
       RELAY_OPS_SUB2API_ADMIN_KEY_FILE: /run/secrets/sub2api-admin-api-key
-      RELAY_OPS_D04_READINESS_RESULT_FILE: /run/relay-ops/d04-readiness-result.json
       RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE: /run/relay-ops/account-quality/account-quality-result.json
       RELAY_OPS_FEISHU_WEBHOOK_FILE: ${RELAY_OPS_FEISHU_WEBHOOK_FILE:-}
       RELAY_OPS_FEISHU_COMMAND_MODE: ${RELAY_OPS_FEISHU_COMMAND_MODE:-disabled}
@@ -154,7 +107,6 @@ services:
     volumes:
       - ${RELAY_OPS_DATABASE_URL_HOST_FILE:-./secrets/relay-ops-database-url}:/run/secrets/relay-ops-database-url:ro
       - ${RELAY_OPS_SUB2API_ADMIN_KEY_HOST_FILE:-./secrets/sub2api-admin-api-key}:/run/secrets/sub2api-admin-api-key:ro
-      - ${RELAY_OPS_D04_READINESS_RESULT_HOST_FILE:-/dev/null}:/run/relay-ops/d04-readiness-result.json:ro
       - ${RELAY_OPS_ACCOUNT_QUALITY_RESULT_HOST_DIR:-/dev/null}:/run/relay-ops/account-quality:ro
       - ${RELAY_OPS_FEISHU_WEBHOOK_HOST_FILE:-/dev/null}:/run/secrets/feishu-webhook:ro
       - ${RELAY_OPS_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro
@@ -227,6 +179,5 @@ services:
     logging: *logging
 
 volumes:
-  internal_test_data:
   caddy_data:
   caddy_config:

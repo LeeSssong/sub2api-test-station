@@ -192,9 +192,7 @@ module ModelRelease
   class Promoter
     REQUIRED_MODES = {
       "relay_ops_mode" => "read_only",
-      "feishu_command_mode" => "dry_run",
-      "d04_mode" => "read_only",
-      "registration_open" => false
+      "feishu_command_mode" => "dry_run"
     }.freeze
     ROOT_KEYS = %w[
       account_set_sha256

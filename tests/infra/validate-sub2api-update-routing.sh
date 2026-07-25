@@ -46,8 +46,6 @@ require_fixed 'path / /home /home/' infra/Caddyfile
 require_fixed 'path /support /support/' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile
-require_fixed 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' infra/Caddyfile
-require_fixed 'path /api/v1/settings/public' infra/Caddyfile
 require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
 require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
 require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}' infra/compose.yaml
@@ -61,5 +59,12 @@ fi
 update_line=$(rg -n -F '@sub2api_update {' infra/Caddyfile | head -n1 | cut -d: -f1)
 fallback_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | tail -n1 | cut -d: -f1)
 [[ "$update_line" -lt "$fallback_line" ]] || fail 'update route must precede the generic Sub2API proxy'
+
+if rg -n -F 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' infra/Caddyfile; then
+  fail 'native authentication routes must not be intercepted before the generic Sub2API proxy'
+fi
+if rg -n -F 'path /api/v1/settings/public' infra/Caddyfile; then
+  fail 'native public settings route must not be intercepted before the generic Sub2API proxy'
+fi
 
 printf 'PASS: Sub2API update UI and routing contracts\n'

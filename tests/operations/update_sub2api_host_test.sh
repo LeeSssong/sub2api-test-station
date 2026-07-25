@@ -159,13 +159,6 @@ if [[ "${1:-}" == inspect ]]; then
   if [[ "$(cat "$state")" == initial ]]; then
     expected='sub2api-id postgres-id redis-id caddy-id relay-ops-id'
     [[ "$*" == *"sub2api-id"*"postgres-id"*"redis-id"*"caddy-id"*"relay-ops-id"* ]] || die "$@"
-    if [[ "${FAKE_INTERNAL_TEST_UNDEFINED:-false}" == true ]]; then
-      [[ "$*" != *"internal-test-service-id"* ]] || die "$@"
-      internal_json=''
-    else
-      [[ "$*" == *"internal-test-service-id"* ]] || die "$@"
-      internal_json=',{"Id":"internal-test-service-id","Config":{"Labels":{"com.docker.compose.project":"'"$project"'"}},"Image":"sha256:d04","State":{"Health":{"Status":"healthy"}}}'
-    fi
     app_name=sub2api_sub2api_data
     postgres_name=sub2api_postgres_data
     redis_name=sub2api_redis_data
@@ -180,7 +173,7 @@ if [[ "${1:-}" == inspect ]]; then
   {"Id":"postgres-id","Config":{"Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"sha256:postgres","State":{"Health":{"Status":"$health"}},"Mounts":[{"Type":"volume","Name":"$postgres_name","Source":"$postgres_name","Destination":"/var/lib/postgresql/data","RW":true}]},
   {"Id":"redis-id","Config":{"Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"sha256:redis","State":{"Health":{"Status":"$health"}},"Mounts":[{"Type":"volume","Name":"$redis_name","Source":"$redis_name","Destination":"/data","RW":true}]},
   {"Id":"caddy-id","Config":{"Labels":{"com.docker.compose.project":"$project"}},"Image":"sha256:caddy","State":{$caddy_state}},
-  {"Id":"relay-ops-id","Config":{"Labels":{"com.docker.compose.project":"$project"}},"Image":"sha256:relay","State":{"Health":{"Status":"$health"}}}$internal_json
+  {"Id":"relay-ops-id","Config":{"Labels":{"com.docker.compose.project":"$project"}},"Image":"sha256:relay","State":{"Health":{"Status":"$health"}}}
 ]
 JSON
   elif [[ "$(cat "$state")" == previous ]]; then
@@ -216,23 +209,10 @@ case "${1:-}" in
       redis) printf 'ps redis=redis-id\n' >>"$log"; printf 'redis-id\n' ;;
       caddy) printf 'ps caddy=caddy-id\n' >>"$log"; printf 'caddy-id\n' ;;
       relay-ops) printf 'ps relay-ops=relay-ops-id\n' >>"$log"; printf 'relay-ops-id\n' ;;
-      internal-test-service)
-        if [[ "${FAKE_INTERNAL_TEST_UNDEFINED:-false}" == true ]]; then
-          printf 'no such service: internal-test-service\n' >&2
-          exit 1
-        fi
-        printf 'ps internal-test-service=internal-test-service-id\n' >>"$log"
-        printf 'internal-test-service-id\n'
-        ;;
       *) die "$@" ;;
     esac
     ;;
   config)
-    if [[ "${2:-}" == --services ]]; then
-      printf '%s\n' sub2api postgres redis caddy relay-ops
-      [[ "${FAKE_INTERNAL_TEST_UNDEFINED:-false}" == true ]] || printf '%s\n' internal-test-service
-      exit 0
-    fi
     printf 'compose-validate\n' >>"$log"
     image=$(awk '/^[[:space:]]+image:/ {print $2; exit}' "$deploy/compose.yaml")
     app_name=sub2api_sub2api_data
@@ -320,7 +300,7 @@ test_success_trace_and_identity() {
   output=$(run_update)
   [[ "$output" == 'result=promoted' ]] || fail "unexpected success output: $output"
   assert_trace 'inspect -> pull -> backup-db -> backup-counts -> backup-app-data -> checksum -> compose-validate -> recreate-sub2api -> health -> smoke -> promoted'
-  rg -n 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id|internal-test-service-id' "$FIXTURE_LOG" >/dev/null \
+  rg -n 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id' "$FIXTURE_LOG" >/dev/null \
     || fail 'container identity checks were not recorded'
   ! rg -n 'down|--force-recreate postgres|--force-recreate redis|pg_restore' "$FIXTURE_LOG" \
     || fail 'forbidden dependency or database restore command was used'
@@ -331,14 +311,6 @@ test_success_trace_and_identity() {
   "$REAL_JQ_PATH" -e --arg image "$IMAGE" --arg operation op-test-001 \
     '.state == "promoted" and .operation_id == $operation and .requested.image == $image and .checks.storage_identity == true' \
     "$record" >/dev/null || fail 'release record is incomplete'
-  cleanup_fixture
-}
-
-test_missing_optional_service_is_accepted() {
-  new_fixture
-  local output
-  output=$(FAKE_INTERNAL_TEST_UNDEFINED=true run_update)
-  [[ "$output" == 'result=promoted' ]] || fail "missing optional service blocked update: $output"
   cleanup_fixture
 }
 
@@ -467,7 +439,6 @@ fi
 
 test_success_trace_and_identity
 test_running_caddy_without_healthcheck_is_accepted
-test_missing_optional_service_is_accepted
 test_preflight_rejects_host_and_context
 test_preflight_rejects_wrong_directory
 test_smoke_url_cannot_bypass_caddy

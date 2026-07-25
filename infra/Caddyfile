@@ -122,27 +122,6 @@
 	}
 	reverse_proxy @sub2api_version_check sub2api:8080
 
-	@d04_auth {
-		method POST
-		path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa
-	}
-	reverse_proxy @d04_auth internal-test-service:8090
-
-	@d04_public_settings {
-		method GET
-		path /api/v1/settings/public
-	}
-	reverse_proxy @d04_public_settings internal-test-service:8090
-
-	@d04_retired path /internal-test/*
-	respond @d04_retired 404
-
-	@d04_oauth_account_creation {
-		method POST
-		path /api/v1/auth/oauth/*/complete-registration /api/v1/auth/oauth/*/create-account /api/v1/auth/pending/create-account /api/v1/auth/oauth/*/pending/create-account
-	}
-	respond @d04_oauth_account_creation `{"code":"D04_REGISTRATION_METHOD_DISABLED","message":"首发计划仅开放邮箱密码注册"}` 403
-
 	@sub2api_update {
 		method POST
 		path /api/v1/admin/system/update

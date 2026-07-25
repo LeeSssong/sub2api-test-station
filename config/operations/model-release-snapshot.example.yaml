@@ -6,8 +6,6 @@ base_config_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 modes:
   relay_ops_mode: read_only
   feishu_command_mode: dry_run
-  d04_mode: read_only
-  registration_open: false
 published:
   families: ["5.5", "5.6"]
   models: [gpt-5.5, gpt-5.6, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra]

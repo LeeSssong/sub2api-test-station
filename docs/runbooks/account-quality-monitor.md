@@ -13,9 +13,10 @@ as `balance_exhausted`; it never stops later accounts from being tested.
 
 This is not a router, failover controller, model publisher, paid probe, or
 Feishu action. It does not change Sub2API routes, groups, priorities,
-account scheduling, prices, multipliers, balances, Keys, models, D04, or
-Feishu. The account-test endpoint is the only executor and is started by the
-systemd task, never by an ad hoc operator command or an LLM request.
+account scheduling, prices, multipliers, balances, Keys, models, registration
+settings, invitation-code settings, or Feishu. The account-test endpoint is
+the only executor and is started by the systemd task, never by an ad hoc
+operator command or an LLM request.
 
 ## Runtime Boundary
 
@@ -100,4 +101,5 @@ sudo systemctl stop sub2api-account-quality-monitor.service
 
 Do not delete evidence to force a rerun. Do not use this task for
 `upstream-benchmark`, model synchronization, capacity testing, provider
-probing, model publication, D04 opening, or Feishu enabled commands.
+probing, model publication, native registration administration, or Feishu
+enabled commands.

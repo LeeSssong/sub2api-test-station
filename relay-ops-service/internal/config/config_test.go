@@ -219,25 +219,6 @@ func TestLoadRejectsWorldReadableSecretFiles(t *testing.T) {
 	}
 }
 
-func TestLoadAcceptsOptionalAbsoluteD04ReadinessResultPath(t *testing.T) {
-	t.Parallel()
-
-	env := validEnv(t)
-	env["RELAY_OPS_D04_READINESS_RESULT_FILE"] = "/run/relay-ops/d04-readiness-result.json"
-	cfg, err := Load(func(key string) string { return env[key] })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.D04ReadinessResultFile != env["RELAY_OPS_D04_READINESS_RESULT_FILE"] {
-		t.Fatalf("readiness result file = %q", cfg.D04ReadinessResultFile)
-	}
-
-	env["RELAY_OPS_D04_READINESS_RESULT_FILE"] = "relative.json"
-	if _, err := Load(func(key string) string { return env[key] }); err == nil {
-		t.Fatal("relative readiness result path was accepted")
-	}
-}
-
 func TestLoadAcceptsOnlyAbsoluteAccountQualityResultPath(t *testing.T) {
 	t.Parallel()
 

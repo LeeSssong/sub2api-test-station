@@ -202,15 +202,6 @@ resolve_container_id() {
   awk 'NF {print; exit}' <<<"$ids"
 }
 
-resolve_optional_container_id() {
-  local service=$1 services
-  services=$("${compose[@]}" config --services) || return 1
-  if ! awk -v service="$service" '$0 == service {found = 1} END {exit(found ? 0 : 1)}' <<<"$services"; then
-    return 0
-  fi
-  resolve_container_id "$service"
-}
-
 inspect_runtime() {
   docker inspect "$@"
 }
@@ -220,7 +211,7 @@ validate_runtime() {
   jq -e --arg project "$compose_project" --arg root "$deploy_root" --arg config "$compose_file" \
     --arg app "$app_volume" --arg postgres "$postgres_volume" --arg redis "$redis_volume" \
     --arg previous "$previous_image" --arg previous_id "$previous_image_id" '
-    (length == 5 or length == 6) and
+    length == 5 and
     all(.[]; .Config.Labels["com.docker.compose.project"] == $project) and
     .[0].Config.Labels["com.docker.compose.project.working_dir"] == $root and
     .[0].Config.Labels["com.docker.compose.project.config_files"] == $config and
@@ -232,7 +223,6 @@ validate_runtime() {
       (.[3].State.Health == null and .[3].State.Running == true)
     ) and
     .[4].State.Health.Status == "healthy" and
-    (length == 5 or .[5].State.Health.Status == "healthy") and
     ([.[0].Mounts[] | select(.Destination == "/app/data")] | length == 1 and
       .[0].Type == "volume" and (.[0].Name // .[0].Source) == $app and .[0].RW == true) and
     ([.[1].Mounts[] | select(.Destination == "/var/lib/postgresql/data")] | length == 1 and
@@ -438,10 +428,6 @@ attempt_rollback() {
     esac
     [[ "$current" == "$expected" ]] || return 1
   done
-  if [[ -n "$internal_test_container" ]]; then
-    current=$(resolve_container_id internal-test-service) || return 1
-    [[ "$current" == "$internal_test_container" ]] || return 1
-  fi
   return 0
 }
 
@@ -489,11 +475,8 @@ for service in postgres redis caddy relay-ops; do
     relay-ops) relay_ops_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
   esac
 done
-internal_test_container=$(resolve_optional_container_id internal-test-service) \
-  || fail 'optional internal-test-service was not resolved uniquely'
-inspect_args=("$sub2api_container" "$postgres_container" "$redis_container" "$caddy_container" "$relay_ops_container")
-[[ -n "$internal_test_container" ]] && inspect_args+=("$internal_test_container")
-inspected=$(inspect_runtime "${inspect_args[@]}") \
+inspected=$(inspect_runtime "$sub2api_container" "$postgres_container" "$redis_container" \
+  "$caddy_container" "$relay_ops_container") \
   || fail 'running containers could not be inspected'
 previous_image=$(jq -er '.[0].Config.Image' <<<"$inspected") || fail 'previous image was not identified'
 previous_image_id=$(jq -er '.[0].Image' <<<"$inspected") || fail 'previous image ID was not identified'
@@ -541,11 +524,6 @@ for service in postgres redis caddy relay-ops; do
   esac
   [[ "$current" == "$expected" ]] || fail "$service container identity changed"
 done
-if [[ -n "$internal_test_container" ]]; then
-  current=$(resolve_container_id internal-test-service) || fail 'internal-test-service disappeared after update'
-  [[ "$current" == "$internal_test_container" ]] || fail 'internal-test-service container identity changed'
-fi
-
 trace smoke
 run_smoke
 smoke=true

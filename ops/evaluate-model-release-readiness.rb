@@ -12,9 +12,7 @@ module ModelRelease
     MAX_AGE_SECONDS = 20 * 60
     REQUIRED_MODES = {
       "relay_ops_mode" => "read_only",
-      "feishu_command_mode" => "dry_run",
-      "d04_mode" => "read_only",
-      "registration_open" => false
+      "feishu_command_mode" => "dry_run"
     }.freeze
     FORBIDDEN_KEY = /\A(?:api[_-]?key|token|cookie|authorization|password|secret|credentials?|model[_-]?output)\z/i
     MODEL_ID = /\A[a-z0-9][a-z0-9._-]{0,127}\z/

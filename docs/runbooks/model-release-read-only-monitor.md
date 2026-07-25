@@ -11,7 +11,8 @@ This server-local systemd timer refreshes the secret-free model-release
 snapshot and readiness result consumed by the hidden administrator /ops page.
 It runs native model-directory discovery only. It does not run a benchmark,
 generate a model response, test SSE, promote a model, change routing, mutate
-prices or balances, open D04 registration, or send a Feishu action.
+prices or balances, change registration or invitation-code settings, or send a
+Feishu action.
 
 ## Runtime Boundary
 
@@ -92,7 +93,7 @@ Disable the schedule without changing the last valid result or Sub2API state:
     sudo systemctl disable --now sub2api-model-release-monitor.timer
     sudo systemctl stop sub2api-model-release-monitor.service
 
-Do not use this monitor to run upstream-benchmark-v2.rb, a promoter, D04
-overlay, route control, or a Feishu enabled command. Compatibility/SSE
-qualification, financial evidence, natural quality evidence, controlled model
-promotion, and D04 opening remain separate approved activities.
+Do not use this monitor to run upstream-benchmark-v2.rb, a promoter, route
+control, or a Feishu enabled command. Compatibility/SSE qualification,
+financial evidence, natural quality evidence, controlled model promotion, and
+native registration administration remain separate approved activities.

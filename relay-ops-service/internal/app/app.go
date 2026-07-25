@@ -18,7 +18,6 @@ import (
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
 	"example.invalid/relay-ops-service/internal/config"
-	"example.invalid/relay-ops-service/internal/d04readiness"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/feishuapi"
@@ -389,7 +388,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
 	operations, err := httpserver.NewServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
-		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, Readiness: d04readiness.FileSource{Path: cfg.D04ReadinessResultFile}, AccountQuality: accountQualitySource},
+		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:       billing.SessionRegistrationService{Repository: database},
 		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},

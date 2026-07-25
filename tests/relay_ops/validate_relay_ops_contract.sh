@@ -26,8 +26,8 @@ require_relay_ops 'user: "10002:10002"'
 require_relay_ops 'security_opt: [no-new-privileges:true]'
 require_relay_ops 'cap_drop: [ALL]'
 require_relay_ops 'RELAY_OPS_MODE: ${RELAY_OPS_MODE:-read_only}'
-require_relay_ops 'RELAY_OPS_D04_READINESS_RESULT_FILE: /run/relay-ops/d04-readiness-result.json'
 require_relay_ops 'RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE: /run/relay-ops/account-quality/account-quality-result.json'
+forbid_relay_ops 'D04'
 forbid_relay_ops 'RELAY_OPS_MODEL_RELEASE_RESULT_FILE'
 require_relay_ops 'RELAY_OPS_CANDIDATE_SECRET_DIR: /var/lib/relay-ops/candidate-keys'
 require_relay_ops 'RELAY_OPS_FEISHU_WEBHOOK_FILE: ${RELAY_OPS_FEISHU_WEBHOOK_FILE:-}'
@@ -55,13 +55,12 @@ require_relay_ops 'mem_limit: 384m'
 require_relay_ops 'cpus: 0.75'
 require_relay_ops '${RELAY_OPS_CANDIDATE_KEYS_HOST_DIR:-./secrets/candidate-keys}:/run/secrets/candidates:ro'
 require_relay_ops '${RELAY_OPS_CANDIDATE_MANAGED_KEYS_HOST_DIR:-./secrets/candidate-managed-keys}:/var/lib/relay-ops/candidate-keys:rw'
-require_relay_ops '${RELAY_OPS_D04_READINESS_RESULT_HOST_FILE:-/dev/null}:/run/relay-ops/d04-readiness-result.json:ro'
 require_relay_ops '${RELAY_OPS_ACCOUNT_QUALITY_RESULT_HOST_DIR:-/dev/null}:/run/relay-ops/account-quality:ro'
 forbid_relay_ops 'RELAY_OPS_MODEL_RELEASE_RESULT_HOST'
 require_relay_ops 'test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8100/healthz"]'
 require 'USER 10002:10002' infra/Dockerfile.relay-ops
 require 'ENTRYPOINT ["/relay-ops"]' infra/Dockerfile.relay-ops
-require 'd04-readiness-snapshot' infra/Dockerfile.relay-ops
+forbid 'd04-readiness-snapshot' infra/Dockerfile.relay-ops
 require 'ops/collect-account-quality-pulse.rb' infra/Dockerfile.relay-ops
 require 'ops/analyze-account-monitor.rb' infra/Dockerfile.relay-ops
 require 'config/upstream-benchmarks/quality-first-fast-v1.yaml' infra/Dockerfile.relay-ops
@@ -74,8 +73,11 @@ require 'not {' infra/Caddyfile
 require 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile
 require 'reverse_proxy sub2api:8080' infra/Caddyfile
-require '内测开放状态' relay-ops-service/internal/http/templates/ops.html
-require '当前活动上游' relay-ops-service/internal/http/templates/ops.html
+forbid 'internal-test-service' infra/Caddyfile
+forbid 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' infra/Caddyfile
+forbid 'path /api/v1/settings/public' infra/Caddyfile
+forbid '内测开放状态' relay-ops-service/internal/http/templates/ops.html
+forbid '当前活动上游' relay-ops-service/internal/http/templates/ops.html
 require '站内运行' relay-ops-service/internal/http/templates/ops.html
 require '公开分组' relay-ops-service/internal/http/templates/ops.html
 require '当前调度账号' relay-ops-service/internal/http/templates/ops.html

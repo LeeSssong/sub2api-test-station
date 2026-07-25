@@ -54,28 +54,17 @@ type ProductionSourceView struct {
 	Name, Status, LastCheck, PriceChange string
 	GroupIDs                             []int64
 }
-type D04LaunchReadinessUpstreamView struct {
-	AccountID, DisplayName, Groups, Runtime, Balance, FinancialAge, Quality, Blockers, BlockerCodes string
-	Samples                                                                                         int64
-}
-type D04LaunchReadinessView struct {
-	Available, Stale                                           bool
-	Decision, SnapshotID, AccountSetSHA256, EvaluatedAt, Error string
-	Blockers, BlockerCodes                                     string
-	Upstreams                                                  []D04LaunchReadinessUpstreamView
-}
 type OpsView struct {
-	PublicGroups       []string
-	NativeMonitorURL   string
-	Production         []ProductionSourceView
-	Candidates         []CandidateView
-	QualityReports     []QualityReportView
-	Incidents          []string
-	AgentReports       []string
-	SiteRuntime        opsmetrics.Snapshot
-	D04LaunchReadiness D04LaunchReadinessView
-	AccountQuality     accountquality.View
-	RefreshedAt        string
+	PublicGroups     []string
+	NativeMonitorURL string
+	Production       []ProductionSourceView
+	Candidates       []CandidateView
+	QualityReports   []QualityReportView
+	Incidents        []string
+	AgentReports     []string
+	SiteRuntime      opsmetrics.Snapshot
+	AccountQuality   accountquality.View
+	RefreshedAt      string
 }
 
 type PricingSource interface {

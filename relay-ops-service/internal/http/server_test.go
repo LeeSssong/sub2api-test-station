@@ -101,16 +101,6 @@ func TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes(t *testing.T) {
 			},
 			Accounts: []opsmetrics.AccountRuntime{{ID: 10, Name: "当前账号 A", PublicGroupNames: []string{"公开分组 A", "公开分组 B"}, RequestCount: 8, ErrorRate: 0.2, SLA: 99.5, TTFTP95MS: 350, DurationP95MS: 1_200, Status: opsmetrics.StatusSampleInsufficient}},
 		},
-		D04LaunchReadiness: D04LaunchReadinessView{
-			Available: true, Decision: "NO-GO", SnapshotID: "snapshot-1",
-			AccountSetSHA256: strings.Repeat("a", 64), EvaluatedAt: "2026-07-22 16:29 UTC",
-			Blockers: "活动上游已变化，等待新门禁检查", BlockerCodes: "upstream_account_set_changed",
-			Upstreams: []D04LaunchReadinessUpstreamView{{
-				AccountID: "10", DisplayName: "XM PLUS", Groups: "GPT-Plus", Runtime: "可用",
-				Balance: "未知", FinancialAge: "未知", Quality: "等待新门禁检查", Samples: 0,
-				Blockers: "活动上游已变化，等待新门禁检查", BlockerCodes: "upstream_account_set_changed",
-			}},
-		},
 	}
 	server := newTestServer(fakeOps{view: view})
 	request := httptest.NewRequest(http.MethodGet, "/relay-ops/api/ops-view", nil)
@@ -121,7 +111,7 @@ func TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes(t *testing.T) {
 		t.Fatalf("ops status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, required := range []string{"站内运行", "公开分组", "当前调度账号", "错误率", "TTFT P95", "总耗时 P95", "读取失败", "样本不足", "公开分组 A", "公开分组 B", "当前账号 A", "7.50%", "97.50%", "20.00%", "99.50%", "内测开放状态", "暂不可开放", "当前活动上游", "XM PLUS", "GPT-Plus", "上次更新", "技术详情", "snapshot-1", "/monitor"} {
+	for _, required := range []string{"站内运行", "Sub2API 原生聚合，最近 15 分钟", "公开分组", "当前调度账号", "错误率", "TTFT P95", "总耗时 P95", "读取失败", "样本不足", "公开分组 A", "公开分组 B", "当前账号 A", "7.50%", "97.50%", "20.00%", "99.50%", "/monitor"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("ops missing %q", required)
 		}

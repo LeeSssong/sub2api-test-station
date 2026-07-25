@@ -27,7 +27,6 @@ type Config struct {
 	DatabaseURLFile          string
 	Sub2APIBaseURL           string
 	Sub2APIAdminKeyFile      string
-	D04ReadinessResultFile   string
 	AccountQualityResultFile string
 	FeishuWebhookFile        string
 	FeishuCommandMode        string
@@ -143,10 +142,6 @@ func Load(env func(string) string) (Config, error) {
 	if baseURL == "" {
 		return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_URL is required")
 	}
-	d04ReadinessResultFile := get("RELAY_OPS_D04_READINESS_RESULT_FILE", "")
-	if d04ReadinessResultFile != "" && !filepath.IsAbs(d04ReadinessResultFile) {
-		return Config{}, fmt.Errorf("RELAY_OPS_D04_READINESS_RESULT_FILE must be an absolute path")
-	}
 	accountQualityResultFile := get("RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE", "")
 	if accountQualityResultFile != "" && !filepath.IsAbs(accountQualityResultFile) {
 		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE must be an absolute path")
@@ -164,7 +159,6 @@ func Load(env func(string) string) (Config, error) {
 		DatabaseURLFile:          databaseURLFile,
 		Sub2APIBaseURL:           baseURL,
 		Sub2APIAdminKeyFile:      adminKeyFile,
-		D04ReadinessResultFile:   d04ReadinessResultFile,
 		AccountQualityResultFile: accountQualityResultFile,
 		FeishuWebhookFile:        feishuFile,
 		FeishuCommandMode:        feishuCommandMode,

@@ -13,6 +13,15 @@ const assetNames = [
   '05-usage-and-billing.png',
 ]
 
+function pngDimensions(path: string) {
+  const bytes = readFileSync(path)
+  expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+  }
+}
+
 describe('Xingqiao beginner guide', () => {
   it('uses approved Xingqiao content and omits disabled features', () => {
     const html = readFileSync(guidePath, 'utf8')
@@ -52,6 +61,12 @@ describe('Xingqiao beginner guide', () => {
     for (const name of assetNames) {
       expect(existsSync(resolve(publicRoot, 'docs/assets', name))).toBe(true)
     }
+
+    // Keep the CC Switch capture focused on the Xingqiao provider row only.
+    expect(pngDimensions(resolve(publicRoot, 'docs/assets/04-ccswitch.png'))).toEqual({
+      width: 1365,
+      height: 58,
+    })
   })
 
   it('keeps normal user links on the Xingqiao origin', () => {

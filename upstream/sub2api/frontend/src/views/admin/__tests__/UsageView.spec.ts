@@ -25,6 +25,8 @@ const messages: Record<string, string> = {
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
   'admin.usage.failedToLoadUser': 'Failed to load user',
+  'admin.users.columnSettings': 'Columns',
+  'usage.detail.action': 'Details',
 }
 
 const formatLocalDate = (date: Date): string => {
@@ -92,8 +94,32 @@ vi.mock('vue-router', () => ({
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const UsageFiltersStub = { template: '<div><slot name="after-reset" /></div>' }
 const UsageTableStub = {
-  emits: ['userClick'],
-  template: '<div data-test="usage-table"><button class="user-click" @click="$emit(\'userClick\', 2)">user</button></div>',
+  name: 'UsageTable',
+  props: ['columns'],
+  emits: ['userClick', 'detailClick'],
+  template: `
+    <div data-test="usage-table">
+      <button class="user-click" @click="$emit('userClick', 2)">user</button>
+      <button class="detail-click" @click="$emit('detailClick', 42)">details</button>
+    </div>
+  `,
+}
+const UsageDetailDialogStub = {
+  name: 'UsageDetailDialog',
+  props: ['show', 'usageId', 'scope'],
+  emits: ['update:show'],
+  template: '<div data-test="usage-detail-dialog" />',
+}
+const OpsErrorLogTableStub = {
+  name: 'OpsErrorLogTable',
+  emits: ['openErrorDetail'],
+  template: '<button data-test="error-detail-action" @click="$emit(\'openErrorDetail\', 7)">error details</button>',
+}
+const OpsErrorDetailModalStub = {
+  name: 'OpsErrorDetailModal',
+  props: ['show', 'errorId', 'errorType'],
+  emits: ['update:show'],
+  template: '<div data-test="error-detail-dialog" />',
 }
 const UserTokenRankingStub = {
   emits: ['select-user'],
@@ -298,6 +324,89 @@ describe('admin UsageView handleUserClick', () => {
     await flushPromises()
 
     expect(getById).toHaveBeenCalledWith(2, true)
+  })
+})
+
+describe('admin UsageView detail wiring', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    list.mockReset()
+    getStats.mockReset()
+    getSnapshotV2.mockReset()
+    getModelStats.mockReset()
+    listErrorLogs.mockReset()
+
+    list.mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockResolvedValue({
+      total_requests: 0, total_input_tokens: 0, total_output_tokens: 0,
+      total_cache_tokens: 0, total_tokens: 0, total_cost: 0, total_actual_cost: 0, average_duration_ms: 0,
+    })
+    getSnapshotV2.mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockResolvedValue({ models: [] })
+    listErrorLogs.mockResolvedValue({ items: [], total: 0, pages: 0 })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps the successful detail column fixed at the right edge and opens the admin dialog', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: UsageTableStub, UsageDetailDialog: UsageDetailDialogStub,
+        UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true, EndpointDistributionChart: true,
+        UserTokenRanking: true, OpsErrorLogTable: true, OpsErrorDetailModal: true,
+      } },
+    })
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    const usageTable = wrapper.getComponent({ name: 'UsageTable' })
+    const columns = usageTable.props('columns') as Array<{ key: string; sortable?: boolean; class?: string }>
+    expect(columns.at(-1)).toEqual(expect.objectContaining({
+      key: 'detail',
+      sortable: false,
+      class: 'w-24 min-w-24',
+    }))
+    expect((wrapper.vm as any).toggleableColumns.map((column: { key: string }) => column.key))
+      .not.toContain('detail')
+
+    await wrapper.get('.detail-click').trigger('click')
+
+    const dialog = wrapper.getComponent({ name: 'UsageDetailDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('usageId')).toBe(42)
+    expect(dialog.props('scope')).toBe('admin')
+  })
+
+  it('preserves the explicit administrator error-row detail action and dialog', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: UsageTableStub, UsageDetailDialog: UsageDetailDialogStub,
+        UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true, EndpointDistributionChart: true,
+        UserTokenRanking: true, OpsErrorLogTable: OpsErrorLogTableStub,
+        OpsErrorDetailModal: OpsErrorDetailModalStub,
+      } },
+    })
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    const tabs = wrapper.findAll('[data-testid="usage-detail-tab"]')
+    await tabs[1].trigger('click')
+    await wrapper.get('[data-test="error-detail-action"]').trigger('click')
+
+    const errorDialog = wrapper.getComponent({ name: 'OpsErrorDetailModal' })
+    expect(errorDialog.props('show')).toBe(true)
+    expect(errorDialog.props('errorId')).toBe(7)
+    expect(errorDialog.props('errorType')).toBe('request')
   })
 })
 

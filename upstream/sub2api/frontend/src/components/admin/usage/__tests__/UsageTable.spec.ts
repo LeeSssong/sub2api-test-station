@@ -51,6 +51,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'usage.detail.action': 'Details',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -72,6 +73,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-detail" :row="row" />
       </div>
     </div>
   `,
@@ -360,6 +362,35 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('Per-image price')
     expect(text).toContain('not recorded')
     expect(text).not.toContain('(2K)')
+  })
+})
+
+describe('admin UsageTable detail action', () => {
+  it('emits the selected successful usage ID from an accessible fixed-size action', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ ...baseImageRow, id: 42 }],
+        loading: false,
+        columns: [{ key: 'detail', label: 'Details' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const action = wrapper.get('[data-testid="usage-detail-action"]')
+    expect(action.attributes('title')).toBe('Details')
+    expect(action.text()).toBe('Details')
+    expect(action.classes()).toContain('min-w-24')
+
+    await action.trigger('click')
+
+    expect(wrapper.emitted('detailClick')).toEqual([[42]])
   })
 })
 

@@ -233,6 +233,20 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-detail="{ row }">
+          <button
+            type="button"
+            data-testid="usage-detail-action"
+            class="inline-flex min-h-9 min-w-24 items-center justify-center gap-1 text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-primary-400 dark:hover:text-primary-300"
+            :title="t('usage.detail.action')"
+            :aria-label="t('usage.detail.action')"
+            @click.stop="emit('detailClick', row.id)"
+          >
+            <Icon name="eye" size="sm" />
+            {{ t('usage.detail.action') }}
+          </button>
+        </template>
+
         <template #empty><EmptyState :message="t('usage.noRecords')" /></template>
       </DataTable>
     </div>
@@ -538,6 +552,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
+  detailClick: [usageID: number]
   sort: [key: string, order: 'asc' | 'desc']
   ipGeoBatchFailed: []
 }>()

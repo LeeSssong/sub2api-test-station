@@ -785,6 +785,13 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
+	NewUpstreamMultiplierMeasurementService,
+	wire.Bind(
+		new(AccountMultiplierMeasurementRefresher),
+		new(*UpstreamMultiplierMeasurementService),
+	),
+	wire.Bind(new(AccountMultiplierNativeProbe), new(*UpstreamBillingProbeService)),
+	NewAccountMultiplierService,
 	ProvideAccountMonitorService,
 	ProvideAccountMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
@@ -848,11 +855,18 @@ func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *Set
 
 func ProvideAccountMonitorService(
 	repo AccountMonitorRepository,
-	accountRepo AccountMonitorAccountRepository,
+	accountRepo AccountRepository,
 	accountTestService *AccountTestService,
 	accountUsageService *AccountUsageService,
+	accountMultiplierService *AccountMultiplierService,
 ) *AccountMonitorService {
-	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService)
+	return NewAccountMonitorService(
+		repo,
+		accountRepo,
+		accountTestService,
+		accountUsageService,
+		accountMultiplierService,
+	)
 }
 
 func ProvideAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {

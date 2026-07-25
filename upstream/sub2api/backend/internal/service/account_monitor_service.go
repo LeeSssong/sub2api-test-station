@@ -22,9 +22,24 @@ import (
 type AccountMonitorService struct {
 	repo        AccountMonitorRepository
 	accountRepo AccountMonitorAccountRepository
-	testService *AccountTestService
+	testService AccountMonitorConnectionProber
 	usage       *AccountUsageService
+	multiplier  AccountMonitorMultiplierRefresher
 	runMu       sync.Mutex
+}
+
+type AccountMonitorConnectionProber interface {
+	ProbeAccountConnection(
+		context.Context,
+		int64,
+		string,
+		string,
+		string,
+	) (AccountMonitorProbeResult, error)
+}
+
+type AccountMonitorMultiplierRefresher interface {
+	RefreshAccount(context.Context, int64, bool) error
 }
 
 type AccountMonitorAccountRepository interface {
@@ -42,14 +57,16 @@ type AccountMonitorAccountRepository interface {
 func NewAccountMonitorService(
 	repo AccountMonitorRepository,
 	accountRepo AccountMonitorAccountRepository,
-	testService *AccountTestService,
+	testService AccountMonitorConnectionProber,
 	usage *AccountUsageService,
+	multiplier AccountMonitorMultiplierRefresher,
 ) *AccountMonitorService {
 	return &AccountMonitorService{
 		repo:        repo,
 		accountRepo: accountRepo,
 		testService: testService,
 		usage:       usage,
+		multiplier:  multiplier,
 	}
 }
 
@@ -99,7 +116,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			TTFTP50MS:    aggregate.TTFTP50MS,
 			TTFTP95MS:    aggregate.TTFTP95MS,
 			LatencyP95MS: aggregate.LatencyP95MS,
-			Multiplier:   account.BillingRateMultiplier(),
+			Multiplier:   resolveAccountMonitorMultiplier(&account, observedAt),
 			ErrorCount:   int64(aggregate.ErrorCount),
 		}
 		if stats := today[account.ID]; stats != nil {
@@ -151,6 +168,9 @@ func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int,
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
+			if s.multiplier != nil {
+				_ = s.multiplier.RefreshAccount(gctx, account.ID, false)
+			}
 			mu.Lock()
 			completed++
 			mu.Unlock()
@@ -194,6 +214,9 @@ func (s *AccountMonitorService) RunOne(
 	result := s.probeAccount(ctx, *target)
 	if err := s.repo.InsertResult(ctx, result, uuid.NewString()); err != nil {
 		return AccountMonitorProbeResult{}, err
+	}
+	if s.multiplier != nil {
+		_ = s.multiplier.RefreshAccount(ctx, accountID, true)
 	}
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID
@@ -355,6 +378,116 @@ func accountGroupNames(account Account) []string {
 		}
 	}
 	return names
+}
+
+func resolveAccountMonitorMultiplier(account *Account, now time.Time) AccountMonitorMultiplier {
+	unavailable := AccountMonitorMultiplier{Status: AccountMonitorMultiplierStatusUnavailable}
+	if account == nil {
+		return unavailable
+	}
+
+	declaration := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	if value, observedAt, ok := freshDeclaredAccountMonitorMultiplier(declaration, now); ok {
+		return AccountMonitorMultiplier{
+			Value:      &value,
+			Source:     AccountMonitorMultiplierSourceDeclared,
+			Status:     AccountMonitorMultiplierStatusOK,
+			ObservedAt: observedAt,
+		}
+	}
+
+	measurement := decodeUpstreamMultiplierMeasurementSnapshot(account.Extra)
+	if measurement != nil && measurement.Status == AccountMonitorMultiplierStatusOK &&
+		measurement.Multiplier != nil && !measurement.ObservedAt.IsZero() &&
+		!measurement.FreshUntil.IsZero() && now.Before(measurement.FreshUntil) {
+		value := *measurement.Multiplier
+		observedAt := measurement.ObservedAt.UTC()
+		return AccountMonitorMultiplier{
+			Value:      &value,
+			Source:     AccountMonitorMultiplierSourceMeasured,
+			Status:     AccountMonitorMultiplierStatusOK,
+			ObservedAt: &observedAt,
+		}
+	}
+
+	if measurement != nil {
+		observedAt := accountMonitorObservedAt(measurement.ObservedAt)
+		if measurement.Status == AccountMonitorMultiplierStatusOK {
+			return AccountMonitorMultiplier{
+				Source:     AccountMonitorMultiplierSourceMeasured,
+				Status:     AccountMonitorMultiplierStatusStale,
+				ObservedAt: observedAt,
+			}
+		}
+		return AccountMonitorMultiplier{
+			Source:     AccountMonitorMultiplierSourceMeasured,
+			Status:     measurement.Status,
+			ObservedAt: observedAt,
+		}
+	}
+
+	if declaration != nil {
+		observedAt := declaration.ReceivedAt
+		if declaration.Data != nil {
+			if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(declaration.Data["observed_at"]))); err == nil {
+				parsed = parsed.UTC()
+				observedAt = &parsed
+			}
+		}
+		switch declaration.Status {
+		case UpstreamBillingProbeStatusUnsupported:
+			return AccountMonitorMultiplier{
+				Source:     AccountMonitorMultiplierSourceDeclared,
+				Status:     AccountMonitorMultiplierStatusUnsupported,
+				ObservedAt: observedAt,
+			}
+		case UpstreamBillingProbeStatusFailed:
+			status := AccountMonitorMultiplierStatusFailed
+			if declaration.FreshUntil != nil && !now.Before(*declaration.FreshUntil) && declaration.Data != nil {
+				status = AccountMonitorMultiplierStatusStale
+			}
+			return AccountMonitorMultiplier{
+				Source:     AccountMonitorMultiplierSourceDeclared,
+				Status:     status,
+				ObservedAt: observedAt,
+			}
+		case UpstreamBillingProbeStatusOK:
+			return AccountMonitorMultiplier{
+				Source:     AccountMonitorMultiplierSourceDeclared,
+				Status:     AccountMonitorMultiplierStatusStale,
+				ObservedAt: observedAt,
+			}
+		}
+	}
+	return unavailable
+}
+
+func freshDeclaredAccountMonitorMultiplier(
+	snapshot *UpstreamBillingProbeSnapshot,
+	now time.Time,
+) (float64, *time.Time, bool) {
+	if snapshot == nil || snapshot.Data == nil || snapshot.FreshUntil == nil ||
+		!now.Before(*snapshot.FreshUntil) {
+		return 0, nil, false
+	}
+	value, ok := upstreamBillingRateAt(snapshot.Data, now)
+	if !ok || value < 0 {
+		return 0, nil, false
+	}
+	observedAt := snapshot.ReceivedAt
+	if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(snapshot.Data["observed_at"]))); err == nil {
+		parsed = parsed.UTC()
+		observedAt = &parsed
+	}
+	return value, observedAt, true
+}
+
+func accountMonitorObservedAt(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func monitorModelForAccount(account *Account) string {

@@ -1,7 +1,7 @@
 # Account Monitor Multiplier And Group Filter Design
 
 **Date:** 2026-07-26 (Asia/Shanghai)
-**Status:** Approved design; pending written-spec review
+**Status:** Approved
 
 ## Goal
 

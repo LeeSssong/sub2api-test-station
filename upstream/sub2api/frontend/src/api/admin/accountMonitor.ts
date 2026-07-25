@@ -2,6 +2,21 @@ import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
+export type AccountMonitorMultiplierSource = 'declared' | 'measured' | string
+export type AccountMonitorMultiplierStatus =
+  | 'ok'
+  | 'stale'
+  | 'unsupported'
+  | 'failed'
+  | 'unavailable'
+  | string
+
+export interface AccountMonitorMultiplier {
+  value?: number | null
+  source?: AccountMonitorMultiplierSource
+  status: AccountMonitorMultiplierStatus
+  observed_at?: string | null
+}
 
 export interface AccountMonitorSettings {
   interval_seconds: number
@@ -43,7 +58,7 @@ export interface AccountMonitorAccount {
   ttft_p50_ms?: number | null
   ttft_p95_ms?: number | null
   latency_p95_ms?: number | null
-  multiplier: number
+  multiplier: AccountMonitorMultiplier
   request_count: number
   error_count: number
   today_stats?: WindowStats | null

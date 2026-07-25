@@ -2621,6 +2621,120 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil)
 }
 
+// UpdateUpstreamMultiplierMeasurementSnapshot stores an observed multiplier
+// only while the credentials, proxy, and previous measurement snapshot used
+// by the request are still current.
+func (r *accountRepository) UpdateUpstreamMultiplierMeasurementSnapshot(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.UpstreamMultiplierMeasurementSnapshot,
+) error {
+	if account == nil || snapshot == nil {
+		return service.ErrAccountNilInput
+	}
+	if dbent.TxFromContext(ctx) == nil {
+		tx, err := r.client.Tx(ctx)
+		if errors.Is(err, dbent.ErrTxStarted) {
+			return r.updateUpstreamMultiplierMeasurementSnapshotInTx(ctx, account, snapshot)
+		}
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := r.updateUpstreamMultiplierMeasurementSnapshotInTx(
+			dbent.NewTxContext(ctx, tx),
+			account,
+			snapshot,
+		); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		r.syncSchedulerAccountSnapshot(ctx, account.ID)
+		return nil
+	}
+	return r.updateUpstreamMultiplierMeasurementSnapshotInTx(ctx, account, snapshot)
+}
+
+func (r *accountRepository) updateUpstreamMultiplierMeasurementSnapshotInTx(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.UpstreamMultiplierMeasurementSnapshot,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		service.UpstreamMultiplierMeasurementExtraKey: snapshot,
+	})
+	if err != nil {
+		return err
+	}
+	credentials, err := json.Marshal(account.Credentials)
+	if err != nil {
+		return err
+	}
+	var expectedSnapshot any
+	if account.Extra != nil {
+		expectedSnapshot = account.Extra[service.UpstreamMultiplierMeasurementExtraKey]
+	}
+	expectedSnapshotJSON, err := json.Marshal(expectedSnapshot)
+	if err != nil {
+		return err
+	}
+	client := clientFromContext(ctx, r.client)
+	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
+	if err != nil {
+		return err
+	}
+	if !proxyMatches {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	var proxyID any
+	if account.ProxyID != nil {
+		proxyID = *account.ProxyID
+	}
+	result, err := client.ExecContext(ctx, `
+		UPDATE accounts
+		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+		WHERE id = $2
+			AND platform = $3
+			AND type = $4
+			AND credentials = $5::jsonb
+			AND proxy_id IS NOT DISTINCT FROM $6
+			AND status = $7
+			AND schedulable = $8
+			AND COALESCE(extra -> 'upstream_multiplier_measurement_v1', 'null'::jsonb) = $9::jsonb
+			AND deleted_at IS NULL
+	`,
+		string(payload),
+		account.ID,
+		account.Platform,
+		account.Type,
+		string(credentials),
+		proxyID,
+		account.Status,
+		account.Schedulable,
+		string(expectedSnapshotJSON),
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	return enqueueSchedulerOutbox(
+		ctx,
+		client,
+		service.SchedulerOutboxEventAccountChanged,
+		&account.ID,
+		nil,
+		nil,
+	)
+}
+
 func lockAndMatchProbeProxyIdentity(ctx context.Context, client *dbent.Client, account *service.Account) (bool, error) {
 	if account.ProxyID == nil {
 		return true, nil

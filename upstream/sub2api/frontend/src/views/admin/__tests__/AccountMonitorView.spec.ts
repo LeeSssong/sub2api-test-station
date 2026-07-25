@@ -63,7 +63,12 @@ const account = {
   ttft_p50_ms: 120,
   ttft_p95_ms: 190,
   latency_p95_ms: 840,
-  multiplier: 0.1,
+  multiplier: {
+    value: 0.1,
+    source: 'declared',
+    status: 'ok',
+    observed_at: '2026-07-25T08:00:00Z',
+  },
   request_count: 12,
   error_count: 1,
   today_stats: { requests: 12, tokens: 100, cost: 0.1, standard_cost: 0.2, user_cost: 0.15 },
@@ -73,7 +78,7 @@ const account = {
 }
 
 const projection = () => ({
-  schema_version: 1,
+  schema_version: 2,
   observed_at: '2026-07-25T08:01:00Z',
   stale: false,
   settings: {
@@ -95,7 +100,7 @@ function mountView() {
           template: `
             <article data-test="monitor-card">
               <span>{{ account.name }}</span>
-              <span>{{ account.multiplier.toFixed(2) }}x</span>
+              <span>{{ account.multiplier.value?.toFixed(2) }}x</span>
               <span>{{ account.latest_status }}</span>
               <span>{{ account.error_code }}</span>
               <button data-test="card-refresh" @click="$emit('refresh', account.account_id)">refresh</button>
@@ -105,9 +110,16 @@ function mountView() {
           `,
         },
         AccountMonitorFilters: {
-          props: ['search', 'platform', 'status'],
-          emits: ['update:search', 'update:platform', 'update:status'],
-          template: '<div data-test="filters" />',
+          props: ['search', 'platform', 'status', 'group'],
+          emits: ['update:search', 'update:platform', 'update:status', 'update:group'],
+          template: `
+            <div data-test="filters">
+              <button data-test="filter-composed"
+                @click="$emit('update:search', 'backup'); $emit('update:platform', 'openai'); $emit('update:status', 'success'); $emit('update:group', '3')">
+                filter
+              </button>
+            </div>
+          `,
         },
         AccountMonitorSettingsDialog: {
           props: ['show', 'intervalSeconds'],
@@ -193,5 +205,40 @@ describe('admin account monitor view', () => {
     expect(wrapper.find('[data-test="monitor-card"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('failed')
     expect(wrapper.text()).toContain('timeout')
+  })
+
+  it('composes group membership with search, platform, and status filters', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: [
+        account,
+        {
+          ...account,
+          account_id: 8,
+          name: 'OpenAI backup',
+          platform: 'openai',
+          group_ids: [3, 8],
+          group_names: ['Production', 'Backup'],
+        },
+        {
+          ...account,
+          account_id: 9,
+          name: 'OpenAI backup wrong group',
+          platform: 'openai',
+          group_ids: [8],
+          group_names: ['Backup'],
+        },
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="filter-composed"]').trigger('click')
+    await flushPromises()
+
+    const cards = wrapper.findAll('[data-test="monitor-card"]')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].text()).toContain('OpenAI backup')
+    expect(cards[0].text()).not.toContain('wrong group')
   })
 })

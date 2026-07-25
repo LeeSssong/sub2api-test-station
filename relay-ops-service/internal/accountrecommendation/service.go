@@ -83,6 +83,12 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 			result.Groups = append(result.Groups, group)
 			continue
 		}
+		if _, ok := usableMultiplier(current); !ok {
+			group.EvidenceState = "multiplier_unavailable"
+			group.Reasons = []string{candidateReason(group.EvidenceState)}
+			result.Groups = append(result.Groups, group)
+			continue
+		}
 		if len(currentRows) == 1 {
 			if len(rows) > 1 {
 				if _, candidateState := bestCandidate(current, rows[1:]); candidateState != "" {
@@ -126,13 +132,16 @@ func Analyze(projection sub2api.AccountMonitorProjection) Result {
 }
 
 func projectionEvidenceState(projection sub2api.AccountMonitorProjection) string {
-	if projection.SchemaVersion != 1 || projection.Stale {
+	if projection.SchemaVersion != 2 || projection.Stale {
 		return "stale"
 	}
 	return "fresh"
 }
 
 func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.AccountMonitorAccount) (sub2api.AccountMonitorAccount, string) {
+	if _, ok := usableMultiplier(current); !ok {
+		return sub2api.AccountMonitorAccount{}, "multiplier_unavailable"
+	}
 	eligible := make([]sub2api.AccountMonitorAccount, 0, len(rows))
 	for _, candidate := range rows {
 		if candidate.Status != "active" || !candidate.Schedulable {
@@ -153,6 +162,9 @@ func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.Account
 		if candidate.TTFTP95MS == nil || candidate.LatencyP95MS == nil || current.TTFTP95MS == nil || current.LatencyP95MS == nil {
 			continue
 		}
+		if _, ok := usableMultiplier(candidate); !ok {
+			continue
+		}
 		eligible = append(eligible, candidate)
 	}
 	if len(eligible) == 0 {
@@ -171,6 +183,8 @@ func bestCandidate(current sub2api.AccountMonitorAccount, rows []sub2api.Account
 				return sub2api.AccountMonitorAccount{}, "incompatible_model"
 			case !usableLatestStatus(candidate):
 				return sub2api.AccountMonitorAccount{}, "recent_failure"
+			case !hasUsableMultiplier(candidate):
+				return sub2api.AccountMonitorAccount{}, "multiplier_unavailable"
 			}
 		}
 		return sub2api.AccountMonitorAccount{}, "no_eligible_candidate"
@@ -200,7 +214,8 @@ func score(account sub2api.AccountMonitorAccount) float64 {
 	if account.TTFTP95MS != nil && account.LatencyP95MS != nil {
 		performance = clamp(1 - ((*account.TTFTP95MS + *account.LatencyP95MS) / 2 / 2000))
 	}
-	multiplier := 1 / (1 + math.Max(account.Multiplier, 0))
+	multiplierValue, _ := usableMultiplier(account)
+	multiplier := 1 / (1 + math.Max(multiplierValue, 0))
 	headroom := 1 - maxUtilization(account)
 	recentLoad := 1 - math.Min(float64(account.RequestCount)/1000, 1)
 	headroom = (headroom + recentLoad) / 2
@@ -225,8 +240,10 @@ func recommendationReasons(current, candidate sub2api.AccountMonitorAccount) []s
 	if candidate.TTFTP95MS != nil && current.TTFTP95MS != nil && *candidate.TTFTP95MS < *current.TTFTP95MS {
 		reasons = append(reasons, "TTFT 更低："+formatMS(*candidate.TTFTP95MS)+" vs "+formatMS(*current.TTFTP95MS))
 	}
-	if candidate.Multiplier < current.Multiplier {
-		reasons = append(reasons, "倍率更低："+formatMultiplier(candidate.Multiplier)+" vs "+formatMultiplier(current.Multiplier))
+	currentMultiplier, currentOK := usableMultiplier(current)
+	candidateMultiplier, candidateOK := usableMultiplier(candidate)
+	if currentOK && candidateOK && candidateMultiplier < currentMultiplier {
+		reasons = append(reasons, "倍率更低："+formatMultiplier(candidateMultiplier)+" vs "+formatMultiplier(currentMultiplier))
 	}
 	if maxUtilization(candidate) < maxUtilization(current) {
 		reasons = append(reasons, "用量窗口余量更高")
@@ -249,6 +266,8 @@ func candidateReason(state string) string {
 		return "候选账号当前不可调度，暂不建议"
 	case "recent_failure":
 		return "最近探测失败，暂不建议"
+	case "multiplier_unavailable":
+		return "缺少可信倍率证据，暂不建议"
 	default:
 		return "没有满足证据条件的候选账号"
 	}
@@ -258,9 +277,34 @@ func accountView(account sub2api.AccountMonitorAccount) AccountView {
 	return AccountView{
 		AccountID: account.AccountID, Name: account.Name, ModelID: emptyAs(account.ModelID, "未选择模型"),
 		SuccessRate: formatPercent(account.SuccessRate), TTFT: formatMetric(account.TTFTP95MS),
-		Latency: formatMetric(account.LatencyP95MS), Multiplier: formatMultiplier(account.Multiplier),
+		Latency: formatMetric(account.LatencyP95MS), Multiplier: accountMultiplierLabel(account),
 		UsageWindows: usageWindows(account), Status: accountStatus(account),
 	}
+}
+
+func usableMultiplier(account sub2api.AccountMonitorAccount) (float64, bool) {
+	multiplier := account.Multiplier
+	if multiplier.Status != "ok" || multiplier.Value == nil ||
+		(multiplier.Source != "declared" && multiplier.Source != "measured") ||
+		multiplier.ObservedAt == nil || multiplier.ObservedAt.IsZero() ||
+		math.IsNaN(*multiplier.Value) || math.IsInf(*multiplier.Value, 0) ||
+		*multiplier.Value < 0 {
+		return 0, false
+	}
+	return *multiplier.Value, true
+}
+
+func hasUsableMultiplier(account sub2api.AccountMonitorAccount) bool {
+	_, ok := usableMultiplier(account)
+	return ok
+}
+
+func accountMultiplierLabel(account sub2api.AccountMonitorAccount) string {
+	value, ok := usableMultiplier(account)
+	if !ok {
+		return "未提供"
+	}
+	return formatMultiplier(value)
 }
 
 func usageWindows(account sub2api.AccountMonitorAccount) string {

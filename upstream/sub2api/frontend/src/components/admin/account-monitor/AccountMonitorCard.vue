@@ -30,7 +30,12 @@
       <Metric :label="t('admin.accountMonitor.metrics.successRate')" :value="formatPercent(account.success_rate)" />
       <Metric :label="t('admin.accountMonitor.metrics.ttft')" :value="formatMs(account.ttft_p50_ms)" />
       <Metric :label="t('admin.accountMonitor.metrics.latency')" :value="formatMs(account.latency_p95_ms)" />
-      <Metric :label="t('admin.accountMonitor.metrics.multiplier')" :value="`${account.multiplier.toFixed(2)}x`" />
+      <Metric
+        :label="t('admin.accountMonitor.metrics.multiplier')"
+        :value="multiplierDisplay.value"
+        :detail="multiplierDisplay.detail"
+        test-id="multiplier-metric"
+      />
     </div>
 
     <div class="mt-4 grid grid-cols-2 gap-3 border-y border-gray-100 py-3 dark:border-dark-700">
@@ -138,6 +143,29 @@ const status = computed(() => {
 
 const statusLabel = computed(() => t(`admin.accountMonitor.status.${status.value}`))
 
+const multiplierDisplay = computed(() => {
+  const multiplier = props.account.multiplier
+  if (
+    multiplier.status === 'ok'
+    && multiplier.value != null
+    && Number.isFinite(multiplier.value)
+    && multiplier.value >= 0
+  ) {
+    const source = multiplier.source === 'measured' ? 'measured' : 'declared'
+    return {
+      value: `${multiplier.value.toFixed(2)}x`,
+      detail: t(`admin.accountMonitor.multiplier.${source}`),
+    }
+  }
+  const statusKey = ['stale', 'unsupported', 'failed'].includes(multiplier.status)
+    ? multiplier.status
+    : 'unavailable'
+  return {
+    value: t(`admin.accountMonitor.multiplier.${statusKey}`),
+    detail: '',
+  }
+})
+
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300': status.value === 'success',
   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': status.value === 'failed',
@@ -170,11 +198,19 @@ const Metric = defineComponent({
   props: {
     label: { type: String, required: true },
     value: { type: String, required: true },
+    detail: { type: String, default: '' },
+    testId: { type: String, default: '' },
   },
   setup(metricProps) {
-    return () => h('div', { class: 'rounded bg-gray-50 p-2 dark:bg-dark-800/70' }, [
+    return () => h('div', {
+      class: 'rounded bg-gray-50 p-2 dark:bg-dark-800/70',
+      'data-test': metricProps.testId || undefined,
+    }, [
       h('div', { class: 'text-[11px] text-gray-500 dark:text-gray-400' }, metricProps.label),
       h('div', { class: 'mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white' }, metricProps.value),
+      metricProps.detail
+        ? h('div', { class: 'mt-0.5 text-[10px] text-gray-500 dark:text-gray-400' }, metricProps.detail)
+        : null,
     ])
   },
 })

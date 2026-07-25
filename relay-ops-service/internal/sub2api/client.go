@@ -511,7 +511,7 @@ func containsForbiddenProjectionKey(data []byte) bool {
 }
 
 func validateAccountMonitorProjection(projection AccountMonitorProjection) error {
-	if projection.SchemaVersion != 1 || projection.ObservedAt.IsZero() || projection.Settings.IntervalSeconds <= 0 || projection.Accounts == nil {
+	if projection.SchemaVersion != 2 || projection.ObservedAt.IsZero() || projection.Settings.IntervalSeconds <= 0 || projection.Accounts == nil {
 		return errSchemaMismatch
 	}
 	seen := make(map[int64]struct{}, len(projection.Accounts))
@@ -519,8 +519,9 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 		if account.AccountID <= 0 || strings.TrimSpace(account.Name) == "" || strings.TrimSpace(account.Platform) == "" ||
 			strings.TrimSpace(account.AccountType) == "" ||
 			account.SampleCount < 0 || account.SuccessRate < 0 || account.SuccessRate > 1 ||
-			account.Multiplier < 0 || account.RequestCount < 0 || account.ErrorCount < 0 ||
-			!finiteNumber(account.SuccessRate) || !finiteNumber(account.Multiplier) {
+			account.RequestCount < 0 || account.ErrorCount < 0 ||
+			!finiteNumber(account.SuccessRate) ||
+			!validAccountMonitorMultiplier(account.Multiplier) {
 			return errSchemaMismatch
 		}
 		if _, ok := seen[account.AccountID]; ok {
@@ -559,6 +560,28 @@ func validateAccountMonitorProjection(projection AccountMonitorProjection) error
 		}
 	}
 	return nil
+}
+
+func validAccountMonitorMultiplier(multiplier AccountMonitorMultiplier) bool {
+	validSource := multiplier.Source == "declared" || multiplier.Source == "measured"
+	validObservedAt := multiplier.ObservedAt == nil || !multiplier.ObservedAt.IsZero()
+	if !validObservedAt {
+		return false
+	}
+	switch multiplier.Status {
+	case "ok":
+		return validSource &&
+			multiplier.Value != nil &&
+			finiteNumber(*multiplier.Value) &&
+			*multiplier.Value >= 0 &&
+			multiplier.ObservedAt != nil
+	case "stale", "unsupported", "failed":
+		return validSource && multiplier.Value == nil
+	case "unavailable":
+		return multiplier.Source == "" && multiplier.Value == nil && multiplier.ObservedAt == nil
+	default:
+		return false
+	}
 }
 
 func finiteNumber(value float64) bool {

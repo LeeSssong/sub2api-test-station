@@ -49,10 +49,12 @@
           :search="search"
           :platform="platform"
           :status="status"
+          :group="group"
           :accounts="accounts"
           @update:search="search = $event"
           @update:platform="platform = $event"
           @update:status="status = $event"
+          @update:group="group = $event"
         />
         <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
           {{ t('admin.accountMonitor.lastObserved', { time: formatDate(projection?.observed_at) }) }}
@@ -168,6 +170,7 @@ const error = ref<string | null>(null)
 const search = ref('')
 const platform = ref('')
 const status = ref('')
+const group = ref('')
 const runningAll = ref(false)
 const runningAccounts = ref(new Set<number>())
 const showSettings = ref(false)
@@ -191,6 +194,7 @@ const filteredAccounts = computed(() => {
   return accounts.value.filter((account) => {
     if (platform.value && account.platform !== platform.value) return false
     if (status.value && displayStatus(account) !== status.value) return false
+    if (group.value && !account.group_ids.includes(Number(group.value))) return false
     if (!query) return true
     return [
       account.name,

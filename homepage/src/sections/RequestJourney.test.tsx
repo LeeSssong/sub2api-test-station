@@ -33,9 +33,14 @@ describe('RequestJourney', () => {
     expect(screen.getByLabelText('一次 API 请求的完整旅程')).toHaveAttribute('data-journey-phase', 'static')
     expect(screen.getByLabelText('一次 API 请求的完整旅程')).toHaveAttribute('data-journey-mode', 'static')
     expect(screen.getByLabelText('一次 API 请求的完整旅程')).toHaveAttribute('data-playback-state', 'static')
+    expect(screen.getByLabelText('请求观测指标')).toHaveAttribute(
+      'data-telemetry-target',
+      'latency-token',
+    )
     const tracks = screen.getByLabelText('应用经星桥连接模型通道').querySelectorAll('.map-track')
     expect(tracks[0]).toHaveAttribute('data-flow-direction', 'forward')
     expect(tracks[1]).toHaveAttribute('data-flow-direction', 'forward')
+    expect(tracks[1]).toHaveAttribute('data-telemetry-source', 'route')
     expect(tracks[0]).toHaveStyle({ '--track-progress': '1' })
     expect(tracks[1]).toHaveStyle({ '--track-progress': '1' })
   })

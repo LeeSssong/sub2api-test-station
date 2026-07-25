@@ -92,7 +92,7 @@ export function RequestJourney() {
               <p className="eyebrow"><span />实时链路</p>
               <h2>跟随一次请求</h2>
             </div>
-            <div className="journey-metrics" aria-label="请求观测指标">
+            <div className="journey-metrics" aria-label="请求观测指标" data-telemetry-target="latency-token">
               <span>延迟 <strong><b>{latency}</b><small>ms</small></strong></span>
               <span>Token <strong>{tokens.toLocaleString('en-US')}</strong></span>
             </div>
@@ -102,7 +102,7 @@ export function RequestJourney() {
             <div className="map-node app-node"><AppWindow aria-hidden="true" /><span>你的应用</span></div>
             <div className="map-track map-track--out" data-flow-direction="forward" style={trackStyle(outgoingProgress)} aria-hidden="true"><i /></div>
             <div className="map-node gateway-node"><img src="/home-assets/xingqiao-logo.png" alt="" /><span>星桥</span><i /></div>
-            <div className="map-track map-track--route" data-flow-direction="forward" style={trackStyle(routedProgress)} aria-hidden="true"><i /></div>
+            <div className="map-track map-track--route" data-flow-direction="forward" data-telemetry-source="route" style={trackStyle(routedProgress)} aria-hidden="true"><i /></div>
             <div className="provider-stack">
               <span><Bot aria-hidden="true" />OpenAI</span>
               <span><Sparkles aria-hidden="true" />Claude</span>

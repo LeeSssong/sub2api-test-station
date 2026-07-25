@@ -4,10 +4,10 @@ import { DEFAULT_SITE_CONFIG } from '../domain/siteConfig'
 import { ValueSections } from './ValueSections'
 
 describe('ValueSections', () => {
-  it('renders discount pricing without the official-price baseline', () => {
+  it('renders the approved pricing multiplier copy', () => {
     render(<ValueSections config={DEFAULT_SITE_CONFIG} />)
 
-    expect(screen.getByText('星桥价格 官方价格的0.1——0.3折')).toBeInTheDocument()
+    expect(screen.getAllByText('官方价格的0.1——0。3倍')).toHaveLength(2)
     expect(screen.queryByText('官方价格 100%')).not.toBeInTheDocument()
     expect(screen.queryByText(/0.1–0.3 倍/)).not.toBeInTheDocument()
     expect(screen.queryByText(/倍率/)).not.toBeInTheDocument()

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMapUserErrorCategory(t *testing.T) {
@@ -106,6 +108,7 @@ func TestToUserErrorRequest_RedactsSensitiveFields(t *testing.T) {
 
 func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 	uid := int64(42)
+	accountID := int64(7)
 	upstreamStatus := 503
 	src := &OpsErrorLogDetail{
 		OpsErrorLog: OpsErrorLog{
@@ -121,8 +124,12 @@ func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 			Message:          "upstream error",
 			UserID:           &uid,
 			UserEmail:        "secret@example.com",
+			AccountID:        &accountID,
+			RequestID:        "req-gateway",
+			ClientRequestID:  "req-client",
 			ClientIP:         func() *string { s := "1.2.3.4"; return &s }(),
 			UpstreamEndpoint: "https://api.openai.com/v1/chat/completions",
+			UpstreamModel:    "gpt-4-upstream",
 			UserAgent:        "codex_cli_rs/0.125.0",
 			GroupName:        "grp-a",
 			Stream:           true,
@@ -170,10 +177,49 @@ func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 		t.Fatalf("json.Marshal failed: %v", err)
 	}
 	raw := string(b)
-	for _, forbidden := range []string{"user_email", "upstream_endpoint"} {
+	for _, forbidden := range []string{
+		"account_id",
+		"client_request_id",
+		"upstream_endpoint",
+		"upstream_model",
+		"user_email",
+	} {
 		if strings.Contains(raw, forbidden) {
 			t.Errorf("sensitive field %q leaked in JSON output: %s", forbidden, raw)
 		}
+	}
+}
+
+func TestToUserErrorRequestDetailSelectsOwnedRequestID(t *testing.T) {
+	out := ToUserErrorRequestDetail(&OpsErrorLogDetail{
+		OpsErrorLog: OpsErrorLog{
+			RequestID:       " req-gateway ",
+			ClientRequestID: "req-client",
+		},
+	})
+	require.Equal(t, "req-gateway", out.RequestID)
+
+	fallback := ToUserErrorRequestDetail(&OpsErrorLogDetail{
+		OpsErrorLog: OpsErrorLog{ClientRequestID: " req-client "},
+	})
+	require.Equal(t, "req-client", fallback.RequestID)
+}
+
+func TestToUserErrorRequestDetailJSONWhitelistKeepsListAndAdminFieldsRedacted(t *testing.T) {
+	listJSON, err := json.Marshal(UserErrorRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, string(listJSON), "request_id")
+
+	detailJSON, err := json.Marshal(UserErrorRequestDetail{RequestID: "req-owned"})
+	require.NoError(t, err)
+	require.Contains(t, string(detailJSON), `"request_id":"req-owned"`)
+	for _, forbidden := range []string{
+		"account_id",
+		"client_request_id",
+		"upstream_endpoint",
+		"upstream_model",
+	} {
+		require.NotContains(t, string(detailJSON), forbidden)
 	}
 }
 

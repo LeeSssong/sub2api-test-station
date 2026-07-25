@@ -254,7 +254,7 @@ func (s *AccountMonitorService) loadSettings(ctx context.Context) (AccountMonito
 }
 
 func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error) {
-	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", StatusActive, "", 0, "")
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
 	if err != nil {
 		return nil, fmt.Errorf("list active schedulable accounts: %w", err)
 	}

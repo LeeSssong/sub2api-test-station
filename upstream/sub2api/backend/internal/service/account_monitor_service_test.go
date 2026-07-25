@@ -62,8 +62,8 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
-	if !repo.listAllCalled || repo.listAllStatus != StatusActive {
-		t.Fatalf("ListAllWithFilters not called with active status: %#v", repo)
+	if !repo.listAllCalled || repo.listAllStatus != "" {
+		t.Fatalf("ListAllWithFilters must not use the composite active filter: %#v", repo)
 	}
 	if repo.listSchedulableCalled {
 		t.Fatal("account monitor must not use runtime scheduler eligibility")

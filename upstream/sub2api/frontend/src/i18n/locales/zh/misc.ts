@@ -80,7 +80,12 @@ export default {
     tableOfContents: '目录',
     copyCode: '复制',
     copiedCode: '已复制',
-    copyCodeFailed: '失败'
+    copyCodeFailed: '失败',
+    supportCopyGroup: '复制群号',
+    supportCopied: '已复制',
+    supportCopyFailed: '复制失败',
+    supportQrPreviewTitle: 'QQ群二维码',
+    supportQrPreviewAlt: 'QQ群二维码放大预览'
   },
 
   // Announcements Page

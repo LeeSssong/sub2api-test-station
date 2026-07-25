@@ -82,7 +82,12 @@ export default {
     tableOfContents: 'Contents',
     copyCode: 'Copy',
     copiedCode: 'Copied',
-    copyCodeFailed: 'Failed'
+    copyCodeFailed: 'Failed',
+    supportCopyGroup: 'Copy group number',
+    supportCopied: 'Copied',
+    supportCopyFailed: 'Copy failed',
+    supportQrPreviewTitle: 'QQ group QR code',
+    supportQrPreviewAlt: 'Enlarged QQ group QR code'
   },
 
   // Announcements Page

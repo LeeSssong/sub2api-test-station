@@ -72,6 +72,7 @@
             ref="markdownContainer"
             class="markdown-page-content flex-1 h-full overflow-auto p-6 md:p-10"
             v-html="renderedHtml"
+            @click="onMarkdownClick"
             @scroll="onContentScroll"
           ></div>
         </div>
@@ -111,6 +112,22 @@
           ></iframe>
         </div>
       </div>
+
+      <BaseDialog
+        :show="previewImage !== null"
+        :title="t('customPage.supportQrPreviewTitle')"
+        width="narrow"
+        close-on-click-outside
+        @close="closeImagePreview"
+      >
+        <div class="support-qr-preview">
+          <img
+            v-if="previewImage"
+            :src="previewImage.src"
+            :alt="previewImage.alt"
+          >
+        </div>
+      </BaseDialog>
     </div>
   </AppLayout>
 </template>
@@ -123,9 +140,17 @@ import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
+import {
+  resolveMarkdownSupportAction,
+  rewriteRelativeImageSources,
+  setMarkdownCopyState,
+  type MarkdownCopyLabels,
+} from '@/utils/markdownSupportActions'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -140,6 +165,7 @@ const route = useRoute()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
+const { copyToClipboard } = useClipboard()
 
 const loading = ref(false)
 const pageTheme = ref<'light' | 'dark'>('light')
@@ -148,7 +174,10 @@ const markdownContainer = ref<HTMLElement | null>(null)
 const tocItems = ref<TocItem[]>([])
 const tocVisible = ref(typeof window !== 'undefined' ? window.innerWidth > 768 : true)
 const activeHeadingId = ref('')
+const previewImage = ref<{ src: string; alt: string } | null>(null)
 let themeObserver: MutationObserver | null = null
+let previewTrigger: HTMLButtonElement | null = null
+let supportCopyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 const menuItemId = computed(() => route.params.id as string)
 
@@ -243,13 +272,26 @@ async function fetchAndRenderMarkdown(slug: string) {
     const html = marked.parse(raw) as string
     const sanitized = DOMPurify.sanitize(html, {
       ADD_TAGS: ['iframe'],
-      ADD_ATTR: ['allowfullscreen', 'frameborder', 'src'],
+      ADD_ATTR: [
+        'allowfullscreen',
+        'aria-label',
+        'data-copy-label',
+        'data-copy-text',
+        'data-image-preview',
+        'frameborder',
+        'src',
+        'type',
+      ],
     })
+    const withResolvedImages = rewriteRelativeImageSources(
+      sanitized,
+      (src) => buildPageImageUrl(slug, src),
+    )
 
     // Inject IDs into headings and build TOC
     const toc: TocItem[] = []
     let headingIndex = 0
-    const withIds = sanitized.replace(
+    const withIds = withResolvedImages.replace(
       /<(h[1-4])[^>]*>(.*?)<\/h[1-4]>/gi,
       (_, tag: string, content: string) => {
         const level = parseInt(tag[1])
@@ -334,6 +376,47 @@ function injectCopyButtons() {
   })
 }
 
+function getSupportCopyLabels(): MarkdownCopyLabels {
+  return {
+    idle: t('customPage.supportCopyGroup'),
+    copied: t('customPage.supportCopied'),
+    failed: t('customPage.supportCopyFailed'),
+  }
+}
+
+async function onMarkdownClick(event: MouseEvent) {
+  const action = resolveMarkdownSupportAction(event.target)
+  if (!action) return
+
+  if (action.kind === 'preview') {
+    previewTrigger = action.trigger
+    previewImage.value = {
+      src: action.src,
+      alt: action.alt || t('customPage.supportQrPreviewAlt'),
+    }
+    return
+  }
+
+  if (supportCopyResetTimer) {
+    clearTimeout(supportCopyResetTimer)
+  }
+
+  const copied = await copyToClipboard(action.text)
+  setMarkdownCopyState(action.button, copied ? 'copied' : 'failed', getSupportCopyLabels())
+  supportCopyResetTimer = setTimeout(() => {
+    setMarkdownCopyState(action.button, 'idle', getSupportCopyLabels())
+    supportCopyResetTimer = null
+  }, 2000)
+}
+
+function closeImagePreview() {
+  previewImage.value = null
+  nextTick(() => {
+    previewTrigger?.focus()
+    previewTrigger = null
+  })
+}
+
 watch(markdownSlug, (slug) => {
   if (slug) {
     fetchAndRenderMarkdown(slug)
@@ -366,6 +449,14 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (supportCopyResetTimer) {
+    clearTimeout(supportCopyResetTimer)
+    supportCopyResetTimer = null
+  }
+  if (scrollRafId) {
+    cancelAnimationFrame(scrollRafId)
+    scrollRafId = 0
+  }
   if (themeObserver) {
     themeObserver.disconnect()
     themeObserver = null
@@ -459,6 +550,20 @@ onUnmounted(() => {
   box-shadow: none;
   background: transparent;
 }
+
+.support-qr-preview {
+  display: flex;
+  min-height: 16rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.support-qr-preview img {
+  display: block;
+  width: min(100%, 28rem);
+  max-height: 70vh;
+  object-fit: contain;
+}
 </style>
 
 <style>
@@ -484,6 +589,147 @@ onUnmounted(() => {
 .markdown-page-content pre { @apply bg-gray-900 dark:bg-dark-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4 relative; }
 .markdown-page-content pre code { @apply bg-transparent p-0 text-inherit; }
 .markdown-page-content hr { @apply my-6 border-gray-200 dark:border-dark-600; }
+
+.markdown-page-content .support-contact-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  width: min(100%, 720px);
+  margin: 24px auto;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.dark .markdown-page-content .support-contact-card {
+  border-color: #374151;
+  background: #1f2937;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.markdown-page-content .support-qr-trigger {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: zoom-in;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.markdown-page-content .support-qr-trigger:hover {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.markdown-page-content .support-qr-trigger:focus-visible,
+.markdown-page-content .support-copy-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.markdown-page-content .support-qr-trigger img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.markdown-page-content .support-contact-details {
+  min-width: 0;
+}
+
+.markdown-page-content .support-contact-details p {
+  margin: 0 0 20px;
+  color: #4b5563;
+}
+
+.dark .markdown-page-content .support-contact-details p {
+  color: #d1d5db;
+}
+
+.markdown-page-content .support-group-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dark .markdown-page-content .support-group-label {
+  color: #9ca3af;
+}
+
+.markdown-page-content .support-group-number {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+.dark .markdown-page-content .support-group-number {
+  color: #f9fafb;
+}
+
+.markdown-page-content .support-copy-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 8px 16px;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.markdown-page-content .support-copy-button:hover {
+  border-color: #1e40af;
+  background: #1d4ed8;
+}
+
+.markdown-page-content .support-copy-button[data-copy-state='copied'] {
+  border-color: #15803d;
+  background: #16a34a;
+}
+
+.markdown-page-content .support-copy-button[data-copy-state='failed'] {
+  border-color: #b91c1c;
+  background: #dc2626;
+}
+
+@media (max-width: 640px) {
+  .markdown-page-content .support-contact-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .markdown-page-content .support-qr-trigger {
+    width: min(100%, 220px);
+    justify-self: center;
+  }
+
+  .markdown-page-content .support-contact-details {
+    text-align: center;
+  }
+}
 
 .copy-btn {
   position: absolute;

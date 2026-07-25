@@ -19,6 +19,41 @@ export type MarkdownSupportAction =
       trigger: HTMLButtonElement
     }
 
+function isSafeRelativeAsset(src: string): boolean {
+  const trimmed = src.trim()
+  if (
+    !trimmed
+    || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+    || trimmed.startsWith('//')
+    || trimmed.startsWith('/')
+  ) {
+    return false
+  }
+
+  const [pathPart] = trimmed.split(/([?#].*)/, 2)
+  return pathPart
+    .split('/')
+    .filter((part) => part && part !== '.')
+    .every((part) => part !== '..' && !part.includes('\\'))
+}
+
+export function rewriteRelativeImageSources(
+  html: string,
+  resolveSource: (src: string) => string,
+): string {
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  template.content.querySelectorAll<HTMLImageElement>('img[src]').forEach((image) => {
+    const source = image.getAttribute('src') ?? ''
+    if (isSafeRelativeAsset(source)) {
+      image.setAttribute('src', resolveSource(source.trim()))
+    }
+  })
+
+  return template.innerHTML
+}
+
 export function resolveMarkdownSupportAction(
   target: EventTarget | null,
 ): MarkdownSupportAction | null {

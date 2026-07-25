@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   resolveMarkdownSupportAction,
+  rewriteRelativeImageSources,
   setMarkdownCopyState,
 } from '../markdownSupportActions'
 
@@ -9,6 +10,31 @@ afterEach(() => {
 })
 
 describe('markdown support actions', () => {
+  it('rewrites relative raw HTML image sources without touching external assets', () => {
+    const html = `
+      <img src="qq-group.png" alt="QQ群二维码">
+      <img src="./nested/image name.png?size=large#preview" alt="嵌套图片">
+      <img src="https://cdn.example.com/remote.png" alt="外部图片">
+      <img src="/already-absolute.png" alt="绝对路径">
+    `
+
+    const result = rewriteRelativeImageSources(
+      html,
+      (src) => `/api/pages/support/images/${src.replace(' ', '%20')}`,
+    )
+    const document = new DOMParser().parseFromString(result, 'text/html')
+    const sources = Array.from(document.querySelectorAll('img'), (image) =>
+      image.getAttribute('src'),
+    )
+
+    expect(sources).toEqual([
+      '/api/pages/support/images/qq-group.png',
+      '/api/pages/support/images/./nested/image%20name.png?size=large#preview',
+      'https://cdn.example.com/remote.png',
+      '/already-absolute.png',
+    ])
+  })
+
   it('resolves a marked copy button from a nested label', () => {
     document.body.innerHTML = `
       <button type="button" data-copy-text="1080152144">

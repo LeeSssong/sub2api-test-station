@@ -53,7 +53,7 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 			{ID: 9, Status: StatusActive, Schedulable: true},
 		},
 	}
-	service := NewAccountMonitorService(nil, repo, nil, nil)
+	service := NewAccountMonitorService(nil, repo, nil, nil, nil)
 
 	accounts, err := service.listPool(context.Background())
 	if err != nil {
@@ -124,7 +124,7 @@ func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) 
 		{ID: 2, Status: StatusActive, Schedulable: true},
 		{ID: 4, Status: StatusDisabled, Schedulable: true},
 		{ID: 6, Status: StatusActive, Schedulable: false},
-	}}, nil, nil)
+	}}, nil, nil, nil)
 
 	accounts, err := service.listPool(context.Background())
 	if err != nil {

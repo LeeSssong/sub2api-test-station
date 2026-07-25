@@ -849,10 +849,13 @@ func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *Set
 func ProvideAccountMonitorService(
 	repo AccountMonitorRepository,
 	accountRepo AccountMonitorAccountRepository,
+	fullAccountRepo AccountRepository,
 	accountTestService *AccountTestService,
 	accountUsageService *AccountUsageService,
+	billingService *BillingService,
 ) *AccountMonitorService {
-	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService)
+	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
+	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
 }
 
 func ProvideAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {

@@ -24,6 +24,7 @@ type AccountMonitorService struct {
 	accountRepo AccountMonitorAccountRepository
 	testService *AccountTestService
 	usage       *AccountUsageService
+	multiplier  *AccountMultiplierService
 	runMu       sync.Mutex
 }
 
@@ -44,12 +45,14 @@ func NewAccountMonitorService(
 	accountRepo AccountMonitorAccountRepository,
 	testService *AccountTestService,
 	usage *AccountUsageService,
+	multiplier *AccountMultiplierService,
 ) *AccountMonitorService {
 	return &AccountMonitorService{
 		repo:        repo,
 		accountRepo: accountRepo,
 		testService: testService,
 		usage:       usage,
+		multiplier:  multiplier,
 	}
 }
 
@@ -99,7 +102,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			TTFTP50MS:    aggregate.TTFTP50MS,
 			TTFTP95MS:    aggregate.TTFTP95MS,
 			LatencyP95MS: aggregate.LatencyP95MS,
-			Multiplier:   account.BillingRateMultiplier(),
+			Multiplier:   s.resolveMultiplier(&account, observedAt),
 			ErrorCount:   int64(aggregate.ErrorCount),
 		}
 		if stats := today[account.ID]; stats != nil {
@@ -127,6 +130,13 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		Settings:      settings,
 		Accounts:      rows,
 	}}, nil
+}
+
+func (s *AccountMonitorService) resolveMultiplier(account *Account, now time.Time) AccountMonitorMultiplier {
+	if s == nil || s.multiplier == nil {
+		return unavailableAccountMultiplier()
+	}
+	return s.multiplier.Resolve(account, now)
 }
 
 func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int, error) {

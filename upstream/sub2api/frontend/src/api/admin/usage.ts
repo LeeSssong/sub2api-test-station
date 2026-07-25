@@ -111,6 +111,16 @@ export async function list(
 }
 
 /**
+ * Get a usage log by ID (admin only)
+ * @param id - Usage log ID
+ * @returns Usage log detail
+ */
+export async function getById(id: number): Promise<AdminUsageLog> {
+  const { data } = await apiClient.get<AdminUsageLog>(`/admin/usage/${id}`)
+  return data
+}
+
+/**
  * Get usage statistics with optional filters (admin only)
  * @param params - Query parameters for filtering
  * @returns Usage statistics
@@ -206,6 +216,7 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
 
 export const adminUsageAPI = {
   list,
+  getById,
   getStats,
   searchUsers,
   searchApiKeys,

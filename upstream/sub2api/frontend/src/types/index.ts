@@ -1948,6 +1948,7 @@ export interface UserErrorRequest {
 }
 
 export interface UserErrorRequestDetail extends UserErrorRequest {
+  request_id?: string
   error_body: string
   upstream_status_code?: number
 }

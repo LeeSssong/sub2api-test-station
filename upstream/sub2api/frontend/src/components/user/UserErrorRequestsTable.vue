@@ -101,6 +101,20 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-detail="{ row }">
+          <button
+            type="button"
+            data-testid="user-error-detail-action"
+            class="inline-flex min-h-9 min-w-24 items-center justify-center gap-1 rounded px-2 text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:text-primary-400 dark:hover:text-primary-300 dark:focus-visible:ring-offset-dark-900"
+            :title="t('usage.detail.action')"
+            :aria-label="t('usage.detail.action')"
+            @click.stop="openDetail(row.id)"
+          >
+            <Icon name="eye" size="sm" />
+            {{ t('usage.detail.action') }}
+          </button>
+        </template>
+
         <template #empty><EmptyState :message="t('usage.errors.empty')" /></template>
       </DataTable>
     </div>
@@ -129,6 +143,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import UserErrorDetailModal from '@/components/user/UserErrorDetailModal.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import IpGeoBatchToolbar from '@/components/common/IpGeoBatchToolbar.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 import {
   mapErrorSortKey,
@@ -178,11 +193,18 @@ const allColumns = computed<Column[]>(() => [
   { key: 'message', label: t('usage.errors.message') },
   { key: 'created_at', label: t('usage.errors.time'), sortable: true },
   { key: 'user_agent', label: t('usage.userAgent') },
+  {
+    key: 'detail',
+    label: t('usage.detail.action'),
+    class: 'w-24 min-w-24',
+  },
 ])
 
 const columns = computed<Column[]>(() =>
   props.visibleColumnKeys
-    ? allColumns.value.filter((c) => props.visibleColumnKeys!.includes(c.key))
+    ? allColumns.value.filter((column) =>
+        column.key === 'detail' || props.visibleColumnKeys!.includes(column.key)
+      )
     : allColumns.value
 )
 

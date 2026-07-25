@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
@@ -60,6 +60,7 @@ const messages: Record<string, string> = {
   'usage.preparingExport': 'Preparing export',
   'usage.exportSuccess': 'Export success',
   'usage.exportFailed': 'Export failed',
+  'usage.detail.action': 'Details',
   'common.refresh': 'Refresh',
   'common.reset': 'Reset',
 }
@@ -95,6 +96,18 @@ vi.mock('vue-i18n', async () => {
 
 const simpleStub = { template: '<div><slot /></div>' }
 const chartStub = { template: '<div />' }
+const UsageTableStub = {
+  name: 'UsageTable',
+  props: ['data', 'columns', 'showAccountBilling', 'showUpstreamEndpoint'],
+  emits: ['detailClick'],
+  template: '<button data-testid="user-usage-detail-action" @click="$emit(\'detailClick\', 42)">Details</button>',
+}
+const UsageDetailDialogStub = {
+  name: 'UsageDetailDialog',
+  props: ['show', 'usageId', 'scope'],
+  emits: ['update:show'],
+  template: '<div data-testid="user-usage-detail-dialog" />',
+}
 
 const usageLog = {
   id: 1,
@@ -137,7 +150,8 @@ function mountUsageView() {
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: chartStub,
-        UsageTable: chartStub,
+        UsageTable: UsageTableStub,
+        UsageDetailDialog: UsageDetailDialogStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,
@@ -191,6 +205,10 @@ describe('user UsageView', () => {
     getAvailable.mockResolvedValue([{ id: 1, name: 'default' }])
   })
 
+  afterEach(() => {
+    localStorage.removeItem('user-usage-hidden-columns')
+  })
+
   it('loads logs, stats, model stats, and snapshot on first render', async () => {
     mountUsageView()
     await flushPromises()
@@ -205,6 +223,38 @@ describe('user UsageView', () => {
     }))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('keeps the successful detail action fixed and opens only the user-scoped dialog', async () => {
+    localStorage.setItem('user-usage-hidden-columns', JSON.stringify(['detail']))
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    const usageTable = wrapper.getComponent({ name: 'UsageTable' })
+    const columns = usageTable.props('columns') as Array<{ key: string; class?: string; sortable?: boolean }>
+    expect(columns.at(-1)).toEqual(expect.objectContaining({
+      key: 'detail',
+      class: 'w-24 min-w-24',
+      sortable: false,
+    }))
+    expect((wrapper.vm as any).toggleableColumns.map((column: { key: string }) => column.key))
+      .not.toContain('detail')
+    expect(usageTable.props('showAccountBilling')).toBe(false)
+    expect(usageTable.props('showUpstreamEndpoint')).toBe(false)
+    expect(columns.map((column) => column.key)).not.toEqual(expect.arrayContaining([
+      'account',
+      'account_cost',
+      'upstream_model',
+      'model_mapping',
+      'user',
+    ]))
+
+    await wrapper.get('[data-testid="user-usage-detail-action"]').trigger('click')
+
+    const dialog = wrapper.getComponent({ name: 'UsageDetailDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('usageId')).toBe(42)
+    expect(dialog.props('scope')).toBe('user')
   })
 
   it('exports csv with current filters and without admin-only fields', async () => {

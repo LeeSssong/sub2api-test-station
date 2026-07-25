@@ -181,6 +181,7 @@
           default-sort-key="created_at"
           default-sort-order="desc"
           @sort="handleSort"
+          @detailClick="openUsageDetail"
           @ipGeoBatchFailed="handleIpGeoBatchFailed"
         />
 
@@ -207,6 +208,12 @@
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
       />
+
+      <UsageDetailDialog
+        v-model:show="showUsageDetail"
+        :usage-id="selectedUsageID"
+        scope="user"
+      />
     </div>
   </AppLayout>
 
@@ -223,6 +230,7 @@ import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
+import UsageDetailDialog from '@/components/usage/UsageDetailDialog.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
@@ -256,6 +264,8 @@ type EndpointSource = 'inbound' | 'upstream' | 'path'
 
 const usageStats = ref<UsageStatsResponse | null>(null)
 const usageLogs = ref<UsageLog[]>([])
+const showUsageDetail = ref(false)
+const selectedUsageID = ref<number | null>(null)
 const trendData = ref<TrendDataPoint[]>([])
 const requestedModelStats = ref<ModelStat[]>([])
 const groupStats = ref<GroupStat[]>([])
@@ -694,7 +704,12 @@ const exportToCSV = async () => {
   }
 }
 
-const ALWAYS_VISIBLE = ['created_at']
+function openUsageDetail(id: number) {
+  selectedUsageID.value = id
+  showUsageDetail.value = true
+}
+
+const ALWAYS_VISIBLE = ['created_at', 'detail']
 const DEFAULT_HIDDEN_COLUMNS = ['user_agent']
 const HIDDEN_COLUMNS_KEY = 'user-usage-hidden-columns'
 
@@ -712,6 +727,12 @@ const allColumns = computed<Column[]>(() => [
   { key: 'latency', label: t('usage.latency'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
   { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  {
+    key: 'detail',
+    label: t('usage.detail.action'),
+    sortable: false,
+    class: 'w-24 min-w-24',
+  },
 ])
 
 const hiddenColumns = reactive<Set<string>>(new Set())

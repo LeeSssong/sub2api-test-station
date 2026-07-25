@@ -16,6 +16,26 @@
     <!-- Detail content -->
     <div v-else-if="detail" class="space-y-4 text-sm">
       <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+        <!-- Request ID -->
+        <div v-if="detail.request_id" class="col-span-2">
+          <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.detail.requestId') }}</span>
+          <div class="mt-0.5 flex min-w-0 items-start gap-2">
+            <span
+              data-testid="user-error-request-id"
+              class="min-w-0 flex-1 break-all font-mono text-gray-900 dark:text-dark-100"
+            >{{ detail.request_id }}</span>
+            <button
+              type="button"
+              data-testid="copy-user-error-request-id"
+              class="inline-flex h-8 w-8 flex-none items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-dark-400 dark:hover:bg-dark-700 dark:hover:text-dark-200"
+              :title="t('usage.detail.copyRequestId')"
+              :aria-label="t('usage.detail.copyRequestId')"
+              @click="copyRequestId"
+            >
+              <Icon name="copy" size="sm" />
+            </button>
+          </div>
+        </div>
         <!-- Time -->
         <div>
           <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.time') }}</span>
@@ -74,7 +94,9 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { getMyErrorDetail } from '@/api/usage'
+import { useClipboard } from '@/composables/useClipboard'
 import { formatDateTime } from '@/utils/format'
 import type { UserErrorRequestDetail } from '@/types'
 
@@ -88,6 +110,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { copyToClipboard } = useClipboard()
 
 const loading = ref(false)
 const loadError = ref(false)
@@ -117,6 +140,11 @@ async function fetchDetail(id: number) {
   } finally {
     loading.value = false
   }
+}
+
+async function copyRequestId() {
+  if (!detail.value?.request_id) return
+  await copyToClipboard(detail.value.request_id, t('usage.detail.copied'))
 }
 
 function statusClass(code: number) {

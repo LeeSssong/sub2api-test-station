@@ -206,13 +206,14 @@ The durable one-click path runs from the production host with the same
 `ops/update-sub2api-host.sh` executor used by the scheduler. The executor
 requires Linux, Docker context `default`, the exact production directory
 `/opt/sub2api/production`, Compose project `sub2api`, the three named volumes,
-and an immutable `weishaw/sub2api:<version>@sha256:<digest>` reference before it
-will pull or recreate anything.
+and an immutable Docker image ID for a locally qualified Xingqiao build before
+it will recreate anything. Official GitHub Releases remain the version source;
+vanilla official images are not eligible for production promotion.
 
 ### CLI
 
-Use an operation ID supplied by the caller and confirm the complete digest
-before running the command. The command prints exactly one terminal result:
+Use an operation ID supplied by the caller and confirm the complete image ID
+and upstream version before running the command. The command prints exactly one terminal result:
 `result=promoted`, `result=rolled_back`, or `result=rollback_failed`.
 
 ```bash
@@ -227,7 +228,8 @@ sudo env \
   ADMIN_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key \
   GATEWAY_API_KEY_FILE=/opt/sub2api/production/secrets/gateway-api-key \
   ./ops/update-sub2api-host.sh \
-  --image 'weishaw/sub2api:<version>@sha256:<64-hex-digest>' \
+  --image 'sha256:<64-hex-image-id>' \
+  --version '<version>' \
   --operation-id '<operation-id>'
 ```
 
@@ -253,6 +255,21 @@ The scheduled operation retains that immutable image reference. It does not
 resolve a later release when the timer fires. The web path and the CLI path
 therefore share the same backup, named-volume checks, recreate-only mutation,
 health checks, smoke checks, and rollback behavior.
+
+Before the button can promote a release, operators import the official source
+delta into `upstream/sub2api`, run the repository test gates, and build
+`xingqiao-sub2api:upstream-<version>` with these labels:
+
+```text
+com.xingqiao.sub2api.qualified=true
+com.xingqiao.sub2api.upstream.version=<version>
+com.xingqiao.sub2api.upstream.commit=<40-hex-official-commit>
+```
+
+The resolver verifies all three labels and pins the resulting immutable image
+ID. If the qualified image is absent or mismatched, the request fails before
+backup or Compose mutation. This preserves Xingqiao Base URL, frontend,
+backend, and navigation behavior across official updates.
 
 The service exposes these same-origin administrative operations:
 

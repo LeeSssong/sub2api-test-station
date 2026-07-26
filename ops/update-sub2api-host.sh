@@ -40,6 +40,7 @@ mode_of() {
 
 parse_args() {
   requested_image=''
+  requested_version=''
   operation_id=''
   while (($#)); do
     case "$1" in
@@ -55,17 +56,23 @@ parse_args() {
         operation_id=$2
         shift 2
         ;;
+      --version)
+        (($# >= 2)) || fail '--version requires the qualified upstream version'
+        [[ -z "$requested_version" ]] || fail '--version may be supplied once'
+        requested_version=$2
+        shift 2
+        ;;
       *) fail "unknown argument: $1" ;;
     esac
   done
   [[ -n "$requested_image" ]] || fail '--image is required'
+  [[ "$requested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z._-]*$ ]] \
+    || fail '--version must be an application version such as 0.1.165'
   [[ -n "$operation_id" && "$operation_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] \
     || fail '--operation-id is invalid'
-  [[ "$requested_image" =~ ^weishaw/sub2api:[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z._-]*@sha256:[a-f0-9]{64}$ ]] \
-    || fail '--image must be weishaw/sub2api:<version>@sha256:<digest>'
-  requested_digest=${requested_image##*@}
-  requested_version=${requested_image#weishaw/sub2api:}
-  requested_version=${requested_version%%@*}
+  [[ "$requested_image" =~ ^sha256:[a-f0-9]{64}$ ]] \
+    || fail '--image must be a qualified immutable sha256 image ID'
+  requested_digest=$requested_image
 }
 
 require_commands() {
@@ -496,10 +503,19 @@ chmod 0600 "$compose_backup"
 cp "$compose_file" "$compose_backup"
 docker tag "$previous_image_id" "$rollback_tag" >/dev/null
 
-trace pull
-docker pull "$requested_image" >/dev/null
-requested_image_id=$(docker image inspect "$requested_image" | jq -er --arg digest "$requested_digest" \
-  '.[0] | select(any(.RepoDigests[]?; endswith($digest))) | .Id') || fail 'requested image digest was not verified'
+trace verify-image
+requested_image_id=$(docker image inspect "$requested_image" | jq -er \
+  --arg image "$requested_image" --arg version "$requested_version" '
+    .[0] |
+    select(
+      .Id == $image and
+      .Config.Labels["com.xingqiao.sub2api.qualified"] == "true" and
+      .Config.Labels["com.xingqiao.sub2api.upstream.version"] == $version and
+      (.Config.Labels["com.xingqiao.sub2api.upstream.commit"] |
+        type == "string" and test("^[a-f0-9]{40}$"))
+    ) |
+    .Id
+  ') || fail 'requested Xingqiao image qualification could not be verified'
 
 backup_release
 replace_sub2api_image "$compose_backup"

@@ -6,9 +6,14 @@
 **生产目录：** `/opt/sub2api/production`  
 **生产 Compose project：** `sub2api`
 
+> **2026-07-26 安全修订：** 生产已恢复星桥源码定制，因此宿主更新器不再直接拉取
+> `weishaw/sub2api` 原版镜像。官方 GitHub Release 仍是版本提示的事实源，但执行层
+> 只接受已合并该官方版本、通过测试并带星桥资格标签的本地镜像 ID。未准备资格
+> 镜像时更新会在备份和容器变更前失败，绝不以丢失星桥定制为代价完成升级。
+
 ## 目标
 
-继续完整使用 `weishaw/sub2api` 官方镜像和官方版本检查界面。管理员收到
+继续使用官方版本检查界面。管理员收到
 官方 GitHub Release 更新提示后，点击原来的“立即更新”，先看到一次确认窗口，
 然后选择“现在升级”或仅为该版本安排一次北京时间升级。实际变更由宿主机完成，
 不再替换容器 writable layer 中的 `/app/sub2api` 二进制。
@@ -84,10 +89,10 @@ Caddy 同时截获 `POST /api/v1/admin/system/update`。来自旧页面、脚本
 
 ## 更新执行
 
-创建任务时，服务验证目标是当前 GitHub 最新稳定 Release，并拉取
-`weishaw/sub2api:<version>`。只有本地 RepoDigest 与官方 repository 匹配时，才把
-`weishaw/sub2api:<version>@sha256:<digest>` 写入任务。调度时间和执行时间均不使用
-可变 tag。
+创建任务时，服务验证目标是当前 GitHub 最新稳定 Release，并解析本地
+`xingqiao-sub2api:upstream-<version>`。镜像必须同时具备
+`com.xingqiao.sub2api.qualified=true`、匹配的官方版本和 40 位官方 commit 标签。
+服务把不可变 Docker image ID 写入任务；调度时间和执行时间均不使用可变 tag。
 
 执行阶段使用宿主机单飞锁，调用 root-owned
 `/opt/sub2api/production/ops/update-sub2api-host.sh`：

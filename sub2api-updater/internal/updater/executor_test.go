@@ -18,7 +18,7 @@ func TestHostExecutorMapsTerminalResultAndPassesImmutableOperation(t *testing.T)
 		t.Fatalf("result = %#v", result)
 	}
 	call := strings.Join(runner.calls[0], " ")
-	if call != "/opt/sub2api/production/ops/update-sub2api-host.sh --image "+op.Image+" --operation-id "+op.OperationID {
+	if call != "/opt/sub2api/production/ops/update-sub2api-host.sh --image "+op.Image+" --version "+op.TargetVersion+" --operation-id "+op.OperationID {
 		t.Fatalf("call = %q", call)
 	}
 }

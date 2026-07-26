@@ -3,10 +3,11 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT="$ROOT/ops/update-sub2api-host.sh"
-IMAGE='weishaw/sub2api:0.1.164@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+IMAGE='sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+VERSION='0.1.165'
 OLD_IMAGE='xingqiao-sub2api:rollback-20260724-contact-v1'
 OLD_ID='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-NEW_ID='sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+NEW_ID="$IMAGE"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -104,7 +105,7 @@ if [[ "$*" == *'-w %{http_code}'* || "$*" == *"-w '%{http_code}'"* ]]; then
 fi
 case "$*" in
   */health*) printf '{"status":"ok"}\n' ;;
-  */api/v1/admin/system/version*) printf '{"data":{"version":"0.1.164"}}\n' ;;
+  */api/v1/admin/system/version*) printf '{"data":{"version":"0.1.165"}}\n' ;;
   */api/v1/settings/public*) printf '{"data":{"custom_menu_items":[{"id":"xingqiao-support","url":"md:support"}]}}\n' ;;
   */api/v1/admin/system/update*) printf 'guard\n' ;;
   */v1/models*) printf '{"data":[]}\n' ;;
@@ -136,7 +137,7 @@ fi
 
 if [[ "${1:-}" == image && "${2:-}" == inspect ]]; then
   [[ "${3:-}" == "$requested" ]] || die "$@"
-  printf '[{"Id":"%s","RepoDigests":["%s"]}]\n' "$new_id" "$requested"
+  printf '[{"Id":"%s","Config":{"Labels":{"com.xingqiao.sub2api.qualified":"true","com.xingqiao.sub2api.upstream.version":"%s","com.xingqiao.sub2api.upstream.commit":"dddddddddddddddddddddddddddddddddddddddd"}}}]\n' "$new_id" "${FAKE_REQUESTED_VERSION:?}"
   exit 0
 fi
 
@@ -267,6 +268,7 @@ run_update() {
     FAKE_DEPLOY="$FIXTURE_DEPLOY" FAKE_PROJECT=sub2api \
     FAKE_STATE="$FIXTURE_STATE" FAKE_LOG="$FIXTURE_LOG" \
     FAKE_REQUESTED_IMAGE="$IMAGE" FAKE_OLD_IMAGE="$OLD_IMAGE" \
+    FAKE_REQUESTED_VERSION="$VERSION" \
     FAKE_OLD_ID="$OLD_ID" FAKE_NEW_ID="$NEW_ID" \
     REAL_JQ_PATH="$REAL_JQ_PATH" \
     SUB2API_PRODUCTION_ROOT="$FIXTURE_DEPLOY" \
@@ -280,7 +282,7 @@ run_update() {
     ADMIN_API_KEY_FILE="$FIXTURE_DEPLOY/admin.key" \
     GATEWAY_API_KEY_FILE="$FIXTURE_DEPLOY/gateway.key" \
     RELEASE_EVENT_LOG="$FIXTURE_TRACE" \
-    bash "$SCRIPT" --image "$IMAGE" --operation-id op-test-001 "$@")
+    bash "$SCRIPT" --image "$IMAGE" --version "$VERSION" --operation-id op-test-001 "$@")
 }
 
 assert_trace() {
@@ -299,7 +301,7 @@ test_success_trace_and_identity() {
   local output record
   output=$(run_update)
   [[ "$output" == 'result=promoted' ]] || fail "unexpected success output: $output"
-  assert_trace 'inspect -> pull -> backup-db -> backup-counts -> backup-app-data -> checksum -> compose-validate -> recreate-sub2api -> health -> smoke -> promoted'
+  assert_trace 'inspect -> verify-image -> backup-db -> backup-counts -> backup-app-data -> checksum -> compose-validate -> recreate-sub2api -> health -> smoke -> promoted'
   rg -n 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id' "$FIXTURE_LOG" >/dev/null \
     || fail 'container identity checks were not recorded'
   ! rg -n 'down|--force-recreate postgres|--force-recreate redis|pg_restore' "$FIXTURE_LOG" \
@@ -398,7 +400,7 @@ test_preflight_rejects_image_and_lock() {
   cleanup_fixture
 
   new_fixture
-  if run_update --image weishaw/sub2api:latest >/dev/null 2>&1; then
+  if run_update --image weishaw/sub2api:0.1.165@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null 2>&1; then
     fail 'mutable image reference was accepted'
   fi
   assert_no_docker_mutation

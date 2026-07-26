@@ -24,7 +24,13 @@ func (e *HostExecutor) Run(ctx context.Context, op Operation) (ExecutionResult, 
 	if e == nil || e.path == "" || e.runner == nil {
 		return ExecutionResult{}, errors.New("host update executor is not configured")
 	}
-	stdout, stderr, err := e.runner.Run(ctx, e.path, "--image", op.Image, "--operation-id", op.OperationID)
+	stdout, stderr, err := e.runner.Run(
+		ctx,
+		e.path,
+		"--image", op.Image,
+		"--version", op.TargetVersion,
+		"--operation-id", op.OperationID,
+	)
 	if err != nil {
 		return ExecutionResult{}, commandFailure(stderr, err)
 	}

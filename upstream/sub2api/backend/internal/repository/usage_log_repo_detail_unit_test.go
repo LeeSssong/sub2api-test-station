@@ -37,6 +37,7 @@ func TestUsageLogRepositoryGetByID加载详情所需摘要关系(t *testing.T) {
 		"ALTER TABLE usage_logs ADD COLUMN inbound_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN upstream_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN account_stats_cost real NULL",
+		"ALTER TABLE usage_logs ADD COLUMN session_id text NULL",
 	} {
 		_, err = db.Exec(statement)
 		require.NoError(t, err)

@@ -3,6 +3,9 @@ set -euo pipefail
 
 umask 077
 
+# Bumped whenever the updater/executor argument contract changes so a stale
+# binary reports the drift instead of failing on an unrecognized argument.
+HOST_CONTRACT_VERSION='1'
 PINNED_POSTGRES_IMAGE='postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
 EXPECTED_QR_SHA256='35b84b14ab472e117fa413ed5f91357becd01199eeaf3fed469a2d9d3d987c16'
 
@@ -42,8 +45,15 @@ parse_args() {
   requested_image=''
   requested_version=''
   operation_id=''
+  contract_version=''
   while (($#)); do
     case "$1" in
+      --contract-version)
+        (($# >= 2)) || fail '--contract-version requires the updater contract version'
+        [[ -z "$contract_version" ]] || fail '--contract-version may be supplied once'
+        contract_version=$2
+        shift 2
+        ;;
       --image)
         (($# >= 2)) || fail '--image requires an immutable image reference'
         [[ -z "$requested_image" ]] || fail '--image may be supplied once'
@@ -65,6 +75,8 @@ parse_args() {
       *) fail "unknown argument: $1" ;;
     esac
   done
+  [[ "$contract_version" == "$HOST_CONTRACT_VERSION" ]] \
+    || fail "updater contract ${contract_version:-none} does not match executor contract $HOST_CONTRACT_VERSION; reinstall the updater with ops/install-sub2api-updater.sh"
   [[ -n "$requested_image" ]] || fail '--image is required'
   [[ "$requested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z._-]*$ ]] \
     || fail '--version must be an application version such as 0.1.165'

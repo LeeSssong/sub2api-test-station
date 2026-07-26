@@ -228,10 +228,16 @@ sudo env \
   ADMIN_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key \
   GATEWAY_API_KEY_FILE=/opt/sub2api/production/secrets/gateway-api-key \
   ./ops/update-sub2api-host.sh \
+  --contract-version 1 \
   --image 'sha256:<64-hex-image-id>' \
   --version '<version>' \
   --operation-id '<operation-id>'
 ```
+
+`--contract-version` must match the executor's `HOST_CONTRACT_VERSION`. The
+updater binary sends its own value, so a mismatch means the binary and the
+executor script drifted apart; reinstall both together with
+`ops/install-sub2api-updater.sh` rather than editing either side.
 
 Do not replace the placeholders with a secret. The executor writes its
 `0600` record under

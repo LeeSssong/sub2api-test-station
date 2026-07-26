@@ -282,7 +282,8 @@ run_update() {
     ADMIN_API_KEY_FILE="$FIXTURE_DEPLOY/admin.key" \
     GATEWAY_API_KEY_FILE="$FIXTURE_DEPLOY/gateway.key" \
     RELEASE_EVENT_LOG="$FIXTURE_TRACE" \
-    bash "$SCRIPT" --image "$IMAGE" --version "$VERSION" --operation-id op-test-001 "$@")
+    bash "$SCRIPT" --image "$IMAGE" --version "$VERSION" --operation-id op-test-001 \
+      ${CONTRACT_ARGS---contract-version 1} "$@")
 }
 
 assert_trace() {
@@ -415,6 +416,27 @@ test_preflight_rejects_image_and_lock() {
   cleanup_fixture
 }
 
+test_preflight_requires_matching_contract_version() {
+  local output
+  new_fixture
+  if output=$(CONTRACT_ARGS='' run_update 2>&1); then
+    fail 'an updater that declares no contract version was accepted'
+  fi
+  grep -q 'install-sub2api-updater.sh' <<<"$output" \
+    || fail "missing contract version did not name the reinstall command: $output"
+  assert_no_docker_mutation
+  cleanup_fixture
+
+  new_fixture
+  if output=$(CONTRACT_ARGS='--contract-version 99' run_update 2>&1); then
+    fail 'a mismatched contract version was accepted'
+  fi
+  grep -q 'install-sub2api-updater.sh' <<<"$output" \
+    || fail "mismatched contract version did not name the reinstall command: $output"
+  assert_no_docker_mutation
+  cleanup_fixture
+}
+
 test_rollback_result_and_no_database_restore() {
   new_fixture
   cat >"$FIXTURE_BIN/curl" <<'SH'
@@ -446,5 +468,6 @@ test_preflight_rejects_wrong_directory
 test_smoke_url_cannot_bypass_caddy
 test_preflight_rejects_runtime_identity_and_space
 test_preflight_rejects_image_and_lock
+test_preflight_requires_matching_contract_version
 test_rollback_result_and_no_database_restore
 printf 'PASS: host-controlled Sub2API update executor\n'

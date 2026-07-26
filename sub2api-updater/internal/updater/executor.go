@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// hostContractVersion is the argument contract this updater speaks. The host
+// executor refuses any other value so a stale binary or script names the drift.
+const hostContractVersion = "1"
+
 // HostExecutor invokes the root-owned update script with an immutable image reference.
 type HostExecutor struct {
 	path   string
@@ -27,11 +31,17 @@ func (e *HostExecutor) Run(ctx context.Context, op Operation) (ExecutionResult, 
 	stdout, stderr, err := e.runner.Run(
 		ctx,
 		e.path,
+		"--contract-version", hostContractVersion,
 		"--image", op.Image,
 		"--version", op.TargetVersion,
 		"--operation-id", op.OperationID,
 	)
 	if err != nil {
+		// The script exits non-zero when rollback itself fails, and that verdict must
+		// reach the operator instead of collapsing into a generic failure.
+		if result, parseErr := parseTerminalResult(stdout); parseErr == nil && result.RollbackFailed {
+			return result, nil
+		}
 		return ExecutionResult{}, commandFailure(stderr, err)
 	}
 	result, err := parseTerminalResult(stdout)

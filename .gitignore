@@ -18,3 +18,6 @@ ops-data/
 **/.obsidian/
 output/
 .worktrees/
+
+# Local codegraph index cache
+.codegraph/

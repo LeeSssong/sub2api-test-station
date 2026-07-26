@@ -1842,6 +1842,7 @@ package dailyreport
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -1960,9 +1961,14 @@ func BuildHealthDigest(
 	view.Profit = notify.ProfitLine{
 		Revenue: total.Revenue, UpstreamCost: total.UpstreamCost, Gross: total.Gross,
 		Margin: total.Margin, Computable: total.Computable, ExcludedAccounts: excluded,
-		NoTraffic: total.Revenue == 0 && total.UpstreamCost == 0,
+		NoTraffic: !hasTraffic,
 	}
-	view.Traffic = notify.TrafficLine{HasTraffic: !view.Profit.NoTraffic}
+	// 所有有流量的账号都因倍率不可用被排除时，利润数字没有意义。此时报
+	// 「可核算、收入 $0」等于凭空造出一个 100% 毛利的一天。
+	if hasTraffic && total.Revenue == 0 && total.UpstreamCost == 0 {
+		view.Profit.Computable = false
+	}
+	view.Traffic = notify.TrafficLine{HasTraffic: hasTraffic, Requests: totalRequests}
 	return view
 }
 
@@ -2005,6 +2011,7 @@ func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []Group
 		errorCodes[account.AccountID] = account.ErrorCode
 	}
 	views := []GroupAvailabilityView{}
+	seen := map[string]bool{}
 	for _, group := range accounthealth.GroupAvailabilities(classify(projection)) {
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
 		for _, down := range group.Down {
@@ -2013,9 +2020,36 @@ func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []Group
 				ErrorCode: errorCodes[down.AccountID],
 			})
 		}
+		seen[group.GroupName] = true
 		views = append(views, GroupAvailabilityView{Alert: alert, Alerting: group.Alerting})
 	}
+	// GroupAvailabilities 会跳过 TierUnknown 账号，因此某个分组的账号全部失去
+	// 样本时，该分组会整个从结果里消失，于是也不再被 Observe，incident 卡在
+	// confirmed —— 与「告警只发一次」同源。这里把缺席的分组补回来，以
+	// Alerting=false 观测，让状态机能够走完恢复路径。
+	for _, name := range groupNamesIn(projection) {
+		if !seen[name] {
+			views = append(views, GroupAvailabilityView{
+				Alert: notify.GroupAlertView{GroupName: name},
+			})
+		}
+	}
+	sort.SliceStable(views, func(i, j int) bool { return views[i].Alert.GroupName < views[j].Alert.GroupName })
 	return views
+}
+
+func groupNamesIn(projection sub2api.AccountMonitorProjection) []string {
+	names := []string{}
+	seen := map[string]bool{}
+	for _, account := range projection.Accounts {
+		for _, name := range account.GroupNames {
+			if name != "" && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 func pendingFor(account sub2api.AccountMonitorAccount, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {
@@ -2171,42 +2205,80 @@ Expected: PASS
 ```go
 		SiteMonitor: siteMonitor.Run,
 		GroupAvailability: func(runCtx context.Context) error {
-			projection, readErr := reader.ListAccountMonitors(runCtx)
-			if readErr != nil {
-				// fail-safe：监控自身故障不得伪装成业务故障，静默跳过本轮
-				return nil
-			}
-			var failures []error
-			for _, item := range dailyreport.BuildGroupAvailability(projection) {
-				alert := item.Alert
-				key := "group:" + alert.GroupName + ":availability"
-				hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d", alert.GroupName, alert.Available, alert.Total)))
-				evidence := hex.EncodeToString(hash[:])
-				// 健康分组同样要 Observe（Failing=false），否则状态机永远走不到
-				// 恢复分支，分组恢复后 incident 卡在 confirmed，下次真出事时
-				// 证据哈希未变会被判定为无需通知——告警只会成功发出一次。
-				transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{
-					Key:                 key,
-					Severity:            "P1",
-					Failing:             item.Alerting,
-					EvidenceHash:        evidence,
-					CurrentValue:        fmt.Sprintf("可用 %d / 共 %d", alert.Available, alert.Total),
-					ConfirmationWindows: 2,
-				})
-				if observeErr != nil || !transition.Notify || notifier == nil {
-					continue
-				}
-				alert.Recovery = !item.Alerting
-				// 单个分组投递失败不得挡住其余分组的告警
-				if sendErr := notifier.SendIncident(runCtx, key, evidence, notify.RenderGroupAlert(alert)); sendErr != nil {
-					failures = append(failures, sendErr)
-				}
-			}
-			return errors.Join(failures...)
+			return runGroupAvailability(runCtx, reader, incidentMachine, notifier, cfg.Timezone, time.Now().UTC())
 		},
 ```
 
 `reader` 是第 234 行构造的 `*sub2api.HTTPReader` 具体类型，无需类型断言。`sha256`、`hex`、`fmt`、`time`、`incidents`、`notify`、`dailyreport` 在 app.go 中均已 import。
+
+告警主体提取为 `app` 包内的可测函数（新建 `relay-ops-service/internal/app/group_availability.go`），而不是写成匿名闭包 —— 闭包无法被测试触达，而 C1 的全部修复逻辑都活在这里：
+
+```go
+type groupMonitorReader interface {
+	ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error)
+}
+
+type groupIncidentObserver interface {
+	Observe(context.Context, incidents.Observation) (incidents.Transition, error)
+}
+
+type groupAlertSender interface {
+	SendIncident(context.Context, string, string, notify.FeishuMessage) error
+}
+
+func runGroupAvailability(
+	ctx context.Context,
+	reader groupMonitorReader,
+	machine groupIncidentObserver,
+	sender groupAlertSender,
+	loc *time.Location,
+	now time.Time,
+) error {
+	projection, readErr := reader.ListAccountMonitors(ctx)
+	if readErr != nil {
+		// fail-safe：监控自身故障不得伪装成业务故障，静默跳过本轮
+		log.Printf("group availability: skip round, monitor read failed: %v", readErr)
+		return nil
+	}
+	if loc == nil {
+		loc = time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	var failures []error
+	for _, item := range dailyreport.BuildGroupAvailability(projection) {
+		alert := item.Alert
+		key := "group:" + alert.GroupName + ":availability"
+		// 投递证据必须带日期。notification_deliveries.dedup_key 有 UNIQUE 约束
+		// 且成功投递的记录永不复用，而可用比会重复出现（单账号分组每次故障
+		// 都是 0/1）。不带日期的话，同一分组第二次故障会撞上第一次的
+		// dedup_key 被静默丢弃——告警只会成功发出一次。dailyreport 的
+		// summaryHash 用的就是这个做法。
+		hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d:%s",
+			alert.GroupName, alert.Available, alert.Total, now.In(loc).Format("2006-01-02"))))
+		evidence := hex.EncodeToString(hash[:])
+		// 健康分组同样要 Observe（Failing=false），否则状态机永远走不到恢复
+		// 分支，分组恢复后 incident 卡在 confirmed。
+		transition, observeErr := machine.Observe(ctx, incidents.Observation{
+			Key:                 key,
+			Severity:            "P1",
+			Failing:             item.Alerting,
+			EvidenceHash:        evidence,
+			CurrentValue:        fmt.Sprintf("可用 %d / 共 %d", alert.Available, alert.Total),
+			ConfirmationWindows: 2,
+		})
+		if observeErr != nil || !transition.Notify || sender == nil {
+			continue
+		}
+		alert.Recovery = !item.Alerting
+		// 单个分组投递失败不得挡住其余分组的告警
+		if sendErr := sender.SendIncident(ctx, key, evidence, notify.RenderGroupAlert(alert)); sendErr != nil {
+			failures = append(failures, sendErr)
+		}
+	}
+	return errors.Join(failures...)
+}
+```
+
+必须为它写一个「故障 → 恢复 → 再次故障」的三阶段测试，断言三张卡都投递出去（红、绿、红），且第二次故障的 dedup 证据与第一次不同。再补一个 reader 返回 error 时静默跳过、不产生任何投递的测试。
 
 - [ ] **Step 6: 验证全量测试通过**
 

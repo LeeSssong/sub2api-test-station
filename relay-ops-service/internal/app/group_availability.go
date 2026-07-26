@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/accounthealth"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
@@ -17,6 +18,7 @@ import (
 
 type groupMonitorReader interface {
 	ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error)
+	ListAccountMonitorHistory(context.Context, int64, int) ([]sub2api.AccountMonitorHistoryEntry, error)
 }
 
 type groupIncidentObserver interface {
@@ -47,8 +49,23 @@ func runGroupAvailability(
 	if loc == nil {
 		loc = time.FixedZone("Asia/Shanghai", 8*60*60)
 	}
+	// 判定口径是最近 1 小时滚动窗，只拉窗口所需的少量 history（300 秒间隔
+	// 是 18 条），不是 48 小时口径的 HistoryLimitFor（692 条，5 分钟一轮会
+	// 白拉 40 倍数据）。
+	limit := accounthealth.RollingWindowLimitFor(projection.Settings.IntervalSeconds)
+	histories := make(map[int64][]sub2api.AccountMonitorHistoryEntry, len(projection.Accounts))
+	for _, account := range projection.Accounts {
+		entries, historyErr := reader.ListAccountMonitorHistory(ctx, account.AccountID, limit)
+		if historyErr != nil {
+			// 单账号历史失败退回投影口径（BuildGroupAvailability 的空窗回退），
+			// 不得挡住其余账号的判定
+			log.Printf("group availability: history read failed for account %d: %v", account.AccountID, historyErr)
+			continue
+		}
+		histories[account.AccountID] = entries
+	}
 	var failures []error
-	for _, item := range dailyreport.BuildGroupAvailability(projection) {
+	for _, item := range dailyreport.BuildGroupAvailability(projection, histories, now) {
 		alert := item.Alert
 		key := "group:" + alert.GroupName + ":availability"
 		// 投递证据必须带时间桶。notification_deliveries.dedup_key 有 UNIQUE

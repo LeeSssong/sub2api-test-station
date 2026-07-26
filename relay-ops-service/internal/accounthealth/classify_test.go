@@ -18,6 +18,11 @@ func TestClassifyAccount(t *testing.T) {
 		{"不可用上边界", AccountSample{SuccessRate: 0.499, SampleCount: 10}, TierUnavailable, false},
 		{"余额耗尽直判不可用", AccountSample{SuccessRate: 1.0, SampleCount: 10, ErrorCode: ErrorCodeBalanceExhausted}, TierUnavailable, false},
 		{"无样本判未知", AccountSample{SuccessRate: 0, SampleCount: 0}, TierUnknown, false},
+		// 窗口口径下零样本是常态（新增账号、跨零点后第一小时）。余额耗尽的
+		// 短路必须先于零样本判定：判成 Unknown 会被 GroupAvailabilities 剔出
+		// Total，3 账号组缩成 2 账号组，告警阈值从「<=1」悄悄放宽到「==0」。
+		{"零样本余额耗尽仍判不可用", AccountSample{SuccessRate: 0, SampleCount: 0, ErrorCode: ErrorCodeBalanceExhausted}, TierUnavailable, false},
+		{"零样本其他错误码判未知", AccountSample{SuccessRate: 0, SampleCount: 0, ErrorCode: "http_error"}, TierUnknown, false},
 		{"延时边界内不标记", AccountSample{SuccessRate: 1.0, SampleCount: 10, TTFTP95MS: float64Ptr(3000)}, TierHealthy, false},
 		{"延时超阈值标记", AccountSample{SuccessRate: 1.0, SampleCount: 10, TTFTP95MS: float64Ptr(3000.1)}, TierHealthy, true},
 		{"偏慢不降档", AccountSample{SuccessRate: 0.99, SampleCount: 10, TTFTP95MS: float64Ptr(9000)}, TierHealthy, true},

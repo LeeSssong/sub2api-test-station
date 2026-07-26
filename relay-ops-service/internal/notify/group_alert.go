@@ -4,10 +4,14 @@ import (
 	"fmt"
 )
 
+// GroupAlertAccount carries only fields the caller actually fills. A former
+// Duration field was never assigned, and rendering the empty slot left every
+// down row with a trailing full-width separator; no data source provides a
+// reliable outage duration (the alert window is one hour), so the field is
+// gone rather than populated with a misleading value.
 type GroupAlertAccount struct {
 	Name      string
 	ErrorCode string
-	Duration  string
 }
 
 type GroupAlertView struct {
@@ -30,8 +34,8 @@ func RenderGroupAlert(view GroupAlertView) FeishuMessage {
 	}
 	if !view.Recovery {
 		for _, account := range view.Down {
-			lines = append(lines, fmt.Sprintf("%s　%s　%s",
-				digestValue(account.Name), digestValue(account.ErrorCode), digestValue(account.Duration)))
+			lines = append(lines, fmt.Sprintf("%s　%s",
+				digestValue(account.Name), digestValue(account.ErrorCode)))
 		}
 		lines = append(lines, "", "建议：为上述账号充值，或临时关闭 schedulable 止血")
 	}

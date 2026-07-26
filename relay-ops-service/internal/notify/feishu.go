@@ -317,10 +317,6 @@ func trimDigestText(value string, maximum int) string {
 	return value[:maximum] + "..."
 }
 
-func digestTimestamp(value time.Time) string {
-	return value.UTC().Format("2006-01-02 15:04 UTC")
-}
-
 func digestValue(value string) string {
 	value = strings.TrimSpace(value)
 	lower := strings.ToLower(value)

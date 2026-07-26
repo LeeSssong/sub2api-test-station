@@ -13,12 +13,21 @@ import (
 )
 
 type fakeGroupReader struct {
-	projection sub2api.AccountMonitorProjection
-	err        error
+	projection      sub2api.AccountMonitorProjection
+	err             error
+	histories       map[int64][]sub2api.AccountMonitorHistoryEntry
+	historyLimits   []int
+	historyAccounts []int64
 }
 
 func (f *fakeGroupReader) ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error) {
 	return f.projection, f.err
+}
+
+func (f *fakeGroupReader) ListAccountMonitorHistory(_ context.Context, accountID int64, limit int) ([]sub2api.AccountMonitorHistoryEntry, error) {
+	f.historyLimits = append(f.historyLimits, limit)
+	f.historyAccounts = append(f.historyAccounts, accountID)
+	return f.histories[accountID], nil
 }
 
 type memoryIncidentRepo struct{ records map[string]incidents.Record }
@@ -189,6 +198,62 @@ func TestRunGroupAvailabilityHasKnownSameBucketSilenceWindow(t *testing.T) {
 	// 同桶同比值的第二次故障被投递层 dedup 拦下 —— 共 2 张（缺陷现状）。
 	if len(sender.delivered) != 2 {
 		t.Fatalf("delivered = %d, want 2: %+v", len(sender.delivered), sender.delivered)
+	}
+}
+
+// 阻断项回归：告警作业必须按最近 1 小时滚动窗判定，而不是 projection 的
+// 7 天累计口径。账号硬挂 1 小时后 7 天成功率仍 ≈98.6% 判健康，修复前
+// 5 分钟一轮的作业对 http_error/timeout 类故障的实际响应时间是天级。
+// 同时锁定 history 拉取条数与 1 小时窗匹配（300 秒间隔 → 18 条），不得
+// 复用 48 小时口径的 HistoryLimitFor（692 条）。
+func TestRunGroupAvailabilityJudgesByRollingHourWindow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
+	now := time.Date(2026, 7, 26, 2, 0, 0, 0, time.UTC)
+	// projection 口径：7 天成功率 98.6%，修复前会判 Healthy 永不告警
+	stale := sub2api.AccountMonitorAccount{
+		AccountID: 22, Name: "Plus-XN-0.09", GroupIDs: []int64{6}, GroupNames: []string{"GPT-Plus"},
+		SampleCount: 2016, SuccessRate: 0.986, ErrorCode: "http_error",
+	}
+	entries := make([]sub2api.AccountMonitorHistoryEntry, 0, 12)
+	for i := 0; i < 12; i++ {
+		entries = append(entries, sub2api.AccountMonitorHistoryEntry{
+			AccountID: 22, Status: "failed", ErrorCode: "http_error",
+			CheckedAt: now.Add(-time.Duration(i)*5*time.Minute - time.Minute),
+		})
+	}
+	reader := &fakeGroupReader{
+		projection: groupProjection(stale),
+		histories:  map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries},
+	}
+	machine := incidents.Machine{
+		Repository: &memoryIncidentRepo{records: map[string]incidents.Record{}},
+		Policy:     incidents.DefaultPolicy(),
+	}
+	sender := &dedupingSender{seen: map[string]bool{}, failKeys: map[string]bool{}}
+
+	// P1 需要 2 个确认窗口
+	for i := 0; i < 2; i++ {
+		reader.histories = map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries}
+		if err := runGroupAvailability(ctx, reader, machine, sender, loc, now.Add(time.Duration(i)*5*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sender.delivered) != 1 {
+		t.Fatalf("1 小时窗内全失败必须触发告警: %+v", sender.delivered)
+	}
+	if title := cardTitle(t, sender.delivered[0].Message); !strings.Contains(title, "分组可用账号不足") {
+		t.Fatalf("不是告警卡: %s", title)
+	}
+	if len(reader.historyLimits) == 0 {
+		t.Fatal("告警作业必须拉取账号 history")
+	}
+	for _, limit := range reader.historyLimits {
+		if limit != 18 {
+			t.Fatalf("history limit = %d, want 18（ceil(3600/300)×1.5，48 小时口径的 692 条是 40 倍浪费）", limit)
+		}
 	}
 }
 

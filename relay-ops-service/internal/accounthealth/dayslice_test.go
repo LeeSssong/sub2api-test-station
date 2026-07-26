@@ -23,6 +23,71 @@ func TestHistoryLimitFor(t *testing.T) {
 	}
 }
 
+func TestRollingWindowLimitFor(t *testing.T) {
+	cases := []struct {
+		interval int
+		want     int
+	}{
+		{300, 18}, // ceil(3600/300)=12, *1.5=18
+		{0, 18},   // 非法值回退 300 秒
+		{-5, 18},  // 非法值回退 300 秒
+		{60, 90},  // ceil(3600/60)=60, *1.5=90
+		{7200, 2}, // ceil(3600/7200)=1, *1.5=1.5 -> 2
+		{250, 23}, // ceil(3600/250)=15, *1.5=22.5 -> 23
+	}
+	for _, tc := range cases {
+		if got := RollingWindowLimitFor(tc.interval); got != tc.want {
+			t.Fatalf("RollingWindowLimitFor(%d) = %d, want %d", tc.interval, got, tc.want)
+		}
+	}
+}
+
+func TestAggregateUsesHalfOpenWindow(t *testing.T) {
+	from := time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	entries := []HistoryEntry{
+		{CheckedAt: from.Add(-time.Second), Status: "success"},                    // 窗口前，排除
+		{CheckedAt: from, Status: "success", TTFTMS: float64Ptr(1000)},            // 左闭，计入
+		{CheckedAt: to.Add(-time.Second), Status: "failed", ErrorCode: "timeout"}, // 窗口内，计入
+		{CheckedAt: to, Status: "failed", ErrorCode: "http_error"},                // 右开，排除
+	}
+	slice := Aggregate(entries, from, to)
+	if slice.SampleCount != 2 || slice.SuccessCount != 1 {
+		t.Fatalf("slice = %+v, want 2 samples 1 success", slice)
+	}
+	if slice.SuccessRate != 0.5 {
+		t.Fatalf("SuccessRate = %v, want 0.5", slice.SuccessRate)
+	}
+	if slice.LastErrorCode != "timeout" {
+		t.Fatalf("LastErrorCode = %q, want timeout（窗口外的 http_error 不得混入）", slice.LastErrorCode)
+	}
+}
+
+func TestAccountSampleFromMapsSliceFields(t *testing.T) {
+	ttft := 1234.0
+	slice := DaySlice{
+		Date: "2026-07-27", SampleCount: 12, SuccessCount: 6,
+		SuccessRate: 0.5, TTFTP95MS: &ttft, LastErrorCode: "timeout",
+	}
+	sample := AccountSampleFrom(slice, 22, "Plus-XN-0.09", []string{"GPT-Plus"})
+	if sample.AccountID != 22 || sample.Name != "Plus-XN-0.09" {
+		t.Fatalf("identity lost: %+v", sample)
+	}
+	if len(sample.GroupNames) != 1 || sample.GroupNames[0] != "GPT-Plus" {
+		t.Fatalf("GroupNames = %v", sample.GroupNames)
+	}
+	if sample.SuccessRate != 0.5 || sample.SampleCount != 12 || sample.ErrorCode != "timeout" {
+		t.Fatalf("sample = %+v", sample)
+	}
+	if sample.TTFTP95MS == nil || *sample.TTFTP95MS != 1234 {
+		t.Fatalf("TTFTP95MS = %v", sample.TTFTP95MS)
+	}
+	verdict := ClassifyAccount(sample)
+	if verdict.Tier != TierDegraded {
+		t.Fatalf("Tier = %q, want degraded（聚合结果可直接进入判定）", verdict.Tier)
+	}
+}
+
 func TestSliceByDaySplitsOnLocalMidnight(t *testing.T) {
 	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
 	now := time.Date(2026, 7, 27, 9, 0, 0, 0, loc)

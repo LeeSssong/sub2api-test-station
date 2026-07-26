@@ -12,20 +12,30 @@ import (
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-func classify(projection sub2api.AccountMonitorProjection) []accounthealth.AccountVerdict {
-	verdicts := make([]accounthealth.AccountVerdict, 0, len(projection.Accounts))
-	for _, account := range projection.Accounts {
-		verdicts = append(verdicts, accounthealth.ClassifyAccount(accounthealth.AccountSample{
-			AccountID:   account.AccountID,
-			Name:        account.Name,
-			GroupNames:  account.GroupNames,
-			SuccessRate: account.SuccessRate,
-			SampleCount: account.SampleCount,
-			TTFTP95MS:   account.TTFTP95MS,
-			ErrorCode:   account.ErrorCode,
-		}))
+// windowSample builds the classifier input for one account from an aggregated
+// time window. Two fallbacks keep accounts without window data judged instead
+// of silently dropped:
+//
+//   - ErrorCode: an empty (or all-success) window carries no error evidence,
+//     so the projection's live error code fills in — a freshly exhausted
+//     account must classify Unavailable even before a probe lands in the
+//     window.
+//   - Rates: with zero window samples the projection's cumulative figures are
+//     used, so the account is judged exactly as before this window existed.
+//     Judging it Unknown instead would remove it from group capacity (Total),
+//     silently loosening the alert threshold, and would drop it from the
+//     daily three-tier counts.
+func windowSample(account sub2api.AccountMonitorAccount, slice accounthealth.DaySlice) accounthealth.AccountSample {
+	sample := accounthealth.AccountSampleFrom(slice, account.AccountID, account.Name, account.GroupNames)
+	if sample.ErrorCode == "" {
+		sample.ErrorCode = account.ErrorCode
 	}
-	return verdicts
+	if slice.SampleCount == 0 {
+		sample.SuccessRate = account.SuccessRate
+		sample.SampleCount = account.SampleCount
+		sample.TTFTP95MS = account.TTFTP95MS
+	}
+	return sample
 }
 
 // trustworthyMultiplier returns the schema v2 multiplier only when it is
@@ -51,16 +61,20 @@ func BuildHealthDigest(
 	loc *time.Location,
 	now time.Time,
 ) notify.HealthDigestView {
-	verdicts := classify(projection)
-
 	view := notify.HealthDigestView{Date: now.In(loc).Format("2006-01-02")}
 	profitInputs := make([]accounthealth.ProfitInput, 0, len(projection.Accounts))
+	ttfts := make([]float64, 0, len(projection.Accounts))
 	comparableAccounts, todayHealthyComparable, yesterdayHealthy := 0, 0, 0
 	hasTraffic := false
 	totalRequests := int64(0)
 
-	for index, account := range projection.Accounts {
-		verdict := verdicts[index]
+	for _, account := range projection.Accounts {
+		// 判定必须走当日切片而不是 projection 的 7 天累计口径：账号上午硬挂
+		// 后，7 天成功率一整天都还停在 90%+，三档计数、待处理与同比会集体
+		// 把「今天刚挂」报成「基本健康」。
+		todaySlice, yesterdaySlice := accounthealth.SliceByDay(toHistoryEntries(histories[account.AccountID]), loc, now)
+		sample := windowSample(account, todaySlice)
+		verdict := accounthealth.ClassifyAccount(sample)
 		switch verdict.Tier {
 		case accounthealth.TierHealthy:
 			view.Quality.Healthy++
@@ -87,27 +101,32 @@ func BuildHealthDigest(
 
 		view.Accounts = append(view.Accounts, notify.AccountDetailLine{
 			Name:              account.Name,
-			SuccessRate:       fmt.Sprintf("%.1f%%", account.SuccessRate*100),
+			SuccessRate:       fmt.Sprintf("%.1f%%", sample.SuccessRate*100),
 			TTFTP50:           millis(account.TTFTP50MS),
 			LatencyP95:        millis(account.LatencyP95MS),
 			Multiplier:        multiplierLabel(account.Multiplier),
 			GrossContribution: grossLabel(accounthealth.ComputeProfit(input)),
 		})
+		if sample.TTFTP95MS != nil {
+			ttfts = append(ttfts, *sample.TTFTP95MS)
+		}
 
-		if item, ok := pendingFor(account, verdict); ok {
+		if item, ok := pendingFor(account, sample, verdict); ok {
 			view.Pending = append(view.Pending, item)
 		}
 
-		if entries := histories[account.AccountID]; len(entries) > 0 {
-			_, yesterday := accounthealth.SliceByDay(toHistoryEntries(entries), loc, now)
-			if yesterday.SampleCount > 0 {
-				comparableAccounts++
-				if yesterday.SuccessRate >= accounthealth.HealthyMinSuccessRate {
-					yesterdayHealthy++
-				}
-				if verdict.Tier == accounthealth.TierHealthy {
-					todayHealthyComparable++
-				}
+		// 同比两侧必须走同一套判定规则（ClassifyAccount）：今天用当日切片、
+		// 昨天用昨日切片。此前昨天只比裸成功率、今天走完整 tier 规则，喂入
+		// 完全相同的两日历史也会算出非零 delta。
+		if todaySlice.SampleCount > 0 && yesterdaySlice.SampleCount > 0 {
+			comparableAccounts++
+			yesterdayVerdict := accounthealth.ClassifyAccount(accounthealth.AccountSampleFrom(
+				yesterdaySlice, account.AccountID, account.Name, account.GroupNames))
+			if yesterdayVerdict.Tier == accounthealth.TierHealthy {
+				yesterdayHealthy++
+			}
+			if verdict.Tier == accounthealth.TierHealthy {
+				todayHealthyComparable++
 			}
 		}
 	}
@@ -121,7 +140,7 @@ func BuildHealthDigest(
 		delta := todayHealthyComparable - yesterdayHealthy
 		view.Quality.HealthyDelta = &delta
 	}
-	view.Quality.TTFTMedianMS = medianTTFT(projection.Accounts)
+	view.Quality.TTFTMedianMS = accounthealth.Percentile(ttfts, 0.5)
 
 	total, excluded := accounthealth.SumProfit(profitInputs)
 	computable := total.Computable
@@ -174,19 +193,37 @@ type GroupAvailabilityView struct {
 	Alerting bool
 }
 
-func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []GroupAvailabilityView {
-	errorCodes := make(map[int64]string, len(projection.Accounts))
+// BuildGroupAvailability judges every account over the trailing one-hour
+// window [now-1h, now) so a hard failure surfaces within the confirmation
+// windows of the 5-minute job, not after the 7-day cumulative rate finally
+// decays below the tier thresholds (a matter of days). Accounts without any
+// window history fall back to the projection's cumulative figures (see
+// windowSample) so a single history-read failure degrades to the old caliber
+// instead of shrinking group capacity.
+func BuildGroupAvailability(
+	projection sub2api.AccountMonitorProjection,
+	histories map[int64][]sub2api.AccountMonitorHistoryEntry,
+	now time.Time,
+) []GroupAvailabilityView {
+	verdicts := make([]accounthealth.AccountVerdict, 0, len(projection.Accounts))
+	problems := make(map[int64]string, len(projection.Accounts))
+	from := now.Add(-time.Hour)
 	for _, account := range projection.Accounts {
-		errorCodes[account.AccountID] = account.ErrorCode
+		slice := accounthealth.Aggregate(toHistoryEntries(histories[account.AccountID]), from, now)
+		sample := windowSample(account, slice)
+		verdicts = append(verdicts, accounthealth.ClassifyAccount(sample))
+		// 与日报待处理层统一走 problemLabel：同一个运维群不该一边收到
+		// 「余额耗尽」、一边收到裸的 balance_exhausted。
+		problems[account.AccountID] = problemLabel(sample.ErrorCode)
 	}
 	views := []GroupAvailabilityView{}
 	seen := map[string]bool{}
-	for _, group := range accounthealth.GroupAvailabilities(classify(projection)) {
+	for _, group := range accounthealth.GroupAvailabilities(verdicts) {
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
 		for _, down := range group.Down {
 			alert.Down = append(alert.Down, notify.GroupAlertAccount{
 				Name:      down.Name,
-				ErrorCode: errorCodes[down.AccountID],
+				ErrorCode: problems[down.AccountID],
 			})
 		}
 		seen[group.GroupName] = true
@@ -221,15 +258,15 @@ func groupNamesIn(projection sub2api.AccountMonitorProjection) []string {
 	return names
 }
 
-func pendingFor(account sub2api.AccountMonitorAccount, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {
+func pendingFor(account sub2api.AccountMonitorAccount, sample accounthealth.AccountSample, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {
 	switch {
 	case verdict.Tier == accounthealth.TierUnavailable:
-		return notify.PendingItem{AccountName: account.Name, Problem: problemLabel(account.ErrorCode), Detail: ""}, true
+		return notify.PendingItem{AccountName: account.Name, Problem: problemLabel(sample.ErrorCode), Detail: ""}, true
 	case verdict.Tier == accounthealth.TierDegraded:
 		return notify.PendingItem{
 			AccountName: account.Name,
-			Problem:     fmt.Sprintf("成功率 %.0f%% ↓", account.SuccessRate*100),
-			Detail:      account.ErrorCode,
+			Problem:     fmt.Sprintf("成功率 %.0f%% ↓", sample.SuccessRate*100),
+			Detail:      sample.ErrorCode,
 		}, true
 	case trustworthyMultiplier(account) == nil:
 		return notify.PendingItem{AccountName: account.Name, Problem: "倍率测不出", Detail: "利润无法核算"}, true
@@ -266,25 +303,6 @@ func millis(value *float64) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.0fms", *value)
-}
-
-func medianTTFT(accounts []sub2api.AccountMonitorAccount) *float64 {
-	values := make([]float64, 0, len(accounts))
-	for _, account := range accounts {
-		if account.TTFTP95MS != nil {
-			values = append(values, *account.TTFTP95MS)
-		}
-	}
-	if len(values) == 0 {
-		return nil
-	}
-	for i := 1; i < len(values); i++ {
-		for j := i; j > 0 && values[j] < values[j-1]; j-- {
-			values[j], values[j-1] = values[j-1], values[j]
-		}
-	}
-	median := values[len(values)/2]
-	return &median
 }
 
 func toHistoryEntries(entries []sub2api.AccountMonitorHistoryEntry) []accounthealth.HistoryEntry {

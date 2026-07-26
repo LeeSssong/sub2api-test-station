@@ -1,6 +1,7 @@
 package dailyreport
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -122,8 +123,8 @@ func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
 }
 
 func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
-	projection, _, _, _ := fixture()
-	views := BuildGroupAvailability(projection)
+	projection, _, _, now := fixture()
+	views := BuildGroupAvailability(projection, nil, now)
 
 	// 健康分组也必须返回，否则状态机永远观测不到 Failing=false，
 	// 恢复分支不可达，告警只会成功发出一次。
@@ -145,8 +146,10 @@ func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
 	if len(plus.Alert.Down) != 1 || plus.Alert.Down[0].Name != "Plus-XN-0.09" {
 		t.Fatalf("Down = %+v", plus.Alert.Down)
 	}
-	if plus.Alert.Down[0].ErrorCode != "balance_exhausted" {
-		t.Fatalf("ErrorCode = %q, want balance_exhausted", plus.Alert.Down[0].ErrorCode)
+	// 告警卡与日报待处理层统一走 problemLabel：不得把裸的 balance_exhausted
+	// 发进运维群。
+	if plus.Alert.Down[0].ErrorCode != "余额耗尽" {
+		t.Fatalf("ErrorCode = %q, want 余额耗尽", plus.Alert.Down[0].ErrorCode)
 	}
 
 	pro, ok := byName["GPT-Pro"]
@@ -159,12 +162,15 @@ func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
 }
 
 func TestBuildGroupAvailabilityKeepsGroupsWhoseAccountsLostAllSamples(t *testing.T) {
-	projection, _, _, _ := fixture()
+	projection, _, _, now := fixture()
 	// GPT-Plus 唯一账号失去全部探测样本（TierUnknown）。GroupAvailabilities
 	// 会跳过 unknown 账号，若分组因此整个消失，就不再被 Observe，incident
 	// 卡在 confirmed，恢复卡与下一次告警都发不出来。
+	// ErrorCode 也要清掉：balance_exhausted 短路先于零样本判定，带着它的
+	// 零样本账号会判 Unavailable 而不是 Unknown。
 	projection.Accounts[0].SampleCount = 0
-	views := BuildGroupAvailability(projection)
+	projection.Accounts[0].ErrorCode = ""
+	views := BuildGroupAvailability(projection, nil, now)
 
 	byName := map[string]GroupAvailabilityView{}
 	for _, view := range views {
@@ -192,6 +198,132 @@ func TestBuildHealthDigestOmitsDeltaWithoutComparableHistory(t *testing.T) {
 	view := BuildHealthDigest(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{}, loc, now)
 	if view.Quality.HealthyDelta != nil {
 		t.Fatalf("HealthyDelta = %v, want nil（无可比历史时不给同比）", *view.Quality.HealthyDelta)
+	}
+}
+
+// 阻断项回归：判定必须消费当日切片，而不是 projection 的 7 天累计口径。
+// 账号今天硬挂（当日全失败），但 7 天累计成功率仍高达 98.6%——修复前它会
+// 被判 Healthy，三档计数与待处理层整天报「基本健康」。
+// 反向验证：把 classify 输入换回 projection.SuccessRate，本测试必须变红。
+func TestBuildHealthDigestJudgesByTodayWindowNotCumulative(t *testing.T) {
+	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
+	now := time.Date(2026, 7, 27, 9, 0, 0, 0, loc)
+	projection := sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+		Accounts: []sub2api.AccountMonitorAccount{{
+			AccountID: 22, Name: "Plus-XN-0.09", GroupIDs: []int64{6}, GroupNames: []string{"GPT-Plus"},
+			SuccessRate: 0.986, SampleCount: 2016, ErrorCode: "http_error",
+		}},
+	}
+	entries := make([]sub2api.AccountMonitorHistoryEntry, 0, 12)
+	for i := 0; i < 12; i++ {
+		entries = append(entries, sub2api.AccountMonitorHistoryEntry{
+			AccountID: 22, Status: "failed", ErrorCode: "http_error",
+			CheckedAt: now.Add(-time.Duration(i) * 5 * time.Minute),
+		})
+	}
+	view := BuildHealthDigest(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries}, loc, now)
+
+	if view.Quality.Unavailable != 1 || view.Quality.Healthy != 0 {
+		t.Fatalf("当日全失败必须判不可用: healthy=%d degraded=%d unavailable=%d",
+			view.Quality.Healthy, view.Quality.Degraded, view.Quality.Unavailable)
+	}
+	if len(view.Accounts) != 1 || view.Accounts[0].SuccessRate != "0.0%" {
+		t.Fatalf("明细成功率必须是当日口径 0.0%%: %+v", view.Accounts)
+	}
+	if len(view.Pending) != 1 || view.Pending[0].Problem != "http_error" {
+		t.Fatalf("待处理项应携带当日窗口的错误码: %+v", view.Pending)
+	}
+}
+
+// 审查员实测缺陷回归：给多个账号喂完全相同的今昨两日历史，HealthyDelta
+// 曾算出非零（今天走完整 tier 规则、昨天只比裸成功率，两套口径）。
+// 两侧统一走 ClassifyAccount 后，历史相同必须恒为 0。projection 的累计
+// 成功率故意与当日口径矛盾（0.6），换回 projection 口径本测试必须变红。
+func TestBuildHealthDigestDeltaZeroWhenHistoriesIdentical(t *testing.T) {
+	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
+	now := time.Date(2026, 7, 27, 9, 0, 0, 0, loc)
+	accounts := []sub2api.AccountMonitorAccount{}
+	histories := map[int64][]sub2api.AccountMonitorHistoryEntry{}
+	// 三种档位各一个账号，今昨两日历史逐条相同（仅日期不同）。
+	patterns := map[int64][]string{
+		1: {"success", "success", "success", "success"}, // 稳定
+		2: {"success", "failed", "success", "failed"},   // 降级 0.5
+		3: {"failed", "failed", "failed", "failed"},     // 不可用
+	}
+	for id, statuses := range patterns {
+		accounts = append(accounts, sub2api.AccountMonitorAccount{
+			AccountID: id, Name: fmt.Sprintf("acct-%d", id), GroupNames: []string{"G"},
+			SuccessRate: 0.6, SampleCount: 2016,
+		})
+		for day := 0; day < 2; day++ {
+			base := now.AddDate(0, 0, -day).Add(-8 * time.Hour)
+			for i, status := range statuses {
+				entry := sub2api.AccountMonitorHistoryEntry{
+					AccountID: id, Status: status,
+					CheckedAt: base.Add(time.Duration(i) * 5 * time.Minute),
+				}
+				if status == "failed" {
+					entry.ErrorCode = "http_error"
+				}
+				histories[id] = append(histories[id], entry)
+			}
+		}
+	}
+	projection := sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+		Accounts:      accounts,
+	}
+	view := BuildHealthDigest(projection, histories, loc, now)
+	if view.Quality.HealthyDelta == nil {
+		t.Fatal("今昨都有样本时必须给出同比")
+	}
+	if *view.Quality.HealthyDelta != 0 {
+		t.Fatalf("HealthyDelta = %d, want 0（两日历史完全相同）", *view.Quality.HealthyDelta)
+	}
+}
+
+// 阻断项回归：分组告警必须按最近 1 小时滚动窗判定。账号 7 天累计成功率
+// 100%，但最近 1 小时全部失败——修复前 classify 读 projection 直接判
+// Healthy，告警对 http_error/timeout 类故障的响应时间是天级。
+// 窗口外（1 小时前）的成功探测必须被排除，否则会稀释失败率导致不告警。
+func TestBuildGroupAvailabilityAlertsOnRollingWindowFailures(t *testing.T) {
+	now := time.Date(2026, 7, 27, 1, 0, 0, 0, time.UTC)
+	projection := sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+		Accounts: []sub2api.AccountMonitorAccount{{
+			AccountID: 26, Name: "Pro-SHEN-0.16", GroupIDs: []int64{7}, GroupNames: []string{"GPT-Pro"},
+			SuccessRate: 1, SampleCount: 2016,
+		}},
+	}
+	entries := []sub2api.AccountMonitorHistoryEntry{}
+	// 最近 1 小时：12 次探测全失败
+	for i := 0; i < 12; i++ {
+		entries = append(entries, sub2api.AccountMonitorHistoryEntry{
+			AccountID: 26, Status: "failed", ErrorCode: "timeout",
+			CheckedAt: now.Add(-time.Duration(i)*5*time.Minute - time.Minute),
+		})
+	}
+	// 窗口之前：30 次成功。若被错误计入，成功率升到 0.71 判降级，不再告警。
+	for i := 0; i < 30; i++ {
+		entries = append(entries, sub2api.AccountMonitorHistoryEntry{
+			AccountID: 26, Status: "success",
+			CheckedAt: now.Add(-time.Hour).Add(-time.Duration(i+1) * 2 * time.Minute),
+		})
+	}
+	views := BuildGroupAvailability(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{26: entries}, now)
+	if len(views) != 1 {
+		t.Fatalf("views = %+v", views)
+	}
+	pro := views[0]
+	if !pro.Alerting || pro.Alert.Available != 0 || pro.Alert.Total != 1 {
+		t.Fatalf("1 小时窗内全失败必须告警: %+v", pro)
+	}
+	if len(pro.Alert.Down) != 1 || pro.Alert.Down[0].ErrorCode != "timeout" {
+		t.Fatalf("Down = %+v", pro.Alert.Down)
 	}
 }
 

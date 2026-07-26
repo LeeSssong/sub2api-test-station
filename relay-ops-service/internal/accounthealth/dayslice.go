@@ -11,6 +11,8 @@ const (
 	historyLimitSlack     = 1.2
 	historyLimitMin       = 100
 	historyLimitMax       = 2000
+	rollingWindowSeconds  = 60 * 60
+	rollingLimitSlack     = 1.5
 	defaultIntervalSecond = 300
 	statusSuccess         = "success"
 	dateLayout            = "2006-01-02"
@@ -50,21 +52,56 @@ func HistoryLimitFor(intervalSeconds int) int {
 	return limit
 }
 
+// RollingWindowLimitFor sizes the history page for the one-hour alert window
+// (ceil(3600/interval) with 1.5x slack; 300-second interval -> 18 entries).
+// HistoryLimitFor must not be reused here: it covers the 48-hour daily-report
+// window (692 entries at a 300-second interval), roughly 40x the data the
+// rolling window needs on every 5-minute job round.
+func RollingWindowLimitFor(intervalSeconds int) int {
+	if intervalSeconds <= 0 {
+		intervalSeconds = defaultIntervalSecond
+	}
+	needed := int(math.Ceil(float64(rollingWindowSeconds) / float64(intervalSeconds)))
+	return int(math.Ceil(float64(needed) * rollingLimitSlack))
+}
+
+// Aggregate summarizes the entries whose CheckedAt falls in the half-open
+// window [from, to). It is the shared primitive behind SliceByDay's calendar
+// days and the alert job's rolling hour. The returned Date carries the date of
+// `from` in its own location; callers slicing arbitrary windows may ignore it.
+func Aggregate(entries []HistoryEntry, from, to time.Time) DaySlice {
+	window := make([]HistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.CheckedAt.Before(from) && entry.CheckedAt.Before(to) {
+			window = append(window, entry)
+		}
+	}
+	return summarize(from.Format(dateLayout), window)
+}
+
+// AccountSampleFrom turns an aggregated window into the classifier's input so
+// the daily report and the availability job judge accounts by the same rules.
+func AccountSampleFrom(slice DaySlice, id int64, name string, groups []string) AccountSample {
+	return AccountSample{
+		AccountID:   id,
+		Name:        name,
+		GroupNames:  groups,
+		SuccessRate: slice.SuccessRate,
+		SampleCount: slice.SampleCount,
+		TTFTP95MS:   slice.TTFTP95MS,
+		ErrorCode:   slice.LastErrorCode,
+	}
+}
+
 func SliceByDay(entries []HistoryEntry, loc *time.Location, now time.Time) (DaySlice, DaySlice) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	todayDate := now.In(loc).Format(dateLayout)
-	yesterdayDate := now.In(loc).AddDate(0, 0, -1).Format(dateLayout)
-
-	buckets := map[string][]HistoryEntry{}
-	for _, entry := range entries {
-		date := entry.CheckedAt.In(loc).Format(dateLayout)
-		if date == todayDate || date == yesterdayDate {
-			buckets[date] = append(buckets[date], entry)
-		}
-	}
-	return summarize(todayDate, buckets[todayDate]), summarize(yesterdayDate, buckets[yesterdayDate])
+	local := now.In(loc)
+	todayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	today := Aggregate(entries, todayStart, todayStart.AddDate(0, 0, 1))
+	yesterday := Aggregate(entries, todayStart.AddDate(0, 0, -1), todayStart)
+	return today, yesterday
 }
 
 func summarize(date string, entries []HistoryEntry) DaySlice {
@@ -91,11 +128,14 @@ func summarize(date string, entries []HistoryEntry) DaySlice {
 		}
 	}
 	slice.SuccessRate = float64(slice.SuccessCount) / float64(slice.SampleCount)
-	slice.TTFTP95MS = percentile(ttfts, 0.95)
+	slice.TTFTP95MS = Percentile(ttfts, 0.95)
 	return slice
 }
 
-func percentile(values []float64, q float64) *float64 {
+// Percentile returns the q-quantile (nearest-rank) of values, or nil when
+// values is empty. Exported so report code reuses one implementation instead
+// of growing ad-hoc sorts.
+func Percentile(values []float64, q float64) *float64 {
 	if len(values) == 0 {
 		return nil
 	}

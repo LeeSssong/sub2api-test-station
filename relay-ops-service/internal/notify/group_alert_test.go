@@ -9,8 +9,8 @@ func TestRenderGroupAlertContent(t *testing.T) {
 	view := GroupAlertView{
 		GroupName: "GPT-Plus", Available: 1, Total: 3,
 		Down: []GroupAlertAccount{
-			{Name: "Plus-XN-0.09", ErrorCode: "balance_exhausted", Duration: "已持续 3 天"},
-			{Name: "Plus-XM-0.1", ErrorCode: "balance_exhausted", Duration: "已持续 5 天"},
+			{Name: "Plus-XN-0.09", ErrorCode: "余额耗尽"},
+			{Name: "Plus-XM-0.1", ErrorCode: "余额耗尽"},
 		},
 	}
 	payload, err := RenderGroupAlert(view).CardJSON()
@@ -18,10 +18,15 @@ func TestRenderGroupAlertContent(t *testing.T) {
 		t.Fatalf("CardJSON: %v", err)
 	}
 	text := string(payload)
-	for _, want := range []string{"GPT-Plus", "可用 1 / 共 3", "Plus-XN-0.09", "balance_exhausted", "已持续 5 天", "red"} {
+	for _, want := range []string{"GPT-Plus", "可用 1 / 共 3", "Plus-XN-0.09", "余额耗尽", "red"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("缺少 %q: %s", want, text)
 		}
+	}
+	// 曾经的 Duration 字段从未被赋值，渲染出「名字　error_code　」这种尾随
+	// 全角分隔符；字段删除后不得再出现。
+	if strings.Contains(text, "余额耗尽　") {
+		t.Fatalf("故障行存在尾随分隔符: %s", text)
 	}
 	if !strings.Contains(text, "建议") {
 		t.Fatal("必须给出建议动作")
@@ -49,8 +54,8 @@ func TestRenderGroupAlertLeaksNoSecrets(t *testing.T) {
 	view := GroupAlertView{
 		GroupName: "https://api.shuaiapi.com/v1", Available: 0, Total: 2,
 		Down: []GroupAlertAccount{
-			{Name: "http://internal.host/admin", ErrorCode: "sk-abc123 leaked", Duration: "x-api-key: secret"},
-			{Name: "Plus-XN-0.09", ErrorCode: "api_key rejected", Duration: "已持续 1 天"},
+			{Name: "http://internal.host/admin", ErrorCode: "sk-abc123 leaked"},
+			{Name: "Plus-XN-0.09", ErrorCode: "api_key rejected"},
 		},
 	}
 	payload, err := RenderGroupAlert(view).CardJSON()
@@ -75,8 +80,7 @@ func TestRenderGroupAlertBoundsOversizedDownList(t *testing.T) {
 	for i := range down {
 		down[i] = GroupAlertAccount{
 			Name:      strings.Repeat("A", 60),
-			ErrorCode: "balance_exhausted",
-			Duration:  "已持续 3 天",
+			ErrorCode: "余额耗尽",
 		}
 	}
 	payload, err := RenderGroupAlert(GroupAlertView{

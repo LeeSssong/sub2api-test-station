@@ -49,11 +49,15 @@ func ClassifyAccount(sample AccountSample) AccountVerdict {
 }
 
 func tierFor(sample AccountSample) Tier {
-	if sample.SampleCount <= 0 {
-		return TierUnknown
-	}
+	// balance_exhausted 短路必须先于零样本判定：窗口口径下「0 样本」是常态
+	// （新增账号、跨零点后的第一小时）。若先判 Unknown，余额耗尽账号会被
+	// GroupAvailabilities 剔出 Total，3 账号组缩成 2 账号组，告警阈值从
+	// 「<=1」悄悄放宽到「==0」。
 	if sample.ErrorCode == ErrorCodeBalanceExhausted {
 		return TierUnavailable
+	}
+	if sample.SampleCount <= 0 {
+		return TierUnknown
 	}
 	switch {
 	case sample.SuccessRate >= HealthyMinSuccessRate:

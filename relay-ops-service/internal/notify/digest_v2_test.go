@@ -144,7 +144,9 @@ func TestRenderHealthDigestDataUnavailable(t *testing.T) {
 }
 
 func TestRenderHealthDigestFitsCardLimit(t *testing.T) {
-	accounts := make([]AccountDetailLine, 200)
+	// 320 条明细未截断时约 40 KiB，必然突破 30 KiB 卡片上限；200 条只有
+	// 25 KiB，修复前的代码也能碰巧通过，判别力不足。
+	accounts := make([]AccountDetailLine, 320)
 	for i := range accounts {
 		accounts[i] = AccountDetailLine{
 			Name: strings.Repeat("A", 60), SuccessRate: "99.9%", TTFTP50: "1500ms",
@@ -152,7 +154,7 @@ func TestRenderHealthDigestFitsCardLimit(t *testing.T) {
 		}
 	}
 	view := HealthDigestView{
-		Date: "2026-07-27", Quality: QualityLine{Healthy: 200},
+		Date: "2026-07-27", Quality: QualityLine{Healthy: 320},
 		Profit: ProfitLine{NoTraffic: true}, Accounts: accounts,
 		Traffic: TrafficLine{HasTraffic: false},
 	}

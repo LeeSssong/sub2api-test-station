@@ -503,3 +503,161 @@ ssh sub2api-prod 'cd /opt/sub2api/production && sudo cp compose.yaml.bak-before-
 
 - `/ops` 账号质量表的账号列仍显示 `账号 {{.AccountID}}` 而非账号名。修它需要 Ruby 采集脚本额外输出账号名，并评估账号名进入 `/ops` 页面的脱敏影响，单独立项。
 - 分组告警在同一小时桶内「故障→恢复→再故障」仍吞掉第二次告警，根治需 `incidents` 包暴露事件轮次。
+
+---
+
+### Task 5: 上游不支持自动测算的降噪
+
+**背景（已核实，勿重复调研）：** shuaiapi 的 `total_used` 在请求完成后不即时结算，Sub2API 的额度测算读 `after` 读得太早，恒定得到 `quota delta must be positive`。这是该上游站的特性，不是缺陷。
+
+修不了：项目已决定不 fork Sub2API（`2026-07-24-official-sub2api-image-migration-design.md`），生产用官方镜像 `upstream-0.1.165`；`UpstreamBillingProbeSettings` 只有 `enabled` / `interval_minutes`，无相关开关。
+
+替代数据源已找到但暂不启用：new-api 的公开接口 `GET /api/pricing` 返回 `group_ratio`（如 `codexPro分组: 0.17`），即倍率本身。但账号所属分组绑定在上游 token 上，Sub2API 的 admin API 不返回账号上游 key，且用 `model_mapping` 反推分组的交集为空，无法自动判定。需要人工提供「账号 → 上游分组名」映射后才能启用，本任务不做。
+
+因此本任务只做一件事：**别让一个无法解决的问题每天出现在待处理清单里**。
+
+**Files:**
+- Modify: `relay-ops-service/internal/dailyreport/health.go`（`pendingFor`、`BuildHealthDigest`）
+- Modify: `relay-ops-service/internal/notify/digest_v2.go`（`ProfitLine`、`profitLines`）
+- Test: `relay-ops-service/internal/dailyreport/health_test.go`、`relay-ops-service/internal/notify/digest_v2_test.go`
+
+**Interfaces:**
+- Produces: `notify.ProfitLine.UnsupportedAccounts int`
+- Changes: `pendingFor` 对「上游不支持自动测算」的账号返回 `false`（不列入待处理）
+
+**判据：** `multiplier.Source == "measured" && multiplier.Status == "failed"`。语义是「上游未声明倍率、回落到额度测算、测算失败」。投影里没有 `extra`，这是能拿到的最准确判据。
+
+**行为要求：**
+- 此类账号**不再**出现在待处理层
+- 利润仍然排除它们（不得以任何方式估算），但文案要区分原因：
+  - 全部排除项都是上游不支持时：`N 个账号上游不支持自动测算，未计入`
+  - 混合时：`N 个账号因倍率不可用未计入（其中 M 个上游不支持自动测算）`
+  - 无不支持项时：保持原文案 `N 个账号因倍率不可用未计入`
+- 其他原因的倍率不可用（如 `declared` 但值异常）**仍然**要进待处理 —— 那是真问题
+
+- [ ] **Step 1: 写失败测试**
+
+`health_test.go` 追加：
+
+```go
+func TestBuildHealthDigestOmitsUnsupportedMeasurementFromPending(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// Pro-SHUAI-0.17 是 measured+failed：上游不支持自动测算，不该每天进待办
+	view := BuildHealthDigest(projection, histories, loc, now)
+	for _, item := range view.Pending {
+		if item.AccountName == "Pro-SHUAI-0.17" {
+			t.Fatalf("上游不支持自动测算的账号不得进入待处理: %+v", item)
+		}
+	}
+	if view.Profit.UnsupportedAccounts != 1 {
+		t.Fatalf("UnsupportedAccounts = %d, want 1", view.Profit.UnsupportedAccounts)
+	}
+	if view.Profit.ExcludedAccounts < 1 {
+		t.Fatal("利润仍必须排除它，不得估算")
+	}
+}
+
+func TestBuildHealthDigestKeepsOtherMultiplierFailuresInPending(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// declared + failed 是真问题（上游声明了却给不出有效值），必须留在待办
+	projection.Accounts[1].Multiplier = sub2api.AccountMonitorMultiplier{
+		Source: "declared", Status: "failed",
+	}
+	view := BuildHealthDigest(projection, histories, loc, now)
+	found := false
+	for _, item := range view.Pending {
+		if item.AccountName == projection.Accounts[1].Name {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("declared+failed 是真问题，必须留在待处理")
+	}
+	if view.Profit.UnsupportedAccounts != 0 {
+		t.Fatalf("UnsupportedAccounts = %d, want 0", view.Profit.UnsupportedAccounts)
+	}
+}
+```
+
+`digest_v2_test.go` 追加：
+
+```go
+func TestRenderHealthDigestExplainsUnsupportedMeasurement(t *testing.T) {
+	cases := []struct {
+		name       string
+		line       ProfitLine
+		wantSubstr string
+	}{
+		{"全部为上游不支持", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 2, UnsupportedAccounts: 2}, "2 个账号上游不支持自动测算，未计入"},
+		{"混合原因", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 3, UnsupportedAccounts: 1}, "其中 1 个上游不支持自动测算"},
+		{"无不支持项", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 2}, "2 个账号因倍率不可用未计入"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			view := HealthDigestView{Date: "2026-07-27", Quality: QualityLine{Healthy: 1}, Profit: tc.line, Traffic: TrafficLine{HasTraffic: true}}
+			text := renderText(t, RenderHealthDigest(view))
+			if !strings.Contains(text, tc.wantSubstr) {
+				t.Fatalf("缺少 %q: %s", tc.wantSubstr, text)
+			}
+		})
+	}
+}
+```
+
+- [ ] **Step 2: 验证测试失败**
+
+Run: `cd relay-ops-service && go test ./internal/dailyreport/ ./internal/notify/ -run 'Unsupported|OtherMultiplierFailures' -v`
+Expected: 编译失败，`unknown field UnsupportedAccounts`
+
+- [ ] **Step 3: 实现**
+
+`notify/digest_v2.go` 的 `ProfitLine` 增加 `UnsupportedAccounts int`；`profitLines` 的排除说明改为：
+
+```go
+	if profit.ExcludedAccounts > 0 {
+		switch {
+		case profit.UnsupportedAccounts >= profit.ExcludedAccounts:
+			lines = append(lines, fmt.Sprintf("%d 个账号上游不支持自动测算，未计入", profit.ExcludedAccounts))
+		case profit.UnsupportedAccounts > 0:
+			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入（其中 %d 个上游不支持自动测算）",
+				profit.ExcludedAccounts, profit.UnsupportedAccounts))
+		default:
+			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入", profit.ExcludedAccounts))
+		}
+	}
+```
+
+`dailyreport/health.go` 增加判据与计数：
+
+```go
+// unsupportedMeasurement reports whether the upstream simply cannot be measured:
+// it declared no billing, the probe fell back to quota measurement, and that
+// failed. shuaiapi settles token usage asynchronously, so the measurement reads
+// an unchanged counter every time. Nothing on our side can fix it while the
+// official Sub2API image owns the measurement, so it must not sit in the daily
+// action list forever.
+func unsupportedMeasurement(m sub2api.AccountMonitorMultiplier) bool {
+	return m.Source == "measured" && m.Status == "failed"
+}
+```
+
+`pendingFor` 的倍率分支改为：
+
+```go
+	case trustworthyMultiplier(account) == nil:
+		if unsupportedMeasurement(account.Multiplier) {
+			return notify.PendingItem{}, false
+		}
+		return notify.PendingItem{AccountName: account.Name, Problem: "倍率测不出", Detail: "利润无法核算"}, true
+```
+
+`BuildHealthDigest` 在账号循环里累加 `unsupported`，并写入 `view.Profit.UnsupportedAccounts`。
+
+- [ ] **Step 4: 验证并提交**
+
+Run: `cd relay-ops-service && go build ./... && go test ./... -count=1 2>&1 | tail -10`
+
+```bash
+git add relay-ops-service/internal/dailyreport/ relay-ops-service/internal/notify/
+git commit -m "feat: stop nagging about upstreams that cannot be measured"
+```

@@ -1280,11 +1280,15 @@ type HealthDigestView struct {
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
+	// fitDigestSection gives every layer its own 4 KiB budget, trims each line
+	// to 768 bytes, and keeps abnormal rows during truncation. Joining raw
+	// would leave the pending layer unbounded, and a card over maxCardBytes
+	// makes CardJSON fail — which drops the whole report instead of degrading.
 	elements := []CardElement{
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(qualityLines(view.Quality), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(profitLines(view.Profit), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(pendingLines(view.Pending, view.Recommendations), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(detailLines(view), "\n")}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(qualityLines(view.Quality))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(profitLines(view.Profit))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(pendingLines(view.Pending, view.Recommendations))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(detailLines(view))}},
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"}, Type: "primary", MultiURL: &CardURL{URL: "/ops"},

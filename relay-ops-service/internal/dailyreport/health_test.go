@@ -84,6 +84,12 @@ func TestBuildHealthDigestExcludesIncomputableProfit(t *testing.T) {
 
 func TestBuildHealthDigestListsPendingItems(t *testing.T) {
 	projection, histories, loc, now := fixture()
+	// 夹具里 Pro-SHUAI 是 measured+failed（上游不支持自动测算，不进待办）。
+	// 这里改成 declared+failed —— 上游声明了倍率却给不出有效值，是真问题，
+	// 必须与余额耗尽一起出现在待处理层。
+	projection.Accounts[1].Multiplier = sub2api.AccountMonitorMultiplier{
+		Source: "declared", Status: "failed",
+	}
 	view := BuildHealthDigest(projection, histories, loc, now)
 
 	var names []string
@@ -324,6 +330,44 @@ func TestBuildGroupAvailabilityAlertsOnRollingWindowFailures(t *testing.T) {
 	}
 	if len(pro.Alert.Down) != 1 || pro.Alert.Down[0].ErrorCode != "timeout" {
 		t.Fatalf("Down = %+v", pro.Alert.Down)
+	}
+}
+
+func TestBuildHealthDigestOmitsUnsupportedMeasurementFromPending(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// Pro-SHUAI-0.17 是 measured+failed：上游不支持自动测算，不该每天进待办
+	view := BuildHealthDigest(projection, histories, loc, now)
+	for _, item := range view.Pending {
+		if item.AccountName == "Pro-SHUAI-0.17" {
+			t.Fatalf("上游不支持自动测算的账号不得进入待处理: %+v", item)
+		}
+	}
+	if view.Profit.UnsupportedAccounts != 1 {
+		t.Fatalf("UnsupportedAccounts = %d, want 1", view.Profit.UnsupportedAccounts)
+	}
+	if view.Profit.ExcludedAccounts < 1 {
+		t.Fatal("利润仍必须排除它，不得估算")
+	}
+}
+
+func TestBuildHealthDigestKeepsOtherMultiplierFailuresInPending(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// declared + failed 是真问题（上游声明了却给不出有效值），必须留在待办
+	projection.Accounts[1].Multiplier = sub2api.AccountMonitorMultiplier{
+		Source: "declared", Status: "failed",
+	}
+	view := BuildHealthDigest(projection, histories, loc, now)
+	found := false
+	for _, item := range view.Pending {
+		if item.AccountName == projection.Accounts[1].Name {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("declared+failed 是真问题，必须留在待处理")
+	}
+	if view.Profit.UnsupportedAccounts != 0 {
+		t.Fatalf("UnsupportedAccounts = %d, want 0", view.Profit.UnsupportedAccounts)
 	}
 }
 

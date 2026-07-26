@@ -22,7 +22,7 @@ func TestRenderHealthDigestLayerOrder(t *testing.T) {
 		Date: "2026-07-27",
 		Quality: QualityLine{
 			Healthy: 6, Degraded: 2, Unavailable: 3, Slow: 2,
-			HealthyDelta: intPtr(-1), TTFTMedianMS: f64Ptr(3900),
+			HealthyDelta: intPtr(-1), TTFTP95MedianMS: f64Ptr(3900),
 		},
 		Profit: ProfitLine{NoTraffic: true},
 		Pending: []PendingItem{
@@ -194,5 +194,26 @@ func TestRenderHealthDigestFitsCardLimitWithManyPendingItems(t *testing.T) {
 	}
 	if !strings.Contains(string(payload), "其余对象请在 /ops 查看") {
 		t.Fatal("待处理层被截断时必须提示去 /ops 查看")
+	}
+}
+
+func TestRenderHealthDigestExplainsUnsupportedMeasurement(t *testing.T) {
+	cases := []struct {
+		name       string
+		line       ProfitLine
+		wantSubstr string
+	}{
+		{"全部为上游不支持", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 2, UnsupportedAccounts: 2}, "2 个账号上游不支持自动测算，未计入"},
+		{"混合原因", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 3, UnsupportedAccounts: 1}, "其中 1 个上游不支持自动测算"},
+		{"无不支持项", ProfitLine{Revenue: 100, Computable: true, ExcludedAccounts: 2}, "2 个账号因倍率不可用未计入"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			view := HealthDigestView{Date: "2026-07-27", Quality: QualityLine{Healthy: 1}, Profit: tc.line, Traffic: TrafficLine{HasTraffic: true}}
+			text := renderText(t, RenderHealthDigest(view))
+			if !strings.Contains(text, tc.wantSubstr) {
+				t.Fatalf("缺少 %q: %s", tc.wantSubstr, text)
+			}
+		})
 	}
 }

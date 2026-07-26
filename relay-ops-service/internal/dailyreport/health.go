@@ -55,6 +55,16 @@ func trustworthyMultiplier(account sub2api.AccountMonitorAccount) *float64 {
 	return account.Multiplier.Value
 }
 
+// unsupportedMeasurement reports whether the upstream simply cannot be measured:
+// it declared no billing, the probe fell back to quota measurement, and that
+// failed. shuaiapi settles token usage asynchronously, so the measurement reads
+// an unchanged counter every time. Nothing on our side can fix it while the
+// official Sub2API image owns the measurement, so it must not sit in the daily
+// action list forever.
+func unsupportedMeasurement(m sub2api.AccountMonitorMultiplier) bool {
+	return m.Source == "measured" && m.Status == "failed"
+}
+
 func BuildHealthDigest(
 	projection sub2api.AccountMonitorProjection,
 	histories map[int64][]sub2api.AccountMonitorHistoryEntry,
@@ -67,6 +77,7 @@ func BuildHealthDigest(
 	comparableAccounts, todayHealthyComparable, yesterdayHealthy := 0, 0, 0
 	hasTraffic := false
 	totalRequests := int64(0)
+	unsupported := 0
 
 	for _, account := range projection.Accounts {
 		// 判定必须走当日切片而不是 projection 的 7 天累计口径：账号上午硬挂
@@ -88,6 +99,9 @@ func BuildHealthDigest(
 		}
 
 		multiplier := trustworthyMultiplier(account)
+		if unsupportedMeasurement(account.Multiplier) {
+			unsupported++
+		}
 		standardCost, userCost := 0.0, 0.0
 		if account.TodayStats != nil {
 			standardCost, userCost = account.TodayStats.StandardCost, account.TodayStats.UserCost
@@ -140,7 +154,7 @@ func BuildHealthDigest(
 		delta := todayHealthyComparable - yesterdayHealthy
 		view.Quality.HealthyDelta = &delta
 	}
-	view.Quality.TTFTMedianMS = accounthealth.Percentile(ttfts, 0.5)
+	view.Quality.TTFTP95MedianMS = accounthealth.Percentile(ttfts, 0.5)
 
 	total, excluded := accounthealth.SumProfit(profitInputs)
 	computable := total.Computable
@@ -154,7 +168,8 @@ func BuildHealthDigest(
 	view.Profit = notify.ProfitLine{
 		Revenue: total.Revenue, UpstreamCost: total.UpstreamCost, Gross: total.Gross,
 		Margin: total.Margin, Computable: computable, ExcludedAccounts: excluded,
-		NoTraffic: !hasTraffic,
+		UnsupportedAccounts: unsupported,
+		NoTraffic:           !hasTraffic,
 	}
 	view.Traffic = notify.TrafficLine{HasTraffic: hasTraffic, Requests: totalRequests}
 	return view
@@ -269,6 +284,9 @@ func pendingFor(account sub2api.AccountMonitorAccount, sample accounthealth.Acco
 			Detail:      sample.ErrorCode,
 		}, true
 	case trustworthyMultiplier(account) == nil:
+		if unsupportedMeasurement(account.Multiplier) {
+			return notify.PendingItem{}, false
+		}
 		return notify.PendingItem{AccountName: account.Name, Problem: "倍率测不出", Detail: "利润无法核算"}, true
 	}
 	return notify.PendingItem{}, false

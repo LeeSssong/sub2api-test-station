@@ -6,12 +6,14 @@ import (
 )
 
 type QualityLine struct {
-	Healthy               int
-	Degraded              int
-	Unavailable           int
-	Slow                  int
-	HealthyDelta          *int
-	TTFTMedianMS          *float64
+	Healthy      int
+	Degraded     int
+	Unavailable  int
+	Slow         int
+	HealthyDelta *int
+	// Median across accounts of each account's TTFT P95 — not a median TTFT.
+	// The old name said "median" alone and invited exactly that misreading.
+	TTFTP95MedianMS       *float64
 	DataUnavailable       bool
 	DataUnavailableReason string
 }
@@ -23,7 +25,12 @@ type ProfitLine struct {
 	Margin           *float64
 	Computable       bool
 	ExcludedAccounts int
-	NoTraffic        bool
+	// UnsupportedAccounts counts, among ExcludedAccounts, the accounts whose
+	// upstream simply cannot be auto-measured (measured+failed). They are
+	// excluded from profit all the same, but the copy must say why instead of
+	// implying someone can fix it.
+	UnsupportedAccounts int
+	NoTraffic           bool
 }
 
 type PendingItem struct {
@@ -103,7 +110,7 @@ func qualityLines(quality QualityLine) []string {
 		summary += "　健康账号较昨日 " + signedDelta(*quality.HealthyDelta)
 	}
 	lines = append(lines, summary)
-	detail := "延时 P95 中位 " + formatMillis(quality.TTFTMedianMS)
+	detail := "延时 P95 中位 " + formatMillis(quality.TTFTP95MedianMS)
 	if quality.Slow > 0 {
 		detail += fmt.Sprintf(" ｜ %d 个账号偏慢", quality.Slow)
 	}
@@ -121,7 +128,15 @@ func profitLines(profit ProfitLine) []string {
 	lines = append(lines, fmt.Sprintf("今日收入 %s　上游成本 %s　毛利 %s（%s）",
 		formatUSD(profit.Revenue), formatUSD(profit.UpstreamCost), formatUSD(profit.Gross), formatMargin(profit.Margin)))
 	if profit.ExcludedAccounts > 0 {
-		lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入", profit.ExcludedAccounts))
+		switch {
+		case profit.UnsupportedAccounts >= profit.ExcludedAccounts:
+			lines = append(lines, fmt.Sprintf("%d 个账号上游不支持自动测算，未计入", profit.ExcludedAccounts))
+		case profit.UnsupportedAccounts > 0:
+			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入（其中 %d 个上游不支持自动测算）",
+				profit.ExcludedAccounts, profit.UnsupportedAccounts))
+		default:
+			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入", profit.ExcludedAccounts))
+		}
 	}
 	return lines
 }

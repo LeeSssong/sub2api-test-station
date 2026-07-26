@@ -1,5 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { HeroSection } from './HeroSection'
 import type { SessionState } from '../domain/session'
 
@@ -50,6 +52,13 @@ describe('HeroSection', () => {
     expect(heading).toHaveClass('hero-title')
     expect(screen.getByText('星桥')).toHaveClass('hero-brand')
     expect(screen.getByText('链接世界顶尖模型')).toHaveClass('hero-tagline')
+  })
+
+  it('keeps a pronounced desktop diagonal and resets the lift on smaller screens', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+
+    expect(styles).toContain('padding-bottom: clamp(12rem, 28vh, 18rem)')
+    expect(styles).toMatch(/@media \(max-width: 980px\)[\s\S]*?\.hero-title \{ padding-bottom: 0; \}/)
   })
 
   it('uses semantic static fallbacks when reduced motion is requested', () => {

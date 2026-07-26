@@ -28,6 +28,7 @@ for setting in \
   'User=root' \
   'Group=root' \
   'Type=simple' \
+  'WorkingDirectory=/opt/sub2api/production' \
   'EnvironmentFile=/etc/sub2api/sub2api-updater.env' \
   'RuntimeDirectory=sub2api-updater' \
   'RuntimeDirectoryMode=0755' \

@@ -23,20 +23,6 @@
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
-        <!-- Contact Support -->
-        <button
-          v-if="user"
-          type="button"
-          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
-          :aria-label="t('common.contactSupport')"
-          :title="t('common.contactSupport')"
-          data-testid="contact-support-trigger"
-          @click="contactSupportOpen = true"
-        >
-          <Icon name="chat" size="sm" />
-          <span class="hidden md:inline">{{ t('common.contactSupport') }}</span>
-        </button>
-
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
@@ -252,10 +238,6 @@
     </div>
   </header>
 
-  <ContactSupportDialog
-    :show="contactSupportOpen"
-    @close="contactSupportOpen = false"
-  />
 </template>
 
 <script setup lang="ts">
@@ -267,7 +249,6 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
-import ContactSupportDialog from '@/components/layout/ContactSupportDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 
@@ -281,7 +262,6 @@ const onboardingStore = useOnboardingStore()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
-const contactSupportOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))

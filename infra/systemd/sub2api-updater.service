@@ -9,6 +9,7 @@ ConditionPathExists=/opt/sub2api/production/ops/update-sub2api-host.sh
 Type=simple
 User=root
 Group=root
+WorkingDirectory=/opt/sub2api/production
 EnvironmentFile=/etc/sub2api/sub2api-updater.env
 ExecStart=/usr/local/libexec/sub2api-updater --socket ${SUB2API_UPDATER_SOCKET} --state ${SUB2API_UPDATER_STATE} --executor ${SUB2API_UPDATER_EXECUTOR} --official-api ${SUB2API_UPDATER_OFFICIAL_API} --official-dial-address ${SUB2API_UPDATER_OFFICIAL_DIAL_ADDRESS} --origin ${SUB2API_UPDATER_ORIGIN} --github-latest-release ${SUB2API_UPDATER_GITHUB_LATEST_RELEASE}
 Restart=on-failure

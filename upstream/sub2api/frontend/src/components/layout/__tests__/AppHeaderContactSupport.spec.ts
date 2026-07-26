@@ -1,6 +1,5 @@
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
 
 import AppHeader from '../AppHeader.vue'
 
@@ -94,7 +93,7 @@ describe('AppHeader contact support entry', () => {
     document.body.innerHTML = ''
   })
 
-  it('opens and closes the QQ support dialog from the authenticated header', async () => {
+  it('does not duplicate contact support in the authenticated header', () => {
     wrapper = mount(AppHeader, {
       attachTo: document.body,
       global: {
@@ -107,19 +106,8 @@ describe('AppHeader contact support entry', () => {
       },
     })
 
-    const trigger = wrapper.get('[data-testid="contact-support-trigger"]')
-    expect(trigger.attributes('aria-label')).toBe('common.contactSupport')
-
-    await trigger.trigger('click')
-    expect(document.body.textContent).toContain('1080152144')
-
-    document.body
-      .querySelector<HTMLButtonElement>('[aria-label="Close modal"]')
-      ?.click()
-    await nextTick()
-    await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 350))
-
+    expect(wrapper.find('[data-testid="contact-support-trigger"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'ContactSupportDialog' }).exists()).toBe(false)
     expect(document.body.textContent).not.toContain('1080152144')
   })
 })

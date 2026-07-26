@@ -421,7 +421,29 @@ OUTER
 
 Expected: `剩余基线 = 0`
 
-- [ ] **Step 3: 构建并部署**
+- [ ] **Step 3: Ruby 采集脚本先行（消除降级窗口）**
+
+`accountquality.Load` 用 `DisallowUnknownFields`，存量 `account-quality-result.json` 含 `rate_multiplier`，新 Go 会拒绝解析它。但反向是兼容的：`DisallowUnknownFields` 只拒绝*未知*字段、不要求字段*存在*，旧 Go 的 `RateMultiplier *float64` 缺键时解码为 nil 且 `validate` 显式允许 nil，Task 2 之后 opsmonitor 也不再读它。**所以新格式文件对旧 Go 完全兼容，Ruby 先行可把降级窗口压到零。**
+
+若反过来同批部署，窗口内（≤15 分钟）`/ops` 会显示「证据已过期」+ 空质量表，`opsmonitor` 的 `balance_exhausted` 告警静默（不误报也不误恢复），飞书日报不受影响 —— 后果可控但没必要承担。
+
+```bash
+git archive --format=tar HEAD ops/collect-account-quality-pulse.rb | ssh sub2api-prod 'cat > /tmp/rb.tar'
+ssh sub2api-prod 'set -e
+  rm -rf /tmp/rbdeploy && mkdir -p /tmp/rbdeploy && tar -xf /tmp/rb.tar -C /tmp/rbdeploy
+  sudo install -m 0644 /tmp/rbdeploy/ops/collect-account-quality-pulse.rb /opt/sub2api/production/ops/account-quality/collect-account-quality-pulse.rb
+  rm -rf /tmp/rbdeploy /tmp/rb.tar'
+```
+
+注意安装路径是 `ops/account-quality/` 子目录（runbook 指定的采集脚本位置），不是 `ops/` 根目录。装完手动触发一次采集并确认新格式：
+
+```bash
+ssh sub2api-prod 'sudo systemctl start sub2api-account-quality-monitor.service && sleep 45 && sudo grep -c rate_multiplier /opt/sub2api/production/evidence/account-quality/account-quality-result.json || echo "0（已无该字段）"'
+```
+
+Expected: `0（已无该字段）`。**若仍有 `rate_multiplier`，不要继续部署 Go**，先查采集脚本是否装对位置。
+
+- [ ] **Step 4: 构建并部署 Go 服务**
 
 **必须从 git 导出干净的树，不要 rsync 工作区。** 本仓库同时有并发会话在做 notify/feishuapi 重构，工作区存在约 20 个未提交、未经审查的改动（含已删除的 `modelrelease/result.go`）。`rsync` 会把它们一并推上生产。
 
@@ -438,7 +460,7 @@ ssh sub2api-prod 'cd /opt/sub2api/production && sudo docker build -f infra/Docke
 ssh sub2api-prod 'cd /opt/sub2api/production && sudo cp compose.yaml compose.yaml.bak-before-multiplier-migration-20260727 && sudo sed -i "s|image: sub2api-relay-ops:merged-5ffc301-20260727-v1|image: sub2api-relay-ops:multiplier-migration-20260727-v1|" compose.yaml && sudo docker compose --env-file .env -f compose.yaml up -d --no-deps --force-recreate relay-ops'
 ```
 
-- [ ] **Step 4: 部署后验证（人工确认项）**
+- [ ] **Step 5: 部署后验证（人工确认项）**
 
 ```bash
 ssh sub2api-prod 'docker inspect sub2api-relay-ops-1 --format "health={{.State.Health.Status}} restarts={{.RestartCount}}"'
@@ -458,7 +480,7 @@ Expected: 新基线的 `current_value` 是 `0.05x` / `0.16x` / `0.25x` 这类真
 
 **必须人工打开 `https://api.xingqiaolab.top/ops` 确认整页渲染完整**（模板错误不会让容器不健康，只会让页面静默截断）。确认账号质量表存在、无「倍率」列、表格行数正常。
 
-- [ ] **Step 5: 确认无假告警**
+- [ ] **Step 6: 确认无假告警**
 
 ```bash
 ssh sub2api-prod 'sudo bash -s' <<'OUTER'

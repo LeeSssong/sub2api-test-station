@@ -51,13 +51,20 @@ func runGroupAvailability(
 	for _, item := range dailyreport.BuildGroupAvailability(projection) {
 		alert := item.Alert
 		key := "group:" + alert.GroupName + ":availability"
-		// 投递证据必须带日期。notification_deliveries.dedup_key 有 UNIQUE 约束
-		// 且成功投递的记录永不复用，而可用比会重复出现（单账号分组每次故障
-		// 都是 0/1）。不带日期的话，同一分组第二次故障会撞上第一次的
-		// dedup_key 被静默丢弃——告警只会成功发出一次。dailyreport 的
-		// summaryHash 用的就是这个做法。
+		// 投递证据必须带时间桶。notification_deliveries.dedup_key 有 UNIQUE
+		// 约束且成功投递的记录永不复用，而可用比会重复出现（单账号分组每次
+		// 故障都是 0/1）。不带时间桶的话，同一分组第二次故障会撞上第一次的
+		// dedup_key 被静默丢弃——告警只会成功发出一次。
+		//
+		// 已知残留：桶内「故障→恢复→再故障」的第二次故障与其恢复卡仍会被
+		// 投递层吞掉，静默窗口 <= 1 小时。根因是同一个 evidenceHash 被两个
+		// 目的复用——状态机用它判断「取值是否变化」，投递层用它做「事件轮次
+		// 幂等键」，二者语义冲突。彻底修法是为投递另行派生带事件轮次判别量
+		// 的证据（需改 incidents 包暴露轮次），本次先用小时桶把窗口压到 1
+		// 小时。不要把这个残留描述成「有意的防刷屏」——防重复由状态机的
+		// 转移判定和 ConfirmationWindows 负责，时间桶抑制的是全新事件。
 		hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d:%s",
-			alert.GroupName, alert.Available, alert.Total, now.In(loc).Format("2006-01-02"))))
+			alert.GroupName, alert.Available, alert.Total, now.In(loc).Format("2006-01-02T15"))))
 		evidence := hex.EncodeToString(hash[:])
 		// 健康分组同样要 Observe（Failing=false），否则状态机永远走不到恢复
 		// 分支，分组恢复后 incident 卡在 confirmed。

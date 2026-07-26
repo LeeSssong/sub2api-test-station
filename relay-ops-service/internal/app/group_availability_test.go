@@ -97,8 +97,9 @@ func cardTitle(t *testing.T, message notify.FeishuMessage) string {
 
 // 三阶段回归：故障 → 恢复 → 再次故障，红、绿、红三张卡都必须真正投递出去。
 // 投递层的 dedup_key 由 incident key + 证据哈希决定且永不复用；单账号分组每
-// 次故障的可用比都是 0/1，若证据不含日期维度，第二次故障会撞上第一次的
-// dedup_key 被静默丢弃——这正是「告警只会成功发出一次」的根因。
+// 次故障的可用比都是 0/1，若证据不含时间维度，第二次故障会撞上第一次的
+// dedup_key 被静默丢弃——这正是「告警只会成功发出一次」的根因。两次故障
+// 相隔 24 小时，跨小时桶，证据必须不同。
 func TestRunGroupAvailabilityDeliversAcrossOutageRecoveryOutage(t *testing.T) {
 	t.Parallel()
 
@@ -155,8 +156,14 @@ func TestRunGroupAvailabilityDeliversAcrossOutageRecoveryOutage(t *testing.T) {
 	}
 }
 
-// 同一天内同分组同可用比只告警一次是有意的防刷屏，不是回归。
-func TestRunGroupAvailabilitySuppressesSameRatioSameDayRepeat(t *testing.T) {
+// 已知残留缺陷（不是设计意图）：同一小时桶内「故障→恢复→再故障」的第二次
+// 故障红卡会被投递层 dedup 吞掉，静默窗口 <= 1 小时。根因是证据哈希语义
+// 冲突——同一个 evidenceHash 既被状态机用来判断「取值是否变化」，又被投递
+// 层用作「事件轮次幂等键」。防重复本来由状态机的转移判定和
+// ConfirmationWindows: 2 负责，时间桶抑制掉的是全新事件。彻底修法是为投递
+// 另行派生带事件轮次判别量的证据（需改 incidents 包暴露轮次）。本测试固化
+// 当前真实行为，一旦根治后应改为期望 3 张卡。
+func TestRunGroupAvailabilityHasKnownSameBucketSilenceWindow(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -178,7 +185,8 @@ func TestRunGroupAvailabilitySuppressesSameRatioSameDayRepeat(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 红、绿，之后同日同比值的第二次故障被 dedup 拦下 —— 共 2 张。
+	// 五轮全部落在 10:00–10:20（Asia/Shanghai）同一小时桶内：红、绿之后，
+	// 同桶同比值的第二次故障被投递层 dedup 拦下 —— 共 2 张（缺陷现状）。
 	if len(sender.delivered) != 2 {
 		t.Fatalf("delivered = %d, want 2: %+v", len(sender.delivered), sender.delivered)
 	}

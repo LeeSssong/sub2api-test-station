@@ -105,12 +105,32 @@ type Card struct {
 	Elements []CardElement `json:"elements"`
 }
 
+// FeishuMessage is always an interactive card; both transports send Card and
+// nothing else. A plain-text copy of the body used to ride along in a Content
+// field, assembled separately from the card — so it could disagree with what
+// was actually delivered. RenderedText derives the same view from the card
+// instead, which cannot drift.
 type FeishuMessage struct {
 	MsgType string `json:"msg_type"`
-	Content struct {
-		Text string `json:"text,omitempty"`
-	} `json:"content,omitempty"`
-	Card *Card `json:"-"`
+	Card    *Card  `json:"-"`
+}
+
+// RenderedText flattens the card into the text a reader sees: header title
+// followed by every rendered section.
+func (m FeishuMessage) RenderedText() string {
+	if m.Card == nil {
+		return ""
+	}
+	parts := []string{m.Card.Header.Title.Content}
+	for _, element := range m.Card.Elements {
+		if element.Text != nil {
+			parts = append(parts, element.Text.Content)
+		}
+		if element.Content != "" {
+			parts = append(parts, element.Content)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func RenderFeishu(event IncidentView) FeishuMessage {
@@ -366,9 +386,7 @@ func newCardMessage(title, template, markdown string, links []Link) FeishuMessag
 			card.Elements = append(card.Elements, CardElement{Tag: "action", Actions: actions})
 		}
 	}
-	message := FeishuMessage{MsgType: "interactive", Card: card}
-	message.Content.Text = safeValue(title) + "\n\n" + markdown
-	return message
+	return FeishuMessage{MsgType: "interactive", Card: card}
 }
 
 func (m FeishuMessage) CardJSON() ([]byte, error) {
@@ -392,8 +410,6 @@ func (m FeishuMessage) Outbound() (feishuapi.OutboundMessage, error) {
 	}
 	return feishuapi.OutboundMessage{MsgType: m.MsgType, Content: data}, nil
 }
-
-func (m FeishuMessage) TextProjection() string { return m.Content.Text }
 
 type Client struct {
 	WebhookFile string

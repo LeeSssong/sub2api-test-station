@@ -56,6 +56,9 @@ type Worker struct {
 	Now          func() time.Time
 	Lease        time.Duration
 	PollInterval time.Duration
+	// ReplyBackoff waits between reply attempts. Tests replace it so the retry
+	// path stays instant; production leaves it nil and gets a real wait.
+	ReplyBackoff func(context.Context, time.Duration) error
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -115,6 +118,15 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			// Back-to-back retries are the one thing that cannot help here:
+			// the failures worth retrying are throttling and transient Feishu
+			// faults, and three sends inside the same millisecond spend the
+			// remaining quota reproducing the same rejection.
+			if waitErr := w.pauseBeforeRetry(ctx, replyRetryDelay(attempt)); waitErr != nil {
+				return true, errors.New("Feishu reply retry was interrupted")
+			}
+		}
 		messageID, sendErr := w.Sender.SendMessage(ctx, record.ChatID, payload)
 		delivered := sendErr == nil
 		errorCode := ""
@@ -133,6 +145,24 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, errors.New("Feishu reply failed after 3 attempts")
 	}
 	return true, nil
+}
+
+func replyRetryDelay(attempt int) time.Duration {
+	return time.Duration(1<<(attempt-1)) * time.Second
+}
+
+func (w *Worker) pauseBeforeRetry(ctx context.Context, delay time.Duration) error {
+	if w.ReplyBackoff != nil {
+		return w.ReplyBackoff(ctx, delay)
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (w *Worker) execute(ctx context.Context, record Record) (Completion, error) {

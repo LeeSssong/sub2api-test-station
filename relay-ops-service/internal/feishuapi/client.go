@@ -21,6 +21,21 @@ const maxMessageContentBytes = 30 << 10
 
 var errUnauthorized = errors.New("Feishu OpenAPI token was rejected")
 
+// APIError carries a Feishu business failure. Feishu reports these as HTTP 200
+// with a non-zero `code` in the body, so a transport-level status check alone
+// reads every failure as success and then trips over the missing payload.
+//
+// Only the numeric code is exposed. The sibling `msg` field echoes
+// server-chosen text back into our logs and alert paths, and the client
+// contract is that no response content reaches an error string.
+type APIError struct {
+	Code int
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("Feishu OpenAPI rejected the request: code %d", e.Code)
+}
+
 type Client struct {
 	baseURL   string
 	appID     string
@@ -58,35 +73,39 @@ func NewClient(baseURL, appIDFile, appSecretFile string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) SendText(ctx context.Context, chatID, text string) (string, error) {
-	if chatID == "" || len(chatID) > 256 || text == "" || len([]byte(text)) > 16<<10 {
-		return "", errors.New("invalid Feishu message input")
-	}
-	content, err := json.Marshal(struct {
-		Text string `json:"text"`
-	}{Text: text})
-	if err != nil {
-		return "", errors.New("encode Feishu message content")
-	}
-	return c.SendMessage(ctx, chatID, OutboundMessage{MsgType: "text", Content: content})
-}
-
 func (c *Client) SendMessage(ctx context.Context, chatID string, message OutboundMessage) (string, error) {
 	if chatID == "" || len(chatID) > 256 || (message.MsgType != "text" && message.MsgType != "interactive") || len(message.Content) == 0 || len(message.Content) > maxMessageContentBytes || !json.Valid(message.Content) {
 		return "", errors.New("invalid Feishu message input")
 	}
+	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := c.tenantToken(ctx)
 		if err != nil {
 			return "", err
 		}
 		messageID, err := c.sendMessage(ctx, token, chatID, message)
-		if !errors.Is(err, errUnauthorized) {
+		if err == nil || !retryAfterTokenRefresh(err) {
 			return messageID, err
 		}
+		lastErr = err
 		c.invalidateToken(token)
 	}
-	return "", errUnauthorized
+	return "", lastErr
+}
+
+// retryAfterTokenRefresh decides whether a failed send is worth one retry with
+// a freshly minted tenant token.
+//
+// A rejected token does not arrive as HTTP 401 — Feishu answers 200 with a
+// business code, and its auth code numbering is neither stable nor documented
+// as a closed set, so enumerating "these codes mean expired" silently rots.
+// Any business failure therefore earns exactly one refresh-and-retry. The cost
+// of that choice is a single wasted call on permanent failures (bot removed
+// from the chat, malformed card); the cost of the alternative is a delivery
+// pipeline that never recovers from a revoked token.
+func retryAfterTokenRefresh(err error) bool {
+	var apiErr *APIError
+	return errors.Is(err, errUnauthorized) || errors.As(err, &apiErr)
 }
 
 func (c *Client) tenantToken(ctx context.Context) (string, error) {
@@ -100,14 +119,15 @@ func (c *Client) tenantToken(ctx context.Context) (string, error) {
 		AppSecret string `json:"app_secret"`
 	}{AppID: c.appID, AppSecret: c.appSecret}
 	var response struct {
-		Code              int    `json:"code"`
 		TenantAccessToken string `json:"tenant_access_token"`
 		Expire            int    `json:"expire"`
 	}
+	// postJSON already rejects a non-zero business code, so reaching here means
+	// the call succeeded and only the payload shape is still in question.
 	if err := c.postJSON(ctx, "/open-apis/auth/v3/tenant_access_token/internal", "", body, &response); err != nil {
 		return "", err
 	}
-	if response.Code != 0 || response.TenantAccessToken == "" || response.Expire <= 0 {
+	if response.TenantAccessToken == "" || response.Expire <= 0 {
 		return "", errors.New("Feishu token response schema mismatch")
 	}
 	cacheSeconds := response.Expire - 60
@@ -126,7 +146,6 @@ func (c *Client) sendMessage(ctx context.Context, token, chatID string, message 
 		Content   string `json:"content"`
 	}{ReceiveID: chatID, MsgType: message.MsgType, Content: string(message.Content)}
 	var response struct {
-		Code int `json:"code"`
 		Data struct {
 			MessageID string `json:"message_id"`
 		} `json:"data"`
@@ -135,7 +154,7 @@ func (c *Client) sendMessage(ctx context.Context, token, chatID string, message 
 	if err := c.postJSON(ctx, path, token, body, &response); err != nil {
 		return "", err
 	}
-	if response.Code != 0 || response.Data.MessageID == "" {
+	if response.Data.MessageID == "" {
 		return "", errors.New("Feishu message response schema mismatch")
 	}
 	return response.Data.MessageID, nil
@@ -172,6 +191,18 @@ func (c *Client) postJSON(ctx context.Context, path, token string, body, out any
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("Feishu OpenAPI returned HTTP %d", resp.StatusCode)
+	}
+	// The business code is checked before the payload is decoded: a failed call
+	// carries no `data`, so decoding first turns every API rejection into an
+	// indistinguishable "schema mismatch" and hides the actual reason.
+	var envelope struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return errors.New("Feishu OpenAPI response schema mismatch")
+	}
+	if envelope.Code != 0 {
+		return &APIError{Code: envelope.Code}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return errors.New("Feishu OpenAPI response schema mismatch")

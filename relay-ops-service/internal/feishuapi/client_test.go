@@ -1,7 +1,9 @@
 package feishuapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,19 @@ import (
 	"sync"
 	"testing"
 )
+
+// sendText is what a caller has to do for a plain-text message now that the
+// client exposes only SendMessage. Text delivery still has to keep working —
+// nothing in relay-ops sends it today, but the API accepts it.
+func sendText(ctx context.Context, client *Client, chatID, text string) (string, error) {
+	content, err := json.Marshal(struct {
+		Text string `json:"text"`
+	}{Text: text})
+	if err != nil {
+		return "", err
+	}
+	return client.SendMessage(ctx, chatID, OutboundMessage{MsgType: "text", Content: content})
+}
 
 func TestClientCachesTokenAndSendsTextToExactChat(t *testing.T) {
 	var mu sync.Mutex
@@ -62,7 +77,7 @@ func TestClientCachesTokenAndSendsTextToExactChat(t *testing.T) {
 
 	client := newTestClient(t, server.URL)
 	for i, want := range []string{"om-1", "om-2"} {
-		messageID, err := client.SendText(t.Context(), "chat-secret-id", "切换已完成")
+		messageID, err := sendText(t.Context(), client, "chat-secret-id", "切换已完成")
 		if err != nil || messageID != want {
 			t.Fatalf("call %d = %q, %v", i, messageID, err)
 		}
@@ -137,9 +152,64 @@ func TestClientRefreshesTokenOnceAfterUnauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	messageID, err := newTestClient(t, server.URL).SendText(t.Context(), "chat-secret-id", "result")
+	messageID, err := sendText(t.Context(), newTestClient(t, server.URL), "chat-secret-id", "result")
 	if err != nil || messageID != "om-refreshed" || tokenCalls != 2 || messageCalls != 2 {
 		t.Fatalf("result=%q err=%v token=%d message=%d", messageID, err, tokenCalls, messageCalls)
+	}
+}
+
+// Feishu rejects a stale tenant token with HTTP 200 and a business code, not
+// HTTP 401. Before this was handled the refresh-and-retry path was unreachable
+// and a revoked token failed every delivery until the process restarted.
+func TestClientRefreshesTokenAfterBusinessCodeRejection(t *testing.T) {
+	tokenCalls := 0
+	messageCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			tokenCalls++
+			fmt.Fprintf(w, `{"code":0,"tenant_access_token":"token-%d","expire":7200}`, tokenCalls)
+			return
+		}
+		messageCalls++
+		if messageCalls == 1 {
+			fmt.Fprint(w, `{"code":99991663,"msg":"tenant access token invalid"}`)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer token-2" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"message_id":"om-recovered"}}`)
+	}))
+	defer server.Close()
+
+	messageID, err := sendText(t.Context(), newTestClient(t, server.URL), "chat-secret-id", "result")
+	if err != nil || messageID != "om-recovered" || tokenCalls != 2 || messageCalls != 2 {
+		t.Fatalf("result=%q err=%v token=%d message=%d", messageID, err, tokenCalls, messageCalls)
+	}
+}
+
+// A permanent rejection must report the code it actually got. Folding it into
+// "schema mismatch" left no way to tell a revoked token apart from a bot that
+// had been removed from the chat.
+func TestClientReportsPersistentBusinessCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			fmt.Fprint(w, `{"code":0,"tenant_access_token":"tenant-token-value","expire":7200}`)
+			return
+		}
+		fmt.Fprint(w, `{"code":230002,"msg":"bot is not in the chat: response-secret"}`)
+	}))
+	defer server.Close()
+
+	_, err := sendText(t.Context(), newTestClient(t, server.URL), "chat-secret-id", "result")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != 230002 {
+		t.Fatalf("err = %v, want APIError code 230002", err)
+	}
+	if strings.Contains(err.Error(), "response-secret") {
+		t.Fatalf("error leaked the Feishu msg field: %v", err)
 	}
 }
 
@@ -169,7 +239,7 @@ func TestClientCapsResponsesAndRedactsErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
-			_, err := newTestClient(t, server.URL).SendText(t.Context(), "chat-secret-id", "result")
+			_, err := sendText(t.Context(), newTestClient(t, server.URL), "chat-secret-id", "result")
 			if err == nil {
 				t.Fatal("error response unexpectedly accepted")
 			}

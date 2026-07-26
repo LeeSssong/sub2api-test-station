@@ -29,12 +29,12 @@ func TestRunCompletesAlertDuplicateAndRecoveryCycleWithoutUpstreamAccess(t *test
 	if analysis.calls != 1 || notifier.attempts != 2 || notifier.delivered != 2 || len(notifier.messages) != 2 {
 		t.Fatalf("analysis=%d attempts=%d delivered=%d messages=%d", analysis.calls, notifier.attempts, notifier.delivered, len(notifier.messages))
 	}
-	if !strings.Contains(notifier.messages[0].Content.Text, "relay-ops 合成告警验收") || !strings.Contains(notifier.messages[1].Content.Text, "relay-ops 合成告警已恢复") {
+	if !strings.Contains(notifier.messages[0].RenderedText(), "relay-ops 合成告警验收") || !strings.Contains(notifier.messages[1].RenderedText(), "relay-ops 合成告警已恢复") {
 		t.Fatalf("unexpected messages: %#v", notifier.messages)
 	}
 	for _, message := range notifier.messages {
-		if strings.Contains(message.Content.Text, "api_key") || strings.Contains(message.Content.Text, "Bearer") {
-			t.Fatalf("message contains secret marker: %s", message.Content.Text)
+		if strings.Contains(message.RenderedText(), "api_key") || strings.Contains(message.RenderedText(), "Bearer") {
+			t.Fatalf("message contains secret marker: %s", message.RenderedText())
 		}
 	}
 }

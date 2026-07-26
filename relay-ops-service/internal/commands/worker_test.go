@@ -117,6 +117,24 @@ func TestWorkerCompletesBeforeReplyAndRetriesDeliveryAtMostThreeTimes(t *testing
 		}
 	})
 
+	t.Run("retries wait between attempts", func(t *testing.T) {
+		repository := &fakeWorkerRepository{next: switchRecord()}
+		worker := testWorker(repository, &fakeRouter{}, &fakeSender{repository: repository, failures: 2}, ModeEnabled)
+		var delays []time.Duration
+		worker.ReplyBackoff = func(_ context.Context, delay time.Duration) error {
+			delays = append(delays, delay)
+			return nil
+		}
+		if _, err := worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("err=%v", err)
+		}
+		// Two waits for three attempts, growing: never before the first send,
+		// never after the last.
+		if len(delays) != 2 || delays[0] != time.Second || delays[1] != 2*time.Second {
+			t.Fatalf("delays = %v", delays)
+		}
+	})
+
 	t.Run("three failures stop", func(t *testing.T) {
 		repository := &fakeWorkerRepository{next: switchRecord()}
 		sender := &fakeSender{repository: repository, failures: 5}
@@ -285,5 +303,6 @@ func testWorker(repository *fakeWorkerRepository, router *fakeRouter, sender *fa
 		},
 		Now:   fixedNow,
 		Lease: time.Minute, PollInterval: time.Millisecond,
+		ReplyBackoff: func(context.Context, time.Duration) error { return nil },
 	}
 }

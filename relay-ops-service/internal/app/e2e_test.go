@@ -69,8 +69,8 @@ func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *t
 	if analysis.calls != 1 || len(notifier.messages) != 1 || probe.calls != 0 {
 		t.Fatalf("analysis=%d messages=%d probes=%d", analysis.calls, len(notifier.messages), probe.calls)
 	}
-	if !strings.Contains(notifier.messages[0].Content.Text, "0.07x") || !strings.Contains(notifier.messages[0].Content.Text, "0.1x") {
-		t.Fatalf("message=%s", notifier.messages[0].Content.Text)
+	if !strings.Contains(notifier.messages[0].RenderedText(), "0.07x") || !strings.Contains(notifier.messages[0].RenderedText(), "0.1x") {
+		t.Fatalf("message=%s", notifier.messages[0].RenderedText())
 	}
 	if err := collector.Run(ctx, source, true); err != nil {
 		t.Fatal(err)

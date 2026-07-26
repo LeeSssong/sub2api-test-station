@@ -20,7 +20,7 @@ func TestRenderFeishuIncludesFiveOperatorSections(t *testing.T) {
 		Title: "GPT-Pro 倍率变化", WhatWasDone: []string{"读取价格页 1 次"}, Results: []string{"当前倍率 0.10x"},
 		Change: "相对 0.07x 上升 42.9%", Focus: "核对利润但不自动改价", Links: []Link{{Label: "事件详情", URL: "https://ops.example/incidents/1"}},
 	})
-	text := message.Content.Text
+	text := message.RenderedText()
 	for _, section := range []string{"已执行", "观测结果", "发生变化", "需要关注"} {
 		if !strings.Contains(text, section) {
 			t.Fatalf("missing section %q in %s", section, text)
@@ -31,8 +31,8 @@ func TestRenderFeishuIncludesFiveOperatorSections(t *testing.T) {
 func TestRenderSessionExpiredUsesExactLoginLink(t *testing.T) {
 	t.Parallel()
 	message := RenderSessionExpired("wawazz", "https://wawazz.example/login")
-	if !strings.Contains(message.Card.Header.Title.Content, "上游用量读取会话失效") || !strings.Contains(message.Content.Text, "质量和公开价格监控正常") {
-		t.Fatalf("message=%s", message.Content.Text)
+	if !strings.Contains(message.Card.Header.Title.Content, "上游用量读取会话失效") || !strings.Contains(message.RenderedText(), "质量和公开价格监控正常") {
+		t.Fatalf("message=%s", message.RenderedText())
 	}
 	card, err := message.CardJSON()
 	if err != nil || !strings.Contains(string(card), "https://wawazz.example/login") {
@@ -126,8 +126,8 @@ func TestRenderAlertRecoveryAndCommandUseInteractiveCards(t *testing.T) {
 	if alert.Card.Header.Template == recovery.Card.Header.Template || alert.Card.Header.Template == command.Card.Header.Template {
 		t.Fatalf("card templates are not visually differentiated")
 	}
-	if !strings.Contains(alert.TextProjection(), "需要关注") || !strings.Contains(recovery.TextProjection(), "恢复") || !strings.Contains(command.TextProjection(), "审计") {
-		t.Fatalf("text projections missing semantic sections")
+	if !strings.Contains(alert.RenderedText(), "需要关注") || !strings.Contains(recovery.RenderedText(), "恢复") || !strings.Contains(command.RenderedText(), "审计") {
+		t.Fatalf("cards missing semantic sections")
 	}
 }
 
@@ -254,7 +254,7 @@ func TestCommandCardStylesOutcomesAndHidesUnknownInput(t *testing.T) {
 			if message.Card.Header.Template != tt.template {
 				t.Fatalf("template=%q", message.Card.Header.Template)
 			}
-			if tt.unknown && strings.Contains(message.TextProjection(), "untrusted dynamic input") {
+			if tt.unknown && strings.Contains(message.RenderedText(), "untrusted dynamic input") {
 				t.Fatal("unknown command echoed untrusted input")
 			}
 		})

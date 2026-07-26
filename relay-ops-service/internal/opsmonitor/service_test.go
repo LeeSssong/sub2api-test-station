@@ -541,7 +541,7 @@ func TestServiceRecoversAfterOneHealthyCompleteWindow(t *testing.T) {
 	if err := service.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(notifier.sent) != 2 || notifier.sent[1].key != "site:group:2:error_rate" || !contains(notifier.sent[1].message.Content.Text, "已恢复") {
+	if len(notifier.sent) != 2 || notifier.sent[1].key != "site:group:2:error_rate" || !contains(notifier.sent[1].message.RenderedText(), "已恢复") {
 		t.Fatalf("sent = %#v", notifier.sent)
 	}
 	if record := repository.records["site:group:2:error_rate"]; record.State != "recovered" {

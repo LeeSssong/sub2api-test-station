@@ -42,8 +42,8 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 	if confirmed.Transition != "confirmed" || confirmed.Notification != "delivered" || len(notifier.messages) != 1 || len(analyzer.contracts) != 1 {
 		t.Fatalf("confirmed=%#v messages=%d analyses=%d", confirmed, len(notifier.messages), len(analyzer.contracts))
 	}
-	if !strings.Contains(notifier.messages[0].Content.Text, "GPT-Pro") || !strings.Contains(notifier.messages[0].Content.Text, "gpt-5.6-sol") {
-		t.Fatalf("notification missing group/model: %q", notifier.messages[0].Content.Text)
+	if !strings.Contains(notifier.messages[0].RenderedText(), "GPT-Pro") || !strings.Contains(notifier.messages[0].RenderedText(), "gpt-5.6-sol") {
+		t.Fatalf("notification missing group/model: %q", notifier.messages[0].RenderedText())
 	}
 
 	duplicate, err := service.Observe(context.Background(), errorSample)
@@ -78,8 +78,8 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 	if recovery.Transition != "recovered" || recovery.Notification != "delivered" || len(notifier.messages) != 3 || len(analyzer.contracts) != 3 {
 		t.Fatalf("recovery=%#v messages=%d analyses=%d", recovery, len(notifier.messages), len(analyzer.contracts))
 	}
-	if !strings.Contains(notifier.messages[2].Content.Text, "恢复") {
-		t.Fatalf("recovery message=%q", notifier.messages[2].Content.Text)
+	if !strings.Contains(notifier.messages[2].RenderedText(), "恢复") {
+		t.Fatalf("recovery message=%q", notifier.messages[2].RenderedText())
 	}
 
 	healthy, err := service.Observe(context.Background(), recovered)

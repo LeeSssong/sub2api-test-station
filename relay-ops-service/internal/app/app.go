@@ -42,7 +42,6 @@ type App struct {
 	Handler   http.Handler
 	Readiness *Readiness
 	Agent     *agent.Service
-	Feishu    *notify.Client
 }
 
 type dailyReportIncidents struct {

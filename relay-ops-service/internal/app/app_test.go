@@ -111,7 +111,7 @@ func TestExecuteFastCandidatePersistsHashBoundQualityReport(t *testing.T) {
 	if incidentStore.record.Key != notifier.key || incidentStore.record.EvidenceHash != notifier.evidence || incidentStore.record.State != "confirmed" {
 		t.Fatalf("incident state = %#v", incidentStore.record)
 	}
-	if notifier.message.MsgType != "interactive" || notifier.message.Card == nil || !strings.Contains(notifier.message.Content.Text, "本通知不执行切换") {
+	if notifier.message.MsgType != "interactive" || notifier.message.Card == nil || !strings.Contains(notifier.message.RenderedText(), "本通知不执行切换") {
 		t.Fatalf("notification = %#v", notifier.message)
 	}
 }

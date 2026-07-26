@@ -98,6 +98,8 @@ rg -Fq 'systemctl daemon-reload' "$INSTALLER" \
   || fail 'installer does not reload systemd'
 rg -Fq 'systemctl enable --now sub2api-updater.service' "$INSTALLER" \
   || fail 'installer does not enable the updater service'
+rg -Fq 'systemctl restart sub2api-updater.service' "$INSTALLER" \
+  || fail 'installer does not restart an already-running updater onto the new binary'
 rg -Fq 'systemd-analyze verify' "$INSTALLER" \
   || fail 'installer does not verify the unit before activation'
 rg -Fq 'install -m 0755' "$INSTALLER" || fail 'installer does not install the binary mode'

@@ -90,5 +90,8 @@ install -m 0644 -o root -g root "$service_source" "$unit_path"
 
 systemctl daemon-reload
 systemctl enable --now sub2api-updater.service
+# enable --now leaves an already-active service on the previous binary, which is
+# exactly how the updater and its executor drifted apart.
+systemctl restart sub2api-updater.service
 printf 'sub2api-updater installed: service=%s socket=%s\n' \
   "$service_name" "$runtime_path/updater.sock"

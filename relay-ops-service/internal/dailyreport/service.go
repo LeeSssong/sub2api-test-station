@@ -154,6 +154,22 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 				histories[account.AccountID] = entries
 			}
 			view = BuildHealthDigest(projection, histories, location, now)
+			// 脱敏不变量：私有（IsExclusive）分组名不得进入日报卡。选型建议
+			// 来自 accountrecommendation.Analyze(projection)，投影不按
+			// IsExclusive 过滤，且 pendingLines 会渲染 rec.GroupName，所以
+			// 这里按 CustomerVisible 分组白名单收敛。runtime.Groups 只含
+			// 公开分组（ListGroups 失败时 Run 早已返回错误）。
+			publicNames := make(map[string]bool, len(runtime.Groups))
+			for _, group := range runtime.Groups {
+				publicNames[group.Name] = true
+			}
+			kept := view.Recommendations[:0]
+			for _, recommendation := range view.Recommendations {
+				if publicNames[recommendation.GroupName] {
+					kept = append(kept, recommendation)
+				}
+			}
+			view.Recommendations = kept
 		}
 	}
 	message := notify.RenderHealthDigest(view)

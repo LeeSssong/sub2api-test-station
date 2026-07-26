@@ -384,38 +384,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		},
 		SiteMonitor: siteMonitor.Run,
 		GroupAvailability: func(runCtx context.Context) error {
-			projection, readErr := reader.ListAccountMonitors(runCtx)
-			if readErr != nil {
-				// fail-safe：监控自身故障不得伪装成业务故障，静默跳过本轮
-				return nil
-			}
-			var failures []error
-			for _, item := range dailyreport.BuildGroupAvailability(projection) {
-				alert := item.Alert
-				key := "group:" + alert.GroupName + ":availability"
-				hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d", alert.GroupName, alert.Available, alert.Total)))
-				evidence := hex.EncodeToString(hash[:])
-				// 健康分组同样要 Observe（Failing=false），否则状态机永远走不到
-				// 恢复分支，分组恢复后 incident 卡在 confirmed，下次真出事时
-				// 证据哈希未变会被判定为无需通知——告警只会成功发出一次。
-				transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{
-					Key:                 key,
-					Severity:            "P1",
-					Failing:             item.Alerting,
-					EvidenceHash:        evidence,
-					CurrentValue:        fmt.Sprintf("可用 %d / 共 %d", alert.Available, alert.Total),
-					ConfirmationWindows: 2,
-				})
-				if observeErr != nil || !transition.Notify || notifier == nil {
-					continue
-				}
-				alert.Recovery = !item.Alerting
-				// 单个分组投递失败不得挡住其余分组的告警
-				if sendErr := notifier.SendIncident(runCtx, key, evidence, notify.RenderGroupAlert(alert)); sendErr != nil {
-					failures = append(failures, sendErr)
-				}
-			}
-			return errors.Join(failures...)
+			return runGroupAvailability(runCtx, reader, incidentMachine, notifier, cfg.Timezone, time.Now().UTC())
 		},
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}

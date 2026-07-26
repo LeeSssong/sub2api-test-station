@@ -2,6 +2,7 @@ package dailyreport
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -179,6 +180,7 @@ func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []Group
 		errorCodes[account.AccountID] = account.ErrorCode
 	}
 	views := []GroupAvailabilityView{}
+	seen := map[string]bool{}
 	for _, group := range accounthealth.GroupAvailabilities(classify(projection)) {
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
 		for _, down := range group.Down {
@@ -187,9 +189,36 @@ func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []Group
 				ErrorCode: errorCodes[down.AccountID],
 			})
 		}
+		seen[group.GroupName] = true
 		views = append(views, GroupAvailabilityView{Alert: alert, Alerting: group.Alerting})
 	}
+	// GroupAvailabilities 会跳过 TierUnknown 账号，因此某个分组的账号全部失去
+	// 样本时，该分组会整个从结果里消失，于是也不再被 Observe，incident 卡在
+	// confirmed —— 与「告警只发一次」同源。这里把缺席的分组补回来，以
+	// Alerting=false 观测，让状态机能够走完恢复路径。
+	for _, name := range groupNamesIn(projection) {
+		if !seen[name] {
+			views = append(views, GroupAvailabilityView{
+				Alert: notify.GroupAlertView{GroupName: name},
+			})
+		}
+	}
+	sort.SliceStable(views, func(i, j int) bool { return views[i].Alert.GroupName < views[j].Alert.GroupName })
 	return views
+}
+
+func groupNamesIn(projection sub2api.AccountMonitorProjection) []string {
+	names := []string{}
+	seen := map[string]bool{}
+	for _, account := range projection.Accounts {
+		for _, name := range account.GroupNames {
+			if name != "" && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 func pendingFor(account sub2api.AccountMonitorAccount, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {

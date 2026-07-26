@@ -158,6 +158,34 @@ func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
 	}
 }
 
+func TestBuildGroupAvailabilityKeepsGroupsWhoseAccountsLostAllSamples(t *testing.T) {
+	projection, _, _, _ := fixture()
+	// GPT-Plus 唯一账号失去全部探测样本（TierUnknown）。GroupAvailabilities
+	// 会跳过 unknown 账号，若分组因此整个消失，就不再被 Observe，incident
+	// 卡在 confirmed，恢复卡与下一次告警都发不出来。
+	projection.Accounts[0].SampleCount = 0
+	views := BuildGroupAvailability(projection)
+
+	byName := map[string]GroupAvailabilityView{}
+	for _, view := range views {
+		byName[view.Alert.GroupName] = view
+	}
+	plus, ok := byName["GPT-Plus"]
+	if !ok {
+		t.Fatalf("失去样本的分组不得从结果里消失: %+v", views)
+	}
+	if plus.Alerting {
+		t.Fatalf("无样本分组应以 Alerting=false 观测（fail-safe）: %+v", plus)
+	}
+	if len(views) != 2 {
+		t.Fatalf("views = %+v, want 2", views)
+	}
+	// 结果必须按分组名排序，投递顺序才可复现。
+	if views[0].Alert.GroupName != "GPT-Plus" || views[1].Alert.GroupName != "GPT-Pro" {
+		t.Fatalf("views 未按分组名排序: %+v", views)
+	}
+}
+
 func TestBuildHealthDigestOmitsDeltaWithoutComparableHistory(t *testing.T) {
 	projection, _, loc, now := fixture()
 	// 历史为空：不得凭空得出「健康账号较昨日 ↑N」。

@@ -16,9 +16,12 @@ import (
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-// 本测试验证的是投递去重（同日同证据只发一次）与事件契约的不变量。
-// 旧名字 TestServiceBuildsOneRedactedReportForEveryPublicGroup 已不符实：
-// 新健康日报不再渲染分组名，「不含 private」之类的断言变成恒真，已删除。
+// 本测试验证投递去重（同日同证据只发一次）、事件契约，以及脱敏不变量：
+// 新健康日报仍会渲染分组名 —— pendingLines 的选型建议行输出
+// digestValue(rec.GroupName)，而 Analyze 的输入投影不按 IsExclusive 过滤，
+// 所以私有分组名有真实通路进入卡片。fixture 的 monitor 投影特意包含私有
+// 分组 "private" 并构造出 candidate_better 建议，使「不含 private」断言
+// 真正可失败。
 func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	t.Parallel()
 
@@ -40,6 +43,14 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 		usage: map[int64]sub2api.UsageStats{
 			2: {TotalRequests: 100, TotalInputTokens: 1_000_000, TotalCacheReadTokens: 3_000_000, TotalCacheCreationTokens: 500_000, CacheMetricsPresent: true, TotalCost: 1.2, TotalActualCost: 0.12, TotalAccountCost: 0.12},
 			6: {TotalRequests: 200, TotalInputTokens: 2_000_000, CacheMetricsPresent: true, TotalCost: 2.4, TotalActualCost: 0.12, TotalAccountCost: 0.12},
+		},
+		monitor: sub2api.AccountMonitorProjection{
+			SchemaVersion: 2, ObservedAt: time.Date(2026, 7, 20, 1, 29, 0, 0, time.UTC),
+			Settings: sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+			Accounts: []sub2api.AccountMonitorAccount{
+				privateMonitorAccount(31, "内部账号 A", 0.70, 450, 1600, 0.12),
+				privateMonitorAccount(32, "内部账号 B", 0.96, 120, 500, 0.08),
+			},
 		},
 	}
 	incidentStore := &reportIncidentStore{items: []string{"P1 confirmed GPT-Pro monitor error"}, observed: map[string]bool{}}
@@ -89,6 +100,12 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	// 其余「质量/利润/…」静态标题为无条件输出，断言恒真，不再保留。
 	if !strings.Contains(text, "中转站日报 2026-07-20") {
 		t.Fatalf("card missing dated title: %s", text)
+	}
+	// 脱敏不变量：私有（IsExclusive）分组名不得进入日报卡。fixture 的私有
+	// 分组 "private" 构造出了 candidate_better 建议行，若渲染链不过滤，
+	// 分组名会经 pendingLines 渲染进卡片。
+	if strings.Contains(text, "private") {
+		t.Fatalf("report leaked private group name: %s", text)
 	}
 	contract := analyzer.contracts[0]
 	if contract.ContractVersion != "relay-ops-incident-v1" || contract.IncidentID != "daily-report:2026-07-20" || contract.Samples != 2 {
@@ -322,6 +339,18 @@ func monitorAccount(id int64, name string, success, ttft, latency, multiplier fl
 }
 
 func timePtr(value time.Time) *time.Time { return &value }
+
+// privateMonitorAccount belongs to the exclusive group "private"（上方 fixture
+// 里 ID 7、IsExclusive: true 的那个分组），用于让脱敏断言真正跑起来。
+func privateMonitorAccount(id int64, name string, success, ttft, latency, multiplier float64) sub2api.AccountMonitorAccount {
+	account := monitorAccount(id, name, success, ttft, latency, multiplier)
+	account.GroupIDs = []int64{7}
+	account.GroupNames = []string{"private"}
+	observed := time.Date(2026, 7, 20, 1, 28, 0, 0, time.UTC)
+	account.Multiplier.ObservedAt = &observed
+	account.CheckedAt = &observed
+	return account
+}
 
 type reportIncidentStore struct {
 	items    []string

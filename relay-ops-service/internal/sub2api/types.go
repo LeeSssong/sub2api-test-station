@@ -21,6 +21,7 @@ type AccountReader interface {
 
 type AccountMonitorReader interface {
 	ListAccountMonitors(context.Context) (AccountMonitorProjection, error)
+	ListAccountMonitorHistory(context.Context, int64, int) ([]AccountMonitorHistoryEntry, error)
 }
 
 type ModelDiscoveryReader interface {
@@ -121,6 +122,21 @@ type AccountMonitorProjection struct {
 	Stale         bool                    `json:"stale"`
 	Settings      AccountMonitorSettings  `json:"settings"`
 	Accounts      []AccountMonitorAccount `json:"accounts"`
+}
+
+type AccountMonitorHistoryEntry struct {
+	AccountID  int64     `json:"account_id"`
+	ModelID    string    `json:"model_id"`
+	Status     string    `json:"status"`
+	ErrorCode  string    `json:"error_code,omitempty"`
+	HTTPStatus *int      `json:"http_status,omitempty"`
+	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
+	LatencyMS  *float64  `json:"latency_ms,omitempty"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
+type accountMonitorHistoryPage struct {
+	Items []AccountMonitorHistoryEntry `json:"items"`
 }
 
 type Model struct {

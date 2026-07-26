@@ -225,6 +225,9 @@ func (r reportReader) GetUsageStats(_ context.Context, query sub2api.UsageQuery)
 func (r reportReader) ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error) {
 	return r.monitor, nil
 }
+func (r reportReader) ListAccountMonitorHistory(context.Context, int64, int) ([]sub2api.AccountMonitorHistoryEntry, error) {
+	return nil, nil
+}
 
 func cacheDiscountPricing(model string) sub2api.ChannelModelPrice {
 	input, read, write := 5e-6, 0.5e-6, 6.25e-6

@@ -149,6 +149,19 @@ func (c *HTTPReader) ListAccountMonitors(ctx context.Context) (AccountMonitorPro
 	return projection, nil
 }
 
+func (c *HTTPReader) ListAccountMonitorHistory(ctx context.Context, accountID int64, limit int) ([]AccountMonitorHistoryEntry, error) {
+	if accountID <= 0 || limit <= 0 {
+		return nil, errSchemaMismatch
+	}
+	path := "/api/v1/admin/account-monitors/" + strconv.FormatInt(accountID, 10) + "/history"
+	query := url.Values{"limit": {strconv.Itoa(limit)}}
+	var page accountMonitorHistoryPage
+	if err := c.getStrict(ctx, path, query, &page); err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 func (c *HTTPReader) ListGroups(ctx context.Context) ([]Group, error) {
 	var groups []Group
 	if err := c.get(ctx, "/api/v1/admin/groups/all", nil, &groups); err != nil {

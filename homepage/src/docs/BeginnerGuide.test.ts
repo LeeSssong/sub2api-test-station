@@ -37,7 +37,7 @@ describe('Xingqiao beginner guide', () => {
       'Codex 安装包下载',
       'CC Switch 安装说明与安装包入口',
       'https://codexapp.agentsmirror.com/',
-      'https://tkapi.fun/api-beginner-guide/',
+      'https://pan.quark.cn/s/74f8c9d8c199#/list/share',
       '六、一键导入 CC Switch',
       '七、启动 Codex 并完成首次测试',
       '八、查看 Token 和扣费',
@@ -82,7 +82,7 @@ describe('Xingqiao beginner guide', () => {
     ])
     const approvedInstallLinks = new Set([
       'https://codexapp.agentsmirror.com/',
-      'https://tkapi.fun/api-beginner-guide/',
+      'https://pan.quark.cn/s/74f8c9d8c199#/list/share',
     ])
     const hrefs = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('a[href]')]
       .map((anchor) => anchor.getAttribute('href'))

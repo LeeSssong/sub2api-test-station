@@ -10,7 +10,9 @@ const steps = [
   { id: 'observe' as const, number: '03', title: '观测', text: '延迟、Token 与结果状态，每一次调用都有迹可循。' },
 ]
 
-const PLAYBACK_DURATION = 6200
+const PLAYBACK_DURATION = 7600
+
+const clamp = (value: number) => Math.max(0, Math.min(1, value))
 
 export function phaseForCycleProgress(progress: number): Phase {
   return progress < .3 ? 'send' : progress < .55 ? 'route' : 'observe'
@@ -66,11 +68,11 @@ export function RequestJourney() {
   }, [reduced])
 
   const visiblePhase = reduced ? 'static' : phase
-  const boundedProgress = Math.max(0, Math.min(1, progress))
-  const outgoingProgress = reduced ? 1 : Math.min(1, boundedProgress / .3)
-  const routedProgress = reduced ? 1 : Math.max(0, Math.min(1, (boundedProgress - .55) / .25))
-  const latency = reduced ? 187 : Math.round(187 * Math.max(0, (progress - .55) / .45))
-  const tokens = reduced ? 2148 : Math.round(2148 * Math.max(0, (progress - .58) / .42))
+  const bounded = clamp(progress)
+  const outgoingProgress = reduced ? 1 : clamp(bounded / .28)
+  const routedProgress = reduced ? 1 : clamp((bounded - .34) / .24)
+  const latency = reduced ? 187 : Math.round(187 * clamp((bounded - .58) / .34))
+  const tokens = reduced ? 2148 : Math.round(2148 * clamp((bounded - .62) / .32))
   const trackStyle = (trackProgress: number) => ({
     '--track-progress': trackProgress,
     '--track-position': `${trackProgress * 100}%`,
@@ -79,13 +81,15 @@ export function RequestJourney() {
   return (
     <section
       ref={root}
-      className="request-journey grid-surface"
+      className="request-journey"
       aria-label="一次 API 请求的完整旅程"
       data-journey-phase={visiblePhase}
       data-journey-mode={reduced ? 'static' : 'auto'}
       data-playback-state={reduced ? 'static' : playing ? 'playing' : 'paused'}
     >
-      <div className="journey-stage">
+      <div className="journey-stage stack-panel">
+        <div className="journey-glow" aria-hidden="true" />
+        <div className="journey-mesh" aria-hidden="true" />
         <div className="journey-content">
           <div className="journey-head">
             <div>
@@ -93,8 +97,8 @@ export function RequestJourney() {
               <h2>跟随一次请求</h2>
             </div>
             <div className="journey-metrics" aria-label="请求观测指标" data-telemetry-target="latency-token">
-              <span>延迟 <strong><b>{latency}</b><small>ms</small></strong></span>
-              <span>Token <strong>{tokens.toLocaleString('en-US')}</strong></span>
+              <span><span>延迟</span><strong><b>{latency}</b><small>ms</small></strong></span>
+              <span><span>Token</span><strong>{tokens.toLocaleString('en-US')}</strong></span>
             </div>
           </div>
 
@@ -115,7 +119,8 @@ export function RequestJourney() {
               <article key={step.id} className={phase === step.id || reduced ? 'is-active' : ''}>
                 <span className="step-number">{step.number}</span>
                 {step.id === 'send' ? <Send aria-hidden="true" /> : step.id === 'route' ? <Route aria-hidden="true" /> : <CircleGauge aria-hidden="true" />}
-                <div><h3>{step.title}</h3><p>{step.text}</p></div>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
               </article>
             ))}
           </div>

@@ -1,5 +1,5 @@
 import { Menu, Moon, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SessionState } from '../domain/session'
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
 
 export function Header({ session }: HeaderProps) {
   const [open, setOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const dashboardHref = session.kind === 'admin' ? '/admin/dashboard' : '/dashboard'
   const links = [
     { label: '首页', href: '/' },
@@ -17,15 +18,29 @@ export function Header({ session }: HeaderProps) {
     { label: '文档', href: '/docs/' },
   ]
 
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 24)
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    return () => window.removeEventListener('scroll', update)
+  }, [])
+
   return (
-    <header className={`site-header${open ? ' site-header--open' : ''}`}>
+    <header
+      className={`site-header${open ? ' site-header--open' : ''}`}
+      data-scrolled={scrolled ? 'true' : 'false'}
+    >
       <nav className="nav-shell" aria-label="主导航">
         <a className="brand-link" href="/" aria-label="星桥首页">
           <img src="/home-assets/xingqiao-logo.png" alt="" width="34" height="34" />
           <span>星桥</span>
         </a>
         <div className="desktop-nav">
-          {links.map((link) => <a key={link.label} href={link.href}>{link.label}</a>)}
+          {links.map((link) => (
+            <a key={link.label} href={link.href} aria-current={link.href === '/' ? 'page' : undefined}>
+              {link.label}
+            </a>
+          ))}
         </div>
         <div className="nav-actions">
           <button className="icon-button theme-indicator" type="button" aria-label="深色主题" title="深色主题">

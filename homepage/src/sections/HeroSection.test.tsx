@@ -57,7 +57,7 @@ describe('HeroSection', () => {
   it('keeps a pronounced desktop diagonal and resets the lift on smaller screens', () => {
     const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
 
-    expect(styles).toContain('padding-bottom: clamp(12rem, 28vh, 18rem)')
+    expect(styles).toContain('padding-bottom: clamp(14rem, 36vh, 26rem)')
     expect(styles).toMatch(/@media \(max-width: 980px\)[\s\S]*?\.hero-title \{ padding-bottom: 0; \}/)
   })
 

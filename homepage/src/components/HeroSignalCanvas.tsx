@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { buildSignalTile } from '../domain/signalTiling'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
 
-const SIGNAL_FONT = '500 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+const SIGNAL_FONT = '500 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+const ROW_HEIGHT = 18
 
 const rowSeeds = [
   'XQ ROUTE 09 CORE TOKEN BRIDGE OPENAI ANTHROPIC RESPONSE 200 STREAM',
@@ -26,9 +27,20 @@ interface SignalRow {
 
 interface HeroSignalCanvasProps {
   active: boolean
+  /** Omit to render the field as decorative (aria-hidden) rather than a labelled image. */
+  label?: string
+  /** Faintest row opacity. */
+  alphaBase?: number
+  /** Additional random opacity on top of the base. */
+  alphaRange?: number
 }
 
-export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
+export function HeroSignalCanvas({
+  active,
+  label,
+  alphaBase = .06,
+  alphaRange = .17,
+}: HeroSignalCanvasProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const host = useRef<HTMLDivElement>(null)
   const frame = useRef<number | null>(null)
@@ -63,7 +75,7 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       element.style.height = `${height}px`
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
       context.font = SIGNAL_FONT
-      const count = Math.max(18, Math.ceil(height / 22) + 6)
+      const count = Math.max(20, Math.ceil(height / ROW_HEIGHT) + 6)
       rows = Array.from({ length: count }, (_, index) => {
         const rowText = `${rowSeeds[index % rowSeeds.length]}  ${String(index * 73 + 19).padStart(4, '0')}`
         const segment = `${rowText}   `
@@ -73,9 +85,9 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
           text: tile.text,
           segmentWidth: tile.segmentWidth,
           x: -(Math.random() * tile.segmentWidth),
-          y: index * 20,
+          y: index * ROW_HEIGHT,
           speed: -(.62 * Math.random() + .48),
-          alpha: .22 * Math.random() + .05,
+          alpha: alphaRange * Math.random() + alphaBase,
         }
       })
     }
@@ -143,14 +155,15 @@ export function HeroSignalCanvas({ active }: HeroSignalCanvasProps) {
       window.removeEventListener('resize', build)
       if (frame.current !== null) window.cancelAnimationFrame(frame.current)
     }
-  }, [active, reduced])
+  }, [active, reduced, alphaBase, alphaRange])
 
   return (
     <div
       ref={host}
       className="hero-signal"
-      role="img"
-      aria-label="星桥实时信号背景"
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
       data-canvas-active={canvasActive ? 'true' : 'false'}
       data-travel-direction="left"
       data-signal-density="dense"

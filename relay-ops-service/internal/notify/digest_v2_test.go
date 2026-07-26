@@ -167,3 +167,30 @@ func TestRenderHealthDigestFitsCardLimit(t *testing.T) {
 		t.Fatal("超限截断时必须注明")
 	}
 }
+
+func TestRenderHealthDigestFitsCardLimitWithManyPendingItems(t *testing.T) {
+	pending := make([]PendingItem, 200)
+	for i := range pending {
+		pending[i] = PendingItem{
+			AccountName: strings.Repeat("P", 60),
+			Problem:     "余额耗尽",
+			Detail:      "已持续 3 天，需要人工介入处理",
+		}
+	}
+	view := HealthDigestView{
+		Date: "2026-07-27", Quality: QualityLine{Healthy: 200},
+		Profit:  ProfitLine{NoTraffic: true},
+		Pending: pending,
+		Traffic: TrafficLine{HasTraffic: false},
+	}
+	payload, err := RenderHealthDigest(view).CardJSON()
+	if err != nil {
+		t.Fatalf("CardJSON: %v", err)
+	}
+	if len(payload) > maxCardBytes {
+		t.Fatalf("card size = %d, exceeds %d", len(payload), maxCardBytes)
+	}
+	if !strings.Contains(string(payload), "其余对象请在 /ops 查看") {
+		t.Fatal("待处理层被截断时必须提示去 /ops 查看")
+	}
+}

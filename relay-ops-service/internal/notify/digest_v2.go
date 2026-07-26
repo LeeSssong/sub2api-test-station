@@ -3,7 +3,6 @@ package notify
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type QualityLine struct {
@@ -67,11 +66,18 @@ type HealthDigestView struct {
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
+	// Each layer must go through fitDigestSection rather than a bare
+	// strings.Join: the pending layer grows linearly with the number of
+	// accounts (one row per abnormal account plus recommendations) and is
+	// otherwise unbounded. An oversized section makes CardJSON return an
+	// error, which drops the entire digest instead of degrading gracefully.
+	// Four sections capped at maxDigestSectionBytes (4 KiB) each stay well
+	// below the maxCardBytes (30 KiB) limit.
 	elements := []CardElement{
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(qualityLines(view.Quality), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(profitLines(view.Profit), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(pendingLines(view.Pending, view.Recommendations), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(detailLines(view), "\n")}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(qualityLines(view.Quality))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(profitLines(view.Profit))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(pendingLines(view.Pending, view.Recommendations))}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(detailLines(view))}},
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"}, Type: "primary", MultiURL: &CardURL{URL: "/ops"},
@@ -143,6 +149,12 @@ func pendingLines(items []PendingItem, recommendations []RecommendationLine) []s
 func detailLines(view HealthDigestView) []string {
 	lines := []string{"**明细**"}
 	kept, truncated := fitAccountLines(view.Accounts)
+	// The truncation notice leads the account rows: fitDigestSection consumes
+	// its byte budget in order, so a trailing notice would be the first line
+	// dropped exactly when truncation happened and the notice matters most.
+	if truncated > 0 {
+		lines = append(lines, fmt.Sprintf("（已截断 %d 个账号，完整明细见运维后台）", truncated))
+	}
 	for _, account := range kept {
 		lines = append(lines, fmt.Sprintf("- %s：成功率 %s · TTFT %s · 延迟 P95 %s · 倍率 %s · 毛利 %s",
 			digestValue(account.Name), digestValue(account.SuccessRate), digestValue(account.TTFTP50),
@@ -150,9 +162,6 @@ func detailLines(view HealthDigestView) []string {
 	}
 	if len(kept) == 0 {
 		lines = append(lines, "无账号明细")
-	}
-	if truncated > 0 {
-		lines = append(lines, fmt.Sprintf("（已截断 %d 个账号，完整明细见运维后台）", truncated))
 	}
 	if view.Traffic.HasTraffic {
 		lines = append(lines, fmt.Sprintf("站内流量：请求 %s · 错误率 %s · SLA %s",
@@ -163,8 +172,10 @@ func detailLines(view HealthDigestView) []string {
 	return lines
 }
 
-// fitAccountLines caps the detail layer so the first three layers always
-// survive the 30 KiB card limit.
+// fitAccountLines caps the detail layer at a fixed number of accounts and
+// reports how many were dropped so the section can carry an explicit
+// "已截断 N 个账号" notice. It does not provide any byte-level guarantee —
+// that comes from fitDigestSection, which every rendered layer goes through.
 func fitAccountLines(accounts []AccountDetailLine) ([]AccountDetailLine, int) {
 	const maxDetailAccounts = 40
 	if len(accounts) <= maxDetailAccounts {

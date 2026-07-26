@@ -253,15 +253,20 @@ validate_runtime() {
 
 validate_compose_storage() {
   local config=$1
+  # A service mount names the volume key declared in the Compose file, while the
+  # runtime volume carries the project prefix. Resolve the key through the
+  # top-level volumes map before comparing against the runtime volume names.
   jq -e --arg image "$requested_image" --arg app "$app_volume" \
     --arg postgres "$postgres_volume" --arg redis "$redis_volume" '
+    def mounted($service; $target; $volume):
+      [.services[$service].volumes[] | select(.target == $target)] as $mounts
+      | ($mounts | length) == 1
+        and $mounts[0].type == "volume"
+        and ((.volumes[$mounts[0].source].name // $mounts[0].source) == $volume);
     .services.sub2api.image == $image and
-    ([.services.sub2api.volumes[] | select(.target == "/app/data")] | length == 1 and
-      .[0].type == "volume" and .[0].source == $app) and
-    ([.services.postgres.volumes[] | select(.target == "/var/lib/postgresql/data")] | length == 1 and
-      .[0].type == "volume" and .[0].source == $postgres) and
-    ([.services.redis.volumes[] | select(.target == "/data")] | length == 1 and
-      .[0].type == "volume" and .[0].source == $redis)
+    mounted("sub2api"; "/app/data"; $app) and
+    mounted("postgres"; "/var/lib/postgresql/data"; $postgres) and
+    mounted("redis"; "/data"; $redis)
   ' <<<"$config" >/dev/null
 }
 

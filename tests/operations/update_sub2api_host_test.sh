@@ -216,9 +216,11 @@ case "${1:-}" in
   config)
     printf 'compose-validate\n' >>"$log"
     image=$(awk '/^[[:space:]]+image:/ {print $2; exit}' "$deploy/compose.yaml")
+    # Compose reports the declared volume key as the service mount source and
+    # resolves the project-prefixed runtime name under the top-level volumes.
     app_name=sub2api_sub2api_data
     [[ "${FAKE_BAD_VOLUME:-false}" == true ]] && app_name=unexpected-volume
-    printf '{"services":{"sub2api":{"image":"%s","volumes":[{"type":"volume","source":"%s","target":"/app/data"}]},"postgres":{"volumes":[{"type":"volume","source":"sub2api_postgres_data","target":"/var/lib/postgresql/data"}]},"redis":{"volumes":[{"type":"volume","source":"sub2api_redis_data","target":"/data"}]}}}\n' "$image" "$app_name"
+    printf '{"services":{"sub2api":{"image":"%s","volumes":[{"type":"volume","source":"sub2api_data","target":"/app/data"}]},"postgres":{"volumes":[{"type":"volume","source":"postgres_data","target":"/var/lib/postgresql/data"}]},"redis":{"volumes":[{"type":"volume","source":"redis_data","target":"/data"}]}},"volumes":{"sub2api_data":{"name":"%s"},"postgres_data":{"name":"sub2api_postgres_data"},"redis_data":{"name":"sub2api_redis_data"}}}\n' "$image" "$app_name"
     ;;
   pull)
     printf 'pull\n' >>"$log"

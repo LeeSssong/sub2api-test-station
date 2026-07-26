@@ -1650,7 +1650,7 @@ git commit -m "feat: render group availability alert card"
 - Consumes: `sub2api.AccountMonitorReader.ListAccountMonitorHistory`（Task 5）
 - Consumes: `notify.RenderHealthDigest`、`notify.RenderGroupAlert`（Task 6–7）
 - Produces: `BuildHealthDigest(projection sub2api.AccountMonitorProjection, histories map[int64][]sub2api.AccountMonitorHistoryEntry, loc *time.Location, now time.Time) notify.HealthDigestView`
-- Produces: `BuildGroupAlerts(projection sub2api.AccountMonitorProjection, loc *time.Location, now time.Time) []notify.GroupAlertView`
+- Produces: `GroupAvailabilityView{Alert notify.GroupAlertView, Alerting bool}` 与 `BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []GroupAvailabilityView`（返回全部分组，不只告警中的）
 - Produces: `Scheduler.GroupAvailability func(context.Context) error` 字段，注册为 `group-availability` 作业，间隔 5 分钟
 
 - [ ] **Step 1: 写失败测试**
@@ -1781,27 +1781,57 @@ func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
 	}
 }
 
-func TestBuildGroupAlertsOnlyForAlertingGroups(t *testing.T) {
-	projection, _, loc, now := fixture()
-	alerts := BuildGroupAlerts(projection, loc, now)
+func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
+	projection, _, _, _ := fixture()
+	views := BuildGroupAvailability(projection)
 
-	// GPT-Plus 单账号且不可用 -> 可用 0，告警；GPT-Pro 2/2 健康 -> 不告警
-	if len(alerts) != 1 {
-		t.Fatalf("alerts = %+v, want 1", alerts)
+	// 健康分组也必须返回，否则状态机永远观测不到 Failing=false，
+	// 恢复分支不可达，告警只会成功发出一次。
+	if len(views) != 2 {
+		t.Fatalf("views = %+v, want 2 (GPT-Plus 与 GPT-Pro 都要在)", views)
 	}
-	if alerts[0].GroupName != "GPT-Plus" || alerts[0].Available != 0 || alerts[0].Total != 1 {
-		t.Fatalf("alert = %+v", alerts[0])
+	byName := map[string]GroupAvailabilityView{}
+	for _, view := range views {
+		byName[view.Alert.GroupName] = view
 	}
-	if len(alerts[0].Down) != 1 || alerts[0].Down[0].Name != "Plus-XN-0.09" {
-		t.Fatalf("Down = %+v", alerts[0].Down)
+
+	plus, ok := byName["GPT-Plus"]
+	if !ok {
+		t.Fatal("缺少 GPT-Plus")
+	}
+	if !plus.Alerting || plus.Alert.Available != 0 || plus.Alert.Total != 1 {
+		t.Fatalf("GPT-Plus = %+v, want alerting 0/1", plus)
+	}
+	if len(plus.Alert.Down) != 1 || plus.Alert.Down[0].Name != "Plus-XN-0.09" {
+		t.Fatalf("Down = %+v", plus.Alert.Down)
+	}
+	if plus.Alert.Down[0].ErrorCode != "balance_exhausted" {
+		t.Fatalf("ErrorCode = %q, want balance_exhausted", plus.Alert.Down[0].ErrorCode)
+	}
+
+	pro, ok := byName["GPT-Pro"]
+	if !ok {
+		t.Fatal("缺少 GPT-Pro")
+	}
+	if pro.Alerting {
+		t.Fatalf("GPT-Pro 2/2 健康不应告警: %+v", pro)
+	}
+}
+
+func TestBuildHealthDigestOmitsDeltaWithoutComparableHistory(t *testing.T) {
+	projection, _, loc, now := fixture()
+	// 历史为空：不得凭空得出「健康账号较昨日 ↑N」。
+	view := BuildHealthDigest(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{}, loc, now)
+	if view.Quality.HealthyDelta != nil {
+		t.Fatalf("HealthyDelta = %v, want nil（无可比历史时不给同比）", *view.Quality.HealthyDelta)
 	}
 }
 ```
 
 - [ ] **Step 2: 验证测试失败**
 
-Run: `cd relay-ops-service && go test ./internal/dailyreport/ -run 'TestBuildHealthDigest|TestBuildGroupAlerts' -v`
-Expected: 编译失败，提示 `undefined: BuildHealthDigest`、`undefined: BuildGroupAlerts`
+Run: `cd relay-ops-service && go test ./internal/dailyreport/ -run 'TestBuildHealthDigest|TestBuildGroupAvailability' -v`
+Expected: 编译失败，提示 `undefined: BuildHealthDigest`、`undefined: BuildGroupAvailability`
 
 - [ ] **Step 3: 实现构建函数**
 
@@ -1864,14 +1894,13 @@ func BuildHealthDigest(
 
 	view := notify.HealthDigestView{Date: now.In(loc).Format("2006-01-02")}
 	profitInputs := make([]accounthealth.ProfitInput, 0, len(projection.Accounts))
-	todayHealthy, yesterdayHealthy := 0, 0
+	comparableAccounts, todayHealthyComparable, yesterdayHealthy := 0, 0, 0
 
 	for index, account := range projection.Accounts {
 		verdict := verdicts[index]
 		switch verdict.Tier {
 		case accounthealth.TierHealthy:
 			view.Quality.Healthy++
-			todayHealthy++
 		case accounthealth.TierDegraded:
 			view.Quality.Degraded++
 		case accounthealth.TierUnavailable:
@@ -1904,16 +1933,25 @@ func BuildHealthDigest(
 
 		if entries := histories[account.AccountID]; len(entries) > 0 {
 			_, yesterday := accounthealth.SliceByDay(toHistoryEntries(entries), loc, now)
-			if yesterday.SampleCount > 0 && yesterday.SuccessRate >= accounthealth.HealthyMinSuccessRate {
-				yesterdayHealthy++
+			if yesterday.SampleCount > 0 {
+				comparableAccounts++
+				if yesterday.SuccessRate >= accounthealth.HealthyMinSuccessRate {
+					yesterdayHealthy++
+				}
+				if verdict.Tier == accounthealth.TierHealthy {
+					todayHealthyComparable++
+				}
 			}
 		}
 	}
 
 	view.Recommendations = buildRecommendations(projection)
 
-	if len(histories) > 0 {
-		delta := todayHealthy - yesterdayHealthy
+	// 同比只能在「今天和昨天都有样本」的账号子集上计算。若拿全部账号的今日
+	// 健康数去减「仅有历史记录的账号」的昨日健康数，两个总体不一致，delta 会
+	// 系统性偏高；历史为空时更会凭空得出「较昨日 ↑N」。宁可不给同比。
+	if comparableAccounts > 0 {
+		delta := todayHealthyComparable - yesterdayHealthy
 		view.Quality.HealthyDelta = &delta
 	}
 	view.Quality.TTFTMedianMS = medianTTFT(projection.Accounts)
@@ -1949,32 +1987,35 @@ func buildRecommendations(projection sub2api.AccountMonitorProjection) []notify.
 	return recommendations
 }
 
-func BuildGroupAlerts(projection sub2api.AccountMonitorProjection, loc *time.Location, now time.Time) []notify.GroupAlertView {
-	alerts := []notify.GroupAlertView{}
+// GroupAvailabilityView pairs a renderable alert with the alerting flag.
+//
+// Every group must be reported, not just the alerting ones: the incident state
+// machine only emits a recovery when it observes Failing=false. Returning just
+// the alerting groups would leave a recovered group stuck in `confirmed`
+// forever, so its next real outage carries an unchanged evidence hash and is
+// silently suppressed — the alert would fire exactly once, ever.
+type GroupAvailabilityView struct {
+	Alert    notify.GroupAlertView
+	Alerting bool
+}
+
+func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []GroupAvailabilityView {
+	errorCodes := make(map[int64]string, len(projection.Accounts))
+	for _, account := range projection.Accounts {
+		errorCodes[account.AccountID] = account.ErrorCode
+	}
+	views := []GroupAvailabilityView{}
 	for _, group := range accounthealth.GroupAvailabilities(classify(projection)) {
-		if !group.Alerting {
-			continue
-		}
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
 		for _, down := range group.Down {
 			alert.Down = append(alert.Down, notify.GroupAlertAccount{
 				Name:      down.Name,
-				ErrorCode: errorCodeOf(projection, down.AccountID),
-				Duration:  "",
+				ErrorCode: errorCodes[down.AccountID],
 			})
 		}
-		alerts = append(alerts, alert)
+		views = append(views, GroupAvailabilityView{Alert: alert, Alerting: group.Alerting})
 	}
-	return alerts
-}
-
-func errorCodeOf(projection sub2api.AccountMonitorProjection, accountID int64) string {
-	for _, account := range projection.Accounts {
-		if account.AccountID == accountID {
-			return account.ErrorCode
-		}
-	}
-	return ""
+	return views
 }
 
 func pendingFor(account sub2api.AccountMonitorAccount, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {
@@ -2057,7 +2098,7 @@ func toHistoryEntries(entries []sub2api.AccountMonitorHistoryEntry) []accounthea
 
 - [ ] **Step 4: 验证构建函数测试通过**
 
-Run: `cd relay-ops-service && go test ./internal/dailyreport/ -run 'TestBuildHealthDigest|TestBuildGroupAlerts' -v`
+Run: `cd relay-ops-service && go test ./internal/dailyreport/ -run 'TestBuildHealthDigest|TestBuildGroupAvailability' -v`
 Expected: PASS
 
 - [ ] **Step 5: 接线到 Run 与调度器**
@@ -2135,14 +2176,19 @@ Expected: PASS
 				// fail-safe：监控自身故障不得伪装成业务故障，静默跳过本轮
 				return nil
 			}
-			for _, alert := range dailyreport.BuildGroupAlerts(projection, cfg.Timezone, time.Now().UTC()) {
+			var failures []error
+			for _, item := range dailyreport.BuildGroupAvailability(projection) {
+				alert := item.Alert
 				key := "group:" + alert.GroupName + ":availability"
 				hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d", alert.GroupName, alert.Available, alert.Total)))
 				evidence := hex.EncodeToString(hash[:])
+				// 健康分组同样要 Observe（Failing=false），否则状态机永远走不到
+				// 恢复分支，分组恢复后 incident 卡在 confirmed，下次真出事时
+				// 证据哈希未变会被判定为无需通知——告警只会成功发出一次。
 				transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{
 					Key:                 key,
 					Severity:            "P1",
-					Failing:             true,
+					Failing:             item.Alerting,
 					EvidenceHash:        evidence,
 					CurrentValue:        fmt.Sprintf("可用 %d / 共 %d", alert.Available, alert.Total),
 					ConfirmationWindows: 2,
@@ -2150,11 +2196,13 @@ Expected: PASS
 				if observeErr != nil || !transition.Notify || notifier == nil {
 					continue
 				}
+				alert.Recovery = !item.Alerting
+				// 单个分组投递失败不得挡住其余分组的告警
 				if sendErr := notifier.SendIncident(runCtx, key, evidence, notify.RenderGroupAlert(alert)); sendErr != nil {
-					return sendErr
+					failures = append(failures, sendErr)
 				}
 			}
-			return nil
+			return errors.Join(failures...)
 		},
 ```
 

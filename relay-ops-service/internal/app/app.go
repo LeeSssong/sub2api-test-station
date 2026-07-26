@@ -383,6 +383,33 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return err
 		},
 		SiteMonitor: siteMonitor.Run,
+		GroupAvailability: func(runCtx context.Context) error {
+			projection, readErr := reader.ListAccountMonitors(runCtx)
+			if readErr != nil {
+				// fail-safe：监控自身故障不得伪装成业务故障，静默跳过本轮
+				return nil
+			}
+			for _, alert := range dailyreport.BuildGroupAlerts(projection, cfg.Timezone, time.Now().UTC()) {
+				key := "group:" + alert.GroupName + ":availability"
+				hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d/%d", alert.GroupName, alert.Available, alert.Total)))
+				evidence := hex.EncodeToString(hash[:])
+				transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{
+					Key:                 key,
+					Severity:            "P1",
+					Failing:             true,
+					EvidenceHash:        evidence,
+					CurrentValue:        fmt.Sprintf("可用 %d / 共 %d", alert.Available, alert.Total),
+					ConfirmationWindows: 2,
+				})
+				if observeErr != nil || !transition.Notify || notifier == nil {
+					continue
+				}
+				if sendErr := notifier.SendIncident(runCtx, key, evidence, notify.RenderGroupAlert(alert)); sendErr != nil {
+					return sendErr
+				}
+			}
+			return nil
+		},
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}

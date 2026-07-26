@@ -36,6 +36,8 @@ type Scheduler struct {
 	Usage         func(context.Context, billing.SessionConfig) error
 	SiteMonitor   func(context.Context) error
 	DailyReport   func(context.Context) error
+
+	GroupAvailability func(context.Context) error
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
@@ -118,6 +120,11 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 	}
 	if s.SiteMonitor != nil {
 		if err := s.runDue(ctx, "site-monitor", now, 15*time.Minute, s.SiteMonitor); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if s.GroupAvailability != nil {
+		if err := s.runDue(ctx, "group-availability", now, 5*time.Minute, s.GroupAvailability); err != nil {
 			failures = append(failures, err)
 		}
 	}

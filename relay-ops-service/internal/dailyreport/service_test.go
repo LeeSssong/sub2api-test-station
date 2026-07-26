@@ -82,7 +82,7 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 		t.Fatal(cardErr)
 	}
 	text := string(card)
-	for _, required := range []string{"站内运行", "公开分组", "GPT-Pro", "GPT-Plus", "当前调度账号", "账号 10", "上游账号质量", "倍率 0.1x", "TTFT P95 260ms", "候选站 1", "活动事件 1", "运维后台"} {
+	for _, required := range []string{"中转站日报 2026-07-20", "质量", "利润", "待处理", "明细", "运维后台"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("report missing %q: %s", required, text)
 		}
@@ -99,7 +99,7 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 	}
 }
 
-func TestServiceMarksMismatchedAccountQualityUnavailableInDigest(t *testing.T) {
+func TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC)
@@ -138,12 +138,17 @@ func TestServiceMarksMismatchedAccountQualityUnavailableInDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "账号集合不匹配") || strings.Contains(text, "倍率 0.1x") {
-		t.Fatalf("mismatched quality was presented as current: %s", text)
+	// 健康日报只呈现账号监控投影；旧 accountquality 快照（含账号集合不匹配的
+	// 陈旧数据）不得再以任何形式进入卡片。整条链路由 Task 9 移除。
+	if strings.Contains(text, "0.1x") || strings.Contains(text, "old-quality") || strings.Contains(text, "上游账号质量") {
+		t.Fatalf("legacy account quality leaked into health digest: %s", text)
+	}
+	if !strings.Contains(text, "质量") {
+		t.Fatalf("health digest missing quality layer: %s", text)
 	}
 }
 
-func TestServiceConsumesNativeAccountMonitorProjectionWithoutBreakingLegacyQuality(t *testing.T) {
+func TestServiceRendersHealthDigestFromMonitorProjection(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 25, 7, 30, 0, 0, time.UTC)
@@ -173,10 +178,13 @@ func TestServiceConsumesNativeAccountMonitorProjectionWithoutBreakingLegacyQuali
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{"上游账号情况", "B 账号综合更佳", "账号监控"} {
+	for _, required := range []string{"稳定 1 / 降级 1 / 不可用 0", "账号 A", "账号 B", "综合优于当前"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("native projection missing %q: %s", required, text)
 		}
+	}
+	if strings.Contains(text, "账号 11") || strings.Contains(text, "账号 12") {
+		t.Fatalf("health digest leaked database ids: %s", text)
 	}
 }
 
@@ -193,6 +201,11 @@ func TestCacheReportLineMarksUnconfirmedAndPricingBlockers(t *testing.T) {
 		t.Fatalf("blocked line = %q", blocked)
 	}
 }
+
+// Service.Run discovers the monitor reader through a runtime type assertion,
+// so a missing method on this double would silently take the else branch and
+// the tests would stop covering the digest path. Fail the build instead.
+var _ sub2api.AccountMonitorReader = reportReader{}
 
 type reportReader struct {
 	channels []sub2api.Channel

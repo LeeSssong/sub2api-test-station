@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accounthealth"
-	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/cachepolicy"
 	"example.invalid/relay-ops-service/internal/candidates"
@@ -40,10 +39,6 @@ type MessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
 
-type AccountQualitySource interface {
-	Read(time.Time) (accountquality.Result, error)
-}
-
 type Result struct {
 	ReportDate   string `json:"report_date"`
 	Groups       int    `json:"groups"`
@@ -52,14 +47,13 @@ type Result struct {
 }
 
 type Service struct {
-	Reader         opsmetrics.Reader
-	Candidates     CandidateReader
-	Incidents      IncidentReader
-	AccountQuality AccountQualitySource
-	Agent          AnalysisRunner
-	Notifier       MessageSender
-	Timezone       *time.Location
-	Now            func() time.Time
+	Reader     opsmetrics.Reader
+	Candidates CandidateReader
+	Incidents  IncidentReader
+	Agent      AnalysisRunner
+	Notifier   MessageSender
+	Timezone   *time.Location
+	Now        func() time.Time
 }
 
 func (s Service) Run(ctx context.Context) (Result, error) {
@@ -123,17 +117,6 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		}
 	}
 	footer = append(footer, "只读分析："+analysis.Summary)
-	quality := accountquality.View{}
-	if s.AccountQuality != nil {
-		if evidence, readErr := s.AccountQuality.Read(now); readErr == nil {
-			quality = evidence.ViewForAccountSet(now, runtime.AccountSetSHA256)
-		} else {
-			quality = accountquality.View{Available: true, Stale: true}
-		}
-	}
-	// 旧卡片的账号质量区块已被健康日报取代，quality 不再进入渲染；
-	// 整条 accountquality 链路由 Task 9 统一移除。
-	_ = quality
 	view := notify.HealthDigestView{
 		Date: date,
 		Quality: notify.QualityLine{

@@ -271,18 +271,16 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
 	nativeAlertService := nativealerts.Service{Incidents: incidentMachine, Agent: nativeAnalysis, Notifier: notifier}
 	syncer.Observer = nativeAlertService
-	var dailyAccountQualitySource dailyreport.AccountQualitySource
 	var accountQualitySource httpserver.AccountQualitySource
 	var siteAccountQualitySource opsmonitor.QualitySource
 	if cfg.AccountQualityResultFile != "" {
 		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
-		dailyAccountQualitySource = source
 		accountQualitySource = source
 		siteAccountQualitySource = source
 	}
 	dailyReportService := dailyreport.Service{
 		Reader: reader, Candidates: database, Incidents: dailyReportIncidents{Store: database, state: incidentMachine},
-		AccountQuality: dailyAccountQualitySource, Agent: reportAnalysis, Notifier: notifier, Timezone: cfg.Timezone,
+		Agent: reportAnalysis, Notifier: notifier, Timezone: cfg.Timezone,
 	}
 	collector := &collection.Collector{
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,

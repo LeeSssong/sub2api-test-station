@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
@@ -56,22 +55,14 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	incidentStore := &reportIncidentStore{items: []string{"P1 confirmed GPT-Pro monitor error"}, observed: map[string]bool{}}
 	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
 	analyzer := &reportAnalyzer{}
-	accountSetHash, hashErr := accountquality.CanonicalAccountSetSHA256([]int64{10})
-	if hashErr != nil {
-		t.Fatal(hashErr)
-	}
 	service := Service{
 		Reader:     reader,
 		Candidates: reportCandidates{items: []candidates.Candidate{{ID: domain.UpstreamID(17), Name: "candidate-a", Enabled: true}}},
 		Incidents:  incidentStore,
-		AccountQuality: reportQualitySource{result: accountquality.Result{
-			SchemaVersion: 1, SnapshotID: "quality-20260720", ObservedAt: time.Date(2026, 7, 20, 1, 20, 0, 0, time.UTC), AccountSetSHA256: accountSetHash,
-			Accounts: []accountquality.Account{{AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64ptr(0.1), SampleCount: 6, SuccessCount: 6, SuccessRate: 1, TTFTP50MS: float64ptr(180), TTFTP95MS: float64ptr(260), LastResult: "passed", LastObservedAt: time.Date(2026, 7, 20, 1, 19, 0, 0, time.UTC)}},
-		}},
-		Agent:    analyzer,
-		Notifier: notifier,
-		Timezone: time.FixedZone("Asia/Shanghai", 8*60*60),
-		Now:      func() time.Time { return time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC) },
+		Agent:      analyzer,
+		Notifier:   notifier,
+		Timezone:   time.FixedZone("Asia/Shanghai", 8*60*60),
+		Now:        func() time.Time { return time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC) },
 	}
 
 	first, err := service.Run(context.Background())
@@ -116,7 +107,10 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	}
 }
 
-func TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest(t *testing.T) {
+// 曾经名为 TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest：旧
+// accountquality 注入点已随 Task 9 整体移除，泄漏断言失去通路后改为守住
+// 剩余的真实数据流 —— 空监控投影必须渲染出全零计数，而不是「数据不可用」。
+func TestServiceRendersZeroQualityCountsFromEmptyMonitorProjection(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC)
@@ -131,16 +125,6 @@ func TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest(t *testing.T) {
 	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
 	service := Service{
 		Reader: reader, Incidents: incidentStore, Notifier: notifier,
-		AccountQuality: reportQualitySource{result: accountquality.Result{
-			SchemaVersion: 1, SnapshotID: "old-quality", ObservedAt: now,
-			AccountSetSHA256: "95bce61a71a78185f4b6f8f25fc6986108043727fe9d9c19dbe44b0081ef928a",
-			Accounts: []accountquality.Account{{
-				AccountID: 10, ModelID: "gpt", RateMultiplier: float64ptr(0.1),
-				SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
-				TTFTP50MS: float64ptr(100), TTFTP95MS: float64ptr(100),
-				LastResult: "passed", LastObservedAt: now,
-			}},
-		}},
 		Now: func() time.Time { return now },
 	}
 
@@ -155,13 +139,8 @@ func TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	// 健康日报只呈现账号监控投影；旧 accountquality 快照（含账号集合不匹配的
-	// 陈旧数据）不得再以任何形式进入卡片。整条链路由 Task 9 移除。
-	if strings.Contains(text, "0.1x") || strings.Contains(text, "old-quality") || strings.Contains(text, "上游账号质量") {
-		t.Fatalf("legacy account quality leaked into health digest: %s", text)
-	}
-	// 「质量」是静态标题，contains("质量") 恒真。改为断言质量层的计数行确实
-	// 来自监控投影：本 fixture 的投影为空，只有走了投影路径才会打出全零计数。
+	// 「质量」是静态标题，contains("质量") 恒真。断言质量层的计数行确实来自
+	// 监控投影：本 fixture 的投影为空，只有走了投影路径才会打出全零计数。
 	if !strings.Contains(text, "稳定 0 / 降级 0 / 不可用 0") {
 		t.Fatalf("quality layer not rendered from monitor projection: %s", text)
 	}
@@ -311,12 +290,6 @@ type reportCandidates struct{ items []candidates.Candidate }
 
 func (r reportCandidates) ListCandidates(context.Context) ([]candidates.Candidate, error) {
 	return r.items, nil
-}
-
-type reportQualitySource struct{ result accountquality.Result }
-
-func (source reportQualitySource) Read(time.Time) (accountquality.Result, error) {
-	return source.result, nil
 }
 
 func float64ptr(value float64) *float64 { return &value }

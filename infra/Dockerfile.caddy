@@ -4,6 +4,9 @@ WORKDIR /src
 COPY homepage/package.json homepage/package-lock.json ./
 RUN npm ci
 COPY homepage/ ./
+# update-ui.contract.test.ts asserts against the injected admin dialog script,
+# which lives outside homepage/ and resolves to /infra from the test file.
+COPY infra/sub2api-update-ui /infra/sub2api-update-ui
 RUN npm run test:run && npm run typecheck && npm run build
 
 FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d

@@ -2387,3 +2387,40 @@ cd relay-ops-service && go build ./... && go test ./... 2>&1 | tail -30
 Expected: 所有包 `ok` 或 `no test files`。
 
 部署前请人工确认三项：日报卡片首屏为质量层且账号显示为用户命名；单账号分组在可用时不产生告警；倍率不可用的账号在利润区显示「无法核算」而非数值。
+
+---
+
+### Task 10: 接上时间窗口（全分支审查发现的阻断项）
+
+**背景：** 前 9 个任务把 `SliceByDay` 造了出来，但判定链从未消费它的 `today` 半边 —— `classify()` 直接读 `projection.Accounts[].SuccessRate`，而该字段在 Sub2API 端来自 `ListAggregates(now - 7*24h)`（`account_monitor_service.go:80`，`AccountMonitorHistoryDays = 7`）。规格现状缺陷表第 6 行点名要修的正是这个 7 天累计聚合。
+
+**后果（按严重度）：**
+
+1. 分组告警对非 `balance_exhausted` 故障近乎永不触发。300 秒间隔 × 7 天 ≈ 2016 样本，账号硬挂 1 小时后 7 天成功率仍 ≈98.6% 判健康，24 小时后 ≈85.6% 判降级（降级仍计入 `Available`），约 3.5–4 天才跌破 50%。5 分钟一次的作业实际响应是天级。
+2. 日报三档计数、明细成功率、待处理「成功率 N% ↓」全是 7 天数字，规格原话「今天刚挂与挂了一周数值几乎相同」原样保留。
+3. `HealthyDelta` 拿 7 天口径的今天减 1 天口径的昨天，且两侧判定规则不同（今天走完整 `ClassifyAccount` 含 `balance_exhausted` 短路，昨天只用裸成功率阈值）。
+
+**Files:**
+- Modify: `relay-ops-service/internal/accounthealth/dayslice.go`（新增 `Aggregate`）
+- Modify: `relay-ops-service/internal/accounthealth/classify.go`（判定顺序）
+- Modify: `relay-ops-service/internal/dailyreport/health.go`（消费 today 切片）
+- Modify: `relay-ops-service/internal/app/group_availability.go`（1 小时滚动窗）
+- Test: 对应各测试文件
+
+**Interfaces:**
+- Produces: `Aggregate(entries []HistoryEntry, from, to time.Time) DaySlice` —— `SliceByDay` 与滚动窗共用的聚合原语，半开区间 `[from, to)`
+- Produces: `AccountSampleFrom(slice DaySlice, id int64, name string, groups []string) AccountSample` —— 由聚合结果构造判定输入，供日报与告警共用
+- Changes: `ClassifyAccount` 的判定顺序 —— `ErrorCodeBalanceExhausted` 短路必须在 `SampleCount <= 0` 之前
+
+**判定顺序为何必须改：** 当前 `SampleCount <= 0` 优先判 `TierUnknown`。窗口接上之前 `SampleCount` 是 7 天累计恒 > 0，所以无害；接上之后它变成当日/1 小时计数，「0 样本」成为常态（新增账号、跨零点后第一个小时）。届时一个余额耗尽账号会被判 `Unknown` → 被 `GroupAvailabilities` 剔出 `Total` → 3 账号组缩成 2 账号组 → 告警阈值从「≤1」悄悄放宽到「==0」。两者必须同批修。
+
+**窗口口径：**
+- 日报：当日 `00:00`（`loc` 时区）起至 `now`
+- 告警：`now - 1h` 至 `now` 滚动窗；历史拉取 `limit` 按 `ceil(3600/interval) × 1.5` 计算（300 秒间隔 → 18 条），不要复用 `HistoryLimitFor`（那是 48 小时口径）
+- `HealthyDelta` 两侧统一走 `ClassifyAccount`：今天用当日切片、昨天用昨日切片，都构造成 `AccountSample` 后判定，不再直接比裸成功率
+
+**必须锁定的回归：**
+- 账号在窗口内全部失败但 7 天聚合仍高 → 当日口径必须判不可用（反向验证：换回 projection 口径应变红）
+- `SampleCount == 0` 且 `ErrorCode == balance_exhausted` → 判 `TierUnavailable` 而非 `TierUnknown`
+- 告警作业拉取的 history 条数与 1 小时窗匹配
+- `HealthyDelta` 在今昨两日历史相同时必须为 0

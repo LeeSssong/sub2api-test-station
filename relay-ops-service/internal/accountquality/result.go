@@ -38,7 +38,6 @@ type Result struct {
 type Account struct {
 	AccountID      int64     `json:"account_id"`
 	ModelID        string    `json:"model_id"`
-	RateMultiplier *float64  `json:"rate_multiplier"`
 	SampleCount    int64     `json:"sample_count"`
 	SuccessCount   int64     `json:"success_count"`
 	SuccessRate    float64   `json:"success_rate"`
@@ -60,7 +59,7 @@ type View struct {
 }
 
 type AccountView struct {
-	AccountID, ModelID, Stability, SuccessRate, TTFTP50, TTFTP95, Multiplier, LastResult string
+	AccountID, ModelID, Stability, SuccessRate, TTFTP50, TTFTP95, LastResult string
 }
 
 type FileSource struct {
@@ -112,7 +111,6 @@ func (r Result) View(now time.Time) View {
 			SuccessRate: fmt.Sprintf("%.1f%%", account.SuccessRate*100),
 			TTFTP50:     formatMS(account.TTFTP50MS),
 			TTFTP95:     formatMS(account.TTFTP95MS),
-			Multiplier:  formatMultiplier(account.RateMultiplier),
 			LastResult:  resultLabel(account.LastResult),
 		})
 	}
@@ -163,7 +161,7 @@ func validate(result Result, now time.Time) error {
 	accountIDs := make([]int64, 0, len(result.Accounts))
 	for _, account := range result.Accounts {
 		if account.AccountID <= previousID || !validModelID(account.ModelID, account.LastResult) ||
-			(account.RateMultiplier != nil && !finiteNonNegative(*account.RateMultiplier)) || account.SampleCount <= 0 || account.SuccessCount < 0 ||
+			account.SampleCount <= 0 || account.SuccessCount < 0 ||
 			account.SuccessCount > account.SampleCount || account.SuccessRate < 0 || account.SuccessRate > 1 ||
 			!finite(account.SuccessRate) || !allowedResult(account.LastResult) || account.LastObservedAt.IsZero() ||
 			account.LastObservedAt.After(result.ObservedAt) || !validErrorCode(account.LastErrorCode, account.LastResult) ||
@@ -221,13 +219,6 @@ func formatMS(value *float64) string {
 		return "无成功样本"
 	}
 	return fmt.Sprintf("%.0fms", *value)
-}
-
-func formatMultiplier(value *float64) string {
-	if value == nil {
-		return "未提供"
-	}
-	return strconv.FormatFloat(*value, 'f', -1, 64) + "x"
 }
 
 func resultLabel(value string) string {

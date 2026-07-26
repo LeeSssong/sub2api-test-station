@@ -184,7 +184,7 @@ func TestServiceSuppressesQualityTransitionsForMismatchedAccountSet(t *testing.T
 		SchemaVersion: 1, SnapshotID: "wrong-set", ObservedAt: now,
 		AccountSetSHA256: "95bce61a71a78185f4b6f8f25fc6986108043727fe9d9c19dbe44b0081ef928a",
 		Accounts: []accountquality.Account{{
-			AccountID: 10, RateMultiplier: number(0.10), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+			AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 			LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: now,
 		}},
 	}}
@@ -212,7 +212,7 @@ func TestServiceDoesNotCreateOrReplaceMultiplierBaselineWhenUnavailable(t *testi
 	notifier := &fakeNotifier{}
 	service := newService(reader, repository, notifier, now)
 	service.Quality = &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-		AccountID: 10, RateMultiplier: nil, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "account_test_error", LastErrorCode: "account_test_error", LastObservedAt: now,
 	}})}
 
@@ -244,7 +244,7 @@ func TestServiceDoesNotTreatOrdinaryAccountTestErrorAsBalanceExhaustion(t *testi
 	notifier := &fakeNotifier{}
 	service := newService(reader, repository, notifier, now)
 	service.Quality = &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-		AccountID: 10, RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "account_test_error", LastErrorCode: "account_test_error", LastObservedAt: now,
 	}})}
 
@@ -265,7 +265,7 @@ func TestServiceDoesNotRecoverConfirmedBalanceIncidentFromAnAccountTestError(t *
 	repository := newMemoryRepository()
 	notifier := &fakeNotifier{}
 	quality := &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-		AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: now,
 	}})}
 	service := newService(reader, repository, notifier, now)
@@ -278,7 +278,7 @@ func TestServiceDoesNotRecoverConfirmedBalanceIncidentFromAnAccountTestError(t *
 		t.Fatalf("balance incident = %#v", notifier.sent)
 	}
 	quality.result = qualityResult(now.Add(time.Minute), []accountquality.Account{{
-		AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "account_test_error", LastErrorCode: "account_test_error", LastObservedAt: now.Add(time.Minute),
 	}})
 	service.Now = func() time.Time { return now.Add(time.Minute) }
@@ -304,7 +304,7 @@ func TestServiceSkipsIndeterminateAccountQualityResults(t *testing.T) {
 			notifier := &fakeNotifier{}
 			service := newService(reader, repository, notifier, now)
 			service.Quality = &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-				AccountID: 10, RateMultiplier: number(0), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+				AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 				LastResult: result, LastErrorCode: result, LastObservedAt: now,
 			}})}
 
@@ -446,7 +446,7 @@ func TestServiceOnlyUsesActiveSchedulableAccountsForQualityEvaluation(t *testing
 	notifier := &fakeNotifier{}
 	service := newService(reader, repository, notifier, now)
 	service.Quality = &fakeQualitySource{result: qualityResult(now, []accountquality.Account{
-		{AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 0, SuccessRate: 0, LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: now},
+		{AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 0, SuccessRate: 0, LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: now},
 	})}
 
 	if err := service.Run(context.Background()); err != nil {
@@ -507,7 +507,7 @@ func TestServiceSkipsStaleAccountQualityEvidence(t *testing.T) {
 	notifier := &fakeNotifier{}
 	service := newService(reader, repository, notifier, now)
 	service.Quality = &fakeQualitySource{result: qualityResult(stale, []accountquality.Account{{
-		AccountID: 10, RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: stale,
 	}})}
 

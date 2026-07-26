@@ -331,8 +331,6 @@ module AccountQualityPulse
     end
 
     def collect_account(account_id, history)
-      multiplier = nil
-      multiplier = rate_multiplier(@client.account(account_id))
       model_id = ModelSelector.select(@client.models(account_id))
       probe = if model_id
                 @client.probe(account_id: account_id, model_id: model_id, prompt: PROMPT)
@@ -342,7 +340,6 @@ module AccountQualityPulse
       sample = {
         "account_id" => account_id,
         "model_id" => model_id.to_s,
-        "rate_multiplier" => multiplier,
         "result" => approved_result(probe.result),
         "error_code" => approved_error_code(probe.error_code, probe.result),
         "ttft_ms" => valid_ttft(probe.ttft_ms),
@@ -350,22 +347,12 @@ module AccountQualityPulse
       }
       { "sample" => sample }
     rescue StandardError
-      { "sample" => failure_sample(account_id, multiplier) }
+      { "sample" => failure_sample(account_id) }
     end
 
-    def rate_multiplier(detail)
-      value = detail.fetch("rate_multiplier")
-      numeric = Float(value)
-      raise ValidationError, "account multiplier is invalid" unless numeric.finite? && numeric >= 0
-
-      numeric
-    rescue KeyError, ArgumentError, TypeError
-      raise ValidationError, "account multiplier is invalid"
-    end
-
-    def failure_sample(account_id, multiplier = nil)
+    def failure_sample(account_id)
       {
-        "account_id" => account_id, "model_id" => "", "rate_multiplier" => multiplier,
+        "account_id" => account_id, "model_id" => "",
         "result" => "account_test_error", "error_code" => "account_test_error", "ttft_ms" => nil,
         "observed_at" => @now.iso8601
       }
@@ -389,7 +376,6 @@ module AccountQualityPulse
       {
         "account_id" => current.fetch("account_id"),
         "model_id" => current.fetch("model_id"),
-        "rate_multiplier" => current.fetch("rate_multiplier"),
         "sample_count" => account_samples.length,
         "success_count" => successful.length,
         "success_rate" => (successful.length.to_f / account_samples.length).round(6),

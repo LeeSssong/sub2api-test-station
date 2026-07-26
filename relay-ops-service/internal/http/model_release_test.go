@@ -16,7 +16,7 @@ func TestOpsShowsReadOnlyAccountPoolQuality(t *testing.T) {
 		NativeMonitorURL: "/monitor",
 		AccountQuality: accountquality.View{
 			Available: true, ObservedAt: "2026-07-23T00:00:00Z", AccountSetSHA256: strings.Repeat("a", 64),
-			Accounts: []accountquality.AccountView{{AccountID: "21", ModelID: "gpt-5.6-sol", Stability: "成功 3/4", SuccessRate: "75.0%", TTFTP50: "150ms", TTFTP95: "210ms", Multiplier: "0.05x", LastResult: "通过"}},
+			Accounts: []accountquality.AccountView{{AccountID: "21", ModelID: "gpt-5.6-sol", Stability: "成功 3/4", SuccessRate: "75.0%", TTFTP50: "150ms", TTFTP95: "210ms", LastResult: "通过"}},
 		},
 	}})
 	request := httptest.NewRequest(http.MethodGet, "/relay-ops/api/ops-view", nil)
@@ -27,12 +27,12 @@ func TestOpsShowsReadOnlyAccountPoolQuality(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, required := range []string{"上游账号质量", "稳定性", "成功 3/4", "TTFT P95", "210ms", "倍率", "0.05x", "账号 21", strings.Repeat("a", 64)} {
+	for _, required := range []string{"上游账号质量", "稳定性", "成功 3/4", "TTFT P95", "210ms", "账号 21", strings.Repeat("a", 64)} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("ops body missing %q", required)
 		}
 	}
-	for _, prohibited := range []string{"模型版本", "<form", "<input", "<select", "<textarea", "<button", "Base URL", "API Key", "确认替换", "立即升级"} {
+	for _, prohibited := range []string{"倍率", "模型版本", "<form", "<input", "<select", "<textarea", "<button", "Base URL", "API Key", "确认替换", "立即升级"} {
 		if strings.Contains(body, prohibited) {
 			t.Fatalf("ops body contains forbidden value %q", prohibited)
 		}

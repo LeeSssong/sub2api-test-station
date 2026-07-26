@@ -24,36 +24,11 @@ func TestLoadAcceptsStrictSecretFreeAccountQualityResult(t *testing.T) {
 	if !view.Available || view.Stale || len(view.Accounts) != 2 {
 		t.Fatalf("view = %#v", view)
 	}
-	if view.Accounts[0].Stability != "成功 3/4" || view.Accounts[0].TTFTP95 != "210ms" || view.Accounts[0].Multiplier != "0.05x" {
+	if view.Accounts[0].Stability != "成功 3/4" || view.Accounts[0].TTFTP95 != "210ms" {
 		t.Fatalf("account = %#v", view.Accounts[0])
 	}
 	if view.Accounts[1].LastResult != "余额不足" || view.Accounts[1].TTFTP95 != "无成功样本" {
 		t.Fatalf("account = %#v", view.Accounts[1])
-	}
-}
-
-func TestLoadAndViewDistinguishUnavailableAndKnownZeroMultiplier(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 7, 23, 0, 10, 0, 0, time.UTC)
-	document := validDocument()
-	accounts := document["accounts"].([]any)
-	accounts[0].(map[string]any)["rate_multiplier"] = nil
-	accounts[1].(map[string]any)["rate_multiplier"] = 0.0
-
-	result, err := Load(writeDocument(t, document), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Accounts[0].RateMultiplier != nil {
-		t.Fatalf("unavailable multiplier = %#v", result.Accounts[0].RateMultiplier)
-	}
-	if result.Accounts[1].RateMultiplier == nil || *result.Accounts[1].RateMultiplier != 0 {
-		t.Fatalf("known zero multiplier = %#v", result.Accounts[1].RateMultiplier)
-	}
-	view := result.View(now)
-	if view.Accounts[0].Multiplier != "未提供" || view.Accounts[1].Multiplier != "0x" {
-		t.Fatalf("multiplier views = %#v", view.Accounts)
 	}
 }
 
@@ -112,7 +87,7 @@ func TestLoadRejectsAccountSetHashThatDoesNotDescribeResultAccounts(t *testing.T
 			mutate: func(document map[string]any) {
 				accounts := document["accounts"].([]any)
 				extra := map[string]any{
-					"account_id": float64(23), "model_id": "gpt-5.6-luna", "rate_multiplier": 0.10,
+					"account_id": float64(23), "model_id": "gpt-5.6-luna",
 					"sample_count": float64(1), "success_count": float64(1), "success_rate": 1.0,
 					"ttft_p50_ms": 100.0, "ttft_p95_ms": 100.0, "last_result": "passed", "last_error_code": "",
 					"last_observed_at": "2026-07-23T00:00:00Z",
@@ -264,13 +239,13 @@ func validDocument() map[string]any {
 		"account_set_sha256": "16f2380a3e0b5e5b1c2d4f701b94a23cff01b0676f32c88b60f22fcd84a26da8",
 		"accounts": []any{
 			map[string]any{
-				"account_id": float64(21), "model_id": "gpt-5.6-sol", "rate_multiplier": 0.05,
+				"account_id": float64(21), "model_id": "gpt-5.6-sol",
 				"sample_count": float64(4), "success_count": float64(3), "success_rate": 0.75,
 				"ttft_p50_ms": 150.0, "ttft_p95_ms": 210.0, "last_result": "passed", "last_error_code": "",
 				"last_observed_at": "2026-07-23T00:00:00Z",
 			},
 			map[string]any{
-				"account_id": float64(22), "model_id": "gpt-5.6-terra", "rate_multiplier": 0.10,
+				"account_id": float64(22), "model_id": "gpt-5.6-terra",
 				"sample_count": float64(4), "success_count": float64(0), "success_rate": 0.0,
 				"ttft_p50_ms": nil, "ttft_p95_ms": nil, "last_result": "balance_exhausted", "last_error_code": "balance_exhausted",
 				"last_observed_at": "2026-07-23T00:00:00Z",

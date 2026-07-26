@@ -98,7 +98,7 @@ func TestDatabaseOpsSourceProjectsAccountQualityResult(t *testing.T) {
 			SchemaVersion: 1, SnapshotID: "ACCOUNT-QUALITY-1", ObservedAt: now,
 			AccountSetSHA256: accountSetHash,
 			Accounts: []accountquality.Account{{
-				AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64Pointer(0.05),
+				AccountID: 10, ModelID: "gpt-5.6-sol",
 				SampleCount: 4, SuccessCount: 3, SuccessRate: 0.75, LastResult: "passed", LastObservedAt: now,
 			}},
 		}},
@@ -127,7 +127,7 @@ func TestDatabaseOpsSourceRejectsAccountQualityForDifferentActiveAccountSet(t *t
 			SchemaVersion: 1, SnapshotID: "ACCOUNT-QUALITY-OLD", ObservedAt: now,
 			AccountSetSHA256: "95bce61a71a78185f4b6f8f25fc6986108043727fe9d9c19dbe44b0081ef928a",
 			Accounts: []accountquality.Account{{
-				AccountID: 10, ModelID: "gpt-5.6-sol", RateMultiplier: float64Pointer(0.05),
+				AccountID: 10, ModelID: "gpt-5.6-sol",
 				SampleCount: 1, SuccessCount: 1, SuccessRate: 1, LastResult: "passed", LastObservedAt: now,
 			}},
 		}},
@@ -250,8 +250,6 @@ func (r runtimeNativeReader) GetOpsSnapshot(_ context.Context, query sub2api.Ops
 func runtimeOpsSnapshot(requestCount int64) sub2api.OpsSnapshot {
 	return sub2api.OpsSnapshot{Overview: sub2api.OpsOverview{RequestCountTotal: requestCount, SuccessCount: requestCount, SLA: 99, TTFT: sub2api.Percentiles{P95MS: 1200}, Duration: sub2api.Percentiles{P95MS: 2400}}}
 }
-
-func float64Pointer(value float64) *float64 { return &value }
 
 type pricingReader struct {
 	channels []sub2api.Channel

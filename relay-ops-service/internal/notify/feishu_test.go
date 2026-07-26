@@ -401,6 +401,24 @@ func TestCardRedactsLongIdentityAndNeverContainsSecret(t *testing.T) {
 	}
 }
 
+// 连字符形式的 api-key 曾能穿透脱敏：标记表只有 api_key / api key。
+// 本项目调用 Sub2API admin API 的 header 就叫 x-api-key，上游错误信息里
+// 很容易原样带上它，必须锁定两条脱敏路径都能拦住。
+func TestRedactionCatchesHyphenatedAPIKeyMarker(t *testing.T) {
+	for _, input := range []string{
+		"missing x-api-key header from upstream",
+		"X-API-Key: rejected",
+		"api-key invalid",
+	} {
+		if got := digestValue(input); got != "[已脱敏]" {
+			t.Fatalf("digestValue(%q) = %q, want [已脱敏]", input, got)
+		}
+		if got := safeValue(input); got != "[已脱敏]" {
+			t.Fatalf("safeValue(%q) = %q, want [已脱敏]", input, got)
+		}
+	}
+}
+
 func TestCardJSONRejectsPayloadOverThirtyKilobytes(t *testing.T) {
 	message := RenderAlert(IncidentView{Title: "large", Results: []string{strings.Repeat("x", 31<<10)}})
 	if _, err := message.CardJSON(); err == nil {

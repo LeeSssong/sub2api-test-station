@@ -585,7 +585,7 @@ func digestTimestamp(value time.Time) string {
 func digestValue(value string) string {
 	value = strings.TrimSpace(value)
 	lower := strings.ToLower(value)
-	for _, marker := range []string{"http://", "https://", "base url", "base_url", "api_key", "api key", "model response", "response text", "ou-"} {
+	for _, marker := range []string{"http://", "https://", "base url", "base_url", "api_key", "api key", "api-key", "model response", "response text", "ou-"} {
 		if strings.Contains(lower, marker) {
 			return "[已脱敏]"
 		}
@@ -823,7 +823,7 @@ func defaultText(value string) string {
 
 func safeValue(value string) string {
 	value = strings.TrimSpace(value)
-	for _, marker := range []string{"sk-", "Bearer ", "Cookie:", "app_secret", "api_key"} {
+	for _, marker := range []string{"sk-", "Bearer ", "Cookie:", "app_secret", "api_key", "api-key"} {
 		if strings.Contains(strings.ToLower(value), strings.ToLower(marker)) {
 			return "[已脱敏]"
 		}

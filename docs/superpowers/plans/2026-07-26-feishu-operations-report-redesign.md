@@ -1703,6 +1703,23 @@ func TestBuildHealthDigestListsPendingItems(t *testing.T) {
 	}
 }
 
+func TestBuildHealthDigestTreatsNonPositiveMultiplierAsUnusable(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// 上游报 status=ok 但倍率为 0：Sub2API 只拒绝 value<0，0 会漏过来。
+	// 若当作可核算，会算出「成本 0、毛利率 100%」这种误导性数字。
+	projection.Accounts[2].Multiplier = sub2api.AccountMonitorMultiplier{
+		Value: f64(0), Source: "declared", Status: "ok",
+	}
+	view := BuildHealthDigest(projection, histories, loc, now)
+
+	if view.Profit.ExcludedAccounts != 2 {
+		t.Fatalf("ExcludedAccounts = %d, want 2 (倍率 failed 与倍率 0 都不可核算)", view.Profit.ExcludedAccounts)
+	}
+	if view.Profit.Computable {
+		t.Fatal("全部账号倍率不可用时不得标记为可核算")
+	}
+}
+
 func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
 	projection, histories, loc, now := fixture()
 	view := BuildHealthDigest(projection, histories, loc, now)
@@ -1771,8 +1788,16 @@ func classify(projection sub2api.AccountMonitorProjection) []accounthealth.Accou
 
 // trustworthyMultiplier returns the schema v2 multiplier only when it is
 // usable. The deprecated accounts.rate_multiplier must never be substituted.
+//
+// A non-positive multiplier is treated as unusable even when the upstream
+// reports status=ok: Sub2API only rejects value < 0, so a zero can reach us,
+// and a zero multiplier would report 100% margin on a real cost. Production
+// multipliers sit in 0.05x-0.25x, so non-positive means bad data.
 func trustworthyMultiplier(account sub2api.AccountMonitorAccount) *float64 {
 	if account.Multiplier.Status != "ok" || account.Multiplier.Value == nil {
+		return nil
+	}
+	if *account.Multiplier.Value <= 0 {
 		return nil
 	}
 	return account.Multiplier.Value

@@ -33,12 +33,21 @@ type MessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
 
+// MultiplierSource provides the schema v2 account-monitors projection that
+// carries the real, changing multiplier. It is deliberately a narrow interface
+// instead of a widened opsmetrics.Reader so other Reader implementers are not
+// affected; *sub2api.HTTPReader satisfies both.
+type MultiplierSource interface {
+	ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error)
+}
+
 type Service struct {
-	Reader    opsmetrics.Reader
-	Quality   QualitySource
-	Incidents *incidents.Machine
-	Notifier  MessageSender
-	Now       func() time.Time
+	Reader      opsmetrics.Reader
+	Quality     QualitySource
+	Multipliers MultiplierSource
+	Incidents   *incidents.Machine
+	Notifier    MessageSender
+	Now         func() time.Time
 }
 
 func (s Service) Run(ctx context.Context) error {
@@ -98,6 +107,10 @@ func (s Service) Run(ctx context.Context) error {
 		}
 	}
 
+	if err := s.evaluateMultipliers(ctx, active, now); err != nil {
+		return err
+	}
+
 	if s.Quality == nil {
 		return nil
 	}
@@ -117,13 +130,6 @@ func (s Service) Run(ctx context.Context) error {
 			continue
 		}
 		object := object{kind: "account", id: account.AccountID}
-		// Multiplier is independently observed account configuration evidence;
-		// its evaluation does not depend on the latest patrol request outcome.
-		if account.RateMultiplier != nil {
-			if err := s.evaluateMultiplier(ctx, object, *account.RateMultiplier, quality.ObservedAt); err != nil {
-				return err
-			}
-		}
 		if account.LastResult != "passed" && account.LastResult != "balance_exhausted" {
 			// A failed or indeterminate patrol is not evidence that an account
 			// recovered from an explicit balance exhaustion incident.
@@ -172,6 +178,45 @@ func (s Service) evaluateRuntime(ctx context.Context, item object, window, basel
 	}
 	ttftWorse := baseline.TTFT.P95MS > 0 && window.TTFT.P95MS > ttftAbsoluteMS && window.TTFT.P95MS >= baseline.TTFT.P95MS*ttftDegradationRatio
 	return s.observe(ctx, item, "ttft_p95", ttftWorse, milliseconds(baseline.TTFT.P95MS), milliseconds(window.TTFT.P95MS), 2, observedAt)
+}
+
+// evaluateMultipliers watches the trustworthy schema v2 multiplier. The old
+// implementation watched accounts.rate_multiplier, which is fixed at 1 in
+// production — 22 baselines, zero changes in four days. An upstream price
+// change never reached this tripwire.
+func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]struct{}, now time.Time) error {
+	if s.Multipliers == nil {
+		return nil
+	}
+	projection, err := s.Multipliers.ListAccountMonitors(ctx)
+	if err != nil {
+		// 读不到倍率证据不是变更事件，静默跳过本轮
+		return nil
+	}
+	for _, account := range projection.Accounts {
+		if _, ok := active[account.AccountID]; !ok {
+			continue
+		}
+		value := trustworthyMultiplier(account.Multiplier)
+		if value == nil {
+			continue
+		}
+		item := object{kind: "account", id: account.AccountID}
+		if err := s.evaluateMultiplier(ctx, item, *value, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// trustworthyMultiplier mirrors the daily report's rule: status must be ok,
+// the value present and positive. Sub2API only rejects value < 0, so a zero
+// can reach us, and a zero would look like a price change to zero.
+func trustworthyMultiplier(m sub2api.AccountMonitorMultiplier) *float64 {
+	if m.Status != "ok" || m.Value == nil || *m.Value <= 0 {
+		return nil
+	}
+	return m.Value
 }
 
 func (s Service) evaluateMultiplier(ctx context.Context, item object, current float64, observedAt time.Time) error {

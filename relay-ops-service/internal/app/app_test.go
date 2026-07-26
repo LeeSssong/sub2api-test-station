@@ -64,7 +64,7 @@ func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
 
 func TestConfiguredSiteMonitorSharesTheIncidentMachine(t *testing.T) {
 	machine := &incidents.Machine{}
-	monitor := configuredSiteMonitor(nil, nil, machine, nil)
+	monitor := configuredSiteMonitor(nil, nil, nil, machine, nil)
 	if monitor.Incidents != machine {
 		t.Fatalf("incident machine = %p, want %p", monitor.Incidents, machine)
 	}

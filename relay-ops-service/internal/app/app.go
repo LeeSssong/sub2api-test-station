@@ -196,8 +196,8 @@ func operationalAnalysisRunners(service *agent.Service) (nativealerts.AnalysisRu
 	return service, service
 }
 
-func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualitySource, state *incidents.Machine, notifier opsmonitor.MessageSender) opsmonitor.Service {
-	return opsmonitor.Service{Reader: reader, Quality: quality, Incidents: state, Notifier: notifier}
+func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualitySource, multipliers opsmonitor.MultiplierSource, state *incidents.Machine, notifier opsmonitor.MessageSender) opsmonitor.Service {
+	return opsmonitor.Service{Reader: reader, Quality: quality, Multipliers: multipliers, Incidents: state, Notifier: notifier}
 }
 
 func notificationClient(cfg config.Config, appSender notify.MessageSender) (notify.MessageClient, error) {
@@ -286,7 +286,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
 		Incidents: incidentMachine, Agent: collectorAnalysis, Notifier: notifier,
 	}
-	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, incidentMachine, notifier)
+	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, reader, incidentMachine, notifier)
 	usageReader := billing.SessionReader{Reporter: database}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,

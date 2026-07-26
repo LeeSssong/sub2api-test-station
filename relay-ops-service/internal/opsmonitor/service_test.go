@@ -2,6 +2,7 @@ package opsmonitor
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -135,11 +136,13 @@ func TestServiceAlertsChangedMultiplierAndExplicitBalanceExhaustionImmediately(t
 	repository := newMemoryRepository()
 	notifier := &fakeNotifier{}
 	quality := &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-		AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
+		AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
 		TTFTP50MS: number(100), TTFTP95MS: number(100), LastResult: "passed", LastObservedAt: now,
 	}})}
+	multipliers := &stubMultiplierSource{projection: multiplierProjection(10, number(0.05), "ok")}
 	service := newService(reader, repository, notifier, now)
 	service.Quality = quality
+	service.Multipliers = multipliers
 
 	if err := service.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -147,8 +150,9 @@ func TestServiceAlertsChangedMultiplierAndExplicitBalanceExhaustionImmediately(t
 	if len(notifier.sent) != 0 {
 		t.Fatalf("initial multiplier sent = %#v", notifier.sent)
 	}
+	multipliers.projection = multiplierProjection(10, number(0.10), "ok")
 	quality.result = qualityResult(now.Add(time.Minute), []accountquality.Account{{
-		AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.10), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+		AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 		LastResult: "balance_exhausted", LastErrorCode: "balance_exhausted", LastObservedAt: now.Add(time.Minute),
 	}})
 	service.Now = func() time.Time { return now.Add(time.Minute) }
@@ -323,16 +327,19 @@ func TestServiceEvaluatesMultiplierWhenPatrolResultIsIndeterminate(t *testing.T)
 			repository := newMemoryRepository()
 			notifier := &fakeNotifier{}
 			quality := &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
-				AccountID: 10, ModelID: "gpt", RateMultiplier: number(0.05), SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
+				AccountID: 10, ModelID: "gpt", SampleCount: 1, SuccessCount: 1, SuccessRate: 1,
 				TTFTP50MS: number(100), TTFTP95MS: number(100), LastResult: "passed", LastObservedAt: now,
 			}})}
+			multipliers := &stubMultiplierSource{projection: multiplierProjection(10, number(0.05), "ok")}
 			service := newService(reader, repository, notifier, now)
 			service.Quality = quality
+			service.Multipliers = multipliers
 			if err := service.Run(context.Background()); err != nil {
 				t.Fatal(err)
 			}
+			multipliers.projection = multiplierProjection(10, number(0.10), "ok")
 			quality.result = qualityResult(now.Add(time.Minute), []accountquality.Account{{
-				AccountID: 10, RateMultiplier: number(0.10), SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
+				AccountID: 10, SampleCount: 1, SuccessCount: 0, SuccessRate: 0,
 				LastResult: result, LastErrorCode: result, LastObservedAt: now.Add(time.Minute),
 			}})
 			service.Now = func() time.Time { return now.Add(time.Minute) }
@@ -539,6 +546,93 @@ func TestServiceRecoversAfterOneHealthyCompleteWindow(t *testing.T) {
 	}
 	if record := repository.records["site:group:2:error_rate"]; record.State != "recovered" {
 		t.Fatalf("record = %#v", record)
+	}
+}
+
+type stubMultiplierSource struct {
+	projection sub2api.AccountMonitorProjection
+	err        error
+}
+
+func (s stubMultiplierSource) ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error) {
+	return s.projection, s.err
+}
+
+func multiplierProjection(accountID int64, value *float64, status string) sub2api.AccountMonitorProjection {
+	return sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Accounts: []sub2api.AccountMonitorAccount{{
+			AccountID: accountID, Name: "Pro-SHEN-0.16",
+			Multiplier: sub2api.AccountMonitorMultiplier{Value: value, Source: "declared", Status: status},
+		}},
+	}
+}
+
+func newTestSiteMonitor(t *testing.T, source MultiplierSource) (Service, *memoryRepository) {
+	t.Helper()
+	now := time.Date(2026, 7, 27, 3, 0, 0, 0, time.UTC)
+	reader := &fakeReader{accounts: []sub2api.Account{{ID: 26, Name: "Pro-SHEN-0.16", Status: "active", Schedulable: true}}}
+	repository := newMemoryRepository()
+	service := newService(reader, repository, &fakeNotifier{}, now)
+	service.Multipliers = source
+	return service, repository
+}
+
+func TestEvaluateMultiplierUsesTrustworthyValue(t *testing.T) {
+	value := 0.16
+	source := stubMultiplierSource{projection: multiplierProjection(26, &value, "ok")}
+	service, repo := newTestSiteMonitor(t, source)
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	record, found, err := repo.Get(context.Background(), "site:account:26:multiplier_baseline")
+	if err != nil || !found {
+		t.Fatalf("baseline not created: found=%v err=%v", found, err)
+	}
+	if record.CurrentValue != "0.16x" {
+		t.Fatalf("CurrentValue = %q, want 0.16x（必须是可信倍率而非废弃的 1x）", record.CurrentValue)
+	}
+}
+
+func TestEvaluateMultiplierSkipsUntrustworthyStatus(t *testing.T) {
+	for _, status := range []string{"failed", "stale", "unsupported", "unavailable"} {
+		t.Run(status, func(t *testing.T) {
+			source := stubMultiplierSource{projection: multiplierProjection(26, nil, status)}
+			service, repo := newTestSiteMonitor(t, source)
+
+			if err := service.Run(context.Background()); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if _, found, _ := repo.Get(context.Background(), "site:account:26:multiplier_baseline"); found {
+				t.Fatalf("status=%s 时不得建立基线（拿不到值不是变更事件）", status)
+			}
+		})
+	}
+}
+
+func TestEvaluateMultiplierSkipsNonPositiveValue(t *testing.T) {
+	zero := 0.0
+	source := stubMultiplierSource{projection: multiplierProjection(26, &zero, "ok")}
+	service, repo := newTestSiteMonitor(t, source)
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, found, _ := repo.Get(context.Background(), "site:account:26:multiplier_baseline"); found {
+		t.Fatal("倍率 0 是坏数据，不得建立基线")
+	}
+}
+
+func TestEvaluateMultiplierSilentWhenSourceFails(t *testing.T) {
+	source := stubMultiplierSource{err: errors.New("unavailable")}
+	service, repo := newTestSiteMonitor(t, source)
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("倍率源故障不得让整个巡检失败: %v", err)
+	}
+	if _, found, _ := repo.Get(context.Background(), "site:account:26:multiplier_baseline"); found {
+		t.Fatal("读取失败时不得建立基线")
 	}
 }
 

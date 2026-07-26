@@ -56,7 +56,7 @@ func main() {
 	service := updater.NewService(
 		updater.NewStore(*statePath),
 		updater.NewResolver(&http.Client{Timeout: 20 * time.Second}, *githubURL, nil),
-		updater.NewHostExecutor(*executor, nil),
+		updater.NewHostExecutor(*executor, filepath.Dir(*statePath), nil),
 	)
 	defer service.Close()
 
@@ -70,7 +70,7 @@ func main() {
 	}()
 
 	server := &http.Server{
-		Handler:           updater.NewHTTP(service, authenticator, *origin),
+		Handler:           updater.NewHTTP(service, authenticator, *origin, filepath.Dir(*statePath)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      16 * time.Minute,

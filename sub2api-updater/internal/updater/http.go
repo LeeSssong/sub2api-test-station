@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -23,16 +24,18 @@ type updateHTTP struct {
 	service        *Service
 	identity       IdentityVerifier
 	expectedOrigin string
+	traceDir       string
 	now            func() time.Time
 }
 
-// NewHTTP exposes only the host-controlled update endpoints.
-func NewHTTP(service *Service, identity IdentityVerifier, expectedOrigin string, clocks ...func() time.Time) http.Handler {
+// NewHTTP exposes only the host-controlled update endpoints. traceDir is where
+// the executor writes per-operation step traces; "" disables event reporting.
+func NewHTTP(service *Service, identity IdentityVerifier, expectedOrigin, traceDir string, clocks ...func() time.Time) http.Handler {
 	now := time.Now
 	if len(clocks) > 0 && clocks[0] != nil {
 		now = clocks[0]
 	}
-	h := &updateHTTP{service: service, identity: identity, expectedOrigin: expectedOrigin, now: now}
+	h := &updateHTTP{service: service, identity: identity, expectedOrigin: expectedOrigin, traceDir: traceDir, now: now}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/admin/system/update", h.update)
 	mux.HandleFunc("GET /api/v1/admin/system/host-update/status", h.status)
@@ -88,7 +91,33 @@ func (h *updateHTTP) status(w http.ResponseWriter, r *http.Request) {
 		h.writeServiceError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, op)
+	writeData(w, http.StatusOK, struct {
+		Operation
+		Events []string `json:"events,omitempty"`
+	}{op, readTraceEvents(h.traceDir, op.OperationID)})
+}
+
+// readTraceEvents returns the executor's step trace for the operation. The
+// trace is advisory progress data, so read failures simply yield no events.
+func readTraceEvents(traceDir, operationID string) []string {
+	tracePath := TracePath(traceDir, operationID)
+	if tracePath == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(tracePath)
+	if err != nil || len(raw) > 64<<10 {
+		return nil
+	}
+	var events []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			events = append(events, line)
+		}
+	}
+	if len(events) > 256 {
+		events = events[len(events)-256:]
+	}
+	return events
 }
 
 func (h *updateHTTP) cancel(w http.ResponseWriter, r *http.Request) {

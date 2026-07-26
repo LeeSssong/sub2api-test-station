@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -23,15 +24,20 @@ var versionPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+){1,2}(?:-[0-9A-Za-z.
 var digestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 var commitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
-// CommandRunner is intentionally small so Docker and the host executor can be tested without a host daemon.
+// CommandRunner is intentionally small so Docker and the host executor can be
+// tested without a host daemon. env entries are appended to the inherited
+// environment; nil leaves it untouched.
 type CommandRunner interface {
-	Run(context.Context, string, ...string) (stdout string, stderr string, err error)
+	Run(ctx context.Context, env []string, name string, args ...string) (stdout string, stderr string, err error)
 }
 
 type execCommandRunner struct{}
 
-func (execCommandRunner) Run(ctx context.Context, name string, args ...string) (string, string, error) {
+func (execCommandRunner) Run(ctx context.Context, env []string, name string, args ...string) (string, string, error) {
 	command := exec.CommandContext(ctx, name, args...)
+	if len(env) > 0 {
+		command.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr strings.Builder
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -89,7 +95,7 @@ func (r *UpdateResolver) Resolve(ctx context.Context, targetVersion string) (str
 	}
 
 	imageTag := qualifiedImageRepository + ":upstream-" + target
-	stdout, stderr, err := r.docker.Run(ctx, "docker", "image", "inspect", "--format", "{{json .}}", imageTag)
+	stdout, stderr, err := r.docker.Run(ctx, nil, "docker", "image", "inspect", "--format", "{{json .}}", imageTag)
 	if err != nil {
 		return "", fmt.Errorf("qualified Xingqiao image is not available for %s: %w", target, commandFailure(stderr, err))
 	}

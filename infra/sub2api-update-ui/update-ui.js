@@ -7,6 +7,22 @@
   var SCHEDULE_PATH = '/api/v1/admin/system/host-update/schedule'
   var POLL_INTERVAL_MS = 3000
   var TERMINAL_STAGES = ['promoted', 'rolled_back', 'failed', 'rollback_failed']
+  var TOAST_DURATION_MS = 5000
+  var STEP_LABELS = {
+    inspect: '检查运行环境',
+    'verify-image': '校验目标镜像',
+    'backup-db': '备份数据库',
+    'backup-counts': '记录数据基线',
+    'backup-app-data': '备份应用数据',
+    checksum: '校验备份完整性',
+    'compose-validate': '校验编排配置',
+    'recreate-sub2api': '切换应用容器',
+    health: '等待健康检查',
+    smoke: '冒烟验证',
+    promoted: '升级完成',
+    rolled_back: '已回滚到上一版本',
+    rollback_failed: '回滚失败',
+  }
   var originalFetch = window.fetch.bind(window)
   var state = {
     dialog: null,
@@ -15,6 +31,7 @@
     opening: null,
     pending: false,
     replacing: false,
+    upgrading: false,
     pollTimer: null,
   }
 
@@ -143,6 +160,35 @@
     state.info = null
     state.existing = null
     state.replacing = false
+    state.upgrading = false
+  }
+
+  function showToast(message) {
+    var toast = document.createElement('div')
+    toast.className = 'xq-update-ui-toast'
+    toast.setAttribute('role', 'status')
+    setText(toast, message)
+    document.body.appendChild(toast)
+    window.setTimeout(function () {
+      toast.remove()
+    }, TOAST_DURATION_MS)
+  }
+
+  function renderProgressLog(events) {
+    if (!state.dialog) return
+    var log = state.dialog.querySelector('[data-role="progress-log"]')
+    if (!log) return
+    log.hidden = !events || !events.length
+    if (log.hidden) return
+    log.textContent = ''
+    events.forEach(function (event, index) {
+      var line = document.createElement('p')
+      var done = index < events.length - 1
+      line.dataset.state = done ? 'done' : 'active'
+      setText(line, (done ? '✓ ' : '… ') + (STEP_LABELS[event] || event))
+      log.appendChild(line)
+    })
+    log.scrollTop = log.scrollHeight
   }
 
   function focusable(dialog) {
@@ -166,9 +212,15 @@
     var input = state.dialog.querySelector('input[type="datetime-local"]')
     var scheduleValid = mode === 'now' || Boolean(input.value && input.value >= input.min && input.value <= input.max)
     var submit = state.dialog.querySelector('[data-action="submit"]')
-    submit.disabled = state.pending || !confirmed || !scheduleValid
-    input.disabled = mode === 'now' || state.pending
-    state.dialog.querySelector('[data-role="submit-label"]').textContent = mode === 'now' ? '现在升级' : '本次定时升级'
+    var busy = state.pending || state.upgrading
+    submit.disabled = busy || !confirmed || !scheduleValid
+    input.disabled = mode === 'now' || busy
+    state.dialog.querySelectorAll('[name="mode"], [name="confirm"]').forEach(function (control) {
+      control.disabled = state.upgrading
+    })
+    state.dialog.querySelector('[data-role="submit-label"]').textContent = state.upgrading
+      ? '升级中…'
+      : (mode === 'now' ? '现在升级' : '本次定时升级')
   }
 
   function renderExistingSchedule(operation) {
@@ -274,6 +326,12 @@
     setText(confirmText, '我确认由宿主机按此版本执行一次受控升级。')
     confirm.appendChild(confirmText)
     body.appendChild(confirm)
+    var progressLog = document.createElement('div')
+    progressLog.className = 'xq-update-ui-progress-log'
+    progressLog.dataset.role = 'progress-log'
+    progressLog.setAttribute('aria-live', 'polite')
+    progressLog.hidden = true
+    body.appendChild(progressLog)
     var message = document.createElement('p')
     message.className = 'xq-update-ui-message'
     message.dataset.role = 'message'
@@ -378,7 +436,8 @@
         renderExistingSchedule(null)
       }
       await apiRequest(UPDATE_PATH, { method: 'POST', body: JSON.stringify(payload) })
-      setMessage('请求已受理，页面将显示最终状态。', 'success')
+      if (mode === 'now') state.upgrading = true
+      setMessage(mode === 'now' ? '升级已开始，以下是宿主机执行进度。' : '定时升级已受理。', 'success')
       startPolling()
     } catch (error) {
       if (error.code === 'UPDATE_ALREADY_SCHEDULED') {
@@ -400,8 +459,18 @@
         stopPolling()
         return null
       }
+      if (operation.stage === 'running' && state.dialog) {
+        state.upgrading = true
+        updateSubmitState()
+      }
+      if (operation.stage === 'promoted' && state.upgrading) {
+        showToast('升级成功，服务已切换到 ' + (operation.target_version || '新版本') + '。')
+        closeDialog()
+        return operation
+      }
       if (state.dialog) {
         if (operation.stage === 'scheduled') renderExistingSchedule(operation)
+        renderProgressLog(operation.events)
         var phrase = {
           running: '升级正在执行，当前请求可能短暂断开。',
           promoted: '升级成功完成。',
@@ -411,7 +480,13 @@
         }[operation.stage]
         if (phrase) setMessage(phrase, TERMINAL_STAGES.indexOf(operation.stage) === -1 ? null : (operation.stage === 'promoted' ? 'success' : 'error'))
       }
-      if (TERMINAL_STAGES.indexOf(operation.stage) !== -1) stopPolling()
+      if (TERMINAL_STAGES.indexOf(operation.stage) !== -1) {
+        stopPolling()
+        if (state.upgrading && operation.stage !== 'promoted') {
+          state.upgrading = false
+          updateSubmitState()
+        }
+      }
       return operation
     } catch (error) {
       if (state.dialog) setMessage(error.message, 'error')

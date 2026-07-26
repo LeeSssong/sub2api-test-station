@@ -11,6 +11,7 @@ import (
 
 type recordedCommandRunner struct {
 	calls   [][]string
+	envs    [][]string
 	results []commandResult
 }
 
@@ -20,8 +21,9 @@ type commandResult struct {
 	err    error
 }
 
-func (r *recordedCommandRunner) Run(_ context.Context, name string, args ...string) (string, string, error) {
+func (r *recordedCommandRunner) Run(_ context.Context, env []string, name string, args ...string) (string, string, error) {
 	r.calls = append(r.calls, append([]string{name}, args...))
+	r.envs = append(r.envs, env)
 	result := r.results[0]
 	r.results = r.results[1:]
 	return result.stdout, result.stderr, result.err

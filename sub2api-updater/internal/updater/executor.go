@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,23 +15,41 @@ const hostContractVersion = "1"
 
 // HostExecutor invokes the root-owned update script with an immutable image reference.
 type HostExecutor struct {
-	path   string
-	runner CommandRunner
+	path     string
+	traceDir string
+	runner   CommandRunner
 }
 
-func NewHostExecutor(path string, runner CommandRunner) *HostExecutor {
+// NewHostExecutor wires the executor script; a non-empty traceDir makes the
+// script append its step trace to trace-<operation_id>.log for status readers.
+func NewHostExecutor(path, traceDir string, runner CommandRunner) *HostExecutor {
 	if runner == nil {
 		runner = execCommandRunner{}
 	}
-	return &HostExecutor{path: path, runner: runner}
+	return &HostExecutor{path: path, traceDir: traceDir, runner: runner}
+}
+
+// TracePath returns the step trace location for an operation, or "" when
+// tracing is disabled.
+func TracePath(traceDir, operationID string) string {
+	if traceDir == "" || operationID == "" {
+		return ""
+	}
+	return filepath.Join(traceDir, "trace-"+operationID+".log")
 }
 
 func (e *HostExecutor) Run(ctx context.Context, op Operation) (ExecutionResult, error) {
 	if e == nil || e.path == "" || e.runner == nil {
 		return ExecutionResult{}, errors.New("host update executor is not configured")
 	}
+	var env []string
+	if tracePath := TracePath(e.traceDir, op.OperationID); tracePath != "" {
+		_ = os.Remove(tracePath)
+		env = []string{"RELEASE_EVENT_LOG=" + tracePath}
+	}
 	stdout, stderr, err := e.runner.Run(
 		ctx,
+		env,
 		e.path,
 		"--contract-version", hostContractVersion,
 		"--image", op.Image,

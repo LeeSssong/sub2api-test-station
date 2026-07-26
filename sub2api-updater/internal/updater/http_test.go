@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -49,14 +51,20 @@ func (f *fakeIdentity) Verify(context.Context, string, http.Header) (Identity, e
 }
 
 func admissionServer(t *testing.T) (*httptest.Server, *fakeResolver, *fakeExecutor) {
+	ts, r, e, _ := admissionServerWithTrace(t)
+	return ts, r, e
+}
+
+func admissionServerWithTrace(t *testing.T) (*httptest.Server, *fakeResolver, *fakeExecutor, string) {
 	t.Helper()
 	r := &fakeResolver{image: "weishaw/sub2api:1.2.3@sha256:" + strings.Repeat("a", 64)}
 	e := &fakeExecutor{}
 	now := func() time.Time { return time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC) }
 	s := NewService(NewStore(t.TempDir()+"/state.json"), r, e, now)
 	t.Cleanup(s.Close)
-	h := NewHTTP(s, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", now)
-	return httptest.NewServer(h), r, e
+	traceDir := t.TempDir()
+	h := NewHTTP(s, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", traceDir, now)
+	return httptest.NewServer(h), r, e, traceDir
 }
 func updateRequest(t *testing.T, url string, mutate func(*http.Request)) *http.Response {
 	t.Helper()
@@ -182,7 +190,7 @@ func TestHTTPSuccessStatusCancelUseOfficialEnvelope(t *testing.T) {
 func TestHTTPUpdateRejectsNonAdminIdentity(t *testing.T) {
 	for _, identity := range []*fakeIdentity{{id: 0, role: "admin", status: "active"}, {id: 1, role: "user", status: "active"}, {id: 1, role: "admin", status: "disabled"}} {
 		s := NewService(NewStore(t.TempDir()+"/state.json"), &fakeResolver{}, &fakeExecutor{})
-		h := NewHTTP(s, identity, "https://admin.example", time.Now)
+		h := NewHTTP(s, identity, "https://admin.example", t.TempDir(), time.Now)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/update", strings.NewReader(`{"mode":"now","target_version":"1.2.3"}`))
 		req.Header.Set("Authorization", "Bearer token")
 		req.Header.Set("Origin", "https://admin.example")
@@ -231,6 +239,53 @@ func TestHTTPStatusAllowsBrowserGETWithoutOrigin(t *testing.T) {
 	}
 	if err := json.NewDecoder(res.Body).Decode(&envelope); err != nil || envelope.Code != 0 {
 		t.Fatalf("envelope=%#v err=%v", envelope, err)
+	}
+}
+
+func TestHTTPStatusReportsTraceEvents(t *testing.T) {
+	ts, _, _, traceDir := admissionServerWithTrace(t)
+	defer ts.Close()
+	// Admit an operation so status has an operation ID to look up.
+	res := updateRequest(t, ts.URL, nil)
+	var admitted struct {
+		Data struct {
+			OperationID string `json:"operation_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&admitted); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	tracePath := filepath.Join(traceDir, "trace-"+admitted.Data.OperationID+".log")
+	if err := os.WriteFile(tracePath, []byte("inspect\nbackup-db\nhealth\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/admin/system/host-update/status", nil)
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	statusRes, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer statusRes.Body.Close()
+	var envelope struct {
+		Data struct {
+			Stage  string   `json:"stage"`
+			Events []string `json:"events"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(statusRes.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"inspect", "backup-db", "health"}
+	if len(envelope.Data.Events) != len(want) {
+		t.Fatalf("events = %#v, want %v", envelope.Data.Events, want)
+	}
+	for i, event := range want {
+		if envelope.Data.Events[i] != event {
+			t.Fatalf("events[%d] = %q, want %q", i, envelope.Data.Events[i], event)
+		}
 	}
 }
 

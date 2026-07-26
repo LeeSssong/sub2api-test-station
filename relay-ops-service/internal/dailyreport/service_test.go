@@ -16,7 +16,10 @@ import (
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
+// 本测试验证的是投递去重（同日同证据只发一次）与事件契约的不变量。
+// 旧名字 TestServiceBuildsOneRedactedReportForEveryPublicGroup 已不符实：
+// 新健康日报不再渲染分组名，「不含 private」之类的断言变成恒真，已删除。
+func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	t.Parallel()
 
 	reader := reportReader{
@@ -82,13 +85,10 @@ func TestServiceBuildsOneRedactedReportForEveryPublicGroup(t *testing.T) {
 		t.Fatal(cardErr)
 	}
 	text := string(card)
-	for _, required := range []string{"中转站日报 2026-07-20", "质量", "利润", "待处理", "明细", "运维后台"} {
-		if !strings.Contains(text, required) {
-			t.Fatalf("report missing %q: %s", required, text)
-		}
-	}
-	if strings.Contains(text, "private") || strings.Contains(text, "sk-") || strings.Contains(text, "http") {
-		t.Fatalf("report leaked private data: %s", text)
+	// 报告日期由 Now/Timezone 推导后进入卡片标题，是真实的数据流断言；
+	// 其余「质量/利润/…」静态标题为无条件输出，断言恒真，不再保留。
+	if !strings.Contains(text, "中转站日报 2026-07-20") {
+		t.Fatalf("card missing dated title: %s", text)
 	}
 	contract := analyzer.contracts[0]
 	if contract.ContractVersion != "relay-ops-incident-v1" || contract.IncidentID != "daily-report:2026-07-20" || contract.Samples != 2 {
@@ -143,8 +143,43 @@ func TestServiceDoesNotRenderLegacyAccountQualityInHealthDigest(t *testing.T) {
 	if strings.Contains(text, "0.1x") || strings.Contains(text, "old-quality") || strings.Contains(text, "上游账号质量") {
 		t.Fatalf("legacy account quality leaked into health digest: %s", text)
 	}
-	if !strings.Contains(text, "质量") {
-		t.Fatalf("health digest missing quality layer: %s", text)
+	// 「质量」是静态标题，contains("质量") 恒真。改为断言质量层的计数行确实
+	// 来自监控投影：本 fixture 的投影为空，只有走了投影路径才会打出全零计数。
+	if !strings.Contains(text, "稳定 0 / 降级 0 / 不可用 0") {
+		t.Fatalf("quality layer not rendered from monitor projection: %s", text)
+	}
+}
+
+// 本任务的核心安全属性：账号监控读取失败时，日报仍要发出，且质量层明确
+// 标注「数据不可用」及原因，而不是伪装成一切正常或整卡缺席。
+func TestServiceSendsDigestWithUnavailableMarkWhenMonitorReadFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 20, 1, 30, 0, 0, time.UTC)
+	reader := failingMonitorReader{reportReader: reportReader{
+		groups: []sub2api.Group{{ID: 2, Name: "Public", Status: "active"}},
+		ops:    map[int64]sub2api.OpsSnapshot{},
+	}}
+	incidentStore := &reportIncidentStore{observed: map[string]bool{}}
+	notifier := &reportNotifier{seen: map[string]bool{}, incidents: incidentStore}
+	service := Service{
+		Reader: reader, Incidents: incidentStore, Notifier: notifier,
+		Now: func() time.Time { return now },
+	}
+
+	if _, err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifier.messages) != 1 {
+		t.Fatalf("messages = %d, want 1（监控失败不得吞掉日报）", len(notifier.messages))
+	}
+	data, err := notifier.messages[0].CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "数据不可用") || !strings.Contains(text, "账号监控数据不可用") {
+		t.Fatalf("fail-safe digest missing unavailable mark: %s", text)
 	}
 }
 
@@ -240,6 +275,14 @@ func (r reportReader) ListAccountMonitors(context.Context) (sub2api.AccountMonit
 }
 func (r reportReader) ListAccountMonitorHistory(context.Context, int64, int) ([]sub2api.AccountMonitorHistoryEntry, error) {
 	return nil, nil
+}
+
+// failingMonitorReader simulates the Sub2API monitor endpoint being down while
+// the rest of the reader keeps working.
+type failingMonitorReader struct{ reportReader }
+
+func (failingMonitorReader) ListAccountMonitors(context.Context) (sub2api.AccountMonitorProjection, error) {
+	return sub2api.AccountMonitorProjection{}, fmt.Errorf("monitor endpoint unavailable")
 }
 
 func cacheDiscountPricing(model string) sub2api.ChannelModelPrice {

@@ -54,15 +54,15 @@ func BuildHealthDigest(
 
 	view := notify.HealthDigestView{Date: now.In(loc).Format("2006-01-02")}
 	profitInputs := make([]accounthealth.ProfitInput, 0, len(projection.Accounts))
-	todayHealthy, yesterdayHealthy := 0, 0
+	comparableAccounts, todayHealthyComparable, yesterdayHealthy := 0, 0, 0
 	hasTraffic := false
+	totalRequests := int64(0)
 
 	for index, account := range projection.Accounts {
 		verdict := verdicts[index]
 		switch verdict.Tier {
 		case accounthealth.TierHealthy:
 			view.Quality.Healthy++
-			todayHealthy++
 		case accounthealth.TierDegraded:
 			view.Quality.Degraded++
 		case accounthealth.TierUnavailable:
@@ -76,6 +76,7 @@ func BuildHealthDigest(
 		standardCost, userCost := 0.0, 0.0
 		if account.TodayStats != nil {
 			standardCost, userCost = account.TodayStats.StandardCost, account.TodayStats.UserCost
+			totalRequests += account.TodayStats.Requests
 		}
 		input := accounthealth.ProfitInput{StandardCost: standardCost, UserCost: userCost, Multiplier: multiplier}
 		profitInputs = append(profitInputs, input)
@@ -98,16 +99,25 @@ func BuildHealthDigest(
 
 		if entries := histories[account.AccountID]; len(entries) > 0 {
 			_, yesterday := accounthealth.SliceByDay(toHistoryEntries(entries), loc, now)
-			if yesterday.SampleCount > 0 && yesterday.SuccessRate >= accounthealth.HealthyMinSuccessRate {
-				yesterdayHealthy++
+			if yesterday.SampleCount > 0 {
+				comparableAccounts++
+				if yesterday.SuccessRate >= accounthealth.HealthyMinSuccessRate {
+					yesterdayHealthy++
+				}
+				if verdict.Tier == accounthealth.TierHealthy {
+					todayHealthyComparable++
+				}
 			}
 		}
 	}
 
 	view.Recommendations = buildRecommendations(projection)
 
-	if len(histories) > 0 {
-		delta := todayHealthy - yesterdayHealthy
+	// 同比只能在「今天和昨天都有样本」的账号子集上计算。若拿全部账号的今日
+	// 健康数去减「仅有历史记录的账号」的昨日健康数，两个总体不一致，delta 会
+	// 系统性偏高；历史为空时更会凭空得出「较昨日 ↑N」。宁可不给同比。
+	if comparableAccounts > 0 {
+		delta := todayHealthyComparable - yesterdayHealthy
 		view.Quality.HealthyDelta = &delta
 	}
 	view.Quality.TTFTMedianMS = medianTTFT(projection.Accounts)
@@ -126,7 +136,7 @@ func BuildHealthDigest(
 		Margin: total.Margin, Computable: computable, ExcludedAccounts: excluded,
 		NoTraffic: !hasTraffic,
 	}
-	view.Traffic = notify.TrafficLine{HasTraffic: hasTraffic}
+	view.Traffic = notify.TrafficLine{HasTraffic: hasTraffic, Requests: totalRequests}
 	return view
 }
 
@@ -151,32 +161,35 @@ func buildRecommendations(projection sub2api.AccountMonitorProjection) []notify.
 	return recommendations
 }
 
-func BuildGroupAlerts(projection sub2api.AccountMonitorProjection, loc *time.Location, now time.Time) []notify.GroupAlertView {
-	alerts := []notify.GroupAlertView{}
+// GroupAvailabilityView pairs a renderable alert with the alerting flag.
+//
+// Every group must be reported, not just the alerting ones: the incident state
+// machine only emits a recovery when it observes Failing=false. Returning just
+// the alerting groups would leave a recovered group stuck in `confirmed`
+// forever, so its next real outage carries an unchanged evidence hash and is
+// silently suppressed — the alert would fire exactly once, ever.
+type GroupAvailabilityView struct {
+	Alert    notify.GroupAlertView
+	Alerting bool
+}
+
+func BuildGroupAvailability(projection sub2api.AccountMonitorProjection) []GroupAvailabilityView {
+	errorCodes := make(map[int64]string, len(projection.Accounts))
+	for _, account := range projection.Accounts {
+		errorCodes[account.AccountID] = account.ErrorCode
+	}
+	views := []GroupAvailabilityView{}
 	for _, group := range accounthealth.GroupAvailabilities(classify(projection)) {
-		if !group.Alerting {
-			continue
-		}
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
 		for _, down := range group.Down {
 			alert.Down = append(alert.Down, notify.GroupAlertAccount{
 				Name:      down.Name,
-				ErrorCode: errorCodeOf(projection, down.AccountID),
-				Duration:  "",
+				ErrorCode: errorCodes[down.AccountID],
 			})
 		}
-		alerts = append(alerts, alert)
+		views = append(views, GroupAvailabilityView{Alert: alert, Alerting: group.Alerting})
 	}
-	return alerts
-}
-
-func errorCodeOf(projection sub2api.AccountMonitorProjection, accountID int64) string {
-	for _, account := range projection.Accounts {
-		if account.AccountID == accountID {
-			return account.ErrorCode
-		}
-	}
-	return ""
+	return views
 }
 
 func pendingFor(account sub2api.AccountMonitorAccount, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {

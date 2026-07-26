@@ -121,18 +121,63 @@ func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
 	}
 }
 
-func TestBuildGroupAlertsOnlyForAlertingGroups(t *testing.T) {
-	projection, _, loc, now := fixture()
-	alerts := BuildGroupAlerts(projection, loc, now)
+func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
+	projection, _, _, _ := fixture()
+	views := BuildGroupAvailability(projection)
 
-	// GPT-Plus 单账号且不可用 -> 可用 0，告警；GPT-Pro 2/2 健康 -> 不告警
-	if len(alerts) != 1 {
-		t.Fatalf("alerts = %+v, want 1", alerts)
+	// 健康分组也必须返回，否则状态机永远观测不到 Failing=false，
+	// 恢复分支不可达，告警只会成功发出一次。
+	if len(views) != 2 {
+		t.Fatalf("views = %+v, want 2 (GPT-Plus 与 GPT-Pro 都要在)", views)
 	}
-	if alerts[0].GroupName != "GPT-Plus" || alerts[0].Available != 0 || alerts[0].Total != 1 {
-		t.Fatalf("alert = %+v", alerts[0])
+	byName := map[string]GroupAvailabilityView{}
+	for _, view := range views {
+		byName[view.Alert.GroupName] = view
 	}
-	if len(alerts[0].Down) != 1 || alerts[0].Down[0].Name != "Plus-XN-0.09" {
-		t.Fatalf("Down = %+v", alerts[0].Down)
+
+	plus, ok := byName["GPT-Plus"]
+	if !ok {
+		t.Fatal("缺少 GPT-Plus")
+	}
+	if !plus.Alerting || plus.Alert.Available != 0 || plus.Alert.Total != 1 {
+		t.Fatalf("GPT-Plus = %+v, want alerting 0/1", plus)
+	}
+	if len(plus.Alert.Down) != 1 || plus.Alert.Down[0].Name != "Plus-XN-0.09" {
+		t.Fatalf("Down = %+v", plus.Alert.Down)
+	}
+	if plus.Alert.Down[0].ErrorCode != "balance_exhausted" {
+		t.Fatalf("ErrorCode = %q, want balance_exhausted", plus.Alert.Down[0].ErrorCode)
+	}
+
+	pro, ok := byName["GPT-Pro"]
+	if !ok {
+		t.Fatal("缺少 GPT-Pro")
+	}
+	if pro.Alerting {
+		t.Fatalf("GPT-Pro 2/2 健康不应告警: %+v", pro)
+	}
+}
+
+func TestBuildHealthDigestOmitsDeltaWithoutComparableHistory(t *testing.T) {
+	projection, _, loc, now := fixture()
+	// 历史为空：不得凭空得出「健康账号较昨日 ↑N」。
+	view := BuildHealthDigest(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{}, loc, now)
+	if view.Quality.HealthyDelta != nil {
+		t.Fatalf("HealthyDelta = %v, want nil（无可比历史时不给同比）", *view.Quality.HealthyDelta)
+	}
+}
+
+func TestBuildHealthDigestAccumulatesTrafficRequests(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	projection.Accounts[1].TodayStats.Requests = 150
+	projection.Accounts[2].TodayStats.Requests = 350
+	view := BuildHealthDigest(projection, histories, loc, now)
+
+	// 请求数缺失时卡片会同时打出「收入 $100」和「请求 0」，自相矛盾。
+	if view.Traffic.Requests != 500 {
+		t.Fatalf("Traffic.Requests = %d, want 500", view.Traffic.Requests)
+	}
+	if !view.Traffic.HasTraffic {
+		t.Fatal("有真实调用时 HasTraffic 应为 true")
 	}
 }

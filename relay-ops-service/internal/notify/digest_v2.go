@@ -165,7 +165,7 @@ func detailLines(view HealthDigestView) []string {
 	}
 	if view.Traffic.HasTraffic {
 		lines = append(lines, fmt.Sprintf("站内流量：请求 %s · 错误率 %s · SLA %s",
-			strconv.FormatInt(view.Traffic.Requests, 10), digestValue(view.Traffic.ErrorRate), digestValue(view.Traffic.SLA)))
+			strconv.FormatInt(view.Traffic.Requests, 10), digestValueOrDash(view.Traffic.ErrorRate), digestValueOrDash(view.Traffic.SLA)))
 	} else {
 		lines = append(lines, "站内流量：今日无真实调用")
 	}
@@ -182,6 +182,16 @@ func fitAccountLines(accounts []AccountDetailLine) ([]AccountDetailLine, int) {
 		return accounts, 0
 	}
 	return accounts[:maxDetailAccounts], len(accounts) - maxDetailAccounts
+}
+
+// digestValueOrDash renders an absent metric as an explicit "—" instead of a
+// blank: `错误率  · SLA ` reads like a rendering bug, `错误率 — · SLA —` reads
+// like the metric is not collected.
+func digestValueOrDash(value string) string {
+	if rendered := digestValue(value); rendered != "" {
+		return rendered
+	}
+	return "—"
 }
 
 func signedDelta(delta int) string {

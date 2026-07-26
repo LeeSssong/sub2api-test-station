@@ -176,6 +176,31 @@ func TestTickRunsSiteMonitorEveryFifteenMinutesInReadOnlyMode(t *testing.T) {
 	}
 }
 
+func TestTickRunsGroupAvailabilityEveryFiveMinutesInReadOnlyMode(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+	store := newFakeJobStore()
+	calls := 0
+	s := Scheduler{
+		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
+		GroupAvailability: func(context.Context) error { calls++; return nil },
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(4 * time.Minute)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("group availability calls = %d, want 2", calls)
+	}
+}
+
 func TestSiteMonitorDoesNotChangeClosedOrExistingJobScheduling(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)

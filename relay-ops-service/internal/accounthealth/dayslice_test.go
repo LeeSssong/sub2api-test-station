@@ -32,13 +32,40 @@ func TestRollingWindowLimitFor(t *testing.T) {
 		{0, 18},   // 非法值回退 300 秒
 		{-5, 18},  // 非法值回退 300 秒
 		{60, 90},  // ceil(3600/60)=60, *1.5=90
-		{7200, 2}, // ceil(3600/7200)=1, *1.5=1.5 -> 2
+		{7200, 12}, // ceil(3600/7200)=1, *1.5=1.5 -> 2 -> 下限 12
 		{250, 23}, // ceil(3600/250)=15, *1.5=22.5 -> 23
 	}
 	for _, tc := range cases {
 		if got := RollingWindowLimitFor(tc.interval); got != tc.want {
 			t.Fatalf("RollingWindowLimitFor(%d) = %d, want %d", tc.interval, got, tc.want)
 		}
+	}
+}
+
+func TestRollingWindowLimitForIsClamped(t *testing.T) {
+	cases := []struct {
+		name     string
+		interval int
+		want     int
+	}{
+		{"当前生产间隔", 300, 18},
+		{"非法值回退 300 秒", 0, 18},
+		{"负值回退 300 秒", -5, 18},
+		{"密集探测撞上限", 1, 200},
+		// 简报原值为 72，但按简报自身实现（slack=1.5）ceil(60*1.5)=90；
+		// 72 只在 slack=1.2 时成立，而那会把 300 秒间隔算成 15、
+		// 破坏 internal/app 端到端测试断言的 limit==18。取 90。
+		{"60 秒间隔在区间内", 60, 90},
+		{"18 秒间隔恰好触顶", 18, 200},
+		{"稀疏探测撞下限", 3600, 12},
+		{"超长间隔仍给下限", 86400, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RollingWindowLimitFor(tc.interval); got != tc.want {
+				t.Fatalf("RollingWindowLimitFor(%d) = %d, want %d", tc.interval, got, tc.want)
+			}
+		})
 	}
 }
 

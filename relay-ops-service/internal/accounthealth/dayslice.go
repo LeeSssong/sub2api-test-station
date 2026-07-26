@@ -13,6 +13,8 @@ const (
 	historyLimitMax       = 2000
 	rollingWindowSeconds  = 60 * 60
 	rollingLimitSlack     = 1.5
+	rollingLimitMin       = 12
+	rollingLimitMax       = 200
 	defaultIntervalSecond = 300
 	statusSuccess         = "success"
 	dateLayout            = "2006-01-02"
@@ -57,12 +59,23 @@ func HistoryLimitFor(intervalSeconds int) int {
 // HistoryLimitFor must not be reused here: it covers the 48-hour daily-report
 // window (692 entries at a 300-second interval), roughly 40x the data the
 // rolling window needs on every 5-minute job round.
+// The clamps matter: without an upper bound a one-second probe interval asks
+// for 5400 entries, blows past the client's response ceiling, and every
+// account silently falls back to the cumulative window — reviving the very
+// staleness this window was added to remove.
 func RollingWindowLimitFor(intervalSeconds int) int {
 	if intervalSeconds <= 0 {
 		intervalSeconds = defaultIntervalSecond
 	}
 	needed := int(math.Ceil(float64(rollingWindowSeconds) / float64(intervalSeconds)))
-	return int(math.Ceil(float64(needed) * rollingLimitSlack))
+	limit := int(math.Ceil(float64(needed) * rollingLimitSlack))
+	if limit < rollingLimitMin {
+		return rollingLimitMin
+	}
+	if limit > rollingLimitMax {
+		return rollingLimitMax
+	}
+	return limit
 }
 
 // Aggregate summarizes the entries whose CheckedAt falls in the half-open

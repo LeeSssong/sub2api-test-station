@@ -1014,7 +1014,8 @@ git commit -m "feat: read account monitor probe history"
 
 **Interfaces:**
 - Consumes: `accounthealth.Tier`、`accounthealth.Profit`、`accounthealth.GroupAvailability`
-- Produces: `HealthDigestView{Date string, Quality QualityLine, Profit ProfitLine, Pending []PendingItem, Accounts []AccountDetailLine, Traffic TrafficLine}`
+- Produces: `HealthDigestView{Date string, Quality QualityLine, Profit ProfitLine, Pending []PendingItem, Recommendations []RecommendationLine, Accounts []AccountDetailLine, Traffic TrafficLine}`
+- Produces: `RecommendationLine{GroupName, CurrentName, CandidateName, Reason string}`
 - Produces: `QualityLine{Healthy, Degraded, Unavailable, Slow int, HealthyDelta *int, TTFTMedianMS *float64, DataUnavailable bool, DataUnavailableReason string}`
 - Produces: `ProfitLine{Revenue, UpstreamCost, Gross float64, Margin *float64, Computable bool, ExcludedAccounts int, NoTraffic bool}`
 - Produces: `PendingItem{AccountName, Problem, Detail string}`
@@ -1132,6 +1133,34 @@ func TestRenderHealthDigestProfitFormatting(t *testing.T) {
 	}
 }
 
+func TestRenderHealthDigestShowsRecommendations(t *testing.T) {
+	view := HealthDigestView{
+		Date: "2026-07-27", Quality: QualityLine{Healthy: 3},
+		Profit: ProfitLine{NoTraffic: true},
+		Recommendations: []RecommendationLine{
+			{GroupName: "GPT-Pro", CurrentName: "Pro-TK-0.15", CandidateName: "Pro-SHEN-0.16", Reason: "成功率更高且延时更低"},
+		},
+		Traffic: TrafficLine{HasTraffic: false},
+	}
+	text := renderText(t, RenderHealthDigest(view))
+	for _, want := range []string{"选型建议", "GPT-Pro", "Pro-SHEN-0.16", "Pro-TK-0.15", "成功率更高且延时更低"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("缺少 %q: %s", want, text)
+		}
+	}
+}
+
+func TestRenderHealthDigestOmitsEmptyRecommendations(t *testing.T) {
+	view := HealthDigestView{
+		Date: "2026-07-27", Quality: QualityLine{Healthy: 3},
+		Profit: ProfitLine{NoTraffic: true}, Traffic: TrafficLine{HasTraffic: false},
+	}
+	text := renderText(t, RenderHealthDigest(view))
+	if strings.Contains(text, "选型建议") {
+		t.Fatalf("无建议时不得输出该小节: %s", text)
+	}
+}
+
 func TestRenderHealthDigestDataUnavailable(t *testing.T) {
 	view := HealthDigestView{
 		Date:    "2026-07-27",
@@ -1233,20 +1262,28 @@ type TrafficLine struct {
 	SLA        string
 }
 
+type RecommendationLine struct {
+	GroupName     string
+	CurrentName   string
+	CandidateName string
+	Reason        string
+}
+
 type HealthDigestView struct {
-	Date     string
-	Quality  QualityLine
-	Profit   ProfitLine
-	Pending  []PendingItem
-	Accounts []AccountDetailLine
-	Traffic  TrafficLine
+	Date            string
+	Quality         QualityLine
+	Profit          ProfitLine
+	Pending         []PendingItem
+	Recommendations []RecommendationLine
+	Accounts        []AccountDetailLine
+	Traffic         TrafficLine
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
 	elements := []CardElement{
 		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(qualityLines(view.Quality), "\n")}},
 		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(profitLines(view.Profit), "\n")}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(pendingLines(view.Pending), "\n")}},
+		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(pendingLines(view.Pending, view.Recommendations), "\n")}},
 		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: strings.Join(detailLines(view), "\n")}},
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
@@ -1296,14 +1333,22 @@ func profitLines(profit ProfitLine) []string {
 	return lines
 }
 
-func pendingLines(items []PendingItem) []string {
+func pendingLines(items []PendingItem, recommendations []RecommendationLine) []string {
 	lines := []string{"**待处理**"}
 	if len(items) == 0 {
-		return append(lines, "无")
+		lines = append(lines, "无")
 	}
 	for _, item := range items {
 		lines = append(lines, fmt.Sprintf("- %s　%s　%s",
 			digestValue(item.AccountName), digestValue(item.Problem), digestValue(item.Detail)))
+	}
+	if len(recommendations) > 0 {
+		lines = append(lines, "**选型建议**")
+		for _, rec := range recommendations {
+			lines = append(lines, fmt.Sprintf("- %s：%s 综合优于当前 %s（%s）",
+				digestValue(rec.GroupName), digestValue(rec.CandidateName),
+				digestValue(rec.CurrentName), digestValue(rec.Reason)))
+		}
 	}
 	return lines
 }
@@ -1550,6 +1595,7 @@ git commit -m "feat: render group availability alert card"
 
 **Interfaces:**
 - Consumes: `accounthealth.ClassifyAccount`、`accounthealth.SliceByDay`、`accounthealth.HistoryLimitFor`、`accounthealth.GroupAvailabilities`、`accounthealth.SumProfit`（Task 1–4）
+- Consumes: `accountrecommendation.Analyze(projection) Result`，其 `Result.Groups[].{GroupName, Decision, CandidateAccountID, Reasons, Current.Name, Candidate.Name}` 用于填充选型建议；仅当 `Decision == "candidate_better"` 且 `CandidateAccountID != 0` 时才产出建议行
 - Consumes: `sub2api.AccountMonitorReader.ListAccountMonitorHistory`（Task 5）
 - Consumes: `notify.RenderHealthDigest`、`notify.RenderGroupAlert`（Task 6–7）
 - Produces: `BuildHealthDigest(projection sub2api.AccountMonitorProjection, histories map[int64][]sub2api.AccountMonitorHistoryEntry, loc *time.Location, now time.Time) notify.HealthDigestView`
@@ -1580,19 +1626,19 @@ func fixture() (sub2api.AccountMonitorProjection, map[int64][]sub2api.AccountMon
 		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
 		Accounts: []sub2api.AccountMonitorAccount{
 			{
-				AccountID: 22, Name: "Plus-XN-0.09", GroupNames: []string{"GPT-Plus"},
+				AccountID: 22, Name: "Plus-XN-0.09", GroupIDs: []int64{6}, GroupNames: []string{"GPT-Plus"},
 				SuccessRate: 0, SampleCount: 200, ErrorCode: "balance_exhausted",
 				Multiplier: sub2api.AccountMonitorMultiplier{Value: f64(0.25), Source: "declared", Status: "ok"},
 				TodayStats: &sub2api.AccountMonitorTodayStats{StandardCost: 0, UserCost: 0},
 			},
 			{
-				AccountID: 21, Name: "Pro-SHUAI-0.17", GroupNames: []string{"GPT-Pro"},
+				AccountID: 21, Name: "Pro-SHUAI-0.17", GroupIDs: []int64{7}, GroupNames: []string{"GPT-Pro"},
 				SuccessRate: 0.98, SampleCount: 200, TTFTP95MS: f64(3777),
 				Multiplier: sub2api.AccountMonitorMultiplier{Status: "failed", Source: "measured"},
 				TodayStats: &sub2api.AccountMonitorTodayStats{StandardCost: 100, UserCost: 40},
 			},
 			{
-				AccountID: 26, Name: "Pro-SHEN-0.16", GroupNames: []string{"GPT-Pro"},
+				AccountID: 26, Name: "Pro-SHEN-0.16", GroupIDs: []int64{7}, GroupNames: []string{"GPT-Pro"},
 				SuccessRate: 1, SampleCount: 200, TTFTP95MS: f64(2000),
 				Multiplier: sub2api.AccountMonitorMultiplier{Value: f64(0.16), Source: "declared", Status: "ok"},
 				TodayStats: &sub2api.AccountMonitorTodayStats{StandardCost: 200, UserCost: 100},
@@ -1657,6 +1703,16 @@ func TestBuildHealthDigestListsPendingItems(t *testing.T) {
 	}
 }
 
+func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	view := BuildHealthDigest(projection, histories, loc, now)
+	for _, rec := range view.Recommendations {
+		if rec.GroupName == "" || rec.CurrentName == "" || rec.CandidateName == "" {
+			t.Fatalf("建议行字段不完整，缺候选或当前账号名: %+v", rec)
+		}
+	}
+}
+
 func TestBuildGroupAlertsOnlyForAlertingGroups(t *testing.T) {
 	projection, _, loc, now := fixture()
 	alerts := BuildGroupAlerts(projection, loc, now)
@@ -1688,9 +1744,11 @@ package dailyreport
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accounthealth"
+	"example.invalid/relay-ops-service/internal/accountrecommendation"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
@@ -1776,6 +1834,8 @@ func BuildHealthDigest(
 		}
 	}
 
+	view.Recommendations = buildRecommendations(projection)
+
 	if len(histories) > 0 {
 		delta := todayHealthy - yesterdayHealthy
 		view.Quality.HealthyDelta = &delta
@@ -1790,6 +1850,27 @@ func BuildHealthDigest(
 	}
 	view.Traffic = notify.TrafficLine{HasTraffic: !view.Profit.NoTraffic}
 	return view
+}
+
+// buildRecommendations surfaces only actionable switches: a group is listed
+// solely when the analyzer concluded the candidate is better and named it.
+func buildRecommendations(projection sub2api.AccountMonitorProjection) []notify.RecommendationLine {
+	recommendations := []notify.RecommendationLine{}
+	for _, group := range accountrecommendation.Analyze(projection).Groups {
+		if group.Decision != "candidate_better" || group.CandidateAccountID == 0 {
+			continue
+		}
+		if group.Current.Name == "" || group.Candidate.Name == "" {
+			continue
+		}
+		recommendations = append(recommendations, notify.RecommendationLine{
+			GroupName:     group.GroupName,
+			CurrentName:   group.Current.Name,
+			CandidateName: group.Candidate.Name,
+			Reason:        strings.Join(group.Reasons, "、"),
+		})
+	}
+	return recommendations
 }
 
 func BuildGroupAlerts(projection sub2api.AccountMonitorProjection, loc *time.Location, now time.Time) []notify.GroupAlertView {
@@ -1948,7 +2029,7 @@ Expected: PASS
 	message := notify.RenderHealthDigest(view)
 ```
 
-同步调整 import：新增 `example.invalid/relay-ops-service/internal/accounthealth`；若 `accountrecommendation` 与 `upstreamAccountStatusView` 在本文件内再无其他引用，一并删除该 import 与该函数（`go build ./...` 会报未使用的 import / 未使用的函数，据此清理）。
+同步调整 `service.go` 的 import：新增 `example.invalid/relay-ops-service/internal/accounthealth`，删除 `accountrecommendation` 与 `notify` 中已不再用到的引用（`accountrecommendation` 改由 `health.go` 引用）。同时删除 `service.go` 中的 `upstreamAccountStatusView` 函数（第 170 行起）——它唯一的调用点正是本步骤替换掉的那段。`go build ./...` 会报未使用的 import，据此收敛。
 
 变量 `quality`、`footer`、`evidenceRefs`、`runtime` 仍被同方法内的 `contract`、`analysis` 与后续 `Observe`/`SendIncident` 逻辑使用，**不要删除它们的赋值**；本步骤只替换卡片渲染部分。
 
@@ -2017,93 +2098,59 @@ git commit -m "feat: wire health digest and group availability alerting"
 
 ---
 
-### Task 9: 清理废弃倍率字段
+### Task 9: 删除旧渲染链并清理废弃倍率字段
 
 **Files:**
+- Modify: `relay-ops-service/internal/notify/feishu.go`（删除 `RenderOperationsDigest` 及其专属辅助函数与视图类型）
+- Modify: `relay-ops-service/internal/notify/feishu_test.go`（删除 8 个 `TestRenderOperationsDigest*` 测试）
 - Modify: `ops/collect-account-quality-pulse.rb:333-335`、`:345`、`:356-364`、`:366-368`、`:392`
 - Modify: `relay-ops-service/internal/accountquality/result.go:41`、`:63`、`:115`、`:166`、`:226`
-- Modify: `relay-ops-service/internal/notify/feishu.go:406-423`（`digestAccountLines`）、`:425-444`（`digestQualityLines`）
 - Test: `relay-ops-service/internal/accountquality/result_test.go`（既有文件，删除倍率相关断言）
 
 **Interfaces:**
+- Removes: `notify.RenderOperationsDigest`、`notify.OperationsDigestView`、`notify.UpstreamAccountStatusView`、`notify.AccountGroupStatusView`、`notify.AccountStatusView`
+- Removes: `notify.digestAccountLines`、`digestQualityLines`、`accountStatusLines`、`accountStatusLine`、`digestGroupLines`、`accountEvidenceStatus`、`qualityStatus`（仅在确认无其他调用者后删除）
 - Removes: `accountquality.AccountRecord.RateMultiplier`、`accountquality.AccountView.Multiplier`、`accountquality.formatMultiplier`
 - Removes: Ruby 端 `rate_multiplier` 方法及其在 sample / summary 中的输出
-- Changes: `digestAccountLines` 改用 `row.Name`
+
+Task 8 已把日报渲染切到 `RenderHealthDigest`，旧链在生产上再无调用者。`accountrecommendation` 包**必须保留** —— Task 8 的 `buildRecommendations` 仍在使用它。
 
 `ops/collect-account-quality-pulse.rb` 生成的证据 JSON 将不再包含 `rate_multiplier` 键。`accountquality` 的校验逻辑必须同步移除对该键的要求，否则历史证据文件解析失败。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 确认旧链无生产调用者**
 
-在 `relay-ops-service/internal/notify/` 下创建 `digest_account_name_test.go`：
+Run:
 
-```go
-package notify
-
-import (
-	"strings"
-	"testing"
-
-	"example.invalid/relay-ops-service/internal/opsmetrics"
-)
-
-func TestDigestAccountLinesUsesName(t *testing.T) {
-	lines := digestAccountLines([]opsmetrics.AccountRuntime{
-		{ID: 20, Name: "Plus-TK-0.08", Status: opsmetrics.StatusOK},
-	})
-	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "Plus-TK-0.08") {
-		t.Fatalf("必须使用账号名: %s", joined)
-	}
-	if strings.Contains(joined, "账号 20") {
-		t.Fatalf("不得输出数据库 ID: %s", joined)
-	}
-}
-
-func TestDigestAccountLinesFallsBackWhenNameEmpty(t *testing.T) {
-	lines := digestAccountLines([]opsmetrics.AccountRuntime{
-		{ID: 20, Name: "", Status: opsmetrics.StatusOK},
-	})
-	if len(lines) == 0 {
-		t.Fatal("空名账号仍应产生一行")
-	}
-}
+```bash
+cd relay-ops-service && grep -rn "RenderOperationsDigest\|OperationsDigestView\|UpstreamAccountStatusView" --include="*.go" . | grep -v "_test.go" | grep -v "internal/notify/feishu.go"
 ```
 
-若 `opsmetrics.StatusOK` 常量名不同，先运行 `grep -n "Status.* = " relay-ops-service/internal/opsmetrics/snapshot.go` 取实际常量名替换。
+Expected: 无输出。若有输出，说明 Task 8 未完成或存在计划外调用者，**停止并上报**，不要继续删除。
 
-- [ ] **Step 2: 验证测试失败**
+- [ ] **Step 2: 删除旧渲染链**
 
-Run: `cd relay-ops-service && go test ./internal/notify/ -run TestDigestAccountLines -v`
-Expected: FAIL，输出中含 `账号 20`
+在 `relay-ops-service/internal/notify/feishu.go` 中删除：`RenderOperationsDigest` 函数、`OperationsDigestView` / `UpstreamAccountStatusView` / `AccountGroupStatusView` / `AccountStatusView` 类型定义，以及仅被它们调用的辅助函数 `digestGroupLines`、`digestAccountLines`、`digestQualityLines`、`accountStatusLines`、`accountStatusLine`、`accountEvidenceStatus`、`qualityStatus`。
 
-- [ ] **Step 3: 修复账号名渲染**
+删每个辅助函数前先确认它没有别的调用者：
 
-将 `relay-ops-service/internal/notify/feishu.go` 中 `digestAccountLines` 的标签构造改为：
-
-```go
-		label := digestValue(row.Name)
-		if label == "" {
-			label = "未命名账号"
-		}
+```bash
+cd relay-ops-service && grep -rn "<函数名>" --include="*.go" .
 ```
 
-同时删除 `digestQualityLines` 中的倍率片段，把格式串由
+`digestValue`、`fitDigestSection`、`shortHash`、`digestTimestamp`、`maxCardBytes` 等被 Task 6/7 的新渲染或其他卡片复用，**不要删除**。
 
-```go
-		lines = append(lines, fmt.Sprintf("- 账号 %s：稳定性 %s，倍率 %s，TTFT P95 %s，最近结果 %s",
-			digestValue(row.AccountID), digestValue(row.Stability), digestValue(row.Multiplier), digestValue(row.TTFTP95), digestValue(row.LastResult)))
-```
+在 `relay-ops-service/internal/notify/feishu_test.go` 中删除全部 8 个 `TestRenderOperationsDigest*` 测试函数。若删除后该文件残留仅供这些测试使用的 helper，一并删除。
 
-改为
+- [ ] **Step 3: 验证删除后仍可编译**
 
-```go
-		lines = append(lines, fmt.Sprintf("- 账号 %s：稳定性 %s，TTFT P95 %s，最近结果 %s",
-			digestValue(row.AccountID), digestValue(row.Stability), digestValue(row.TTFTP95), digestValue(row.LastResult)))
-```
+Run: `cd relay-ops-service && go build ./... && go vet ./internal/notify/`
+Expected: 无输出（编译与静态检查均通过）
 
 - [ ] **Step 4: 移除 Go 端倍率字段**
 
 在 `relay-ops-service/internal/accountquality/result.go`：删除第 41 行 `RateMultiplier *float64` 字段、第 63 行 `AccountView` 中的 `Multiplier`、第 115 行的 `Multiplier: formatMultiplier(...)` 赋值、第 166 行校验条件中的 `(account.RateMultiplier != nil && !finiteNonNegative(*account.RateMultiplier)) ||` 片段，以及第 226 行起的 `formatMultiplier` 函数。删除 `result_test.go` 中所有引用 `RateMultiplier` 或 `Multiplier` 的断言。
+
+若 `finiteNonNegative` 在删除该片段后再无调用者，一并删除；先用 `grep -rn "finiteNonNegative" --include="*.go" .` 确认。
 
 - [ ] **Step 5: 移除 Ruby 端倍率采集**
 
@@ -2121,7 +2168,7 @@ Expected: `Syntax OK`
 
 ```bash
 git add ops/collect-account-quality-pulse.rb relay-ops-service/internal/accountquality/ relay-ops-service/internal/notify/
-git commit -m "refactor: drop deprecated rate multiplier from quality evidence"
+git commit -m "refactor: remove legacy digest renderer and deprecated multiplier"
 ```
 
 ---

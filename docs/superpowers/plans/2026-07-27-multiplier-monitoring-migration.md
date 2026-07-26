@@ -423,10 +423,17 @@ Expected: `剩余基线 = 0`
 
 - [ ] **Step 3: 构建并部署**
 
+**必须从 git 导出干净的树，不要 rsync 工作区。** 本仓库同时有并发会话在做 notify/feishuapi 重构，工作区存在约 20 个未提交、未经审查的改动（含已删除的 `modelrelease/result.go`）。`rsync` 会把它们一并推上生产。
+
 ```bash
-rsync -a --delete relay-ops-service/ sub2api-prod:/opt/sub2api/production/relay-ops-service/
-rsync -a ops/collect-account-quality-pulse.rb sub2api-prod:/tmp/
-ssh sub2api-prod 'sudo install -m 0644 /tmp/collect-account-quality-pulse.rb /opt/sub2api/production/ops/ && rm -f /tmp/collect-account-quality-pulse.rb'
+# 从 HEAD 导出，工作区的并发改动不会进入部署包
+git archive --format=tar HEAD relay-ops-service ops/collect-account-quality-pulse.rb \
+  | ssh sub2api-prod 'cat > /tmp/deploy.tar'
+ssh sub2api-prod 'set -e
+  rm -rf /tmp/deploy && mkdir -p /tmp/deploy && tar -xf /tmp/deploy.tar -C /tmp/deploy
+  sudo rsync -a --delete /tmp/deploy/relay-ops-service/ /opt/sub2api/production/relay-ops-service/
+  sudo install -m 0644 /tmp/deploy/ops/collect-account-quality-pulse.rb /opt/sub2api/production/ops/
+  rm -rf /tmp/deploy /tmp/deploy.tar'
 ssh sub2api-prod 'cd /opt/sub2api/production && sudo docker build -f infra/Dockerfile.relay-ops -t sub2api-relay-ops:multiplier-migration-20260727-v1 . 2>&1 | tail -3'
 ssh sub2api-prod 'cd /opt/sub2api/production && sudo cp compose.yaml compose.yaml.bak-before-multiplier-migration-20260727 && sudo sed -i "s|image: sub2api-relay-ops:merged-5ffc301-20260727-v1|image: sub2api-relay-ops:multiplier-migration-20260727-v1|" compose.yaml && sudo docker compose --env-file .env -f compose.yaml up -d --no-deps --force-recreate relay-ops'
 ```

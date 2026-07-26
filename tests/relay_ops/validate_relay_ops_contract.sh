@@ -85,7 +85,10 @@ require '上游账号质量' relay-ops-service/internal/http/templates/ops.html
 require '错误率' relay-ops-service/internal/http/templates/ops.html
 require '稳定性' relay-ops-service/internal/http/templates/ops.html
 require 'TTFT P95' relay-ops-service/internal/http/templates/ops.html
-require '倍率' relay-ops-service/internal/http/templates/ops.html
+# 倍率列已从账号质量表移除：质量视图只讲稳定性与延时，倍率属成本维度，
+# 且原数据源 accounts.rate_multiplier 生产恒为 1、已废弃。倍率监控改由
+# opsmonitor 消费 schema v2 的可信倍率（0.05x-0.25x）。
+forbid '倍率' relay-ops-service/internal/http/templates/ops.html
 forbid '模型版本' relay-ops-service/internal/http/templates/ops.html
 require '<details class="technical-details">' relay-ops-service/internal/http/templates/ops.html
 require '.ops-main section{border-top:1px solid var(--rule);padding-top:16px;min-width:0}' relay-ops-service/internal/http/static/app.css

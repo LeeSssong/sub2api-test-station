@@ -369,7 +369,13 @@ SQL
 wait_for_requested_health() {
   local deadline=$((SECONDS + health_timeout)) inspected actual_id status image
   while ((SECONDS <= deadline)); do
-    inspected=$(inspect_runtime "$sub2api_container" 2>/dev/null || true)
+    # force-recreate issues a fresh container identity, so resolve on every
+    # probe instead of trusting the pre-update container ID.
+    if sub2api_container=$(resolve_container_id sub2api); then
+      inspected=$(inspect_runtime "$sub2api_container" 2>/dev/null || true)
+    else
+      inspected=''
+    fi
     actual_id=$(jq -er '.[0].Image // empty' <<<"$inspected" 2>/dev/null || true)
     status=$(jq -er '.[0].State.Health.Status // empty' <<<"$inspected" 2>/dev/null || true)
     image=$(jq -er '.[0].Config.Image // empty' <<<"$inspected" 2>/dev/null || true)
@@ -387,11 +393,21 @@ wait_for_requested_health() {
 }
 
 wait_for_rollback_health() {
-  local inspected
-  inspected=$(inspect_runtime "$sub2api_container")
-  jq -e --arg image "$previous_image" --arg id "$previous_image_id" '
-    .[0].Config.Image == $image and .[0].Image == $id and .[0].State.Health.Status == "healthy"
-  ' <<<"$inspected" >/dev/null
+  # The rollback recreation also mints a new container that starts out in the
+  # "starting" health state, so poll it just like the requested container.
+  local deadline=$((SECONDS + health_timeout)) inspected
+  while ((SECONDS <= deadline)); do
+    if sub2api_container=$(resolve_container_id sub2api) &&
+      inspected=$(inspect_runtime "$sub2api_container" 2>/dev/null) &&
+      jq -e --arg image "$previous_image" --arg id "$previous_image_id" '
+        .[0].Config.Image == $image and .[0].Image == $id and .[0].State.Health.Status == "healthy"
+      ' <<<"$inspected" >/dev/null; then
+      return 0
+    fi
+    ((SECONDS < deadline)) || break
+    sleep 2
+  done
+  return 1
 }
 
 run_smoke() {

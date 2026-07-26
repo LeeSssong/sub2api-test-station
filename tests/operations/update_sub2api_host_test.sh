@@ -157,6 +157,20 @@ if [[ "${1:-}" == run ]]; then
 fi
 
 if [[ "${1:-}" == inspect ]]; then
+  # Containers get a fresh identity on every force-recreate, exactly like the
+  # real daemon: the pre-update ID dies with the old container, the requested
+  # container is sub2api-id-2, and the rollback container is sub2api-id-3.
+  case "$(cat "$state")" in
+    initial) live_sub2api=sub2api-id ;;
+    requested) live_sub2api=sub2api-id-2 ;;
+    previous) live_sub2api=sub2api-id-3 ;;
+  esac
+  for argument in "${@:2}"; do
+    if [[ "$argument" == sub2api-id* && "$argument" != "$live_sub2api" ]]; then
+      printf 'Error response from daemon: No such object: %s\n' "$argument" >&2
+      exit 1
+    fi
+  done
   if [[ "$(cat "$state")" == initial ]]; then
     expected='sub2api-id postgres-id redis-id caddy-id relay-ops-id'
     [[ "$*" == *"sub2api-id"*"postgres-id"*"redis-id"*"caddy-id"*"relay-ops-id"* ]] || die "$@"
@@ -178,12 +192,18 @@ if [[ "${1:-}" == inspect ]]; then
 ]
 JSON
   elif [[ "$(cat "$state")" == previous ]]; then
+    rollback_health=healthy
+    if [[ "${FAKE_ROLLBACK_STARTING_CHECKS:-0}" -gt 0 ]]; then
+      checks=$(cat "$state.rollback-checks" 2>/dev/null || printf 0)
+      printf '%s\n' "$((checks + 1))" >"$state.rollback-checks"
+      [[ "$checks" -ge "$FAKE_ROLLBACK_STARTING_CHECKS" ]] || rollback_health=starting
+    fi
     cat <<JSON
-[{"Id":"sub2api-id","Config":{"Image":"$old_image","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$old_id","State":{"Health":{"Status":"healthy"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
+[{"Id":"sub2api-id-3","Config":{"Image":"$old_image","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$old_id","State":{"Health":{"Status":"$rollback_health"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
 JSON
   else
     cat <<JSON
-[{"Id":"sub2api-id","Config":{"Image":"$requested","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$new_id","State":{"Health":{"Status":"healthy"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
+[{"Id":"sub2api-id-2","Config":{"Image":"$requested","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$new_id","State":{"Health":{"Status":"healthy"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
 JSON
   fi
   printf 'inspect\n' >>"$log"
@@ -205,7 +225,15 @@ case "${1:-}" in
   ps)
     [[ "${2:-}" == -q ]] || die "$@"
     case "${3:-}" in
-      sub2api) printf 'ps sub2api=sub2api-id\n' >>"$log"; printf 'sub2api-id\n' ;;
+      sub2api)
+        case "$(cat "$state")" in
+          initial) live_sub2api=sub2api-id ;;
+          requested) live_sub2api=sub2api-id-2 ;;
+          previous) live_sub2api=sub2api-id-3 ;;
+        esac
+        printf 'ps sub2api=%s\n' "$live_sub2api" >>"$log"
+        printf '%s\n' "$live_sub2api"
+        ;;
       postgres) printf 'ps postgres=postgres-id\n' >>"$log"; printf 'postgres-id\n' ;;
       redis) printf 'ps redis=redis-id\n' >>"$log"; printf 'redis-id\n' ;;
       caddy) printf 'ps caddy=caddy-id\n' >>"$log"; printf 'caddy-id\n' ;;
@@ -284,6 +312,7 @@ run_update() {
     ADMIN_API_KEY_FILE="$FIXTURE_DEPLOY/admin.key" \
     GATEWAY_API_KEY_FILE="$FIXTURE_DEPLOY/gateway.key" \
     RELEASE_EVENT_LOG="$FIXTURE_TRACE" \
+    HEALTH_TIMEOUT_SECONDS="${FAKE_HEALTH_TIMEOUT-5}" \
     bash "$SCRIPT" --image "$IMAGE" --version "$VERSION" --operation-id op-test-001 \
       ${CONTRACT_ARGS---contract-version 1} "$@")
 }
@@ -418,6 +447,24 @@ test_preflight_rejects_image_and_lock() {
   cleanup_fixture
 }
 
+test_rollback_waits_for_recreated_container_health() {
+  new_fixture
+  cat >"$FIXTURE_BIN/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'curl %s\n' "$*" >>"${FAKE_LOG:?}"
+exit 22
+SH
+  chmod 0755 "$FIXTURE_BIN/curl"
+  local output
+  # The rollback container reports "starting" for the first checks, exactly
+  # like a freshly recreated container before its first successful probe.
+  output=$(FAKE_ROLLBACK_STARTING_CHECKS=2 run_update)
+  [[ "$output" == 'result=rolled_back' ]] \
+    || fail "a briefly starting rollback container was reported as: $output"
+  cleanup_fixture
+}
+
 test_preflight_requires_matching_contract_version() {
   local output
   new_fixture
@@ -472,4 +519,5 @@ test_preflight_rejects_runtime_identity_and_space
 test_preflight_rejects_image_and_lock
 test_preflight_requires_matching_contract_version
 test_rollback_result_and_no_database_restore
+test_rollback_waits_for_recreated_container_health
 printf 'PASS: host-controlled Sub2API update executor\n'

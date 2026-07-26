@@ -1,41 +1,53 @@
-**Comparison Target**
+# Design QA
 
-- Source visual truth: `output/playwright/reference-shuaiapi/desktop-00-top.png` and `output/playwright/reference-shuaiapi/mobile-00-top-settled.png`
-- Browser-rendered implementation: `output/playwright/xingqiao-homepage-desktop-top-final.png` and `output/playwright/xingqiao-homepage-mobile-final.png`
-- Desktop viewport: `1440 x 900` CSS px, source `1440 x 900` px, implementation `1440 x 900` px, `deviceScaleFactor: 1`; no density normalization required.
-- Mobile viewport: `390 x 844` CSS px, source `390 x 844` px, implementation `390 x 844` px, `deviceScaleFactor: 1`; no density normalization required.
-- State: guest session, settled hero entrance, dark theme.
+- Source visual truth: `/var/folders/26/3qc7y_lx2s11df_9sh7dqg_40000gn/T/codex-clipboard-6193e098-4916-4681-ba94-6937b60505bb.png`
+- Desktop implementation: `output/playwright/homepage-final-desktop.png`
+- Mobile implementation: `output/playwright/homepage-final-mobile.png`
+- Combined comparison: `output/playwright/homepage-final-comparison.png`
+- Desktop viewport: 1812 x 1050 CSS px, device pixel ratio 1
+- Desktop pixels: source 2858 x 1346; implementation capture 1797 x 1041
+- Mobile viewport: 390 x 844 CSS px, device pixel ratio 1
+- Mobile pixels: implementation capture 375 x 812
+- State: hero entry animation completed, dark theme, guest session
 
-**Evidence**
+## Full-View Comparison
 
-- Full-view comparison: source and implementation were opened together at the matched desktop and mobile viewports. The hero uses the reference's fixed compact navigation, dense code-field backdrop, bottom-weighted title/copy composition, restrained borders, and dark technical palette. Xingqiao replaces only brand marks and approved business content.
-- Focused region comparison: the matched desktop top captures were used to inspect the header, endpoint row, headline, CTA pair, and scroll cue; the matched mobile captures were used to inspect compact navigation, endpoint wrapping, title hierarchy, CTA fit, and the beginning of the next section.
-- Browser acceptance evidence: `output/playwright/xingqiao-homepage-desktop-journey-route.png`, `output/playwright/xingqiao-homepage-desktop-journey-observe.png`, `output/playwright/xingqiao-homepage-desktop-brand-reveal.png`, and `output/playwright/xingqiao-homepage-mobile-menu.png`.
-- Primary interactions tested: guest CTA navigates to `/register`; seeded user and administrator states resolve to `/dashboard` and `/admin/dashboard`; mobile navigation opens and closes after selecting `#docs`; desktop request flow reaches `send`, `route`, and `observe`; the canvas is active and nonblank, responds to pointer hover; reduced motion exposes all statement words and static journey metrics.
-- Console: browser console reported zero errors during desktop, mobile, motion, and session-state checks.
+The annotated source asked for the title group to move substantially upward while the pitch and CTA remain toward the lower right. The implementation places the title at `y=441.75` and the pitch at `y=766.81`, producing a clear 325 px vertical diagonal. The previous desktop composition kept both groups near the lower edge.
 
-**Findings**
+The desktop hero has no horizontal overflow. The mobile layout resets the title padding to `0px`, keeps all hero controls within the viewport, and has no horizontal overflow.
 
-No actionable P0/P1/P2 differences found.
+## Focused Evidence
 
-- Fonts and typography: system CJK fallbacks retain a bold, compact display hierarchy matching the reference composition; intentionally replaced Xingqiao copy remains within its controls at both target viewports.
-- Spacing and layout rhythm: desktop uses a contained fixed header and bottom-aligned hero; mobile has no horizontal overflow (`scrollWidth === innerWidth === 390`) and the following section begins at `810px`, leaving a visible continuation cue.
-- Colors and visual tokens: near-black canvas, muted code field, white primary CTA, cyan-blue route/grid accents, and restrained gold scroll marker map to the reference's technical dark theme while incorporating the approved logo palette.
-- Image quality and asset fidelity: the only brand asset is the approved Xingqiao PNG. The footer particle reveal is original canvas behavior, not a substituted reference asset.
-- Copy and content: first-screen text, OpenAI/Anthropic compatibility, Seoul direct-connect message, fixed public price copy, and QQ-only support all match the approved product requirements.
+A separate crop was not required because the requested change affects the full hero composition and is readable at full-view scale. DOM measurements confirm:
 
-**Open Questions**
+- Desktop title padding: `288px`
+- Desktop grid contract: `data-composition="raised-diagonal"`
+- Mobile title padding: `0px`
+- Desktop and mobile console errors: none
+- Codex installer link: `https://codexapp.agentsmirror.com/`, `_blank`, `noopener noreferrer`
 
-None. Reference product copy and logos were intentionally not reused; their Xingqiao replacements are specified product changes.
+## Fidelity Review
 
-**Implementation Checklist**
+- Fonts and typography: Existing font stack, weights, line heights, letter spacing, and wrapping are unchanged. The title remains readable and does not collide with the pitch.
+- Spacing and layout rhythm: The desktop title is visibly raised; the right pitch remains anchored low. Mobile returns to the existing stacked rhythm.
+- Colors and visual tokens: Existing dark palette, cyan status accent, and background signal treatment are unchanged.
+- Image quality and assets: Existing logo and canvas signal rendering remain sharp and correctly framed.
+- Copy and content: Hero copy is unchanged. The Codex installation label and destination now match the requested website.
 
-- [x] Matched desktop and mobile reference states at equal CSS and pixel dimensions.
-- [x] Validated guest, user, administrator, mobile-menu, reduced-motion, request-flow, and canvas states in a real browser.
-- [x] Checked console errors and mobile overflow.
+## Comparison History
 
-**Follow-up Polish**
+- Earlier P1: The title and pitch were both concentrated near the bottom, so the intended diagonal composition was too weak.
+- Fix: Increased desktop `.hero-title` bottom padding from `clamp(4.5rem, 8vh, 6.5rem)` to `clamp(12rem, 28vh, 18rem)` while preserving the `980px` mobile reset.
+- Post-fix evidence: Desktop title and pitch have a 325 px top-position separation; mobile has no overflow or overlap.
 
-- [P3] Re-capture the reference and implementation after any future reference-site redesign before changing the visual system.
+## Findings
+
+No actionable P0, P1, or P2 findings remain.
+
+## Primary Interactions
+
+- Hero pointer entry animation reaches the visible final state.
+- Homepage navigation and CTA links render with valid destinations.
+- Documentation installer link renders with the requested destination and safe new-tab attributes.
 
 final result: passed

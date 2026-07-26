@@ -13,9 +13,8 @@ class CollectAccountQualityPulseTest < Minitest::Test
   class FakeClient
     attr_reader :probe_calls
 
-    def initialize(accounts:, details:, models:, probes:)
+    def initialize(accounts:, models:, probes:)
       @accounts = accounts
-      @details = details
       @models = models
       @probes = probes
       @probe_calls = []
@@ -23,10 +22,6 @@ class CollectAccountQualityPulseTest < Minitest::Test
 
     def accounts
       @accounts
-    end
-
-    def account(account_id)
-      @details.fetch(account_id)
     end
 
     def models(account_id)
@@ -46,10 +41,6 @@ class CollectAccountQualityPulseTest < Minitest::Test
         {"id" => 23, "status" => "disabled", "schedulable" => false},
         {"id" => 21, "status" => "active", "schedulable" => true}
       ],
-      details: {
-        21 => {"id" => 21, "rate_multiplier" => 0.05},
-        22 => {"id" => 22, "rate_multiplier" => 0.10}
-      },
       models: {
         21 => ["gpt-5.5", "gpt-5.6-sol", "dall-e-3"],
         22 => ["gpt-5.6-terra"]
@@ -80,10 +71,6 @@ class CollectAccountQualityPulseTest < Minitest::Test
         {"id" => 1, "status" => "active", "schedulable" => true},
         {"id" => 2, "status" => "active", "schedulable" => true}
       ],
-      details: {
-        1 => {"id" => 1, "rate_multiplier" => 0.1},
-        2 => {"id" => 2, "rate_multiplier" => 0.2}
-      },
       models: {1 => ["gpt-5.6"], 2 => ["gpt-5.6"]},
       probes: {
         1 => AccountQualityPulse::ProbeResult.new(result: "timeout", ttft_ms: nil, error_code: "timeout"),
@@ -98,41 +85,12 @@ class CollectAccountQualityPulseTest < Minitest::Test
     assert_equal [1, 2], client.probe_calls.map(&:first)
   end
 
-  def test_account_detail_failure_marks_multiplier_unavailable_and_preserves_known_zero
-    client = FakeClient.new(
-      accounts: [
-        {"id" => 1, "status" => "active", "schedulable" => true},
-        {"id" => 2, "status" => "active", "schedulable" => true}
-      ],
-      details: {
-        2 => {"id" => 2, "rate_multiplier" => 0}
-      },
-      models: {2 => ["gpt-5.6"]},
-      probes: {
-        2 => AccountQualityPulse::ProbeResult.new(result: "passed", ttft_ms: 80, error_code: "")
-      }
-    )
-
-    output = AccountQualityPulse::Collector.new(client: client, now: NOW).collect(history: [])
-    accounts = output.fetch("result").fetch("accounts")
-    history = output.fetch("history")
-
-    assert_nil accounts[0].fetch("rate_multiplier")
-    assert_nil history.find { |sample| sample.fetch("account_id") == 1 }.fetch("rate_multiplier")
-    assert_equal 0.0, accounts[1].fetch("rate_multiplier")
-    assert_equal [2], client.probe_calls.map(&:first)
-  end
-
   def test_account_set_hash_is_sha256_of_sorted_id_json_array
     client = FakeClient.new(
       accounts: [
         {"id" => 22, "status" => "active", "schedulable" => true},
         {"id" => 21, "status" => "active", "schedulable" => true}
       ],
-      details: {
-        21 => {"id" => 21, "rate_multiplier" => 0.05},
-        22 => {"id" => 22, "rate_multiplier" => 0.10}
-      },
       models: {21 => [], 22 => []},
       probes: {}
     )
@@ -156,7 +114,6 @@ class CollectAccountQualityPulseTest < Minitest::Test
   def test_no_text_model_is_recorded_without_calling_the_probe
     client = FakeClient.new(
       accounts: [{"id" => 21, "status" => "active", "schedulable" => true}],
-      details: {21 => {"id" => 21, "rate_multiplier" => 0.05}},
       models: {21 => ["dall-e-3", "whisper-1"]},
       probes: {}
     )
@@ -176,7 +133,6 @@ class CollectAccountQualityPulseTest < Minitest::Test
     ]
     client = FakeClient.new(
       accounts: [{"id" => 21, "status" => "active", "schedulable" => true}],
-      details: {21 => {"id" => 21, "rate_multiplier" => 0.05}},
       models: {21 => ["gpt-5.6-sol"]},
       probes: {21 => AccountQualityPulse::ProbeResult.new(result: "passed", ttft_ms: 200, error_code: "")}
     )

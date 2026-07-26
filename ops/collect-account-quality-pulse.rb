@@ -137,13 +137,6 @@ module AccountQualityPulse
       raise ValidationError, "native account list is invalid"
     end
 
-    def account(account_id)
-      data = json_request("GET", "/api/v1/admin/accounts/#{positive_id(account_id)}")
-      raise ValidationError, "native account detail is invalid" unless data.is_a?(Hash)
-
-      data
-    end
-
     def models(account_id)
       data = json_request("GET", "/api/v1/admin/accounts/#{positive_id(account_id)}/models")
       raise ValidationError, "native account models are invalid" unless data.is_a?(Array)

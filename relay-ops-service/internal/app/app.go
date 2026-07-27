@@ -394,7 +394,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			hash := sha256.Sum256([]byte(session.LoginURL))
 			transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: false, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话正常"})
 			if observeErr == nil && transition.Notify && notifier != nil {
-				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", notify.RenderFeishu(notify.IncidentView{Title: "上游用量读取会话已恢复：" + session.UpstreamName, Recovery: true, WhatWasDone: []string{"重新读取上游用量页面"}, Results: []string{"会话恢复，真实消费核对继续"}, Change: "会话从失效恢复为正常", Focus: "继续关注倍率与真实费用辅助证据", Links: []notify.Link{{Label: "运维后台", URL: "/ops"}}}))
+				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", renderUsageSessionRecovery(session.UpstreamName))
 			}
 			return nil
 		},
@@ -427,6 +427,22 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/", operations)
 	failed = false
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService}, nil
+}
+
+func renderUsageSessionRecovery(upstream string) notify.FeishuMessage {
+	return notify.RenderRecoveryCard(notify.RecoveryCardView{
+		Title:   "上游用量读取会话已恢复：" + upstream,
+		Summary: "用量读取会话已恢复",
+		Detail:  "会话已回到正常状态，真实消费核对继续",
+		Metrics: []notify.RecoveryMetric{
+			{Label: "会话状态", Value: "正常"},
+			{Label: "消费核对", Value: "已恢复"},
+		},
+		Basis:  []string{"上游用量页面已可正常读取"},
+		Source: "上游用量页面只读读取结果",
+		Focus:  "继续关注倍率与真实费用辅助证据",
+		Links:  []notify.Link{{Label: "运维后台", URL: "/ops"}},
+	})
 }
 
 func configuredCandidateService(cfg config.Config, repository candidates.Repository) candidates.Service {

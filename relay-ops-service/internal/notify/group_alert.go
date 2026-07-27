@@ -24,21 +24,32 @@ type GroupAlertView struct {
 
 func RenderGroupAlert(view GroupAlertView) FeishuMessage {
 	name := digestValue(view.GroupName)
+	if view.Recovery {
+		return RenderRecoveryCard(RecoveryCardView{
+			Title:   "分组可用性已恢复：" + name,
+			Summary: "分组可用性已恢复",
+			Detail:  "分组账号已重新满足可用性要求",
+			Metrics: []RecoveryMetric{
+				{Label: "可用账号", Value: fmt.Sprintf("%d / %d", view.Available, view.Total)},
+				{Label: "当前状态", Value: "可用性正常"},
+				{Label: "健康确认", Value: "1 个完整窗口"},
+			},
+			Basis:  []string{"当前可用账号数量已回到健康范围"},
+			Source: "Sub2API 账号监控分组快照",
+			Focus:  "继续观察分组可用账号数量",
+			Links:  []Link{{Label: "运维后台", URL: "/ops"}},
+		})
+	}
+
 	lines := []string{fmt.Sprintf("可用 %d / 共 %d", view.Available, view.Total)}
 
 	template := "red"
 	title := "⚠️ 分组可用账号不足：" + name
-	if view.Recovery {
-		template = "green"
-		title = "分组可用性已恢复：" + name
+	for _, account := range view.Down {
+		lines = append(lines, fmt.Sprintf("%s　%s",
+			digestValue(account.Name), digestValue(account.ErrorCode)))
 	}
-	if !view.Recovery {
-		for _, account := range view.Down {
-			lines = append(lines, fmt.Sprintf("%s　%s",
-				digestValue(account.Name), digestValue(account.ErrorCode)))
-		}
-		lines = append(lines, "", "建议：为上述账号充值，或临时关闭 schedulable 止血")
-	}
+	lines = append(lines, "", "建议：为上述账号充值，或临时关闭 schedulable 止血")
 	return FeishuMessage{MsgType: "interactive", Card: &Card{
 		Config: CardConfig{WideScreenMode: true},
 		Header: CardHeader{Title: CardText{Tag: "plain_text", Content: title}, Template: template},

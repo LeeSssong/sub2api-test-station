@@ -89,6 +89,19 @@ func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testin
 	}
 }
 
+func TestRenderUsageSessionRecoveryUsesStructuredBusinessCopy(t *testing.T) {
+	t.Parallel()
+	message := renderUsageSessionRecovery("wawazz")
+	for _, want := range []string{"用量读取会话已恢复", "会话状态", "正常", "消费核对", "已恢复", "上游用量页面"} {
+		if !strings.Contains(message.RenderedText(), want) {
+			t.Fatalf("missing %q in %q", want, message.RenderedText())
+		}
+	}
+	if len(message.Card.Elements) < 3 || len(message.Card.Elements[1].Fields) != 2 {
+		t.Fatalf("recovery card is not structured: %#v", message.Card.Elements)
+	}
+}
+
 func TestExecuteFastCandidatePersistsHashBoundQualityReport(t *testing.T) {
 	now := time.Date(2026, 7, 22, 3, 0, 0, 0, time.UTC)
 	record := []byte(`{"schema_version":1,"run_id":"fast-1","channel_id":"candidate-17","profile_id":"quality-first-fast-v1","job_kind":"health_pulse","recorded_at":"2026-07-22T03:00:00Z","status":"passed","metrics":{"selected_models":["gpt-a"],"direct":{"request_count":2,"success_count":2,"success_rate":1,"latency":{"p95_ms":1200},"ttft":{"p95_ms":500}},"gateway":{"status":"unknown"}},"errors":[]}`)

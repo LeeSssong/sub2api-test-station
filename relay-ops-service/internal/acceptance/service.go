@@ -135,18 +135,20 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	result.State = recoveryTransition.State
 	result.Transition = recoveryTransition.Kind
 	if recoveryTransition.Notify && s.Notifier != nil {
-		recoveryMessage := notify.RenderFeishu(notify.IncidentView{
-			Title:    "relay-ops 合成告警已恢复",
-			Recovery: true, Suppressed: true,
-			WhatWasDone: []string{
-				"对同一固定事件重复观察一次并确认未重复告警",
-				"将合成事件转为恢复状态",
-				"未访问任何上游、未产生请求费用",
+		recoveryMessage := notify.RenderRecoveryCard(notify.RecoveryCardView{
+			Title:   "relay-ops 合成告警已恢复",
+			Summary: "合成事件已恢复",
+			Detail:  "合成事件已从告警恢复，真实服务未受影响",
+			Metrics: []notify.RecoveryMetric{
+				{Label: "当前状态", Value: "已恢复"},
+				{Label: "重复事件", Value: "已抑制"},
+				{Label: "真实服务影响", Value: "无"},
 			},
-			Results: []string{"状态：" + recoveryTransition.State, "重复事件：已抑制", "分析：" + analysis.Summary},
-			Change:  "合成事件已从告警恢复，真实服务状态未受影响",
-			Focus:   "确认飞书只收到一条告警和一条恢复通知",
-			Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
+			Basis:      []string{"固定事件已转为恢复状态，重复告警未再次发送", analysis.Summary},
+			Source:     "relay-ops 合成验收（未访问上游）",
+			Focus:      "确认飞书只收到一条告警和一条恢复通知",
+			Links:      []notify.Link{{Label: "运维后台", URL: "/ops"}},
+			Suppressed: true,
 		})
 		if err := s.Notifier.SendIncident(ctx, syntheticIncidentID, recoveryHash, recoveryMessage); err != nil {
 			result.RecoveryNotification = "failed"

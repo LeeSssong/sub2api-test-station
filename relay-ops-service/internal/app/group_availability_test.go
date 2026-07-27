@@ -156,6 +156,11 @@ func TestRunGroupAvailabilityDeliversAcrossOutageRecoveryOutage(t *testing.T) {
 	if !strings.Contains(cardTitle(t, recovery.Message), "分组可用性已恢复") {
 		t.Fatalf("第二张不是恢复卡: %s", cardTitle(t, recovery.Message))
 	}
+	for _, want := range []string{"可用账号", "1 / 1", "可用性正常", "账号监控分组快照"} {
+		if !strings.Contains(recovery.Message.RenderedText(), want) {
+			t.Fatalf("恢复卡缺少 %q: %s", want, recovery.Message.RenderedText())
+		}
+	}
 	if !strings.Contains(cardTitle(t, second.Message), "分组可用账号不足") {
 		t.Fatalf("第三张不是告警卡: %s", cardTitle(t, second.Message))
 	}

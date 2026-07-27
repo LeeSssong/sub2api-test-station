@@ -35,7 +35,8 @@ func TestRenderGroupAlertContent(t *testing.T) {
 
 func TestRenderGroupAlertRecovery(t *testing.T) {
 	view := GroupAlertView{GroupName: "GPT-Plus", Available: 3, Total: 3, Recovery: true}
-	payload, err := RenderGroupAlert(view).CardJSON()
+	message := RenderGroupAlert(view)
+	payload, err := message.CardJSON()
 	if err != nil {
 		t.Fatalf("CardJSON: %v", err)
 	}
@@ -45,6 +46,14 @@ func TestRenderGroupAlertRecovery(t *testing.T) {
 	}
 	if !strings.Contains(text, "已恢复") {
 		t.Fatal("恢复卡应说明已恢复")
+	}
+	for _, want := range []string{"可用账号", "3 / 3", "当前状态", "可用性正常", "数据来源", "Sub2API 账号监控分组快照"} {
+		if !strings.Contains(message.RenderedText(), want) {
+			t.Fatalf("恢复卡缺少 %q: %s", want, message.RenderedText())
+		}
+	}
+	if len(message.Card.Elements) < 3 || len(message.Card.Elements[1].Fields) != 3 {
+		t.Fatalf("恢复卡未使用结构化指标: %#v", message.Card.Elements)
 	}
 }
 

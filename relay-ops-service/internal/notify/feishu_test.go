@@ -3,11 +3,13 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -109,6 +111,38 @@ func TestAppClientResolvesRelativeOpsLinkBeforeSending(t *testing.T) {
 	}
 }
 
+func TestAppClientFiltersUnsafeStructuredRecoveryLinkAndResolvesRelativeLink(t *testing.T) {
+	sender := &fakeTextSender{}
+	client := AppClient{Sender: sender, ChatID: "oc_alert_group", BaseURL: "https://ops.example"}
+	message := RenderRecoveryCard(RecoveryCardView{
+		Title:   "恢复",
+		Summary: "状态已恢复",
+		Metrics: []RecoveryMetric{
+			{Label: "当前状态", Value: "正常"},
+			{Label: "健康确认", Value: "1 个完整窗口"},
+		},
+		Links: []Link{
+			{Label: "不安全链接", URL: "http://unsafe.example/ops"},
+			{Label: "运维后台", URL: "/ops"},
+		},
+	})
+	if err := client.Send(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+
+	var card Card
+	if err := json.Unmarshal(sender.payload.Content, &card); err != nil {
+		t.Fatal(err)
+	}
+	if len(card.Elements) != 3 || card.Elements[2].Tag != "action" || len(card.Elements[2].Actions) != 1 {
+		t.Fatalf("unsafe action was retained: %s", sender.payload.Content)
+	}
+	action := card.Elements[2].Actions[0]
+	if action.MultiURL == nil || action.MultiURL.URL != "https://ops.example/ops" {
+		t.Fatalf("relative action was not resolved: %#v", action)
+	}
+}
+
 func TestRenderAlertRecoveryAndCommandUseInteractiveCards(t *testing.T) {
 	t.Parallel()
 	alert := RenderAlert(IncidentView{Title: "上游异常", Severity: "P1", Current: "error", Baseline: "operational", Results: []string{"失败率升高"}})
@@ -128,6 +162,23 @@ func TestRenderAlertRecoveryAndCommandUseInteractiveCards(t *testing.T) {
 	}
 	if !strings.Contains(alert.RenderedText(), "需要关注") || !strings.Contains(recovery.RenderedText(), "恢复") || !strings.Contains(command.RenderedText(), "审计") {
 		t.Fatalf("cards missing semantic sections")
+	}
+}
+
+func TestRenderAlertKeepsSingleProseDivWithoutStructuredFields(t *testing.T) {
+	t.Parallel()
+	message := RenderAlert(IncidentView{
+		Title:    "上游异常",
+		Severity: "P1",
+		Current:  "error",
+		Results:  []string{"失败率升高"},
+	})
+	if len(message.Card.Elements) != 1 {
+		t.Fatalf("alert elements=%#v", message.Card.Elements)
+	}
+	element := message.Card.Elements[0]
+	if element.Tag != "div" || element.Text == nil || len(element.Fields) != 0 {
+		t.Fatalf("alert adopted structured recovery fields: %#v", element)
 	}
 }
 
@@ -179,8 +230,58 @@ func TestRenderRecoveryCardOmitsBlankMetricsAndRedactsValues(t *testing.T) {
 		},
 	})
 	fields := message.Card.Elements[1].Fields
-	if len(fields) != 2 || strings.Contains(message.RenderedText(), "secret") || !strings.Contains(message.RenderedText(), "[已脱敏]") {
+	if len(fields) != 1 || strings.Contains(message.RenderedText(), "secret") || strings.Contains(message.RenderedText(), "[已脱敏]") {
 		t.Fatalf("fields=%#v text=%q", fields, message.RenderedText())
+	}
+}
+
+func TestRenderRecoveryCardFallsBackWhenNoUsableMetricsRemain(t *testing.T) {
+	t.Parallel()
+	message := RenderRecoveryCard(RecoveryCardView{
+		Title: "恢复", Summary: "证据已恢复", Detail: "继续观察",
+		Metrics: []RecoveryMetric{
+			{Label: "", Value: ""},
+			{Label: "证据", Value: "x-api-key: secret"},
+		},
+		Basis:  []string{"读取现有证据"},
+		Source: "只读来源",
+		Focus:  "关注后续状态",
+	})
+	for _, element := range message.Card.Elements {
+		if len(element.Fields) > 0 {
+			t.Fatalf("fallback retained fields: %#v", message.Card.Elements)
+		}
+	}
+	for _, want := range []string{"**恢复结果**", "证据已恢复", "读取现有证据", "数据来源：只读来源"} {
+		if !strings.Contains(message.RenderedText(), want) {
+			t.Fatalf("fallback missing %q in %q", want, message.RenderedText())
+		}
+	}
+	if strings.Contains(message.RenderedText(), "[已脱敏]") {
+		t.Fatalf("fallback retained unusable metric: %q", message.RenderedText())
+	}
+}
+
+func TestRenderRecoveryCardSupportsTwoThreeAndFourSerializedFields(t *testing.T) {
+	t.Parallel()
+	for _, count := range []int{2, 3, 4} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			metrics := make([]RecoveryMetric, count)
+			for index := range metrics {
+				metrics[index] = RecoveryMetric{Label: fmt.Sprintf("指标 %d", index+1), Value: fmt.Sprintf("值 %d", index+1)}
+			}
+			data, err := RenderRecoveryCard(RecoveryCardView{Title: "恢复", Summary: "已恢复", Metrics: metrics}).CardJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card Card
+			if err := json.Unmarshal(data, &card); err != nil {
+				t.Fatal(err)
+			}
+			if len(card.Elements) < 2 || len(card.Elements[1].Fields) != count {
+				t.Fatalf("count=%d card=%s", count, data)
+			}
+		})
 	}
 }
 
@@ -289,6 +390,20 @@ func TestCardJSONRejectsPayloadOverThirtyKilobytes(t *testing.T) {
 	message := RenderAlert(IncidentView{Title: "large", Results: []string{strings.Repeat("x", 31<<10)}})
 	if _, err := message.CardJSON(); err == nil {
 		t.Fatal("oversized card was accepted")
+	}
+}
+
+func TestStructuredRecoveryCardRejectsPayloadOverThirtyKilobytes(t *testing.T) {
+	message := RenderRecoveryCard(RecoveryCardView{
+		Title:   "large recovery",
+		Summary: strings.Repeat("x", 31<<10),
+		Metrics: []RecoveryMetric{
+			{Label: "当前状态", Value: "正常"},
+			{Label: "健康确认", Value: "1 个完整窗口"},
+		},
+	})
+	if _, err := message.CardJSON(); err == nil {
+		t.Fatal("oversized structured recovery card was accepted")
 	}
 }
 

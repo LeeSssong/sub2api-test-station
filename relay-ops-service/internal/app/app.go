@@ -394,7 +394,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			hash := sha256.Sum256([]byte(session.LoginURL))
 			transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: false, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话正常"})
 			if observeErr == nil && transition.Notify && notifier != nil {
-				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", renderUsageSessionRecovery(session.UpstreamName))
+				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", renderUsageSessionRecovery(session.UpstreamName, evidence.ObservedAt))
 			}
 			return nil
 		},
@@ -429,19 +429,23 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService}, nil
 }
 
-func renderUsageSessionRecovery(upstream string) notify.FeishuMessage {
+func renderUsageSessionRecovery(upstream string, observedAt time.Time) notify.FeishuMessage {
+	metrics := []notify.RecoveryMetric{
+		{Label: "会话状态", Value: "正常"},
+		{Label: "消费核对", Value: "已恢复"},
+	}
+	if !observedAt.IsZero() {
+		metrics = append(metrics, notify.RecoveryMetric{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")})
+	}
 	return notify.RenderRecoveryCard(notify.RecoveryCardView{
 		Title:   "上游用量读取会话已恢复：" + upstream,
 		Summary: "用量读取会话已恢复",
 		Detail:  "会话已回到正常状态，真实消费核对继续",
-		Metrics: []notify.RecoveryMetric{
-			{Label: "会话状态", Value: "正常"},
-			{Label: "消费核对", Value: "已恢复"},
-		},
-		Basis:  []string{"上游用量页面已可正常读取"},
-		Source: "上游用量页面只读读取结果",
-		Focus:  "继续关注倍率与真实费用辅助证据",
-		Links:  []notify.Link{{Label: "运维后台", URL: "/ops"}},
+		Metrics: metrics,
+		Basis:   []string{"上游用量页面已可正常读取"},
+		Source:  "上游用量页面只读读取结果",
+		Focus:   "继续关注倍率与真实费用辅助证据",
+		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
 }
 

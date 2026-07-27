@@ -228,17 +228,38 @@ func RenderRecoveryCard(view RecoveryCardView) FeishuMessage {
 		if label == "" || value == "" {
 			continue
 		}
+		label = safeValue(label)
+		value = safeValue(value)
+		if label == "[已脱敏]" || value == "[已脱敏]" {
+			continue
+		}
 		fields = append(fields, CardField{
 			IsShort: true,
 			Text: CardText{
 				Tag:     "lark_md",
-				Content: "**" + safeValue(label) + "**\n" + safeValue(value),
+				Content: "**" + label + "**\n" + value,
 			},
 		})
 	}
-	if len(fields) > 0 {
-		elements = append(elements, CardElement{Tag: "div", Fields: fields})
+	if len(fields) == 0 {
+		results := make([]string, 0, len(view.Basis)+2)
+		if summary := strings.TrimSpace(view.Summary); summary != "" {
+			results = append(results, summary)
+		}
+		results = append(results, view.Basis...)
+		if source := strings.TrimSpace(view.Source); source != "" {
+			results = append(results, "数据来源："+source)
+		}
+		return RenderRecovery(IncidentView{
+			Title:      view.Title,
+			Results:    results,
+			Change:     view.Detail,
+			Focus:      view.Focus,
+			Links:      view.Links,
+			Suppressed: view.Suppressed,
+		})
 	}
+	elements = append(elements, CardElement{Tag: "div", Fields: fields})
 
 	evidence := make([]string, 0, 4)
 	if len(view.Basis) > 0 {

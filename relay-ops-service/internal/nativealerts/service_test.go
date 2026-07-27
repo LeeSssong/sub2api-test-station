@@ -79,7 +79,7 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 		t.Fatalf("recovery=%#v messages=%d analyses=%d", recovery, len(notifier.messages), len(analyzer.contracts))
 	}
 	recoveryText := notifier.messages[2].RenderedText()
-	for _, want := range []string{"原生监控已恢复", "运行正常", "gpt-5.6-sol", "1396ms", "Sub2API 原生 Channel Monitor 最新状态"} {
+	for _, want := range []string{"原生监控已恢复", "运行正常", "gpt-5.6-sol", "1396ms", "健康确认", "1 个完整窗口", "Sub2API 原生 Channel Monitor 最新状态"} {
 		if !strings.Contains(recoveryText, want) {
 			t.Fatalf("recovery message missing %q: %q", want, recoveryText)
 		}
@@ -101,6 +101,22 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 		if contract.ContractVersion != "relay-ops-incident-v1" || len(contract.EvidenceRefs) != 1 || strings.Contains(strings.Join(contract.EvidenceRefs, " "), "http") {
 			t.Fatalf("unsafe or incomplete contract: %#v", contract)
 		}
+	}
+}
+
+func TestRenderRecoveryUsesPrimaryModelFallbackAndKeepsMinimumMetrics(t *testing.T) {
+	t.Parallel()
+	message := renderRecoveryMessage(Observation{
+		Monitor: sub2api.ChannelMonitor{GroupName: "GPT-Pro", PrimaryModel: "gpt-primary"},
+		History: sub2api.MonitorHistory{Status: "operational", CheckedAt: "invalid"},
+	})
+	for _, want := range []string{"运行正常", "gpt-primary", "健康确认", "1 个完整窗口"} {
+		if !strings.Contains(message.RenderedText(), want) {
+			t.Fatalf("missing %q in %q", want, message.RenderedText())
+		}
+	}
+	if got := len(message.Card.Elements[1].Fields); got != 3 {
+		t.Fatalf("fields=%d, want current state, model, healthy window", got)
 	}
 }
 

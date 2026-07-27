@@ -26,6 +26,11 @@ const (
 	qualityStaleAfter    = 20 * time.Minute
 )
 
+type recoveryEvidence struct {
+	source string
+	window string
+}
+
 type QualitySource interface {
 	Read(time.Time) (accountquality.Result, error)
 }
@@ -97,7 +102,7 @@ func (s Service) Run(ctx context.Context) error {
 			continue
 		}
 		item := object{kind: "account", id: account.ID, name: account.Name}
-		if err := s.observe(ctx, item, "paused", !account.Schedulable, "active && schedulable", schedulingValue(account), 1, now); err != nil {
+		if err := s.observe(ctx, item, "paused", !account.Schedulable, "active && schedulable", schedulingValue(account), 1, now, recoveryEvidenceForMetric("paused")); err != nil {
 			return err
 		}
 		if !account.Schedulable {
@@ -143,7 +148,7 @@ func (s Service) Run(ctx context.Context) error {
 			// recovered from an explicit balance exhaustion incident.
 			continue
 		}
-		if err := s.observe(ctx, object, "balance_exhausted", account.LastResult == "balance_exhausted", "not_balance_exhausted", account.LastResult, 1, account.LastObservedAt); err != nil {
+		if err := s.observe(ctx, object, "balance_exhausted", account.LastResult == "balance_exhausted", "not_balance_exhausted", account.LastResult, 1, account.LastObservedAt, recoveryEvidenceForMetric("balance_exhausted")); err != nil {
 			return err
 		}
 	}
@@ -189,14 +194,14 @@ func (s Service) evaluateRuntime(ctx context.Context, item object, window, basel
 	if window.RequestCountTotal < minimumRequests && !completeFailure {
 		return nil
 	}
-	if err := s.observe(ctx, item, "availability", completeFailure, "successful requests", fmt.Sprintf("%d/%d successful", window.SuccessCount, window.RequestCountTotal), 1, observedAt); err != nil {
+	if err := s.observe(ctx, item, "availability", completeFailure, "successful requests", fmt.Sprintf("%d/%d successful", window.SuccessCount, window.RequestCountTotal), 1, observedAt, recoveryEvidenceForMetric("availability")); err != nil {
 		return err
 	}
-	if err := s.observe(ctx, item, "error_rate", window.ErrorRate >= errorRateThreshold, "<5.00%", percent(window.ErrorRate), 2, observedAt); err != nil {
+	if err := s.observe(ctx, item, "error_rate", window.ErrorRate >= errorRateThreshold, "<5.00%", percent(window.ErrorRate), 2, observedAt, recoveryEvidenceForMetric("error_rate")); err != nil {
 		return err
 	}
 	ttftWorse := baseline.TTFT.P95MS > 0 && window.TTFT.P95MS > ttftAbsoluteMS && window.TTFT.P95MS >= baseline.TTFT.P95MS*ttftDegradationRatio
-	return s.observe(ctx, item, "ttft_p95", ttftWorse, milliseconds(baseline.TTFT.P95MS), milliseconds(window.TTFT.P95MS), 2, observedAt)
+	return s.observe(ctx, item, "ttft_p95", ttftWorse, milliseconds(baseline.TTFT.P95MS), milliseconds(window.TTFT.P95MS), 2, observedAt, recoveryEvidenceForMetric("ttft_p95"))
 }
 
 // evaluateMultipliers watches the trustworthy schema v2 multiplier. The old
@@ -218,19 +223,21 @@ func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]strin
 			continue
 		}
 		value := trustworthyMultiplier(account.Multiplier)
+		evidence := recoveryEvidenceForMetric("multiplier")
 		if value == nil && s.Fallback != nil {
 			// 优先级 declared > measured > upstream_pricing：只有 Sub2API 自己
 			// 拿不出可信值时才咨询上游定价，绝不覆盖可信值。兜底约定所有失败
 			// 都返回 nil；非正值防御性拒绝，理由同 trustworthyMultiplier。
 			if fallbackValue := s.Fallback(ctx, account.Name); fallbackValue != nil && *fallbackValue > 0 {
 				value = fallbackValue
+				evidence = recoveryEvidence{source: "上游公开定价只读结果"}
 			}
 		}
 		if value == nil {
 			continue
 		}
 		item := object{kind: "account", id: account.AccountID, name: displayName}
-		if err := s.evaluateMultiplier(ctx, item, *value, now); err != nil {
+		if err := s.evaluateMultiplier(ctx, item, *value, now, evidence); err != nil {
 			return err
 		}
 	}
@@ -247,7 +254,7 @@ func trustworthyMultiplier(m sub2api.AccountMonitorMultiplier) *float64 {
 	return m.Value
 }
 
-func (s Service) evaluateMultiplier(ctx context.Context, item object, current float64, observedAt time.Time) error {
+func (s Service) evaluateMultiplier(ctx context.Context, item object, current float64, observedAt time.Time, evidence recoveryEvidence) error {
 	baselineKey := item.key("multiplier_baseline")
 	currentValue := multiplier(current)
 	record, found, err := s.Incidents.Repository.Get(ctx, baselineKey)
@@ -258,7 +265,7 @@ func (s Service) evaluateMultiplier(ctx context.Context, item object, current fl
 		return s.Incidents.Repository.Put(ctx, incidents.Record{Key: baselineKey, Severity: "P2", State: "muted", SampleCount: 1, CurrentValue: currentValue, EvidenceHash: evidenceHash(item, "multiplier_baseline", currentValue, "")})
 	}
 	changed := record.CurrentValue != currentValue
-	if err := s.observe(ctx, item, "multiplier", changed, record.CurrentValue, currentValue, 1, observedAt); err != nil {
+	if err := s.observe(ctx, item, "multiplier", changed, record.CurrentValue, currentValue, 1, observedAt, evidence); err != nil {
 		return err
 	}
 	if record.CurrentValue == currentValue {
@@ -270,7 +277,7 @@ func (s Service) evaluateMultiplier(ctx context.Context, item object, current fl
 	return s.Incidents.Repository.Put(ctx, record)
 }
 
-func (s Service) observe(ctx context.Context, item object, metric string, failing bool, baseline, current string, windows int, observedAt time.Time) error {
+func (s Service) observe(ctx context.Context, item object, metric string, failing bool, baseline, current string, windows int, observedAt time.Time, recovery recoveryEvidence) error {
 	key := item.key(metric)
 	transition, err := s.Incidents.Observe(ctx, incidents.Observation{
 		Key: key, Severity: "P1", Failing: failing, EvidenceHash: evidenceHash(item, metric, current, baseline),
@@ -282,15 +289,19 @@ func (s Service) observe(ctx context.Context, item object, metric string, failin
 	if !transition.Notify || s.Notifier == nil {
 		return nil
 	}
-	return s.Notifier.SendIncident(ctx, key, transition.Kind+":"+evidenceHash(item, metric, current, baseline), render(item, metric, current, baseline, windows, observedAt, transition.Kind))
+	return s.Notifier.SendIncident(ctx, key, transition.Kind+":"+evidenceHash(item, metric, current, baseline), renderWithEvidence(item, metric, current, baseline, windows, observedAt, transition.Kind, recovery))
 }
 
 func render(item object, metric, current, baseline string, windows int, observedAt time.Time, transition string) notify.FeishuMessage {
+	return renderWithEvidence(item, metric, current, baseline, windows, observedAt, transition, recoveryEvidenceForMetric(metric))
+}
+
+func renderWithEvidence(item object, metric, current, baseline string, windows int, observedAt time.Time, transition string, recovery recoveryEvidence) notify.FeishuMessage {
 	label := item.displayLabel()
 	isRecovery := transition == "recovered"
 	domain, source, actions, focus := renderDomain(metric)
 	if isRecovery {
-		return renderRecovery(item, metric, current, baseline, observedAt, domain, source, focus)
+		return renderRecovery(item, metric, current, baseline, observedAt, domain, recovery, focus)
 	}
 	title := domain + "告警：" + label
 	results := []string{
@@ -310,7 +321,7 @@ func render(item object, metric, current, baseline string, windows int, observed
 	})
 }
 
-func renderRecovery(item object, metric, current, baseline string, observedAt time.Time, domain, source, focus string) notify.FeishuMessage {
+func renderRecovery(item object, metric, current, baseline string, observedAt time.Time, domain string, evidence recoveryEvidence, focus string) notify.FeishuMessage {
 	label := item.displayLabel()
 	metricLabel, summary, detail := recoveryCopy(metric)
 	currentDisplay := recoveryValue(metric, current)
@@ -319,26 +330,42 @@ func renderRecovery(item object, metric, current, baseline string, observedAt ti
 	if metric == "paused" || metric == "availability" || metric == "balance_exhausted" {
 		currentLabel = "当前状态"
 	}
-	thirdMetric := notify.RecoveryMetric{Label: "恢复指标", Value: metricLabel}
-	if domain == "站内运行" {
-		thirdMetric = notify.RecoveryMetric{Label: "观测窗口", Value: "15 分钟 / 24 小时"}
+	metrics := []notify.RecoveryMetric{
+		{Label: currentLabel, Value: currentDisplay},
+		{Label: "健康确认", Value: "1 个完整窗口"},
 	}
+	if evidence.window != "" {
+		metrics = append(metrics, notify.RecoveryMetric{Label: "观测窗口", Value: evidence.window})
+	} else {
+		metrics = append(metrics, notify.RecoveryMetric{Label: "恢复指标", Value: metricLabel})
+	}
+	metrics = append(metrics, notify.RecoveryMetric{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")})
 
 	return notify.RenderRecoveryCard(notify.RecoveryCardView{
 		Title:   domain + "已恢复：" + label,
 		Summary: summary,
 		Detail:  detail,
-		Metrics: []notify.RecoveryMetric{
-			{Label: currentLabel, Value: currentDisplay},
-			{Label: "健康确认", Value: "1 个完整窗口"},
-			thirdMetric,
-			{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")},
-		},
-		Basis:  []string{recoveryBasis(metric, metricLabel, currentDisplay, baselineDisplay)},
-		Source: source,
-		Focus:  focus,
-		Links:  []notify.Link{{Label: "运维后台", URL: "/ops"}},
+		Metrics: metrics,
+		Basis:   []string{recoveryBasis(metric, metricLabel, currentDisplay, baselineDisplay)},
+		Source:  evidence.source,
+		Focus:   focus,
+		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
+}
+
+func recoveryEvidenceForMetric(metric string) recoveryEvidence {
+	switch metric {
+	case "paused":
+		return recoveryEvidence{source: "Sub2API 原生账号调度状态"}
+	case "availability", "error_rate", "ttft_p95":
+		return recoveryEvidence{source: "Sub2API 原生站内运行快照（15 分钟与 24 小时）", window: "15 分钟 / 24 小时"}
+	case "multiplier":
+		return recoveryEvidence{source: "Sub2API 原生账号监控倍率投影"}
+	case "balance_exhausted":
+		return recoveryEvidence{source: "账号质量定时巡检结果（不发起新探测）"}
+	default:
+		return recoveryEvidence{source: "现有只读监控结果"}
+	}
 }
 
 func recoveryCopy(metric string) (label, summary, detail string) {

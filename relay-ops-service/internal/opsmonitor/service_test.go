@@ -638,8 +638,8 @@ func TestRenderRecoveryUsesBusinessLanguageAndStructuredMetrics(t *testing.T) {
 			name: "runtime scheduling",
 			message: render(object{kind: "account", id: 10, name: "特惠-SHUAI"},
 				"paused", "active && schedulable", "active && schedulable", 1, now, "recovered"),
-			wants:   []string{"已恢复正常调度", "当前状态", "正常调度", "1 个完整窗口", "Sub2API 原生站内运行快照"},
-			forbids: []string{"**恢复结果**", "指标：paused", "active && schedulable"},
+			wants:   []string{"已恢复正常调度", "当前状态", "正常调度", "1 个完整窗口", "Sub2API 原生账号调度状态"},
+			forbids: []string{"**恢复结果**", "指标：paused", "active && schedulable", "15 分钟 / 24 小时"},
 		},
 		{
 			name: "account balance",
@@ -813,6 +813,32 @@ func TestEvaluateMultiplierUsesUpstreamPricingFallbackWhenUnmeasurable(t *testin
 	}
 	if record.CurrentValue != "0.17x" {
 		t.Fatalf("CurrentValue = %q, want 0.17x（上游定价兜底值）", record.CurrentValue)
+	}
+}
+
+func TestEvaluateMultiplierRecoveryNamesUpstreamPricingFallbackSource(t *testing.T) {
+	source := &stubMultiplierSource{projection: multiplierProjection(26, nil, "failed")}
+	service, _ := newTestSiteMonitor(t, source)
+	notifier := service.Notifier.(*fakeNotifier)
+	fallbackValue := 0.17
+	service.Fallback = func(context.Context, string) *float64 { return &fallbackValue }
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("baseline run: %v", err)
+	}
+	fallbackValue = 0.19
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("alert run: %v", err)
+	}
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("recovery run: %v", err)
+	}
+	if len(notifier.sent) != 2 {
+		t.Fatalf("sent=%#v", notifier.sent)
+	}
+	recoveryText := notifier.sent[1].message.RenderedText()
+	if !strings.Contains(recoveryText, "上游公开定价只读结果") || strings.Contains(recoveryText, "账号监控倍率投影") {
+		t.Fatalf("recovery source=%q", recoveryText)
 	}
 }
 

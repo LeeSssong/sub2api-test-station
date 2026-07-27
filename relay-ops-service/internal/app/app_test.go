@@ -91,13 +91,14 @@ func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testin
 
 func TestRenderUsageSessionRecoveryUsesStructuredBusinessCopy(t *testing.T) {
 	t.Parallel()
-	message := renderUsageSessionRecovery("wawazz")
-	for _, want := range []string{"用量读取会话已恢复", "会话状态", "正常", "消费核对", "已恢复", "上游用量页面"} {
+	observedAt := time.Date(2026, 7, 27, 5, 15, 0, 0, time.UTC)
+	message := renderUsageSessionRecovery("wawazz", observedAt)
+	for _, want := range []string{"用量读取会话已恢复", "会话状态", "正常", "消费核对", "已恢复", "证据时间", "05:15 UTC", "上游用量页面"} {
 		if !strings.Contains(message.RenderedText(), want) {
 			t.Fatalf("missing %q in %q", want, message.RenderedText())
 		}
 	}
-	if len(message.Card.Elements) < 3 || len(message.Card.Elements[1].Fields) != 2 {
+	if len(message.Card.Elements) < 3 || len(message.Card.Elements[1].Fields) != 3 {
 		t.Fatalf("recovery card is not structured: %#v", message.Card.Elements)
 	}
 }

@@ -270,12 +270,114 @@ delta into `upstream/sub2api`, run the repository test gates, and build
 com.xingqiao.sub2api.qualified=true
 com.xingqiao.sub2api.upstream.version=<version>
 com.xingqiao.sub2api.upstream.commit=<40-hex-official-commit>
+com.xingqiao.sub2api.source.commit=<40-hex-qualified-source-commit>
 ```
 
-The resolver verifies all three labels and pins the resulting immutable image
+The resolver verifies all four labels and pins the resulting immutable image
 ID. If the qualified image is absent or mismatched, the request fails before
 backup or Compose mutation. This preserves Xingqiao Base URL, frontend,
 backend, and navigation behavior across official updates.
+
+### Automated Candidate Preparation
+
+The normal preparation path is
+`.github/workflows/sub2api-release-preparation.yml`. GitHub Actions runs it at
+minute `17` every six hours and also permits `workflow_dispatch` for a retry.
+It reads the latest stable `Wei-Shaw/sub2api` GitHub Release directly; the
+official admin page and its request cache are not scheduling inputs.
+
+The job boundary is:
+
+| Job | Permissions | Credential boundary |
+|---|---|---|
+| `discover` | `contents: read` | repository-scoped read token only |
+| `prepare` | `contents: read` | no package, production, Feishu, or write credential |
+| `publish` | `contents: write`, `packages: write` | short-lived job token for GHCR and the audit branch |
+| `stage-production` | `contents: read`, `packages: read` | short-lived GHCR token plus the forced-command SSH key |
+| `advance-source` | `contents: write` | compare-and-swap fast-forward only |
+| `notify` | `contents: read` | Feishu webhook file only |
+
+All external Actions are pinned to full commit SHAs. The untrusted official
+source is merged, tested, and built only in `prepare`, which has no external
+secret or write permission. Credentialed jobs check out `${{ github.sha }}`;
+they never execute the candidate Git tree or candidate image.
+
+Qualified images are private:
+
+```text
+ghcr.io/leesssong/xingqiao-sub2api:upstream-<version>
+ghcr.io/leesssong/xingqiao-sub2api@sha256:<manifest-digest>
+```
+
+The version tag is treated as immutable. Existing content is reused only when
+its image ID, platform, and four qualification labels match. A mismatch or an
+ambiguous registry failure stops the run without a push. Production always
+receives the digest reference, never the version tag.
+
+“Candidate image silently prepared” means all of these facts are true:
+
+1. the official delta merged without a guessed conflict resolution;
+2. backend, frontend, deployment, updater, and image qualification gates passed;
+3. private GHCR contains the exact immutable image;
+4. production pulled and isolatedly verified that exact digest;
+5. `xingqiao-sub2api:upstream-<version>` points to it locally;
+6. the running container identity, image, start time, status, health, restart
+   count, and production Compose SHA-256 remained identical;
+7. qualified source reached `main` through an ordinary compare-and-swap
+   fast-forward;
+8. the Feishu card reports facts without a fixed next-step instruction.
+
+Candidate preparation is not deployment. The production forced command cannot
+call Docker Compose, an update API, a database client, a container lifecycle
+command, or prune. It only pulls, inspects, executes `/app/sub2api --version`
+with no network and a read-only filesystem, applies the updater-compatible
+local tag, and writes mode `0600` evidence to:
+
+```text
+/var/lib/sub2api-candidate-loader/state.json
+```
+
+The running image changes only after an administrator confirms the existing
+web update dialog. No scheduled workflow invokes that action.
+
+Repeated runs are idempotent: the same GHCR content and audit branch are
+reused, the same candidate source is accepted as already advanced, and a
+concurrent third-party `main` commit fails closed. The next six-hour run retries
+transient failures. Failure cards use stable categories:
+`QUALIFICATION_FAILED`, `PUBLISH_FAILED`, `PRODUCTION_STAGING_FAILED`, and
+`SOURCE_ADVANCE_FAILED`; raw stderr is never sent. Consecutive failures for the
+same version and stage use the Actions cache key to suppress duplicate cards.
+
+Configure the GitHub Environment `production-candidate` without an approval
+gate:
+
+```text
+SUB2API_PREP_SSH_KEY
+SUB2API_PREP_SSH_HOST
+SUB2API_PREP_SSH_PORT
+SUB2API_PREP_SSH_USER
+SUB2API_PREP_KNOWN_HOSTS
+SUB2API_RELEASE_FEISHU_WEBHOOK
+```
+
+The GHCR password is not one of these secrets. Each staging job pipes its
+short-lived `GITHUB_TOKEN` through SSH stdin. The production loader creates a
+temporary mode `0700` Docker config and removes it on every exit path; no
+long-lived GHCR credential belongs on the host.
+
+Install or rotate the dedicated key by building the Linux AMD64 candidate
+loader, generating an Ed25519 key in a temporary mode `0700` directory, and
+running `ops/install-sub2api-candidate-loader.sh` from
+`/opt/sub2api/production` as root with the prebuilt loader and public-key file.
+The installer adds only:
+
+```text
+restrict,command="/usr/local/libexec/sub2api-candidate-ssh" <ed25519-public-key>
+```
+
+Update the GitHub secret with the matching private key, run one end-to-end
+dispatch, then remove the prior forced-key line by exact public-key match.
+Never replace the whole `authorized_keys` file or print either key.
 
 The service exposes these same-origin administrative operations:
 
@@ -395,9 +497,13 @@ live production database as an image-release response.
 
 ## Future Releases
 
-For every new official digest: connect through `ssh sub2api-prod`, capture the
-current IDs and mounts, make a verified backup, pull the exact digest, update
-only the production `sub2api.image` declaration, and recreate only `sub2api`.
-Keep the previous image tag and backup until post-release checks pass. Do not
-use the Docker admin UI updater: changes made inside a container are not the
-durable deployment declaration and are lost on recreation.
+For normal releases, let the scheduled workflow prepare and stage the qualified
+candidate, review its fact-only Feishu card, and use the existing admin update
+dialog for the runtime change. The host updater then owns backup, the durable
+Compose image declaration, recreate-only mutation, smoke checks, and rollback.
+
+Use the manual CLI path only when the automated preparation or web control
+plane is unavailable and a separately reviewed change is required. Even then,
+pin the exact qualified image ID, preserve the previous image tag and verified
+backup, recreate only `sub2api`, and retain the host updater record until
+post-release checks pass.

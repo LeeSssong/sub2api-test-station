@@ -1,6 +1,6 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-26
+**更新日期：** 2026-07-28
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
 
 ## 当前指针
@@ -15,7 +15,7 @@
 - 下一步：管理员按业务需要在 Sub2API 后台维护开放注册和邀请码；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不扩展飞书写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
+最新验证：`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`、`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
 
 ## 产品
 
@@ -42,6 +42,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
+- Sub2API 候选准备：GitHub Actions 每 6 小时发现最新稳定官方 Release，在无秘密 Job 中三方合并、全量测试并构建 `linux/amd64` 合格镜像；受信任 Job 将不可变镜像发布到私有 GHCR、通过 forced SSH 在生产拉取和验证候选、以 compare-and-swap fast-forward 推进合格源码，并发送无固定下一步的飞书事实卡片。生产 staging 不调用更新 API、不修改 Compose、不操作数据库、不切换或重启运行容器；运行时升级仍只由管理员在现有后台确认。实现已完成本地契约验证，GitHub Environment 和生产 forced-command 安装将在首次真实 workflow 验收中激活。
 - 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 SQLite 备份仅保留为历史证据，不再属于当前备份或恢复范围。
 - 生产主机：腾讯云首尔二区实例运行 Sub2API、PostgreSQL、Redis、Caddy 和 relay-ops；正式入口为 `https://api.xingqiaolab.top`。
 - 外部服务配置事实：账号 `8` 对应上游的 Base URL 为 `https://wawazz.xyz`，绑定 `GPT-Plus`、成本倍率 `0.05x`、并发 `1`，账号级 `User-Agent` 固定为 `node`，原生监控和 Node/Python 同步/SSE 已通过。账号 `7` 对应上游的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`，绑定 `GPT-Pro`、成本倍率 `0.10x`、并发 `2`。隔离复制账号 `9` 保留但未绑定、不可调度；Aliu `2` 未绑定、不可调度、总并发 `1`，现作为 Pro/Plus 共享灾备。上述名称和地址只记录配置事实，不定义“当前活动上游”。

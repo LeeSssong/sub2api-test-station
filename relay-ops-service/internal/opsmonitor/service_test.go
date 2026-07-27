@@ -209,9 +209,11 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 				time.Date(2026, 7, 27, 2, 0, 0, 0, time.UTC), tc.transition,
 			)
 			text := message.RenderedText()
-			if !strings.Contains(text, tc.wantTitle) ||
-				!strings.Contains(text, "对象：Pro-SHUAI-0.17") {
-				t.Fatalf("name missing: %s", text)
+			if message.Card.Header.Title.Content != tc.wantTitle {
+				t.Fatalf("title=%q, want %q", message.Card.Header.Title.Content, tc.wantTitle)
+			}
+			if tc.transition != "recovered" && !strings.Contains(text, "对象：Pro-SHUAI-0.17") {
+				t.Fatalf("alert body missing object name: %s", text)
 			}
 		})
 	}
@@ -624,17 +626,43 @@ func TestRenderSeparatesRuntimeAndAccountQualityEvidenceInCardJSON(t *testing.T)
 	}
 }
 
-func TestRenderRecoveryStatesOneCompleteHealthyWindow(t *testing.T) {
-	message := render(object{kind: "group", id: 2}, "error_rate", "1.00%", "<5.00%", 2, time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC), "recovered")
-	data, err := message.CardJSON()
-	if err != nil {
-		t.Fatal(err)
+func TestRenderRecoveryUsesBusinessLanguageAndStructuredMetrics(t *testing.T) {
+	now := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		message notify.FeishuMessage
+		wants   []string
+		forbids []string
+	}{
+		{
+			name: "runtime scheduling",
+			message: render(object{kind: "account", id: 10, name: "特惠-SHUAI"},
+				"paused", "active && schedulable", "active && schedulable", 1, now, "recovered"),
+			wants:   []string{"已恢复正常调度", "当前状态", "正常调度", "1 个完整窗口", "Sub2API 原生站内运行快照"},
+			forbids: []string{"**恢复结果**", "指标：paused", "active && schedulable"},
+		},
+		{
+			name: "account balance",
+			message: render(object{kind: "account", id: 10, name: "特惠-SHUAI"},
+				"balance_exhausted", "passed", "not_balance_exhausted", 1, now, "recovered"),
+			wants:   []string{"余额状态已恢复", "余额可用", "余额耗尽", "账号质量定时巡检结果"},
+			forbids: []string{"balance_exhausted", "not_balance_exhausted"},
+		},
 	}
-	if !contains(string(data), "恢复窗口：1 个完整健康窗口") {
-		t.Fatalf("recovery card = %s", data)
-	}
-	if contains(string(data), "连续窗口：2") {
-		t.Fatalf("recovery card must not retain alert confirmation count: %s", data)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text := tt.message.RenderedText()
+			for _, want := range tt.wants {
+				if !strings.Contains(text, want) {
+					t.Fatalf("missing %q in %q", want, text)
+				}
+			}
+			for _, forbidden := range tt.forbids {
+				if strings.Contains(text, forbidden) {
+					t.Fatalf("found %q in %q", forbidden, text)
+				}
+			}
+		})
 	}
 }
 

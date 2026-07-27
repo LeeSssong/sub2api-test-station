@@ -289,10 +289,10 @@ func render(item object, metric, current, baseline string, windows int, observed
 	label := item.displayLabel()
 	isRecovery := transition == "recovered"
 	domain, source, actions, focus := renderDomain(metric)
-	title := domain + "告警：" + label
 	if isRecovery {
-		title = domain + "已恢复：" + label
+		return renderRecovery(item, metric, current, baseline, observedAt, domain, source, focus)
 	}
+	title := domain + "告警：" + label
 	results := []string{
 		"数据来源：" + source,
 		"对象：" + label,
@@ -301,17 +301,92 @@ func render(item object, metric, current, baseline string, windows int, observed
 		"基线：" + baseline,
 		"证据时间：" + observedAt.UTC().Format(time.RFC3339),
 	}
-	if isRecovery {
-		results = append(results, "恢复窗口：1 个完整健康窗口")
-	} else {
-		results = append(results, "连续窗口："+strconv.Itoa(windows))
-	}
+	results = append(results, "连续窗口："+strconv.Itoa(windows))
 	return notify.RenderFeishu(notify.IncidentView{
-		Title: title, Severity: "P1", Recovery: isRecovery, Current: current, Baseline: baseline,
+		Title: title, Severity: "P1", Current: current, Baseline: baseline,
 		WhatWasDone: actions,
 		Results:     results,
 		Change:      "指标状态已更新", Focus: focus, Links: []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
+}
+
+func renderRecovery(item object, metric, current, baseline string, observedAt time.Time, domain, source, focus string) notify.FeishuMessage {
+	label := item.displayLabel()
+	metricLabel, summary, detail := recoveryCopy(metric)
+	currentDisplay := recoveryValue(metric, current)
+	baselineDisplay := recoveryValue(metric, baseline)
+	currentLabel := "当前值"
+	if metric == "paused" || metric == "availability" || metric == "balance_exhausted" {
+		currentLabel = "当前状态"
+	}
+	thirdMetric := notify.RecoveryMetric{Label: "恢复指标", Value: metricLabel}
+	if domain == "站内运行" {
+		thirdMetric = notify.RecoveryMetric{Label: "观测窗口", Value: "15 分钟 / 24 小时"}
+	}
+
+	return notify.RenderRecoveryCard(notify.RecoveryCardView{
+		Title:   domain + "已恢复：" + label,
+		Summary: summary,
+		Detail:  detail,
+		Metrics: []notify.RecoveryMetric{
+			{Label: currentLabel, Value: currentDisplay},
+			{Label: "健康确认", Value: "1 个完整窗口"},
+			thirdMetric,
+			{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")},
+		},
+		Basis:  []string{recoveryBasis(metric, metricLabel, currentDisplay, baselineDisplay)},
+		Source: source,
+		Focus:  focus,
+		Links:  []notify.Link{{Label: "运维后台", URL: "/ops"}},
+	})
+}
+
+func recoveryCopy(metric string) (label, summary, detail string) {
+	switch metric {
+	case "paused":
+		return "调度状态", "已恢复正常调度", "调度状态已回到健康基线"
+	case "availability":
+		return "可用性", "可用性已恢复", "请求已重新成功完成"
+	case "error_rate":
+		return "错误率", "错误率已恢复", "错误率已回到健康范围"
+	case "ttft_p95":
+		return "首字延迟 P95", "首字延迟已恢复", "首字延迟已回到健康范围"
+	case "multiplier":
+		return "倍率", "倍率已恢复", "账号倍率已回到健康基线"
+	case "balance_exhausted":
+		return "余额耗尽", "余额状态已恢复", "账号重新满足健康规则"
+	default:
+		return "运行指标", "运行指标已恢复", "指标已回到健康基线"
+	}
+}
+
+func recoveryValue(metric, value string) string {
+	switch metric {
+	case "paused":
+		if strings.Contains(strings.ToLower(value), "schedulable") {
+			return "正常调度"
+		}
+	case "availability":
+		if strings.Contains(strings.ToLower(value), "successful") {
+			return "可用"
+		}
+	case "balance_exhausted":
+		if value == "passed" || value == "not_balance_exhausted" {
+			return "余额可用"
+		}
+	}
+	return value
+}
+
+func recoveryBasis(metric, metricLabel, current, baseline string) string {
+	switch metric {
+	case "paused":
+		return "当前与基线均为可用、可调度"
+	case "balance_exhausted":
+		return "当前结果已回到非余额耗尽基线"
+	default:
+		return metricLabel + "：当前 " + current + "，健康基线 " + baseline
+	}
 }
 
 func renderDomain(metric string) (string, string, []string, string) {

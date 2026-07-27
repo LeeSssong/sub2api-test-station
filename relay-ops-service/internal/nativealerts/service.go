@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/incidents"
@@ -141,9 +142,7 @@ func renderMessage(observation Observation, transition incidents.Transition, ana
 	change := "监控状态变为 " + status
 	focus := "人工查看原生 Monitor 和用户完整链路；不要自动改路由、价格或 Key"
 	if transition.Kind == "recovered" {
-		title = "上游原生监控已恢复：" + observation.Monitor.GroupName
-		change = "监控状态恢复为 operational"
-		focus = "继续观察恢复后的成功率和首字延迟"
+		return renderRecoveryMessage(observation)
 	}
 	return notify.RenderFeishu(notify.IncidentView{
 		Title: title, Severity: "P1", Recovery: transition.Kind == "recovered",
@@ -160,5 +159,34 @@ func renderMessage(observation Observation, transition incidents.Transition, ana
 		Change: change,
 		Focus:  focus,
 		Links:  []notify.Link{{Label: "运维后台", URL: "/ops"}},
+	})
+}
+
+func renderRecoveryMessage(observation Observation) notify.FeishuMessage {
+	metrics := []notify.RecoveryMetric{
+		{Label: "当前状态", Value: "运行正常"},
+		{Label: "监控模型", Value: observation.History.Model},
+	}
+	if observation.History.LatencyMS > 0 {
+		metrics = append(metrics, notify.RecoveryMetric{
+			Label: "最新延迟",
+			Value: strconv.FormatInt(observation.History.LatencyMS, 10) + "ms",
+		})
+	}
+	if checkedAt, err := time.Parse(time.RFC3339, observation.History.CheckedAt); err == nil {
+		metrics = append(metrics, notify.RecoveryMetric{
+			Label: "证据时间",
+			Value: checkedAt.UTC().Format("15:04 UTC"),
+		})
+	}
+	return notify.RenderRecoveryCard(notify.RecoveryCardView{
+		Title:   "上游原生监控已恢复：" + observation.Monitor.GroupName,
+		Summary: "原生监控已恢复",
+		Detail:  "监控状态已回到正常基线",
+		Metrics: metrics,
+		Basis:   []string{"当前状态为运行正常"},
+		Source:  "Sub2API 原生 Channel Monitor 最新状态",
+		Focus:   "继续观察恢复后的成功率和首字延迟",
+		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
 }

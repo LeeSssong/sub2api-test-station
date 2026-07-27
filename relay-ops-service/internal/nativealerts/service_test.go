@@ -78,8 +78,16 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 	if recovery.Transition != "recovered" || recovery.Notification != "delivered" || len(notifier.messages) != 3 || len(analyzer.contracts) != 3 {
 		t.Fatalf("recovery=%#v messages=%d analyses=%d", recovery, len(notifier.messages), len(analyzer.contracts))
 	}
-	if !strings.Contains(notifier.messages[2].RenderedText(), "恢复") {
-		t.Fatalf("recovery message=%q", notifier.messages[2].RenderedText())
+	recoveryText := notifier.messages[2].RenderedText()
+	for _, want := range []string{"原生监控已恢复", "运行正常", "gpt-5.6-sol", "1396ms", "Sub2API 原生 Channel Monitor 最新状态"} {
+		if !strings.Contains(recoveryText, want) {
+			t.Fatalf("recovery message missing %q: %q", want, recoveryText)
+		}
+	}
+	for _, forbidden := range []string{"**恢复结果**", "状态：operational"} {
+		if strings.Contains(recoveryText, forbidden) {
+			t.Fatalf("recovery message exposes legacy prose %q: %q", forbidden, recoveryText)
+		}
 	}
 
 	healthy, err := service.Observe(context.Background(), recovered)

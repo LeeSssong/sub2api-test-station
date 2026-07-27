@@ -65,11 +65,52 @@ func unsupportedMeasurement(m sub2api.AccountMonitorMultiplier) bool {
 	return m.Source == "measured" && m.Status == "failed"
 }
 
+// resolvedMultiplier is the multiplier chosen for profit accounting plus its
+// provenance, so the detail line can label upstream-pricing values instead of
+// passing them off as Sub2API measurements.
+type resolvedMultiplier struct {
+	value        *float64
+	fromUpstream bool
+}
+
+// resolveMultiplier centralizes the priority chain declared > measured >
+// upstream_pricing. Sub2API itself already prefers declared over measured in
+// the schema v2 projection, so any trustworthy value from it wins; the
+// upstream-pricing fallback is consulted only when Sub2API has nothing usable
+// and must never override a trustworthy value. A non-positive fallback value
+// is rejected for the same reason as in trustworthyMultiplier.
+func resolveMultiplier(account sub2api.AccountMonitorAccount, fallback func(string) *float64) resolvedMultiplier {
+	if value := trustworthyMultiplier(account); value != nil {
+		return resolvedMultiplier{value: value}
+	}
+	if fallback == nil {
+		return resolvedMultiplier{}
+	}
+	value := fallback(account.Name)
+	if value == nil || *value <= 0 {
+		return resolvedMultiplier{}
+	}
+	return resolvedMultiplier{value: value, fromUpstream: true}
+}
+
 func BuildHealthDigest(
 	projection sub2api.AccountMonitorProjection,
 	histories map[int64][]sub2api.AccountMonitorHistoryEntry,
 	loc *time.Location,
 	now time.Time,
+) notify.HealthDigestView {
+	return BuildHealthDigestWithFallback(projection, histories, loc, now, nil)
+}
+
+// BuildHealthDigestWithFallback additionally consults fallback (an
+// upstream-pricing lookup keyed by account name) for accounts whose Sub2API
+// multiplier is unusable. A nil fallback reproduces BuildHealthDigest exactly.
+func BuildHealthDigestWithFallback(
+	projection sub2api.AccountMonitorProjection,
+	histories map[int64][]sub2api.AccountMonitorHistoryEntry,
+	loc *time.Location,
+	now time.Time,
+	fallback func(string) *float64,
 ) notify.HealthDigestView {
 	view := notify.HealthDigestView{Date: now.In(loc).Format("2006-01-02")}
 	profitInputs := make([]accounthealth.ProfitInput, 0, len(projection.Accounts))
@@ -98,8 +139,9 @@ func BuildHealthDigest(
 			view.Quality.Slow++
 		}
 
-		multiplier := trustworthyMultiplier(account)
-		if unsupportedMeasurement(account.Multiplier) {
+		multiplier := resolveMultiplier(account, fallback)
+		// 兜底成功的账号利润已经算得出来，不再是「上游不支持自动测算」。
+		if unsupportedMeasurement(account.Multiplier) && multiplier.value == nil {
 			unsupported++
 		}
 		standardCost, userCost := 0.0, 0.0
@@ -107,7 +149,7 @@ func BuildHealthDigest(
 			standardCost, userCost = account.TodayStats.StandardCost, account.TodayStats.UserCost
 			totalRequests += account.TodayStats.Requests
 		}
-		input := accounthealth.ProfitInput{StandardCost: standardCost, UserCost: userCost, Multiplier: multiplier}
+		input := accounthealth.ProfitInput{StandardCost: standardCost, UserCost: userCost, Multiplier: multiplier.value}
 		profitInputs = append(profitInputs, input)
 		if standardCost > 0 || userCost > 0 {
 			hasTraffic = true
@@ -118,7 +160,7 @@ func BuildHealthDigest(
 			SuccessRate:       fmt.Sprintf("%.1f%%", sample.SuccessRate*100),
 			TTFTP50:           millis(account.TTFTP50MS),
 			LatencyP95:        millis(account.LatencyP95MS),
-			Multiplier:        multiplierLabel(account.Multiplier),
+			Multiplier:        resolvedMultiplierLabel(account.Multiplier, multiplier),
 			GrossContribution: grossLabel(accounthealth.ComputeProfit(input)),
 		})
 		if sample.TTFTP95MS != nil {
@@ -307,6 +349,16 @@ func multiplierLabel(multiplier sub2api.AccountMonitorMultiplier) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.2fx", *multiplier.Value)
+}
+
+// resolvedMultiplierLabel makes the provenance visible: an upstream-pricing
+// fallback value renders as「0.17x（上游定价）」so ops can tell at a glance it
+// was not measured by Sub2API itself.
+func resolvedMultiplierLabel(multiplier sub2api.AccountMonitorMultiplier, resolved resolvedMultiplier) string {
+	if resolved.fromUpstream {
+		return fmt.Sprintf("%.2fx（上游定价）", *resolved.value)
+	}
+	return multiplierLabel(multiplier)
 }
 
 func grossLabel(profit accounthealth.Profit) string {

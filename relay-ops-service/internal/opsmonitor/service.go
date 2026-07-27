@@ -48,6 +48,11 @@ type Service struct {
 	Incidents   *incidents.Machine
 	Notifier    MessageSender
 	Now         func() time.Time
+	// Fallback resolves an account's multiplier from upstream public pricing
+	// when the schema v2 multiplier is unusable (e.g. measured/failed), so an
+	// upstream price change still trips the multiplier-change alert. nil
+	// disables the fallback; it must never override a trustworthy value.
+	Fallback func(context.Context, string) *float64
 }
 
 func (s Service) Run(ctx context.Context) error {
@@ -198,6 +203,14 @@ func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]struc
 			continue
 		}
 		value := trustworthyMultiplier(account.Multiplier)
+		if value == nil && s.Fallback != nil {
+			// 优先级 declared > measured > upstream_pricing：只有 Sub2API 自己
+			// 拿不出可信值时才咨询上游定价，绝不覆盖可信值。兜底约定所有失败
+			// 都返回 nil；非正值防御性拒绝，理由同 trustworthyMultiplier。
+			if fallbackValue := s.Fallback(ctx, account.Name); fallbackValue != nil && *fallbackValue > 0 {
+				value = fallbackValue
+			}
+		}
 		if value == nil {
 			continue
 		}

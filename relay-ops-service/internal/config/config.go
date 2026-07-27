@@ -28,6 +28,7 @@ type Config struct {
 	Sub2APIBaseURL           string
 	Sub2APIAdminKeyFile      string
 	AccountQualityResultFile string
+	UpstreamGroupMappingFile string
 	FeishuWebhookFile        string
 	FeishuCommandMode        string
 	FeishuAppIDFile          string
@@ -146,6 +147,10 @@ func Load(env func(string) string) (Config, error) {
 	if accountQualityResultFile != "" && !filepath.IsAbs(accountQualityResultFile) {
 		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE must be an absolute path")
 	}
+	upstreamGroupMappingFile := get("RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE", "")
+	if upstreamGroupMappingFile != "" && !filepath.IsAbs(upstreamGroupMappingFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE must be an absolute path")
+	}
 	candidateSecretDir := filepath.Clean(get("RELAY_OPS_CANDIDATE_SECRET_DIR", "/var/lib/relay-ops/candidate-keys"))
 	if !filepath.IsAbs(candidateSecretDir) {
 		return Config{}, fmt.Errorf("RELAY_OPS_CANDIDATE_SECRET_DIR must be an absolute path")
@@ -160,6 +165,7 @@ func Load(env func(string) string) (Config, error) {
 		Sub2APIBaseURL:           baseURL,
 		Sub2APIAdminKeyFile:      adminKeyFile,
 		AccountQualityResultFile: accountQualityResultFile,
+		UpstreamGroupMappingFile: upstreamGroupMappingFile,
 		FeishuWebhookFile:        feishuFile,
 		FeishuCommandMode:        feishuCommandMode,
 		FeishuAppIDFile:          feishuCallbackFiles["Feishu App ID"],

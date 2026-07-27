@@ -371,6 +371,69 @@ func TestBuildHealthDigestKeepsOtherMultiplierFailuresInPending(t *testing.T) {
 	}
 }
 
+func TestBuildHealthDigestUsesUpstreamPricingFallback(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// Pro-SHUAI-0.17 的 Sub2API 倍率是 measured/failed，靠上游定价兜底
+	fallback := func(name string) *float64 {
+		if name == "Pro-SHUAI-0.17" {
+			v := 0.17
+			return &v
+		}
+		return nil
+	}
+	view := BuildHealthDigestWithFallback(projection, histories, loc, now, fallback)
+
+	if view.Profit.UnsupportedAccounts != 0 {
+		t.Fatalf("UnsupportedAccounts = %d, want 0（已被兜底，不再算不支持）", view.Profit.UnsupportedAccounts)
+	}
+	var line string
+	for _, account := range view.Accounts {
+		if account.Name == "Pro-SHUAI-0.17" {
+			line = account.Multiplier
+		}
+	}
+	if line != "0.17x（上游定价）" {
+		t.Fatalf("Multiplier = %q, want 0.17x（上游定价）—— 来源必须可见", line)
+	}
+}
+
+func TestBuildHealthDigestFallbackDoesNotOverrideTrustworthy(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// Pro-SHEN-0.16 有 declared/ok 倍率，兜底不得覆盖它
+	fallback := func(string) *float64 { v := 9.99; return &v }
+	view := BuildHealthDigestWithFallback(projection, histories, loc, now, fallback)
+
+	for _, account := range view.Accounts {
+		if account.Name == "Pro-SHEN-0.16" && account.Multiplier != "0.16x" {
+			t.Fatalf("Multiplier = %q, want 0.16x（declared 优先于兜底）", account.Multiplier)
+		}
+	}
+}
+
+func TestBuildHealthDigestFallbackIncludesAccountInProfit(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	// 兜底成功后 Pro-SHUAI-0.17 的利润必须可核算：
+	// 收入 = 100 + 40 = 140，上游成本 = 200*0.16 + 100*0.17 = 49
+	fallback := func(name string) *float64 {
+		if name == "Pro-SHUAI-0.17" {
+			v := 0.17
+			return &v
+		}
+		return nil
+	}
+	view := BuildHealthDigestWithFallback(projection, histories, loc, now, fallback)
+
+	if view.Profit.ExcludedAccounts != 0 {
+		t.Fatalf("ExcludedAccounts = %d, want 0（兜底后全部可核算）", view.Profit.ExcludedAccounts)
+	}
+	if view.Profit.Revenue != 140 {
+		t.Fatalf("Revenue = %v, want 140", view.Profit.Revenue)
+	}
+	if view.Profit.UpstreamCost != 49 {
+		t.Fatalf("UpstreamCost = %v, want 49", view.Profit.UpstreamCost)
+	}
+}
+
 func TestBuildHealthDigestAccumulatesTrafficRequests(t *testing.T) {
 	projection, histories, loc, now := fixture()
 	projection.Accounts[1].TodayStats.Requests = 150

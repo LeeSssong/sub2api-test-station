@@ -54,6 +54,10 @@ type Service struct {
 	Notifier   MessageSender
 	Timezone   *time.Location
 	Now        func() time.Time
+	// Fallback resolves an account's multiplier from upstream public pricing
+	// when Sub2API's own schema v2 multiplier is unusable. nil disables the
+	// fallback; every failure must return nil, never a guessed value.
+	Fallback func(context.Context, string) *float64
 }
 
 func (s Service) Run(ctx context.Context) (Result, error) {
@@ -136,7 +140,11 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 				}
 				histories[account.AccountID] = entries
 			}
-			view = BuildHealthDigest(projection, histories, location, now)
+			var fallback func(string) *float64
+			if s.Fallback != nil {
+				fallback = func(name string) *float64 { return s.Fallback(ctx, name) }
+			}
+			view = BuildHealthDigestWithFallback(projection, histories, location, now, fallback)
 			// 脱敏不变量：私有（IsExclusive）分组名不得进入日报卡。选型建议
 			// 来自 accountrecommendation.Analyze(projection)，投影不按
 			// IsExclusive 过滤，且 pendingLines 会渲染 rec.GroupName，所以

@@ -624,6 +624,65 @@ func TestEvaluateMultiplierSkipsNonPositiveValue(t *testing.T) {
 	}
 }
 
+func TestEvaluateMultiplierUsesUpstreamPricingFallbackWhenUnmeasurable(t *testing.T) {
+	// measured/failed：Sub2API 自己测不出，靠上游定价兜底建立基线，
+	// 这样上游调价同样会触发倍率变化告警。
+	source := stubMultiplierSource{projection: multiplierProjection(26, nil, "failed")}
+	service, repo := newTestSiteMonitor(t, source)
+	service.Fallback = func(_ context.Context, name string) *float64 {
+		if name != "Pro-SHEN-0.16" {
+			return nil
+		}
+		value := 0.17
+		return &value
+	}
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	record, found, err := repo.Get(context.Background(), "site:account:26:multiplier_baseline")
+	if err != nil || !found {
+		t.Fatalf("baseline not created from fallback: found=%v err=%v", found, err)
+	}
+	if record.CurrentValue != "0.17x" {
+		t.Fatalf("CurrentValue = %q, want 0.17x（上游定价兜底值）", record.CurrentValue)
+	}
+}
+
+func TestEvaluateMultiplierFallbackDoesNotOverrideTrustworthy(t *testing.T) {
+	value := 0.16
+	source := stubMultiplierSource{projection: multiplierProjection(26, &value, "ok")}
+	service, repo := newTestSiteMonitor(t, source)
+	service.Fallback = func(context.Context, string) *float64 {
+		wrong := 9.99
+		return &wrong
+	}
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	record, found, err := repo.Get(context.Background(), "site:account:26:multiplier_baseline")
+	if err != nil || !found {
+		t.Fatalf("baseline not created: found=%v err=%v", found, err)
+	}
+	if record.CurrentValue != "0.16x" {
+		t.Fatalf("CurrentValue = %q, want 0.16x（可信值优先于兜底）", record.CurrentValue)
+	}
+}
+
+func TestEvaluateMultiplierFallbackFailureStaysSilent(t *testing.T) {
+	source := stubMultiplierSource{projection: multiplierProjection(26, nil, "failed")}
+	service, repo := newTestSiteMonitor(t, source)
+	service.Fallback = func(context.Context, string) *float64 { return nil }
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, found, _ := repo.Get(context.Background(), "site:account:26:multiplier_baseline"); found {
+		t.Fatal("兜底也拿不到值时不得建立基线")
+	}
+}
+
 func TestEvaluateMultiplierSilentWhenSourceFails(t *testing.T) {
 	source := stubMultiplierSource{err: errors.New("unavailable")}
 	service, repo := newTestSiteMonitor(t, source)

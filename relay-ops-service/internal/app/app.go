@@ -33,6 +33,7 @@ import (
 	"example.invalid/relay-ops-service/internal/scheduler"
 	"example.invalid/relay-ops-service/internal/store"
 	"example.invalid/relay-ops-service/internal/sub2api"
+	"example.invalid/relay-ops-service/internal/upstreampricing"
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
 
@@ -199,6 +200,25 @@ func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualityS
 	return opsmonitor.Service{Reader: reader, Quality: quality, Multipliers: multipliers, Incidents: state, Notifier: notifier}
 }
 
+// upstreamPricingFallback adapts upstreampricing.Resolver.Lookup to the
+// fallback signature shared by the daily report and the multiplier alert:
+// every failure path already returns (nil, false), so nil means "cannot
+// account", never a guessed value. A nil config path disables the fallback
+// entirely and both consumers behave exactly as before.
+func upstreamPricingFallback(configPath string) func(context.Context, string) *float64 {
+	if configPath == "" {
+		return nil
+	}
+	resolver := &upstreampricing.Resolver{ConfigPath: configPath, RequireHTTPS: true, TTL: 10 * time.Minute}
+	return func(ctx context.Context, accountName string) *float64 {
+		value, ok := resolver.Lookup(ctx, accountName)
+		if !ok {
+			return nil
+		}
+		return value
+	}
+}
+
 func notificationClient(cfg config.Config, appSender notify.MessageSender) (notify.MessageClient, error) {
 	if cfg.FeishuAlertChatIDFile != "" {
 		if appSender == nil {
@@ -277,15 +297,18 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		accountQualitySource = source
 		siteAccountQualitySource = source
 	}
+	pricingFallback := upstreamPricingFallback(cfg.UpstreamGroupMappingFile)
 	dailyReportService := dailyreport.Service{
 		Reader: reader, Candidates: database, Incidents: dailyReportIncidents{Store: database, state: incidentMachine},
 		Agent: reportAnalysis, Notifier: notifier, Timezone: cfg.Timezone,
+		Fallback: pricingFallback,
 	}
 	collector := &collection.Collector{
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
 		Incidents: incidentMachine, Agent: collectorAnalysis, Notifier: notifier,
 	}
 	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, reader, incidentMachine, notifier)
+	siteMonitor.Fallback = pricingFallback
 	usageReader := billing.SessionReader{Reporter: database}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,

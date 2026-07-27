@@ -41,6 +41,43 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsAbsoluteUpstreamGroupMappingFile(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE"] = "/run/relay-ops/upstream-group-mapping.json"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.UpstreamGroupMappingFile != env["RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE"] {
+		t.Fatalf("UpstreamGroupMappingFile = %q", cfg.UpstreamGroupMappingFile)
+	}
+}
+
+func TestLoadRejectsRelativeUpstreamGroupMappingFile(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE"] = "config/upstream-group-mapping.json"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("Load accepted a relative upstream group mapping file")
+	}
+}
+
+func TestLoadDefaultsUpstreamGroupMappingFileToDisabled(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.UpstreamGroupMappingFile != "" {
+		t.Fatalf("UpstreamGroupMappingFile = %q, want empty（不配就当没这功能）", cfg.UpstreamGroupMappingFile)
+	}
+}
+
 func TestLoadAcceptsAbsoluteCandidateSecretDirectory(t *testing.T) {
 	t.Parallel()
 

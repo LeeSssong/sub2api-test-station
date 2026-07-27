@@ -38,6 +38,23 @@ type IncidentView struct {
 	Suppressed  bool
 }
 
+type RecoveryMetric struct {
+	Label string
+	Value string
+}
+
+type RecoveryCardView struct {
+	Title      string
+	Summary    string
+	Detail     string
+	Metrics    []RecoveryMetric
+	Basis      []string
+	Source     string
+	Focus      string
+	Links      []Link
+	Suppressed bool
+}
+
 type CommandView struct {
 	Command    string
 	ActorID    string
@@ -71,6 +88,11 @@ type CardText struct {
 	Content string `json:"content"`
 }
 
+type CardField struct {
+	IsShort bool     `json:"is_short"`
+	Text    CardText `json:"text"`
+}
+
 type CardConfig struct {
 	WideScreenMode bool `json:"wide_screen_mode,omitempty"`
 }
@@ -95,6 +117,7 @@ type CardElement struct {
 	Tag     string       `json:"tag"`
 	Content string       `json:"content,omitempty"`
 	Text    *CardText    `json:"text,omitempty"`
+	Fields  []CardField  `json:"fields,omitempty"`
 	Actions []CardAction `json:"actions,omitempty"`
 	Margin  string       `json:"margin,omitempty"`
 }
@@ -125,6 +148,9 @@ func (m FeishuMessage) RenderedText() string {
 	for _, element := range m.Card.Elements {
 		if element.Text != nil {
 			parts = append(parts, element.Text.Content)
+		}
+		for _, field := range element.Fields {
+			parts = append(parts, field.Text.Content)
 		}
 		if element.Content != "" {
 			parts = append(parts, element.Content)
@@ -176,6 +202,70 @@ func RenderRecovery(event IncidentView) FeishuMessage {
 		sections = append(sections, "**去重** 告警重复已抑制")
 	}
 	return newCardMessage(event.Title, "green", strings.Join(sections, "\n\n"), event.Links)
+}
+
+func RenderRecoveryCard(view RecoveryCardView) FeishuMessage {
+	summary := safeValue(view.Summary)
+	if summary == "" {
+		summary = "已恢复"
+	}
+	summaryContent := "**" + summary + "**"
+	if detail := safeValue(view.Detail); detail != "" {
+		summaryContent += "\n" + detail
+	}
+	elements := []CardElement{{
+		Tag:  "div",
+		Text: &CardText{Tag: "lark_md", Content: summaryContent},
+	}}
+
+	fields := make([]CardField, 0, 4)
+	for _, metric := range view.Metrics {
+		if len(fields) == 4 {
+			break
+		}
+		label := strings.TrimSpace(metric.Label)
+		value := strings.TrimSpace(metric.Value)
+		if label == "" || value == "" {
+			continue
+		}
+		fields = append(fields, CardField{
+			IsShort: true,
+			Text: CardText{
+				Tag:     "lark_md",
+				Content: "**" + safeValue(label) + "**\n" + safeValue(value),
+			},
+		})
+	}
+	if len(fields) > 0 {
+		elements = append(elements, CardElement{Tag: "div", Fields: fields})
+	}
+
+	evidence := make([]string, 0, 4)
+	if len(view.Basis) > 0 {
+		evidence = append(evidence, "**判断依据**\n"+joinItems(view.Basis))
+	}
+	if source := strings.TrimSpace(view.Source); source != "" {
+		evidence = append(evidence, "**数据来源**\n"+safeValue(source))
+	}
+	if focus := strings.TrimSpace(view.Focus); focus != "" {
+		evidence = append(evidence, "**后续观察**\n"+safeValue(focus))
+	}
+	if view.Suppressed {
+		evidence = append(evidence, "**去重**\n重复事件已抑制")
+	}
+	if len(evidence) > 0 {
+		elements = append(elements, CardElement{
+			Tag:  "div",
+			Text: &CardText{Tag: "lark_md", Content: strings.Join(evidence, "\n\n")},
+		})
+	}
+	elements = appendCardActions(elements, view.Links)
+
+	return FeishuMessage{MsgType: "interactive", Card: &Card{
+		Config:   CardConfig{WideScreenMode: true},
+		Header:   CardHeader{Title: CardText{Tag: "plain_text", Content: safeValue(view.Title)}, Template: "green"},
+		Elements: elements,
+	}}
 }
 
 func RenderCommand(event CommandView) FeishuMessage {
@@ -374,6 +464,11 @@ func newCardMessage(title, template, markdown string, links []Link) FeishuMessag
 		Header:   CardHeader{Title: CardText{Tag: "plain_text", Content: safeValue(title)}, Template: template},
 		Elements: []CardElement{{Tag: "div", Text: &CardText{Tag: "lark_md", Content: markdown}}},
 	}
+	card.Elements = appendCardActions(card.Elements, links)
+	return FeishuMessage{MsgType: "interactive", Card: card}
+}
+
+func appendCardActions(elements []CardElement, links []Link) []CardElement {
 	if len(links) > 0 {
 		actions := make([]CardAction, 0, len(links))
 		for _, link := range links {
@@ -383,10 +478,10 @@ func newCardMessage(title, template, markdown string, links []Link) FeishuMessag
 			actions = append(actions, CardAction{Tag: "button", Text: CardText{Tag: "plain_text", Content: safeValue(link.Label)}, Type: "primary", MultiURL: &CardURL{URL: link.URL}})
 		}
 		if len(actions) > 0 {
-			card.Elements = append(card.Elements, CardElement{Tag: "action", Actions: actions})
+			elements = append(elements, CardElement{Tag: "action", Actions: actions})
 		}
 	}
-	return FeishuMessage{MsgType: "interactive", Card: card}
+	return elements
 }
 
 func (m FeishuMessage) CardJSON() ([]byte, error) {

@@ -131,6 +131,59 @@ func TestRenderAlertRecoveryAndCommandUseInteractiveCards(t *testing.T) {
 	}
 }
 
+func TestRenderRecoveryCardSeparatesSummaryMetricsEvidenceAndAction(t *testing.T) {
+	t.Parallel()
+	message := RenderRecoveryCard(RecoveryCardView{
+		Title:   "站内运行已恢复：特惠-SHUAI",
+		Summary: "已恢复正常调度",
+		Detail:  "调度状态已回到健康基线",
+		Metrics: []RecoveryMetric{
+			{Label: "当前状态", Value: "正常调度"},
+			{Label: "健康确认", Value: "1 个完整窗口"},
+			{Label: "观测窗口", Value: "15 分钟 / 24 小时"},
+			{Label: "证据时间", Value: "05:15 UTC"},
+		},
+		Basis:  []string{"当前与基线均为可用、可调度"},
+		Source: "Sub2API 原生站内运行快照",
+		Focus:  "在运维后台查看站内运行证据",
+		Links:  []Link{{Label: "运维后台", URL: "/ops"}},
+	})
+
+	if got := len(message.Card.Elements); got != 4 {
+		t.Fatalf("elements=%d, want summary, metrics, evidence, action", got)
+	}
+	fields := message.Card.Elements[1].Fields
+	if len(fields) != 4 {
+		t.Fatalf("fields=%#v", fields)
+	}
+	for _, field := range fields {
+		if !field.IsShort || field.Text.Tag != "lark_md" || strings.TrimSpace(field.Text.Content) == "" {
+			t.Fatalf("invalid field=%#v", field)
+		}
+	}
+	for _, want := range []string{"已恢复正常调度", "当前状态", "正常调度", "判断依据", "数据来源", "后续观察"} {
+		if !strings.Contains(message.RenderedText(), want) {
+			t.Fatalf("missing %q in %q", want, message.RenderedText())
+		}
+	}
+}
+
+func TestRenderRecoveryCardOmitsBlankMetricsAndRedactsValues(t *testing.T) {
+	t.Parallel()
+	message := RenderRecoveryCard(RecoveryCardView{
+		Title: "恢复", Summary: "已恢复",
+		Metrics: []RecoveryMetric{
+			{Label: "当前状态", Value: "正常"},
+			{Label: "", Value: ""},
+			{Label: "证据", Value: "x-api-key: secret"},
+		},
+	})
+	fields := message.Card.Elements[1].Fields
+	if len(fields) != 2 || strings.Contains(message.RenderedText(), "secret") || !strings.Contains(message.RenderedText(), "[已脱敏]") {
+		t.Fatalf("fields=%#v text=%q", fields, message.RenderedText())
+	}
+}
+
 func TestCardUsesOfficialStableElementShape(t *testing.T) {
 	message := RenderAlert(IncidentView{Title: "上游异常", Results: []string{"失败率升高"}})
 	if len(message.Card.Elements) == 0 || message.Card.Elements[0].Tag != "div" || message.Card.Elements[0].Text == nil || message.Card.Elements[0].Text.Tag != "lark_md" {

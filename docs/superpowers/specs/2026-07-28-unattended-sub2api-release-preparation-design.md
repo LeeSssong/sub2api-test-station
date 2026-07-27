@@ -135,7 +135,8 @@ GET https://api.github.com/repos/Wei-Shaw/sub2api/releases/latest
 2. `prepare`：无秘密地合并、测试和构建，不执行生产操作。
 3. `publish`：只加载已经验证的 OCI artifact，检查标签并推送 GHCR；不执行候选
    仓库脚本或候选镜像。
-4. `stage-production`：只持有专用受限 SSH 密钥，只能调用生产候选加载器。
+4. `stage-production`：只持有专用受限 SSH 密钥和当前 Job 的短时
+   `packages:read` token，只能调用生产候选加载器。
 5. `advance-source`：只读取候选 Git bundle，在远端 `main` 仍等于固定基线时执行
    fast-forward；绝不 force push。
 6. `notify`：只检出触发本次工作流的可信源码提交并使用飞书凭据，不检出或执行
@@ -199,8 +200,11 @@ prepare <ghcr-digest-ref> <version> <official-commit> <source-commit>
 加载器不得调用 Docker Compose、宿主更新器、更新 API、数据库客户端或容器 restart。
 它不得打印 registry token、SSH 密钥、环境文件或飞书凭据。
 
-生产 root Docker 必须在启用流水线前完成一次私有 GHCR 只读登录。读包 token 只保存在
-生产 root Docker credential store，不进入 GitHub Actions 日志或命令参数。
+生产不保存长期 GHCR PAT。`stage-production` 使用当前 Job 的短时
+`GITHUB_TOKEN`，其权限限定为 `contents:read` 和 `packages:read`。token 只通过 SSH
+标准输入传给 forced-command，不进入命令参数、环境文件或日志。加载器在 `0700`
+临时目录中创建 Docker config，完成 login、digest pull 和校验后立即 logout 并删除
+目录；任意退出路径都执行清理。
 
 ## 源码推进
 
@@ -272,18 +276,18 @@ GitHub Environment `production-candidate` 保存：
 - 飞书候选准备 webhook；
 - 必要的非秘密生产入口变量。
 
-GHCR 发布使用 Actions 自动提供的仓库 `GITHUB_TOKEN`。生产 GHCR 只读 token 只安装
-在生产 root Docker credential store。
+GHCR 发布和生产短时只读登录都使用 Actions 自动提供的仓库 `GITHUB_TOKEN`，但分属
+不同 Job 权限：发布 Job 仅有 `packages:write`，生产 Job 仅有 `packages:read`。
+token 不跨 Job 持久化。
 
 初次启用必须：
 
 1. 合并并推送工作流及可信辅助脚本到 `main`。
 2. 把 GHCR package 设为 private，并授予本仓库 Actions 写权限。
 3. 在生产创建专用 SSH key pair，安装 forced-command 公钥和 loader。
-4. 在生产完成私有 GHCR 只读登录。
-5. 配置 GitHub Environment secrets/variables，不设置人工 approval gate。
-6. 手动执行一次 `workflow_dispatch`，验证从发现到飞书的完整路径。
-7. 证明生产运行容器、Compose 和数据库在前后均未变化。
+4. 配置 GitHub Environment secrets/variables，不设置人工 approval gate。
+5. 手动执行一次 `workflow_dispatch`，验证短时 GHCR 登录和从发现到飞书的完整路径。
+6. 证明生产没有残留 GHCR credential，且运行容器、Compose 和数据库在前后均未变化。
 
 凭据缺失、权限不足或环境保护要求人工审批时，流水线必须失败并报告配置阶段，不能
 降级为生产构建、SSH 文件分片传输或无校验的镜像加载。

@@ -5,10 +5,96 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/accounthealth"
+	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
 func f64(v float64) *float64 { return &v }
+
+func TestBuildHealthDigestCountsPricingCoverage(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	fallback := func(name string) *float64 {
+		if name == "Pro-SHUAI-0.17" {
+			value := 0.17
+			return &value
+		}
+		return nil
+	}
+
+	view := BuildHealthDigestWithFallback(projection, histories, loc, now, fallback)
+
+	if view.Profit.TotalAccounts != len(projection.Accounts) {
+		t.Fatalf("TotalAccounts = %d, want %d", view.Profit.TotalAccounts, len(projection.Accounts))
+	}
+	if view.Profit.PricedAccounts != len(projection.Accounts) {
+		t.Fatalf("PricedAccounts = %d, want %d", view.Profit.PricedAccounts, len(projection.Accounts))
+	}
+	if view.Profit.UpstreamPricedAccounts != 1 {
+		t.Fatalf("UpstreamPricedAccounts = %d, want 1", view.Profit.UpstreamPricedAccounts)
+	}
+	for _, item := range view.Pending {
+		if item.AccountName == "Pro-SHUAI-0.17" {
+			t.Fatalf("fallback-priced account must not be pending: %+v", item)
+		}
+	}
+}
+
+func TestPendingItemsCarryStructuredSeverity(t *testing.T) {
+	projection, histories, loc, now := fixture()
+	view := BuildHealthDigest(projection, histories, loc, now)
+
+	severityByName := map[string]notify.PendingSeverity{}
+	for _, item := range view.Pending {
+		severityByName[item.AccountName] = item.Severity
+	}
+	if severityByName["Plus-XN-0.09"] != notify.PendingCritical {
+		t.Fatalf("balance-exhausted severity = %q, want critical", severityByName["Plus-XN-0.09"])
+	}
+	warning, ok := pendingFor(
+		sub2api.AccountMonitorAccount{AccountID: 41, Name: "warning"},
+		accounthealth.AccountSample{SuccessRate: 0.76, SampleCount: 10, ErrorCode: "http_error"},
+		accounthealth.AccountVerdict{Tier: accounthealth.TierDegraded},
+		resolvedMultiplier{value: f64(0.2)},
+	)
+	if !ok || warning.Severity != notify.PendingWarning {
+		t.Fatalf("degraded severity = %q, ok = %v, want warning", warning.Severity, ok)
+	}
+	accounting, ok := pendingFor(
+		sub2api.AccountMonitorAccount{
+			AccountID: 42, Name: "accounting",
+			Multiplier: sub2api.AccountMonitorMultiplier{Source: "declared", Status: "failed"},
+		},
+		accounthealth.AccountSample{SuccessRate: 1, SampleCount: 10},
+		accounthealth.AccountVerdict{Tier: accounthealth.TierHealthy},
+		resolvedMultiplier{},
+	)
+	if !ok || accounting.Severity != notify.PendingAccounting {
+		t.Fatalf("unpriced severity = %q, ok = %v, want accounting", accounting.Severity, ok)
+	}
+	for _, item := range view.Pending {
+		if item.Severity == "" {
+			t.Fatalf("pending item has empty severity: %+v", item)
+		}
+	}
+}
+
+func TestProblemLabelUsesOperatorReadableCopy(t *testing.T) {
+	cases := map[string]string{
+		"balance_exhausted":  "余额耗尽",
+		"http_error":         "HTTP 错误",
+		"timeout":            "请求超时",
+		"malformed_stream":   "响应格式异常",
+		"model_unavailable":  "模型不可用",
+		"account_test_error": "账号测试失败",
+		"unknown_code":       "账号异常",
+	}
+	for input, want := range cases {
+		if got := problemLabel(input); got != want {
+			t.Fatalf("problemLabel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
 
 func fixture() (sub2api.AccountMonitorProjection, map[int64][]sub2api.AccountMonitorHistoryEntry, *time.Location, time.Time) {
 	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
@@ -238,7 +324,7 @@ func TestBuildHealthDigestJudgesByTodayWindowNotCumulative(t *testing.T) {
 	if len(view.Accounts) != 1 || view.Accounts[0].SuccessRate != "0.0%" {
 		t.Fatalf("明细成功率必须是当日口径 0.0%%: %+v", view.Accounts)
 	}
-	if len(view.Pending) != 1 || view.Pending[0].Problem != "http_error" {
+	if len(view.Pending) != 1 || view.Pending[0].Problem != "HTTP 错误" {
 		t.Fatalf("待处理项应携带当日窗口的错误码: %+v", view.Pending)
 	}
 }
@@ -328,7 +414,7 @@ func TestBuildGroupAvailabilityAlertsOnRollingWindowFailures(t *testing.T) {
 	if !pro.Alerting || pro.Alert.Available != 0 || pro.Alert.Total != 1 {
 		t.Fatalf("1 小时窗内全失败必须告警: %+v", pro)
 	}
-	if len(pro.Alert.Down) != 1 || pro.Alert.Down[0].ErrorCode != "timeout" {
+	if len(pro.Alert.Down) != 1 || pro.Alert.Down[0].ErrorCode != "请求超时" {
 		t.Fatalf("Down = %+v", pro.Alert.Down)
 	}
 }

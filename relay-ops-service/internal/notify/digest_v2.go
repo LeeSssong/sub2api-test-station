@@ -29,14 +29,27 @@ type ProfitLine struct {
 	// upstream simply cannot be auto-measured (measured+failed). They are
 	// excluded from profit all the same, but the copy must say why instead of
 	// implying someone can fix it.
-	UnsupportedAccounts int
-	NoTraffic           bool
+	UnsupportedAccounts    int
+	TotalAccounts          int
+	PricedAccounts         int
+	UpstreamPricedAccounts int
+	NoTraffic              bool
 }
 
+type PendingSeverity string
+
+const (
+	PendingCritical   PendingSeverity = "critical"
+	PendingWarning    PendingSeverity = "warning"
+	PendingAccounting PendingSeverity = "accounting"
+)
+
 type PendingItem struct {
+	AccountID   int64
 	AccountName string
 	Problem     string
 	Detail      string
+	Severity    PendingSeverity
 }
 
 type AccountDetailLine struct {

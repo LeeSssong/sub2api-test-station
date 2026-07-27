@@ -113,6 +113,9 @@ func BuildHealthDigestWithFallback(
 	fallback func(string) *float64,
 ) notify.HealthDigestView {
 	view := notify.HealthDigestView{Date: now.In(loc).Format("2006-01-02")}
+	totalAccounts := len(projection.Accounts)
+	pricedAccounts := 0
+	upstreamPricedAccounts := 0
 	profitInputs := make([]accounthealth.ProfitInput, 0, len(projection.Accounts))
 	ttfts := make([]float64, 0, len(projection.Accounts))
 	comparableAccounts, todayHealthyComparable, yesterdayHealthy := 0, 0, 0
@@ -140,6 +143,12 @@ func BuildHealthDigestWithFallback(
 		}
 
 		multiplier := resolveMultiplier(account, fallback)
+		if multiplier.value != nil {
+			pricedAccounts++
+		}
+		if multiplier.fromUpstream {
+			upstreamPricedAccounts++
+		}
 		// 兜底成功的账号利润已经算得出来，不再是「上游不支持自动测算」。
 		if unsupportedMeasurement(account.Multiplier) && multiplier.value == nil {
 			unsupported++
@@ -167,7 +176,7 @@ func BuildHealthDigestWithFallback(
 			ttfts = append(ttfts, *sample.TTFTP95MS)
 		}
 
-		if item, ok := pendingFor(account, sample, verdict); ok {
+		if item, ok := pendingFor(account, sample, verdict, multiplier); ok {
 			view.Pending = append(view.Pending, item)
 		}
 
@@ -210,8 +219,11 @@ func BuildHealthDigestWithFallback(
 	view.Profit = notify.ProfitLine{
 		Revenue: total.Revenue, UpstreamCost: total.UpstreamCost, Gross: total.Gross,
 		Margin: total.Margin, Computable: computable, ExcludedAccounts: excluded,
-		UnsupportedAccounts: unsupported,
-		NoTraffic:           !hasTraffic,
+		UnsupportedAccounts:    unsupported,
+		TotalAccounts:          totalAccounts,
+		PricedAccounts:         pricedAccounts,
+		UpstreamPricedAccounts: upstreamPricedAccounts,
+		NoTraffic:              !hasTraffic,
 	}
 	view.Traffic = notify.TrafficLine{HasTraffic: hasTraffic, Requests: totalRequests}
 	return view
@@ -315,33 +327,66 @@ func groupNamesIn(projection sub2api.AccountMonitorProjection) []string {
 	return names
 }
 
-func pendingFor(account sub2api.AccountMonitorAccount, sample accounthealth.AccountSample, verdict accounthealth.AccountVerdict) (notify.PendingItem, bool) {
+func pendingFor(
+	account sub2api.AccountMonitorAccount,
+	sample accounthealth.AccountSample,
+	verdict accounthealth.AccountVerdict,
+	resolved resolvedMultiplier,
+) (notify.PendingItem, bool) {
 	switch {
 	case verdict.Tier == accounthealth.TierUnavailable:
-		return notify.PendingItem{AccountName: account.Name, Problem: problemLabel(sample.ErrorCode), Detail: ""}, true
-	case verdict.Tier == accounthealth.TierDegraded:
 		return notify.PendingItem{
+			AccountID:   account.AccountID,
+			AccountName: account.Name,
+			Problem:     problemLabel(sample.ErrorCode),
+			Severity:    notify.PendingCritical,
+		}, true
+	case verdict.Tier == accounthealth.TierDegraded:
+		detail := ""
+		if sample.ErrorCode != "" {
+			detail = problemLabel(sample.ErrorCode)
+		}
+		return notify.PendingItem{
+			AccountID:   account.AccountID,
 			AccountName: account.Name,
 			Problem:     fmt.Sprintf("成功率 %.0f%% ↓", sample.SuccessRate*100),
-			Detail:      sample.ErrorCode,
+			Detail:      detail,
+			Severity:    notify.PendingWarning,
 		}, true
-	case trustworthyMultiplier(account) == nil:
+	case resolved.value == nil:
 		if unsupportedMeasurement(account.Multiplier) {
 			return notify.PendingItem{}, false
 		}
-		return notify.PendingItem{AccountName: account.Name, Problem: "倍率测不出", Detail: "利润无法核算"}, true
+		return notify.PendingItem{
+			AccountID:   account.AccountID,
+			AccountName: account.Name,
+			Problem:     "倍率不可用",
+			Detail:      "利润未核算",
+			Severity:    notify.PendingAccounting,
+		}, true
 	}
 	return notify.PendingItem{}, false
 }
 
 func problemLabel(errorCode string) string {
-	if errorCode == accounthealth.ErrorCodeBalanceExhausted {
+	switch errorCode {
+	case accounthealth.ErrorCodeBalanceExhausted:
 		return "余额耗尽"
-	}
-	if errorCode == "" {
+	case "http_error":
+		return "HTTP 错误"
+	case "timeout":
+		return "请求超时"
+	case "malformed_stream":
+		return "响应格式异常"
+	case "model_unavailable":
+		return "模型不可用"
+	case "account_test_error":
+		return "账号测试失败"
+	case "":
 		return "不可用"
+	default:
+		return "账号异常"
 	}
-	return errorCode
 }
 
 func multiplierLabel(multiplier sub2api.AccountMonitorMultiplier) string {

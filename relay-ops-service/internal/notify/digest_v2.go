@@ -2,8 +2,13 @@ package notify
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
+	"time"
 )
+
+const maxMorningActions = 8
 
 type QualityLine struct {
 	Healthy      int
@@ -11,24 +16,19 @@ type QualityLine struct {
 	Unavailable  int
 	Slow         int
 	HealthyDelta *int
-	// Median across accounts of each account's TTFT P95 — not a median TTFT.
-	// The old name said "median" alone and invited exactly that misreading.
+	// Median across accounts of each account's TTFT P95, not a median TTFT.
 	TTFTP95MedianMS       *float64
 	DataUnavailable       bool
 	DataUnavailableReason string
 }
 
 type ProfitLine struct {
-	Revenue          float64
-	UpstreamCost     float64
-	Gross            float64
-	Margin           *float64
-	Computable       bool
-	ExcludedAccounts int
-	// UnsupportedAccounts counts, among ExcludedAccounts, the accounts whose
-	// upstream simply cannot be auto-measured (measured+failed). They are
-	// excluded from profit all the same, but the copy must say why instead of
-	// implying someone can fix it.
+	Revenue                float64
+	UpstreamCost           float64
+	Gross                  float64
+	Margin                 *float64
+	Computable             bool
+	ExcludedAccounts       int
 	UnsupportedAccounts    int
 	TotalAccounts          int
 	PricedAccounts         int
@@ -52,20 +52,9 @@ type PendingItem struct {
 	Severity    PendingSeverity
 }
 
-type AccountDetailLine struct {
-	Name              string
-	SuccessRate       string
-	TTFTP50           string
-	LatencyP95        string
-	Multiplier        string
-	GrossContribution string
-}
-
 type TrafficLine struct {
 	HasTraffic bool
 	Requests   int64
-	ErrorRate  string
-	SLA        string
 }
 
 type RecommendationLine struct {
@@ -81,145 +70,203 @@ type HealthDigestView struct {
 	Profit          ProfitLine
 	Pending         []PendingItem
 	Recommendations []RecommendationLine
-	Accounts        []AccountDetailLine
 	Traffic         TrafficLine
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
-	// Each layer must go through fitDigestSection rather than a bare
-	// strings.Join: the pending layer grows linearly with the number of
-	// accounts (one row per abnormal account plus recommendations) and is
-	// otherwise unbounded. An oversized section makes CardJSON return an
-	// error, which drops the entire digest instead of degrading gracefully.
-	// Four sections capped at maxDigestSectionBytes (4 KiB) each stay well
-	// below the maxCardBytes (30 KiB) limit.
 	elements := []CardElement{
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(qualityLines(view.Quality))}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(profitLines(view.Profit))}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(pendingLines(view.Pending, view.Recommendations))}},
-		{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(detailLines(view))}},
+		{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: fitDigestSection(qualityLines(view.Quality)),
+		}},
+	}
+	if !view.Quality.DataUnavailable {
+		elements = append(elements,
+			CardElement{Tag: "div", Text: &CardText{
+				Tag: "lark_md", Content: fitDigestSection(profitLines(view.Profit, view.Traffic)),
+			}},
+			CardElement{Tag: "div", Text: &CardText{
+				Tag: "lark_md", Content: fitDigestSection(actionLines(view)),
+			}},
+		)
+		if lines := recommendationLines(view.Recommendations); len(lines) > 0 {
+			elements = append(elements, CardElement{Tag: "div", Text: &CardText{
+				Tag: "lark_md", Content: fitDigestSection(lines),
+			}})
+		}
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
-		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"}, Type: "primary", MultiURL: &CardURL{URL: "/ops"},
+		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"},
+		Type: "primary", MultiURL: &CardURL{URL: "/ops"},
 	}}})
+
 	return FeishuMessage{MsgType: "interactive", Card: &Card{
-		Config:   CardConfig{WideScreenMode: true},
-		Header:   CardHeader{Title: CardText{Tag: "plain_text", Content: "relay-ops 中转站日报 " + digestValue(view.Date)}, Template: "blue"},
+		Config: CardConfig{WideScreenMode: true},
+		Header: CardHeader{
+			Title:    CardText{Tag: "plain_text", Content: "中转站晨报 · " + morningDate(view.Date)},
+			Template: digestTemplate(view),
+		},
 		Elements: elements,
 	}}
 }
 
+func morningDate(value string) string {
+	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	if err != nil {
+		return digestValue(value)
+	}
+	return parsed.Format("1月2日")
+}
+
+func digestTemplate(view HealthDigestView) string {
+	switch {
+	case view.Quality.DataUnavailable:
+		return "orange"
+	case view.Quality.Unavailable > 0:
+		return "red"
+	case view.Quality.Degraded > 0 || len(view.Pending) > 0 || len(view.Recommendations) > 0:
+		return "orange"
+	default:
+		return "green"
+	}
+}
+
 func qualityLines(quality QualityLine) []string {
-	lines := []string{"**质量**"}
+	lines := []string{"**运行概览**"}
 	if quality.DataUnavailable {
 		reason := digestValue(quality.DataUnavailableReason)
 		if reason == "" {
 			reason = "原因未知"
 		}
-		return append(lines, "数据不可用："+reason)
+		return append(lines, "数据不可用｜"+reason)
 	}
-	summary := fmt.Sprintf("稳定 %d / 降级 %d / 不可用 %d", quality.Healthy, quality.Degraded, quality.Unavailable)
+
+	summary := fmt.Sprintf("%d 个稳定｜%d 个降级｜%d 个不可用",
+		quality.Healthy, quality.Degraded, quality.Unavailable)
 	if quality.HealthyDelta != nil {
-		summary += "　健康账号较昨日 " + signedDelta(*quality.HealthyDelta)
+		summary += "｜较昨日 " + signedDelta(*quality.HealthyDelta)
 	}
 	lines = append(lines, summary)
-	detail := "延时 P95 中位 " + formatMillis(quality.TTFTP95MedianMS)
+
+	detail := "P95 中位 " + formatMillis(quality.TTFTP95MedianMS)
 	if quality.Slow > 0 {
-		detail += fmt.Sprintf(" ｜ %d 个账号偏慢", quality.Slow)
+		detail += fmt.Sprintf("｜%d 个偏慢", quality.Slow)
 	}
 	return append(lines, detail)
 }
 
-func profitLines(profit ProfitLine) []string {
-	lines := []string{"**利润**"}
-	if profit.NoTraffic {
-		return append(lines, "今日无真实调用")
+func profitLines(profit ProfitLine, traffic TrafficLine) []string {
+	lines := []string{"**经营情况**"}
+	switch {
+	case profit.NoTraffic:
+		lines = append(lines, "今日无有效流量，利润暂不可核算")
+	case !profit.Computable:
+		lines = append(lines, fmt.Sprintf("利润暂不可核算｜%d 个账号倍率不可用", profit.ExcludedAccounts))
+	default:
+		lines = append(lines,
+			fmt.Sprintf("请求 %d｜收入 %s｜成本 %s",
+				traffic.Requests, formatUSD(profit.Revenue), formatUSD(profit.UpstreamCost)),
+			fmt.Sprintf("毛利 %s｜毛利率 %s", formatUSD(profit.Gross), formatMargin(profit.Margin)),
+		)
 	}
-	if !profit.Computable {
-		return append(lines, "无法核算：所有账号倍率不可用")
-	}
-	lines = append(lines, fmt.Sprintf("今日收入 %s　上游成本 %s　毛利 %s（%s）",
-		formatUSD(profit.Revenue), formatUSD(profit.UpstreamCost), formatUSD(profit.Gross), formatMargin(profit.Margin)))
-	if profit.ExcludedAccounts > 0 {
-		switch {
-		case profit.UnsupportedAccounts >= profit.ExcludedAccounts:
-			lines = append(lines, fmt.Sprintf("%d 个账号上游不支持自动测算，未计入", profit.ExcludedAccounts))
-		case profit.UnsupportedAccounts > 0:
-			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入（其中 %d 个上游不支持自动测算）",
-				profit.ExcludedAccounts, profit.UnsupportedAccounts))
-		default:
-			lines = append(lines, fmt.Sprintf("%d 个账号因倍率不可用未计入", profit.ExcludedAccounts))
-		}
+	if profit.TotalAccounts > 0 {
+		lines = append(lines, fmt.Sprintf("利润覆盖 %d/%d 个账号｜%d 个采用上游公开定价",
+			profit.PricedAccounts, profit.TotalAccounts, profit.UpstreamPricedAccounts))
 	}
 	return lines
 }
 
-func pendingLines(items []PendingItem, recommendations []RecommendationLine) []string {
-	lines := []string{"**待处理**"}
-	if len(items) == 0 {
-		lines = append(lines, "无")
+func severityRank(value PendingSeverity) int {
+	switch value {
+	case PendingCritical:
+		return 0
+	case PendingWarning:
+		return 1
+	case PendingAccounting:
+		return 2
+	default:
+		return 3
 	}
+}
+
+func severityLabel(value PendingSeverity) string {
+	switch value {
+	case PendingCritical:
+		return "严重"
+	case PendingWarning:
+		return "注意"
+	case PendingAccounting:
+		return "核算"
+	default:
+		return "注意"
+	}
+}
+
+func normalizePending(items []PendingItem) []PendingItem {
+	indexByAccount := make(map[string]int, len(items))
+	normalized := make([]PendingItem, 0, len(items))
 	for _, item := range items {
-		lines = append(lines, fmt.Sprintf("- %s　%s　%s",
-			digestValue(item.AccountName), digestValue(item.Problem), digestValue(item.Detail)))
+		key := "name:" + strings.TrimSpace(item.AccountName)
+		if item.AccountID != 0 {
+			key = "id:" + strconv.FormatInt(item.AccountID, 10)
+		}
+		if index, ok := indexByAccount[key]; ok {
+			if severityRank(item.Severity) < severityRank(normalized[index].Severity) {
+				normalized[index] = item
+			}
+			continue
+		}
+		indexByAccount[key] = len(normalized)
+		normalized = append(normalized, item)
 	}
-	if len(recommendations) > 0 {
-		lines = append(lines, "**选型建议**")
-		for _, rec := range recommendations {
-			lines = append(lines, fmt.Sprintf("- %s：%s 综合优于当前 %s（%s）",
-				digestValue(rec.GroupName), digestValue(rec.CandidateName),
-				digestValue(rec.CurrentName), digestValue(rec.Reason)))
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return severityRank(normalized[i].Severity) < severityRank(normalized[j].Severity)
+	})
+	return normalized
+}
+
+func actionLines(view HealthDigestView) []string {
+	items := normalizePending(view.Pending)
+	lines := []string{fmt.Sprintf("**需要处理 · %d**", len(items))}
+	if len(items) > 0 {
+		kept := items
+		if len(kept) > maxMorningActions {
+			kept = kept[:maxMorningActions]
+		}
+		for _, item := range kept {
+			name := digestValue(item.AccountName)
+			if name == "" {
+				name = "账号名称不可用"
+			}
+			title := fmt.Sprintf("**%s｜%s**", severityLabel(item.Severity), name)
+			detail := digestValue(item.Problem)
+			if rendered := digestValue(item.Detail); rendered != "" {
+				detail += "｜" + rendered
+			}
+			lines = append(lines, title+"\n"+detail)
+		}
+		if hidden := len(items) - len(kept); hidden > 0 {
+			lines = append(lines, fmt.Sprintf("其余 %d 项见运维后台", hidden))
 		}
 	}
-	return lines
+
+	clear := view.Profit.TotalAccounts - len(items)
+	if clear < 0 {
+		clear = 0
+	}
+	return append(lines, fmt.Sprintf("其余 %d 个账号无待处理项", clear))
 }
 
-func detailLines(view HealthDigestView) []string {
-	lines := []string{"**明细**"}
-	kept, truncated := fitAccountLines(view.Accounts)
-	// The truncation notice leads the account rows: fitDigestSection consumes
-	// its byte budget in order, so a trailing notice would be the first line
-	// dropped exactly when truncation happened and the notice matters most.
-	if truncated > 0 {
-		lines = append(lines, fmt.Sprintf("（已截断 %d 个账号，完整明细见运维后台）", truncated))
+func recommendationLines(items []RecommendationLine) []string {
+	if len(items) == 0 {
+		return nil
 	}
-	for _, account := range kept {
-		lines = append(lines, fmt.Sprintf("- %s：成功率 %s · TTFT %s · 延迟 P95 %s · 倍率 %s · 毛利 %s",
-			digestValue(account.Name), digestValue(account.SuccessRate), digestValue(account.TTFTP50),
-			digestValue(account.LatencyP95), digestValue(account.Multiplier), digestValue(account.GrossContribution)))
-	}
-	if len(kept) == 0 {
-		lines = append(lines, "无账号明细")
-	}
-	if view.Traffic.HasTraffic {
-		lines = append(lines, fmt.Sprintf("站内流量：请求 %s · 错误率 %s · SLA %s",
-			strconv.FormatInt(view.Traffic.Requests, 10), digestValueOrDash(view.Traffic.ErrorRate), digestValueOrDash(view.Traffic.SLA)))
-	} else {
-		lines = append(lines, "站内流量：今日无真实调用")
+	lines := []string{"**调整建议**"}
+	for _, item := range items {
+		lines = append(lines, fmt.Sprintf("%s：建议由 %s 切换到 %s｜%s",
+			digestValue(item.GroupName), digestValue(item.CurrentName),
+			digestValue(item.CandidateName), digestValue(item.Reason)))
 	}
 	return lines
-}
-
-// fitAccountLines caps the detail layer at a fixed number of accounts and
-// reports how many were dropped so the section can carry an explicit
-// "已截断 N 个账号" notice. It does not provide any byte-level guarantee —
-// that comes from fitDigestSection, which every rendered layer goes through.
-func fitAccountLines(accounts []AccountDetailLine) ([]AccountDetailLine, int) {
-	const maxDetailAccounts = 40
-	if len(accounts) <= maxDetailAccounts {
-		return accounts, 0
-	}
-	return accounts[:maxDetailAccounts], len(accounts) - maxDetailAccounts
-}
-
-// digestValueOrDash renders an absent metric as an explicit "—" instead of a
-// blank: `错误率  · SLA ` reads like a rendering bug, `错误率 — · SLA —` reads
-// like the metric is not collected.
-func digestValueOrDash(value string) string {
-	if rendered := digestValue(value); rendered != "" {
-		return rendered
-	}
-	return "—"
 }
 
 func signedDelta(delta int) string {

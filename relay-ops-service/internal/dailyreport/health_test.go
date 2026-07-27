@@ -145,10 +145,8 @@ func TestBuildHealthDigestUsesNamesAndTiers(t *testing.T) {
 	if view.Quality.Slow != 1 {
 		t.Fatalf("Slow = %d, want 1 (仅 Pro-SHUAI-0.17 的 3777ms 超阈值)", view.Quality.Slow)
 	}
-	for _, account := range view.Accounts {
-		if account.Name == "" {
-			t.Fatal("明细行缺少账号名")
-		}
+	if len(view.Pending) != 1 || view.Pending[0].AccountName != "Plus-XN-0.09" {
+		t.Fatalf("待处理项必须使用账号名称: %+v", view.Pending)
 	}
 }
 
@@ -321,9 +319,6 @@ func TestBuildHealthDigestJudgesByTodayWindowNotCumulative(t *testing.T) {
 		t.Fatalf("当日全失败必须判不可用: healthy=%d degraded=%d unavailable=%d",
 			view.Quality.Healthy, view.Quality.Degraded, view.Quality.Unavailable)
 	}
-	if len(view.Accounts) != 1 || view.Accounts[0].SuccessRate != "0.0%" {
-		t.Fatalf("明细成功率必须是当日口径 0.0%%: %+v", view.Accounts)
-	}
 	if len(view.Pending) != 1 || view.Pending[0].Problem != "HTTP 错误" {
 		t.Fatalf("待处理项应携带当日窗口的错误码: %+v", view.Pending)
 	}
@@ -472,27 +467,27 @@ func TestBuildHealthDigestUsesUpstreamPricingFallback(t *testing.T) {
 	if view.Profit.UnsupportedAccounts != 0 {
 		t.Fatalf("UnsupportedAccounts = %d, want 0（已被兜底，不再算不支持）", view.Profit.UnsupportedAccounts)
 	}
-	var line string
-	for _, account := range view.Accounts {
-		if account.Name == "Pro-SHUAI-0.17" {
-			line = account.Multiplier
-		}
-	}
-	if line != "0.17x（上游定价）" {
-		t.Fatalf("Multiplier = %q, want 0.17x（上游定价）—— 来源必须可见", line)
+	if view.Profit.UpstreamPricedAccounts != 1 {
+		t.Fatalf("UpstreamPricedAccounts = %d, want 1", view.Profit.UpstreamPricedAccounts)
 	}
 }
 
 func TestBuildHealthDigestFallbackDoesNotOverrideTrustworthy(t *testing.T) {
 	projection, histories, loc, now := fixture()
 	// Pro-SHEN-0.16 有 declared/ok 倍率，兜底不得覆盖它
-	fallback := func(string) *float64 { v := 9.99; return &v }
+	var fallbackNames []string
+	fallback := func(name string) *float64 {
+		fallbackNames = append(fallbackNames, name)
+		v := 9.99
+		return &v
+	}
 	view := BuildHealthDigestWithFallback(projection, histories, loc, now, fallback)
 
-	for _, account := range view.Accounts {
-		if account.Name == "Pro-SHEN-0.16" && account.Multiplier != "0.16x" {
-			t.Fatalf("Multiplier = %q, want 0.16x（declared 优先于兜底）", account.Multiplier)
-		}
+	if len(fallbackNames) != 1 || fallbackNames[0] != "Pro-SHUAI-0.17" {
+		t.Fatalf("fallback called for trustworthy account: %v", fallbackNames)
+	}
+	if view.Profit.UpstreamCost != 1031 {
+		t.Fatalf("UpstreamCost = %v, want 1031（可信 0.16x 不得被 9.99x 覆盖）", view.Profit.UpstreamCost)
 	}
 }
 

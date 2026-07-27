@@ -16,7 +16,7 @@ import (
 )
 
 // 本测试验证投递去重（同日同证据只发一次）、事件契约，以及脱敏不变量：
-// 新健康日报仍会渲染分组名 —— pendingLines 的选型建议行输出
+// 行动晨报仍会渲染分组名 —— recommendationLines 的调整建议行输出
 // digestValue(rec.GroupName)，而 Analyze 的输入投影不按 IsExclusive 过滤，
 // 所以私有分组名有真实通路进入卡片。fixture 的 monitor 投影特意包含私有
 // 分组 "private" 并构造出 candidate_better 建议，使「不含 private」断言
@@ -87,16 +87,18 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 		t.Fatal(cardErr)
 	}
 	text := string(card)
-	// 报告日期由 Now/Timezone 推导后进入卡片标题，是真实的数据流断言；
-	// 其余「质量/利润/…」静态标题为无条件输出，断言恒真，不再保留。
-	if !strings.Contains(text, "中转站日报 2026-07-20") {
+	// 报告日期由 Now/Timezone 推导后进入卡片标题，是真实的数据流断言。
+	if !strings.Contains(text, "中转站晨报 · 7月20日") {
 		t.Fatalf("card missing dated title: %s", text)
 	}
 	// 脱敏不变量：私有（IsExclusive）分组名不得进入日报卡。fixture 的私有
 	// 分组 "private" 构造出了 candidate_better 建议行，若渲染链不过滤，
-	// 分组名会经 pendingLines 渲染进卡片。
+	// 分组名会经 recommendationLines 渲染进卡片。
 	if strings.Contains(text, "private") {
 		t.Fatalf("report leaked private group name: %s", text)
+	}
+	if strings.Contains(text, "**明细**") {
+		t.Fatalf("action morning rendered full account details: %s", text)
 	}
 	contract := analyzer.contracts[0]
 	if contract.ContractVersion != "relay-ops-incident-v1" || contract.IncidentID != "daily-report:2026-07-20" || contract.Samples != 2 {
@@ -139,9 +141,9 @@ func TestServiceRendersZeroQualityCountsFromEmptyMonitorProjection(t *testing.T)
 		t.Fatal(err)
 	}
 	text := string(data)
-	// 「质量」是静态标题，contains("质量") 恒真。断言质量层的计数行确实来自
+	// 「运行概览」是静态标题。断言计数行确实来自
 	// 监控投影：本 fixture 的投影为空，只有走了投影路径才会打出全零计数。
-	if !strings.Contains(text, "稳定 0 / 降级 0 / 不可用 0") {
+	if !strings.Contains(text, "0 个稳定｜0 个降级｜0 个不可用") {
 		t.Fatalf("quality layer not rendered from monitor projection: %s", text)
 	}
 }
@@ -209,10 +211,19 @@ func TestServiceRendersHealthDigestFromMonitorProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{"稳定 1 / 降级 1 / 不可用 0", "账号 A", "账号 B", "综合优于当前"} {
+	for _, required := range []string{
+		"1 个稳定｜1 个降级｜0 个不可用",
+		"需要处理 · 1",
+		"注意｜账号 A",
+		"调整建议",
+		"GPT-Pro：建议由 账号 A 切换到 账号 B",
+	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("native projection missing %q: %s", required, text)
 		}
+	}
+	if strings.Contains(text, "**明细**") {
+		t.Fatalf("action morning rendered full account details: %s", text)
 	}
 	if strings.Contains(text, "账号 11") || strings.Contains(text, "账号 12") {
 		t.Fatalf("health digest leaked database ids: %s", text)

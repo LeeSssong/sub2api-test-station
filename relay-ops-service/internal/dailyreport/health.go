@@ -164,14 +164,6 @@ func BuildHealthDigestWithFallback(
 			hasTraffic = true
 		}
 
-		view.Accounts = append(view.Accounts, notify.AccountDetailLine{
-			Name:              account.Name,
-			SuccessRate:       fmt.Sprintf("%.1f%%", sample.SuccessRate*100),
-			TTFTP50:           millis(account.TTFTP50MS),
-			LatencyP95:        millis(account.LatencyP95MS),
-			Multiplier:        resolvedMultiplierLabel(account.Multiplier, multiplier),
-			GrossContribution: grossLabel(accounthealth.ComputeProfit(input)),
-		})
 		if sample.TTFTP95MS != nil {
 			ttfts = append(ttfts, *sample.TTFTP95MS)
 		}
@@ -387,37 +379,6 @@ func problemLabel(errorCode string) string {
 	default:
 		return "账号异常"
 	}
-}
-
-func multiplierLabel(multiplier sub2api.AccountMonitorMultiplier) string {
-	if multiplier.Status != "ok" || multiplier.Value == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.2fx", *multiplier.Value)
-}
-
-// resolvedMultiplierLabel makes the provenance visible: an upstream-pricing
-// fallback value renders as「0.17x（上游定价）」so ops can tell at a glance it
-// was not measured by Sub2API itself.
-func resolvedMultiplierLabel(multiplier sub2api.AccountMonitorMultiplier, resolved resolvedMultiplier) string {
-	if resolved.fromUpstream {
-		return fmt.Sprintf("%.2fx（上游定价）", *resolved.value)
-	}
-	return multiplierLabel(multiplier)
-}
-
-func grossLabel(profit accounthealth.Profit) string {
-	if !profit.Computable {
-		return "—"
-	}
-	return fmt.Sprintf("$%.2f", profit.Gross)
-}
-
-func millis(value *float64) string {
-	if value == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.0fms", *value)
 }
 
 func toHistoryEntries(entries []sub2api.AccountMonitorHistoryEntry) []accounthealth.HistoryEntry {

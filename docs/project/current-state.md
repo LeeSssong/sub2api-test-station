@@ -42,7 +42,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
-- Sub2API 更新：官方 `v0.1.166`（commit `dc893dd0b8eab41df5be595ae9fcd1aa74a062b8`）已无文本冲突合入 Xingqiao 定制快照并通过本地后端、前端和部署契约验证；合格 `linux/amd64` 镜像正在准备。生产仍运行合格 `0.1.165`，本任务只交付新镜像并保留管理员手动点击更新，不调用更新 API、不修改生产 Compose、不重建容器。
+- Sub2API 更新：官方 `v0.1.166`（commit `dc893dd0b8eab41df5be595ae9fcd1aa74a062b8`）已无文本冲突合入 Xingqiao 定制快照并通过后端、前端和部署契约验证；合格 `linux/amd64` 镜像 `xingqiao-sub2api:upstream-0.1.166` 已加载到生产，平台 manifest 为 `sha256:e146027d59ab96c40d9ef12eea3943446a22b32e7aba918b85313909efce4ccf`。生产仍运行合格 `0.1.165`，等待管理员手动点击更新；交付过程未调用更新 API、未修改生产 Compose、未重建容器。
 - 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 SQLite 备份仅保留为历史证据，不再属于当前备份或恢复范围。
 - 生产主机：腾讯云首尔二区实例运行 Sub2API、PostgreSQL、Redis、Caddy 和 relay-ops；正式入口为 `https://api.xingqiaolab.top`。
 - 外部服务配置事实：账号 `8` 对应上游的 Base URL 为 `https://wawazz.xyz`，绑定 `GPT-Plus`、成本倍率 `0.05x`、并发 `1`，账号级 `User-Agent` 固定为 `node`，原生监控和 Node/Python 同步/SSE 已通过。账号 `7` 对应上游的 OpenAI 兼容 Base URL 为 `https://api.999555999.com/v1`，绑定 `GPT-Pro`、成本倍率 `0.10x`、并发 `2`。隔离复制账号 `9` 保留但未绑定、不可调度；Aliu `2` 未绑定、不可调度、总并发 `1`，现作为 Pro/Plus 共享灾备。上述名称和地址只记录配置事实，不定义“当前活动上游”。

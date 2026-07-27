@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accountquality"
@@ -89,25 +90,26 @@ func (s Service) Run(ctx context.Context) error {
 		}
 	}
 
-	active := make(map[int64]struct{}, len(accounts))
+	active := make(map[int64]string, len(accounts))
 	activeIDs := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
 		if account.Status != "active" {
 			continue
 		}
-		if err := s.observe(ctx, object{kind: "account", id: account.ID}, "paused", !account.Schedulable, "active && schedulable", schedulingValue(account), 1, now); err != nil {
+		item := object{kind: "account", id: account.ID, name: account.Name}
+		if err := s.observe(ctx, item, "paused", !account.Schedulable, "active && schedulable", schedulingValue(account), 1, now); err != nil {
 			return err
 		}
 		if !account.Schedulable {
 			continue
 		}
-		active[account.ID] = struct{}{}
+		active[account.ID] = account.Name
 		activeIDs = append(activeIDs, account.ID)
 		window, baseline, available := s.snapshots(ctx, sub2api.OpsQuery{AccountID: account.ID})
 		if !available {
 			continue
 		}
-		if err := s.evaluateRuntime(ctx, object{kind: "account", id: account.ID}, window, baseline, now); err != nil {
+		if err := s.evaluateRuntime(ctx, item, window, baseline, now); err != nil {
 			return err
 		}
 	}
@@ -131,10 +133,11 @@ func (s Service) Run(ctx context.Context) error {
 		return nil
 	}
 	for _, account := range quality.Accounts {
-		if _, ok := active[account.AccountID]; !ok {
+		name, ok := active[account.AccountID]
+		if !ok {
 			continue
 		}
-		object := object{kind: "account", id: account.AccountID}
+		object := object{kind: "account", id: account.AccountID, name: name}
 		if account.LastResult != "passed" && account.LastResult != "balance_exhausted" {
 			// A failed or indeterminate patrol is not evidence that an account
 			// recovered from an explicit balance exhaustion incident.
@@ -150,10 +153,21 @@ func (s Service) Run(ctx context.Context) error {
 type object struct {
 	kind string
 	id   int64
+	name string
 }
 
 func (o object) key(metric string) string {
 	return "site:" + o.kind + ":" + strconv.FormatInt(o.id, 10) + ":" + metric
+}
+
+func (o object) displayLabel() string {
+	if o.kind == "account" {
+		if name := strings.TrimSpace(o.name); name != "" {
+			return name
+		}
+		return "账号名称不可用"
+	}
+	return o.kind + " #" + strconv.FormatInt(o.id, 10)
 }
 
 func (s Service) snapshots(ctx context.Context, query sub2api.OpsQuery) (sub2api.OpsOverview, sub2api.OpsOverview, bool) {
@@ -189,7 +203,7 @@ func (s Service) evaluateRuntime(ctx context.Context, item object, window, basel
 // implementation watched accounts.rate_multiplier, which is fixed at 1 in
 // production — 22 baselines, zero changes in four days. An upstream price
 // change never reached this tripwire.
-func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]struct{}, now time.Time) error {
+func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]string, now time.Time) error {
 	if s.Multipliers == nil {
 		return nil
 	}
@@ -199,7 +213,8 @@ func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]struc
 		return nil
 	}
 	for _, account := range projection.Accounts {
-		if _, ok := active[account.AccountID]; !ok {
+		displayName, ok := active[account.AccountID]
+		if !ok {
 			continue
 		}
 		value := trustworthyMultiplier(account.Multiplier)
@@ -214,7 +229,7 @@ func (s Service) evaluateMultipliers(ctx context.Context, active map[int64]struc
 		if value == nil {
 			continue
 		}
-		item := object{kind: "account", id: account.AccountID}
+		item := object{kind: "account", id: account.AccountID, name: displayName}
 		if err := s.evaluateMultiplier(ctx, item, *value, now); err != nil {
 			return err
 		}
@@ -271,7 +286,7 @@ func (s Service) observe(ctx context.Context, item object, metric string, failin
 }
 
 func render(item object, metric, current, baseline string, windows int, observedAt time.Time, transition string) notify.FeishuMessage {
-	label := item.kind + " #" + strconv.FormatInt(item.id, 10)
+	label := item.displayLabel()
 	isRecovery := transition == "recovered"
 	domain, source, actions, focus := renderDomain(metric)
 	title := domain + "告警：" + label

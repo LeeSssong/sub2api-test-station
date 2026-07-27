@@ -3,6 +3,7 @@ package opsmonitor
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,92 @@ func TestServiceAlertsPausedAccountImmediately(t *testing.T) {
 	}
 	if record := repository.records["site:account:7:paused"]; record.Severity != "P1" || record.State != "confirmed" {
 		t.Fatalf("record = %#v", record)
+	}
+}
+
+func TestPausedAlertDisplaysAccountNameButKeepsIDKey(t *testing.T) {
+	now := time.Date(2026, 7, 27, 2, 0, 0, 0, time.UTC)
+	reader := &fakeReader{
+		accounts: []sub2api.Account{
+			{ID: 35, Name: "特惠-SHUAI", Status: "active", Schedulable: false},
+		},
+	}
+	repository := newMemoryRepository()
+	notifier := &fakeNotifier{}
+	service := newService(reader, repository, notifier, now)
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(notifier.sent) != 1 {
+		t.Fatalf("sent = %d, want 1", len(notifier.sent))
+	}
+	if notifier.sent[0].key != "site:account:35:paused" {
+		t.Fatalf("key = %q", notifier.sent[0].key)
+	}
+	text := notifier.sent[0].message.RenderedText()
+	if !strings.Contains(text, "站内运行告警：特惠-SHUAI") ||
+		!strings.Contains(text, "对象：特惠-SHUAI") {
+		t.Fatalf("account name missing: %s", text)
+	}
+	if strings.Contains(text, "account #35") || strings.Contains(text, "账号 #35") {
+		t.Fatalf("database label leaked: %s", text)
+	}
+}
+
+func TestObjectDisplayNameDoesNotChangeIdentity(t *testing.T) {
+	first := object{kind: "account", id: 35, name: "特惠-SHUAI"}
+	renamed := object{kind: "account", id: 35, name: "特惠-SHUAI-新名称"}
+
+	if first.key("paused") != renamed.key("paused") {
+		t.Fatal("display name changed incident key")
+	}
+	firstHash := evidenceHash(first, "paused", "active but paused", "active && schedulable")
+	renamedHash := evidenceHash(renamed, "paused", "active but paused", "active && schedulable")
+	if firstHash != renamedHash {
+		t.Fatal("display name changed evidence hash")
+	}
+}
+
+func TestRenderAccountWithEmptyNameDoesNotExposeID(t *testing.T) {
+	message := render(
+		object{kind: "account", id: 35},
+		"paused", "active but paused", "active && schedulable",
+		1, time.Date(2026, 7, 27, 2, 0, 0, 0, time.UTC), "confirmed",
+	)
+	text := message.RenderedText()
+	if !strings.Contains(text, "账号名称不可用") {
+		t.Fatalf("missing empty-name fallback: %s", text)
+	}
+	if strings.Contains(text, "#35") {
+		t.Fatalf("database ID leaked: %s", text)
+	}
+}
+
+func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
+	cases := []struct {
+		metric     string
+		transition string
+		wantTitle  string
+	}{
+		{"availability", "confirmed", "站内运行告警：Pro-SHUAI-0.17"},
+		{"balance_exhausted", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
+		{"multiplier", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
+		{"paused", "recovered", "站内运行已恢复：Pro-SHUAI-0.17"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.metric+"/"+tc.transition, func(t *testing.T) {
+			message := render(
+				object{kind: "account", id: 21, name: "Pro-SHUAI-0.17"},
+				tc.metric, "current", "baseline", 1,
+				time.Date(2026, 7, 27, 2, 0, 0, 0, time.UTC), tc.transition,
+			)
+			text := message.RenderedText()
+			if !strings.Contains(text, tc.wantTitle) ||
+				!strings.Contains(text, "对象：Pro-SHUAI-0.17") {
+				t.Fatalf("name missing: %s", text)
+			}
+		})
 	}
 }
 

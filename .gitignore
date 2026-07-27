@@ -17,6 +17,7 @@ ops-data/
 **/.playwright-cli/
 **/.obsidian/
 output/
+.release/
 .worktrees/
 
 # Local codegraph index cache

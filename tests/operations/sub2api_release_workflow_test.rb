@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "open3"
 require "yaml"
 
 ROOT = File.expand_path("../..", __dir__)
@@ -102,5 +103,12 @@ class Sub2APIReleaseWorkflowTest < Minitest::Test
   def test_hyphenated_context_keys_use_bracket_access
     source = File.read(WORKFLOW_PATH)
     refute_match(/\b(?:needs|steps)\.[a-z0-9_]+-[a-z0-9_-]+/i, source)
+  end
+
+  def test_runtime_release_artifacts_do_not_dirty_the_checkout
+    _stdout, _stderr, status = Open3.capture3(
+      "git", "-C", ROOT, "check-ignore", "-q", ".release/discovery/metadata.json"
+    )
+    assert status.success?, ".release runtime artifacts are not ignored"
   end
 end

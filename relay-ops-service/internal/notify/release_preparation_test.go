@@ -24,7 +24,7 @@ func TestRenderReleasePreparationSuccessIsFactOnly(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Fix billing and compatibility.", "后端测试通过", "前端测试通过",
-		"0.1.166", "healthy", "未调用更新 API", "未修改 Compose", "未切换运行容器",
+		"0.1.166", "healthy", "未调用更新 API", "未修改 Compose", "未操作数据库", "未切换运行容器",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %s", want, text)

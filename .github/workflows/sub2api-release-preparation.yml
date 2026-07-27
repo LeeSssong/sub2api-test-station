@@ -1,0 +1,521 @@
+name: Sub2API release preparation
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sub2api-release-preparation
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has_update: ${{ steps.decision.outputs.has_update }}
+      version: ${{ steps.decision.outputs.version }}
+    steps:
+      - name: Check out trusted release automation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve latest stable official release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .release/discovery
+          chmod 0700 .release .release/discovery
+          api=https://api.github.com/repos/Wei-Shaw/sub2api
+          curl --fail --silent --show-error --location \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$api/releases/latest" >.release/discovery/release.json
+          tag=$(
+            ruby -rjson -e '
+              release = JSON.parse(File.binread(ARGV.fetch(0)))
+              tag = release.fetch("tag_name")
+              abort unless tag.is_a?(String) && tag.match?(/\Av?[0-9]+(?:[.][0-9]+){1,2}\z/)
+              print tag
+            ' .release/discovery/release.json
+          )
+          curl --fail --silent --show-error --location \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$api/git/ref/tags/$tag" >.release/discovery/tag-ref.json
+          read -r object_type object_sha < <(
+            ruby -rjson -e '
+              object = JSON.parse(File.binread(ARGV.fetch(0))).fetch("object")
+              type = object.fetch("type")
+              sha = object.fetch("sha")
+              abort unless %w[commit tag].include?(type) && sha.match?(/\A[0-9a-f]{40}\z/)
+              print "#{type} #{sha}"
+            ' .release/discovery/tag-ref.json
+          )
+          if [[ "$object_type" == tag ]]; then
+            curl --fail --silent --show-error --location \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "$api/git/tags/$object_sha" >.release/discovery/tag-object.json
+            official_commit=$(
+              ruby -rjson -e '
+                object = JSON.parse(File.binread(ARGV.fetch(0))).fetch("object")
+                abort unless object.fetch("type") == "commit"
+                sha = object.fetch("sha")
+                abort unless sha.match?(/\A[0-9a-f]{40}\z/)
+                print sha
+              ' .release/discovery/tag-object.json
+            )
+          else
+            official_commit=$object_sha
+          fi
+          base_sha=$(git rev-parse HEAD)
+          ruby ops/sub2api-release-metadata.rb discover \
+            --release .release/discovery/release.json \
+            --provenance upstream/sub2api/XINGQIAO_UPSTREAM.md \
+            --base-sha "$base_sha" \
+            --official-commit "$official_commit" \
+            --output .release/discovery/metadata.json
+      - name: Export normalized decision
+        id: decision
+        run: |
+          ruby -rjson -e '
+            metadata = JSON.parse(File.binread(ARGV.fetch(0)))
+            update = metadata.fetch("has_update")
+            version = metadata.fetch("version")
+            abort unless update == true || update == false
+            abort unless version.match?(/\A[0-9]+(?:[.][0-9]+){1,2}\z/)
+            File.open(ENV.fetch("GITHUB_OUTPUT"), "a", 0o600) do |file|
+              file.puts "has_update=#{update}"
+              file.puts "version=#{version}"
+            end
+          ' .release/discovery/metadata.json
+      - name: Store normalized discovery
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sub2api-release-discovery
+          path: .release/discovery
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  prepare:
+    needs: discover
+    if: needs.discover.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out trusted customization base
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download normalized discovery
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-discovery
+          path: .release/discovery
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: upstream/sub2api/backend/go.mod
+          cache: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Merge official source without credentials
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .release/preparation
+          chmod 0700 .release/preparation
+          bash ops/merge-sub2api-release.sh \
+            --root "$GITHUB_WORKSPACE" \
+            --metadata "$GITHUB_WORKSPACE/.release/discovery/metadata.json" \
+            --official-repository https://github.com/Wei-Shaw/sub2api.git \
+            --bundle "$GITHUB_WORKSPACE/.release/preparation/candidate.bundle" \
+            --report "$GITHUB_WORKSPACE/.release/preparation/report.json"
+      - name: Run complete qualification gates
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.9 --activate
+          go -C upstream/sub2api/backend test ./... -count=1
+          go -C upstream/sub2api/backend vet ./...
+          pnpm --dir upstream/sub2api/frontend install --frozen-lockfile
+          pnpm --dir upstream/sub2api/frontend test:run
+          pnpm --dir upstream/sub2api/frontend build
+          bash upstream/sub2api/deploy/test-caddyfile-cache.sh
+          bash tests/operations/update_sub2api_host_test.sh
+          go -C sub2api-updater test ./... -count=1
+          go -C sub2api-updater vet ./...
+          git diff --check
+      - name: Export validated build inputs
+        id: build-inputs
+        run: |
+          ruby -rjson -e '
+            metadata = JSON.parse(File.binread(ARGV.fetch(0)))
+            report = JSON.parse(File.binread(ARGV.fetch(1)))
+            values = {
+              "version" => metadata.fetch("version"),
+              "official_commit" => metadata.fetch("official_commit"),
+              "source_commit" => report.fetch("candidate_commit")
+            }
+            abort unless values.fetch("version").match?(/\A[0-9]+(?:[.][0-9]+){1,2}\z/)
+            abort unless values.values_at("official_commit", "source_commit").all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
+            File.open(ENV.fetch("GITHUB_OUTPUT"), "a", 0o600) do |file|
+              values.each { |key, value| file.puts "#{key}=#{value}" }
+            end
+          ' .release/discovery/metadata.json .release/preparation/report.json
+      - name: Build qualified Linux AMD64 archive
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg VERSION=${{ steps['build-inputs'].outputs.version }} \
+            --build-arg COMMIT=${{ steps['build-inputs'].outputs.official_commit }} \
+            --build-arg FRONTEND_NODE_MAX_OLD_SPACE_SIZE=3072 \
+            --label com.xingqiao.sub2api.qualified=true \
+            --label com.xingqiao.sub2api.upstream.version=${{ steps['build-inputs'].outputs.version }} \
+            --label com.xingqiao.sub2api.upstream.commit=${{ steps['build-inputs'].outputs.official_commit }} \
+            --label com.xingqiao.sub2api.source.commit=${{ steps['build-inputs'].outputs.source_commit }} \
+            --tag xingqiao-sub2api:upstream-${{ steps['build-inputs'].outputs.version }} \
+            --output type=docker,dest=.release/preparation/candidate-image.tar \
+            upstream/sub2api
+      - name: Store qualified candidate artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sub2api-release-preparation
+          path: |
+            .release/discovery/metadata.json
+            .release/preparation/candidate.bundle
+            .release/preparation/report.json
+            .release/preparation/candidate-image.tar
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Check out trusted publisher
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Download qualified candidate artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-preparation
+          path: .release
+      - name: Authenticate to private GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Publish immutable image and audit branch
+        run: |
+          set -euo pipefail
+          umask 077
+          bash ops/publish-sub2api-candidate.sh \
+            --archive "$GITHUB_WORKSPACE/.release/preparation/candidate-image.tar" \
+            --metadata "$GITHUB_WORKSPACE/.release/discovery/metadata.json" \
+            --report "$GITHUB_WORKSPACE/.release/preparation/report.json" \
+            --bundle "$GITHUB_WORKSPACE/.release/preparation/candidate.bundle" \
+            --remote origin \
+            --output "$GITHUB_WORKSPACE/.release/publish.json"
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io >/dev/null 2>&1 || true
+      - name: Store immutable publish result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sub2api-release-publish
+          path: .release/publish.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  stage-production:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production-candidate
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Download qualified preparation
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-preparation
+          path: .release/preparation
+      - name: Download immutable publish result
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-publish
+          path: .release/publish
+      - name: Validate forced-command inputs
+        id: candidate
+        run: |
+          set -euo pipefail
+          ruby -rjson -e '
+            metadata = JSON.parse(File.binread(ARGV.fetch(0)))
+            report = JSON.parse(File.binread(ARGV.fetch(1)))
+            publish = JSON.parse(File.binread(ARGV.fetch(2)))
+            values = {
+              "reference" => publish.fetch("reference"),
+              "version" => metadata.fetch("version"),
+              "official_commit" => metadata.fetch("official_commit"),
+              "source_commit" => report.fetch("candidate_commit")
+            }
+            abort unless values.fetch("reference").match?(/\Aghcr[.]io\/leesssong\/xingqiao-sub2api@sha256:[0-9a-f]{64}\z/)
+            abort unless values.fetch("version").match?(/\A[0-9]+(?:[.][0-9]+){1,2}\z/)
+            abort unless values.values_at("official_commit", "source_commit").all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
+            File.open(ENV.fetch("GITHUB_OUTPUT"), "a", 0o600) do |file|
+              values.each { |key, value| file.puts "#{key}=#{value}" }
+            end
+          ' \
+            .release/preparation/discovery/metadata.json \
+            .release/preparation/preparation/report.json \
+            .release/publish/publish.json
+      - name: Stage and verify production candidate
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          PREP_SSH_KEY: ${{ secrets.SUB2API_PREP_SSH_KEY }}
+          PREP_SSH_HOST: ${{ secrets.SUB2API_PREP_SSH_HOST }}
+          PREP_SSH_PORT: ${{ secrets.SUB2API_PREP_SSH_PORT }}
+          PREP_SSH_USER: ${{ secrets.SUB2API_PREP_SSH_USER }}
+          PREP_KNOWN_HOSTS: ${{ secrets.SUB2API_PREP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .release/stage
+          chmod 0700 .release/stage
+          printf '%s\n' "$PREP_SSH_KEY" >.release/stage/id_ed25519
+          printf '%s\n' "$PREP_KNOWN_HOSTS" >.release/stage/known_hosts
+          chmod 0600 .release/stage/id_ed25519 .release/stage/known_hosts
+          command="prepare ${{ steps.candidate.outputs.reference }} ${{ steps.candidate.outputs.version }} ${{ steps.candidate.outputs.official_commit }} ${{ steps.candidate.outputs.source_commit }}"
+          printf '%s' "$GHCR_TOKEN" |
+            ssh -T \
+              -i .release/stage/id_ed25519 \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=.release/stage/known_hosts \
+              -p "$PREP_SSH_PORT" \
+              "$PREP_SSH_USER@$PREP_SSH_HOST" \
+              "$command" >.release/stage/candidate.json
+          chmod 0600 .release/stage/candidate.json
+      - name: Remove production SSH material
+        if: always()
+        run: rm -f .release/stage/id_ed25519 .release/stage/known_hosts
+      - name: Store production candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sub2api-release-production
+          path: .release/stage/candidate.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  advance-source:
+    needs: stage-production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out trusted source advancer
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Download qualified candidate artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-preparation
+          path: .release
+      - name: Advance source with compare-and-swap
+        run: |
+          set -euo pipefail
+          read -r base_sha candidate_sha < <(
+            ruby -rjson -e '
+              metadata = JSON.parse(File.binread(ARGV.fetch(0)))
+              report = JSON.parse(File.binread(ARGV.fetch(1)))
+              base = metadata.fetch("base_sha")
+              candidate = report.fetch("candidate_commit")
+              abort unless [base, candidate].all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
+              print "#{base} #{candidate}"
+            ' \
+              .release/discovery/metadata.json \
+              .release/preparation/report.json
+          )
+          bash ops/advance-sub2api-source.sh \
+            --bundle "$GITHUB_WORKSPACE/.release/preparation/candidate.bundle" \
+            --base-sha "$base_sha" \
+            --candidate-sha "$candidate_sha" \
+            --remote origin \
+            --output "$GITHUB_WORKSPACE/.release/advance.json"
+      - name: Store source advance result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sub2api-release-source
+          path: .release/advance.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  notify:
+    needs:
+      - discover
+      - prepare
+      - publish
+      - stage-production
+      - advance-source
+    if: always() && needs.discover.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    environment: production-candidate
+    permissions:
+      contents: read
+    steps:
+      - name: Check out trusted notification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: relay-ops-service/go.mod
+          cache: false
+      - name: Download discovery facts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-discovery
+          path: .release/discovery
+      - name: Download preparation facts
+        if: needs.prepare.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-preparation
+          path: .release/preparation
+      - name: Download publish facts
+        if: needs.publish.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-publish
+          path: .release/publish
+      - name: Download production facts
+        if: needs['stage-production'].result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sub2api-release-production
+          path: .release/production
+      - name: Build fact-only notification event
+        id: event
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          STAGE_RESULT: ${{ needs['stage-production'].result }}
+          ADVANCE_RESULT: ${{ needs['advance-source'].result }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .release/notify-cache
+          chmod 0700 .release/notify-cache
+          ruby -rjson -e '
+            metadata = JSON.parse(File.binread(".release/discovery/metadata.json"))
+            stages = [
+              ["prepare", ENV.fetch("PREPARE_RESULT"), "QUALIFICATION_FAILED"],
+              ["publish", ENV.fetch("PUBLISH_RESULT"), "PUBLISH_FAILED"],
+              ["stage-production", ENV.fetch("STAGE_RESULT"), "PRODUCTION_STAGING_FAILED"],
+              ["advance-source", ENV.fetch("ADVANCE_RESULT"), "SOURCE_ADVANCE_FAILED"]
+            ]
+            failed = stages.find { |_stage, result, _code| result != "success" }
+            event = {
+              "status" => failed ? "failed" : "succeeded",
+              "stage" => failed&.fetch(0).to_s,
+              "version" => metadata.fetch("version"),
+              "release_name" => metadata.fetch("name"),
+              "release_body" => metadata.fetch("body"),
+              "published_at" => metadata.fetch("published_at"),
+              "release_url" => metadata.fetch("html_url"),
+              "official_commit" => metadata.fetch("official_commit"),
+              "running_version" => metadata.fetch("base_version"),
+              "error_code" => failed&.fetch(2).to_s,
+              "workflow_url" => ENV.fetch("WORKFLOW_URL")
+            }
+            unless failed
+              report = JSON.parse(File.binread(".release/preparation/preparation/report.json"))
+              publish = JSON.parse(File.binread(".release/publish/publish.json"))
+              production = JSON.parse(File.binread(".release/production/candidate.json"))
+              runtime = production.fetch("runtime")
+              event.merge!(
+                "source_commit" => report.fetch("candidate_commit"),
+                "image_digest" => publish.fetch("reference"),
+                "production_image_id" => production.fetch("image_id"),
+                "running_image_id" => runtime.fetch("image_id"),
+                "running_health" => runtime.fetch("health"),
+                "running_started_at" => runtime.fetch("started_at"),
+                "compose_sha256" => runtime.fetch("compose_sha256"),
+                "checks" => [
+                  "官方源码三方合并通过",
+                  "后端测试与 vet 通过",
+                  "前端测试与生产构建通过",
+                  "部署契约与候选加载器测试通过",
+                  "生产镜像平台、标签与版本通过",
+                  "生产运行容器与 Compose 前后完全一致"
+                ]
+              )
+            end
+            File.write(".release/event.json", JSON.pretty_generate(event) + "\n", mode: "w", perm: 0o600)
+            File.write(".release/notify-cache/marker", "created\n", mode: "w", perm: 0o600)
+            File.open(ENV.fetch("GITHUB_OUTPUT"), "a", 0o600) do |file|
+              file.puts "status=#{event.fetch("status")}"
+              file.puts "stage=#{event.fetch("stage").empty? ? "completed" : event.fetch("stage")}"
+              file.puts "version=#{event.fetch("version")}"
+            end
+          '
+      - name: Restore notification deduplication key
+        id: notification-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: .release/notify-cache
+          key: sub2api-release-notify-${{ steps.event.outputs.version }}-${{ steps.event.outputs.status }}-${{ steps.event.outputs.stage }}
+      - name: Send release preparation facts
+        if: steps.event.outputs.status == 'succeeded' || steps['notification-cache'].outputs.cache-hit != 'true'
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.SUB2API_RELEASE_FEISHU_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$FEISHU_WEBHOOK" >.release/feishu-webhook
+          chmod 0600 .release/feishu-webhook
+          go -C relay-ops-service run ./cmd/release-prep-notify \
+            --event "$GITHUB_WORKSPACE/.release/event.json" \
+            --webhook-file "$GITHUB_WORKSPACE/.release/feishu-webhook"
+      - name: Remove notification secret
+        if: always()
+        run: rm -f .release/feishu-webhook

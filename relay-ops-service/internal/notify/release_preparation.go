@@ -56,7 +56,7 @@ func RenderReleasePreparation(view ReleasePreparationView) FeishuMessage {
 			"**运行健康状态** " + releasePreparationDefault(view.RunningHealth),
 			"**运行启动时间** " + releasePreparationDefault(view.RunningStartedAt),
 			"**Compose SHA-256** " + releasePreparationDefault(view.ComposeSHA256),
-			"**生产边界** 未调用更新 API；未修改 Compose；未切换运行容器",
+			"**生产边界** 未调用更新 API；未修改 Compose；未操作数据库；未切换运行容器",
 		}
 		return releasePreparationMessage(
 			"Sub2API "+version+" 候选镜像已静默准备",

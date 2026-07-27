@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -137,4 +139,107 @@ func TestLookupRejectsPlainHTTPInProduction(t *testing.T) {
 	if _, ok := resolver.Lookup(context.Background(), "A"); ok {
 		t.Fatal("RequireHTTPS 开启时明文 HTTP 必须被拒绝")
 	}
+}
+
+func TestLookupRejectsRedirectDowngradeToHTTP(t *testing.T) {
+	// 初始 URL 是 https 不够：Go 默认 client 跟随重定向且允许降级到明文，
+	// RequireHTTPS 必须对每一跳生效。
+	var plainHit atomic.Bool
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHit.Store(true)
+		_, _ = w.Write([]byte(pricingBody))
+	}))
+	defer plain.Close()
+
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+"/api/pricing", http.StatusFound)
+	}))
+	defer secure.Close()
+
+	path := writeConfig(t, `{"upstreams":[{"pricing_url":"`+secure.URL+`","accounts":{"A":"codexPro分组"}}]}`)
+	client := secure.Client()
+	resolver := &Resolver{ConfigPath: path, HTTP: client, TTL: time.Minute, RequireHTTPS: true}
+	if _, ok := resolver.Lookup(context.Background(), "A"); ok {
+		t.Fatal("302 降级到明文 HTTP 时必须拒绝，不得返回倍率")
+	}
+	if plainHit.Load() {
+		t.Fatal("明文跳转目标不应被请求到")
+	}
+	if client.CheckRedirect != nil {
+		t.Fatal("不得修改调用方注入的 client（副作用会污染共享 client）")
+	}
+}
+
+func TestLookupNegativeCachesUpstreamFailure(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	path := writeConfig(t, `{"upstreams":[{"pricing_url":"`+server.URL+`","accounts":{"A":"codexPro分组","B":"codexPro分组兜底"}}]}`)
+	resolver := newResolver(t, path)
+	now := time.Now()
+	resolver.Now = func() time.Time { return now }
+
+	resolver.Lookup(context.Background(), "A")
+	resolver.Lookup(context.Background(), "B")
+	if calls != 1 {
+		t.Fatalf("上游故障被请求 %d 次，负缓存 TTL 内应只请求 1 次", calls)
+	}
+
+	// 负缓存过期后必须重试，不能把上游永久拉黑
+	now = now.Add(negativeTTL + time.Second)
+	resolver.Lookup(context.Background(), "A")
+	if calls != 2 {
+		t.Fatalf("负缓存过期后被请求 %d 次，应重试第 2 次", calls)
+	}
+}
+
+func TestLookupSlowUpstreamDoesNotBlockOtherUpstream(t *testing.T) {
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		_, _ = w.Write([]byte(pricingBody))
+	}))
+	defer slow.Close()
+	fast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(pricingBody))
+	}))
+	defer fast.Close()
+
+	path := writeConfig(t, `{"upstreams":[`+
+		`{"pricing_url":"`+slow.URL+`","accounts":{"S":"codexPro分组"}},`+
+		`{"pricing_url":"`+fast.URL+`","accounts":{"F":"codexPro分组"}}]}`)
+	resolver := newResolver(t, path)
+
+	slowDone := make(chan struct{})
+	go func() {
+		defer close(slowDone)
+		resolver.Lookup(context.Background(), "S")
+	}()
+	// 等慢请求真正挂在上游上（拿不到锁的话 fast 那边会超时暴露问题）
+	time.Sleep(50 * time.Millisecond)
+
+	fastDone := make(chan bool, 1)
+	go func() {
+		_, ok := resolver.Lookup(context.Background(), "F")
+		fastDone <- ok
+	}()
+	select {
+	case ok := <-fastDone:
+		if !ok {
+			t.Fatal("fast 上游的 Lookup 应成功")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("慢上游持锁期间阻塞了另一个上游的 Lookup")
+	}
+
+	unblock()
+	<-slowDone
 }

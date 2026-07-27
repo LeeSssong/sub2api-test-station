@@ -219,7 +219,7 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 
 func TestServiceAlertsChangedMultiplierAndExplicitBalanceExhaustionImmediately(t *testing.T) {
 	now := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
-	reader := &fakeReader{accounts: []sub2api.Account{{ID: 10, Name: "Current", Status: "active", Schedulable: true}}}
+	reader := &fakeReader{accounts: []sub2api.Account{{ID: 10, Name: "ListAccounts 名称", Status: "active", Schedulable: true}}}
 	repository := newMemoryRepository()
 	notifier := &fakeNotifier{}
 	quality := &fakeQualitySource{result: qualityResult(now, []accountquality.Account{{
@@ -249,10 +249,62 @@ func TestServiceAlertsChangedMultiplierAndExplicitBalanceExhaustionImmediately(t
 	if len(notifier.sent) != 2 || notifier.sent[0].key != "site:account:10:multiplier" || notifier.sent[1].key != "site:account:10:balance_exhausted" {
 		t.Fatalf("sent = %#v", notifier.sent)
 	}
+	for _, sent := range notifier.sent {
+		text := sent.message.RenderedText()
+		if !strings.Contains(text, "ListAccounts 名称") {
+			t.Fatalf("%s did not use ListAccounts name: %s", sent.key, text)
+		}
+		if strings.Contains(text, "Pro-SHEN-0.16") || strings.Contains(text, "#10") {
+			t.Fatalf("%s leaked projection name or account ID: %s", sent.key, text)
+		}
+	}
 	for _, key := range []string{"site:account:10:multiplier", "site:account:10:balance_exhausted"} {
 		if record := repository.records[key]; record.Severity != "P1" || record.State != "confirmed" {
 			t.Fatalf("%s record = %#v", key, record)
 		}
+	}
+}
+
+func TestServiceAccountRuntimeAlertAndRecoveryUseListAccountsName(t *testing.T) {
+	now := time.Date(2026, 7, 27, 3, 0, 0, 0, time.UTC)
+	reader := &fakeReader{
+		accounts: []sub2api.Account{{ID: 10, Name: "ListAccounts 运行名称", Status: "active", Schedulable: true}},
+		ops: map[snapshotKey]sub2api.OpsSnapshot{
+			{accountID: 10, rangeName: "15m"}: snapshot(20, 18, 0.06, 1200),
+			{accountID: 10, rangeName: "24h"}: snapshot(500, 490, 0.02, 1000),
+		},
+	}
+	repository := newMemoryRepository()
+	notifier := &fakeNotifier{}
+	service := newService(reader, repository, notifier, now)
+
+	for range 2 {
+		if err := service.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reader.ops[snapshotKey{accountID: 10, rangeName: "15m"}] = snapshot(20, 20, 0.01, 1200)
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(notifier.sent) != 2 {
+		t.Fatalf("sent = %#v, want confirmed and recovered", notifier.sent)
+	}
+	for _, sent := range notifier.sent {
+		if sent.key != "site:account:10:error_rate" {
+			t.Fatalf("key = %q, want ID-based error-rate key", sent.key)
+		}
+		text := sent.message.RenderedText()
+		if !strings.Contains(text, "ListAccounts 运行名称") {
+			t.Fatalf("%s did not use ListAccounts name: %s", sent.key, text)
+		}
+		if strings.Contains(text, "#10") {
+			t.Fatalf("%s leaked account ID: %s", sent.key, text)
+		}
+	}
+	if !strings.Contains(notifier.sent[1].message.RenderedText(), "已恢复") {
+		t.Fatalf("second message is not recovery: %s", notifier.sent[1].message.RenderedText())
 	}
 }
 

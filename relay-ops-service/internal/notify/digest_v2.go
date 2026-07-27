@@ -93,6 +93,9 @@ func RenderHealthDigest(view HealthDigestView) FeishuMessage {
 				Tag: "lark_md", Content: fitDigestSection(lines),
 			}})
 		}
+		elements = append(elements, CardElement{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: clearAccountLine(view),
+		}})
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"},
@@ -249,11 +252,15 @@ func actionLines(view HealthDigestView) []string {
 		}
 	}
 
-	clear := view.Profit.TotalAccounts - len(items)
+	return lines
+}
+
+func clearAccountLine(view HealthDigestView) string {
+	clear := view.Profit.TotalAccounts - len(normalizePending(view.Pending))
 	if clear < 0 {
 		clear = 0
 	}
-	return append(lines, fmt.Sprintf("其余 %d 个账号无待处理项", clear))
+	return fmt.Sprintf("其余 %d 个账号无待处理项", clear)
 }
 
 func recommendationLines(items []RecommendationLine) []string {

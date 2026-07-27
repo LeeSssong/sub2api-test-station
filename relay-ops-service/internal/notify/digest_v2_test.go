@@ -57,6 +57,24 @@ func TestRenderHealthDigestActionMorningOrder(t *testing.T) {
 			t.Fatalf("missing %q: %s", want, text)
 		}
 	}
+	ordered := []string{
+		"运行概览",
+		"经营情况",
+		"需要处理 · 3",
+		"严重｜Pro20x-XN-0.25",
+		"注意｜特惠-XM-0.045",
+		"核算｜claude-SHUAI",
+		"调整建议",
+		"其余 7 个账号无待处理项",
+	}
+	previousIndex := -1
+	for _, want := range ordered {
+		index := strings.Index(text, want)
+		if index <= previousIndex {
+			t.Fatalf("%q rendered out of order: %s", want, text)
+		}
+		previousIndex = index
+	}
 	if message.Card.Header.Template != "red" {
 		t.Fatalf("template = %q, want red", message.Card.Header.Template)
 	}
@@ -105,6 +123,28 @@ func TestRenderHealthDigestDeduplicatesPendingBySeverity(t *testing.T) {
 	}
 	if strings.Index(text, "严重｜A") > strings.Index(text, "注意｜B") {
 		t.Fatalf("critical must render before warning: %s", text)
+	}
+}
+
+func TestRenderHealthDigestKeepsStableOrderWithinSeverity(t *testing.T) {
+	view := HealthDigestView{
+		Date:    "2026-07-27",
+		Quality: QualityLine{Degraded: 3},
+		Profit:  ProfitLine{TotalAccounts: 3, PricedAccounts: 3},
+		Pending: []PendingItem{
+			{AccountID: 41, AccountName: "先出现", Problem: "HTTP 错误", Severity: PendingWarning},
+			{AccountID: 42, AccountName: "随后出现", Problem: "响应偏慢", Severity: PendingWarning},
+			{AccountID: 43, AccountName: "最后出现", Problem: "成功率下降", Severity: PendingWarning},
+		},
+	}
+	text := renderText(t, RenderHealthDigest(view))
+	previousIndex := -1
+	for _, name := range []string{"注意｜先出现", "注意｜随后出现", "注意｜最后出现"} {
+		index := strings.Index(text, name)
+		if index <= previousIndex {
+			t.Fatalf("%q did not preserve stable input order: %s", name, text)
+		}
+		previousIndex = index
 	}
 }
 

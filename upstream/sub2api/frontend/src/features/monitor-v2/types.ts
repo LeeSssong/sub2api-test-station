@@ -8,6 +8,7 @@ export type MonitorV2GroupStatus =
   | 'unavailable'
   | 'unconfigured'
   | 'insufficient_data'
+export type MonitorV2ModelStatus = MonitorV2GroupStatus
 
 export interface MonitorV2Metric {
   state: MonitorV2MetricState
@@ -30,7 +31,7 @@ export interface MonitorV2TimelinePoint {
 
 export interface MonitorV2Model {
   name: string
-  status: string
+  status: MonitorV2ModelStatus
 }
 
 export interface MonitorV2Group {

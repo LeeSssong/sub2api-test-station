@@ -27,6 +27,9 @@ const (
 	MonitorV2MetricNotProvided      = "not_provided"
 
 	monitorV2MaxGroups      = 100
+	monitorV2MaxModels      = 200
+	monitorV2MaxTimeline    = 64
+	monitorV2MaxTextLength  = 256
 	monitorV2MetricWorkers  = 4
 	monitorV2MinimumSamples = 5
 )
@@ -34,8 +37,9 @@ const (
 type MonitorV2Window string
 
 type MonitorV2CacheStats struct {
-	RequestCount int64
-	HitCount     int64
+	EvidenceAvailable bool
+	RequestCount      int64
+	HitCount          int64
 }
 
 type MonitorV2Repository interface {
@@ -207,6 +211,9 @@ func (s *MonitorV2Service) Snapshot(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := monitorV2ValidateSnapshotBounds(cards); err != nil {
+		return nil, err
+	}
 
 	return &MonitorV2Snapshot{
 		ContractVersion: MonitorV2ContractVersion,
@@ -214,6 +221,32 @@ func (s *MonitorV2Service) Snapshot(
 		GeneratedAt:     now.UTC(),
 		Groups:          cards,
 	}, nil
+}
+
+func monitorV2ValidateSnapshotBounds(groups []MonitorV2Group) error {
+	if len(groups) > monitorV2MaxGroups {
+		return fmt.Errorf("too many public groups: %d exceeds %d", len(groups), monitorV2MaxGroups)
+	}
+	for _, group := range groups {
+		if len([]rune(group.Name)) > monitorV2MaxTextLength {
+			return fmt.Errorf("group name too long for monitor v2")
+		}
+		if len([]rune(group.Platform)) > monitorV2MaxTextLength {
+			return fmt.Errorf("group platform too long for monitor v2")
+		}
+		if len(group.Models) > monitorV2MaxModels {
+			return fmt.Errorf("too many models for monitor v2 group %d: %d exceeds %d", group.ID, len(group.Models), monitorV2MaxModels)
+		}
+		if len(group.Timeline) > monitorV2MaxTimeline {
+			return fmt.Errorf("too many timeline points for monitor v2 group %d: %d exceeds %d", group.ID, len(group.Timeline), monitorV2MaxTimeline)
+		}
+		for _, model := range group.Models {
+			if len([]rune(model.Name)) > monitorV2MaxTextLength {
+				return fmt.Errorf("model name too long for monitor v2 group %d", group.ID)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *MonitorV2Service) listChannels(ctx context.Context) ([]AvailableChannel, error) {
@@ -285,8 +318,8 @@ func (s *MonitorV2Service) buildGroup(
 	}
 	if overview, err := s.ops.GetDashboardOverview(ctx, filter); err == nil && overview != nil {
 		card.Availability = monitorV2AvailabilityFromOverview(overview)
-		card.TTFT = monitorV2PercentileMetric(overview.TTFT.P50, overview.SuccessCount)
-		card.TTFTP95 = monitorV2PercentileMetric(overview.TTFT.P95, overview.SuccessCount)
+		card.TTFT = monitorV2PercentileMetric(overview.TTFT.P50, overview.TTFT.SampleCount)
+		card.TTFTP95 = monitorV2PercentileMetric(overview.TTFT.P95, overview.TTFT.SampleCount)
 		card.Latency = monitorV2PercentileMetric(overview.Duration.P50, overview.SuccessCount)
 		card.LatencyP95 = monitorV2PercentileMetric(overview.Duration.P95, overview.SuccessCount)
 	}
@@ -525,6 +558,9 @@ func monitorV2PercentileMetric(value *int, sampleCount int64) MonitorV2Metric {
 }
 
 func monitorV2CacheMetric(stats MonitorV2CacheStats) MonitorV2Metric {
+	if !stats.EvidenceAvailable {
+		return MonitorV2Metric{State: MonitorV2MetricNotProvided}
+	}
 	out := MonitorV2Metric{
 		State:       MonitorV2MetricInsufficientData,
 		SampleCount: stats.RequestCount,
@@ -548,11 +584,11 @@ func monitorV2TPSMetric(stats *OpsOpenAITokenStatsResponse) MonitorV2Metric {
 		weighted float64
 	)
 	for _, item := range stats.Items {
-		if item == nil || item.AvgTokensPerSec == nil || item.RequestCount <= 0 {
+		if item == nil || item.AvgTokensPerSec == nil || item.TPSSampleCount <= 0 {
 			continue
 		}
-		samples += item.RequestCount
-		weighted += *item.AvgTokensPerSec * float64(item.RequestCount)
+		samples += item.TPSSampleCount
+		weighted += *item.AvgTokensPerSec * float64(item.TPSSampleCount)
 	}
 	out.SampleCount = samples
 	if samples < monitorV2MinimumSamples {

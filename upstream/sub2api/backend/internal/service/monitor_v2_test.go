@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,12 +38,19 @@ func (s *monitorV2ProbeReaderStub) ListUserView(context.Context) ([]*UserMonitor
 	return append([]*UserMonitorView(nil), s.views...), s.err
 }
 
-type monitorV2OpsReaderStub struct{}
+type monitorV2OpsReaderStub struct {
+	overview        *OpsDashboardOverview
+	throughputTrend *OpsThroughputTrendResponse
+	tokenStats      *OpsOpenAITokenStatsResponse
+}
 
 func (s *monitorV2OpsReaderStub) GetDashboardOverview(
 	_ context.Context,
 	filter *OpsDashboardFilter,
 ) (*OpsDashboardOverview, error) {
+	if s.overview != nil {
+		return s.overview, nil
+	}
 	success := int64(9842)
 	slaErrors := int64(68)
 	if filter.GroupID != nil && *filter.GroupID == 2 {
@@ -61,8 +70,9 @@ func (s *monitorV2OpsReaderStub) GetDashboardOverview(
 			P95: &durationP95,
 		},
 		TTFT: OpsPercentiles{
-			P50: &ttftP50,
-			P95: &ttftP95,
+			P50:         &ttftP50,
+			P95:         &ttftP95,
+			SampleCount: success,
 		},
 	}, nil
 }
@@ -72,6 +82,9 @@ func (s *monitorV2OpsReaderStub) GetThroughputTrend(
 	filter *OpsDashboardFilter,
 	_ int,
 ) (*OpsThroughputTrendResponse, error) {
+	if s.throughputTrend != nil {
+		return s.throughputTrend, nil
+	}
 	if filter.GroupID != nil && *filter.GroupID == 2 {
 		return &OpsThroughputTrendResponse{Points: []*OpsThroughputTrendPoint{}}, nil
 	}
@@ -101,6 +114,9 @@ func (s *monitorV2OpsReaderStub) GetOpenAITokenStats(
 	_ context.Context,
 	filter *OpsOpenAITokenStatsFilter,
 ) (*OpsOpenAITokenStatsResponse, error) {
+	if s.tokenStats != nil {
+		return s.tokenStats, nil
+	}
 	if filter.GroupID != nil && *filter.GroupID == 2 {
 		return &OpsOpenAITokenStatsResponse{Items: []*OpsOpenAITokenStatsItem{}}, nil
 	}
@@ -110,6 +126,7 @@ func (s *monitorV2OpsReaderStub) GetOpenAITokenStats(
 			{
 				Model:           "gpt-5.4",
 				RequestCount:    12,
+				TPSSampleCount:  12,
 				AvgTokensPerSec: &tps,
 			},
 		},
@@ -131,6 +148,98 @@ func (s *monitorV2RepoStub) GetCacheStats(
 		out[id] = stat
 	}
 	return out, nil
+}
+
+func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
+	t.Run("ttft ignores ordinary successes without first-token evidence", func(t *testing.T) {
+		ttftP50 := 420
+		ttftP95 := 880
+		svc := NewMonitorV2Service(
+			&monitorV2GroupRepoStub{groups: []Group{{
+				ID:          1,
+				Name:        "公开标准",
+				Platform:    PlatformOpenAI,
+				Status:      StatusActive,
+				IsExclusive: false,
+			}}},
+			&monitorV2ChannelReaderStub{},
+			&monitorV2ProbeReaderStub{},
+			&monitorV2OpsReaderStub{overview: &OpsDashboardOverview{
+				SuccessCount:    100,
+				RequestCountSLA: 100,
+				TTFT: OpsPercentiles{
+					P50:         &ttftP50,
+					P95:         &ttftP95,
+					SampleCount: 3,
+				},
+			}},
+			&monitorV2RepoStub{},
+		)
+
+		snapshot, err := svc.Snapshot(
+			context.Background(),
+			MonitorV2Window24H,
+			time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, MonitorV2MetricInsufficientData, snapshot.Groups[0].TTFT.State)
+		require.Equal(t, int64(3), snapshot.Groups[0].TTFT.SampleCount)
+		require.Equal(t, MonitorV2MetricInsufficientData, snapshot.Groups[0].TTFTP95.State)
+		require.Equal(t, int64(3), snapshot.Groups[0].TTFTP95.SampleCount)
+	})
+
+	t.Run("tps weights only requests with throughput evidence", func(t *testing.T) {
+		fastTPS := 100.0
+		slowTPS := 10.0
+
+		metric := monitorV2TPSMetric(&OpsOpenAITokenStatsResponse{
+			Items: []*OpsOpenAITokenStatsItem{
+				{
+					Model:           "gpt-fast",
+					RequestCount:    100,
+					TPSSampleCount:  1,
+					AvgTokensPerSec: &fastTPS,
+				},
+				{
+					Model:           "gpt-slow",
+					RequestCount:    4,
+					TPSSampleCount:  4,
+					AvgTokensPerSec: &slowTPS,
+				},
+			},
+		})
+
+		require.Equal(t, MonitorV2MetricAvailable, metric.State)
+		require.Equal(t, int64(5), metric.SampleCount)
+		require.NotNil(t, metric.Value)
+		require.InDelta(t, 28.0, *metric.Value, 0.0001)
+	})
+
+	t.Run("unsupported cache evidence is not reported as zero percent", func(t *testing.T) {
+		metric := monitorV2CacheMetric(MonitorV2CacheStats{
+			EvidenceAvailable: false,
+			RequestCount:      20,
+			HitCount:          0,
+		})
+
+		require.Equal(t, MonitorV2MetricNotProvided, metric.State)
+		require.Equal(t, int64(0), metric.SampleCount)
+		require.Nil(t, metric.Value)
+	})
+
+	t.Run("supported cache evidence can report an all-miss sample", func(t *testing.T) {
+		metric := monitorV2CacheMetric(MonitorV2CacheStats{
+			EvidenceAvailable: true,
+			RequestCount:      5,
+			HitCount:          0,
+		})
+
+		require.Equal(t, MonitorV2MetricAvailable, metric.State)
+		require.Equal(t, int64(5), metric.SampleCount)
+		require.NotNil(t, metric.Value)
+		require.Equal(t, 0.0, *metric.Value)
+	})
 }
 
 func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
@@ -197,7 +306,7 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 		&monitorV2ProbeReaderStub{views: probes},
 		&monitorV2OpsReaderStub{},
 		&monitorV2RepoStub{stats: map[int64]MonitorV2CacheStats{
-			1: {RequestCount: 20, HitCount: 8},
+			1: {EvidenceAvailable: true, RequestCount: 20, HitCount: 8},
 		}},
 	)
 
@@ -309,4 +418,73 @@ func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) 
 
 	_, err = svc.Snapshot(context.Background(), MonitorV2Window24H, now)
 	require.ErrorContains(t, err, "too many public groups")
+}
+
+func TestMonitorV2SnapshotBoundsModelsTimelineAndStrings(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	group := Group{
+		ID:          1,
+		Name:        "公开标准",
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		IsExclusive: false,
+	}
+
+	t.Run("models", func(t *testing.T) {
+		models := make([]SupportedModel, 201)
+		for i := range models {
+			models[i] = SupportedModel{Name: fmt.Sprintf("gpt-%03d", i)}
+		}
+		svc := NewMonitorV2Service(
+			&monitorV2GroupRepoStub{groups: []Group{group}},
+			&monitorV2ChannelReaderStub{channels: []AvailableChannel{{
+				Status:          StatusActive,
+				Groups:          []AvailableGroupRef{{ID: group.ID, Name: group.Name}},
+				SupportedModels: models,
+			}}},
+			&monitorV2ProbeReaderStub{},
+			nil,
+			&monitorV2RepoStub{},
+		)
+
+		_, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+		require.ErrorContains(t, err, "too many models")
+	})
+
+	t.Run("timeline", func(t *testing.T) {
+		points := make([]*OpsThroughputTrendPoint, 65)
+		for i := range points {
+			points[i] = &OpsThroughputTrendPoint{
+				BucketStart:  now.Add(time.Duration(i) * time.Minute),
+				RequestCount: 1,
+			}
+		}
+		svc := NewMonitorV2Service(
+			&monitorV2GroupRepoStub{groups: []Group{group}},
+			&monitorV2ChannelReaderStub{},
+			&monitorV2ProbeReaderStub{},
+			&monitorV2OpsReaderStub{
+				throughputTrend: &OpsThroughputTrendResponse{Points: points},
+			},
+			&monitorV2RepoStub{},
+		)
+
+		_, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+		require.ErrorContains(t, err, "too many timeline points")
+	})
+
+	t.Run("group name", func(t *testing.T) {
+		oversized := group
+		oversized.Name = strings.Repeat("a", 257)
+		svc := NewMonitorV2Service(
+			&monitorV2GroupRepoStub{groups: []Group{oversized}},
+			&monitorV2ChannelReaderStub{},
+			&monitorV2ProbeReaderStub{},
+			nil,
+			&monitorV2RepoStub{},
+		)
+
+		_, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+		require.ErrorContains(t, err, "group name too long")
+	})
 }

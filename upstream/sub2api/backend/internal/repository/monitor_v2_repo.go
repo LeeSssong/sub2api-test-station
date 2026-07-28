@@ -38,16 +38,22 @@ func (r *monitorV2Repository) GetCacheStats(
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-SELECT
-  group_id,
-  COUNT(*)::bigint AS request_count,
-  COUNT(*) FILTER (WHERE cache_read_tokens > 0)::bigint AS hit_count
-FROM usage_logs
-WHERE created_at >= $1
-  AND created_at < $2
-  AND group_id = ANY($3)
-GROUP BY group_id
-`, start.UTC(), end.UTC(), pq.Array(groupIDs))
+	SELECT
+	  g.id AS group_id,
+	  LOWER(g.platform) IN ('openai', 'anthropic') AS evidence_available,
+	  COUNT(ul.id) FILTER (WHERE LOWER(g.platform) IN ('openai', 'anthropic'))::bigint AS request_count,
+	  COUNT(ul.id) FILTER (
+	    WHERE LOWER(g.platform) IN ('openai', 'anthropic')
+	      AND ul.cache_read_tokens > 0
+	  )::bigint AS hit_count
+	FROM groups g
+	LEFT JOIN usage_logs ul
+	  ON ul.group_id = g.id
+	  AND ul.created_at >= $1
+	  AND ul.created_at < $2
+	WHERE g.id = ANY($3)
+	GROUP BY g.id, g.platform
+	`, start.UTC(), end.UTC(), pq.Array(groupIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query monitor v2 cache stats: %w", err)
 	}
@@ -58,7 +64,12 @@ GROUP BY group_id
 			groupID int64
 			stats   service.MonitorV2CacheStats
 		)
-		if err := rows.Scan(&groupID, &stats.RequestCount, &stats.HitCount); err != nil {
+		if err := rows.Scan(
+			&groupID,
+			&stats.EvidenceAvailable,
+			&stats.RequestCount,
+			&stats.HitCount,
+		); err != nil {
 			return nil, fmt.Errorf("scan monitor v2 cache stats: %w", err)
 		}
 		out[groupID] = stats

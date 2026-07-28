@@ -142,4 +142,126 @@ describe('Monitor V2 API contract', () => {
       })
     ).toThrow('ttft_p95')
   })
+
+  it('rejects oversized group arrays before mapping them', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: Array.from({ length: 101 }, (_, index) => ({
+          ...validPayload.groups[0],
+          id: index + 1,
+        })),
+      })
+    ).toThrow('at most 100')
+  })
+
+  it('rejects oversized model and timeline arrays', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            models: Array.from({ length: 201 }, (_, index) => ({
+              name: `gpt-${index}`,
+              status: 'operational',
+            })),
+          },
+        ],
+      })
+    ).toThrow('models')
+
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            timeline: Array.from({ length: 65 }, (_, index) => ({
+              ...validPayload.groups[0].timeline[0],
+              bucket_start: new Date(Date.UTC(2026, 6, 1, 0, index)).toISOString(),
+            })),
+          },
+        ],
+      })
+    ).toThrow('timeline')
+  })
+
+  it('rejects oversized public strings', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            name: 'a'.repeat(257),
+          },
+        ],
+      })
+    ).toThrow('name')
+  })
+
+  it('rejects unknown model statuses', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            models: [{ name: 'gpt-5.4', status: 'mystery' }],
+          },
+        ],
+      })
+    ).toThrow('models[0].status')
+  })
+
+  it('rejects available metrics without eligible samples', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            ttft: { state: 'available', value: 420, sample_count: 0 },
+          },
+        ],
+      })
+    ).toThrow('ttft.sample_count')
+  })
+
+  it('rejects availability values that disagree with call counts', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            availability: {
+              state: 'available',
+              value: 10,
+              sample_count: 200,
+              success_count: 199,
+              eligible_count: 200,
+            },
+          },
+        ],
+      })
+    ).toThrow('availability.value')
+  })
+
+  it('rejects incomplete enabled peak pricing rules', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [
+          {
+            ...validPayload.groups[0],
+            peak_rate_enabled: true,
+            peak_start: '',
+            peak_end: '',
+          },
+        ],
+      })
+    ).toThrow('peak_start')
+  })
 })

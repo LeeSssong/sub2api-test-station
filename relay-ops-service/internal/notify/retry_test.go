@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,7 +16,8 @@ func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *test
 		t.Fatal(err)
 	}
 	repository := &retryRepository{claims: []*RetryDelivery{{
-		ID: 41, IncidentKey: "group:GPT-Plus:availability", Severity: "P0",
+		Kind: "incident", ID: 41,
+		IncidentKey: "group:GPT-Plus:availability", Severity: "P0",
 		OccurrenceNo: 3, Transition: "confirmed", Payload: payload,
 	}}}
 	client := resultClientFunc(func(_ context.Context, message FeishuMessage) (SendResult, error) {
@@ -50,7 +52,8 @@ func TestDeliveryRetryServiceRecordsFailureWithoutPersistingClientPayload(t *tes
 		t.Fatal(err)
 	}
 	repository := &retryRepository{claims: []*RetryDelivery{{
-		ID: 42, IncidentKey: "group:GPT-Plus:availability", Severity: "P0",
+		Kind: "incident", ID: 42,
+		IncidentKey: "group:GPT-Plus:availability", Severity: "P0",
 		OccurrenceNo: 1, Transition: "confirmed", Payload: payload,
 	}}}
 	service := DeliveryRetryService{
@@ -69,14 +72,53 @@ func TestDeliveryRetryServiceRecordsFailureWithoutPersistingClientPayload(t *tes
 	}
 }
 
+func TestDeliveryRetryServiceRetriesOneShotWithoutIncidentIdentity(t *testing.T) {
+	message := RenderPricingNotice(PricingNoticeView{
+		Upstream: "Neko",
+		Change:   "公开计费倍率由 0.07x 变为 0.10x。",
+		Review:   "核对售价与毛利。",
+	})
+	payload, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &retryRepository{claims: []*RetryDelivery{{
+		Kind: "one_shot", ID: 51,
+		NotificationKey: "pricing:7:semantic-change",
+		Severity:        "P2", Payload: payload,
+	}}}
+	client := resultClientFunc(func(_ context.Context, retried FeishuMessage) (SendResult, error) {
+		if retried.OccurrenceNo != 0 || retried.Transition != "" ||
+			strings.Contains(retried.RenderedText(), "确认并接手") {
+			t.Fatalf("one-shot gained incident lifecycle: %#v", retried)
+		}
+		return SendResult{
+			MessageID: "om-pricing-retry", ResponseCode: http.StatusOK,
+			UrgentStatus: "not_supported",
+		}, nil
+	})
+	service := DeliveryRetryService{Repository: repository, Client: client}
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.outcomes) != 0 ||
+		len(repository.oneShotOutcomes) != 1 ||
+		repository.oneShotOutcomes[0].id != 51 ||
+		repository.oneShotOutcomes[0].outcome.Status != "delivered" {
+		t.Fatalf("incident=%#v one-shot=%#v",
+			repository.outcomes, repository.oneShotOutcomes)
+	}
+}
+
 type retryOutcome struct {
 	id      int64
 	outcome DeliveryOutcome
 }
 
 type retryRepository struct {
-	claims   []*RetryDelivery
-	outcomes []retryOutcome
+	claims          []*RetryDelivery
+	outcomes        []retryOutcome
+	oneShotOutcomes []retryOutcome
 }
 
 func (r *retryRepository) ClaimNotificationRetry(context.Context, time.Time) (*RetryDelivery, error) {
@@ -90,5 +132,10 @@ func (r *retryRepository) ClaimNotificationRetry(context.Context, time.Time) (*R
 
 func (r *retryRepository) FinishNotification(_ context.Context, id int64, outcome DeliveryOutcome) error {
 	r.outcomes = append(r.outcomes, retryOutcome{id: id, outcome: outcome})
+	return nil
+}
+
+func (r *retryRepository) FinishOneShot(_ context.Context, id int64, outcome DeliveryOutcome) error {
+	r.oneShotOutcomes = append(r.oneShotOutcomes, retryOutcome{id: id, outcome: outcome})
 	return nil
 }

@@ -138,24 +138,7 @@ func (s *Store) ReserveOneShot(
 			(notification_key, family, policy_version, source_kind, dedup_key,
 			 message_hash, message_payload, delivery_status, attempt_count)
 		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'reserved', 1)
-		ON CONFLICT (notification_key) DO UPDATE
-		SET family=EXCLUDED.family,
-		    policy_version=EXCLUDED.policy_version,
-		    source_kind=EXCLUDED.source_kind,
-		    dedup_key=EXCLUDED.dedup_key,
-		    message_hash=EXCLUDED.message_hash,
-		    message_payload=EXCLUDED.message_payload,
-		    delivery_status='reserved',
-		    response_code=NULL,
-		    delivered_at=NULL,
-		    message_id=NULL,
-		    urgent_status=NULL,
-		    urgent_response_code=NULL,
-		    attempt_count=notification_messages.attempt_count+1,
-		    next_attempt_at=NULL,
-		    updated_at=NOW()
-		WHERE notification_messages.delivery_status='failed'
-		  AND notification_messages.attempt_count<5
+		ON CONFLICT (notification_key) DO NOTHING
 		RETURNING id`,
 		reservation.NotificationKey, reservation.Family, reservation.PolicyVersion,
 		reservation.SourceKind, reservation.DedupKey, reservation.MessageHash,

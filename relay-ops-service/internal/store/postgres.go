@@ -1342,6 +1342,39 @@ func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*not
 		&delivery.ID, &delivery.IncidentKey, &delivery.Severity,
 		&delivery.OccurrenceNo, &delivery.Transition, &delivery.Payload,
 	)
+	if err == nil {
+		delivery.Kind = "incident"
+		if _, err := tx.Exec(ctx, `
+			UPDATE relay_ops.notification_deliveries
+			SET delivery_status='reserved', attempt_count=attempt_count+1,
+			    next_attempt_at=NULL, created_at=$2
+			WHERE id=$1`, delivery.ID, now.UTC()); err != nil {
+			return nil, fmt.Errorf("lease notification retry: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit notification retry claim: %w", err)
+		}
+		return &delivery, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("claim notification retry: %w", err)
+	}
+
+	delivery = notify.RetryDelivery{}
+	err = tx.QueryRow(ctx, `
+		SELECT id, notification_key, 'P2', message_payload
+		FROM relay_ops.notification_messages
+		WHERE attempt_count<5
+		  AND message_payload IS NOT NULL
+		  AND (
+		    (delivery_status='failed' AND next_attempt_at<=$1)
+		    OR (delivery_status='reserved' AND updated_at<=$1-INTERVAL '2 minutes')
+		  )
+		ORDER BY COALESCE(next_attempt_at, updated_at), id
+		FOR UPDATE SKIP LOCKED
+		LIMIT 1`, now.UTC()).Scan(
+		&delivery.ID, &delivery.NotificationKey, &delivery.Severity, &delivery.Payload,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if err := tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("commit empty notification retry claim: %w", err)
@@ -1349,17 +1382,18 @@ func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*not
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("claim notification retry: %w", err)
+		return nil, fmt.Errorf("claim one-shot notification retry: %w", err)
 	}
+	delivery.Kind = "one_shot"
 	if _, err := tx.Exec(ctx, `
-		UPDATE relay_ops.notification_deliveries
+		UPDATE relay_ops.notification_messages
 		SET delivery_status='reserved', attempt_count=attempt_count+1,
-		    next_attempt_at=NULL, created_at=$2
+		    next_attempt_at=NULL, updated_at=$2
 		WHERE id=$1`, delivery.ID, now.UTC()); err != nil {
-		return nil, fmt.Errorf("lease notification retry: %w", err)
+		return nil, fmt.Errorf("lease one-shot notification retry: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit notification retry claim: %w", err)
+		return nil, fmt.Errorf("commit one-shot notification retry claim: %w", err)
 	}
 	return &delivery, nil
 }

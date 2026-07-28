@@ -10,17 +10,20 @@ import (
 )
 
 type RetryDelivery struct {
-	ID           int64
-	IncidentKey  string
-	Severity     string
-	OccurrenceNo int64
-	Transition   string
-	Payload      []byte
+	Kind            string
+	ID              int64
+	IncidentKey     string
+	NotificationKey string
+	Severity        string
+	OccurrenceNo    int64
+	Transition      string
+	Payload         []byte
 }
 
 type DeliveryRetryRepository interface {
 	ClaimNotificationRetry(context.Context, time.Time) (*RetryDelivery, error)
 	FinishNotification(context.Context, int64, DeliveryOutcome) error
+	FinishOneShot(context.Context, int64, DeliveryOutcome) error
 }
 
 type DeliveryRetryService struct {
@@ -64,7 +67,7 @@ func (service DeliveryRetryService) Run(ctx context.Context) error {
 			outcome.UrgentStatus = result.UrgentStatus
 			outcome.UrgentResponseCode = result.UrgentResponseCode
 		}
-		if finishErr := service.Repository.FinishNotification(ctx, delivery.ID, outcome); finishErr != nil {
+		if finishErr := service.finish(ctx, *delivery, outcome); finishErr != nil {
 			failures = append(failures, finishErr)
 		}
 		if err != nil {
@@ -74,10 +77,40 @@ func (service DeliveryRetryService) Run(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+func (service DeliveryRetryService) finish(
+	ctx context.Context,
+	delivery RetryDelivery,
+	outcome DeliveryOutcome,
+) error {
+	switch delivery.Kind {
+	case "incident":
+		return service.Repository.FinishNotification(ctx, delivery.ID, outcome)
+	case "one_shot":
+		return service.Repository.FinishOneShot(ctx, delivery.ID, outcome)
+	default:
+		return fmt.Errorf("notification retry kind is invalid")
+	}
+}
+
 func retryMessage(delivery RetryDelivery) (FeishuMessage, error) {
-	if delivery.ID <= 0 || delivery.IncidentKey == "" || delivery.OccurrenceNo <= 0 ||
-		delivery.Transition == "" || (delivery.Severity != "P0" && delivery.Severity != "P1" && delivery.Severity != "P2") ||
+	if delivery.ID <= 0 ||
+		(delivery.Severity != "P0" && delivery.Severity != "P1" && delivery.Severity != "P2") ||
 		len(delivery.Payload) == 0 {
+		return FeishuMessage{}, fmt.Errorf("notification retry claim is invalid")
+	}
+	switch delivery.Kind {
+	case "incident":
+		if delivery.IncidentKey == "" || delivery.NotificationKey != "" ||
+			delivery.OccurrenceNo <= 0 || delivery.Transition == "" {
+			return FeishuMessage{}, fmt.Errorf("notification retry claim is invalid")
+		}
+	case "one_shot":
+		if delivery.NotificationKey == "" || delivery.IncidentKey != "" ||
+			delivery.OccurrenceNo != 0 || delivery.Transition != "" ||
+			delivery.Severity != "P2" {
+			return FeishuMessage{}, fmt.Errorf("notification retry claim is invalid")
+		}
+	default:
 		return FeishuMessage{}, fmt.Errorf("notification retry claim is invalid")
 	}
 	var card Card
@@ -86,7 +119,10 @@ func retryMessage(delivery RetryDelivery) (FeishuMessage, error) {
 	}
 	message := FeishuMessage{
 		MsgType: "interactive", Card: &card, Severity: delivery.Severity,
-		OccurrenceNo: delivery.OccurrenceNo, Transition: delivery.Transition,
+	}
+	if delivery.Kind == "incident" {
+		message.OccurrenceNo = delivery.OccurrenceNo
+		message.Transition = delivery.Transition
 	}
 	if _, err := message.CardJSON(); err != nil {
 		return FeishuMessage{}, err

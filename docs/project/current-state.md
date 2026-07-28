@@ -1,6 +1,6 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-28
+**更新日期：** 2026-07-29
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
 
 ## 当前指针
@@ -15,7 +15,7 @@
 - 下一步：管理员按业务需要在 Sub2API 后台维护开放注册和邀请码；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不扩展飞书写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`、`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
+最新验证：`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md`、`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`、`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
 
 ## 产品
 
@@ -53,6 +53,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - 生产凭据：未记录；密钥、Cookie、OAuth 凭据、2FA 恢复码和支付密钥禁止进入 Git 和普通文档。
 - 首发用户自动化：`internal-test-service` 使用 Go 1.24、SQLite WAL 和独立 Admin API 客户端；只代理原生 register/login/login-2fa 和 public-settings，1 MiB/20 秒有界且不存储认证内容。有效注册开关是“Sub2API 原生开关 AND D04 模式/配置/15 人/预算门禁”；历史邀请/推荐表保留只读兼容，旧 join、邀请、推荐发奖和手动签到不再属于活动路径。容器契约为无宿主机端口、只读根文件系统、非 root、仅 `/var/lib/internal-test` 可写。当前生产运行 `sub2api-internal-test:d04-auth-client-identity-20260723-v2`，healthy/restart `0`，`D04_MODE=read_only` 且 `D04_REGISTRATION_OPEN=false`；历史低额验收已有 1 个隔离首发用户、1 条 `daily_login_credit` 成功 grant 和 1 条匹配的 `$20` provider balance history。详见 D04 验收报告。
 - relay-ops：生产镜像为 `sub2api-relay-ops:ops-dual-domain-20260723-v1`，healthy/restart `0`，以 `read_only + dry_run` 运行。管理员 `/ops` 每 30 秒刷新 Sub2API 原生站内运行投影和 systemd 账号质量结果；日报与 15 分钟告警/恢复使用同一只读数据边界。候选、Base URL/Key、账单会话、验收、质量预览和模型发布写路由均不对浏览器开放。历史 relay-ops 表与旧 model-release 证据保留，但不定义当前上游或活动监控任务。
+- 2026-07-29：飞书通知收敛已完成本地实现，所有主动通知必须由服务端 JSON 策略显式启用；候选、质量报告、Usage Session 和 synthetic acceptance 不再接入生产 notifier。面向公开分组的用户影响合并为单一事故，提醒使用最新事实快照，定价变化和日报走独立 one-shot 生命周期，事故与 one-shot 统一由 retry worker 重试。该实现尚未部署，生产保持不变：生产镜像未更新、生产策略文件未安装，未制造飞书消息，也未写入路由、账号、价格、余额或 Key。
 - 2026-07-22：GPT/Codex 缓存让利只读基线已实现。relay-ops 能区分缓存字段缺失与真实零值，验证公开 `gpt-*` 模型缓存读取价低于普通输入价，并在日报显示缓存读写、命中率和价格覆盖；Sub2API `v0.1.161` 继续负责四类 Token 计费、用户账单、`prompt_cache_key` 和粘性路由。本地全量测试、race、vet、Compose 和差异检查通过；未部署、未改价、未发请求，24 小时自然流量门禁仍待执行。证据见 `docs/superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md`。
 - 2026-07-20：生产 URL allowlist 仅追加 `wawazz.xyz`，只重建 Sub2API，其他容器未重建。GPT-Pro 隔离同步/SSE 均 HTTP 200、SSE 含 `[DONE]`；两条记录各 `10/5` Token，Sub2API 各扣 `$0.000200`，Neko 各实际 `$0.000020`，实测倍率 `0.10x`；测试用户/Key 已清理。Neko 原生监控样本为 `100%`、`1396 ms`。Wawazz 原有监控 Key 返回 `INVALID_API_KEY`，已删除并替换为新低额 Key；替换 Key 有效但上游账户余额不足，监控返回 `INSUFFICIENT_BALANCE`，当前 `/monitor` 为 `DEGRADED`。
 - 2026-07-20：Wawazz 补余额后的原生监控连续恢复为 `operational`（`1754 ms`、`2293 ms`）。Node UA 下 GPT-Plus 同步/SSE 均 HTTP 200，SSE 含 `[DONE]`；两条 Sub2API 记录各扣 `$0.002410`，Wawazz 各实际 `$0.000121`，实测约 `0.0502x`。同请求改为 `Python-urllib` 或 `OpenAI/Python` UA 时上游返回 403 且零扣费，说明原生 Go 监控不能覆盖客户 UA 兼容性；临时用户/Key 已清理，路由和模式未修改。详见 `docs/superpowers/reports/2026-07-20-wawazz-balance-recovery-verification.md`。

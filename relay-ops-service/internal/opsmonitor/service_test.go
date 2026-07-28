@@ -198,7 +198,7 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 	}{
 		{"availability", "confirmed", "站内运行告警：Pro-SHUAI-0.17"},
 		{"balance_exhausted", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
-		{"multiplier", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
+		{"multiplier", "confirmed", "账号计费倍率变更：Pro-SHUAI-0.17"},
 		{"paused", "recovered", "站内运行已恢复：Pro-SHUAI-0.17"},
 	}
 	for _, tc := range cases {
@@ -216,6 +216,65 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 				t.Fatalf("alert body missing object name: %s", text)
 			}
 		})
+	}
+}
+
+func TestRenderMultiplierChangeUsesBillingLanguageWithoutUnsupportedOpsLink(t *testing.T) {
+	message := render(
+		object{kind: "account", id: 21, name: "Plus-TK-极速"},
+		"multiplier", "0.07x", "0.08x", 1,
+		time.Date(2026, 7, 28, 1, 35, 4, 0, time.UTC), "confirmed",
+	)
+	text := message.RenderedText()
+	for _, want := range []string{
+		"账号计费倍率变更：Plus-TK-极速",
+		"当前倍率** 0.07x",
+		"上次记录** 0.08x",
+		"确认是否符合上游价格或账号配置变化",
+		"不执行路由或账号写入",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+	for _, forbidden := range []string{"上游账号质量告警", "**基线**", "查看上游账号质量证据"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("found %q in %q", forbidden, text)
+		}
+	}
+	if len(message.Card.Elements) != 1 {
+		t.Fatalf("multiplier card has unsupported action: %#v", message.Card.Elements)
+	}
+}
+
+func TestRenderMultiplierStabilityDoesNotClaimHealthRecoveryOrLinkOps(t *testing.T) {
+	message := render(
+		object{kind: "account", id: 21, name: "Plus-TK-极速"},
+		"multiplier", "0.07x", "0.07x", 1,
+		time.Date(2026, 7, 28, 1, 40, 4, 0, time.UTC), "recovered",
+	)
+	text := message.RenderedText()
+	for _, want := range []string{
+		"账号计费倍率记录已稳定：Plus-TK-极速",
+		"当前倍率",
+		"0.07x",
+		"本次记录与上次记录一致",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+	for _, forbidden := range []string{"已恢复", "健康基线", "健康确认"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("found %q in %q", forbidden, text)
+		}
+	}
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(data), `"tag":"action"`) || contains(string(data), `"/ops"`) {
+		t.Fatalf("multiplier stability card has unsupported action: %s", data)
 	}
 }
 
@@ -603,11 +662,11 @@ func TestServiceOnlyUsesActiveSchedulableAccountsForQualityEvaluation(t *testing
 	}
 }
 
-func TestRenderSeparatesRuntimeAndAccountQualityEvidenceInCardJSON(t *testing.T) {
+func TestRenderSeparatesRuntimeAndMultiplierEvidenceInCardJSON(t *testing.T) {
 	now := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
 	for name, message := range map[string]notify.FeishuMessage{
-		"runtime": render(object{kind: "group", id: 2}, "ttft_p95", "3900ms", "3000ms", 2, now, "confirmed"),
-		"quality": render(object{kind: "account", id: 10}, "multiplier", "0.1x", "0.05x", 1, now, "confirmed"),
+		"runtime":    render(object{kind: "group", id: 2}, "ttft_p95", "3900ms", "3000ms", 2, now, "confirmed"),
+		"multiplier": render(object{kind: "account", id: 10}, "multiplier", "0.1x", "0.05x", 1, now, "confirmed"),
 	} {
 		data, err := message.CardJSON()
 		if err != nil {
@@ -620,8 +679,8 @@ func TestRenderSeparatesRuntimeAndAccountQualityEvidenceInCardJSON(t *testing.T)
 			}
 			continue
 		}
-		if !contains(card, "上游账号质量告警") || !contains(card, "数据来源：账号质量定时巡检结果") || contains(card, "Sub2API 原生站内运行快照") {
-			t.Fatalf("quality card = %s", card)
+		if !contains(card, "账号计费倍率变更") || !contains(card, "数据来源：Sub2API 原生账号监控倍率投影") || contains(card, "账号质量定时巡检结果") {
+			t.Fatalf("multiplier card = %s", card)
 		}
 	}
 }

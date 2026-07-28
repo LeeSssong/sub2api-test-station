@@ -304,20 +304,39 @@ func renderWithEvidence(item object, metric, current, baseline string, windows i
 		return renderRecovery(item, metric, current, baseline, observedAt, domain, recovery, focus)
 	}
 	title := domain + "告警：" + label
+	currentLabel := "影响"
+	baselineLabel := "基线"
+	resultCurrentLabel := "当前值"
+	resultBaselineLabel := "基线"
+	metricLabel := metric
+	change := "指标状态已更新"
+	links := []notify.Link{{Label: "运维后台", URL: "/ops"}}
+	if metric == "multiplier" {
+		title = "账号计费倍率变更：" + label
+		currentLabel = "当前倍率"
+		baselineLabel = "上次记录"
+		resultCurrentLabel = "当前倍率"
+		resultBaselineLabel = "上次记录"
+		metricLabel = "计费倍率"
+		change = "计费倍率已更新"
+		links = nil
+	}
 	results := []string{
 		"数据来源：" + source,
 		"对象：" + label,
-		"指标：" + metric,
-		"当前值：" + current,
-		"基线：" + baseline,
+		"指标：" + metricLabel,
+		resultCurrentLabel + "：" + current,
+		resultBaselineLabel + "：" + baseline,
 		"证据时间：" + observedAt.UTC().Format(time.RFC3339),
 	}
 	results = append(results, "连续窗口："+strconv.Itoa(windows))
 	return notify.RenderFeishu(notify.IncidentView{
-		Title: title, Severity: "P1", Current: current, Baseline: baseline,
+		Title: title, Severity: "P1",
+		CurrentLabel: currentLabel, BaselineLabel: baselineLabel,
+		Current: current, Baseline: baseline,
 		WhatWasDone: actions,
 		Results:     results,
-		Change:      "指标状态已更新", Focus: focus, Links: []notify.Link{{Label: "运维后台", URL: "/ops"}},
+		Change:      change, Focus: focus, Links: links,
 	})
 }
 
@@ -326,30 +345,43 @@ func renderRecovery(item object, metric, current, baseline string, observedAt ti
 	metricLabel, summary, detail := recoveryCopy(metric)
 	currentDisplay := recoveryValue(metric, current)
 	baselineDisplay := recoveryValue(metric, baseline)
+	title := domain + "已恢复：" + label
 	currentLabel := "当前值"
 	if metric == "paused" || metric == "availability" || metric == "balance_exhausted" {
 		currentLabel = "当前状态"
 	}
+	confirmationLabel := "健康确认"
+	confirmationValue := "1 个完整窗口"
+	metricStatusLabel := "恢复指标"
+	links := []notify.Link{{Label: "运维后台", URL: "/ops"}}
+	if metric == "multiplier" {
+		title = "账号计费倍率记录已稳定：" + label
+		currentLabel = "当前倍率"
+		confirmationLabel = "稳定确认"
+		confirmationValue = "与上次记录一致"
+		metricStatusLabel = "记录指标"
+		links = nil
+	}
 	metrics := []notify.RecoveryMetric{
 		{Label: currentLabel, Value: currentDisplay},
-		{Label: "健康确认", Value: "1 个完整窗口"},
+		{Label: confirmationLabel, Value: confirmationValue},
 	}
 	if evidence.window != "" {
 		metrics = append(metrics, notify.RecoveryMetric{Label: "观测窗口", Value: evidence.window})
 	} else {
-		metrics = append(metrics, notify.RecoveryMetric{Label: "恢复指标", Value: metricLabel})
+		metrics = append(metrics, notify.RecoveryMetric{Label: metricStatusLabel, Value: metricLabel})
 	}
 	metrics = append(metrics, notify.RecoveryMetric{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")})
 
 	return notify.RenderRecoveryCard(notify.RecoveryCardView{
-		Title:   domain + "已恢复：" + label,
+		Title:   title,
 		Summary: summary,
 		Detail:  detail,
 		Metrics: metrics,
 		Basis:   []string{recoveryBasis(metric, metricLabel, currentDisplay, baselineDisplay)},
 		Source:  evidence.source,
 		Focus:   focus,
-		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
+		Links:   links,
 	})
 }
 
@@ -379,7 +411,7 @@ func recoveryCopy(metric string) (label, summary, detail string) {
 	case "ttft_p95":
 		return "首字延迟 P95", "首字延迟已恢复", "首字延迟已回到健康范围"
 	case "multiplier":
-		return "倍率", "倍率已恢复", "账号倍率已回到健康基线"
+		return "计费倍率", "倍率记录已稳定", "本次记录与上次记录一致"
 	case "balance_exhausted":
 		return "余额耗尽", "余额状态已恢复", "账号重新满足健康规则"
 	default:
@@ -411,13 +443,20 @@ func recoveryBasis(metric, metricLabel, current, baseline string) string {
 		return "当前与基线均为可用、可调度"
 	case "balance_exhausted":
 		return "当前结果已回到非余额耗尽基线"
+	case "multiplier":
+		return "当前倍率 " + current + "，与上次记录一致"
 	default:
 		return metricLabel + "：当前 " + current + "，健康基线 " + baseline
 	}
 }
 
 func renderDomain(metric string) (string, string, []string, string) {
-	if metric == "multiplier" || metric == "balance_exhausted" {
+	if metric == "multiplier" {
+		return "账号计费倍率", "Sub2API 原生账号监控倍率投影",
+			[]string{"读取账号计费倍率定时记录", "仅比较本次与上次记录，不执行路由或账号写入"},
+			"确认是否符合上游价格或账号配置变化"
+	}
+	if metric == "balance_exhausted" {
 		return "上游账号质量", "账号质量定时巡检结果（不发起新探测）",
 			[]string{"读取账号质量定时巡检结果", "按固定质量规则评估，不执行路由或账号写入"},
 			"在运维后台查看上游账号质量证据"

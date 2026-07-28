@@ -23,19 +23,21 @@ const maxCardBytes = 30 << 10
 type Link struct{ Label, URL string }
 
 type IncidentView struct {
-	Title       string
-	Severity    string
-	WhatWasDone []string
-	Results     []string
-	Change      string
-	Focus       string
-	Links       []Link
-	Current     string
-	Baseline    string
-	Duration    string
-	Analysis    string
-	Recovery    bool
-	Suppressed  bool
+	Title         string
+	Severity      string
+	WhatWasDone   []string
+	Results       []string
+	Change        string
+	Focus         string
+	Links         []Link
+	CurrentLabel  string
+	BaselineLabel string
+	Current       string
+	Baseline      string
+	Duration      string
+	Analysis      string
+	Recovery      bool
+	Suppressed    bool
 }
 
 type RecoveryMetric struct {
@@ -172,10 +174,18 @@ func RenderAlert(event IncidentView) FeishuMessage {
 	if severity == "P0" || severity == "P1" || strings.Contains(strings.ToLower(event.Title), "异常") {
 		template = "red"
 	}
+	currentLabel := strings.TrimSpace(event.CurrentLabel)
+	if currentLabel == "" {
+		currentLabel = "影响"
+	}
+	baselineLabel := strings.TrimSpace(event.BaselineLabel)
+	if baselineLabel == "" {
+		baselineLabel = "基线"
+	}
 	sections := []string{
 		"**状态** 需要关注",
-		"**影响** " + defaultText(event.Current),
-		"**基线** " + defaultText(event.Baseline),
+		"**" + currentLabel + "** " + defaultText(event.Current),
+		"**" + baselineLabel + "** " + defaultText(event.Baseline),
 		"**已执行** " + joinItems(event.WhatWasDone),
 		"**观测结果** " + joinItems(event.Results),
 		"**发生变化** " + defaultText(event.Change),

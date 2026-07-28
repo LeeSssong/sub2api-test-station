@@ -18,6 +18,7 @@ import (
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -61,9 +62,12 @@ func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
 	var _ dailyreport.AnalysisRunner = reportRunner
 }
 
-func TestConfiguredSiteMonitorSharesTheIncidentMachine(t *testing.T) {
+func TestConfiguredMultiplierWatcherSharesTheIncidentMachine(t *testing.T) {
 	machine := &incidents.Machine{}
-	monitor := configuredSiteMonitor(nil, nil, nil, machine, nil)
+	monitor := configuredMultiplierWatcher(
+		nil, nil, machine, nil,
+		notificationpolicy.Policy{Version: 1},
+	)
 	if monitor.Incidents != machine {
 		t.Fatalf("incident machine = %p, want %p", monitor.Incidents, machine)
 	}

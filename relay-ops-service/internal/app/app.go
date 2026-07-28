@@ -22,9 +22,11 @@ import (
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/feishuapi"
+	"example.invalid/relay-ops-service/internal/groupimpact"
 	httpserver "example.invalid/relay-ops-service/internal/http"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/nativealerts"
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
 	"example.invalid/relay-ops-service/internal/opsmonitor"
@@ -206,8 +208,17 @@ func operationalReportAnalysisRunner(service *agent.Service) dailyreport.Analysi
 	return service
 }
 
-func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualitySource, multipliers opsmonitor.MultiplierSource, state *incidents.Machine, notifier opsmonitor.MessageSender) opsmonitor.Service {
-	return opsmonitor.Service{Reader: reader, Quality: quality, Multipliers: multipliers, Incidents: state, Notifier: notifier}
+func configuredMultiplierWatcher(
+	reader opsmetrics.Reader,
+	multipliers opsmonitor.MultiplierSource,
+	state *incidents.Machine,
+	notifier opsmonitor.MessageSender,
+	policy notificationpolicy.Policy,
+) opsmonitor.Service {
+	return opsmonitor.Service{
+		Reader: reader, Multipliers: multipliers, Incidents: state,
+		Notifier: notifier, Policy: policy,
+	}
 }
 
 // upstreamPricingFallback adapts upstreampricing.Resolver.Lookup to the
@@ -313,11 +324,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
 	var accountQualitySource httpserver.AccountQualitySource
-	var siteAccountQualitySource opsmonitor.QualitySource
 	if cfg.AccountQualityResultFile != "" {
 		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
 		accountQualitySource = source
-		siteAccountQualitySource = source
 	}
 	pricingFallback := upstreamPricingFallback(cfg.UpstreamGroupMappingFile)
 	dailyReportService := dailyreport.Service{
@@ -329,8 +338,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
 		Incidents: incidentMachine, Agent: collectorAnalysis, Notifier: notifier,
 	}
-	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, reader, incidentMachine, notifier)
-	siteMonitor.Fallback = pricingFallback
+	multiplierWatcher := configuredMultiplierWatcher(
+		reader, reader, incidentMachine, notifier, cfg.NotificationPolicy,
+	)
+	multiplierWatcher.Fallback = pricingFallback
+	groupImpactService := groupimpact.Service{
+		Reader: reader, Signals: database, Incidents: incidentMachine,
+		Notifier: notifier, Policy: cfg.NotificationPolicy, Decisions: database,
+	}
 	escalationService := alerting.Service{Repository: database, Sender: notifier}
 	retryService := notify.DeliveryRetryService{Repository: database, Client: notificationTransport}
 	usageReader := billing.SessionReader{Reporter: database}
@@ -436,7 +451,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			_, err := dailyReportService.Run(runCtx)
 			return err
 		},
-		SiteMonitor: siteMonitor.Run,
+		SiteMonitor: func(runCtx context.Context) error {
+			return errors.Join(
+				groupImpactService.Run(runCtx),
+				multiplierWatcher.Run(runCtx),
+			)
+		},
 		IncidentEscalation: func(runCtx context.Context) error {
 			if notifier == nil {
 				return nil

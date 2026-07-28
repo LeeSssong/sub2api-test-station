@@ -39,6 +39,7 @@ describe('App', () => {
     ]) {
       expect(styles).toContain(token)
     }
+    expect(styles).toContain('html[data-theme="light"] .check-list')
   })
 
   it('renders the complete Xingqiao guest homepage contract', () => {

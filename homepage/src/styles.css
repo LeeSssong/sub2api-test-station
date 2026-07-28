@@ -445,6 +445,7 @@ html[data-theme="light"] .security-proof small,
 html[data-theme="light"] .boundary-grid p {
   color: var(--text-muted);
 }
+html[data-theme="light"] .check-list { color: #40536a; }
 html[data-theme="light"] .request-chip,
 html[data-theme="light"] .gateway-chip {
   color: #253750;

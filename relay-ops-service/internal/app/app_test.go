@@ -18,7 +18,6 @@ import (
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
 	"example.invalid/relay-ops-service/internal/incidents"
-	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -35,16 +34,16 @@ func TestCandidateServiceUsesConfiguredManagedSecretDirectory(t *testing.T) {
 	}
 }
 
-func TestAnalysisRunnersDoNotWrapAnUnconfiguredAgentAsANonNilInterface(t *testing.T) {
-	collectorRunner, acceptanceRunner := analysisRunners(nil)
-	if collectorRunner != nil || acceptanceRunner != nil {
-		t.Fatalf("unconfigured runners must stay nil: collector=%T acceptance=%T", collectorRunner, acceptanceRunner)
+func TestAcceptanceAnalysisRunnerDoesNotWrapAnUnconfiguredAgentAsANonNilInterface(t *testing.T) {
+	runner := acceptanceAnalysisRunner(nil)
+	if runner != nil {
+		t.Fatalf("unconfigured runner must stay nil: acceptance=%T", runner)
 	}
 
 	service := &agent.Service{}
-	collectorRunner, acceptanceRunner = analysisRunners(service)
-	if collectorRunner == nil || acceptanceRunner == nil {
-		t.Fatal("configured agent must be wired into both analysis paths")
+	runner = acceptanceAnalysisRunner(service)
+	if runner == nil {
+		t.Fatal("configured agent must be wired into acceptance analysis")
 	}
 }
 
@@ -60,17 +59,6 @@ func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
 		t.Fatal("configured agent must be wired into daily reports")
 	}
 	var _ dailyreport.AnalysisRunner = reportRunner
-}
-
-func TestConfiguredMultiplierWatcherSharesTheIncidentMachine(t *testing.T) {
-	machine := &incidents.Machine{}
-	monitor := configuredMultiplierWatcher(
-		nil, nil, machine, nil,
-		notificationpolicy.Policy{Version: 1},
-	)
-	if monitor.Incidents != machine {
-		t.Fatalf("incident machine = %p, want %p", monitor.Incidents, machine)
-	}
 }
 
 func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {

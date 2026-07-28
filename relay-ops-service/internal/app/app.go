@@ -26,11 +26,9 @@ import (
 	httpserver "example.invalid/relay-ops-service/internal/http"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/nativealerts"
-	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
-	"example.invalid/relay-ops-service/internal/opsmetrics"
-	"example.invalid/relay-ops-service/internal/opsmonitor"
 	"example.invalid/relay-ops-service/internal/pricing"
+	"example.invalid/relay-ops-service/internal/pricingevents"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/scheduler"
@@ -51,6 +49,10 @@ type App struct {
 type dailyReportIncidents struct {
 	*store.Store
 	state *incidents.Machine
+}
+
+type incidentMessageSender interface {
+	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
 
 type incidentAcknowledgements struct {
@@ -194,11 +196,11 @@ func (source dailyReportIncidents) Observe(ctx context.Context, observation inci
 	return source.state.Observe(ctx, observation)
 }
 
-func analysisRunners(service *agent.Service) (collection.AnalysisRunner, acceptance.AnalysisRunner) {
+func acceptanceAnalysisRunner(service *agent.Service) acceptance.AnalysisRunner {
 	if service == nil {
-		return nil, nil
+		return nil
 	}
-	return service, service
+	return service
 }
 
 func operationalReportAnalysisRunner(service *agent.Service) dailyreport.AnalysisRunner {
@@ -208,29 +210,28 @@ func operationalReportAnalysisRunner(service *agent.Service) dailyreport.Analysi
 	return service
 }
 
-func configuredMultiplierWatcher(
-	reader opsmetrics.Reader,
-	multipliers opsmonitor.MultiplierSource,
-	state *incidents.Machine,
-	notifier opsmonitor.MessageSender,
-	policy notificationpolicy.Policy,
-) opsmonitor.Service {
-	return opsmonitor.Service{
-		Reader: reader, Multipliers: multipliers, Incidents: state,
-		Notifier: notifier, Policy: policy,
-	}
-}
-
-// upstreamPricingFallback adapts upstreampricing.Resolver.Lookup to the
-// fallback signature shared by the daily report and the multiplier alert:
-// every failure path already returns (nil, false), so nil means "cannot
-// account", never a guessed value. A nil config path disables the fallback
-// entirely and both consumers behave exactly as before.
-func upstreamPricingFallback(configPath string) func(context.Context, string) *float64 {
+func configuredUpstreamPricingResolver(configPath string) *upstreampricing.Resolver {
 	if configPath == "" {
 		return nil
 	}
-	resolver := &upstreampricing.Resolver{ConfigPath: configPath, RequireHTTPS: true, TTL: 10 * time.Minute}
+	return &upstreampricing.Resolver{
+		ConfigPath: configPath, RequireHTTPS: true, TTL: 10 * time.Minute,
+	}
+}
+
+// upstreamPricingFallback keeps the current daily-report fallback contract.
+// Pricing events receive the Resolver itself so an explicit mapping can
+// suppress a duplicate account-multiplier event.
+func upstreamPricingFallback(configPath string) func(context.Context, string) *float64 {
+	return upstreamPricingFallbackFromResolver(configuredUpstreamPricingResolver(configPath))
+}
+
+func upstreamPricingFallbackFromResolver(
+	resolver *upstreampricing.Resolver,
+) func(context.Context, string) *float64 {
+	if resolver == nil {
+		return nil
+	}
 	return func(ctx context.Context, accountName string) *float64 {
 		value, ok := resolver.Lookup(ctx, accountName)
 		if !ok {
@@ -304,7 +305,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		client := &agent.Client{BaseURL: cfg.AgentBaseURL, APIKeyFile: cfg.AgentAPIKeyFile, Model: cfg.AgentModel}
 		analysisService = &agent.Service{Analyzer: client, Repository: database}
 	}
-	collectorAnalysis, acceptanceAnalysis := analysisRunners(analysisService)
+	acceptanceAnalysis := acceptanceAnalysisRunner(analysisService)
 	reportAnalysis := operationalReportAnalysisRunner(analysisService)
 	var appAlertSender notify.MessageSender
 	if cfg.FeishuAlertChatIDFile != "" {
@@ -318,9 +319,15 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	var notifier collection.MessageSender
+	var notifier incidentMessageSender
+	var oneShotNotifier pricingevents.EventSender
 	if notificationTransport != nil {
-		notifier = notify.DeliverySender{Client: notificationTransport, Repository: database}
+		notifier = notify.DeliverySender{
+			Client: notificationTransport, Repository: database,
+		}
+		oneShotNotifier = notify.OneShotSender{
+			Client: notificationTransport, Repository: database,
+		}
 	}
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
 	var accountQualitySource httpserver.AccountQualitySource
@@ -328,7 +335,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
 		accountQualitySource = source
 	}
-	pricingFallback := upstreamPricingFallback(cfg.UpstreamGroupMappingFile)
+	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
+	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
 	dailyReportService := dailyreport.Service{
 		Reader: reader, Candidates: database, Incidents: dailyReportIncidents{Store: database, state: incidentMachine},
 		Agent: reportAnalysis, Notifier: notifier, Timezone: cfg.Timezone,
@@ -336,12 +344,13 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	collector := &collection.Collector{
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
-		Incidents: incidentMachine, Agent: collectorAnalysis, Notifier: notifier,
+		Notifier: oneShotNotifier, Decisions: database, Policy: cfg.NotificationPolicy,
 	}
-	multiplierWatcher := configuredMultiplierWatcher(
-		reader, reader, incidentMachine, notifier, cfg.NotificationPolicy,
-	)
-	multiplierWatcher.Fallback = pricingFallback
+	pricingEventService := pricingevents.Service{
+		Accounts: reader, Multipliers: reader, Baselines: database,
+		Resolver: pricingResolver, Notifier: oneShotNotifier, Decisions: database,
+		Policy: cfg.NotificationPolicy,
+	}
 	groupImpactService := groupimpact.Service{
 		Reader: reader, Signals: database, Incidents: incidentMachine,
 		Notifier: notifier, Policy: cfg.NotificationPolicy, Decisions: database,
@@ -454,7 +463,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		SiteMonitor: func(runCtx context.Context) error {
 			return errors.Join(
 				groupImpactService.Run(runCtx),
-				multiplierWatcher.Run(runCtx),
+				pricingEventService.Run(runCtx),
 			)
 		},
 		IncidentEscalation: func(runCtx context.Context) error {

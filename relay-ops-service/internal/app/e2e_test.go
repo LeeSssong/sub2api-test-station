@@ -13,18 +13,16 @@ import (
 	"sync"
 	"testing"
 
-	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
-	"example.invalid/relay-ops-service/internal/domain"
-	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/store"
 )
 
-func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *testing.T) {
+func TestCandidateCollectionPriceChangeDoesNotNotifyAndPaidProbeIsExplicit(t *testing.T) {
 	databaseURL := os.Getenv("RELAY_OPS_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("RELAY_OPS_TEST_DATABASE_URL is not set")
@@ -52,9 +50,19 @@ func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *t
 	}
 	pages := &pageSequence{bodies: []string{`{"multiplier":"0.07x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`, `{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`, `{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`, `{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`}}
 	probe := &fakeProbeRunner{runID: "e2e-probe-" + testID}
-	analysis := &fakeAnalysisRunner{}
 	notifier := &fakeMessageSender{}
-	collector := &collection.Collector{Repository: database, Fetcher: pricing.Fetcher{Client: &http.Client{Transport: pages}, Resolver: e2eResolver{}}, Extractor: pricing.CompositeExtractor{}, Probes: probe, Incidents: &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}, Agent: analysis, Notifier: notifier}
+	collector := &collection.Collector{
+		Repository: database,
+		Fetcher: pricing.Fetcher{
+			Client: &http.Client{Transport: pages}, Resolver: e2eResolver{},
+		},
+		Extractor: pricing.CompositeExtractor{}, Probes: probe,
+		Notifier: notifier, Decisions: database,
+		Policy: notificationpolicy.Policy{
+			Version: 1, Mode: notificationpolicy.ModeEnabled,
+			Feishu: notificationpolicy.FeishuPolicy{PricingNoticeEnabled: true},
+		},
+	}
 	source := collection.Source{ID: id, Name: name, Role: collection.RoleCandidate, BaseURL: "https://" + host + "/v1", PricingURL: "https://" + host + "/pricing", UsageURL: "https://" + host + "/usage", ProbeSecretRef: record.SecretRef.SecretRef, Enabled: true}
 	ctx := context.Background()
 	if err := collector.Run(ctx, source, false); err != nil {
@@ -66,16 +74,13 @@ func TestCandidateCollectionPriceChangeIsNotifiedOnceAndPaidProbeIsExplicit(t *t
 	if err := collector.Run(ctx, source, false); err != nil {
 		t.Fatal(err)
 	}
-	if analysis.calls != 1 || len(notifier.messages) != 1 || probe.calls != 0 {
-		t.Fatalf("analysis=%d messages=%d probes=%d", analysis.calls, len(notifier.messages), probe.calls)
-	}
-	if !strings.Contains(notifier.messages[0].RenderedText(), "0.07x") || !strings.Contains(notifier.messages[0].RenderedText(), "0.1x") {
-		t.Fatalf("message=%s", notifier.messages[0].RenderedText())
+	if len(notifier.messages) != 0 || probe.calls != 0 {
+		t.Fatalf("messages=%d probes=%d", len(notifier.messages), probe.calls)
 	}
 	if err := collector.Run(ctx, source, true); err != nil {
 		t.Fatal(err)
 	}
-	if probe.calls != 1 || len(notifier.messages) != 1 {
+	if probe.calls != 1 || len(notifier.messages) != 0 {
 		t.Fatalf("probes=%d messages=%d", probe.calls, len(notifier.messages))
 	}
 }
@@ -113,24 +118,16 @@ func (p *fakeProbeRunner) Watch(context.Context, candidates.Candidate) (probes.P
 	return probes.ProbeRun{SchemaVersion: 1, RunID: p.runID, ChannelID: "candidate", Status: "passed"}, nil
 }
 
-type fakeAnalysisRunner struct{ calls int }
-
-func (a *fakeAnalysisRunner) AnalyzeOnce(_ context.Context, contract agent.IncidentContractV1) (agent.Analysis, error) {
-	a.calls++
-	result := agent.Fallback(contract)
-	result.Change = "公开倍率发生变化"
-	result.Focus = "人工核对利润空间"
-	return result, nil
-}
-
 type fakeMessageSender struct{ messages []notify.FeishuMessage }
 
-func (s *fakeMessageSender) SendIncident(_ context.Context, _, _ string, message notify.FeishuMessage) error {
+func (s *fakeMessageSender) SendOneShot(
+	_ context.Context,
+	_ notify.OneShotIdentity,
+	message notify.FeishuMessage,
+) error {
 	s.messages = append(s.messages, message)
 	return nil
 }
-
-var _ domain.UpstreamID
 
 func randomTestID(t *testing.T) string {
 	t.Helper()

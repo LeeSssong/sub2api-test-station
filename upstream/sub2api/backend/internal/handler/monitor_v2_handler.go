@@ -63,8 +63,10 @@ type monitorV2GroupResponse struct {
 	Status             string                           `json:"status"`
 	Availability       monitorV2AvailabilityResponse    `json:"availability"`
 	TTFT               monitorV2MetricResponse          `json:"ttft"`
+	TTFTP95            monitorV2MetricResponse          `json:"ttft_p95"`
 	TPS                monitorV2MetricResponse          `json:"tps"`
 	Latency            monitorV2MetricResponse          `json:"latency"`
+	LatencyP95         monitorV2MetricResponse          `json:"latency_p95"`
 	CacheHit           monitorV2MetricResponse          `json:"cache_hit"`
 	Timeline           []monitorV2TimelinePointResponse `json:"timeline"`
 	Models             []monitorV2ModelResponse         `json:"models"`
@@ -159,12 +161,14 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 				SuccessCount:            group.Availability.SuccessCount,
 				EligibleCount:           group.Availability.EligibleCount,
 			},
-			TTFT:     monitorV2MetricFromService(group.TTFT),
-			TPS:      monitorV2MetricFromService(group.TPS),
-			Latency:  monitorV2MetricFromService(group.Latency),
-			CacheHit: monitorV2MetricFromService(group.CacheHit),
-			Timeline: timeline,
-			Models:   models,
+			TTFT:       monitorV2MetricFromService(group.TTFT),
+			TTFTP95:    monitorV2MetricFromService(group.TTFTP95),
+			TPS:        monitorV2MetricFromService(group.TPS),
+			Latency:    monitorV2MetricFromService(group.Latency),
+			LatencyP95: monitorV2MetricFromService(group.LatencyP95),
+			CacheHit:   monitorV2MetricFromService(group.CacheHit),
+			Timeline:   timeline,
+			Models:     models,
 		})
 	}
 	return monitorV2SnapshotResponse{

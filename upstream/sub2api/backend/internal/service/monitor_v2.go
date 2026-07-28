@@ -98,8 +98,10 @@ type MonitorV2Group struct {
 	Status             string
 	Availability       MonitorV2Availability
 	TTFT               MonitorV2Metric
+	TTFTP95            MonitorV2Metric
 	TPS                MonitorV2Metric
 	Latency            MonitorV2Metric
+	LatencyP95         MonitorV2Metric
 	CacheHit           MonitorV2Metric
 	Timeline           []MonitorV2TimelinePoint
 	Models             []MonitorV2Model
@@ -170,7 +172,7 @@ func (s *MonitorV2Service) Snapshot(
 	channels, _ := s.listChannels(ctx)
 	probes, _ := s.listProbes(ctx)
 	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
-	modelsByGroup := monitorV2ModelsByGroup(channels, probes)
+	modelsByGroup := monitorV2ModelsByGroup(publicGroups, channels, probes)
 	probesByGroup := monitorV2ProbesByGroup(probes)
 
 	cards := make([]MonitorV2Group, len(publicGroups))
@@ -261,8 +263,10 @@ func (s *MonitorV2Service) buildGroup(
 		Status:             monitorV2GroupStatus(probes),
 		Availability:       monitorV2UnavailableAvailability(),
 		TTFT:               monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
+		TTFTP95:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		TPS:                monitorV2UnavailableMetric(MonitorV2MetricNotProvided),
 		Latency:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
+		LatencyP95:         monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		CacheHit:           monitorV2CacheMetric(cache),
 		Timeline:           []MonitorV2TimelinePoint{},
 		Models:             monitorV2ApplyProbeStatuses(models, probes),
@@ -282,7 +286,9 @@ func (s *MonitorV2Service) buildGroup(
 	if overview, err := s.ops.GetDashboardOverview(ctx, filter); err == nil && overview != nil {
 		card.Availability = monitorV2AvailabilityFromOverview(overview)
 		card.TTFT = monitorV2PercentileMetric(overview.TTFT.P50, overview.SuccessCount)
+		card.TTFTP95 = monitorV2PercentileMetric(overview.TTFT.P95, overview.SuccessCount)
 		card.Latency = monitorV2PercentileMetric(overview.Duration.P50, overview.SuccessCount)
+		card.LatencyP95 = monitorV2PercentileMetric(overview.Duration.P95, overview.SuccessCount)
 	}
 
 	throughput, throughputErr := s.ops.GetThroughputTrend(ctx, filter, bucketSeconds)
@@ -341,6 +347,7 @@ func monitorV2ProbesByGroup(views []*UserMonitorView) map[string][]*UserMonitorV
 }
 
 func monitorV2ModelsByGroup(
+	publicGroups []Group,
 	channels []AvailableChannel,
 	probes []*UserMonitorView,
 ) map[int64][]MonitorV2Model {
@@ -363,9 +370,14 @@ func monitorV2ModelsByGroup(
 		}
 	}
 	groupNameToID := make(map[string]int64)
+	for i := range publicGroups {
+		groupNameToID[monitorV2GroupKey(publicGroups[i].Name)] = publicGroups[i].ID
+	}
 	for i := range channels {
 		for _, group := range channels[i].Groups {
-			groupNameToID[monitorV2GroupKey(group.Name)] = group.ID
+			if _, exists := groupNameToID[monitorV2GroupKey(group.Name)]; !exists {
+				groupNameToID[monitorV2GroupKey(group.Name)] = group.ID
+			}
 		}
 	}
 	for _, probe := range probes {

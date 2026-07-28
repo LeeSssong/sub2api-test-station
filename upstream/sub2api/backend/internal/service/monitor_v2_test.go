@@ -220,6 +220,12 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, MonitorV2MetricAvailable, first.TTFT.State)
 	require.Equal(t, int64(9842), first.TTFT.SampleCount)
 	require.Equal(t, 420.0, *first.TTFT.Value)
+	require.Equal(t, MonitorV2MetricAvailable, first.TTFTP95.State)
+	require.Equal(t, int64(9842), first.TTFTP95.SampleCount)
+	require.Equal(t, 880.0, *first.TTFTP95.Value)
+	require.Equal(t, MonitorV2MetricAvailable, first.LatencyP95.State)
+	require.Equal(t, int64(9842), first.LatencyP95.SampleCount)
+	require.Equal(t, 2400.0, *first.LatencyP95.Value)
 	require.Equal(t, MonitorV2MetricAvailable, first.TPS.State)
 	require.Equal(t, int64(12), first.TPS.SampleCount)
 	require.Equal(t, 46.5, *first.TPS.Value)
@@ -238,6 +244,37 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, MonitorV2MetricInsufficientData, second.TTFT.State)
 	require.Equal(t, MonitorV2MetricInsufficientData, second.Availability.State)
 	require.Nil(t, second.Availability.Value)
+}
+
+func TestMonitorV2SnapshotPublishesProbeModelsForMatchingPublicGroupWithoutChannel(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{{
+			ID:          17,
+			Name:        " 公开探针组 ",
+			Platform:    PlatformOpenAI,
+			Status:      StatusActive,
+			IsExclusive: false,
+		}}},
+		&monitorV2ChannelReaderStub{},
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
+			GroupName:     "公开探针组",
+			PrimaryModel:  "gpt-5.4",
+			PrimaryStatus: MonitorStatusOperational,
+		}}},
+		nil,
+		&monitorV2RepoStub{},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Status)
+	require.Equal(t, []MonitorV2Model{{
+		Name:   "gpt-5.4",
+		Status: MonitorStatusOperational,
+	}}, snapshot.Groups[0].Models)
 }
 
 func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) {

@@ -132,7 +132,7 @@
                 :to="isAuthenticated ? dashboardPath : '/login'"
                 class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
               >
-                {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
+                {{ t('home.getStarted') }}
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
               </router-link>
             </div>

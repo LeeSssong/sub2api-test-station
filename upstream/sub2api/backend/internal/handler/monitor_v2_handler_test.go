@@ -31,6 +31,8 @@ func (s *monitorV2SnapshotterStub) Snapshot(
 func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	value := 99.5
+	ttftP95 := 880.0
+	latencyP95 := 2400.0
 	stub := &monitorV2SnapshotterStub{
 		snapshot: &service.MonitorV2Snapshot{
 			ContractVersion: service.MonitorV2ContractVersion,
@@ -51,6 +53,16 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 						},
 						SuccessCount:  199,
 						EligibleCount: 200,
+					},
+					TTFTP95: service.MonitorV2Metric{
+						State:       service.MonitorV2MetricAvailable,
+						Value:       &ttftP95,
+						SampleCount: 180,
+					},
+					LatencyP95: service.MonitorV2Metric{
+						State:       service.MonitorV2MetricAvailable,
+						Value:       &latencyP95,
+						SampleCount: 199,
 					},
 					Models: []service.MonitorV2Model{
 						{Name: "gpt-5.4", Status: service.MonitorStatusOperational},
@@ -79,6 +91,11 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	groups, ok := envelope.Data["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 1)
+	group := groups[0].(map[string]any)
+	require.Equal(t, float64(880), group["ttft_p95"].(map[string]any)["value"])
+	require.Equal(t, float64(180), group["ttft_p95"].(map[string]any)["sample_count"])
+	require.Equal(t, float64(2400), group["latency_p95"].(map[string]any)["value"])
+	require.Equal(t, float64(199), group["latency_p95"].(map[string]any)["sample_count"])
 
 	serialized := strings.ToLower(recorder.Body.String())
 	for _, forbidden := range []string{

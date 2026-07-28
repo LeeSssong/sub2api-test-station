@@ -136,7 +136,7 @@ h1, h2, h3, p { margin-top: 0; }
 .hero { position: relative; z-index: 1; min-height: 100svh; overflow: hidden; background: var(--hero-bg); color: var(--text-strong); --hero-entry-x: 50%; --hero-entry-y: 42%; transition: background-color .22s var(--ease), color .22s var(--ease); }
 .hero-signal-layer { position: absolute; inset: -6% 0; z-index: 0; will-change: transform; }
 .hero-signal { position: absolute; inset: 0; overflow: hidden; }
-.hero-signal canvas { width: 100%; height: 100%; opacity: .95; }
+.hero-signal canvas { width: 100%; height: 100%; opacity: 1; }
 .hero-signal > span { position: absolute; left: 2rem; top: 20%; max-width: 80%; color: rgba(157,174,198,.1); font: 600 12px/2 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hero-signal[data-canvas-active="true"] > span { opacity: 0; }
 .hero-ambient, .hero-grid-layer { position: absolute; inset: 0; z-index: 0; opacity: 0; clip-path: circle(0 at var(--hero-entry-x) var(--hero-entry-y)); }
@@ -380,6 +380,7 @@ html[data-theme="light"] .hero-ambient {
     radial-gradient(circle at 18% 24%, rgba(55, 177, 207, .16), transparent 35%),
     radial-gradient(circle at 86% 74%, rgba(70, 112, 217, .12), transparent 34%);
 }
+html[data-theme="light"] .hero-signal > span { color: rgba(46, 71, 101, .2); }
 html[data-theme="light"] .hero-grid-layer {
   background-image:
     linear-gradient(rgba(63, 91, 130, .1) 1px, transparent 1px),

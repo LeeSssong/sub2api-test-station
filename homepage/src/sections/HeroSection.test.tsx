@@ -43,6 +43,7 @@ describe('HeroSection', () => {
     expect(screen.queryByRole('img', { name: '首尔边缘节点示意' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-signal-density', 'dense')
     expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-signal-speed', 'fast')
+    expect(screen.getByLabelText('星桥实时信号背景')).toHaveAttribute('data-signal-layers', '3')
   })
 
   it('separates the two headline rows for cross-platform font metrics', () => {

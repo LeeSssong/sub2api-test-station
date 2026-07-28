@@ -18,7 +18,7 @@ type Incident struct {
 	EscalationLevel  int
 	ClaimToken       string
 	FirstDeliveredAt time.Time
-	MessagePayload   []byte
+	CurrentValue     string
 }
 
 type Result struct {
@@ -123,40 +123,32 @@ func escalationMessage(incident Incident, level int, now time.Time) (notify.Feis
 	if incident.Key == "" || incident.OccurrenceNo <= 0 || incident.EscalationLevel < 0 ||
 		incident.ClaimToken == "" ||
 		(incident.Severity != "P0" && incident.Severity != "P1") ||
-		incident.FirstDeliveredAt.IsZero() || len(incident.MessagePayload) == 0 {
+		incident.FirstDeliveredAt.IsZero() || strings.TrimSpace(incident.CurrentValue) == "" {
 		return notify.FeishuMessage{}, fmt.Errorf("incident escalation claim is invalid")
 	}
-	var card notify.Card
-	if err := json.Unmarshal(incident.MessagePayload, &card); err != nil {
-		return notify.FeishuMessage{}, fmt.Errorf("decode incident escalation payload")
+	var snapshot struct {
+		GroupName  string    `json:"group_name"`
+		Headline   string    `json:"headline"`
+		LatestFact string    `json:"latest_fact"`
+		Capacity   string    `json:"capacity"`
+		ObservedAt time.Time `json:"observed_at"`
 	}
-	title := card.Header.Title.Content
-	for strings.HasPrefix(title, "再次提醒｜") {
-		title = strings.TrimPrefix(title, "再次提醒｜")
+	if err := json.Unmarshal([]byte(incident.CurrentValue), &snapshot); err != nil {
+		return notify.FeishuMessage{}, fmt.Errorf("decode incident reminder snapshot")
 	}
-	card.Header.Title.Content = "再次提醒｜" + title
-	elements := make([]notify.CardElement, 0, len(card.Elements)+1)
-	elements = append(elements, notify.CardElement{
-		Tag: "div",
-		Text: &notify.CardText{
-			Tag:     "lark_md",
-			Content: fmt.Sprintf("**持续时间** %s\n\n**提醒级别** 第 %d 次", elapsed(now.Sub(incident.FirstDeliveredAt)), level),
-		},
+	if strings.TrimSpace(snapshot.GroupName) == "" ||
+		strings.TrimSpace(snapshot.Headline) == "" ||
+		strings.TrimSpace(snapshot.LatestFact) == "" {
+		return notify.FeishuMessage{}, fmt.Errorf("decode incident reminder snapshot")
+	}
+	message := notify.RenderUserImpactReminder(notify.UserImpactReminderView{
+		GroupName:  snapshot.GroupName,
+		Severity:   incident.Severity,
+		Headline:   snapshot.Headline,
+		Duration:   elapsed(now.Sub(incident.FirstDeliveredAt)),
+		LatestFact: snapshot.LatestFact,
+		Capacity:   snapshot.Capacity,
 	})
-	for _, element := range card.Elements {
-		if element.Text != nil && strings.Contains(element.Text.Content, "<at id=") {
-			continue
-		}
-		if element.Text != nil && strings.Contains(element.Text.Content, "**持续时间**") &&
-			strings.Contains(element.Text.Content, "**提醒级别**") {
-			continue
-		}
-		elements = append(elements, element)
-	}
-	card.Elements = elements
-	message := notify.FeishuMessage{
-		MsgType: "interactive", Card: &card, Severity: incident.Severity,
-	}
 	message = notify.WithDeliveryIdentity(message, incident.OccurrenceNo, fmt.Sprintf("escalation_%d", level))
 	if _, err := message.CardJSON(); err != nil {
 		return notify.FeishuMessage{}, err

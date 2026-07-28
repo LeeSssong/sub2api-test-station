@@ -520,7 +520,9 @@ func TestIncidentEscalationClaimAndRetryAreOccurrenceSafe(t *testing.T) {
 	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
 	transition, err := machine.Observe(ctx, incidents.Observation{
 		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
-		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+		CurrentValue: `{"group_name":"Public","headline":"全部请求持续失败",` +
+			`"latest_fact":"最近窗口请求全部失败。","capacity":"当前可用账号 0 / 1。"}`,
+		ConfirmationWindows: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -564,7 +566,8 @@ func TestIncidentEscalationClaimAndRetryAreOccurrenceSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	if claim == nil || claim.Key != key || claim.Severity != "P0" || claim.OccurrenceNo != 1 ||
-		claim.EscalationLevel != 0 || !json.Valid(claim.MessagePayload) {
+		claim.EscalationLevel != 0 || !json.Valid([]byte(claim.CurrentValue)) ||
+		!strings.Contains(claim.CurrentValue, "最近窗口请求全部失败") {
 		t.Fatalf("claim=%#v", claim)
 	}
 	retryAt := firstDue.Add(time.Minute)
@@ -622,7 +625,9 @@ func TestRecoveryReservationRequiresDeliveredAlertForOccurrence(t *testing.T) {
 	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
 	transition, err := machine.Observe(ctx, incidents.Observation{
 		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
-		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+		CurrentValue: `{"group_name":"Public","headline":"全部请求持续失败",` +
+			`"latest_fact":"最近窗口请求全部失败。","capacity":"当前可用账号 0 / 1。"}`,
+		ConfirmationWindows: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -678,7 +683,9 @@ func TestNonRecoveryReservationIsRejectedAfterIncidentRecovery(t *testing.T) {
 	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
 	transition, err := machine.Observe(ctx, incidents.Observation{
 		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
-		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+		CurrentValue: `{"group_name":"Public","headline":"全部请求持续失败",` +
+			`"latest_fact":"最近窗口请求全部失败。","capacity":"当前可用账号 0 / 1。"}`,
+		ConfirmationWindows: 1,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -87,3 +87,36 @@ func TestRenderUserImpactRecoveryHasNoIncidentActions(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderUserImpactReminderIsConciseAndKeepsSeverity(t *testing.T) {
+	message := RenderUserImpactReminder(UserImpactReminderView{
+		GroupName: "GPT PLUS 内测", Severity: "P0",
+		Headline:   "全部请求持续失败",
+		Duration:   "15 分钟",
+		LatestFact: "最近 15 分钟 31 次请求全部失败。",
+		Capacity:   "当前可用账号 1 / 3。",
+	})
+	if message.Severity != "P0" ||
+		message.Card.Header.Template != "red" ||
+		message.Card.Header.Title.Content !=
+			"再次提醒｜GPT PLUS 内测分组全部请求持续失败" {
+		t.Fatalf("message=%#v", message)
+	}
+	text := message.RenderedText()
+	for _, want := range []string{
+		"15 分钟", "尚未有人确认接手",
+		"最近 15 分钟 31 次请求全部失败",
+		"当前可用账号 1 / 3",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %s", want, text)
+		}
+	}
+	for _, forbidden := range []string{
+		"第 1 次提醒", "发生了什么", "用户影响", "已知线索", "建议处理",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("reminder cloned initial card section %q: %s", forbidden, text)
+		}
+	}
+}

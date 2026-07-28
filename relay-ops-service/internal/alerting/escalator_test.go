@@ -38,16 +38,15 @@ func TestNextEscalationAtUsesBoundedOriginalIncidentClock(t *testing.T) {
 	}
 }
 
-func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing.T) {
+func TestServiceRendersCurrentSnapshotWithSeverityElapsedTimeAndNextLevel(t *testing.T) {
 	now := time.Date(2026, 7, 28, 4, 5, 0, 0, time.UTC)
 	first := now.Add(-5 * time.Minute)
-	payload, err := notify.RenderAlert(notify.IncidentView{Title: "公开分组不可用", Severity: "P0"}).CardJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
 	repository := &fakeEscalationRepository{claims: []*Incident{{
-		Key: "group:GPT-Plus:availability", Severity: "P0", OccurrenceNo: 3,
-		EscalationLevel: 0, ClaimToken: "claim-1", FirstDeliveredAt: first, MessagePayload: payload,
+		Key: "group:7:user-impact", Severity: "P0", OccurrenceNo: 3,
+		EscalationLevel: 0, ClaimToken: "claim-1", FirstDeliveredAt: first,
+		CurrentValue: `{"group_name":"GPT-Plus","headline":"全部请求持续失败",` +
+			`"latest_fact":"最近 15 分钟 31 次请求全部失败。",` +
+			`"capacity":"当前可用账号 1 / 3。","observed_at":"2026-07-28T04:05:00Z"}`,
 	}}}
 	sender := &fakeEscalationSender{}
 	service := Service{Repository: repository, Sender: sender, Clock: func() time.Time { return now }}
@@ -58,7 +57,7 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 		t.Fatalf("sent=%#v", sender.sent)
 	}
 	sent := sender.sent[0]
-	if sent.key != "group:GPT-Plus:availability" || sent.evidence != "occurrence:3:escalation:1" {
+	if sent.key != "group:7:user-impact" || sent.evidence != "occurrence:3:escalation:1" {
 		t.Fatalf("delivery identity=%#v", sent)
 	}
 	if sent.message.Severity != "P0" || sent.message.OccurrenceNo != 3 || sent.message.Transition != "escalation_1" {
@@ -66,8 +65,18 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 	}
 	if !strings.HasPrefix(sent.message.Card.Header.Title.Content, "再次提醒｜") ||
 		!strings.Contains(sent.message.RenderedText(), "持续时间") ||
-		!strings.Contains(sent.message.RenderedText(), "5 分钟") {
+		!strings.Contains(sent.message.RenderedText(), "5 分钟") ||
+		!strings.Contains(sent.message.RenderedText(), "31 次请求全部失败") ||
+		!strings.Contains(sent.message.RenderedText(), "可用账号 1 / 3") {
 		t.Fatalf("message=%s", sent.message.RenderedText())
+	}
+	for _, forbidden := range []string{
+		"第 1 次提醒", "发生了什么", "用户影响", "已知线索",
+	} {
+		if strings.Contains(sent.message.RenderedText(), forbidden) {
+			t.Fatalf("reminder contains cloned section %q: %s",
+				forbidden, sent.message.RenderedText())
+		}
 	}
 	if len(repository.results) != 1 || !repository.results[0].Succeeded ||
 		repository.results[0].Level != 1 || repository.results[0].NextEscalationAt == nil ||
@@ -75,13 +84,11 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 		!repository.results[0].NextEscalationAt.Equal(first.Add(15*time.Minute)) {
 		t.Fatalf("results=%#v", repository.results)
 	}
-	firstEscalationPayload, err := sent.message.CardJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
 	secondEscalation, err := escalationMessage(Incident{
-		Key: "group:GPT-Plus:availability", Severity: "P0", OccurrenceNo: 3,
-		EscalationLevel: 1, ClaimToken: "claim-2", FirstDeliveredAt: first, MessagePayload: firstEscalationPayload,
+		Key: "group:7:user-impact", Severity: "P0", OccurrenceNo: 3,
+		EscalationLevel: 1, ClaimToken: "claim-2", FirstDeliveredAt: first,
+		CurrentValue: `{"group_name":"GPT-Plus","headline":"全部请求持续失败",` +
+			`"latest_fact":"最新窗口仍全部失败。","capacity":"当前可用账号 1 / 3。"}`,
 	}, 2, first.Add(15*time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -94,13 +101,12 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 
 func TestServiceRetriesFailedLevelAfterOneMinuteWithoutAdvancing(t *testing.T) {
 	now := time.Date(2026, 7, 28, 4, 15, 0, 0, time.UTC)
-	payload, err := notify.RenderAlert(notify.IncidentView{Title: "错误率升高", Severity: "P1"}).CardJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
 	repository := &fakeEscalationRepository{claims: []*Incident{{
-		Key: "site:group:2:error_rate", Severity: "P1", OccurrenceNo: 1,
-		EscalationLevel: 0, ClaimToken: "claim-1", FirstDeliveredAt: now.Add(-15 * time.Minute), MessagePayload: payload,
+		Key: "group:2:user-impact", Severity: "P1", OccurrenceNo: 1,
+		EscalationLevel: 0, ClaimToken: "claim-1",
+		FirstDeliveredAt: now.Add(-15 * time.Minute),
+		CurrentValue: `{"group_name":"Public","headline":"部分请求持续失败",` +
+			`"latest_fact":"错误仍在持续。","capacity":"当前可用账号 2 / 3。"}`,
 	}}}
 	sender := &fakeEscalationSender{err: errors.New("send failed")}
 	service := Service{Repository: repository, Sender: sender, Clock: func() time.Time { return now }}
@@ -109,6 +115,31 @@ func TestServiceRetriesFailedLevelAfterOneMinuteWithoutAdvancing(t *testing.T) {
 	}
 	if len(repository.results) != 1 || repository.results[0].Succeeded ||
 		repository.results[0].Level != 1 || !repository.results[0].RetryAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("results=%#v", repository.results)
+	}
+}
+
+func TestServiceRetriesInvalidLegacySnapshotWithoutSendingRawValue(t *testing.T) {
+	now := time.Date(2026, 7, 28, 4, 15, 0, 0, time.UTC)
+	repository := &fakeEscalationRepository{claims: []*Incident{{
+		Key: "site:group:2:error_rate", Severity: "P1", OccurrenceNo: 1,
+		EscalationLevel: 0, ClaimToken: "claim-legacy",
+		FirstDeliveredAt: now.Add(-15 * time.Minute),
+		CurrentValue:     `error_rate=0.2`,
+	}}}
+	sender := &fakeEscalationSender{}
+	service := Service{
+		Repository: repository, Sender: sender, Clock: func() time.Time { return now },
+	}
+	if err := service.Run(context.Background()); err == nil {
+		t.Fatal("expected legacy snapshot decode failure")
+	}
+	if len(sender.sent) != 0 {
+		t.Fatalf("legacy value was sent: %#v", sender.sent)
+	}
+	if len(repository.results) != 1 ||
+		repository.results[0].Succeeded ||
+		!repository.results[0].RetryAt.Equal(now.Add(time.Minute)) {
 		t.Fatalf("results=%#v", repository.results)
 	}
 }

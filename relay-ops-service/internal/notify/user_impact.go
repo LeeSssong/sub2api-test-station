@@ -35,6 +35,7 @@ type UserImpactRecoveryView struct {
 
 type UserImpactReminderView struct {
 	GroupName  string
+	Severity   string
 	Headline   string
 	Duration   string
 	LatestFact string
@@ -117,8 +118,16 @@ func RenderUserImpactRecovery(view UserImpactRecoveryView) FeishuMessage {
 
 func RenderUserImpactReminder(view UserImpactReminderView) FeishuMessage {
 	groupName := userImpactGroupName(view.GroupName)
+	severity := strings.ToUpper(strings.TrimSpace(view.Severity))
+	template := "orange"
+	if severity == "P0" {
+		template = "red"
+	} else {
+		severity = "P1"
+	}
 	lines := []string{
-		"事故已持续 " + humanText(view.Duration, "一段时间") + "，尚未有人确认接手。",
+		"**持续时间**：" + humanText(view.Duration, "一段时间"),
+		"**接手状态**：尚未有人确认接手。",
 		"",
 		"**最新情况**",
 		humanText(view.LatestFact, "最新运行情况待确认。"),
@@ -128,7 +137,7 @@ func RenderUserImpactReminder(view UserImpactReminderView) FeishuMessage {
 	}
 	return FeishuMessage{
 		MsgType:  "interactive",
-		Severity: "P1",
+		Severity: severity,
 		Card: &Card{
 			Config: CardConfig{WideScreenMode: true},
 			Header: CardHeader{
@@ -136,7 +145,7 @@ func RenderUserImpactReminder(view UserImpactReminderView) FeishuMessage {
 					Tag:     "plain_text",
 					Content: "再次提醒｜" + groupName + "分组" + humanText(view.Headline, "需要关注"),
 				},
-				Template: "orange",
+				Template: template,
 			},
 			Elements: []CardElement{
 				{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(lines)}},

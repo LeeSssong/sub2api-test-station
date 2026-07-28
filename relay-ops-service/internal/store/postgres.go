@@ -1381,7 +1381,7 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 	var incident alerting.Incident
 	err = tx.QueryRow(ctx, `
 		SELECT i.id, i.incident_key, i.severity, i.occurrence_no, i.escalation_level,
-		       first_delivery.delivered_at, latest_delivery.message_payload
+		       first_delivery.delivered_at, i.current_value
 		FROM relay_ops.incidents i
 		JOIN LATERAL (
 			SELECT MIN(d.delivered_at) AS delivered_at
@@ -1391,17 +1391,6 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 			  AND d.delivery_status='delivered'
 			  AND d.transition<>'recovered'
 		) first_delivery ON first_delivery.delivered_at IS NOT NULL
-		JOIN LATERAL (
-			SELECT d.message_payload
-			FROM relay_ops.notification_deliveries d
-			WHERE d.incident_id=i.id
-			  AND d.occurrence_no=i.occurrence_no
-			  AND d.delivery_status='delivered'
-			  AND d.transition<>'recovered'
-			  AND d.message_payload IS NOT NULL
-			ORDER BY d.delivered_at DESC, d.id DESC
-			LIMIT 1
-		) latest_delivery ON true
 		WHERE i.next_escalation_at<=$1
 		  AND i.severity IN ('P0', 'P1')
 		  AND i.state IN ('confirmed', 'escalated', 'degraded')
@@ -1414,7 +1403,7 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 		FOR UPDATE OF i SKIP LOCKED
 		LIMIT 1`, now.UTC()).Scan(
 		&id, &incident.Key, &incident.Severity, &incident.OccurrenceNo,
-		&incident.EscalationLevel, &incident.FirstDeliveredAt, &incident.MessagePayload,
+		&incident.EscalationLevel, &incident.FirstDeliveredAt, &incident.CurrentValue,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if err := tx.Commit(ctx); err != nil {

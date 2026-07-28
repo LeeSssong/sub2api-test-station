@@ -24,18 +24,20 @@ type JobStore interface {
 }
 
 type Scheduler struct {
-	Mode          string
-	Store         JobStore
-	Timezone      *time.Location
-	Clock         func() time.Time
-	Production    func(context.Context) error
-	Candidates    func(context.Context) ([]domain.UpstreamID, error)
-	Candidate     func(context.Context, domain.UpstreamID, bool) error
-	FastCandidate func(context.Context, domain.UpstreamID, string, bool) error
-	UsageSessions func(context.Context) ([]billing.SessionConfig, error)
-	Usage         func(context.Context, billing.SessionConfig) error
-	SiteMonitor   func(context.Context) error
-	DailyReport   func(context.Context) error
+	Mode               string
+	Store              JobStore
+	Timezone           *time.Location
+	Clock              func() time.Time
+	Production         func(context.Context) error
+	Candidates         func(context.Context) ([]domain.UpstreamID, error)
+	Candidate          func(context.Context, domain.UpstreamID, bool) error
+	FastCandidate      func(context.Context, domain.UpstreamID, string, bool) error
+	UsageSessions      func(context.Context) ([]billing.SessionConfig, error)
+	Usage              func(context.Context, billing.SessionConfig) error
+	SiteMonitor        func(context.Context) error
+	DailyReport        func(context.Context) error
+	IncidentEscalation func(context.Context) error
+	NotificationRetry  func(context.Context) error
 
 	GroupAvailability func(context.Context) error
 }
@@ -67,6 +69,16 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		now = s.Clock().UTC()
 	}
 	var failures []error
+	if s.NotificationRetry != nil {
+		if err := s.runDue(ctx, "notification-retry", now, time.Minute, s.NotificationRetry); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if s.IncidentEscalation != nil {
+		if err := s.runDue(ctx, "incident-escalation", now, time.Minute, s.IncidentEscalation); err != nil {
+			failures = append(failures, err)
+		}
+	}
 	if err := s.runDue(ctx, "production-collection", now, 5*time.Minute, s.RunProductionCollection); err != nil {
 		failures = append(failures, err)
 	}

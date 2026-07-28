@@ -102,6 +102,7 @@ services:
       RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE: ${RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE:-}
       RELAY_OPS_FEISHU_ROUTING_FILE: ${RELAY_OPS_FEISHU_ROUTING_FILE:-}
       RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE: ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE:-}
+      RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE: ${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE:-}
       RELAY_OPS_AGENT_BASE_URL: ${RELAY_OPS_AGENT_BASE_URL:-}
       RELAY_OPS_AGENT_API_KEY_FILE: /run/secrets/agent-api-key
       RELAY_OPS_AGENT_MODEL: ${RELAY_OPS_AGENT_MODEL:-}
@@ -117,6 +118,7 @@ services:
       - ${RELAY_OPS_FEISHU_ENCRYPT_KEY_HOST_FILE:-/dev/null}:/run/secrets/feishu-encrypt-key:ro
       - ${RELAY_OPS_FEISHU_ROUTING_HOST_FILE:-/dev/null}:/run/secrets/feishu-routing.json:ro
       - ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro
+      - ${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-recipients.json:ro
       - ${RELAY_OPS_AGENT_API_KEY_HOST_FILE:-./secrets/agent-api-key}:/run/secrets/agent-api-key:ro
       - ${RELAY_OPS_CANDIDATE_KEYS_HOST_DIR:-./secrets/candidate-keys}:/run/secrets/candidates:ro
       - ${RELAY_OPS_CANDIDATE_MANAGED_KEYS_HOST_DIR:-./secrets/candidate-managed-keys}:/var/lib/relay-ops/candidate-keys:rw

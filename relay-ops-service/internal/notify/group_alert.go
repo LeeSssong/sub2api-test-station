@@ -18,6 +18,7 @@ type GroupAlertView struct {
 	GroupName string
 	Available int
 	Total     int
+	Severity  string
 	Down      []GroupAlertAccount
 	Recovery  bool
 }
@@ -41,16 +42,27 @@ func RenderGroupAlert(view GroupAlertView) FeishuMessage {
 		})
 	}
 
-	lines := []string{fmt.Sprintf("可用 %d / 共 %d", view.Available, view.Total)}
+	severity := view.Severity
+	if severity != "P0" {
+		severity = "P1"
+	}
+	impact := "分组冗余不足，部分请求可能受到影响"
+	if severity == "P0" {
+		impact = "分组已无可用账号，用户请求将失败"
+	}
+	lines := []string{
+		"**用户影响** " + impact,
+		fmt.Sprintf("**剩余容量** 可用 %d / 共 %d", view.Available, view.Total),
+	}
 
 	template := "red"
-	title := "⚠️ 分组可用账号不足：" + name
+	title := severity + "｜分组可用账号不足：" + name
 	for _, account := range view.Down {
 		lines = append(lines, fmt.Sprintf("%s　%s",
 			digestValue(account.Name), digestValue(account.ErrorCode)))
 	}
 	lines = append(lines, "", "建议：为上述账号充值，或临时关闭 schedulable 止血")
-	return FeishuMessage{MsgType: "interactive", Card: &Card{
+	return FeishuMessage{MsgType: "interactive", Severity: severity, Card: &Card{
 		Config: CardConfig{WideScreenMode: true},
 		Header: CardHeader{Title: CardText{Tag: "plain_text", Content: title}, Template: template},
 		Elements: []CardElement{

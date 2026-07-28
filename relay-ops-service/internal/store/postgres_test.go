@@ -4,17 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -125,22 +129,117 @@ func TestNotificationDeliveryRetriesFailedButNotDeliveredEvidence(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	firstID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-one")
+	reservation := notify.Reservation{
+		IncidentKey: incidentKey, DedupKey: "semantic-evidence",
+		MessageHash: "message-one", OccurrenceNo: 1, Transition: "confirmed",
+		Payload: []byte(`{"header":{"title":{"content":"P2"}},"elements":[]}`),
+	}
+	firstID, reserved, err := st.ReserveNotification(ctx, reservation)
 	if err != nil || !reserved {
 		t.Fatalf("first reservation = %d %v %v", firstID, reserved, err)
 	}
-	if err := st.FinishNotification(ctx, firstID, "failed", 0); err != nil {
+	if err := st.FinishNotification(ctx, firstID, notify.DeliveryOutcome{Status: "failed"}); err != nil {
 		t.Fatal(err)
 	}
-	secondID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-two")
+	reservation.MessageHash = "message-two"
+	secondID, reserved, err := st.ReserveNotification(ctx, reservation)
 	if err != nil || !reserved || secondID != firstID {
 		t.Fatalf("failed retry = %d %v %v", secondID, reserved, err)
 	}
-	if err := st.FinishNotification(ctx, secondID, "delivered", 200); err != nil {
+	payload := []byte(`{"header":{"title":{"content":"P0"}},"elements":[]}`)
+	if err := st.FinishNotification(ctx, secondID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: 200, MessageID: "om-alert",
+		Payload: payload, UrgentStatus: "failed",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-three"); err != nil || reserved {
+	reservation.MessageHash = "message-three"
+	if _, reserved, err := st.ReserveNotification(ctx, reservation); err != nil || reserved {
 		t.Fatalf("delivered duplicate = %v %v", reserved, err)
+	}
+	var occurrenceNo int64
+	var transition, messageID, urgentStatus string
+	var storedPayload []byte
+	if err := st.pool.QueryRow(ctx, `
+		SELECT occurrence_no, transition, message_id, urgent_status, message_payload
+		FROM relay_ops.notification_deliveries WHERE id=$1`, secondID).Scan(
+		&occurrenceNo, &transition, &messageID, &urgentStatus, &storedPayload,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var gotPayload, wantPayload any
+	if err := json.Unmarshal(storedPayload, &gotPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(payload, &wantPayload); err != nil {
+		t.Fatal(err)
+	}
+	if occurrenceNo != 1 || transition != "confirmed" || messageID != "om-alert" ||
+		urgentStatus != "failed" || !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("stored delivery = occurrence %d transition %q message %q urgency %q payload %s",
+			occurrenceNo, transition, messageID, urgentStatus, storedPayload)
+	}
+}
+
+func TestIncidentOccurrencePersistenceAndAcknowledgement(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	observation := incidents.Observation{
+		Key:                 "group:GPT-Plus:availability",
+		Severity:            "P0",
+		Failing:             true,
+		EvidenceHash:        "available:0/1",
+		CurrentValue:        "可用 0 / 共 1",
+		ConfirmationWindows: 1,
+	}
+	first, err := machine.Observe(ctx, observation)
+	if err != nil || first.OccurrenceNo != 1 {
+		t.Fatalf("first observation = %#v, %v", first, err)
+	}
+	acknowledgedAt := time.Date(2026, 7, 28, 5, 0, 0, 0, time.UTC)
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt,
+	}); err != nil {
+		t.Fatalf("acknowledge current occurrence: %v", err)
+	}
+	var occurrenceNo, acknowledgedOccurrence int64
+	var acknowledgedBy int64
+	var storedAcknowledgedAt time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT occurrence_no, acknowledged_occurrence, acknowledged_by, acknowledged_at
+		FROM relay_ops.incidents WHERE incident_key=$1`, observation.Key).Scan(
+		&occurrenceNo, &acknowledgedOccurrence, &acknowledgedBy, &storedAcknowledgedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if occurrenceNo != 1 || acknowledgedOccurrence != 1 || acknowledgedBy != 42 || !storedAcknowledgedAt.Equal(acknowledgedAt) {
+		t.Fatalf("stored acknowledgement = occurrence %d acknowledged %d by %d at %s",
+			occurrenceNo, acknowledgedOccurrence, acknowledgedBy, storedAcknowledgedAt)
+	}
+
+	if _, err := machine.Observe(ctx, incidents.Observation{
+		Key: observation.Key, Severity: "P0", Failing: false,
+		EvidenceHash: "available:1/1", CurrentValue: "可用 1 / 共 1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(time.Minute),
+	}); !errors.Is(err, incidents.ErrNotActive) {
+		t.Fatalf("acknowledge recovered error = %v, want ErrNotActive", err)
+	}
+	second, err := machine.Observe(ctx, observation)
+	if err != nil || second.OccurrenceNo != 2 {
+		t.Fatalf("second occurrence = %#v, %v", second, err)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(2 * time.Minute),
+	}); !errors.Is(err, incidents.ErrOccurrenceConflict) {
+		t.Fatalf("acknowledge stale occurrence error = %v, want ErrOccurrenceConflict", err)
 	}
 }
 
@@ -408,6 +507,609 @@ func TestSchedulerClaimIsConcurrentAndRestartSafe(t *testing.T) {
 	if claimed, err := st.Claim(ctx, "candidate-cycle:17", now.Add(6*time.Hour), 6*time.Hour); err != nil || !claimed {
 		t.Fatalf("due claim=%v err=%v", claimed, err)
 	}
+}
+
+func TestIncidentEscalationClaimAndRetryAreOccurrenceSafe(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:escalation-store-test:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := notify.WithDeliveryIdentity(
+		notify.RenderAlert(notify.IncidentView{Title: "告警链路存储测试", Severity: "P0"}),
+		transition.OccurrenceNo, transition.Kind,
+	)
+	payload, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "escalation-store-test-initial", MessageHash: "message",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind,
+		Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, MessageID: "om-store-test",
+		Payload: payload, UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var firstDeliveredAt, firstDue time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT d.delivered_at, i.next_escalation_at
+		FROM relay_ops.incidents i
+		JOIN relay_ops.notification_deliveries d ON d.incident_id=i.id
+		WHERE i.incident_key=$1 AND d.id=$2`, key, deliveryID).Scan(&firstDeliveredAt, &firstDue); err != nil {
+		t.Fatal(err)
+	}
+	if !firstDue.Equal(firstDeliveredAt.Add(5 * time.Minute)) {
+		t.Fatalf("first due=%s delivered=%s", firstDue, firstDeliveredAt)
+	}
+	claim, err := st.ClaimDueEscalation(ctx, firstDue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Key != key || claim.Severity != "P0" || claim.OccurrenceNo != 1 ||
+		claim.EscalationLevel != 0 || !json.Valid(claim.MessagePayload) {
+		t.Fatalf("claim=%#v", claim)
+	}
+	retryAt := firstDue.Add(time.Minute)
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: 1, Level: 1, ClaimToken: claim.ClaimToken,
+		Succeeded: false, RetryAt: retryAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var level int
+	var next time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT escalation_level, next_escalation_at FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(&level, &next); err != nil {
+		t.Fatal(err)
+	}
+	if level != 0 || !next.Equal(retryAt) {
+		t.Fatalf("failed escalation level=%d next=%s", level, next)
+	}
+	claim, err = st.ClaimDueEscalation(ctx, retryAt)
+	if err != nil || claim == nil || claim.EscalationLevel != 0 {
+		t.Fatalf("retry claim=%#v err=%v", claim, err)
+	}
+	secondDue := firstDeliveredAt.Add(15 * time.Minute)
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: 1, Level: 1, ClaimToken: claim.ClaimToken,
+		Succeeded: true, NextEscalationAt: &secondDue,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `
+		SELECT escalation_level, next_escalation_at FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(&level, &next); err != nil {
+		t.Fatal(err)
+	}
+	if level != 1 || !next.Equal(secondDue) {
+		t.Fatalf("successful escalation level=%d next=%s", level, next)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: key, OccurrenceNo: 1, ActorUserID: 42, At: retryAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err = st.ClaimDueEscalation(ctx, secondDue)
+	if err != nil || claim != nil {
+		t.Fatalf("acknowledged claim=%#v err=%v", claim, err)
+	}
+}
+
+func TestRecoveryReservationRequiresDeliveredAlertForOccurrence(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:recovery-delivery-gate:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "recovery-before-alert", MessageHash: "recovery",
+		OccurrenceNo: transition.OccurrenceNo, Transition: "recovered",
+		Payload: []byte(`{"header":{"title":{"content":"recovered"}},"elements":[]}`),
+	}); err != nil || reserved {
+		t.Fatalf("recovery before alert reserved=%v err=%v", reserved, err)
+	}
+
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "initial-alert", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: "confirmed",
+		Payload: []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`),
+	})
+	if err != nil || !reserved {
+		t.Fatalf("initial reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	payload, err := notify.RenderAlert(notify.IncidentView{Title: "test", Severity: "P0"}).CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, MessageID: "om-recovery-gate",
+		Payload: payload, UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: false, EvidenceHash: "1/1",
+		CurrentValue: "可用 1 / 共 1", ConfirmationWindows: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "recovery-after-alert", MessageHash: "recovery",
+		OccurrenceNo: transition.OccurrenceNo, Transition: "recovered",
+		Payload: []byte(`{"header":{"title":{"content":"recovered"}},"elements":[]}`),
+	}); err != nil || !reserved {
+		t.Fatalf("recovery after alert reserved=%v err=%v", reserved, err)
+	}
+}
+
+func TestNonRecoveryReservationIsRejectedAfterIncidentRecovery(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:recovered-reservation-gate:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: false, EvidenceHash: "1/1",
+		CurrentValue: "可用 1 / 共 1", ConfirmationWindows: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"header":{"title":{"content":"stale alert"}},"elements":[]}`)
+	if _, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "stale-alert-after-recovery", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	}); err != nil || reserved {
+		t.Fatalf("stale alert after recovery reserved=%v err=%v", reserved, err)
+	}
+}
+
+func TestFailedNotificationBecomesDueForLeasedRetry(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:failed-delivery-retry:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := notify.RenderAlert(notify.IncidentView{Title: "test", Severity: "P0"}).CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "failed-delivery-retry", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "failed", Payload: payload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var nextAttempt time.Time
+	var attempts int
+	if err := st.pool.QueryRow(ctx, `
+		SELECT next_attempt_at, attempt_count
+		FROM relay_ops.notification_deliveries
+		WHERE id=$1`, deliveryID).Scan(&nextAttempt, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts=%d", attempts)
+	}
+	if claim, err := st.ClaimNotificationRetry(ctx, nextAttempt.Add(-time.Second)); err != nil || claim != nil {
+		t.Fatalf("early claim=%#v err=%v", claim, err)
+	}
+	claim, err := st.ClaimNotificationRetry(ctx, nextAttempt)
+	if err != nil || claim == nil || claim.ID != deliveryID || claim.IncidentKey != key ||
+		claim.OccurrenceNo != transition.OccurrenceNo || claim.Transition != transition.Kind ||
+		!json.Valid(claim.Payload) {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+	if err := st.pool.QueryRow(ctx, `
+		SELECT attempt_count FROM relay_ops.notification_deliveries WHERE id=$1`,
+		deliveryID).Scan(&attempts); err != nil || attempts != 2 {
+		t.Fatalf("attempts after claim=%d err=%v", attempts, err)
+	}
+}
+
+func TestStaleReservedNotificationIsReclaimed(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:stale-reservation-retry:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P1", Failing: true, EvidenceHash: "1/2",
+		CurrentValue: "可用 1 / 共 2", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := notify.RenderAlert(notify.IncidentView{Title: "test", Severity: "P1"}).CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "stale-reservation-retry", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.notification_deliveries
+		SET created_at=$2
+		WHERE id=$1`, deliveryID, now.Add(-3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimNotificationRetry(ctx, now)
+	if err != nil || claim == nil || claim.ID != deliveryID {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+}
+
+func TestAcknowledgementAndRecoveryCancelPendingNotificationRetries(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		stop func(context.Context, *Store, string, int64) error
+	}{
+		{
+			name: "acknowledgement",
+			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
+				return st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+					Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: time.Now().UTC(),
+				})
+			},
+		},
+		{
+			name: "recovery",
+			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
+				return st.Put(ctx, incidents.Record{
+					Key: key, Severity: "P0", State: "recovered", OccurrenceNo: occurrenceNo,
+				})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := openTestStore(t)
+			ctx := context.Background()
+			if err := st.Migrate(ctx); err != nil {
+				t.Fatal(err)
+			}
+			key := "group:cancel-retry-" + test.name + ":availability"
+			machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+			transition, err := machine.Observe(ctx, incidents.Observation{
+				Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+				CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+			deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+				IncidentKey: key, DedupKey: "cancel-retry-" + test.name, MessageHash: "alert",
+				OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+			})
+			if err != nil || !reserved {
+				t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+			}
+			if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+				Status: "failed", Payload: payload,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.stop(ctx, st, key, transition.OccurrenceNo); err != nil {
+				t.Fatal(err)
+			}
+			var status string
+			var nextAttempt *time.Time
+			if err := st.pool.QueryRow(ctx, `
+				SELECT delivery_status, next_attempt_at
+				FROM relay_ops.notification_deliveries
+				WHERE id=$1`, deliveryID).Scan(&status, &nextAttempt); err != nil {
+				t.Fatal(err)
+			}
+			if status != "canceled" || nextAttempt != nil {
+				t.Fatalf("status=%q next_attempt=%v", status, nextAttempt)
+			}
+		})
+	}
+}
+
+func TestAcknowledgementAndRecoveryWaitForInFlightNotificationDelivery(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		stop func(context.Context, *Store, string, int64) error
+	}{
+		{
+			name: "acknowledgement",
+			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
+				return st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+					Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: time.Now().UTC(),
+				})
+			},
+		},
+		{
+			name: "recovery",
+			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
+				return st.Put(ctx, incidents.Record{
+					Key: key, Severity: "P0", State: "recovered", OccurrenceNo: occurrenceNo,
+				})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := openTestStore(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := st.Migrate(ctx); err != nil {
+				t.Fatal(err)
+			}
+			key := "group:in-flight-notification-" + test.name + ":availability"
+			machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+			transition, err := machine.Observe(ctx, incidents.Observation{
+				Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+				CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+			deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+				IncidentKey: key, DedupKey: "in-flight-notification-" + test.name, MessageHash: "alert",
+				OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+			})
+			if err != nil || !reserved {
+				t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+			}
+
+			done := make(chan error, 1)
+			go func() {
+				done <- test.stop(ctx, st, key, transition.OccurrenceNo)
+			}()
+			select {
+			case err := <-done:
+				t.Fatalf("%s returned before notification delivery finished: %v", test.name, err)
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+				Status: "delivered", ResponseCode: http.StatusOK, Payload: payload,
+				MessageID: "om-in-flight", UrgentStatus: "delivered",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-ctx.Done():
+				t.Fatalf("%s did not resume after notification delivery finished", test.name)
+			}
+		})
+	}
+}
+
+func TestRecoveryWaitsForInFlightNotificationRetry(t *testing.T) {
+	st := openTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:in-flight-notification-retry:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "in-flight-notification-retry", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "failed", Payload: payload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var nextAttempt time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT next_attempt_at
+		FROM relay_ops.notification_deliveries
+		WHERE id=$1`, deliveryID).Scan(&nextAttempt); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimNotificationRetry(ctx, nextAttempt)
+	if err != nil || claim == nil || claim.ID != deliveryID {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- st.Put(ctx, incidents.Record{
+			Key: key, Severity: "P0", State: "recovered", OccurrenceNo: transition.OccurrenceNo,
+		})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("recovery returned before notification retry finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, Payload: payload,
+		MessageID: "om-retry", UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("recovery did not resume after notification retry finished")
+	}
+}
+
+func TestAcknowledgementWaitsForInFlightEscalation(t *testing.T) {
+	st, key, occurrenceNo, firstDue := prepareDueEscalation(t, "ack-race")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	claim, err := st.ClaimDueEscalation(ctx, firstDue)
+	if err != nil || claim == nil || claim.ClaimToken == "" {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+			Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: firstDue,
+		})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("acknowledgement returned before escalation finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: occurrenceNo, Level: 1, ClaimToken: claim.ClaimToken,
+		Succeeded: false, RetryAt: firstDue.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("acknowledgement did not resume after escalation finished")
+	}
+}
+
+func TestRecoveryWaitsForInFlightEscalation(t *testing.T) {
+	st, key, occurrenceNo, firstDue := prepareDueEscalation(t, "recovery-race")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	claim, err := st.ClaimDueEscalation(ctx, firstDue)
+	if err != nil || claim == nil || claim.ClaimToken == "" {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- st.Put(ctx, incidents.Record{
+			Key: key, Severity: "P0", State: "recovered", OccurrenceNo: occurrenceNo,
+		})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("recovery returned before escalation finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: occurrenceNo, Level: 1, ClaimToken: claim.ClaimToken,
+		Succeeded: false, RetryAt: firstDue.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("recovery did not resume after escalation finished")
+	}
+}
+
+func prepareDueEscalation(t *testing.T, suffix string) (*Store, string, int64, time.Time) {
+	t.Helper()
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:" + suffix + ":availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: suffix, MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, Payload: payload, UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var firstDue time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT next_escalation_at FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(&firstDue); err != nil {
+		t.Fatal(err)
+	}
+	return st, key, transition.OccurrenceNo, firstDue
 }
 
 func openTestStore(t *testing.T) *Store {

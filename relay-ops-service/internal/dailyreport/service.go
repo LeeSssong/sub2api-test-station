@@ -172,16 +172,18 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		return Result{}, fmt.Errorf("daily report incident state is required")
 	}
 	evidence := summaryHash(date)
-	if _, err := reporter.Observe(ctx, incidents.Observation{
+	transition, err := reporter.Observe(ctx, incidents.Observation{
 		Key:                 contract.IncidentID,
 		Severity:            "P2",
 		Failing:             true,
 		EvidenceHash:        evidence,
 		CurrentValue:        "daily operations report generated",
 		ConfirmationWindows: 1,
-	}); err != nil {
+	})
+	if err != nil {
 		return Result{}, fmt.Errorf("record daily report incident: %w", err)
 	}
+	message = notify.WithDeliveryIdentity(message, transition.OccurrenceNo, transition.Kind)
 	if err := s.Notifier.SendIncident(ctx, contract.IncidentID, evidence, message); err != nil {
 		result.Notification = "failed"
 		return result, err

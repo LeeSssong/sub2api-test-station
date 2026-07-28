@@ -2,8 +2,22 @@ package incidents
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 )
+
+var (
+	ErrOccurrenceConflict = errors.New("incident occurrence conflicts with current state")
+	ErrNotActive          = errors.New("incident is not active")
+)
+
+type Acknowledgement struct {
+	Key          string
+	OccurrenceNo int64
+	ActorUserID  int64
+	At           time.Time
+}
 
 type Observation struct {
 	Key                 string
@@ -19,6 +33,7 @@ type Record struct {
 	Severity     string
 	State        string
 	SampleCount  int
+	OccurrenceNo int64
 	EvidenceHash string
 	CurrentValue string
 }
@@ -42,10 +57,11 @@ type Machine struct {
 }
 
 type Transition struct {
-	State      string
-	Kind       string
-	Notify     bool
-	RelatedKey string
+	State        string
+	Kind         string
+	Notify       bool
+	RelatedKey   string
+	OccurrenceNo int64
 }
 
 func (m Machine) Observe(ctx context.Context, observation Observation) (Transition, error) {
@@ -63,9 +79,12 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 	if err != nil {
 		return Transition{}, err
 	}
+	if exists && record.OccurrenceNo <= 0 {
+		record.OccurrenceNo = 1
+	}
 	if !observation.Failing {
 		if !exists || record.State == "recovered" {
-			return Transition{State: "healthy"}, nil
+			return Transition{State: "healthy", OccurrenceNo: record.OccurrenceNo}, nil
 		}
 		notify := record.State == "confirmed" || record.State == "escalated" || record.State == "degraded"
 		record.State = "recovered"
@@ -74,11 +93,15 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: "recovered", Kind: "recovered", Notify: notify, RelatedKey: observation.Key}, nil
+		return Transition{State: "recovered", Kind: "recovered", Notify: notify, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 
 	if !exists || record.State == "recovered" {
-		record = Record{Key: observation.Key, Severity: observation.Severity, State: "observed", SampleCount: 1, EvidenceHash: observation.EvidenceHash, CurrentValue: observation.CurrentValue}
+		occurrenceNo := int64(1)
+		if exists {
+			occurrenceNo = record.OccurrenceNo + 1
+		}
+		record = Record{Key: observation.Key, Severity: observation.Severity, State: "observed", SampleCount: 1, OccurrenceNo: occurrenceNo, EvidenceHash: observation.EvidenceHash, CurrentValue: observation.CurrentValue}
 		if required == 1 {
 			record.State = "confirmed"
 		}
@@ -86,9 +109,9 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 			return Transition{}, err
 		}
 		if record.State == "confirmed" {
-			return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key}, nil
+			return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 		}
-		return Transition{State: record.State}, nil
+		return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 
 	previousEvidence := record.EvidenceHash
@@ -102,22 +125,22 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: record.State, Kind: "escalated", Notify: true, RelatedKey: observation.Key}, nil
+		return Transition{State: record.State, Kind: "escalated", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 	if record.State == "observed" && record.SampleCount >= required {
 		record.State = "confirmed"
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key}, nil
+		return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 	if err := m.Repository.Put(ctx, record); err != nil {
 		return Transition{}, err
 	}
 	if (record.State == "confirmed" || record.State == "escalated") && observation.EvidenceHash != "" && observation.EvidenceHash != previousEvidence {
-		return Transition{State: record.State, Kind: "new_evidence", Notify: true, RelatedKey: observation.Key}, nil
+		return Transition{State: record.State, Kind: "new_evidence", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
-	return Transition{State: record.State}, nil
+	return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
 }
 
 func severityRank(severity string) int {

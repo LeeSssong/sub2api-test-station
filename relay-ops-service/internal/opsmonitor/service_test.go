@@ -46,6 +46,41 @@ func TestServiceConfirmsErrorRateAfterTwoCompleteWindows(t *testing.T) {
 	}
 }
 
+func TestServiceDoesNotDuplicatePublicRuntimeAlertsForEveryAccount(t *testing.T) {
+	now := time.Date(2026, 7, 28, 4, 0, 0, 0, time.UTC)
+	reader := &fakeReader{
+		groups: []sub2api.Group{{ID: 16, Name: "GPT-PLUS-内测", Status: "active"}},
+		ops:    map[snapshotKey]sub2api.OpsSnapshot{},
+	}
+	reader.ops[snapshotKey{groupID: 16, rangeName: "15m"}] = snapshot(20, 18, 0.06, 1200)
+	reader.ops[snapshotKey{groupID: 16, rangeName: "24h"}] = snapshot(500, 490, 0.02, 1000)
+	for id := int64(20); id < 28; id++ {
+		reader.accounts = append(reader.accounts, sub2api.Account{
+			ID: id, Name: "account", Status: "active", Schedulable: true,
+		})
+		reader.ops[snapshotKey{accountID: id, rangeName: "15m"}] = snapshot(20, 18, 0.06, 1200)
+		reader.ops[snapshotKey{accountID: id, rangeName: "24h"}] = snapshot(500, 490, 0.02, 1000)
+	}
+	repository := newMemoryRepository()
+	notifier := &fakeNotifier{}
+	service := newService(reader, repository, notifier, now)
+
+	for range 2 {
+		if err := service.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(notifier.sent) != 1 || notifier.sent[0].key != "site:group:16:error_rate" {
+		t.Fatalf("sent = %#v", notifier.sent)
+	}
+	for key := range repository.records {
+		if strings.HasPrefix(key, "site:account:") &&
+			(strings.HasSuffix(key, ":availability") || strings.HasSuffix(key, ":error_rate") || strings.HasSuffix(key, ":ttft_p95")) {
+			t.Fatalf("duplicate account runtime incident created: %s", key)
+		}
+	}
+}
+
 func TestServiceSuppressesUnchangedConfirmedMetricAtANewerEvidenceTime(t *testing.T) {
 	now := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
 	reader := &fakeReader{
@@ -196,9 +231,9 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 		transition string
 		wantTitle  string
 	}{
-		{"availability", "confirmed", "站内运行告警：Pro-SHUAI-0.17"},
-		{"balance_exhausted", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
-		{"multiplier", "confirmed", "上游账号质量告警：Pro-SHUAI-0.17"},
+		{"availability", "confirmed", "P1｜站内运行告警：Pro-SHUAI-0.17"},
+		{"balance_exhausted", "confirmed", "P1｜上游账号质量告警：Pro-SHUAI-0.17"},
+		{"multiplier", "confirmed", "账号计费倍率变更：Pro-SHUAI-0.17"},
 		{"paused", "recovered", "站内运行已恢复：Pro-SHUAI-0.17"},
 	}
 	for _, tc := range cases {
@@ -216,6 +251,65 @@ func TestRenderAccountMetricsUseDisplayName(t *testing.T) {
 				t.Fatalf("alert body missing object name: %s", text)
 			}
 		})
+	}
+}
+
+func TestRenderMultiplierChangeUsesBillingLanguageWithoutUnsupportedOpsLink(t *testing.T) {
+	message := render(
+		object{kind: "account", id: 21, name: "Plus-TK-极速"},
+		"multiplier", "0.07x", "0.08x", 1,
+		time.Date(2026, 7, 28, 1, 35, 4, 0, time.UTC), "confirmed",
+	)
+	text := message.RenderedText()
+	for _, want := range []string{
+		"账号计费倍率变更：Plus-TK-极速",
+		"当前倍率** 0.07x",
+		"上次记录** 0.08x",
+		"确认是否符合上游价格或账号配置变化",
+		"不执行路由或账号写入",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+	for _, forbidden := range []string{"上游账号质量告警", "**基线**", "查看上游账号质量证据"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("found %q in %q", forbidden, text)
+		}
+	}
+	if len(message.Card.Elements) != 1 {
+		t.Fatalf("multiplier card has unsupported action: %#v", message.Card.Elements)
+	}
+}
+
+func TestRenderMultiplierStabilityDoesNotClaimHealthRecoveryOrLinkOps(t *testing.T) {
+	message := render(
+		object{kind: "account", id: 21, name: "Plus-TK-极速"},
+		"multiplier", "0.07x", "0.07x", 1,
+		time.Date(2026, 7, 28, 1, 40, 4, 0, time.UTC), "recovered",
+	)
+	text := message.RenderedText()
+	for _, want := range []string{
+		"账号计费倍率记录已稳定：Plus-TK-极速",
+		"当前倍率",
+		"0.07x",
+		"本次记录与上次记录一致",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+	for _, forbidden := range []string{"已恢复", "健康基线", "健康确认"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("found %q in %q", forbidden, text)
+		}
+	}
+	data, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(data), `"tag":"action"`) || contains(string(data), `"/ops"`) {
+		t.Fatalf("multiplier stability card has unsupported action: %s", data)
 	}
 }
 
@@ -260,14 +354,15 @@ func TestServiceAlertsChangedMultiplierAndExplicitBalanceExhaustionImmediately(t
 			t.Fatalf("%s leaked projection name or account ID: %s", sent.key, text)
 		}
 	}
-	for _, key := range []string{"site:account:10:multiplier", "site:account:10:balance_exhausted"} {
-		if record := repository.records[key]; record.Severity != "P1" || record.State != "confirmed" {
-			t.Fatalf("%s record = %#v", key, record)
-		}
+	if record := repository.records["site:account:10:multiplier"]; record.Severity != "P2" || record.State != "confirmed" {
+		t.Fatalf("multiplier record = %#v", record)
+	}
+	if record := repository.records["site:account:10:balance_exhausted"]; record.Severity != "P1" || record.State != "confirmed" {
+		t.Fatalf("balance record = %#v", record)
 	}
 }
 
-func TestServiceAccountRuntimeAlertAndRecoveryUseListAccountsName(t *testing.T) {
+func TestServiceSuppressesAccountRuntimeAlertCopies(t *testing.T) {
 	now := time.Date(2026, 7, 27, 3, 0, 0, 0, time.UTC)
 	reader := &fakeReader{
 		accounts: []sub2api.Account{{ID: 10, Name: "ListAccounts 运行名称", Status: "active", Schedulable: true}},
@@ -290,23 +385,13 @@ func TestServiceAccountRuntimeAlertAndRecoveryUseListAccountsName(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	if len(notifier.sent) != 2 {
-		t.Fatalf("sent = %#v, want confirmed and recovered", notifier.sent)
+	if len(notifier.sent) != 0 {
+		t.Fatalf("account runtime copies sent = %#v", notifier.sent)
 	}
-	for _, sent := range notifier.sent {
-		if sent.key != "site:account:10:error_rate" {
-			t.Fatalf("key = %q, want ID-based error-rate key", sent.key)
+	for _, metric := range []string{"availability", "error_rate", "ttft_p95"} {
+		if _, found := repository.records["site:account:10:"+metric]; found {
+			t.Fatalf("account runtime incident %q was created", metric)
 		}
-		text := sent.message.RenderedText()
-		if !strings.Contains(text, "ListAccounts 运行名称") {
-			t.Fatalf("%s did not use ListAccounts name: %s", sent.key, text)
-		}
-		if strings.Contains(text, "#10") {
-			t.Fatalf("%s leaked account ID: %s", sent.key, text)
-		}
-	}
-	if !strings.Contains(notifier.sent[1].message.RenderedText(), "已恢复") {
-		t.Fatalf("second message is not recovery: %s", notifier.sent[1].message.RenderedText())
 	}
 }
 
@@ -571,8 +656,15 @@ func TestServiceAlertsCompleteFailureImmediatelyBelowMinimumSample(t *testing.T)
 	if err := service.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if len(notifier.sent) != 1 || notifier.sent[0].key != "site:group:2:availability" {
-		t.Fatalf("complete failure must alert immediately: %#v", notifier.sent)
+		t.Fatalf("complete failure must emit only its parent P0: %#v", notifier.sent)
+	}
+	message := notifier.sent[0].message
+	if message.Severity != "P0" || !strings.HasPrefix(message.Card.Header.Title.Content, "P0｜") {
+		t.Fatalf("complete failure message severity=%q title=%q", message.Severity, message.Card.Header.Title.Content)
 	}
 }
 
@@ -603,11 +695,11 @@ func TestServiceOnlyUsesActiveSchedulableAccountsForQualityEvaluation(t *testing
 	}
 }
 
-func TestRenderSeparatesRuntimeAndAccountQualityEvidenceInCardJSON(t *testing.T) {
+func TestRenderSeparatesRuntimeAndMultiplierEvidenceInCardJSON(t *testing.T) {
 	now := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
 	for name, message := range map[string]notify.FeishuMessage{
-		"runtime": render(object{kind: "group", id: 2}, "ttft_p95", "3900ms", "3000ms", 2, now, "confirmed"),
-		"quality": render(object{kind: "account", id: 10}, "multiplier", "0.1x", "0.05x", 1, now, "confirmed"),
+		"runtime":    render(object{kind: "group", id: 2}, "ttft_p95", "3900ms", "3000ms", 2, now, "confirmed"),
+		"multiplier": render(object{kind: "account", id: 10}, "multiplier", "0.1x", "0.05x", 1, now, "confirmed"),
 	} {
 		data, err := message.CardJSON()
 		if err != nil {
@@ -620,8 +712,8 @@ func TestRenderSeparatesRuntimeAndAccountQualityEvidenceInCardJSON(t *testing.T)
 			}
 			continue
 		}
-		if !contains(card, "上游账号质量告警") || !contains(card, "数据来源：账号质量定时巡检结果") || contains(card, "Sub2API 原生站内运行快照") {
-			t.Fatalf("quality card = %s", card)
+		if !contains(card, "账号计费倍率变更") || !contains(card, "数据来源：Sub2API 原生账号监控倍率投影") || contains(card, "账号质量定时巡检结果") {
+			t.Fatalf("multiplier card = %s", card)
 		}
 	}
 }

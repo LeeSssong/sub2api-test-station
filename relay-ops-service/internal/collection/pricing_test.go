@@ -51,6 +51,9 @@ func TestProductionCollectionDetectsMultiplierOnceWithoutPaidProbe(t *testing.T)
 	if len(notifier.messages) != 1 {
 		t.Fatalf("notifications = %d, want one semantic change", len(notifier.messages))
 	}
+	if notifier.messages[0].OccurrenceNo != 7 || notifier.messages[0].Transition != "confirmed" {
+		t.Fatalf("delivery identity=%#v", notifier.messages[0])
+	}
 	if probe.calls != 0 {
 		t.Fatalf("production probe calls = %d, want 0", probe.calls)
 	}
@@ -162,7 +165,7 @@ func (r *fakeRepository) AppendProbeRun(context.Context, domain.UpstreamID, prob
 type fakeIncidents struct{}
 
 func (fakeIncidents) Observe(context.Context, incidents.Observation) (incidents.Transition, error) {
-	return incidents.Transition{Notify: true, State: "confirmed", Kind: "confirmed"}, nil
+	return incidents.Transition{Notify: true, State: "confirmed", Kind: "confirmed", OccurrenceNo: 7}, nil
 }
 
 type fakeNotifier struct{ messages []notify.FeishuMessage }

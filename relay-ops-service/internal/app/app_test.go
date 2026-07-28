@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -75,17 +76,31 @@ func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testin
 	if err := os.WriteFile(chatFile, []byte("oc_alert_group\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	recipientsFile := filepath.Join(t.TempDir(), "feishu-alert-recipients.json")
+	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator-a"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	sender := &appTestMessageSender{}
-	client, err := notificationClient(config.Config{FeishuAlertChatIDFile: chatFile}, sender)
+	client, err := notificationClient(config.Config{
+		FeishuAlertChatIDFile: chatFile, FeishuAlertRecipientsFile: recipientsFile,
+	}, sender)
 	if err != nil {
 		t.Fatal(err)
 	}
-	message := notify.RenderFeishu(notify.IncidentView{Title: "合成告警"})
+	message := notify.RenderFeishu(notify.IncidentView{Title: "合成告警", Severity: "P1"})
 	if err := client.Send(context.Background(), message); err != nil {
 		t.Fatal(err)
 	}
 	if sender.chatID != "oc_alert_group" || sender.payload.MsgType != "interactive" {
 		t.Fatalf("sender=%#v", sender)
+	}
+	var card notify.Card
+	if err := json.Unmarshal(sender.payload.Content, &card); err != nil {
+		t.Fatal(err)
+	}
+	if len(card.Elements) == 0 || card.Elements[0].Text == nil ||
+		!strings.Contains(card.Elements[0].Text.Content, "<at id=operator-a></at>") {
+		t.Fatal("configured alert recipient was not mentioned")
 	}
 }
 

@@ -181,6 +181,7 @@ func (c Collector) notifyChange(ctx context.Context, source Source, snapshotID i
 		Focus:       analysis.Focus,
 		Links:       []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
+	message = notify.WithDeliveryIdentity(message, transition.OccurrenceNo, transition.Kind)
 	return c.Notifier.SendIncident(ctx, key, evidenceHash, message)
 }
 

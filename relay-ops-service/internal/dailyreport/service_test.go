@@ -82,6 +82,9 @@ func TestServiceDeduplicatesDailyDeliveryAndKeepsContractStable(t *testing.T) {
 	if notifier.delivered != 1 || notifier.attempts != 2 || len(analyzer.contracts) != 2 {
 		t.Fatalf("delivered=%d attempts=%d analyses=%d", notifier.delivered, notifier.attempts, len(analyzer.contracts))
 	}
+	if notifier.messages[0].OccurrenceNo != 5 || notifier.messages[0].Transition != "confirmed" {
+		t.Fatalf("delivery identity=%#v", notifier.messages[0])
+	}
 	card, cardErr := notifier.messages[0].CardJSON()
 	if cardErr != nil {
 		t.Fatal(cardErr)
@@ -347,7 +350,7 @@ func (r *reportIncidentStore) ListIncidentSummaries(context.Context, int) ([]str
 
 func (r *reportIncidentStore) Observe(_ context.Context, observation incidents.Observation) (incidents.Transition, error) {
 	r.observed[observation.Key] = true
-	return incidents.Transition{State: "confirmed", Kind: "confirmed", Notify: true, RelatedKey: observation.Key}, nil
+	return incidents.Transition{State: "confirmed", Kind: "confirmed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: 5}, nil
 }
 
 type reportAnalyzer struct{ contracts []agent.IncidentContractV1 }

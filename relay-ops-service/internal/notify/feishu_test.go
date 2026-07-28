@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,6 +40,9 @@ func TestRenderSessionExpiredUsesExactLoginLink(t *testing.T) {
 	card, err := message.CardJSON()
 	if err != nil || !strings.Contains(string(card), "https://wawazz.example/login") {
 		t.Fatalf("card=%s err=%v", card, err)
+	}
+	if message.Severity != "P2" {
+		t.Fatalf("severity=%q, want P2 operational event", message.Severity)
 	}
 }
 
@@ -97,6 +101,168 @@ func TestAppClientSendsRenderedTextToConfiguredChat(t *testing.T) {
 	if sender.chatID != "oc_alert_group" || sender.payload.MsgType != "interactive" {
 		t.Fatalf("sender=%#v message=%#v", sender, message)
 	}
+}
+
+func TestAppClientMentionsRecipientsAndUrgentsOnlyP0(t *testing.T) {
+	tests := []struct {
+		name         string
+		message      FeishuMessage
+		wantMentions bool
+		wantUrgent   bool
+	}{
+		{name: "P0", message: RenderAlert(IncidentView{Title: "公开分组不可用", Severity: "P0"}), wantMentions: true, wantUrgent: true},
+		{name: "P1", message: RenderAlert(IncidentView{Title: "账号不可调度", Severity: "P1"}), wantMentions: true},
+		{name: "P2", message: RenderAlert(IncidentView{Title: "倍率变化", Severity: "P2"})},
+		{name: "recovery", message: RenderRecovery(IncidentView{Title: "已恢复", Severity: "P0"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sender := &fakeTextSender{}
+			client := AppClient{
+				Sender: sender, ChatID: "oc_alert_group",
+				RecipientOpenIDs: []string{"ou-a", "ou-b", "ou-a"},
+			}
+			result, err := client.SendWithResult(context.Background(), test.message)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card Card
+			if err := json.Unmarshal(sender.payload.Content, &card); err != nil {
+				t.Fatal(err)
+			}
+			firstContent := ""
+			if len(card.Elements) > 0 && card.Elements[0].Text != nil {
+				firstContent = card.Elements[0].Text.Content
+			}
+			hasMentions := strings.Contains(firstContent, "<at id=ou-a></at>") && strings.Contains(firstContent, "<at id=ou-b></at>")
+			if hasMentions != test.wantMentions {
+				t.Fatalf("mentions = %v, want %v: %s", hasMentions, test.wantMentions, sender.payload.Content)
+			}
+			if (sender.urgentCalls == 1) != test.wantUrgent {
+				t.Fatalf("urgent calls = %d, want urgent %v", sender.urgentCalls, test.wantUrgent)
+			}
+			if result.MessageID != "om_alert" || result.ResponseCode != http.StatusOK || !json.Valid(result.Payload) {
+				t.Fatalf("send result = %#v", result)
+			}
+		})
+	}
+}
+
+func TestAppClientRecordsUrgencyFailureAfterMessageDelivery(t *testing.T) {
+	sender := &fakeTextSender{urgentErr: fmt.Errorf("urgent rejected")}
+	client := AppClient{
+		Sender: sender, ChatID: "oc_alert_group",
+		RecipientOpenIDs: []string{"ou-a"},
+	}
+	result, err := client.SendWithResult(context.Background(), RenderAlert(IncidentView{Title: "不可用", Severity: "P0"}))
+	if err != nil {
+		t.Fatalf("message delivery should remain successful: %v", err)
+	}
+	if result.MessageID != "om_alert" || result.UrgentStatus != "failed" || result.UrgentResponseCode != 0 {
+		t.Fatalf("send result = %#v", result)
+	}
+}
+
+func TestLoadRecipientOpenIDsStrictlyValidatesSecretJSON(t *testing.T) {
+	t.Parallel()
+	validValues := make([]string, 20)
+	for index := range validValues {
+		validValues[index] = fmt.Sprintf("operator-%02d", index)
+	}
+	validPayload, err := json.Marshal(map[string]any{"open_ids": validValues})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validFile := filepath.Join(t.TempDir(), "recipients.json")
+	if err := os.WriteFile(validFile, validPayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadRecipientOpenIDs(validFile)
+	if err != nil || len(got) != 20 {
+		t.Fatalf("recipients count=%d err=%v", len(got), err)
+	}
+
+	tests := []struct {
+		name    string
+		payload []byte
+		mode    os.FileMode
+	}{
+		{name: "empty list", payload: []byte(`{"open_ids":[]}`), mode: 0o600},
+		{name: "too many", payload: func() []byte {
+			values := append(append([]string(nil), validValues...), "operator-20")
+			data, _ := json.Marshal(map[string]any{"open_ids": values})
+			return data
+		}(), mode: 0o600},
+		{name: "duplicate after trim", payload: []byte(`{"open_ids":["operator-a"," operator-a "]}`), mode: 0o600},
+		{name: "empty value", payload: []byte(`{"open_ids":["operator-a"," "]}`), mode: 0o600},
+		{name: "unknown field", payload: []byte(`{"open_ids":["operator-a"],"chat_id":"not-allowed"}`), mode: 0o600},
+		{name: "invalid JSON", payload: []byte(`{"open_ids":`), mode: 0o600},
+		{name: "trailing JSON", payload: []byte(`{"open_ids":["operator-a"]}{}`), mode: 0o600},
+		{name: "oversized", payload: []byte(`{"open_ids":["` + strings.Repeat("x", 9<<10) + `"]}`), mode: 0o600},
+		{name: "unsafe permissions", payload: []byte(`{"open_ids":["operator-a"]}`), mode: 0o644},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "recipients.json")
+			if err := os.WriteFile(path, test.payload, test.mode); err != nil {
+				t.Fatal(err)
+			}
+			if values, err := LoadRecipientOpenIDs(path); err == nil {
+				t.Fatalf("accepted invalid recipients count=%d", len(values))
+			}
+		})
+	}
+	if _, err := LoadRecipientOpenIDs(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("missing recipient file accepted")
+	}
+}
+
+func TestWithAcknowledgementActionOnlyAddsCurrentP0P1Button(t *testing.T) {
+	tests := []struct {
+		name       string
+		message    FeishuMessage
+		wantButton bool
+	}{
+		{name: "P0", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "不可用", Severity: "P0"}), 3, "confirmed"), wantButton: true},
+		{name: "P1", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "变慢", Severity: "P1"}), 4, "new_evidence"), wantButton: true},
+		{name: "P2", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "倍率", Severity: "P2"}), 2, "confirmed")},
+		{name: "recovery", message: WithDeliveryIdentity(RenderRecovery(IncidentView{Title: "恢复", Recovery: true}), 3, "recovered")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message := WithAcknowledgementAction(test.message, "group:GPT PLUS/内测:availability", messageOccurrence(test.message))
+			var matches []CardAction
+			for _, element := range message.Card.Elements {
+				for _, action := range element.Actions {
+					if action.Text.Content == "确认并接手" {
+						matches = append(matches, action)
+					}
+				}
+			}
+			if !test.wantButton {
+				if len(matches) != 0 {
+					t.Fatalf("unexpected acknowledgement actions: %#v", matches)
+				}
+				return
+			}
+			if len(matches) != 1 || matches[0].MultiURL == nil {
+				t.Fatalf("acknowledgement actions = %#v", matches)
+			}
+			parsed, err := url.Parse(matches[0].MultiURL.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Path != "/ops" ||
+				parsed.Query().Get("ack_incident") != "group:GPT PLUS/内测:availability" ||
+				parsed.Query().Get("ack_occurrence") != strconv.FormatInt(messageOccurrence(test.message), 10) {
+				t.Fatalf("acknowledgement URL = %q", matches[0].MultiURL.URL)
+			}
+		})
+	}
+}
+
+func messageOccurrence(message FeishuMessage) int64 {
+	return message.OccurrenceNo
 }
 
 func TestAppClientResolvesRelativeOpsLinkBeforeSending(t *testing.T) {
@@ -461,14 +627,27 @@ func TestRenderUpstreamReportIsNotificationOnly(t *testing.T) {
 }
 
 type fakeTextSender struct {
-	chatID  string
-	payload feishuapi.OutboundMessage
+	chatID      string
+	payload     feishuapi.OutboundMessage
+	urgentCalls int
+	urgentErr   error
 }
 
 func (f *fakeTextSender) SendMessage(_ context.Context, chatID string, payload feishuapi.OutboundMessage) (string, error) {
 	f.chatID = chatID
 	f.payload = payload
 	return "om_alert", nil
+}
+
+func (f *fakeTextSender) UrgentMessage(_ context.Context, messageID string, openIDs []string) (int, error) {
+	f.urgentCalls++
+	if messageID != "om_alert" || fmt.Sprint(openIDs) != "[ou-a ou-b]" && fmt.Sprint(openIDs) != "[ou-a]" {
+		return 0, fmt.Errorf("unexpected urgent input")
+	}
+	if f.urgentErr != nil {
+		return 0, f.urgentErr
+	}
+	return http.StatusOK, nil
 }
 
 type notifyResolver struct{}

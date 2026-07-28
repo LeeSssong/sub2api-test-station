@@ -93,6 +93,36 @@ func (c *Client) SendMessage(ctx context.Context, chatID string, message Outboun
 	return "", lastErr
 }
 
+func (c *Client) UrgentMessage(ctx context.Context, messageID string, openIDs []string) (int, error) {
+	if messageID == "" || len(messageID) > 256 || len(openIDs) == 0 || len(openIDs) > 20 {
+		return 0, errors.New("invalid Feishu urgency input")
+	}
+	for _, openID := range openIDs {
+		if strings.TrimSpace(openID) == "" || len(openID) > 256 {
+			return 0, errors.New("invalid Feishu urgency input")
+		}
+	}
+	body := struct {
+		UserIDList []string `json:"user_id_list"`
+	}{UserIDList: openIDs}
+	path := "/open-apis/im/v1/messages/" + url.PathEscape(messageID) + "/urgent_app?user_id_type=open_id"
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := c.tenantToken(ctx)
+		if err != nil {
+			return 0, err
+		}
+		var response struct{}
+		status, err := c.requestJSON(ctx, http.MethodPatch, path, token, body, &response)
+		if err == nil || !retryAfterTokenRefresh(err) {
+			return status, err
+		}
+		lastErr = err
+		c.invalidateToken(token)
+	}
+	return 0, lastErr
+}
+
 // retryAfterTokenRefresh decides whether a failed send is worth one retry with
 // a freshly minted tenant token.
 //
@@ -161,13 +191,18 @@ func (c *Client) sendMessage(ctx context.Context, token, chatID string, message 
 }
 
 func (c *Client) postJSON(ctx context.Context, path, token string, body, out any) error {
+	_, err := c.requestJSON(ctx, http.MethodPost, path, token, body, out)
+	return err
+}
+
+func (c *Client) requestJSON(ctx context.Context, method, path, token string, body, out any) (int, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
-		return errors.New("encode Feishu OpenAPI request")
+		return 0, errors.New("encode Feishu OpenAPI request")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(data))
 	if err != nil {
-		return errors.New("build Feishu OpenAPI request")
+		return 0, errors.New("build Feishu OpenAPI request")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -176,21 +211,21 @@ func (c *Client) postJSON(ctx context.Context, path, token string, body, out any
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("Feishu OpenAPI request failed: %w", err)
+		return 0, fmt.Errorf("Feishu OpenAPI request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	data, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return errors.New("read Feishu OpenAPI response")
+		return resp.StatusCode, errors.New("read Feishu OpenAPI response")
 	}
 	if len(data) > maxResponseBytes {
-		return errors.New("Feishu OpenAPI response exceeds size limit")
+		return resp.StatusCode, errors.New("Feishu OpenAPI response exceeds size limit")
 	}
 	if resp.StatusCode == http.StatusUnauthorized && token != "" {
-		return errUnauthorized
+		return resp.StatusCode, errUnauthorized
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Feishu OpenAPI returned HTTP %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("Feishu OpenAPI returned HTTP %d", resp.StatusCode)
 	}
 	// The business code is checked before the payload is decoded: a failed call
 	// carries no `data`, so decoding first turns every API rejection into an
@@ -199,15 +234,15 @@ func (c *Client) postJSON(ctx context.Context, path, token string, body, out any
 		Code int `json:"code"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return errors.New("Feishu OpenAPI response schema mismatch")
+		return resp.StatusCode, errors.New("Feishu OpenAPI response schema mismatch")
 	}
 	if envelope.Code != 0 {
-		return &APIError{Code: envelope.Code}
+		return resp.StatusCode, &APIError{Code: envelope.Code}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return errors.New("Feishu OpenAPI response schema mismatch")
+		return resp.StatusCode, errors.New("Feishu OpenAPI response schema mismatch")
 	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 func (c *Client) invalidateToken(token string) {

@@ -33,6 +33,32 @@ func TestRenderGroupAlertContent(t *testing.T) {
 	}
 }
 
+func TestRenderGroupAlertCarriesImpactSeverity(t *testing.T) {
+	tests := []struct {
+		name      string
+		view      GroupAlertView
+		severity  string
+		titlePart string
+	}{
+		{name: "zero capacity", view: GroupAlertView{GroupName: "GPT-Plus", Available: 0, Total: 1, Severity: "P0"}, severity: "P0", titlePart: "P0｜"},
+		{name: "partial capacity", view: GroupAlertView{GroupName: "GPT-Plus", Available: 1, Total: 3, Severity: "P1"}, severity: "P1", titlePart: "P1｜"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message := RenderGroupAlert(test.view)
+			if message.Severity != test.severity || !strings.Contains(message.Card.Header.Title.Content, test.titlePart) {
+				t.Fatalf("message severity=%q title=%q", message.Severity, message.Card.Header.Title.Content)
+			}
+			text := message.RenderedText()
+			for _, want := range []string{"用户影响", "剩余容量", "建议"} {
+				if !strings.Contains(text, want) {
+					t.Fatalf("missing %q in %s", want, text)
+				}
+			}
+		})
+	}
+}
+
 func TestRenderGroupAlertRecovery(t *testing.T) {
 	view := GroupAlertView{GroupName: "GPT-Plus", Available: 3, Total: 3, Recovery: true}
 	message := RenderGroupAlert(view)

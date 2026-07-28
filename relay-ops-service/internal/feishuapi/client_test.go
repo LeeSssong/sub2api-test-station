@@ -117,6 +117,43 @@ func TestClientSendsInteractiveCardAsJSONString(t *testing.T) {
 	}
 }
 
+func TestClientUrgentsMessageForExactOpenIDs(t *testing.T) {
+	var urgentCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			fmt.Fprint(w, `{"code":0,"tenant_access_token":"tenant-token-value","expire":7200}`)
+		case "/open-apis/im/v1/messages/om-alert/urgent_app":
+			urgentCalls++
+			if r.Method != http.MethodPatch || r.URL.Query().Get("user_id_type") != "open_id" {
+				t.Errorf("urgent request = %s %s", r.Method, r.URL.String())
+			}
+			if r.Header.Get("Authorization") != "Bearer tenant-token-value" {
+				t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+			}
+			var body struct {
+				UserIDList []string `json:"user_id_list"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(body.UserIDList) != "[ou-a ou-b]" {
+				t.Errorf("urgent recipients = %#v", body.UserIDList)
+			}
+			fmt.Fprint(w, `{"code":0,"data":{}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	status, err := newTestClient(t, server.URL).UrgentMessage(t.Context(), "om-alert", []string{"ou-a", "ou-b"})
+	if err != nil || status != http.StatusOK || urgentCalls != 1 {
+		t.Fatalf("urgent result = status %d calls %d err %v", status, urgentCalls, err)
+	}
+}
+
 func TestClientRejectsOversizedInteractiveCardBeforeNetwork(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("network request made for oversized card")

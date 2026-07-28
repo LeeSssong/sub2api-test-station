@@ -100,6 +100,7 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		Focus:   "确认飞书消息已收到；无需修改价格、路由、余额或 Key",
 		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
 	})
+	alertMessage = notify.WithDeliveryIdentity(alertMessage, alertTransition.OccurrenceNo, alertTransition.Kind)
 	if alertTransition.Notify && s.Notifier != nil {
 		if err := s.Notifier.SendIncident(ctx, syntheticIncidentID, evidenceHash, alertMessage); err != nil {
 			result.AlertNotification = "failed"
@@ -150,6 +151,11 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 			Links:      []notify.Link{{Label: "运维后台", URL: "/ops"}},
 			Suppressed: true,
 		})
+		recoveryMessage = notify.WithDeliveryIdentity(
+			recoveryMessage,
+			recoveryTransition.OccurrenceNo,
+			recoveryTransition.Kind,
+		)
 		if err := s.Notifier.SendIncident(ctx, syntheticIncidentID, recoveryHash, recoveryMessage); err != nil {
 			result.RecoveryNotification = "failed"
 		} else {

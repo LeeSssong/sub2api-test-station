@@ -14,6 +14,7 @@ import (
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
+	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
@@ -48,6 +49,14 @@ type App struct {
 type dailyReportIncidents struct {
 	*store.Store
 	state *incidents.Machine
+}
+
+type incidentAcknowledgements struct {
+	store *store.Store
+}
+
+func (service incidentAcknowledgements) Acknowledge(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
+	return service.store.AcknowledgeIncident(ctx, acknowledgement)
 }
 
 type fastCandidateRepository interface {
@@ -147,6 +156,7 @@ func executeFastCandidate(ctx context.Context, upstreamID domain.UpstreamID, job
 		}); err != nil {
 			return err
 		}
+		message = notify.WithDeliveryIdentity(message, 1, "confirmed")
 		return notifier.SendIncident(ctx, key, evidence, message)
 	}
 	return candidates.ErrNotFound
@@ -228,7 +238,14 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		if err != nil {
 			return nil, fmt.Errorf("Feishu alert chat ID is unavailable")
 		}
-		return notify.AppClient{Sender: appSender, ChatID: chatID, BaseURL: cfg.PublicBaseURL}, nil
+		recipients, err := notify.LoadRecipientOpenIDs(cfg.FeishuAlertRecipientsFile)
+		if err != nil {
+			return nil, fmt.Errorf("Feishu alert recipients are unavailable")
+		}
+		return notify.AppClient{
+			Sender: appSender, ChatID: chatID, BaseURL: cfg.PublicBaseURL,
+			RecipientOpenIDs: recipients,
+		}, nil
 	}
 	if cfg.FeishuWebhookFile != "" {
 		return notify.Client{WebhookFile: cfg.FeishuWebhookFile, BaseURL: cfg.PublicBaseURL}, nil
@@ -309,6 +326,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, reader, incidentMachine, notifier)
 	siteMonitor.Fallback = pricingFallback
+	escalationService := alerting.Service{Repository: database, Sender: notifier}
+	retryService := notify.DeliveryRetryService{Repository: database, Client: notificationTransport}
 	usageReader := billing.SessionReader{Reporter: database}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,
@@ -380,7 +399,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 						hash := sha256.Sum256([]byte(session.LoginURL))
 						transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: true, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话失效", ConfirmationWindows: 1})
 						if observeErr == nil && transition.Notify && notifier != nil {
-							_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:]), notify.RenderSessionExpired(session.UpstreamName, session.LoginURL))
+							message := notify.WithDeliveryIdentity(
+								notify.RenderSessionExpired(session.UpstreamName, session.LoginURL),
+								transition.OccurrenceNo,
+								transition.Kind,
+							)
+							_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:]), message)
 						}
 					}
 					return nil
@@ -394,7 +418,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			hash := sha256.Sum256([]byte(session.LoginURL))
 			transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: false, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话正常"})
 			if observeErr == nil && transition.Notify && notifier != nil {
-				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", renderUsageSessionRecovery(session.UpstreamName, evidence.ObservedAt))
+				message := notify.WithDeliveryIdentity(
+					renderUsageSessionRecovery(session.UpstreamName, evidence.ObservedAt),
+					transition.OccurrenceNo,
+					transition.Kind,
+				)
+				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", message)
 			}
 			return nil
 		},
@@ -403,6 +432,18 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return err
 		},
 		SiteMonitor: siteMonitor.Run,
+		IncidentEscalation: func(runCtx context.Context) error {
+			if notifier == nil {
+				return nil
+			}
+			return escalationService.Run(runCtx)
+		},
+		NotificationRetry: func(runCtx context.Context) error {
+			if notificationTransport == nil {
+				return nil
+			}
+			return retryService.Run(runCtx)
+		},
 		GroupAvailability: func(runCtx context.Context) error {
 			return runGroupAvailability(runCtx, reader, incidentMachine, notifier, cfg.Timezone, time.Now().UTC())
 		},
@@ -413,10 +454,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
-		Billing:       billing.SessionRegistrationService{Repository: database},
-		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},
-		DailyReport:   dailyReportService,
-		QualityReview: qualityReview,
+		Billing:                  billing.SessionRegistrationService{Repository: database},
+		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},
+		DailyReport:              dailyReportService,
+		QualityReview:            qualityReview,
+		IncidentAcknowledgements: incidentAcknowledgements{store: database},
 	})
 	if err != nil {
 		return nil, err

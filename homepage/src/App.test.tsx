@@ -1,4 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import { DEFAULT_SITE_CONFIG, type ThirdPartyReport } from './domain/siteConfig'
@@ -23,6 +25,22 @@ const validReport: ThirdPartyReport = {
 }
 
 describe('App', () => {
+  it('defines complete semantic light and dark theme contracts', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+
+    expect(styles).toContain('html[data-theme="light"]')
+    expect(styles).toContain('html[data-theme="dark"]')
+    for (const token of [
+      '--page-bg',
+      '--surface-1',
+      '--text-strong',
+      '--text-muted',
+      '--border-subtle',
+    ]) {
+      expect(styles).toContain(token)
+    }
+  })
+
   it('renders the complete Xingqiao guest homepage contract', () => {
     render(<App
       config={{ ...DEFAULT_SITE_CONFIG, apiOrigin: 'https://api.example.com' }}

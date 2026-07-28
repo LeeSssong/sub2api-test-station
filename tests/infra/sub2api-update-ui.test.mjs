@@ -23,6 +23,7 @@ async function createBrowser({ fetchImpl } = {}) {
     { url: 'https://api.xingqiaolab.top/admin/system', runScripts: 'outside-only' },
   )
   const { window } = dom
+  window.Date.now = () => new Date('2026-07-20T00:00:00Z').getTime()
   const requests = []
   const defaultFetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.url
@@ -32,7 +33,7 @@ async function createBrowser({ fetchImpl } = {}) {
       return response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.3' } })
     }
     if (url.endsWith('/api/v1/admin/system/host-update/status')) {
-      return response({ code: 0, data: { operation_id: 'op-status', stage: 'running', target_version: '1.2.3' } })
+      return response({ code: 0, data: null })
     }
     if (url.endsWith('/api/v1/admin/system/update')) {
       return response({ code: 0, data: { operation_id: 'op-now', stage: 'accepted' } })
@@ -60,6 +61,83 @@ function scheduledFetch(requests, fallback) {
     if (url.endsWith('/host-update/schedule') && (init.method || 'GET') === 'DELETE') {
       requests.push({ url, method: 'DELETE', body: init.body, headers: init.headers })
       return response({ code: 0, data: { cancelled: true } })
+    }
+    return fallback(input, init)
+  }
+}
+
+function runningFetch(requests, fallback) {
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    if (url.endsWith('/host-update/status')) {
+      requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+      return response({
+        code: 0,
+        data: {
+          operation_id: 'running-op',
+          stage: 'running',
+          target_version: '1.2.3',
+          events: ['inspect', 'recreate-sub2api'],
+        },
+      })
+    }
+    return fallback(input, init)
+  }
+}
+
+function transientAuthFetch(requests, fallback) {
+  let updateAccepted = false
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    const method = (init.method || 'GET').toUpperCase()
+    if (url.endsWith('/api/v1/admin/system/update')) {
+      updateAccepted = true
+      requests.push({ url, method, body: init.body, headers: init.headers })
+      return response({ code: 0, data: { operation_id: 'op-now', stage: 'accepted' } })
+    }
+    if (url.endsWith('/host-update/status') && updateAccepted) {
+      requests.push({ url, method, body: init.body, headers: init.headers })
+      return response({ code: 'UPDATE_AUTH_REQUIRED' }, 401)
+    }
+    return fallback(input, init)
+  }
+}
+
+function runningWithInfoFailureFetch(requests, fallback) {
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    if (url.endsWith('/check-updates')) {
+      requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+      return response({ code: 'TEMPORARILY_UNAVAILABLE' }, 503)
+    }
+    return runningFetch(requests, fallback)(input, init)
+  }
+}
+
+function transientNetworkFetch(requests, fallback) {
+  let updateAccepted = false
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    const method = (init.method || 'GET').toUpperCase()
+    if (url.endsWith('/api/v1/admin/system/update')) {
+      updateAccepted = true
+      requests.push({ url, method, body: init.body, headers: init.headers })
+      return response({ code: 0, data: { operation_id: 'op-now', stage: 'accepted' } })
+    }
+    if (url.endsWith('/host-update/status') && updateAccepted) {
+      requests.push({ url, method, body: init.body, headers: init.headers })
+      throw new TypeError('Failed to fetch')
+    }
+    return fallback(input, init)
+  }
+}
+
+function preSubmitAuthFailureFetch(requests, fallback) {
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url
+    if (url.endsWith('/host-update/status')) {
+      requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+      return response({ code: 'UPDATE_AUTH_REQUIRED' }, 401)
     }
     return fallback(input, init)
   }
@@ -157,6 +235,75 @@ test('starts status polling after an accepted operation', async () => {
   browser.ui.stopPolling()
 })
 
+test('resumes a running upgrade after the admin page reloads', async () => {
+  const browser = await createBrowser({ fetchImpl: runningFetch })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  assert.equal(dialog.querySelector('[name="mode"][value="now"]').disabled, true)
+  assert.equal(dialog.querySelector('[data-role="submit-label"]').textContent, '升级中…')
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /升级正在执行/)
+  assert.match(dialog.querySelector('[data-role="progress-log"]').textContent, /检查运行环境/)
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+  assert.equal(browser.requests.some((request) => request.url.endsWith('/api/v1/admin/system/update')), false)
+  assert.equal(browser.ui.isPolling(), true)
+  browser.ui.stopPolling()
+})
+
+test('resumes a running upgrade when version lookup is temporarily unavailable', async () => {
+  const browser = await createBrowser({ fetchImpl: runningWithInfoFailureFetch })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  assert.equal(dialog.querySelector('[name="mode"][value="now"]').disabled, true)
+  assert.equal(dialog.querySelector('[data-role="submit-label"]').textContent, '升级中…')
+  assert.equal(browser.ui.isPolling(), true)
+  browser.ui.stopPolling()
+})
+
+test('keeps waiting through transient authentication loss after update acceptance', async () => {
+  const browser = await createBrowser({ fetchImpl: transientAuthFetch })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+
+  await browser.ui.pollStatus()
+
+  const message = dialog.querySelector('[data-role="message"]').textContent
+  assert.match(message, /应用容器正在重启/)
+  assert.doesNotMatch(message, /更新服务不可用/)
+  assert.equal(browser.ui.isPolling(), true)
+  browser.ui.stopPolling()
+})
+
+test('keeps waiting through a network disconnect after update acceptance', async () => {
+  const browser = await createBrowser({ fetchImpl: transientNetworkFetch })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+
+  await browser.ui.pollStatus()
+
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /应用容器正在重启/)
+  assert.equal(browser.ui.isPolling(), true)
+  browser.ui.stopPolling()
+})
+
+test('shows authentication failure before an upgrade has started', async () => {
+  const browser = await createBrowser({ fetchImpl: preSubmitAuthFailureFetch })
+  await browser.ui.openConfirmation()
+  const message = browser.window.document.querySelector('[data-role="message"]')
+
+  assert.equal(message.dataset.tone, 'error')
+  assert.doesNotMatch(message.textContent, /应用容器正在重启/)
+  assert.equal(browser.ui.isPolling(), false)
+})
+
 test('does not intercept unrelated buttons and fail-closes direct update fetches', async () => {
   const browser = await createBrowser()
   let unrelatedCalled = false
@@ -176,7 +323,7 @@ test('does not intercept unrelated buttons and fail-closes direct update fetches
 test('serves a template shell with external UI assets only', async () => {
   const html = await readFile(UI_HTML, 'utf8')
   assert.match(html, /\{\{\s*httpInclude\s+"\/__sub2api-official-index"\s*\}\}/)
-  assert.match(html, /href="\/xingqiao-update-ui\.css"/)
-  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260725-2"/)
+  assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260726-1"/)
+  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260728-1"/)
   assert.doesNotMatch(html, /<script[^>]*>[^<]+<\/script>/)
 })

@@ -194,6 +194,10 @@ func RenderFeishu(event IncidentView) FeishuMessage {
 
 func RenderAlert(event IncidentView) FeishuMessage {
 	severity := strings.ToUpper(strings.TrimSpace(event.Severity))
+	title := event.Title
+	if (severity == "P0" || severity == "P1") && !strings.HasPrefix(title, severity+"｜") {
+		title = severity + "｜" + title
+	}
 	template := "orange"
 	if severity == "P0" || severity == "P1" || strings.Contains(strings.ToLower(event.Title), "异常") {
 		template = "red"
@@ -221,7 +225,7 @@ func RenderAlert(event IncidentView) FeishuMessage {
 	if event.Suppressed {
 		sections = append(sections, "**去重** 重复事件已静默")
 	}
-	message := newCardMessage(event.Title, template, strings.Join(sections, "\n\n"), event.Links)
+	message := newCardMessage(title, template, strings.Join(sections, "\n\n"), event.Links)
 	message.Severity = severity
 	return message
 }

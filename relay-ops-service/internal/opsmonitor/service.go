@@ -110,13 +110,6 @@ func (s Service) Run(ctx context.Context) error {
 		}
 		active[account.ID] = account.Name
 		activeIDs = append(activeIDs, account.ID)
-		window, baseline, available := s.snapshots(ctx, sub2api.OpsQuery{AccountID: account.ID})
-		if !available {
-			continue
-		}
-		if err := s.evaluateRuntime(ctx, item, window, baseline, now); err != nil {
-			return err
-		}
 	}
 
 	if err := s.evaluateMultipliers(ctx, active, now); err != nil {
@@ -194,7 +187,11 @@ func (s Service) evaluateRuntime(ctx context.Context, item object, window, basel
 	if window.RequestCountTotal < minimumRequests && !completeFailure {
 		return nil
 	}
-	if err := s.observe(ctx, item, "availability", completeFailure, "successful requests", fmt.Sprintf("%d/%d successful", window.SuccessCount, window.RequestCountTotal), 1, observedAt, recoveryEvidenceForMetric("availability")); err != nil {
+	availabilitySeverity := "P1"
+	if completeFailure && item.kind == "group" {
+		availabilitySeverity = "P0"
+	}
+	if err := s.observeWithSeverity(ctx, item, "availability", availabilitySeverity, completeFailure, "successful requests", fmt.Sprintf("%d/%d successful", window.SuccessCount, window.RequestCountTotal), 1, observedAt, recoveryEvidenceForMetric("availability")); err != nil {
 		return err
 	}
 	if err := s.observe(ctx, item, "error_rate", window.ErrorRate >= errorRateThreshold, "<5.00%", percent(window.ErrorRate), 2, observedAt, recoveryEvidenceForMetric("error_rate")); err != nil {
@@ -265,7 +262,7 @@ func (s Service) evaluateMultiplier(ctx context.Context, item object, current fl
 		return s.Incidents.Repository.Put(ctx, incidents.Record{Key: baselineKey, Severity: "P2", State: "muted", SampleCount: 1, CurrentValue: currentValue, EvidenceHash: evidenceHash(item, "multiplier_baseline", currentValue, "")})
 	}
 	changed := record.CurrentValue != currentValue
-	if err := s.observe(ctx, item, "multiplier", changed, record.CurrentValue, currentValue, 1, observedAt, evidence); err != nil {
+	if err := s.observeWithSeverity(ctx, item, "multiplier", "P2", changed, record.CurrentValue, currentValue, 1, observedAt, evidence); err != nil {
 		return err
 	}
 	if record.CurrentValue == currentValue {
@@ -278,9 +275,13 @@ func (s Service) evaluateMultiplier(ctx context.Context, item object, current fl
 }
 
 func (s Service) observe(ctx context.Context, item object, metric string, failing bool, baseline, current string, windows int, observedAt time.Time, recovery recoveryEvidence) error {
+	return s.observeWithSeverity(ctx, item, metric, "P1", failing, baseline, current, windows, observedAt, recovery)
+}
+
+func (s Service) observeWithSeverity(ctx context.Context, item object, metric, severity string, failing bool, baseline, current string, windows int, observedAt time.Time, recovery recoveryEvidence) error {
 	key := item.key(metric)
 	transition, err := s.Incidents.Observe(ctx, incidents.Observation{
-		Key: key, Severity: "P1", Failing: failing, EvidenceHash: evidenceHash(item, metric, current, baseline),
+		Key: key, Severity: severity, Failing: failing, EvidenceHash: evidenceHash(item, metric, current, baseline),
 		CurrentValue: current, ConfirmationWindows: windows,
 	})
 	if err != nil {
@@ -289,14 +290,20 @@ func (s Service) observe(ctx context.Context, item object, metric string, failin
 	if !transition.Notify || s.Notifier == nil {
 		return nil
 	}
-	return s.Notifier.SendIncident(ctx, key, transition.Kind+":"+evidenceHash(item, metric, current, baseline), renderWithEvidence(item, metric, current, baseline, windows, observedAt, transition.Kind, recovery))
+	message := renderWithEvidence(item, metric, severity, current, baseline, windows, observedAt, transition.Kind, recovery)
+	message = notify.WithDeliveryIdentity(message, transition.OccurrenceNo, transition.Kind)
+	return s.Notifier.SendIncident(ctx, key, transition.Kind+":"+evidenceHash(item, metric, current, baseline), message)
 }
 
 func render(item object, metric, current, baseline string, windows int, observedAt time.Time, transition string) notify.FeishuMessage {
-	return renderWithEvidence(item, metric, current, baseline, windows, observedAt, transition, recoveryEvidenceForMetric(metric))
+	severity := "P1"
+	if metric == "multiplier" {
+		severity = "P2"
+	}
+	return renderWithEvidence(item, metric, severity, current, baseline, windows, observedAt, transition, recoveryEvidenceForMetric(metric))
 }
 
-func renderWithEvidence(item object, metric, current, baseline string, windows int, observedAt time.Time, transition string, recovery recoveryEvidence) notify.FeishuMessage {
+func renderWithEvidence(item object, metric, severity, current, baseline string, windows int, observedAt time.Time, transition string, recovery recoveryEvidence) notify.FeishuMessage {
 	label := item.displayLabel()
 	isRecovery := transition == "recovered"
 	domain, source, actions, focus := renderDomain(metric)
@@ -331,7 +338,7 @@ func renderWithEvidence(item object, metric, current, baseline string, windows i
 	}
 	results = append(results, "连续窗口："+strconv.Itoa(windows))
 	return notify.RenderFeishu(notify.IncidentView{
-		Title: title, Severity: "P1",
+		Title: title, Severity: severity,
 		CurrentLabel: currentLabel, BaselineLabel: baselineLabel,
 		Current: current, Baseline: baseline,
 		WhatWasDone: actions,

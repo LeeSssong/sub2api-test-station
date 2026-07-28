@@ -1112,6 +1112,159 @@ func prepareDueEscalation(t *testing.T, suffix string) (*Store, string, int64, t
 	return st, key, transition.OccurrenceNo, firstDue
 }
 
+func TestGroupSignalsReplaceByIdentityAndExpire(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 29, 1, 0, 0, 0, time.UTC)
+	signal := GroupSignal{
+		GroupName: "GPT Plus 内测", SourceKind: "capacity", SourceKey: "current",
+		Payload:          json.RawMessage(`{"available":1,"total":2}`),
+		SourceObservedAt: now.Add(-time.Minute), ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := st.UpsertGroupSignal(ctx, signal); err != nil {
+		t.Fatalf("UpsertGroupSignal: %v", err)
+	}
+	signal.Payload = json.RawMessage(`{"available":0,"total":2}`)
+	signal.SourceObservedAt = now
+	if err := st.UpsertGroupSignal(ctx, signal); err != nil {
+		t.Fatalf("replace UpsertGroupSignal: %v", err)
+	}
+	if err := st.UpsertGroupSignal(ctx, GroupSignal{
+		GroupName: "GPT Plus 内测", SourceKind: "native_monitor", SourceKey: "7:gpt-5",
+		Payload:          json.RawMessage(`{"status":"abnormal"}`),
+		SourceObservedAt: now.Add(-time.Hour), ExpiresAt: now.Add(-time.Second),
+	}); err != nil {
+		t.Fatalf("expired UpsertGroupSignal: %v", err)
+	}
+
+	signals, err := st.ListFreshGroupSignals(ctx, "GPT Plus 内测", now)
+	if err != nil {
+		t.Fatalf("ListFreshGroupSignals: %v", err)
+	}
+	if len(signals) != 1 || signals[0].SourceKind != "capacity" {
+		t.Fatalf("fresh signals = %#v", signals)
+	}
+	var payload map[string]int
+	if err := json.Unmarshal(signals[0].Payload, &payload); err != nil ||
+		payload["available"] != 0 || payload["total"] != 2 {
+		t.Fatalf("fresh signal payload = %s, err=%v", signals[0].Payload, err)
+	}
+}
+
+func TestOneShotReservationIsIdempotentAndRetriesFailure(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	reservation := notify.OneShotReservation{
+		NotificationKey: "pricing:7:semantic-hash",
+		Family:          "pricing_notice",
+		PolicyVersion:   1,
+		SourceKind:      "public_pricing",
+		DedupKey:        "dedup-pricing-7",
+		MessageHash:     "message-one",
+		Payload:         []byte(`{"header":{"title":{"content":"价格变更"}},"elements":[]}`),
+	}
+	firstID, reserved, err := st.ReserveOneShot(ctx, reservation)
+	if err != nil || !reserved {
+		t.Fatalf("first reservation = %d %v %v", firstID, reserved, err)
+	}
+	if err := st.FinishOneShot(ctx, firstID, notify.DeliveryOutcome{Status: "failed", Payload: reservation.Payload}); err != nil {
+		t.Fatal(err)
+	}
+	reservation.MessageHash = "message-two"
+	secondID, reserved, err := st.ReserveOneShot(ctx, reservation)
+	if err != nil || !reserved || secondID != firstID {
+		t.Fatalf("failed retry = %d %v %v", secondID, reserved, err)
+	}
+	if err := st.FinishOneShot(ctx, secondID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, MessageID: "om-pricing",
+		Payload: reservation.Payload, UrgentStatus: "not_supported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, reserved, err := st.ReserveOneShot(ctx, reservation); err != nil || reserved {
+		t.Fatalf("delivered duplicate = %v %v", reserved, err)
+	}
+	var status string
+	var attempts int
+	if err := st.pool.QueryRow(ctx, `
+		SELECT delivery_status, attempt_count
+		FROM relay_ops.notification_messages WHERE id=$1`, firstID).Scan(&status, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if status != "delivered" || attempts != 2 {
+		t.Fatalf("stored one-shot = status %q attempts %d", status, attempts)
+	}
+}
+
+func TestNotificationDecisionUpsertsLastSeenAndCount(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	firstSeen := time.Date(2026, 7, 29, 1, 0, 0, 0, time.UTC)
+	record := DecisionRecord{
+		DecisionKey: "capacity:GPT Plus 内测:source-unavailable",
+		Family:      "group_capacity", PolicyVersion: 1, SourceKind: "capacity",
+		Decision: "suppressed", Reason: "source_unavailable",
+		Details: json.RawMessage(`{"source":"accounts"}`), ObservedAt: firstSeen,
+	}
+	if err := st.RecordNotificationDecision(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	record.Reason = "policy_disabled"
+	record.Details = json.RawMessage(`{"mode":"disabled"}`)
+	record.ObservedAt = firstSeen.Add(5 * time.Minute)
+	if err := st.RecordNotificationDecision(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	var count int64
+	var lastSeen time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT reason, observation_count, last_seen_at
+		FROM relay_ops.notification_decisions WHERE decision_key=$1`, record.DecisionKey).Scan(
+		&reason, &count, &lastSeen,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "policy_disabled" || count != 2 || !lastSeen.Equal(record.ObservedAt) {
+		t.Fatalf("stored decision = reason %q count %d last_seen %s", reason, count, lastSeen)
+	}
+}
+
+func TestOperationalBaselineRoundTrips(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := Baseline{
+		Key: "multiplier:account:17", CurrentValue: "0.07",
+		EvidenceHash: "sha256:one",
+		UpdatedAt:    time.Date(2026, 7, 29, 1, 0, 0, 0, time.UTC),
+	}
+	if err := st.PutOperationalBaseline(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := st.GetOperationalBaseline(ctx, want.Key)
+	if err != nil || !found {
+		t.Fatalf("GetOperationalBaseline = %#v %v %v", got, found, err)
+	}
+	if got != want {
+		t.Fatalf("baseline = %#v, want %#v", got, want)
+	}
+	if _, found, err := st.GetOperationalBaseline(ctx, "missing"); err != nil || found {
+		t.Fatalf("missing baseline found=%v err=%v", found, err)
+	}
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	url := os.Getenv("RELAY_OPS_TEST_DATABASE_URL")

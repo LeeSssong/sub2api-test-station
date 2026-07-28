@@ -39,11 +39,15 @@ var userImpactAlertingMigration string
 //go:embed migrations/005_notification_retry.sql
 var notificationRetryMigration string
 
+//go:embed migrations/006_notification_consolidation.sql
+var notificationConsolidationMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
 	initialMigration += "\n" + userImpactAlertingMigration
 	initialMigration += "\n" + notificationRetryMigration
+	initialMigration += "\n" + notificationConsolidationMigration
 }
 
 type Store struct {

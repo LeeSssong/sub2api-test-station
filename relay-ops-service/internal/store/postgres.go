@@ -30,7 +30,14 @@ import (
 //go:embed migrations/001_init.sql
 var initialMigration string
 
+//go:embed migrations/004_user_impact_alerting.sql
+var userImpactAlertingMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
+
+func init() {
+	initialMigration += "\n" + userImpactAlertingMigration
+}
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -652,9 +659,9 @@ func (s *Store) Get(ctx context.Context, key string) (incidents.Record, bool, er
 	var evidenceJSON []byte
 	record.Key = key
 	err := s.pool.QueryRow(ctx, `
-		SELECT severity, state, sample_count, COALESCE(current_value, ''), evidence_refs
+		SELECT severity, state, sample_count, occurrence_no, COALESCE(current_value, ''), evidence_refs
 		FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(
-		&record.Severity, &record.State, &record.SampleCount, &record.CurrentValue, &evidenceJSON,
+		&record.Severity, &record.State, &record.SampleCount, &record.OccurrenceNo, &record.CurrentValue, &evidenceJSON,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return incidents.Record{}, false, nil
@@ -673,6 +680,9 @@ func (s *Store) Get(ctx context.Context, key string) (incidents.Record, bool, er
 }
 
 func (s *Store) Put(ctx context.Context, record incidents.Record) error {
+	if record.OccurrenceNo <= 0 {
+		record.OccurrenceNo = 1
+	}
 	evidence := []string{}
 	if record.EvidenceHash != "" {
 		evidence = append(evidence, record.EvidenceHash)
@@ -683,18 +693,86 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO relay_ops.incidents
-			(incident_key, severity, state, current_value, sample_count, evidence_refs)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6)
+			(incident_key, severity, state, current_value, sample_count, occurrence_no, evidence_refs)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
 		ON CONFLICT (incident_key) DO UPDATE SET
 			severity=EXCLUDED.severity,
 			state=EXCLUDED.state,
 			current_value=EXCLUDED.current_value,
 			sample_count=EXCLUDED.sample_count,
+			occurrence_no=EXCLUDED.occurrence_no,
 			evidence_refs=EXCLUDED.evidence_refs,
+			acknowledged_occurrence=CASE
+				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+				ELSE relay_ops.incidents.acknowledged_occurrence
+			END,
+			acknowledged_at=CASE
+				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+				ELSE relay_ops.incidents.acknowledged_at
+			END,
+			acknowledged_by=CASE
+				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+				ELSE relay_ops.incidents.acknowledged_by
+			END,
+			escalation_level=CASE
+				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN 0
+				ELSE relay_ops.incidents.escalation_level
+			END,
+			next_escalation_at=CASE
+				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+				ELSE relay_ops.incidents.next_escalation_at
+			END,
 			last_seen_at=NOW()`,
-		record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, evidenceJSON)
+		record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, record.OccurrenceNo, evidenceJSON)
 	if err != nil {
 		return fmt.Errorf("put incident state: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) AcknowledgeIncident(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
+	if acknowledgement.Key == "" || acknowledgement.OccurrenceNo <= 0 || acknowledgement.ActorUserID <= 0 || acknowledgement.At.IsZero() {
+		return fmt.Errorf("incident acknowledgement is invalid")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin incident acknowledgement: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var occurrenceNo int64
+	var state string
+	err = tx.QueryRow(ctx, `
+		SELECT occurrence_no, state
+		FROM relay_ops.incidents
+		WHERE incident_key=$1
+		FOR UPDATE`, acknowledgement.Key).Scan(&occurrenceNo, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return incidents.ErrNotActive
+	}
+	if err != nil {
+		return fmt.Errorf("read incident acknowledgement state: %w", err)
+	}
+	if occurrenceNo != acknowledgement.OccurrenceNo {
+		return incidents.ErrOccurrenceConflict
+	}
+	if state != "confirmed" && state != "escalated" && state != "degraded" {
+		return incidents.ErrNotActive
+	}
+	command, err := tx.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET acknowledged_occurrence=$2, acknowledged_at=$3, acknowledged_by=$4,
+		    next_escalation_at=NULL
+		WHERE incident_key=$1 AND occurrence_no=$2`,
+		acknowledgement.Key, acknowledgement.OccurrenceNo, acknowledgement.At.UTC(), acknowledgement.ActorUserID)
+	if err != nil {
+		return fmt.Errorf("write incident acknowledgement: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return incidents.ErrOccurrenceConflict
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit incident acknowledgement: %w", err)
 	}
 	return nil
 }

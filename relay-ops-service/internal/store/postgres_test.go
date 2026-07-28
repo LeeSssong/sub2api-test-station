@@ -144,6 +144,68 @@ func TestNotificationDeliveryRetriesFailedButNotDeliveredEvidence(t *testing.T) 
 	}
 }
 
+func TestIncidentOccurrencePersistenceAndAcknowledgement(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	observation := incidents.Observation{
+		Key:                 "group:GPT-Plus:availability",
+		Severity:            "P0",
+		Failing:             true,
+		EvidenceHash:        "available:0/1",
+		CurrentValue:        "可用 0 / 共 1",
+		ConfirmationWindows: 1,
+	}
+	first, err := machine.Observe(ctx, observation)
+	if err != nil || first.OccurrenceNo != 1 {
+		t.Fatalf("first observation = %#v, %v", first, err)
+	}
+	acknowledgedAt := time.Date(2026, 7, 28, 5, 0, 0, 0, time.UTC)
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt,
+	}); err != nil {
+		t.Fatalf("acknowledge current occurrence: %v", err)
+	}
+	var occurrenceNo, acknowledgedOccurrence int64
+	var acknowledgedBy int64
+	var storedAcknowledgedAt time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT occurrence_no, acknowledged_occurrence, acknowledged_by, acknowledged_at
+		FROM relay_ops.incidents WHERE incident_key=$1`, observation.Key).Scan(
+		&occurrenceNo, &acknowledgedOccurrence, &acknowledgedBy, &storedAcknowledgedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if occurrenceNo != 1 || acknowledgedOccurrence != 1 || acknowledgedBy != 42 || !storedAcknowledgedAt.Equal(acknowledgedAt) {
+		t.Fatalf("stored acknowledgement = occurrence %d acknowledged %d by %d at %s",
+			occurrenceNo, acknowledgedOccurrence, acknowledgedBy, storedAcknowledgedAt)
+	}
+
+	if _, err := machine.Observe(ctx, incidents.Observation{
+		Key: observation.Key, Severity: "P0", Failing: false,
+		EvidenceHash: "available:1/1", CurrentValue: "可用 1 / 共 1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(time.Minute),
+	}); !errors.Is(err, incidents.ErrNotActive) {
+		t.Fatalf("acknowledge recovered error = %v, want ErrNotActive", err)
+	}
+	second, err := machine.Observe(ctx, observation)
+	if err != nil || second.OccurrenceNo != 2 {
+		t.Fatalf("second occurrence = %#v, %v", second, err)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(2 * time.Minute),
+	}); !errors.Is(err, incidents.ErrOccurrenceConflict) {
+		t.Fatalf("acknowledge stale occurrence error = %v, want ErrOccurrenceConflict", err)
+	}
+}
+
 func TestNativeSyncPreservesQualificationAndDeduplicatesMetricRefs(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

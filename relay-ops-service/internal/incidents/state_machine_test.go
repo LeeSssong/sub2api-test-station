@@ -65,6 +65,48 @@ func TestMachineAllowsHighConfidenceSingleWindowConfirmation(t *testing.T) {
 	}
 }
 
+func TestMachineAssignsANewOccurrenceAfterRecovery(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	ctx := context.Background()
+	observation := Observation{
+		Key:                 "group:GPT-Plus:availability",
+		Severity:            "P1",
+		Failing:             true,
+		EvidenceHash:        "available:0/1",
+		CurrentValue:        "可用 0 / 共 1",
+		ConfirmationWindows: 1,
+	}
+
+	first, err := machine.Observe(ctx, observation)
+	if err != nil || first.OccurrenceNo != 1 || first.Kind != "confirmed" {
+		t.Fatalf("first transition = %#v, %v", first, err)
+	}
+	repeated, err := machine.Observe(ctx, observation)
+	if err != nil || repeated.OccurrenceNo != 1 || repeated.Notify {
+		t.Fatalf("repeated transition = %#v, %v", repeated, err)
+	}
+	recovered, err := machine.Observe(ctx, Observation{
+		Key:                 observation.Key,
+		Severity:            "P1",
+		Failing:             false,
+		EvidenceHash:        "available:1/1",
+		CurrentValue:        "可用 1 / 共 1",
+		ConfirmationWindows: 1,
+	})
+	if err != nil || recovered.OccurrenceNo != 1 || recovered.Kind != "recovered" {
+		t.Fatalf("recovery transition = %#v, %v", recovered, err)
+	}
+	second, err := machine.Observe(ctx, observation)
+	if err != nil || second.OccurrenceNo != 2 || second.Kind != "confirmed" {
+		t.Fatalf("second transition = %#v, %v", second, err)
+	}
+	if record := repository.records[observation.Key]; record.OccurrenceNo != 2 {
+		t.Fatalf("stored occurrence = %d, want 2", record.OccurrenceNo)
+	}
+}
+
 type memoryRepository struct{ records map[string]Record }
 
 func newMemoryRepository() *memoryRepository { return &memoryRepository{records: map[string]Record{}} }

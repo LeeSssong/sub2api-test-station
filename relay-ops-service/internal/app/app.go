@@ -46,11 +46,6 @@ type App struct {
 	Agent     *agent.Service
 }
 
-type dailyReportIncidents struct {
-	*store.Store
-	state *incidents.Machine
-}
-
 type incidentMessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
@@ -192,18 +187,7 @@ func (a qualityReviewAdapter) Preview(ctx context.Context, actor domain.AdminAct
 	}, nil
 }
 
-func (source dailyReportIncidents) Observe(ctx context.Context, observation incidents.Observation) (incidents.Transition, error) {
-	return source.state.Observe(ctx, observation)
-}
-
 func acceptanceAnalysisRunner(service *agent.Service) acceptance.AnalysisRunner {
-	if service == nil {
-		return nil
-	}
-	return service
-}
-
-func operationalReportAnalysisRunner(service *agent.Service) dailyreport.AnalysisRunner {
 	if service == nil {
 		return nil
 	}
@@ -306,7 +290,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		analysisService = &agent.Service{Analyzer: client, Repository: database}
 	}
 	acceptanceAnalysis := acceptanceAnalysisRunner(analysisService)
-	reportAnalysis := operationalReportAnalysisRunner(analysisService)
 	var appAlertSender notify.MessageSender
 	if cfg.FeishuAlertChatIDFile != "" {
 		appClient, clientErr := feishuapi.NewClient(feishuOpenAPIBaseURL, cfg.FeishuAppIDFile, cfg.FeishuAppSecretFile)
@@ -338,9 +321,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
 	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
 	dailyReportService := dailyreport.Service{
-		Reader: reader, Candidates: database, Incidents: dailyReportIncidents{Store: database, state: incidentMachine},
-		Agent: reportAnalysis, Notifier: notifier, Timezone: cfg.Timezone,
-		Fallback: pricingFallback,
+		Reader: reader, Summary: database, Notifier: oneShotNotifier,
+		Decisions: database, Policy: cfg.NotificationPolicy,
+		Timezone: cfg.Timezone, Fallback: pricingFallback,
 	}
 	collector := &collection.Collector{
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,

@@ -13,7 +13,6 @@ import (
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/config"
-	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
@@ -45,20 +44,6 @@ func TestAcceptanceAnalysisRunnerDoesNotWrapAnUnconfiguredAgentAsANonNilInterfac
 	if runner == nil {
 		t.Fatal("configured agent must be wired into acceptance analysis")
 	}
-}
-
-func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
-	reportRunner := operationalReportAnalysisRunner(nil)
-	if reportRunner != nil {
-		t.Fatalf("unconfigured report runner must stay nil: report=%T", reportRunner)
-	}
-
-	service := &agent.Service{}
-	reportRunner = operationalReportAnalysisRunner(service)
-	if reportRunner == nil {
-		t.Fatal("configured agent must be wired into daily reports")
-	}
-	var _ dailyreport.AnalysisRunner = reportRunner
 }
 
 func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {

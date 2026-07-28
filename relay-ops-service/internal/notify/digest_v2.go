@@ -57,45 +57,44 @@ type TrafficLine struct {
 	Requests   int64
 }
 
-type RecommendationLine struct {
-	GroupName     string
-	CurrentName   string
-	CandidateName string
-	Reason        string
+type DigestNotificationSummary struct {
+	ActiveP0              int
+	ActiveP1              int
+	Recovered             int
+	PricingEvents         int
+	TrackedPublicGroups   int
+	FreshCapacityGroups   int
+	PricingSources        int
+	TrackedPricingSources int
 }
 
 type HealthDigestView struct {
-	Date            string
-	Quality         QualityLine
-	Profit          ProfitLine
-	Pending         []PendingItem
-	Recommendations []RecommendationLine
-	Traffic         TrafficLine
+	Date         string
+	PublicGroups int
+	Summary      DigestNotificationSummary
+	Quality      QualityLine
+	Profit       ProfitLine
+	Pending      []PendingItem
+	Traffic      TrafficLine
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
 	elements := []CardElement{
 		{Tag: "div", Text: &CardText{
-			Tag: "lark_md", Content: fitDigestSection(qualityLines(view.Quality)),
+			Tag: "lark_md", Content: fitDigestSection(conclusionLines(view)),
 		}},
-	}
-	if !view.Quality.DataUnavailable {
-		elements = append(elements,
-			CardElement{Tag: "div", Text: &CardText{
-				Tag: "lark_md", Content: fitDigestSection(profitLines(view.Profit, view.Traffic)),
-			}},
-			CardElement{Tag: "div", Text: &CardText{
-				Tag: "lark_md", Content: fitDigestSection(actionLines(view)),
-			}},
-		)
-		if lines := recommendationLines(view.Recommendations); len(lines) > 0 {
-			elements = append(elements, CardElement{Tag: "div", Text: &CardText{
-				Tag: "lark_md", Content: fitDigestSection(lines),
-			}})
-		}
-		elements = append(elements, CardElement{Tag: "div", Text: &CardText{
-			Tag: "lark_md", Content: clearAccountLine(view),
-		}})
+		{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: fitDigestSection(userRuntimeLines(view)),
+		}},
+		{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: fitDigestSection(actionLines(view)),
+		}},
+		{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: fitDigestSection(profitLines(view)),
+		}},
+		{Tag: "div", Text: &CardText{
+			Tag: "lark_md", Content: fitDigestSection(monitoringLines(view)),
+		}},
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"},
@@ -105,7 +104,7 @@ func RenderHealthDigest(view HealthDigestView) FeishuMessage {
 	return FeishuMessage{MsgType: "interactive", Card: &Card{
 		Config: CardConfig{WideScreenMode: true},
 		Header: CardHeader{
-			Title:    CardText{Tag: "plain_text", Content: "中转站晨报 · " + morningDate(view.Date)},
+			Title:    CardText{Tag: "plain_text", Content: "中转站晨报｜" + morningDate(view.Date)},
 			Template: digestTemplate(view),
 		},
 		Elements: elements,
@@ -122,43 +121,64 @@ func morningDate(value string) string {
 
 func digestTemplate(view HealthDigestView) string {
 	switch {
-	case view.Quality.DataUnavailable:
-		return "orange"
-	case view.Quality.Unavailable > 0:
+	case view.Summary.ActiveP0 > 0 || view.Quality.Unavailable > 0:
 		return "red"
-	case view.Quality.Degraded > 0 || len(view.Pending) > 0 || len(view.Recommendations) > 0:
+	case view.Quality.DataUnavailable ||
+		view.Summary.ActiveP1 > 0 ||
+		view.Quality.Degraded > 0 ||
+		len(view.Pending) > 0 ||
+		view.Summary.PricingEvents > 0 ||
+		!monitoringComplete(view):
 		return "orange"
 	default:
 		return "green"
 	}
 }
 
-func qualityLines(quality QualityLine) []string {
-	lines := []string{"**运行概览**"}
-	if quality.DataUnavailable {
-		reason := digestValue(quality.DataUnavailableReason)
+func conclusionLines(view HealthDigestView) []string {
+	active := view.Summary.ActiveP0 + view.Summary.ActiveP1
+	needs := len(normalizePending(view.Pending)) + view.Summary.PricingEvents
+	return []string{
+		"**一句话结论**",
+		fmt.Sprintf("%d 个公开分组，%d 起进行中用户事故，%d 项需要处理。",
+			view.PublicGroups, active, needs),
+	}
+}
+
+func userRuntimeLines(view HealthDigestView) []string {
+	lines := []string{
+		"**用户侧运行**",
+		fmt.Sprintf("公开分组 %d｜P0 %d｜P1 %d",
+			view.PublicGroups, view.Summary.ActiveP0, view.Summary.ActiveP1),
+		fmt.Sprintf("昨日恢复 %d 起", view.Summary.Recovered),
+	}
+	if view.Quality.DataUnavailable {
+		reason := digestValue(view.Quality.DataUnavailableReason)
 		if reason == "" {
 			reason = "原因未知"
 		}
-		return append(lines, "数据不可用｜"+reason)
+		return append(lines, "账号质量：数据不可用｜"+reason)
 	}
-
-	summary := fmt.Sprintf("%d 个稳定｜%d 个降级｜%d 个不可用",
-		quality.Healthy, quality.Degraded, quality.Unavailable)
-	if quality.HealthyDelta != nil {
-		summary += "｜较昨日 " + signedDelta(*quality.HealthyDelta)
+	summary := fmt.Sprintf("账号状态：%d 个稳定｜%d 个降级｜%d 个不可用",
+		view.Quality.Healthy, view.Quality.Degraded, view.Quality.Unavailable)
+	if view.Quality.HealthyDelta != nil {
+		summary += "｜较昨日 " + signedDelta(*view.Quality.HealthyDelta)
 	}
 	lines = append(lines, summary)
-
-	detail := "P95 中位 " + formatMillis(quality.TTFTP95MedianMS)
-	if quality.Slow > 0 {
-		detail += fmt.Sprintf("｜%d 个偏慢", quality.Slow)
+	detail := "响应首字节 P95 中位 " + formatMillis(view.Quality.TTFTP95MedianMS)
+	if view.Quality.Slow > 0 {
+		detail += fmt.Sprintf("｜%d 个偏慢", view.Quality.Slow)
 	}
 	return append(lines, detail)
 }
 
-func profitLines(profit ProfitLine, traffic TrafficLine) []string {
+func profitLines(view HealthDigestView) []string {
 	lines := []string{"**经营情况**"}
+	if view.Quality.DataUnavailable {
+		return append(lines, "账号监控数据不可用，经营数据暂不可核算。")
+	}
+	profit := view.Profit
+	traffic := view.Traffic
 	switch {
 	case profit.NoTraffic:
 		lines = append(lines, "今日无有效流量，利润暂不可核算")
@@ -229,7 +249,14 @@ func normalizePending(items []PendingItem) []PendingItem {
 
 func actionLines(view HealthDigestView) []string {
 	items := normalizePending(view.Pending)
-	lines := []string{fmt.Sprintf("**需要处理 · %d**", len(items))}
+	total := len(items) + view.Summary.PricingEvents
+	lines := []string{fmt.Sprintf("**需要处理 · %d**", total)}
+	if view.Summary.PricingEvents > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"**价格核对｜公开定价变化 %d 项**\n请核对当前售价与毛利。",
+			view.Summary.PricingEvents,
+		))
+	}
 	if len(items) > 0 {
 		kept := items
 		if len(kept) > maxMorningActions {
@@ -251,6 +278,9 @@ func actionLines(view HealthDigestView) []string {
 			lines = append(lines, fmt.Sprintf("其余 %d 项见运维后台", hidden))
 		}
 	}
+	if !view.Quality.DataUnavailable && view.Profit.TotalAccounts > 0 {
+		lines = append(lines, clearAccountLine(view))
+	}
 
 	return lines
 }
@@ -263,17 +293,48 @@ func clearAccountLine(view HealthDigestView) string {
 	return fmt.Sprintf("其余 %d 个账号无待处理项", clear)
 }
 
-func recommendationLines(items []RecommendationLine) []string {
-	if len(items) == 0 {
-		return nil
+func monitoringLines(view HealthDigestView) []string {
+	lines := []string{"**监控完整性**"}
+	issues := make([]string, 0, 4)
+	if view.Quality.DataUnavailable {
+		reason := digestValue(view.Quality.DataUnavailableReason)
+		if reason == "" {
+			reason = "账号质量来源不可用"
+		}
+		issues = append(issues, reason)
 	}
-	lines := []string{"**调整建议**"}
-	for _, item := range items {
-		lines = append(lines, fmt.Sprintf("%s：建议由 %s 切换到 %s｜%s",
-			digestValue(item.GroupName), digestValue(item.CurrentName),
-			digestValue(item.CandidateName), digestValue(item.Reason)))
+	if view.Summary.TrackedPublicGroups != view.PublicGroups {
+		issues = append(issues, fmt.Sprintf(
+			"公开分组同步 %d/%d",
+			view.Summary.TrackedPublicGroups,
+			view.PublicGroups,
+		))
 	}
-	return lines
+	if view.Summary.FreshCapacityGroups < view.PublicGroups {
+		issues = append(issues, fmt.Sprintf(
+			"容量证据 %d/%d 为新鲜状态",
+			view.Summary.FreshCapacityGroups,
+			view.PublicGroups,
+		))
+	}
+	if view.Summary.TrackedPricingSources < view.Summary.PricingSources {
+		issues = append(issues, fmt.Sprintf(
+			"生产定价来源 %d/%d 已建立可靠基线",
+			view.Summary.TrackedPricingSources,
+			view.Summary.PricingSources,
+		))
+	}
+	if len(issues) == 0 {
+		return append(lines, "真实流量、账号质量、容量证据和生产定价来源均已读取。")
+	}
+	return append(lines, issues...)
+}
+
+func monitoringComplete(view HealthDigestView) bool {
+	return !view.Quality.DataUnavailable &&
+		view.Summary.TrackedPublicGroups == view.PublicGroups &&
+		view.Summary.FreshCapacityGroups >= view.PublicGroups &&
+		view.Summary.TrackedPricingSources >= view.Summary.PricingSources
 }
 
 func signedDelta(delta int) string {

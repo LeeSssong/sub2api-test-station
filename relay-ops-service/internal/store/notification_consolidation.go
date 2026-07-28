@@ -40,6 +40,17 @@ type Baseline struct {
 	UpdatedAt    time.Time
 }
 
+type DailyNotificationSummary struct {
+	PublicGroups          int
+	ActiveP0              int
+	ActiveP1              int
+	Recovered             int
+	PricingEvents         int
+	FreshCapacityGroups   int
+	PricingSources        int
+	TrackedPricingSources int
+}
+
 func (s *Store) UpsertGroupSignal(ctx context.Context, signal GroupSignal) error {
 	signal.GroupName = strings.TrimSpace(signal.GroupName)
 	signal.SourceKind = strings.TrimSpace(signal.SourceKind)
@@ -327,6 +338,95 @@ func (s *Store) PutOperationalBaseline(ctx context.Context, baseline Baseline) e
 		return fmt.Errorf("put operational baseline: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) ReadDailyNotificationSummary(
+	ctx context.Context,
+	from time.Time,
+	to time.Time,
+) (DailyNotificationSummary, error) {
+	if from.IsZero() || to.IsZero() || !to.After(from) {
+		return DailyNotificationSummary{}, fmt.Errorf("daily notification summary range is invalid")
+	}
+	var summary DailyNotificationSummary
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*)
+			   FROM relay_ops.incidents
+			  WHERE family='group_runtime'
+			    AND source_kind='site_monitor'
+			    AND incident_key LIKE 'group:%:user-impact'
+			    AND severity='P0'
+			    AND state IN ('confirmed', 'escalated', 'degraded')),
+			(SELECT COUNT(*)
+			   FROM relay_ops.incidents
+			  WHERE family='group_runtime'
+			    AND source_kind='site_monitor'
+			    AND incident_key LIKE 'group:%:user-impact'
+			    AND severity='P1'
+			    AND state IN ('confirmed', 'escalated', 'degraded')),
+			(SELECT COUNT(*)
+			   FROM relay_ops.notification_deliveries AS deliveries
+			   JOIN relay_ops.incidents AS incidents
+			     ON incidents.id=deliveries.incident_id
+			  WHERE incidents.family='group_runtime'
+			    AND incidents.source_kind='site_monitor'
+			    AND incidents.incident_key LIKE 'group:%:user-impact'
+			    AND deliveries.transition='recovered'
+			    AND deliveries.delivery_status='delivered'
+			    AND deliveries.delivered_at >= $1
+			    AND deliveries.delivered_at < $2),
+			(SELECT COUNT(*)
+			   FROM relay_ops.notification_messages
+			  WHERE family='pricing_notice'
+			    AND delivery_status='delivered'
+			    AND delivered_at >= $1
+			    AND delivered_at < $2),
+			(SELECT COUNT(*)
+			   FROM relay_ops.public_groups
+			  WHERE enabled=TRUE AND customer_visible=TRUE),
+			(SELECT COUNT(*)
+			   FROM relay_ops.public_groups AS groups
+			  WHERE groups.enabled=TRUE
+			    AND groups.customer_visible=TRUE
+			    AND EXISTS (
+			      SELECT 1
+			        FROM relay_ops.group_impact_signals AS signals
+			       WHERE signals.group_name=groups.name
+			         AND signals.source_kind='capacity'
+			         AND signals.expires_at>NOW()
+			    )),
+			(SELECT COUNT(*)
+			   FROM relay_ops.upstreams
+			  WHERE role='production'
+			    AND enabled=TRUE
+			    AND COALESCE(BTRIM(pricing_url), '')<>''),
+			(SELECT COUNT(*)
+			   FROM relay_ops.upstreams AS upstreams
+			  WHERE upstreams.role='production'
+			    AND upstreams.enabled=TRUE
+			    AND COALESCE(BTRIM(upstreams.pricing_url), '')<>''
+			    AND EXISTS (
+			      SELECT 1
+			        FROM relay_ops.pricing_snapshots AS snapshots
+			       WHERE snapshots.upstream_id=upstreams.id
+			         AND snapshots.evidence_level<>'unparseable'
+			    ))`,
+		from.UTC(), to.UTC(),
+	).Scan(
+		&summary.ActiveP0,
+		&summary.ActiveP1,
+		&summary.Recovered,
+		&summary.PricingEvents,
+		&summary.PublicGroups,
+		&summary.FreshCapacityGroups,
+		&summary.PricingSources,
+		&summary.TrackedPricingSources,
+	)
+	if err != nil {
+		return DailyNotificationSummary{}, fmt.Errorf("read daily notification summary: %w", err)
+	}
+	return summary, nil
 }
 
 func (s *Store) SupersedeLegacyNotificationIncidents(

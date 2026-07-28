@@ -2,58 +2,53 @@ package dailyreport
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accounthealth"
-	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/cachepolicy"
-	"example.invalid/relay-ops-service/internal/candidates"
-	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
+	"example.invalid/relay-ops-service/internal/store"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-type CandidateReader interface {
-	ListCandidates(context.Context) ([]candidates.Candidate, error)
+type DailyNotificationSummary = store.DailyNotificationSummary
+
+type DigestSummaryReader interface {
+	ReadDailyNotificationSummary(
+		context.Context,
+		time.Time,
+		time.Time,
+	) (DailyNotificationSummary, error)
 }
 
-type IncidentReader interface {
-	ListIncidentSummaries(context.Context, int) ([]string, error)
+type EventSender interface {
+	SendOneShot(context.Context, notify.OneShotIdentity, notify.FeishuMessage) error
 }
 
-type IncidentStateRunner interface {
-	Observe(context.Context, incidents.Observation) (incidents.Transition, error)
-}
-
-type AnalysisRunner interface {
-	AnalyzeOnce(context.Context, agent.IncidentContractV1) (agent.Analysis, error)
-}
-
-type MessageSender interface {
-	SendIncident(context.Context, string, string, notify.FeishuMessage) error
+type DecisionRecorder interface {
+	RecordNotificationDecision(context.Context, store.DecisionRecord) error
 }
 
 type Result struct {
 	ReportDate   string `json:"report_date"`
 	Groups       int    `json:"groups"`
 	Notification string `json:"notification"`
-	AgentStatus  string `json:"agent_status"`
 }
 
 type Service struct {
-	Reader     opsmetrics.Reader
-	Candidates CandidateReader
-	Incidents  IncidentReader
-	Agent      AnalysisRunner
-	Notifier   MessageSender
-	Timezone   *time.Location
-	Now        func() time.Time
+	Reader    opsmetrics.Reader
+	Summary   DigestSummaryReader
+	Notifier  EventSender
+	Decisions DecisionRecorder
+	Policy    notificationpolicy.Policy
+	Timezone  *time.Location
+	Now       func() time.Time
 	// Fallback resolves an account's multiplier from upstream public pricing
 	// when Sub2API's own schema v2 multiplier is unusable. nil disables the
 	// fallback; every failure must return nil, never a guessed value.
@@ -64,6 +59,9 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	if s.Reader == nil {
 		return Result{}, fmt.Errorf("daily report reader is required")
 	}
+	if s.Summary == nil {
+		return Result{}, fmt.Errorf("daily notification summary reader is required")
+	}
 	location := s.Timezone
 	if location == nil {
 		location = time.FixedZone("Asia/Shanghai", 8*60*60)
@@ -73,56 +71,28 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 		now = s.Now().UTC()
 	}
 	date := now.In(location).Format("2006-01-02")
+	localNow := now.In(location)
+	summaryTo := time.Date(
+		localNow.Year(), localNow.Month(), localNow.Day(),
+		0, 0, 0, 0, location,
+	)
+	summaryFrom := summaryTo.AddDate(0, 0, -1)
 	runtime, err := opsmetrics.Collect(ctx, s.Reader, now)
 	if err != nil {
 		return Result{}, fmt.Errorf("collect site runtime: %w", err)
 	}
-	evidenceRefs := make([]string, 0, len(runtime.Groups)+3)
-	for _, group := range runtime.Groups {
-		evidenceRefs = append(evidenceRefs, "group:"+strconv.FormatInt(group.ID, 10)+":ops15m")
+	summary, err := s.Summary.ReadDailyNotificationSummary(
+		ctx,
+		summaryFrom.UTC(),
+		summaryTo.UTC(),
+	)
+	if err != nil {
+		return Result{}, fmt.Errorf("read daily notification summary: %w", err)
 	}
 	publicGroups := len(runtime.Groups)
-	footer := make([]string, 0, 3)
-	if s.Candidates != nil {
-		items, err := s.Candidates.ListCandidates(ctx)
-		if err != nil {
-			return Result{}, fmt.Errorf("list candidates: %w", err)
-		}
-		footer = append(footer, "候选站 "+strconv.Itoa(len(items)))
-		evidenceRefs = append(evidenceRefs, "candidates:summary")
-	}
-	if s.Incidents != nil {
-		items, err := s.Incidents.ListIncidentSummaries(ctx, 20)
-		if err != nil {
-			return Result{}, fmt.Errorf("list incidents: %w", err)
-		}
-		footer = append(footer, "活动事件 "+strconv.Itoa(len(items)))
-		evidenceRefs = append(evidenceRefs, "incidents:recent")
-	}
-	contract := agent.IncidentContractV1{
-		ContractVersion: "relay-ops-incident-v1",
-		IncidentID:      "daily-report:" + date,
-		Severity:        "P2",
-		Upstream:        "relay-ops",
-		MetricName:      "daily_operations_report",
-		CurrentValue:    "公开分组 " + strconv.Itoa(publicGroups),
-		Samples:         int64(publicGroups),
-		EvidenceRefs:    evidenceRefs,
-		AllowedActions:  []string{"observe", "request_human_review"},
-	}
-	analysis := agent.Fallback(contract)
-	result := Result{ReportDate: date, Groups: publicGroups, AgentStatus: "fallback", Notification: "not_configured"}
-	if s.Agent != nil {
-		if generated, analyzeErr := s.Agent.AnalyzeOnce(ctx, contract); analyzeErr == nil {
-			analysis = generated
-			result.AgentStatus = "completed"
-		} else {
-			result.AgentStatus = "fallback_after_error"
-		}
-	}
-	footer = append(footer, "只读分析："+analysis.Summary)
 	view := notify.HealthDigestView{
-		Date: date,
+		Date: date, PublicGroups: publicGroups,
+		Summary: digestSummary(summary),
 		Quality: notify.QualityLine{
 			DataUnavailable:       true,
 			DataUnavailableReason: "账号监控数据不可用",
@@ -145,51 +115,89 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 				fallback = func(name string) *float64 { return s.Fallback(ctx, name) }
 			}
 			view = BuildHealthDigestWithFallback(projection, histories, location, now, fallback)
-			// 脱敏不变量：私有（IsExclusive）分组名不得进入日报卡。选型建议
-			// 来自 accountrecommendation.Analyze(projection)，投影不按
-			// IsExclusive 过滤，且 pendingLines 会渲染 rec.GroupName，所以
-			// 这里按 CustomerVisible 分组白名单收敛。runtime.Groups 只含
-			// 公开分组（ListGroups 失败时 Run 早已返回错误）。
-			publicNames := make(map[string]bool, len(runtime.Groups))
-			for _, group := range runtime.Groups {
-				publicNames[group.Name] = true
-			}
-			kept := view.Recommendations[:0]
-			for _, recommendation := range view.Recommendations {
-				if publicNames[recommendation.GroupName] {
-					kept = append(kept, recommendation)
-				}
-			}
-			view.Recommendations = kept
 		}
 	}
+	view.Date = date
+	view.PublicGroups = publicGroups
+	view.Summary = digestSummary(summary)
 	message := notify.RenderHealthDigest(view)
-	if s.Notifier == nil {
+	result := Result{
+		ReportDate: date, Groups: publicGroups, Notification: "not_configured",
+	}
+	key := "daily-digest:" + date
+	details, _ := json.Marshal(struct {
+		Date    string                   `json:"date"`
+		Groups  int                      `json:"groups"`
+		Summary DailyNotificationSummary `json:"summary"`
+	}{Date: date, Groups: publicGroups, Summary: summary})
+	if s.Policy.Version <= 0 {
+		result.Notification = "suppressed"
 		return result, nil
 	}
-	reporter, ok := s.Incidents.(IncidentStateRunner)
-	if !ok {
-		return Result{}, fmt.Errorf("daily report incident state is required")
+	if s.Decisions == nil {
+		return Result{}, fmt.Errorf("daily digest decision recorder is required")
 	}
-	evidence := summaryHash(date)
-	transition, err := reporter.Observe(ctx, incidents.Observation{
-		Key:                 contract.IncidentID,
-		Severity:            "P2",
-		Failing:             true,
-		EvidenceHash:        evidence,
-		CurrentValue:        "daily operations report generated",
-		ConfirmationWindows: 1,
-	})
-	if err != nil {
-		return Result{}, fmt.Errorf("record daily report incident: %w", err)
+	if !s.Policy.Enabled(notificationpolicy.FamilyDailyDigest) {
+		result.Notification = "suppressed"
+		return result, s.recordDecision(
+			ctx, key, "suppressed", "policy_disabled", details, now,
+		)
 	}
-	message = notify.WithDeliveryIdentity(message, transition.OccurrenceNo, transition.Kind)
-	if err := s.Notifier.SendIncident(ctx, contract.IncidentID, evidence, message); err != nil {
+	switch s.Policy.Mode {
+	case notificationpolicy.ModeShadow:
+		result.Notification = "shadow"
+		return result, s.recordDecision(
+			ctx, key, "shadow_would_deliver", key, details, now,
+		)
+	case notificationpolicy.ModeEnabled:
+	default:
+		result.Notification = "suppressed"
+		return result, s.recordDecision(
+			ctx, key, "suppressed", "delivery_mode_disabled", details, now,
+		)
+	}
+	if s.Notifier == nil {
+		result.Notification = "not_configured"
+		return result, s.recordDecision(
+			ctx, key, "suppressed", "transport_unavailable", details, now,
+		)
+	}
+	if err := s.Notifier.SendOneShot(ctx, notify.OneShotIdentity{
+		Key: key, Family: string(notificationpolicy.FamilyDailyDigest),
+		PolicyVersion: s.Policy.Version, SourceKind: "daily_report",
+	}, message); err != nil {
 		result.Notification = "failed"
+		_ = s.recordDecision(ctx, key, "failed", "delivery_failed", details, now)
 		return result, err
 	}
 	result.Notification = "delivered"
-	return result, nil
+	return result, s.recordDecision(ctx, key, "delivered", key, details, now)
+}
+
+func (s Service) recordDecision(
+	ctx context.Context,
+	key string,
+	decision string,
+	reason string,
+	details []byte,
+	observedAt time.Time,
+) error {
+	return s.Decisions.RecordNotificationDecision(ctx, store.DecisionRecord{
+		DecisionKey: key, Family: string(notificationpolicy.FamilyDailyDigest),
+		PolicyVersion: s.Policy.Version, SourceKind: "daily_report",
+		Decision: decision, Reason: reason, Details: details, ObservedAt: observedAt,
+	})
+}
+
+func digestSummary(summary DailyNotificationSummary) notify.DigestNotificationSummary {
+	return notify.DigestNotificationSummary{
+		ActiveP0: summary.ActiveP0, ActiveP1: summary.ActiveP1,
+		Recovered: summary.Recovered, PricingEvents: summary.PricingEvents,
+		TrackedPublicGroups:   summary.PublicGroups,
+		FreshCapacityGroups:   summary.FreshCapacityGroups,
+		PricingSources:        summary.PricingSources,
+		TrackedPricingSources: summary.TrackedPricingSources,
+	}
 }
 
 func cacheReportLine(usage sub2api.UsageStats, ready bool, eligible, discounted int, blockers []string) string {
@@ -234,9 +242,4 @@ func formatTokens(value int64) string {
 	default:
 		return strconv.FormatInt(value, 10)
 	}
-}
-
-func summaryHash(date string) string {
-	sum := sha256.Sum256([]byte("daily-report-v1\x00" + date))
-	return hex.EncodeToString(sum[:])
 }

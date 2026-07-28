@@ -1267,6 +1267,158 @@ func TestOperationalBaselineRoundTrips(t *testing.T) {
 	}
 }
 
+func TestDailyNotificationSummaryReadsOnlyConsolidatedProductionFacts(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := st.UpsertPublicGroup(ctx, sub2api.PublicGroupRecord{
+		GroupID: 7, Name: "Public", Enabled: true, CustomerVisible: true,
+		UserMultiplierBPS: 10_000, SourceRevision: "summary-test",
+		LastSeenAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertGroupSignal(ctx, GroupSignal{
+		GroupName: "Public", SourceKind: "capacity", SourceKey: "current",
+		Payload:          json.RawMessage(`{"available":2,"total":2}`),
+		SourceObservedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []incidents.Record{
+		{
+			Key: "group:7:user-impact", Family: "group_runtime",
+			PolicyVersion: 1, SourceKind: "site_monitor",
+			Severity: "P0", State: "confirmed", SampleCount: 2, OccurrenceNo: 1,
+		},
+		{
+			Key: "group:8:user-impact", Family: "group_runtime",
+			PolicyVersion: 1, SourceKind: "site_monitor",
+			Severity: "P1", State: "escalated", SampleCount: 3, OccurrenceNo: 1,
+		},
+		{
+			Key: "group:9:user-impact", Family: "group_runtime",
+			PolicyVersion: 1, SourceKind: "site_monitor",
+			Severity: "P1", State: "confirmed", SampleCount: 2, OccurrenceNo: 1,
+		},
+		{
+			Key: "candidate:17:quality", Family: "legacy",
+			Severity: "P1", State: "confirmed", SampleCount: 1, OccurrenceNo: 1,
+		},
+	} {
+		if err := st.Put(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initialPayload := []byte(`{"header":{"title":{"content":"P1"}},"elements":[]}`)
+	initialDeliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: "group:9:user-impact", DedupKey: "summary-initial",
+		MessageHash: "summary-initial-message", Transition: "confirmed",
+		OccurrenceNo: 1, Payload: initialPayload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("ReserveNotification initial=%d %v %v", initialDeliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, initialDeliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK,
+		MessageID: "om-initial-summary", Payload: initialPayload,
+		UrgentStatus: "not_supported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(ctx, incidents.Record{
+		Key: "group:9:user-impact", Family: "group_runtime",
+		PolicyVersion: 1, SourceKind: "site_monitor",
+		Severity: "P1", State: "recovered", SampleCount: 4, OccurrenceNo: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recoveryPayload := []byte(`{"header":{"title":{"content":"恢复"}},"elements":[]}`)
+	recoveryDeliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: "group:9:user-impact", DedupKey: "summary-recovery",
+		MessageHash: "summary-recovery-message", Transition: "recovered",
+		OccurrenceNo: 1, Payload: recoveryPayload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("ReserveNotification=%d %v %v", recoveryDeliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, recoveryDeliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK,
+		MessageID: "om-recovery-summary", Payload: recoveryPayload,
+		UrgentStatus: "not_supported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(ctx, incidents.Record{
+		Key: "group:9:user-impact", Family: "group_runtime",
+		PolicyVersion: 1, SourceKind: "site_monitor",
+		Severity: "P1", State: "observed", SampleCount: 1, OccurrenceNo: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	upstreamID, err := st.CreateUpstream(ctx, Upstream{
+		Name: "Neko", Role: "production",
+		BaseURL:     "https://neko-summary.example/v1",
+		AdapterType: "openai", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.upstreams
+		SET pricing_url='https://neko-summary.example/pricing'
+		WHERE id=$1`, upstreamID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppendPricingSnapshot(ctx, PricingSnapshot{
+		UpstreamID: upstreamID, SourceURL: "https://neko-summary.example/pricing",
+		SourceType: "public_page", FetchedAt: now, ContentHash: "summary-price",
+		NormalizedJSON: []byte(`{"schema_version":"pricing-evidence-v2","confidence":"structured_json","models":[]}`),
+		EvidenceLevel:  "structured_json",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reservation := notify.OneShotReservation{
+		NotificationKey: "pricing:summary:test", Family: "pricing_notice",
+		PolicyVersion: 1, SourceKind: "public_pricing",
+		DedupKey: "pricing-summary-test", MessageHash: "pricing-summary-message",
+		Payload: []byte(`{"header":{"title":{"content":"价格变更"}},"elements":[]}`),
+	}
+	deliveryID, reserved, err := st.ReserveOneShot(ctx, reservation)
+	if err != nil || !reserved {
+		t.Fatalf("ReserveOneShot=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishOneShot(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK,
+		MessageID: "om-summary", Payload: reservation.Payload,
+		UrgentStatus: "not_supported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := st.ReadDailyNotificationSummary(
+		ctx,
+		now.Add(-time.Hour),
+		now.Add(time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.PublicGroups != 1 ||
+		summary.ActiveP0 != 1 ||
+		summary.ActiveP1 != 1 ||
+		summary.Recovered != 1 ||
+		summary.PricingEvents != 1 ||
+		summary.FreshCapacityGroups != 1 ||
+		summary.PricingSources != 1 ||
+		summary.TrackedPricingSources != 1 {
+		t.Fatalf("summary=%#v", summary)
+	}
+}
+
 func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

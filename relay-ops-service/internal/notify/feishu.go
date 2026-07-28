@@ -550,7 +550,7 @@ func shortHash(value string) string {
 func RenderSessionExpired(upstream, loginURL string) FeishuMessage {
 	return RenderAlert(IncidentView{
 		Title:       "上游用量读取会话失效：" + upstream,
-		Severity:    "P1",
+		Severity:    "P2",
 		WhatWasDone: []string{"读取上游用量页面并在 401 后重试 1 次"},
 		Results:     []string{"质量和公开价格监控正常；真实消费核对暂停"},
 		Change:      "登录会话已失效",

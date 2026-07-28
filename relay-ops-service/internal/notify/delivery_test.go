@@ -24,7 +24,11 @@ func TestDeliverySenderDeduplicatesSuccessfulEvidenceAndRetriesFailure(t *testin
 		return notifyResponse(http.StatusNoContent, "")
 	})}}
 	sender := DeliverySender{Client: client, Repository: repository}
-	message := RenderFeishu(IncidentView{Title: "倍率变化", Results: []string{"0.07x -> 0.10x"}})
+	message := WithDeliveryIdentity(
+		RenderFeishu(IncidentView{Title: "倍率变化", Results: []string{"0.07x -> 0.10x"}}),
+		1,
+		"confirmed",
+	)
 	if err := sender.SendIncident(context.Background(), "upstream:7:pricing", "hash-1", message); err == nil {
 		t.Fatal("expected first delivery failure")
 	}
@@ -37,6 +41,23 @@ func TestDeliverySenderDeduplicatesSuccessfulEvidenceAndRetriesFailure(t *testin
 	}
 	if repository.reserveCalls != 3 || repository.delivered != 1 {
 		t.Fatalf("repository = %#v", repository)
+	}
+}
+
+func TestDeliverySenderRejectsMissingIncidentIdentity(t *testing.T) {
+	repository := &fakeDeliveryRepository{}
+	client := &auditedFakeClient{}
+	sender := DeliverySender{Client: client, Repository: repository}
+
+	err := sender.SendIncident(
+		context.Background(),
+		"group:GPT-Plus:availability",
+		"available:0/1",
+		RenderAlert(IncidentView{Title: "P0｜公开分组不可用", Severity: "P0"}),
+	)
+
+	if err == nil || client.calls != 0 || repository.reserveCalls != 0 {
+		t.Fatalf("err=%v client_calls=%d reserve_calls=%d", err, client.calls, repository.reserveCalls)
 	}
 }
 
@@ -73,6 +94,43 @@ func TestDeliverySenderSeparatesOccurrencesAndPersistsAuditedOutcome(t *testing.
 			t.Fatalf("outcome = %#v", outcome)
 		}
 	}
+}
+
+func TestDeliverySenderPersistsPreMentionPayload(t *testing.T) {
+	repository := &fakeDeliveryRepository{}
+	client := resultClientFunc(func(_ context.Context, _ FeishuMessage) (SendResult, error) {
+		return SendResult{
+			MessageID:          "om-alert",
+			ResponseCode:       http.StatusOK,
+			Payload:            []byte(`{"elements":[{"tag":"div","text":{"tag":"lark_md","content":"<at id=ou-secret></at>"}}]}`),
+			UrgentStatus:       "delivered",
+			UrgentResponseCode: http.StatusOK,
+		}, nil
+	})
+	sender := DeliverySender{Client: client, Repository: repository}
+	message := WithDeliveryIdentity(
+		RenderAlert(IncidentView{Title: "公开分组不可用", Severity: "P0"}),
+		1,
+		"confirmed",
+	)
+
+	if err := sender.SendIncident(context.Background(), "group:GPT-Plus:availability", "available:0/1", message); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.outcomes) != 1 || strings.Contains(string(repository.outcomes[0].Payload), "ou-secret") {
+		t.Fatalf("persisted outcome=%#v", repository.outcomes)
+	}
+}
+
+type resultClientFunc func(context.Context, FeishuMessage) (SendResult, error)
+
+func (fn resultClientFunc) Send(ctx context.Context, message FeishuMessage) error {
+	_, err := fn(ctx, message)
+	return err
+}
+
+func (fn resultClientFunc) SendWithResult(ctx context.Context, message FeishuMessage) (SendResult, error) {
+	return fn(ctx, message)
 }
 
 type fakeDeliveryRepository struct {

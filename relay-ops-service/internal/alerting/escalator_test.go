@@ -47,7 +47,7 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 	}
 	repository := &fakeEscalationRepository{claims: []*Incident{{
 		Key: "group:GPT-Plus:availability", Severity: "P0", OccurrenceNo: 3,
-		EscalationLevel: 0, FirstDeliveredAt: first, MessagePayload: payload,
+		EscalationLevel: 0, ClaimToken: "claim-1", FirstDeliveredAt: first, MessagePayload: payload,
 	}}}
 	sender := &fakeEscalationSender{}
 	service := Service{Repository: repository, Sender: sender, Clock: func() time.Time { return now }}
@@ -71,6 +71,7 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 	}
 	if len(repository.results) != 1 || !repository.results[0].Succeeded ||
 		repository.results[0].Level != 1 || repository.results[0].NextEscalationAt == nil ||
+		repository.results[0].ClaimToken != "claim-1" ||
 		!repository.results[0].NextEscalationAt.Equal(first.Add(15*time.Minute)) {
 		t.Fatalf("results=%#v", repository.results)
 	}
@@ -80,7 +81,7 @@ func TestServiceResendsAuditedCardWithSeverityElapsedTimeAndNextLevel(t *testing
 	}
 	secondEscalation, err := escalationMessage(Incident{
 		Key: "group:GPT-Plus:availability", Severity: "P0", OccurrenceNo: 3,
-		EscalationLevel: 1, FirstDeliveredAt: first, MessagePayload: firstEscalationPayload,
+		EscalationLevel: 1, ClaimToken: "claim-2", FirstDeliveredAt: first, MessagePayload: firstEscalationPayload,
 	}, 2, first.Add(15*time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +100,7 @@ func TestServiceRetriesFailedLevelAfterOneMinuteWithoutAdvancing(t *testing.T) {
 	}
 	repository := &fakeEscalationRepository{claims: []*Incident{{
 		Key: "site:group:2:error_rate", Severity: "P1", OccurrenceNo: 1,
-		EscalationLevel: 0, FirstDeliveredAt: now.Add(-15 * time.Minute), MessagePayload: payload,
+		EscalationLevel: 0, ClaimToken: "claim-1", FirstDeliveredAt: now.Add(-15 * time.Minute), MessagePayload: payload,
 	}}}
 	sender := &fakeEscalationSender{err: errors.New("send failed")}
 	service := Service{Repository: repository, Sender: sender, Clock: func() time.Time { return now }}

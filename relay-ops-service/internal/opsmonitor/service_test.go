@@ -656,8 +656,11 @@ func TestServiceAlertsCompleteFailureImmediatelyBelowMinimumSample(t *testing.T)
 	if err := service.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if len(notifier.sent) != 1 || notifier.sent[0].key != "site:group:2:availability" {
-		t.Fatalf("complete failure must alert immediately: %#v", notifier.sent)
+		t.Fatalf("complete failure must emit only its parent P0: %#v", notifier.sent)
 	}
 	message := notifier.sent[0].message
 	if message.Severity != "P0" || !strings.HasPrefix(message.Card.Header.Title.Content, "P0｜") {

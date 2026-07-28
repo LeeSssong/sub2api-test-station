@@ -45,6 +45,9 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 	if !strings.Contains(notifier.messages[0].RenderedText(), "GPT-Pro") || !strings.Contains(notifier.messages[0].RenderedText(), "gpt-5.6-sol") {
 		t.Fatalf("notification missing group/model: %q", notifier.messages[0].RenderedText())
 	}
+	if notifier.messages[0].OccurrenceNo != 1 || notifier.messages[0].Transition != "confirmed" {
+		t.Fatalf("confirmed identity=%#v", notifier.messages[0])
+	}
 
 	duplicate, err := service.Observe(context.Background(), errorSample)
 	if err != nil {
@@ -79,6 +82,9 @@ func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
 		t.Fatalf("recovery=%#v messages=%d analyses=%d", recovery, len(notifier.messages), len(analyzer.contracts))
 	}
 	recoveryText := notifier.messages[2].RenderedText()
+	if notifier.messages[2].OccurrenceNo != 1 || notifier.messages[2].Transition != "recovered" {
+		t.Fatalf("recovery identity=%#v", notifier.messages[2])
+	}
 	for _, want := range []string{"原生监控已恢复", "运行正常", "gpt-5.6-sol", "1396ms", "健康确认", "1 个完整窗口", "Sub2API 原生 Channel Monitor 最新状态"} {
 		if !strings.Contains(recoveryText, want) {
 			t.Fatalf("recovery message missing %q: %q", want, recoveryText)

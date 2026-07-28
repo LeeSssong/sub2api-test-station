@@ -37,6 +37,7 @@ type Scheduler struct {
 	SiteMonitor        func(context.Context) error
 	DailyReport        func(context.Context) error
 	IncidentEscalation func(context.Context) error
+	NotificationRetry  func(context.Context) error
 
 	GroupAvailability func(context.Context) error
 }
@@ -68,6 +69,11 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		now = s.Clock().UTC()
 	}
 	var failures []error
+	if s.NotificationRetry != nil {
+		if err := s.runDue(ctx, "notification-retry", now, time.Minute, s.NotificationRetry); err != nil {
+			failures = append(failures, err)
+		}
+	}
 	if s.IncidentEscalation != nil {
 		if err := s.runDue(ctx, "incident-escalation", now, time.Minute, s.IncidentEscalation); err != nil {
 			failures = append(failures, err)

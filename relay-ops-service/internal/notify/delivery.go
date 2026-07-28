@@ -26,6 +26,7 @@ type Reservation struct {
 	MessageHash  string
 	Transition   string
 	OccurrenceNo int64
+	Payload      []byte
 }
 
 type DeliveryOutcome struct {
@@ -49,10 +50,10 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 	if s.Client == nil {
 		return fmt.Errorf("notification client is required")
 	}
-	occurrenceNo := message.OccurrenceNo
-	if occurrenceNo <= 0 {
-		occurrenceNo = 1
+	if message.OccurrenceNo <= 0 || message.Transition == "" {
+		return fmt.Errorf("notification delivery identity is required")
 	}
+	occurrenceNo := message.OccurrenceNo
 	message = WithAcknowledgementAction(message, incidentKey, occurrenceNo)
 	// The dedup fingerprint is taken over the card that will actually be sent,
 	// so a message whose rendering changed counts as a different message.
@@ -61,9 +62,6 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 		return fmt.Errorf("encode notification message")
 	}
 	transition := message.Transition
-	if transition == "" {
-		transition = "confirmed"
-	}
 	dedupKey := digest(fmt.Sprintf("%s\x00%d\x00%s\x00%s", incidentKey, occurrenceNo, transition, evidenceHash))
 	messageHash := digest(string(payload))
 	if s.Repository == nil {
@@ -75,7 +73,7 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 	}
 	deliveryID, reserved, err := s.Repository.ReserveNotification(ctx, Reservation{
 		IncidentKey: incidentKey, DedupKey: dedupKey, MessageHash: messageHash,
-		Transition: transition, OccurrenceNo: occurrenceNo,
+		Transition: transition, OccurrenceNo: occurrenceNo, Payload: payload,
 	})
 	if err != nil {
 		return err
@@ -90,12 +88,12 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 		err = s.Client.Send(ctx, message)
 	}
 	if err != nil {
-		_ = s.Repository.FinishNotification(ctx, deliveryID, DeliveryOutcome{Status: "failed"})
+		_ = s.Repository.FinishNotification(ctx, deliveryID, DeliveryOutcome{Status: "failed", Payload: payload})
 		return err
 	}
 	outcome := DeliveryOutcome{
 		Status: "delivered", MessageID: result.MessageID, ResponseCode: result.ResponseCode,
-		Payload: result.Payload, UrgentStatus: result.UrgentStatus,
+		Payload: payload, UrgentStatus: result.UrgentStatus,
 		UrgentResponseCode: result.UrgentResponseCode,
 	}
 	if err := s.Repository.FinishNotification(ctx, deliveryID, outcome); err != nil {

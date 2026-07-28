@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
@@ -35,10 +36,14 @@ var initialMigration string
 //go:embed migrations/004_user_impact_alerting.sql
 var userImpactAlertingMigration string
 
+//go:embed migrations/005_notification_retry.sql
+var notificationRetryMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
 	initialMigration += "\n" + userImpactAlertingMigration
+	initialMigration += "\n" + notificationRetryMigration
 }
 
 type Store struct {
@@ -693,90 +698,213 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 	if err != nil {
 		return fmt.Errorf("encode incident state evidence: %w", err)
 	}
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO relay_ops.incidents
-			(incident_key, severity, state, current_value, sample_count, occurrence_no, evidence_refs)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
-		ON CONFLICT (incident_key) DO UPDATE SET
-			severity=EXCLUDED.severity,
-			state=EXCLUDED.state,
-			current_value=EXCLUDED.current_value,
-			sample_count=EXCLUDED.sample_count,
-			occurrence_no=EXCLUDED.occurrence_no,
-			evidence_refs=EXCLUDED.evidence_refs,
-			acknowledged_occurrence=CASE
-				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-				ELSE relay_ops.incidents.acknowledged_occurrence
-			END,
-			acknowledged_at=CASE
-				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-				ELSE relay_ops.incidents.acknowledged_at
-			END,
-			acknowledged_by=CASE
-				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-				ELSE relay_ops.incidents.acknowledged_by
-			END,
-			escalation_level=CASE
-				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN 0
-				ELSE relay_ops.incidents.escalation_level
-			END,
-			next_escalation_at=CASE
-				WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-				ELSE relay_ops.incidents.next_escalation_at
-			END,
-			last_seen_at=NOW()`,
-		record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, record.OccurrenceNo, evidenceJSON)
-	if err != nil {
-		return fmt.Errorf("put incident state: %w", err)
+	for {
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin incident state update: %w", err)
+		}
+		var claimToken sql.NullString
+		err = tx.QueryRow(ctx, `
+			SELECT escalation_claim_token
+			FROM relay_ops.incidents
+			WHERE incident_key=$1
+			FOR UPDATE`, record.Key).Scan(&claimToken)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			tx.Rollback(ctx)
+			return fmt.Errorf("lock incident state: %w", err)
+		}
+		if claimToken.Valid && claimToken.String != "" {
+			tx.Rollback(ctx)
+			if err := waitForIncidentOperation(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		inFlight, err := hasInFlightNotificationDelivery(ctx, tx, record.Key, record.OccurrenceNo)
+		if err != nil {
+			tx.Rollback(ctx)
+			return err
+		}
+		if inFlight {
+			tx.Rollback(ctx)
+			if err := waitForIncidentOperation(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO relay_ops.incidents
+				(incident_key, severity, state, current_value, sample_count, occurrence_no, evidence_refs)
+			VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
+			ON CONFLICT (incident_key) DO UPDATE SET
+				severity=EXCLUDED.severity,
+				state=EXCLUDED.state,
+				current_value=EXCLUDED.current_value,
+				sample_count=EXCLUDED.sample_count,
+				occurrence_no=EXCLUDED.occurrence_no,
+				evidence_refs=EXCLUDED.evidence_refs,
+				acknowledged_occurrence=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.acknowledged_occurrence
+				END,
+				acknowledged_at=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.acknowledged_at
+				END,
+				acknowledged_by=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.acknowledged_by
+				END,
+				escalation_level=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN 0
+					ELSE relay_ops.incidents.escalation_level
+				END,
+				next_escalation_at=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.next_escalation_at
+				END,
+				escalation_claim_token=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.escalation_claim_token
+				END,
+				escalation_claimed_at=CASE
+					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
+					ELSE relay_ops.incidents.escalation_claimed_at
+				END,
+				last_seen_at=NOW()`,
+			record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, record.OccurrenceNo, evidenceJSON)
+		if err != nil {
+			tx.Rollback(ctx)
+			return fmt.Errorf("put incident state: %w", err)
+		}
+		if record.State == "recovered" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE relay_ops.notification_deliveries
+				SET delivery_status='canceled', next_attempt_at=NULL
+				WHERE incident_id=(SELECT id FROM relay_ops.incidents WHERE incident_key=$1)
+				  AND occurrence_no=$2
+				  AND delivery_status IN ('failed', 'reserved')`,
+				record.Key, record.OccurrenceNo); err != nil {
+				tx.Rollback(ctx)
+				return fmt.Errorf("cancel recovered incident notification retries: %w", err)
+			}
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit incident state: %w", err)
+		}
+		return nil
 	}
-	return nil
 }
 
 func (s *Store) AcknowledgeIncident(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
 	if acknowledgement.Key == "" || acknowledgement.OccurrenceNo <= 0 || acknowledgement.ActorUserID <= 0 || acknowledgement.At.IsZero() {
 		return fmt.Errorf("incident acknowledgement is invalid")
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin incident acknowledgement: %w", err)
+	for {
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin incident acknowledgement: %w", err)
+		}
+		var occurrenceNo int64
+		var state string
+		var claimToken sql.NullString
+		err = tx.QueryRow(ctx, `
+			SELECT occurrence_no, state, escalation_claim_token
+			FROM relay_ops.incidents
+			WHERE incident_key=$1
+			FOR UPDATE`, acknowledgement.Key).Scan(&occurrenceNo, &state, &claimToken)
+		if errors.Is(err, pgx.ErrNoRows) {
+			tx.Rollback(ctx)
+			return incidents.ErrNotActive
+		}
+		if err != nil {
+			tx.Rollback(ctx)
+			return fmt.Errorf("read incident acknowledgement state: %w", err)
+		}
+		if occurrenceNo != acknowledgement.OccurrenceNo {
+			tx.Rollback(ctx)
+			return incidents.ErrOccurrenceConflict
+		}
+		if state != "confirmed" && state != "escalated" && state != "degraded" {
+			tx.Rollback(ctx)
+			return incidents.ErrNotActive
+		}
+		if claimToken.Valid && claimToken.String != "" {
+			tx.Rollback(ctx)
+			if err := waitForIncidentOperation(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		inFlight, err := hasInFlightNotificationDelivery(ctx, tx, acknowledgement.Key, acknowledgement.OccurrenceNo)
+		if err != nil {
+			tx.Rollback(ctx)
+			return err
+		}
+		if inFlight {
+			tx.Rollback(ctx)
+			if err := waitForIncidentOperation(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		command, err := tx.Exec(ctx, `
+			UPDATE relay_ops.incidents
+			SET acknowledged_occurrence=$2, acknowledged_at=$3, acknowledged_by=$4,
+			    next_escalation_at=NULL
+			WHERE incident_key=$1 AND occurrence_no=$2`,
+			acknowledgement.Key, acknowledgement.OccurrenceNo, acknowledgement.At.UTC(), acknowledgement.ActorUserID)
+		if err != nil {
+			tx.Rollback(ctx)
+			return fmt.Errorf("write incident acknowledgement: %w", err)
+		}
+		if command.RowsAffected() != 1 {
+			tx.Rollback(ctx)
+			return incidents.ErrOccurrenceConflict
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE relay_ops.notification_deliveries
+			SET delivery_status='canceled', next_attempt_at=NULL
+			WHERE incident_id=(SELECT id FROM relay_ops.incidents WHERE incident_key=$1)
+			  AND occurrence_no=$2
+			  AND delivery_status IN ('failed', 'reserved')`,
+			acknowledgement.Key, acknowledgement.OccurrenceNo); err != nil {
+			tx.Rollback(ctx)
+			return fmt.Errorf("cancel acknowledged incident notification retries: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit incident acknowledgement: %w", err)
+		}
+		return nil
 	}
-	defer tx.Rollback(ctx)
+}
 
-	var occurrenceNo int64
-	var state string
-	err = tx.QueryRow(ctx, `
-		SELECT occurrence_no, state
-		FROM relay_ops.incidents
-		WHERE incident_key=$1
-		FOR UPDATE`, acknowledgement.Key).Scan(&occurrenceNo, &state)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return incidents.ErrNotActive
+func waitForIncidentOperation(ctx context.Context) error {
+	timer := time.NewTimer(25 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("read incident acknowledgement state: %w", err)
+}
+
+func hasInFlightNotificationDelivery(ctx context.Context, tx pgx.Tx, key string, occurrenceNo int64) (bool, error) {
+	var inFlight bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM relay_ops.notification_deliveries d
+			JOIN relay_ops.incidents i ON i.id=d.incident_id
+			WHERE i.incident_key=$1
+			  AND d.occurrence_no=$2
+			  AND d.delivery_status='reserved'
+			  AND d.created_at>NOW()-INTERVAL '2 minutes'
+		)`, key, occurrenceNo).Scan(&inFlight); err != nil {
+		return false, fmt.Errorf("read in-flight incident notification: %w", err)
 	}
-	if occurrenceNo != acknowledgement.OccurrenceNo {
-		return incidents.ErrOccurrenceConflict
-	}
-	if state != "confirmed" && state != "escalated" && state != "degraded" {
-		return incidents.ErrNotActive
-	}
-	command, err := tx.Exec(ctx, `
-		UPDATE relay_ops.incidents
-		SET acknowledged_occurrence=$2, acknowledged_at=$3, acknowledged_by=$4,
-		    next_escalation_at=NULL
-		WHERE incident_key=$1 AND occurrence_no=$2`,
-		acknowledgement.Key, acknowledgement.OccurrenceNo, acknowledgement.At.UTC(), acknowledgement.ActorUserID)
-	if err != nil {
-		return fmt.Errorf("write incident acknowledgement: %w", err)
-	}
-	if command.RowsAffected() != 1 {
-		return incidents.ErrOccurrenceConflict
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit incident acknowledgement: %w", err)
-	}
-	return nil
+	return inFlight, nil
 }
 
 func (s *Store) Claim(ctx context.Context, key string, now time.Time, interval time.Duration) (bool, error) {
@@ -955,15 +1083,39 @@ func (s *Store) ListAgentSummaries(ctx context.Context, limit int) ([]string, er
 
 func (s *Store) ReserveNotification(ctx context.Context, reservation notify.Reservation) (int64, bool, error) {
 	if reservation.IncidentKey == "" || reservation.DedupKey == "" || reservation.MessageHash == "" ||
-		reservation.OccurrenceNo <= 0 || reservation.Transition == "" {
+		reservation.OccurrenceNo <= 0 || reservation.Transition == "" || !json.Valid(reservation.Payload) {
 		return 0, false, fmt.Errorf("notification identity is incomplete")
 	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `
+		WITH target_incident AS (
+			SELECT id
+			FROM relay_ops.incidents
+			WHERE incident_key=$1
+			  AND occurrence_no=$4
+			  AND (
+			    ($5='recovered' AND state='recovered')
+			    OR
+			    ($5<>'recovered' AND state IN ('confirmed', 'escalated', 'degraded'))
+			  )
+			FOR UPDATE
+		)
 		INSERT INTO relay_ops.notification_deliveries
-			(incident_id, dedup_key, message_hash, delivery_status, occurrence_no, transition)
-		SELECT id, $2, $3, 'reserved', $4, $5
-		FROM relay_ops.incidents WHERE incident_key=$1
+			(incident_id, dedup_key, message_hash, delivery_status, occurrence_no, transition,
+			 message_payload, attempt_count)
+		SELECT id, $2, $3, 'reserved', $4, $5, $6::jsonb, 1
+		FROM target_incident
+		WHERE (
+		    $5<>'recovered'
+		    OR EXISTS (
+		      SELECT 1
+		      FROM relay_ops.notification_deliveries delivered
+		      WHERE delivered.incident_id=target_incident.id
+		        AND delivered.occurrence_no=$4
+		        AND delivered.delivery_status='delivered'
+		        AND delivered.transition<>'recovered'
+		    )
+		  )
 		ON CONFLICT (dedup_key) DO UPDATE
 		SET message_hash=EXCLUDED.message_hash,
 		    delivery_status='reserved',
@@ -971,20 +1123,33 @@ func (s *Store) ReserveNotification(ctx context.Context, reservation notify.Rese
 		    transition=EXCLUDED.transition,
 		    response_code=NULL,
 		    delivered_at=NULL,
-		    message_payload=NULL,
+		    message_payload=EXCLUDED.message_payload,
 		    message_id=NULL,
 		    urgent_status=NULL,
 		    urgent_response_code=NULL,
+		    attempt_count=notification_deliveries.attempt_count+1,
+		    next_attempt_at=NULL,
 		    created_at=NOW()
 		WHERE notification_deliveries.delivery_status='failed'
 		RETURNING id`, reservation.IncidentKey, reservation.DedupKey, reservation.MessageHash,
-		reservation.OccurrenceNo, reservation.Transition).Scan(&id)
+		reservation.OccurrenceNo, reservation.Transition, string(reservation.Payload)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var exists bool
 		if scanErr := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM relay_ops.notification_deliveries WHERE dedup_key=$1)`, reservation.DedupKey).Scan(&exists); scanErr != nil {
 			return 0, false, fmt.Errorf("check notification reservation: %w", scanErr)
 		}
 		if exists {
+			return 0, false, nil
+		}
+		var incidentExists bool
+		if scanErr := s.pool.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM relay_ops.incidents
+				WHERE incident_key=$1 AND occurrence_no=$2
+			)`, reservation.IncidentKey, reservation.OccurrenceNo).Scan(&incidentExists); scanErr != nil {
+			return 0, false, fmt.Errorf("check notification incident: %w", scanErr)
+		}
+		if incidentExists {
 			return 0, false, nil
 		}
 		return 0, false, fmt.Errorf("incident not found for notification")
@@ -1023,12 +1188,34 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 		return fmt.Errorf("begin notification delivery finish: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	var incidentID int64
+	if err := tx.QueryRow(ctx, `
+		SELECT i.id
+		FROM relay_ops.notification_deliveries d
+		JOIN relay_ops.incidents i ON i.id=d.incident_id
+		WHERE d.id=$1
+		FOR UPDATE OF i`, deliveryID).Scan(&incidentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("notification delivery not found")
+		}
+		return fmt.Errorf("lock notification incident: %w", err)
+	}
 	command, err := tx.Exec(ctx, `
 		UPDATE relay_ops.notification_deliveries
 		SET delivery_status=$2, response_code=$3, delivered_at=$4,
 		    message_payload=$5::jsonb, message_id=NULLIF($6, ''),
-		    urgent_status=NULLIF($7, ''), urgent_response_code=$8
-		WHERE id=$1`, deliveryID, outcome.Status, code, deliveredAt, payload,
+		    urgent_status=NULLIF($7, ''), urgent_response_code=$8,
+		    next_attempt_at=CASE
+		      WHEN $2='failed' AND attempt_count<5 THEN
+		        NOW() + CASE attempt_count
+		          WHEN 1 THEN INTERVAL '1 minute'
+		          WHEN 2 THEN INTERVAL '2 minutes'
+		          WHEN 3 THEN INTERVAL '5 minutes'
+		          ELSE INTERVAL '10 minutes'
+		        END
+		      ELSE NULL
+		    END
+		WHERE id=$1 AND delivery_status='reserved'`, deliveryID, outcome.Status, code, deliveredAt, payload,
 		outcome.MessageID, outcome.UrgentStatus, urgentCode)
 	if err != nil {
 		return fmt.Errorf("finish notification delivery: %w", err)
@@ -1037,7 +1224,7 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 		return fmt.Errorf("notification delivery not found")
 	}
 	if outcome.Status == "delivered" {
-		var incidentID, occurrenceNo, deliveryOccurrence int64
+		var occurrenceNo, deliveryOccurrence int64
 		var severity, state, transition string
 		var escalationLevel int
 		var acknowledgedOccurrence sql.NullInt64
@@ -1082,6 +1269,57 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 	return nil
 }
 
+func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*notify.RetryDelivery, error) {
+	if now.IsZero() {
+		return nil, fmt.Errorf("notification retry claim time is required")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin notification retry claim: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var delivery notify.RetryDelivery
+	err = tx.QueryRow(ctx, `
+		SELECT d.id, i.incident_key, i.severity, d.occurrence_no, d.transition, d.message_payload
+		FROM relay_ops.notification_deliveries d
+		JOIN relay_ops.incidents i ON i.id=d.incident_id
+		WHERE d.attempt_count<5
+		  AND d.message_payload IS NOT NULL
+		  AND (
+		    (d.delivery_status='failed' AND d.next_attempt_at<=$1)
+		    OR (d.delivery_status='reserved' AND d.created_at<=$1-INTERVAL '2 minutes')
+		  )
+		  AND i.occurrence_no=d.occurrence_no
+		  AND i.state IN ('confirmed', 'escalated', 'degraded')
+		  AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
+		ORDER BY COALESCE(d.next_attempt_at, d.created_at), d.id
+		FOR UPDATE OF i SKIP LOCKED
+		LIMIT 1`, now.UTC()).Scan(
+		&delivery.ID, &delivery.IncidentKey, &delivery.Severity,
+		&delivery.OccurrenceNo, &delivery.Transition, &delivery.Payload,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit empty notification retry claim: %w", err)
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("claim notification retry: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE relay_ops.notification_deliveries
+		SET delivery_status='reserved', attempt_count=attempt_count+1,
+		    next_attempt_at=NULL, created_at=$2
+		WHERE id=$1`, delivery.ID, now.UTC()); err != nil {
+		return nil, fmt.Errorf("lease notification retry: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit notification retry claim: %w", err)
+	}
+	return &delivery, nil
+}
+
 func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alerting.Incident, error) {
 	if now.IsZero() {
 		return nil, fmt.Errorf("incident escalation claim time is required")
@@ -1091,6 +1329,10 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 		return nil, fmt.Errorf("begin incident escalation claim: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	claimToken, err := newEscalationClaimToken()
+	if err != nil {
+		return nil, err
+	}
 	var id int64
 	var incident alerting.Incident
 	err = tx.QueryRow(ctx, `
@@ -1120,6 +1362,10 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 		  AND i.severity IN ('P0', 'P1')
 		  AND i.state IN ('confirmed', 'escalated', 'degraded')
 		  AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
+		  AND (
+		    i.escalation_claim_token IS NULL
+		    OR i.escalation_claimed_at<=$1-INTERVAL '2 minutes'
+		  )
 		ORDER BY i.next_escalation_at, i.id
 		FOR UPDATE OF i SKIP LOCKED
 		LIMIT 1`, now.UTC()).Scan(
@@ -1137,18 +1383,19 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE relay_ops.incidents
-		SET next_escalation_at=$2
-		WHERE id=$1`, id, now.UTC().Add(time.Minute)); err != nil {
+		SET next_escalation_at=$2, escalation_claim_token=$3, escalation_claimed_at=$4
+		WHERE id=$1`, id, now.UTC().Add(time.Minute), claimToken, now.UTC()); err != nil {
 		return nil, fmt.Errorf("lease incident escalation: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit incident escalation claim: %w", err)
 	}
+	incident.ClaimToken = claimToken
 	return &incident, nil
 }
 
 func (s *Store) FinishEscalation(ctx context.Context, result alerting.Result) error {
-	if result.Key == "" || result.OccurrenceNo <= 0 || result.Level <= 0 {
+	if result.Key == "" || result.OccurrenceNo <= 0 || result.Level <= 0 || result.ClaimToken == "" {
 		return fmt.Errorf("incident escalation result is invalid")
 	}
 	var next any
@@ -1163,31 +1410,48 @@ func (s *Store) FinishEscalation(ctx context.Context, result alerting.Result) er
 		next = result.RetryAt.UTC()
 	}
 	if result.Succeeded {
-		_, err := s.pool.Exec(ctx, `
+		command, err := s.pool.Exec(ctx, `
 			UPDATE relay_ops.incidents
-			SET escalation_level=$3, next_escalation_at=$4
+			SET escalation_level=$3, next_escalation_at=$4,
+			    escalation_claim_token=NULL, escalation_claimed_at=NULL
 			WHERE incident_key=$1 AND occurrence_no=$2
 			  AND escalation_level=$3-1
+			  AND escalation_claim_token=$5
 			  AND state IN ('confirmed', 'escalated', 'degraded')
 			  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
-			result.Key, result.OccurrenceNo, result.Level, next)
+			result.Key, result.OccurrenceNo, result.Level, next, result.ClaimToken)
 		if err != nil {
 			return fmt.Errorf("finish successful incident escalation: %w", err)
 		}
+		if command.RowsAffected() != 1 {
+			return fmt.Errorf("incident escalation claim is no longer current")
+		}
 		return nil
 	}
-	_, err := s.pool.Exec(ctx, `
+	command, err := s.pool.Exec(ctx, `
 		UPDATE relay_ops.incidents
-		SET next_escalation_at=$4
+		SET next_escalation_at=$4, escalation_claim_token=NULL, escalation_claimed_at=NULL
 		WHERE incident_key=$1 AND occurrence_no=$2
 		  AND escalation_level=$3-1
+		  AND escalation_claim_token=$5
 		  AND state IN ('confirmed', 'escalated', 'degraded')
 		  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
-		result.Key, result.OccurrenceNo, result.Level, next)
+		result.Key, result.OccurrenceNo, result.Level, next, result.ClaimToken)
 	if err != nil {
 		return fmt.Errorf("finish failed incident escalation: %w", err)
 	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("incident escalation claim is no longer current")
+	}
 	return nil
+}
+
+func newEscalationClaimToken() (string, error) {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", fmt.Errorf("generate incident escalation claim token: %w", err)
+	}
+	return hex.EncodeToString(token[:]), nil
 }
 
 func (s *Store) UpsertPublicGroup(ctx context.Context, group sub2api.PublicGroupRecord) error {

@@ -41,6 +41,9 @@ func TestRenderSessionExpiredUsesExactLoginLink(t *testing.T) {
 	if err != nil || !strings.Contains(string(card), "https://wawazz.example/login") {
 		t.Fatalf("card=%s err=%v", card, err)
 	}
+	if message.Severity != "P2" {
+		t.Fatalf("severity=%q, want P2 operational event", message.Severity)
+	}
 }
 
 func TestFeishuClientReadsWebhookSecretWithoutLeakingFailures(t *testing.T) {

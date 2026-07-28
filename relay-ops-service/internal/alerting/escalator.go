@@ -16,6 +16,7 @@ type Incident struct {
 	Severity         string
 	OccurrenceNo     int64
 	EscalationLevel  int
+	ClaimToken       string
 	FirstDeliveredAt time.Time
 	MessagePayload   []byte
 }
@@ -24,6 +25,7 @@ type Result struct {
 	Key              string
 	OccurrenceNo     int64
 	Level            int
+	ClaimToken       string
 	Succeeded        bool
 	NextEscalationAt *time.Time
 	RetryAt          time.Time
@@ -98,7 +100,7 @@ func (service Service) Run(ctx context.Context) error {
 		}
 		result := Result{
 			Key: incident.Key, OccurrenceNo: incident.OccurrenceNo, Level: level,
-			Succeeded: sendErr == nil,
+			ClaimToken: incident.ClaimToken, Succeeded: sendErr == nil,
 		}
 		if sendErr == nil {
 			if next, found := NextEscalationAt(incident.Severity, level, incident.FirstDeliveredAt); found {
@@ -119,6 +121,7 @@ func (service Service) Run(ctx context.Context) error {
 
 func escalationMessage(incident Incident, level int, now time.Time) (notify.FeishuMessage, error) {
 	if incident.Key == "" || incident.OccurrenceNo <= 0 || incident.EscalationLevel < 0 ||
+		incident.ClaimToken == "" ||
 		(incident.Severity != "P0" && incident.Severity != "P1") ||
 		incident.FirstDeliveredAt.IsZero() || len(incident.MessagePayload) == 0 {
 		return notify.FeishuMessage{}, fmt.Errorf("incident escalation claim is invalid")

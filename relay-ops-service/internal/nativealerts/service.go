@@ -105,7 +105,11 @@ func (s Service) Observe(ctx context.Context, observation Observation) (Result, 
 		result.Notification = "not_configured"
 		return result, nil
 	}
-	message := renderMessage(observation, transition, analysis)
+	message := notify.WithDeliveryIdentity(
+		renderMessage(observation, transition, analysis),
+		transition.OccurrenceNo,
+		transition.Kind,
+	)
 	deliveryEvidence := transition.Kind + ":" + evidence
 	if err := s.Notifier.SendIncident(ctx, key, deliveryEvidence, message); err != nil {
 		result.Notification = "failed"

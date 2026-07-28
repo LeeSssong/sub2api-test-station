@@ -194,6 +194,17 @@ func (s Service) evaluateRuntime(ctx context.Context, item object, window, basel
 	if err := s.observeWithSeverity(ctx, item, "availability", availabilitySeverity, completeFailure, "successful requests", fmt.Sprintf("%d/%d successful", window.SuccessCount, window.RequestCountTotal), 1, observedAt, recoveryEvidenceForMetric("availability")); err != nil {
 		return err
 	}
+	if completeFailure && item.kind == "group" {
+		// Preserve subordinate state so it can recover correctly, but the
+		// parent P0 is the only notification for this complete outage.
+		stateOnly := s
+		stateOnly.Notifier = nil
+		if err := stateOnly.observe(ctx, item, "error_rate", window.ErrorRate >= errorRateThreshold, "<5.00%", percent(window.ErrorRate), 2, observedAt, recoveryEvidenceForMetric("error_rate")); err != nil {
+			return err
+		}
+		ttftWorse := baseline.TTFT.P95MS > 0 && window.TTFT.P95MS > ttftAbsoluteMS && window.TTFT.P95MS >= baseline.TTFT.P95MS*ttftDegradationRatio
+		return stateOnly.observe(ctx, item, "ttft_p95", ttftWorse, milliseconds(baseline.TTFT.P95MS), milliseconds(window.TTFT.P95MS), 2, observedAt, recoveryEvidenceForMetric("ttft_p95"))
+	}
 	if err := s.observe(ctx, item, "error_rate", window.ErrorRate >= errorRateThreshold, "<5.00%", percent(window.ErrorRate), 2, observedAt, recoveryEvidenceForMetric("error_rate")); err != nil {
 		return err
 	}

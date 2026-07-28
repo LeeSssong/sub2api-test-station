@@ -7,17 +7,20 @@ import { RequestJourney } from './sections/RequestJourney'
 import { BrandReveal } from './sections/BrandReveal'
 import type { SiteConfig } from './domain/siteConfig'
 import type { SessionState } from './domain/session'
+import type { Theme } from './domain/themeSchedule'
 
 interface AppProps {
   config: SiteConfig
   session: SessionState
+  theme: Theme
+  onToggleTheme: () => void
 }
 
-export function App({ config, session }: AppProps) {
+export function App({ config, session, theme, onToggleTheme }: AppProps) {
   return (
     <>
       <a className="skip-link" href="#main-content">跳到主内容</a>
-      <Header session={session} />
+      <Header session={session} theme={theme} onToggleTheme={onToggleTheme} />
       <main id="main-content">
         <HeroSection session={session} />
         <ValueSections config={config} />

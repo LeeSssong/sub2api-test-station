@@ -1,12 +1,15 @@
-import { Menu, Moon, X } from 'lucide-react'
+import { Menu, Moon, Sun, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SessionState } from '../domain/session'
+import type { Theme } from '../domain/themeSchedule'
 
 interface HeaderProps {
   session: SessionState
+  theme: Theme
+  onToggleTheme: () => void
 }
 
-export function Header({ session }: HeaderProps) {
+export function Header({ session, theme, onToggleTheme }: HeaderProps) {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const dashboardHref = session.kind === 'admin' ? '/admin/dashboard' : '/dashboard'
@@ -17,6 +20,7 @@ export function Header({ session }: HeaderProps) {
     { label: '状态', href: '/monitor' },
     { label: '文档', href: '/docs/' },
   ]
+  const themeActionLabel = theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 24)
@@ -43,8 +47,14 @@ export function Header({ session }: HeaderProps) {
           ))}
         </div>
         <div className="nav-actions">
-          <button className="icon-button theme-indicator" type="button" aria-label="深色主题" title="深色主题">
-            <Moon aria-hidden="true" />
+          <button
+            className="icon-button theme-indicator"
+            type="button"
+            aria-label={themeActionLabel}
+            title={themeActionLabel}
+            onClick={onToggleTheme}
+          >
+            {theme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
           </button>
           <button
             className="icon-button menu-button"

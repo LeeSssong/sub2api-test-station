@@ -9,6 +9,10 @@ const guest: SessionState = {
   ctaLabel: '立即开始',
   ctaHref: '/dashboard',
 }
+const themeProps = {
+  theme: 'dark' as const,
+  onToggleTheme: () => {},
+}
 
 const validReport: ThirdPartyReport = {
   id: 'modeloc-1',
@@ -23,6 +27,7 @@ describe('App', () => {
     render(<App
       config={{ ...DEFAULT_SITE_CONFIG, apiOrigin: 'https://api.example.com' }}
       session={guest}
+      {...themeProps}
     />)
 
     const navigation = screen.getByRole('navigation', { name: '主导航' })
@@ -65,10 +70,10 @@ describe('App', () => {
       ctaHref: '/admin/dashboard',
       user: { id: 1, role: 'admin' },
     }
-    const { rerender } = render(<App config={DEFAULT_SITE_CONFIG} session={user} />)
+    const { rerender } = render(<App config={DEFAULT_SITE_CONFIG} session={user} {...themeProps} />)
     expect(screen.getByRole('link', { name: '进入控制台' })).toHaveAttribute('href', '/dashboard')
 
-    rerender(<App config={DEFAULT_SITE_CONFIG} session={admin} />)
+    rerender(<App config={DEFAULT_SITE_CONFIG} session={admin} {...themeProps} />)
     expect(screen.getByRole('link', { name: '进入控制台' })).toHaveAttribute('href', '/admin/dashboard')
   })
 
@@ -76,6 +81,7 @@ describe('App', () => {
     render(<App
       config={{ ...DEFAULT_SITE_CONFIG, thirdPartyReports: [validReport] }}
       session={guest}
+      {...themeProps}
     />)
     expect(screen.queryByText('待公开')).not.toBeInTheDocument()
     expect(screen.getByText('已获得 MODELOC 真实性验证')).toBeInTheDocument()

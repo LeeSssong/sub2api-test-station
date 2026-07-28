@@ -5,6 +5,7 @@ import { App } from './App'
 import type { SiteConfig } from './domain/siteConfig'
 import { useSession } from './hooks/useSession'
 import { useSiteConfig } from './hooks/useSiteConfig'
+import { useHomepageTheme } from './hooks/useHomepageTheme'
 import { SupportPage } from './pages/SupportPage'
 import { bootstrapHomepageTheme } from './themeBootstrap'
 import './styles.css'
@@ -33,7 +34,8 @@ function useSmoothScroll() {
 function HomeRuntimeApp({ config }: { config: SiteConfig }) {
   useSmoothScroll()
   const session = useSession()
-  return <App config={config} session={session} />
+  const { theme, toggleTheme } = useHomepageTheme()
+  return <App config={config} session={session} theme={theme} onToggleTheme={toggleTheme} />
 }
 
 function RuntimeApp() {

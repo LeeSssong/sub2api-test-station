@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -125,22 +127,54 @@ func TestNotificationDeliveryRetriesFailedButNotDeliveredEvidence(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	firstID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-one")
+	reservation := notify.Reservation{
+		IncidentKey: incidentKey, DedupKey: "semantic-evidence",
+		MessageHash: "message-one", OccurrenceNo: 1, Transition: "confirmed",
+	}
+	firstID, reserved, err := st.ReserveNotification(ctx, reservation)
 	if err != nil || !reserved {
 		t.Fatalf("first reservation = %d %v %v", firstID, reserved, err)
 	}
-	if err := st.FinishNotification(ctx, firstID, "failed", 0); err != nil {
+	if err := st.FinishNotification(ctx, firstID, notify.DeliveryOutcome{Status: "failed"}); err != nil {
 		t.Fatal(err)
 	}
-	secondID, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-two")
+	reservation.MessageHash = "message-two"
+	secondID, reserved, err := st.ReserveNotification(ctx, reservation)
 	if err != nil || !reserved || secondID != firstID {
 		t.Fatalf("failed retry = %d %v %v", secondID, reserved, err)
 	}
-	if err := st.FinishNotification(ctx, secondID, "delivered", 200); err != nil {
+	payload := []byte(`{"header":{"title":{"content":"P0"}},"elements":[]}`)
+	if err := st.FinishNotification(ctx, secondID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: 200, MessageID: "om-alert",
+		Payload: payload, UrgentStatus: "failed",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, reserved, err := st.ReserveNotification(ctx, incidentKey, "semantic-evidence", "message-three"); err != nil || reserved {
+	reservation.MessageHash = "message-three"
+	if _, reserved, err := st.ReserveNotification(ctx, reservation); err != nil || reserved {
 		t.Fatalf("delivered duplicate = %v %v", reserved, err)
+	}
+	var occurrenceNo int64
+	var transition, messageID, urgentStatus string
+	var storedPayload []byte
+	if err := st.pool.QueryRow(ctx, `
+		SELECT occurrence_no, transition, message_id, urgent_status, message_payload
+		FROM relay_ops.notification_deliveries WHERE id=$1`, secondID).Scan(
+		&occurrenceNo, &transition, &messageID, &urgentStatus, &storedPayload,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var gotPayload, wantPayload any
+	if err := json.Unmarshal(storedPayload, &gotPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(payload, &wantPayload); err != nil {
+		t.Fatal(err)
+	}
+	if occurrenceNo != 1 || transition != "confirmed" || messageID != "om-alert" ||
+		urgentStatus != "failed" || !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("stored delivery = occurrence %d transition %q message %q urgency %q payload %s",
+			occurrenceNo, transition, messageID, urgentStatus, storedPayload)
 	}
 }
 

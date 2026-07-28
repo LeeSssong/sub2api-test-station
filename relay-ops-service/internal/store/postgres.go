@@ -19,6 +19,7 @@ import (
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/incidents"
+	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -951,27 +952,35 @@ func (s *Store) ListAgentSummaries(ctx context.Context, limit int) ([]string, er
 	return result, nil
 }
 
-func (s *Store) ReserveNotification(ctx context.Context, incidentKey, dedupKey, messageHash string) (int64, bool, error) {
-	if incidentKey == "" || dedupKey == "" || messageHash == "" {
+func (s *Store) ReserveNotification(ctx context.Context, reservation notify.Reservation) (int64, bool, error) {
+	if reservation.IncidentKey == "" || reservation.DedupKey == "" || reservation.MessageHash == "" ||
+		reservation.OccurrenceNo <= 0 || reservation.Transition == "" {
 		return 0, false, fmt.Errorf("notification identity is incomplete")
 	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO relay_ops.notification_deliveries
-			(incident_id, dedup_key, message_hash, delivery_status)
-		SELECT id, $2, $3, 'reserved'
+			(incident_id, dedup_key, message_hash, delivery_status, occurrence_no, transition)
+		SELECT id, $2, $3, 'reserved', $4, $5
 		FROM relay_ops.incidents WHERE incident_key=$1
 		ON CONFLICT (dedup_key) DO UPDATE
 		SET message_hash=EXCLUDED.message_hash,
 		    delivery_status='reserved',
+		    occurrence_no=EXCLUDED.occurrence_no,
+		    transition=EXCLUDED.transition,
 		    response_code=NULL,
 		    delivered_at=NULL,
+		    message_payload=NULL,
+		    message_id=NULL,
+		    urgent_status=NULL,
+		    urgent_response_code=NULL,
 		    created_at=NOW()
 		WHERE notification_deliveries.delivery_status='failed'
-		RETURNING id`, incidentKey, dedupKey, messageHash).Scan(&id)
+		RETURNING id`, reservation.IncidentKey, reservation.DedupKey, reservation.MessageHash,
+		reservation.OccurrenceNo, reservation.Transition).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var exists bool
-		if scanErr := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM relay_ops.notification_deliveries WHERE dedup_key=$1)`, dedupKey).Scan(&exists); scanErr != nil {
+		if scanErr := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM relay_ops.notification_deliveries WHERE dedup_key=$1)`, reservation.DedupKey).Scan(&exists); scanErr != nil {
 			return 0, false, fmt.Errorf("check notification reservation: %w", scanErr)
 		}
 		if exists {
@@ -985,22 +994,36 @@ func (s *Store) ReserveNotification(ctx context.Context, incidentKey, dedupKey, 
 	return id, true, nil
 }
 
-func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, status string, responseCode int) error {
-	if deliveryID <= 0 || (status != "delivered" && status != "failed") {
+func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcome notify.DeliveryOutcome) error {
+	if deliveryID <= 0 || (outcome.Status != "delivered" && outcome.Status != "failed") {
 		return fmt.Errorf("notification delivery status is invalid")
 	}
 	var code any
-	if responseCode > 0 {
-		code = responseCode
+	if outcome.ResponseCode > 0 {
+		code = outcome.ResponseCode
 	}
 	var deliveredAt any
-	if status == "delivered" {
+	if outcome.Status == "delivered" {
 		deliveredAt = time.Now().UTC()
+	}
+	var payload any
+	if len(outcome.Payload) > 0 {
+		if !json.Valid(outcome.Payload) {
+			return fmt.Errorf("notification delivery payload is invalid")
+		}
+		payload = string(outcome.Payload)
+	}
+	var urgentCode any
+	if outcome.UrgentResponseCode > 0 {
+		urgentCode = outcome.UrgentResponseCode
 	}
 	command, err := s.pool.Exec(ctx, `
 		UPDATE relay_ops.notification_deliveries
-		SET delivery_status=$2, response_code=$3, delivered_at=$4
-		WHERE id=$1`, deliveryID, status, code, deliveredAt)
+		SET delivery_status=$2, response_code=$3, delivered_at=$4,
+		    message_payload=$5::jsonb, message_id=NULLIF($6, ''),
+		    urgent_status=NULLIF($7, ''), urgent_response_code=$8
+		WHERE id=$1`, deliveryID, outcome.Status, code, deliveredAt, payload,
+		outcome.MessageID, outcome.UrgentStatus, urgentCode)
 	if err != nil {
 		return fmt.Errorf("finish notification delivery: %w", err)
 	}

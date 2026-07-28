@@ -99,6 +99,66 @@ func TestAppClientSendsRenderedTextToConfiguredChat(t *testing.T) {
 	}
 }
 
+func TestAppClientMentionsRecipientsAndUrgentsOnlyP0(t *testing.T) {
+	tests := []struct {
+		name         string
+		message      FeishuMessage
+		wantMentions bool
+		wantUrgent   bool
+	}{
+		{name: "P0", message: RenderAlert(IncidentView{Title: "公开分组不可用", Severity: "P0"}), wantMentions: true, wantUrgent: true},
+		{name: "P1", message: RenderAlert(IncidentView{Title: "账号不可调度", Severity: "P1"}), wantMentions: true},
+		{name: "P2", message: RenderAlert(IncidentView{Title: "倍率变化", Severity: "P2"})},
+		{name: "recovery", message: RenderRecovery(IncidentView{Title: "已恢复", Severity: "P0"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sender := &fakeTextSender{}
+			client := AppClient{
+				Sender: sender, ChatID: "oc_alert_group",
+				RecipientOpenIDs: []string{"ou-a", "ou-b", "ou-a"},
+			}
+			result, err := client.SendWithResult(context.Background(), test.message)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card Card
+			if err := json.Unmarshal(sender.payload.Content, &card); err != nil {
+				t.Fatal(err)
+			}
+			firstContent := ""
+			if len(card.Elements) > 0 && card.Elements[0].Text != nil {
+				firstContent = card.Elements[0].Text.Content
+			}
+			hasMentions := strings.Contains(firstContent, "<at id=ou-a></at>") && strings.Contains(firstContent, "<at id=ou-b></at>")
+			if hasMentions != test.wantMentions {
+				t.Fatalf("mentions = %v, want %v: %s", hasMentions, test.wantMentions, sender.payload.Content)
+			}
+			if (sender.urgentCalls == 1) != test.wantUrgent {
+				t.Fatalf("urgent calls = %d, want urgent %v", sender.urgentCalls, test.wantUrgent)
+			}
+			if result.MessageID != "om_alert" || result.ResponseCode != http.StatusOK || !json.Valid(result.Payload) {
+				t.Fatalf("send result = %#v", result)
+			}
+		})
+	}
+}
+
+func TestAppClientRecordsUrgencyFailureAfterMessageDelivery(t *testing.T) {
+	sender := &fakeTextSender{urgentErr: fmt.Errorf("urgent rejected")}
+	client := AppClient{
+		Sender: sender, ChatID: "oc_alert_group",
+		RecipientOpenIDs: []string{"ou-a"},
+	}
+	result, err := client.SendWithResult(context.Background(), RenderAlert(IncidentView{Title: "不可用", Severity: "P0"}))
+	if err != nil {
+		t.Fatalf("message delivery should remain successful: %v", err)
+	}
+	if result.MessageID != "om_alert" || result.UrgentStatus != "failed" || result.UrgentResponseCode != 0 {
+		t.Fatalf("send result = %#v", result)
+	}
+}
+
 func TestAppClientResolvesRelativeOpsLinkBeforeSending(t *testing.T) {
 	sender := &fakeTextSender{}
 	client := AppClient{Sender: sender, ChatID: "oc_alert_group", BaseURL: "https://ops.example"}
@@ -461,14 +521,27 @@ func TestRenderUpstreamReportIsNotificationOnly(t *testing.T) {
 }
 
 type fakeTextSender struct {
-	chatID  string
-	payload feishuapi.OutboundMessage
+	chatID      string
+	payload     feishuapi.OutboundMessage
+	urgentCalls int
+	urgentErr   error
 }
 
 func (f *fakeTextSender) SendMessage(_ context.Context, chatID string, payload feishuapi.OutboundMessage) (string, error) {
 	f.chatID = chatID
 	f.payload = payload
 	return "om_alert", nil
+}
+
+func (f *fakeTextSender) UrgentMessage(_ context.Context, messageID string, openIDs []string) (int, error) {
+	f.urgentCalls++
+	if messageID != "om_alert" || fmt.Sprint(openIDs) != "[ou-a ou-b]" && fmt.Sprint(openIDs) != "[ou-a]" {
+		return 0, fmt.Errorf("unexpected urgent input")
+	}
+	if f.urgentErr != nil {
+		return 0, f.urgentErr
+	}
+	return http.StatusOK, nil
 }
 
 type notifyResolver struct{}

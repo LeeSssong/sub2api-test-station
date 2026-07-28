@@ -136,8 +136,32 @@ type Card struct {
 // was actually delivered. RenderedText derives the same view from the card
 // instead, which cannot drift.
 type FeishuMessage struct {
-	MsgType string `json:"msg_type"`
-	Card    *Card  `json:"-"`
+	MsgType      string `json:"msg_type"`
+	Card         *Card  `json:"-"`
+	Severity     string `json:"-"`
+	OccurrenceNo int64  `json:"-"`
+	Transition   string `json:"-"`
+}
+
+type SendResult struct {
+	MessageID          string
+	ResponseCode       int
+	Payload            []byte
+	UrgentStatus       string
+	UrgentResponseCode int
+}
+
+func WithDeliveryIdentity(message FeishuMessage, occurrenceNo int64, transition string) FeishuMessage {
+	if occurrenceNo <= 0 {
+		occurrenceNo = 1
+	}
+	transition = strings.TrimSpace(transition)
+	if transition == "" {
+		transition = "confirmed"
+	}
+	message.OccurrenceNo = occurrenceNo
+	message.Transition = transition
+	return message
 }
 
 // RenderedText flattens the card into the text a reader sees: header title
@@ -197,7 +221,9 @@ func RenderAlert(event IncidentView) FeishuMessage {
 	if event.Suppressed {
 		sections = append(sections, "**去重** 重复事件已静默")
 	}
-	return newCardMessage(event.Title, template, strings.Join(sections, "\n\n"), event.Links)
+	message := newCardMessage(event.Title, template, strings.Join(sections, "\n\n"), event.Links)
+	message.Severity = severity
+	return message
 }
 
 func RenderRecovery(event IncidentView) FeishuMessage {
@@ -548,24 +574,106 @@ type MessageSender interface {
 	SendMessage(context.Context, string, feishuapi.OutboundMessage) (string, error)
 }
 
+type UrgentMessageSender interface {
+	UrgentMessage(context.Context, string, []string) (int, error)
+}
+
 type AppClient struct {
-	Sender  MessageSender
-	ChatID  string
-	BaseURL string
+	Sender           MessageSender
+	ChatID           string
+	BaseURL          string
+	RecipientOpenIDs []string
 }
 
 func (c AppClient) Send(ctx context.Context, message FeishuMessage) error {
+	_, err := c.SendWithResult(ctx, message)
+	return err
+}
+
+func (c AppClient) SendWithResult(ctx context.Context, message FeishuMessage) (SendResult, error) {
 	if c.Sender == nil || strings.TrimSpace(c.ChatID) == "" {
-		return fmt.Errorf("Feishu App delivery is unavailable")
+		return SendResult{}, fmt.Errorf("Feishu App delivery is unavailable")
 	}
-	payload, err := resolveMessageLinks(message, c.BaseURL).Outbound()
+	prepared, err := prepareStrongReminder(resolveMessageLinks(message, c.BaseURL), c.RecipientOpenIDs)
 	if err != nil {
-		return err
+		return SendResult{}, err
 	}
-	if _, err := c.Sender.SendMessage(ctx, c.ChatID, payload); err != nil {
-		return fmt.Errorf("Feishu App delivery failed")
+	payload, err := prepared.Outbound()
+	if err != nil {
+		return SendResult{}, err
 	}
-	return nil
+	messageID, err := c.Sender.SendMessage(ctx, c.ChatID, payload)
+	if err != nil {
+		return SendResult{}, fmt.Errorf("Feishu App delivery failed")
+	}
+	result := SendResult{
+		MessageID: messageID, ResponseCode: http.StatusOK, Payload: append([]byte(nil), payload.Content...),
+		UrgentStatus: "not_required",
+	}
+	if prepared.Severity != "P0" || len(c.RecipientOpenIDs) == 0 {
+		return result, nil
+	}
+	urgentSender, ok := c.Sender.(UrgentMessageSender)
+	if !ok {
+		result.UrgentStatus = "failed"
+		return result, nil
+	}
+	status, urgentErr := urgentSender.UrgentMessage(ctx, messageID, normalizedOpenIDs(c.RecipientOpenIDs))
+	result.UrgentResponseCode = status
+	if urgentErr != nil {
+		result.UrgentStatus = "failed"
+		return result, nil
+	}
+	result.UrgentStatus = "delivered"
+	return result, nil
+}
+
+func prepareStrongReminder(message FeishuMessage, recipients []string) (FeishuMessage, error) {
+	if message.Severity != "P0" && message.Severity != "P1" {
+		return message, nil
+	}
+	recipients = normalizedOpenIDs(recipients)
+	if len(recipients) == 0 {
+		return message, nil
+	}
+	data, err := message.CardJSON()
+	if err != nil {
+		return FeishuMessage{}, err
+	}
+	var card Card
+	if err := json.Unmarshal(data, &card); err != nil {
+		return FeishuMessage{}, fmt.Errorf("decode notification card")
+	}
+	mentions := make([]string, 0, len(recipients))
+	for _, openID := range recipients {
+		mentions = append(mentions, "<at id="+openID+"></at>")
+	}
+	card.Elements = append([]CardElement{{
+		Tag:  "div",
+		Text: &CardText{Tag: "lark_md", Content: strings.Join(mentions, " ")},
+	}}, card.Elements...)
+	message.Card = &card
+	return message, nil
+}
+
+func normalizedOpenIDs(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+		if len(result) == 20 {
+			break
+		}
+	}
+	return result
 }
 
 func (c Client) Send(ctx context.Context, message FeishuMessage) error {

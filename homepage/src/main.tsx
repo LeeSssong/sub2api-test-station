@@ -6,6 +6,7 @@ import type { SiteConfig } from './domain/siteConfig'
 import { useSession } from './hooks/useSession'
 import { useSiteConfig } from './hooks/useSiteConfig'
 import { SupportPage } from './pages/SupportPage'
+import { bootstrapHomepageTheme } from './themeBootstrap'
 import './styles.css'
 
 export function selectRuntimePage(pathname: string): 'support' | 'home' {
@@ -48,6 +49,7 @@ function RuntimeApp() {
 const rootElement = document.getElementById('root')
 
 if (rootElement) {
+  bootstrapHomepageTheme(window.location.pathname)
   createRoot(rootElement).render(
     <StrictMode><RuntimeApp /></StrictMode>,
   )

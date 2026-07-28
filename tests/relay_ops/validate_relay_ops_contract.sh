@@ -40,6 +40,7 @@ require_relay_ops 'RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE: ${RELAY_OPS_FEISHU_ENCRYPT
 require_relay_ops 'RELAY_OPS_FEISHU_ROUTING_FILE: ${RELAY_OPS_FEISHU_ROUTING_FILE:-}'
 require_relay_ops 'RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE: ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE:-}'
 require_relay_ops 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE: ${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE:-}'
+require_relay_ops 'RELAY_OPS_NOTIFICATION_POLICY_FILE: ${RELAY_OPS_NOTIFICATION_POLICY_FILE:-}'
 require_relay_ops '${RELAY_OPS_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro'
 require_relay_ops '${RELAY_OPS_FEISHU_WEBHOOK_HOST_FILE:-/dev/null}:/run/secrets/feishu-webhook:ro'
 require_relay_ops '${RELAY_OPS_FEISHU_APP_SECRET_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-secret:ro'
@@ -48,6 +49,7 @@ require_relay_ops '${RELAY_OPS_FEISHU_ENCRYPT_KEY_HOST_FILE:-/dev/null}:/run/sec
 require_relay_ops '${RELAY_OPS_FEISHU_ROUTING_HOST_FILE:-/dev/null}:/run/secrets/feishu-routing.json:ro'
 require_relay_ops '${RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro'
 require_relay_ops '${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-recipients.json:ro'
+require_relay_ops '${RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE:-/dev/null}:/run/relay-ops/notification-policy.json:ro'
 require_relay_ops '/run/secrets/feishu-app-id:ro'
 require_relay_ops '/run/secrets/feishu-app-secret:ro'
 require_relay_ops '/run/secrets/feishu-verification-token:ro'
@@ -55,6 +57,7 @@ require_relay_ops '/run/secrets/feishu-encrypt-key:ro'
 require_relay_ops '/run/secrets/feishu-routing.json:ro'
 require_relay_ops '/run/secrets/feishu-alert-chat-id:ro'
 require_relay_ops '/run/secrets/feishu-alert-recipients.json:ro'
+require_relay_ops '/run/relay-ops/notification-policy.json:ro'
 require_relay_ops 'mem_limit: 384m'
 require_relay_ops 'cpus: 0.75'
 require_relay_ops '${RELAY_OPS_CANDIDATE_KEYS_HOST_DIR:-./secrets/candidate-keys}:/run/secrets/candidates:ro'
@@ -62,6 +65,27 @@ require_relay_ops '${RELAY_OPS_CANDIDATE_MANAGED_KEYS_HOST_DIR:-./secrets/candid
 require_relay_ops '${RELAY_OPS_ACCOUNT_QUALITY_RESULT_HOST_DIR:-/dev/null}:/run/relay-ops/account-quality:ro'
 require_relay_ops '${RELAY_OPS_UPSTREAM_GROUP_MAPPING_HOST_FILE:-/dev/null}:/run/relay-ops/upstream-group-mapping.json:ro'
 forbid_relay_ops 'RELAY_OPS_MODEL_RELEASE_RESULT_HOST'
+require 'RELAY_OPS_NOTIFICATION_POLICY_FILE=' infra/.env.example
+require 'RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=' infra/.env.example
+policy_file=config/relay-ops/notification-policy.example.json
+[[ -f "$policy_file" ]] || fail "missing notification policy example $policy_file"
+require '"version": 1' "$policy_file"
+require '"delivery_mode": "shadow"' "$policy_file"
+for family in \
+  group_runtime \
+  group_capacity \
+  account_impact \
+  native_monitor_evidence \
+  pricing_notice \
+  daily_digest \
+  incident_escalation
+do
+  require "\"${family}_enabled\":" "$policy_file"
+done
+for family in candidate release usage synthetic
+do
+  forbid "$family" "$policy_file"
+done
 require_relay_ops 'test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8100/healthz"]'
 require 'USER 10002:10002' infra/Dockerfile.relay-ops
 require 'ENTRYPOINT ["/relay-ops"]' infra/Dockerfile.relay-ops

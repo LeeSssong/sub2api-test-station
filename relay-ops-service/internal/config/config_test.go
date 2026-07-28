@@ -137,17 +137,8 @@ func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
 	t.Parallel()
 
 	env := validEnv(t)
-	addFeishuCallbackFiles(t, env)
-	chatIDFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
-	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
-	recipientsFile := filepath.Join(t.TempDir(), "feishu-alert-recipients.json")
-	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator"]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"] = recipientsFile
+	chatIDFile, recipientsFile := addFeishuAlertFiles(t, env)
+	policyFile := addNotificationPolicy(t, env)
 	cfg, err := Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatalf("alert configuration rejected: %v", err)
@@ -157,6 +148,46 @@ func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
 	}
 	if cfg.FeishuAlertRecipientsFile != recipientsFile {
 		t.Fatalf("alert recipients file = %q, want %q", cfg.FeishuAlertRecipientsFile, recipientsFile)
+	}
+	if cfg.NotificationPolicyFile != policyFile {
+		t.Fatalf("notification policy file = %q, want %q", cfg.NotificationPolicyFile, policyFile)
+	}
+}
+
+func TestLoadRequiresNotificationPolicyForConfiguredAlertTransport(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuAlertFiles(t, env)
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("configured alert transport without notification policy was accepted")
+	}
+}
+
+func TestLoadAcceptsNoPolicyWhenNoAlertTransportExists(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NotificationPolicyFile != "" {
+		t.Fatalf("notification policy file = %q, want empty", cfg.NotificationPolicyFile)
+	}
+}
+
+func TestLoadRejectsInvalidNotificationPolicyPermissions(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuAlertFiles(t, env)
+	path := addNotificationPolicy(t, env)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("world-readable notification policy was accepted")
 	}
 }
 
@@ -345,4 +376,44 @@ func addFeishuCallbackFiles(t *testing.T, env map[string]string) {
 		}
 		env[key] = path
 	}
+}
+
+func addFeishuAlertFiles(t *testing.T, env map[string]string) (string, string) {
+	t.Helper()
+	addFeishuCallbackFiles(t, env)
+	dir := t.TempDir()
+	chatIDFile := filepath.Join(dir, "feishu-alert-chat-id")
+	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recipientsFile := filepath.Join(dir, "feishu-alert-recipients.json")
+	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	env["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"] = recipientsFile
+	return chatIDFile, recipientsFile
+}
+
+func addNotificationPolicy(t *testing.T, env map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "notification-policy.json")
+	body := `{
+		"version": 1,
+		"delivery_mode": "shadow",
+		"feishu_notifications": {
+			"group_runtime_enabled": true,
+			"group_capacity_enabled": true,
+			"account_impact_enabled": true,
+			"native_monitor_evidence_enabled": true,
+			"pricing_notice_enabled": true,
+			"daily_digest_enabled": true,
+			"incident_escalation_enabled": true
+		}
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_NOTIFICATION_POLICY_FILE"] = path
+	return path
 }

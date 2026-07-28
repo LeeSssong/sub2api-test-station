@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata"
+
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
 )
 
 const (
@@ -38,6 +40,8 @@ type Config struct {
 	FeishuRoutingFile         string
 	FeishuAlertChatIDFile     string
 	FeishuAlertRecipientsFile string
+	NotificationPolicyFile    string
+	NotificationPolicy        notificationpolicy.Policy
 	AgentBaseURL              string
 	AgentAPIKeyFile           string
 	AgentModel                string
@@ -104,6 +108,7 @@ func Load(env func(string) string) (Config, error) {
 	feishuRoutingFile := get("RELAY_OPS_FEISHU_ROUTING_FILE", "")
 	feishuAlertChatIDFile := get("RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE", "")
 	feishuAlertRecipientsFile := get("RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE", "")
+	notificationPolicyFile := get("RELAY_OPS_NOTIFICATION_POLICY_FILE", "")
 	configuredCallbackFiles := 0
 	for _, path := range feishuCallbackFiles {
 		if path != "" {
@@ -152,6 +157,20 @@ func Load(env func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("Feishu alert recipients file: %w", err)
 		}
 	}
+	alertTransportConfigured := feishuFile != "" || feishuAlertChatIDFile != ""
+	if alertTransportConfigured && notificationPolicyFile == "" {
+		return Config{}, fmt.Errorf("Feishu alert transport requires a notification policy file")
+	}
+	var notificationPolicy notificationpolicy.Policy
+	if notificationPolicyFile != "" {
+		if err := validateSecretFile(notificationPolicyFile); err != nil {
+			return Config{}, fmt.Errorf("notification policy file: %w", err)
+		}
+		notificationPolicy, err = notificationpolicy.Load(notificationPolicyFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("notification policy file: %w", err)
+		}
+	}
 	baseURL := strings.TrimRight(get("RELAY_OPS_SUB2API_URL", "http://sub2api:8080"), "/")
 	if baseURL == "" {
 		return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_URL is required")
@@ -188,6 +207,8 @@ func Load(env func(string) string) (Config, error) {
 		FeishuRoutingFile:         feishuRoutingFile,
 		FeishuAlertChatIDFile:     feishuAlertChatIDFile,
 		FeishuAlertRecipientsFile: feishuAlertRecipientsFile,
+		NotificationPolicyFile:    notificationPolicyFile,
+		NotificationPolicy:        notificationPolicy,
 		AgentBaseURL:              strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
 		AgentAPIKeyFile:           agentKeyFile,
 		AgentModel:                get("RELAY_OPS_AGENT_MODEL", ""),

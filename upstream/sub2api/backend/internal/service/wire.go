@@ -784,7 +784,9 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
+	ProvideMonitorV2Service,
 	ProvideChannelMonitorRunner,
+	ProvideAccountMonitorAccountRepository,
 	ProvideAccountMonitorService,
 	ProvideAccountMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
@@ -835,6 +837,22 @@ func ProvideChannelMonitorService(
 	return NewChannelMonitorService(repo, encryptor)
 }
 
+func ProvideMonitorV2Service(
+	groupRepo GroupRepository,
+	channelService *ChannelService,
+	channelMonitorService *ChannelMonitorService,
+	opsService *OpsService,
+	repo MonitorV2Repository,
+) *MonitorV2Service {
+	return NewMonitorV2Service(
+		groupRepo,
+		channelService,
+		channelMonitorService,
+		opsService,
+		repo,
+	)
+}
+
 // ProvideChannelMonitorRunner 创建并启动渠道监控调度器。
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
@@ -858,6 +876,10 @@ func ProvideAccountMonitorService(
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
 	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
 	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
+}
+
+func ProvideAccountMonitorAccountRepository(repo AccountRepository) AccountMonitorAccountRepository {
+	return repo
 }
 
 func ProvideAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {

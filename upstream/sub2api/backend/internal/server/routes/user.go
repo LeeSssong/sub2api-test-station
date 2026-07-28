@@ -128,5 +128,8 @@ func RegisterUserRoutes(
 			monitors.GET("", h.ChannelMonitor.List)
 			monitors.GET("/:id/status", h.ChannelMonitor.GetStatus)
 		}
+
+		// 星桥 Monitor V2（用户只读；登录仅作为访问边界）
+		authenticated.GET("/monitor-v2", h.MonitorV2.Snapshot)
 	}
 }

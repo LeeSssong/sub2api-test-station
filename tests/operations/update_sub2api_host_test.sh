@@ -340,7 +340,7 @@ test_success_trace_and_identity() {
     || fail 'forbidden dependency or database restore command was used'
   record=$(find "$FIXTURE_RECORDS" -type f -name '*.json' -print -quit)
   [[ -n "$record" ]] || fail 'release record missing'
-  [[ $(stat -f '%Lp' "$record" 2>/dev/null || stat -c '%a' "$record") == 600 ]] \
+  [[ $(stat -c '%a' "$record" 2>/dev/null || stat -f '%Lp' "$record") == 600 ]] \
     || fail 'release record is not 0600'
   "$REAL_JQ_PATH" -e --arg image "$IMAGE" --arg operation op-test-001 \
     '.state == "promoted" and .operation_id == $operation and .requested.image == $image and .checks.storage_identity == true' \

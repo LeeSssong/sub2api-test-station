@@ -2,13 +2,9 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
@@ -70,37 +66,14 @@ type qualityReportSink interface {
 	PutQualityReport(context.Context, qualityreports.Report) error
 }
 
-type qualityReportNotifier interface {
-	SendIncident(context.Context, string, string, notify.FeishuMessage) error
-}
-
-type qualityReportIncidentStore interface {
-	Put(context.Context, incidents.Record) error
-}
-
-func qualityNotificationEvidence(report qualityreports.Report) string {
-	payload, _ := json.Marshal(struct {
-		UpstreamID   domain.UpstreamID `json:"upstream_id"`
-		JobKind      string            `json:"job_kind"`
-		Status       string            `json:"status"`
-		QualityScore int               `json:"quality_score"`
-		TotalScore   int               `json:"total_score"`
-		Direct       string            `json:"direct"`
-		Gateway      string            `json:"gateway"`
-		Models       string            `json:"models"`
-		Pricing      string            `json:"pricing"`
-		Capacity     string            `json:"capacity"`
-	}{
-		UpstreamID: report.UpstreamID, JobKind: report.JobKind, Status: report.Status,
-		QualityScore: report.QualityScore, TotalScore: report.TotalScore,
-		Direct: report.Direct, Gateway: report.Gateway, Models: report.Models,
-		Pricing: report.Pricing, Capacity: report.Capacity,
-	})
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
-}
-
-func executeFastCandidate(ctx context.Context, upstreamID domain.UpstreamID, jobKind string, repository fastCandidateRepository, runner fastCandidateRunner, sink qualityReportSink, incidentStore qualityReportIncidentStore, notifier qualityReportNotifier) error {
+func executeFastCandidate(
+	ctx context.Context,
+	upstreamID domain.UpstreamID,
+	jobKind string,
+	repository fastCandidateRepository,
+	runner fastCandidateRunner,
+	sink qualityReportSink,
+) error {
 	items, err := repository.ListCandidates(ctx)
 	if err != nil {
 		return err
@@ -123,40 +96,7 @@ func executeFastCandidate(ctx context.Context, upstreamID domain.UpstreamID, job
 		if err := sink.PutQualityReport(ctx, report); err != nil {
 			return err
 		}
-		if notifier == nil {
-			return nil
-		}
-		if incidentStore == nil {
-			return fmt.Errorf("quality report incident store is unavailable")
-		}
-		unknowns := make([]string, 0, 3)
-		if report.Gateway == "unknown" {
-			unknowns = append(unknowns, "网关测量")
-		}
-		if report.Pricing == "unknown" {
-			unknowns = append(unknowns, "价格与账单")
-		}
-		if report.Capacity == "unknown" {
-			unknowns = append(unknowns, "容量下界")
-		}
-		message := notify.RenderUpstreamReport(notify.UpstreamReportView{
-			Title: report.UpstreamName + " 质量评测", Status: report.Status,
-			QualityScore: report.QualityScore, TotalScore: report.TotalScore,
-			Direct: report.Direct, Gateway: report.Gateway, Models: report.Models,
-			Pricing: report.Pricing, Capacity: report.Capacity, Unknowns: unknowns,
-			ReportID: report.ReportID, ReportHash: report.ReportHash,
-			Links: []notify.Link{{Label: "运维后台", URL: "/ops"}},
-		})
-		key := "quality-report:" + strconv.FormatInt(int64(upstreamID), 10) + ":" + jobKind
-		evidence := qualityNotificationEvidence(report)
-		if err := incidentStore.Put(ctx, incidents.Record{
-			Key: key, Severity: "P2", State: "confirmed", SampleCount: 1,
-			EvidenceHash: evidence, CurrentValue: report.Status,
-		}); err != nil {
-			return err
-		}
-		message = notify.WithDeliveryIdentity(message, 1, "confirmed")
-		return notifier.SendIncident(ctx, key, evidence, message)
+		return nil
 	}
 	return candidates.ErrNotFound
 }
@@ -261,6 +201,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		}
 	}()
 	if err := database.Migrate(ctx); err != nil {
+		return nil, err
+	}
+	if _, err := database.SupersedeLegacyNotificationIncidents(ctx, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	reader, err := sub2api.NewHTTPReader(cfg.Sub2APIBaseURL, cfg.Sub2APIAdminKeyFile)
@@ -398,7 +341,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return candidates.ErrNotFound
 		},
 		FastCandidate: func(runCtx context.Context, upstreamID domain.UpstreamID, jobKind string, _ bool) error {
-			return executeFastCandidate(runCtx, upstreamID, jobKind, database, probeRunner, database, database, notifier)
+			return executeFastCandidate(
+				runCtx, upstreamID, jobKind, database, probeRunner, database,
+			)
 		},
 		UsageSessions: database.ListUsageSessions,
 		Usage: func(runCtx context.Context, session billing.SessionConfig) error {
@@ -406,36 +351,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			if err != nil {
 				var expired *billing.SessionExpiredError
 				if errors.As(err, &expired) {
-					if expired.Notify {
-						key := "upstream:" + fmt.Sprint(session.UpstreamID) + ":usage_session"
-						hash := sha256.Sum256([]byte(session.LoginURL))
-						transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: true, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话失效", ConfirmationWindows: 1})
-						if observeErr == nil && transition.Notify && notifier != nil {
-							message := notify.WithDeliveryIdentity(
-								notify.RenderSessionExpired(session.UpstreamName, session.LoginURL),
-								transition.OccurrenceNo,
-								transition.Kind,
-							)
-							_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:]), message)
-						}
-					}
 					return nil
 				}
 				return err
 			}
 			if err := database.AppendCostObservation(runCtx, evidence); err != nil {
 				return err
-			}
-			key := "upstream:" + fmt.Sprint(session.UpstreamID) + ":usage_session"
-			hash := sha256.Sum256([]byte(session.LoginURL))
-			transition, observeErr := incidentMachine.Observe(runCtx, incidents.Observation{Key: key, Severity: "P2", Failing: false, EvidenceHash: hex.EncodeToString(hash[:]), CurrentValue: "登录会话正常"})
-			if observeErr == nil && transition.Notify && notifier != nil {
-				message := notify.WithDeliveryIdentity(
-					renderUsageSessionRecovery(session.UpstreamName, evidence.ObservedAt),
-					transition.OccurrenceNo,
-					transition.Kind,
-				)
-				_ = notifier.SendIncident(runCtx, key, hex.EncodeToString(hash[:])+":recovered", message)
 			}
 			return nil
 		},
@@ -474,7 +395,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:                  billing.SessionRegistrationService{Repository: database},
-		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},
+		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
 		DailyReport:              dailyReportService,
 		QualityReview:            qualityReview,
 		IncidentAcknowledgements: incidentAcknowledgements{store: database},
@@ -488,26 +409,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/", operations)
 	failed = false
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService}, nil
-}
-
-func renderUsageSessionRecovery(upstream string, observedAt time.Time) notify.FeishuMessage {
-	metrics := []notify.RecoveryMetric{
-		{Label: "会话状态", Value: "正常"},
-		{Label: "消费核对", Value: "已恢复"},
-	}
-	if !observedAt.IsZero() {
-		metrics = append(metrics, notify.RecoveryMetric{Label: "证据时间", Value: observedAt.UTC().Format("15:04 UTC")})
-	}
-	return notify.RenderRecoveryCard(notify.RecoveryCardView{
-		Title:   "上游用量读取会话已恢复：" + upstream,
-		Summary: "用量读取会话已恢复",
-		Detail:  "会话已回到正常状态，真实消费核对继续",
-		Metrics: metrics,
-		Basis:   []string{"上游用量页面已可正常读取"},
-		Source:  "上游用量页面只读读取结果",
-		Focus:   "继续关注倍率与真实费用辅助证据",
-		Links:   []notify.Link{{Label: "运维后台", URL: "/ops"}},
-	})
 }
 
 func configuredCandidateService(cfg config.Config, repository candidates.Repository) candidates.Service {

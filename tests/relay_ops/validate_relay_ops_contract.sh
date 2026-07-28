@@ -86,6 +86,21 @@ for family in candidate release usage synthetic
 do
   forbid "$family" "$policy_file"
 done
+for inactive_dir in \
+  relay-ops-service/internal/acceptance \
+  relay-ops-service/internal/candidates \
+  relay-ops-service/internal/qualityreports \
+  relay-ops-service/internal/billing
+do
+  if rg -n 'SendIncident|SendOneShot' "$inactive_dir" --glob '*.go'; then
+    fail "inactive notification sender found in $inactive_dir"
+  fi
+done
+forbid 'notifier.SendIncident' relay-ops-service/internal/app/app.go
+if rg -n 'Acceptance:.*Notifier:' relay-ops-service/internal/app/app.go; then
+  fail 'synthetic acceptance regained a notification sender'
+fi
+require 'SupersedeLegacyNotificationIncidents(ctx' relay-ops-service/internal/app/app.go
 require_relay_ops 'test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8100/healthz"]'
 require 'USER 10002:10002' infra/Dockerfile.relay-ops
 require 'ENTRYPOINT ["/relay-ops"]' infra/Dockerfile.relay-ops

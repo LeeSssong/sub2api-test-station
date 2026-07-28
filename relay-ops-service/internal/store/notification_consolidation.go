@@ -456,8 +456,10 @@ func (s *Store) SupersedeLegacyNotificationIncidents(
 		    OR incident_key LIKE 'upstream:%:pricing'
 		    OR incident_key LIKE 'candidate:%'
 		    OR incident_key LIKE 'quality:%'
+		    OR incident_key LIKE 'quality-report:%'
 		    OR incident_key LIKE 'synthetic:%'
 		    OR incident_key LIKE 'usage_session:%'
+		    OR incident_key LIKE 'upstream:%:usage_session'
 		  )`, now.UTC())
 	if err != nil {
 		return 0, fmt.Errorf("supersede legacy notification incidents: %w", err)

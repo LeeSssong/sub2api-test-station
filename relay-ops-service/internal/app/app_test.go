@@ -16,7 +16,6 @@ import (
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
-	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -79,63 +78,22 @@ func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testin
 	}
 }
 
-func TestRenderUsageSessionRecoveryUsesStructuredBusinessCopy(t *testing.T) {
-	t.Parallel()
-	observedAt := time.Date(2026, 7, 27, 5, 15, 0, 0, time.UTC)
-	message := renderUsageSessionRecovery("wawazz", observedAt)
-	for _, want := range []string{"用量读取会话已恢复", "会话状态", "正常", "消费核对", "已恢复", "证据时间", "05:15 UTC", "上游用量页面"} {
-		if !strings.Contains(message.RenderedText(), want) {
-			t.Fatalf("missing %q in %q", want, message.RenderedText())
-		}
-	}
-	if len(message.Card.Elements) < 3 || len(message.Card.Elements[1].Fields) != 3 {
-		t.Fatalf("recovery card is not structured: %#v", message.Card.Elements)
-	}
-}
-
-func TestExecuteFastCandidatePersistsHashBoundQualityReport(t *testing.T) {
+func TestExecuteFastCandidatePersistsQualityReportWithoutNotificationDependencies(t *testing.T) {
 	now := time.Date(2026, 7, 22, 3, 0, 0, 0, time.UTC)
 	record := []byte(`{"schema_version":1,"run_id":"fast-1","channel_id":"candidate-17","profile_id":"quality-first-fast-v1","job_kind":"health_pulse","recorded_at":"2026-07-22T03:00:00Z","status":"passed","metrics":{"selected_models":["gpt-a"],"direct":{"request_count":2,"success_count":2,"success_rate":1,"latency":{"p95_ms":1200},"ttft":{"p95_ms":500}},"gateway":{"status":"unknown"}},"errors":[]}`)
 	runner := &fakeFastRunner{result: probes.FastResult{RunID: "fast-1", JobKind: "health_pulse", Status: "passed", RecordedAt: now, Record: record}}
 	sink := &fakeQualitySink{}
-	incidentStore := &fakeQualityIncidentStore{}
-	notifier := &fakeQualityNotifier{}
 	repository := fakeCandidateRepository{items: []candidates.Candidate{{ID: 17, Name: "Candidate", BaseURL: "https://candidate.example/v1", Enabled: true}}}
 
-	err := executeFastCandidate(context.Background(), domain.UpstreamID(17), "health_pulse", repository, runner, sink, incidentStore, notifier)
+	err := executeFastCandidate(
+		context.Background(), domain.UpstreamID(17), "health_pulse",
+		repository, runner, sink,
+	)
 	if err != nil {
 		t.Fatalf("executeFastCandidate: %v", err)
 	}
 	if runner.candidate.ID != 17 || sink.report.ReportID != "fast-1" || len(sink.report.ReportHash) != 64 {
 		t.Fatalf("runner=%#v report=%#v", runner.candidate, sink.report)
-	}
-	if notifier.key != "quality-report:17:health_pulse" || notifier.evidence != qualityNotificationEvidence(sink.report) {
-		t.Fatalf("notification identity = %q %q", notifier.key, notifier.evidence)
-	}
-	if incidentStore.record.Key != notifier.key || incidentStore.record.EvidenceHash != notifier.evidence || incidentStore.record.State != "confirmed" {
-		t.Fatalf("incident state = %#v", incidentStore.record)
-	}
-	if notifier.message.MsgType != "interactive" || notifier.message.Card == nil || !strings.Contains(notifier.message.RenderedText(), "本通知不执行切换") {
-		t.Fatalf("notification = %#v", notifier.message)
-	}
-}
-
-func TestQualityNotificationEvidenceDeduplicatesEquivalentRuns(t *testing.T) {
-	first := qualityreports.Report{
-		ReportID: "run-1", ReportHash: strings.Repeat("a", 64), UpstreamID: 17, JobKind: "health_pulse",
-		Status: "needs_evidence", QualityScore: 80, TotalScore: 80,
-		Direct: "6/6", Gateway: "unknown", Models: "3 selected", Pricing: "unknown", Capacity: "unknown",
-	}
-	second := first
-	second.ReportID = "run-2"
-	second.ReportHash = strings.Repeat("b", 64)
-
-	if qualityNotificationEvidence(first) != qualityNotificationEvidence(second) {
-		t.Fatal("equivalent reports must share notification evidence")
-	}
-	second.Status = "blocked"
-	if qualityNotificationEvidence(first) == qualityNotificationEvidence(second) {
-		t.Fatal("a changed quality decision must produce new notification evidence")
 	}
 }
 
@@ -176,26 +134,6 @@ type fakeQualitySink struct{ report qualityreports.Report }
 
 func (f *fakeQualitySink) PutQualityReport(_ context.Context, report qualityreports.Report) error {
 	f.report = report
-	return nil
-}
-
-type fakeQualityNotifier struct {
-	key      string
-	evidence string
-	message  notify.FeishuMessage
-}
-
-type fakeQualityIncidentStore struct{ record incidents.Record }
-
-func (f *fakeQualityIncidentStore) Put(_ context.Context, record incidents.Record) error {
-	f.record = record
-	return nil
-}
-
-func (f *fakeQualityNotifier) SendIncident(_ context.Context, key, evidence string, message notify.FeishuMessage) error {
-	f.key = key
-	f.evidence = evidence
-	f.message = message
 	return nil
 }
 

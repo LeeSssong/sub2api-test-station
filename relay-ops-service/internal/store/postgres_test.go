@@ -1274,6 +1274,102 @@ func TestOperationalBaselineRoundTrips(t *testing.T) {
 	}
 }
 
+func TestSupersedeLegacyNotificationIncidentsPreservesRowsAndClearsLifecycle(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	legacyKeys := []string{
+		"daily-report:2026-07-28",
+		"native-monitor:7:account:1",
+		"site:account:1:paused",
+		"site:account:2:balance_exhausted",
+		"site:group:7:availability",
+		"site:group:7:error_rate",
+		"site:group:7:ttft_p95",
+		"upstream:1:pricing",
+		"candidate:17:quality",
+		"quality-report:17:health_pulse",
+		"synthetic:relay-ops:acceptance:v1",
+		"upstream:1:usage_session",
+	}
+	for _, key := range legacyKeys {
+		if err := st.Put(ctx, incidents.Record{
+			Key: key, Family: "legacy", SourceKind: "legacy",
+			Severity: "P1", State: "confirmed", SampleCount: 1, OccurrenceNo: 1,
+		}); err != nil {
+			t.Fatalf("Put(%q): %v", key, err)
+		}
+	}
+	if err := st.Put(ctx, incidents.Record{
+		Key: "legacy:already-recovered", Family: "legacy", SourceKind: "legacy",
+		Severity: "P1", State: "recovered", SampleCount: 2, OccurrenceNo: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(ctx, incidents.Record{
+		Key: "group:7:user-impact", Family: "group_runtime", PolicyVersion: 1,
+		SourceKind: "site_monitor", Severity: "P1", State: "confirmed",
+		SampleCount: 2, OccurrenceNo: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 29, 6, 0, 0, 0, time.UTC)
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET next_escalation_at=$1,
+		    escalation_claim_token='legacy-claim',
+		    escalation_claimed_at=$2
+		WHERE family='legacy' AND state='confirmed'`,
+		now.Add(-time.Minute), now.Add(-2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := st.SupersedeLegacyNotificationIncidents(ctx, now)
+	if err != nil || updated != int64(len(legacyKeys)) {
+		t.Fatalf("SupersedeLegacyNotificationIncidents = %d, %v", updated, err)
+	}
+	for _, key := range legacyKeys {
+		var state string
+		var nextEscalation, claimedAt sql.NullTime
+		var claimToken sql.NullString
+		if err := st.pool.QueryRow(ctx, `
+			SELECT state, next_escalation_at, escalation_claim_token, escalation_claimed_at
+			FROM relay_ops.incidents WHERE incident_key=$1`, key).
+			Scan(&state, &nextEscalation, &claimToken, &claimedAt); err != nil {
+			t.Fatalf("read %q: %v", key, err)
+		}
+		if state != "superseded" || nextEscalation.Valid || claimToken.Valid || claimedAt.Valid {
+			t.Fatalf("%q lifecycle = state %q next %#v token %#v claimed %#v",
+				key, state, nextEscalation, claimToken, claimedAt)
+		}
+	}
+	for key, wantState := range map[string]string{
+		"legacy:already-recovered": "recovered",
+		"group:7:user-impact":      "confirmed",
+	} {
+		var state string
+		if err := st.pool.QueryRow(ctx,
+			`SELECT state FROM relay_ops.incidents WHERE incident_key=$1`, key,
+		).Scan(&state); err != nil || state != wantState {
+			t.Fatalf("%q state = %q, %v", key, state, err)
+		}
+	}
+	var incidentCount, deliveryCount int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.incidents`).
+		Scan(&incidentCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.notification_deliveries`).
+		Scan(&deliveryCount); err != nil {
+		t.Fatal(err)
+	}
+	if incidentCount != len(legacyKeys)+2 || deliveryCount != 0 {
+		t.Fatalf("preserved rows=%d deliveries=%d", incidentCount, deliveryCount)
+	}
+}
+
 func TestDailyNotificationSummaryReadsOnlyConsolidatedProductionFacts(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

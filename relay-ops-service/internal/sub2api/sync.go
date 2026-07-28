@@ -43,7 +43,7 @@ type SyncSink interface {
 }
 
 type MonitorObserver interface {
-	ObserveMonitor(context.Context, ChannelMonitor, MonitorHistory) error
+	ObserveMonitor(context.Context, Group, ChannelMonitor, MonitorHistory) error
 }
 
 type Synchronizer struct {
@@ -102,7 +102,7 @@ func (s Synchronizer) Sync(ctx context.Context) error {
 			return err
 		}
 		for _, monitor := range groupMonitors {
-			if err := s.collectMonitorRef(ctx, monitor); err != nil {
+			if err := s.collectMonitorRef(ctx, group, monitor); err != nil {
 				return err
 			}
 		}
@@ -129,7 +129,7 @@ func (s Synchronizer) collectOpsRef(ctx context.Context, groupID int64) error {
 	})
 }
 
-func (s Synchronizer) collectMonitorRef(ctx context.Context, monitor ChannelMonitor) error {
+func (s Synchronizer) collectMonitorRef(ctx context.Context, group Group, monitor ChannelMonitor) error {
 	history, err := s.Reader.GetChannelMonitorHistory(ctx, monitor.ID, monitor.PrimaryModel, 60)
 	if err != nil {
 		return fmt.Errorf("get monitor %d history: %w", monitor.ID, err)
@@ -152,7 +152,7 @@ func (s Synchronizer) collectMonitorRef(ctx context.Context, monitor ChannelMoni
 		if err != nil {
 			return fmt.Errorf("monitor %d latest history malformed", monitor.ID)
 		}
-		if err := s.Observer.ObserveMonitor(ctx, monitor, latest); err != nil {
+		if err := s.Observer.ObserveMonitor(ctx, group, monitor, latest); err != nil {
 			return fmt.Errorf("observe monitor %d: %w", monitor.ID, err)
 		}
 	}

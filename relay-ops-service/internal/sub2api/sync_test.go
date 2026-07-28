@@ -15,8 +15,11 @@ func TestSynchronizerKeepsOnlyCustomerVisibleGroupsAndNativeReferences(t *testin
 			{ID: 3, Name: "GPT-Pro", Platform: "openai", RateMultiplier: 1, Status: "active"},
 			{ID: 4, Name: "private", Platform: "openai", RateMultiplier: 0.5, IsExclusive: true, Status: "active"},
 		},
-		monitors: []ChannelMonitor{{ID: 9, Name: "GPT-Pro", GroupName: "GPT-Pro", Enabled: true, PrimaryModel: "gpt-5.6-sol"}},
-		ops:      OpsSnapshot{GeneratedAt: "2026-07-19T08:00:00Z", Overview: OpsOverview{StartTime: "2026-07-18T08:00:00Z", EndTime: "2026-07-19T08:00:00Z", SLA: 99, TTFT: Percentiles{P95MS: 1400}}},
+		monitors: []ChannelMonitor{
+			{ID: 9, Name: "GPT-Pro", GroupName: "GPT-Pro", Enabled: true, PrimaryModel: "gpt-5.6-sol"},
+			{ID: 10, Name: "unbound", GroupName: "other", Enabled: true, PrimaryModel: "gpt-5.6-sol"},
+		},
+		ops: OpsSnapshot{GeneratedAt: "2026-07-19T08:00:00Z", Overview: OpsOverview{StartTime: "2026-07-18T08:00:00Z", EndTime: "2026-07-19T08:00:00Z", SLA: 99, TTFT: Percentiles{P95MS: 1400}}},
 		history: []MonitorHistory{
 			{ID: 10, Model: "gpt-5.6-sol", Status: "operational", CheckedAt: "2026-07-19T07:55:00Z"},
 			{ID: 11, Model: "gpt-5.6-sol", Status: "error", CheckedAt: "2026-07-19T08:00:00Z"},
@@ -46,7 +49,8 @@ func TestSynchronizerKeepsOnlyCustomerVisibleGroupsAndNativeReferences(t *testin
 			t.Fatalf("invalid metric ref: %#v", ref)
 		}
 	}
-	if observer.calls != 1 || observer.monitor.ID != 9 || observer.history.ID != 11 || observer.history.Status != "error" {
+	if observer.calls != 1 || observer.group.ID != 3 || observer.group.Name != "GPT-Pro" ||
+		observer.monitor.ID != 9 || observer.history.ID != 11 || observer.history.Status != "error" {
 		t.Fatalf("observer=%#v", observer)
 	}
 }
@@ -91,12 +95,19 @@ func (f *fakeSink) AppendMetricRef(_ context.Context, ref MetricRef) error {
 
 type fakeMonitorObserver struct {
 	calls   int
+	group   Group
 	monitor ChannelMonitor
 	history MonitorHistory
 }
 
-func (f *fakeMonitorObserver) ObserveMonitor(_ context.Context, monitor ChannelMonitor, history MonitorHistory) error {
+func (f *fakeMonitorObserver) ObserveMonitor(
+	_ context.Context,
+	group Group,
+	monitor ChannelMonitor,
+	history MonitorHistory,
+) error {
 	f.calls++
+	f.group = group
 	f.monitor = monitor
 	f.history = history
 	return nil

@@ -199,11 +199,11 @@ func analysisRunners(service *agent.Service) (collection.AnalysisRunner, accepta
 	return service, service
 }
 
-func operationalAnalysisRunners(service *agent.Service) (nativealerts.AnalysisRunner, dailyreport.AnalysisRunner) {
+func operationalReportAnalysisRunner(service *agent.Service) dailyreport.AnalysisRunner {
 	if service == nil {
-		return nil, nil
+		return nil
 	}
-	return service, service
+	return service
 }
 
 func configuredSiteMonitor(reader opsmetrics.Reader, quality opsmonitor.QualitySource, multipliers opsmonitor.MultiplierSource, state *incidents.Machine, notifier opsmonitor.MessageSender) opsmonitor.Service {
@@ -272,7 +272,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	readiness := &Readiness{Database: database}
-	syncer := sub2api.Synchronizer{Reader: reader, Sink: database}
+	syncer := sub2api.Synchronizer{
+		Reader: reader,
+		Sink:   database,
+		Observer: nativealerts.Service{
+			Signals: database,
+			Policy:  cfg.NotificationPolicy,
+		},
+	}
 	if cfg.Mode != config.ModeClosed {
 		bootstrapCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		_ = BootstrapNativeReadiness(bootstrapCtx, syncer.Sync, readiness)
@@ -287,7 +294,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		analysisService = &agent.Service{Analyzer: client, Repository: database}
 	}
 	collectorAnalysis, acceptanceAnalysis := analysisRunners(analysisService)
-	nativeAnalysis, reportAnalysis := operationalAnalysisRunners(analysisService)
+	reportAnalysis := operationalReportAnalysisRunner(analysisService)
 	var appAlertSender notify.MessageSender
 	if cfg.FeishuAlertChatIDFile != "" {
 		appClient, clientErr := feishuapi.NewClient(feishuOpenAPIBaseURL, cfg.FeishuAppIDFile, cfg.FeishuAppSecretFile)
@@ -305,8 +312,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		notifier = notify.DeliverySender{Client: notificationTransport, Repository: database}
 	}
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
-	nativeAlertService := nativealerts.Service{Incidents: incidentMachine, Agent: nativeAnalysis, Notifier: notifier}
-	syncer.Observer = nativeAlertService
 	var accountQualitySource httpserver.AccountQualitySource
 	var siteAccountQualitySource opsmonitor.QualitySource
 	if cfg.AccountQualityResultFile != "" {
@@ -445,7 +450,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return retryService.Run(runCtx)
 		},
 		GroupAvailability: func(runCtx context.Context) error {
-			return runGroupAvailability(runCtx, reader, incidentMachine, notifier, cfg.Timezone, time.Now().UTC())
+			return runGroupAvailability(
+				runCtx, reader, database, cfg.NotificationPolicy, time.Now().UTC(),
+			)
 		},
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}

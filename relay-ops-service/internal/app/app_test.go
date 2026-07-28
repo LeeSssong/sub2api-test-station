@@ -18,7 +18,6 @@ import (
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
 	"example.invalid/relay-ops-service/internal/incidents"
-	"example.invalid/relay-ops-service/internal/nativealerts"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -49,17 +48,16 @@ func TestAnalysisRunnersDoNotWrapAnUnconfiguredAgentAsANonNilInterface(t *testin
 }
 
 func TestOperationalAnalysisRunnersStayNilUntilAgentIsConfigured(t *testing.T) {
-	nativeRunner, reportRunner := operationalAnalysisRunners(nil)
-	if nativeRunner != nil || reportRunner != nil {
-		t.Fatalf("unconfigured operational runners must stay nil: native=%T report=%T", nativeRunner, reportRunner)
+	reportRunner := operationalReportAnalysisRunner(nil)
+	if reportRunner != nil {
+		t.Fatalf("unconfigured report runner must stay nil: report=%T", reportRunner)
 	}
 
 	service := &agent.Service{}
-	nativeRunner, reportRunner = operationalAnalysisRunners(service)
-	if nativeRunner == nil || reportRunner == nil {
-		t.Fatal("configured agent must be wired into native alerts and daily reports")
+	reportRunner = operationalReportAnalysisRunner(service)
+	if reportRunner == nil {
+		t.Fatal("configured agent must be wired into daily reports")
 	}
-	var _ nativealerts.AnalysisRunner = nativeRunner
 	var _ dailyreport.AnalysisRunner = reportRunner
 }
 

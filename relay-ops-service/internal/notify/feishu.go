@@ -10,7 +10,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -162,6 +164,43 @@ func WithDeliveryIdentity(message FeishuMessage, occurrenceNo int64, transition 
 	message.OccurrenceNo = occurrenceNo
 	message.Transition = transition
 	return message
+}
+
+func WithAcknowledgementAction(message FeishuMessage, incidentKey string, occurrenceNo int64) FeishuMessage {
+	severity := strings.ToUpper(strings.TrimSpace(message.Severity))
+	if message.Card == nil || (severity != "P0" && severity != "P1") ||
+		message.Transition == "recovered" || strings.TrimSpace(incidentKey) == "" || occurrenceNo <= 0 {
+		return message
+	}
+	query := url.Values{}
+	query.Set("ack_incident", incidentKey)
+	query.Set("ack_occurrence", strconv.FormatInt(occurrenceNo, 10))
+	action := CardAction{
+		Tag: "button", Text: CardText{Tag: "plain_text", Content: "确认并接手"},
+		Type: "primary", MultiURL: &CardURL{URL: "/ops?" + query.Encode()},
+	}
+
+	copyMessage := message
+	copyCard := *message.Card
+	copyCard.Elements = append([]CardElement(nil), message.Card.Elements...)
+	for index := range copyCard.Elements {
+		element := &copyCard.Elements[index]
+		element.Actions = append([]CardAction(nil), element.Actions...)
+		for _, existing := range element.Actions {
+			if existing.Text.Content == action.Text.Content {
+				copyMessage.Card = &copyCard
+				return copyMessage
+			}
+		}
+		if element.Tag == "action" {
+			element.Actions = append(element.Actions, action)
+			copyMessage.Card = &copyCard
+			return copyMessage
+		}
+	}
+	copyCard.Elements = append(copyCard.Elements, CardElement{Tag: "action", Actions: []CardAction{action}})
+	copyMessage.Card = &copyCard
+	return copyMessage
 }
 
 // RenderedText flattens the card into the text a reader sees: header title

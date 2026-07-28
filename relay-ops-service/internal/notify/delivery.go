@@ -49,15 +49,16 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 	if s.Client == nil {
 		return fmt.Errorf("notification client is required")
 	}
+	occurrenceNo := message.OccurrenceNo
+	if occurrenceNo <= 0 {
+		occurrenceNo = 1
+	}
+	message = WithAcknowledgementAction(message, incidentKey, occurrenceNo)
 	// The dedup fingerprint is taken over the card that will actually be sent,
 	// so a message whose rendering changed counts as a different message.
 	payload, err := message.CardJSON()
 	if err != nil {
 		return fmt.Errorf("encode notification message")
-	}
-	occurrenceNo := message.OccurrenceNo
-	if occurrenceNo <= 0 {
-		occurrenceNo = 1
 	}
 	transition := message.Transition
 	if transition == "" {

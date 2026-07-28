@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -157,6 +158,54 @@ func TestAppClientRecordsUrgencyFailureAfterMessageDelivery(t *testing.T) {
 	if result.MessageID != "om_alert" || result.UrgentStatus != "failed" || result.UrgentResponseCode != 0 {
 		t.Fatalf("send result = %#v", result)
 	}
+}
+
+func TestWithAcknowledgementActionOnlyAddsCurrentP0P1Button(t *testing.T) {
+	tests := []struct {
+		name       string
+		message    FeishuMessage
+		wantButton bool
+	}{
+		{name: "P0", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "不可用", Severity: "P0"}), 3, "confirmed"), wantButton: true},
+		{name: "P1", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "变慢", Severity: "P1"}), 4, "new_evidence"), wantButton: true},
+		{name: "P2", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "倍率", Severity: "P2"}), 2, "confirmed")},
+		{name: "recovery", message: WithDeliveryIdentity(RenderRecovery(IncidentView{Title: "恢复", Recovery: true}), 3, "recovered")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message := WithAcknowledgementAction(test.message, "group:GPT PLUS/内测:availability", messageOccurrence(test.message))
+			var matches []CardAction
+			for _, element := range message.Card.Elements {
+				for _, action := range element.Actions {
+					if action.Text.Content == "确认并接手" {
+						matches = append(matches, action)
+					}
+				}
+			}
+			if !test.wantButton {
+				if len(matches) != 0 {
+					t.Fatalf("unexpected acknowledgement actions: %#v", matches)
+				}
+				return
+			}
+			if len(matches) != 1 || matches[0].MultiURL == nil {
+				t.Fatalf("acknowledgement actions = %#v", matches)
+			}
+			parsed, err := url.Parse(matches[0].MultiURL.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Path != "/ops" ||
+				parsed.Query().Get("ack_incident") != "group:GPT PLUS/内测:availability" ||
+				parsed.Query().Get("ack_occurrence") != strconv.FormatInt(messageOccurrence(test.message), 10) {
+				t.Fatalf("acknowledgement URL = %q", matches[0].MultiURL.URL)
+			}
+		})
+	}
+}
+
+func messageOccurrence(message FeishuMessage) int64 {
+	return message.OccurrenceNo
 }
 
 func TestAppClientResolvesRelativeOpsLinkBeforeSending(t *testing.T) {

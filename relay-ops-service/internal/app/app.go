@@ -50,6 +50,14 @@ type dailyReportIncidents struct {
 	state *incidents.Machine
 }
 
+type incidentAcknowledgements struct {
+	store *store.Store
+}
+
+func (service incidentAcknowledgements) Acknowledge(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
+	return service.store.AcknowledgeIncident(ctx, acknowledgement)
+}
+
 type fastCandidateRepository interface {
 	ListCandidates(context.Context) ([]candidates.Candidate, error)
 }
@@ -413,10 +421,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
-		Billing:       billing.SessionRegistrationService{Repository: database},
-		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},
-		DailyReport:   dailyReportService,
-		QualityReview: qualityReview,
+		Billing:                  billing.SessionRegistrationService{Repository: database},
+		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis, Notifier: notifier},
+		DailyReport:              dailyReportService,
+		QualityReview:            qualityReview,
+		IncidentAcknowledgements: incidentAcknowledgements{store: database},
 	})
 	if err != nil {
 		return nil, err

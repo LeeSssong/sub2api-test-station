@@ -85,6 +85,31 @@ jobs:
             --base-sha "$base_sha" \
             --official-commit "$official_commit" \
             --output .release/discovery/metadata.json
+          curl --fail --silent --show-error --location \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" \
+            >.release/discovery/current-main.json
+          ruby -rjson -rtempfile -e '
+            metadata_path = File.expand_path(ARGV.fetch(0))
+            metadata = JSON.parse(File.binread(metadata_path))
+            current_main = JSON.parse(File.binread(ARGV.fetch(1))).fetch("sha")
+            base_sha = ARGV.fetch(2)
+            abort unless [current_main, base_sha].all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
+            stale = current_main != base_sha
+            metadata["stale_run"] = stale
+            metadata["has_update"] = false if stale
+            Tempfile.create([".sub2api-discovery-", ".json"], File.dirname(metadata_path)) do |file|
+              file.chmod(0o600)
+              file.write(JSON.pretty_generate(metadata) + "\n")
+              file.flush
+              file.fsync
+              File.rename(file.path, metadata_path)
+            end
+          ' \
+            .release/discovery/metadata.json \
+            .release/discovery/current-main.json \
+            "$base_sha"
       - name: Export normalized decision
         id: decision
         run: |

@@ -184,7 +184,15 @@ func startPassthroughLifecycleServer(
 		req := r.Clone(controlCtx)
 		req.Header = req.Header.Clone()
 		ginCtx.Request = req
-		serverErr <- svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, nil)
+		proxyErr := svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, nil)
+		// The production handler sends an application close frame before the
+		// deferred CloseNow tears down the transport. Mirror that boundary here
+		// so lifecycle assertions observe the same client-facing contract.
+		var closeErr *OpenAIWSClientCloseError
+		if errors.As(proxyErr, &closeErr) {
+			_ = conn.Close(closeErr.StatusCode(), closeErr.Reason())
+		}
+		serverErr <- proxyErr
 	}))
 	return server, serverErr
 }

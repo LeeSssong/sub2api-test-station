@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -717,6 +718,52 @@ func normalizedOpenIDs(values []string) []string {
 		}
 	}
 	return result
+}
+
+func LoadRecipientOpenIDs(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("Feishu alert recipient file is unavailable")
+	}
+	permissions := info.Mode().Perm()
+	if !info.Mode().IsRegular() || (permissions != 0o600 && permissions != 0o640) ||
+		info.Size() <= 0 || info.Size() > 8<<10 {
+		return nil, fmt.Errorf("Feishu alert recipient file is unsafe")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("Feishu alert recipient file is unavailable")
+	}
+	defer clearNotifySecret(data)
+	var document struct {
+		OpenIDs []string `json:"open_ids"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
+		return nil, fmt.Errorf("Feishu alert recipient file is invalid")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("Feishu alert recipient file is invalid")
+	}
+	if len(document.OpenIDs) < 1 || len(document.OpenIDs) > 20 {
+		return nil, fmt.Errorf("Feishu alert recipient count is invalid")
+	}
+	recipients := make([]string, 0, len(document.OpenIDs))
+	seen := make(map[string]struct{}, len(document.OpenIDs))
+	for _, value := range document.OpenIDs {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, fmt.Errorf("Feishu alert recipient value is invalid")
+		}
+		if _, exists := seen[value]; exists {
+			return nil, fmt.Errorf("Feishu alert recipient values must be unique")
+		}
+		seen[value] = struct{}{}
+		recipients = append(recipients, value)
+	}
+	return recipients, nil
 }
 
 func (c Client) Send(ctx context.Context, message FeishuMessage) error {

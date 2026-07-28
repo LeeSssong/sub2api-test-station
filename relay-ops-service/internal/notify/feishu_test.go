@@ -160,6 +160,60 @@ func TestAppClientRecordsUrgencyFailureAfterMessageDelivery(t *testing.T) {
 	}
 }
 
+func TestLoadRecipientOpenIDsStrictlyValidatesSecretJSON(t *testing.T) {
+	t.Parallel()
+	validValues := make([]string, 20)
+	for index := range validValues {
+		validValues[index] = fmt.Sprintf("operator-%02d", index)
+	}
+	validPayload, err := json.Marshal(map[string]any{"open_ids": validValues})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validFile := filepath.Join(t.TempDir(), "recipients.json")
+	if err := os.WriteFile(validFile, validPayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadRecipientOpenIDs(validFile)
+	if err != nil || len(got) != 20 {
+		t.Fatalf("recipients count=%d err=%v", len(got), err)
+	}
+
+	tests := []struct {
+		name    string
+		payload []byte
+		mode    os.FileMode
+	}{
+		{name: "empty list", payload: []byte(`{"open_ids":[]}`), mode: 0o600},
+		{name: "too many", payload: func() []byte {
+			values := append(append([]string(nil), validValues...), "operator-20")
+			data, _ := json.Marshal(map[string]any{"open_ids": values})
+			return data
+		}(), mode: 0o600},
+		{name: "duplicate after trim", payload: []byte(`{"open_ids":["operator-a"," operator-a "]}`), mode: 0o600},
+		{name: "empty value", payload: []byte(`{"open_ids":["operator-a"," "]}`), mode: 0o600},
+		{name: "unknown field", payload: []byte(`{"open_ids":["operator-a"],"chat_id":"not-allowed"}`), mode: 0o600},
+		{name: "invalid JSON", payload: []byte(`{"open_ids":`), mode: 0o600},
+		{name: "trailing JSON", payload: []byte(`{"open_ids":["operator-a"]}{}`), mode: 0o600},
+		{name: "oversized", payload: []byte(`{"open_ids":["` + strings.Repeat("x", 9<<10) + `"]}`), mode: 0o600},
+		{name: "unsafe permissions", payload: []byte(`{"open_ids":["operator-a"]}`), mode: 0o644},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "recipients.json")
+			if err := os.WriteFile(path, test.payload, test.mode); err != nil {
+				t.Fatal(err)
+			}
+			if values, err := LoadRecipientOpenIDs(path); err == nil {
+				t.Fatalf("accepted invalid recipients count=%d", len(values))
+			}
+		})
+	}
+	if _, err := LoadRecipientOpenIDs(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("missing recipient file accepted")
+	}
+}
+
 func TestWithAcknowledgementActionOnlyAddsCurrentP0P1Button(t *testing.T) {
 	tests := []struct {
 		name       string

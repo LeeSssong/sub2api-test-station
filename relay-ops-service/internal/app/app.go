@@ -237,7 +237,14 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		if err != nil {
 			return nil, fmt.Errorf("Feishu alert chat ID is unavailable")
 		}
-		return notify.AppClient{Sender: appSender, ChatID: chatID, BaseURL: cfg.PublicBaseURL}, nil
+		recipients, err := notify.LoadRecipientOpenIDs(cfg.FeishuAlertRecipientsFile)
+		if err != nil {
+			return nil, fmt.Errorf("Feishu alert recipients are unavailable")
+		}
+		return notify.AppClient{
+			Sender: appSender, ChatID: chatID, BaseURL: cfg.PublicBaseURL,
+			RecipientOpenIDs: recipients,
+		}, nil
 	}
 	if cfg.FeishuWebhookFile != "" {
 		return notify.Client{WebhookFile: cfg.FeishuWebhookFile, BaseURL: cfg.PublicBaseURL}, nil

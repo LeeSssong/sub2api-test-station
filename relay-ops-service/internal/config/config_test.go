@@ -143,12 +143,35 @@ func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	recipientsFile := filepath.Join(t.TempDir(), "feishu-alert-recipients.json")
+	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"] = recipientsFile
 	cfg, err := Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatalf("alert configuration rejected: %v", err)
 	}
 	if cfg.FeishuAlertChatIDFile != chatIDFile {
 		t.Fatalf("alert chat file = %q, want %q", cfg.FeishuAlertChatIDFile, chatIDFile)
+	}
+	if cfg.FeishuAlertRecipientsFile != recipientsFile {
+		t.Fatalf("alert recipients file = %q, want %q", cfg.FeishuAlertRecipientsFile, recipientsFile)
+	}
+}
+
+func TestLoadRejectsFeishuAlertChatWithoutRecipients(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addFeishuCallbackFiles(t, env)
+	chatIDFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
+	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("alert chat without recipients unexpectedly accepted")
 	}
 }
 

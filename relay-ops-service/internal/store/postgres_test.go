@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
@@ -503,6 +505,105 @@ func TestSchedulerClaimIsConcurrentAndRestartSafe(t *testing.T) {
 	}
 	if claimed, err := st.Claim(ctx, "candidate-cycle:17", now.Add(6*time.Hour), 6*time.Hour); err != nil || !claimed {
 		t.Fatalf("due claim=%v err=%v", claimed, err)
+	}
+}
+
+func TestIncidentEscalationClaimAndRetryAreOccurrenceSafe(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:escalation-store-test:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := notify.WithDeliveryIdentity(
+		notify.RenderAlert(notify.IncidentView{Title: "告警链路存储测试", Severity: "P0"}),
+		transition.OccurrenceNo, transition.Kind,
+	)
+	payload, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "escalation-store-test-initial", MessageHash: "message",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, MessageID: "om-store-test",
+		Payload: payload, UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var firstDeliveredAt, firstDue time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT d.delivered_at, i.next_escalation_at
+		FROM relay_ops.incidents i
+		JOIN relay_ops.notification_deliveries d ON d.incident_id=i.id
+		WHERE i.incident_key=$1 AND d.id=$2`, key, deliveryID).Scan(&firstDeliveredAt, &firstDue); err != nil {
+		t.Fatal(err)
+	}
+	if !firstDue.Equal(firstDeliveredAt.Add(5 * time.Minute)) {
+		t.Fatalf("first due=%s delivered=%s", firstDue, firstDeliveredAt)
+	}
+	claim, err := st.ClaimDueEscalation(ctx, firstDue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Key != key || claim.Severity != "P0" || claim.OccurrenceNo != 1 ||
+		claim.EscalationLevel != 0 || !json.Valid(claim.MessagePayload) {
+		t.Fatalf("claim=%#v", claim)
+	}
+	retryAt := firstDue.Add(time.Minute)
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: 1, Level: 1, Succeeded: false, RetryAt: retryAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var level int
+	var next time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT escalation_level, next_escalation_at FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(&level, &next); err != nil {
+		t.Fatal(err)
+	}
+	if level != 0 || !next.Equal(retryAt) {
+		t.Fatalf("failed escalation level=%d next=%s", level, next)
+	}
+	claim, err = st.ClaimDueEscalation(ctx, retryAt)
+	if err != nil || claim == nil || claim.EscalationLevel != 0 {
+		t.Fatalf("retry claim=%#v err=%v", claim, err)
+	}
+	secondDue := firstDeliveredAt.Add(15 * time.Minute)
+	if err := st.FinishEscalation(ctx, alerting.Result{
+		Key: key, OccurrenceNo: 1, Level: 1, Succeeded: true, NextEscalationAt: &secondDue,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `
+		SELECT escalation_level, next_escalation_at FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(&level, &next); err != nil {
+		t.Fatal(err)
+	}
+	if level != 1 || !next.Equal(secondDue) {
+		t.Fatalf("successful escalation level=%d next=%s", level, next)
+	}
+	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
+		Key: key, OccurrenceNo: 1, ActorUserID: 42, At: retryAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err = st.ClaimDueEscalation(ctx, secondDue)
+	if err != nil || claim != nil {
+		t.Fatalf("acknowledged claim=%#v err=%v", claim, err)
 	}
 }
 

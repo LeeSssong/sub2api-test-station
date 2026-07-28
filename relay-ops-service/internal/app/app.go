@@ -14,6 +14,7 @@ import (
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
+	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
@@ -317,6 +318,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	siteMonitor := configuredSiteMonitor(reader, siteAccountQualitySource, reader, incidentMachine, notifier)
 	siteMonitor.Fallback = pricingFallback
+	escalationService := alerting.Service{Repository: database, Sender: notifier}
 	usageReader := billing.SessionReader{Reporter: database}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,
@@ -411,6 +413,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return err
 		},
 		SiteMonitor: siteMonitor.Run,
+		IncidentEscalation: func(runCtx context.Context) error {
+			if notifier == nil {
+				return nil
+			}
+			return escalationService.Run(runCtx)
+		},
 		GroupAvailability: func(runCtx context.Context) error {
 			return runGroupAvailability(runCtx, reader, incidentMachine, notifier, cfg.Timezone, time.Now().UTC())
 		},

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/agent"
+	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
@@ -1017,7 +1018,12 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 	if outcome.UrgentResponseCode > 0 {
 		urgentCode = outcome.UrgentResponseCode
 	}
-	command, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin notification delivery finish: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	command, err := tx.Exec(ctx, `
 		UPDATE relay_ops.notification_deliveries
 		SET delivery_status=$2, response_code=$3, delivered_at=$4,
 		    message_payload=$5::jsonb, message_id=NULLIF($6, ''),
@@ -1029,6 +1035,157 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 	}
 	if command.RowsAffected() != 1 {
 		return fmt.Errorf("notification delivery not found")
+	}
+	if outcome.Status == "delivered" {
+		var incidentID, occurrenceNo, deliveryOccurrence int64
+		var severity, state, transition string
+		var escalationLevel int
+		var acknowledgedOccurrence sql.NullInt64
+		var firstDeliveredAt time.Time
+		err = tx.QueryRow(ctx, `
+			SELECT i.id, i.severity, i.state, i.occurrence_no, i.escalation_level,
+			       i.acknowledged_occurrence, d.occurrence_no, d.transition,
+			       MIN(history.delivered_at)
+			FROM relay_ops.notification_deliveries d
+			JOIN relay_ops.incidents i ON i.id=d.incident_id
+			JOIN relay_ops.notification_deliveries history
+			  ON history.incident_id=i.id
+			 AND history.occurrence_no=d.occurrence_no
+			 AND history.delivery_status='delivered'
+			 AND history.transition<>'recovered'
+			WHERE d.id=$1
+			GROUP BY i.id, d.occurrence_no, d.transition`, deliveryID).Scan(
+			&incidentID, &severity, &state, &occurrenceNo, &escalationLevel,
+			&acknowledgedOccurrence, &deliveryOccurrence, &transition, &firstDeliveredAt,
+		)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("read initial escalation schedule: %w", err)
+		}
+		active := state == "confirmed" || state == "escalated" || state == "degraded"
+		unacknowledged := !acknowledgedOccurrence.Valid || acknowledgedOccurrence.Int64 != occurrenceNo
+		if err == nil && active && unacknowledged && transition != "recovered" && deliveryOccurrence == occurrenceNo {
+			var deadline any
+			if next, found := alerting.NextEscalationAt(severity, escalationLevel, firstDeliveredAt); found {
+				deadline = next
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE relay_ops.incidents
+				SET next_escalation_at=$2
+				WHERE id=$1 AND occurrence_no=$3`, incidentID, deadline, occurrenceNo); err != nil {
+				return fmt.Errorf("schedule initial incident escalation: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit notification delivery finish: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alerting.Incident, error) {
+	if now.IsZero() {
+		return nil, fmt.Errorf("incident escalation claim time is required")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin incident escalation claim: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var id int64
+	var incident alerting.Incident
+	err = tx.QueryRow(ctx, `
+		SELECT i.id, i.incident_key, i.severity, i.occurrence_no, i.escalation_level,
+		       first_delivery.delivered_at, latest_delivery.message_payload
+		FROM relay_ops.incidents i
+		JOIN LATERAL (
+			SELECT MIN(d.delivered_at) AS delivered_at
+			FROM relay_ops.notification_deliveries d
+			WHERE d.incident_id=i.id
+			  AND d.occurrence_no=i.occurrence_no
+			  AND d.delivery_status='delivered'
+			  AND d.transition<>'recovered'
+		) first_delivery ON first_delivery.delivered_at IS NOT NULL
+		JOIN LATERAL (
+			SELECT d.message_payload
+			FROM relay_ops.notification_deliveries d
+			WHERE d.incident_id=i.id
+			  AND d.occurrence_no=i.occurrence_no
+			  AND d.delivery_status='delivered'
+			  AND d.transition<>'recovered'
+			  AND d.message_payload IS NOT NULL
+			ORDER BY d.delivered_at DESC, d.id DESC
+			LIMIT 1
+		) latest_delivery ON true
+		WHERE i.next_escalation_at<=$1
+		  AND i.severity IN ('P0', 'P1')
+		  AND i.state IN ('confirmed', 'escalated', 'degraded')
+		  AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
+		ORDER BY i.next_escalation_at, i.id
+		FOR UPDATE OF i SKIP LOCKED
+		LIMIT 1`, now.UTC()).Scan(
+		&id, &incident.Key, &incident.Severity, &incident.OccurrenceNo,
+		&incident.EscalationLevel, &incident.FirstDeliveredAt, &incident.MessagePayload,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit empty incident escalation claim: %w", err)
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("claim due incident escalation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET next_escalation_at=$2
+		WHERE id=$1`, id, now.UTC().Add(time.Minute)); err != nil {
+		return nil, fmt.Errorf("lease incident escalation: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit incident escalation claim: %w", err)
+	}
+	return &incident, nil
+}
+
+func (s *Store) FinishEscalation(ctx context.Context, result alerting.Result) error {
+	if result.Key == "" || result.OccurrenceNo <= 0 || result.Level <= 0 {
+		return fmt.Errorf("incident escalation result is invalid")
+	}
+	var next any
+	if result.Succeeded {
+		if result.NextEscalationAt != nil {
+			next = result.NextEscalationAt.UTC()
+		}
+	} else {
+		if result.RetryAt.IsZero() {
+			return fmt.Errorf("incident escalation retry time is required")
+		}
+		next = result.RetryAt.UTC()
+	}
+	if result.Succeeded {
+		_, err := s.pool.Exec(ctx, `
+			UPDATE relay_ops.incidents
+			SET escalation_level=$3, next_escalation_at=$4
+			WHERE incident_key=$1 AND occurrence_no=$2
+			  AND escalation_level=$3-1
+			  AND state IN ('confirmed', 'escalated', 'degraded')
+			  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
+			result.Key, result.OccurrenceNo, result.Level, next)
+		if err != nil {
+			return fmt.Errorf("finish successful incident escalation: %w", err)
+		}
+		return nil
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET next_escalation_at=$4
+		WHERE incident_key=$1 AND occurrence_no=$2
+		  AND escalation_level=$3-1
+		  AND state IN ('confirmed', 'escalated', 'degraded')
+		  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
+		result.Key, result.OccurrenceNo, result.Level, next)
+	if err != nil {
+		return fmt.Errorf("finish failed incident escalation: %w", err)
 	}
 	return nil
 }

@@ -670,9 +670,13 @@ func (s *Store) Get(ctx context.Context, key string) (incidents.Record, bool, er
 	var evidenceJSON []byte
 	record.Key = key
 	err := s.pool.QueryRow(ctx, `
-		SELECT severity, state, sample_count, occurrence_no, COALESCE(current_value, ''), evidence_refs
+		SELECT family, policy_version, source_kind, severity, state, sample_count,
+		       occurrence_no, recovery_count, COALESCE(current_value, ''),
+		       evidence_refs, COALESCE(material_hash, ''), latest_payload
 		FROM relay_ops.incidents WHERE incident_key=$1`, key).Scan(
-		&record.Severity, &record.State, &record.SampleCount, &record.OccurrenceNo, &record.CurrentValue, &evidenceJSON,
+		&record.Family, &record.PolicyVersion, &record.SourceKind, &record.Severity,
+		&record.State, &record.SampleCount, &record.OccurrenceNo, &record.RecoveryCount,
+		&record.CurrentValue, &evidenceJSON, &record.MaterialHash, &record.LatestPayload,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return incidents.Record{}, false, nil
@@ -694,6 +698,25 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 	if record.OccurrenceNo <= 0 {
 		record.OccurrenceNo = 1
 	}
+	if record.Family == "" {
+		record.Family = "legacy"
+	}
+	if record.SourceKind == "" {
+		record.SourceKind = "legacy"
+	}
+	if record.PolicyVersion < 0 || record.RecoveryCount < 0 {
+		return fmt.Errorf("incident notification metadata is invalid")
+	}
+	if record.State == "recovered" {
+		record.RecoveryCount = 0
+	}
+	var latestPayload any
+	if len(record.LatestPayload) > 0 {
+		if len(record.LatestPayload) > 30<<10 || !json.Valid(record.LatestPayload) {
+			return fmt.Errorf("incident latest payload is invalid")
+		}
+		latestPayload = string(record.LatestPayload)
+	}
 	evidence := []string{}
 	if record.EvidenceHash != "" {
 		evidence = append(evidence, record.EvidenceHash)
@@ -707,12 +730,13 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 		if err != nil {
 			return fmt.Errorf("begin incident state update: %w", err)
 		}
+		var previousOccurrence int64
 		var claimToken sql.NullString
 		err = tx.QueryRow(ctx, `
-			SELECT escalation_claim_token
+			SELECT occurrence_no, escalation_claim_token
 			FROM relay_ops.incidents
 			WHERE incident_key=$1
-			FOR UPDATE`, record.Key).Scan(&claimToken)
+			FOR UPDATE`, record.Key).Scan(&previousOccurrence, &claimToken)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			tx.Rollback(ctx)
 			return fmt.Errorf("lock incident state: %w", err)
@@ -738,15 +762,24 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO relay_ops.incidents
-				(incident_key, severity, state, current_value, sample_count, occurrence_no, evidence_refs)
-			VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
+				(incident_key, family, policy_version, source_kind, severity, state,
+				 current_value, sample_count, occurrence_no, recovery_count,
+				 evidence_refs, material_hash, latest_payload)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10,
+			        $11, NULLIF($12, ''), $13::jsonb)
 			ON CONFLICT (incident_key) DO UPDATE SET
 				severity=EXCLUDED.severity,
 				state=EXCLUDED.state,
 				current_value=EXCLUDED.current_value,
 				sample_count=EXCLUDED.sample_count,
 				occurrence_no=EXCLUDED.occurrence_no,
+				family=EXCLUDED.family,
+				policy_version=EXCLUDED.policy_version,
+				source_kind=EXCLUDED.source_kind,
+				recovery_count=EXCLUDED.recovery_count,
 				evidence_refs=EXCLUDED.evidence_refs,
+				material_hash=EXCLUDED.material_hash,
+				latest_payload=EXCLUDED.latest_payload,
 				acknowledged_occurrence=CASE
 					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
 					ELSE relay_ops.incidents.acknowledged_occurrence
@@ -776,21 +809,28 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 					ELSE relay_ops.incidents.escalation_claimed_at
 				END,
 				last_seen_at=NOW()`,
-			record.Key, record.Severity, record.State, record.CurrentValue, record.SampleCount, record.OccurrenceNo, evidenceJSON)
+			record.Key, record.Family, record.PolicyVersion, record.SourceKind,
+			record.Severity, record.State, record.CurrentValue, record.SampleCount,
+			record.OccurrenceNo, record.RecoveryCount, evidenceJSON,
+			record.MaterialHash, latestPayload)
 		if err != nil {
 			tx.Rollback(ctx)
 			return fmt.Errorf("put incident state: %w", err)
 		}
-		if record.State == "recovered" {
+		newOccurrence := previousOccurrence > 0 && previousOccurrence != record.OccurrenceNo
+		if record.State == "recovered" || newOccurrence {
 			if _, err := tx.Exec(ctx, `
 				UPDATE relay_ops.notification_deliveries
 				SET delivery_status='canceled', next_attempt_at=NULL
 				WHERE incident_id=(SELECT id FROM relay_ops.incidents WHERE incident_key=$1)
-				  AND occurrence_no=$2
-				  AND delivery_status IN ('failed', 'reserved')`,
-				record.Key, record.OccurrenceNo); err != nil {
+				  AND delivery_status IN ('failed', 'reserved')
+				  AND (
+				    ($3 AND occurrence_no=$2)
+				    OR ($4 AND occurrence_no<>$2)
+				  )`,
+				record.Key, record.OccurrenceNo, record.State == "recovered", newOccurrence); err != nil {
 				tx.Rollback(ctx)
-				return fmt.Errorf("cancel recovered incident notification retries: %w", err)
+				return fmt.Errorf("cancel inactive incident notification retries: %w", err)
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {

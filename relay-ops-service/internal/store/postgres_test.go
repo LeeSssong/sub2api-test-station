@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -1257,11 +1258,96 @@ func TestOperationalBaselineRoundTrips(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("GetOperationalBaseline = %#v %v %v", got, found, err)
 	}
-	if got != want {
+	if got.Key != want.Key || got.CurrentValue != want.CurrentValue ||
+		got.EvidenceHash != want.EvidenceHash || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("baseline = %#v, want %#v", got, want)
 	}
 	if _, found, err := st.GetOperationalBaseline(ctx, "missing"); err != nil || found {
 		t.Fatalf("missing baseline found=%v err=%v", found, err)
+	}
+}
+
+func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	record := incidents.Record{
+		Key: "group:7:user-impact", Family: "group_runtime", PolicyVersion: 1,
+		SourceKind: "site_monitor", Severity: "P1", State: "confirmed",
+		SampleCount: 2, OccurrenceNo: 1, RecoveryCount: 1,
+		EvidenceHash: "metrics-one", MaterialHash: "partial-request-failures",
+		CurrentValue:  `{"latest_fact":"错误率 10%"}`,
+		LatestPayload: []byte(`{"header":{"title":{"content":"P1"}},"elements":[]}`),
+	}
+	if err := st.Put(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := st.Get(ctx, record.Key)
+	if err != nil || !found {
+		t.Fatalf("Get = %#v %v %v", got, found, err)
+	}
+	var gotPayload, wantPayload any
+	if err := json.Unmarshal(got.LatestPayload, &gotPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(record.LatestPayload, &wantPayload); err != nil {
+		t.Fatal(err)
+	}
+	got.LatestPayload = nil
+	record.LatestPayload = nil
+	if !reflect.DeepEqual(got, record) || !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("record = %#v, want %#v", got, record)
+	}
+	record.LatestPayload = []byte(`{"header":{"title":{"content":"P1"}},"elements":[]}`)
+
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: record.Key, DedupKey: "old-occurrence-delivery",
+		MessageHash: "old-card", OccurrenceNo: 1, Transition: "confirmed",
+		Payload: record.LatestPayload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("ReserveNotification = %d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "failed", Payload: record.LatestPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET acknowledged_occurrence=1, acknowledged_at=NOW(), acknowledged_by=42,
+		    escalation_level=1, next_escalation_at=NOW()+INTERVAL '5 minutes'
+		WHERE incident_key=$1`, record.Key); err != nil {
+		t.Fatal(err)
+	}
+
+	record.OccurrenceNo = 2
+	record.RecoveryCount = 0
+	record.EvidenceHash = "metrics-two"
+	record.MaterialHash = "lost-redundancy"
+	if err := st.Put(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	var acknowledged sql.NullInt64
+	var nextEscalation sql.NullTime
+	var oldDeliveryStatus string
+	if err := st.pool.QueryRow(ctx, `
+		SELECT acknowledged_occurrence, next_escalation_at
+		FROM relay_ops.incidents WHERE incident_key=$1`, record.Key).Scan(
+		&acknowledged, &nextEscalation,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `
+		SELECT delivery_status FROM relay_ops.notification_deliveries WHERE id=$1`,
+		deliveryID).Scan(&oldDeliveryStatus); err != nil {
+		t.Fatal(err)
+	}
+	if acknowledged.Valid || nextEscalation.Valid || oldDeliveryStatus != "canceled" {
+		t.Fatalf("new occurrence lifecycle = ack %#v escalation %#v delivery %q",
+			acknowledged, nextEscalation, oldDeliveryStatus)
 	}
 }
 

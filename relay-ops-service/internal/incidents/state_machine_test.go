@@ -25,7 +25,7 @@ func TestMachineConfirmsDeduplicatesEscalatesAndRecovers(t *testing.T) {
 		t.Fatalf("duplicate=%#v", duplicate)
 	}
 	newEvidence, _ := machine.Observe(ctx, Observation{Key: key, Severity: "P1", Failing: true, EvidenceHash: "b", CurrentValue: "0.11"})
-	if !newEvidence.Notify || newEvidence.Kind != "new_evidence" {
+	if newEvidence.Notify || newEvidence.Kind != "" {
 		t.Fatalf("new evidence=%#v", newEvidence)
 	}
 	escalated, _ := machine.Observe(ctx, Observation{Key: key, Severity: "P0", Failing: true, EvidenceHash: "c", CurrentValue: "unavailable"})
@@ -35,6 +35,130 @@ func TestMachineConfirmsDeduplicatesEscalatesAndRecovers(t *testing.T) {
 	recovered, _ := machine.Observe(ctx, Observation{Key: key, Severity: "P0", Failing: false, EvidenceHash: "recovered", CurrentValue: "healthy"})
 	if !recovered.Notify || recovered.Kind != "recovered" || recovered.RelatedKey != key {
 		t.Fatalf("recovered=%#v", recovered)
+	}
+}
+
+func TestEvidenceChangeUpdatesStateWithoutNotification(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	first := Observation{
+		Key: "group:7:user-impact", Family: "group_runtime", PolicyVersion: 1,
+		SourceKind: "site_monitor", Severity: "P1", Failing: true,
+		EvidenceHash: "requests:20:errors:2", MaterialHash: "partial-errors:gpt-5",
+		CurrentValue: `{"latest_fact":"错误率 10%"}`, LatestPayload: []byte(`{"card":"first"}`),
+		ConfirmationWindows: 1, RecoveryWindows: 2,
+	}
+	if transition, err := machine.Observe(context.Background(), first); err != nil || !transition.Notify {
+		t.Fatalf("first transition=%#v err=%v", transition, err)
+	}
+	changed := first
+	changed.EvidenceHash = "requests:25:errors:2"
+	changed.CurrentValue = `{"latest_fact":"错误率 8%"}`
+	changed.LatestPayload = []byte(`{"card":"updated"}`)
+	transition, err := machine.Observe(context.Background(), changed)
+	if err != nil || transition.Notify || transition.Kind != "" {
+		t.Fatalf("evidence transition=%#v err=%v", transition, err)
+	}
+	record := repository.records[first.Key]
+	if record.EvidenceHash != changed.EvidenceHash ||
+		record.CurrentValue != changed.CurrentValue ||
+		string(record.LatestPayload) != string(changed.LatestPayload) {
+		t.Fatalf("stored record=%#v", record)
+	}
+}
+
+func TestMaterialChangeProducesProgressedNotification(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	observation := Observation{
+		Key: "group:7:user-impact", Severity: "P1", Failing: true,
+		EvidenceHash: "one", MaterialHash: "lost-redundancy",
+		ConfirmationWindows: 1,
+	}
+	if _, err := machine.Observe(context.Background(), observation); err != nil {
+		t.Fatal(err)
+	}
+	observation.EvidenceHash = "two"
+	observation.MaterialHash = "partial-request-failures"
+	transition, err := machine.Observe(context.Background(), observation)
+	if err != nil || !transition.Notify || transition.Kind != "progressed" {
+		t.Fatalf("material transition=%#v err=%v", transition, err)
+	}
+}
+
+func TestRecoveryRequiresConfiguredHealthyWindows(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	failing := Observation{
+		Key: "group:7:user-impact", Severity: "P1", Failing: true,
+		EvidenceHash: "failing", MaterialHash: "partial-request-failures",
+		ConfirmationWindows: 1, RecoveryWindows: 2,
+	}
+	if _, err := machine.Observe(context.Background(), failing); err != nil {
+		t.Fatal(err)
+	}
+	healthy := failing
+	healthy.Failing = false
+	healthy.EvidenceHash = "healthy"
+	healthy.MaterialHash = "healthy"
+	first, err := machine.Observe(context.Background(), healthy)
+	if err != nil || first.Notify || first.Kind != "" || first.State != "confirmed" {
+		t.Fatalf("first healthy=%#v err=%v", first, err)
+	}
+	second, err := machine.Observe(context.Background(), healthy)
+	if err != nil || !second.Notify || second.Kind != "recovered" || second.State != "recovered" {
+		t.Fatalf("second healthy=%#v err=%v", second, err)
+	}
+}
+
+func TestFailureResetsRecoveryCount(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	failing := Observation{
+		Key: "group:7:user-impact", Severity: "P1", Failing: true,
+		EvidenceHash: "failing", MaterialHash: "partial-request-failures",
+		ConfirmationWindows: 1, RecoveryWindows: 2,
+	}
+	if _, err := machine.Observe(context.Background(), failing); err != nil {
+		t.Fatal(err)
+	}
+	healthy := failing
+	healthy.Failing = false
+	if _, err := machine.Observe(context.Background(), healthy); err != nil {
+		t.Fatal(err)
+	}
+	if repository.records[failing.Key].RecoveryCount != 1 {
+		t.Fatalf("recovery count=%d", repository.records[failing.Key].RecoveryCount)
+	}
+	if transition, err := machine.Observe(context.Background(), failing); err != nil || transition.Notify {
+		t.Fatalf("renewed failure transition=%#v err=%v", transition, err)
+	}
+	if repository.records[failing.Key].RecoveryCount != 0 {
+		t.Fatalf("recovery count was not reset: %d", repository.records[failing.Key].RecoveryCount)
+	}
+}
+
+func TestSeverityEscalationStillNotifies(t *testing.T) {
+	t.Parallel()
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	if _, err := machine.Observe(context.Background(), Observation{
+		Key: "group:7:user-impact", Severity: "P1", Failing: true,
+		EvidenceHash: "p1", MaterialHash: "partial-request-failures",
+		ConfirmationWindows: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	transition, err := machine.Observe(context.Background(), Observation{
+		Key: "group:7:user-impact", Severity: "P0", Failing: true,
+		EvidenceHash: "p0", MaterialHash: "all-requests-failed",
+	})
+	if err != nil || !transition.Notify || transition.Kind != "escalated" {
+		t.Fatalf("escalation=%#v err=%v", transition, err)
 	}
 }
 

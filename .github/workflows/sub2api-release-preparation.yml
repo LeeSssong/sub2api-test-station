@@ -366,7 +366,7 @@ jobs:
               base = metadata.fetch("base_sha")
               candidate = report.fetch("candidate_commit")
               abort unless [base, candidate].all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
-              print "#{base} #{candidate}"
+              puts "#{base} #{candidate}"
             ' \
               .release/discovery/metadata.json \
               .release/preparation/report.json

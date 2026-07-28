@@ -56,6 +56,21 @@ class PublishSub2APICandidateTest < Minitest::Test
     end
   end
 
+  def test_resolves_named_remote_before_pushing_from_temporary_repository
+    with_fixture("new") do |fixture|
+      status, output = publish(
+        fixture,
+        remote: "fixture-origin",
+        chdir: fixture[:repository]
+      )
+
+      assert status.success?, output
+      result = JSON.parse(File.read(fixture[:output]))
+      assert_equal fixture[:candidate],
+                   git(fixture[:remote], "rev-parse", "refs/heads/#{result.fetch("audit_branch")}").strip
+    end
+  end
+
   def test_registry_inspection_failure_never_falls_through_to_push
     with_fixture("registry-error") do |fixture|
       status, = publish(fixture)
@@ -109,14 +124,14 @@ class PublishSub2APICandidateTest < Minitest::Test
       docker_log = File.join(dir, "docker.log")
       write_fake_docker(File.join(fake_bin, "docker"))
       yield(
-        dir: dir, archive: archive, metadata: metadata, report: report,
+        dir: dir, repository: repository, archive: archive, metadata: metadata, report: report,
         bundle: bundle, remote: remote, output: output, fake_bin: fake_bin,
         docker_log: docker_log, scenario: scenario, candidate: candidate
       )
     end
   end
 
-  def publish(fixture)
+  def publish(fixture, remote: fixture[:remote], chdir: nil)
     env = {
       "PATH" => "#{fixture[:fake_bin]}:#{ENV.fetch("PATH")}",
       "FAKE_DOCKER_LOG" => fixture[:docker_log],
@@ -127,15 +142,18 @@ class PublishSub2APICandidateTest < Minitest::Test
       "FAKE_DOCKER_DIGEST" => DIGEST,
       "FAKE_DOCKER_IMAGE_ID" => IMAGE_ID
     }
-    Open3.capture3(
+    arguments = [
       env, "bash", PUBLISHER,
       "--archive", fixture[:archive],
       "--metadata", fixture[:metadata],
       "--report", fixture[:report],
       "--bundle", fixture[:bundle],
-      "--remote", fixture[:remote],
+      "--remote", remote,
       "--output", fixture[:output]
-    ).then { |stdout, stderr, status| [status, stdout + stderr] }
+    ]
+    options = chdir ? { chdir: chdir } : {}
+    Open3.capture3(*arguments, **options)
+         .then { |stdout, stderr, status| [status, stdout + stderr] }
   end
 
   def write_fake_docker(path)

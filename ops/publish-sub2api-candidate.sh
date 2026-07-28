@@ -132,7 +132,8 @@ git -C "$git_dir" fetch -q "$bundle" candidate-artifact:candidate-artifact
 [[ "$(git -C "$git_dir" rev-parse "${candidate_commit}^")" == "$base_sha" ]] || fail
 existing_audit=$(git ls-remote "$remote" "refs/heads/$audit_branch" | awk 'NR == 1 { print $1 }')
 [[ -z "$existing_audit" || "$existing_audit" == "$candidate_commit" ]] || fail
-git -C "$git_dir" push -q "$remote" "$candidate_commit:refs/heads/$audit_branch"
+GIT_ALTERNATE_OBJECT_DIRECTORIES="$git_dir/.git/objects" \
+  git push -q "$remote" "$candidate_commit:refs/heads/$audit_branch"
 [[ "$(git ls-remote "$remote" "refs/heads/$audit_branch" | awk 'NR == 1 { print $1 }')" == "$candidate_commit" ]] || fail
 
 umask 077

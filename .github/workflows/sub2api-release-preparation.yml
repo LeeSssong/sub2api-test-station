@@ -58,7 +58,7 @@ jobs:
               type = object.fetch("type")
               sha = object.fetch("sha")
               abort unless %w[commit tag].include?(type) && sha.match?(/\A[0-9a-f]{40}\z/)
-              print "#{type} #{sha}"
+              puts "#{type} #{sha}"
             ' .release/discovery/tag-ref.json
           )
           if [[ "$object_type" == tag ]]; then

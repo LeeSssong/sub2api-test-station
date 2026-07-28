@@ -25,7 +25,7 @@ class PublishSub2APICandidateTest < Minitest::Test
       assert status.success?, output
       result = JSON.parse(File.read(fixture[:output]))
       assert_equal "ghcr.io/leesssong/xingqiao-sub2api@sha256:#{DIGEST}", result.fetch("reference")
-      assert_equal "automation/sub2api-upstream-#{VERSION}", result.fetch("audit_branch")
+      assert_equal "automation/sub2api-upstream-#{VERSION}-#{fixture[:candidate]}", result.fetch("audit_branch")
       refute_includes File.read(fixture[:docker_log]), " push "
       assert_equal fixture[:candidate], git(fixture[:remote], "rev-parse", "refs/heads/#{result.fetch("audit_branch")}").strip
     end
@@ -50,6 +50,9 @@ class PublishSub2APICandidateTest < Minitest::Test
 
       assert status.success?, output
       assert_equal 1, File.readlines(fixture[:docker_log]).count { |line| line.include?(" push ") }
+      assert_includes File.read(fixture[:docker_log]),
+                      " tag xingqiao-sub2api:upstream-#{VERSION} " \
+                      "ghcr.io/leesssong/xingqiao-sub2api:candidate-#{VERSION}-#{fixture[:candidate]} "
       result = JSON.parse(File.read(fixture[:output]))
       assert_equal "ghcr.io/leesssong/xingqiao-sub2api@sha256:#{DIGEST}", result.fetch("reference")
       assert_equal 0o600, File.stat(fixture[:output]).mode & 0o777
@@ -61,7 +64,7 @@ class PublishSub2APICandidateTest < Minitest::Test
       status, output = publish(
         fixture,
         remote: "fixture-origin",
-        chdir: fixture[:repository]
+        chdir: fixture[:checkout]
       )
 
       assert status.success?, output
@@ -105,6 +108,10 @@ class PublishSub2APICandidateTest < Minitest::Test
       git(remote, "init", "--bare", "-q")
       git(repository, "remote", "add", "fixture-origin", remote)
       git(repository, "push", "-q", "fixture-origin", "#{base}:refs/heads/main")
+      checkout = File.join(dir, "checkout")
+      git(dir, "clone", "-q", remote, checkout)
+      configure_git(checkout)
+      git(checkout, "remote", "rename", "origin", "fixture-origin")
 
       metadata = File.join(dir, "metadata.json")
       report = File.join(dir, "report.json")
@@ -124,7 +131,8 @@ class PublishSub2APICandidateTest < Minitest::Test
       docker_log = File.join(dir, "docker.log")
       write_fake_docker(File.join(fake_bin, "docker"))
       yield(
-        dir: dir, repository: repository, archive: archive, metadata: metadata, report: report,
+        dir: dir, repository: repository, checkout: checkout, archive: archive,
+        metadata: metadata, report: report,
         bundle: bundle, remote: remote, output: output, fake_bin: fake_bin,
         docker_log: docker_log, scenario: scenario, candidate: candidate
       )
@@ -163,7 +171,7 @@ class PublishSub2APICandidateTest < Minitest::Test
       printf 'docker %s \n' "$*" >>"$FAKE_DOCKER_LOG"
       repository=ghcr.io/leesssong/xingqiao-sub2api
       local_ref=xingqiao-sub2api:upstream-"$FAKE_DOCKER_VERSION"
-      target="$repository:upstream-$FAKE_DOCKER_VERSION"
+      target="$repository:candidate-$FAKE_DOCKER_VERSION-$FAKE_DOCKER_SOURCE"
       labels=$(printf '{"com.xingqiao.sub2api.qualified":"true","com.xingqiao.sub2api.upstream.version":"%s","com.xingqiao.sub2api.upstream.commit":"%s","com.xingqiao.sub2api.source.commit":"%s"}' "$FAKE_DOCKER_VERSION" "$FAKE_DOCKER_OFFICIAL" "$FAKE_DOCKER_SOURCE")
       if [[ "$1 $2" == "manifest inspect" ]]; then
         if [[ "$FAKE_DOCKER_SCENARIO" == new ]]; then

@@ -59,8 +59,8 @@ version_pattern='^[0-9]+([.][0-9]+){1,2}$'
 
 repository=ghcr.io/leesssong/xingqiao-sub2api
 local_reference=xingqiao-sub2api:upstream-"$version"
-target="$repository:upstream-$version"
-audit_branch=automation/sub2api-upstream-"$version"
+target="$repository:candidate-$version-$candidate_commit"
+audit_branch=automation/sub2api-upstream-"$version-$candidate_commit"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-candidate-publish.XXXXXX")
 cleanup() {

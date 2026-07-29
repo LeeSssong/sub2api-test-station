@@ -31,19 +31,19 @@ describe('Xingqiao beginner guide', () => {
       '1080152144',
       '适合第一次使用 API、Codex 和 CC Switch 的用户',
       '充值并确认余额',
-      '五、创建 API 密钥',
-      '三、安装 Codex',
-      '四、安装 CC Switch',
+      '四、创建 API 密钥',
+      '二、安装 Codex',
+      '三、安装 CC Switch',
       'Codex 安装包下载',
       'CC Switch 安装说明与安装包入口',
       'https://codexapp.agentsmirror.com/',
       'https://pan.quark.cn/s/74f8c9d8c199#/list/share',
-      '六、一键导入 CC Switch',
-      '七、启动 Codex 并完成首次测试',
-      '八、查看 Token 和扣费',
-      '九、常见报错',
+      '五、一键导入 CC Switch',
+      '六、启动 Codex 并完成首次测试',
+      '七、查看 Token 和扣费',
+      '八、常见报错',
       '密钥安全建议',
-      '十一、完成检查',
+      '十、完成检查',
       '输入 Token',
       '用户扣费',
     ]) expect(html).toContain(required)
@@ -104,5 +104,28 @@ describe('Xingqiao beginner guide', () => {
       expect(link?.target).toBe('_blank')
       expect(link?.rel).toContain('noopener')
     }
+  })
+
+  it('numbers main chapters from one through ten and keeps the TOC aligned', () => {
+    const dom = new JSDOM(readFileSync(guidePath, 'utf8'))
+    const headings = [...dom.window.document.querySelectorAll('#article > h2')]
+      .map((heading) => heading.textContent?.trim())
+    const tocLabels = [...dom.window.document.querySelectorAll('#toc-links a.level-2')]
+      .map((link) => link.textContent?.trim())
+
+    expect(headings).toEqual([
+      '开始前先了解',
+      '一、充值并确认余额',
+      '二、安装 Codex',
+      '三、安装 CC Switch',
+      '四、创建 API 密钥',
+      '五、一键导入 CC Switch',
+      '六、启动 Codex 并完成首次测试',
+      '七、查看 Token 和扣费',
+      '八、常见报错',
+      '九、密钥安全建议',
+      '十、完成检查',
+    ])
+    expect(tocLabels).toEqual(headings)
   })
 })

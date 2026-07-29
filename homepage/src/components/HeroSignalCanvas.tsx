@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import {
+  buildSignalRows,
+  signalPalette,
+  type SignalLayer,
+  type SignalRowDescriptor,
+} from '../domain/signalField'
 import { buildSignalTile } from '../domain/signalTiling'
+import type { Theme } from '../domain/themeSchedule'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
+import { HOMEPAGE_THEME_EVENT } from '../themeBootstrap'
 
-const SIGNAL_FONT = '500 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
-const ROW_HEIGHT = 18
+const SIGNAL_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
 
 const rowSeeds = [
   'XQ ROUTE 09 CORE TOKEN BRIDGE OPENAI ANTHROPIC RESPONSE 200 STREAM',
@@ -16,13 +23,10 @@ const rowSeeds = [
   'MODEL RESPONSE TOOL CALL JSON EVENT SOURCE COMPLETE OK',
 ]
 
-interface SignalRow {
+interface SignalRow extends SignalRowDescriptor {
   text: string
   segmentWidth: number
   x: number
-  y: number
-  speed: number
-  alpha: number
 }
 
 interface HeroSignalCanvasProps {
@@ -38,8 +42,8 @@ interface HeroSignalCanvasProps {
 export function HeroSignalCanvas({
   active,
   label,
-  alphaBase = .06,
-  alphaRange = .17,
+  alphaBase = .09,
+  alphaRange = .3,
 }: HeroSignalCanvasProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const host = useRef<HTMLDivElement>(null)
@@ -50,7 +54,7 @@ export function HeroSignalCanvas({
   useEffect(() => {
     const element = canvas.current
     const container = host.current
-    if (!active || reduced || !element || !container) return
+    if (!active || !element || !container) return
     const context = element.getContext('2d')
     if (!context) return
 
@@ -63,6 +67,7 @@ export function HeroSignalCanvas({
     let pointerX = 0
     let velocity = 1.35
     let targetVelocity = 1.35
+    let currentTheme: Theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
 
     const build = () => {
       const rect = container.getBoundingClientRect()
@@ -74,43 +79,59 @@ export function HeroSignalCanvas({
       element.style.width = `${width}px`
       element.style.height = `${height}px`
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
-      context.font = SIGNAL_FONT
-      const count = Math.max(20, Math.ceil(height / ROW_HEIGHT) + 6)
-      rows = Array.from({ length: count }, (_, index) => {
+      const layerRank: Record<SignalLayer, number> = { far: 0, mid: 1, near: 2 }
+      rows = buildSignalRows({ width, height })
+        .sort((left, right) => layerRank[left.layer] - layerRank[right.layer])
+        .map((descriptor) => {
+        const index = descriptor.seedIndex
         const rowText = `${rowSeeds[index % rowSeeds.length]}  ${String(index * 73 + 19).padStart(4, '0')}`
         const segment = `${rowText}   `
+        context.font = `500 ${descriptor.fontSize}px ${SIGNAL_FONT_FAMILY}`
         const tile = buildSignalTile(segment, context.measureText(segment).width, width)
 
         return {
+          ...descriptor,
           text: tile.text,
           segmentWidth: tile.segmentWidth,
           x: -(Math.random() * tile.segmentWidth),
-          y: index * ROW_HEIGHT,
-          speed: -(.62 * Math.random() + .48),
-          alpha: alphaRange * Math.random() + alphaBase,
         }
       })
     }
 
-    const draw = () => {
+    const draw = (time = 0, advance = false) => {
       context.clearRect(0, 0, width, height)
-      context.font = SIGNAL_FONT
       context.textBaseline = 'middle'
-      velocity += (targetVelocity - velocity) * .055
+      const palette = signalPalette(currentTheme)
+      const pointerDistance = width > 1 ? Math.min(1, Math.abs(pointerX - width / 2) / (width / 2)) : 1
+      const pointerLift = 1 + (1 - pointerDistance) * .12
+      if (advance) velocity += (targetVelocity - velocity) * .055
+
       for (const row of rows) {
-        row.x += row.speed * velocity
-        if (row.x < -row.segmentWidth) row.x += row.segmentWidth
-        context.fillStyle = `rgba(157, 174, 198, ${row.alpha})`
+        if (advance) {
+          row.x += row.speed * velocity
+          if (row.x < -row.segmentWidth) row.x += row.segmentWidth
+        }
+        const pulse = row.active ? .5 + Math.sin(time / 920 + row.seedIndex) * .5 : 0
+        context.font = `500 ${row.fontSize}px ${SIGNAL_FONT_FAMILY}`
+        context.fillStyle = row.active ? palette.active : palette[row.layer]
+        context.globalAlpha = Math.min(
+          .82,
+          (alphaBase + row.alpha * alphaRange + pulse * .18) * pointerLift,
+        )
+        context.shadowColor = row.active ? palette.active : 'transparent'
+        context.shadowBlur = row.active ? 7 + pulse * 7 : 0
         context.fillText(row.text, row.x, row.y)
       }
+      context.globalAlpha = 1
+      context.shadowBlur = 0
     }
 
-    const tick = () => {
+    const tick = (time: number) => {
       if (!visible || !active) {
         running = false
         return
       }
-      draw()
+      draw(time, true)
       frame.current = window.requestAnimationFrame(tick)
     }
 
@@ -126,7 +147,13 @@ export function HeroSignalCanvas({
       targetVelocity = .9 + 3.4 * Math.abs((pointerX - center) / center)
     }
     const onPointerLeave = () => {
+      pointerX = 0
       targetVelocity = 1.35
+    }
+    const onThemeChange = (event: Event) => {
+      const nextTheme = (event as CustomEvent<{ theme?: Theme }>).detail?.theme
+      currentTheme = nextTheme === 'light' ? 'light' : 'dark'
+      draw(performance.now(), false)
     }
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry?.isIntersecting ?? true
@@ -139,12 +166,21 @@ export function HeroSignalCanvas({
     })
 
     build()
-    draw()
+    draw(performance.now(), false)
+    window.addEventListener('resize', build)
+    window.addEventListener(HOMEPAGE_THEME_EVENT, onThemeChange)
+
+    if (reduced) {
+      return () => {
+        window.removeEventListener('resize', build)
+        window.removeEventListener(HOMEPAGE_THEME_EVENT, onThemeChange)
+      }
+    }
+
     setCanvasActive(true)
     observer.observe(container)
     container.addEventListener('pointermove', onPointerMove, { passive: true })
     container.addEventListener('pointerleave', onPointerLeave)
-    window.addEventListener('resize', build)
     start()
 
     return () => {
@@ -153,6 +189,7 @@ export function HeroSignalCanvas({
       container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('pointerleave', onPointerLeave)
       window.removeEventListener('resize', build)
+      window.removeEventListener(HOMEPAGE_THEME_EVENT, onThemeChange)
       if (frame.current !== null) window.cancelAnimationFrame(frame.current)
     }
   }, [active, reduced, alphaBase, alphaRange])
@@ -168,6 +205,7 @@ export function HeroSignalCanvas({
       data-travel-direction="left"
       data-signal-density="dense"
       data-signal-speed="fast"
+      data-signal-layers="3"
     >
       <canvas ref={canvas} aria-hidden="true" />
       <span aria-hidden="true">XQ / OPENAI / ANTHROPIC / SEOUL DIRECT / API READY</span>

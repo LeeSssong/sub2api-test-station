@@ -1,4 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import { DEFAULT_SITE_CONFIG, type ThirdPartyReport } from './domain/siteConfig'
@@ -8,6 +10,10 @@ const guest: SessionState = {
   kind: 'guest',
   ctaLabel: '立即开始',
   ctaHref: '/dashboard',
+}
+const themeProps = {
+  theme: 'dark' as const,
+  onToggleTheme: () => {},
 }
 
 const validReport: ThirdPartyReport = {
@@ -19,10 +25,28 @@ const validReport: ThirdPartyReport = {
 }
 
 describe('App', () => {
+  it('defines complete semantic light and dark theme contracts', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+
+    expect(styles).toContain('html[data-theme="light"]')
+    expect(styles).toContain('html[data-theme="dark"]')
+    for (const token of [
+      '--page-bg',
+      '--surface-1',
+      '--text-strong',
+      '--text-muted',
+      '--border-subtle',
+    ]) {
+      expect(styles).toContain(token)
+    }
+    expect(styles).toContain('html[data-theme="light"] .check-list')
+  })
+
   it('renders the complete Xingqiao guest homepage contract', () => {
     render(<App
       config={{ ...DEFAULT_SITE_CONFIG, apiOrigin: 'https://api.example.com' }}
       session={guest}
+      {...themeProps}
     />)
 
     const navigation = screen.getByRole('navigation', { name: '主导航' })
@@ -65,10 +89,10 @@ describe('App', () => {
       ctaHref: '/admin/dashboard',
       user: { id: 1, role: 'admin' },
     }
-    const { rerender } = render(<App config={DEFAULT_SITE_CONFIG} session={user} />)
+    const { rerender } = render(<App config={DEFAULT_SITE_CONFIG} session={user} {...themeProps} />)
     expect(screen.getByRole('link', { name: '进入控制台' })).toHaveAttribute('href', '/dashboard')
 
-    rerender(<App config={DEFAULT_SITE_CONFIG} session={admin} />)
+    rerender(<App config={DEFAULT_SITE_CONFIG} session={admin} {...themeProps} />)
     expect(screen.getByRole('link', { name: '进入控制台' })).toHaveAttribute('href', '/admin/dashboard')
   })
 
@@ -76,6 +100,7 @@ describe('App', () => {
     render(<App
       config={{ ...DEFAULT_SITE_CONFIG, thirdPartyReports: [validReport] }}
       session={guest}
+      {...themeProps}
     />)
     expect(screen.queryByText('待公开')).not.toBeInTheDocument()
     expect(screen.getByText('已获得 MODELOC 真实性验证')).toBeInTheDocument()

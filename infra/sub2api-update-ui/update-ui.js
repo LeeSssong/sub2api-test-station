@@ -617,6 +617,7 @@
 
   async function reloadTargetAfterChange() {
     var dialog = state.dialog
+    var previousTarget = state.readinessTarget
     state.candidateReady = false
     state.readinessTarget = ''
     state.readinessGeneration += 1
@@ -628,6 +629,11 @@
       state.info = info
       var targetVersion = state.dialog.querySelector('[data-role="target-version"]')
       if (targetVersion) setText(targetVersion, info.target)
+      if (!info.target || info.target === previousTarget) {
+        setMessage('更新目标已变更，等待最新版本信息。', 'error')
+        updateSubmitState()
+        return
+      }
       state.readinessTarget = info.target
       await pollReadiness()
       startReadinessPolling()

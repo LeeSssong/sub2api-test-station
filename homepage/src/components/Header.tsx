@@ -36,7 +36,7 @@ export function Header({ session, theme, onToggleTheme }: HeaderProps) {
     >
       <nav className="nav-shell" aria-label="主导航">
         <a className="brand-link" href="/" aria-label="星桥首页">
-          <img src="/home-assets/xingqiao-logo.png" alt="" width="34" height="34" />
+          <img src="/home-assets/xingqiao-logo-256-v1.webp" alt="" width="34" height="34" />
           <span>星桥</span>
         </a>
         <div className="desktop-nav">

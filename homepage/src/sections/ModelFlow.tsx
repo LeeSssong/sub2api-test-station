@@ -20,7 +20,7 @@ export function ModelFlow() {
       <motion.i style={reduced ? { scaleX: 1 } : { scaleX: requestFill }} />
       <motion.b style={reduced ? { opacity: 0 } : { opacity: requestGlow }} />
     </span>
-    <span className="gateway-chip"><img src="/home-assets/xingqiao-logo.png" alt="" />星桥</span>
+    <span className="gateway-chip"><img src="/home-assets/xingqiao-logo-256-v1.webp" alt="" />星桥</span>
     <span className="flow-line" data-flow-segment="gateway-to-models" data-scroll-range="0.58-1" aria-hidden="true">
       <motion.i style={reduced ? { scaleX: 1 } : { scaleX: modelFill }} />
       <motion.b style={reduced ? { opacity: 0 } : { opacity: modelGlow }} />

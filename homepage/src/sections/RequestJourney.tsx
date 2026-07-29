@@ -105,7 +105,7 @@ export function RequestJourney() {
           <div className="request-map" aria-label="应用经星桥连接模型通道">
             <div className="map-node app-node"><AppWindow aria-hidden="true" /><span>你的应用</span></div>
             <div className="map-track map-track--out" data-flow-direction="forward" style={trackStyle(outgoingProgress)} aria-hidden="true"><i /></div>
-            <div className="map-node gateway-node"><img src="/home-assets/xingqiao-logo.png" alt="" /><span>星桥</span><i /></div>
+            <div className="map-node gateway-node"><img src="/home-assets/xingqiao-logo-256-v1.webp" alt="" /><span>星桥</span><i /></div>
             <div className="map-track map-track--route" data-flow-direction="forward" data-telemetry-source="route" style={trackStyle(routedProgress)} aria-hidden="true"><i /></div>
             <div className="provider-stack">
               <span><Bot aria-hidden="true" />OpenAI</span>

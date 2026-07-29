@@ -59,6 +59,70 @@ export default {
     addBalanceWithCode: 'Add balance with a code'
   },
 
+  monitorV2: {
+    title: 'Service Monitor',
+    description: 'View the health and call quality of public groups',
+    loading: 'Loading public group status',
+    fallbackNotice: 'The enhanced monitor is unavailable. Showing the basic status page.',
+    updatedAt: 'Updated {time}',
+    refresh: 'Refresh',
+    window: {
+      '24h': '24 hours',
+      '7d': '7 days',
+      '30d': '30 days'
+    },
+    overall: {
+      operational: 'All services operational',
+      degraded: 'Some services are degraded',
+      unavailable: 'Services unavailable',
+      noData: 'Waiting for monitoring data'
+    },
+    status: {
+      operational: 'Operational',
+      degraded: 'Degraded',
+      unavailable: 'Unavailable',
+      unconfigured: 'Monitor not configured',
+      insufficient_data: 'Insufficient data',
+      failed: 'Unavailable',
+      error: 'Monitor error'
+    },
+    metric: {
+      ttft: 'TTFT P50',
+      ttftP95: 'TTFT P95',
+      tps: 'Output TPS',
+      latency: 'Total latency P50',
+      latencyP95: 'Total latency P95',
+      cache: 'Cache hit rate',
+      insufficient_data: 'Insufficient data',
+      not_provided: 'Not provided'
+    },
+    samples: '{count} samples',
+    baseRate: 'Base multiplier',
+    peakRate: '{start}-{end} peak multiplier {rate}×',
+    availability: 'Eligible calls',
+    callEvidence: '{success} / {eligible} eligible calls succeeded',
+    models: '{count} models',
+    viewModels: 'View models',
+    hideModels: 'Hide models',
+    noModels: 'No published models',
+    modelStatus: 'Status: {status}',
+    details: {
+      metrics: 'Tail latency',
+      definition: 'P95 means 95% of successful requests completed within this value; samples are the corresponding successful requests.'
+    },
+    timeline: {
+      noData: 'No eligible calls in this period'
+    },
+    empty: {
+      title: 'No public groups',
+      description: 'No service groups are currently published.'
+    },
+    notes: {
+      metrics: 'Metrics are aggregated for the selected window. Estimates are not shown when samples are insufficient.',
+      privacy: 'Only aggregate data for public groups is shown. Account, user, and request content is excluded.'
+    }
+  },
+
   // Groups (shared)
   groups: {
     subscription: 'Sub'

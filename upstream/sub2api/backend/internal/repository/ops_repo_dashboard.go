@@ -255,6 +255,7 @@ func (r *opsRepository) getDashboardOverviewPreaggregated(ctx context.Context, f
 		{weight: head.ttftSampleCount, p: head.ttft},
 		{weight: tail.ttftSampleCount, p: tail.ttft},
 	})
+	ttft.SampleCount = preagg.ttftSampleCount + head.ttftSampleCount + tail.ttftSampleCount
 
 	windowSeconds := end.Sub(start).Seconds()
 	if windowSeconds <= 0 {
@@ -863,6 +864,7 @@ FROM usage_logs ul
 		v := int(tMax.Int64)
 		ttft.Max = &v
 	}
+	ttft.SampleCount = tCount
 
 	return duration, ttft, tCount, nil
 }

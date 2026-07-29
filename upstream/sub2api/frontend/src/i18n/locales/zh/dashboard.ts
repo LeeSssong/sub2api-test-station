@@ -59,6 +59,70 @@ export default {
     addBalanceWithCode: '使用兑换码充值'
   },
 
+  monitorV2: {
+    title: '服务监控',
+    description: '查看公开分组的运行状态与调用质量',
+    loading: '正在读取公开分组状态',
+    fallbackNotice: '新版监控暂不可用，已切换到基础状态页。',
+    updatedAt: '更新于 {time}',
+    refresh: '刷新',
+    window: {
+      '24h': '24 小时',
+      '7d': '7 天',
+      '30d': '30 天'
+    },
+    overall: {
+      operational: '全部服务正常',
+      degraded: '部分服务波动',
+      unavailable: '服务不可用',
+      noData: '等待监控数据'
+    },
+    status: {
+      operational: '运行中',
+      degraded: '服务波动',
+      unavailable: '不可用',
+      unconfigured: '未配置监控',
+      insufficient_data: '样本不足',
+      failed: '不可用',
+      error: '监控异常'
+    },
+    metric: {
+      ttft: 'TTFT P50',
+      ttftP95: 'TTFT P95',
+      tps: '输出 TPS',
+      latency: '总延迟 P50',
+      latencyP95: '总延迟 P95',
+      cache: '缓存命中率',
+      insufficient_data: '样本不足',
+      not_provided: '未提供'
+    },
+    samples: '{count} 个样本',
+    baseRate: '基础倍率',
+    peakRate: '{start}-{end} 高峰倍率 {rate}×',
+    availability: '有效调用',
+    callEvidence: '{success} / {eligible} 次有效调用成功',
+    models: '{count} 个模型',
+    viewModels: '查看模型',
+    hideModels: '收起模型',
+    noModels: '暂未发布模型',
+    modelStatus: '状态：{status}',
+    details: {
+      metrics: '高分位指标',
+      definition: 'P95 表示 95% 的成功请求耗时不超过该值；样本数为对应成功请求数。'
+    },
+    timeline: {
+      noData: '该时段暂无有效调用'
+    },
+    empty: {
+      title: '暂无公开分组',
+      description: '管理员尚未开放可展示的服务分组。'
+    },
+    notes: {
+      metrics: '指标按所选时间范围汇总，样本不足时不显示推测值。',
+      privacy: '仅展示公开分组的聚合数据，不包含账号、用户或请求内容。'
+    }
+  },
+
   // Groups (shared)
   groups: {
     subscription: '订阅'

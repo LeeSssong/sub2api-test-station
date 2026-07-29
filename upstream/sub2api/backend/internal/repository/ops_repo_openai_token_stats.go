@@ -36,10 +36,13 @@ func (r *opsRepository) GetOpenAITokenStats(ctx context.Context, filter *service
 
 	baseCTE := `
 WITH stats AS (
-  SELECT
-    ul.model AS model,
-    COUNT(*)::bigint AS request_count,
-    ROUND(
+	  SELECT
+	    ul.model AS model,
+	    COUNT(*)::bigint AS request_count,
+	    COUNT(*) FILTER (
+	      WHERE ul.duration_ms > 0 AND ul.output_tokens > 0
+	    )::bigint AS tps_sample_count,
+	    ROUND(
       AVG(
         CASE
           WHEN ul.duration_ms > 0 AND ul.output_tokens > 0
@@ -66,10 +69,11 @@ WITH stats AS (
 	}
 
 	querySQL := baseCTE + `
-SELECT
-  model,
-  request_count,
-  avg_tokens_per_sec,
+	SELECT
+	  model,
+	  request_count,
+	  tps_sample_count,
+	  avg_tokens_per_sec,
   avg_first_token_ms,
   total_output_tokens,
   avg_duration_ms,
@@ -103,6 +107,7 @@ ORDER BY request_count DESC, model ASC`
 		if err := rows.Scan(
 			&item.Model,
 			&item.RequestCount,
+			&item.TPSSampleCount,
 			&avgTPS,
 			&avgFirstToken,
 			&item.TotalOutputTokens,

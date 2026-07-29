@@ -25,6 +25,7 @@ func (f *OpsOpenAITokenStatsFilter) IsTopNMode() bool {
 type OpsOpenAITokenStatsItem struct {
 	Model                  string   `json:"model"`
 	RequestCount           int64    `json:"request_count"`
+	TPSSampleCount         int64    `json:"tps_sample_count"`
 	AvgTokensPerSec        *float64 `json:"avg_tokens_per_sec"`
 	AvgFirstTokenMs        *float64 `json:"avg_first_token_ms"`
 	TotalOutputTokens      int64    `json:"total_output_tokens"`

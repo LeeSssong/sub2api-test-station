@@ -85,12 +85,27 @@ GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
 GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
   git -C "$official" commit -q --allow-empty -m 'chore: overlay Xingqiao customizations'
 
-GIT_AUTHOR_NAME='Xingqiao Release Automation' \
-GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
-GIT_COMMITTER_NAME='Xingqiao Release Automation' \
-GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
-GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
-  git -C "$official" merge -q --no-ff --no-edit "$target_commit"
+if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
+  GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
+  GIT_COMMITTER_NAME='Xingqiao Release Automation' \
+  GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
+  GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
+    git -C "$official" merge -q --no-ff --no-edit "$target_commit"; then
+  conflicts=$(git -C "$official" diff --name-only --diff-filter=U)
+  [[ "$conflicts" == 'backend/cmd/server/wire_gen.go' ]] || fail
+
+  git -C "$official" checkout --theirs -- backend/cmd/server/wire_gen.go
+  go -C "$official/backend" generate ./cmd/server
+  git -C "$official" add -- backend/cmd/server/wire_gen.go
+  [[ -z "$(git -C "$official" diff --name-only --diff-filter=U)" ]] || fail
+
+  GIT_AUTHOR_NAME='Xingqiao Release Automation' \
+  GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
+  GIT_COMMITTER_NAME='Xingqiao Release Automation' \
+  GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
+  GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
+    git -C "$official" commit -q --no-edit
+fi
 
 [[ -z "$(git -C "$official" status --porcelain=v1)" ]] || fail
 [[ "$(git -C "$official" rev-parse "${target_tag}^{commit}")" == "$target_commit" ]] || fail

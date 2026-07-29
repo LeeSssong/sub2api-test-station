@@ -104,6 +104,138 @@ func responseCode(t *testing.T, r *http.Response) string {
 	return v.Code
 }
 
+func readinessRequest(t *testing.T, url, targetVersion string, mutate func(*http.Request)) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url+"/api/v1/admin/system/host-update/readiness?target_version="+targetVersion, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	if mutate != nil {
+		mutate(req)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestHTTPReadinessReportsReadyWithoutOperation(t *testing.T) {
+	ts, resolver, executor := admissionServer(t)
+	defer ts.Close()
+
+	res := readinessRequest(t, ts.URL, "1.2.3", nil)
+	defer res.Body.Close()
+	var response struct {
+		Code int       `json:"code"`
+		Data Readiness `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || response.Code != 0 || !response.Data.Ready || response.Data.TargetVersion != "1.2.3" {
+		t.Fatalf("status=%d response=%#v", res.StatusCode, response)
+	}
+	if resolver.calls != 1 || executor.calls != 0 {
+		t.Fatalf("readiness invoked resolver=%d executor=%d", resolver.calls, executor.calls)
+	}
+
+	statusReq, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/admin/system/host-update/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusReq.Header.Set("Authorization", "Bearer valid")
+	statusReq.Header.Set("X-Admin-UI-Request", "1")
+	statusRes, err := http.DefaultClient.Do(statusReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer statusRes.Body.Close()
+	var status struct {
+		Code int             `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(statusRes.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if statusRes.StatusCode != http.StatusOK || status.Code != 0 || string(status.Data) != "null" {
+		t.Fatalf("status=%d response=%#v", statusRes.StatusCode, status)
+	}
+}
+
+func TestHTTPReadinessRequiresTargetVersion(t *testing.T) {
+	ts, resolver, executor := admissionServer(t)
+	defer ts.Close()
+
+	res := readinessRequest(t, ts.URL, "", nil)
+	if res.StatusCode != http.StatusBadRequest || responseCode(t, res) != codeConfirmationRequired {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if resolver.calls != 0 || executor.calls != 0 {
+		t.Fatalf("invalid request invoked resolver=%d executor=%d", resolver.calls, executor.calls)
+	}
+}
+
+func TestHTTPReadinessReportsMissingCandidate(t *testing.T) {
+	ts, resolver, executor := admissionServer(t)
+	defer ts.Close()
+	resolver.err = ErrCandidateNotReady
+
+	res := readinessRequest(t, ts.URL, "1.2.3", nil)
+	defer res.Body.Close()
+	var response struct {
+		Code int       `json:"code"`
+		Data Readiness `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || response.Code != 0 || response.Data.Ready || response.Data.Reason != "candidate_not_ready" {
+		t.Fatalf("status=%d response=%#v", res.StatusCode, response)
+	}
+	if resolver.calls != 1 || executor.calls != 0 {
+		t.Fatalf("missing candidate invoked resolver=%d executor=%d", resolver.calls, executor.calls)
+	}
+}
+
+func TestHTTPReadinessRequiresActiveAdmin(t *testing.T) {
+	ts, _, _ := admissionServer(t)
+	defer ts.Close()
+	res := readinessRequest(t, ts.URL, "1.2.3", func(r *http.Request) { r.Header.Del("Authorization") })
+	if res.StatusCode != http.StatusUnauthorized || responseCode(t, res) != codeAuthRequired {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+
+	service := NewService(NewStore(filepath.Join(t.TempDir(), "state.json")), &fakeResolver{}, &fakeExecutor{})
+	t.Cleanup(service.Close)
+	handler := NewHTTP(service, &fakeIdentity{id: 1, role: "user", status: "active"}, "https://admin.example", "")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system/host-update/readiness?target_version=1.2.3", nil)
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status=%d", rr.Code)
+	}
+	if got := responseCodeFromBody(t, rr.Body); got != codeForbidden {
+		t.Fatalf("non-admin code=%q", got)
+	}
+}
+
+func TestHTTPUpdateReturnsCandidateNotReady(t *testing.T) {
+	ts, resolver, _ := admissionServer(t)
+	defer ts.Close()
+	resolver.err = ErrCandidateNotReady
+
+	res := updateRequest(t, ts.URL, nil)
+	if res.StatusCode != http.StatusConflict || responseCode(t, res) != "UPDATE_CANDIDATE_NOT_READY" {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+}
+
 func TestHTTPUpdateRejectsAdmission(t *testing.T) {
 	cases := []struct {
 		name   string

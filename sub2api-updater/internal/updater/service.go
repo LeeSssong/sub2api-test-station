@@ -53,6 +53,13 @@ type Identity struct {
 type Resolver interface {
 	Resolve(context.Context, string) (string, error)
 }
+
+type Readiness struct {
+	TargetVersion string `json:"target_version"`
+	Ready         bool   `json:"ready"`
+	Reason        string `json:"reason,omitempty"`
+}
+
 type Executor interface {
 	Run(context.Context, Operation) (ExecutionResult, error)
 }
@@ -135,6 +142,16 @@ func (s *Service) Schedule(ctx context.Context, actorID int64, mode, targetVersi
 	s.last = &op
 	s.armLocked()
 	return op, nil
+}
+
+func (s *Service) Readiness(ctx context.Context, targetVersion string) (Readiness, error) {
+	if _, err := s.resolver.Resolve(ctx, targetVersion); err != nil {
+		if errors.Is(err, ErrCandidateNotReady) {
+			return Readiness{TargetVersion: targetVersion, Reason: "candidate_not_ready"}, nil
+		}
+		return Readiness{}, err
+	}
+	return Readiness{TargetVersion: targetVersion, Ready: true}, nil
 }
 
 func (s *Service) Cancel() error {

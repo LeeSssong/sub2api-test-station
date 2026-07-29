@@ -38,6 +38,7 @@
     candidateReady: false,
     readinessTarget: '',
     readinessTimer: null,
+    readinessGeneration: 0,
   }
 
   function text(value) {
@@ -186,6 +187,7 @@
     state.upgrading = false
     state.candidateReady = false
     state.readinessTarget = ''
+    state.readinessGeneration += 1
   }
 
   function showToast(message) {
@@ -317,12 +319,13 @@
     body.className = 'xq-update-ui-body'
     var summary = document.createElement('dl')
     summary.className = 'xq-update-ui-summary'
-    ;[['当前版本', info.current], ['目标版本', info.target]].forEach(function (item) {
+    ;[['当前版本', info.current], ['目标版本', info.target]].forEach(function (item, index) {
       var wrapper = document.createElement('div')
       var label = document.createElement('dt')
       var value = document.createElement('dd')
       setText(label, item[0])
       setText(value, item[1])
+      if (index === 1) value.dataset.role = 'target-version'
       wrapper.appendChild(label)
       wrapper.appendChild(value)
       summary.appendChild(wrapper)
@@ -428,6 +431,9 @@
   async function openConfirmation() {
     if (state.dialog) return state.dialog
     if (state.opening) return state.opening
+    state.candidateReady = false
+    state.readinessTarget = ''
+    state.readinessGeneration += 1
     state.opening = Promise.all([settled(getUpdateInfo()), settled(getStatus())]).then(async function (results) {
       var infoResult = results[0]
       var statusResult = results[1]
@@ -506,8 +512,10 @@
         renderExistingSchedule(await getStatus().catch(function () { return null }))
       } else if (error.code === 'UPDATE_CANDIDATE_NOT_READY') {
         state.candidateReady = false
-        setMessage('候选版本正在准备，暂不可升级', 'error')
+        setMessage('候选版本正在准备，暂不可升级', 'warning')
         startReadinessPolling()
+      } else if (error.code === 'UPDATE_TARGET_CHANGED') {
+        await reloadTargetAfterChange()
       } else {
         setMessage(error.message, 'error')
       }
@@ -574,24 +582,61 @@
 
   async function pollReadiness() {
     if (!state.dialog || !state.readinessTarget || state.upgrading) return null
+    var dialog = state.dialog
+    var target = state.readinessTarget
+    var generation = state.readinessGeneration
     try {
-      var readiness = await getReadiness(state.readinessTarget)
-      if (text(readiness.target_version) !== state.readinessTarget) {
+      var readiness = await getReadiness(target)
+      if (!isCurrentReadinessRequest(dialog, target, generation)) return null
+      if (text(readiness.target_version) !== target) {
         throw new Error('更新服务返回了不匹配的候选版本')
       }
       state.candidateReady = readiness.ready === true
       if (!state.candidateReady) {
-        setMessage('候选版本正在准备，暂不可升级', 'error')
+        setMessage('候选版本正在准备，暂不可升级', 'warning')
       } else {
         var message = state.dialog.querySelector('[data-role="message"]')
         if (message && message.textContent === '候选版本正在准备，暂不可升级') setMessage('')
       }
     } catch (error) {
+      if (!isCurrentReadinessRequest(dialog, target, generation)) return null
+      if (error.code === 'UPDATE_TARGET_CHANGED') {
+        await reloadTargetAfterChange()
+        return null
+      }
       state.candidateReady = false
       setMessage(error.message || '更新服务不可用', 'error')
     }
     updateSubmitState()
     return state.candidateReady
+  }
+
+  function isCurrentReadinessRequest(dialog, target, generation) {
+    return state.dialog === dialog && state.readinessTarget === target && state.readinessGeneration === generation
+  }
+
+  async function reloadTargetAfterChange() {
+    var dialog = state.dialog
+    state.candidateReady = false
+    state.readinessTarget = ''
+    state.readinessGeneration += 1
+    stopReadinessPolling()
+    updateSubmitState()
+    try {
+      var info = await getUpdateInfo()
+      if (state.dialog !== dialog || state.upgrading) return
+      state.info = info
+      var targetVersion = state.dialog.querySelector('[data-role="target-version"]')
+      if (targetVersion) setText(targetVersion, info.target)
+      state.readinessTarget = info.target
+      await pollReadiness()
+      startReadinessPolling()
+    } catch (error) {
+      if (state.dialog !== dialog) return
+      state.candidateReady = false
+      setMessage(error.message || '更新服务不可用', 'error')
+      updateSubmitState()
+    }
   }
 
   function startReadinessPolling() {

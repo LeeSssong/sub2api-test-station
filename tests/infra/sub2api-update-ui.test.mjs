@@ -359,6 +359,7 @@ test('keeps submit disabled until the qualified candidate becomes ready and stop
   dialog.querySelector('[name="confirm"]').click()
 
   assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
+  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'warning')
   assert.equal(submit.disabled, true)
   assert.equal(browser.ui.isReadinessPolling(), true)
   submit.click()
@@ -370,6 +371,125 @@ test('keeps submit disabled until the qualified candidate becomes ready and stop
   assert.equal(submit.disabled, false)
   dialog.querySelector('[data-action="close"]').click()
   assert.equal(browser.ui.isReadinessPolling(), false)
+})
+
+test('reloads the official target after readiness reports UPDATE_TARGET_CHANGED', async () => {
+  let target = '1.2.3'
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      const method = (init.method || input.method || 'GET').toUpperCase()
+      if (url.endsWith('/check-updates')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { current_version: '1.2.2', latest_version: target } })
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        target = '1.2.4'
+        return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.4')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { target_version: '1.2.4', ready: false, reason: 'candidate_not_ready' } })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  const dialog = await browser.ui.openConfirmation()
+  dialog.querySelector('[name="confirm"]').click()
+
+  const readinessTargets = browser.requests
+    .filter((request) => request.url.includes('/host-update/readiness'))
+    .map((request) => new URL(request.url, browser.window.location.href).searchParams.get('target_version'))
+  assert.deepEqual(readinessTargets, ['1.2.3', '1.2.4'])
+  assert.match(dialog.textContent, /1\.2\.4/)
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(browser.requests.some((request) => request.method === 'POST' && request.url.endsWith('/system/update')), false)
+})
+
+test('fails closed and refreshes readiness when POST reports UPDATE_TARGET_CHANGED', async () => {
+  let target = '1.2.3'
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      const method = (init.method || input.method || 'GET').toUpperCase()
+      if (url.endsWith('/check-updates')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { current_version: '1.2.2', latest_version: target } })
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+      }
+      if (url.endsWith('/api/v1/admin/system/update')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        target = '1.2.4'
+        return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.4')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { target_version: '1.2.4', ready: false, reason: 'candidate_not_ready' } })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  const dialog = await browser.ui.openConfirmation()
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+
+  const updates = browser.requests.filter((request) => request.method === 'POST' && request.url.endsWith('/system/update'))
+  assert.deepEqual(updates.map((request) => JSON.parse(request.body).target_version), ['1.2.3'])
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(browser.requests.some((request) => request.url.endsWith('/host-update/readiness?target_version=1.2.4')), true)
+})
+
+test('ignores readiness responses from a closed dialog when a new dialog opens', async () => {
+  const readinessResolvers = []
+  let readinessCalls = 0
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        readinessCalls += 1
+        if (readinessCalls === 1) {
+          return response({
+            code: 0,
+            data: { target_version: '1.2.3', ready: false, reason: 'candidate_not_ready' },
+          })
+        }
+        return new Promise((resolve) => readinessResolvers.push(resolve))
+      }
+      return fallback(input, init)
+    },
+  })
+
+  await browser.ui.openConfirmation()
+  const stalePoll = browser.ui.pollReadiness()
+  await flush()
+  const firstDialog = browser.window.document.querySelector('[role="dialog"]')
+  assert.ok(firstDialog)
+  assert.equal(readinessResolvers.length, 1)
+  firstDialog.querySelector('[data-action="close"]').click()
+
+  const secondOpen = browser.ui.openConfirmation()
+  await flush()
+  const secondDialog = browser.window.document.querySelector('[role="dialog"]')
+  assert.ok(secondDialog)
+  assert.equal(readinessResolvers.length, 2)
+  readinessResolvers[0](response({ code: 0, data: { target_version: '1.2.3', ready: true } }))
+  await stalePoll
+  secondDialog.querySelector('[name="confirm"]').click()
+  assert.equal(secondDialog.querySelector('[data-action="submit"]').disabled, true)
+
+  readinessResolvers[1](response({
+    code: 0,
+    data: { target_version: '1.2.3', ready: false, reason: 'candidate_not_ready' },
+  }))
+  await secondOpen
 })
 
 test('renders candidate-not-ready POST errors as preparation state', async () => {
@@ -391,6 +511,7 @@ test('renders candidate-not-ready POST errors as preparation state', async () =>
 
   assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
   assert.doesNotMatch(dialog.querySelector('[data-role="message"]').textContent, /更新服务不可用/)
+  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'warning')
 })
 
 test('serves a template shell with external UI assets only', async () => {

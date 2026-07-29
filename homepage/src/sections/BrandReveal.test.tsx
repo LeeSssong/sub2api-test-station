@@ -72,4 +72,52 @@ describe('BrandReveal', () => {
     expect(drawColors).toContain(expectedColor)
     expect(screen.getByLabelText('星桥品牌揭幕')).toHaveAttribute('data-theme', theme)
   })
+
+  it('resumes pointer animation after a theme rebuild', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('IntersectionObserver', class {
+      observe() {}
+      disconnect() {}
+    })
+    const requestFrame = vi.fn().mockReturnValueOnce(1).mockReturnValueOnce(2)
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 100,
+      height: 100,
+      top: 0,
+      left: 0,
+      right: 100,
+      bottom: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+      fillStyle: '',
+      font: '',
+      textAlign: '',
+      textBaseline: '',
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      fillText: vi.fn(),
+      fillRect: vi.fn(),
+      getImageData: vi.fn().mockReturnValue({
+        data: new Uint8ClampedArray(100 * 100 * 4).fill(255),
+      }),
+    }) as unknown as CanvasRenderingContext2D)
+
+    const view = render(<BrandReveal theme="dark" />)
+    const canvas = view.container.querySelector('canvas')!
+    canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 50, clientY: 50, bubbles: true }))
+    expect(requestFrame).toHaveBeenCalledTimes(1)
+
+    view.rerender(<BrandReveal theme="light" />)
+    canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 50, clientY: 50, bubbles: true }))
+    expect(requestFrame).toHaveBeenCalledTimes(2)
+  })
 })

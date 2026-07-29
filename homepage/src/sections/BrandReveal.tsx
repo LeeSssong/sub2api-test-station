@@ -134,6 +134,7 @@ export function BrandReveal({ theme }: { theme: Theme }) {
       element.removeEventListener('pointermove', disturb)
       window.removeEventListener('resize', build)
       if (frame.current !== null) cancelAnimationFrame(frame.current)
+      frame.current = null
     }
   }, [reduced, theme])
 

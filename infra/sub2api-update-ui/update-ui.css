@@ -6,6 +6,7 @@
   --xq-accent: #0b6e69;
   --xq-accent-dark: #07534f;
   --xq-danger: #b42318;
+  --xq-warning: #9a6700;
   position: fixed;
   inset: 0;
   z-index: 2147483000;
@@ -163,6 +164,10 @@
 
 .xq-update-ui-message[data-tone="error"] {
   color: var(--xq-danger);
+}
+
+.xq-update-ui-message[data-tone="warning"] {
+  color: var(--xq-warning);
 }
 
 .xq-update-ui-message[data-tone="success"] {

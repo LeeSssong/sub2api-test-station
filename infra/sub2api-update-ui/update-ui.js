@@ -5,6 +5,8 @@
   var UPDATE_PATH = '/api/v1/admin/system/update'
   var STATUS_PATH = '/api/v1/admin/system/host-update/status'
   var SCHEDULE_PATH = '/api/v1/admin/system/host-update/schedule'
+  var READINESS_PATH = '/api/v1/admin/system/host-update/readiness'
+  var READINESS_POLL_INTERVAL_MS = 30000
   var POLL_INTERVAL_MS = 3000
   var TERMINAL_STAGES = ['promoted', 'rolled_back', 'failed', 'rollback_failed']
   var TOAST_DURATION_MS = 5000
@@ -33,6 +35,10 @@
     replacing: false,
     upgrading: false,
     pollTimer: null,
+    candidateReady: false,
+    readinessTarget: '',
+    readinessTimer: null,
+    readinessGeneration: 0,
   }
 
   function text(value) {
@@ -49,8 +55,12 @@
 
   function makeError(payload, status) {
     var data = payload && typeof payload === 'object' ? (payload.data || payload) : {}
-    var error = new Error(text(data.message || payload && payload.message || '更新服务不可用'))
-    error.code = text(payload && payload.code || data && data.code)
+    var code = text(payload && payload.code || data && data.code)
+    var fallback = code === 'UPDATE_CANDIDATE_NOT_READY'
+      ? '候选版本正在准备，暂不可升级'
+      : '更新服务不可用'
+    var error = new Error(text(data.message || payload && payload.message || fallback))
+    error.code = code
     error.status = status || 0
     return error
   }
@@ -98,6 +108,12 @@
       if (error.status === 404 || error.code === 'UPDATE_NO_OPERATION') return null
       throw error
     }
+  }
+
+  async function getReadiness(target) {
+    return payloadData(await apiRequest(
+      READINESS_PATH + '?target_version=' + encodeURIComponent(target),
+    ))
   }
 
   function shanghaiParts(date) {
@@ -162,12 +178,16 @@
 
   function closeDialog() {
     stopPolling()
+    stopReadinessPolling()
     if (state.dialog) state.dialog.remove()
     state.dialog = null
     state.info = null
     state.existing = null
     state.replacing = false
     state.upgrading = false
+    state.candidateReady = false
+    state.readinessTarget = ''
+    state.readinessGeneration += 1
   }
 
   function showToast(message) {
@@ -220,7 +240,7 @@
     var scheduleValid = mode === 'now' || Boolean(input.value && input.value >= input.min && input.value <= input.max)
     var submit = state.dialog.querySelector('[data-action="submit"]')
     var busy = state.pending || state.upgrading
-    submit.disabled = busy || !confirmed || !scheduleValid
+    submit.disabled = busy || !confirmed || !scheduleValid || !state.candidateReady
     input.disabled = mode === 'now' || busy
     state.dialog.querySelectorAll('[name="mode"], [name="confirm"]').forEach(function (control) {
       control.disabled = state.upgrading
@@ -299,12 +319,13 @@
     body.className = 'xq-update-ui-body'
     var summary = document.createElement('dl')
     summary.className = 'xq-update-ui-summary'
-    ;[['当前版本', info.current], ['目标版本', info.target]].forEach(function (item) {
+    ;[['当前版本', info.current], ['目标版本', info.target]].forEach(function (item, index) {
       var wrapper = document.createElement('div')
       var label = document.createElement('dt')
       var value = document.createElement('dd')
       setText(label, item[0])
       setText(value, item[1])
+      if (index === 1) value.dataset.role = 'target-version'
       wrapper.appendChild(label)
       wrapper.appendChild(value)
       summary.appendChild(wrapper)
@@ -410,7 +431,10 @@
   async function openConfirmation() {
     if (state.dialog) return state.dialog
     if (state.opening) return state.opening
-    state.opening = Promise.all([settled(getUpdateInfo()), settled(getStatus())]).then(function (results) {
+    state.candidateReady = false
+    state.readinessTarget = ''
+    state.readinessGeneration += 1
+    state.opening = Promise.all([settled(getUpdateInfo()), settled(getStatus())]).then(async function (results) {
       var infoResult = results[0]
       var statusResult = results[1]
       state.info = infoResult.error ? { current: '未知', target: '未知' } : infoResult.value
@@ -419,7 +443,13 @@
       renderExistingSchedule(operation)
       if (resumeRunningOperation(operation)) return state.dialog
       var error = statusResult.error || infoResult.error
-      if (error) setMessage(error.message, 'error')
+      if (error) {
+        setMessage(error.message, 'error')
+      } else {
+        state.readinessTarget = state.info.target
+        await pollReadiness()
+        startReadinessPolling()
+      }
       return state.dialog
     }).finally(function () {
       state.opening = null
@@ -447,7 +477,7 @@
   }
 
   async function submitUpdate() {
-    if (!state.dialog || state.pending || state.upgrading) return
+    if (!state.dialog || state.pending || state.upgrading || !state.candidateReady) return
     var mode = state.dialog.querySelector('[name="mode"]:checked').value
     var input = state.dialog.querySelector('input[type="datetime-local"]')
     var payload = { mode: mode, target_version: state.info.target }
@@ -472,6 +502,7 @@
         renderExistingSchedule(null)
       }
       await apiRequest(UPDATE_PATH, { method: 'POST', body: JSON.stringify(payload) })
+      stopReadinessPolling()
       if (mode === 'now') state.upgrading = true
       setMessage(mode === 'now' ? '升级已开始，以下是宿主机执行进度。' : '定时升级已受理。', 'success')
       startPolling()
@@ -479,6 +510,12 @@
       if (error.code === 'UPDATE_ALREADY_SCHEDULED') {
         setMessage('已有定时升级，请先明确替换或取消。', 'error')
         renderExistingSchedule(await getStatus().catch(function () { return null }))
+      } else if (error.code === 'UPDATE_CANDIDATE_NOT_READY') {
+        state.candidateReady = false
+        setMessage('候选版本正在准备，暂不可升级', 'warning')
+        startReadinessPolling()
+      } else if (error.code === 'UPDATE_TARGET_CHANGED') {
+        await reloadTargetAfterChange()
       } else {
         setMessage(error.message, 'error')
       }
@@ -540,6 +577,77 @@
   function stopPolling() {
     if (state.pollTimer !== null) window.clearInterval(state.pollTimer)
     state.pollTimer = null
+    stopReadinessPolling()
+  }
+
+  async function pollReadiness() {
+    if (!state.dialog || !state.readinessTarget || state.upgrading) return null
+    var dialog = state.dialog
+    var target = state.readinessTarget
+    var generation = state.readinessGeneration
+    try {
+      var readiness = await getReadiness(target)
+      if (!isCurrentReadinessRequest(dialog, target, generation)) return null
+      if (text(readiness.target_version) !== target) {
+        throw new Error('更新服务返回了不匹配的候选版本')
+      }
+      state.candidateReady = readiness.ready === true
+      if (!state.candidateReady) {
+        setMessage('候选版本正在准备，暂不可升级', 'warning')
+      } else {
+        var message = state.dialog.querySelector('[data-role="message"]')
+        if (message && message.textContent === '候选版本正在准备，暂不可升级') setMessage('')
+      }
+    } catch (error) {
+      if (!isCurrentReadinessRequest(dialog, target, generation)) return null
+      if (error.code === 'UPDATE_TARGET_CHANGED') {
+        await reloadTargetAfterChange()
+        return null
+      }
+      state.candidateReady = false
+      setMessage(error.message || '更新服务不可用', 'error')
+    }
+    updateSubmitState()
+    return state.candidateReady
+  }
+
+  function isCurrentReadinessRequest(dialog, target, generation) {
+    return state.dialog === dialog && state.readinessTarget === target && state.readinessGeneration === generation
+  }
+
+  async function reloadTargetAfterChange() {
+    var dialog = state.dialog
+    state.candidateReady = false
+    state.readinessTarget = ''
+    state.readinessGeneration += 1
+    stopReadinessPolling()
+    updateSubmitState()
+    try {
+      var info = await getUpdateInfo()
+      if (state.dialog !== dialog || state.upgrading) return
+      state.info = info
+      var targetVersion = state.dialog.querySelector('[data-role="target-version"]')
+      if (targetVersion) setText(targetVersion, info.target)
+      state.readinessTarget = info.target
+      await pollReadiness()
+      startReadinessPolling()
+    } catch (error) {
+      if (state.dialog !== dialog) return
+      state.candidateReady = false
+      setMessage(error.message || '更新服务不可用', 'error')
+      updateSubmitState()
+    }
+  }
+
+  function startReadinessPolling() {
+    stopReadinessPolling()
+    if (!state.dialog || !state.readinessTarget || state.upgrading) return
+    state.readinessTimer = window.setInterval(pollReadiness, READINESS_POLL_INTERVAL_MS)
+  }
+
+  function stopReadinessPolling() {
+    if (state.readinessTimer !== null) window.clearInterval(state.readinessTimer)
+    state.readinessTimer = null
   }
 
   function replaceSchedule() {
@@ -611,9 +719,11 @@
   window.__XingqiaoUpdateUI__ = {
     openConfirmation: openConfirmation,
     pollStatus: pollStatus,
+    pollReadiness: pollReadiness,
     startPolling: startPolling,
     stopPolling: stopPolling,
     isPolling: function () { return state.pollTimer !== null },
+    isReadinessPolling: function () { return state.readinessTimer !== null },
     convertBeijingTime: shanghaiLocalToUTC,
   }
 }())

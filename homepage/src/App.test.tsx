@@ -72,6 +72,7 @@ describe('App', () => {
     expect(screen.queryByText('TG群组')).not.toBeInTheDocument()
     expect(screen.queryByText('站内工单')).not.toBeInTheDocument()
     expect(screen.getByText('已获得 MODELOC 真实性验证')).toBeInTheDocument()
+    expect(screen.getByLabelText('星桥品牌揭幕')).toHaveAttribute('data-theme', 'dark')
     expect(screen.queryByText('待公开')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '边界清晰，承诺才有意义' })).not.toBeInTheDocument()
   })

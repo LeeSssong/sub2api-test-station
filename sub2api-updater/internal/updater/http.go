@@ -17,6 +17,7 @@ const (
 	codeInProgress           = "UPDATE_IN_PROGRESS"
 	codeInvalidTime          = "UPDATE_INVALID_TIME"
 	codeTargetChanged        = "UPDATE_TARGET_CHANGED"
+	codeCandidateNotReady    = "UPDATE_CANDIDATE_NOT_READY"
 	codeServiceError         = "UPDATE_SERVICE_ERROR"
 )
 
@@ -39,6 +40,7 @@ func NewHTTP(service *Service, identity IdentityVerifier, expectedOrigin, traceD
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/admin/system/update", h.update)
 	mux.HandleFunc("GET /api/v1/admin/system/host-update/status", h.status)
+	mux.HandleFunc("GET /api/v1/admin/system/host-update/readiness", h.readiness)
 	mux.HandleFunc("DELETE /api/v1/admin/system/host-update/schedule", h.cancel)
 	return mux
 }
@@ -95,6 +97,23 @@ func (h *updateHTTP) status(w http.ResponseWriter, r *http.Request) {
 		Operation
 		Events []string `json:"events,omitempty"`
 	}{op, readTraceEvents(h.traceDir, op.OperationID)})
+}
+
+func (h *updateHTTP) readiness(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorize(w, r, false); !ok {
+		return
+	}
+	targetVersions := r.URL.Query()["target_version"]
+	if len(targetVersions) != 1 || strings.TrimSpace(targetVersions[0]) == "" {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return
+	}
+	readiness, err := h.service.Readiness(r.Context(), targetVersions[0])
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, readiness)
 }
 
 // readTraceEvents returns the executor's step trace for the operation. The
@@ -174,6 +193,8 @@ func (h *updateHTTP) writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, codeAlreadyScheduled)
 	case errors.Is(err, ErrTargetChanged):
 		writeError(w, http.StatusConflict, codeTargetChanged)
+	case errors.Is(err, ErrCandidateNotReady):
+		writeError(w, http.StatusConflict, codeCandidateNotReady)
 	case errors.Is(err, ErrNoOperation):
 		writeError(w, http.StatusNotFound, codeServiceError)
 	default:

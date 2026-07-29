@@ -1,6 +1,12 @@
 import { motion, useScroll, useTransform } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { useReducedMotionPreference } from '../hooks/useReducedMotion'
+import type { Theme } from '../domain/themeSchedule'
+
+const particleColor: Record<Theme, string> = {
+  dark: '#dce4fa',
+  light: '#354e78',
+}
 
 interface Cell {
   x: number
@@ -10,7 +16,7 @@ interface Cell {
   color: string
 }
 
-export function BrandReveal() {
+export function BrandReveal({ theme }: { theme: Theme }) {
   const root = useRef<HTMLElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const frame = useRef<number | null>(null)
@@ -43,10 +49,10 @@ export function BrandReveal() {
       const source = document.createElement('canvas')
       source.width = width
       source.height = height
-      const sourceContext = source.getContext('2d')
+      const sourceContext = source.getContext('2d', { willReadFrequently: true })
       if (!sourceContext) return
       const fontSize = Math.min(width * .36, height * .86)
-      sourceContext.fillStyle = '#dce4fa'
+      sourceContext.fillStyle = particleColor[theme]
       sourceContext.font = `750 ${fontSize}px "PingFang SC", "Microsoft YaHei", sans-serif`
       sourceContext.textAlign = 'center'
       sourceContext.textBaseline = 'alphabetic'
@@ -59,7 +65,7 @@ export function BrandReveal() {
           const sampleX = Math.min(width - 1, x + Math.floor(size / 2))
           const sampleY = Math.min(height - 1, y + Math.floor(size / 2))
           if (pixels[(sampleY * width + sampleX) * 4 + 3] > 32) {
-            next.push({ x, y, ox: 0, oy: 0, color: '#dce4fa' })
+            next.push({ x, y, ox: 0, oy: 0, color: particleColor[theme] })
           }
         }
       }
@@ -128,8 +134,9 @@ export function BrandReveal() {
       element.removeEventListener('pointermove', disturb)
       window.removeEventListener('resize', build)
       if (frame.current !== null) cancelAnimationFrame(frame.current)
+      frame.current = null
     }
-  }, [reduced])
+  }, [reduced, theme])
 
   return (
     <section
@@ -137,6 +144,7 @@ export function BrandReveal() {
       className="brand-reveal"
       aria-label="星桥品牌揭幕"
       data-canvas-active={active ? 'true' : 'false'}
+      data-theme={theme}
     >
       <motion.div
         className="brand-reveal-layer"

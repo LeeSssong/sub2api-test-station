@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,6 +19,15 @@ type schedulerResolver struct {
 func (r *schedulerResolver) Resolve(context.Context, string) (string, error) {
 	r.calls++
 	return r.image, nil
+}
+
+type readinessResolver struct {
+	image string
+	err   error
+}
+
+func (r readinessResolver) Resolve(context.Context, string) (string, error) {
+	return r.image, r.err
 }
 
 type schedulerExecutor struct {
@@ -62,6 +72,52 @@ func newSchedulerService(t *testing.T, now func() time.Time, executor *scheduler
 	service := NewService(store, resolver, executor, now)
 	t.Cleanup(service.Close)
 	return service, resolver, store
+}
+
+func TestServiceReadinessReportsReadyWithoutCreatingOperation(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	executor := &schedulerExecutor{}
+	service := NewService(
+		NewStore(statePath),
+		readinessResolver{image: "xingqiao-sub2api:upstream-1.2.3"},
+		executor,
+	)
+	t.Cleanup(service.Close)
+
+	readiness, err := service.Readiness(context.Background(), "1.2.3")
+	if err != nil || !readiness.Ready || readiness.TargetVersion != "1.2.3" {
+		t.Fatalf("readiness=%#v err=%v", readiness, err)
+	}
+	if _, err := service.Status(); !errors.Is(err, ErrNoOperation) {
+		t.Fatalf("readiness created operation: %v", err)
+	}
+	if executor.count() != 0 {
+		t.Fatalf("readiness invoked executor %d times", executor.count())
+	}
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("readiness created state file: %v", err)
+	}
+}
+
+func TestServiceReadinessReportsCandidateNotReadyWithoutState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	executor := &schedulerExecutor{}
+	service := NewService(NewStore(statePath), readinessResolver{err: ErrCandidateNotReady}, executor)
+	t.Cleanup(service.Close)
+
+	readiness, err := service.Readiness(context.Background(), "1.2.3")
+	if err != nil || readiness.Ready || readiness.TargetVersion != "1.2.3" || readiness.Reason != "candidate_not_ready" {
+		t.Fatalf("readiness=%#v err=%v", readiness, err)
+	}
+	if _, err := service.Status(); !errors.Is(err, ErrNoOperation) {
+		t.Fatalf("readiness created operation: %v", err)
+	}
+	if executor.count() != 0 {
+		t.Fatalf("readiness invoked executor %d times", executor.count())
+	}
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("readiness created state file: %v", err)
+	}
 }
 
 func TestServiceSchedulePersistsImmutableImageAndIsIdempotent(t *testing.T) {

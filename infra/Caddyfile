@@ -139,6 +139,12 @@
 	}
 	reverse_proxy @sub2api_host_update_status unix//run/sub2api-updater/updater.sock
 
+	@sub2api_host_update_readiness {
+		method GET
+		path /api/v1/admin/system/host-update/readiness
+	}
+	reverse_proxy @sub2api_host_update_readiness unix//run/sub2api-updater/updater.sock
+
 	@sub2api_host_update_schedule {
 		method DELETE
 		path /api/v1/admin/system/host-update/schedule

@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 )
 
-var ErrTargetChanged = errors.New("requested version is not the latest release")
+var (
+	ErrTargetChanged     = errors.New("requested version is not the latest release")
+	ErrCandidateNotReady = errors.New("qualified update candidate is not ready")
+)
 
 const (
 	qualifiedImageRepository = "xingqiao-sub2api"
@@ -93,17 +97,93 @@ func (r *UpdateResolver) Resolve(ctx context.Context, targetVersion string) (str
 	if err != nil || latest != target {
 		return "", ErrTargetChanged
 	}
+	officialCommit, err := r.resolveOfficialCommit(ctx, release.TagName)
+	if err != nil {
+		return "", err
+	}
 
 	imageTag := qualifiedImageRepository + ":upstream-" + target
 	stdout, stderr, err := r.docker.Run(ctx, nil, "docker", "image", "inspect", "--format", "{{json .}}", imageTag)
 	if err != nil {
-		return "", fmt.Errorf("qualified Xingqiao image is not available for %s: %w", target, commandFailure(stderr, err))
+		failure := commandFailure(stderr, err)
+		if strings.Contains(stderr, "No such image: "+imageTag) {
+			return "", fmt.Errorf("%w for %s: %v", ErrCandidateNotReady, target, failure)
+		}
+		return "", fmt.Errorf("qualified Xingqiao image is not available for %s: %w", target, failure)
 	}
-	imageID, ok := matchingQualifiedImage(stdout, target)
+	imageID, ok := matchingQualifiedImage(stdout, target, officialCommit)
 	if !ok {
 		return "", errors.New("Xingqiao image qualification labels are missing or do not match the official release")
 	}
 	return imageID, nil
+}
+
+func (r *UpdateResolver) resolveOfficialCommit(ctx context.Context, tag string) (string, error) {
+	ref, err := r.gitObject(ctx, "/git/ref/tags/"+url.PathEscape(tag))
+	if err != nil {
+		return "", fmt.Errorf("resolve official release tag: %w", err)
+	}
+	switch ref.Type {
+	case "commit":
+		if commitPattern.MatchString(ref.SHA) {
+			return ref.SHA, nil
+		}
+	case "tag":
+		object, err := r.gitObject(ctx, "/git/tags/"+ref.SHA)
+		if err != nil {
+			return "", fmt.Errorf("dereference official release tag: %w", err)
+		}
+		if object.Type == "commit" && commitPattern.MatchString(object.SHA) {
+			return object.SHA, nil
+		}
+	}
+	return "", errors.New("official release tag does not resolve to a commit")
+}
+
+type gitObject struct {
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+}
+
+func (r *UpdateResolver) gitObject(ctx context.Context, suffix string) (gitObject, error) {
+	endpoint, err := r.gitAPIURL(suffix)
+	if err != nil {
+		return gitObject{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return gitObject{}, fmt.Errorf("build GitHub request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	res, err := r.client.Do(req)
+	if err != nil {
+		return gitObject{}, fmt.Errorf("fetch GitHub object: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return gitObject{}, fmt.Errorf("fetch GitHub object: status %d", res.StatusCode)
+	}
+	var response struct {
+		Object gitObject `json:"object"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&response); err != nil {
+		return gitObject{}, fmt.Errorf("decode GitHub object: %w", err)
+	}
+	return response.Object, nil
+}
+
+func (r *UpdateResolver) gitAPIURL(suffix string) (string, error) {
+	endpoint, err := url.Parse(r.latestReleaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse latest release URL: %w", err)
+	}
+	const latestSuffix = "/releases/latest"
+	if !strings.HasSuffix(endpoint.Path, latestSuffix) {
+		return "", errors.New("latest release URL must end with /releases/latest")
+	}
+	endpoint.Path = strings.TrimSuffix(endpoint.Path, latestSuffix) + suffix
+	endpoint.RawQuery = ""
+	return endpoint.String(), nil
 }
 
 func normalizeVersion(version string) (string, error) {
@@ -115,10 +195,12 @@ func normalizeVersion(version string) (string, error) {
 	return version, nil
 }
 
-func matchingQualifiedImage(output string, targetVersion string) (string, bool) {
+func matchingQualifiedImage(output string, targetVersion string, officialCommit string) (string, bool) {
 	var image struct {
-		ID     string `json:"Id"`
-		Config struct {
+		ID           string `json:"Id"`
+		OS           string `json:"Os"`
+		Architecture string `json:"Architecture"`
+		Config       struct {
 			Labels map[string]string `json:"Labels"`
 		} `json:"Config"`
 	}
@@ -127,9 +209,12 @@ func matchingQualifiedImage(output string, targetVersion string) (string, bool) 
 	}
 	labels := image.Config.Labels
 	if !digestPattern.MatchString(image.ID) ||
+		image.OS != "linux" ||
+		image.Architecture != "amd64" ||
 		labels["com.xingqiao.sub2api.qualified"] != "true" ||
 		labels["com.xingqiao.sub2api.upstream.version"] != targetVersion ||
-		!commitPattern.MatchString(labels["com.xingqiao.sub2api.upstream.commit"]) {
+		labels["com.xingqiao.sub2api.upstream.commit"] != officialCommit ||
+		!commitPattern.MatchString(labels["com.xingqiao.sub2api.source.commit"]) {
 		return "", false
 	}
 	return image.ID, true

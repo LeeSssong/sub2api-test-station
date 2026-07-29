@@ -31,7 +31,7 @@ require_fixed '@sub2api_official_index path /__sub2api-official-index' infra/Cad
 require_fixed 'reverse_proxy sub2api:8080' infra/Caddyfile
 require_fixed 'templates' infra/Caddyfile
 require_fixed 'httpInclude "/__sub2api-official-index"' infra/sub2api-update-ui/index.html
-require_fixed 'src="/xingqiao-update-ui.js?v=20260728-1"' infra/sub2api-update-ui/index.html
+require_fixed 'src="/xingqiao-update-ui.js?v=20260729-1"' infra/sub2api-update-ui/index.html
 require_fixed 'href="/xingqiao-update-ui.css?v=20260726-1"' infra/sub2api-update-ui/index.html
 require_fixed '@sub2api_update {' infra/Caddyfile
 require_fixed $'\t\tmethod POST' infra/Caddyfile
@@ -40,6 +40,8 @@ require_fixed 'reverse_proxy @sub2api_update unix//run/sub2api-updater/updater.s
 require_fixed 'response_header_timeout 15m' infra/Caddyfile
 require_fixed 'reverse_proxy @sub2api_host_update_status unix//run/sub2api-updater/updater.sock' infra/Caddyfile
 require_fixed 'reverse_proxy @sub2api_host_update_schedule unix//run/sub2api-updater/updater.sock' infra/Caddyfile
+require_fixed 'path /api/v1/admin/system/host-update/readiness' infra/Caddyfile
+require_fixed 'reverse_proxy @sub2api_host_update_readiness unix//run/sub2api-updater/updater.sock' infra/Caddyfile
 require_fixed 'path /api/v1/admin/system/check-updates' infra/Caddyfile
 require_fixed 'path /api/v1/admin/system/rollback' infra/Caddyfile
 require_fixed 'path /api/v1/admin/system/restart' infra/Caddyfile

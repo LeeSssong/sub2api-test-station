@@ -49,7 +49,7 @@ export function BrandReveal({ theme }: { theme: Theme }) {
       const source = document.createElement('canvas')
       source.width = width
       source.height = height
-      const sourceContext = source.getContext('2d')
+      const sourceContext = source.getContext('2d', { willReadFrequently: true })
       if (!sourceContext) return
       const fontSize = Math.min(width * .36, height * .86)
       sourceContext.fillStyle = particleColor[theme]

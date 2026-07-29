@@ -69,6 +69,22 @@ func TestResolverRejectsTargetThatIsNotLatestBeforeDocker(t *testing.T) {
 	}
 }
 
+func TestResolverClassifiesMissingQualifiedImageAsCandidateNotReady(t *testing.T) {
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v1.2.3"}`))
+	}))
+	defer github.Close()
+	docker := &recordedCommandRunner{results: []commandResult{{
+		stderr: "Error response from daemon: No such image: xingqiao-sub2api:upstream-1.2.3",
+		err:    errors.New("exit status 1"),
+	}}}
+
+	_, err := NewResolver(github.Client(), github.URL, docker).Resolve(context.Background(), "1.2.3")
+	if !errors.Is(err, ErrCandidateNotReady) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestResolverRejectsImageWithoutQualificationLabel(t *testing.T) {
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"tag_name":"v1.2.3"}`))

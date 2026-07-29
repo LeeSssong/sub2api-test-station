@@ -13,7 +13,10 @@ import (
 	"strings"
 )
 
-var ErrTargetChanged = errors.New("requested version is not the latest release")
+var (
+	ErrTargetChanged     = errors.New("requested version is not the latest release")
+	ErrCandidateNotReady = errors.New("qualified update candidate is not ready")
+)
 
 const (
 	qualifiedImageRepository = "xingqiao-sub2api"
@@ -97,7 +100,7 @@ func (r *UpdateResolver) Resolve(ctx context.Context, targetVersion string) (str
 	imageTag := qualifiedImageRepository + ":upstream-" + target
 	stdout, stderr, err := r.docker.Run(ctx, nil, "docker", "image", "inspect", "--format", "{{json .}}", imageTag)
 	if err != nil {
-		return "", fmt.Errorf("qualified Xingqiao image is not available for %s: %w", target, commandFailure(stderr, err))
+		return "", fmt.Errorf("%w for %s: %v", ErrCandidateNotReady, target, commandFailure(stderr, err))
 	}
 	imageID, ok := matchingQualifiedImage(stdout, target)
 	if !ok {

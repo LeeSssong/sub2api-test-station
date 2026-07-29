@@ -30,7 +30,7 @@ export function App({ config, session, theme, onToggleTheme }: AppProps) {
       </main>
       <footer className="site-footer">
         <div><span>© 2026 星桥</span><span>世界顶尖模型触手可及</span></div>
-        <BrandReveal />
+        <BrandReveal theme={theme} />
       </footer>
     </>
   )

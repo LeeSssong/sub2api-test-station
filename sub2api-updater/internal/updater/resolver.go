@@ -100,7 +100,11 @@ func (r *UpdateResolver) Resolve(ctx context.Context, targetVersion string) (str
 	imageTag := qualifiedImageRepository + ":upstream-" + target
 	stdout, stderr, err := r.docker.Run(ctx, nil, "docker", "image", "inspect", "--format", "{{json .}}", imageTag)
 	if err != nil {
-		return "", fmt.Errorf("%w for %s: %v", ErrCandidateNotReady, target, commandFailure(stderr, err))
+		failure := commandFailure(stderr, err)
+		if strings.Contains(stderr, "No such image: "+imageTag) {
+			return "", fmt.Errorf("%w for %s: %v", ErrCandidateNotReady, target, failure)
+		}
+		return "", fmt.Errorf("qualified Xingqiao image is not available for %s: %w", target, failure)
 	}
 	imageID, ok := matchingQualifiedImage(stdout, target)
 	if !ok {

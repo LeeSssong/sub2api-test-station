@@ -85,6 +85,32 @@ func TestResolverClassifiesMissingQualifiedImageAsCandidateNotReady(t *testing.T
 	}
 }
 
+func TestResolverDoesNotClassifyDockerDaemonOrPermissionFailuresAsCandidateNotReady(t *testing.T) {
+	for _, stderr := range []string{
+		"Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+		"permission denied while trying to connect to the Docker daemon socket",
+	} {
+		t.Run(stderr, func(t *testing.T) {
+			github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"tag_name":"v1.2.3"}`))
+			}))
+			defer github.Close()
+			docker := &recordedCommandRunner{results: []commandResult{{
+				stderr: stderr,
+				err:    errors.New("exit status 1"),
+			}}}
+
+			_, err := NewResolver(github.Client(), github.URL, docker).Resolve(context.Background(), "1.2.3")
+			if err == nil {
+				t.Fatal("expected docker inspect failure")
+			}
+			if errors.Is(err, ErrCandidateNotReady) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
 func TestResolverRejectsImageWithoutQualificationLabel(t *testing.T) {
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"tag_name":"v1.2.3"}`))

@@ -95,8 +95,15 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
   [[ "$conflicts" == 'backend/cmd/server/wire_gen.go' ]] || fail
 
   git -C "$official" checkout --theirs -- backend/cmd/server/wire_gen.go
-  go -C "$official/backend" generate ./cmd/server
+  GOFLAGS=-mod=mod go -C "$official/backend" generate ./cmd/server
+  generated_paths=$(git -C "$official" diff --name-only | sort -u)
+  printf 'sub2api_merge generated_paths=%q\n' "$generated_paths" >&2
+  [[ "$generated_paths" == 'backend/cmd/server/wire_gen.go' ||
+    "$generated_paths" == $'backend/cmd/server/wire_gen.go\nbackend/go.sum' ]] || fail
   git -C "$official" add -- backend/cmd/server/wire_gen.go
+  if [[ -f "$official/backend/go.sum" ]]; then
+    git -C "$official" add -- backend/go.sum
+  fi
   [[ -z "$(git -C "$official" diff --name-only --diff-filter=U)" ]] || fail
 
   GIT_AUTHOR_NAME='Xingqiao Release Automation' \

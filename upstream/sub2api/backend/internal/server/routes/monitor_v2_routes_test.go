@@ -41,7 +41,7 @@ func TestMonitorV2RouteUsesAuthenticatedUserBoundary(t *testing.T) {
 	audit := middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
 	RegisterUserRoutes(v1, &handler.Handlers{
 		MonitorV2: handler.NewMonitorV2Handler(monitorV2RouteSnapshotter{}),
-	}, jwt, audit, nil)
+	}, jwt, audit, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2?window=7d", nil)

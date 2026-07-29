@@ -435,6 +435,103 @@ test('fails closed when refreshed update info still returns the changed target',
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
   assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
   assert.match(dialog.querySelector('[data-role="message"]').textContent, /更新目标已变更/)
+  assert.equal(browser.ui.isReadinessPolling(), false)
+})
+
+test('fails closed when refreshed update info omits the target', async () => {
+  let infoCalls = 0
+  let readinessCalls = 0
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      const method = (init.method || input.method || 'GET').toUpperCase()
+      if (url.endsWith('/check-updates')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        infoCalls += 1
+        return response({
+          code: 0,
+          data: { current_version: '1.2.2', latest_version: infoCalls === 1 ? '1.2.3' : '' },
+        })
+      }
+      if (url.includes('/host-update/readiness')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        readinessCalls += 1
+        if (readinessCalls === 1) return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+        return response({ code: 0, data: { target_version: '未知', ready: true } })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  const dialog = await browser.ui.openConfirmation()
+  dialog.querySelector('[name="confirm"]').click()
+
+  assert.equal(readinessCalls, 1)
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
+  assert.equal(browser.ui.isReadinessPolling(), false)
+})
+
+test('ignores out-of-order target reloads and keeps the changed target disabled', async () => {
+  let infoCalls = 0
+  let readinessCalls = 0
+  let resolveUpdate
+  const infoResolvers = []
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      const method = (init.method || input.method || 'GET').toUpperCase()
+      if (url.endsWith('/check-updates')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        infoCalls += 1
+        if (infoCalls === 1) {
+          return response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.3' } })
+        }
+        return new Promise((resolve) => infoResolvers.push(resolve))
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        readinessCalls += 1
+        if (readinessCalls === 1) {
+          return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+        }
+        if (readinessCalls === 2) return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+        return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.4')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { target_version: '1.2.4', ready: true } })
+      }
+      if (url.endsWith('/api/v1/admin/system/update')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return new Promise((resolve) => { resolveUpdate = resolve })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  const dialog = await browser.ui.openConfirmation()
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+  assert.ok(resolveUpdate)
+
+  const poll = browser.ui.pollReadiness()
+  await flush()
+  assert.equal(infoResolvers.length, 1)
+  resolveUpdate(response({ code: 'UPDATE_TARGET_CHANGED' }, 409))
+  await flush()
+  assert.equal(infoResolvers.length, 2)
+
+  infoResolvers[0](response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.4' } }))
+  await poll
+  infoResolvers[1](response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.3' } }))
+  await flush()
+
+  assert.equal(readinessCalls, 2)
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
+  assert.equal(browser.ui.isReadinessPolling(), false)
 })
 
 test('fails closed and refreshes readiness when POST reports UPDATE_TARGET_CHANGED', async () => {

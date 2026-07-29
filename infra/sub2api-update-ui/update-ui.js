@@ -95,7 +95,7 @@
     var payload = payloadData(await apiRequest('/api/v1/admin/system/check-updates'))
     return {
       current: text(payload.current_version || payload.currentVersion || '未知'),
-      target: text(payload.latest_version || payload.latestVersion || '未知'),
+      target: text(payload.latest_version || payload.latestVersion),
     }
   }
 
@@ -319,7 +319,7 @@
     body.className = 'xq-update-ui-body'
     var summary = document.createElement('dl')
     summary.className = 'xq-update-ui-summary'
-    ;[['当前版本', info.current], ['目标版本', info.target]].forEach(function (item, index) {
+    ;[['当前版本', info.current], ['目标版本', info.target || '未知']].forEach(function (item, index) {
       var wrapper = document.createElement('div')
       var label = document.createElement('dt')
       var value = document.createElement('dd')
@@ -445,6 +445,8 @@
       var error = statusResult.error || infoResult.error
       if (error) {
         setMessage(error.message, 'error')
+      } else if (!state.info.target) {
+        setMessage('更新服务未返回可用目标版本。', 'error')
       } else {
         state.readinessTarget = state.info.target
         await pollReadiness()
@@ -515,7 +517,7 @@
         setMessage('候选版本正在准备，暂不可升级', 'warning')
         startReadinessPolling()
       } else if (error.code === 'UPDATE_TARGET_CHANGED') {
-        await reloadTargetAfterChange()
+        await reloadTargetAfterChange(payload.target_version)
       } else {
         setMessage(error.message, 'error')
       }
@@ -601,7 +603,7 @@
     } catch (error) {
       if (!isCurrentReadinessRequest(dialog, target, generation)) return null
       if (error.code === 'UPDATE_TARGET_CHANGED') {
-        await reloadTargetAfterChange()
+        await reloadTargetAfterChange(target)
         return null
       }
       state.candidateReady = false
@@ -615,20 +617,21 @@
     return state.dialog === dialog && state.readinessTarget === target && state.readinessGeneration === generation
   }
 
-  async function reloadTargetAfterChange() {
+  async function reloadTargetAfterChange(changedTarget) {
     var dialog = state.dialog
-    var previousTarget = state.readinessTarget
+    var previousTarget = text(changedTarget || state.readinessTarget)
     state.candidateReady = false
     state.readinessTarget = ''
     state.readinessGeneration += 1
+    var reloadGeneration = state.readinessGeneration
     stopReadinessPolling()
     updateSubmitState()
     try {
       var info = await getUpdateInfo()
-      if (state.dialog !== dialog || state.upgrading) return
+      if (state.dialog !== dialog || state.upgrading || state.readinessGeneration !== reloadGeneration) return
       state.info = info
       var targetVersion = state.dialog.querySelector('[data-role="target-version"]')
-      if (targetVersion) setText(targetVersion, info.target)
+      if (targetVersion) setText(targetVersion, info.target || '未知')
       if (!info.target || info.target === previousTarget) {
         setMessage('更新目标已变更，等待最新版本信息。', 'error')
         updateSubmitState()

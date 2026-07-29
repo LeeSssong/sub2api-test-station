@@ -69,7 +69,12 @@
   async function apiRequest(path, options) {
     var request = Object.assign({ credentials: 'same-origin' }, options || {})
     request.headers = Object.assign({}, authHeaders(Boolean(request.body)), request.headers || {})
-    return readJSON(await originalFetch(path, request))
+    try {
+      return readJSON(await originalFetch(path, request))
+    } catch (error) {
+      if (typeof error.status !== 'number') error.status = 0
+      throw error
+    }
   }
 
   function payloadData(payload) {
@@ -86,7 +91,9 @@
 
   async function getStatus() {
     try {
-      return payloadData(await apiRequest(STATUS_PATH))
+      var payload = await apiRequest(STATUS_PATH)
+      if (payload && payload.data == null) return null
+      return payloadData(payload)
     } catch (error) {
       if (error.status === 404 || error.code === 'UPDATE_NO_OPERATION') return null
       throw error
@@ -243,6 +250,27 @@
     area.appendChild(actions)
   }
 
+  function resumeRunningOperation(operation) {
+    if (!operation || operation.stage !== 'running' || !state.dialog) return false
+    state.upgrading = true
+    updateSubmitState()
+    renderProgressLog(operation.events)
+    setMessage('升级正在执行，应用容器重启期间请求可能短暂断开。')
+    if (state.pollTimer === null) startPolling()
+    return true
+  }
+
+  function isTransientUpgradeError(error) {
+    return state.upgrading && (
+      error.status === 0 ||
+      error.status === 401 ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504 ||
+      error.code === 'UPDATE_AUTH_REQUIRED'
+    )
+  }
+
   function renderDialog(info, existing) {
     var dialog = document.createElement('div')
     dialog.id = 'xingqiao-update-ui-dialog'
@@ -371,19 +399,27 @@
     return operation && operation.stage === 'scheduled' ? operation : null
   }
 
+  function settled(promise) {
+    return promise.then(function (value) {
+      return { value: value }
+    }, function (error) {
+      return { error: error }
+    })
+  }
+
   async function openConfirmation() {
     if (state.dialog) return state.dialog
     if (state.opening) return state.opening
-    state.opening = Promise.all([getUpdateInfo(), getStatus()]).then(function (values) {
-      state.info = values[0]
-      renderDialog(state.info, values[1])
-      renderExistingSchedule(values[1])
-      return state.dialog
-    }).catch(function (error) {
-      var info = { current: '未知', target: '未知' }
-      state.info = info
-      renderDialog(info, null)
-      setMessage(error.message, 'error')
+    state.opening = Promise.all([settled(getUpdateInfo()), settled(getStatus())]).then(function (results) {
+      var infoResult = results[0]
+      var statusResult = results[1]
+      state.info = infoResult.error ? { current: '未知', target: '未知' } : infoResult.value
+      var operation = statusResult.error ? null : statusResult.value
+      renderDialog(state.info, operation)
+      renderExistingSchedule(operation)
+      if (resumeRunningOperation(operation)) return state.dialog
+      var error = statusResult.error || infoResult.error
+      if (error) setMessage(error.message, 'error')
       return state.dialog
     }).finally(function () {
       state.opening = null
@@ -411,7 +447,7 @@
   }
 
   async function submitUpdate() {
-    if (!state.dialog || state.pending) return
+    if (!state.dialog || state.pending || state.upgrading) return
     var mode = state.dialog.querySelector('[name="mode"]:checked').value
     var input = state.dialog.querySelector('input[type="datetime-local"]')
     var payload = { mode: mode, target_version: state.info.target }
@@ -459,10 +495,7 @@
         stopPolling()
         return null
       }
-      if (operation.stage === 'running' && state.dialog) {
-        state.upgrading = true
-        updateSubmitState()
-      }
+      resumeRunningOperation(operation)
       if (operation.stage === 'promoted' && state.upgrading) {
         showToast('升级成功，服务已切换到 ' + (operation.target_version || '新版本') + '。')
         closeDialog()
@@ -489,7 +522,12 @@
       }
       return operation
     } catch (error) {
-      if (state.dialog) setMessage(error.message, 'error')
+      if (state.dialog && isTransientUpgradeError(error)) {
+        setMessage('应用容器正在重启，正在等待升级结果。')
+        if (state.pollTimer === null) startPolling()
+      } else if (state.dialog) {
+        setMessage(error.message, 'error')
+      }
       return null
     }
   }

@@ -44,8 +44,6 @@ trap cleanup EXIT
 chmod 0700 "$temporary"
 
 git init -q "$temporary/git"
-git -C "$temporary/git" fetch -q "$remote" refs/heads/main:refs/remotes/origin/main
-[[ "$(git -C "$temporary/git" rev-parse refs/remotes/origin/main)" == "$initial_main" ]] || fail
 git -C "$temporary/git" fetch -q "$bundle" candidate-artifact:candidate-artifact
 [[ "$(git -C "$temporary/git" rev-parse candidate-artifact)" == "$candidate_sha" ]] || fail
 [[ "$(git -C "$temporary/git" rev-parse "${candidate_sha}^")" == "$base_sha" ]] || fail
@@ -54,7 +52,8 @@ git -C "$temporary/git" merge-base --is-ancestor "$base_sha" "$candidate_sha" ||
 current_main=$(remote_main)
 [[ "$current_main" == "$base_sha" || "$current_main" == "$candidate_sha" ]] || fail
 if [[ "$current_main" == "$base_sha" ]]; then
-  git -C "$temporary/git" push -q "$remote" "$candidate_sha:refs/heads/main"
+  GIT_ALTERNATE_OBJECT_DIRECTORIES="$temporary/git/.git/objects" \
+    git push -q "$remote" "$candidate_sha:refs/heads/main"
 fi
 [[ "$(remote_main)" == "$candidate_sha" ]] || fail
 

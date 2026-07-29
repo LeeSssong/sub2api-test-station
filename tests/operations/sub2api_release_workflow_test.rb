@@ -37,6 +37,14 @@ class Sub2APIReleaseWorkflowTest < Minitest::Test
     assert_equal %w[discover prepare publish stage-production advance-source], @jobs.dig("notify", "needs")
   end
 
+  def test_stale_queued_run_is_suppressed_before_preparation
+    discover_runs = @jobs.fetch("discover").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+
+    assert_includes discover_runs, 'https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main'
+    assert_includes discover_runs, '"stale_run"'
+    assert_includes discover_runs, 'metadata["has_update"] = false'
+  end
+
   def test_permissions_and_secret_boundaries_are_least_privilege
     assert_equal({ "contents" => "read" }, @jobs.dig("discover", "permissions"))
     assert_equal({ "contents" => "read" }, @jobs.dig("prepare", "permissions"))

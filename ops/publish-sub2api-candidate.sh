@@ -59,8 +59,8 @@ version_pattern='^[0-9]+([.][0-9]+){1,2}$'
 
 repository=ghcr.io/leesssong/xingqiao-sub2api
 local_reference=xingqiao-sub2api:upstream-"$version"
-target="$repository:upstream-$version"
-audit_branch=automation/sub2api-upstream-"$version"
+target="$repository:candidate-$version-$candidate_commit"
+audit_branch=automation/sub2api-upstream-"$version-$candidate_commit"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-candidate-publish.XXXXXX")
 cleanup() {
@@ -132,7 +132,8 @@ git -C "$git_dir" fetch -q "$bundle" candidate-artifact:candidate-artifact
 [[ "$(git -C "$git_dir" rev-parse "${candidate_commit}^")" == "$base_sha" ]] || fail
 existing_audit=$(git ls-remote "$remote" "refs/heads/$audit_branch" | awk 'NR == 1 { print $1 }')
 [[ -z "$existing_audit" || "$existing_audit" == "$candidate_commit" ]] || fail
-git -C "$git_dir" push -q "$remote" "$candidate_commit:refs/heads/$audit_branch"
+GIT_ALTERNATE_OBJECT_DIRECTORIES="$git_dir/.git/objects" \
+  git push -q "$remote" "$candidate_commit:refs/heads/$audit_branch"
 [[ "$(git ls-remote "$remote" "refs/heads/$audit_branch" | awk 'NR == 1 { print $1 }')" == "$candidate_commit" ]] || fail
 
 umask 077

@@ -43,6 +43,19 @@ class AdvanceSub2APISourceTest < Minitest::Test
     end
   end
 
+  def test_resolves_named_remote_while_candidate_exists_only_in_bundle
+    with_fixture do |fixture|
+      status, output = advance(
+        fixture,
+        remote: "fixture-origin",
+        chdir: fixture[:checkout]
+      )
+
+      assert status.success?, output
+      assert_equal fixture[:candidate], git(fixture[:remote], "rev-parse", "refs/heads/main").strip
+    end
+  end
+
   def test_concurrent_main_change_fails_without_force_or_overwrite
     with_fixture do |fixture|
       concurrent = File.join(fixture[:dir], "concurrent")
@@ -88,22 +101,29 @@ class AdvanceSub2APISourceTest < Minitest::Test
       git(source, "remote", "add", "origin", remote)
       git(source, "push", "-q", "origin", "#{base}:refs/heads/main")
       git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+      checkout = File.join(dir, "checkout")
+      git(dir, "clone", "-q", remote, checkout)
+      configure_git(checkout)
+      git(checkout, "remote", "rename", "origin", "fixture-origin")
       yield(
-        dir: dir, remote: remote, bundle: bundle, base: base,
+        dir: dir, remote: remote, checkout: checkout, bundle: bundle, base: base,
         candidate: candidate, output: File.join(dir, "advance.json")
       )
     end
   end
 
-  def advance(fixture)
-    Open3.capture3(
+  def advance(fixture, remote: fixture[:remote], chdir: nil)
+    arguments = [
       "bash", ADVANCER,
       "--bundle", fixture[:bundle],
       "--base-sha", fixture[:base],
       "--candidate-sha", fixture[:candidate],
-      "--remote", fixture[:remote],
+      "--remote", remote,
       "--output", fixture[:output]
-    ).then { |stdout, stderr, status| [status, stdout + stderr] }
+    ]
+    options = chdir ? { chdir: chdir } : {}
+    Open3.capture3(*arguments, **options)
+         .then { |stdout, stderr, status| [status, stdout + stderr] }
   end
 
   def configure_git(path)

@@ -52,6 +52,11 @@ type accountMonitorMultiplierCall struct {
 	force     bool
 }
 
+type accountMonitorRunResult struct {
+	completed int
+	err       error
+}
+
 func (s *accountMonitorMultiplierStub) Resolve(*Account, time.Time) AccountMonitorMultiplier {
 	return s.result
 }
@@ -257,5 +262,220 @@ func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t
 	}
 	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 23, force: true}) {
 		t.Fatalf("multiplier calls = %#v", multiplier.calls)
+	}
+}
+
+func TestAccountMonitorServiceRunAllBoundsBlockingProbe(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          31,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.probeTimeout = 20 * time.Millisecond
+	service.probeConnection = func(
+		ctx context.Context,
+		_ int64,
+		_ string,
+		_ string,
+		_ string,
+	) (AccountMonitorProbeResult, error) {
+		<-ctx.Done()
+		return AccountMonitorProbeResult{}, ctx.Err()
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		completed, err := service.RunAll(context.Background(), 1)
+		if err != nil {
+			t.Fatalf("attempt %d: %v", attempt+1, err)
+		}
+		if completed != 1 {
+			t.Fatalf("attempt %d completed = %d", attempt+1, completed)
+		}
+	}
+
+	if len(monitorRepo.results) != 2 {
+		t.Fatalf("persisted results = %#v", monitorRepo.results)
+	}
+	for _, result := range monitorRepo.results {
+		if result.Status != "failed" || result.ErrorCode != "timeout" {
+			t.Fatalf("timed-out result = %#v", result)
+		}
+	}
+}
+
+func TestAccountMonitorServiceConcurrentRunAllJoinsInFlightRun(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          37,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var probeCalls int
+	var probeMu sync.Mutex
+	service.probeConnection = func(
+		context.Context,
+		int64,
+		string,
+		string,
+		string,
+	) (AccountMonitorProbeResult, error) {
+		probeMu.Lock()
+		probeCalls++
+		call := probeCalls
+		probeMu.Unlock()
+		if call == 1 {
+			close(started)
+			<-release
+		}
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+
+	first := make(chan accountMonitorRunResult, 1)
+	second := make(chan accountMonitorRunResult, 1)
+	go func() {
+		completed, err := service.RunAll(context.Background(), 1)
+		first <- accountMonitorRunResult{completed: completed, err: err}
+	}()
+	<-started
+	go func() {
+		completed, err := service.RunAll(context.Background(), 2)
+		second <- accountMonitorRunResult{completed: completed, err: err}
+	}()
+
+	select {
+	case result := <-second:
+		t.Fatalf("joiner returned before leader completed: %#v", result)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+
+	for name, resultCh := range map[string]<-chan accountMonitorRunResult{
+		"leader": first,
+		"joiner": second,
+	} {
+		result := <-resultCh
+		if result.err != nil || result.completed != 1 {
+			t.Fatalf("%s result = %#v", name, result)
+		}
+	}
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if probeCalls != 1 {
+		t.Fatalf("physical probe calls = %d", probeCalls)
+	}
+}
+
+func TestAccountMonitorServiceJoiningRunAllHonorsCallerCancellation(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          41,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	service.probeConnection = func(
+		context.Context,
+		int64,
+		string,
+		string,
+		string,
+	) (AccountMonitorProbeResult, error) {
+		close(started)
+		<-release
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+
+	leader := make(chan accountMonitorRunResult, 1)
+	go func() {
+		completed, err := service.RunAll(context.Background(), 1)
+		leader <- accountMonitorRunResult{completed: completed, err: err}
+	}()
+	<-started
+
+	waiterCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	completed, err := service.RunAll(waiterCtx, 2)
+	if completed != 0 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled joiner completed=%d err=%v", completed, err)
+	}
+
+	close(release)
+	result := <-leader
+	if result.err != nil || result.completed != 1 {
+		t.Fatalf("leader result = %#v", result)
+	}
+}
+
+func TestAccountMonitorServiceRunOneWaitsForInFlightRunAll(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID:          43,
+		Status:      StatusActive,
+		Schedulable: true,
+		Platform:    PlatformOpenAI,
+	}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var probeCalls int
+	var probeMu sync.Mutex
+	service.probeConnection = func(
+		context.Context,
+		int64,
+		string,
+		string,
+		string,
+	) (AccountMonitorProbeResult, error) {
+		probeMu.Lock()
+		probeCalls++
+		call := probeCalls
+		probeMu.Unlock()
+		if call == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+
+	fullRun := make(chan accountMonitorRunResult, 1)
+	go func() {
+		completed, err := service.RunAll(context.Background(), 1)
+		fullRun <- accountMonitorRunResult{completed: completed, err: err}
+	}()
+	<-firstStarted
+
+	singleRun := make(chan error, 1)
+	go func() {
+		_, err := service.RunOne(context.Background(), 2, 43)
+		singleRun <- err
+	}()
+
+	select {
+	case err := <-singleRun:
+		t.Fatalf("single run returned before full run completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseFirst)
+
+	if result := <-fullRun; result.err != nil || result.completed != 1 {
+		t.Fatalf("full run result = %#v", result)
+	}
+	if err := <-singleRun; err != nil {
+		t.Fatalf("single run error = %v", err)
+	}
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if probeCalls != 2 {
+		t.Fatalf("physical probe calls = %d", probeCalls)
 	}
 }

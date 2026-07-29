@@ -3,11 +3,10 @@ package dailyreport
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accounthealth"
-	"example.invalid/relay-ops-service/internal/accountrecommendation"
+	"example.invalid/relay-ops-service/internal/groupimpact"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
@@ -27,8 +26,13 @@ import (
 //     daily three-tier counts.
 func windowSample(account sub2api.AccountMonitorAccount, slice accounthealth.DaySlice) accounthealth.AccountSample {
 	sample := accounthealth.AccountSampleFrom(slice, account.AccountID, account.Name, account.GroupNames)
+	sample.Unschedulable = account.Status == "active" && !account.Schedulable
 	if sample.ErrorCode == "" {
-		sample.ErrorCode = account.ErrorCode
+		if sample.Unschedulable {
+			sample.ErrorCode = "unschedulable"
+		} else {
+			sample.ErrorCode = account.ErrorCode
+		}
 	}
 	if slice.SampleCount == 0 {
 		sample.SuccessRate = account.SuccessRate
@@ -188,8 +192,6 @@ func BuildHealthDigestWithFallback(
 		}
 	}
 
-	view.Recommendations = buildRecommendations(projection)
-
 	// 同比只能在「今天和昨天都有样本」的账号子集上计算。若拿全部账号的今日
 	// 健康数去减「仅有历史记录的账号」的昨日健康数，两个总体不一致，delta 会
 	// 系统性偏高；历史为空时更会凭空得出「较昨日 ↑N」。宁可不给同比。
@@ -221,27 +223,6 @@ func BuildHealthDigestWithFallback(
 	return view
 }
 
-// buildRecommendations surfaces only actionable switches: a group is listed
-// solely when the analyzer concluded the candidate is better and named it.
-func buildRecommendations(projection sub2api.AccountMonitorProjection) []notify.RecommendationLine {
-	recommendations := []notify.RecommendationLine{}
-	for _, group := range accountrecommendation.Analyze(projection).Groups {
-		if group.Decision != "candidate_better" || group.CandidateAccountID == 0 {
-			continue
-		}
-		if group.Current.Name == "" || group.Candidate.Name == "" {
-			continue
-		}
-		recommendations = append(recommendations, notify.RecommendationLine{
-			GroupName:     group.GroupName,
-			CurrentName:   group.Current.Name,
-			CandidateName: group.Candidate.Name,
-			Reason:        strings.Join(group.Reasons, "、"),
-		})
-	}
-	return recommendations
-}
-
 // GroupAvailabilityView pairs a renderable alert with the alerting flag.
 //
 // Every group must be reported, not just the alerting ones: the incident state
@@ -252,6 +233,8 @@ func buildRecommendations(projection sub2api.AccountMonitorProjection) []notify.
 type GroupAvailabilityView struct {
 	Alert    notify.GroupAlertView
 	Alerting bool
+	Capacity groupimpact.CapacityEvidence
+	Reliable bool
 }
 
 // BuildGroupAvailability judges every account over the trailing one-hour
@@ -281,14 +264,20 @@ func BuildGroupAvailability(
 	seen := map[string]bool{}
 	for _, group := range accounthealth.GroupAvailabilities(verdicts) {
 		alert := notify.GroupAlertView{GroupName: group.GroupName, Available: group.Available, Total: group.Total}
+		capacity := groupimpact.CapacityEvidence{Available: group.Available, Total: group.Total, ObservedAt: now.UTC()}
 		for _, down := range group.Down {
 			alert.Down = append(alert.Down, notify.GroupAlertAccount{
 				Name:      down.Name,
 				ErrorCode: problems[down.AccountID],
 			})
+			capacity.Unavailable = append(capacity.Unavailable, groupimpact.UnavailableAccount{
+				Name: down.Name, Reason: problems[down.AccountID],
+			})
 		}
 		seen[group.GroupName] = true
-		views = append(views, GroupAvailabilityView{Alert: alert, Alerting: group.Alerting})
+		views = append(views, GroupAvailabilityView{
+			Alert: alert, Alerting: group.Alerting, Capacity: capacity, Reliable: true,
+		})
 	}
 	// GroupAvailabilities 会跳过 TierUnknown 账号，因此某个分组的账号全部失去
 	// 样本时，该分组会整个从结果里消失，于是也不再被 Observe，incident 卡在
@@ -376,6 +365,8 @@ func problemLabel(errorCode string) string {
 		return "账号测试失败"
 	case "":
 		return "不可用"
+	case "unschedulable":
+		return "当前未参与调度"
 	default:
 		return "账号异常"
 	}

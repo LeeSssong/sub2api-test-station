@@ -2,25 +2,52 @@ package incidents
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 )
+
+var (
+	ErrOccurrenceConflict = errors.New("incident occurrence conflicts with current state")
+	ErrNotActive          = errors.New("incident is not active")
+)
+
+type Acknowledgement struct {
+	Key          string
+	OccurrenceNo int64
+	ActorUserID  int64
+	At           time.Time
+}
 
 type Observation struct {
 	Key                 string
+	Family              string
+	PolicyVersion       int
+	SourceKind          string
 	Severity            string
 	Failing             bool
 	EvidenceHash        string
+	MaterialHash        string
 	CurrentValue        string
+	LatestPayload       []byte
 	ConfirmationWindows int
+	RecoveryWindows     int
 }
 
 type Record struct {
-	Key          string
-	Severity     string
-	State        string
-	SampleCount  int
-	EvidenceHash string
-	CurrentValue string
+	Key           string
+	Family        string
+	PolicyVersion int
+	SourceKind    string
+	Severity      string
+	State         string
+	SampleCount   int
+	OccurrenceNo  int64
+	RecoveryCount int
+	EvidenceHash  string
+	MaterialHash  string
+	CurrentValue  string
+	LatestPayload []byte
 }
 
 type Repository interface {
@@ -42,10 +69,11 @@ type Machine struct {
 }
 
 type Transition struct {
-	State      string
-	Kind       string
-	Notify     bool
-	RelatedKey string
+	State        string
+	Kind         string
+	Notify       bool
+	RelatedKey   string
+	OccurrenceNo int64
 }
 
 func (m Machine) Observe(ctx context.Context, observation Observation) (Transition, error) {
@@ -63,22 +91,49 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 	if err != nil {
 		return Transition{}, err
 	}
+	if exists && record.OccurrenceNo <= 0 {
+		record.OccurrenceNo = 1
+	}
 	if !observation.Failing {
 		if !exists || record.State == "recovered" {
-			return Transition{State: "healthy"}, nil
+			return Transition{State: "healthy", OccurrenceNo: record.OccurrenceNo}, nil
+		}
+		recoveryWindows := observation.RecoveryWindows
+		if recoveryWindows <= 0 {
+			recoveryWindows = 1
 		}
 		notify := record.State == "confirmed" || record.State == "escalated" || record.State == "degraded"
-		record.State = "recovered"
+		record.RecoveryCount++
 		record.CurrentValue = observation.CurrentValue
 		record.EvidenceHash = observation.EvidenceHash
+		record.LatestPayload = append([]byte(nil), observation.LatestPayload...)
+		applyObservationMetadata(&record, observation)
+		if record.RecoveryCount < recoveryWindows {
+			if err := m.Repository.Put(ctx, record); err != nil {
+				return Transition{}, err
+			}
+			return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
+		}
+		record.State = "recovered"
+		record.MaterialHash = observation.MaterialHash
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: "recovered", Kind: "recovered", Notify: notify, RelatedKey: observation.Key}, nil
+		return Transition{State: "recovered", Kind: "recovered", Notify: notify, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 
 	if !exists || record.State == "recovered" {
-		record = Record{Key: observation.Key, Severity: observation.Severity, State: "observed", SampleCount: 1, EvidenceHash: observation.EvidenceHash, CurrentValue: observation.CurrentValue}
+		occurrenceNo := int64(1)
+		if exists {
+			occurrenceNo = record.OccurrenceNo + 1
+		}
+		record = Record{
+			Key: observation.Key, Family: observation.Family, PolicyVersion: observation.PolicyVersion,
+			SourceKind: observation.SourceKind, Severity: observation.Severity, State: "observed",
+			SampleCount: 1, OccurrenceNo: occurrenceNo, EvidenceHash: observation.EvidenceHash,
+			MaterialHash: observation.MaterialHash, CurrentValue: observation.CurrentValue,
+			LatestPayload: append([]byte(nil), observation.LatestPayload...),
+		}
 		if required == 1 {
 			record.State = "confirmed"
 		}
@@ -86,38 +141,55 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 			return Transition{}, err
 		}
 		if record.State == "confirmed" {
-			return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key}, nil
+			return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 		}
-		return Transition{State: record.State}, nil
+		return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 
-	previousEvidence := record.EvidenceHash
+	previousMaterial := record.MaterialHash
 	previousSeverity := record.Severity
 	record.SampleCount++
+	record.RecoveryCount = 0
 	record.CurrentValue = observation.CurrentValue
 	record.EvidenceHash = observation.EvidenceHash
+	record.MaterialHash = observation.MaterialHash
+	record.LatestPayload = append([]byte(nil), observation.LatestPayload...)
+	applyObservationMetadata(&record, observation)
 	if severityRank(observation.Severity) < severityRank(previousSeverity) {
 		record.Severity = observation.Severity
 		record.State = "escalated"
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: record.State, Kind: "escalated", Notify: true, RelatedKey: observation.Key}, nil
+		return Transition{State: record.State, Kind: "escalated", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 	if record.State == "observed" && record.SampleCount >= required {
 		record.State = "confirmed"
 		if err := m.Repository.Put(ctx, record); err != nil {
 			return Transition{}, err
 		}
-		return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key}, nil
+		return Transition{State: record.State, Kind: "confirmed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 	if err := m.Repository.Put(ctx, record); err != nil {
 		return Transition{}, err
 	}
-	if (record.State == "confirmed" || record.State == "escalated") && observation.EvidenceHash != "" && observation.EvidenceHash != previousEvidence {
-		return Transition{State: record.State, Kind: "new_evidence", Notify: true, RelatedKey: observation.Key}, nil
+	if (record.State == "confirmed" || record.State == "escalated" || record.State == "degraded") &&
+		observation.MaterialHash != "" && observation.MaterialHash != previousMaterial {
+		return Transition{State: record.State, Kind: "progressed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
-	return Transition{State: record.State}, nil
+	return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
+}
+
+func applyObservationMetadata(record *Record, observation Observation) {
+	if observation.Family != "" {
+		record.Family = observation.Family
+	}
+	if observation.PolicyVersion > 0 {
+		record.PolicyVersion = observation.PolicyVersion
+	}
+	if observation.SourceKind != "" {
+		record.SourceKind = observation.SourceKind
+	}
 }
 
 func severityRank(severity string) int {

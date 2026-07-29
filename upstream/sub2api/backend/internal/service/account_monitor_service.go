@@ -20,7 +20,32 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const accountMonitorMultiplierRefreshTimeout = 2 * time.Minute
+const (
+	accountMonitorMultiplierRefreshTimeout = 2 * time.Minute
+	accountMonitorProbeTimeout             = 60 * time.Second
+)
+
+type accountMonitorProbeConnection func(
+	context.Context,
+	int64,
+	string,
+	string,
+	string,
+) (AccountMonitorProbeResult, error)
+
+type accountMonitorRunKind uint8
+
+const (
+	accountMonitorFullRun accountMonitorRunKind = iota
+	accountMonitorSingleRun
+)
+
+type accountMonitorRun struct {
+	kind      accountMonitorRunKind
+	done      chan struct{}
+	completed int
+	err       error
+}
 
 type accountMonitorMultiplierResolver interface {
 	Resolve(*Account, time.Time) AccountMonitorMultiplier
@@ -33,7 +58,12 @@ type AccountMonitorService struct {
 	testService *AccountTestService
 	usage       *AccountUsageService
 	multiplier  accountMonitorMultiplierResolver
-	runMu       sync.Mutex
+
+	probeConnection accountMonitorProbeConnection
+	probeTimeout    time.Duration
+
+	runStateMu sync.Mutex
+	activeRun  *accountMonitorRun
 }
 
 type AccountMonitorAccountRepository interface {
@@ -56,11 +86,12 @@ func NewAccountMonitorService(
 	multiplier accountMonitorMultiplierResolver,
 ) *AccountMonitorService {
 	return &AccountMonitorService{
-		repo:        repo,
-		accountRepo: accountRepo,
-		testService: testService,
-		usage:       usage,
-		multiplier:  multiplier,
+		repo:         repo,
+		accountRepo:  accountRepo,
+		testService:  testService,
+		usage:        usage,
+		multiplier:   multiplier,
+		probeTimeout: accountMonitorProbeTimeout,
 	}
 }
 
@@ -148,11 +179,20 @@ func (s *AccountMonitorService) resolveMultiplier(account *Account, now time.Tim
 }
 
 func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int, error) {
-	if !s.runMu.TryLock() {
-		return 0, errors.New("account monitor run already in progress")
+	run, leader, err := s.beginRun(ctx, accountMonitorFullRun)
+	if err != nil {
+		return 0, err
 	}
-	defer s.runMu.Unlock()
+	if !leader {
+		return run.completed, run.err
+	}
 
+	completed, runErr := s.runAll(ctx, actorID)
+	s.finishRun(run, completed, runErr)
+	return completed, runErr
+}
+
+func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int, error) {
 	accounts, err := s.listPool(ctx)
 	if err != nil {
 		return 0, err
@@ -191,13 +231,19 @@ func (s *AccountMonitorService) RunOne(
 	actorID int64,
 	accountID int64,
 ) (AccountMonitorProbeResult, error) {
-	if !s.runMu.TryLock() {
-		return AccountMonitorProbeResult{}, errors.New("account monitor run already in progress")
+	run, _, err := s.beginRun(ctx, accountMonitorSingleRun)
+	if err != nil {
+		return AccountMonitorProbeResult{}, err
 	}
-	defer s.runMu.Unlock()
+	var completed int
+	var runErr error
+	defer func() {
+		s.finishRun(run, completed, runErr)
+	}()
 
 	accounts, err := s.listPool(ctx)
 	if err != nil {
+		runErr = err
 		return AccountMonitorProbeResult{}, err
 	}
 	var target *Account
@@ -208,16 +254,65 @@ func (s *AccountMonitorService) RunOne(
 		}
 	}
 	if target == nil {
-		return AccountMonitorProbeResult{}, fmt.Errorf("account %d is not active and schedulable", accountID)
+		runErr = fmt.Errorf("account %d is not active and schedulable", accountID)
+		return AccountMonitorProbeResult{}, runErr
 	}
 	result := s.probeAccount(ctx, *target)
 	if err := s.repo.InsertResult(ctx, result, uuid.NewString()); err != nil {
+		runErr = err
 		return AccountMonitorProbeResult{}, err
 	}
+	completed = 1
 	s.refreshMultiplier(ctx, target, true)
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID
 	return result, nil
+}
+
+func (s *AccountMonitorService) beginRun(
+	ctx context.Context,
+	kind accountMonitorRunKind,
+) (*accountMonitorRun, bool, error) {
+	for {
+		s.runStateMu.Lock()
+		active := s.activeRun
+		if active == nil {
+			run := &accountMonitorRun{kind: kind, done: make(chan struct{})}
+			s.activeRun = run
+			s.runStateMu.Unlock()
+			return run, true, nil
+		}
+		s.runStateMu.Unlock()
+
+		if kind == accountMonitorFullRun && active.kind == accountMonitorFullRun {
+			select {
+			case <-active.done:
+				return active, false, nil
+			case <-ctx.Done():
+				return nil, false, ctx.Err()
+			}
+		}
+
+		select {
+		case <-active.done:
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		}
+	}
+}
+
+func (s *AccountMonitorService) finishRun(run *accountMonitorRun, completed int, err error) {
+	if run == nil {
+		return
+	}
+	s.runStateMu.Lock()
+	run.completed = completed
+	run.err = err
+	if s.activeRun == run {
+		s.activeRun = nil
+	}
+	close(run.done)
+	s.runStateMu.Unlock()
 }
 
 func (s *AccountMonitorService) refreshMultiplier(ctx context.Context, account *Account, force bool) {
@@ -304,7 +399,11 @@ func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error)
 
 func (s *AccountMonitorService) probeAccount(ctx context.Context, account Account) AccountMonitorProbeResult {
 	modelID := monitorModelForAccount(&account)
-	if s.testService == nil {
+	probeConnection := s.probeConnection
+	if probeConnection == nil && s.testService != nil {
+		probeConnection = s.testService.ProbeAccountConnection
+	}
+	if probeConnection == nil {
 		return AccountMonitorProbeResult{
 			AccountID: account.ID,
 			ModelID:   modelID,
@@ -313,7 +412,13 @@ func (s *AccountMonitorService) probeAccount(ctx context.Context, account Accoun
 			CheckedAt: time.Now().UTC(),
 		}
 	}
-	result, err := s.testService.ProbeAccountConnection(ctx, account.ID, modelID, "hi", AccountTestModeDefault)
+	timeout := s.probeTimeout
+	if timeout <= 0 {
+		timeout = accountMonitorProbeTimeout
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	result, err := probeConnection(probeCtx, account.ID, modelID, "hi", AccountTestModeDefault)
 	if err != nil {
 		result.Status = "failed"
 		result.ErrorCode = classifyAccountMonitorProbeError(err)

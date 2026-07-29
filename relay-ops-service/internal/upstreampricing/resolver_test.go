@@ -57,6 +57,19 @@ func TestLookupResolvesMappedAccount(t *testing.T) {
 	}
 }
 
+func TestResolveReturnsExplicitPricingSourceAndMultiplier(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(pricingBody))
+	}))
+	defer server.Close()
+
+	path := writeConfig(t, `{"upstreams":[{"pricing_url":"`+server.URL+`","accounts":{"Pro-SHUAI-0.17":"codexPro分组"}}]}`)
+	resolution, ok := newResolver(t, path).Resolve(context.Background(), "Pro-SHUAI-0.17")
+	if !ok || resolution.PricingURL != server.URL || resolution.Multiplier != .17 {
+		t.Fatalf("resolution = %#v, %v", resolution, ok)
+	}
+}
+
 func TestLookupRejectsUnknownGroupName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(pricingBody))

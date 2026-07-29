@@ -53,6 +53,11 @@ type Config struct {
 	Upstreams []UpstreamMapping `json:"upstreams"`
 }
 
+type Resolution struct {
+	PricingURL string
+	Multiplier float64
+}
+
 // LoadConfig reads and strictly parses the mapping config at path.
 func LoadConfig(path string) (Config, error) {
 	f, err := os.Open(path)
@@ -144,12 +149,22 @@ func (r *Resolver) now() func() time.Time {
 // unknown group name, non-positive ratio — returns (nil, false); it never
 // returns a guessed or stale-beyond-TTL value.
 func (r *Resolver) Lookup(ctx context.Context, accountName string) (*float64, bool) {
+	resolution, ok := r.Resolve(ctx, accountName)
+	if !ok {
+		return nil, false
+	}
+	return &resolution.Multiplier, true
+}
+
+// Resolve returns both the explicitly configured production pricing source
+// and the live multiplier it currently exposes for accountName.
+func (r *Resolver) Resolve(ctx context.Context, accountName string) (Resolution, bool) {
 	cfg, err := LoadConfig(r.ConfigPath)
 	if err != nil {
 		// /dev/null 挂载、文件缺失、JSON 写错都会走到这里；不记日志的话
 		// 功能会永久静默失效，日报只显示「—」而无从排查。
 		r.logf("config", "upstream pricing: mapping config unusable, fallback disabled: %v", err)
-		return nil, false
+		return Resolution{}, false
 	}
 
 	for _, upstream := range cfg.Upstreams {
@@ -161,24 +176,24 @@ func (r *Resolver) Lookup(ctx context.Context, accountName string) (*float64, bo
 		ratios, err := r.groupRatios(ctx, upstream.PricingURL)
 		if err != nil {
 			// 拉取失败已在实际发请求处记过日志（负缓存命中不重复记）。
-			return nil, false
+			return Resolution{}, false
 		}
 		ratio, found := ratios[group]
 		if !found {
 			r.logf("group:"+accountName,
 				"upstream pricing: account %q unresolved: group %q not in %s group_ratio",
 				accountName, group, upstream.PricingURL)
-			return nil, false
+			return Resolution{}, false
 		}
 		if ratio <= 0 {
 			r.logf("ratio:"+accountName,
 				"upstream pricing: account %q unresolved: group %q ratio %v is non-positive",
 				accountName, group, ratio)
-			return nil, false
+			return Resolution{}, false
 		}
-		return &ratio, true
+		return Resolution{PricingURL: upstream.PricingURL, Multiplier: ratio}, true
 	}
-	return nil, false
+	return Resolution{}, false
 }
 
 // groupRatios returns the ratio table for pricingURL, served from cache

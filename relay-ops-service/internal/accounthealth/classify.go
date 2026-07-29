@@ -20,13 +20,14 @@ const (
 )
 
 type AccountSample struct {
-	AccountID   int64
-	Name        string
-	GroupNames  []string
-	SuccessRate float64
-	SampleCount int
-	TTFTP95MS   *float64
-	ErrorCode   string
+	AccountID     int64
+	Name          string
+	GroupNames    []string
+	SuccessRate   float64
+	SampleCount   int
+	TTFTP95MS     *float64
+	ErrorCode     string
+	Unschedulable bool
 }
 
 type AccountVerdict struct {
@@ -49,6 +50,9 @@ func ClassifyAccount(sample AccountSample) AccountVerdict {
 }
 
 func tierFor(sample AccountSample) Tier {
+	if sample.Unschedulable {
+		return TierUnavailable
+	}
 	// balance_exhausted 短路必须先于零样本判定：窗口口径下「0 样本」是常态
 	// （新增账号、跨零点后的第一小时）。若先判 Unknown，余额耗尽账号会被
 	// GroupAvailabilities 剔出 Total，3 账号组缩成 2 账号组，告警阈值从

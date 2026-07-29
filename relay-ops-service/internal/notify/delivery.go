@@ -8,12 +8,34 @@ import (
 )
 
 type DeliveryRepository interface {
-	ReserveNotification(context.Context, string, string, string) (int64, bool, error)
-	FinishNotification(context.Context, int64, string, int) error
+	ReserveNotification(context.Context, Reservation) (int64, bool, error)
+	FinishNotification(context.Context, int64, DeliveryOutcome) error
 }
 
 type MessageClient interface {
 	Send(context.Context, FeishuMessage) error
+}
+
+type ResultMessageClient interface {
+	SendWithResult(context.Context, FeishuMessage) (SendResult, error)
+}
+
+type Reservation struct {
+	IncidentKey  string
+	DedupKey     string
+	MessageHash  string
+	Transition   string
+	OccurrenceNo int64
+	Payload      []byte
+}
+
+type DeliveryOutcome struct {
+	Status             string
+	MessageID          string
+	ResponseCode       int
+	Payload            []byte
+	UrgentStatus       string
+	UrgentResponseCode int
 }
 
 type DeliverySender struct {
@@ -28,29 +50,53 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 	if s.Client == nil {
 		return fmt.Errorf("notification client is required")
 	}
+	if message.OccurrenceNo <= 0 || message.Transition == "" {
+		return fmt.Errorf("notification delivery identity is required")
+	}
+	occurrenceNo := message.OccurrenceNo
+	message = WithAcknowledgementAction(message, incidentKey, occurrenceNo)
 	// The dedup fingerprint is taken over the card that will actually be sent,
 	// so a message whose rendering changed counts as a different message.
 	payload, err := message.CardJSON()
 	if err != nil {
 		return fmt.Errorf("encode notification message")
 	}
-	dedupKey := digest(incidentKey + "\x00" + evidenceHash)
+	transition := message.Transition
+	dedupKey := digest(fmt.Sprintf("%s\x00%d\x00%s\x00%s", incidentKey, occurrenceNo, transition, evidenceHash))
 	messageHash := digest(string(payload))
 	if s.Repository == nil {
+		if client, ok := s.Client.(ResultMessageClient); ok {
+			_, err := client.SendWithResult(ctx, message)
+			return err
+		}
 		return s.Client.Send(ctx, message)
 	}
-	deliveryID, reserved, err := s.Repository.ReserveNotification(ctx, incidentKey, dedupKey, messageHash)
+	deliveryID, reserved, err := s.Repository.ReserveNotification(ctx, Reservation{
+		IncidentKey: incidentKey, DedupKey: dedupKey, MessageHash: messageHash,
+		Transition: transition, OccurrenceNo: occurrenceNo, Payload: payload,
+	})
 	if err != nil {
 		return err
 	}
 	if !reserved {
 		return nil
 	}
-	if err := s.Client.Send(ctx, message); err != nil {
-		_ = s.Repository.FinishNotification(ctx, deliveryID, "failed", 0)
+	result := SendResult{ResponseCode: 200, Payload: payload, UrgentStatus: "not_supported"}
+	if client, ok := s.Client.(ResultMessageClient); ok {
+		result, err = client.SendWithResult(ctx, message)
+	} else {
+		err = s.Client.Send(ctx, message)
+	}
+	if err != nil {
+		_ = s.Repository.FinishNotification(ctx, deliveryID, DeliveryOutcome{Status: "failed", Payload: payload})
 		return err
 	}
-	if err := s.Repository.FinishNotification(ctx, deliveryID, "delivered", 200); err != nil {
+	outcome := DeliveryOutcome{
+		Status: "delivered", MessageID: result.MessageID, ResponseCode: result.ResponseCode,
+		Payload: payload, UrgentStatus: result.UrgentStatus,
+		UrgentResponseCode: result.UrgentResponseCode,
+	}
+	if err := s.Repository.FinishNotification(ctx, deliveryID, outcome); err != nil {
 		return err
 	}
 	return nil

@@ -202,16 +202,6 @@ func TestBuildHealthDigestTreatsNonPositiveMultiplierAsUnusable(t *testing.T) {
 	}
 }
 
-func TestBuildHealthDigestRecommendationsAreComplete(t *testing.T) {
-	projection, histories, loc, now := fixture()
-	view := BuildHealthDigest(projection, histories, loc, now)
-	for _, rec := range view.Recommendations {
-		if rec.GroupName == "" || rec.CurrentName == "" || rec.CandidateName == "" {
-			t.Fatalf("建议行字段不完整，缺候选或当前账号名: %+v", rec)
-		}
-	}
-}
-
 func TestBuildGroupAvailabilityReportsEveryGroup(t *testing.T) {
 	projection, _, _, now := fixture()
 	views := BuildGroupAvailability(projection, nil, now)

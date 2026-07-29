@@ -1,6 +1,7 @@
 (() => {
   const status = document.getElementById('ops-status')
   const token = localStorage.getItem('auth_token')
+  const acknowledgementQuery = window.location.search
   const notFound = () => window.location.replace('/404')
 
   if (!token) {
@@ -29,6 +30,9 @@
       document.open()
       document.write(html)
       document.close()
+      if (acknowledgementQuery && window.location.search !== acknowledgementQuery) {
+        window.history.replaceState(null, '', `${window.location.pathname}${acknowledgementQuery}${window.location.hash}`)
+      }
     })
     .catch(() => {
       if (status) status.textContent = '页面暂时不可用，请刷新重试'

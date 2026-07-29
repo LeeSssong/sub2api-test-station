@@ -201,6 +201,56 @@ func TestTickRunsGroupAvailabilityEveryFiveMinutesInReadOnlyMode(t *testing.T) {
 	}
 }
 
+func TestTickRunsIncidentEscalationEveryMinute(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 4, 0, 0, 0, time.UTC)
+	store := newFakeJobStore()
+	calls := 0
+	s := Scheduler{
+		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
+		IncidentEscalation: func(context.Context) error { calls++; return nil },
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !store.due["incident-escalation"].Equal(now.Add(time.Minute)) {
+		t.Fatalf("calls=%d due=%v", calls, store.due)
+	}
+}
+
+func TestTickRunsNotificationRetryEveryMinute(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 4, 0, 0, 0, time.UTC)
+	store := newFakeJobStore()
+	calls := 0
+	s := Scheduler{
+		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
+		NotificationRetry: func(context.Context) error { calls++; return nil },
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !store.due["notification-retry"].Equal(now.Add(time.Minute)) {
+		t.Fatalf("calls=%d due=%v", calls, store.due)
+	}
+}
+
 func TestSiteMonitorDoesNotChangeClosedOrExistingJobScheduling(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)

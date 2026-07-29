@@ -20,7 +20,13 @@ func renderText(t *testing.T, message FeishuMessage) string {
 
 func TestRenderHealthDigestActionMorningOrder(t *testing.T) {
 	view := HealthDigestView{
-		Date: "2026-07-27",
+		Date:         "2026-07-27",
+		PublicGroups: 6,
+		Summary: DigestNotificationSummary{
+			ActiveP0: 1, ActiveP1: 1, Recovered: 1, PricingEvents: 1,
+			TrackedPublicGroups: 6, FreshCapacityGroups: 6,
+			PricingSources: 2, TrackedPricingSources: 2,
+		},
 		Quality: QualityLine{
 			Healthy: 8, Degraded: 1, Unavailable: 1, Slow: 3,
 			HealthyDelta: intPtr(-1), TTFTP95MedianMS: f64Ptr(3800),
@@ -35,22 +41,22 @@ func TestRenderHealthDigestActionMorningOrder(t *testing.T) {
 			{AccountID: 32, AccountName: "Pro20x-XN-0.25", Problem: "余额耗尽", Severity: PendingCritical},
 			{AccountID: 33, AccountName: "claude-SHUAI", Problem: "倍率不可用", Detail: "利润未核算", Severity: PendingAccounting},
 		},
-		Recommendations: []RecommendationLine{
-			{GroupName: "GPT-Pro", CurrentName: "A", CandidateName: "B", Reason: "成功率更高"},
-		},
 		Traffic: TrafficLine{HasTraffic: true, Requests: 57},
 	}
 
 	message := RenderHealthDigest(view)
 	text := renderText(t, message)
 	for _, want := range []string{
-		"中转站晨报 · 7月27日",
-		"运行概览", "8 个稳定｜1 个降级｜1 个不可用",
+		"中转站晨报｜7月27日",
+		"一句话结论", "6 个公开分组", "2 起进行中用户事故",
+		"用户侧运行", "P0 1｜P1 1", "昨日恢复 1 起",
+		"8 个稳定｜1 个降级｜1 个不可用",
+		"需要处理 · 4", "公开定价变化 1 项",
+		"严重｜Pro20x-XN-0.25",
+		"注意｜特惠-XM-0.045", "核算｜claude-SHUAI",
 		"经营情况", "请求 57｜收入 $140.00｜成本 $49.00",
 		"利润覆盖 9/10 个账号｜3 个采用上游公开定价",
-		"需要处理 · 3", "严重｜Pro20x-XN-0.25",
-		"注意｜特惠-XM-0.045", "核算｜claude-SHUAI",
-		"调整建议", "GPT-Pro：建议由 A 切换到 B｜成功率更高",
+		"监控完整性", "真实流量、账号质量、容量证据和生产定价来源均已读取",
 		"其余 7 个账号无待处理项",
 	} {
 		if !strings.Contains(text, want) {
@@ -58,14 +64,15 @@ func TestRenderHealthDigestActionMorningOrder(t *testing.T) {
 		}
 	}
 	ordered := []string{
-		"运行概览",
-		"经营情况",
-		"需要处理 · 3",
+		"一句话结论",
+		"用户侧运行",
+		"需要处理 · 4",
 		"严重｜Pro20x-XN-0.25",
 		"注意｜特惠-XM-0.045",
 		"核算｜claude-SHUAI",
-		"调整建议",
 		"其余 7 个账号无待处理项",
+		"经营情况",
+		"监控完整性",
 	}
 	previousIndex := -1
 	for _, want := range ordered {
@@ -93,7 +100,6 @@ func TestRenderHealthDigestTemplate(t *testing.T) {
 		{"healthy", HealthDigestView{Quality: QualityLine{Healthy: 3}, Profit: ProfitLine{TotalAccounts: 3, PricedAccounts: 3}}, "green"},
 		{"degraded", HealthDigestView{Quality: QualityLine{Healthy: 2, Degraded: 1}, Profit: ProfitLine{TotalAccounts: 3, PricedAccounts: 3}}, "orange"},
 		{"accounting", HealthDigestView{Quality: QualityLine{Healthy: 3}, Profit: ProfitLine{TotalAccounts: 3, PricedAccounts: 2}, Pending: []PendingItem{{AccountName: "A", Severity: PendingAccounting}}}, "orange"},
-		{"recommendation", HealthDigestView{Quality: QualityLine{Healthy: 3}, Profit: ProfitLine{TotalAccounts: 3, PricedAccounts: 3}, Recommendations: []RecommendationLine{{GroupName: "G", CurrentName: "A", CandidateName: "B"}}}, "orange"},
 		{"unavailable", HealthDigestView{Quality: QualityLine{Unavailable: 1}, Profit: ProfitLine{TotalAccounts: 1}}, "red"},
 		{"data unavailable", HealthDigestView{Quality: QualityLine{DataUnavailable: true, DataUnavailableReason: "read failed"}}, "orange"},
 	}
@@ -175,7 +181,7 @@ func TestRenderHealthDigestDataUnavailableDoesNotClaimHealthy(t *testing.T) {
 		t.Fatalf("missing unavailable reason: %s", text)
 	}
 	for _, forbidden := range []string{
-		"0 个不可用", "经营情况", "需要处理", "无待处理", "其余 11 个账号",
+		"0 个不可用", "无待处理", "其余 11 个账号",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("data-unavailable card contains fake normal %q: %s", forbidden, text)
@@ -229,15 +235,19 @@ func TestRenderHealthDigestUncomputableProfitIsExplicit(t *testing.T) {
 	}
 }
 
-func TestRenderHealthDigestOmitsEmptyRecommendations(t *testing.T) {
+func TestRenderHealthDigestOmitsRetiredNotificationLanguage(t *testing.T) {
 	view := HealthDigestView{
 		Date:    "2026-07-27",
 		Quality: QualityLine{Healthy: 3},
 		Profit:  ProfitLine{NoTraffic: true, TotalAccounts: 3, PricedAccounts: 3},
 	}
 	text := renderText(t, RenderHealthDigest(view))
-	if strings.Contains(text, "调整建议") {
-		t.Fatalf("empty recommendations rendered a section: %s", text)
+	for _, forbidden := range []string{
+		"候选", "当前账号", "候选账号", "只读分析", "调整建议",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("digest contains retired language %q: %s", forbidden, text)
+		}
 	}
 }
 

@@ -2,152 +2,105 @@ package nativealerts
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
 	"testing"
 
-	"example.invalid/relay-ops-service/internal/agent"
-	"example.invalid/relay-ops-service/internal/incidents"
-	"example.invalid/relay-ops-service/internal/notify"
+	"example.invalid/relay-ops-service/internal/groupimpact"
+	"example.invalid/relay-ops-service/internal/notificationpolicy"
+	"example.invalid/relay-ops-service/internal/store"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
-func TestServiceConfirmsSuppressesAddsEvidenceAndRecovers(t *testing.T) {
+func TestServiceStoresAbnormalMonitorAsGroupEvidenceWithoutPaging(t *testing.T) {
 	t.Parallel()
-
-	repository := &memoryIncidentRepository{records: map[string]incidents.Record{}}
-	analyzer := &recordingAnalyzer{}
-	notifier := &recordingNotifier{}
-	service := Service{
-		Incidents: incidents.Machine{Repository: repository, Policy: incidents.DefaultPolicy()},
-		Agent:     analyzer,
-		Notifier:  notifier,
+	sink := &recordingSignalSink{}
+	service := Service{Signals: sink, Policy: nativeMonitorPolicy()}
+	group := sub2api.Group{ID: 7, Name: "GPT PLUS 内测", Status: "active"}
+	monitor := sub2api.ChannelMonitor{
+		ID: 9, GroupName: group.Name, Enabled: true, PrimaryModel: "gpt-5",
 	}
-	errorSample := Observation{
-		Monitor: sub2api.ChannelMonitor{ID: 9, Name: "GPT-Pro monitor", GroupName: "GPT-Pro", PrimaryModel: "gpt-5.6-sol"},
-		History: sub2api.MonitorHistory{ID: 101, Model: "gpt-5.6-sol", Status: "error", LatencyMS: 570, CheckedAt: "2026-07-20T14:55:00Z"},
+	history := sub2api.MonitorHistory{
+		ID: 17, Model: "gpt-5", Status: "error", LatencyMS: 1200,
+		CheckedAt: "2026-07-29T01:00:00Z",
 	}
-
-	first, err := service.Observe(context.Background(), errorSample)
-	if err != nil {
+	if err := service.ObserveMonitor(context.Background(), group, monitor, history); err != nil {
 		t.Fatal(err)
 	}
-	if first.State != "observed" || first.Notification != "suppressed" || len(notifier.messages) != 0 {
-		t.Fatalf("first=%#v messages=%d", first, len(notifier.messages))
+	if len(sink.signals) != 1 || len(sink.decisions) != 1 {
+		t.Fatalf("signals=%#v decisions=%#v", sink.signals, sink.decisions)
 	}
-
-	confirmed, err := service.Observe(context.Background(), errorSample)
-	if err != nil {
+	var payload groupimpact.NativeMonitorSignalPayload
+	if err := json.Unmarshal(sink.signals[0].Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if confirmed.Transition != "confirmed" || confirmed.Notification != "delivered" || len(notifier.messages) != 1 || len(analyzer.contracts) != 1 {
-		t.Fatalf("confirmed=%#v messages=%d analyses=%d", confirmed, len(notifier.messages), len(analyzer.contracts))
-	}
-	if !strings.Contains(notifier.messages[0].RenderedText(), "GPT-Pro") || !strings.Contains(notifier.messages[0].RenderedText(), "gpt-5.6-sol") {
-		t.Fatalf("notification missing group/model: %q", notifier.messages[0].RenderedText())
-	}
-
-	duplicate, err := service.Observe(context.Background(), errorSample)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if duplicate.Notification != "suppressed" || len(notifier.messages) != 1 || len(analyzer.contracts) != 1 {
-		t.Fatalf("duplicate=%#v messages=%d analyses=%d", duplicate, len(notifier.messages), len(analyzer.contracts))
-	}
-
-	degraded := errorSample
-	degraded.History.Status = "degraded"
-	degraded.History.ID = 102
-	degraded.History.CheckedAt = "2026-07-20T15:00:00Z"
-	changed, err := service.Observe(context.Background(), degraded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if changed.Transition != "new_evidence" || changed.Notification != "delivered" || len(notifier.messages) != 2 || len(analyzer.contracts) != 2 {
-		t.Fatalf("changed=%#v messages=%d analyses=%d", changed, len(notifier.messages), len(analyzer.contracts))
-	}
-
-	recovered := errorSample
-	recovered.History.Status = "operational"
-	recovered.History.ID = 103
-	recovered.History.LatencyMS = 1396
-	recovered.History.CheckedAt = "2026-07-20T15:05:00Z"
-	recovery, err := service.Observe(context.Background(), recovered)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recovery.Transition != "recovered" || recovery.Notification != "delivered" || len(notifier.messages) != 3 || len(analyzer.contracts) != 3 {
-		t.Fatalf("recovery=%#v messages=%d analyses=%d", recovery, len(notifier.messages), len(analyzer.contracts))
-	}
-	recoveryText := notifier.messages[2].RenderedText()
-	for _, want := range []string{"原生监控已恢复", "运行正常", "gpt-5.6-sol", "1396ms", "健康确认", "1 个完整窗口", "Sub2API 原生 Channel Monitor 最新状态"} {
-		if !strings.Contains(recoveryText, want) {
-			t.Fatalf("recovery message missing %q: %q", want, recoveryText)
-		}
-	}
-	for _, forbidden := range []string{"**恢复结果**", "状态：operational"} {
-		if strings.Contains(recoveryText, forbidden) {
-			t.Fatalf("recovery message exposes legacy prose %q: %q", forbidden, recoveryText)
-		}
-	}
-
-	healthy, err := service.Observe(context.Background(), recovered)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if healthy.Notification != "suppressed" || len(notifier.messages) != 3 || len(analyzer.contracts) != 3 {
-		t.Fatalf("healthy=%#v messages=%d analyses=%d", healthy, len(notifier.messages), len(analyzer.contracts))
-	}
-	for _, contract := range analyzer.contracts {
-		if contract.ContractVersion != "relay-ops-incident-v1" || len(contract.EvidenceRefs) != 1 || strings.Contains(strings.Join(contract.EvidenceRefs, " "), "http") {
-			t.Fatalf("unsafe or incomplete contract: %#v", contract)
-		}
+	if payload.Status != "error" || payload.Model != "gpt-5" ||
+		sink.decisions[0].Decision != "evidence_stored" {
+		t.Fatalf("payload=%#v decision=%#v", payload, sink.decisions[0])
 	}
 }
 
-func TestRenderRecoveryUsesPrimaryModelFallbackAndKeepsMinimumMetrics(t *testing.T) {
+func TestServicePolicyDisabledRecordsSuppressionWithoutSignal(t *testing.T) {
 	t.Parallel()
-	message := renderRecoveryMessage(Observation{
-		Monitor: sub2api.ChannelMonitor{GroupName: "GPT-Pro", PrimaryModel: "gpt-primary"},
-		History: sub2api.MonitorHistory{Status: "operational", CheckedAt: "invalid"},
-	})
-	for _, want := range []string{"运行正常", "gpt-primary", "健康确认", "1 个完整窗口"} {
-		if !strings.Contains(message.RenderedText(), want) {
-			t.Fatalf("missing %q in %q", want, message.RenderedText())
-		}
+	sink := &recordingSignalSink{}
+	policy := nativeMonitorPolicy()
+	policy.Feishu.NativeMonitorEvidenceEnabled = false
+	service := Service{Signals: sink, Policy: policy}
+	group := sub2api.Group{ID: 7, Name: "GPT PLUS 内测", Status: "active"}
+	if err := service.ObserveMonitor(context.Background(), group, sub2api.ChannelMonitor{
+		ID: 9, GroupName: group.Name, Enabled: true, PrimaryModel: "gpt-5",
+	}, sub2api.MonitorHistory{
+		Model: "gpt-5", Status: "error", CheckedAt: "2026-07-29T01:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
 	}
-	if got := len(message.Card.Elements[1].Fields); got != 3 {
-		t.Fatalf("fields=%d, want current state, model, healthy window", got)
+	if len(sink.signals) != 0 || len(sink.decisions) != 1 ||
+		sink.decisions[0].Decision != "suppressed" ||
+		sink.decisions[0].Reason != "policy_disabled" {
+		t.Fatalf("signals=%#v decisions=%#v", sink.signals, sink.decisions)
 	}
 }
 
-type memoryIncidentRepository struct{ records map[string]incidents.Record }
-
-func (r *memoryIncidentRepository) Get(_ context.Context, key string) (incidents.Record, bool, error) {
-	record, ok := r.records[key]
-	return record, ok, nil
+func TestServiceRejectsMonitorOutsideMatchedVisibleGroup(t *testing.T) {
+	t.Parallel()
+	service := Service{Signals: &recordingSignalSink{}, Policy: nativeMonitorPolicy()}
+	err := service.ObserveMonitor(
+		context.Background(),
+		sub2api.Group{ID: 7, Name: "private", Status: "active", IsExclusive: true},
+		sub2api.ChannelMonitor{ID: 9, GroupName: "GPT PLUS 内测", Enabled: true},
+		sub2api.MonitorHistory{Status: "error", CheckedAt: "2026-07-29T01:00:00Z"},
+	)
+	if err == nil {
+		t.Fatal("unmatched private group was accepted")
+	}
 }
 
-func (r *memoryIncidentRepository) Put(_ context.Context, record incidents.Record) error {
-	r.records[record.Key] = record
+type recordingSignalSink struct {
+	signals   []store.GroupSignal
+	decisions []store.DecisionRecord
+}
+
+func (sink *recordingSignalSink) UpsertGroupSignal(
+	_ context.Context,
+	signal store.GroupSignal,
+) error {
+	sink.signals = append(sink.signals, signal)
 	return nil
 }
 
-type recordingAnalyzer struct{ contracts []agent.IncidentContractV1 }
-
-func (a *recordingAnalyzer) AnalyzeOnce(_ context.Context, contract agent.IncidentContractV1) (agent.Analysis, error) {
-	a.contracts = append(a.contracts, contract)
-	return agent.Analysis{Summary: "只读分析", Change: "状态变化", Focus: "人工复核"}, nil
-}
-
-type recordingNotifier struct {
-	keys     []string
-	evidence []string
-	messages []notify.FeishuMessage
-}
-
-func (n *recordingNotifier) SendIncident(_ context.Context, key, evidence string, message notify.FeishuMessage) error {
-	n.keys = append(n.keys, key)
-	n.evidence = append(n.evidence, evidence)
-	n.messages = append(n.messages, message)
+func (sink *recordingSignalSink) RecordNotificationDecision(
+	_ context.Context,
+	decision store.DecisionRecord,
+) error {
+	sink.decisions = append(sink.decisions, decision)
 	return nil
+}
+
+func nativeMonitorPolicy() notificationpolicy.Policy {
+	return notificationpolicy.Policy{
+		Version: 1,
+		Mode:    notificationpolicy.ModeEnabled,
+		Feishu: notificationpolicy.FeishuPolicy{
+			NativeMonitorEvidenceEnabled: true,
+		},
+	}
 }

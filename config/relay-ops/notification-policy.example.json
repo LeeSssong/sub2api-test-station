@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "delivery_mode": "shadow",
+  "feishu_notifications": {
+    "group_runtime_enabled": true,
+    "group_capacity_enabled": true,
+    "account_impact_enabled": true,
+    "native_monitor_evidence_enabled": true,
+    "pricing_notice_enabled": true,
+    "daily_digest_enabled": true,
+    "incident_escalation_enabled": true
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
 )
 
@@ -145,6 +146,11 @@ func TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes(t *testing.T) {
 			t.Fatalf("admin script contains retired behavior %q", prohibited)
 		}
 	}
+	for _, required := range []string{"/relay-ops/api/incidents/ack", "ack_incident", "ack_occurrence", "history.replaceState", "application/json"} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("admin script missing acknowledgement behavior %q", required)
+		}
+	}
 
 	bootstrapScript := httptest.NewRecorder()
 	server.ServeHTTP(bootstrapScript, httptest.NewRequest(http.MethodGet, "/relay-ops/static/ops.js", nil))
@@ -154,10 +160,70 @@ func TestOpsPageIsReadOnlyPlainLanguageAndAutoRefreshes(t *testing.T) {
 			t.Fatalf("bootstrap script missing %q", required)
 		}
 	}
-	for _, prohibited := range []string{"/login?", "document.cookie", "location.search", "console.log"} {
+	for _, prohibited := range []string{"/login?", "document.cookie", "console.log"} {
 		if strings.Contains(bootstrapJS, prohibited) {
 			t.Fatalf("bootstrap script contains %q", prohibited)
 		}
+	}
+	if !strings.Contains(bootstrapJS, "location.search") {
+		t.Fatal("bootstrap script does not preserve acknowledgement query")
+	}
+}
+
+func TestIncidentAcknowledgementRequiresCurrentHiddenAdminAndExactOrigin(t *testing.T) {
+	t.Parallel()
+	service := &fakeIncidentAcknowledgements{}
+	server := newTestServerWithAcknowledgements(fakeOps{}, service)
+	validBody := `{"incident_key":"group:GPT-Plus:availability","occurrence_no":3}`
+
+	request := httptest.NewRequest(http.MethodPost, "/relay-ops/api/incidents/ack", strings.NewReader(validBody))
+	request.Header.Set("Authorization", "Bearer admin")
+	request.Header.Set("Origin", "https://api.example.com")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("valid acknowledgement status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(service.acknowledgements) != 1 {
+		t.Fatalf("acknowledgements=%#v", service.acknowledgements)
+	}
+	acknowledgement := service.acknowledgements[0]
+	if acknowledgement.Key != "group:GPT-Plus:availability" || acknowledgement.OccurrenceNo != 3 ||
+		acknowledgement.ActorUserID != 42 || acknowledgement.At.IsZero() {
+		t.Fatalf("acknowledgement=%#v", acknowledgement)
+	}
+
+	for _, test := range []struct {
+		name        string
+		bearer      string
+		origin      string
+		contentType string
+		body        string
+		err         error
+		want        int
+	}{
+		{name: "missing bearer is hidden", origin: "https://api.example.com", contentType: "application/json", body: validBody, want: http.StatusNotFound},
+		{name: "wrong origin", bearer: "admin", origin: "https://evil.example", contentType: "application/json", body: validBody, want: http.StatusForbidden},
+		{name: "stale occurrence", bearer: "admin", origin: "https://api.example.com", contentType: "application/json", body: validBody, err: incidents.ErrOccurrenceConflict, want: http.StatusConflict},
+		{name: "recovered occurrence", bearer: "admin", origin: "https://api.example.com", contentType: "application/json", body: validBody, err: incidents.ErrNotActive, want: http.StatusConflict},
+		{name: "unknown field", bearer: "admin", origin: "https://api.example.com", contentType: "application/json", body: `{"incident_key":"x","occurrence_no":1,"actor":9}`, want: http.StatusBadRequest},
+		{name: "oversized body", bearer: "admin", origin: "https://api.example.com", contentType: "application/json", body: `{"incident_key":"` + strings.Repeat("x", 2048) + `","occurrence_no":1}`, want: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service.err = test.err
+			request := httptest.NewRequest(http.MethodPost, "/relay-ops/api/incidents/ack", strings.NewReader(test.body))
+			if test.bearer != "" {
+				request.Header.Set("Authorization", "Bearer "+test.bearer)
+			}
+			request.Header.Set("Origin", test.origin)
+			request.Header.Set("Content-Type", test.contentType)
+			recorder := httptest.NewRecorder()
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.want, recorder.Body.String())
+			}
+		})
 	}
 }
 
@@ -207,11 +273,28 @@ func TestNoPerformanceRouteAndResponsivePricingStateExist(t *testing.T) {
 }
 
 func newTestServer(ops fakeOps) http.Handler {
-	server, err := NewServer(Dependencies{BaseOrigin: "https://api.example.com", Auth: fakeVerifier{}, Pricing: fakePricing{}, Ops: ops})
+	return newTestServerWithAcknowledgements(ops, &fakeIncidentAcknowledgements{})
+}
+
+func newTestServerWithAcknowledgements(ops fakeOps, acknowledgements IncidentAcknowledgementService) http.Handler {
+	server, err := NewServer(Dependencies{
+		BaseOrigin: "https://api.example.com", Auth: fakeVerifier{}, Pricing: fakePricing{}, Ops: ops,
+		IncidentAcknowledgements: acknowledgements,
+	})
 	if err != nil {
 		panic(err)
 	}
 	return server
+}
+
+type fakeIncidentAcknowledgements struct {
+	acknowledgements []incidents.Acknowledgement
+	err              error
+}
+
+func (service *fakeIncidentAcknowledgements) Acknowledge(_ context.Context, acknowledgement incidents.Acknowledgement) error {
+	service.acknowledgements = append(service.acknowledgements, acknowledgement)
+	return service.err
 }
 
 type fakeVerifier struct{}

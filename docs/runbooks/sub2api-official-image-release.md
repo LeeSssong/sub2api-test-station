@@ -49,6 +49,13 @@ Run independent rows concurrently. After merging worktrees, rerun only gates
 whose input tree changed. A clean ancestry merge requires `git diff-tree` to
 show no file changes and does not invalidate prior test evidence.
 
+After the homepage test and production build pass, use
+`infra/Dockerfile.caddy-prebuilt` to copy the verified `homepage/dist` into the
+currently running immutable Caddy image. This offline layer-only build avoids
+reinstalling frontend dependencies or contacting Docker Hub. Pin
+`BASE_IMAGE` to the inspected current Caddy image ID or local tag, validate the
+new image labels, then recreate only Caddy with `--no-deps`.
+
 ### Fast-Lane Rules
 
 1. A qualified candidate may be built locally when GitHub Actions is

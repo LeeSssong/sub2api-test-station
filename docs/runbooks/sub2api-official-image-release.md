@@ -12,6 +12,73 @@ never be used for production. The generic release orchestrator currently
 models bind-mounted rehearsal storage and must not be invoked with
 `--mode production` against the named-volume production deployment.
 
+## 30-Minute Rapid Release Lane
+
+Use this lane for normal source, updater, homepage, and qualified-candidate
+changes that do not require a database restore, storage migration, secret
+rotation, or a new production topology. Those higher-risk changes leave the
+rapid lane and follow their dedicated rehearsal and incident procedures.
+
+The 30-minute limit is an engineering budget, not permission to skip a failed
+gate. Stop the release when a required gate fails; do not spend the remaining
+window repeatedly retrying unrelated infrastructure.
+
+| Elapsed | Stage | Required outcome |
+|---:|---|---|
+| 0-3 min | Inventory | Resolve all worktrees, dirty files, remote `main`, changed subsystems, production Docker context, Compose SHA, and protected container identities once. |
+| 3-15 min | Parallel qualification | Run only the test matrix for changed subsystems while building independent artifacts in parallel. Each required full suite runs once per final tree. |
+| 15-20 min | Pre-stage | Verify immutable image labels/version/architecture, transfer with resume support, compare full SHA-256, and load the candidate without switching the running service. |
+| 20-25 min | Minimal rollout | Restart only the updater when updater files changed; recreate only Caddy with `--no-deps` when homepage/Caddy files changed. Do not touch an unchanged service. |
+| 25-30 min | Acceptance | Verify public health, candidate readiness, update UI state, changed user-visible behavior, logs, and protected container identities. Push/record the exact final `main` commit. |
+
+### Change-Based Test Matrix
+
+Determine the matrix from `git diff --name-only <deployed-commit>..HEAD`.
+Do not rerun a broad suite merely because an ancestry-only merge commit was
+added after the same tree already passed.
+
+| Changed area | Required local gates |
+|---|---|
+| `upstream/sub2api/backend`, release import, or candidate Dockerfile | `go test ./... -count=1`, `go vet ./...`, image build, image label/version/platform verification |
+| `upstream/sub2api/frontend` | pinned pnpm install, full Vitest, production build |
+| `sub2api-updater`, update UI, updater systemd/executor | updater Go test/vet plus update UI, routing, host executor, and merge-release contract tests |
+| `homepage`, Caddyfile, Caddy image | homepage full test/build plus desktop/mobile browser checks in both themes |
+| documentation only | the owning document contract test and link/outline validation |
+
+Run independent rows concurrently. After merging worktrees, rerun only gates
+whose input tree changed. A clean ancestry merge requires `git diff-tree` to
+show no file changes and does not invalidate prior test evidence.
+
+### Fast-Lane Rules
+
+1. A qualified candidate may be built locally when GitHub Actions is
+   unavailable. Local qualification must use the same pinned source,
+   full subsystem gates, immutable labels, architecture check, archive
+   SHA-256, and isolated `--version` execution. GitHub remains the remote
+   source of record; a workflow run is not a production prerequisite.
+2. Candidate preparation and application promotion are separate operations.
+   Loading `xingqiao-sub2api:upstream-<version>` must not recreate the running
+   Sub2API container. Only an explicit administrator confirmation may promote
+   it later.
+3. Worktree consolidation starts with `git cherry` and tree comparison.
+   Merge real unique changes once. For patch-equivalent branches, use an
+   ancestry-only merge after proving the merge commit has an empty tree diff;
+   never replay stale files over `main`.
+4. Preserve production's named-volume Compose file. Sync only required
+   updater/Caddy inputs, validate the resolved configuration, and change only
+   the intended image reference.
+5. Capture PostgreSQL, Redis, Sub2API, and relay-ops container ID, start time,
+   restart count, image, and health before and after a Caddy/updater-only
+   rollout. Any unexpected change fails acceptance.
+6. Keep old application images and release records for rollback. Clean local
+   worktrees and transfer staging only after production acceptance.
+
+The release owner keeps a single timer and one checklist. Parallel commands
+must have bounded timeouts and retain their exit status. A task exceeding the
+budget is reported as an exception with the exact slow stage so the next
+release can remove that bottleneck; the normal path must not silently expand
+beyond 30 minutes.
+
 ## Prerequisites
 
 - Production was started with Compose project `sub2api`. Rehearsal uses

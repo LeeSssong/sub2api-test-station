@@ -105,6 +105,12 @@ class Sub2APIReleaseWorkflowTest < Minitest::Test
     refute_match(/\b(?:needs|steps)\.[a-z0-9_]+-[a-z0-9_-]+/i, source)
   end
 
+  def test_discovery_tag_reference_is_line_delimited_for_bash_read
+    source = File.read(WORKFLOW_PATH)
+    assert_includes source, 'puts "#{type} #{sha}"'
+    assert_includes source, 'puts "#{base} #{candidate}"'
+  end
+
   def test_runtime_release_artifacts_do_not_dirty_the_checkout
     _stdout, _stderr, status = Open3.capture3(
       "git", "-C", ROOT, "check-ignore", "-q", ".release/discovery/metadata.json"

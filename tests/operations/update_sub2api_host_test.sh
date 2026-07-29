@@ -324,7 +324,7 @@ assert_trace() {
 }
 
 assert_no_docker_mutation() {
-  ! rg -n 'pull|recreate-sub2api|backup-db|backup-counts|backup-app-data|postgres-validator' "$FIXTURE_LOG" \
+  ! grep -En 'pull|recreate-sub2api|backup-db|backup-counts|backup-app-data|postgres-validator' "$FIXTURE_LOG" \
     || fail 'Docker mutation or backup occurred before preflight rejection'
 }
 
@@ -334,9 +334,9 @@ test_success_trace_and_identity() {
   output=$(run_update)
   [[ "$output" == 'result=promoted' ]] || fail "unexpected success output: $output"
   assert_trace 'inspect -> verify-image -> backup-db -> backup-counts -> backup-app-data -> checksum -> compose-validate -> recreate-sub2api -> health -> smoke -> promoted'
-  rg -n 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id' "$FIXTURE_LOG" >/dev/null \
+  grep -En 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id' "$FIXTURE_LOG" >/dev/null \
     || fail 'container identity checks were not recorded'
-  ! rg -n 'down|--force-recreate postgres|--force-recreate redis|pg_restore' "$FIXTURE_LOG" \
+  ! grep -En 'down|--force-recreate postgres|--force-recreate redis|pg_restore' "$FIXTURE_LOG" \
     || fail 'forbidden dependency or database restore command was used'
   record=$(find "$FIXTURE_RECORDS" -type f -name '*.json' -print -quit)
   [[ -n "$record" ]] || fail 'release record missing'
@@ -501,8 +501,8 @@ SH
   local output
   output=$(ROLLBACK_COMPATIBLE=true run_update)
   [[ "$output" == 'result=rolled_back' ]] || fail "unexpected rollback output: $output"
-  rg -n 'recreate-sub2api' "$FIXTURE_LOG" >/dev/null || fail 'rollback recreation missing'
-  ! rg -n 'down|pg_restore' "$FIXTURE_LOG" >/dev/null || fail 'rollback restored database or tore down project'
+  grep -En 'recreate-sub2api' "$FIXTURE_LOG" >/dev/null || fail 'rollback recreation missing'
+  ! grep -En 'down|pg_restore' "$FIXTURE_LOG" >/dev/null || fail 'rollback restored database or tore down project'
   cleanup_fixture
 }
 

@@ -18,8 +18,10 @@ declare global {
     __XingqiaoUpdateUI__?: {
       openConfirmation: () => Promise<HTMLElement>
       pollStatus: () => Promise<unknown>
+      pollReadiness: () => Promise<unknown>
       stopPolling: () => void
       isPolling: () => boolean
+      isReadinessPolling: () => boolean
     }
   }
 }
@@ -43,6 +45,9 @@ function stubFetch(): FetchStub {
     }
     if (url.includes('/host-update/status')) {
       return jsonResponse(statusData)
+    }
+    if (url.includes('/host-update/readiness')) {
+      return jsonResponse({ target_version: '0.1.166', ready: true })
     }
     if (url.includes('/system/update')) {
       return jsonResponse({ operation_id: 'op-ui-1', stage: 'scheduled' })

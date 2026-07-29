@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { test } from 'node:test'
+import { afterEach, test } from 'node:test'
 
 const require = createRequire(import.meta.url)
 const { JSDOM } = require('../../homepage/node_modules/jsdom')
 const UI_SCRIPT = new URL('../../infra/sub2api-update-ui/update-ui.js', import.meta.url)
 const UI_HTML = new URL('../../infra/sub2api-update-ui/index.html', import.meta.url)
+const openBrowsers = []
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -35,6 +36,9 @@ async function createBrowser({ fetchImpl } = {}) {
     if (url.endsWith('/api/v1/admin/system/host-update/status')) {
       return response({ code: 0, data: null })
     }
+    if (url.endsWith('/api/v1/admin/system/host-update/readiness?target_version=1.2.3')) {
+      return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+    }
     if (url.endsWith('/api/v1/admin/system/update')) {
       return response({ code: 0, data: { operation_id: 'op-now', stage: 'accepted' } })
     }
@@ -48,8 +52,18 @@ async function createBrowser({ fetchImpl } = {}) {
   const script = await readFile(UI_SCRIPT, 'utf8')
   window.eval(script)
   await flush()
-  return { dom, window, requests, ui: window.__XingqiaoUpdateUI__ }
+  const browser = { dom, window, requests, ui: window.__XingqiaoUpdateUI__ }
+  openBrowsers.push(browser)
+  return browser
 }
+
+afterEach(() => {
+  while (openBrowsers.length) {
+    const browser = openBrowsers.pop()
+    browser.ui.stopPolling()
+    browser.dom.window.close()
+  }
+})
 
 function scheduledFetch(requests, fallback) {
   return async (input, init = {}) => {
@@ -320,10 +334,69 @@ test('does not intercept unrelated buttons and fail-closes direct update fetches
   assert.equal(browser.window.document.querySelector('[role="dialog"]') !== null, true)
 })
 
+test('keeps submit disabled until the qualified candidate becomes ready and stops polling on close', async () => {
+  let ready = false
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        return response({
+          code: 0,
+          data: {
+            target_version: '1.2.3',
+            ready,
+            ...(ready ? {} : { reason: 'candidate_not_ready' }),
+          },
+        })
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+  const submit = dialog.querySelector('[data-action="submit"]')
+  dialog.querySelector('[name="confirm"]').click()
+
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
+  assert.equal(submit.disabled, true)
+  assert.equal(browser.ui.isReadinessPolling(), true)
+  submit.click()
+  await flush()
+  assert.equal(browser.requests.some((request) => request.url.endsWith('/api/v1/admin/system/update')), false)
+
+  ready = true
+  await browser.ui.pollReadiness()
+  assert.equal(submit.disabled, false)
+  dialog.querySelector('[data-action="close"]').click()
+  assert.equal(browser.ui.isReadinessPolling(), false)
+})
+
+test('renders candidate-not-ready POST errors as preparation state', async () => {
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/api/v1/admin/system/update')) {
+        requests.push({ url, method: 'POST', body: init.body, headers: init.headers })
+        return response({ code: 'UPDATE_CANDIDATE_NOT_READY' }, 409)
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+  dialog.querySelector('[name="confirm"]').click()
+  dialog.querySelector('[data-action="submit"]').click()
+  await flush()
+
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
+  assert.doesNotMatch(dialog.querySelector('[data-role="message"]').textContent, /更新服务不可用/)
+})
+
 test('serves a template shell with external UI assets only', async () => {
   const html = await readFile(UI_HTML, 'utf8')
   assert.match(html, /\{\{\s*httpInclude\s+"\/__sub2api-official-index"\s*\}\}/)
   assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260726-1"/)
-  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260728-1"/)
+  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260729-1"/)
   assert.doesNotMatch(html, /<script[^>]*>[^<]+<\/script>/)
 })

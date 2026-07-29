@@ -408,6 +408,35 @@ test('reloads the official target after readiness reports UPDATE_TARGET_CHANGED'
   assert.equal(browser.requests.some((request) => request.method === 'POST' && request.url.endsWith('/system/update')), false)
 })
 
+test('fails closed when refreshed update info still returns the changed target', async () => {
+  let readinessCalls = 0
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      const method = (init.method || input.method || 'GET').toUpperCase()
+      if (url.endsWith('/check-updates')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        return response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.3' } })
+      }
+      if (url.endsWith('/host-update/readiness?target_version=1.2.3')) {
+        requests.push({ url, method, body: init.body, headers: init.headers })
+        readinessCalls += 1
+        if (readinessCalls === 1) return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+        return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  const dialog = await browser.ui.openConfirmation()
+  dialog.querySelector('[name="confirm"]').click()
+
+  assert.equal(readinessCalls, 1)
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /更新目标已变更/)
+})
+
 test('fails closed and refreshes readiness when POST reports UPDATE_TARGET_CHANGED', async () => {
   let target = '1.2.3'
   const browser = await createBrowser({

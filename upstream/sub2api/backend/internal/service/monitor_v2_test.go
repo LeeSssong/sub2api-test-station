@@ -151,6 +151,27 @@ func (s *monitorV2RepoStub) GetCacheStats(
 }
 
 func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
+	t.Run("timeline subtracts SLA errors from total requests", func(t *testing.T) {
+		bucket := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+
+		points := monitorV2Timeline(
+			&OpsThroughputTrendResponse{Points: []*OpsThroughputTrendPoint{{
+				BucketStart:  bucket,
+				RequestCount: 5,
+			}}},
+			&OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{{
+				BucketStart:   bucket,
+				ErrorCountSLA: 5,
+			}}},
+		)
+
+		require.Len(t, points, 1)
+		require.Equal(t, int64(0), points[0].SuccessCount)
+		require.Equal(t, int64(5), points[0].EligibleCount)
+		require.NotNil(t, points[0].Value)
+		require.Equal(t, 0.0, *points[0].Value)
+	})
+
 	t.Run("ttft ignores ordinary successes without first-token evidence", func(t *testing.T) {
 		ttftP50 := 420
 		ttftP95 := 880
@@ -242,6 +263,43 @@ func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
 	})
 }
 
+func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{{
+			ID:          17,
+			Name:        "公开探针组",
+			Platform:    PlatformOpenAI,
+			Status:      StatusActive,
+			IsExclusive: false,
+		}}},
+		&monitorV2ChannelReaderStub{},
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
+			GroupName:        "公开探针组",
+			PrimaryModel:     "gpt-5.4",
+			PrimaryStatus:    MonitorStatusOperational,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now.Add(-2*time.Minute - time.Second),
+			Timeline: []UserMonitorTimelinePoint{{
+				Status:    MonitorStatusOperational,
+				CheckedAt: now.Add(-2*time.Minute - time.Second),
+			}},
+		}}},
+		nil,
+		&monitorV2RepoStub{},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, MonitorV2StatusInsufficientData, snapshot.Groups[0].Status)
+	require.Equal(t, []MonitorV2Model{{
+		Name:   "gpt-5.4",
+		Status: MonitorV2StatusInsufficientData,
+	}}, snapshot.Groups[0].Models)
+}
+
 func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	groups := []Group{
@@ -292,11 +350,13 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	}
 	probes := []*UserMonitorView{
 		{
-			ID:            21,
-			Name:          "公开标准探针",
-			GroupName:     " 公开标准 ",
-			PrimaryModel:  "gpt-5.4",
-			PrimaryStatus: MonitorStatusOperational,
+			ID:               21,
+			Name:             "公开标准探针",
+			GroupName:        " 公开标准 ",
+			PrimaryModel:     "gpt-5.4",
+			PrimaryStatus:    MonitorStatusOperational,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
 		},
 	}
 
@@ -343,8 +403,8 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, 40.0, *first.CacheHit.Value)
 	require.Equal(t, []MonitorV2Model{{Name: "gpt-5.4", Status: MonitorStatusOperational}}, first.Models)
 	require.Len(t, first.Timeline, 1)
-	require.Equal(t, int64(12), first.Timeline[0].SuccessCount)
-	require.Equal(t, int64(13), first.Timeline[0].EligibleCount)
+	require.Equal(t, int64(11), first.Timeline[0].SuccessCount)
+	require.Equal(t, int64(12), first.Timeline[0].EligibleCount)
 
 	second := snapshot.Groups[1]
 	require.Equal(t, int64(2), second.ID)
@@ -367,9 +427,11 @@ func TestMonitorV2SnapshotPublishesProbeModelsForMatchingPublicGroupWithoutChann
 		}}},
 		&monitorV2ChannelReaderStub{},
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
-			GroupName:     "公开探针组",
-			PrimaryModel:  "gpt-5.4",
-			PrimaryStatus: MonitorStatusOperational,
+			GroupName:        "公开探针组",
+			PrimaryModel:     "gpt-5.4",
+			PrimaryStatus:    MonitorStatusOperational,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
 		}}},
 		nil,
 		&monitorV2RepoStub{},

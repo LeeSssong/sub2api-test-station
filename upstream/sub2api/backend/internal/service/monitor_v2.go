@@ -293,7 +293,7 @@ func (s *MonitorV2Service) buildGroup(
 		PeakStart:          group.PeakStart,
 		PeakEnd:            group.PeakEnd,
 		PeakRateMultiplier: group.PeakRateMultiplier,
-		Status:             monitorV2GroupStatus(probes),
+		Status:             monitorV2GroupStatus(probes, end),
 		Availability:       monitorV2UnavailableAvailability(),
 		TTFT:               monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		TTFTP95:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
@@ -302,7 +302,7 @@ func (s *MonitorV2Service) buildGroup(
 		LatencyP95:         monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		CacheHit:           monitorV2CacheMetric(cache),
 		Timeline:           []MonitorV2TimelinePoint{},
-		Models:             monitorV2ApplyProbeStatuses(models, probes),
+		Models:             monitorV2ApplyProbeStatuses(models, probes, end),
 	}
 	if s.ops == nil {
 		return card
@@ -450,6 +450,7 @@ func monitorV2ModelsByGroup(
 func monitorV2ApplyProbeStatuses(
 	models []MonitorV2Model,
 	probes []*UserMonitorView,
+	now time.Time,
 ) []MonitorV2Model {
 	statuses := make(map[string][]string)
 	for _, probe := range probes {
@@ -457,12 +458,20 @@ func monitorV2ApplyProbeStatuses(
 			continue
 		}
 		if model := strings.TrimSpace(probe.PrimaryModel); model != "" {
-			statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], probe.PrimaryStatus)
+			status := probe.PrimaryStatus
+			if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, probe.PrimaryCheckedAt, now) {
+				status = MonitorV2StatusInsufficientData
+			}
+			statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], status)
 		}
 		for _, extra := range probe.ExtraModels {
 			model := strings.TrimSpace(extra.Model)
 			if model != "" {
-				statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], extra.Status)
+				status := extra.Status
+				if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, extra.CheckedAt, now) {
+					status = MonitorV2StatusInsufficientData
+				}
+				statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], status)
 			}
 		}
 	}
@@ -473,17 +482,28 @@ func monitorV2ApplyProbeStatuses(
 	return out
 }
 
-func monitorV2GroupStatus(probes []*UserMonitorView) string {
+func monitorV2GroupStatus(probes []*UserMonitorView, now time.Time) string {
 	if len(probes) == 0 {
 		return MonitorV2StatusUnconfigured
 	}
 	statuses := make([]string, 0, len(probes))
 	for _, probe := range probes {
 		if probe != nil {
-			statuses = append(statuses, probe.PrimaryStatus)
+			status := probe.PrimaryStatus
+			if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, probe.PrimaryCheckedAt, now) {
+				status = MonitorV2StatusInsufficientData
+			}
+			statuses = append(statuses, status)
 		}
 	}
 	return monitorV2ProbeStatuses(statuses)
+}
+
+func monitorV2ProbeObservationFresh(intervalSeconds int, checkedAt, now time.Time) bool {
+	if intervalSeconds <= 0 || checkedAt.IsZero() {
+		return false
+	}
+	return !checkedAt.Before(now.UTC().Add(-2 * time.Duration(intervalSeconds) * time.Second))
 }
 
 func monitorV2ProbeStatuses(statuses []string) string {
@@ -605,8 +625,8 @@ func monitorV2Timeline(
 	errorsTrend *OpsErrorTrendResponse,
 ) []MonitorV2TimelinePoint {
 	type counts struct {
-		success int64
-		errors  int64
+		requests int64
+		errors   int64
 	}
 	byBucket := make(map[time.Time]counts)
 	if throughput != nil {
@@ -616,7 +636,7 @@ func monitorV2Timeline(
 			}
 			key := point.BucketStart.UTC()
 			current := byBucket[key]
-			current.success += point.RequestCount
+			current.requests += point.RequestCount
 			byBucket[key] = current
 		}
 	}
@@ -640,15 +660,19 @@ func monitorV2Timeline(
 	out := make([]MonitorV2TimelinePoint, 0, len(keys))
 	for _, key := range keys {
 		count := byBucket[key]
-		eligible := count.success + count.errors
+		eligible := count.requests
+		success := eligible - count.errors
+		if success < 0 {
+			success = 0
+		}
 		point := MonitorV2TimelinePoint{
 			BucketStart:   key,
 			State:         MonitorV2MetricInsufficientData,
-			SuccessCount:  count.success,
+			SuccessCount:  success,
 			EligibleCount: eligible,
 		}
 		if eligible > 0 {
-			value := float64(count.success) / float64(eligible) * 100
+			value := float64(success) / float64(eligible) * 100
 			point.State = MonitorV2MetricAvailable
 			point.Value = &value
 		}

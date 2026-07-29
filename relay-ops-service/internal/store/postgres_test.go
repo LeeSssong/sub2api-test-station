@@ -765,6 +765,72 @@ func TestFailedNotificationBecomesDueForLeasedRetry(t *testing.T) {
 	}
 }
 
+func TestFailedRecoveryNotificationBecomesDueForLeasedRetry(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:failed-recovery-retry:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	alert, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P1", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alertPayload := []byte(`{"header":{"title":{"content":"P1"}},"elements":[]}`)
+	alertID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "failed-recovery-retry-alert", MessageHash: "alert",
+		OccurrenceNo: alert.OccurrenceNo, Transition: alert.Kind, Payload: alertPayload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve alert=%d %v %v", alertID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, alertID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, Payload: alertPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	recovery, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P1", Failing: false, EvidenceHash: "1/1",
+		CurrentValue: "可用 1 / 共 1",
+	})
+	if err != nil || recovery.Kind != "recovered" {
+		t.Fatalf("recovery=%#v err=%v", recovery, err)
+	}
+	recoveryPayload := []byte(`{"header":{"title":{"content":"恢复"}},"elements":[]}`)
+	recoveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "failed-recovery-retry-recovery", MessageHash: "recovery",
+		OccurrenceNo: recovery.OccurrenceNo, Transition: recovery.Kind, Payload: recoveryPayload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve recovery=%d %v %v", recoveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, recoveryID, notify.DeliveryOutcome{
+		Status: "failed", Payload: recoveryPayload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var due time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT next_attempt_at FROM relay_ops.notification_deliveries WHERE id=$1`,
+		recoveryID,
+	).Scan(&due); err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := st.ClaimNotificationRetry(ctx, due)
+
+	if err != nil || claim == nil || claim.ID != recoveryID ||
+		claim.IncidentKey != key || claim.OccurrenceNo != recovery.OccurrenceNo ||
+		claim.Transition != "recovered" || !json.Valid(claim.Payload) {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+}
+
 func TestStaleReservedNotificationIsReclaimed(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

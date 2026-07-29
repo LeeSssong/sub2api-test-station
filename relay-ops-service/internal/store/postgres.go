@@ -1334,8 +1334,14 @@ func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*not
 		    OR (d.delivery_status='reserved' AND d.created_at<=$1-INTERVAL '2 minutes')
 		  )
 		  AND i.occurrence_no=d.occurrence_no
-		  AND i.state IN ('confirmed', 'escalated', 'degraded')
-		  AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
+		  AND (
+		    (d.transition='recovered' AND i.state='recovered')
+		    OR (
+		      d.transition<>'recovered'
+		      AND i.state IN ('confirmed', 'escalated', 'degraded')
+		      AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
+		    )
+		  )
 		ORDER BY COALESCE(d.next_attempt_at, d.created_at), d.id
 		FOR UPDATE OF i SKIP LOCKED
 		LIMIT 1`, now.UTC()).Scan(

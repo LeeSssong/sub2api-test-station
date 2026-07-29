@@ -214,6 +214,7 @@ func buildStatusSummary(
 		if l, ok := latestByModel[model]; ok {
 			entry.Status = l.Status
 			entry.LatencyMs = l.LatencyMs
+			entry.CheckedAt = l.CheckedAt
 		}
 		summary.ExtraModels = append(summary.ExtraModels, entry)
 	}
@@ -235,6 +236,7 @@ func buildUserViewFromSummary(
 		GroupName:        m.GroupName,
 		PrimaryModel:     m.PrimaryModel,
 		PrimaryStatus:    summary.PrimaryStatus,
+		IntervalSeconds:  m.IntervalSeconds,
 		PrimaryLatencyMs: summary.PrimaryLatencyMs,
 		Availability7d:   summary.Availability7d,
 		ExtraModels:      summary.ExtraModels,
@@ -242,6 +244,7 @@ func buildUserViewFromSummary(
 	}
 	if primaryLatest != nil {
 		view.PrimaryPingLatencyMs = primaryLatest.PingLatencyMs
+		view.PrimaryCheckedAt = primaryLatest.CheckedAt
 	}
 	return view
 }

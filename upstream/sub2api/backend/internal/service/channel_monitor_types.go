@@ -132,6 +132,8 @@ type UserMonitorView struct {
 	GroupName            string
 	PrimaryModel         string
 	PrimaryStatus        string
+	IntervalSeconds      int
+	PrimaryCheckedAt     time.Time
 	PrimaryLatencyMs     *int
 	PrimaryPingLatencyMs *int    // 主模型最近一次 ping 延迟
 	Availability7d       float64 // 0-100
@@ -152,6 +154,7 @@ type ExtraModelStatus struct {
 	Model     string
 	Status    string
 	LatencyMs *int
+	CheckedAt time.Time
 }
 
 // UserMonitorDetail 用户只读视图：监控详情（含全部模型 7d/15d/30d 可用率与平均延迟）。

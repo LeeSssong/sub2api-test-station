@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "delivery_mode": "shadow",
+  "delivery_mode": "enabled",
   "feishu_notifications": {
     "group_runtime_enabled": true,
     "group_capacity_enabled": true,

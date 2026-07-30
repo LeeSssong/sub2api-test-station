@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getMonitorV2Snapshot } = vi.hoisted(() => ({
   getMonitorV2Snapshot: vi.fn(),
@@ -76,8 +76,9 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '2',
+  contract_version: '3',
   window: '7d',
+  refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',
   groups: [
     {
@@ -147,7 +148,7 @@ const snapshot: MonitorV2Snapshot = {
 }
 
 function mountView(initialSnapshot = snapshot) {
-  return mount(MonitorV2View, {
+  const wrapper = mount(MonitorV2View, {
     props: { initialSnapshot },
     global: {
       stubs: {
@@ -156,12 +157,37 @@ function mountView(initialSnapshot = snapshot) {
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
+
+const mountedWrappers: Array<ReturnType<typeof mount>> = []
 
 describe('MonitorV2View', () => {
   beforeEach(() => {
     getMonitorV2Snapshot.mockReset()
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    })
   })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+    vi.useRealTimers()
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    })
+  })
+
+  function setVisibility(state: 'hidden' | 'visible') {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: state,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }
 
   it('leads with public rate, call evidence, and sample-aware metrics', () => {
     const wrapper = mountView()
@@ -204,6 +230,77 @@ describe('MonitorV2View', () => {
 
     expect(getMonitorV2Snapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal))
     expect(wrapper.text()).toContain('24 小时结果')
+  })
+
+  it('does not render a manual refresh control', () => {
+    expect(mountView().find('[data-test="monitor-refresh"]').exists()).toBe(false)
+  })
+
+  it('refreshes using the administrator interval', async () => {
+    vi.useFakeTimers()
+    getMonitorV2Snapshot.mockResolvedValue(snapshot)
+    const wrapper = mountView()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(getMonitorV2Snapshot).toHaveBeenCalledWith('7d', expect.any(AbortSignal))
+    wrapper.unmount()
+  })
+
+  it('does not schedule an interval when administrator disables refresh', async () => {
+    vi.useFakeTimers()
+    mountView({ ...snapshot, refresh_interval_seconds: 0 })
+
+    await vi.advanceTimersByTimeAsync(600_000)
+
+    expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
+  })
+
+  it('pauses while hidden and refreshes once when visible again', async () => {
+    vi.useFakeTimers()
+    getMonitorV2Snapshot.mockResolvedValue(snapshot)
+    const wrapper = mountView()
+
+    setVisibility('hidden')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
+
+    setVisibility('visible')
+    await flushPromises()
+
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(1)
+    expect(getMonitorV2Snapshot).toHaveBeenCalledWith('7d', expect.any(AbortSignal))
+    wrapper.unmount()
+  })
+
+  it('does not refresh after unmount', async () => {
+    vi.useFakeTimers()
+    getMonitorV2Snapshot.mockResolvedValue(snapshot)
+    const wrapper = mountView()
+    wrapper.unmount()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
+  })
+
+  it('applies a changed interval from the periodic response', async () => {
+    vi.useFakeTimers()
+    getMonitorV2Snapshot
+      .mockResolvedValueOnce({ ...snapshot, refresh_interval_seconds: 300 })
+      .mockResolvedValue(snapshot)
+    const wrapper = mountView()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(240_000)
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(2)
+    expect(getMonitorV2Snapshot).toHaveBeenLastCalledWith('7d', expect.any(AbortSignal))
+    wrapper.unmount()
   })
 
   it('renders an instructive empty state', () => {

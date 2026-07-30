@@ -52,15 +52,6 @@
               {{ option.label }}
             </button>
           </div>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            :disabled="loading"
-            @click="reload(currentWindow)"
-          >
-            <Icon name="refresh" size="sm" :class="{ 'animate-spin motion-reduce:animate-none': loading }" />
-            {{ t('monitorV2.refresh') }}
-          </button>
         </div>
       </header>
 
@@ -97,10 +88,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import Icon from '@/components/icons/Icon.vue'
 import { getMonitorV2Snapshot } from './api'
 import MonitorV2GroupCard from './MonitorV2GroupCard.vue'
 import type { MonitorV2Snapshot, MonitorV2Window } from './types'
@@ -118,6 +108,7 @@ const snapshot = ref<MonitorV2Snapshot>(props.initialSnapshot)
 const currentWindow = ref<MonitorV2Window>(props.initialSnapshot.window)
 const loading = ref(false)
 let abortController: AbortController | null = null
+let refreshTimer: number | null = null
 
 const windowOptions = computed(() => [
   { value: '24h' as const, label: t('monitorV2.window.24h') },
@@ -160,7 +151,23 @@ async function selectWindow(window: MonitorV2Window) {
   await reload(window)
 }
 
+function clearRefreshTimer() {
+  if (refreshTimer === null) return
+  window.clearTimeout(refreshTimer)
+  refreshTimer = null
+}
+
+function scheduleRefresh(intervalSeconds: MonitorV2Snapshot['refresh_interval_seconds']) {
+  clearRefreshTimer()
+  if (intervalSeconds === 0 || document.visibilityState === 'hidden') return
+  refreshTimer = window.setTimeout(async () => {
+    refreshTimer = null
+    await reload(currentWindow.value)
+  }, intervalSeconds * 1_000)
+}
+
 async function reload(window: MonitorV2Window) {
+  clearRefreshTimer()
   abortController?.abort()
   const controller = new AbortController()
   abortController = controller
@@ -170,6 +177,7 @@ async function reload(window: MonitorV2Window) {
     if (controller.signal.aborted || abortController !== controller) return
     snapshot.value = next
     currentWindow.value = next.window
+    scheduleRefresh(next.refresh_interval_seconds)
   } catch (error: unknown) {
     const candidate = error as { name?: string; code?: string }
     if (candidate?.name === 'AbortError' || candidate?.code === 'ERR_CANCELED') return
@@ -182,7 +190,22 @@ async function reload(window: MonitorV2Window) {
   }
 }
 
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    clearRefreshTimer()
+    return
+  }
+  void reload(currentWindow.value)
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  scheduleRefresh(snapshot.value.refresh_interval_seconds)
+})
+
 onBeforeUnmount(() => {
   abortController?.abort()
+  clearRefreshTimer()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>

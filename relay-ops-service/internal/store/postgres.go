@@ -780,18 +780,6 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 				evidence_refs=EXCLUDED.evidence_refs,
 				material_hash=EXCLUDED.material_hash,
 				latest_payload=EXCLUDED.latest_payload,
-				acknowledged_occurrence=CASE
-					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-					ELSE relay_ops.incidents.acknowledged_occurrence
-				END,
-				acknowledged_at=CASE
-					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-					ELSE relay_ops.incidents.acknowledged_at
-				END,
-				acknowledged_by=CASE
-					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN NULL
-					ELSE relay_ops.incidents.acknowledged_by
-				END,
 				escalation_level=CASE
 					WHEN relay_ops.incidents.occurrence_no<>EXCLUDED.occurrence_no OR EXCLUDED.state='recovered' THEN 0
 					ELSE relay_ops.incidents.escalation_level
@@ -835,89 +823,6 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("commit incident state: %w", err)
-		}
-		return nil
-	}
-}
-
-func (s *Store) AcknowledgeIncident(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
-	if acknowledgement.Key == "" || acknowledgement.OccurrenceNo <= 0 || acknowledgement.ActorUserID <= 0 || acknowledgement.At.IsZero() {
-		return fmt.Errorf("incident acknowledgement is invalid")
-	}
-	for {
-		tx, err := s.pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("begin incident acknowledgement: %w", err)
-		}
-		var occurrenceNo int64
-		var state string
-		var claimToken sql.NullString
-		err = tx.QueryRow(ctx, `
-			SELECT occurrence_no, state, escalation_claim_token
-			FROM relay_ops.incidents
-			WHERE incident_key=$1
-			FOR UPDATE`, acknowledgement.Key).Scan(&occurrenceNo, &state, &claimToken)
-		if errors.Is(err, pgx.ErrNoRows) {
-			tx.Rollback(ctx)
-			return incidents.ErrNotActive
-		}
-		if err != nil {
-			tx.Rollback(ctx)
-			return fmt.Errorf("read incident acknowledgement state: %w", err)
-		}
-		if occurrenceNo != acknowledgement.OccurrenceNo {
-			tx.Rollback(ctx)
-			return incidents.ErrOccurrenceConflict
-		}
-		if state != "confirmed" && state != "escalated" && state != "degraded" {
-			tx.Rollback(ctx)
-			return incidents.ErrNotActive
-		}
-		if claimToken.Valid && claimToken.String != "" {
-			tx.Rollback(ctx)
-			if err := waitForIncidentOperation(ctx); err != nil {
-				return err
-			}
-			continue
-		}
-		inFlight, err := hasInFlightNotificationDelivery(ctx, tx, acknowledgement.Key, acknowledgement.OccurrenceNo)
-		if err != nil {
-			tx.Rollback(ctx)
-			return err
-		}
-		if inFlight {
-			tx.Rollback(ctx)
-			if err := waitForIncidentOperation(ctx); err != nil {
-				return err
-			}
-			continue
-		}
-		command, err := tx.Exec(ctx, `
-			UPDATE relay_ops.incidents
-			SET acknowledged_occurrence=$2, acknowledged_at=$3, acknowledged_by=$4,
-			    next_escalation_at=NULL
-			WHERE incident_key=$1 AND occurrence_no=$2`,
-			acknowledgement.Key, acknowledgement.OccurrenceNo, acknowledgement.At.UTC(), acknowledgement.ActorUserID)
-		if err != nil {
-			tx.Rollback(ctx)
-			return fmt.Errorf("write incident acknowledgement: %w", err)
-		}
-		if command.RowsAffected() != 1 {
-			tx.Rollback(ctx)
-			return incidents.ErrOccurrenceConflict
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE relay_ops.notification_deliveries
-			SET delivery_status='canceled', next_attempt_at=NULL
-			WHERE incident_id=(SELECT id FROM relay_ops.incidents WHERE incident_key=$1)
-			  AND occurrence_no=$2
-			  AND delivery_status IN ('failed', 'reserved')`,
-			acknowledgement.Key, acknowledgement.OccurrenceNo); err != nil {
-			tx.Rollback(ctx)
-			return fmt.Errorf("cancel acknowledged incident notification retries: %w", err)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("commit incident acknowledgement: %w", err)
 		}
 		return nil
 	}
@@ -1271,11 +1176,10 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 		var occurrenceNo, deliveryOccurrence int64
 		var severity, state, transition string
 		var escalationLevel int
-		var acknowledgedOccurrence sql.NullInt64
 		var firstDeliveredAt time.Time
 		err = tx.QueryRow(ctx, `
 			SELECT i.id, i.severity, i.state, i.occurrence_no, i.escalation_level,
-			       i.acknowledged_occurrence, d.occurrence_no, d.transition,
+			       d.occurrence_no, d.transition,
 			       MIN(history.delivered_at)
 			FROM relay_ops.notification_deliveries d
 			JOIN relay_ops.incidents i ON i.id=d.incident_id
@@ -1287,14 +1191,13 @@ func (s *Store) FinishNotification(ctx context.Context, deliveryID int64, outcom
 			WHERE d.id=$1
 			GROUP BY i.id, d.occurrence_no, d.transition`, deliveryID).Scan(
 			&incidentID, &severity, &state, &occurrenceNo, &escalationLevel,
-			&acknowledgedOccurrence, &deliveryOccurrence, &transition, &firstDeliveredAt,
+			&deliveryOccurrence, &transition, &firstDeliveredAt,
 		)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("read initial escalation schedule: %w", err)
 		}
 		active := state == "confirmed" || state == "escalated" || state == "degraded"
-		unacknowledged := !acknowledgedOccurrence.Valid || acknowledgedOccurrence.Int64 != occurrenceNo
-		if err == nil && active && unacknowledged && transition != "recovered" && deliveryOccurrence == occurrenceNo {
+		if err == nil && active && transition != "recovered" && deliveryOccurrence == occurrenceNo {
 			var deadline any
 			if next, found := alerting.NextEscalationAt(severity, escalationLevel, firstDeliveredAt); found {
 				deadline = next
@@ -1339,7 +1242,6 @@ func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*not
 		    OR (
 		      d.transition<>'recovered'
 		      AND i.state IN ('confirmed', 'escalated', 'degraded')
-		      AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
 		    )
 		  )
 		ORDER BY COALESCE(d.next_attempt_at, d.created_at), d.id
@@ -1434,7 +1336,6 @@ func (s *Store) ClaimDueEscalation(ctx context.Context, now time.Time) (*alertin
 		WHERE i.next_escalation_at<=$1
 		  AND i.severity IN ('P0', 'P1')
 		  AND i.state IN ('confirmed', 'escalated', 'degraded')
-		  AND (i.acknowledged_occurrence IS NULL OR i.acknowledged_occurrence<>i.occurrence_no)
 		  AND (
 		    i.escalation_claim_token IS NULL
 		    OR i.escalation_claimed_at<=$1-INTERVAL '2 minutes'
@@ -1490,8 +1391,7 @@ func (s *Store) FinishEscalation(ctx context.Context, result alerting.Result) er
 			WHERE incident_key=$1 AND occurrence_no=$2
 			  AND escalation_level=$3-1
 			  AND escalation_claim_token=$5
-			  AND state IN ('confirmed', 'escalated', 'degraded')
-			  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
+			  AND state IN ('confirmed', 'escalated', 'degraded')`,
 			result.Key, result.OccurrenceNo, result.Level, next, result.ClaimToken)
 		if err != nil {
 			return fmt.Errorf("finish successful incident escalation: %w", err)
@@ -1507,8 +1407,7 @@ func (s *Store) FinishEscalation(ctx context.Context, result alerting.Result) er
 		WHERE incident_key=$1 AND occurrence_no=$2
 		  AND escalation_level=$3-1
 		  AND escalation_claim_token=$5
-		  AND state IN ('confirmed', 'escalated', 'degraded')
-		  AND (acknowledged_occurrence IS NULL OR acknowledged_occurrence<>occurrence_no)`,
+		  AND state IN ('confirmed', 'escalated', 'degraded')`,
 		result.Key, result.OccurrenceNo, result.Level, next, result.ClaimToken)
 	if err != nil {
 		return fmt.Errorf("finish failed incident escalation: %w", err)

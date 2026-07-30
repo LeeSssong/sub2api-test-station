@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -262,6 +263,66 @@ func TestLoadRejectsWorldReadableSecretFiles(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresNativeOpsAlertReadDatabaseURLFileWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addNotificationPolicy(t, env)
+	delete(env, "RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE")
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("native ops alerts without read database URL file were accepted")
+	}
+}
+
+func TestLoadRejectsRelativeNativeOpsAlertReadDatabaseURLFile(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addNotificationPolicy(t, env)
+	env["RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE"] = "relative-secret"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("relative native ops alert read database URL file was accepted")
+	}
+}
+
+func TestLoadAcceptsNativeOpsAlertReadDatabaseURLFile(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	addNotificationPolicy(t, env)
+	path := filepath.Join(t.TempDir(), "sub2api-alert-read-database-url")
+	if err := os.WriteFile(path, []byte("postgres://reader:secret@postgres/sub2api"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE"] = path
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Sub2APIAlertReadDatabaseURLFile != path {
+		t.Fatalf("Sub2APIAlertReadDatabaseURLFile = %q, want %q", cfg.Sub2APIAlertReadDatabaseURLFile, path)
+	}
+}
+
+func TestLoadAllowsNoNativeOpsAlertReadDatabaseURLFileWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	path := addNotificationPolicy(t, env)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = []byte(strings.Replace(string(body), `"native_ops_alerts_enabled": true`, `"native_ops_alerts_enabled": false`, 1))
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	delete(env, "RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE")
+	if _, err := Load(func(key string) string { return env[key] }); err != nil {
+		t.Fatalf("disabled native ops alerts rejected without secret path: %v", err)
+	}
+}
+
 func TestLoadAcceptsOnlyAbsoluteAccountQualityResultPath(t *testing.T) {
 	t.Parallel()
 
@@ -345,12 +406,18 @@ func addNotificationPolicy(t *testing.T, env map[string]string) string {
 			"native_monitor_evidence_enabled": true,
 			"pricing_notice_enabled": true,
 			"daily_digest_enabled": true,
-			"incident_escalation_enabled": true
+			"incident_escalation_enabled": true,
+			"native_ops_alerts_enabled": true
 		}
 	}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	env["RELAY_OPS_NOTIFICATION_POLICY_FILE"] = path
+	readURLPath := filepath.Join(t.TempDir(), "sub2api-alert-read-database-url")
+	if err := os.WriteFile(readURLPath, []byte("postgres://reader:secret@postgres/sub2api"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env["RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE"] = readURLPath
 	return path
 }

@@ -52,16 +52,18 @@ func NextEscalationAt(severity string, completedLevel int, firstDeliveredAt time
 	}
 	switch severity {
 	case "P0":
-		switch completedLevel {
-		case 0:
+		if completedLevel == 0 {
 			return firstDeliveredAt.Add(5 * time.Minute), true
-		case 1:
+		}
+		if completedLevel == 1 {
 			return firstDeliveredAt.Add(15 * time.Minute), true
 		}
+		return firstDeliveredAt.Add(15*time.Minute + time.Duration(completedLevel-1)*30*time.Minute), true
 	case "P1":
 		if completedLevel == 0 {
 			return firstDeliveredAt.Add(15 * time.Minute), true
 		}
+		return firstDeliveredAt.Add(15*time.Minute + time.Duration(completedLevel)*60*time.Minute), true
 	}
 	return time.Time{}, false
 }

@@ -81,7 +81,7 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 		record.OccurrenceNo = 1
 	}
 	if !observation.Failing {
-		if !exists || record.State == "recovered" {
+		if !exists || record.State == "recovered" || record.State == "closed" {
 			return Transition{State: "healthy", OccurrenceNo: record.OccurrenceNo}, nil
 		}
 		recoveryWindows := observation.RecoveryWindows
@@ -132,6 +132,21 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 		return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 
+	if record.State == "suppressed" {
+		record.State = "confirmed"
+		record.RecoveryCount = 0
+		record.SampleCount++
+		record.CurrentValue = observation.CurrentValue
+		record.EvidenceHash = observation.EvidenceHash
+		record.MaterialHash = observation.MaterialHash
+		record.LatestPayload = append([]byte(nil), observation.LatestPayload...)
+		applyObservationMetadata(&record, observation)
+		if err := m.Repository.Put(ctx, record); err != nil {
+			return Transition{}, err
+		}
+		return Transition{State: "confirmed", Kind: "resumed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
+	}
+
 	previousMaterial := record.MaterialHash
 	previousSeverity := record.Severity
 	record.SampleCount++
@@ -164,6 +179,55 @@ func (m Machine) Observe(ctx context.Context, observation Observation) (Transiti
 		return Transition{State: record.State, Kind: "progressed", Notify: true, RelatedKey: observation.Key, OccurrenceNo: record.OccurrenceNo}, nil
 	}
 	return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
+}
+
+func (m Machine) Suppress(ctx context.Context, key string) error {
+	if m.Repository == nil || key == "" {
+		return fmt.Errorf("incident repository and key are required")
+	}
+	record, exists, err := m.Repository.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("incident not found")
+	}
+	if record.State == "recovered" || record.State == "closed" {
+		return nil
+	}
+	record.State = "suppressed"
+	record.RecoveryCount = 0
+	return m.Repository.Put(ctx, record)
+}
+
+func (m Machine) Close(ctx context.Context, key, reason string) (Transition, error) {
+	if m.Repository == nil || key == "" {
+		return Transition{}, fmt.Errorf("incident repository and key are required")
+	}
+	if reason != "resolved" && reason != "manual_resolved" {
+		return Transition{}, fmt.Errorf("incident close reason is invalid")
+	}
+	record, exists, err := m.Repository.Get(ctx, key)
+	if err != nil {
+		return Transition{}, err
+	}
+	if !exists {
+		return Transition{}, fmt.Errorf("incident not found")
+	}
+	if record.State == "recovered" || record.State == "closed" {
+		return Transition{State: record.State, OccurrenceNo: record.OccurrenceNo}, nil
+	}
+	notify := record.State == "confirmed" || record.State == "escalated" || record.State == "degraded"
+	state, kind := "recovered", "recovered"
+	if reason == "manual_resolved" {
+		state, kind = "closed", "manual_resolved"
+	}
+	record.State = state
+	record.RecoveryCount = 0
+	if err := m.Repository.Put(ctx, record); err != nil {
+		return Transition{}, err
+	}
+	return Transition{State: state, Kind: kind, Notify: notify, RelatedKey: key, OccurrenceNo: record.OccurrenceNo}, nil
 }
 
 func applyObservationMetadata(record *Record, observation Observation) {

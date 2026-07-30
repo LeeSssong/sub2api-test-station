@@ -231,6 +231,53 @@ func TestMachineAssignsANewOccurrenceAfterRecovery(t *testing.T) {
 	}
 }
 
+func TestMachineSuppressesAndResumesSameOccurrence(t *testing.T) {
+	repository := newMemoryRepository()
+	machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+	ctx := context.Background()
+	observation := Observation{Key: "native:7:hash", Family: "native_ops_alert", SourceKind: "sub2api", Severity: "P0", Failing: true, EvidenceHash: "one", ConfirmationWindows: 1}
+	first, err := machine.Observe(ctx, observation)
+	if err != nil || !first.Notify || first.OccurrenceNo != 1 {
+		t.Fatalf("first=%#v err=%v", first, err)
+	}
+	if err := machine.Suppress(ctx, observation.Key); err != nil {
+		t.Fatal(err)
+	}
+	record := repository.records[observation.Key]
+	if record.State != "suppressed" || record.OccurrenceNo != 1 {
+		t.Fatalf("suppressed record=%#v", record)
+	}
+	resumed, err := machine.Observe(ctx, observation)
+	if err != nil || !resumed.Notify || resumed.OccurrenceNo != 1 || resumed.Kind != "resumed" {
+		t.Fatalf("resumed=%#v err=%v", resumed, err)
+	}
+}
+
+func TestMachineClosesResolvedAndManualResolved(t *testing.T) {
+	for _, reason := range []string{"resolved", "manual_resolved"} {
+		t.Run(reason, func(t *testing.T) {
+			repository := newMemoryRepository()
+			machine := Machine{Repository: repository, Policy: DefaultPolicy()}
+			ctx := context.Background()
+			observation := Observation{Key: "native:" + reason, Severity: "P0", Failing: true, EvidenceHash: "one", ConfirmationWindows: 1}
+			if _, err := machine.Observe(ctx, observation); err != nil {
+				t.Fatal(err)
+			}
+			transition, err := machine.Close(ctx, observation.Key, reason)
+			if err != nil || !transition.Notify || transition.OccurrenceNo != 1 {
+				t.Fatalf("transition=%#v err=%v", transition, err)
+			}
+			wantState, wantKind := "recovered", "recovered"
+			if reason == "manual_resolved" {
+				wantState, wantKind = "closed", "manual_resolved"
+			}
+			if transition.State != wantState || transition.Kind != wantKind {
+				t.Fatalf("transition=%#v want state=%q kind=%q", transition, wantState, wantKind)
+			}
+		})
+	}
+}
+
 type memoryRepository struct{ records map[string]Record }
 
 func newMemoryRepository() *memoryRepository { return &memoryRepository{records: map[string]Record{}} }

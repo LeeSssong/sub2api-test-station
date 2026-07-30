@@ -19,6 +19,7 @@ const (
 	FamilyPricingNotice         Family = "pricing_notice"
 	FamilyDailyDigest           Family = "daily_digest"
 	FamilyIncidentEscalation    Family = "incident_escalation"
+	FamilyNativeOpsAlert        Family = "native_ops_alert"
 
 	ModeDisabled DeliveryMode = "disabled"
 	ModeShadow   DeliveryMode = "shadow"
@@ -33,6 +34,7 @@ type FeishuPolicy struct {
 	PricingNoticeEnabled         bool `json:"pricing_notice_enabled"`
 	DailyDigestEnabled           bool `json:"daily_digest_enabled"`
 	IncidentEscalationEnabled    bool `json:"incident_escalation_enabled"`
+	NativeOpsAlertsEnabled       bool `json:"native_ops_alerts_enabled"`
 }
 
 type Policy struct {
@@ -49,6 +51,7 @@ type rawFeishuPolicy struct {
 	PricingNoticeEnabled         *bool `json:"pricing_notice_enabled"`
 	DailyDigestEnabled           *bool `json:"daily_digest_enabled"`
 	IncidentEscalationEnabled    *bool `json:"incident_escalation_enabled"`
+	NativeOpsAlertsEnabled       *bool `json:"native_ops_alerts_enabled"`
 }
 
 type rawPolicy struct {
@@ -87,6 +90,7 @@ func Load(path string) (Policy, error) {
 		"pricing_notice_enabled":          raw.Feishu.PricingNoticeEnabled,
 		"daily_digest_enabled":            raw.Feishu.DailyDigestEnabled,
 		"incident_escalation_enabled":     raw.Feishu.IncidentEscalationEnabled,
+		"native_ops_alerts_enabled":       raw.Feishu.NativeOpsAlertsEnabled,
 	}
 	for name, value := range fields {
 		if value == nil {
@@ -104,6 +108,7 @@ func Load(path string) (Policy, error) {
 			PricingNoticeEnabled:         *raw.Feishu.PricingNoticeEnabled,
 			DailyDigestEnabled:           *raw.Feishu.DailyDigestEnabled,
 			IncidentEscalationEnabled:    *raw.Feishu.IncidentEscalationEnabled,
+			NativeOpsAlertsEnabled:       *raw.Feishu.NativeOpsAlertsEnabled,
 		},
 	}, nil
 }
@@ -128,6 +133,7 @@ func ApprovedFamilies() []Family {
 		FamilyPricingNotice,
 		FamilyDailyDigest,
 		FamilyIncidentEscalation,
+		FamilyNativeOpsAlert,
 	}
 }
 
@@ -147,6 +153,8 @@ func (p Policy) Enabled(family Family) bool {
 		return p.Feishu.DailyDigestEnabled
 	case FamilyIncidentEscalation:
 		return p.Feishu.IncidentEscalationEnabled
+	case FamilyNativeOpsAlert:
+		return p.Feishu.NativeOpsAlertsEnabled
 	default:
 		return false
 	}

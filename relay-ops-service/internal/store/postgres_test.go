@@ -1775,6 +1775,138 @@ func TestIncidentNotificationMetadataRoundTripsAndNewOccurrencePreservesHistoric
 	}
 }
 
+func TestNativeOpsAlertMigrationCursorAndSourceRoundTrip(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("first Migrate: %v", err)
+	}
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("second Migrate: %v", err)
+	}
+
+	got, found, err := st.LoadNativeOpsAlertCursor(ctx)
+	if err != nil {
+		t.Fatalf("LoadNativeOpsAlertCursor before initialization: %v", err)
+	}
+	if found {
+		t.Fatalf("LoadNativeOpsAlertCursor before initialization found %v, cursor %#v", found, got)
+	}
+
+	cursor41 := NativeOpsAlertCursor{
+		FiredAt: time.Date(2026, 7, 30, 13, 48, 0, 0, time.UTC),
+		EventID: 41,
+	}
+	source41 := nativeOpsAlertSource(41, "firing")
+	if err := st.InitializeNativeOpsAlertSync(ctx, cursor41, []NativeOpsAlertSource{source41}); err != nil {
+		t.Fatalf("InitializeNativeOpsAlertSync: %v", err)
+	}
+
+	got, found, err = st.LoadNativeOpsAlertCursor(ctx)
+	if err != nil {
+		t.Fatalf("LoadNativeOpsAlertCursor after initialization: %v", err)
+	}
+	if !found || !got.FiredAt.Equal(cursor41.FiredAt) || got.EventID != cursor41.EventID {
+		t.Fatalf("LoadNativeOpsAlertCursor after initialization = %#v, %v, want %#v, true", got, found, cursor41)
+	}
+
+	firing, err := st.ListFiringNativeOpsAlertSources(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListFiringNativeOpsAlertSources: %v", err)
+	}
+	if len(firing) != 1 || !reflect.DeepEqual(firing[0], source41) {
+		t.Fatalf("ListFiringNativeOpsAlertSources = %#v, want %#v", firing, []NativeOpsAlertSource{source41})
+	}
+}
+
+func TestNativeOpsAlertPageRejectsInvalidSourceWithoutUpdatingCursor(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	cursor41 := NativeOpsAlertCursor{FiredAt: time.Date(2026, 7, 30, 13, 48, 0, 0, time.UTC), EventID: 41}
+	if err := st.InitializeNativeOpsAlertSync(ctx, cursor41, []NativeOpsAlertSource{nativeOpsAlertSource(41, "firing")}); err != nil {
+		t.Fatal(err)
+	}
+
+	valid42 := nativeOpsAlertSource(42, "firing")
+	invalid43 := nativeOpsAlertSource(43, "firing")
+	invalid43.RuleID = 0
+	cursor43 := NativeOpsAlertCursor{FiredAt: time.Date(2026, 7, 30, 13, 50, 0, 0, time.UTC), EventID: 43}
+	if err := st.CommitNativeOpsAlertPage(ctx, []NativeOpsAlertSource{valid42, invalid43}, cursor43); err == nil {
+		t.Fatal("CommitNativeOpsAlertPage accepted an invalid source")
+	}
+
+	got, found, err := st.LoadNativeOpsAlertCursor(ctx)
+	if err != nil || !found || !got.FiredAt.Equal(cursor41.FiredAt) || got.EventID != cursor41.EventID {
+		t.Fatalf("cursor after rejected page = %#v, %v, %v; want %#v, true, nil", got, found, err, cursor41)
+	}
+	var rows int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.native_ops_alert_events WHERE source_event_id=42`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("valid source from rejected page persisted %d rows", rows)
+	}
+}
+
+func TestNativeOpsAlertSourceLedgerIsIdempotentAndResolvedSourcesAreExcluded(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	source41 := nativeOpsAlertSource(41, "firing")
+	cursor41 := NativeOpsAlertCursor{FiredAt: time.Date(2026, 7, 30, 13, 48, 0, 0, time.UTC), EventID: 41}
+	if err := st.CommitNativeOpsAlertPage(ctx, []NativeOpsAlertSource{source41}, cursor41); err != nil {
+		t.Fatalf("first CommitNativeOpsAlertPage: %v", err)
+	}
+	if err := st.CommitNativeOpsAlertPage(ctx, []NativeOpsAlertSource{source41}, cursor41); err != nil {
+		t.Fatalf("idempotent CommitNativeOpsAlertPage: %v", err)
+	}
+	var rows int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.native_ops_alert_events WHERE source_event_id=41`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("source event row count = %d, want 1", rows)
+	}
+
+	resolved := source41
+	resolved.SourceStatus = "resolved"
+	resolvedAt := time.Date(2026, 7, 30, 14, 0, 0, 0, time.UTC)
+	resolved.ResolvedAt = &resolvedAt
+	resolved.LastSeenAt = resolvedAt
+	if err := st.UpsertNativeOpsAlertSource(ctx, resolved); err != nil {
+		t.Fatalf("UpsertNativeOpsAlertSource resolved: %v", err)
+	}
+	firing, err := st.ListFiringNativeOpsAlertSources(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firing) != 0 {
+		t.Fatalf("ListFiringNativeOpsAlertSources after resolved update = %#v, want none", firing)
+	}
+}
+
+func nativeOpsAlertSource(eventID int64, status string) NativeOpsAlertSource {
+	firedAt := time.Date(2026, 7, 30, 13, 48, 0, 0, time.UTC).Add(time.Duration(eventID-41) * time.Minute)
+	return NativeOpsAlertSource{
+		SourceEventID:  eventID,
+		RuleID:         7,
+		IncidentKey:    "native-ops-alert:7:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Severity:       "P0",
+		SourceStatus:   status,
+		FiredAt:        firedAt,
+		Silenced:       false,
+		DimensionsHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		LastSeenAt:     firedAt,
+	}
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	url := os.Getenv("RELAY_OPS_TEST_DATABASE_URL")

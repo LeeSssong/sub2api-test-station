@@ -18,35 +18,36 @@ const (
 )
 
 type Config struct {
-	Mode                      string
-	ListenAddress             string
-	Timezone                  *time.Location
-	TimezoneName              string
-	DatabaseURLFile           string
-	Sub2APIBaseURL            string
-	Sub2APIAdminKeyFile       string
-	AccountQualityResultFile  string
-	UpstreamGroupMappingFile  string
-	FeishuWebhookFile         string
-	FeishuAppIDFile           string
-	FeishuAppSecretFile       string
-	FeishuAlertChatIDFile     string
-	FeishuAlertRecipientsFile string
-	NotificationPolicyFile    string
-	NotificationPolicy        notificationpolicy.Policy
-	AgentBaseURL              string
-	AgentAPIKeyFile           string
-	AgentModel                string
-	ProductionPageInterval    time.Duration
-	CandidateInterval         time.Duration
-	PublicBaseURL             string
-	RubyPath                  string
-	V2ScriptPath              string
-	CandidateProfilePath      string
-	FastProfilePath           string
-	CandidateSecretDir        string
-	QualificationProfilePath  string
-	AnalyzerCommandPath       string
+	Mode                            string
+	ListenAddress                   string
+	Timezone                        *time.Location
+	TimezoneName                    string
+	DatabaseURLFile                 string
+	Sub2APIBaseURL                  string
+	Sub2APIAdminKeyFile             string
+	Sub2APIAlertReadDatabaseURLFile string
+	AccountQualityResultFile        string
+	UpstreamGroupMappingFile        string
+	FeishuWebhookFile               string
+	FeishuAppIDFile                 string
+	FeishuAppSecretFile             string
+	FeishuAlertChatIDFile           string
+	FeishuAlertRecipientsFile       string
+	NotificationPolicyFile          string
+	NotificationPolicy              notificationpolicy.Policy
+	AgentBaseURL                    string
+	AgentAPIKeyFile                 string
+	AgentModel                      string
+	ProductionPageInterval          time.Duration
+	CandidateInterval               time.Duration
+	PublicBaseURL                   string
+	RubyPath                        string
+	V2ScriptPath                    string
+	CandidateProfilePath            string
+	FastProfilePath                 string
+	CandidateSecretDir              string
+	QualificationProfilePath        string
+	AnalyzerCommandPath             string
 }
 
 func Load(env func(string) string) (Config, error) {
@@ -138,6 +139,18 @@ func Load(env func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("notification policy file: %w", err)
 		}
 	}
+	sub2APIAlertReadDatabaseURLFile := get("RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE", "")
+	if notificationPolicy.Feishu.NativeOpsAlertsEnabled {
+		if sub2APIAlertReadDatabaseURLFile == "" {
+			return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE is required when native ops alerts are enabled")
+		}
+		if !filepath.IsAbs(sub2APIAlertReadDatabaseURLFile) {
+			return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_ALERT_READ_DATABASE_URL_FILE must be an absolute path")
+		}
+		if err := validateSecretFile(sub2APIAlertReadDatabaseURLFile); err != nil {
+			return Config{}, fmt.Errorf("Sub2API alert read database URL file: %w", err)
+		}
+	}
 	baseURL := strings.TrimRight(get("RELAY_OPS_SUB2API_URL", "http://sub2api:8080"), "/")
 	if baseURL == "" {
 		return Config{}, fmt.Errorf("RELAY_OPS_SUB2API_URL is required")
@@ -156,35 +169,36 @@ func Load(env func(string) string) (Config, error) {
 	}
 	analyzerCommandPath := get("RELAY_OPS_ACCOUNT_MONITOR_ANALYZER_PATH", "/app/ops/analyze-account-monitor.rb")
 	return Config{
-		Mode:                      mode,
-		ListenAddress:             get("RELAY_OPS_LISTEN_ADDRESS", ":8100"),
-		Timezone:                  timezone,
-		TimezoneName:              timezoneName,
-		DatabaseURLFile:           databaseURLFile,
-		Sub2APIBaseURL:            baseURL,
-		Sub2APIAdminKeyFile:       adminKeyFile,
-		AccountQualityResultFile:  accountQualityResultFile,
-		UpstreamGroupMappingFile:  upstreamGroupMappingFile,
-		FeishuWebhookFile:         feishuFile,
-		FeishuAppIDFile:           feishuAppIDFile,
-		FeishuAppSecretFile:       feishuAppSecretFile,
-		FeishuAlertChatIDFile:     feishuAlertChatIDFile,
-		FeishuAlertRecipientsFile: feishuAlertRecipientsFile,
-		NotificationPolicyFile:    notificationPolicyFile,
-		NotificationPolicy:        notificationPolicy,
-		AgentBaseURL:              strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
-		AgentAPIKeyFile:           agentKeyFile,
-		AgentModel:                get("RELAY_OPS_AGENT_MODEL", ""),
-		ProductionPageInterval:    5 * time.Minute,
-		CandidateInterval:         6 * time.Hour,
-		PublicBaseURL:             strings.TrimRight(get("RELAY_OPS_PUBLIC_BASE_URL", "https://api.xingqiaolab.top"), "/"),
-		RubyPath:                  get("RELAY_OPS_RUBY_PATH", "/usr/bin/ruby"),
-		V2ScriptPath:              get("RELAY_OPS_V2_SCRIPT_PATH", "/app/ops/upstream-benchmark-v2.rb"),
-		CandidateProfilePath:      get("RELAY_OPS_CANDIDATE_PROFILE_PATH", "/app/config/upstream-benchmarks/candidate-watch-v2.yaml"),
-		FastProfilePath:           get("RELAY_OPS_FAST_PROFILE_PATH", "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml"),
-		CandidateSecretDir:        candidateSecretDir,
-		QualificationProfilePath:  get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
-		AnalyzerCommandPath:       analyzerCommandPath,
+		Mode:                            mode,
+		ListenAddress:                   get("RELAY_OPS_LISTEN_ADDRESS", ":8100"),
+		Timezone:                        timezone,
+		TimezoneName:                    timezoneName,
+		DatabaseURLFile:                 databaseURLFile,
+		Sub2APIBaseURL:                  baseURL,
+		Sub2APIAdminKeyFile:             adminKeyFile,
+		Sub2APIAlertReadDatabaseURLFile: sub2APIAlertReadDatabaseURLFile,
+		AccountQualityResultFile:        accountQualityResultFile,
+		UpstreamGroupMappingFile:        upstreamGroupMappingFile,
+		FeishuWebhookFile:               feishuFile,
+		FeishuAppIDFile:                 feishuAppIDFile,
+		FeishuAppSecretFile:             feishuAppSecretFile,
+		FeishuAlertChatIDFile:           feishuAlertChatIDFile,
+		FeishuAlertRecipientsFile:       feishuAlertRecipientsFile,
+		NotificationPolicyFile:          notificationPolicyFile,
+		NotificationPolicy:              notificationPolicy,
+		AgentBaseURL:                    strings.TrimRight(get("RELAY_OPS_AGENT_BASE_URL", ""), "/"),
+		AgentAPIKeyFile:                 agentKeyFile,
+		AgentModel:                      get("RELAY_OPS_AGENT_MODEL", ""),
+		ProductionPageInterval:          5 * time.Minute,
+		CandidateInterval:               6 * time.Hour,
+		PublicBaseURL:                   strings.TrimRight(get("RELAY_OPS_PUBLIC_BASE_URL", "https://api.xingqiaolab.top"), "/"),
+		RubyPath:                        get("RELAY_OPS_RUBY_PATH", "/usr/bin/ruby"),
+		V2ScriptPath:                    get("RELAY_OPS_V2_SCRIPT_PATH", "/app/ops/upstream-benchmark-v2.rb"),
+		CandidateProfilePath:            get("RELAY_OPS_CANDIDATE_PROFILE_PATH", "/app/config/upstream-benchmarks/candidate-watch-v2.yaml"),
+		FastProfilePath:                 get("RELAY_OPS_FAST_PROFILE_PATH", "/app/config/upstream-benchmarks/quality-first-fast-v1.yaml"),
+		CandidateSecretDir:              candidateSecretDir,
+		QualificationProfilePath:        get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
+		AnalyzerCommandPath:             analyzerCommandPath,
 	}, nil
 }
 

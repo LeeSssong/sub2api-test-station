@@ -14,6 +14,7 @@ const allEnabledPolicy = `{
     "group_capacity_enabled": true,
     "account_impact_enabled": true,
     "native_monitor_evidence_enabled": true,
+    "native_ops_alerts_enabled": true,
     "pricing_notice_enabled": true,
     "daily_digest_enabled": true,
     "incident_escalation_enabled": true
@@ -108,6 +109,39 @@ func TestLoadRejectsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestNativeOpsAlertFamilyRequiresFieldAndFollowsPolicy(t *testing.T) {
+	t.Parallel()
+
+	missing := stringReplace(allEnabledPolicy, `    "native_ops_alerts_enabled": true,
+`, "")
+	if _, err := Load(writePolicy(t, missing)); err == nil {
+		t.Fatal("policy without native ops alert family was accepted")
+	}
+
+	policy, err := Load(writePolicy(t, allEnabledPolicy))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !policy.Enabled(FamilyNativeOpsAlert) || !policy.ShouldDeliver(FamilyNativeOpsAlert) {
+		t.Fatal("enabled native ops alert family is not deliverable")
+	}
+	shadow, err := Load(writePolicy(t, replaceMode(allEnabledPolicy, "shadow")))
+	if err != nil {
+		t.Fatalf("Load shadow: %v", err)
+	}
+	if !shadow.Enabled(FamilyNativeOpsAlert) || shadow.ShouldDeliver(FamilyNativeOpsAlert) {
+		t.Fatal("shadow native ops alert family delivery mismatch")
+	}
+	disabled := replaceBool(allEnabledPolicy, `"native_ops_alerts_enabled": true`, `"native_ops_alerts_enabled": false`)
+	disabledPolicy, err := Load(writePolicy(t, disabled))
+	if err != nil {
+		t.Fatalf("Load disabled family: %v", err)
+	}
+	if disabledPolicy.Enabled(FamilyNativeOpsAlert) || disabledPolicy.ShouldDeliver(FamilyNativeOpsAlert) {
+		t.Fatal("disabled native ops alert family is deliverable")
+	}
+}
+
 func writePolicy(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "notification-policy.json")
@@ -129,4 +163,8 @@ func stringReplace(value, old, replacement string) string {
 		}
 	}
 	return value
+}
+
+func replaceBool(value, old, replacement string) string {
+	return stringReplace(value, old, replacement)
 }

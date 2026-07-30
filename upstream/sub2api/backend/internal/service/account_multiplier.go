@@ -26,7 +26,7 @@ const (
 	accountMultiplierMaxRelativeSpread   = 0.15
 	accountMultiplierRequestTimeout      = 30 * time.Second
 	accountMultiplierMaxBodyBytes        = 128 * 1024
-	accountMultiplierQuotaPollAttempts   = 5
+	accountMultiplierQuotaPollAttempts   = 8
 	accountMultiplierQuotaPollDelay      = 250 * time.Millisecond
 
 	AccountMonitorMultiplierSourceDeclared = "declared"

@@ -419,7 +419,7 @@ func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSna
 func TestAccountMultiplierWaitForQuotaUsagePollsUntilCounterAdvances(t *testing.T) {
 	account := &Account{ID: 23, Concurrency: 1}
 	upstream := &accountMultiplierHTTPStub{
-		usageValues:    []float64{100, 100, 125},
+		usageValues:    []float64{100, 100, 100, 100, 100, 100, 100, 125},
 		expectedAPIKey: "sk-sensitive",
 	}
 	testService := &AccountTestService{httpUpstream: upstream}
@@ -440,8 +440,8 @@ func TestAccountMultiplierWaitForQuotaUsagePollsUntilCounterAdvances(t *testing.
 	if after != 125 {
 		t.Fatalf("waitForNewAPIQuotaUsage() = %v, want 125", after)
 	}
-	if upstream.usageIndex != 3 {
-		t.Fatalf("usage reads = %d, want 3", upstream.usageIndex)
+	if upstream.usageIndex != 8 {
+		t.Fatalf("usage reads = %d, want 8", upstream.usageIndex)
 	}
 }
 

@@ -144,7 +144,7 @@ func TestServiceRetriesInvalidLegacySnapshotWithoutSendingRawValue(t *testing.T)
 	}
 }
 
-func TestServiceDoesNothingWhenRepositoryHasNoUnacknowledgedActiveClaim(t *testing.T) {
+func TestServiceDoesNothingWhenRepositoryHasNoActiveClaim(t *testing.T) {
 	sender := &fakeEscalationSender{}
 	service := Service{
 		Repository: &fakeEscalationRepository{},

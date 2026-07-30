@@ -11,7 +11,10 @@ import (
 )
 
 func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *testing.T) {
-	payload, err := RenderAlert(IncidentView{Title: "公开分组不可用", Severity: "P0"}).CardJSON()
+	payload, err := RenderAlert(IncidentView{
+		Title: "公开分组不可用", Severity: "P0",
+		Links: []Link{{Label: "运维后台", URL: "/admin/ops"}},
+	}).CardJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +27,7 @@ func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *test
 		if message.OccurrenceNo != 3 || message.Transition != "confirmed" || message.Severity != "P0" {
 			t.Fatalf("retried message=%#v", message)
 		}
+		assertReminderOnlyCard(t, message)
 		return SendResult{
 			MessageID: "om-retry", ResponseCode: http.StatusOK,
 			Payload:      []byte(`{"content":"<at id=ou-secret></at>"}`),
@@ -42,6 +46,46 @@ func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *test
 	if len(repository.outcomes) != 1 || repository.outcomes[0].id != 41 ||
 		repository.outcomes[0].outcome.Status != "delivered" ||
 		!bytes.Equal(repository.outcomes[0].outcome.Payload, payload) {
+		t.Fatalf("outcomes=%#v", repository.outcomes)
+	}
+}
+
+func TestDeliveryRetryServiceNormalizesLegacyAcknowledgementCardBeforeSending(t *testing.T) {
+	legacyPayload := []byte(`{
+		"config":{"wide_screen_mode":true},
+		"header":{"title":{"tag":"plain_text","content":"P1｜GPT PLUS 内测分组部分请求持续失败"},"template":"orange"},
+		"elements":[
+			{"tag":"div","text":{"tag":"lark_md","content":"**持续时间**：15 分钟\n**接手状态**：尚未有人确认接手。\n\n**最新情况**\n部分请求持续失败。"}},
+			{"tag":"action","actions":[
+				{"tag":"button","text":{"tag":"plain_text","content":"查看运维后台"},"type":"primary","multi_url":{"url":"/ops"}},
+				{"tag":"button","text":{"tag":"plain_text","content":"确认并接手"},"type":"primary","multi_url":{"url":"/ops?ack_incident=group%3AGPT-PLUS-%E5%86%85%E6%B5%8B%3Aavailability&ack_occurrence=3"}}
+			]}
+		]
+	}`)
+	repository := &retryRepository{claims: []*RetryDelivery{{
+		Kind: "incident", ID: 61,
+		IncidentKey: "group:GPT-PLUS-内测:availability", Severity: "P1",
+		OccurrenceNo: 3, Transition: "confirmed", Payload: legacyPayload,
+	}}}
+	client := resultClientFunc(func(_ context.Context, message FeishuMessage) (SendResult, error) {
+		if message.OccurrenceNo != 3 || message.Transition != "confirmed" || message.Severity != "P1" {
+			t.Fatalf("retried message=%#v", message)
+		}
+		assertReminderOnlyCard(t, message)
+		return SendResult{
+			MessageID: "om-legacy-retry", ResponseCode: http.StatusOK,
+			UrgentStatus: "not_supported",
+		}, nil
+	})
+	service := DeliveryRetryService{Repository: repository, Client: client}
+
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.outcomes) != 1 ||
+		repository.outcomes[0].id != 61 ||
+		repository.outcomes[0].outcome.Status != "delivered" ||
+		!bytes.Equal(repository.outcomes[0].outcome.Payload, legacyPayload) {
 		t.Fatalf("outcomes=%#v", repository.outcomes)
 	}
 }
@@ -92,6 +136,7 @@ func TestDeliveryRetryServiceRetriesOneShotWithoutIncidentIdentity(t *testing.T)
 			strings.Contains(retried.RenderedText(), "确认并接手") {
 			t.Fatalf("one-shot gained incident lifecycle: %#v", retried)
 		}
+		assertReminderOnlyCard(t, retried)
 		return SendResult{
 			MessageID: "om-pricing-retry", ResponseCode: http.StatusOK,
 			UrgentStatus: "not_supported",

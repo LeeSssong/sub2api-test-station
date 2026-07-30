@@ -127,7 +127,7 @@ func RenderUserImpactReminder(view UserImpactReminderView) FeishuMessage {
 	}
 	lines := []string{
 		"**持续时间**：" + humanText(view.Duration, "一段时间"),
-		"**接手状态**：尚未有人确认接手。",
+		"**提醒状态**：该异常仍在持续。",
 		"",
 		"**最新情况**",
 		humanText(view.LatestFact, "最新运行情况待确认。"),
@@ -205,7 +205,7 @@ func factLines(primary, additional []UserImpactFact) []string {
 func operationsAction() CardElement {
 	return CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "查看运维后台"},
-		Type: "primary", MultiURL: &CardURL{URL: "/ops"},
+		Type: "primary", MultiURL: &CardURL{URL: "/admin/ops"},
 	}}}
 }
 

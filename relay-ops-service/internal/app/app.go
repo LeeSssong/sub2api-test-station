@@ -1,14 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
-	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
@@ -34,6 +35,8 @@ import (
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
 
+const feishuOpenAPIBaseURL = "https://open.feishu.cn"
+
 type App struct {
 	Store     *store.Store
 	Scheduler *scheduler.Scheduler
@@ -44,14 +47,6 @@ type App struct {
 
 type incidentMessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
-}
-
-type incidentAcknowledgements struct {
-	store *store.Store
-}
-
-func (service incidentAcknowledgements) Acknowledge(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
-	return service.store.AcknowledgeIncident(ctx, acknowledgement)
 }
 
 type fastCandidateRepository interface {
@@ -170,7 +165,7 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		if appSender == nil {
 			return nil, fmt.Errorf("Feishu App alert sender is unavailable")
 		}
-		chatID, err := readFeishuCommandSecret(cfg.FeishuAlertChatIDFile)
+		chatID, err := readFeishuSecret(cfg.FeishuAlertChatIDFile)
 		if err != nil {
 			return nil, fmt.Errorf("Feishu alert chat ID is unavailable")
 		}
@@ -187,6 +182,18 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		return notify.Client{WebhookFile: cfg.FeishuWebhookFile, BaseURL: cfg.PublicBaseURL}, nil
 	}
 	return nil, nil
+}
+
+func readFeishuSecret(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > 64<<10 {
+		return "", errors.New("secret is unavailable")
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return "", errors.New("secret is empty")
+	}
+	return string(data), nil
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
@@ -256,11 +263,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		}
 	}
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
-	var accountQualitySource httpserver.AccountQualitySource
-	if cfg.AccountQualityResultFile != "" {
-		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
-		accountQualitySource = source
-	}
 	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
 	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
 	dailyReportService := dailyreport.Service{
@@ -392,13 +394,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
 	operations, err := httpserver.NewServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
-		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
-		Billing:                  billing.SessionRegistrationService{Repository: database},
-		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
-		DailyReport:              dailyReportService,
-		QualityReview:            qualityReview,
-		IncidentAcknowledgements: incidentAcknowledgements{store: database},
+		Billing:       billing.SessionRegistrationService{Repository: database},
+		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
+		DailyReport:   dailyReportService,
+		QualityReview: qualityReview,
 	})
 	if err != nil {
 		return nil, err

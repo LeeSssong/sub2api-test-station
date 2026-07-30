@@ -121,6 +121,51 @@ for path in "${paths[@]}"; do
   audit_path "$path" "$classification"
 done
 
+for legacy_ops_path in /ops /ops/ /ops/incidents; do
+  ops_headers="$TEMP_DIR/ops-$(printf '%s' "$legacy_ops_path" | tr '/' '_').headers"
+  ops_status=$(curl --silent --show-error --max-redirs 0 \
+    --output /dev/null \
+    --dump-header "$ops_headers" \
+    --write-out '%{http_code}' \
+    "${BASE_ORIGIN}${legacy_ops_path}")
+  [[ "$ops_status" == '302' ]] || fail "$legacy_ops_path must return 302, got $ops_status"
+  grep -Eiq '^location:[[:space:]]*/admin/ops([[:space:]]|$)' "$ops_headers" || \
+    fail "$legacy_ops_path must redirect to /admin/ops"
+done
+
+audit_retired_endpoint() {
+  local retired_method=$1
+  local retired_path=$2
+  local retired_status
+  local curl_args=(
+    --silent
+    --show-error
+    --max-redirs 0
+    --request "$retired_method"
+    --output /dev/null
+    --write-out '%{http_code}'
+  )
+
+  if [[ "$retired_method" == 'POST' ]]; then
+    curl_args+=(--header 'Content-Type: application/json' --data '{}')
+  fi
+
+  retired_status=$(curl --disable "${curl_args[@]}" "${BASE_ORIGIN}${retired_path}")
+  [[ "$retired_status" == '404' ]] || \
+    fail "$retired_method $retired_path must return 404 without authentication, got $retired_status"
+}
+
+retired_endpoints=(
+  'GET /relay-ops/api/ops-view'
+  'POST /relay-ops/api/incidents/ack'
+  'POST /relay-ops/api/feishu/events'
+)
+
+for retired_endpoint in "${retired_endpoints[@]}"; do
+  read -r retired_method retired_path <<< "$retired_endpoint"
+  audit_retired_endpoint "$retired_method" "$retired_path"
+done
+
 CURRENT_PATH=/api/v1/settings/public
 settings_file="$TEMP_DIR/settings-public.json"
 fetch "$CURRENT_PATH" "$settings_file"

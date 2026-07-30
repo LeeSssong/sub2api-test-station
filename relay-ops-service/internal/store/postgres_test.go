@@ -183,7 +183,7 @@ func TestNotificationDeliveryRetriesFailedButNotDeliveredEvidence(t *testing.T) 
 	}
 }
 
-func TestIncidentOccurrencePersistenceAndAcknowledgement(t *testing.T) {
+func TestIncidentOccurrencePersistence(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	if err := st.Migrate(ctx); err != nil {
@@ -202,26 +202,6 @@ func TestIncidentOccurrencePersistenceAndAcknowledgement(t *testing.T) {
 	if err != nil || first.OccurrenceNo != 1 {
 		t.Fatalf("first observation = %#v, %v", first, err)
 	}
-	acknowledgedAt := time.Date(2026, 7, 28, 5, 0, 0, 0, time.UTC)
-	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt,
-	}); err != nil {
-		t.Fatalf("acknowledge current occurrence: %v", err)
-	}
-	var occurrenceNo, acknowledgedOccurrence int64
-	var acknowledgedBy int64
-	var storedAcknowledgedAt time.Time
-	if err := st.pool.QueryRow(ctx, `
-		SELECT occurrence_no, acknowledged_occurrence, acknowledged_by, acknowledged_at
-		FROM relay_ops.incidents WHERE incident_key=$1`, observation.Key).Scan(
-		&occurrenceNo, &acknowledgedOccurrence, &acknowledgedBy, &storedAcknowledgedAt,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if occurrenceNo != 1 || acknowledgedOccurrence != 1 || acknowledgedBy != 42 || !storedAcknowledgedAt.Equal(acknowledgedAt) {
-		t.Fatalf("stored acknowledgement = occurrence %d acknowledged %d by %d at %s",
-			occurrenceNo, acknowledgedOccurrence, acknowledgedBy, storedAcknowledgedAt)
-	}
 
 	if _, err := machine.Observe(ctx, incidents.Observation{
 		Key: observation.Key, Severity: "P0", Failing: false,
@@ -229,19 +209,9 @@ func TestIncidentOccurrencePersistenceAndAcknowledgement(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(time.Minute),
-	}); !errors.Is(err, incidents.ErrNotActive) {
-		t.Fatalf("acknowledge recovered error = %v, want ErrNotActive", err)
-	}
 	second, err := machine.Observe(ctx, observation)
 	if err != nil || second.OccurrenceNo != 2 {
 		t.Fatalf("second occurrence = %#v, %v", second, err)
-	}
-	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-		Key: observation.Key, OccurrenceNo: 1, ActorUserID: 42, At: acknowledgedAt.Add(2 * time.Minute),
-	}); !errors.Is(err, incidents.ErrOccurrenceConflict) {
-		t.Fatalf("acknowledge stale occurrence error = %v, want ErrOccurrenceConflict", err)
 	}
 }
 
@@ -605,14 +575,9 @@ func TestIncidentEscalationClaimAndRetryAreOccurrenceSafe(t *testing.T) {
 	if level != 1 || !next.Equal(secondDue) {
 		t.Fatalf("successful escalation level=%d next=%s", level, next)
 	}
-	if err := st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-		Key: key, OccurrenceNo: 1, ActorUserID: 42, At: retryAt,
-	}); err != nil {
-		t.Fatal(err)
-	}
 	claim, err = st.ClaimDueEscalation(ctx, secondDue)
-	if err != nil || claim != nil {
-		t.Fatalf("acknowledged claim=%#v err=%v", claim, err)
+	if err != nil || claim == nil || claim.OccurrenceNo != 1 || claim.EscalationLevel != 1 {
+		t.Fatalf("second reminder claim=%#v err=%v", claim, err)
 	}
 }
 
@@ -1042,146 +1007,102 @@ func TestNotificationRetrySkipsTerminalAndMaxAttemptOneShots(t *testing.T) {
 	}
 }
 
-func TestAcknowledgementAndRecoveryCancelPendingNotificationRetries(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		stop func(context.Context, *Store, string, int64) error
-	}{
-		{
-			name: "acknowledgement",
-			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
-				return st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-					Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: time.Now().UTC(),
-				})
-			},
-		},
-		{
-			name: "recovery",
-			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
-				return st.Put(ctx, incidents.Record{
-					Key: key, Severity: "P0", State: "recovered", OccurrenceNo: occurrenceNo,
-				})
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			st := openTestStore(t)
-			ctx := context.Background()
-			if err := st.Migrate(ctx); err != nil {
-				t.Fatal(err)
-			}
-			key := "group:cancel-retry-" + test.name + ":availability"
-			machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
-			transition, err := machine.Observe(ctx, incidents.Observation{
-				Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
-				CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
-			deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
-				IncidentKey: key, DedupKey: "cancel-retry-" + test.name, MessageHash: "alert",
-				OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
-			})
-			if err != nil || !reserved {
-				t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
-			}
-			if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
-				Status: "failed", Payload: payload,
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if err := test.stop(ctx, st, key, transition.OccurrenceNo); err != nil {
-				t.Fatal(err)
-			}
-			var status string
-			var nextAttempt *time.Time
-			if err := st.pool.QueryRow(ctx, `
-				SELECT delivery_status, next_attempt_at
-				FROM relay_ops.notification_deliveries
-				WHERE id=$1`, deliveryID).Scan(&status, &nextAttempt); err != nil {
-				t.Fatal(err)
-			}
-			if status != "canceled" || nextAttempt != nil {
-				t.Fatalf("status=%q next_attempt=%v", status, nextAttempt)
-			}
-		})
+func TestRecoveryCancelsPendingNotificationRetries(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:cancel-retry-recovery:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "cancel-retry-recovery", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "failed", Payload: payload,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(ctx, incidents.Record{
+		Key: key, Severity: "P0", State: "recovered", OccurrenceNo: transition.OccurrenceNo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var nextAttempt *time.Time
+	if err := st.pool.QueryRow(ctx, `
+		SELECT delivery_status, next_attempt_at
+		FROM relay_ops.notification_deliveries
+		WHERE id=$1`, deliveryID).Scan(&status, &nextAttempt); err != nil {
+		t.Fatal(err)
+	}
+	if status != "canceled" || nextAttempt != nil {
+		t.Fatalf("status=%q next_attempt=%v", status, nextAttempt)
 	}
 }
 
-func TestAcknowledgementAndRecoveryWaitForInFlightNotificationDelivery(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		stop func(context.Context, *Store, string, int64) error
-	}{
-		{
-			name: "acknowledgement",
-			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
-				return st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-					Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: time.Now().UTC(),
-				})
-			},
-		},
-		{
-			name: "recovery",
-			stop: func(ctx context.Context, st *Store, key string, occurrenceNo int64) error {
-				return st.Put(ctx, incidents.Record{
-					Key: key, Severity: "P0", State: "recovered", OccurrenceNo: occurrenceNo,
-				})
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			st := openTestStore(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			if err := st.Migrate(ctx); err != nil {
-				t.Fatal(err)
-			}
-			key := "group:in-flight-notification-" + test.name + ":availability"
-			machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
-			transition, err := machine.Observe(ctx, incidents.Observation{
-				Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
-				CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
-			deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
-				IncidentKey: key, DedupKey: "in-flight-notification-" + test.name, MessageHash: "alert",
-				OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
-			})
-			if err != nil || !reserved {
-				t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
-			}
+func TestRecoveryWaitsForInFlightNotificationDelivery(t *testing.T) {
+	st := openTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := "group:in-flight-notification-recovery:availability"
+	machine := incidents.Machine{Repository: st, Policy: incidents.DefaultPolicy()}
+	transition, err := machine.Observe(ctx, incidents.Observation{
+		Key: key, Severity: "P0", Failing: true, EvidenceHash: "0/1",
+		CurrentValue: "可用 0 / 共 1", ConfirmationWindows: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"header":{"title":{"content":"alert"}},"elements":[]}`)
+	deliveryID, reserved, err := st.ReserveNotification(ctx, notify.Reservation{
+		IncidentKey: key, DedupKey: "in-flight-notification-recovery", MessageHash: "alert",
+		OccurrenceNo: transition.OccurrenceNo, Transition: transition.Kind, Payload: payload,
+	})
+	if err != nil || !reserved {
+		t.Fatalf("reserve=%d %v %v", deliveryID, reserved, err)
+	}
 
-			done := make(chan error, 1)
-			go func() {
-				done <- test.stop(ctx, st, key, transition.OccurrenceNo)
-			}()
-			select {
-			case err := <-done:
-				t.Fatalf("%s returned before notification delivery finished: %v", test.name, err)
-			case <-time.After(100 * time.Millisecond):
-			}
-
-			if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
-				Status: "delivered", ResponseCode: http.StatusOK, Payload: payload,
-				MessageID: "om-in-flight", UrgentStatus: "delivered",
-			}); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Fatal(err)
-				}
-			case <-ctx.Done():
-				t.Fatalf("%s did not resume after notification delivery finished", test.name)
-			}
+	done := make(chan error, 1)
+	go func() {
+		done <- st.Put(ctx, incidents.Record{
+			Key: key, Severity: "P0", State: "recovered", OccurrenceNo: transition.OccurrenceNo,
 		})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("recovery returned before notification delivery finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err := st.FinishNotification(ctx, deliveryID, notify.DeliveryOutcome{
+		Status: "delivered", ResponseCode: http.StatusOK, Payload: payload,
+		MessageID: "om-in-flight", UrgentStatus: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("recovery did not resume after notification delivery finished")
 	}
 }
 
@@ -1253,41 +1174,6 @@ func TestRecoveryWaitsForInFlightNotificationRetry(t *testing.T) {
 	}
 }
 
-func TestAcknowledgementWaitsForInFlightEscalation(t *testing.T) {
-	st, key, occurrenceNo, firstDue := prepareDueEscalation(t, "ack-race")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	claim, err := st.ClaimDueEscalation(ctx, firstDue)
-	if err != nil || claim == nil || claim.ClaimToken == "" {
-		t.Fatalf("claim=%#v err=%v", claim, err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- st.AcknowledgeIncident(ctx, incidents.Acknowledgement{
-			Key: key, OccurrenceNo: occurrenceNo, ActorUserID: 42, At: firstDue,
-		})
-	}()
-	select {
-	case err := <-done:
-		t.Fatalf("acknowledgement returned before escalation finished: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	if err := st.FinishEscalation(ctx, alerting.Result{
-		Key: key, OccurrenceNo: occurrenceNo, Level: 1, ClaimToken: claim.ClaimToken,
-		Succeeded: false, RetryAt: firstDue.Add(time.Minute),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-ctx.Done():
-		t.Fatal("acknowledgement did not resume after escalation finished")
-	}
-}
-
 func TestRecoveryWaitsForInFlightEscalation(t *testing.T) {
 	st, key, occurrenceNo, firstDue := prepareDueEscalation(t, "recovery-race")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -1320,6 +1206,32 @@ func TestRecoveryWaitsForInFlightEscalation(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("recovery did not resume after escalation finished")
+	}
+}
+
+func TestActiveReminderClaimIgnoresHistoricalAcknowledgement(t *testing.T) {
+	st, _, _, firstDue := prepareDueEscalation(t, "historical-ack")
+	ctx := context.Background()
+	observation := incidents.Observation{
+		Key: "group:historical-ack:availability",
+	}
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.incidents
+		SET acknowledged_occurrence=occurrence_no,
+		    acknowledged_at=$2,
+		    acknowledged_by=42,
+		    next_escalation_at=$3
+		WHERE incident_key=$1`,
+		observation.Key, firstDue.Add(-time.Minute), firstDue.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := st.ClaimDueEscalation(ctx, firstDue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Key != observation.Key {
+		t.Fatalf("active reminder claim = %#v, want incident %q", claim, observation.Key)
 	}
 }
 
@@ -1773,7 +1685,7 @@ func TestDailyNotificationSummaryReadsOnlyConsolidatedProductionFacts(t *testing
 	}
 }
 
-func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t *testing.T) {
+func TestIncidentNotificationMetadataRoundTripsAndNewOccurrencePreservesHistoricalAcknowledgement(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	if err := st.Migrate(ctx); err != nil {
@@ -1821,11 +1733,12 @@ func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t
 	}); err != nil {
 		t.Fatal(err)
 	}
+	acknowledgedAt := time.Date(2026, 7, 28, 5, 0, 0, 0, time.UTC)
 	if _, err := st.pool.Exec(ctx, `
 		UPDATE relay_ops.incidents
-		SET acknowledged_occurrence=1, acknowledged_at=NOW(), acknowledged_by=42,
+		SET acknowledged_occurrence=1, acknowledged_at=$2, acknowledged_by=42,
 		    escalation_level=1, next_escalation_at=NOW()+INTERVAL '5 minutes'
-		WHERE incident_key=$1`, record.Key); err != nil {
+		WHERE incident_key=$1`, record.Key, acknowledgedAt); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1837,12 +1750,14 @@ func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t
 		t.Fatal(err)
 	}
 	var acknowledged sql.NullInt64
+	var storedAcknowledgedAt sql.NullTime
+	var acknowledgedBy sql.NullInt64
 	var nextEscalation sql.NullTime
 	var oldDeliveryStatus string
 	if err := st.pool.QueryRow(ctx, `
-		SELECT acknowledged_occurrence, next_escalation_at
+		SELECT acknowledged_occurrence, acknowledged_at, acknowledged_by, next_escalation_at
 		FROM relay_ops.incidents WHERE incident_key=$1`, record.Key).Scan(
-		&acknowledged, &nextEscalation,
+		&acknowledged, &storedAcknowledgedAt, &acknowledgedBy, &nextEscalation,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1851,9 +1766,12 @@ func TestIncidentNotificationMetadataRoundTripsAndNewOccurrenceResetsLifecycle(t
 		deliveryID).Scan(&oldDeliveryStatus); err != nil {
 		t.Fatal(err)
 	}
-	if acknowledged.Valid || nextEscalation.Valid || oldDeliveryStatus != "canceled" {
-		t.Fatalf("new occurrence lifecycle = ack %#v escalation %#v delivery %q",
-			acknowledged, nextEscalation, oldDeliveryStatus)
+	if !acknowledged.Valid || acknowledged.Int64 != 1 ||
+		!storedAcknowledgedAt.Valid || !storedAcknowledgedAt.Time.Equal(acknowledgedAt) ||
+		!acknowledgedBy.Valid || acknowledgedBy.Int64 != 42 ||
+		nextEscalation.Valid || oldDeliveryStatus != "canceled" {
+		t.Fatalf("new occurrence lifecycle = ack %#v at %#v by %#v escalation %#v delivery %q",
+			acknowledged, storedAcknowledgedAt, acknowledgedBy, nextEscalation, oldDeliveryStatus)
 	}
 }
 

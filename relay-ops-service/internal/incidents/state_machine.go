@@ -2,22 +2,8 @@ package incidents
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 )
-
-var (
-	ErrOccurrenceConflict = errors.New("incident occurrence conflicts with current state")
-	ErrNotActive          = errors.New("incident is not active")
-)
-
-type Acknowledgement struct {
-	Key          string
-	OccurrenceNo int64
-	ActorUserID  int64
-	At           time.Time
-}
 
 type Observation struct {
 	Key                 string

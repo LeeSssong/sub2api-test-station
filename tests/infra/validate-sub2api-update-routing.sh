@@ -48,12 +48,26 @@ require_fixed 'path /api/v1/admin/system/restart' infra/Caddyfile
 require_fixed 'path / /home /home/' infra/Caddyfile
 require_fixed 'path /support /support/' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
-require_fixed 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile
+require_fixed '@legacy_ops path /ops /ops/*' infra/Caddyfile
+require_fixed 'redir @legacy_ops /admin/ops 302' infra/Caddyfile
 require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
 require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
 require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}' infra/compose.yaml
 require_fixed 'rewrite * /update-ui.js' infra/Caddyfile
 require_fixed 'rewrite * /update-ui.css' infra/Caddyfile
+
+if rg -n -F 'path /relay-ops/api/feishu/events' infra/Caddyfile; then
+  fail 'Feishu inbound callback must not be publicly routed'
+fi
+if rg -n -F '/relay-ops/api/incidents/ack' infra/Caddyfile; then
+  fail 'retired incident acknowledgement API must not be publicly routed'
+fi
+if rg -n -F '/relay-ops/api/ops-view' infra/Caddyfile; then
+  fail 'retired relay ops view API must not be publicly routed'
+fi
+if rg -n -F 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile; then
+  fail 'retired relay ops APIs must not be publicly routed'
+fi
 
 if rg -n '/(var/)?run/docker\.sock|docker\.sock' infra/compose.yaml infra/Caddyfile; then
   fail 'Docker socket must not be mounted'

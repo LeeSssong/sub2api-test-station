@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -117,6 +118,7 @@ func retryMessage(delivery RetryDelivery) (FeishuMessage, error) {
 	if err := json.Unmarshal(delivery.Payload, &card); err != nil {
 		return FeishuMessage{}, fmt.Errorf("decode notification retry payload")
 	}
+	normalizeRetryCard(&card)
 	message := FeishuMessage{
 		MsgType: "interactive", Card: &card, Severity: delivery.Severity,
 	}
@@ -128,4 +130,34 @@ func retryMessage(delivery RetryDelivery) (FeishuMessage, error) {
 		return FeishuMessage{}, err
 	}
 	return message, nil
+}
+
+func normalizeRetryCard(card *Card) {
+	if card == nil {
+		return
+	}
+	elements := make([]CardElement, 0, len(card.Elements)+1)
+	for _, element := range card.Elements {
+		if element.Text != nil {
+			element.Text.Content = normalizeRetryText(element.Text.Content)
+		}
+		for index := range element.Fields {
+			element.Fields[index].Text.Content = normalizeRetryText(element.Fields[index].Text.Content)
+		}
+		element.Content = normalizeRetryText(element.Content)
+		element.Actions = nil
+		if element.Tag != "action" {
+			elements = append(elements, element)
+		}
+	}
+	card.Elements = append(elements, operationsAction())
+}
+
+func normalizeRetryText(value string) string {
+	legacyStatusLine := "**接手" + "状态**：尚未有人确认" + "接手。"
+	return strings.ReplaceAll(
+		value,
+		legacyStatusLine,
+		"**提醒状态**：该异常仍在持续。",
+	)
 }

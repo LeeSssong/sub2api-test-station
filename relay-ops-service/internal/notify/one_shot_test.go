@@ -10,9 +10,10 @@ func TestOneShotSenderDoesNotAddAcknowledgementOrIncidentIdentity(t *testing.T) 
 	repository := &fakeOneShotRepository{}
 	client := &oneShotClient{}
 	sender := OneShotSender{Client: client, Repository: repository}
-	message := RenderAlert(IncidentView{
-		Title: "P1｜价格证据变化", Severity: "P1",
-		Current: "公开价格由 0.07 元变为 0.08 元",
+	message := RenderPricingNotice(PricingNoticeView{
+		Upstream: "Neko",
+		Change:   "公开价格由 0.07 元变为 0.08 元。",
+		Review:   "核对售价与毛利。",
 	})
 
 	err := sender.SendOneShot(context.Background(), OneShotIdentity{
@@ -38,6 +39,7 @@ func TestOneShotSenderDoesNotAddAcknowledgementOrIncidentIdentity(t *testing.T) 
 		strings.Contains(client.message.RenderedText(), "确认并接手") {
 		t.Fatal("one-shot notification gained an incident acknowledgement")
 	}
+	assertReminderOnlyCard(t, client.message)
 	if client.message.OccurrenceNo != 0 || client.message.Transition != "" {
 		t.Fatalf("one-shot gained incident identity: %#v", client.message)
 	}

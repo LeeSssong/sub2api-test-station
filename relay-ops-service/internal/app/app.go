@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
-	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
@@ -44,14 +43,6 @@ type App struct {
 
 type incidentMessageSender interface {
 	SendIncident(context.Context, string, string, notify.FeishuMessage) error
-}
-
-type incidentAcknowledgements struct {
-	store *store.Store
-}
-
-func (service incidentAcknowledgements) Acknowledge(ctx context.Context, acknowledgement incidents.Acknowledgement) error {
-	return service.store.AcknowledgeIncident(ctx, acknowledgement)
 }
 
 type fastCandidateRepository interface {
@@ -256,11 +247,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		}
 	}
 	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
-	var accountQualitySource httpserver.AccountQualitySource
-	if cfg.AccountQualityResultFile != "" {
-		source := accountquality.FileSource{Path: cfg.AccountQualityResultFile}
-		accountQualitySource = source
-	}
 	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
 	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
 	dailyReportService := dailyreport.Service{
@@ -392,13 +378,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
 	operations, err := httpserver.NewServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
-		Ops:        httpserver.DatabaseOpsSource{Repository: database, Production: database, Pricing: database, Evidence: database, Quality: database, Native: reader, AccountQuality: accountQualitySource},
 		Candidates: candidateService, Upstreams: productionService,
-		Billing:                  billing.SessionRegistrationService{Repository: database},
-		Acceptance:               acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
-		DailyReport:              dailyReportService,
-		QualityReview:            qualityReview,
-		IncidentAcknowledgements: incidentAcknowledgements{store: database},
+		Billing:       billing.SessionRegistrationService{Repository: database},
+		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
+		DailyReport:   dailyReportService,
+		QualityReview: qualityReview,
 	})
 	if err != nil {
 		return nil, err

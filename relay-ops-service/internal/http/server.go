@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accountquality"
@@ -22,14 +21,13 @@ import (
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
-	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
 
 var ErrQualityReportStale = errors.New("quality report is stale or mismatched")
 
-//go:embed templates/*.html static/*.css static/*.js
+//go:embed templates/*.html static/*.css
 var assets embed.FS
 
 type PublicModel struct{ ModelID, Tier, Input, Output, CacheRead, CacheWrite string }
@@ -96,10 +94,6 @@ type DailyReportAcceptanceService interface {
 	Run(context.Context) (dailyreport.Result, error)
 }
 
-type IncidentAcknowledgementService interface {
-	Acknowledge(context.Context, incidents.Acknowledgement) error
-}
-
 type QualityPreviewInput struct {
 	ReportID   string `json:"report_id"`
 	ReportHash string `json:"report_hash"`
@@ -118,28 +112,25 @@ type QualityReviewService interface {
 }
 
 type Dependencies struct {
-	BaseOrigin               string
-	Auth                     adminauth.Verifier
-	Pricing                  PricingSource
-	Ops                      OpsSource
-	Candidates               CandidateService
-	Upstreams                ProductionUpstreamService
-	Billing                  BillingSessionService
-	Acceptance               SyntheticAcceptanceService
-	DailyReport              DailyReportAcceptanceService
-	QualityReview            QualityReviewService
-	IncidentAcknowledgements IncidentAcknowledgementService
+	BaseOrigin    string
+	Auth          adminauth.Verifier
+	Pricing       PricingSource
+	Candidates    CandidateService
+	Upstreams     ProductionUpstreamService
+	Billing       BillingSessionService
+	Acceptance    SyntheticAcceptanceService
+	DailyReport   DailyReportAcceptanceService
+	QualityReview QualityReviewService
 }
 
 type server struct {
 	dependencies Dependencies
 	templates    *template.Template
 	css          []byte
-	opsJS        []byte
 }
 
 func NewServer(dependencies Dependencies) (http.Handler, error) {
-	if dependencies.Auth == nil || dependencies.Pricing == nil || dependencies.Ops == nil || dependencies.IncidentAcknowledgements == nil {
+	if dependencies.Pricing == nil {
 		return nil, fmt.Errorf("HTTP dependencies are incomplete")
 	}
 	templates, err := template.ParseFS(assets, "templates/*.html")
@@ -150,61 +141,11 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read CSS: %w", err)
 	}
-	opsJS, err := assets.ReadFile("static/ops.js")
-	if err != nil {
-		return nil, fmt.Errorf("read ops bootstrap: %w", err)
-	}
-	s := &server{dependencies: dependencies, templates: templates, css: css, opsJS: opsJS}
+	s := &server{dependencies: dependencies, templates: templates, css: css}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)
-	mux.HandleFunc("GET /relay-ops/static/ops.js", s.opsScript)
-	mux.HandleFunc("GET /relay-ops/static/ops-admin.js", s.opsAdminScript)
 	mux.HandleFunc("GET /pricing", s.pricing)
-	mux.HandleFunc("GET /ops", s.opsBootstrap)
-	mux.Handle("GET /relay-ops/api/ops-view", adminauth.RequireHiddenAdmin(dependencies.Auth, http.HandlerFunc(s.ops)))
-	mux.Handle("POST /relay-ops/api/incidents/ack", adminauth.RequireHiddenAdmin(dependencies.Auth, http.HandlerFunc(s.ackIncident)))
 	return mux, nil
-}
-
-func (s *server) ackIncident(w http.ResponseWriter, request *http.Request) {
-	if !s.validMutation(request) {
-		writeAPIError(w, http.StatusForbidden, "ORIGIN_REJECTED")
-		return
-	}
-	var input struct {
-		IncidentKey  string `json:"incident_key"`
-		OccurrenceNo int64  `json:"occurrence_no"`
-	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 1<<10))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_INCIDENT_ACKNOWLEDGEMENT")
-		return
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_INCIDENT_ACKNOWLEDGEMENT")
-		return
-	}
-	input.IncidentKey = strings.TrimSpace(input.IncidentKey)
-	if input.IncidentKey == "" || len(input.IncidentKey) > 512 || input.OccurrenceNo <= 0 {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_INCIDENT_ACKNOWLEDGEMENT")
-		return
-	}
-	actor, _ := adminauth.ActorFromContext(request.Context())
-	err := s.dependencies.IncidentAcknowledgements.Acknowledge(request.Context(), incidents.Acknowledgement{
-		Key: input.IncidentKey, OccurrenceNo: input.OccurrenceNo,
-		ActorUserID: actor.UserID, At: time.Now().UTC(),
-	})
-	if errors.Is(err, incidents.ErrOccurrenceConflict) || errors.Is(err, incidents.ErrNotActive) {
-		writeAPIError(w, http.StatusConflict, "INCIDENT_ACKNOWLEDGEMENT_STALE")
-		return
-	}
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "INCIDENT_ACKNOWLEDGEMENT_FAILED")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) qualityReportPreview(w http.ResponseWriter, request *http.Request) {
@@ -407,23 +348,6 @@ func (s *server) disableUpstream(w http.ResponseWriter, request *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *server) opsScript(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write(s.opsJS)
-}
-
-func (s *server) opsAdminScript(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	data, err := assets.ReadFile("static/ops-admin.js")
-	if err != nil {
-		http.Error(w, "static asset unavailable", http.StatusInternalServerError)
-		return
-	}
-	_, _ = w.Write(data)
-}
-
 func (s *server) styles(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -450,27 +374,9 @@ func (s *server) pricing(w http.ResponseWriter, request *http.Request) {
 	_ = s.templates.ExecuteTemplate(w, "pricing.html", map[string]any{"Rows": rows, "Query": request.URL.Query().Get("q")})
 }
 
-func (s *server) opsBootstrap(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-	_ = s.templates.ExecuteTemplate(w, "ops-bootstrap.html", nil)
-}
-
 type pricingRow struct {
 	Group, UpdatedAt string
 	PublicModel
-}
-
-func (s *server) ops(w http.ResponseWriter, request *http.Request) {
-	view, err := s.dependencies.Ops.Snapshot(request.Context())
-	if err != nil {
-		http.Error(w, "运维数据暂时不可用", http.StatusServiceUnavailable)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = s.templates.ExecuteTemplate(w, "ops.html", view)
 }
 
 func (s *server) listCandidates(w http.ResponseWriter, request *http.Request) {

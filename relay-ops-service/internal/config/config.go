@@ -15,10 +15,6 @@ const (
 	ModeReadOnly = "read_only"
 	ModeProbe    = "probe"
 	ModeClosed   = "closed"
-
-	FeishuCommandDisabled = "disabled"
-	FeishuCommandDryRun   = "dry_run"
-	FeishuCommandEnabled  = "enabled"
 )
 
 type Config struct {
@@ -32,12 +28,8 @@ type Config struct {
 	AccountQualityResultFile  string
 	UpstreamGroupMappingFile  string
 	FeishuWebhookFile         string
-	FeishuCommandMode         string
 	FeishuAppIDFile           string
 	FeishuAppSecretFile       string
-	FeishuVerificationFile    string
-	FeishuEncryptKeyFile      string
-	FeishuRoutingFile         string
 	FeishuAlertChatIDFile     string
 	FeishuAlertRecipientsFile string
 	NotificationPolicyFile    string
@@ -95,39 +87,16 @@ func Load(env func(string) string) (Config, error) {
 			}
 		}
 	}
-	feishuCommandMode := get("RELAY_OPS_FEISHU_COMMAND_MODE", FeishuCommandDisabled)
-	if feishuCommandMode != FeishuCommandDisabled && feishuCommandMode != FeishuCommandDryRun && feishuCommandMode != FeishuCommandEnabled {
-		return Config{}, fmt.Errorf("RELAY_OPS_FEISHU_COMMAND_MODE must be disabled, dry_run, or enabled")
-	}
-	feishuCallbackFiles := map[string]string{
-		"Feishu App ID":             get("RELAY_OPS_FEISHU_APP_ID_FILE", ""),
-		"Feishu App Secret":         get("RELAY_OPS_FEISHU_APP_SECRET_FILE", ""),
-		"Feishu verification token": get("RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE", ""),
-		"Feishu Encrypt Key":        get("RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE", ""),
-	}
-	feishuRoutingFile := get("RELAY_OPS_FEISHU_ROUTING_FILE", "")
+	feishuAppIDFile := get("RELAY_OPS_FEISHU_APP_ID_FILE", "")
+	feishuAppSecretFile := get("RELAY_OPS_FEISHU_APP_SECRET_FILE", "")
 	feishuAlertChatIDFile := get("RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE", "")
 	feishuAlertRecipientsFile := get("RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE", "")
 	notificationPolicyFile := get("RELAY_OPS_NOTIFICATION_POLICY_FILE", "")
-	configuredCallbackFiles := 0
-	for _, path := range feishuCallbackFiles {
-		if path != "" {
-			configuredCallbackFiles++
-		}
+	if (feishuAppIDFile == "") != (feishuAppSecretFile == "") {
+		return Config{}, fmt.Errorf("Feishu App ID and App Secret files must be configured together")
 	}
-	if configuredCallbackFiles > 0 && configuredCallbackFiles != len(feishuCallbackFiles) {
-		return Config{}, fmt.Errorf("Feishu callback files must be configured as a complete set")
-	}
-	if feishuCommandMode != FeishuCommandDisabled {
-		if configuredCallbackFiles != len(feishuCallbackFiles) || feishuRoutingFile == "" {
-			return Config{}, fmt.Errorf("Feishu command files must be configured as a complete set")
-		}
-	}
-	if feishuRoutingFile != "" && configuredCallbackFiles != len(feishuCallbackFiles) {
-		return Config{}, fmt.Errorf("Feishu routing config requires callback files")
-	}
-	if feishuAlertChatIDFile != "" && configuredCallbackFiles != len(feishuCallbackFiles) {
-		return Config{}, fmt.Errorf("Feishu alert chat requires callback files")
+	if feishuAlertChatIDFile != "" && feishuAppIDFile == "" {
+		return Config{}, fmt.Errorf("Feishu alert chat requires App ID and App Secret files")
 	}
 	if feishuAlertChatIDFile != "" && feishuAlertRecipientsFile == "" {
 		return Config{}, fmt.Errorf("Feishu alert chat requires an alert recipients file")
@@ -135,16 +104,14 @@ func Load(env func(string) string) (Config, error) {
 	if feishuAlertRecipientsFile != "" && feishuAlertChatIDFile == "" {
 		return Config{}, fmt.Errorf("Feishu alert recipients require an alert chat")
 	}
-	if configuredCallbackFiles == len(feishuCallbackFiles) {
-		for label, path := range feishuCallbackFiles {
+	if feishuAppIDFile != "" {
+		for label, path := range map[string]string{
+			"Feishu App ID":     feishuAppIDFile,
+			"Feishu App Secret": feishuAppSecretFile,
+		} {
 			if err := validateSecretFile(path); err != nil {
 				return Config{}, fmt.Errorf("%s file: %w", label, err)
 			}
-		}
-	}
-	if feishuRoutingFile != "" {
-		if err := validateSecretFile(feishuRoutingFile); err != nil {
-			return Config{}, fmt.Errorf("Feishu routing config file: %w", err)
 		}
 	}
 	if feishuAlertChatIDFile != "" {
@@ -199,12 +166,8 @@ func Load(env func(string) string) (Config, error) {
 		AccountQualityResultFile:  accountQualityResultFile,
 		UpstreamGroupMappingFile:  upstreamGroupMappingFile,
 		FeishuWebhookFile:         feishuFile,
-		FeishuCommandMode:         feishuCommandMode,
-		FeishuAppIDFile:           feishuCallbackFiles["Feishu App ID"],
-		FeishuAppSecretFile:       feishuCallbackFiles["Feishu App Secret"],
-		FeishuVerificationFile:    feishuCallbackFiles["Feishu verification token"],
-		FeishuEncryptKeyFile:      feishuCallbackFiles["Feishu Encrypt Key"],
-		FeishuRoutingFile:         feishuRoutingFile,
+		FeishuAppIDFile:           feishuAppIDFile,
+		FeishuAppSecretFile:       feishuAppSecretFile,
 		FeishuAlertChatIDFile:     feishuAlertChatIDFile,
 		FeishuAlertRecipientsFile: feishuAlertRecipientsFile,
 		NotificationPolicyFile:    notificationPolicyFile,

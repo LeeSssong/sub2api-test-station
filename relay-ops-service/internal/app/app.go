@@ -1,10 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
@@ -32,6 +34,8 @@ import (
 	"example.invalid/relay-ops-service/internal/upstreampricing"
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
+
+const feishuOpenAPIBaseURL = "https://open.feishu.cn"
 
 type App struct {
 	Store     *store.Store
@@ -161,7 +165,7 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		if appSender == nil {
 			return nil, fmt.Errorf("Feishu App alert sender is unavailable")
 		}
-		chatID, err := readFeishuCommandSecret(cfg.FeishuAlertChatIDFile)
+		chatID, err := readFeishuSecret(cfg.FeishuAlertChatIDFile)
 		if err != nil {
 			return nil, fmt.Errorf("Feishu alert chat ID is unavailable")
 		}
@@ -178,6 +182,18 @@ func notificationClient(cfg config.Config, appSender notify.MessageSender) (noti
 		return notify.Client{WebhookFile: cfg.FeishuWebhookFile, BaseURL: cfg.PublicBaseURL}, nil
 	}
 	return nil, nil
+}
+
+func readFeishuSecret(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > 64<<10 {
+		return "", errors.New("secret is unavailable")
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return "", errors.New("secret is empty")
+	}
+	return string(data), nil
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {

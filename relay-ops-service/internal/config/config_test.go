@@ -27,9 +27,6 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	if cfg.TimezoneName != "Asia/Shanghai" {
 		t.Fatalf("TimezoneName = %q", cfg.TimezoneName)
 	}
-	if cfg.FeishuCommandMode != FeishuCommandDisabled {
-		t.Fatalf("FeishuCommandMode = %q, want %q", cfg.FeishuCommandMode, FeishuCommandDisabled)
-	}
 	if cfg.CandidateSecretDir != "/var/lib/relay-ops/candidate-keys" {
 		t.Fatalf("CandidateSecretDir = %q", cfg.CandidateSecretDir)
 	}
@@ -102,37 +99,6 @@ func TestLoadRejectsRelativeCandidateSecretDirectory(t *testing.T) {
 	}
 }
 
-func TestLoadAcceptsKnownFeishuCommandModesWithCompleteFiles(t *testing.T) {
-	t.Parallel()
-
-	for _, mode := range []string{FeishuCommandDisabled, FeishuCommandDryRun, FeishuCommandEnabled} {
-		env := validEnv(t)
-		addFeishuCommandFiles(t, env)
-		env["RELAY_OPS_FEISHU_COMMAND_MODE"] = mode
-		cfg, err := Load(func(key string) string { return env[key] })
-		if err != nil {
-			t.Fatalf("mode %q rejected: %v", mode, err)
-		}
-		if cfg.FeishuCommandMode != mode {
-			t.Fatalf("mode = %q, want %q", cfg.FeishuCommandMode, mode)
-		}
-	}
-}
-
-func TestLoadDisabledAcceptsCallbackFilesWithoutRouting(t *testing.T) {
-	t.Parallel()
-
-	env := validEnv(t)
-	addFeishuCallbackFiles(t, env)
-	cfg, err := Load(func(key string) string { return env[key] })
-	if err != nil {
-		t.Fatalf("disabled callback configuration rejected: %v", err)
-	}
-	if cfg.FeishuRoutingFile != "" {
-		t.Fatalf("routing file = %q, want empty", cfg.FeishuRoutingFile)
-	}
-}
-
 func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
 	t.Parallel()
 
@@ -151,6 +117,24 @@ func TestLoadAcceptsFeishuAlertChatWithCompleteAppFiles(t *testing.T) {
 	}
 	if cfg.NotificationPolicyFile != policyFile {
 		t.Fatalf("notification policy file = %q, want %q", cfg.NotificationPolicyFile, policyFile)
+	}
+}
+
+func TestLoadAcceptsOutboundAlertAppWithoutCallbackSecrets(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	appID, appSecret, chatID, recipients := addOutboundFeishuAlertFiles(t, env)
+	policy := addNotificationPolicy(t, env)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("outbound-only alert configuration rejected: %v", err)
+	}
+	if cfg.FeishuAppIDFile != appID || cfg.FeishuAppSecretFile != appSecret ||
+		cfg.FeishuAlertChatIDFile != chatID ||
+		cfg.FeishuAlertRecipientsFile != recipients ||
+		cfg.NotificationPolicyFile != policy {
+		t.Fatalf("outbound Feishu config = %#v", cfg)
 	}
 }
 
@@ -195,12 +179,13 @@ func TestLoadRejectsFeishuAlertChatWithoutRecipients(t *testing.T) {
 	t.Parallel()
 
 	env := validEnv(t)
-	addFeishuCallbackFiles(t, env)
+	addOutboundFeishuAlertFiles(t, env)
 	chatIDFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
 	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	delete(env, "RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE")
 	if _, err := Load(func(key string) string { return env[key] }); err == nil {
 		t.Fatal("alert chat without recipients unexpectedly accepted")
 	}
@@ -214,59 +199,26 @@ func TestLoadRejectsFeishuAlertChatWithoutCompleteAppFiles(t *testing.T) {
 	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	recipientsFile := filepath.Join(t.TempDir(), "feishu-alert-recipients.json")
+	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
+	env["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"] = recipientsFile
 	if _, err := Load(func(key string) string { return env[key] }); err == nil {
 		t.Fatal("alert chat without Feishu App files unexpectedly accepted")
 	}
 }
 
-func TestLoadRejectsUnknownFeishuCommandMode(t *testing.T) {
+func TestLoadRejectsIncompleteFeishuAppFiles(t *testing.T) {
 	t.Parallel()
 
 	env := validEnv(t)
-	addFeishuCommandFiles(t, env)
-	env["RELAY_OPS_FEISHU_COMMAND_MODE"] = "write"
+	appID, _, _, _ := addOutboundFeishuAlertFiles(t, env)
+	delete(env, "RELAY_OPS_FEISHU_APP_SECRET_FILE")
+	env["RELAY_OPS_FEISHU_APP_ID_FILE"] = appID
 	if _, err := Load(func(key string) string { return env[key] }); err == nil {
-		t.Fatal("unknown Feishu command mode unexpectedly accepted")
-	}
-}
-
-func TestLoadRequiresCompleteFeishuCommandFiles(t *testing.T) {
-	t.Parallel()
-
-	for _, mode := range []string{FeishuCommandDryRun, FeishuCommandEnabled} {
-		env := validEnv(t)
-		addFeishuCommandFiles(t, env)
-		env["RELAY_OPS_FEISHU_COMMAND_MODE"] = mode
-		delete(env, "RELAY_OPS_FEISHU_APP_SECRET_FILE")
-		if _, err := Load(func(key string) string { return env[key] }); err == nil {
-			t.Fatalf("mode %q accepted an incomplete file set", mode)
-		}
-	}
-}
-
-func TestLoadDisabledRejectsPartialFeishuCommandFiles(t *testing.T) {
-	t.Parallel()
-
-	env := validEnv(t)
-	addFeishuCommandFiles(t, env)
-	delete(env, "RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE")
-	if _, err := Load(func(key string) string { return env[key] }); err == nil {
-		t.Fatal("disabled mode accepted a partial file set")
-	}
-}
-
-func TestLoadRejectsInsecureFeishuCommandFile(t *testing.T) {
-	t.Parallel()
-
-	env := validEnv(t)
-	addFeishuCommandFiles(t, env)
-	env["RELAY_OPS_FEISHU_COMMAND_MODE"] = FeishuCommandDryRun
-	if err := os.Chmod(env["RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE"], 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(func(key string) string { return env[key] }); err == nil {
-		t.Fatal("world-readable Feishu secret unexpectedly accepted")
+		t.Fatal("incomplete Feishu App file pair unexpectedly accepted")
 	}
 }
 
@@ -349,50 +301,35 @@ func validEnv(t *testing.T) map[string]string {
 	}
 }
 
-func addFeishuCommandFiles(t *testing.T, env map[string]string) {
+func addFeishuAlertFiles(t *testing.T, env map[string]string) (string, string) {
 	t.Helper()
-	addFeishuCallbackFiles(t, env)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "RELAY_OPS_FEISHU_ROUTING_FILE")
-	if err := os.WriteFile(path, []byte(`{"groups":[]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env["RELAY_OPS_FEISHU_ROUTING_FILE"] = path
+	_, _, chatIDFile, recipientsFile := addOutboundFeishuAlertFiles(t, env)
+	return chatIDFile, recipientsFile
 }
 
-func addFeishuCallbackFiles(t *testing.T, env map[string]string) {
+func addOutboundFeishuAlertFiles(t *testing.T, env map[string]string) (string, string, string, string) {
 	t.Helper()
+
 	dir := t.TempDir()
 	files := map[string]string{
-		"RELAY_OPS_FEISHU_APP_ID_FILE":             "cli_test_app",
-		"RELAY_OPS_FEISHU_APP_SECRET_FILE":         "app-secret",
-		"RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE": "verification-token",
-		"RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE":        "encrypt-key",
+		"RELAY_OPS_FEISHU_APP_ID_FILE":           "cli_test_app",
+		"RELAY_OPS_FEISHU_APP_SECRET_FILE":       "app-secret",
+		"RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE":    "oc_alert_group",
+		"RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE": `{"open_ids":["operator"]}`,
 	}
+	paths := make(map[string]string, len(files))
 	for key, value := range files {
 		path := filepath.Join(dir, key)
 		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		env[key] = path
+		paths[key] = path
 	}
-}
-
-func addFeishuAlertFiles(t *testing.T, env map[string]string) (string, string) {
-	t.Helper()
-	addFeishuCallbackFiles(t, env)
-	dir := t.TempDir()
-	chatIDFile := filepath.Join(dir, "feishu-alert-chat-id")
-	if err := os.WriteFile(chatIDFile, []byte("oc_alert_group"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	recipientsFile := filepath.Join(dir, "feishu-alert-recipients.json")
-	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator"]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"] = chatIDFile
-	env["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"] = recipientsFile
-	return chatIDFile, recipientsFile
+	return paths["RELAY_OPS_FEISHU_APP_ID_FILE"],
+		paths["RELAY_OPS_FEISHU_APP_SECRET_FILE"],
+		paths["RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE"],
+		paths["RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE"]
 }
 
 func addNotificationPolicy(t *testing.T, env map[string]string) string {

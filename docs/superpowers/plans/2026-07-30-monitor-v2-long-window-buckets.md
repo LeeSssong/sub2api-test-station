@@ -67,6 +67,11 @@ Add 21,600 and 86,400 to a shared supported-bucket normalizer. Use it in both
 repository methods. Generate epoch-floor SQL expressions for 300, 21,600, and
 86,400 seconds; keep the existing hourly and minute expressions.
 
+After merging timeline trends, calculate the expected point capacity from the
+window duration and bucket size. If and only if the merged result contains one
+extra inclusive boundary bucket, remove the oldest point and retain the newest
+bucket. Grossly oversized results must continue to fail the 64-point guard.
+
 - [x] **Step 2: Run the focused tests and verify GREEN**
 
 ```bash

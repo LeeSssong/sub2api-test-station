@@ -33,6 +33,13 @@ For 6-hour and 24-hour buckets, group PostgreSQL timestamps by flooring Unix
 epoch seconds to the requested interval. This keeps bucket boundaries aligned
 to UTC and reuses the repository's existing fill logic and bucket labels.
 
+PostgreSQL's inclusive `generate_series(start, end, bucket)` can expose one
+partial bucket at each edge of an unaligned window, yielding 29 or 31 merged
+timeline points. After merging throughput and error trends, trim only the
+oldest point when the result is exactly one point above the calculated window
+capacity. Keep the newest/current bucket. Do not trim grossly oversized
+results, so the existing 64-point guard still catches a future bucket fallback.
+
 ## Test Strategy
 
 Exercise the real `opsRepository.GetThroughputTrend` and
@@ -51,6 +58,8 @@ falling back to 60 seconds cannot satisfy the tests.
 - [x] Error trends preserve 21,600-second and 86,400-second buckets.
 - [x] A 7-day empty trend contains 28 points, not 10,081 points.
 - [x] A 30-day empty trend contains 30 points.
+- [x] Snapshot timelines remove only the single inclusive boundary overflow
+  and retain their newest bucket.
 - [x] Existing Monitor V2 and repository tests pass.
 
 ## Risks

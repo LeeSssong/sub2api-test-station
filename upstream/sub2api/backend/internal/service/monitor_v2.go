@@ -327,7 +327,12 @@ func (s *MonitorV2Service) buildGroup(
 	throughput, throughputErr := s.ops.GetThroughputTrend(ctx, filter, bucketSeconds)
 	errorsTrend, errorsErr := s.ops.GetErrorTrend(ctx, filter, bucketSeconds)
 	if throughputErr == nil && errorsErr == nil {
-		card.Timeline = monitorV2Timeline(throughput, errorsTrend)
+		card.Timeline = monitorV2TrimBoundaryBucket(
+			monitorV2Timeline(throughput, errorsTrend),
+			start,
+			end,
+			bucketSeconds,
+		)
 	}
 
 	if strings.EqualFold(group.Platform, PlatformOpenAI) {
@@ -679,4 +684,21 @@ func monitorV2Timeline(
 		out = append(out, point)
 	}
 	return out
+}
+
+func monitorV2TrimBoundaryBucket(
+	points []MonitorV2TimelinePoint,
+	start, end time.Time,
+	bucketSeconds int,
+) []MonitorV2TimelinePoint {
+	bucket := time.Duration(bucketSeconds) * time.Second
+	window := end.Sub(start)
+	if bucket <= 0 || window <= 0 {
+		return points
+	}
+	expected := int((window + bucket - 1) / bucket)
+	if len(points) != expected+1 {
+		return points
+	}
+	return append([]MonitorV2TimelinePoint(nil), points[len(points)-expected:]...)
 }

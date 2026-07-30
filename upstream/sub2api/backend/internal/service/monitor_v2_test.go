@@ -41,6 +41,7 @@ func (s *monitorV2ProbeReaderStub) ListUserView(context.Context) ([]*UserMonitor
 type monitorV2OpsReaderStub struct {
 	overview        *OpsDashboardOverview
 	throughputTrend *OpsThroughputTrendResponse
+	errorTrend      *OpsErrorTrendResponse
 	tokenStats      *OpsOpenAITokenStatsResponse
 }
 
@@ -100,6 +101,9 @@ func (s *monitorV2OpsReaderStub) GetErrorTrend(
 	filter *OpsDashboardFilter,
 	_ int,
 ) (*OpsErrorTrendResponse, error) {
+	if s.errorTrend != nil {
+		return s.errorTrend, nil
+	}
 	if filter.GroupID != nil && *filter.GroupID == 2 {
 		return &OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{}}, nil
 	}
@@ -148,6 +152,59 @@ func (s *monitorV2RepoStub) GetCacheStats(
 		out[id] = stat
 	}
 	return out, nil
+}
+
+func TestMonitorV2SnapshotKeepsLatestExpectedTimelineBuckets(t *testing.T) {
+	now := time.Date(2026, 7, 30, 5, 17, 0, 0, time.UTC)
+	group := Group{
+		ID:          16,
+		Name:        "公开标准",
+		Platform:    PlatformAnthropic,
+		Status:      StatusActive,
+		IsExclusive: false,
+	}
+
+	tests := []struct {
+		name       string
+		window     MonitorV2Window
+		bucket     time.Duration
+		pointCount int
+		wantCount  int
+	}{
+		{name: "7d", window: MonitorV2Window7D, bucket: 6 * time.Hour, pointCount: 29, wantCount: 28},
+		{name: "30d", window: MonitorV2Window30D, bucket: 24 * time.Hour, pointCount: 31, wantCount: 30},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			firstBucket := now.Add(-time.Duration(tt.wantCount) * tt.bucket).Truncate(tt.bucket)
+			points := make([]*OpsThroughputTrendPoint, tt.pointCount)
+			for i := range points {
+				points[i] = &OpsThroughputTrendPoint{
+					BucketStart:  firstBucket.Add(time.Duration(i) * tt.bucket),
+					RequestCount: 1,
+				}
+			}
+			svc := NewMonitorV2Service(
+				&monitorV2GroupRepoStub{groups: []Group{group}},
+				&monitorV2ChannelReaderStub{},
+				&monitorV2ProbeReaderStub{},
+				&monitorV2OpsReaderStub{
+					throughputTrend: &OpsThroughputTrendResponse{Points: points},
+					errorTrend:      &OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{}},
+				},
+				&monitorV2RepoStub{},
+			)
+
+			snapshot, err := svc.Snapshot(context.Background(), tt.window, now)
+
+			require.NoError(t, err)
+			require.Len(t, snapshot.Groups, 1)
+			require.Len(t, snapshot.Groups[0].Timeline, tt.wantCount)
+			require.Equal(t, points[1].BucketStart, snapshot.Groups[0].Timeline[0].BucketStart)
+			require.Equal(t, points[len(points)-1].BucketStart, snapshot.Groups[0].Timeline[tt.wantCount-1].BucketStart)
+		})
+	}
 }
 
 func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {

@@ -21,13 +21,7 @@ func (r *opsRepository) GetThroughputTrend(ctx context.Context, filter *service.
 		return nil, fmt.Errorf("start_time/end_time required")
 	}
 
-	if bucketSeconds <= 0 {
-		bucketSeconds = 60
-	}
-	if bucketSeconds != 60 && bucketSeconds != 300 && bucketSeconds != 3600 {
-		// Keep a small, predictable set of supported buckets for now.
-		bucketSeconds = 60
-	}
+	bucketSeconds = normalizeOpsTrendBucketSeconds(bucketSeconds)
 
 	start := filter.StartTime.UTC()
 	end := filter.EndTime.UTC()
@@ -331,13 +325,25 @@ LIMIT $4`
 	return items, nil
 }
 
+func normalizeOpsTrendBucketSeconds(bucketSeconds int) int {
+	switch bucketSeconds {
+	case 60, 300, 3600, 21600, 86400:
+		return bucketSeconds
+	default:
+		return 60
+	}
+}
+
 func opsBucketExprForUsage(bucketSeconds int) string {
 	switch bucketSeconds {
 	case 3600:
 		return "date_trunc('hour', ul.created_at)"
-	case 300:
-		// 5-minute buckets in UTC.
-		return "to_timestamp(floor(extract(epoch from ul.created_at) / 300) * 300)"
+	case 300, 21600, 86400:
+		return fmt.Sprintf(
+			"to_timestamp(floor(extract(epoch from ul.created_at) / %d) * %d)",
+			bucketSeconds,
+			bucketSeconds,
+		)
 	default:
 		return "date_trunc('minute', ul.created_at)"
 	}
@@ -347,8 +353,12 @@ func opsBucketExprForError(bucketSeconds int) string {
 	switch bucketSeconds {
 	case 3600:
 		return "date_trunc('hour', created_at)"
-	case 300:
-		return "to_timestamp(floor(extract(epoch from created_at) / 300) * 300)"
+	case 300, 21600, 86400:
+		return fmt.Sprintf(
+			"to_timestamp(floor(extract(epoch from created_at) / %d) * %d)",
+			bucketSeconds,
+			bucketSeconds,
+		)
 	default:
 		return "date_trunc('minute', created_at)"
 	}
@@ -436,12 +446,7 @@ func (r *opsRepository) GetErrorTrend(ctx context.Context, filter *service.OpsDa
 		return nil, fmt.Errorf("start_time/end_time required")
 	}
 
-	if bucketSeconds <= 0 {
-		bucketSeconds = 60
-	}
-	if bucketSeconds != 60 && bucketSeconds != 300 && bucketSeconds != 3600 {
-		bucketSeconds = 60
-	}
+	bucketSeconds = normalizeOpsTrendBucketSeconds(bucketSeconds)
 
 	start := filter.StartTime.UTC()
 	end := filter.EndTime.UTC()

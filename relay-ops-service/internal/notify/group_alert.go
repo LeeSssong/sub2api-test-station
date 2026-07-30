@@ -38,7 +38,7 @@ func RenderGroupAlert(view GroupAlertView) FeishuMessage {
 			Basis:  []string{"当前可用账号数量已回到健康范围"},
 			Source: "Sub2API 账号监控分组快照",
 			Focus:  "继续观察分组可用账号数量",
-			Links:  []Link{{Label: "运维后台", URL: "/ops"}},
+			Links:  []Link{{Label: "运维后台", URL: "/admin/ops"}},
 		})
 	}
 
@@ -72,7 +72,7 @@ func RenderGroupAlert(view GroupAlertView) FeishuMessage {
 			// fail, so the alert would be lost precisely when it is needed.
 			{Tag: "div", Text: &CardText{Tag: "lark_md", Content: fitDigestSection(lines)}},
 			{Tag: "action", Actions: []CardAction{{
-				Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"}, Type: "primary", MultiURL: &CardURL{URL: "/ops"},
+				Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"}, Type: "primary", MultiURL: &CardURL{URL: "/admin/ops"},
 			}}},
 		},
 	}}

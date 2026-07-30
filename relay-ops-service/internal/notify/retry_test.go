@@ -11,7 +11,10 @@ import (
 )
 
 func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *testing.T) {
-	payload, err := RenderAlert(IncidentView{Title: "公开分组不可用", Severity: "P0"}).CardJSON()
+	payload, err := RenderAlert(IncidentView{
+		Title: "公开分组不可用", Severity: "P0",
+		Links: []Link{{Label: "运维后台", URL: "/admin/ops"}},
+	}).CardJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +27,7 @@ func TestDeliveryRetryServiceSendsClaimedSafePayloadWithOriginalIdentity(t *test
 		if message.OccurrenceNo != 3 || message.Transition != "confirmed" || message.Severity != "P0" {
 			t.Fatalf("retried message=%#v", message)
 		}
+		assertReminderOnlyCard(t, message)
 		return SendResult{
 			MessageID: "om-retry", ResponseCode: http.StatusOK,
 			Payload:      []byte(`{"content":"<at id=ou-secret></at>"}`),
@@ -92,6 +96,7 @@ func TestDeliveryRetryServiceRetriesOneShotWithoutIncidentIdentity(t *testing.T)
 			strings.Contains(retried.RenderedText(), "确认并接手") {
 			t.Fatalf("one-shot gained incident lifecycle: %#v", retried)
 		}
+		assertReminderOnlyCard(t, retried)
 		return SendResult{
 			MessageID: "om-pricing-retry", ResponseCode: http.StatusOK,
 			UrgentStatus: "not_supported",

@@ -13,7 +13,9 @@ func TestRenderGroupAlertContent(t *testing.T) {
 			{Name: "Plus-XM-0.1", ErrorCode: "余额耗尽"},
 		},
 	}
-	payload, err := RenderGroupAlert(view).CardJSON()
+	message := RenderGroupAlert(view)
+	assertReminderOnlyCard(t, message)
+	payload, err := message.CardJSON()
 	if err != nil {
 		t.Fatalf("CardJSON: %v", err)
 	}
@@ -46,6 +48,7 @@ func TestRenderGroupAlertCarriesImpactSeverity(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			message := RenderGroupAlert(test.view)
+			assertReminderOnlyCard(t, message)
 			if message.Severity != test.severity || !strings.Contains(message.Card.Header.Title.Content, test.titlePart) {
 				t.Fatalf("message severity=%q title=%q", message.Severity, message.Card.Header.Title.Content)
 			}
@@ -62,6 +65,7 @@ func TestRenderGroupAlertCarriesImpactSeverity(t *testing.T) {
 func TestRenderGroupAlertRecovery(t *testing.T) {
 	view := GroupAlertView{GroupName: "GPT-Plus", Available: 3, Total: 3, Recovery: true}
 	message := RenderGroupAlert(view)
+	assertReminderOnlyCard(t, message)
 	payload, err := message.CardJSON()
 	if err != nil {
 		t.Fatalf("CardJSON: %v", err)

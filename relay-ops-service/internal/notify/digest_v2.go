@@ -98,7 +98,7 @@ func RenderHealthDigest(view HealthDigestView) FeishuMessage {
 	}
 	elements = append(elements, CardElement{Tag: "action", Actions: []CardAction{{
 		Tag: "button", Text: CardText{Tag: "plain_text", Content: "运维后台"},
-		Type: "primary", MultiURL: &CardURL{URL: "/ops"},
+		Type: "primary", MultiURL: &CardURL{URL: "/admin/ops"},
 	}}})
 
 	return FeishuMessage{MsgType: "interactive", Card: &Card{

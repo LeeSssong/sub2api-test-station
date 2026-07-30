@@ -147,7 +147,7 @@ func TestConsolidatedGroupIncidentLifecycleWithConciseReminder(t *testing.T) {
 		t.Fatalf("reminder messages=%#v", client.messages)
 	}
 	reminderText := client.messages[1].RenderedText()
-	for _, want := range []string{"持续时间", "尚未有人确认接手", "30"} {
+	for _, want := range []string{"持续时间", "提醒状态", "该异常仍在持续", "30"} {
 		if !strings.Contains(reminderText, want) {
 			t.Fatalf("reminder missing %q in %q", want, reminderText)
 		}
@@ -156,6 +156,14 @@ func TestConsolidatedGroupIncidentLifecycleWithConciseReminder(t *testing.T) {
 		if strings.Contains(reminderText, forbidden) {
 			t.Fatalf("reminder cloned %q: %s", forbidden, reminderText)
 		}
+	}
+	reminderPayload, err := client.messages[1].CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reminderPayload), "ack_incident") ||
+		!strings.Contains(string(reminderPayload), `"url":"/admin/ops"`) {
+		t.Fatalf("reminder is not navigation-only: %s", reminderPayload)
 	}
 
 	observedAt = observedAt.Add(time.Minute)

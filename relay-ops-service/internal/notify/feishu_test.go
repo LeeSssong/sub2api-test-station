@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +15,42 @@ import (
 
 	"example.invalid/relay-ops-service/internal/feishuapi"
 )
+
+func assertReminderOnlyCard(t *testing.T, message FeishuMessage) {
+	t.Helper()
+	text := message.RenderedText()
+	for _, forbidden := range []string{
+		"确认并接手", "尚未有人确认接手", "接手状态", "已接手", "处理人",
+		"ack_incident", "ack_occurrence",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("card contains retired interaction %q: %s", forbidden, text)
+		}
+	}
+	payload, err := message.CardJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(payload)
+	if strings.Contains(body, "ack_incident") || strings.Contains(body, "ack_occurrence") {
+		t.Fatalf("card payload contains acknowledgement query: %s", body)
+	}
+	if !strings.Contains(body, `"url":"/admin/ops"`) {
+		t.Fatalf("card payload missing native ops link: %s", body)
+	}
+	var actionCount int
+	for _, element := range message.Card.Elements {
+		for _, action := range element.Actions {
+			actionCount++
+			if action.MultiURL == nil || action.MultiURL.URL != "/admin/ops" {
+				t.Fatalf("card contains non-native action: %#v", action)
+			}
+		}
+	}
+	if actionCount != 1 {
+		t.Fatalf("card action count = %d, want 1: %s", actionCount, body)
+	}
+}
 
 func TestRenderFeishuIncludesFiveOperatorSections(t *testing.T) {
 	t.Parallel()
@@ -217,62 +252,38 @@ func TestLoadRecipientOpenIDsStrictlyValidatesSecretJSON(t *testing.T) {
 	}
 }
 
-func TestWithAcknowledgementActionOnlyAddsCurrentP0P1Button(t *testing.T) {
-	tests := []struct {
-		name       string
-		message    FeishuMessage
-		wantButton bool
-	}{
-		{name: "P0", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "不可用", Severity: "P0"}), 3, "confirmed"), wantButton: true},
-		{name: "P1", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "变慢", Severity: "P1"}), 4, "new_evidence"), wantButton: true},
-		{name: "P2", message: WithDeliveryIdentity(RenderAlert(IncidentView{Title: "倍率", Severity: "P2"}), 2, "confirmed")},
-		{name: "recovery", message: WithDeliveryIdentity(RenderRecovery(IncidentView{Title: "恢复", Recovery: true}), 3, "recovered")},
+func TestDeliverySenderDoesNotInjectAcknowledgementAction(t *testing.T) {
+	message := WithDeliveryIdentity(RenderUserImpact(UserImpactView{
+		GroupName: "GPT-PLUS-内测", Severity: "P1", Headline: "部分请求持续失败",
+	}), 3, "confirmed")
+	repository := &recordingDeliveryRepository{}
+	client := &recordingMessageClient{}
+	sender := DeliverySender{Client: client, Repository: repository}
+	if err := sender.SendIncident(context.Background(), "group:1", "evidence", message); err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			message := WithAcknowledgementAction(test.message, "group:GPT PLUS/内测:availability", messageOccurrence(test.message))
-			var matches []CardAction
-			for _, element := range message.Card.Elements {
-				for _, action := range element.Actions {
-					if action.Text.Content == "确认并接手" {
-						matches = append(matches, action)
-					}
-				}
-			}
-			if !test.wantButton {
-				if len(matches) != 0 {
-					t.Fatalf("unexpected acknowledgement actions: %#v", matches)
-				}
-				return
-			}
-			if len(matches) != 1 || matches[0].MultiURL == nil {
-				t.Fatalf("acknowledgement actions = %#v", matches)
-			}
-			parsed, err := url.Parse(matches[0].MultiURL.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if parsed.Path != "/ops" ||
-				parsed.Query().Get("ack_incident") != "group:GPT PLUS/内测:availability" ||
-				parsed.Query().Get("ack_occurrence") != strconv.FormatInt(messageOccurrence(test.message), 10) {
-				t.Fatalf("acknowledgement URL = %q", matches[0].MultiURL.URL)
-			}
-		})
-	}
+	assertReminderOnlyCard(t, client.message)
 }
 
-func messageOccurrence(message FeishuMessage) int64 {
-	return message.OccurrenceNo
+type recordingDeliveryRepository = fakeDeliveryRepository
+
+type recordingMessageClient struct {
+	message FeishuMessage
+}
+
+func (client *recordingMessageClient) Send(_ context.Context, message FeishuMessage) error {
+	client.message = message
+	return nil
 }
 
 func TestAppClientResolvesRelativeOpsLinkBeforeSending(t *testing.T) {
 	sender := &fakeTextSender{}
 	client := AppClient{Sender: sender, ChatID: "oc_alert_group", BaseURL: "https://ops.example"}
-	message := RenderAlert(IncidentView{Title: "告警", Links: []Link{{Label: "运维后台", URL: "/ops"}}})
+	message := RenderAlert(IncidentView{Title: "告警", Links: []Link{{Label: "运维后台", URL: "/admin/ops"}}})
 	if err := client.Send(context.Background(), message); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(sender.payload.Content), "https://ops.example/ops") {
+	if !strings.Contains(string(sender.payload.Content), "https://ops.example/admin/ops") {
 		t.Fatalf("relative link was not resolved: %s", sender.payload.Content)
 	}
 }
@@ -289,7 +300,7 @@ func TestAppClientFiltersUnsafeStructuredRecoveryLinkAndResolvesRelativeLink(t *
 		},
 		Links: []Link{
 			{Label: "不安全链接", URL: "http://unsafe.example/ops"},
-			{Label: "运维后台", URL: "/ops"},
+			{Label: "运维后台", URL: "/admin/ops"},
 		},
 	})
 	if err := client.Send(context.Background(), message); err != nil {
@@ -304,7 +315,7 @@ func TestAppClientFiltersUnsafeStructuredRecoveryLinkAndResolvesRelativeLink(t *
 		t.Fatalf("unsafe action was retained: %s", sender.payload.Content)
 	}
 	action := card.Elements[2].Actions[0]
-	if action.MultiURL == nil || action.MultiURL.URL != "https://ops.example/ops" {
+	if action.MultiURL == nil || action.MultiURL.URL != "https://ops.example/admin/ops" {
 		t.Fatalf("relative action was not resolved: %#v", action)
 	}
 }
@@ -363,7 +374,7 @@ func TestRenderRecoveryCardSeparatesSummaryMetricsEvidenceAndAction(t *testing.T
 		Basis:  []string{"当前与基线均为可用、可调度"},
 		Source: "Sub2API 原生站内运行快照",
 		Focus:  "在运维后台查看站内运行证据",
-		Links:  []Link{{Label: "运维后台", URL: "/ops"}},
+		Links:  []Link{{Label: "运维后台", URL: "/admin/ops"}},
 	})
 
 	if got := len(message.Card.Elements); got != 4 {
@@ -511,8 +522,8 @@ func TestFitDigestSectionIsDeterministicRetainsAbnormalitiesAndBoundsEscapedByte
 	if !strings.Contains(first, "读取失败") {
 		t.Fatalf("truncation dropped the trailing abnormal line: %s", first)
 	}
-	if !strings.Contains(first, "其余对象请在 /ops 查看") {
-		t.Fatal("truncated section missing the /ops remainder notice")
+	if !strings.Contains(first, "其余对象请在原生运维后台查看") {
+		t.Fatal("truncated section missing the native ops remainder notice")
 	}
 	encoded, err := json.Marshal(first)
 	if err != nil {
@@ -603,7 +614,7 @@ func TestRenderUpstreamReportIsNotificationOnly(t *testing.T) {
 		Gateway: "成功 6/6，TTFT P95 940ms", Models: "可开放 15，阻塞 0",
 		Pricing: "multiplier_only，待管理员确认余额", Capacity: "并发至少 5，RPM 至少 20",
 		Unknowns: []string{"转售条款"}, ReportID: "report-20260722-73", ReportHash: strings.Repeat("a", 64),
-		Links: []Link{{Label: "运维后台", URL: "/ops"}},
+		Links: []Link{{Label: "运维后台", URL: "/admin/ops"}},
 	})
 
 	data, err := message.CardJSON()

@@ -54,7 +54,6 @@ func (s DeliverySender) SendIncident(ctx context.Context, incidentKey, evidenceH
 		return fmt.Errorf("notification delivery identity is required")
 	}
 	occurrenceNo := message.OccurrenceNo
-	message = WithAcknowledgementAction(message, incidentKey, occurrenceNo)
 	// The dedup fingerprint is taken over the card that will actually be sent,
 	// so a message whose rendering changed counts as a different message.
 	payload, err := message.CardJSON()

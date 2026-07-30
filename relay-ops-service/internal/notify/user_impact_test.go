@@ -22,6 +22,7 @@ func TestRenderUserImpactUsesApprovedHumanLanguageSections(t *testing.T) {
 		ObservedAt: time.Date(2026, 7, 29, 13, 3, 0, 0, time.UTC),
 	}
 	message := RenderUserImpact(view)
+	assertReminderOnlyCard(t, message)
 	if message.Severity != "P1" ||
 		message.Card.Header.Title.Content != "P1｜GPT PLUS 内测分组部分请求持续失败" {
 		t.Fatalf("message = %#v", message)
@@ -53,6 +54,7 @@ func TestRenderUserImpactProgressUsesHumanTitle(t *testing.T) {
 		Current:    []UserImpactFact{{Label: "最新情况", Value: "最近 15 分钟 31 次请求全部失败。"}},
 		Action:     "立即检查剩余账号请求错误，并恢复至少一个备用账号。",
 	})
+	assertReminderOnlyCard(t, message)
 	if message.Card.Header.Title.Content != "事故进展｜GPT PLUS 内测分组已从部分失败升级为全部失败" {
 		t.Fatalf("title = %q", message.Card.Header.Title.Content)
 	}
@@ -67,6 +69,7 @@ func TestRenderUserImpactRecoveryHasNoIncidentActions(t *testing.T) {
 		Duration: "约 30 分钟", Current: "可用账号 3 / 3，未发现持续用户影响。",
 		ObservedAt: time.Date(2026, 7, 29, 13, 30, 0, 0, time.UTC),
 	})
+	assertReminderOnlyCard(t, message)
 	if message.Card.Header.Title.Content != "恢复｜GPT PLUS 内测分组请求已恢复" ||
 		message.Severity != "" {
 		t.Fatalf("recovery = %#v", message)
@@ -96,6 +99,7 @@ func TestRenderUserImpactReminderIsConciseAndKeepsSeverity(t *testing.T) {
 		LatestFact: "最近 15 分钟 31 次请求全部失败。",
 		Capacity:   "当前可用账号 1 / 3。",
 	})
+	assertReminderOnlyCard(t, message)
 	if message.Severity != "P0" ||
 		message.Card.Header.Template != "red" ||
 		message.Card.Header.Title.Content !=
@@ -104,7 +108,7 @@ func TestRenderUserImpactReminderIsConciseAndKeepsSeverity(t *testing.T) {
 	}
 	text := message.RenderedText()
 	for _, want := range []string{
-		"15 分钟", "尚未有人确认接手",
+		"15 分钟", "提醒状态", "该异常仍在持续",
 		"最近 15 分钟 31 次请求全部失败",
 		"当前可用账号 1 / 3",
 	} {

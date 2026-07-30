@@ -45,6 +45,7 @@ func TestRenderHealthDigestActionMorningOrder(t *testing.T) {
 	}
 
 	message := RenderHealthDigest(view)
+	assertReminderOnlyCard(t, message)
 	text := renderText(t, message)
 	for _, want := range []string{
 		"中转站晨报｜7月27日",

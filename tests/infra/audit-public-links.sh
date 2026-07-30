@@ -121,6 +121,16 @@ for path in "${paths[@]}"; do
   audit_path "$path" "$classification"
 done
 
+ops_headers="$TEMP_DIR/ops.headers"
+ops_status=$(curl --silent --show-error --max-redirs 0 \
+  --output /dev/null \
+  --dump-header "$ops_headers" \
+  --write-out '%{http_code}' \
+  "${BASE_ORIGIN}/ops")
+[[ "$ops_status" == '302' ]] || fail "/ops must return 302, got $ops_status"
+grep -Eiq '^location:[[:space:]]*/admin/ops([[:space:]]|$)' "$ops_headers" || \
+  fail '/ops must redirect to /admin/ops'
+
 CURRENT_PATH=/api/v1/settings/public
 settings_file="$TEMP_DIR/settings-public.json"
 fetch "$CURRENT_PATH" "$settings_file"

@@ -103,6 +103,9 @@
 		reverse_proxy sub2api:8080
 	}
 
+	@legacy_ops path /ops /ops/*
+	redir @legacy_ops /admin/ops 302
+
 	@sub2api_html {
 		header Accept *text/html*
 		not {
@@ -161,21 +164,6 @@
 		path /pricing /relay-ops/static/*
 	}
 	reverse_proxy @relay_ops_public relay-ops:8100
-
-	@relay_ops_feishu_command {
-		method POST
-		path /relay-ops/api/feishu/events
-	}
-	reverse_proxy @relay_ops_feishu_command relay-ops:8100
-
-	@relay_ops_admin {
-		path /ops /ops/* /relay-ops/api/*
-		not {
-			method POST
-			path /relay-ops/api/feishu/events
-		}
-	}
-	reverse_proxy @relay_ops_admin relay-ops:8100
 
 	reverse_proxy sub2api:8080 {
 		flush_interval -1

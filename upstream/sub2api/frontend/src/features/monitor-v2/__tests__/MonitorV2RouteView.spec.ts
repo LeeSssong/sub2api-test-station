@@ -27,17 +27,17 @@ vi.mock('vue-i18n', async () => {
     useI18n: () => ({
       t: (key: string) =>
         ({
-          'monitorV2.loading': '正在读取公开分组状态',
+          'monitorV2.loading': '正在读取分组状态',
           'monitorV2.fallbackNotice': '新版监控暂不可用，已切换到基础状态页。',
           'monitorV2.title': '服务监控',
-          'monitorV2.description': '公开分组状态',
+          'monitorV2.description': '可见分组状态',
           'monitorV2.updatedAt': '更新于现在',
           'monitorV2.refresh': '刷新',
           'monitorV2.overall.noData': '等待监控数据',
           'monitorV2.window.24h': '24 小时',
           'monitorV2.window.7d': '7 天',
           'monitorV2.window.30d': '30 天',
-          'monitorV2.empty.title': '暂无公开分组',
+          'monitorV2.empty.title': '暂无可见分组',
           'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
           'monitorV2.notes.metrics': '样本说明',
           'monitorV2.notes.privacy': '隐私说明',
@@ -78,7 +78,7 @@ describe('MonitorV2RouteView', () => {
     await flushPromises()
 
     expect(getMonitorV2Snapshot).toHaveBeenCalledWith('7d', expect.any(AbortSignal))
-    expect(wrapper.text()).toContain('暂无公开分组')
+    expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.find('[data-test="native-channel-status"]').exists()).toBe(false)
   })
 

@@ -15,7 +15,7 @@ vi.mock('../api', async () => {
 
 const messages: Record<string, string> = {
   'monitorV2.title': '服务监控',
-  'monitorV2.description': '查看公开分组的实时状态与调用质量',
+  'monitorV2.description': '查看当前可见分组的实时状态与调用质量',
   'monitorV2.updatedAt': '更新于 {time}',
   'monitorV2.refresh': '刷新',
   'monitorV2.overall.operational': '全部服务正常',
@@ -49,10 +49,10 @@ const messages: Record<string, string> = {
   'monitorV2.details.metrics': '高分位指标',
   'monitorV2.details.definition': 'P95 表示 95% 的成功请求快于该数值。',
   'monitorV2.modelStatus': '状态：{status}',
-  'monitorV2.empty.title': '暂无公开分组',
+  'monitorV2.empty.title': '暂无可见分组',
   'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
   'monitorV2.notes.metrics': '指标按所选时间范围汇总，样本不足时不显示推测值。',
-  'monitorV2.notes.privacy': '仅展示公开分组的聚合数据，不包含账号、用户或请求内容。',
+  'monitorV2.notes.privacy': '普通用户仅展示公开分组，管理员展示全部启用分组；不包含账号、用户或请求内容。',
   'monitorV2.timeline.noData': '该时段暂无有效调用',
 }
 
@@ -212,7 +212,7 @@ describe('MonitorV2View', () => {
       groups: [],
     })
 
-    expect(wrapper.text()).toContain('暂无公开分组')
+    expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.text()).toContain('管理员尚未开放可展示的服务分组。')
   })
 })

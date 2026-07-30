@@ -153,6 +153,9 @@ var (
 	ErrChannelMonitorMissingPrimaryModel = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_MISSING_PRIMARY_MODEL", "primary_model is required",
 	)
+	ErrChannelMonitorInvalidGroup = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_INVALID_GROUP", "group_id must reference an active group matching the monitor provider",
+	)
 	ErrChannelMonitorAPIKeyDecryptFailed = infraerrors.InternalServer(
 		"CHANNEL_MONITOR_KEY_DECRYPT_FAILED", "api key decryption failed; please re-edit the monitor with a fresh key",
 	)

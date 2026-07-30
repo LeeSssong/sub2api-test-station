@@ -834,8 +834,9 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 func ProvideChannelMonitorService(
 	repo ChannelMonitorRepository,
 	encryptor SecretEncryptor,
+	groupRepo GroupRepository,
 ) *ChannelMonitorService {
-	return NewChannelMonitorService(repo, encryptor)
+	return NewChannelMonitorService(repo, encryptor, groupRepo)
 }
 
 func ProvideMonitorV2Service(

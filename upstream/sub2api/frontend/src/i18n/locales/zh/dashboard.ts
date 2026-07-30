@@ -61,8 +61,8 @@ export default {
 
   monitorV2: {
     title: '服务监控',
-    description: '查看公开分组的运行状态与调用质量',
-    loading: '正在读取公开分组状态',
+    description: '查看当前可见分组的运行状态与调用质量',
+    loading: '正在读取分组状态',
     fallbackNotice: '新版监控暂不可用，已切换到基础状态页。',
     updatedAt: '更新于 {time}',
     refresh: '刷新',
@@ -114,12 +114,12 @@ export default {
       noData: '该时段暂无有效调用'
     },
     empty: {
-      title: '暂无公开分组',
-      description: '管理员尚未开放可展示的服务分组。'
+      title: '暂无可见分组',
+      description: '当前没有可展示的服务分组。'
     },
     notes: {
       metrics: '指标按所选时间范围汇总，样本不足时不显示推测值。',
-      privacy: '仅展示公开分组的聚合数据，不包含账号、用户或请求内容。'
+      privacy: '普通用户仅展示公开分组，管理员展示全部启用分组；不包含账号、用户或请求内容。'
     }
   },
 

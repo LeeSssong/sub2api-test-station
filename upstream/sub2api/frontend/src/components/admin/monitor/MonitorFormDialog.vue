@@ -102,7 +102,16 @@
 
       <div>
         <label class="input-label">{{ t('admin.channelMonitor.form.groupName') }}</label>
-        <input v-model="form.group_name" type="text" class="input" :placeholder="t('admin.channelMonitor.form.groupNamePlaceholder')" />
+        <Select
+          id="monitor-group"
+          v-model="groupSelectValue"
+          :options="groupOptions"
+          :placeholder="t('admin.channelMonitor.form.groupNamePlaceholder')"
+          :empty-text="t('admin.channelMonitor.form.groupEmpty')"
+          searchable
+          clearable
+        />
+        <p class="mt-1 text-xs text-gray-400">{{ t('admin.channelMonitor.form.groupHint') }}</p>
       </div>
 
       <div>
@@ -201,7 +210,7 @@ import type {
   UpdateParams,
 } from '@/api/admin/channelMonitor'
 import type { ChannelMonitorTemplate } from '@/api/admin/channelMonitorTemplate'
-import type { ApiKey } from '@/types'
+import type { AdminGroup, ApiKey } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Select from '@/components/common/Select.vue'
@@ -264,6 +273,7 @@ interface MonitorForm {
   primary_model: string
   extra_models: string[]
   group_name: string
+  group_id: number | null
   interval_seconds: number
   jitter_seconds: number
   enabled: boolean
@@ -283,6 +293,7 @@ const form = reactive<MonitorForm>({
   primary_model: '',
   extra_models: [],
   group_name: '',
+  group_id: null,
   interval_seconds: systemDefaultInterval.value,
   jitter_seconds: 0,
   enabled: true,
@@ -300,6 +311,52 @@ let suppressFormWatchers = false
 // 可用模板列表（进入 dialog 时一次性拉取 cache；按 provider / api mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
 const templatesLoading = ref(false)
+const groupsCache = ref<AdminGroup[]>([])
+const groupsLoaded = ref(false)
+let groupSelectionTouched = false
+
+const groupOptions = computed(() => {
+  const items = groupsCache.value
+    .filter((group) => group.platform === form.provider)
+    .map((group) => ({ value: group.id, label: group.name }))
+  if (
+    form.group_id != null &&
+    form.group_name &&
+    !items.some((option) => option.value === form.group_id)
+  ) {
+    items.unshift({ value: form.group_id, label: form.group_name })
+  }
+  return items
+})
+
+const groupSelectValue = computed<number | null>({
+  get: () => form.group_id,
+  set: (raw) => {
+    groupSelectionTouched = true
+    if (raw == null) {
+      form.group_id = null
+      form.group_name = ''
+      return
+    }
+    const group = groupsCache.value.find((item) => item.id === raw)
+    if (!group) return
+    form.group_id = group.id
+    form.group_name = group.name
+  },
+})
+
+function resolveLegacyGroupAssociation() {
+  if (form.group_id != null) return
+  const legacyName = form.group_name.trim().toLocaleLowerCase()
+  if (!legacyName) return
+  const group = groupsCache.value.find((item) => (
+    item.platform === form.provider &&
+    item.name.trim().toLocaleLowerCase() === legacyName
+  ))
+  if (!group) return
+  form.group_id = group.id
+  form.group_name = group.name
+}
 
 const templateOptions = computed(() => {
   const items = templatesCache.value.filter((t) => {
@@ -324,6 +381,17 @@ async function loadTemplates() {
     console.warn('load monitor templates failed', err)
   } finally {
     templatesLoading.value = false
+  }
+}
+
+async function loadGroups() {
+  if (groupsLoaded.value) return
+  try {
+    groupsCache.value = await adminAPI.groups.getAll()
+    groupsLoaded.value = true
+    resolveLegacyGroupAssociation()
+  } catch (err: unknown) {
+    console.warn('load monitor groups failed', err)
   }
 }
 
@@ -429,6 +497,11 @@ function selectProvider(provider: Provider) {
 watch(() => form.provider, () => {
   if (suppressFormWatchers) return
   form.api_key = ''
+  if (form.group_id != null) {
+    groupSelectionTouched = true
+    form.group_id = null
+    form.group_name = ''
+  }
   if (form.provider !== PROVIDER_OPENAI) {
     form.api_mode = API_MODE_CHAT_COMPLETIONS
   }
@@ -444,6 +517,7 @@ watch(() => form.api_mode, () => {
 
 function resetForm() {
   suppressFormWatchers = true
+  groupSelectionTouched = false
   form.name = ''
   form.provider = PROVIDER_ANTHROPIC
   form.api_mode = API_MODE_CHAT_COMPLETIONS
@@ -452,6 +526,7 @@ function resetForm() {
   form.primary_model = ''
   form.extra_models = []
   form.group_name = ''
+  form.group_id = null
   form.interval_seconds = systemDefaultInterval.value
   form.jitter_seconds = 0
   form.enabled = true
@@ -464,6 +539,7 @@ function resetForm() {
 
 function loadFromMonitor(m: ChannelMonitor) {
   suppressFormWatchers = true
+  groupSelectionTouched = false
   form.name = m.name
   form.provider = m.provider
   form.api_mode = normalizeAPIMode(m.api_mode)
@@ -472,6 +548,8 @@ function loadFromMonitor(m: ChannelMonitor) {
   form.primary_model = m.primary_model
   form.extra_models = [...(m.extra_models || [])]
   form.group_name = m.group_name || ''
+  form.group_id = m.group_id ?? null
+  resolveLegacyGroupAssociation()
   form.interval_seconds = m.interval_seconds || systemDefaultInterval.value
   form.jitter_seconds = m.jitter_seconds || 0
   form.enabled = m.enabled
@@ -489,6 +567,7 @@ watch(
   ([show, m]) => {
     if (!show) return
     void loadTemplates()
+    void loadGroups()
     if (m) loadFromMonitor(m)
     else resetForm()
   },
@@ -538,6 +617,7 @@ function buildPayload(): CreateParams {
     primary_model: form.primary_model.trim(),
     extra_models: form.extra_models,
     group_name: form.group_name.trim(),
+    group_id: form.group_id,
     enabled: form.enabled,
     interval_seconds: form.interval_seconds,
     jitter_seconds: form.jitter_seconds || 0,
@@ -571,6 +651,10 @@ async function handleSubmit() {
       if (form.template_id == null) {
         req.clear_template = true
         delete req.template_id
+      }
+      if (form.group_id == null) {
+        delete req.group_id
+        if (groupSelectionTouched) req.clear_group = true
       }
       await adminAPI.channelMonitor.update(target.id, req)
       appStore.showSuccess(t('admin.channelMonitor.updateSuccess'))

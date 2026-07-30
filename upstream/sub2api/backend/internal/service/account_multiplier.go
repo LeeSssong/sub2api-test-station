@@ -21,10 +21,14 @@ const (
 	AccountMultiplierMeasurementExtraKey = "account_monitor_multiplier_measurement"
 	AccountMultiplierMeasurementVersion  = 1
 	AccountMultiplierMeasurementTTL      = 24 * time.Hour
+	accountMultiplierFailureRetryTTL     = 15 * time.Minute
 	accountMultiplierMeasurementSamples  = 3
 	accountMultiplierMaxRelativeSpread   = 0.15
 	accountMultiplierRequestTimeout      = 30 * time.Second
 	accountMultiplierMaxBodyBytes        = 128 * 1024
+	accountMultiplierQuotaPollAttempts   = 20
+	accountMultiplierQuotaPollDelay      = 250 * time.Millisecond
+	accountMultiplierQuotaPollMaxDelay   = 5 * time.Second
 
 	AccountMonitorMultiplierSourceDeclared = "declared"
 	AccountMonitorMultiplierSourceMeasured = "measured"
@@ -47,6 +51,7 @@ type AccountMultiplierMeasurementSnapshot struct {
 	ObservedAt     *time.Time `json:"observed_at,omitempty"`
 	FreshUntil     *time.Time `json:"fresh_until,omitempty"`
 	LastAttemptAt  time.Time  `json:"last_attempt_at"`
+	FailureCode    string     `json:"failure_code,omitempty"`
 }
 
 type AccountMultiplierService struct {
@@ -55,6 +60,7 @@ type AccountMultiplierService struct {
 	billingService     *BillingService
 	declarationProbe   accountMultiplierDeclarationProbe
 	now                func() time.Time
+	wait               func(context.Context, time.Duration) error
 }
 
 type accountMultiplierDeclarationProbe interface {
@@ -71,6 +77,7 @@ func NewAccountMultiplierService(
 		accountTestService: accountTestService,
 		billingService:     billingService,
 		now:                time.Now,
+		wait:               waitForAccountMultiplierDelay,
 	}
 }
 
@@ -118,9 +125,13 @@ func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account
 			measurement.FreshUntil != nil && now.Before(*measurement.FreshUntil) {
 			return nil
 		}
+		retryTTL := AccountMultiplierMeasurementTTL
+		if measurement.Status == AccountMonitorMultiplierStatusFailed {
+			retryTTL = accountMultiplierFailureRetryTTL
+		}
 		if !measurement.LastAttemptAt.IsZero() &&
 			now.Sub(measurement.LastAttemptAt) >= 0 &&
-			now.Sub(measurement.LastAttemptAt) < AccountMultiplierMeasurementTTL {
+			now.Sub(measurement.LastAttemptAt) < retryTTL {
 			return nil
 		}
 	}
@@ -136,6 +147,7 @@ func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account
 			Status:        AccountMonitorMultiplierStatusFailed,
 			Source:        AccountMonitorMultiplierSourceMeasured,
 			LastAttemptAt: now,
+			FailureCode:   accountMultiplierFailureCode(measureErr),
 		}
 	}
 	if persistErr := s.persistMeasurement(ctx, account, snapshot); persistErr != nil {
@@ -171,19 +183,15 @@ func (s *AccountMultiplierService) measure(
 	}
 	modelID := monitorModelForAccount(account)
 	upstreamModelID := account.GetMappedModel(modelID)
-	samples := make([]float64, 0, accountMultiplierMeasurementSamples)
+	before, err := s.readNewAPIQuotaUsage(ctx, account, normalizedBaseURL, apiKey, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	var officialCost float64
 	for range accountMultiplierMeasurementSamples {
-		before, readErr := s.readNewAPIQuotaUsage(ctx, account, normalizedBaseURL, apiKey, proxyURL)
-		if readErr != nil {
-			return nil, readErr
-		}
 		usage, completionErr := s.runNewAPICompletion(ctx, account, normalizedBaseURL, apiKey, proxyURL, upstreamModelID)
 		if completionErr != nil {
 			return nil, completionErr
-		}
-		after, readErr := s.readNewAPIQuotaUsage(ctx, account, normalizedBaseURL, apiKey, proxyURL)
-		if readErr != nil {
-			return nil, readErr
 		}
 		cost, costErr := s.billingService.CalculateCost(modelID, UsageTokens{
 			InputTokens:     usage.InputTokens - usage.CacheReadTokens,
@@ -193,29 +201,35 @@ func (s *AccountMultiplierService) measure(
 		if costErr != nil || cost == nil {
 			return nil, errors.New("official model pricing is unavailable")
 		}
-		sample, sampleErr := calculateAccountMultiplierSample(before, after, status.QuotaPerUnit, cost.TotalCost)
-		if sampleErr != nil {
-			return nil, sampleErr
-		}
-		samples = append(samples, sample)
+		officialCost += cost.TotalCost
 	}
-	value, spread, err := summarizeAccountMultiplierSamples(samples)
+	after, err := s.waitForNewAPIQuotaUsage(
+		ctx,
+		account,
+		normalizedBaseURL,
+		apiKey,
+		proxyURL,
+		before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	value, err := calculateAccountMultiplierSample(before, after, status.QuotaPerUnit, officialCost)
 	if err != nil {
 		return nil, err
 	}
 	observedAt := now
 	freshUntil := now.Add(AccountMultiplierMeasurementTTL)
 	return &AccountMultiplierMeasurementSnapshot{
-		Version:        AccountMultiplierMeasurementVersion,
-		Status:         AccountMonitorMultiplierStatusOK,
-		Source:         AccountMonitorMultiplierSourceMeasured,
-		Value:          float64PointerCopy(value),
-		ModelID:        modelID,
-		SampleCount:    len(samples),
-		RelativeSpread: float64PointerCopy(spread),
-		ObservedAt:     &observedAt,
-		FreshUntil:     &freshUntil,
-		LastAttemptAt:  now,
+		Version:       AccountMultiplierMeasurementVersion,
+		Status:        AccountMonitorMultiplierStatusOK,
+		Source:        AccountMonitorMultiplierSourceMeasured,
+		Value:         float64PointerCopy(value),
+		ModelID:       modelID,
+		SampleCount:   accountMultiplierMeasurementSamples,
+		ObservedAt:    &observedAt,
+		FreshUntil:    &freshUntil,
+		LastAttemptAt: now,
 	}, nil
 }
 
@@ -253,6 +267,41 @@ func (s *AccountMultiplierService) readNewAPIQuotaUsage(
 		return 0, errors.New("New API total_used is unavailable")
 	}
 	return value, nil
+}
+
+func (s *AccountMultiplierService) waitForNewAPIQuotaUsage(
+	ctx context.Context,
+	account *Account,
+	baseURL string,
+	apiKey string,
+	proxyURL string,
+	before float64,
+) (float64, error) {
+	delay := accountMultiplierQuotaPollDelay
+	for attempt := 0; attempt < accountMultiplierQuotaPollAttempts; attempt++ {
+		after, err := s.readNewAPIQuotaUsage(ctx, account, baseURL, apiKey, proxyURL)
+		if err != nil {
+			return 0, err
+		}
+		if after > before {
+			return after, nil
+		}
+		if attempt == accountMultiplierQuotaPollAttempts-1 {
+			break
+		}
+		wait := s.wait
+		if wait == nil {
+			wait = waitForAccountMultiplierDelay
+		}
+		if err := wait(ctx, delay); err != nil {
+			return 0, err
+		}
+		delay *= 2
+		if delay > accountMultiplierQuotaPollMaxDelay {
+			delay = accountMultiplierQuotaPollMaxDelay
+		}
+	}
+	return 0, errors.New("quota delta was not observed")
 }
 
 func (s *AccountMultiplierService) runNewAPICompletion(
@@ -375,6 +424,37 @@ func (s *AccountMultiplierService) currentTime() time.Time {
 		return s.now()
 	}
 	return time.Now()
+}
+
+func waitForAccountMultiplierDelay(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func accountMultiplierFailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		return "timeout"
+	case strings.Contains(err.Error(), "quota delta"):
+		return "quota_delta_not_observed"
+	case strings.Contains(err.Error(), "pricing"):
+		return "pricing_unavailable"
+	case strings.Contains(err.Error(), "completion usage"):
+		return "completion_usage_unavailable"
+	case strings.Contains(err.Error(), "HTTP "):
+		return "upstream_http_error"
+	default:
+		return "measurement_failed"
+	}
 }
 
 func accountMultiplierProxyURL(account *Account) (string, error) {

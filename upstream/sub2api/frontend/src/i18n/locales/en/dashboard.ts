@@ -61,8 +61,8 @@ export default {
 
   monitorV2: {
     title: 'Service Monitor',
-    description: 'View the health and call quality of public groups',
-    loading: 'Loading public group status',
+    description: 'View the health and call quality of groups visible to you',
+    loading: 'Loading group status',
     fallbackNotice: 'The enhanced monitor is unavailable. Showing the basic status page.',
     updatedAt: 'Updated {time}',
     refresh: 'Refresh',
@@ -114,12 +114,12 @@ export default {
       noData: 'No eligible calls in this period'
     },
     empty: {
-      title: 'No public groups',
-      description: 'No service groups are currently published.'
+      title: 'No visible groups',
+      description: 'No service groups are currently available to display.'
     },
     notes: {
       metrics: 'Metrics are aggregated for the selected window. Estimates are not shown when samples are insufficient.',
-      privacy: 'Only aggregate data for public groups is shown. Account, user, and request content is excluded.'
+      privacy: 'Ordinary users see public groups only; administrators see all active groups. Account, user, and request content is excluded.'
     }
   },
 

@@ -26,8 +26,9 @@ const (
 	accountMultiplierMaxRelativeSpread   = 0.15
 	accountMultiplierRequestTimeout      = 30 * time.Second
 	accountMultiplierMaxBodyBytes        = 128 * 1024
-	accountMultiplierQuotaPollAttempts   = 8
+	accountMultiplierQuotaPollAttempts   = 20
 	accountMultiplierQuotaPollDelay      = 250 * time.Millisecond
+	accountMultiplierQuotaPollMaxDelay   = 5 * time.Second
 
 	AccountMonitorMultiplierSourceDeclared = "declared"
 	AccountMonitorMultiplierSourceMeasured = "measured"
@@ -182,26 +183,15 @@ func (s *AccountMultiplierService) measure(
 	}
 	modelID := monitorModelForAccount(account)
 	upstreamModelID := account.GetMappedModel(modelID)
-	samples := make([]float64, 0, accountMultiplierMeasurementSamples)
+	before, err := s.readNewAPIQuotaUsage(ctx, account, normalizedBaseURL, apiKey, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	var officialCost float64
 	for range accountMultiplierMeasurementSamples {
-		before, readErr := s.readNewAPIQuotaUsage(ctx, account, normalizedBaseURL, apiKey, proxyURL)
-		if readErr != nil {
-			return nil, readErr
-		}
 		usage, completionErr := s.runNewAPICompletion(ctx, account, normalizedBaseURL, apiKey, proxyURL, upstreamModelID)
 		if completionErr != nil {
 			return nil, completionErr
-		}
-		after, readErr := s.waitForNewAPIQuotaUsage(
-			ctx,
-			account,
-			normalizedBaseURL,
-			apiKey,
-			proxyURL,
-			before,
-		)
-		if readErr != nil {
-			return nil, readErr
 		}
 		cost, costErr := s.billingService.CalculateCost(modelID, UsageTokens{
 			InputTokens:     usage.InputTokens - usage.CacheReadTokens,
@@ -211,29 +201,35 @@ func (s *AccountMultiplierService) measure(
 		if costErr != nil || cost == nil {
 			return nil, errors.New("official model pricing is unavailable")
 		}
-		sample, sampleErr := calculateAccountMultiplierSample(before, after, status.QuotaPerUnit, cost.TotalCost)
-		if sampleErr != nil {
-			return nil, sampleErr
-		}
-		samples = append(samples, sample)
+		officialCost += cost.TotalCost
 	}
-	value, spread, err := summarizeAccountMultiplierSamples(samples)
+	after, err := s.waitForNewAPIQuotaUsage(
+		ctx,
+		account,
+		normalizedBaseURL,
+		apiKey,
+		proxyURL,
+		before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	value, err := calculateAccountMultiplierSample(before, after, status.QuotaPerUnit, officialCost)
 	if err != nil {
 		return nil, err
 	}
 	observedAt := now
 	freshUntil := now.Add(AccountMultiplierMeasurementTTL)
 	return &AccountMultiplierMeasurementSnapshot{
-		Version:        AccountMultiplierMeasurementVersion,
-		Status:         AccountMonitorMultiplierStatusOK,
-		Source:         AccountMonitorMultiplierSourceMeasured,
-		Value:          float64PointerCopy(value),
-		ModelID:        modelID,
-		SampleCount:    len(samples),
-		RelativeSpread: float64PointerCopy(spread),
-		ObservedAt:     &observedAt,
-		FreshUntil:     &freshUntil,
-		LastAttemptAt:  now,
+		Version:       AccountMultiplierMeasurementVersion,
+		Status:        AccountMonitorMultiplierStatusOK,
+		Source:        AccountMonitorMultiplierSourceMeasured,
+		Value:         float64PointerCopy(value),
+		ModelID:       modelID,
+		SampleCount:   accountMultiplierMeasurementSamples,
+		ObservedAt:    &observedAt,
+		FreshUntil:    &freshUntil,
+		LastAttemptAt: now,
 	}, nil
 }
 
@@ -301,6 +297,9 @@ func (s *AccountMultiplierService) waitForNewAPIQuotaUsage(
 			return 0, err
 		}
 		delay *= 2
+		if delay > accountMultiplierQuotaPollMaxDelay {
+			delay = accountMultiplierQuotaPollMaxDelay
+		}
 	}
 	return 0, errors.New("quota delta was not observed")
 }

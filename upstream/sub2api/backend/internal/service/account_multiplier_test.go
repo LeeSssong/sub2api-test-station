@@ -328,7 +328,7 @@ func errorsForAccountMultiplierTest(message string) error {
 	return accountMultiplierTestError(message)
 }
 
-func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSnapshot(t *testing.T) {
+func TestAccountMultiplierRefreshMeasuresNewAPIAggregateAndPersistsSanitizedSnapshot(t *testing.T) {
 	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
 	billing := NewBillingService(nil, nil)
 	cost, err := billing.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 1000, OutputTokens: 100}, 1)
@@ -336,13 +336,11 @@ func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSna
 		t.Fatal(err)
 	}
 	const quotaPerUnit = 500_000.0
-	samples := []float64{0.24, 0.25, 0.26}
-	usageValues := make([]float64, 0, len(samples)*2)
+	const multiplier = 0.25
 	totalUsed := 10_000.0
-	for _, sample := range samples {
-		usageValues = append(usageValues, totalUsed)
-		totalUsed += cost.TotalCost * quotaPerUnit * sample
-		usageValues = append(usageValues, totalUsed)
+	usageValues := []float64{
+		totalUsed,
+		totalUsed + cost.TotalCost*accountMultiplierMeasurementSamples*quotaPerUnit*multiplier,
 	}
 	account := &Account{
 		ID:          21,
@@ -396,13 +394,16 @@ func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSna
 	if persisted == nil || persisted.Value == nil {
 		t.Fatalf("persisted snapshot = %#v", persisted)
 	}
-	if math.Abs(*persisted.Value-0.25) > 1e-9 || persisted.SampleCount != 3 {
+	if math.Abs(*persisted.Value-multiplier) > 1e-9 || persisted.SampleCount != 3 {
 		t.Fatalf("persisted snapshot = %#v", persisted)
+	}
+	if persisted.RelativeSpread != nil {
+		t.Fatalf("aggregate measurement must not claim a per-sample spread: %#v", persisted.RelativeSpread)
 	}
 	if persisted.FreshUntil == nil || !persisted.FreshUntil.Equal(now.Add(AccountMultiplierMeasurementTTL)) {
 		t.Fatalf("FreshUntil = %#v", persisted.FreshUntil)
 	}
-	if upstream.completionCalls != 3 || upstream.usageIndex != 6 {
+	if upstream.completionCalls != 3 || upstream.usageIndex != 2 {
 		t.Fatalf("upstream calls: completions=%d usage=%d", upstream.completionCalls, upstream.usageIndex)
 	}
 	encoded, err := json.Marshal(persisted)
@@ -418,13 +419,22 @@ func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSna
 
 func TestAccountMultiplierWaitForQuotaUsagePollsUntilCounterAdvances(t *testing.T) {
 	account := &Account{ID: 23, Concurrency: 1}
+	usageValues := make([]float64, 20)
+	for i := range usageValues {
+		usageValues[i] = 100
+	}
+	usageValues[len(usageValues)-1] = 125
 	upstream := &accountMultiplierHTTPStub{
-		usageValues:    []float64{100, 100, 100, 100, 100, 100, 100, 125},
+		usageValues:    usageValues,
 		expectedAPIKey: "sk-sensitive",
 	}
 	testService := &AccountTestService{httpUpstream: upstream}
 	svc := NewAccountMultiplierService(nil, testService, nil)
-	svc.wait = func(context.Context, time.Duration) error { return nil }
+	var waits []time.Duration
+	svc.wait = func(_ context.Context, delay time.Duration) error {
+		waits = append(waits, delay)
+		return nil
+	}
 
 	after, err := svc.waitForNewAPIQuotaUsage(
 		context.Background(),
@@ -440,8 +450,11 @@ func TestAccountMultiplierWaitForQuotaUsagePollsUntilCounterAdvances(t *testing.
 	if after != 125 {
 		t.Fatalf("waitForNewAPIQuotaUsage() = %v, want 125", after)
 	}
-	if upstream.usageIndex != 8 {
-		t.Fatalf("usage reads = %d, want 8", upstream.usageIndex)
+	if upstream.usageIndex != 20 {
+		t.Fatalf("usage reads = %d, want 20", upstream.usageIndex)
+	}
+	if len(waits) != 19 || waits[len(waits)-1] != 5*time.Second {
+		t.Fatalf("waits = %v", waits)
 	}
 }
 

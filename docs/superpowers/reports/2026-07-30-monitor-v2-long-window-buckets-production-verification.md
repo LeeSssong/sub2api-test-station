@@ -63,7 +63,7 @@ monitor-v2-boundary-0ae56f0c8
 Its retained release record is:
 
 ```text
-/opt/sub2api/production/release-records/host-updater/20260730T053833Z-monitor-v2-boundary-0ae56f0c8.json
+/opt/sub2api/production/release-records/host-updater/20260730T053832Z-monitor-v2-boundary-0ae56f0c8.json
 ```
 
 The record reports `storage_identity`, `backup`, `health`, and `smoke` as

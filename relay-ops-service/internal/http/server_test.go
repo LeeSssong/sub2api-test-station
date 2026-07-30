@@ -39,6 +39,7 @@ func TestRetiredOpsAndAcknowledgementRoutesAreNotMounted(t *testing.T) {
 		{http.MethodGet, "/ops"},
 		{http.MethodGet, "/relay-ops/api/ops-view"},
 		{http.MethodPost, "/relay-ops/api/incidents/ack"},
+		{http.MethodPost, "/relay-ops/api/feishu/events"},
 		{http.MethodGet, "/relay-ops/static/ops.js"},
 		{http.MethodGet, "/relay-ops/static/ops-admin.js"},
 	}

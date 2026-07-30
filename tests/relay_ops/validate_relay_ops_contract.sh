@@ -71,6 +71,8 @@ done
 
 require 'RELAY_OPS_NOTIFICATION_POLICY_FILE=' infra/.env.example
 require 'RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=' infra/.env.example
+require 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=/run/secrets/feishu-alert-recipients.json' infra/.env.example
+require 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=./secrets/feishu-alert-recipients.json' infra/.env.example
 policy_file=config/relay-ops/notification-policy.example.json
 [[ -f "$policy_file" ]] || fail "missing notification policy example $policy_file"
 require '"version": 1' "$policy_file"

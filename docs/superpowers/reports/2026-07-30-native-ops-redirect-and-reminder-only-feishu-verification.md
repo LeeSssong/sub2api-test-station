@@ -9,6 +9,7 @@
 - relay-ops 不再挂载 `/ops`、`/relay-ops/api/ops-view`、`/relay-ops/api/incidents/ack` 或 `/relay-ops/api/feishu/events`；其 HTTP 服务只保留公开 `/pricing` 与样式资源。
 - 飞书只出站发送告警、持续提醒、恢复和日报。所有卡片动作都只导航到 `/admin/ops`，不能确认接手或修改状态。
 - App Bot 出站配置保留 App ID、App Secret、目标会话和通知策略；verification token、Encrypt Key、命令模式和命令路由文件不再属于 Compose 或环境示例契约。
+- `infra/.env.example` 为出站收件人提供容器内路径 `/run/secrets/feishu-alert-recipients.json` 和仓库一致的宿主机示例路径 `./secrets/feishu-alert-recipients.json`；这只是路径示例，不证明真实秘密文件存在。
 - 历史数据库迁移、历史 acknowledgement 字段和日期报告保持不变。
 
 ## 验证命令与结果
@@ -53,11 +54,19 @@ PASS: Sub2API update UI and routing contracts
 /relay-ops/api/ops-view
 ```
 
-本任务没有部署，因此没有对生产域名运行该部署后审计。relay HTTP server 的本地 Go 测试 `TestRetiredOpsAndAcknowledgementRoutesAreNotMounted` 已在全量测试中确认这些退役路由返回 `404`。
+本任务没有部署，因此没有对生产域名运行该部署后审计。relay HTTP server 的本地 Go 测试 `TestRetiredOpsAndAcknowledgementRoutesAreNotMounted` 已在全量测试中确认这些退役路由返回 `404`，包括原 callback 方法 `POST /relay-ops/api/feishu/events`。
 
 ### Compose 结构
 
-工作树中没有忽略的 `infra/.env`，因此没有读取或重建生产秘密。使用仓库支持的无秘密组合执行同一结构解析：
+计划指定的命令是：
+
+```bash
+docker compose --env-file infra/.env -f infra/compose.yaml config >/dev/null
+```
+
+该命令未执行、在本地仍未验证，因为隔离工作树中没有被忽略的部署环境文件 `infra/.env`。本任务没有复制、伪造或创建该文件，也没有读取生产秘密。
+
+根据任务控制器明确允许的替代方案，使用仓库支持的无秘密环境示例与 release 环境执行结构解析：
 
 ```bash
 docker compose \
@@ -67,7 +76,7 @@ docker compose \
   config >/dev/null
 ```
 
-结果：退出码 `0`。
+替代命令结果：退出码 `0`。该结果只确认 Compose 文件能够用仓库提供的非秘密示例完成结构解析；不声称真实部署环境、秘密文件挂载或生产上线准备已经验证。
 
 同时运行：
 

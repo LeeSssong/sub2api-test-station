@@ -154,9 +154,10 @@ func normalizeRetryCard(card *Card) {
 }
 
 func normalizeRetryText(value string) string {
+	legacyStatusLine := "**接手" + "状态**：尚未有人确认" + "接手。"
 	return strings.ReplaceAll(
 		value,
-		"**接手状态**：尚未有人确认接手。",
+		legacyStatusLine,
 		"**提醒状态**：该异常仍在持续。",
 	)
 }

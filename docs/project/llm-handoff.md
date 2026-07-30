@@ -1,15 +1,15 @@
 # 商用 AI API 中转站项目 Handoff
 
-**交接日期：** 2026-07-23
+**交接日期：** 2026-07-30
 **用途：** 新 Codex 窗口的唯一恢复入口  
 **当前政策（2026-07-26）：** D04 / internal-test 运行时、部署文件和受控开放流程已退役。注册与邀请码仅由 Sub2API 原生管理；Caddy 不再拦截认证或公开设置接口。内测人数上限、预算门禁、每日额度和独立注册代理均不得恢复。
-**当前主线：** 账号质量巡检和 relay-ops 继续只读观测 `active + schedulable` 的动态账号集合，不控制注册、邀请码、路由、账号、额度或余额。后文所有 D04 段落均为历史证据，不能作为当前操作说明。
+**当前主线：** 运维入口统一为 Sub2API 原生 `/admin/ops`。旧 `/ops`、`/ops/` 与 `/ops/*` 返回 `302` 到 `/admin/ops`；relay-ops 不再提供运维浏览器/API 控制面，只保留公开定价、采集和出站通知。后文所有 D04、relay-ops `/ops` 和飞书命令控制段落均为历史证据，不能作为当前操作说明。
 
 **最新部署证据：** `relay-ops` 已更新为 `ops-dual-domain-20260723-v1`，container `84ad983a6be4`，healthy/restart `0`，仍为 `read_only + dry_run`。collector SHA-256 为 `20452b9218af79fb6ba19895d7f250b6754011a828eaf3e3f77f69faf8e90ea9`；一次 systemd 验收成功生成 `ACCOUNT-QUALITY-20260723T152705Z`，结果 SHA-256 为 `4677925dbbcee85f4881c155c513bdb8f7fee2460bb851420b545fc3bd181536`。timer 为 `enabled/active`，五个公网入口为 200，匿名 ops-view 为 404，除 relay-ops 外的容器 ID 未变。旧 model-release timer 仍 `disabled/inactive`，其一次性 service 的既有 `exit-code` 历史状态不属于本次部署且未被重启。
 **非功能子 Agent 收口：** 公共 v3 又补齐了 shared-pool 的 `topology_phase/wave_id/TTFT/总耗时` 证据、观察窗口的 sync/SSE 指标以及 topology evidence 的 `scenario_id/scenario_hash` 绑定；非功能测试 `32/160`、V2 `32/194`、protocol `10/44`、V1 `18/63` 全部通过。XM/Wawazz 目标角色仍没有 live 资格证据，目标状态为 `NOT_READY`，详见 `docs/superpowers/reports/2026-07-22-nonfunctional-baseline-subagent.md`。
 
 **历史 D04 验收：** 单用户窗口、`403 D04_REGISTRATION_CLOSED` 和相关设置恢复只保留为历史审计证据；D04 文件与运行时现已退役。禁止再用空对象 PUT 探索设置接口。
-**飞书边界：** 告警、恢复、日报、Interactive Card、命令卡、去重、App Bot 投递和确定性只读分析均已收口，并保留在当前 `ops-dual-domain-20260723-v1` 镜像中。账号质量巡检不逐次发送飞书消息；本轮没有发送合成消息或制造事件。告警/恢复卡真实视觉仅等待自然事件，属于非阻塞观察；不删除去重记录、不制造故障。
+**飞书边界：** 飞书是纯出站通知面，只发送告警、持续提醒、恢复和日报，并保留重试与去重。卡片只含前往 `/admin/ops` 的导航链接，不能确认接手或改变任何状态。入站 callback、群命令、verification token、Encrypt Key 和命令路由配置均已从当前运行契约移除；App Bot 出站启动只依赖 App ID、App Secret 和目标会话配置。本变更截至 2026-07-30 未部署，也没有发送合成消息、制造事件或执行生产写入。
 
 ## 1. 新窗口先做什么
 
@@ -259,14 +259,14 @@ NekoAPI 隔离网关与计费闭环随后于 2026-07-18 完成，覆盖上述 bl
 ## 11. 新窗口可直接使用的 Loop Brief
 
 ```text
-Goal: 使用新鲜轻量账号池质量和最低余额证据完成 D04 首发用户受控开放准备。
-Context: 双区 `/ops`、日报和告警集成已部署为 `ops-dual-domain-20260723-v1`；`sub2api-account-quality-monitor.timer` 每 15 分钟动态发现 `active + schedulable` 集合并顺序调用 Sub2API 原生账号测试。当前集合为 `[10,11,12,13]`，集合哈希为 `f6b733f89e799048c92d90dc0d404ce1f96300bf1f2964184cc681bdcc2457e7`。最新 45 样本中成功数为 `27/12/0/30`，TTFT P95 约 `12.27s/11.92s/无成功样本/14.28s`，最新一轮均为 `account_test_error`。D04 为 `read_only/registration=false`，relay-ops 为 `read_only + dry_run`。
-Constraints: 不读取或输出生产 `.env`、App Secret、verification token、Encrypt Key、Admin API Key、上游 Key、Cookie 或密码；不直接写 Sub2API PostgreSQL；不按供应商名称或固定账号 ID 设置例外，不改任何上游余额、路由、倍率、价格、Key、模型或调度。飞书不进入 `enabled`，不恢复复杂模型资格、容量、排序或发布任务。
-Plan: 让 systemd 巡检自然累积质量窗口，复用 Sub2API 原生账户和余额能力补齐 D04 门禁证据；先确认账号 `12` 的持续零成功及其余账号高 TTFT/错误，再判断是否达到轻量门禁。门禁通过后再申请新的 D04 行动批准。
-Implement: 只更新无秘密账号质量、最低余额与 D04 准入证据；不由 LLM 手工逐账号测试、不重复 D04 grant、不扩展飞书、不创建候选或启用 probe。
-Validate: 核对 timer、结果新鲜度、集合 hash、各账号最新结果和最低余额；复核 D04 403/只读、账户备份、relay-ops `read_only + dry_run`、零候选/probe、路由哈希和注册关闭。任何历史值都不得替代 SSH 新鲜证据。
-Review: 重点审查账户集合漂移、单账号失败隔离、余额分类是否明确、样本新鲜度、首发总预算和注册关闭回滚。
-Done when: 动态活动账号满足轻量最低余额与新鲜质量条件，D04 准入结果允许开放，并在新的明确行动批准下打开注册；此前继续关闭注册。
+Goal: 维护 Sub2API 原生运维入口与 relay-ops 出站通知边界，不恢复第二套控制面。
+Context: `/ops`、`/ops/` 和 `/ops/*` 的当前代码契约是 `302 -> /admin/ops`；relay-ops HTTP server 只挂载 `/pricing` 与静态样式。飞书只发送告警、持续提醒、恢复和日报，卡片唯一动作是导航到 `/admin/ops`。
+Constraints: 不读取或输出生产 `.env`、App Secret、Admin API Key、上游 Key、Cookie 或密码；不部署、不制造告警、不写路由、账号、价格、余额或数据库。不得恢复飞书 callback、命令、确认接手、verification token、Encrypt Key 或命令路由配置。
+Plan: 所有运维展示和操作优先复用 Sub2API 原生能力；relay-ops 仅消费只读证据并发送 reminder-only 卡片。
+Implement: 当前任务只维护文档、契约测试和本地验证；任何部署必须另行批准。
+Validate: 运行 Go 格式化、vet、全量测试、routing contract、Compose config 和退役行为扫描；确认历史迁移与日期报告未改，`监控日报-2026-07-28.md` 不进入暂存区或提交。
+Review: 重点检查旧 `/ops` 全路径覆盖、三个退役 relay endpoint 的 404、卡片只指向 `/admin/ops`、提醒节奏与历史 acknowledgement 字段解耦、App Bot 只需出站凭据。
+Done when: 当前分支的全部验证通过并形成可复现报告；不以部署或生产写入作为完成条件。
 ```
 ## D04 首发自动化历史基线（2026-07-19，已被 2026-07-21 新口径覆盖）
 

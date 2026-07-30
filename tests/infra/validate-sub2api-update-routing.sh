@@ -59,6 +59,12 @@ require_fixed 'rewrite * /update-ui.css' infra/Caddyfile
 if rg -n -F 'path /relay-ops/api/feishu/events' infra/Caddyfile; then
   fail 'Feishu inbound callback must not be publicly routed'
 fi
+if rg -n -F '/relay-ops/api/incidents/ack' infra/Caddyfile; then
+  fail 'retired incident acknowledgement API must not be publicly routed'
+fi
+if rg -n -F '/relay-ops/api/ops-view' infra/Caddyfile; then
+  fail 'retired relay ops view API must not be publicly routed'
+fi
 if rg -n -F 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile; then
   fail 'retired relay ops APIs must not be publicly routed'
 fi

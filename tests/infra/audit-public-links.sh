@@ -121,15 +121,30 @@ for path in "${paths[@]}"; do
   audit_path "$path" "$classification"
 done
 
-ops_headers="$TEMP_DIR/ops.headers"
-ops_status=$(curl --silent --show-error --max-redirs 0 \
-  --output /dev/null \
-  --dump-header "$ops_headers" \
-  --write-out '%{http_code}' \
-  "${BASE_ORIGIN}/ops")
-[[ "$ops_status" == '302' ]] || fail "/ops must return 302, got $ops_status"
-grep -Eiq '^location:[[:space:]]*/admin/ops([[:space:]]|$)' "$ops_headers" || \
-  fail '/ops must redirect to /admin/ops'
+for legacy_ops_path in /ops /ops/ /ops/incidents; do
+  ops_headers="$TEMP_DIR/ops-$(printf '%s' "$legacy_ops_path" | tr '/' '_').headers"
+  ops_status=$(curl --silent --show-error --max-redirs 0 \
+    --output /dev/null \
+    --dump-header "$ops_headers" \
+    --write-out '%{http_code}' \
+    "${BASE_ORIGIN}${legacy_ops_path}")
+  [[ "$ops_status" == '302' ]] || fail "$legacy_ops_path must return 302, got $ops_status"
+  grep -Eiq '^location:[[:space:]]*/admin/ops([[:space:]]|$)' "$ops_headers" || \
+    fail "$legacy_ops_path must redirect to /admin/ops"
+done
+
+for retired_relay_path in \
+  /relay-ops/api/feishu/events \
+  /relay-ops/api/incidents/ack \
+  /relay-ops/api/ops-view
+do
+  retired_status=$(curl --silent --show-error --max-redirs 0 \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    "${BASE_ORIGIN}${retired_relay_path}")
+  [[ "$retired_status" == '404' ]] || \
+    fail "$retired_relay_path must return 404 without authentication, got $retired_status"
+done
 
 CURRENT_PATH=/api/v1/settings/public
 settings_file="$TEMP_DIR/settings-public.json"

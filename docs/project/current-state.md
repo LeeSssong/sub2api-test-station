@@ -1,21 +1,21 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-29
+**更新日期：** 2026-07-30
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
 
 ## 当前指针
 
-> 2026-07-26 起，D04 内测服务、注册代理、人数与预算门禁、每日额度及其运行开关全部退役。网站采用 Sub2API 原生“开放注册 + 邀请码”能力：管理员在 Sub2API 管理后台启用注册和邀请码，Caddy 直接将认证与公开设置请求转发给 Sub2API。`relay-ops` 继续仅提供只读运维观测，不控制注册、邀请码、路由、账号或额度。
+> 2026-07-30 起，D04 内测服务及 relay-ops 自建运维控制面均已退役。网站采用 Sub2API 原生“开放注册 + 邀请码”和原生 `/admin/ops`：旧 `/ops`、`/ops/` 与 `/ops/*` 统一返回 `302` 到 `/admin/ops`。`relay-ops` 只保留公开定价、采集与出站通知，不再暴露运维浏览器/API 控制面，也不能修改注册、邀请码、路由、账号、额度或余额。
 
 - 当前阶段：`L1-2` 至 `L1-9` 的全部离线准备、`M0` 主机基线和 `M1` 核心站点部署已完成。Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 是当前运行边界。
 - 已完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。
-- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果经只读证据目录进入 `/ops`，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
-- 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe、模型发布和飞书 `enabled` 继续关闭。
+- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果由 Sub2API 原生 `/admin/ops` 承载，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
+- 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe 和模型发布继续关闭。飞书只允许出站告警、持续提醒、恢复和日报；入站回调、命令控制与确认接手均已退役。
 - 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
-- 下一步：管理员按业务需要在 Sub2API 后台维护开放注册和邀请码；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不扩展飞书写能力。
+- 下一步：管理员按业务需要在 Sub2API 后台维护开放注册、邀请码和原生运维；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不恢复 relay-ops 控制面或飞书入站写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md`、`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`、`docs/superpowers/reports/2026-07-23-ops-monitoring-and-feishu-dual-domain-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
+最新验证：`docs/superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md`、`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md`、`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧 relay-ops 运维页、飞书命令控制、模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
 
 ## 产品
 
@@ -53,7 +53,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 - 网关扩容研究：LiteLLM 和 New API 均采用同模型多 deployment/渠道、健康路由、失败重试和用户级限流；第二个 Neko Key 应作为第二个 Sub2API 账号对象加入同一逻辑组，不能假设容量线性翻倍。详见 `docs/superpowers/reports/2026-07-19-gateway-scaling-practices.md`。
 - 生产凭据：未记录；密钥、Cookie、OAuth 凭据、2FA 恢复码和支付密钥禁止进入 Git 和普通文档。
 - 首发用户自动化：`internal-test-service` 使用 Go 1.24、SQLite WAL 和独立 Admin API 客户端；只代理原生 register/login/login-2fa 和 public-settings，1 MiB/20 秒有界且不存储认证内容。有效注册开关是“Sub2API 原生开关 AND D04 模式/配置/15 人/预算门禁”；历史邀请/推荐表保留只读兼容，旧 join、邀请、推荐发奖和手动签到不再属于活动路径。容器契约为无宿主机端口、只读根文件系统、非 root、仅 `/var/lib/internal-test` 可写。当前生产运行 `sub2api-internal-test:d04-auth-client-identity-20260723-v2`，healthy/restart `0`，`D04_MODE=read_only` 且 `D04_REGISTRATION_OPEN=false`；历史低额验收已有 1 个隔离首发用户、1 条 `daily_login_credit` 成功 grant 和 1 条匹配的 `$20` provider balance history。详见 D04 验收报告。
-- relay-ops：生产镜像为 `sub2api-relay-ops:ops-dual-domain-20260723-v1`，healthy/restart `0`，以 `read_only + dry_run` 运行。管理员 `/ops` 每 30 秒刷新 Sub2API 原生站内运行投影和 systemd 账号质量结果；日报与 15 分钟告警/恢复使用同一只读数据边界。候选、Base URL/Key、账单会话、验收、质量预览和模型发布写路由均不对浏览器开放。历史 relay-ops 表与旧 model-release 证据保留，但不定义当前上游或活动监控任务。
+- relay-ops：当前代码契约只保留 `/pricing`、健康检查、采集与出站通知；`/ops` 和 relay admin API 未挂载，Caddy 将所有旧 `/ops` 路径 `302` 到 Sub2API `/admin/ops`。日报与 15 分钟告警/持续提醒/恢复使用同一只读数据边界。飞书卡片只有指向 `/admin/ops` 的导航按钮，不能确认、接手或修改状态；App Bot 出站投递只需要 App ID、App Secret 和目标会话配置，不再需要 verification token、Encrypt Key、命令路由文件或入站 callback。历史 relay-ops 表、迁移与旧 model-release 证据保留，但不定义当前上游或活动监控任务。本变更截至 2026-07-30 只完成代码与本地验证，未部署或执行生产变更。
 - 2026-07-29：飞书通知收敛已完成本地实现，所有主动通知必须由服务端 JSON 策略显式启用；候选、质量报告、Usage Session 和 synthetic acceptance 不再接入生产 notifier。面向公开分组的用户影响合并为单一事故，提醒使用最新事实快照，定价变化和日报走独立 one-shot 生命周期，事故与 one-shot 统一由 retry worker 重试。该实现尚未部署，生产保持不变：生产镜像未更新、生产策略文件未安装，未制造飞书消息，也未写入路由、账号、价格、余额或 Key。
 - 2026-07-22：GPT/Codex 缓存让利只读基线已实现。relay-ops 能区分缓存字段缺失与真实零值，验证公开 `gpt-*` 模型缓存读取价低于普通输入价，并在日报显示缓存读写、命中率和价格覆盖；Sub2API `v0.1.161` 继续负责四类 Token 计费、用户账单、`prompt_cache_key` 和粘性路由。本地全量测试、race、vet、Compose 和差异检查通过；未部署、未改价、未发请求，24 小时自然流量门禁仍待执行。证据见 `docs/superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md`。
 - 2026-07-20：生产 URL allowlist 仅追加 `wawazz.xyz`，只重建 Sub2API，其他容器未重建。GPT-Pro 隔离同步/SSE 均 HTTP 200、SSE 含 `[DONE]`；两条记录各 `10/5` Token，Sub2API 各扣 `$0.000200`，Neko 各实际 `$0.000020`，实测倍率 `0.10x`；测试用户/Key 已清理。Neko 原生监控样本为 `100%`、`1396 ms`。Wawazz 原有监控 Key 返回 `INVALID_API_KEY`，已删除并替换为新低额 Key；替换 Key 有效但上游账户余额不足，监控返回 `INSUFFICIENT_BALANCE`，当前 `/monitor` 为 `DEGRADED`。

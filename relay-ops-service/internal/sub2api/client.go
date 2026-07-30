@@ -318,6 +318,85 @@ func (c *HTTPReader) GetUsageStats(ctx context.Context, query UsageQuery) (Usage
 	return stats, nil
 }
 
+func (c *HTTPReader) ListOpsAlertEvents(ctx context.Context, cursor OpsAlertEventCursor) ([]OpsAlertEvent, error) {
+	limit := cursor.Limit
+	if limit == 0 {
+		limit = 500
+	}
+	if limit < 1 || limit > 500 || (cursor.BeforeFiredAt == nil) != (cursor.BeforeID == nil) {
+		return nil, errSchemaMismatch
+	}
+	values := url.Values{"limit": {strconv.Itoa(limit)}}
+	if cursor.BeforeFiredAt != nil && cursor.BeforeID != nil {
+		if cursor.BeforeFiredAt.IsZero() || *cursor.BeforeID <= 0 {
+			return nil, errSchemaMismatch
+		}
+		values.Set("before_fired_at", cursor.BeforeFiredAt.UTC().Format(time.RFC3339Nano))
+		values.Set("before_id", strconv.FormatInt(*cursor.BeforeID, 10))
+	}
+	var payloads []opsAlertEventPayload
+	if err := c.getStrict(ctx, "/api/v1/admin/ops/alert-events", values, &payloads); err != nil {
+		return nil, err
+	}
+	events := make([]OpsAlertEvent, 0, len(payloads))
+	for _, payload := range payloads {
+		event := payload.event()
+		if err := validateOpsAlertEvent(event); err != nil {
+			return nil, errSchemaMismatch
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+func (c *HTTPReader) GetOpsAlertEvent(ctx context.Context, id int64) (OpsAlertEvent, error) {
+	if id <= 0 {
+		return OpsAlertEvent{}, errSchemaMismatch
+	}
+	var payload opsAlertEventPayload
+	path := "/api/v1/admin/ops/alert-events/" + strconv.FormatInt(id, 10)
+	if err := c.getStrict(ctx, path, nil, &payload); err != nil {
+		return OpsAlertEvent{}, err
+	}
+	event := payload.event()
+	if event.ID != id || validateOpsAlertEvent(event) != nil {
+		return OpsAlertEvent{}, errSchemaMismatch
+	}
+	return event, nil
+}
+
+type opsAlertEventPayload struct {
+	ID             int64          `json:"id"`
+	RuleID         int64          `json:"rule_id"`
+	Severity       string         `json:"severity"`
+	Status         string         `json:"status"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	MetricValue    *float64       `json:"metric_value"`
+	ThresholdValue *float64       `json:"threshold_value"`
+	Dimensions     map[string]any `json:"dimensions"`
+	FiredAt        time.Time      `json:"fired_at"`
+	ResolvedAt     *time.Time     `json:"resolved_at"`
+	EmailSent      bool           `json:"email_sent"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
+func (p opsAlertEventPayload) event() OpsAlertEvent {
+	return OpsAlertEvent{
+		ID:             p.ID,
+		RuleID:         p.RuleID,
+		Severity:       p.Severity,
+		Status:         p.Status,
+		Title:          p.Title,
+		Description:    p.Description,
+		MetricValue:    p.MetricValue,
+		ThresholdValue: p.ThresholdValue,
+		Dimensions:     p.Dimensions,
+		FiredAt:        p.FiredAt,
+		ResolvedAt:     p.ResolvedAt,
+	}
+}
+
 func (c *HTTPReader) VerifyAdminSession(ctx context.Context, session adminauth.Session) (adminauth.Identity, error) {
 	var identity struct {
 		UserID int64  `json:"id"`
@@ -591,6 +670,37 @@ func validAccountMonitorMultiplier(multiplier AccountMonitorMultiplier, projecti
 	default:
 		return false
 	}
+}
+
+func validateOpsAlertEvent(event OpsAlertEvent) error {
+	if event.ID <= 0 || event.RuleID <= 0 || event.FiredAt.IsZero() {
+		return errSchemaMismatch
+	}
+	switch event.Severity {
+	case "P0", "P1", "P2", "P3":
+	default:
+		return errSchemaMismatch
+	}
+	switch event.Status {
+	case "firing", "resolved", "manual_resolved":
+	default:
+		return errSchemaMismatch
+	}
+	if event.ResolvedAt != nil && event.ResolvedAt.IsZero() {
+		return errSchemaMismatch
+	}
+	for _, value := range []*float64{event.MetricValue, event.ThresholdValue} {
+		if value != nil && !finiteNumber(*value) {
+			return errSchemaMismatch
+		}
+	}
+	if event.Dimensions != nil {
+		data, err := json.Marshal(event.Dimensions)
+		if err != nil || len(data) > maxResponseBytes || containsForbiddenProjectionKey(data) {
+			return errSchemaMismatch
+		}
+	}
+	return nil
 }
 
 func finiteNumber(value float64) bool {

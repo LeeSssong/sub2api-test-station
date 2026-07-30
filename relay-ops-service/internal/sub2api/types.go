@@ -28,6 +28,11 @@ type ModelDiscoveryReader interface {
 	SyncUpstreamModels(context.Context, int64) ([]Model, error)
 }
 
+type OpsAlertReader interface {
+	ListOpsAlertEvents(context.Context, OpsAlertEventCursor) ([]OpsAlertEvent, error)
+	GetOpsAlertEvent(context.Context, int64) (OpsAlertEvent, error)
+}
+
 type Controller interface {
 	GetGroup(context.Context, int64) (Group, error)
 	GetAccount(context.Context, int64) (Account, error)
@@ -215,6 +220,26 @@ type OpsQuery struct {
 	AccountID int64
 	Platform  string
 	Mode      string
+}
+
+type OpsAlertEventCursor struct {
+	Limit         int
+	BeforeFiredAt *time.Time
+	BeforeID      *int64
+}
+
+type OpsAlertEvent struct {
+	ID             int64          `json:"id"`
+	RuleID         int64          `json:"rule_id"`
+	Severity       string         `json:"severity"`
+	Status         string         `json:"status"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	MetricValue    *float64       `json:"metric_value"`
+	ThresholdValue *float64       `json:"threshold_value"`
+	Dimensions     map[string]any `json:"dimensions"`
+	FiredAt        time.Time      `json:"fired_at"`
+	ResolvedAt     *time.Time     `json:"resolved_at"`
 }
 
 type Percentiles struct {

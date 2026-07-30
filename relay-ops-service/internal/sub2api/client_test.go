@@ -634,6 +634,103 @@ func TestHTTPReaderListAccountMonitorsRejectsSchemaDriftAndSecretKeys(t *testing
 	}
 }
 
+func TestHTTPReaderOpsAlertListAndDetail(t *testing.T) {
+	t.Parallel()
+
+	wantFired := time.Date(2026, 7, 30, 13, 48, 0, 123456789, time.UTC)
+	wantID := int64(40)
+	var listQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/admin/ops/alert-events":
+			listQuery = r.URL.RawQuery
+			fmt.Fprint(w, `{"data":[{"id":41,"rule_id":7,"severity":"P0","status":"firing","title":"错误率过高","description":"error_rate > 5","metric_value":80,"threshold_value":5,"dimensions":{"platform":"openai","group_id":16},"fired_at":"2026-07-30T13:48:00.123456789Z","resolved_at":null,"email_sent":false,"created_at":"2026-07-30T13:48:00Z"}]}`)
+		case "/api/v1/admin/ops/alert-events/41":
+			fmt.Fprint(w, `{"data":{"id":41,"rule_id":7,"severity":"P0","status":"firing","title":"错误率过高","description":"error_rate > 5","metric_value":80,"threshold_value":5,"dimensions":{"platform":"openai","group_id":16},"fired_at":"2026-07-30T13:48:00.123456789Z","resolved_at":null,"email_sent":false,"created_at":"2026-07-30T13:48:00Z"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	reader := newTestReader(t, server.URL)
+	got, err := reader.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{BeforeFiredAt: &wantFired, BeforeID: &wantID})
+	if err != nil || len(got) != 1 || got[0].ID != 41 || got[0].Dimensions["platform"] != "openai" || got[0].ResolvedAt != nil {
+		t.Fatalf("ListOpsAlertEvents = %#v, %v", got, err)
+	}
+	if !strings.Contains(listQuery, "limit=500") || !strings.Contains(listQuery, "before_fired_at=2026-07-30T13%3A48%3A00.123456789Z") || !strings.Contains(listQuery, "before_id=40") {
+		t.Fatalf("list query = %q", listQuery)
+	}
+	detail, err := reader.GetOpsAlertEvent(context.Background(), 41)
+	if err != nil || detail.ID != 41 || detail.Title != "错误率过高" {
+		t.Fatalf("GetOpsAlertEvent = %#v, %v", detail, err)
+	}
+}
+
+func TestHTTPReaderOpsAlertRejectsMalformedResponses(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		body  string
+		call  func(*HTTPReader) error
+		large bool
+	}{
+		{"zero id", `{"data":[{"id":0,"rule_id":7,"severity":"P0","status":"firing","fired_at":"2026-07-30T13:48:00Z"}]}`, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, false},
+		{"invalid severity", `{"data":[{"id":1,"rule_id":7,"severity":"P9","status":"firing","fired_at":"2026-07-30T13:48:00Z"}]}`, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, false},
+		{"invalid status", `{"data":[{"id":1,"rule_id":7,"severity":"P0","status":"open","fired_at":"2026-07-30T13:48:00Z"}]}`, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, false},
+		{"nan metric", `{"data":[{"id":1,"rule_id":7,"severity":"P0","status":"firing","metric_value":1e400,"fired_at":"2026-07-30T13:48:00Z"}]}`, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, false},
+		{"missing fired at", `{"data":[{"id":1,"rule_id":7,"severity":"P0","status":"firing"}]}`, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, false},
+		{"mismatched cursor", `{"data":[]}`, func(r *HTTPReader) error {
+			t := time.Now()
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{BeforeFiredAt: &t})
+			return e
+		}, false},
+		{"detail id mismatch", `{"data":{"id":2,"rule_id":7,"severity":"P0","status":"firing","fired_at":"2026-07-30T13:48:00Z"}}`, func(r *HTTPReader) error { _, e := r.GetOpsAlertEvent(context.Background(), 1); return e }, false},
+		{"response too large", ``, func(r *HTTPReader) error {
+			_, e := r.ListOpsAlertEvents(context.Background(), OpsAlertEventCursor{})
+			return e
+		}, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if tc.large {
+					fmt.Fprint(w, `{"data":[{"id":1,"rule_id":7,"severity":"P0","status":"firing","fired_at":"2026-07-30T13:48:00Z","dimensions":{"x":"`+strings.Repeat("x", maxResponseBytes)+`"}}]}`)
+					return
+				}
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			err := tc.call(newTestReader(t, server.URL))
+			if tc.large {
+				if !IsResponseTooLarge(err) {
+					t.Fatalf("error = %v, want response-too-large", err)
+				}
+			} else if !IsSchemaMismatch(err) {
+				t.Fatalf("error = %v, want schema mismatch", err)
+			}
+		})
+	}
+}
+
 func newTestReader(t *testing.T, baseURL string) *HTTPReader {
 	t.Helper()
 	keyFile := filepath.Join(t.TempDir(), "admin-key")

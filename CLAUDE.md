@@ -57,7 +57,35 @@ git branch           # 应只剩 main
 git archive --format=tar main <路径...> | ssh sub2api-prod 'cat > /tmp/deploy.tar'
 ```
 
-生产机是 `ssh sub2api-prod`，部署根目录 `/opt/sub2api/production`。改 `compose.yaml` 或 `.env` 前先 `cp` 一份带日期的备份。
+### 已验证的生产连接（2026-07-30）
+
+后续服务器操作统一从本节获取连接参数，不要从聊天记录、临时 shell 历史或其他文档猜测：
+
+- SSH 别名：`sub2api-prod`
+- 主机：`43.133.75.82`
+- 端口：`2222`
+- 用户：`ubuntu`
+- 本机专用身份文件：`~/.ssh/tencent_lighthouse_seoul_sub2api`
+- 生产部署根目录：`/opt/sub2api/production`
+- Compose 项目：`sub2api`
+
+已用只读连接验证：SSH BatchMode 登录成功；远端为 Linux；Docker context 为 `default`；`DOCKER_HOST` 为空；`sudo -n` 可用；使用生产 `/opt/sub2api/production/.env` 的 Compose 配置解析成功。文档只记录连接元数据，不记录私钥内容、密码、API Key 或 `.env` 内容。
+
+生产操作标准前置检查：
+
+```bash
+ssh -o BatchMode=yes sub2api-prod
+set -euo pipefail
+test "$(uname -s)" = Linux
+test "$(docker context show)" = default
+test -z "${DOCKER_HOST:-}"
+cd /opt/sub2api/production
+test "$(pwd -P)" = /opt/sub2api/production
+sudo -n true
+sudo -n docker compose --project-name sub2api --env-file .env -f compose.yaml config --quiet
+```
+
+修改 `compose.yaml` 或 `.env` 前先 `cp` 一份带日期的备份。生产发布只能在该远端主机执行，不能在本机 macOS、Docker Desktop、`colima` context 或本地 `infra/.env` 上冒充生产部署。
 
 `/ops` 页面的模板错误**编译期发现不了**（`server.go` 里是 `_ = ExecuteTemplate(...)`，错误被丢弃），改动 `ops.html` 或它依赖的结构体后，必须实际打开页面确认整页渲染完整。
 

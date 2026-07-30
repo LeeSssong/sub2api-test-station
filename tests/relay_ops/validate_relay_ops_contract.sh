@@ -131,6 +131,8 @@ require 'config/upstream-benchmarks/quality-first-fast-v1.yaml' infra/Dockerfile
 require 'path /pricing /relay-ops/static/*' infra/Caddyfile
 require '@legacy_ops path /ops /ops/*' infra/Caddyfile
 require 'redir @legacy_ops /admin/ops 302' infra/Caddyfile
+require '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile
+require 'respond @retired_relay_ops_api 404' infra/Caddyfile
 require 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require 'reverse_proxy sub2api:8080' infra/Caddyfile
 forbid 'internal-test-service' infra/Caddyfile
@@ -138,9 +140,6 @@ forbid 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' in
 forbid 'path /api/v1/settings/public' infra/Caddyfile
 forbid '@relay_ops_feishu_command' infra/Caddyfile
 forbid '@relay_ops_admin' infra/Caddyfile
-forbid '/relay-ops/api/feishu/events' infra/Caddyfile
-forbid '/relay-ops/api/incidents/ack' infra/Caddyfile
-forbid '/relay-ops/api/ops-view' infra/Caddyfile
 
 require 'mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)' relay-ops-service/internal/http/server.go
 require 'mux.HandleFunc("GET /pricing", s.pricing)' relay-ops-service/internal/http/server.go

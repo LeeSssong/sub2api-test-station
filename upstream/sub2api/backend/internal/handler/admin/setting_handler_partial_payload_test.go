@@ -19,11 +19,12 @@ import (
 
 func TestUpdateSettingsPartialPayloadKeepsUnsentKeys(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
-		service.SettingKeySiteName:         "Example Gateway",
-		service.SettingKeySiteSubtitle:     "Example Gateway Platform",
-		service.SettingKeySMTPHost:         "smtp.example.com",
-		service.SettingKeySMTPFrom:         "noreply@example.com",
-		service.SettingKeyTurnstileEnabled: "true",
+		service.SettingKeySiteName:                          "Example Gateway",
+		service.SettingKeySiteSubtitle:                      "Example Gateway Platform",
+		service.SettingKeySMTPHost:                          "smtp.example.com",
+		service.SettingKeySMTPFrom:                          "noreply@example.com",
+		service.SettingKeyTurnstileEnabled:                  "true",
+		service.SettingKeyMonitorPageRefreshIntervalSeconds: "300",
 	})
 
 	rec := doUpdateSettings(t, h, map[string]any{"risk_control_enabled": true}, nil)
@@ -37,6 +38,15 @@ func TestUpdateSettingsPartialPayloadKeepsUnsentKeys(t *testing.T) {
 	require.Equal(t, "smtp.example.com", repo.values[service.SettingKeySMTPHost])
 	require.Equal(t, "noreply@example.com", repo.values[service.SettingKeySMTPFrom])
 	require.Equal(t, "true", repo.values[service.SettingKeyTurnstileEnabled])
+	require.Equal(t, "300", repo.values[service.SettingKeyMonitorPageRefreshIntervalSeconds])
+}
+
+func TestUpdateSettingsRejectsUnsupportedMonitorPageRefreshInterval(t *testing.T) {
+	h, _ := newStepUpSwitchTestHandler(t, map[string]string{})
+
+	rec := doUpdateSettings(t, h, map[string]any{"monitor_page_refresh_interval_seconds": 15}, nil)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 // A full payload keeps whole-document semantics: fields explicitly set to their

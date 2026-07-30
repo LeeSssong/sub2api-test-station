@@ -361,6 +361,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
+	settings.MonitorPageRefreshIntervalSeconds = NormalizeMonitorPageRefreshIntervalSeconds(strconv.Itoa(settings.MonitorPageRefreshIntervalSeconds))
+	updates[SettingKeyMonitorPageRefreshIntervalSeconds] = strconv.Itoa(settings.MonitorPageRefreshIntervalSeconds)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
 		return nil, fmt.Errorf("marshal default subscriptions: %w", err)

@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	MonitorV2ContractVersion = "2"
+	MonitorV2ContractVersion = "3"
 
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
@@ -72,6 +73,10 @@ type MonitorV2OpsReader interface {
 	GetOpenAITokenStats(context.Context, *OpsOpenAITokenStatsFilter) (*OpsOpenAITokenStatsResponse, error)
 }
 
+type MonitorV2SettingsReader interface {
+	GetAllSettings(context.Context) (*SystemSettings, error)
+}
+
 type MonitorV2Metric struct {
 	State       string
 	Value       *float64
@@ -119,10 +124,11 @@ type MonitorV2Group struct {
 }
 
 type MonitorV2Snapshot struct {
-	ContractVersion string
-	Window          MonitorV2Window
-	GeneratedAt     time.Time
-	Groups          []MonitorV2Group
+	ContractVersion        string
+	Window                 MonitorV2Window
+	RefreshIntervalSeconds int
+	GeneratedAt            time.Time
+	Groups                 []MonitorV2Group
 }
 
 type MonitorV2Service struct {
@@ -131,6 +137,7 @@ type MonitorV2Service struct {
 	probes    MonitorV2ProbeReader
 	ops       MonitorV2OpsReader
 	repo      MonitorV2Repository
+	settings  MonitorV2SettingsReader
 }
 
 func NewMonitorV2Service(
@@ -139,13 +146,19 @@ func NewMonitorV2Service(
 	probes MonitorV2ProbeReader,
 	ops MonitorV2OpsReader,
 	repo MonitorV2Repository,
+	settings ...MonitorV2SettingsReader,
 ) *MonitorV2Service {
+	var settingsReader MonitorV2SettingsReader
+	if len(settings) > 0 {
+		settingsReader = settings[0]
+	}
 	return &MonitorV2Service{
 		groupRepo: groupRepo,
 		channels:  channels,
 		probes:    probes,
 		ops:       ops,
 		repo:      repo,
+		settings:  settingsReader,
 	}
 }
 
@@ -226,12 +239,21 @@ func (s *MonitorV2Service) Snapshot(
 	if err := monitorV2ValidateSnapshotBounds(cards); err != nil {
 		return nil, err
 	}
+	refreshIntervalSeconds := MonitorPageRefreshIntervalSecondsDefault
+	if s.settings != nil {
+		if settings, err := s.settings.GetAllSettings(ctx); err == nil && settings != nil {
+			refreshIntervalSeconds = NormalizeMonitorPageRefreshIntervalSeconds(
+				strconv.Itoa(settings.MonitorPageRefreshIntervalSeconds),
+			)
+		}
+	}
 
 	return &MonitorV2Snapshot{
-		ContractVersion: MonitorV2ContractVersion,
-		Window:          window,
-		GeneratedAt:     now.UTC(),
-		Groups:          cards,
+		ContractVersion:        MonitorV2ContractVersion,
+		Window:                 window,
+		RefreshIntervalSeconds: refreshIntervalSeconds,
+		GeneratedAt:            now.UTC(),
+		Groups:                 cards,
 	}, nil
 }
 

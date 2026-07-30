@@ -305,6 +305,7 @@ type UpdateSettingsRequest struct {
 	PaymentAlipayForceQRCode *bool `json:"payment_alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	PaymentAlipayMobilePrecreateDeepLink *bool `json:"payment_alipay_mobile_precreate_deep_link"`
+	MonitorPageRefreshIntervalSeconds    *int  `json:"monitor_page_refresh_interval_seconds"`
 
 	// Channel Monitor feature switch
 	ChannelMonitorEnabled                *bool `json:"channel_monitor_enabled"`
@@ -483,6 +484,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	forwardedClientIPHeaders := append([]string(nil), previousSettings.ForwardedClientIPHeaders...)
 	if req.ForwardedClientIPHeaders != nil {
 		forwardedClientIPHeaders = append([]string(nil), (*req.ForwardedClientIPHeaders)...)
+	}
+	monitorPageRefreshIntervalSeconds := previousSettings.MonitorPageRefreshIntervalSeconds
+	if req.MonitorPageRefreshIntervalSeconds != nil {
+		if !service.IsMonitorPageRefreshIntervalSeconds(*req.MonitorPageRefreshIntervalSeconds) {
+			response.BadRequest(c, "monitor_page_refresh_interval_seconds must be one of 0, 30, 60, 300, 600")
+			return
+		}
+		monitorPageRefreshIntervalSeconds = *req.MonitorPageRefreshIntervalSeconds
 	}
 
 	// 开启敏感操作 step-up 门控属自锁风险操作：仅允许本人已启用 TOTP 的管理员会话开启，
@@ -1320,7 +1329,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
-		DefaultPlatformQuotas: req.DefaultPlatformQuotas,
+		DefaultPlatformQuotas:             req.DefaultPlatformQuotas,
+		MonitorPageRefreshIntervalSeconds: monitorPageRefreshIntervalSeconds,
 
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
@@ -2067,6 +2077,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SubscriptionExpiryNotifyEnabled:                        updatedSettings.SubscriptionExpiryNotifyEnabled,
 		AccountQuotaNotifyEnabled:                              updatedSettings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:                               dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
+		MonitorPageRefreshIntervalSeconds:                      updatedSettings.MonitorPageRefreshIntervalSeconds,
 		PaymentEnabled:                                         updatedPaymentCfg.Enabled,
 		PaymentMinAmount:                                       updatedPaymentCfg.MinAmount,
 		PaymentMaxAmount:                                       updatedPaymentCfg.MaxAmount,

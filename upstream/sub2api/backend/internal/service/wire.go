@@ -845,6 +845,7 @@ func ProvideMonitorV2Service(
 	channelMonitorService *ChannelMonitorService,
 	opsService *OpsService,
 	repo MonitorV2Repository,
+	settingService *SettingService,
 ) *MonitorV2Service {
 	return NewMonitorV2Service(
 		groupRepo,
@@ -852,6 +853,7 @@ func ProvideMonitorV2Service(
 		channelMonitorService,
 		opsService,
 		repo,
+		settingService,
 	)
 }
 

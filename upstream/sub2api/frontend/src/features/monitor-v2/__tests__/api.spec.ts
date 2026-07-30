@@ -15,7 +15,8 @@ import {
 } from '../api'
 
 const validPayload = {
-  contract_version: '2',
+	contract_version: '3',
+	refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',
   groups: [
@@ -61,7 +62,7 @@ describe('Monitor V2 API contract', () => {
     get.mockReset()
   })
 
-  it('returns a validated version 2 snapshot', async () => {
+	it('returns a validated version 3 snapshot', async () => {
     get.mockResolvedValue({ data: validPayload })
 
     const snapshot = await getMonitorV2Snapshot('7d')
@@ -76,14 +77,26 @@ describe('Monitor V2 API contract', () => {
     expect(snapshot.groups[0].latency_p95.value).toBe(2400)
   })
 
-  it('rejects an unsupported contract version', () => {
-    expect(() =>
-      validateMonitorV2Snapshot({
-        ...validPayload,
-        contract_version: '3',
-      })
-    ).toThrow(MonitorV2ContractError)
-  })
+	it('rejects an unsupported contract version', () => {
+		expect(() =>
+			validateMonitorV2Snapshot({
+				...validPayload,
+				contract_version: '2',
+			})
+		).toThrow(MonitorV2ContractError)
+	})
+
+	it('rejects unsupported refresh intervals and accepts configured values', () => {
+		expect(() =>
+			validateMonitorV2Snapshot({ ...validPayload, refresh_interval_seconds: 15 })
+		).toThrow('refresh_interval_seconds is unsupported')
+
+		for (const refreshIntervalSeconds of [0, 30, 60, 300, 600]) {
+			expect(
+				validateMonitorV2Snapshot({ ...validPayload, refresh_interval_seconds: refreshIntervalSeconds })
+			).toMatchObject({ refresh_interval_seconds: refreshIntervalSeconds })
+		}
+	})
 
   it('rejects invalid metric ranges and impossible counts', () => {
     const invalidAvailability = {

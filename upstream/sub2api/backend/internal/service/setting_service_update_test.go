@@ -217,6 +217,27 @@ func TestSettingService_AffiliateAdminRechargeSetting(t *testing.T) {
 	})
 }
 
+func TestSettingServicePersistsMonitorPageRefreshIntervals(t *testing.T) {
+	for _, want := range []int{0, 30, 60, 300, 600} {
+		t.Run(strconv.Itoa(want), func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				MonitorPageRefreshIntervalSeconds: want,
+			})
+			require.NoError(t, err)
+			require.Equal(t, strconv.Itoa(want), repo.updates[SettingKeyMonitorPageRefreshIntervalSeconds])
+		})
+	}
+}
+
+func TestMonitorPageRefreshIntervalFallsBackToSixty(t *testing.T) {
+	require.Equal(t, 60, NormalizeMonitorPageRefreshIntervalSeconds(""))
+	require.Equal(t, 60, NormalizeMonitorPageRefreshIntervalSeconds("15"))
+	require.Equal(t, 60, NormalizeMonitorPageRefreshIntervalSeconds("invalid"))
+}
+
 func (s *defaultSubGroupReaderStub) GetByID(ctx context.Context, id int64) (*Group, error) {
 	s.calls = append(s.calls, id)
 	if err, ok := s.errBy[id]; ok {

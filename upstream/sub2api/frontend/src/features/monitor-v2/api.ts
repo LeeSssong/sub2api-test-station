@@ -8,6 +8,7 @@ import {
   type MonitorV2MetricState,
   type MonitorV2Model,
   type MonitorV2ModelStatus,
+  type MonitorV2RefreshIntervalSeconds,
   type MonitorV2Snapshot,
   type MonitorV2TimelinePoint,
   type MonitorV2Window,
@@ -21,6 +22,7 @@ export class MonitorV2ContractError extends Error {
 }
 
 const WINDOWS = new Set<MonitorV2Window>(['24h', '7d', '30d'])
+const REFRESH_INTERVALS = new Set<MonitorV2RefreshIntervalSeconds>([0, 30, 60, 300, 600])
 const METRIC_STATES = new Set<MonitorV2MetricState>([
   'available',
   'insufficient_data',
@@ -277,6 +279,10 @@ export function validateMonitorV2Snapshot(value: unknown): MonitorV2Snapshot {
   if (!WINDOWS.has(window)) {
     throw new MonitorV2ContractError('window is unsupported')
   }
+  const refreshIntervalSeconds = integer(source.refresh_interval_seconds, 'refresh_interval_seconds')
+  if (!REFRESH_INTERVALS.has(refreshIntervalSeconds as MonitorV2RefreshIntervalSeconds)) {
+    throw new MonitorV2ContractError('refresh_interval_seconds is unsupported')
+  }
   const generatedAt = text(source.generated_at, 'generated_at')
   if (Number.isNaN(Date.parse(generatedAt))) {
     throw new MonitorV2ContractError('generated_at must be RFC3339')
@@ -298,6 +304,7 @@ export function validateMonitorV2Snapshot(value: unknown): MonitorV2Snapshot {
   return {
     contract_version: MONITOR_V2_CONTRACT_VERSION,
     window,
+    refresh_interval_seconds: refreshIntervalSeconds as MonitorV2RefreshIntervalSeconds,
     generated_at: generatedAt,
     groups,
   }

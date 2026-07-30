@@ -380,6 +380,10 @@ const (
 	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 3600].
 	SettingKeyChannelMonitorDefaultIntervalSeconds = "channel_monitor_default_interval_seconds"
 
+	// SettingKeyMonitorPageRefreshIntervalSeconds controls the administrator
+	// monitor page refresh policy. 0 disables automatic refresh.
+	SettingKeyMonitorPageRefreshIntervalSeconds = "monitor_page_refresh_interval_seconds"
+
 	// SettingKeyAvailableChannelsEnabled is a DB-backed soft switch for the "Available Channels"
 	// user-facing aggregate view. When false: user endpoint returns an empty list and the
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
@@ -544,6 +548,17 @@ const (
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
 )
+
+const MonitorPageRefreshIntervalSecondsDefault = 60
+
+func IsMonitorPageRefreshIntervalSeconds(value int) bool {
+	switch value {
+	case 0, 30, 60, 300, 600:
+		return true
+	default:
+		return false
+	}
+}
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。
 // 值为 map[platform]{daily,weekly,monthly}，null/缺省 = 不限制；0 = 禁用；>0 = USD 上限。

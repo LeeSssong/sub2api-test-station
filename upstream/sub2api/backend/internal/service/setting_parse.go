@@ -129,6 +129,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
 		SettingKeyDefaultUserRPMLimit:                       "0",
 		SettingKeyDefaultSubscriptions:                      "[]",
+		SettingKeyMonitorPageRefreshIntervalSeconds:         strconv.Itoa(MonitorPageRefreshIntervalSecondsDefault),
 		SettingKeyAuthSourceDefaultEmailBalance:             "0",
 		SettingKeyAuthSourceDefaultEmailConcurrency:         "5",
 		SettingKeyAuthSourceDefaultEmailSubscriptions:       "[]",
@@ -296,46 +297,47 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		}
 	}
 	result := &SystemSettings{
-		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
-		EmailVerifyEnabled:               emailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
-		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
-		PasswordResetEnabled:             emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
-		FrontendURL:                      settings[SettingKeyFrontendURL],
-		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
-		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
-		PasskeyEnabled:                   s.passkeySettingEnabled(settings),
-		SessionBindingEnabled:            settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
-		StepUpEnabled:                    settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
-		AuditLogRetentionDays:            parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
-		LoginAgreementEnabled:            settings[SettingKeyLoginAgreementEnabled] == "true",
-		LoginAgreementMode:               normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
-		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
-		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         settings[SettingKeySMTPHost],
-		SMTPUsername:                     settings[SettingKeySMTPUsername],
-		SMTPFrom:                         settings[SettingKeySMTPFrom],
-		SMTPFromName:                     settings[SettingKeySMTPFromName],
-		SMTPUseTLS:                       settings[SettingKeySMTPUseTLS] == "true",
-		SMTPPasswordConfigured:           settings[SettingKeySMTPPassword] != "",
-		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
-		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
-		TurnstileSecretKeyConfigured:     settings[SettingKeyTurnstileSecretKey] != "",
-		APIKeyACLTrustForwardedIP:        apiKeyACLTrustForwardedIP,
-		ForwardedClientIPHeaders:         forwardedClientIPHeaders,
-		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
-		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
-		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
-		ContactInfo:                      settings[SettingKeyContactInfo],
-		DocURL:                           settings[SettingKeyDocURL],
-		HomeContent:                      settings[SettingKeyHomeContent],
-		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
-		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
-		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
-		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
-		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
-		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
+		RegistrationEnabled:               settings[SettingKeyRegistrationEnabled] == "true",
+		EmailVerifyEnabled:                emailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:  ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
+		PromoCodeEnabled:                  settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
+		PasswordResetEnabled:              emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
+		FrontendURL:                       settings[SettingKeyFrontendURL],
+		InvitationCodeEnabled:             settings[SettingKeyInvitationCodeEnabled] == "true",
+		TotpEnabled:                       settings[SettingKeyTotpEnabled] == "true",
+		PasskeyEnabled:                    s.passkeySettingEnabled(settings),
+		SessionBindingEnabled:             settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
+		StepUpEnabled:                     settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
+		AuditLogRetentionDays:             parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
+		MonitorPageRefreshIntervalSeconds: NormalizeMonitorPageRefreshIntervalSeconds(settings[SettingKeyMonitorPageRefreshIntervalSeconds]),
+		LoginAgreementEnabled:             settings[SettingKeyLoginAgreementEnabled] == "true",
+		LoginAgreementMode:                normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
+		LoginAgreementUpdatedAt:           loginAgreementUpdatedAt,
+		LoginAgreementDocuments:           loginAgreementDocuments,
+		SMTPHost:                          settings[SettingKeySMTPHost],
+		SMTPUsername:                      settings[SettingKeySMTPUsername],
+		SMTPFrom:                          settings[SettingKeySMTPFrom],
+		SMTPFromName:                      settings[SettingKeySMTPFromName],
+		SMTPUseTLS:                        settings[SettingKeySMTPUseTLS] == "true",
+		SMTPPasswordConfigured:            settings[SettingKeySMTPPassword] != "",
+		TurnstileEnabled:                  settings[SettingKeyTurnstileEnabled] == "true",
+		TurnstileSiteKey:                  settings[SettingKeyTurnstileSiteKey],
+		TurnstileSecretKeyConfigured:      settings[SettingKeyTurnstileSecretKey] != "",
+		APIKeyACLTrustForwardedIP:         apiKeyACLTrustForwardedIP,
+		ForwardedClientIPHeaders:          forwardedClientIPHeaders,
+		SiteName:                          s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
+		SiteLogo:                          settings[SettingKeySiteLogo],
+		SiteSubtitle:                      s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		APIBaseURL:                        settings[SettingKeyAPIBaseURL],
+		ContactInfo:                       settings[SettingKeyContactInfo],
+		DocURL:                            settings[SettingKeyDocURL],
+		HomeContent:                       settings[SettingKeyHomeContent],
+		HideCcsImportButton:               settings[SettingKeyHideCcsImportButton] == "true",
+		PurchaseSubscriptionEnabled:       settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
+		PurchaseSubscriptionURL:           strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		CustomMenuItems:                   settings[SettingKeyCustomMenuItems],
+		CustomEndpoints:                   settings[SettingKeyCustomEndpoints],
+		BackendModeEnabled:                settings[SettingKeyBackendModeEnabled] == "true",
 	}
 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(
 		settings[SettingKeyTableDefaultPageSize],
@@ -905,6 +907,17 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.AllowUserViewErrorRequests = settings[SettingKeyAllowUserViewErrorRequests] == "true" // default false
 
 	return result
+}
+
+// NormalizeMonitorPageRefreshIntervalSeconds parses the stored administrator
+// monitor page refresh policy. Missing and legacy invalid values safely fall
+// back to the default 60-second refresh interval.
+func NormalizeMonitorPageRefreshIntervalSeconds(raw string) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || !IsMonitorPageRefreshIntervalSeconds(value) {
+		return MonitorPageRefreshIntervalSecondsDefault
+	}
+	return value
 }
 
 func clampAffiliateRebateRate(value float64) float64 {

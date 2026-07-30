@@ -326,6 +326,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}
+	if before.MonitorPageRefreshIntervalSeconds != after.MonitorPageRefreshIntervalSeconds {
+		changed = append(changed, "monitor_page_refresh_interval_seconds")
+	}
 	if before.EnableModelFallback != after.EnableModelFallback {
 		changed = append(changed, "enable_model_fallback")
 	}

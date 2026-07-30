@@ -70,10 +70,20 @@ do
   forbid_relay_ops "$retired_mount"
 done
 
-require 'RELAY_OPS_NOTIFICATION_POLICY_FILE=' infra/.env.example
-require 'RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=' infra/.env.example
-require_line 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=' infra/.env.example
-require_line 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=' infra/.env.example
+for disabled_app_bot_assignment in \
+  RELAY_OPS_FEISHU_APP_ID_FILE= \
+  RELAY_OPS_FEISHU_APP_SECRET_FILE= \
+  RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE= \
+  RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE= \
+  RELAY_OPS_NOTIFICATION_POLICY_FILE= \
+  RELAY_OPS_FEISHU_APP_ID_HOST_FILE= \
+  RELAY_OPS_FEISHU_APP_SECRET_HOST_FILE= \
+  RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE= \
+  RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE= \
+  RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=
+do
+  require_line "$disabled_app_bot_assignment" infra/.env.example
+done
 require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=/run/secrets/feishu-alert-recipients.json' infra/.env.example
 require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=./secrets/feishu-alert-recipients.json' infra/.env.example
 policy_file=config/relay-ops/notification-policy.example.json

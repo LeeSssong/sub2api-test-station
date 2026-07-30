@@ -106,6 +106,9 @@
 	@legacy_ops path /ops /ops/*
 	redir @legacy_ops /admin/ops 302
 
+	@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events
+	respond @retired_relay_ops_api 404
+
 	@sub2api_html {
 		header Accept *text/html*
 		not {

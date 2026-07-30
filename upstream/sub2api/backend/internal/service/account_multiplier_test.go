@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -415,6 +416,35 @@ func TestAccountMultiplierRefreshMeasuresNewAPIThreeTimesAndPersistsSanitizedSna
 	}
 }
 
+func TestAccountMultiplierWaitForQuotaUsagePollsUntilCounterAdvances(t *testing.T) {
+	account := &Account{ID: 23, Concurrency: 1}
+	upstream := &accountMultiplierHTTPStub{
+		usageValues:    []float64{100, 100, 125},
+		expectedAPIKey: "sk-sensitive",
+	}
+	testService := &AccountTestService{httpUpstream: upstream}
+	svc := NewAccountMultiplierService(nil, testService, nil)
+	svc.wait = func(context.Context, time.Duration) error { return nil }
+
+	after, err := svc.waitForNewAPIQuotaUsage(
+		context.Background(),
+		account,
+		"http://new-api.example",
+		"sk-sensitive",
+		"",
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != 125 {
+		t.Fatalf("waitForNewAPIQuotaUsage() = %v, want 125", after)
+	}
+	if upstream.usageIndex != 3 {
+		t.Fatalf("usage reads = %d, want 3", upstream.usageIndex)
+	}
+}
+
 func TestAccountMultiplierRefreshReusesFreshMeasurementUnlessForced(t *testing.T) {
 	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
 	value := 0.25
@@ -438,7 +468,26 @@ func TestAccountMultiplierRefreshReusesFreshMeasurementUnlessForced(t *testing.T
 	}
 }
 
-func TestAccountMultiplierRefreshDoesNotRetryRecentFailureAutomatically(t *testing.T) {
+func TestAccountMultiplierRefreshDoesNotRetryVeryRecentFailureAutomatically(t *testing.T) {
+	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
+	account := &Account{Extra: map[string]any{
+		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
+			Version:       AccountMultiplierMeasurementVersion,
+			Status:        AccountMonitorMultiplierStatusFailed,
+			Source:        AccountMonitorMultiplierSourceMeasured,
+			LastAttemptAt: now.Add(-time.Minute),
+		},
+	}}
+	svc := NewAccountMultiplierService(nil, nil, nil)
+	svc.now = func() time.Time { return now }
+
+	if err := svc.Refresh(context.Background(), account, false); err != nil {
+		t.Fatalf("recent automatic failure must be throttled: %v", err)
+	}
+}
+
+func TestAccountMultiplierRefreshRetriesFailedMeasurementAfterShortBackoff(t *testing.T) {
 	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
 	account := &Account{Extra: map[string]any{
 		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
@@ -452,8 +501,9 @@ func TestAccountMultiplierRefreshDoesNotRetryRecentFailureAutomatically(t *testi
 	svc := NewAccountMultiplierService(nil, nil, nil)
 	svc.now = func() time.Time { return now }
 
-	if err := svc.Refresh(context.Background(), account, false); err != nil {
-		t.Fatalf("recent automatic failure must be throttled: %v", err)
+	err := svc.Refresh(context.Background(), account, false)
+	if !errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
+		t.Fatalf("Refresh() error = %v, want unavailable after retry becomes due", err)
 	}
 }
 

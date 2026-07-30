@@ -153,6 +153,7 @@ func (s *ChannelMonitorService) GetUserDetail(ctx context.Context, id int64) (*U
 		Name:      m.Name,
 		Provider:  m.Provider,
 		GroupName: m.GroupName,
+		GroupID:   cloneInt64Pointer(m.GroupID),
 		Models:    models,
 	}, nil
 }
@@ -234,6 +235,7 @@ func buildUserViewFromSummary(
 		Name:             m.Name,
 		Provider:         m.Provider,
 		GroupName:        m.GroupName,
+		GroupID:          cloneInt64Pointer(m.GroupID),
 		PrimaryModel:     m.PrimaryModel,
 		PrimaryStatus:    summary.PrimaryStatus,
 		IntervalSeconds:  m.IntervalSeconds,

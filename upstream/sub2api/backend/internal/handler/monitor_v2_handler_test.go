@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -17,14 +18,19 @@ import (
 type monitorV2SnapshotterStub struct {
 	snapshot *service.MonitorV2Snapshot
 	window   service.MonitorV2Window
+	scope    service.MonitorV2Scope
 }
 
 func (s *monitorV2SnapshotterStub) Snapshot(
 	_ context.Context,
 	window service.MonitorV2Window,
 	_ time.Time,
+	scope ...service.MonitorV2Scope,
 ) (*service.MonitorV2Snapshot, error) {
 	s.window = window
+	if len(scope) > 0 {
+		s.scope = scope[0]
+	}
 	return s.snapshot, nil
 }
 
@@ -81,6 +87,7 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 	require.Equal(t, service.MonitorV2Window7D, stub.window)
+	require.Equal(t, service.MonitorV2ScopePublic, stub.scope)
 
 	var envelope struct {
 		Data map[string]any `json:"data"`
@@ -115,6 +122,25 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	} {
 		require.NotContains(t, serialized, forbidden)
 	}
+}
+
+func TestMonitorV2HandlerUsesAdminScopeFromTrustedRoleContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &monitorV2SnapshotterStub{snapshot: &service.MonitorV2Snapshot{
+		ContractVersion: service.MonitorV2ContractVersion,
+		Window:          service.MonitorV2Window7D,
+		Groups:          []service.MonitorV2Group{},
+	}}
+	handler := NewMonitorV2Handler(stub)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2?window=7d", nil)
+	context.Set(string(middleware.ContextKeyUserRole), service.RoleAdmin)
+
+	handler.Snapshot(context)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, service.MonitorV2ScopeAdmin, stub.scope)
 }
 
 func TestMonitorV2HandlerRejectsUnsupportedWindow(t *testing.T) {

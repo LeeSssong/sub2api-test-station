@@ -111,6 +111,7 @@ func (e *duplicateChannelMonitorEncryptor) Decrypt(ciphertext string) (string, e
 func TestDuplicateChannelMonitorCopiesConfigurationAndResetsRuntimeState(t *testing.T) {
 	lastCheckedAt := time.Date(2026, time.July, 15, 7, 0, 0, 0, time.UTC)
 	templateID := int64(9)
+	groupID := int64(16)
 	source := &ChannelMonitor{
 		ID:               42,
 		Name:             "primary",
@@ -121,6 +122,7 @@ func TestDuplicateChannelMonitorCopiesConfigurationAndResetsRuntimeState(t *test
 		PrimaryModel:     "gpt-5.4-mini",
 		ExtraModels:      []string{"gpt-5.4", "gpt-5.3"},
 		GroupName:        "production",
+		GroupID:          &groupID,
 		Enabled:          true,
 		IntervalSeconds:  90,
 		JitterSeconds:    15,
@@ -153,6 +155,7 @@ func TestDuplicateChannelMonitorCopiesConfigurationAndResetsRuntimeState(t *test
 	require.Equal(t, source.PrimaryModel, duplicate.PrimaryModel)
 	require.Equal(t, source.ExtraModels, duplicate.ExtraModels)
 	require.Equal(t, source.GroupName, duplicate.GroupName)
+	require.Equal(t, source.GroupID, duplicate.GroupID)
 	require.Equal(t, source.IntervalSeconds, duplicate.IntervalSeconds)
 	require.Equal(t, source.JitterSeconds, duplicate.JitterSeconds)
 	require.Equal(t, source.TemplateID, duplicate.TemplateID)
@@ -169,10 +172,12 @@ func TestDuplicateChannelMonitorCopiesConfigurationAndResetsRuntimeState(t *test
 	duplicate.ExtraHeaders["User-Agent"] = "changed"
 	duplicate.BodyOverride["metadata"].(map[string]any)["source"] = "changed"
 	*duplicate.TemplateID = 10
+	*duplicate.GroupID = 17
 	require.Equal(t, []string{"gpt-5.4", "gpt-5.3"}, source.ExtraModels)
 	require.Equal(t, "Codex", source.ExtraHeaders["User-Agent"])
 	require.Equal(t, "original", source.BodyOverride["metadata"].(map[string]any)["source"])
 	require.Equal(t, int64(9), *source.TemplateID)
+	require.Equal(t, int64(16), *source.GroupID)
 	require.Equal(t, "OLD:top-secret", source.APIKey)
 	require.True(t, source.Enabled)
 	require.Equal(t, &lastCheckedAt, source.LastCheckedAt)

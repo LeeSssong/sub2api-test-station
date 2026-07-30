@@ -36,6 +36,13 @@ const (
 
 type MonitorV2Window string
 
+type MonitorV2Scope string
+
+const (
+	MonitorV2ScopePublic MonitorV2Scope = "public"
+	MonitorV2ScopeAdmin  MonitorV2Scope = "admin"
+)
+
 type MonitorV2CacheStats struct {
 	EvidenceAvailable bool
 	RequestCount      int64
@@ -146,6 +153,7 @@ func (s *MonitorV2Service) Snapshot(
 	ctx context.Context,
 	window MonitorV2Window,
 	now time.Time,
+	scopes ...MonitorV2Scope,
 ) (*MonitorV2Snapshot, error) {
 	start, bucketSeconds, err := monitorV2WindowBounds(window, now)
 	if err != nil {
@@ -159,32 +167,36 @@ func (s *MonitorV2Service) Snapshot(
 	if err != nil {
 		return nil, fmt.Errorf("list active groups for monitor v2: %w", err)
 	}
-	publicGroups := make([]Group, 0, len(allGroups))
+	scope := MonitorV2ScopePublic
+	if len(scopes) > 0 && scopes[0] == MonitorV2ScopeAdmin {
+		scope = MonitorV2ScopeAdmin
+	}
+	visibleGroups := make([]Group, 0, len(allGroups))
 	groupIDs := make([]int64, 0, len(allGroups))
 	for i := range allGroups {
 		group := allGroups[i]
-		if group.Status != StatusActive || group.IsExclusive {
+		if group.Status != StatusActive || (scope != MonitorV2ScopeAdmin && group.IsExclusive) {
 			continue
 		}
-		publicGroups = append(publicGroups, group)
+		visibleGroups = append(visibleGroups, group)
 		groupIDs = append(groupIDs, group.ID)
 	}
-	if len(publicGroups) > monitorV2MaxGroups {
-		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(publicGroups), monitorV2MaxGroups)
+	if len(visibleGroups) > monitorV2MaxGroups {
+		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV2MaxGroups)
 	}
 
 	channels, _ := s.listChannels(ctx)
 	probes, _ := s.listProbes(ctx)
 	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
-	modelsByGroup := monitorV2ModelsByGroup(publicGroups, channels, probes)
-	probesByGroup := monitorV2ProbesByGroup(probes)
+	modelsByGroup := monitorV2ModelsByGroup(visibleGroups, channels, probes)
+	probesByGroup := monitorV2ProbesByGroup(visibleGroups, probes)
 
-	cards := make([]MonitorV2Group, len(publicGroups))
+	cards := make([]MonitorV2Group, len(visibleGroups))
 	sem := make(chan struct{}, monitorV2MetricWorkers)
 	var wg sync.WaitGroup
-	for i := range publicGroups {
+	for i := range visibleGroups {
 		i := i
-		group := publicGroups[i]
+		group := visibleGroups[i]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -197,7 +209,7 @@ func (s *MonitorV2Service) Snapshot(
 			cards[i] = s.buildGroup(
 				ctx,
 				group,
-				probesByGroup[monitorV2GroupKey(group.Name)],
+				probesByGroup[group.ID],
 				modelsByGroup[group.ID],
 				cacheStats[group.ID],
 				window,
@@ -369,26 +381,28 @@ func monitorV2GroupKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-func monitorV2ProbesByGroup(views []*UserMonitorView) map[string][]*UserMonitorView {
-	out := make(map[string][]*UserMonitorView)
+func monitorV2ProbesByGroup(groups []Group, views []*UserMonitorView) map[int64][]*UserMonitorView {
+	visibleIDs, groupNameToID := monitorV2VisibleGroupLookup(groups)
+	out := make(map[int64][]*UserMonitorView)
 	for _, view := range views {
 		if view == nil {
 			continue
 		}
-		key := monitorV2GroupKey(view.GroupName)
-		if key == "" {
+		groupID := monitorV2ProbeGroupID(view, visibleIDs, groupNameToID)
+		if groupID == 0 {
 			continue
 		}
-		out[key] = append(out[key], view)
+		out[groupID] = append(out[groupID], view)
 	}
 	return out
 }
 
 func monitorV2ModelsByGroup(
-	publicGroups []Group,
+	visibleGroups []Group,
 	channels []AvailableChannel,
 	probes []*UserMonitorView,
 ) map[int64][]MonitorV2Model {
+	visibleIDs, groupNameToID := monitorV2VisibleGroupLookup(visibleGroups)
 	modelSets := make(map[int64]map[string]string)
 	for i := range channels {
 		channel := channels[i]
@@ -407,22 +421,11 @@ func monitorV2ModelsByGroup(
 			}
 		}
 	}
-	groupNameToID := make(map[string]int64)
-	for i := range publicGroups {
-		groupNameToID[monitorV2GroupKey(publicGroups[i].Name)] = publicGroups[i].ID
-	}
-	for i := range channels {
-		for _, group := range channels[i].Groups {
-			if _, exists := groupNameToID[monitorV2GroupKey(group.Name)]; !exists {
-				groupNameToID[monitorV2GroupKey(group.Name)] = group.ID
-			}
-		}
-	}
 	for _, probe := range probes {
 		if probe == nil {
 			continue
 		}
-		groupID := groupNameToID[monitorV2GroupKey(probe.GroupName)]
+		groupID := monitorV2ProbeGroupID(probe, visibleIDs, groupNameToID)
 		if groupID == 0 {
 			continue
 		}
@@ -450,6 +453,36 @@ func monitorV2ModelsByGroup(
 		out[groupID] = models
 	}
 	return out
+}
+
+func monitorV2VisibleGroupLookup(groups []Group) (map[int64]struct{}, map[string]int64) {
+	visibleIDs := make(map[int64]struct{}, len(groups))
+	groupNameToID := make(map[string]int64, len(groups))
+	for i := range groups {
+		group := groups[i]
+		visibleIDs[group.ID] = struct{}{}
+		if key := monitorV2GroupKey(group.Name); key != "" {
+			groupNameToID[key] = group.ID
+		}
+	}
+	return visibleIDs, groupNameToID
+}
+
+func monitorV2ProbeGroupID(
+	probe *UserMonitorView,
+	visibleIDs map[int64]struct{},
+	groupNameToID map[string]int64,
+) int64 {
+	if probe == nil {
+		return 0
+	}
+	if probe.GroupID != nil {
+		if _, visible := visibleIDs[*probe.GroupID]; visible {
+			return *probe.GroupID
+		}
+		return 0
+	}
+	return groupNameToID[monitorV2GroupKey(probe.GroupName)]
 }
 
 func monitorV2ApplyProbeStatuses(

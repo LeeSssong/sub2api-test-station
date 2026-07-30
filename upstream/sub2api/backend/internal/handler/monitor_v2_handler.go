@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,7 @@ type monitorV2Snapshotter interface {
 		context.Context,
 		service.MonitorV2Window,
 		time.Time,
+		...service.MonitorV2Scope,
 	) (*service.MonitorV2Snapshot, error)
 }
 
@@ -90,7 +92,11 @@ func (h *MonitorV2Handler) Snapshot(c *gin.Context) {
 		response.InternalError(c, "monitor v2 unavailable")
 		return
 	}
-	snapshot, err := h.service.Snapshot(c.Request.Context(), window, time.Now().UTC())
+	scope := service.MonitorV2ScopePublic
+	if role, ok := middleware.GetUserRoleFromContext(c); ok && role == service.RoleAdmin {
+		scope = service.MonitorV2ScopeAdmin
+	}
+	snapshot, err := h.service.Snapshot(c.Request.Context(), window, time.Now().UTC(), scope)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -23,6 +23,9 @@ vi.mock('@/api/admin', () => ({
     channelMonitorTemplate: {
       list: listTemplates,
     },
+    groups: {
+      getAll: vi.fn().mockResolvedValue([]),
+    },
   },
 }))
 

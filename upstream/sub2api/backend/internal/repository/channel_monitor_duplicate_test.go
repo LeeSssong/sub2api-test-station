@@ -11,7 +11,9 @@ import (
 )
 
 func TestChannelMonitorDuplicateOperationMetadataStaysOutOfRuntimeHeaders(t *testing.T) {
+	groupID := int64(16)
 	monitor := &service.ChannelMonitor{
+		GroupID:              &groupID,
 		ExtraHeaders:         map[string]string{"User-Agent": "Codex"},
 		DuplicateOperationID: "operation-digest",
 	}
@@ -21,7 +23,8 @@ func TestChannelMonitorDuplicateOperationMetadataStaysOutOfRuntimeHeaders(t *tes
 	require.Equal(t, "Codex", persisted["User-Agent"])
 	require.NotContains(t, monitor.ExtraHeaders, service.ChannelMonitorDuplicateOperationIDMetadataKey)
 
-	restored := entToServiceMonitor(&dbent.ChannelMonitor{ExtraHeaders: persisted})
+	restored := entToServiceMonitor(&dbent.ChannelMonitor{GroupID: &groupID, ExtraHeaders: persisted})
+	require.Equal(t, &groupID, restored.GroupID)
 	require.Equal(t, "operation-digest", restored.DuplicateOperationID)
 	require.Equal(t, map[string]string{"User-Agent": "Codex"}, restored.ExtraHeaders)
 	require.NotContains(t, restored.ExtraHeaders, service.ChannelMonitorDuplicateOperationIDMetadataKey)

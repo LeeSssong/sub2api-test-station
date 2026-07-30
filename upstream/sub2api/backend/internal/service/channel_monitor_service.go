@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -61,10 +62,15 @@ type ChannelMonitorRepository interface {
 	UpdateAggregationWatermark(ctx context.Context, date time.Time) error
 }
 
+type ChannelMonitorGroupReader interface {
+	GetByIDLite(ctx context.Context, id int64) (*Group, error)
+}
+
 // ChannelMonitorService 渠道监控管理服务。
 type ChannelMonitorService struct {
-	repo      ChannelMonitorRepository
-	encryptor SecretEncryptor
+	repo        ChannelMonitorRepository
+	encryptor   SecretEncryptor
+	groupReader ChannelMonitorGroupReader
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
 	scheduler MonitorScheduler
@@ -79,8 +85,16 @@ const maxChannelMonitorNameRunes = 100
 const ChannelMonitorDuplicateOperationIDMetadataKey = "sub2api:duplicate_operation_id"
 
 // NewChannelMonitorService 创建渠道监控服务实例。
-func NewChannelMonitorService(repo ChannelMonitorRepository, encryptor SecretEncryptor) *ChannelMonitorService {
-	return &ChannelMonitorService{repo: repo, encryptor: encryptor}
+func NewChannelMonitorService(
+	repo ChannelMonitorRepository,
+	encryptor SecretEncryptor,
+	groupReaders ...ChannelMonitorGroupReader,
+) *ChannelMonitorService {
+	service := &ChannelMonitorService{repo: repo, encryptor: encryptor}
+	if len(groupReaders) > 0 {
+		service.groupReader = groupReaders[0]
+	}
+	return service
 }
 
 // ---------- CRUD ----------
@@ -119,6 +133,13 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 	if err := validateCreateParams(p); err != nil {
 		return nil, err
 	}
+	group, err := s.resolveGroupAssociation(ctx, p.Provider, p.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if group != nil {
+		p.GroupName = group.Name
+	}
 	if err := validateBodyModeForProtocol(p.Provider, p.APIMode, p.BodyOverrideMode, p.BodyOverride); err != nil {
 		return nil, err
 	}
@@ -138,6 +159,7 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		PrimaryModel:     normalizeMonitorPrimaryModel(p.Provider, p.PrimaryModel),
 		ExtraModels:      normalizeModels(p.ExtraModels),
 		GroupName:        strings.TrimSpace(p.GroupName),
+		GroupID:          cloneInt64Pointer(p.GroupID),
 		Enabled:          p.Enabled,
 		IntervalSeconds:  p.IntervalSeconds,
 		JitterSeconds:    p.JitterSeconds,
@@ -203,6 +225,7 @@ func (s *ChannelMonitorService) Duplicate(
 		PrimaryModel:         source.PrimaryModel,
 		ExtraModels:          append([]string{}, source.ExtraModels...),
 		GroupName:            source.GroupName,
+		GroupID:              cloneInt64Pointer(source.GroupID),
 		Enabled:              false,
 		IntervalSeconds:      source.IntervalSeconds,
 		JitterSeconds:        source.JitterSeconds,
@@ -351,6 +374,13 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	}
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
+	}
+	group, err := s.resolveGroupAssociation(ctx, existing.Provider, existing.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if group != nil {
+		existing.GroupName = group.Name
 	}
 
 	newPlainAPIKey, apiKeyUpdated, err := s.applyAPIKeyUpdate(existing, p.APIKey)
@@ -680,6 +710,12 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 	if p.GroupName != nil {
 		existing.GroupName = strings.TrimSpace(*p.GroupName)
 	}
+	if p.ClearGroup {
+		existing.GroupID = nil
+		existing.GroupName = ""
+	} else if p.GroupID != nil {
+		existing.GroupID = cloneInt64Pointer(p.GroupID)
+	}
 	if p.Enabled != nil {
 		existing.Enabled = *p.Enabled
 	}
@@ -699,6 +735,33 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 		}
 	}
 	return applyMonitorAdvancedUpdate(existing, p, providerChanged)
+}
+
+func (s *ChannelMonitorService) resolveGroupAssociation(
+	ctx context.Context,
+	provider string,
+	groupID *int64,
+) (*Group, error) {
+	if groupID == nil {
+		return nil, nil
+	}
+	if *groupID <= 0 {
+		return nil, ErrChannelMonitorInvalidGroup
+	}
+	if s.groupReader == nil {
+		return nil, nil
+	}
+	group, err := s.groupReader.GetByIDLite(ctx, *groupID)
+	if err != nil {
+		if errors.Is(err, ErrGroupNotFound) {
+			return nil, ErrChannelMonitorInvalidGroup
+		}
+		return nil, fmt.Errorf("load channel monitor group: %w", err)
+	}
+	if group == nil || group.Status != StatusActive || group.Platform != provider {
+		return nil, ErrChannelMonitorInvalidGroup
+	}
+	return group, nil
 }
 
 // applyMonitorAdvancedUpdate 处理自定义请求快照相关字段，从 applyMonitorUpdate 拆出避免过长。

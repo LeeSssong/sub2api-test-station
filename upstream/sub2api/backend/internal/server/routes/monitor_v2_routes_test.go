@@ -78,6 +78,7 @@ func (monitorV2RouteSnapshotter) Snapshot(
 	context.Context,
 	service.MonitorV2Window,
 	time.Time,
+	...service.MonitorV2Scope,
 ) (*service.MonitorV2Snapshot, error) {
 	return &service.MonitorV2Snapshot{
 		ContractVersion: service.MonitorV2ContractVersion,

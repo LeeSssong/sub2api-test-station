@@ -75,10 +75,11 @@ type monitorV2GroupResponse struct {
 }
 
 type monitorV2SnapshotResponse struct {
-	ContractVersion string                   `json:"contract_version"`
-	Window          service.MonitorV2Window  `json:"window"`
-	GeneratedAt     string                   `json:"generated_at"`
-	Groups          []monitorV2GroupResponse `json:"groups"`
+	ContractVersion        string                   `json:"contract_version"`
+	Window                 service.MonitorV2Window  `json:"window"`
+	RefreshIntervalSeconds int                      `json:"refresh_interval_seconds"`
+	GeneratedAt            string                   `json:"generated_at"`
+	Groups                 []monitorV2GroupResponse `json:"groups"`
 }
 
 func (h *MonitorV2Handler) Snapshot(c *gin.Context) {
@@ -128,9 +129,10 @@ func monitorV2MetricFromService(metric service.MonitorV2Metric) monitorV2MetricR
 func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2SnapshotResponse {
 	if snapshot == nil {
 		return monitorV2SnapshotResponse{
-			ContractVersion: service.MonitorV2ContractVersion,
-			Window:          service.MonitorV2Window7D,
-			Groups:          []monitorV2GroupResponse{},
+			ContractVersion:        service.MonitorV2ContractVersion,
+			Window:                 service.MonitorV2Window7D,
+			RefreshIntervalSeconds: service.MonitorPageRefreshIntervalSecondsDefault,
+			Groups:                 []monitorV2GroupResponse{},
 		}
 	}
 	groups := make([]monitorV2GroupResponse, 0, len(snapshot.Groups))
@@ -178,9 +180,10 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 		})
 	}
 	return monitorV2SnapshotResponse{
-		ContractVersion: snapshot.ContractVersion,
-		Window:          snapshot.Window,
-		GeneratedAt:     snapshot.GeneratedAt.UTC().Format(time.RFC3339),
-		Groups:          groups,
+		ContractVersion:        snapshot.ContractVersion,
+		Window:                 snapshot.Window,
+		RefreshIntervalSeconds: snapshot.RefreshIntervalSeconds,
+		GeneratedAt:            snapshot.GeneratedAt.UTC().Format(time.RFC3339),
+		Groups:                 groups,
 	}
 }

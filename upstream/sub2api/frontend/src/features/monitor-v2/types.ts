@@ -1,4 +1,6 @@
-export const MONITOR_V2_CONTRACT_VERSION = '2' as const
+export const MONITOR_V2_CONTRACT_VERSION = '3' as const
+
+export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
 export type MonitorV2Window = '24h' | '7d' | '30d'
 export type MonitorV2MetricState = 'available' | 'insufficient_data' | 'not_provided'
@@ -58,6 +60,7 @@ export interface MonitorV2Group {
 export interface MonitorV2Snapshot {
   contract_version: typeof MONITOR_V2_CONTRACT_VERSION
   window: MonitorV2Window
+  refresh_interval_seconds: MonitorV2RefreshIntervalSeconds
   generated_at: string
   groups: MonitorV2Group[]
 }

@@ -83,6 +83,7 @@ func (monitorV2RouteSnapshotter) Snapshot(
 	return &service.MonitorV2Snapshot{
 		ContractVersion: service.MonitorV2ContractVersion,
 		Window:          service.MonitorV2Window7D,
+		RefreshIntervalSeconds: 300,
 		GeneratedAt:     time.Now().UTC(),
 		Groups:          []service.MonitorV2Group{},
 	}, nil
@@ -139,5 +140,6 @@ func TestMonitorV2RouteUsesAuthenticatedUserBoundary(t *testing.T) {
 
 	require.True(t, authCalled)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), `"contract_version":"2"`)
+	require.Contains(t, recorder.Body.String(), `"contract_version":"3"`)
+	require.Contains(t, recorder.Body.String(), `"refresh_interval_seconds":300`)
 }

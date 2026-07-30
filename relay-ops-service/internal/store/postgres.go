@@ -1047,7 +1047,7 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 			return fmt.Errorf("put incident state: %w", err)
 		}
 		newOccurrence := previousOccurrence > 0 && previousOccurrence != record.OccurrenceNo
-		if record.State == "recovered" || newOccurrence {
+		if record.State == "recovered" || record.State == "suppressed" || record.State == "closed" || newOccurrence {
 			if _, err := tx.Exec(ctx, `
 				UPDATE relay_ops.notification_deliveries
 				SET delivery_status='canceled', next_attempt_at=NULL
@@ -1057,7 +1057,9 @@ func (s *Store) Put(ctx context.Context, record incidents.Record) error {
 				    ($3 AND occurrence_no=$2)
 				    OR ($4 AND occurrence_no<>$2)
 				  )`,
-				record.Key, record.OccurrenceNo, record.State == "recovered", newOccurrence); err != nil {
+				record.Key, record.OccurrenceNo,
+				record.State == "recovered" || record.State == "suppressed" || record.State == "closed",
+				newOccurrence); err != nil {
 				tx.Rollback(ctx)
 				return fmt.Errorf("cancel inactive incident notification retries: %w", err)
 			}
@@ -1285,8 +1287,9 @@ func (s *Store) ReserveNotification(ctx context.Context, reservation notify.Rese
 			  AND occurrence_no=$4
 			  AND (
 			    ($5='recovered' AND state='recovered')
+			    OR ($5='manual_resolved' AND state='closed')
 			    OR
-			    ($5<>'recovered' AND state IN ('confirmed', 'escalated', 'degraded'))
+			    ($5 NOT IN ('recovered', 'manual_resolved') AND state IN ('confirmed', 'escalated', 'degraded'))
 			  )
 			FOR UPDATE
 		)
@@ -1296,14 +1299,14 @@ func (s *Store) ReserveNotification(ctx context.Context, reservation notify.Rese
 		SELECT id, $2, $3, 'reserved', $4, $5, $6::jsonb, 1
 		FROM target_incident
 		WHERE (
-		    $5<>'recovered'
+		    $5 NOT IN ('recovered', 'manual_resolved')
 		    OR EXISTS (
 		      SELECT 1
 		      FROM relay_ops.notification_deliveries delivered
 		      WHERE delivered.incident_id=target_incident.id
 		        AND delivered.occurrence_no=$4
 		        AND delivered.delivery_status='delivered'
-		        AND delivered.transition<>'recovered'
+		        AND delivered.transition NOT IN ('recovered', 'manual_resolved')
 		    )
 		  )
 		ON CONFLICT (dedup_key) DO UPDATE
@@ -1480,8 +1483,9 @@ func (s *Store) ClaimNotificationRetry(ctx context.Context, now time.Time) (*not
 		  AND i.occurrence_no=d.occurrence_no
 		  AND (
 		    (d.transition='recovered' AND i.state='recovered')
+		    OR (d.transition='manual_resolved' AND i.state='closed')
 		    OR (
-		      d.transition<>'recovered'
+		      d.transition NOT IN ('recovered', 'manual_resolved')
 		      AND i.state IN ('confirmed', 'escalated', 'degraded')
 		    )
 		  )

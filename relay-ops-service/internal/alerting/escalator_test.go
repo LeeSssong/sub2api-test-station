@@ -21,9 +21,11 @@ func TestNextEscalationAtUsesBoundedOriginalIncidentClock(t *testing.T) {
 	}{
 		{name: "P0 initial", severity: "P0", level: 0, want: first.Add(5 * time.Minute), wantFound: true},
 		{name: "P0 first escalation", severity: "P0", level: 1, want: first.Add(15 * time.Minute), wantFound: true},
-		{name: "P0 complete", severity: "P0", level: 2},
+		{name: "P0 second reminder", severity: "P0", level: 2, want: first.Add(45 * time.Minute), wantFound: true},
+		{name: "P0 recurring reminder", severity: "P0", level: 3, want: first.Add(75 * time.Minute), wantFound: true},
 		{name: "P1 initial", severity: "P1", level: 0, want: first.Add(15 * time.Minute), wantFound: true},
-		{name: "P1 complete", severity: "P1", level: 1},
+		{name: "P1 recurring reminder", severity: "P1", level: 1, want: first.Add(75 * time.Minute), wantFound: true},
+		{name: "P1 second recurring reminder", severity: "P1", level: 2, want: first.Add(135 * time.Minute), wantFound: true},
 		{name: "P2", severity: "P2", level: 0},
 		{name: "recovery", severity: "", level: 0},
 	}

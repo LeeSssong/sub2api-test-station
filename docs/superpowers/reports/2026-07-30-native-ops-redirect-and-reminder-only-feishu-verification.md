@@ -30,18 +30,52 @@ go test ./... -count=1
 - `go vet ./...`：退出码 `0`，无诊断。
 - `go test ./... -count=1`：退出码 `0`；`cmd/relay-ops` 无测试文件，其余全部包为 `ok`。
 
+全量命令未设置 `RELAY_OPS_TEST_DATABASE_URL`，因此数据库支持的测试仍按测试辅助函数的既有约定显示为 `ok` 但内部 `SKIP`。活动提醒与历史 acknowledgement 相互独立的中心存储集成测试已使用下述临时 PostgreSQL 单独执行，不以全量命令替代该证据。
+
+### PostgreSQL 中心存储集成测试
+
+使用本机已有的 `postgres:18-alpine` 镜像启动一次性容器；容器只监听随机分配的 `127.0.0.1` 端口，使用临时数据库和临时口令。就绪后在 `relay-ops-service` 中运行：
+
+```bash
+RELAY_OPS_TEST_DATABASE_URL='postgres://postgres:<temporary-password>@127.0.0.1:<temporary-port>/relay_ops_test?sslmode=disable' \
+  go test ./internal/store \
+  -run '^TestActiveReminderClaimIgnoresHistoricalAcknowledgement$' \
+  -count=1 -v
+```
+
+结果：测试实际执行并通过，没有跳过：
+
+```text
+=== RUN   TestActiveReminderClaimIgnoresHistoricalAcknowledgement
+--- PASS: TestActiveReminderClaimIgnoresHistoricalAcknowledgement (0.08s)
+PASS
+ok  	example.invalid/relay-ops-service/internal/store	2.012s
+```
+
+容器证据：
+
+```text
+SETUP: started codex-relay-ops-final-fix-019fb1a5-2 from postgres:18-alpine
+SETUP: PostgreSQL ready after 2 check(s)
+CLEANUP: stopped and removed codex-relay-ops-final-fix-019fb1a5-2 after 2 check(s)
+```
+
+清理后 `docker inspect codex-relay-ops-final-fix-019fb1a5-2` 不再找到容器；临时连接值未写入仓库。
+
 ### 路由契约
 
 在仓库根目录运行：
 
 ```bash
 bash tests/infra/validate-sub2api-update-routing.sh
+bash tests/infra/validate-public-link-audit.sh
 ```
 
-结果：退出码 `0`，输出：
+结果：两条命令退出码均为 `0`，输出：
 
 ```text
 PASS: Sub2API update UI and routing contracts
+PASS: public link audit static contracts
 ```
 
 该契约确认 Caddy matcher 覆盖 `/ops` 和 `/ops/*`（包含 `/ops/` 与任意更深路径），重定向目标固定为 `/admin/ops`，且 Caddy 不再包含飞书 callback、事故确认 API、relay ops-view API 或 relay admin reverse proxy。
@@ -49,12 +83,16 @@ PASS: Sub2API update UI and routing contracts
 当前部署审计脚本 `tests/infra/audit-public-links.sh` 已逐一检查 `/ops`、`/ops/`、`/ops/incidents` 的 `302` 和 `Location: /admin/ops`，并以未认证请求检查以下三个端点为 `404`：
 
 ```text
-/relay-ops/api/feishu/events
-/relay-ops/api/incidents/ack
-/relay-ops/api/ops-view
+GET  /relay-ops/api/ops-view
+POST /relay-ops/api/incidents/ack
+POST /relay-ops/api/feishu/events
 ```
 
-本任务没有部署，因此没有对生产域名运行该部署后审计。relay HTTP server 的本地 Go 测试 `TestRetiredOpsAndAcknowledgementRoutesAreNotMounted` 已在全量测试中确认这些退役路由返回 `404`，包括原 callback 方法 `POST /relay-ops/api/feishu/events`。
+POST 请求只发送空 JSON 对象，不带凭据；退役端点辅助函数以 `curl --disable` 忽略用户级 curl 配置，使用 `--max-redirs 0` 且不使用 `--location`。静态契约固定检查精确方法/路径表、循环到辅助函数的方法/路径透传、动态 `curl --request` 和不跟随重定向的约束。
+
+本任务没有部署，因此没有对生产域名运行该部署后审计。relay HTTP server 的本地 Go 测试 `TestRetiredOpsAndAcknowledgementRoutesAreNotMounted` 已确认这些退役路由按各自原始方法返回 `404`。
+
+删除孤立的 `internal/http/templates/ops-bootstrap.html` 后，`internal/http` 的 embed 通配范围中只剩仍由 `/pricing` 使用的 `templates/pricing.html` 与 `static/app.css`；扫描没有发现 `ops-bootstrap` 引用。
 
 ### Compose 结构
 
@@ -133,7 +171,7 @@ rg -n -S 'URL: "/ops"|URL:"/ops"|其余对象请在 /ops 查看' \
 - 日报 one-shot 幂等：`TestServiceSendsIdempotentDailyDigestWithoutIncidentIdentity`。
 - 事故证据去重、失败重试和新 occurrence：`TestDeliverySenderDeduplicatesSuccessfulEvidenceAndRetriesFailure`。
 - 旧队列卡片在发送前归一化为 reminder-only：`TestDeliveryRetryServiceNormalizesLegacyAcknowledgementCardBeforeSending`。
-- 活动提醒不受历史 acknowledgement 列影响：`TestActiveReminderClaimIgnoresHistoricalAcknowledgement`。
+- 活动提醒不受历史 acknowledgement 列影响：`TestActiveReminderClaimIgnoresHistoricalAcknowledgement` 已在临时 PostgreSQL 18 上实际执行并通过。
 - 所有当前卡片只有 `/admin/ops` 导航动作且不含 acknowledgement 查询参数：`assertReminderOnlyCard` 被告警、提醒、恢复、日报和 retry 测试共用。
 
 ## 受保护文件与历史证据

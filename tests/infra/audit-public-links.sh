@@ -133,17 +133,37 @@ for legacy_ops_path in /ops /ops/ /ops/incidents; do
     fail "$legacy_ops_path must redirect to /admin/ops"
 done
 
-for retired_relay_path in \
-  /relay-ops/api/feishu/events \
-  /relay-ops/api/incidents/ack \
-  /relay-ops/api/ops-view
-do
-  retired_status=$(curl --silent --show-error --max-redirs 0 \
-    --output /dev/null \
-    --write-out '%{http_code}' \
-    "${BASE_ORIGIN}${retired_relay_path}")
+audit_retired_endpoint() {
+  local retired_method=$1
+  local retired_path=$2
+  local retired_status
+  local curl_args=(
+    --silent
+    --show-error
+    --max-redirs 0
+    --request "$retired_method"
+    --output /dev/null
+    --write-out '%{http_code}'
+  )
+
+  if [[ "$retired_method" == 'POST' ]]; then
+    curl_args+=(--header 'Content-Type: application/json' --data '{}')
+  fi
+
+  retired_status=$(curl --disable "${curl_args[@]}" "${BASE_ORIGIN}${retired_path}")
   [[ "$retired_status" == '404' ]] || \
-    fail "$retired_relay_path must return 404 without authentication, got $retired_status"
+    fail "$retired_method $retired_path must return 404 without authentication, got $retired_status"
+}
+
+retired_endpoints=(
+  'GET /relay-ops/api/ops-view'
+  'POST /relay-ops/api/incidents/ack'
+  'POST /relay-ops/api/feishu/events'
+)
+
+for retired_endpoint in "${retired_endpoints[@]}"; do
+  read -r retired_method retired_path <<< "$retired_endpoint"
+  audit_retired_endpoint "$retired_method" "$retired_path"
 done
 
 CURRENT_PATH=/api/v1/settings/public

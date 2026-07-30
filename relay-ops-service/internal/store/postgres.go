@@ -42,12 +42,16 @@ var notificationRetryMigration string
 //go:embed migrations/006_notification_consolidation.sql
 var notificationConsolidationMigration string
 
+//go:embed migrations/007_native_ops_alert_bridge.sql
+var nativeOpsAlertBridgeMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
 	initialMigration += "\n" + userImpactAlertingMigration
 	initialMigration += "\n" + notificationRetryMigration
 	initialMigration += "\n" + notificationConsolidationMigration
+	initialMigration += "\n" + nativeOpsAlertBridgeMigration
 }
 
 type Store struct {
@@ -82,6 +86,24 @@ type Incident struct {
 	CurrentValue  string
 	SampleCount   int64
 	EvidenceRefs  []string
+}
+
+type NativeOpsAlertCursor struct {
+	FiredAt time.Time
+	EventID int64
+}
+
+type NativeOpsAlertSource struct {
+	SourceEventID  int64
+	RuleID         int64
+	IncidentKey    string
+	Severity       string
+	SourceStatus   string
+	FiredAt        time.Time
+	ResolvedAt     *time.Time
+	Silenced       bool
+	DimensionsHash string
+	LastSeenAt     time.Time
 }
 
 func Open(ctx context.Context, databaseURLFile string) (*Store, error) {
@@ -124,6 +146,225 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("migrate relay ops schema: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) LoadNativeOpsAlertCursor(ctx context.Context) (NativeOpsAlertCursor, bool, error) {
+	var firedAt *time.Time
+	var eventID *int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT before_fired_at, before_id
+		FROM relay_ops.native_ops_alert_sync_state
+		WHERE singleton=TRUE`).Scan(&firedAt, &eventID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NativeOpsAlertCursor{}, false, nil
+	}
+	if err != nil {
+		return NativeOpsAlertCursor{}, false, fmt.Errorf("load native ops alert cursor: %w", err)
+	}
+	if firedAt == nil || eventID == nil {
+		return NativeOpsAlertCursor{}, false, fmt.Errorf("stored native ops alert cursor is incomplete")
+	}
+	return NativeOpsAlertCursor{FiredAt: firedAt.UTC(), EventID: *eventID}, true, nil
+}
+
+func (s *Store) InitializeNativeOpsAlertSync(ctx context.Context, cursor NativeOpsAlertCursor, sources []NativeOpsAlertSource) error {
+	if err := validateNativeOpsAlertPage(sources, cursor); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin native ops alert initialization: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	command, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.native_ops_alert_sync_state
+			(singleton, before_fired_at, before_id, initialized_at, updated_at)
+		VALUES (TRUE, $1, $2, NOW(), NOW())
+		ON CONFLICT (singleton) DO NOTHING`, cursor.FiredAt.UTC(), cursor.EventID)
+	if err != nil {
+		return fmt.Errorf("initialize native ops alert cursor: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return fmt.Errorf("native ops alert sync is already initialized")
+	}
+	for _, source := range sources {
+		if err := upsertNativeOpsAlertSource(ctx, tx, source); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit native ops alert initialization: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CommitNativeOpsAlertPage(ctx context.Context, sources []NativeOpsAlertSource, cursor NativeOpsAlertCursor) error {
+	if err := validateNativeOpsAlertPage(sources, cursor); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin native ops alert page: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	for _, source := range sources {
+		if err := upsertNativeOpsAlertSource(ctx, tx, source); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.native_ops_alert_sync_state
+			(singleton, before_fired_at, before_id, initialized_at, updated_at)
+		VALUES (TRUE, $1, $2, NOW(), NOW())
+		ON CONFLICT (singleton) DO UPDATE
+		SET before_fired_at=EXCLUDED.before_fired_at,
+			before_id=EXCLUDED.before_id,
+			updated_at=NOW()
+		WHERE (native_ops_alert_sync_state.before_fired_at, native_ops_alert_sync_state.before_id)
+			<= (EXCLUDED.before_fired_at, EXCLUDED.before_id)`, cursor.FiredAt.UTC(), cursor.EventID); err != nil {
+		return fmt.Errorf("commit native ops alert cursor: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit native ops alert page: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) UpsertNativeOpsAlertSource(ctx context.Context, source NativeOpsAlertSource) error {
+	if err := validateNativeOpsAlertSource(source); err != nil {
+		return err
+	}
+	return upsertNativeOpsAlertSource(ctx, s.pool, source)
+}
+
+func (s *Store) ListFiringNativeOpsAlertSources(ctx context.Context, limit int) ([]NativeOpsAlertSource, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT source_event_id, rule_id, incident_key, severity, source_status,
+			fired_at, resolved_at, silenced, dimensions_hash, last_seen_at
+		FROM relay_ops.native_ops_alert_events
+		WHERE source_status='firing'
+		ORDER BY last_seen_at, source_event_id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list firing native ops alert sources: %w", err)
+	}
+	defer rows.Close()
+	result := make([]NativeOpsAlertSource, 0)
+	for rows.Next() {
+		var source NativeOpsAlertSource
+		if err := rows.Scan(
+			&source.SourceEventID, &source.RuleID, &source.IncidentKey, &source.Severity,
+			&source.SourceStatus, &source.FiredAt, &source.ResolvedAt, &source.Silenced,
+			&source.DimensionsHash, &source.LastSeenAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan firing native ops alert source: %w", err)
+		}
+		source.FiredAt = source.FiredAt.UTC()
+		if source.ResolvedAt != nil {
+			resolvedAt := source.ResolvedAt.UTC()
+			source.ResolvedAt = &resolvedAt
+		}
+		source.LastSeenAt = source.LastSeenAt.UTC()
+		result = append(result, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate firing native ops alert sources: %w", err)
+	}
+	return result, nil
+}
+
+type nativeOpsAlertSourceExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func upsertNativeOpsAlertSource(ctx context.Context, executor nativeOpsAlertSourceExecer, source NativeOpsAlertSource) error {
+	var resolvedAt any
+	if source.ResolvedAt != nil {
+		resolvedAt = source.ResolvedAt.UTC()
+	}
+	_, err := executor.Exec(ctx, `
+		INSERT INTO relay_ops.native_ops_alert_events
+			(source_event_id, rule_id, incident_key, severity, source_status,
+			 fired_at, resolved_at, silenced, dimensions_hash, last_seen_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+		ON CONFLICT (source_event_id) DO UPDATE
+		SET rule_id=EXCLUDED.rule_id,
+			incident_key=EXCLUDED.incident_key,
+			severity=EXCLUDED.severity,
+			source_status=EXCLUDED.source_status,
+			fired_at=EXCLUDED.fired_at,
+			resolved_at=EXCLUDED.resolved_at,
+			silenced=EXCLUDED.silenced,
+			dimensions_hash=EXCLUDED.dimensions_hash,
+			last_seen_at=EXCLUDED.last_seen_at,
+			updated_at=NOW()`,
+		source.SourceEventID, source.RuleID, source.IncidentKey, source.Severity, source.SourceStatus,
+		source.FiredAt.UTC(), resolvedAt, source.Silenced, source.DimensionsHash, source.LastSeenAt.UTC())
+	if err != nil {
+		return fmt.Errorf("upsert native ops alert source: %w", err)
+	}
+	return nil
+}
+
+func validateNativeOpsAlertPage(sources []NativeOpsAlertSource, cursor NativeOpsAlertCursor) error {
+	if err := validateNativeOpsAlertCursor(cursor); err != nil {
+		return err
+	}
+	for _, source := range sources {
+		if err := validateNativeOpsAlertSource(source); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateNativeOpsAlertCursor(cursor NativeOpsAlertCursor) error {
+	if cursor.EventID <= 0 || cursor.FiredAt.IsZero() {
+		return fmt.Errorf("native ops alert cursor is invalid")
+	}
+	return nil
+}
+
+func validateNativeOpsAlertSource(source NativeOpsAlertSource) error {
+	if source.SourceEventID <= 0 || source.RuleID <= 0 || strings.TrimSpace(source.IncidentKey) == "" {
+		return fmt.Errorf("native ops alert source identity is invalid")
+	}
+	if source.Severity != "P0" && source.Severity != "P1" {
+		return fmt.Errorf("native ops alert source severity is invalid")
+	}
+	if source.SourceStatus != "firing" && source.SourceStatus != "resolved" && source.SourceStatus != "manual_resolved" {
+		return fmt.Errorf("native ops alert source status is invalid")
+	}
+	if !isLowerHexSHA256(source.DimensionsHash) {
+		return fmt.Errorf("native ops alert source dimensions hash is invalid")
+	}
+	if source.FiredAt.IsZero() || source.LastSeenAt.IsZero() || source.LastSeenAt.Before(source.FiredAt) {
+		return fmt.Errorf("native ops alert source timestamps are invalid")
+	}
+	if source.SourceStatus == "firing" && source.ResolvedAt != nil {
+		return fmt.Errorf("firing native ops alert source has a resolution timestamp")
+	}
+	if source.SourceStatus != "firing" {
+		if source.ResolvedAt == nil || source.ResolvedAt.IsZero() || source.ResolvedAt.Before(source.FiredAt) {
+			return fmt.Errorf("terminal native ops alert source resolution timestamp is invalid")
+		}
+	}
+	return nil
+}
+
+func isLowerHexSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) CreateUpstream(ctx context.Context, upstream Upstream) (domain.UpstreamID, error) {

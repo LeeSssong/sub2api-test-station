@@ -6,6 +6,7 @@ cd "$ROOT"
 
 fail(){ printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 require(){ rg -Fq -- "$1" "$2" || fail "missing $1 in $2"; }
+require_line(){ rg -Fxq -- "$1" "$2" || fail "missing exact line in $2: $1"; }
 forbid(){ ! rg -Fq -- "$1" "$2" || fail "forbidden $1 in $2"; }
 
 COMPOSE_FILE=${RELAY_OPS_COMPOSE_FILE:-infra/compose.yaml}
@@ -71,8 +72,10 @@ done
 
 require 'RELAY_OPS_NOTIFICATION_POLICY_FILE=' infra/.env.example
 require 'RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=' infra/.env.example
-require 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=/run/secrets/feishu-alert-recipients.json' infra/.env.example
-require 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=./secrets/feishu-alert-recipients.json' infra/.env.example
+require_line 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=' infra/.env.example
+require_line 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=' infra/.env.example
+require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=/run/secrets/feishu-alert-recipients.json' infra/.env.example
+require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=./secrets/feishu-alert-recipients.json' infra/.env.example
 policy_file=config/relay-ops/notification-policy.example.json
 [[ -f "$policy_file" ]] || fail "missing notification policy example $policy_file"
 require '"version": 1' "$policy_file"

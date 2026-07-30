@@ -9,7 +9,7 @@
 - relay-ops 不再挂载 `/ops`、`/relay-ops/api/ops-view`、`/relay-ops/api/incidents/ack` 或 `/relay-ops/api/feishu/events`；其 HTTP 服务只保留公开 `/pricing` 与样式资源。
 - 飞书只出站发送告警、持续提醒、恢复和日报。所有卡片动作都只导航到 `/admin/ops`，不能确认接手或修改状态。
 - App Bot 出站配置保留 App ID、App Secret、目标会话和通知策略；verification token、Encrypt Key、命令模式和命令路由文件不再属于 Compose 或环境示例契约。
-- `infra/.env.example` 为出站收件人提供容器内路径 `/run/secrets/feishu-alert-recipients.json` 和仓库一致的宿主机示例路径 `./secrets/feishu-alert-recipients.json`；这只是路径示例，不证明真实秘密文件存在。
+- `infra/.env.example` 默认将 App ID、App Secret、目标会话、收件人及对应宿主机文件变量全部留空，使 App Bot 保持一致的禁用态。相邻注释给出启用时使用的收件人容器路径 `/run/secrets/feishu-alert-recipients.json` 和宿主机示例路径 `./secrets/feishu-alert-recipients.json`，并要求完整配置 App ID/App Secret/chat/recipients 集合；注释不证明真实秘密文件存在。
 - 历史数据库迁移、历史 acknowledgement 字段和日期报告保持不变。
 
 ## 验证命令与结果

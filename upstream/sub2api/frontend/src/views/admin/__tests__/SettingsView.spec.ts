@@ -716,6 +716,29 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(showSuccess).toHaveBeenCalled();
   });
 
+  it("loads and saves the selected monitor page refresh interval", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      monitor_page_refresh_interval_seconds: 60,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-test="monitor-page-refresh-interval"]').element.value,
+    ).toBe("60");
+    await wrapper
+      .get('[data-test="monitor-page-refresh-interval"]')
+      .setValue("300");
+    await wrapper.get('[data-test="save-settings"]').trigger("click");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ monitor_page_refresh_interval_seconds: 300 }),
+    );
+  });
+
   it("does not render legacy visible payment method controls", async () => {
     const wrapper = mountView();
 

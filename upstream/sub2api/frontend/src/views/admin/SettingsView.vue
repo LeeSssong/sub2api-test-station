@@ -6436,6 +6436,27 @@
                 {{ t('admin.settings.features.channelMonitor.defaultIntervalHint') }}
               </p>
             </div>
+
+            <div>
+              <label for="monitor-page-refresh-interval" class="input-label">
+                {{ t('admin.settings.monitorPageRefresh.title') }}
+              </label>
+              <select
+                id="monitor-page-refresh-interval"
+                v-model.number="form.monitor_page_refresh_interval_seconds"
+                data-test="monitor-page-refresh-interval"
+                class="input"
+              >
+                <option :value="0">{{ t('admin.settings.monitorPageRefresh.off') }}</option>
+                <option :value="30">{{ t('admin.settings.monitorPageRefresh.seconds', { count: 30 }) }}</option>
+                <option :value="60">{{ t('admin.settings.monitorPageRefresh.minute') }}</option>
+                <option :value="300">{{ t('admin.settings.monitorPageRefresh.minutes', { count: 5 }) }}</option>
+                <option :value="600">{{ t('admin.settings.monitorPageRefresh.minutes', { count: 10 }) }}</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-400">
+                {{ t('admin.settings.monitorPageRefresh.description') }}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -7978,6 +7999,8 @@
           <button
             type="submit"
             :disabled="saving || loadFailed"
+            data-test="save-settings"
+            @click.prevent="saveSettings"
             class="btn btn-primary"
           >
             <svg
@@ -8755,6 +8778,15 @@ interface DefaultSubscriptionGroupOption {
   [key: string]: unknown;
 }
 
+const monitorPageRefreshIntervalValues = new Set([0, 30, 60, 300, 600]);
+
+function normalizeMonitorPageRefreshInterval(value: unknown): number {
+  return typeof value === "number" &&
+    monitorPageRefreshIntervalValues.has(value)
+    ? value
+    : 60;
+}
+
 type SettingsForm = Omit<
   SystemSettings,
   | "wechat_connect_open_enabled"
@@ -9038,6 +9070,7 @@ const form = reactive<SettingsForm>({
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
   channel_monitor_default_interval_seconds: 60,
+  monitor_page_refresh_interval_seconds: 60,
   // Available Channels feature switch
   available_channels_enabled: false,
   // Model Plaza feature switches + description
@@ -9953,6 +9986,10 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.monitor_page_refresh_interval_seconds =
+      normalizeMonitorPageRefreshInterval(
+        settings.monitor_page_refresh_interval_seconds,
+      );
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
         defaultClaudeOAuthSystemPromptBlocks;
@@ -10587,6 +10624,10 @@ async function saveSettings() {
       channel_monitor_enabled: form.channel_monitor_enabled,
       channel_monitor_default_interval_seconds:
         Number(form.channel_monitor_default_interval_seconds) || 60,
+      monitor_page_refresh_interval_seconds:
+        normalizeMonitorPageRefreshInterval(
+          form.monitor_page_refresh_interval_seconds,
+        ),
       // Available Channels feature switch
       available_channels_enabled: form.available_channels_enabled,
       // Model Plaza feature switches + description
@@ -10642,6 +10683,10 @@ async function saveSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.monitor_page_refresh_interval_seconds =
+      normalizeMonitorPageRefreshInterval(
+        updated.monitor_page_refresh_interval_seconds,
+      );
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     registrationEmailSuffixWhitelistTags.value =

@@ -165,7 +165,7 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 		accountingMux.HandleFunc("GET /relay-ops/accounting", s.accountingPage)
 		accountingMux.HandleFunc("GET /relay-ops/api/accounting/daily", s.accountingDaily)
 		accountingMux.HandleFunc("POST /relay-ops/api/accounting/cash-events", s.createAccountingCashEvent)
-		accountingMux.HandleFunc("GET /relay-ops/static/accounting.js", s.accountingScript)
+		mux.HandleFunc("GET /relay-ops/static/accounting.js", s.accountingScript)
 		mux.Handle("/relay-ops/", adminauth.RequireAdmin(dependencies.Auth, accountingMux))
 	}
 	return mux, nil

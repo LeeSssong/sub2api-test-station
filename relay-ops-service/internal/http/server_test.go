@@ -117,6 +117,7 @@ func TestAccountingRoutesAreNotMountedWhenDisabled(t *testing.T) {
 		{method: http.MethodGet, path: "/relay-ops/accounting"},
 		{method: http.MethodGet, path: "/relay-ops/api/accounting/daily?date=2026-08-02"},
 		{method: http.MethodPost, path: "/relay-ops/api/accounting/cash-events"},
+		{method: http.MethodGet, path: "/relay-ops/static/accounting.js"},
 	} {
 		request := authenticatedRequest(target.method, target.path, "")
 		recorder := httptest.NewRecorder()
@@ -124,6 +125,23 @@ func TestAccountingRoutesAreNotMountedWhenDisabled(t *testing.T) {
 		if recorder.Code != http.StatusNotFound {
 			t.Fatalf("%s %s status=%d want=404", target.method, target.path, recorder.Code)
 		}
+	}
+}
+
+func TestAccountingBrowserScriptIsReachableWithoutBearerHeader(t *testing.T) {
+	t.Parallel()
+
+	server := newAccountingTestServer(t, &fakeAccounting{}, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/relay-ops/static/accounting.js", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d want=200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Header().Get("Content-Type"), "text/javascript") {
+		t.Fatalf("content type=%q", recorder.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(recorder.Body.String(), "cash-event-form") {
+		t.Fatalf("script body missing form behavior")
 	}
 }
 

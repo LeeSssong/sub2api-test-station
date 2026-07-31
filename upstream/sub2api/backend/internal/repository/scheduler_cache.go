@@ -20,6 +20,7 @@ const (
 	schedulerAccountPrefix         = "sched:acc:"
 	schedulerAccountMetaPrefix     = "sched:meta:"
 	schedulerAccountLastUsedPrefix = "sched:acc:last_used:"
+	schedulerAccountVersionPrefix  = "sched:acc:version:"
 	schedulerActivePrefix          = "sched:active:"
 	schedulerReadyPrefix           = "sched:ready:"
 	schedulerVersionPrefix         = "sched:ver:"
@@ -35,6 +36,8 @@ const (
 	// snapshotGraceTTLSeconds 旧快照过期的宽限期（秒）。
 	// 替代立即 DEL，让正在读取旧版本的 reader 有足够时间完成 ZRANGE。
 	snapshotGraceTTLSeconds = 60
+
+	schedulerAccountVersionLayout = "2006-01-02T15:04:05.000000000Z"
 )
 
 const (
@@ -59,6 +62,61 @@ for index = 1, #ARGV do
     end
 end
 return updated
+`)
+
+// writeSchedulerAccountScript atomically keeps the full and metadata payloads
+// at the newest accounts.updated_at version. A deletion tombstone at the same
+// version wins over a delayed writer, while equal live versions remain
+// rewritable for callers that build equivalent snapshots independently.
+var writeSchedulerAccountScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[3])
+if current ~= false then
+    local current_version = string.sub(current, 1, 30)
+    local current_state = string.sub(current, 32, 32)
+    if ARGV[3] < current_version or (ARGV[3] == current_version and current_state == 'D') then
+        return 0
+    end
+end
+
+redis.call('MSET', KEYS[1], ARGV[1], KEYS[2], ARGV[2], KEYS[3], ARGV[3] .. '|L')
+return 1
+`)
+
+// deleteSchedulerAccountScript deletes all readable account state and leaves
+// a monotonic tombstone so delayed SetAccount or snapshot writes cannot
+// resurrect an account that has already been removed.
+var deleteSchedulerAccountScript = redis.NewScript(`
+local tombstone_version = ARGV[1]
+local current = redis.call('GET', KEYS[4])
+if current ~= false then
+    local current_version = string.sub(current, 1, 30)
+    if current_version > tombstone_version then
+        tombstone_version = current_version
+    end
+end
+
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+redis.call('SET', KEYS[4], tombstone_version .. '|D')
+return 1
+`)
+
+// clearSchedulerAccountPayloadScript removes an unencodable live payload only
+// when it is not older than the currently cached version. It deliberately
+// leaves a live (not deleted) version marker so a corrected payload from the
+// same database row version can restore the cache.
+var clearSchedulerAccountPayloadScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[4])
+if current ~= false then
+    local current_version = string.sub(current, 1, 30)
+    local current_state = string.sub(current, 32, 32)
+    if ARGV[1] < current_version or (ARGV[1] == current_version and current_state == 'D') then
+        return 0
+    end
+end
+
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+redis.call('SET', KEYS[4], ARGV[1] .. '|L')
+return 1
 `)
 
 var (
@@ -589,14 +647,26 @@ func (c *schedulerCache) SetAccount(ctx context.Context, account *service.Accoun
 	if account == nil || account.ID <= 0 {
 		return nil
 	}
-	accountIDs, err := c.writeAccountIDs(ctx, []service.Account{*account})
+	fullPayload, metaPayload, err := marshalSchedulerCacheAccount(*account)
 	if err != nil {
-		return err
+		slog.Warn("scheduler cache clears account with unencodable payload",
+			"account_id", account.ID,
+			"error", err,
+		)
+		id := strconv.FormatInt(account.ID, 10)
+		return clearSchedulerAccountPayloadScript.Run(ctx, c.rdb, []string{
+			schedulerAccountKey(id),
+			schedulerAccountMetaKey(id),
+			schedulerLastUsedKey(id),
+			schedulerAccountVersionKey(id),
+		}, schedulerAccountVersion(account.UpdatedAt)).Err()
 	}
-	if len(accountIDs) == 0 {
-		return c.DeleteAccount(ctx, account.ID)
-	}
-	return nil
+	id := strconv.FormatInt(account.ID, 10)
+	return writeSchedulerAccountScript.Run(ctx, c.rdb, []string{
+		schedulerAccountKey(id),
+		schedulerAccountMetaKey(id),
+		schedulerAccountVersionKey(id),
+	}, fullPayload, metaPayload, schedulerAccountVersion(account.UpdatedAt)).Err()
 }
 
 func (c *schedulerCache) DeleteAccount(ctx context.Context, accountID int64) error {
@@ -604,7 +674,12 @@ func (c *schedulerCache) DeleteAccount(ctx context.Context, accountID int64) err
 		return nil
 	}
 	id := strconv.FormatInt(accountID, 10)
-	return c.rdb.Del(ctx, schedulerAccountKey(id), schedulerAccountMetaKey(id), schedulerLastUsedKey(id)).Err()
+	return deleteSchedulerAccountScript.Run(ctx, c.rdb, []string{
+		schedulerAccountKey(id),
+		schedulerAccountMetaKey(id),
+		schedulerLastUsedKey(id),
+		schedulerAccountVersionKey(id),
+	}, schedulerAccountVersion(time.Now())).Err()
 }
 
 func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
@@ -724,6 +799,14 @@ func schedulerLastUsedKey(id string) string {
 	return schedulerAccountLastUsedPrefix + id
 }
 
+func schedulerAccountVersionKey(id string) string {
+	return schedulerAccountVersionPrefix + id
+}
+
+func schedulerAccountVersion(updatedAt time.Time) string {
+	return updatedAt.UTC().Format(schedulerAccountVersionLayout)
+}
+
 func ptrTime(t time.Time) *time.Time {
 	return &t
 }
@@ -807,8 +890,11 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 		}
 
 		id := strconv.FormatInt(account.ID, 10)
-		pipe.Set(ctx, schedulerAccountKey(id), fullPayload, 0)
-		pipe.Set(ctx, schedulerAccountMetaKey(id), metaPayload, 0)
+		writeSchedulerAccountScript.Eval(ctx, pipe, []string{
+			schedulerAccountKey(id),
+			schedulerAccountMetaKey(id),
+			schedulerAccountVersionKey(id),
+		}, fullPayload, metaPayload, schedulerAccountVersion(account.UpdatedAt))
 		// Keep the hot LastUsedAt side key untouched: a lagging snapshot rebuild
 		// must not overwrite a newer scheduler update.
 		accountIDs = append(accountIDs, account.ID)

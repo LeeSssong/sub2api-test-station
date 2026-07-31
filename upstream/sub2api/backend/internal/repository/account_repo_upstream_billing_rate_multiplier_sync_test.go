@@ -46,12 +46,13 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 
 	observedAt := time.Date(2026, time.July, 31, 9, 30, 0, 0, time.UTC)
 	oldMultiplier := 1.0
-	newMultiplier := 0.07
+	probeMultiplier := 0.249975
+	newMultiplier := 0.25
 	mock.ExpectBegin()
 	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts")+`.*`+regexp.QuoteMeta("SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb")+`.*`+regexp.QuoteMeta("COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb")).
 		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "null").
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")+`.*`+regexp.QuoteMeta("COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'")).
+	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")+`.*`+regexp.QuoteMeta("COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'manual_override') = 'upstream_managed'")).
 		WithArgs(newMultiplier, int64(17), oldMultiplier).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).
@@ -77,12 +78,15 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 		Type:           service.AccountTypeAPIKey,
 		Credentials:    map[string]any{"api_key": "sk-test"},
 		RateMultiplier: &oldMultiplier,
+		Extra: map[string]any{
+			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+		},
 	}
 
 	err = repo.UpdateUpstreamBillingProbeSnapshot(context.Background(), account, &service.UpstreamBillingProbeSnapshot{
 		Status:     service.UpstreamBillingProbeStatusOK,
 		ReceivedAt: &observedAt,
-		Data:       map[string]any{"effective_rate_multiplier": newMultiplier},
+		Data:       map[string]any{"effective_rate_multiplier": probeMultiplier},
 	})
 
 	require.NoError(t, err)
@@ -138,6 +142,9 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitFailureDoesNotRefreshSchedulerO
 		Type:           service.AccountTypeAPIKey,
 		Credentials:    map[string]any{"api_key": "sk-test"},
 		RateMultiplier: &oldMultiplier,
+		Extra: map[string]any{
+			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+		},
 	}, &service.UpstreamBillingProbeSnapshot{
 		Status: service.UpstreamBillingProbeStatusOK,
 		Data:   map[string]any{"effective_rate_multiplier": newMultiplier},
@@ -172,6 +179,14 @@ func TestUpdateUpstreamBillingProbeSnapshotPreservesSnapshotWithoutMultiplierCha
 			snapshot: &service.UpstreamBillingProbeSnapshot{
 				Status: service.UpstreamBillingProbeStatusOK,
 				Data:   map[string]any{"effective_rate_multiplier": 0.07},
+			},
+		},
+		{
+			name:       "high precision probe matching persisted four decimal value",
+			multiplier: 0.25,
+			snapshot: &service.UpstreamBillingProbeSnapshot{
+				Status: service.UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 0.249975},
 			},
 		},
 		{

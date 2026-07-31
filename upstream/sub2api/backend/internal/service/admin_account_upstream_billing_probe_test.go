@@ -64,6 +64,92 @@ func TestCreateAccountAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) 
 	require.ErrorIs(t, err, ErrUpstreamBillingProbeAccountInvalid)
 }
 
+func TestCreateAccountWritesExplicitRateMultiplierPolicy(t *testing.T) {
+	manualRate := 0.8
+	tests := []struct {
+		name       string
+		rate       *float64
+		wantPolicy string
+	}{
+		{name: "default rate remains upstream managed", wantPolicy: UpstreamBillingRateMultiplierPolicyManaged},
+		{name: "explicit rate is a manual override", rate: &manualRate, wantPolicy: UpstreamBillingRateMultiplierPolicyManualOverride},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			created, err := (&adminServiceImpl{accountRepo: &upstreamBillingProbeAccountRepo{}}).CreateAccount(context.Background(), &CreateAccountInput{
+				Name:                 "upstream",
+				Platform:             PlatformOpenAI,
+				Type:                 AccountTypeAPIKey,
+				Credentials:          map[string]any{"api_key": "sk-test"},
+				RateMultiplier:       tt.rate,
+				SkipDefaultGroupBind: true,
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPolicy, created.Extra[UpstreamBillingRateMultiplierPolicyExtraKey])
+		})
+	}
+}
+
+func TestUpdateAccountRateMultiplierMarksManualOverride(t *testing.T) {
+	accountID := int64(901)
+	oldRate := 0.07
+	manualRate := 0.8
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {
+			ID:             accountID,
+			Platform:       PlatformOpenAI,
+			Type:           AccountTypeAPIKey,
+			Status:         StatusActive,
+			RateMultiplier: &oldRate,
+			Extra: map[string]any{
+				UpstreamBillingRateMultiplierPolicyExtraKey: UpstreamBillingRateMultiplierPolicyManaged,
+			},
+		},
+	}}
+
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		RateMultiplier: &manualRate,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, manualRate, updated.BillingRateMultiplier())
+	require.Equal(t, UpstreamBillingRateMultiplierPolicyManualOverride, updated.Extra[UpstreamBillingRateMultiplierPolicyExtraKey])
+}
+
+func TestUpdateAccountExtraExplicitlyOptsExistingAccountIntoUpstreamManagement(t *testing.T) {
+	accountID := int64(902)
+	manualRate := 0.8
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {
+			ID:             accountID,
+			Platform:       PlatformOpenAI,
+			Type:           AccountTypeAPIKey,
+			Status:         StatusActive,
+			RateMultiplier: &manualRate,
+			Extra:          map[string]any{},
+		},
+	}}
+
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Extra: map[string]any{
+			UpstreamBillingRateMultiplierPolicyExtraKey: UpstreamBillingRateMultiplierPolicyManaged,
+		},
+	})
+
+	require.NoError(t, err)
+	policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(updated.Extra)
+	require.True(t, valid)
+	require.Equal(t, UpstreamBillingRateMultiplierPolicyManaged, policy)
+	decision := DecideUpstreamBillingRateMultiplierSync(&UpstreamBillingProbeSnapshot{
+		Status: UpstreamBillingProbeStatusOK,
+		Data:   map[string]any{"effective_rate_multiplier": 0.07},
+	}, updated, policy)
+	require.Equal(t, UpstreamBillingRateMultiplierDecisionReasonUpdated, decision.Reason)
+	require.Equal(t, 0.07, *decision.RateMultiplier)
+}
+
 func TestUpdateAccountPreservesManagedUpstreamBillingProbeStateForUnrelatedEdit(t *testing.T) {
 	accountID := int64(110)
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
@@ -384,6 +470,21 @@ func TestBulkUpdateAccountsDropsManagedUpstreamBillingProbeState(t *testing.T) {
 	require.Equal(t, "value", repo.bulkUpdates[0].Extra["custom"])
 	require.NotContains(t, repo.bulkUpdates[0].Extra, UpstreamBillingProbeEnabledExtraKey)
 	require.NotContains(t, repo.bulkUpdates[0].Extra, UpstreamBillingProbeExtraKey)
+}
+
+func TestBulkUpdateAccountsRateMultiplierMarksManualOverride(t *testing.T) {
+	manualRate := 0.8
+	repo := &upstreamBillingProbeAccountRepo{}
+	result, err := (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:     []int64{1, 2},
+		RateMultiplier: &manualRate,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Success)
+	require.Len(t, repo.bulkUpdates, 1)
+	require.Same(t, &manualRate, repo.bulkUpdates[0].RateMultiplier)
+	require.Equal(t, UpstreamBillingRateMultiplierPolicyManualOverride, repo.bulkUpdates[0].Extra[UpstreamBillingRateMultiplierPolicyExtraKey])
 }
 
 func TestBulkUpdateAccountsAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {

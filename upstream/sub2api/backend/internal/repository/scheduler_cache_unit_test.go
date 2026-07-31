@@ -68,6 +68,151 @@ func TestSchedulerCacheSetAccountClearsUnencodablePayload(t *testing.T) {
 	cached, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.Nil(t, cached)
+
+	account.ExpiresAt = nil
+	require.NoError(t, cache.SetAccount(ctx, &account))
+	cached, err = cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cached, "a corrected payload at the same database version must restore the cache")
+}
+
+func TestSchedulerCacheSetAccountUnencodableStalePayloadDoesNotDeleteNewerState(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	base := time.Date(2026, time.July, 31, 10, 0, 0, 0, time.UTC)
+	newer := service.Account{
+		ID:        118,
+		Name:      "newer-valid",
+		Platform:  service.PlatformOpenAI,
+		Type:      service.AccountTypeAPIKey,
+		UpdatedAt: base.Add(time.Minute),
+	}
+	require.NoError(t, cache.SetAccount(ctx, &newer))
+
+	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	staleInvalid := newer
+	staleInvalid.Name = "stale-invalid"
+	staleInvalid.UpdatedAt = base
+	staleInvalid.ExpiresAt = &invalidTime
+	require.NoError(t, cache.SetAccount(ctx, &staleInvalid))
+
+	cached, err := cache.GetAccount(ctx, newer.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	require.Equal(t, newer.Name, cached.Name)
+}
+
+func TestSchedulerCacheSetAccountRejectsStaleUpdatedAtAndKeepsPayloadsConsistent(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	base := time.Date(2026, time.July, 31, 10, 0, 0, 0, time.UTC)
+	oldRate := 0.25
+	newRate := 0.75
+	stale := service.Account{
+		ID:             115,
+		Name:           "stale",
+		Platform:       service.PlatformOpenAI,
+		Type:           service.AccountTypeAPIKey,
+		RateMultiplier: &oldRate,
+		UpdatedAt:      base,
+	}
+	newer := stale
+	newer.Name = "newer-manual-state"
+	newer.RateMultiplier = &newRate
+	newer.UpdatedAt = base.Add(time.Minute)
+
+	require.NoError(t, cache.SetAccount(ctx, &newer))
+	require.NoError(t, cache.SetAccount(ctx, &stale))
+
+	cached, err := cache.GetAccount(ctx, stale.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	require.Equal(t, newer.Name, cached.Name)
+	require.Equal(t, newRate, cached.BillingRateMultiplier())
+
+	id := strconv.FormatInt(stale.ID, 10)
+	full, err := cache.rdb.Get(ctx, schedulerAccountKey(id)).Result()
+	require.NoError(t, err)
+	meta, err := cache.rdb.Get(ctx, schedulerAccountMetaKey(id)).Result()
+	require.NoError(t, err)
+	fullAccount, err := decodeCachedAccount(full)
+	require.NoError(t, err)
+	metaAccount, err := decodeCachedAccount(meta)
+	require.NoError(t, err)
+	require.Equal(t, newer.Name, fullAccount.Name)
+	require.Equal(t, newRate, fullAccount.BillingRateMultiplier())
+	require.Equal(t, newer.Name, metaAccount.Name)
+	require.Equal(t, newRate, metaAccount.BillingRateMultiplier())
+}
+
+func TestSchedulerCacheSnapshotWritePreservesNewerAccountPayload(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	base := time.Date(2026, time.July, 31, 10, 0, 0, 0, time.UTC)
+	oldRate := 0.25
+	newRate := 0.75
+	stale := service.Account{
+		ID:             116,
+		Name:           "stale-rebuild",
+		Platform:       service.PlatformOpenAI,
+		Type:           service.AccountTypeAPIKey,
+		RateMultiplier: &oldRate,
+		Schedulable:    true,
+		UpdatedAt:      base,
+	}
+	newer := stale
+	newer.Name = "newer-manual-state"
+	newer.RateMultiplier = &newRate
+	newer.UpdatedAt = base.Add(time.Minute)
+	require.NoError(t, cache.SetAccount(ctx, &newer))
+
+	bucket := service.SchedulerBucket{GroupID: 23, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+	require.NoError(t, err)
+	accountIDs, err := cache.SetSnapshotAndReturnAccountIDs(ctx, bucket, token, []service.Account{stale})
+	require.NoError(t, err)
+	require.Equal(t, []int64{stale.ID}, accountIDs, "stale payload rejection must not remove snapshot membership")
+
+	cached, err := cache.GetAccount(ctx, stale.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+	require.Equal(t, newer.Name, cached.Name)
+	require.Equal(t, newRate, cached.BillingRateMultiplier())
+	snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, snapshot, 1)
+	require.Equal(t, newer.Name, snapshot[0].Name)
+	require.Equal(t, newRate, snapshot[0].BillingRateMultiplier())
+}
+
+func TestSchedulerCacheDeleteFencesStaleAccountAndSnapshotWrites(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	account := service.Account{
+		ID:          117,
+		Name:        "deleted",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Schedulable: true,
+		UpdatedAt:   time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+	require.NoError(t, cache.SetAccount(ctx, &account))
+	require.NoError(t, cache.DeleteAccount(ctx, account.ID))
+	require.NoError(t, cache.SetAccount(ctx, &account))
+
+	bucket := service.SchedulerBucket{GroupID: 24, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+	require.NoError(t, err)
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, token, []service.Account{account}))
+
+	cached, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.Nil(t, cached)
+	snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Nil(t, snapshot)
 }
 
 func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {

@@ -21,7 +21,8 @@ const (
 	UpstreamBillingRateMultiplierDecisionReasonMissingAccount       = "missing_account"
 
 	// Account.rate_multiplier is currently persisted as decimal(10,4).
-	upstreamBillingRateMultiplierMax = 999999.9999
+	upstreamBillingRateMultiplierMax   = 999999.9999
+	upstreamBillingRateMultiplierScale = 10000.0
 )
 
 // UpstreamBillingRateMultiplierDecision describes whether a validated probe
@@ -33,16 +34,19 @@ type UpstreamBillingRateMultiplierDecision struct {
 }
 
 // UpstreamBillingRateMultiplierPolicyFromExtra reads the explicit policy from
-// accounts.extra. An absent or nil policy is the managed default. Invalid
-// values are rejected instead of silently falling back to managed mode, so a
-// malformed setting cannot overwrite a manually configured multiplier.
+// accounts.extra. An absent or nil policy is a legacy manual override: older
+// accounts may already carry an operator-configured multiplier, so a probe
+// must never overwrite it until an administrator explicitly opts the account
+// into upstream-managed pricing. Invalid values are rejected instead of
+// silently falling back to managed mode, so a malformed setting cannot
+// overwrite a manually configured multiplier.
 func UpstreamBillingRateMultiplierPolicyFromExtra(extra map[string]any) (string, bool) {
 	if len(extra) == 0 {
-		return UpstreamBillingRateMultiplierPolicyManaged, true
+		return UpstreamBillingRateMultiplierPolicyManualOverride, true
 	}
 	value, ok := extra[UpstreamBillingRateMultiplierPolicyExtraKey]
 	if !ok || value == nil {
-		return UpstreamBillingRateMultiplierPolicyManaged, true
+		return UpstreamBillingRateMultiplierPolicyManualOverride, true
 	}
 	policy, ok := value.(string)
 	if !ok {
@@ -91,7 +95,14 @@ func DecideUpstreamBillingRateMultiplierSync(
 	if !ok {
 		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate}
 	}
-	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 || rate > upstreamBillingRateMultiplierMax {
+	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 {
+		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate}
+	}
+	// Match PostgreSQL decimal(10,4) persistence before deciding whether a
+	// write is necessary. Probe values are positive, so math.Round's half-away
+	// behavior is the same as decimal half-up rounding at the storage boundary.
+	rate = math.Round(rate*upstreamBillingRateMultiplierScale) / upstreamBillingRateMultiplierScale
+	if rate <= 0 || rate > upstreamBillingRateMultiplierMax {
 		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate}
 	}
 	if equalBillingMultiplier(account.BillingRateMultiplier(), rate) {

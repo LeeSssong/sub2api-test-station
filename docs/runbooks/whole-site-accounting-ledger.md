@@ -1,9 +1,8 @@
 # Whole-site accounting ledger activation runbook
 
 This runbook activates the CNY whole-site accounting ledger after a controlled
-baseline reset. It is an operator procedure, not a production deployment
-authorization. Never run the apply path against production or against a
-database that has not been explicitly identified as the non-production target.
+baseline reset. Run the apply path only after the formal activation
+authorization identifies the intended database target.
 
 ## What the report means
 
@@ -41,9 +40,9 @@ the original cash event.
 
 ## Customer and internal traffic
 
-Set `RELAY_OPS_ACCOUNTING_ENABLED=true` only for the explicitly selected
-non-production activation, and set `RELAY_OPS_ACCOUNTING_LEDGER_START_DATE` to
-the confirmed first ledger date. Configure administrator/internal traffic with
+Set `RELAY_OPS_ACCOUNTING_ENABLED=true` after activation authorization, and set
+`RELAY_OPS_ACCOUNTING_LEDGER_START_DATE` to the confirmed first ledger date.
+Configure administrator/internal traffic with
 the comma-separated positive IDs in:
 
 - `RELAY_OPS_ACCOUNTING_INTERNAL_USER_IDS`
@@ -60,10 +59,9 @@ is reported as shared/unlinked cash outflow.
 
 ## First activation
 
-1. Identify a non-production PostgreSQL database and ensure the operator's
-   `infra/.env` contains the connection values. The reset script requires this
-   file and never prints its password. Do not copy a production `.env` into the
-   worktree.
+1. Obtain formal activation authorization for the database target and ensure the
+   operator's `infra/.env` contains its connection values. The reset script
+   requires this file and never prints its password.
 2. Choose the first ledger date, for example `2026-08-02`, and run the dry run:
 
    ```bash
@@ -74,8 +72,12 @@ is reported as shared/unlinked cash outflow.
    backup. It prints the exact `RELAY_OPS_ACCOUNTING_LEDGER_START_DATE` value to
    set.
 
-3. If the counts and target are correct, run the explicit apply command with
-   the exact matching confirmation date:
+3. If the counts and target are correct, stop or quiesce every database writer,
+   including Sub2API, Relay Ops, scheduled jobs, imports, and any direct SQL
+   maintenance process. Keep every writer stopped through post-commit
+   verification and relay-ops reconfiguration.
+
+4. Run the explicit apply command with the exact matching confirmation date:
 
    ```bash
    bash ops/reset-accounting-baseline.sh \
@@ -91,12 +93,12 @@ is reported as shared/unlinked cash outflow.
    preserves accounts, groups, API keys, users, channels, settings,
    credentials, routes, and model pricing.
 
-4. Set the four accounting environment variables, including the exact start
+5. Set the four accounting environment variables, including the exact start
    date printed by the script, then restart/recreate only the relay-ops service
    using the normal deployment procedure. Never put credentials or purchase
    costs in `infra/.env.example` or Compose configuration.
 
-5. For the first three Shanghai calendar days, verify after the scheduled
+6. For the first three Shanghai calendar days, verify after the scheduled
    00:10 run that each daily snapshot is present, customer revenue excludes
    configured internal IDs, resource cost includes all traffic, and cash
    events reconcile to the operator's evidence. Late usage and late event entry

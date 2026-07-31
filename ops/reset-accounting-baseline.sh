@@ -14,6 +14,26 @@ die() {
   exit 1
 }
 
+is_valid_gregorian_date() {
+  local value=$1 year month day days_in_month
+  [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
+  year=$((10#${value:0:4}))
+  month=$((10#${value:5:2}))
+  day=$((10#${value:8:2}))
+  ((year >= 1 && month >= 1 && month <= 12 && day >= 1)) || return 1
+  case "$month" in
+    1|3|5|7|8|10|12) days_in_month=31 ;;
+    4|6|9|11) days_in_month=30 ;;
+    2)
+      days_in_month=28
+      if ((year % 400 == 0 || (year % 4 == 0 && year % 100 != 0))); then
+        days_in_month=29
+      fi
+      ;;
+  esac
+  ((day <= days_in_month))
+}
+
 mode=''
 start_date=''
 confirm_start_date=''
@@ -52,6 +72,7 @@ done
 [[ -n "$mode" ]] || { usage; exit 1; }
 [[ -n "$start_date" ]] || die '--start-date is required'
 [[ "$start_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die '--start-date must be YYYY-MM-DD'
+is_valid_gregorian_date "$start_date" || die '--start-date must be a real Gregorian calendar date'
 if [[ "$mode" == 'apply' ]]; then
   [[ "$confirm_start_date" == "$start_date" ]] || die '--confirm-ledger-start-date must exactly match --start-date'
 else
@@ -68,14 +89,6 @@ set -a
 # shellcheck disable=SC1090
 source "$env_file"
 set +a
-
-for deployment_env in "${RELAY_OPS_DEPLOYMENT_ENV:-}" "${RELAY_OPS_ENVIRONMENT:-}" "${APP_ENV:-}" "${ENVIRONMENT:-}" "${NODE_ENV:-}"; do
-  case "$(printf '%s' "$deployment_env" | tr '[:upper:]' '[:lower:]')" in
-    production|prod)
-      die 'refusing to run against an environment marked production'
-      ;;
-  esac
-done
 
 command -v psql >/dev/null 2>&1 || die 'psql is required'
 if [[ "$mode" == 'apply' ]]; then
@@ -142,6 +155,18 @@ fi
 
 if ! psql "${psql_args[@]}" <<'SQL'
 BEGIN;
+LOCK TABLE public.billing_usage_entries IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_billing_dedup IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_billing_dedup_archive IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_dashboard_hourly_users IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_dashboard_daily_users IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_dashboard_hourly IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_dashboard_daily IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.usage_logs IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.user_affiliate_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.payment_orders IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE relay_ops.accounting_cash_events IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE relay_ops.accounting_daily_snapshots IN ACCESS EXCLUSIVE MODE;
 DELETE FROM public.billing_usage_entries;
 DELETE FROM public.usage_billing_dedup;
 DELETE FROM public.usage_billing_dedup_archive;
@@ -154,6 +179,36 @@ DELETE FROM public.user_affiliate_ledger;
 DELETE FROM public.payment_orders;
 DELETE FROM relay_ops.accounting_cash_events;
 DELETE FROM relay_ops.accounting_daily_snapshots;
+DO $$
+DECLARE
+  remaining_rows BIGINT;
+BEGIN
+  SELECT count(*) INTO remaining_rows FROM public.billing_usage_entries;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.billing_usage_entries'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_billing_dedup;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_billing_dedup'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_billing_dedup_archive;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_billing_dedup_archive'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_dashboard_hourly_users;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_dashboard_hourly_users'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_dashboard_daily_users;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_dashboard_daily_users'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_dashboard_hourly;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_dashboard_hourly'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_dashboard_daily;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_dashboard_daily'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.usage_logs;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.usage_logs'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.user_affiliate_ledger;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.user_affiliate_ledger'; END IF;
+  SELECT count(*) INTO remaining_rows FROM public.payment_orders;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for public.payment_orders'; END IF;
+  SELECT count(*) INTO remaining_rows FROM relay_ops.accounting_cash_events;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for relay_ops.accounting_cash_events'; END IF;
+  SELECT count(*) INTO remaining_rows FROM relay_ops.accounting_daily_snapshots;
+  IF remaining_rows <> 0 THEN RAISE EXCEPTION 'reset verification failed for relay_ops.accounting_daily_snapshots'; END IF;
+END
+$$;
 COMMIT;
 SQL
 then

@@ -34,19 +34,18 @@ type UpstreamBillingRateMultiplierDecision struct {
 }
 
 // UpstreamBillingRateMultiplierPolicyFromExtra reads the explicit policy from
-// accounts.extra. An absent or nil policy is a legacy manual override: older
-// accounts may already carry an operator-configured multiplier, so a probe
-// must never overwrite it until an administrator explicitly opts the account
-// into upstream-managed pricing. Invalid values are rejected instead of
+// accounts.extra. An absent or nil policy is the managed default for accounts
+// created before this policy existed. Explicit manual overrides are persisted
+// by the account admin write paths. Invalid values are rejected instead of
 // silently falling back to managed mode, so a malformed setting cannot
 // overwrite a manually configured multiplier.
 func UpstreamBillingRateMultiplierPolicyFromExtra(extra map[string]any) (string, bool) {
 	if len(extra) == 0 {
-		return UpstreamBillingRateMultiplierPolicyManualOverride, true
+		return UpstreamBillingRateMultiplierPolicyManaged, true
 	}
 	value, ok := extra[UpstreamBillingRateMultiplierPolicyExtraKey]
 	if !ok || value == nil {
-		return UpstreamBillingRateMultiplierPolicyManualOverride, true
+		return UpstreamBillingRateMultiplierPolicyManaged, true
 	}
 	policy, ok := value.(string)
 	if !ok {

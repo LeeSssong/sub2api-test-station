@@ -106,3 +106,48 @@ ok github.com/Wei-Shaw/sub2api/cmd/server 1.984s [no tests to run]
   post-commit hook.
 - Task 3 must mark lifecycle probes with the new context helper and must not
   add billing probes to ordinary request forwarding.
+
+## Fix round 1/5
+
+Independent review findings were reproduced and fixed:
+
+- Probe multipliers are quantized with positive half-up semantics to
+  PostgreSQL `decimal(10,4)` before validation, comparison, CAS, persistence,
+  and audit construction. `0.249975` therefore becomes `0.2500`, repeated
+  probes are no-ops, and values that round to zero or overflow the decimal
+  maximum are rejected.
+- Scheduler full and metadata account payloads now use one Redis Lua write with
+  a fixed-width UTC `UpdatedAt` fence. Stale post-commit `SetAccount` and bulk
+  snapshot rebuild writes are skipped while snapshot membership remains intact;
+  `last_used` stays a separate monotonic side key. Delete and unencodable
+  payload paths use tombstone/live version markers to prevent resurrection.
+- Added real PostgreSQL/Redis integration coverage through
+  `integration_harness_test.go` for decimal idempotency, newer-manual cache
+  wins, and managed update/cache refresh.
+
+RED/GREEN evidence:
+
+```text
+go test ./internal/service -run TestDecideUpstreamBillingRateMultiplierSync -count=1
+RED: high-precision normalization and rounding-boundary cases failed.
+GREEN: ok github.com/Wei-Shaw/sub2api/internal/service
+
+go test -tags=unit ./internal/repository -run 'TestSchedulerCache' -count=1
+GREEN: ok github.com/Wei-Shaw/sub2api/internal/repository
+
+go test -tags=unit ./internal/repository -count=1
+GREEN: ok github.com/Wei-Shaw/sub2api/internal/repository
+
+go test ./internal/service ./internal/repository ./internal/handler/admin ./internal/server/routes -count=1
+go test ./cmd/server -run '^$' -count=1
+GREEN: all packages exited 0.
+
+go test ./... -count=1
+GREEN: all packages exited 0.
+
+go test -tags=integration ./internal/repository -run 'Test(ManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesCache|SchedulerCacheNewerManualSnapshotWinsAgainstStaleManagedWriteIntegration)$' -count=1 -v
+BLOCKED: harness panicked while starting PostgreSQL with exact error `rootless Docker not found`; Docker is unavailable in this environment.
+```
+
+The project progress ledger remains **进行中**: this fix is committed locally
+but has not been pushed, deployed, or verified in production.

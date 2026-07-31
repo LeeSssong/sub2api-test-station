@@ -52,7 +52,7 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts")+`.*`+regexp.QuoteMeta("SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb")+`.*`+regexp.QuoteMeta("COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb")).
 		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "null").
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")+`.*`+regexp.QuoteMeta("COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'manual_override') = 'upstream_managed'")).
+	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")+`.*`+regexp.QuoteMeta("COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'")).
 		WithArgs(newMultiplier, int64(17), oldMultiplier).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).

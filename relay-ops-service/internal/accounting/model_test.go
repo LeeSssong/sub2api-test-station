@@ -131,6 +131,7 @@ func TestValidateCashEventAcceptsNormalPurchaseNotes(t *testing.T) {
 		"Upstream API top-up for August",
 		"monthly account purchase",
 		"OAuth token purchase for August",
+		"OAuth authorization purchase for August",
 	} {
 		input := base
 		input.Notes = notes

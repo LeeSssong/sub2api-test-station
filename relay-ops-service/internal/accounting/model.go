@@ -93,7 +93,7 @@ type DailySnapshot struct {
 }
 
 var (
-	credentialLikeNotePattern = regexp.MustCompile(`(?i)(?:(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|password|passwd|secret|cookie|private[_-]?key)\s*(?:=|:|\s)\s*\S+|token\s*(?:=|:)\s*\S+|authorization\s*(?:=|:|\s)\s*(?:(?:basic|bearer)\s+)?\S+|bearer\s+\S+)`)
+	credentialLikeNotePattern = regexp.MustCompile(`(?i)(?:(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|password|passwd|secret|cookie|private[_-]?key)\s*(?:=|:|\s)\s*\S+|token\s*(?:=|:)\s*\S+|authorization\s*(?:=|:)\s*\S+|authorization\s+(?:basic|bearer)\s+\S+|bearer\s+\S+)`)
 	openAIKeyPattern          = regexp.MustCompile(`(?i)(?:^|[^a-z0-9_-])sk-(?:proj-)?[a-z0-9_-]{16,}(?:$|[^a-z0-9_-])`)
 	jwtPattern                = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?:$|[^A-Za-z0-9_-])`)
 	opaqueTokenPattern        = regexp.MustCompile(`[A-Za-z0-9_+/=-]{40,}`)

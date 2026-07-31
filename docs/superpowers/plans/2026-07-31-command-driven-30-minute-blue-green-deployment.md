@@ -720,4 +720,3 @@ git commit -m "docs: hand off Sub2API blue green deployment"
 - [ ] Confirm `git status --short` contains only intentional task files.
 - [ ] Confirm no production host was contacted and no branch was pushed unless the user separately authorized it.
 - [ ] Leave the progress ledger at `准备完成（待生产部署与验收）`, not `已完成`.
-

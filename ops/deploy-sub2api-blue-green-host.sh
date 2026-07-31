@@ -40,7 +40,7 @@ done
 [[ "$migrations_hash" =~ ^[a-f0-9]{64}$ ]] || fail '--migrations-hash must be 64 lowercase hex'
 [[ "$source_tree" == "$tested_tree" ]] || fail 'source tree does not equal tested tree'
 
-for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename; do
+for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename sleep; do
   command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
 done
 
@@ -106,6 +106,22 @@ else
     || fail 'rehearsal COMPOSE_PROJECT_NAME is invalid'
 fi
 
+network_curl_image=${NETWORK_CURL_IMAGE:-}
+network_curl_allowlist=${NETWORK_CURL_IMAGE_ALLOWLIST:-}
+if [[ "$mode" == production ]]; then
+  [[ "$network_curl_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] \
+    || fail 'production NETWORK_CURL_IMAGE must be an approved immutable sha256 digest'
+  [[ -n "$network_curl_allowlist" ]] || fail 'production NETWORK_CURL_IMAGE_ALLOWLIST is required'
+  network_curl_approved=false
+  while IFS= read -r approved_network_curl_image; do
+    [[ -z "$approved_network_curl_image" ]] && continue
+    [[ "$approved_network_curl_image" == "$network_curl_image" ]] && network_curl_approved=true
+  done <<<"$network_curl_allowlist"
+  [[ "$network_curl_approved" == true ]] || fail 'production NETWORK_CURL_IMAGE is not allowlisted'
+else
+  network_curl_image=${network_curl_image:-curlimages/curl:8.12.1}
+fi
+
 lock_dir="$record_root/.blue-green.lock"
 lock_owner_path="$lock_dir/owner.pid"
 lock_owned=false
@@ -129,7 +145,7 @@ persist_lock_owner() {
 }
 
 acquire_lock() {
-  local owner_pid
+  local owner_pid lock_age lock_mtime
   if mkdir "$lock_dir" 2>/dev/null; then
     lock_owned=true
     persist_lock_owner
@@ -137,6 +153,20 @@ acquire_lock() {
   fi
 
   [[ -d "$lock_dir" && ! -L "$lock_dir" ]] || fail 'blue-green release lock is invalid'
+  if [[ ! -e "$lock_owner_path" ]]; then
+    lock_mtime=$(stat -f '%m' "$lock_dir" 2>/dev/null || stat -c '%Y' "$lock_dir") \
+      || fail 'blue-green release lock timestamp is invalid'
+    lock_age=$(( $(date -u +%s) - lock_mtime ))
+    [[ "$lock_age" =~ ^[0-9]+$ && "$lock_age" -ge "${LOCK_OWNER_GRACE_SECONDS:-5}" ]] \
+      || fail 'blue-green release lock owner is not yet established'
+    rmdir "$lock_dir" 2>/dev/null || fail 'another blue-green release is in progress'
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+      fail 'another blue-green release is in progress'
+    fi
+    lock_owned=true
+    persist_lock_owner
+    return 0
+  fi
   [[ -f "$lock_owner_path" && ! -L "$lock_owner_path" ]] || fail 'blue-green release lock owner is invalid'
   [[ "$(mode_of "$lock_owner_path")" == 600 ]] || fail 'blue-green release lock owner mode must be 0600'
   owner_pid=$(awk 'NR == 1 { owner=$0 } END { if (NR != 1) exit 1; print owner }' "$lock_owner_path") \
@@ -179,6 +209,9 @@ rollback_postgres_id=''
 rollback_redis_id=''
 rollback_caddy_id=''
 candidate_env=''
+rollback_env=''
+admin_header=''
+gateway_header=''
 attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-$mode-$$"
 started_epoch=$(date -u +%s)
 record_path="$record_root/$attempt_id.json"
@@ -211,9 +244,9 @@ write_final_record() {
   record_finalized=true
 }
 
-write_release_env_values() {
-  local blue_image=$1 green_image=$2 worker_image=$3 active_upstream=$4 active_slot=$5 previous=$6 temporary
-  temporary="$(dirname "$release_env")/.$(basename "$release_env").$attempt_id.tmp"
+write_release_env_values_to() {
+  local target=$1 blue_image=$2 green_image=$3 worker_image=$4 active_upstream=$5 active_slot=$6 previous=$7 temporary
+  temporary="$(dirname "$target")/.$(basename "$target").$attempt_id.tmp"
   awk \
     -v blue="$blue_image" -v green="$green_image" -v worker="$worker_image" \
     -v upstream="$active_upstream" -v active="$active_slot" -v previous="$previous" '
@@ -241,7 +274,11 @@ write_release_env_values() {
     }
   ' "$release_env" >"$temporary"
   chmod 0600 "$temporary"
-  mv "$temporary" "$release_env"
+  mv "$temporary" "$target"
+}
+
+write_release_env_values() {
+  write_release_env_values_to "$release_env" "$@"
 }
 
 write_state_values() {
@@ -269,7 +306,8 @@ write_partial() {
   temporary="$partial_path.tmp"
   jq -n \
     --arg attempt_id "$attempt_id" --arg mode "$mode" --argjson started_epoch "$started_epoch" \
-    --arg phase "$phase" --argjson cutover_applied "$cutover_applied" \
+    --arg phase "$phase" --argjson cutover_attempted "$cutover_attempted" \
+    --argjson cutover_applied "$cutover_applied" \
     --argjson worker_updated "$worker_update_started" \
     --arg previous_slot "$previous_slot" --arg previous_upstream "$previous_upstream" \
     --arg previous_blue_image "$rollback_blue_image" --arg previous_green_image "$rollback_green_image" \
@@ -281,7 +319,8 @@ write_partial() {
     --arg candidate_slot "$candidate_slot" --arg candidate_upstream "$candidate_upstream" \
     --arg candidate_image "$requested_image" \
     '{schema_version:1, attempt_id:$attempt_id, mode:$mode, started_epoch:$started_epoch,
-      phase:$phase, cutover_applied:$cutover_applied, worker_updated:$worker_updated,
+      phase:$phase, cutover_attempted:$cutover_attempted, cutover_applied:$cutover_applied,
+      worker_updated:$worker_updated,
       previous:{active_slot:$previous_slot, active_upstream:$previous_upstream,
         blue_image:$previous_blue_image, green_image:$previous_green_image, worker_image:$previous_worker_image,
         source_commit:$previous_source_commit, source_tree:$previous_source_tree,
@@ -335,6 +374,31 @@ resolve_container_id() {
   printf '%s\n' "$ids" | awk 'NF { print; exit }'
 }
 
+wait_for_worker_healthy() {
+  local timeout=${WORKER_HEALTH_TIMEOUT_SECONDS:-90} poll=${WORKER_HEALTH_POLL_SECONDS:-1}
+  local deadline now remaining attempts=0 max_attempts worker_status
+  [[ "$timeout" =~ ^[1-9][0-9]*$ && "$poll" =~ ^[1-9][0-9]*$ ]] || return 1
+  deadline=$(( $(date -u +%s) + timeout ))
+  max_attempts=$((timeout / poll + 1))
+  while true; do
+    worker_status=$(docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.State.Health.Status}}') || return 1
+    [[ "$worker_status" == healthy ]] && return 0
+    attempts=$((attempts + 1))
+    [[ "$attempts" -lt "$max_attempts" ]] || return 1
+    now=$(date -u +%s)
+    [[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline" ]] || return 1
+    remaining=$((deadline - now))
+    if [[ "$poll" -lt "$remaining" ]]; then sleep "$poll"; else sleep "$remaining"; fi
+  done
+}
+
+worker_logs_are_acceptable() {
+  local worker_logs
+  worker_logs=$("${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
+  printf '%s\n' "$worker_logs" | grep -Eiq 'panic:|fatal:|migration.*failed|worker.*failed' && return 1
+  return 0
+}
+
 restore_previous() {
   local rollback_ok=true current_blue current_green previous_previous
   if [[ "$cutover_attempted" == true ]]; then
@@ -347,7 +411,19 @@ restore_previous() {
       rollback_ok=false
     fi
   fi
-  if [[ "$persistence_started" == true || "$state_persisted" == true || "$worker_update_started" == true ]]; then
+  if [[ "$rollback_ok" == true && "$worker_update_started" == true ]]; then
+    rollback_env="$record_root/.$attempt_id.rollback.env"
+    write_release_env_values_to "$rollback_env" "$rollback_blue_image" "$rollback_green_image" "$previous_worker_image" \
+      "$previous_upstream" "$previous_slot" "$candidate_slot" || rollback_ok=false
+    if [[ "$rollback_ok" == true ]]; then
+      compose_rollback=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
+        --env-file "$secret_env" --env-file "$rollback_env" -f "$base_compose")
+      "${compose_rollback[@]}" up --no-deps -d --force-recreate sub2api-worker >/dev/null 2>&1 || rollback_ok=false
+      [[ "$rollback_ok" == false ]] || wait_for_worker_healthy || rollback_ok=false
+      [[ "$rollback_ok" == false ]] || worker_logs_are_acceptable || rollback_ok=false
+    fi
+  fi
+  if [[ "$rollback_ok" == true && ( "$persistence_started" == true || "$state_persisted" == true || "$worker_update_started" == true ) ]]; then
     current_blue=$rollback_blue_image
     current_green=$rollback_green_image
     previous_previous=$candidate_slot
@@ -356,9 +432,6 @@ restore_previous() {
     write_state_values "$previous_slot" "$previous_upstream" "$current_blue" "$current_green" \
       "$previous_worker_image" "$rollback_source_commit" "$rollback_source_tree" "$rollback_migrations_hash" \
       "$rollback_postgres_id" "$rollback_redis_id" "$rollback_caddy_id" || rollback_ok=false
-    if [[ "$worker_update_started" == true ]]; then
-      "${compose_current[@]}" up --no-deps -d --force-recreate sub2api-worker >/dev/null 2>&1 || rollback_ok=false
-    fi
   fi
   [[ "$rollback_ok" == true ]] || return 1
   rollback_completed=true
@@ -370,13 +443,16 @@ on_exit() {
   trap - EXIT HUP INT TERM
   set +e
   [[ -n "$candidate_env" ]] && rm -f -- "$candidate_env"
+  [[ -n "$rollback_env" ]] && rm -f -- "$rollback_env"
+  [[ -n "$admin_header" ]] && rm -f -- "$admin_header"
+  [[ -n "$gateway_header" ]] && rm -f -- "$gateway_header"
   if [[ "$status" -ne 0 && "$record_finalized" == false && -n "$partial_path" && -e "$partial_path" ]]; then
     if restore_previous; then
       write_final_record failed rolled_back "$failure_reason"
     else
       write_final_record failed rollback_failed "$failure_reason"
     fi
-    rm -f -- "$partial_path"
+    [[ "$rollback_completed" == true ]] && rm -f -- "$partial_path"
   fi
   cleanup_lock
   exit "$status"
@@ -385,16 +461,17 @@ trap on_exit EXIT
 trap 'failure_reason=interrupted; exit 130' HUP INT TERM
 
 recover_partial() {
-  local existing=$1 now age recovery_cutover recovery_worker
+  local existing=$1 now age recovery_cutover_attempted recovery_cutover recovery_worker
   [[ "$(mode_of "$existing")" == 600 ]] || fail 'partial release record mode must be 0600'
   jq -e --arg mode "$mode" '
     type == "object" and
-    (keys | sort) == ["attempt_id","candidate","cutover_applied","mode","phase","previous","schema_version","started_epoch","worker_updated"] and
+    (keys | sort) == ["attempt_id","candidate","cutover_applied","cutover_attempted","mode","phase","previous","schema_version","started_epoch","worker_updated"] and
     .schema_version == 1 and (.attempt_id | type == "string" and length > 0) and
     .mode == $mode and
     (.started_epoch | type == "number" and floor == .) and
     (.phase | type == "string" and length > 0) and
-    (.cutover_applied | type == "boolean") and (.worker_updated | type == "boolean") and
+    (.cutover_attempted | type == "boolean") and (.cutover_applied | type == "boolean") and
+    (.worker_updated | type == "boolean") and
     (.previous | type == "object" and
       (keys | sort) == ["active_slot","active_upstream","blue_image","caddy_id","green_image","migrations_hash","postgres_id","redis_id","source_commit","source_tree","worker_image"] and
       (.active_slot == "blue" or .active_slot == "green") and
@@ -428,11 +505,12 @@ recover_partial() {
   rollback_caddy_id=$(jq -r '.previous.caddy_id' "$existing")
   candidate_slot=$(jq -r '.candidate.slot' "$existing")
   candidate_upstream=$(jq -r '.candidate.upstream' "$existing")
+  recovery_cutover_attempted=$(jq -r '.cutover_attempted' "$existing")
   recovery_cutover=$(jq -r '.cutover_applied' "$existing")
   recovery_worker=$(jq -r '.worker_updated' "$existing")
   validate_upstream "$previous_upstream" || fail 'partial record previous upstream is invalid'
   [[ "$previous_worker_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail 'partial record previous worker image is invalid'
-  cutover_attempted=$recovery_cutover
+  cutover_attempted=$recovery_cutover_attempted
   cutover_applied=$recovery_cutover
   state_persisted=$recovery_cutover
   persistence_started=$recovery_cutover
@@ -441,12 +519,34 @@ recover_partial() {
   partial_path=$existing
   if restore_previous; then
     write_final_record failed rolled_back "$failure_reason"
+    rm -f -- "$existing"
   else
     write_final_record failed rollback_failed "$failure_reason"
   fi
-  rm -f -- "$existing"
   cleanup_lock
   exit 1
+}
+
+partial_is_committed_success() {
+  local existing=$1 partial_attempt partial_slot partial_upstream partial_image success_record state_image
+  partial_attempt=$(jq -r '.attempt_id // empty' "$existing" 2>/dev/null) || return 1
+  partial_slot=$(jq -r '.candidate.slot // empty' "$existing" 2>/dev/null) || return 1
+  partial_upstream=$(jq -r '.candidate.upstream // empty' "$existing" 2>/dev/null) || return 1
+  partial_image=$(jq -r '.candidate.image // empty' "$existing" 2>/dev/null) || return 1
+  [[ "$partial_attempt" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  case "$partial_slot:$partial_upstream" in
+    blue:sub2api-blue:8080) state_image=$state_blue_image ;;
+    green:sub2api-green:8080) state_image=$state_green_image ;;
+    *) return 1 ;;
+  esac
+  [[ "$state_active_slot" == "$partial_slot" && "$state_active_upstream" == "$partial_upstream" && "$state_image" == "$partial_image" ]] \
+    || return 1
+  success_record="$record_root/$partial_attempt.json"
+  [[ -f "$success_record" && ! -L "$success_record" && "$(mode_of "$success_record")" == 600 ]] || return 1
+  jq -e --arg attempt_id "$partial_attempt" --arg mode "$mode" --arg image "$partial_image" '
+    type == "object" and .schema_version == 1 and .attempt_id == $attempt_id and .mode == $mode and
+    .result == "succeeded" and .state == "promoted" and (.requested | type == "object") and .requested.image == $image
+  ' "$success_record" >/dev/null 2>&1
 }
 
 existing_partials=$(find "$record_root" -maxdepth 1 -type f -name '*.partial' -print)
@@ -502,7 +602,12 @@ state_redis_id=$(jq -r '.redis_id' "$release_state")
 state_caddy_id=$(jq -r '.caddy_id' "$release_state")
 
 if [[ "$partial_count" == 1 ]]; then
-  recover_partial "$existing_partials"
+  if partial_is_committed_success "$existing_partials"; then
+    rm -f -- "$existing_partials"
+    partial_count=0
+  else
+    recover_partial "$existing_partials"
+  fi
 fi
 
 case "$state_active_slot:$state_active_upstream" in
@@ -620,7 +725,6 @@ printf 'X-API-Key: %s\n' "$(tr -d '\r\n' <"$admin_key_file")" >"$admin_header"
 printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$gateway_key_file")" >"$gateway_header"
 chmod 0600 "$admin_header" "$gateway_header"
 network_name="${compose_project}_default"
-network_curl_image=${NETWORK_CURL_IMAGE:-curlimages/curl:8.12.1}
 candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
 docker run --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
@@ -673,12 +777,8 @@ failure_reason=worker_update_failed
 worker_update_started=true
 write_partial worker_updating
 "${compose_current[@]}" up --no-deps -d --force-recreate sub2api-worker >/dev/null
-worker_status=$(docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.State.Health.Status}}')
-[[ "$worker_status" == healthy ]] || fail 'worker did not become healthy'
-worker_logs=$("${compose_current[@]}" logs --no-color --tail 200 sub2api-worker)
-if printf '%s\n' "$worker_logs" | grep -Eiq 'panic:|fatal:|migration.*failed|worker.*failed'; then
-  fail 'worker logs contain a startup failure'
-fi
+wait_for_worker_healthy || fail 'worker did not become healthy before timeout'
+worker_logs_are_acceptable || fail 'worker logs contain a startup failure'
 write_partial worker_accepted
 
 failure_reason=final_identity_check_failed

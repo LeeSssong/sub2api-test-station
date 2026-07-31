@@ -94,6 +94,17 @@ EOF
 #!/usr/bin/env bash
 printf 'sleep %s\n' "$*" >>"${FAKE_EVENT_LOG:?}"
 EOF
+  cat >"$CASE_DIR/bin/mkdir" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+/bin/mkdir "$@"
+if [[ "${FAKE_PAUSE_AFTER_LOCK_MKDIR:-}" == 1 && "$1" == "${FAKE_LOCK_DIR:-}" ]]; then
+  : >"${FAKE_LOCK_CREATED_FILE:?}"
+  while [[ ! -e "${FAKE_LOCK_RELEASE_FILE:?}" ]]; do
+    /bin/sleep 1
+  done
+fi
+EOF
   cat >"$CASE_DIR/bin/df" <<'EOF'
 #!/usr/bin/env bash
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
@@ -559,15 +570,70 @@ test_review_recovery_and_cleanup() {
   first_blue_pull=$(grep -n 'pull sub2api-blue' "$EVENT_LOG" | head -n 1 | cut -d: -f1)
   [[ -n "$first_blue_reload" && -n "$first_blue_pull" && "$first_blue_pull" -lt "$first_blue_reload" ]] \
     || fail 'committed success was recovered as an incomplete release'
+
+  setup_case malformed_committed_success_partial
+  write_meminfo
+  "$REAL_JQ" --arg image "$IMAGE" '
+    .active_slot="green" | .active_upstream="sub2api-green:8080" |
+    .green_image=$image | .worker_image=$image
+  ' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  sed -i.bak \
+    -e "s|^SUB2API_GREEN_IMAGE=.*|SUB2API_GREEN_IMAGE=$IMAGE|" \
+    -e "s|^SUB2API_WORKER_IMAGE=.*|SUB2API_WORKER_IMAGE=$IMAGE|" \
+    -e 's|^SUB2API_ACTIVE_UPSTREAM=.*|SUB2API_ACTIVE_UPSTREAM=sub2api-green:8080|' \
+    -e 's|^SUB2API_ACTIVE_SLOT=.*|SUB2API_ACTIVE_SLOT=green|' \
+    -e 's|^SUB2API_PREVIOUS_SLOT=.*|SUB2API_PREVIOUS_SLOT=blue|' "$CASE_DIR/release.env"
+  rm -f -- "$CASE_DIR/release.env.bak"
+  printf '{"attempt_id":"malformed-committed","candidate":{"slot":"green","upstream":"sub2api-green:8080","image":"%s"}}\n' "$IMAGE" \
+    >"$CASE_DIR/records/malformed-committed.partial"
+  chmod 0600 "$CASE_DIR/records/malformed-committed.partial"
+  "$REAL_JQ" -n --arg image "$IMAGE" '
+    {schema_version:1, attempt_id:"malformed-committed", mode:"production",
+     requested:{image:$image}, result:"succeeded", state:"promoted", reason:"", rolled_back:false}
+  ' >"$CASE_DIR/records/malformed-committed.json"
+  chmod 0600 "$CASE_DIR/records/malformed-committed.json"
+  expect_failure malformed_committed_success run_executor
+  [[ -e "$CASE_DIR/records/malformed-committed.partial" ]] \
+    || fail 'malformed committed-success partial was deleted'
+  ! grep -q 'pull sub2api-blue' "$EVENT_LOG" \
+    || fail 'malformed committed-success partial permitted a new release'
 }
 
-test_review_ownerless_lock_recovery() {
-  setup_case ownerless_lock
+test_review_paused_lock_creator_is_never_reclaimed() {
+  local first_pid second_status attempts=0
+  setup_case paused_lock_creator
   write_meminfo
-  mkdir "$CASE_DIR/records/.blue-green.lock"
-  run_executor LOCK_OWNER_GRACE_SECONDS=0 FAKE_EPOCH=1785539999 >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
-    || fail "ownerless stale lock should be reclaimed: $(cat "$CASE_DIR/stderr")"
-  [[ ! -e "$CASE_DIR/records/.blue-green.lock" ]] || fail 'ownerless stale lock remained after release'
+  (
+    run_executor \
+      FAKE_PAUSE_AFTER_LOCK_MKDIR=1 \
+      FAKE_LOCK_DIR="$CASE_DIR/records/.blue-green.lock" \
+      FAKE_LOCK_CREATED_FILE="$CASE_DIR/lock-created" \
+      FAKE_LOCK_RELEASE_FILE="$CASE_DIR/lock-release"
+  ) >"$CASE_DIR/first.stdout" 2>"$CASE_DIR/first.stderr" &
+  first_pid=$!
+  while [[ ! -e "$CASE_DIR/lock-created" && "$attempts" -lt 10 ]]; do
+    /bin/sleep 1
+    attempts=$((attempts + 1))
+  done
+  [[ -e "$CASE_DIR/lock-created" ]] || fail 'first deployer did not pause after acquiring lock directory'
+
+  if run_executor LOCK_OWNER_GRACE_SECONDS=0 FAKE_EPOCH=1785539999 >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
+    second_status=0
+  else
+    second_status=$?
+  fi
+  [[ "$second_status" -ne 0 ]] || {
+    : >"$CASE_DIR/lock-release"
+    wait "$first_pid" || true
+    fail 'second deployer reclaimed a live ownerless lock'
+  }
+  ! grep -Eq 'docker .*compose .* up |caddy caddy reload' "$EVENT_LOG" \
+    || fail 'blocked second deployer mutated Docker or Caddy'
+
+  : >"$CASE_DIR/lock-release"
+  wait "$first_pid" || fail "first deployer did not retain its lock: $(cat "$CASE_DIR/first.stderr")"
 }
 
 case "${ONLY_TEST:-all}" in
@@ -586,12 +652,12 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: worker health wait\n'
     test_review_recovery_and_cleanup
     printf 'PASS: recovery checkpoints and credential cleanup\n'
-    test_review_ownerless_lock_recovery
-    printf 'PASS: ownerless lock recovery\n'
+    test_review_paused_lock_creator_is_never_reclaimed
+    printf 'PASS: ownerless lock fail-closed concurrency\n'
     ;;
   network) test_review_network_probe_image_policy ;;
   worker) test_review_worker_health_wait ;;
   recovery) test_review_recovery_and_cleanup ;;
-  lock) test_review_ownerless_lock_recovery ;;
+  lock) test_review_paused_lock_creator_is_never_reclaimed ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

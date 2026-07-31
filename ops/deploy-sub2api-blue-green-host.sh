@@ -145,7 +145,7 @@ persist_lock_owner() {
 }
 
 acquire_lock() {
-  local owner_pid lock_age lock_mtime
+  local owner_pid
   if mkdir "$lock_dir" 2>/dev/null; then
     lock_owned=true
     persist_lock_owner
@@ -154,18 +154,7 @@ acquire_lock() {
 
   [[ -d "$lock_dir" && ! -L "$lock_dir" ]] || fail 'blue-green release lock is invalid'
   if [[ ! -e "$lock_owner_path" ]]; then
-    lock_mtime=$(stat -f '%m' "$lock_dir" 2>/dev/null || stat -c '%Y' "$lock_dir") \
-      || fail 'blue-green release lock timestamp is invalid'
-    lock_age=$(( $(date -u +%s) - lock_mtime ))
-    [[ "$lock_age" =~ ^[0-9]+$ && "$lock_age" -ge "${LOCK_OWNER_GRACE_SECONDS:-5}" ]] \
-      || fail 'blue-green release lock owner is not yet established'
-    rmdir "$lock_dir" 2>/dev/null || fail 'another blue-green release is in progress'
-    if ! mkdir "$lock_dir" 2>/dev/null; then
-      fail 'another blue-green release is in progress'
-    fi
-    lock_owned=true
-    persist_lock_owner
-    return 0
+    fail 'blue-green release lock owner is missing; manual recovery is required'
   fi
   [[ -f "$lock_owner_path" && ! -L "$lock_owner_path" ]] || fail 'blue-green release lock owner is invalid'
   [[ "$(mode_of "$lock_owner_path")" == 600 ]] || fail 'blue-green release lock owner mode must be 0600'
@@ -460,9 +449,9 @@ on_exit() {
 trap on_exit EXIT
 trap 'failure_reason=interrupted; exit 130' HUP INT TERM
 
-recover_partial() {
-  local existing=$1 now age recovery_cutover_attempted recovery_cutover recovery_worker
-  [[ "$(mode_of "$existing")" == 600 ]] || fail 'partial release record mode must be 0600'
+partial_record_is_valid() {
+  local existing=$1
+  [[ -f "$existing" && ! -L "$existing" && "$(mode_of "$existing")" == 600 ]] || return 1
   jq -e --arg mode "$mode" '
     type == "object" and
     (keys | sort) == ["attempt_id","candidate","cutover_applied","cutover_attempted","mode","phase","previous","schema_version","started_epoch","worker_updated"] and
@@ -488,7 +477,12 @@ recover_partial() {
        (.slot == "green" and .upstream == "sub2api-green:8080")) and
       (.image | type == "string" and test("^[^[:space:]@]+@sha256:[a-f0-9]{64}$"))) and
     .previous.active_slot != .candidate.slot
-  ' "$existing" >/dev/null 2>&1 || fail 'stale or invalid partial release record is present'
+  ' "$existing" >/dev/null 2>&1
+}
+
+recover_partial() {
+  local existing=$1 now age recovery_cutover_attempted recovery_cutover recovery_worker
+  partial_record_is_valid "$existing" || fail 'stale or invalid partial release record is present'
   now=$(date -u +%s)
   age=$((now - $(jq -r '.started_epoch' "$existing")))
   [[ "$age" -ge 0 && "$age" -le 1800 ]] || fail 'stale partial release record is present'
@@ -529,6 +523,7 @@ recover_partial() {
 
 partial_is_committed_success() {
   local existing=$1 partial_attempt partial_slot partial_upstream partial_image success_record state_image
+  partial_record_is_valid "$existing" || return 1
   partial_attempt=$(jq -r '.attempt_id // empty' "$existing" 2>/dev/null) || return 1
   partial_slot=$(jq -r '.candidate.slot // empty' "$existing" 2>/dev/null) || return 1
   partial_upstream=$(jq -r '.candidate.upstream // empty' "$existing" 2>/dev/null) || return 1

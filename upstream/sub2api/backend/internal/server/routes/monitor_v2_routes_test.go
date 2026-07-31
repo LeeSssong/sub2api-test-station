@@ -140,6 +140,6 @@ func TestMonitorV2RouteUsesAuthenticatedUserBoundary(t *testing.T) {
 
 	require.True(t, authCalled)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), `"contract_version":"3"`)
+	require.Contains(t, recorder.Body.String(), `"contract_version":"`+service.MonitorV2ContractVersion+`"`)
 	require.Contains(t, recorder.Body.String(), `"refresh_interval_seconds":300`)
 }

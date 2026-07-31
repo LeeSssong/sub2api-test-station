@@ -39,6 +39,76 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresStartDateWhenAccountingEnabled(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_ACCOUNTING_ENABLED"] = "true"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil ||
+		!strings.Contains(err.Error(), "RELAY_OPS_ACCOUNTING_LEDGER_START_DATE") {
+		t.Fatalf("error = %v, want start-date requirement", err)
+	}
+}
+
+func TestLoadParsesAccountingExclusionIDs(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_ACCOUNTING_ENABLED"] = "true"
+	env["RELAY_OPS_ACCOUNTING_LEDGER_START_DATE"] = "2026-08-02"
+	env["RELAY_OPS_ACCOUNTING_INTERNAL_USER_IDS"] = "7, 9"
+	env["RELAY_OPS_ACCOUNTING_INTERNAL_API_KEY_IDS"] = "11"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.AccountingEnabled || cfg.AccountingLedgerStartDate.Format("2006-01-02") != "2026-08-02" {
+		t.Fatalf("accounting activation = %#v", cfg)
+	}
+	if got, want := cfg.AccountingInternalUserIDs, []int64{7, 9}; !equalInt64s(got, want) {
+		t.Fatalf("internal user IDs = %v, want %v", got, want)
+	}
+	if got, want := cfg.AccountingInternalAPIKeyIDs, []int64{11}; !equalInt64s(got, want) {
+		t.Fatalf("internal API key IDs = %v, want %v", got, want)
+	}
+}
+
+func TestLoadRejectsInvalidAccountingIDsAndDate(t *testing.T) {
+	t.Parallel()
+
+	for name, overrides := range map[string]string{
+		"duplicate":  "1,1",
+		"zero":       "0",
+		"nonnumeric": "x",
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := validEnv(t)
+			env["RELAY_OPS_ACCOUNTING_INTERNAL_USER_IDS"] = overrides
+			if _, err := Load(func(key string) string { return env[key] }); err == nil {
+				t.Fatalf("accepted invalid accounting IDs %q", overrides)
+			}
+		})
+	}
+	env := validEnv(t)
+	env["RELAY_OPS_ACCOUNTING_ENABLED"] = "true"
+	env["RELAY_OPS_ACCOUNTING_LEDGER_START_DATE"] = "2026-02-30"
+	if _, err := Load(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("accepted invalid accounting start date")
+	}
+}
+
+func equalInt64s(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestLoadAcceptsAbsoluteUpstreamGroupMappingFile(t *testing.T) {
 	t.Parallel()
 

@@ -218,6 +218,26 @@ func TestUpstreamBillingRateMultiplierPolicyFromExtra(t *testing.T) {
 	}
 }
 
+func TestValidateUpstreamBillingRateMultiplierPolicyIntentRejectsInvalidRequests(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy string
+		rate   *float64
+	}{
+		{name: "unknown policy", policy: "automatic"},
+		{name: "manual override without multiplier", policy: UpstreamBillingRateMultiplierPolicyManualOverride},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateUpstreamBillingRateMultiplierPolicyIntent(&tt.policy, tt.rate)
+			if err == nil {
+				t.Fatal("expected invalid policy intent to be rejected")
+			}
+		})
+	}
+}
+
 func TestLegacyAccountWithoutPolicyUsesManagedProbeMultiplier(t *testing.T) {
 	configuredRate := 0.8
 	policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(map[string]any{})

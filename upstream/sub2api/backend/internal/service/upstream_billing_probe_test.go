@@ -989,7 +989,7 @@ func TestUpstreamBillingProbeManualBatchesShareConcurrencyLimit(t *testing.T) {
 	require.Equal(t, int64(upstreamBillingProbeConcurrency), upstream.maxActive.Load())
 }
 
-func TestUpstreamBillingProbeManualAndScheduledRequestsShareOneNetworkProbe(t *testing.T) {
+func TestUpstreamBillingProbeCrossModeRequestsDoNotCoalesce(t *testing.T) {
 	account := &Account{
 		ID:          46,
 		Platform:    PlatformOpenAI,
@@ -1000,37 +1000,103 @@ func TestUpstreamBillingProbeManualAndScheduledRequestsShareOneNetworkProbe(t *t
 		Extra:       map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
 	}
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
-	started := make(chan struct{})
+	entered := make(chan struct{}, 3)
 	unblock := make(chan struct{})
-	var startedOnce sync.Once
+	var unblockOnce sync.Once
+	release := func() { unblockOnce.Do(func() { close(unblock) }) }
+	t.Cleanup(release)
 	upstream := &upstreamBillingProbeHTTPStub{beforeResponse: func() {
-		startedOnce.Do(func() { close(started) })
+		entered <- struct{}{}
+		<-unblock
+	}}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	errs := make(chan error, 3)
+	start := make(chan struct{})
+	go func() {
+		<-start
+		_, err := svc.probeScheduledAccount(context.Background(), account.ID, 30)
+		errs <- err
+	}()
+	go func() {
+		<-start
+		_, err := svc.ProbeAccount(context.Background(), account.ID)
+		errs <- err
+	}()
+	go func() {
+		<-start
+		_, err := svc.ProbeLifecycleAccount(context.Background(), account.ID)
+		errs <- err
+	}()
+	close(start)
+
+	for range 3 {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("all three probe modes must independently reach the upstream")
+		}
+	}
+	release()
+	for range 3 {
+		require.NoError(t, <-errs)
+	}
+	require.Equal(t, int64(3), upstream.calls.Load())
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.ElementsMatch(t, []string{"manual", "scheduled", "lifecycle"}, repo.syncTriggers)
+}
+
+func TestUpstreamBillingProbeSameModeRequestsStillCoalesce(t *testing.T) {
+	account := &Account{
+		ID:          461,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	entered := make(chan struct{}, 2)
+	unblock := make(chan struct{})
+	var unblockOnce sync.Once
+	release := func() { unblockOnce.Do(func() { close(unblock) }) }
+	t.Cleanup(release)
+	upstream := &upstreamBillingProbeHTTPStub{beforeResponse: func() {
+		entered <- struct{}{}
 		<-unblock
 	}}
 	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
 
 	errs := make(chan error, 2)
 	go func() {
-		_, err := svc.probeScheduledAccount(context.Background(), account.ID, 30)
-		errs <- err
-	}()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("scheduled probe did not reach the upstream")
-	}
-	manualStarted := make(chan struct{})
-	go func() {
-		close(manualStarted)
 		_, err := svc.ProbeAccount(context.Background(), account.ID)
 		errs <- err
 	}()
-	<-manualStarted
-	time.Sleep(20 * time.Millisecond)
-	close(unblock)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first manual probe did not reach the upstream")
+	}
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		_, err := svc.ProbeAccount(context.Background(), account.ID)
+		errs <- err
+	}()
+	<-secondStarted
+	select {
+	case <-entered:
+		t.Fatal("same-mode duplicate unexpectedly reached the upstream")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
 	require.NoError(t, <-errs)
 	require.NoError(t, <-errs)
 	require.Equal(t, int64(1), upstream.calls.Load())
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Equal(t, []string{"manual"}, repo.syncTriggers)
 }
 
 func TestUpstreamBillingProbeScheduledRechecksAfterWaitingForSlot(t *testing.T) {

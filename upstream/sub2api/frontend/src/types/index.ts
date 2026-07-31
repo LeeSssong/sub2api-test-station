@@ -1305,6 +1305,7 @@ export interface CodexUsageSnapshot {
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
 export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
+export type AccountRateMultiplierPolicy = 'upstream_managed' | 'manual_override'
 
 export interface OpenAICompactState {
   openai_compact_mode?: OpenAICompactMode
@@ -1331,6 +1332,7 @@ export interface CreateAccountRequest {
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
+  rate_multiplier_policy?: AccountRateMultiplierPolicy
   group_ids?: number[]
   expires_at?: number | null
   auto_pause_on_expired?: boolean
@@ -1349,6 +1351,7 @@ export interface UpdateAccountRequest {
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
+  rate_multiplier_policy?: AccountRateMultiplierPolicy
   schedulable?: boolean
   status?: 'active' | 'inactive' | 'error'
   group_ids?: number[]
@@ -1466,6 +1469,7 @@ export interface CodexSessionImportRequest {
   concurrency?: number
   priority?: number
   rate_multiplier?: number
+  rate_multiplier_policy?: AccountRateMultiplierPolicy
   load_factor?: number | null
   expires_at?: number | null
   auto_pause_on_expired?: boolean
@@ -1485,6 +1489,7 @@ export interface OpenAICodexPATCreateRequest {
   concurrency?: number
   priority?: number
   rate_multiplier?: number
+  rate_multiplier_policy?: AccountRateMultiplierPolicy
   load_factor?: number | null
   expires_at?: number | null
   auto_pause_on_expired?: boolean

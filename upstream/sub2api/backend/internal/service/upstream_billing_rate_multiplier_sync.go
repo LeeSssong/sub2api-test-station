@@ -1,6 +1,10 @@
 package service
 
-import "math"
+import (
+	"math"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+)
 
 const (
 	// UpstreamBillingRateMultiplierPolicyExtraKey stores the explicit pricing
@@ -56,6 +60,29 @@ func UpstreamBillingRateMultiplierPolicyFromExtra(extra map[string]any) (string,
 		return policy, true
 	default:
 		return "", false
+	}
+}
+
+func validateUpstreamBillingRateMultiplierPolicyIntent(policy *string, rateMultiplier *float64) (string, error) {
+	if policy == nil {
+		return "", nil
+	}
+	switch *policy {
+	case UpstreamBillingRateMultiplierPolicyManaged:
+		return *policy, nil
+	case UpstreamBillingRateMultiplierPolicyManualOverride:
+		if rateMultiplier == nil {
+			return "", infraerrors.BadRequest(
+				"INVALID_UPSTREAM_BILLING_RATE_MULTIPLIER_POLICY",
+				"rate_multiplier is required when rate_multiplier_policy is manual_override",
+			)
+		}
+		return *policy, nil
+	default:
+		return "", infraerrors.BadRequest(
+			"INVALID_UPSTREAM_BILLING_RATE_MULTIPLIER_POLICY",
+			"rate_multiplier_policy must be upstream_managed or manual_override",
+		)
 	}
 }
 

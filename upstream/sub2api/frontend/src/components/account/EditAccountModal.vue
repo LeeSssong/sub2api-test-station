@@ -1441,9 +1441,18 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
-          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" />
+          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input"
+            :disabled="account?.platform === 'openai' && account?.type === 'apikey' && form.rate_multiplier_policy === 'upstream_managed'" />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
+      </div>
+      <div v-if="account?.platform === 'openai' && account?.type === 'apikey'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">{{ t('admin.accounts.billingRateMultiplierPolicy') }}</label>
+        <select v-model="form.rate_multiplier_policy" class="input" data-testid="edit-rate-multiplier-policy">
+          <option value="upstream_managed">{{ t('admin.accounts.billingRateMultiplierPolicyManaged') }}</option>
+          <option value="manual_override">{{ t('admin.accounts.billingRateMultiplierPolicyManual') }}</option>
+        </select>
+        <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierPolicyHint') }}</p>
       </div>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
@@ -3153,6 +3162,7 @@ const form = reactive({
   load_factor: null as number | null,
   priority: 1,
   rate_multiplier: 1,
+  rate_multiplier_policy: 'upstream_managed' as 'upstream_managed' | 'manual_override',
   status: 'active' as 'active' | 'inactive' | 'error',
   group_ids: [] as number[],
   expires_at: null as number | null
@@ -3242,6 +3252,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.load_factor = newAccount.load_factor ?? null
   form.priority = newAccount.priority
   form.rate_multiplier = newAccount.rate_multiplier ?? 1
+  form.rate_multiplier_policy = newAccount.extra?.upstream_billing_rate_multiplier_policy === 'manual_override'
+    ? 'manual_override'
+    : 'upstream_managed'
   form.status = (newAccount.status === 'active' || newAccount.status === 'inactive' || newAccount.status === 'error')
     ? newAccount.status
     : 'active'
@@ -4037,6 +4050,9 @@ const handleSubmit = async () => {
 
   const updatePayload: Record<string, unknown> = { ...form }
   try {
+    if (props.account.platform !== 'openai' || props.account.type !== 'apikey') {
+      delete updatePayload.rate_multiplier_policy
+    }
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {
       updatePayload.proxy_id = 0

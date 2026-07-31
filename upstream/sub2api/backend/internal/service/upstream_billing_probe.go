@@ -199,6 +199,14 @@ type upstreamBillingProbeDueAccountLister interface {
 	ListDueUpstreamBillingProbeAccounts(context.Context, time.Time, int) ([]Account, error)
 }
 
+type upstreamBillingProbeMode string
+
+const (
+	upstreamBillingProbeModeManual    upstreamBillingProbeMode = "manual"
+	upstreamBillingProbeModeScheduled upstreamBillingProbeMode = "scheduled"
+	upstreamBillingProbeModeLifecycle upstreamBillingProbeMode = "lifecycle"
+)
+
 func NewUpstreamBillingProbeService(
 	accountRepo AccountRepository,
 	accountTestService *AccountTestService,
@@ -428,41 +436,42 @@ func (s *UpstreamBillingProbeService) ProbeLifecycleAccount(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return s.probeLifecycleAccount(WithUpstreamBillingRateMultiplierSyncTrigger(ctx, UpstreamBillingRateMultiplierSyncTriggerLifecycle), accountID, settings.IntervalMinutes)
+	return s.probeLifecycleAccount(ctx, accountID, settings.IntervalMinutes)
 }
 
 func (s *UpstreamBillingProbeService) probeAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
-	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false, false)
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, upstreamBillingProbeModeManual)
 }
 
 func (s *UpstreamBillingProbeService) probeScheduledAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
-	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, true, true)
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, upstreamBillingProbeModeScheduled)
 }
 
 func (s *UpstreamBillingProbeService) probeLifecycleAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
-	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false, true)
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, upstreamBillingProbeModeLifecycle)
 }
 
-func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, accountID int64, intervalMinutes int, requireEnabled, requireActive bool) (*UpstreamBillingProbeSnapshot, error) {
-	key := strconv.FormatInt(accountID, 10)
+func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, accountID int64, intervalMinutes int, mode upstreamBillingProbeMode) (*UpstreamBillingProbeSnapshot, error) {
+	key := fmt.Sprintf("%d:%s", accountID, mode)
 	value, err, _ := s.probeGroup.Do(key, func() (any, error) {
+		probeCtx := WithUpstreamBillingRateMultiplierSyncTrigger(ctx, string(mode))
 		select {
 		case s.probeSlots <- struct{}{}:
 			defer func() { <-s.probeSlots }()
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		case <-probeCtx.Done():
+			return nil, probeCtx.Err()
 		}
-		account, loadErr := s.accountRepo.GetByID(ctx, accountID)
+		account, loadErr := s.accountRepo.GetByID(probeCtx, accountID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
-		if requireActive && !account.IsActive() {
+		if mode != upstreamBillingProbeModeManual && !account.IsActive() {
 			return nil, nil
 		}
-		if requireEnabled {
+		if mode == upstreamBillingProbeModeScheduled {
 			if !upstreamBillingProbeEnabled(account) {
 				return nil, nil
 			}
@@ -471,7 +480,7 @@ func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, 
 				return nil, nil
 			}
 		}
-		return s.probeLoadedAccount(ctx, account, intervalMinutes)
+		return s.probeLoadedAccount(probeCtx, account, intervalMinutes)
 	})
 	if err != nil {
 		return nil, err

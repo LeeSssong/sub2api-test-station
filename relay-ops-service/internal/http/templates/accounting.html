@@ -1,0 +1,183 @@
+{{define "accounting.html"}}<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>全站现金台账</title>
+  <link rel="stylesheet" href="/relay-ops/static/app.css">
+</head>
+<body class="accounting-page">
+  <header class="accounting-header">
+    <div>
+      <p class="accounting-eyebrow">Relay Ops · CNY</p>
+      <h1>全站现金台账</h1>
+      <p class="accounting-intro">登记已发生的现金事件，并核对昨日或选定日期的全站快照。</p>
+    </div>
+    <a href="/pricing">公开价格</a>
+  </header>
+
+  <main class="accounting-main">
+    <section class="accounting-entry" aria-labelledby="cash-event-title">
+      <div class="accounting-section-head">
+        <div>
+          <p class="accounting-kicker">人工登记</p>
+          <h2 id="cash-event-title">新增现金事件</h2>
+        </div>
+        <p>只记录付款事实；金额以 CNY 填写。</p>
+      </div>
+
+      <form id="cash-event-form" class="cash-event-form">
+        <label class="cash-event-field">
+          <span>事件类型</span>
+          <select name="event_type" required>
+            <option value="account_purchase">账号采购</option>
+            <option value="upstream_topup">上游充值</option>
+            <option value="refund">退款</option>
+            <option value="fee">手续费</option>
+          </select>
+        </label>
+        <label class="cash-event-field">
+          <span>支付时间</span>
+          <input name="paid_at" type="datetime-local" value="{{.DefaultPaidAt}}" required>
+        </label>
+        <label class="cash-event-field">
+          <span>金额（CNY）</span>
+          <input name="amount_cny" type="text" inputmode="decimal" placeholder="68.00" required>
+        </label>
+        <label class="cash-event-field">
+          <span>来源类型</span>
+          <select name="source_kind" required>
+            <option value="owned_oauth">owned_oauth</option>
+            <option value="upstream_apikey">upstream_apikey</option>
+          </select>
+        </label>
+        <label class="cash-event-field">
+          <span>账号 ID（可选）</span>
+          <input name="account_id" type="number" min="1" step="1" inputmode="numeric">
+        </label>
+        <label class="cash-event-field cash-event-notes">
+          <span>备注（可选）</span>
+          <textarea name="notes" maxlength="500" rows="3" placeholder="说明付款用途，不填写敏感值"></textarea>
+        </label>
+        <div class="cash-event-action">
+          <button type="submit">记录现金事件</button>
+          <p id="cash-event-status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+    </section>
+
+    <section class="accounting-report" aria-labelledby="daily-report-title">
+      <div class="accounting-section-head">
+        <div>
+          <p class="accounting-kicker">已保存快照</p>
+          <h2 id="daily-report-title">昨日 / 选定日期</h2>
+        </div>
+        <form method="get" action="/relay-ops/accounting" class="accounting-date-form">
+          <label for="accounting-date">查看日期</label>
+          <input id="accounting-date" name="date" type="date" value="{{.SelectedDate}}" required>
+          <button type="submit">查看</button>
+        </form>
+      </div>
+
+      {{if .HasSnapshot}}
+      <div class="accounting-ledger-line" aria-label="核心现金结果">
+        <div>
+          <span>报告日期</span>
+          <strong>{{.Snapshot.ReportDate}}</strong>
+        </div>
+        <div>
+          <span>外部收入</span>
+          <strong>¥{{.Snapshot.ExternalRevenueCNY}}</strong>
+        </div>
+        <div>
+          <span>资源成本</span>
+          <strong>¥{{.Snapshot.ResourceCostCNY}}</strong>
+        </div>
+        <div>
+          <span>经营毛利</span>
+          <strong>¥{{.Snapshot.OperatingGrossProfitCNY}}</strong>
+        </div>
+        <div>
+          <span>现金净结果</span>
+          <strong>¥{{.Snapshot.CashNetResultCNY}}</strong>
+        </div>
+      </div>
+
+      {{if .HasUnlinkedOutflow}}
+      <div class="accounting-warning" role="alert">
+        <strong>未关联现金支出 ¥{{.Snapshot.UnlinkedCashOutflowCNY}}</strong>
+        <span>存在未绑定账号 ID 的现金流出，请核对当天记录。</span>
+      </div>
+      {{end}}
+
+      <div class="accounting-report-grid">
+        <article>
+          <h3>流量与现金</h3>
+          <dl>
+            <div><dt>外部请求</dt><dd>{{.Snapshot.ExternalRequests}}</dd></div>
+            <div><dt>内部请求</dt><dd>{{.Snapshot.InternalRequests}}</dd></div>
+            <div><dt>客户资源成本</dt><dd>¥{{.Snapshot.CustomerResourceCostCNY}}</dd></div>
+            <div><dt>内部资源成本</dt><dd>¥{{.Snapshot.InternalResourceCostCNY}}</dd></div>
+            <div><dt>现金流出</dt><dd>¥{{.Snapshot.CashOutflowCNY}}</dd></div>
+            <div><dt>现金事件数</dt><dd>{{.Snapshot.CashEventCount}}</dd></div>
+          </dl>
+        </article>
+        <article>
+          <h3>来源成本</h3>
+          <dl class="source-cost-list">
+            <div><dt>owned_oauth</dt><dd>¥{{.Snapshot.OwnedOAuthCostCNY}}</dd></div>
+            <div><dt>upstream_apikey</dt><dd>¥{{.Snapshot.UpstreamAPIKeyCostCNY}}</dd></div>
+          </dl>
+        </article>
+      </div>
+      {{else}}
+      <div class="accounting-empty">
+        <strong>{{.SelectedDate}} 暂无已保存快照</strong>
+        <span>每日结算完成后，此处会显示全站结果。</span>
+      </div>
+      {{end}}
+    </section>
+
+    <section class="accounting-history" aria-labelledby="cash-history-title">
+      <div class="accounting-section-head">
+        <div>
+          <p class="accounting-kicker">当日记录</p>
+          <h2 id="cash-history-title">现金事件</h2>
+        </div>
+      </div>
+      {{if .Events}}
+      <div class="table-wrap">
+        <table class="accounting-event-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>类型</th>
+              <th>金额</th>
+              <th>来源</th>
+              <th>账号 ID</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range .Events}}
+            <tr>
+              <td>{{.PaidAt}}</td>
+              <td>{{.EventType}}</td>
+              <td>¥{{.AmountCNY}}</td>
+              <td>{{.SourceKind}}</td>
+              <td>{{if .AccountID}}{{.AccountID}}{{else}}—{{end}}</td>
+              <td class="accounting-event-notes">{{.Notes}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <p class="accounting-empty accounting-history-empty">选定日期没有现金事件。</p>
+      {{end}}
+    </section>
+  </main>
+
+  <script src="/relay-ops/static/accounting.js" defer></script>
+</body>
+</html>{{end}}

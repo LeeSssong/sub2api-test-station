@@ -418,7 +418,7 @@ func (s *UpstreamBillingProbeService) ProbeAccount(ctx context.Context, accountI
 }
 
 // ProbeLifecycleAccount performs one forced native billing probe for an
-// eligible account lifecycle transition. It deliberately uses the manual
+// eligible account lifecycle transition. It uses a distinct lifecycle
 // probe mode so a newly created account or a just-enabled probe is refreshed
 // once even before the periodic runner sees it.
 func (s *UpstreamBillingProbeService) ProbeLifecycleAccount(ctx context.Context, accountID int64) (*UpstreamBillingProbeSnapshot, error) {

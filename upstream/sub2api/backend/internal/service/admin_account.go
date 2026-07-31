@@ -796,6 +796,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			account.Extra = make(map[string]any)
 		}
 		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policyIntent
+		account.RateMultiplierPolicyIntent = &policyIntent
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {

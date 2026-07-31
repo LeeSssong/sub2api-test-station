@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/accounting"
+	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/config"
@@ -43,6 +47,142 @@ func TestAcceptanceAnalysisRunnerDoesNotWrapAnUnconfiguredAgentAsANonNilInterfac
 	if runner == nil {
 		t.Fatal("configured agent must be wired into acceptance analysis")
 	}
+}
+
+func TestAccountingIsNotMountedWhenDisabled(t *testing.T) {
+	app := newAccountingVerificationApp(t, false, time.Time{})
+	t.Cleanup(app.Close)
+
+	recorder := httptest.NewRecorder()
+	app.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/relay-ops/accounting", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want=%d body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+	}
+}
+
+func TestAccountingEnabledBuildsZeroBaselineUntilNewUsageArrives(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	startDate := time.Date(2026, 8, 2, 0, 0, 0, 0, shanghai)
+	app := newAccountingVerificationApp(t, true, startDate)
+	t.Cleanup(app.Close)
+	if app.Accounting == nil {
+		t.Fatal("enabled accounting service = nil")
+	}
+
+	snapshot, err := app.Accounting.RecomputeDate(context.Background(), startDate)
+	if err != nil {
+		t.Fatalf("RecomputeDate: %v", err)
+	}
+	if got := snapshot.ExternalRevenueCNY.StringFixed(2); got != "0.00" {
+		t.Fatalf("external revenue = %s, want 0.00", got)
+	}
+	if got := snapshot.ResourceCostCNY.StringFixed(2); got != "0.00" {
+		t.Fatalf("resource cost = %s, want 0.00", got)
+	}
+}
+
+func TestConfiguredAccountingServiceIsEnabledOnlyAndUsesRuntimeConfiguration(t *testing.T) {
+	if service := configuredAccountingService(config.Config{}, nil); service != nil {
+		t.Fatalf("disabled accounting service = %#v, want nil", service)
+	}
+
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	startDate := time.Date(2026, 8, 2, 0, 0, 0, 0, shanghai)
+	service := configuredAccountingService(config.Config{
+		AccountingEnabled:           true,
+		Timezone:                    shanghai,
+		AccountingLedgerStartDate:   startDate,
+		AccountingInternalUserIDs:   []int64{7, 9},
+		AccountingInternalAPIKeyIDs: []int64{11},
+	}, nil)
+	if service == nil {
+		t.Fatal("enabled accounting service = nil")
+	}
+	if service.Timezone != shanghai || !service.StartDate.Equal(startDate) {
+		t.Fatalf("accounting schedule = timezone %v, start %v", service.Timezone, service.StartDate)
+	}
+	if len(service.Exclusions.InternalUserIDs) != 2 ||
+		service.Exclusions.InternalUserIDs[0] != 7 ||
+		service.Exclusions.InternalUserIDs[1] != 9 ||
+		len(service.Exclusions.InternalAPIKeyIDs) != 1 ||
+		service.Exclusions.InternalAPIKeyIDs[0] != 11 {
+		t.Fatalf("accounting exclusions = %#v", service.Exclusions)
+	}
+}
+
+// newAccountingVerificationApp builds the same App root route composition as
+// production, backed by an in-memory accounting repository. It deliberately
+// avoids New because New migrates and writes to its configured database.
+func newAccountingVerificationApp(t *testing.T, enabled bool, startDate time.Time) *App {
+	t.Helper()
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := configuredAccountingService(config.Config{
+		Mode:                      config.ModeClosed,
+		Timezone:                  shanghai,
+		AccountingEnabled:         enabled,
+		AccountingLedgerStartDate: startDate,
+	}, &accountingVerificationRepository{snapshots: make(map[time.Time]accounting.DailySnapshot)})
+	operations, err := newOperationsServer(httpserver.Dependencies{
+		BaseOrigin: "https://api.example.test",
+		Auth:       accountingVerificationAdminVerifier{}, Pricing: accountingVerificationPricing{},
+	}, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := http.NewServeMux()
+	root.Handle("/", operations)
+	return &App{Handler: root, Accounting: service}
+}
+
+type accountingVerificationPricing struct{}
+
+func (accountingVerificationPricing) PublicPricing(context.Context) ([]httpserver.PublicGroup, error) {
+	return nil, nil
+}
+
+type accountingVerificationAdminVerifier struct{}
+
+func (accountingVerificationAdminVerifier) VerifyAdminSession(context.Context, adminauth.Session) (adminauth.Identity, error) {
+	return adminauth.Identity{UserID: 1, Role: "admin", Status: "active"}, nil
+}
+
+type accountingVerificationRepository struct {
+	snapshots map[time.Time]accounting.DailySnapshot
+}
+
+func (*accountingVerificationRepository) ReadUsageTotals(context.Context, accounting.DayWindow, accounting.ExclusionPolicy) (accounting.UsageTotals, error) {
+	return accounting.UsageTotals{}, nil
+}
+
+func (*accountingVerificationRepository) ReadCashEventTotals(context.Context, accounting.DayWindow) (accounting.CashEventTotals, error) {
+	return accounting.CashEventTotals{}, nil
+}
+
+func (repository *accountingVerificationRepository) UpsertDailySnapshot(_ context.Context, snapshot accounting.DailySnapshot) error {
+	repository.snapshots[snapshot.ReportDate] = snapshot
+	return nil
+}
+
+func (*accountingVerificationRepository) CreateCashEvent(context.Context, domain.AdminActor, accounting.CashEventInput, string) (accounting.CashEvent, bool, error) {
+	return accounting.CashEvent{}, false, errors.New("cash events are outside this verification")
+}
+
+func (repository *accountingVerificationRepository) ReadDailySnapshot(_ context.Context, date time.Time) (accounting.DailySnapshot, bool, error) {
+	snapshot, found := repository.snapshots[date]
+	return snapshot, found, nil
+}
+
+func (*accountingVerificationRepository) ListCashEvents(context.Context, time.Time, time.Time, int) ([]accounting.CashEvent, error) {
+	return nil, nil
 }
 
 func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {

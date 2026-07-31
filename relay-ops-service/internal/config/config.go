@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -48,6 +49,10 @@ type Config struct {
 	CandidateSecretDir              string
 	QualificationProfilePath        string
 	AnalyzerCommandPath             string
+	AccountingEnabled               bool
+	AccountingLedgerStartDate       time.Time
+	AccountingInternalUserIDs       []int64
+	AccountingInternalAPIKeyIDs     []int64
 }
 
 func Load(env func(string) string) (Config, error) {
@@ -68,6 +73,36 @@ func Load(env func(string) string) (Config, error) {
 	timezone, err := time.LoadLocation(timezoneName)
 	if err != nil {
 		return Config{}, fmt.Errorf("load timezone: %w", err)
+	}
+	accountingEnabled, err := parseBool(get("RELAY_OPS_ACCOUNTING_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_ENABLED must be true or false")
+	}
+	accountingStartDateText := get("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE", "")
+	var accountingStartDate time.Time
+	if accountingEnabled {
+		if accountingStartDateText == "" {
+			return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE is required when accounting is enabled")
+		}
+		parsed, parseErr := time.ParseInLocation("2006-01-02", accountingStartDateText, timezone)
+		if parseErr != nil || parsed.Format("2006-01-02") != accountingStartDateText {
+			return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE must be YYYY-MM-DD")
+		}
+		accountingStartDate = parsed
+	} else if accountingStartDateText != "" {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", accountingStartDateText, timezone)
+		if parseErr != nil || parsed.Format("2006-01-02") != accountingStartDateText {
+			return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE must be YYYY-MM-DD")
+		}
+		accountingStartDate = parsed
+	}
+	accountingInternalUserIDs, err := parsePositiveIDList(get("RELAY_OPS_ACCOUNTING_INTERNAL_USER_IDS", ""))
+	if err != nil {
+		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_INTERNAL_USER_IDS: %w", err)
+	}
+	accountingInternalAPIKeyIDs, err := parsePositiveIDList(get("RELAY_OPS_ACCOUNTING_INTERNAL_API_KEY_IDS", ""))
+	if err != nil {
+		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_INTERNAL_API_KEY_IDS: %w", err)
 	}
 	databaseURLFile := get("RELAY_OPS_DATABASE_URL_FILE", "/run/secrets/relay-ops-database-url")
 	adminKeyFile := get("RELAY_OPS_SUB2API_ADMIN_KEY_FILE", "/run/secrets/sub2api-admin-api-key")
@@ -199,7 +234,48 @@ func Load(env func(string) string) (Config, error) {
 		CandidateSecretDir:              candidateSecretDir,
 		QualificationProfilePath:        get("RELAY_OPS_QUALIFICATION_PROFILE_PATH", "/app/config/upstream-benchmarks/mvp-text-v2.yaml"),
 		AnalyzerCommandPath:             analyzerCommandPath,
+		AccountingEnabled:               accountingEnabled,
+		AccountingLedgerStartDate:       accountingStartDate,
+		AccountingInternalUserIDs:       accountingInternalUserIDs,
+		AccountingInternalAPIKeyIDs:     accountingInternalAPIKeyIDs,
 	}, nil
+}
+
+func parseBool(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes":
+		return true, nil
+	case "false", "0", "no", "":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean")
+	}
+}
+
+func parsePositiveIDList(value string) ([]int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]int64, 0, len(parts))
+	seen := make(map[int64]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, fmt.Errorf("IDs must be positive comma-separated integers")
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("IDs must be positive comma-separated integers")
+		}
+		if _, exists := seen[id]; exists {
+			return nil, fmt.Errorf("duplicate ID %d", id)
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result, nil
 }
 
 func validateSecretFile(path string) error {

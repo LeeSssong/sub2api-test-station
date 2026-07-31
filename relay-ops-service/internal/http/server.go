@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
+	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/billing"
@@ -27,7 +29,7 @@ import (
 
 var ErrQualityReportStale = errors.New("quality report is stale or mismatched")
 
-//go:embed templates/*.html static/*.css
+//go:embed templates/*.html static/*.css static/*.js
 var assets embed.FS
 
 type PublicModel struct{ ModelID, Tier, Input, Output, CacheRead, CacheWrite string }
@@ -111,6 +113,13 @@ type QualityReviewService interface {
 	Preview(context.Context, domain.AdminActor, QualityPreviewInput) (QualitySwitchPreview, error)
 }
 
+type AccountingService interface {
+	CreateCashEvent(context.Context, domain.AdminActor, accounting.CashEventInput, string) (accounting.CashEvent, bool, error)
+	ReadDailySnapshot(context.Context, time.Time) (accounting.DailySnapshot, bool, error)
+	ListCashEvents(context.Context, time.Time, time.Time, int) ([]accounting.CashEvent, error)
+	RecomputeDate(context.Context, time.Time) (accounting.DailySnapshot, error)
+}
+
 type Dependencies struct {
 	BaseOrigin    string
 	Auth          adminauth.Verifier
@@ -121,12 +130,14 @@ type Dependencies struct {
 	Acceptance    SyntheticAcceptanceService
 	DailyReport   DailyReportAcceptanceService
 	QualityReview QualityReviewService
+	Accounting    AccountingService
 }
 
 type server struct {
 	dependencies Dependencies
 	templates    *template.Template
 	css          []byte
+	accountingJS []byte
 }
 
 func NewServer(dependencies Dependencies) (http.Handler, error) {
@@ -141,10 +152,22 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read CSS: %w", err)
 	}
-	s := &server{dependencies: dependencies, templates: templates, css: css}
+	accountingJS, err := assets.ReadFile("static/accounting.js")
+	if err != nil {
+		return nil, fmt.Errorf("read accounting JavaScript: %w", err)
+	}
+	s := &server{dependencies: dependencies, templates: templates, css: css, accountingJS: accountingJS}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)
 	mux.HandleFunc("GET /pricing", s.pricing)
+	if dependencies.Accounting != nil {
+		accountingMux := http.NewServeMux()
+		accountingMux.HandleFunc("GET /relay-ops/accounting", s.accountingPage)
+		accountingMux.HandleFunc("GET /relay-ops/api/accounting/daily", s.accountingDaily)
+		accountingMux.HandleFunc("POST /relay-ops/api/accounting/cash-events", s.createAccountingCashEvent)
+		mux.HandleFunc("GET /relay-ops/static/accounting.js", s.accountingScript)
+		mux.Handle("/relay-ops/", adminauth.RequireAdmin(dependencies.Auth, accountingMux))
+	}
 	return mux, nil
 }
 

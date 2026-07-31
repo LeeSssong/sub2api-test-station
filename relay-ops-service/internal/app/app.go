@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
+	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
@@ -38,11 +39,12 @@ import (
 const feishuOpenAPIBaseURL = "https://open.feishu.cn"
 
 type App struct {
-	Store     *store.Store
-	Scheduler *scheduler.Scheduler
-	Handler   http.Handler
-	Readiness *Readiness
-	Agent     *agent.Service
+	Store      *store.Store
+	Scheduler  *scheduler.Scheduler
+	Handler    http.Handler
+	Readiness  *Readiness
+	Agent      *agent.Service
+	Accounting *accounting.Service
 }
 
 type incidentMessageSender interface {
@@ -210,6 +212,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := database.Migrate(ctx); err != nil {
 		return nil, err
 	}
+	accountingService := configuredAccountingService(cfg, database)
 	if _, err := database.SupersedeLegacyNotificationIncidents(ctx, time.Now().UTC()); err != nil {
 		return nil, err
 	}
@@ -286,6 +289,13 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	escalationService := alerting.Service{Repository: database, Sender: notifier}
 	retryService := notify.DeliveryRetryService{Repository: database, Client: notificationTransport}
 	usageReader := billing.SessionReader{Reporter: database}
+	var accountingDaily func(context.Context) error
+	if accountingService != nil {
+		accountingDaily = func(runCtx context.Context) error {
+			_, err := accountingService.RecomputeRecent(runCtx)
+			return err
+		}
+	}
 	scheduled := &scheduler.Scheduler{
 		Mode: cfg.Mode, Store: database, Timezone: cfg.Timezone,
 		Production: func(runCtx context.Context) error {
@@ -366,6 +376,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			_, err := dailyReportService.Run(runCtx)
 			return err
 		},
+		AccountingDaily: accountingDaily,
 		SiteMonitor: func(runCtx context.Context) error {
 			return errors.Join(
 				groupImpactService.Run(runCtx),
@@ -392,14 +403,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
-	operations, err := httpserver.NewServer(httpserver.Dependencies{
+	operations, err := newOperationsServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:       billing.SessionRegistrationService{Repository: database},
 		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
 		DailyReport:   dailyReportService,
 		QualityReview: qualityReview,
-	})
+	}, accountingService)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +419,29 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/readyz", HealthHandler(readiness))
 	root.Handle("/", operations)
 	failed = false
-	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService}, nil
+	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService}, nil
+}
+
+func newOperationsServer(dependencies httpserver.Dependencies, accountingService *accounting.Service) (http.Handler, error) {
+	if accountingService != nil {
+		dependencies.Accounting = accountingService
+	}
+	return httpserver.NewServer(dependencies)
+}
+
+func configuredAccountingService(cfg config.Config, repository accounting.Repository) *accounting.Service {
+	if !cfg.AccountingEnabled {
+		return nil
+	}
+	return &accounting.Service{
+		Repository: repository,
+		Timezone:   cfg.Timezone,
+		StartDate:  cfg.AccountingLedgerStartDate,
+		Exclusions: accounting.ExclusionPolicy{
+			InternalUserIDs:   cfg.AccountingInternalUserIDs,
+			InternalAPIKeyIDs: cfg.AccountingInternalAPIKeyIDs,
+		},
+	}
 }
 
 func configuredCandidateService(cfg config.Config, repository candidates.Repository) candidates.Service {

@@ -45,6 +45,9 @@ var notificationConsolidationMigration string
 //go:embed migrations/007_native_ops_alert_bridge.sql
 var nativeOpsAlertBridgeMigration string
 
+//go:embed migrations/008_accounting_ledger.sql
+var accountingLedgerMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
@@ -52,6 +55,7 @@ func init() {
 	initialMigration += "\n" + notificationRetryMigration
 	initialMigration += "\n" + notificationConsolidationMigration
 	initialMigration += "\n" + nativeOpsAlertBridgeMigration
+	initialMigration += "\n" + accountingLedgerMigration
 }
 
 type Store struct {

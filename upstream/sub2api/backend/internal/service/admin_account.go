@@ -504,6 +504,17 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		}
 		account.RateMultiplier = input.RateMultiplier
 	}
+	if account.Extra == nil {
+		account.Extra = make(map[string]any)
+	}
+	// New accounts always persist an explicit policy. A supplied multiplier is
+	// an operator decision, so it wins over a simultaneous extra opt-in and is
+	// protected from the first billing probe.
+	if input.RateMultiplier != nil {
+		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
+	} else if _, exists := account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey]; !exists {
+		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManaged
+	}
 	if input.LoadFactor != nil && *input.LoadFactor > 0 {
 		if *input.LoadFactor > 10000 {
 			return nil, errors.New("load_factor must be <= 10000")
@@ -767,6 +778,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
 		account.RateMultiplier = input.RateMultiplier
+		if account.Extra == nil {
+			account.Extra = make(map[string]any)
+		}
+		// This is persisted together with the multiplier by accountRepo.Update,
+		// fencing an in-flight probe's conditional multiplier update.
+		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {
@@ -1037,6 +1054,12 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 	if input.RateMultiplier != nil {
 		repoUpdates.RateMultiplier = input.RateMultiplier
+		if repoUpdates.Extra == nil {
+			repoUpdates.Extra = make(map[string]any)
+		}
+		// BulkUpdate writes columns and JSONB extra in one UPDATE statement, so
+		// each selected account is protected atomically from a concurrent probe.
+		repoUpdates.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {

@@ -29,6 +29,69 @@ func TestDecideUpstreamBillingRateMultiplierSync(t *testing.T) {
 			wantReason: UpstreamBillingRateMultiplierDecisionReasonUpdated,
 		},
 		{
+			name:    "managed snapshot is quantized to persisted four decimal precision",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 0.249975},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantRate:   testFloat64Ptr(0.25),
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonUpdated,
+		},
+		{
+			name:    "quantized managed snapshot matching persisted value is unchanged",
+			account: &Account{RateMultiplier: testFloat64Ptr(0.25)},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 0.249975},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonUnchanged,
+		},
+		{
+			name:    "smallest half boundary rounds to minimum persisted positive value",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 0.00005},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantRate:   testFloat64Ptr(0.0001),
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonUpdated,
+		},
+		{
+			name:    "value rounding to zero is rejected",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 0.000049},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate,
+		},
+		{
+			name:    "value rounding to decimal maximum is accepted",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 999999.99994},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantRate:   testFloat64Ptr(999999.9999),
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonUpdated,
+		},
+		{
+			name:    "value overflowing decimal maximum after rounding is rejected",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": 999999.99995},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate,
+		},
+		{
 			name:    "zero multiplier is rejected",
 			account: &Account{RateMultiplier: &managedRate},
 			snapshot: &UpstreamBillingProbeSnapshot{
@@ -123,9 +186,9 @@ func TestUpstreamBillingRateMultiplierPolicyFromExtra(t *testing.T) {
 		wantValid  bool
 	}{
 		{
-			name:       "missing policy defaults to upstream managed",
+			name:       "missing policy preserves legacy configured multiplier",
 			extra:      map[string]any{},
-			wantPolicy: UpstreamBillingRateMultiplierPolicyManaged,
+			wantPolicy: UpstreamBillingRateMultiplierPolicyManualOverride,
 			wantValid:  true,
 		},
 		{
@@ -152,6 +215,25 @@ func TestUpstreamBillingRateMultiplierPolicyFromExtra(t *testing.T) {
 				t.Fatalf("policy, valid = %q, %t; want %q, %t", gotPolicy, gotValid, tt.wantPolicy, tt.wantValid)
 			}
 		})
+	}
+}
+
+func TestLegacyAccountWithoutPolicyIsNotOverwrittenByFirstProbe(t *testing.T) {
+	configuredRate := 0.8
+	policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(map[string]any{})
+	decision := DecideUpstreamBillingRateMultiplierSync(&UpstreamBillingProbeSnapshot{
+		Status: UpstreamBillingProbeStatusOK,
+		Data:   map[string]any{"effective_rate_multiplier": 0.07},
+	}, &Account{RateMultiplier: &configuredRate}, policy)
+
+	if !valid {
+		t.Fatal("legacy account policy must remain valid")
+	}
+	if decision.Reason != UpstreamBillingRateMultiplierDecisionReasonManualOverride {
+		t.Fatalf("decision reason = %q, want %q", decision.Reason, UpstreamBillingRateMultiplierDecisionReasonManualOverride)
+	}
+	if decision.RateMultiplier != nil {
+		t.Fatalf("legacy configured multiplier would be overwritten with %v", *decision.RateMultiplier)
 	}
 }
 

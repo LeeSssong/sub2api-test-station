@@ -2741,7 +2741,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			SET rate_multiplier = $1, updated_at = NOW()
 			WHERE id = $2
 				AND rate_multiplier IS NOT DISTINCT FROM $3
-				AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'
+			AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'manual_override') = 'upstream_managed'
 				AND deleted_at IS NULL
 		`, *decision.RateMultiplier, account.ID, expectedRate)
 		if err != nil {

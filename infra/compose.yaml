@@ -232,6 +232,18 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}
       CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}
       SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        case "$$SUB2API_ACTIVE_UPSTREAM" in
+          sub2api-blue:8080|sub2api-green:8080) ;;
+          *)
+            echo "invalid SUB2API_ACTIVE_UPSTREAM: $$SUB2API_ACTIVE_UPSTREAM" >&2
+            exit 64
+            ;;
+        esac
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports: ["80:80", "443:443"]
     expose: ["8081"]
     volumes:

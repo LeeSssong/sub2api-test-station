@@ -46,6 +46,19 @@ EOF
 compose=(docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/release.env" -f "$ROOT/infra/compose.yaml")
 "${compose[@]}" config --format json >"$FIXTURE/compose.json"
 
+cat >"$FIXTURE/invalid-release.env" <<'EOF'
+SUB2API_BLUE_IMAGE=example.invalid/sub2api-blue@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SUB2API_GREEN_IMAGE=example.invalid/sub2api-green@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+SUB2API_WORKER_IMAGE=example.invalid/sub2api-worker@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+SUB2API_ACTIVE_UPSTREAM=untrusted-upstream:8080
+SUB2API_ACTIVE_SLOT=blue
+SUB2API_PREVIOUS_SLOT=green
+SUB2API_IMAGE=example.invalid/sub2api-legacy@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+EOF
+
+invalid_compose=(docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/invalid-release.env" -f "$ROOT/infra/compose.yaml")
+"${invalid_compose[@]}" config --format json >"$FIXTURE/invalid-compose.json"
+
 ruby -rjson - "$FIXTURE/compose.json" "$FIXTURE" <<'RUBY'
 config = JSON.parse(File.read(ARGV.fetch(0)))
 fixture = ARGV.fetch(1)
@@ -126,6 +139,10 @@ allowed_upstreams = ["sub2api-blue:8080", "sub2api-green:8080"]
 assert!(allowed_upstreams.include?(caddy_environment["SUB2API_ACTIVE_UPSTREAM"]), "Caddy active upstream must be blue or green")
 assert!(caddy_environment["SUB2API_ACTIVE_UPSTREAM"] == "sub2api-blue:8080", "fixture active upstream must render into Caddy")
 
+command = caddy.fetch("command", nil)
+assert!(command.is_a?(Array) && command.first(2) == ["/bin/sh", "-ec"] && command.length == 3,
+        "Caddy must define a shell startup guard for the active upstream")
+
 puts "PASS: rendered blue/green/worker topology"
 RUBY
 
@@ -134,6 +151,23 @@ RUBY
 # unrelated homepage asset stage while exercising the deployed Caddy binary.
 readonly CADDY_RUNTIME_IMAGE=caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
 docker image inspect "$CADDY_RUNTIME_IMAGE" >/dev/null
+
+caddy_guard=$(ruby -rjson - "$FIXTURE/invalid-compose.json" <<'RUBY'
+config = JSON.parse(File.read(ARGV.fetch(0)))
+command = config.fetch("services").fetch("caddy").fetch("command")
+abort "FAIL: Caddy command must be a shell guard" unless command.is_a?(Array) && command.first(2) == ["/bin/sh", "-ec"] && command.length == 3
+puts command.fetch(2)
+RUBY
+)
+
+if invalid_output=$(docker run --rm \
+  --env "SITE_ADDRESS=sub2api.example.test" \
+  --env "SUB2API_ACTIVE_UPSTREAM=untrusted-upstream:8080" \
+  "$CADDY_RUNTIME_IMAGE" /bin/sh -ec "$caddy_guard" 2>&1); then
+  fail "Caddy startup accepted an invalid active upstream"
+fi
+[[ "$invalid_output" == *"invalid SUB2API_ACTIVE_UPSTREAM"* ]] || fail "Caddy did not report its invalid active upstream"
+printf 'PASS: Caddy startup rejects invalid active upstreams\n'
 
 for upstream in sub2api-blue:8080 sub2api-green:8080; do
   caddy=(docker run --rm

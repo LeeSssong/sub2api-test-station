@@ -147,10 +147,13 @@ $ git diff --check
 # exit 0
 ```
 
-`RELAY_OPS_TEST_DATABASE_URL` was not set on 2026-07-31, so PostgreSQL E2E
-tests were not run. The Task 7 app-construction checks use an in-memory
-accounting repository specifically to avoid connecting to any database while
-still checking disabled route mounting and an empty-baseline snapshot.
+On 2026-07-31, the final merged-tree verification used a disposable local
+PostgreSQL 18 container and a dedicated `relay_ops_test` database. With
+`RELAY_OPS_TEST_DATABASE_URL` pointing only to that temporary database,
+`internal/store`, `internal/nativeopssilence`, and `internal/app` all passed;
+the container was removed after the run. No production or staging database
+URL was read or used. The Task 7 app-construction checks also retain their
+in-memory coverage for disabled route mounting and an empty-baseline snapshot.
 
 No account credential was supplied to these tests. Existing HTTP assertions
 verify that account-page HTML excludes credential fields and that internal

@@ -425,6 +425,7 @@ type accountingUsageFixture struct {
 
 func newAccountingUsageFixture(t *testing.T, st *Store) *accountingUsageFixture {
 	t.Helper()
+	ensureAccountingUsageFixtureSchema(t, st)
 	fixture := &accountingUsageFixture{
 		st:    st,
 		ctx:   context.Background(),
@@ -443,6 +444,42 @@ func newAccountingUsageFixture(t *testing.T, st *Store) *accountingUsageFixture 
 		}
 	})
 	return fixture
+}
+
+func ensureAccountingUsageFixtureSchema(t *testing.T, st *Store) {
+	t.Helper()
+	if _, err := st.pool.Exec(context.Background(), `
+		CREATE TABLE IF NOT EXISTS public.users (
+			id BIGSERIAL PRIMARY KEY,
+			email TEXT NOT NULL,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS public.api_keys (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			key TEXT NOT NULL,
+			name TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS public.accounts (
+			id BIGSERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			platform TEXT NOT NULL,
+			type TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS public.usage_logs (
+			user_id BIGINT NOT NULL,
+			api_key_id BIGINT NOT NULL,
+			account_id BIGINT,
+			model TEXT NOT NULL,
+			actual_cost NUMERIC NOT NULL,
+			total_cost NUMERIC NOT NULL,
+			account_stats_cost NUMERIC,
+			account_rate_multiplier NUMERIC,
+			created_at TIMESTAMPTZ NOT NULL
+		)`); err != nil {
+		t.Fatalf("create accounting usage fixture schema: %v", err)
+	}
 }
 
 func (f *accountingUsageFixture) addUser(t *testing.T, role string) (int64, int64) {

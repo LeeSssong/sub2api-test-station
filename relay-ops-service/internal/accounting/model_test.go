@@ -154,6 +154,8 @@ func TestValidateCashEventRejectsBareCredentialValues(t *testing.T) {
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		"AbCdEf0123456789AbCdEf0123456789AbCdEf0123456789",
 		"AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUv",
+		"Authorization: Basic dXNlcjpwYXNz",
+		"authorization=abcdef",
 	} {
 		input := base
 		input.Notes = notes

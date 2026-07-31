@@ -13,12 +13,22 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const cashEventAmountScale = 8
+
 func decimalFromText(value string) (decimal.Decimal, error) {
 	d, err := decimal.NewFromString(value)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("parse numeric %q: %w", value, err)
 	}
 	return d, nil
+}
+
+func normalizeCashEventForStorage(input accounting.CashEventInput) accounting.CashEventInput {
+	// Match NUMERIC(20,8) and pgx's microsecond timestamptz encoding before
+	// both insertion and replay comparison.
+	input.PaidAt = input.PaidAt.UTC().Truncate(time.Microsecond)
+	input.AmountCNY = input.AmountCNY.Round(cashEventAmountScale)
+	return input
 }
 
 func (s *Store) CreateCashEvent(ctx context.Context, actor domain.AdminActor, input accounting.CashEventInput, idempotencyKey string) (accounting.CashEvent, bool, error) {
@@ -28,7 +38,7 @@ func (s *Store) CreateCashEvent(ctx context.Context, actor domain.AdminActor, in
 	if strings.TrimSpace(idempotencyKey) == "" || len([]byte(idempotencyKey)) > 200 {
 		return accounting.CashEvent{}, false, fmt.Errorf("idempotency_key is required and must be at most 200 bytes")
 	}
-	validated, err := accounting.ValidateCashEvent(input)
+	validated, err := accounting.ValidateCashEvent(normalizeCashEventForStorage(input))
 	if err != nil {
 		return accounting.CashEvent{}, false, err
 	}
@@ -44,7 +54,7 @@ func (s *Store) CreateCashEvent(ctx context.Context, actor domain.AdminActor, in
 			SET idempotency_key = EXCLUDED.idempotency_key
 		RETURNING id, event_type, paid_at, amount_cny::text, source_kind, account_id, notes,
 			idempotency_key, created_by_user_id, created_at, (xmax = 0) AS inserted`,
-		validated.EventType, validated.PaidAt.UTC(), validated.AmountCNY.String(),
+		validated.EventType, validated.PaidAt, validated.AmountCNY.StringFixed(cashEventAmountScale),
 		string(validated.SourceKind), validated.AccountID, validated.Notes, idempotencyKey, actor.UserID,
 	).Scan(&event.ID, &event.EventType, &event.PaidAt, &amountText, &event.SourceKind, &accountID,
 		&event.Notes, &idempotencyKey, &event.CreatedByUserID, &event.CreatedAt, &inserted)
@@ -67,12 +77,13 @@ func (s *Store) CreateCashEvent(ctx context.Context, actor domain.AdminActor, in
 }
 
 func compareCashEvent(stored accounting.CashEvent, input accounting.CashEventInput) error {
-	if stored.EventType != input.EventType ||
-		!stored.PaidAt.Equal(input.PaidAt.UTC()) ||
-		!stored.AmountCNY.Equal(input.AmountCNY) ||
-		stored.SourceKind != input.SourceKind ||
-		stored.Notes != input.Notes ||
-		!sameInt64Ptr(stored.AccountID, input.AccountID) {
+	normalized := normalizeCashEventForStorage(input)
+	if stored.EventType != normalized.EventType ||
+		!stored.PaidAt.Equal(normalized.PaidAt) ||
+		!stored.AmountCNY.Equal(normalized.AmountCNY) ||
+		stored.SourceKind != normalized.SourceKind ||
+		stored.Notes != normalized.Notes ||
+		!sameInt64Ptr(stored.AccountID, normalized.AccountID) {
 		return ErrConflict
 	}
 	return nil

@@ -7,7 +7,8 @@ STATUS: READY FOR INDEPENDENT REVIEW
 - An eligible active `openai` / `apikey` account now schedules one asynchronous,
   best-effort native billing probe after successful create or edit.
 - Enabling native billing probing schedules the same forced lifecycle probe.
-  The lifecycle service boundary rechecks eligibility and active status, so an
+  The lifecycle service boundary checks eligibility and active status both
+  before dispatch and on the account reload immediately preceding HTTP, so an
   inactive account makes no upstream HTTP request.
 - Lifecycle probes use the existing `ProbeAccount` persistence route and mark
   its synchronization context as `lifecycle`; scheduled probes retain the
@@ -124,3 +125,43 @@ ok github.com/Wei-Shaw/sub2api/cmd/server 3.422s
   behavior.
 - Push, deployment, and live verification are deliberately out of scope and
   still required before this project item can be marked complete.
+
+## Fix round 1 — lifecycle active-status TOCTOU
+
+Independent review found that the original lifecycle precheck ran on one
+account read, while `ProbeAccount` issued HTTP from a second read without an
+active-status requirement. A disable between those reads could therefore still
+contact the upstream.
+
+`ProbeLifecycleAccount` now uses an explicit active-required probe mode for
+its second load. Scheduled mode retains its existing active/enabled checks;
+manual `ProbeAccount` remains active-status agnostic, including when the
+per-account probe switch is disabled.
+
+RED (the first read returns active and changes the second read to disabled):
+
+```text
+go test ./internal/service -run TestUpstreamBillingProbeLifecycleProbeRechecksActiveStatusBeforeHTTPRequest -count=1
+Expected nil, but got: &service.UpstreamBillingProbeSnapshot{Status:"ok", ...}
+FAIL
+```
+
+GREEN (second read blocks the request):
+
+```text
+go test ./internal/service -run 'TestUpstreamBillingProbe(LifecycleProbe(RechecksActiveStatusBeforeHTTPRequest|UsesLifecycleSyncTrigger|SkipsInactiveAccount)|RunnerIsBoundedAndManualProbeIgnoresSwitches)' -count=1
+ok github.com/Wei-Shaw/sub2api/internal/service 2.025s
+```
+
+The race regression asserts two repository reads and zero upstream HTTP calls.
+
+GREEN (full affected-package regression, exit status 0):
+
+```text
+go test ./internal/service ./internal/handler/admin ./internal/repository ./internal/server/routes ./cmd/server -count=1
+ok github.com/Wei-Shaw/sub2api/internal/service 101.134s
+ok github.com/Wei-Shaw/sub2api/internal/handler/admin 2.523s
+ok github.com/Wei-Shaw/sub2api/internal/repository 3.749s
+ok github.com/Wei-Shaw/sub2api/internal/server/routes 3.198s
+ok github.com/Wei-Shaw/sub2api/cmd/server 3.223s
+```

@@ -424,18 +424,26 @@ func (s *UpstreamBillingProbeService) ProbeLifecycleAccount(ctx context.Context,
 	if !isUpstreamBillingProbeAccount(account) || !account.IsActive() {
 		return nil, nil
 	}
-	return s.ProbeAccount(WithUpstreamBillingRateMultiplierSyncTrigger(ctx, UpstreamBillingRateMultiplierSyncTriggerLifecycle), accountID)
+	settings, err := s.getSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.probeLifecycleAccount(WithUpstreamBillingRateMultiplierSyncTrigger(ctx, UpstreamBillingRateMultiplierSyncTriggerLifecycle), accountID, settings.IntervalMinutes)
 }
 
 func (s *UpstreamBillingProbeService) probeAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
-	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false)
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false, false)
 }
 
 func (s *UpstreamBillingProbeService) probeScheduledAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
-	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, true)
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, true, true)
 }
 
-func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, accountID int64, intervalMinutes int, requireEnabled bool) (*UpstreamBillingProbeSnapshot, error) {
+func (s *UpstreamBillingProbeService) probeLifecycleAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
+	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false, true)
+}
+
+func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, accountID int64, intervalMinutes int, requireEnabled, requireActive bool) (*UpstreamBillingProbeSnapshot, error) {
 	key := strconv.FormatInt(accountID, 10)
 	value, err, _ := s.probeGroup.Do(key, func() (any, error) {
 		select {
@@ -451,8 +459,11 @@ func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, 
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
+		if requireActive && !account.IsActive() {
+			return nil, nil
+		}
 		if requireEnabled {
-			if !account.IsActive() || !upstreamBillingProbeEnabled(account) {
+			if !upstreamBillingProbeEnabled(account) {
 				return nil, nil
 			}
 			if snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra); snapshot != nil &&

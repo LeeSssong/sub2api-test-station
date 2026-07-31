@@ -32,6 +32,24 @@ type staleDueUpstreamBillingProbeAccountRepo struct {
 	due []Account
 }
 
+type lifecycleTOCTOUUpstreamBillingProbeAccountRepo struct {
+	*upstreamBillingProbeAccountRepo
+	reads atomic.Int64
+}
+
+func (r *lifecycleTOCTOUUpstreamBillingProbeAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
+	account, err := r.upstreamBillingProbeAccountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if r.reads.Add(1) == 1 {
+		r.mu.Lock()
+		r.accounts[id].Status = StatusDisabled
+		r.mu.Unlock()
+	}
+	return account, nil
+}
+
 func (r *staleDueUpstreamBillingProbeAccountRepo) ListDueUpstreamBillingProbeAccounts(_ context.Context, _ time.Time, limit int) ([]Account, error) {
 	if limit < len(r.due) {
 		return append([]Account(nil), r.due[:limit]...), nil
@@ -600,6 +618,7 @@ func TestUpstreamBillingProbeRunnerIsBoundedAndManualProbeIgnoresSwitches(t *tes
 	require.Equal(t, int64(20), upstream.calls.Load())
 
 	accounts[25].Extra[UpstreamBillingProbeEnabledExtraKey] = false
+	accounts[25].Status = StatusDisabled
 	snapshot, err := svc.ProbeAccount(context.Background(), 25)
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
@@ -647,6 +666,28 @@ func TestUpstreamBillingProbeLifecycleProbeSkipsInactiveAccount(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, snapshot)
 	require.Equal(t, int64(0), upstream.calls.Load())
+}
+
+func TestUpstreamBillingProbeLifecycleProbeRechecksActiveStatusBeforeHTTPRequest(t *testing.T) {
+	account := &Account{
+		ID:          242,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+	}
+	baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	repo := &lifecycleTOCTOUUpstreamBillingProbeAccountRepo{upstreamBillingProbeAccountRepo: baseRepo}
+	upstream := &upstreamBillingProbeHTTPStub{}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeLifecycleAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Nil(t, snapshot)
+	require.Equal(t, int64(2), repo.reads.Load())
+	require.Zero(t, upstream.calls.Load())
 }
 
 func TestUpstreamBillingProbeScheduledProbeUsesScheduledSyncTrigger(t *testing.T) {

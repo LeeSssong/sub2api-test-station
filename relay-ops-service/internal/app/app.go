@@ -403,15 +403,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
-	operations, err := httpserver.NewServer(httpserver.Dependencies{
+	operations, err := newOperationsServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:       billing.SessionRegistrationService{Repository: database},
 		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
 		DailyReport:   dailyReportService,
 		QualityReview: qualityReview,
-		Accounting:    accountingService,
-	})
+	}, accountingService)
 	if err != nil {
 		return nil, err
 	}
@@ -421,6 +420,13 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/", operations)
 	failed = false
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService}, nil
+}
+
+func newOperationsServer(dependencies httpserver.Dependencies, accountingService *accounting.Service) (http.Handler, error) {
+	if accountingService != nil {
+		dependencies.Accounting = accountingService
+	}
+	return httpserver.NewServer(dependencies)
 }
 
 func configuredAccountingService(cfg config.Config, repository accounting.Repository) *accounting.Service {

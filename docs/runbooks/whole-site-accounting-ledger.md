@@ -118,3 +118,43 @@ treated as customer revenue in the first snapshots.
 
 Keep the database backup archive, the confirmed ledger start date, the first
 daily snapshot, and the complete cash-event history as activation evidence.
+
+## Implementation verification record (2026-07-31)
+
+This is local implementation evidence, not a staging or production activation
+record. No reset `--apply`, service restart, staging activation, or production
+database connection was performed during this verification. In particular,
+`2026-08-02` appears only as the deterministic future empty-baseline date in
+the application test; it is **not** an activated ledger start date.
+
+The following commands completed successfully from the repository checkout:
+
+```text
+$ cd relay-ops-service && go test ./... -count=1
+ok   example.invalid/relay-ops-service/internal/accounting
+ok   example.invalid/relay-ops-service/internal/app
+ok   example.invalid/relay-ops-service/internal/http
+ok   example.invalid/relay-ops-service/internal/store
+... all remaining packages passed
+
+$ cd relay-ops-service && go vet ./...
+# exit 0
+
+$ bash tests/operations/reset_accounting_baseline_test.sh
+# exit 0
+
+$ git diff --check
+# exit 0
+```
+
+`RELAY_OPS_TEST_DATABASE_URL` was not set on 2026-07-31, so PostgreSQL E2E
+tests were not run. The Task 7 app-construction checks use an in-memory
+accounting repository specifically to avoid connecting to any database while
+still checking disabled route mounting and an empty-baseline snapshot.
+
+No account credential was supplied to these tests. Existing HTTP assertions
+verify that account-page HTML excludes credential fields and that internal
+errors do not reach clients; successful cash-event JSON response shape is
+covered separately. The implementation diff contains neither account
+credentials nor database URLs. A staging activation record must be added only
+after an authorized staging reset, deployment, and observed verification.

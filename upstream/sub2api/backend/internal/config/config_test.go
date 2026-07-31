@@ -23,6 +23,66 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestLoadProcessRole(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   *string
+		want    ProcessRole
+		wantErr bool
+	}{
+		{name: "defaults to all", want: ProcessRoleAll},
+		{name: "accepts normalized api", value: stringPointer("  API  "), want: ProcessRoleAPI},
+		{name: "accepts normalized worker", value: stringPointer("  WoRkEr  "), want: ProcessRoleWorker},
+		{name: "rejects primary", value: stringPointer("primary"), wantErr: true},
+		{name: "rejects explicitly empty", value: stringPointer("   "), wantErr: true},
+		{name: "rejects unknown", value: stringPointer("scheduler"), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			if tt.value != nil {
+				t.Setenv("SERVER_PROCESS_ROLE", *tt.value)
+			}
+
+			cfg, err := Load()
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorContains(t, err, "server.process_role")
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Server.ProcessRole)
+		})
+	}
+}
+
+func TestProcessRoleCapabilities(t *testing.T) {
+	tests := []struct {
+		role              ProcessRole
+		servesAPI         bool
+		runsMigrations    bool
+		runsSingletonJobs bool
+	}{
+		{role: ProcessRoleAll, servesAPI: true, runsMigrations: true, runsSingletonJobs: true},
+		{role: ProcessRoleAPI, servesAPI: true},
+		{role: ProcessRoleWorker, runsMigrations: true, runsSingletonJobs: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.role), func(t *testing.T) {
+			require.Equal(t, tt.servesAPI, tt.role.ServesAPI())
+			require.Equal(t, tt.runsMigrations, tt.role.RunsMigrations())
+			require.Equal(t, tt.runsSingletonJobs, tt.role.RunsSingletonJobs())
+		})
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
 func TestLoadServerTimingConfig(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetViperWithJWTSecret(t)

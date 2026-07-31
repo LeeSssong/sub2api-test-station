@@ -103,6 +103,106 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 	return applyMigrationsFS(ctx, db, migrations.FS)
 }
 
+// VerifyMigrations verifies that every non-empty migration in the embedded
+// migration set has already been applied with the expected checksum. It only
+// reads schema_migrations; callers use it for processes that must not mutate
+// the database during startup.
+func VerifyMigrations(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return errors.New("nil sql db")
+	}
+	return verifyMigrationsFS(ctx, db, migrations.FS)
+}
+
+type migrationFile struct {
+	name     string
+	content  string
+	checksum string
+}
+
+func migrationFiles(fsys fs.FS) ([]migrationFile, error) {
+	files, err := fs.Glob(fsys, "*.sql")
+	if err != nil {
+		return nil, fmt.Errorf("list migrations: %w", err)
+	}
+	sort.Strings(files)
+
+	result := make([]migrationFile, 0, len(files))
+	for _, name := range files {
+		contentBytes, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return nil, fmt.Errorf("read migration %s: %w", name, err)
+		}
+		content := strings.TrimSpace(string(contentBytes))
+		if content == "" {
+			continue
+		}
+		result = append(result, migrationFile{
+			name:     name,
+			content:  content,
+			checksum: normalizedMigrationChecksum(content),
+		})
+	}
+	return result, nil
+}
+
+func normalizedMigrationChecksum(content string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(content)))
+	return hex.EncodeToString(sum[:])
+}
+
+// MigrationSetHash returns a deterministic hash of the sorted migration set.
+func MigrationSetHash(fsys fs.FS) (string, error) {
+	files, err := migrationFiles(fsys)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	for _, file := range files {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\n", file.name, file.checksum)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func verifyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
+	if db == nil {
+		return errors.New("nil sql db")
+	}
+	files, err := migrationFiles(fsys)
+	if err != nil {
+		return err
+	}
+
+	rows, err := db.QueryContext(ctx, "SELECT filename, checksum FROM schema_migrations")
+	if err != nil {
+		return fmt.Errorf("read schema_migrations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	dbChecksums := make(map[string]string, len(files))
+	for rows.Next() {
+		var filename, checksum string
+		if err := rows.Scan(&filename, &checksum); err != nil {
+			return fmt.Errorf("read schema_migrations row: %w", err)
+		}
+		dbChecksums[filename] = checksum
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read schema_migrations rows: %w", err)
+	}
+
+	for _, file := range files {
+		dbChecksum, ok := dbChecksums[file.name]
+		if !ok {
+			return fmt.Errorf("migration %s missing from schema_migrations", file.name)
+		}
+		if dbChecksum != file.checksum && !isMigrationChecksumCompatible(file.name, dbChecksum, file.checksum) {
+			return fmt.Errorf("migration %s checksum mismatch (db=%s file=%s)", file.name, dbChecksum, file.checksum)
+		}
+	}
+	return nil
+}
+
 // applyMigrationsFS 是迁移执行的核心实现。
 // 它从指定的文件系统读取 SQL 迁移文件并按顺序应用。
 //
@@ -158,28 +258,15 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 
 	// 获取所有 .sql 迁移文件并按文件名排序。
 	// 命名规范：使用零填充数字前缀（如 001_init.sql, 002_add_users.sql）。
-	files, err := fs.Glob(fsys, "*.sql")
+	files, err := migrationFiles(fsys)
 	if err != nil {
-		return fmt.Errorf("list migrations: %w", err)
+		return err
 	}
-	sort.Strings(files) // 确保按文件名顺序执行迁移
 
-	for _, name := range files {
-		// 读取迁移文件内容
-		contentBytes, err := fs.ReadFile(fsys, name)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", name, err)
-		}
-
-		content := strings.TrimSpace(string(contentBytes))
-		if content == "" {
-			continue // 跳过空文件
-		}
-
-		// 计算文件内容的 SHA256 校验和，用于检测文件是否被修改。
-		// 这是一种防篡改机制：如果有人修改了已应用的迁移文件，系统会拒绝启动。
-		sum := sha256.Sum256([]byte(content))
-		checksum := hex.EncodeToString(sum[:])
+	for _, file := range files {
+		name := file.name
+		content := file.content
+		checksum := file.checksum
 
 		// 检查该迁移是否已经应用
 		var existing string
@@ -435,8 +522,7 @@ func latestMigrationBaseline(fsys fs.FS) (string, string, string, error) {
 		return "", "", "", err
 	}
 	content := strings.TrimSpace(string(contentBytes))
-	sum := sha256.Sum256([]byte(content))
-	hash := hex.EncodeToString(sum[:])
+	hash := normalizedMigrationChecksum(content)
 	version := strings.TrimSuffix(name, ".sql")
 	return version, version, hash, nil
 }

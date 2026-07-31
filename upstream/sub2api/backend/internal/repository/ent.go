@@ -69,18 +69,26 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 	// 这种方式比 Ent 的自动迁移更可控，支持复杂的迁移场景。
 	migrationCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := applyMigrationsFS(migrationCtx, drv.DB(), migrations.FS); err != nil {
+	var migrationErr error
+	if cfg.Server.ProcessRole.RunsMigrations() {
+		migrationErr = applyMigrationsFS(migrationCtx, drv.DB(), migrations.FS)
+	} else {
+		migrationErr = verifyMigrationsFS(migrationCtx, drv.DB(), migrations.FS)
+	}
+	if migrationErr != nil {
 		_ = drv.Close() // 迁移失败时关闭驱动，避免资源泄露
-		return nil, nil, err
+		return nil, nil, migrationErr
 	}
 
 	// 创建 Ent 客户端，绑定到已配置的数据库驱动。
 	client := ent.NewClient(ent.Driver(drv))
 
 	// 启动阶段：从配置或数据库中确保系统密钥可用。
-	if err := ensureBootstrapSecrets(migrationCtx, client, cfg); err != nil {
-		_ = client.Close()
-		return nil, nil, err
+	if cfg.Server.ProcessRole.RunsMigrations() {
+		if err := ensureBootstrapSecrets(migrationCtx, client, cfg); err != nil {
+			_ = client.Close()
+			return nil, nil, err
+		}
 	}
 
 	// 在密钥补齐后执行完整配置校验，避免空 jwt.secret 导致服务运行时失败。
@@ -92,7 +100,7 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 	// SIMPLE 模式：启动时补齐各平台默认分组。
 	// - anthropic/openai/gemini: 确保存在 <platform>-default
 	// - antigravity: 仅要求存在 >=2 个未软删除分组（用于 claude/gemini 混合调度场景）
-	if cfg.RunMode == config.RunModeSimple {
+	if cfg.Server.ProcessRole.RunsMigrations() && cfg.RunMode == config.RunModeSimple {
 		seedCtx, seedCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer seedCancel()
 		if err := ensureSimpleModeDefaultGroups(seedCtx, client); err != nil {

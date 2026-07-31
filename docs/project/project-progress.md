@@ -26,7 +26,7 @@
 4. **relay-ops 原生 P0/P1 Bridge 与蓝绿发布机制**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；可复用蓝绿机制尚不存在。**状态：持续实施**。
 5. **Caddy/homepage 运行时差异与全站账务总账**：Caddy/homepage 运行时改动须独立发布；`accounting-ledger` 仍在 `codex/accounting-ledger`，未合并。**状态：工程差异待部署/持续实施**。
 6. **Neko/Wawazz 门禁、D04 readiness、备份留存和后续运营**：均保留最新证据和外部验收跟进，不因文档或历史报告单独记为工程未部署。
-7. **账号上游倍率自动同步**：上游 billing probe 已解析账号有效倍率，但当前只写入观测快照，未回写 `accounts.rate_multiplier`；本次将增加托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发。Task 1 的托管/手工覆盖策略与纯决策逻辑已准备完成；Task 2（仓储事务、审计和缓存同步）已于 2026-07-31 完成本地实现与回归验证，但尚未推送、部署或线上验证；整体仍需后续接线、推送、部署和线上验证。**状态：进行中；待代码实现、推送、部署和线上验证**。
+7. **账号上游倍率自动同步**：上游 billing probe 已解析账号有效倍率，但当前只写入观测快照，未回写 `accounts.rate_multiplier`；本次增加托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发。Task 1 的托管/手工覆盖策略与纯决策逻辑、Task 2 的仓储事务/审计/缓存同步、Task 3 的生命周期强制刷新和周期探测接线均已完成本地实现与回归验证，正待独立复审；尚未推送、部署或线上验证。**状态：进行中；待独立复审、推送、部署和线上验证**。
 
 ## 生产工程代码/配置已部署并验证（18 项）
 
@@ -198,7 +198,7 @@
 2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
 3. **全站账务总账**：`codex/accounting-ledger` 仍在进行中，未合并到 `main`；Task 1–3 已实现并通过独立复审，Task 4 受保护的极简现金台账与日报页面/API 正在实施，仍待后续实现、推送、部署和三方验收；**状态：持续实施**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-ledger-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[历史证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)、[当前状态](current-state.md)。
 4. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
-5. **账号上游倍率自动同步**：解决 billing probe 结果与实际计费倍率漂移；将同步 `effective_rate_multiplier` 到托管账号的 `accounts.rate_multiplier`，保留手工覆盖并刷新缓存/调度器快照。Task 2（仓储事务、审计和缓存同步）已于 2026-07-31 完成本地实现与回归验证，但尚未推送、部署或线上验证。**状态：进行中；尚待代码实现、服务端推送、生产部署和生效验证**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
+5. **账号上游倍率自动同步**：解决 billing probe 结果与实际计费倍率漂移；将同步 `effective_rate_multiplier` 到托管账号的 `accounts.rate_multiplier`，保留手工覆盖并刷新缓存/调度器快照。Task 3（生命周期强制刷新、周期触发接线和用量日志倍率回归）已于 2026-07-31 完成本地实现与回归验证，正待独立复审；尚未推送、部署或线上验证。**状态：进行中；尚待独立复审、服务端推送、生产部署和生效验证**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 
 ## 总账维护规则
 

@@ -409,6 +409,24 @@ func (s *UpstreamBillingProbeService) ProbeAccount(ctx context.Context, accountI
 	return s.probeAccount(ctx, accountID, settings.IntervalMinutes)
 }
 
+// ProbeLifecycleAccount performs one forced native billing probe for an
+// eligible account lifecycle transition. It deliberately uses the manual
+// probe mode so a newly created account or a just-enabled probe is refreshed
+// once even before the periodic runner sees it.
+func (s *UpstreamBillingProbeService) ProbeLifecycleAccount(ctx context.Context, accountID int64) (*UpstreamBillingProbeSnapshot, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, ErrUpstreamBillingProbeUnavailable
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !isUpstreamBillingProbeAccount(account) || !account.IsActive() {
+		return nil, nil
+	}
+	return s.ProbeAccount(WithUpstreamBillingRateMultiplierSyncTrigger(ctx, UpstreamBillingRateMultiplierSyncTriggerLifecycle), accountID)
+}
+
 func (s *UpstreamBillingProbeService) probeAccount(ctx context.Context, accountID int64, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
 	return s.probeAccountWithMode(ctx, accountID, intervalMinutes, false)
 }

@@ -30,8 +30,10 @@ type stubAdminService struct {
 	testedProxyIDs                      []int64
 	getUserErr                          error
 	createAccountErr                    error
+	createAccountResult                 *service.Account
 	createSparkShadowErr                error
 	updateAccountErr                    error
+	updateAccountResult                 *service.Account
 	bulkUpdateAccountErr                error
 	lastBulkUpdateAccountInput          *service.BulkUpdateAccountsInput
 	getAccountResult                    *service.Account
@@ -486,6 +488,9 @@ func (s *stubAdminService) CreateAccount(ctx context.Context, input *service.Cre
 	if s.createAccountErr != nil {
 		return nil, s.createAccountErr
 	}
+	if s.createAccountResult != nil {
+		return s.createAccountResult, nil
+	}
 	account := service.Account{ID: 300, Name: input.Name, Status: service.StatusActive}
 	return &account, nil
 }
@@ -503,6 +508,9 @@ func (s *stubAdminService) UpdateAccount(ctx context.Context, id int64, input *s
 	s.updateAccountCalls++
 	if s.updateAccountErr != nil {
 		return nil, s.updateAccountErr
+	}
+	if s.updateAccountResult != nil {
+		return s.updateAccountResult, nil
 	}
 	account := service.Account{ID: id, Name: input.Name, Status: service.StatusActive}
 	return &account, nil

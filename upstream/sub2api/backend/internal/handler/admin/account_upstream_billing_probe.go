@@ -70,6 +70,9 @@ func (h *AccountHandler) SetUpstreamBillingProbeEnabled(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if *req.Enabled {
+		h.scheduleUpstreamBillingLifecycleProbeByID(accountID)
+	}
 	response.Success(c, gin.H{"account_id": accountID, "enabled": *req.Enabled})
 }
 

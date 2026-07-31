@@ -20,10 +20,11 @@ import (
 
 type upstreamBillingProbeAccountRepo struct {
 	AccountRepository
-	mu          sync.Mutex
-	accounts    map[int64]*Account
-	updates     map[int64][]map[string]any
-	bulkUpdates []AccountBulkUpdate
+	mu           sync.Mutex
+	accounts     map[int64]*Account
+	updates      map[int64][]map[string]any
+	bulkUpdates  []AccountBulkUpdate
+	syncTriggers []string
 }
 
 type staleDueUpstreamBillingProbeAccountRepo struct {
@@ -110,7 +111,7 @@ func (r *upstreamBillingProbeAccountRepo) UpdateExtra(_ context.Context, id int6
 	return nil
 }
 
-func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(_ context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot) error {
+func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(ctx context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	account := r.accounts[expected.ID]
@@ -121,6 +122,7 @@ func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(_ c
 		account.Extra = make(map[string]any)
 	}
 	account.Extra[UpstreamBillingProbeExtraKey] = snapshot
+	r.syncTriggers = append(r.syncTriggers, UpstreamBillingRateMultiplierSyncTriggerFromContext(ctx))
 	return nil
 }
 
@@ -602,6 +604,103 @@ func TestUpstreamBillingProbeRunnerIsBoundedAndManualProbeIgnoresSwitches(t *tes
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
 	require.Equal(t, int64(21), upstream.calls.Load())
+}
+
+func TestUpstreamBillingProbeLifecycleProbeUsesLifecycleSyncTrigger(t *testing.T) {
+	account := &Account{
+		ID:          24,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	upstream := &upstreamBillingProbeHTTPStub{}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeLifecycleAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	require.Equal(t, int64(1), upstream.calls.Load())
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Equal(t, []string{UpstreamBillingRateMultiplierSyncTriggerLifecycle}, repo.syncTriggers)
+}
+
+func TestUpstreamBillingProbeLifecycleProbeSkipsInactiveAccount(t *testing.T) {
+	account := &Account{
+		ID:          241,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusDisabled,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	upstream := &upstreamBillingProbeHTTPStub{}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeLifecycleAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Nil(t, snapshot)
+	require.Equal(t, int64(0), upstream.calls.Load())
+}
+
+func TestUpstreamBillingProbeScheduledProbeUsesScheduledSyncTrigger(t *testing.T) {
+	account := &Account{
+		ID:          25,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+		Extra:       map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.probeScheduledAccount(context.Background(), account.ID, 30)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Equal(t, []string{UpstreamBillingRateMultiplierSyncTriggerScheduled}, repo.syncTriggers)
+}
+
+func TestUpstreamBillingProbeFailurePreservesExistingMultiplierAndBillingData(t *testing.T) {
+	rate := 0.07
+	previousData := map[string]any{"effective_rate_multiplier": 0.07}
+	account := &Account{
+		ID:             26,
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Concurrency:    1,
+		RateMultiplier: &rate,
+		Credentials:    map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: &UpstreamBillingProbeSnapshot{
+				Status:     UpstreamBillingProbeStatusOK,
+				Data:       previousData,
+				ReceivedAt: probeTimePtr(time.Date(2026, time.July, 13, 1, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	svc := newUpstreamBillingProbeTestService(repo, nil, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeLifecycleAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusFailed, snapshot.Status)
+	require.Equal(t, previousData, snapshot.Data)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Equal(t, 0.07, *repo.accounts[account.ID].RateMultiplier)
 }
 
 func TestUpstreamBillingProbeRunnerRechecksEnabledAfterDueSelection(t *testing.T) {

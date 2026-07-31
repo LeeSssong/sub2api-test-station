@@ -40,11 +40,11 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	ttftP95 := 880.0
 	latencyP95 := 2400.0
 	stub := &monitorV2SnapshotterStub{
-		 snapshot: &service.MonitorV2Snapshot{
-			ContractVersion: service.MonitorV2ContractVersion,
-			Window:          service.MonitorV2Window7D,
+		snapshot: &service.MonitorV2Snapshot{
+			ContractVersion:        service.MonitorV2ContractVersion,
+			Window:                 service.MonitorV2Window7D,
 			RefreshIntervalSeconds: 300,
-			GeneratedAt:     time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
+			GeneratedAt:            time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
 			Groups: []service.MonitorV2Group{
 				{
 					ID:             7,
@@ -71,9 +71,6 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 						Value:       &latencyP95,
 						SampleCount: 199,
 					},
-					Models: []service.MonitorV2Model{
-						{Name: "gpt-5.4", Status: service.MonitorStatusOperational},
-					},
 				},
 			},
 		},
@@ -94,13 +91,15 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-	require.Equal(t, "3", envelope.Data["contract_version"])
+	require.Equal(t, "4", envelope.Data["contract_version"])
 	require.Equal(t, float64(300), envelope.Data["refresh_interval_seconds"])
 	require.Equal(t, "7d", envelope.Data["window"])
 	groups, ok := envelope.Data["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 1)
 	group := groups[0].(map[string]any)
+	_, hasModels := group["models"]
+	require.False(t, hasModels)
 	require.Equal(t, float64(880), group["ttft_p95"].(map[string]any)["value"])
 	require.Equal(t, float64(180), group["ttft_p95"].(map[string]any)["sample_count"])
 	require.Equal(t, float64(2400), group["latency_p95"].(map[string]any)["value"])

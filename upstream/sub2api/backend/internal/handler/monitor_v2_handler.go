@@ -48,11 +48,6 @@ type monitorV2TimelinePointResponse struct {
 	EligibleCount int64    `json:"eligible_count"`
 }
 
-type monitorV2ModelResponse struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-}
-
 type monitorV2GroupResponse struct {
 	ID                 int64                            `json:"id"`
 	Name               string                           `json:"name"`
@@ -71,7 +66,6 @@ type monitorV2GroupResponse struct {
 	LatencyP95         monitorV2MetricResponse          `json:"latency_p95"`
 	CacheHit           monitorV2MetricResponse          `json:"cache_hit"`
 	Timeline           []monitorV2TimelinePointResponse `json:"timeline"`
-	Models             []monitorV2ModelResponse         `json:"models"`
 }
 
 type monitorV2SnapshotResponse struct {
@@ -147,13 +141,6 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 				EligibleCount: point.EligibleCount,
 			})
 		}
-		models := make([]monitorV2ModelResponse, 0, len(group.Models))
-		for _, model := range group.Models {
-			models = append(models, monitorV2ModelResponse{
-				Name:   model.Name,
-				Status: model.Status,
-			})
-		}
 		groups = append(groups, monitorV2GroupResponse{
 			ID:                 group.ID,
 			Name:               group.Name,
@@ -176,7 +163,6 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 			LatencyP95: monitorV2MetricFromService(group.LatencyP95),
 			CacheHit:   monitorV2MetricFromService(group.CacheHit),
 			Timeline:   timeline,
-			Models:     models,
 		})
 	}
 	return monitorV2SnapshotResponse{

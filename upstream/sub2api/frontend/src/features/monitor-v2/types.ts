@@ -1,4 +1,4 @@
-export const MONITOR_V2_CONTRACT_VERSION = '3' as const
+export const MONITOR_V2_CONTRACT_VERSION = '4' as const
 
 export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
@@ -10,8 +10,6 @@ export type MonitorV2GroupStatus =
   | 'unavailable'
   | 'unconfigured'
   | 'insufficient_data'
-export type MonitorV2ModelStatus = MonitorV2GroupStatus
-
 export interface MonitorV2Metric {
   state: MonitorV2MetricState
   value: number | null
@@ -29,11 +27,6 @@ export interface MonitorV2TimelinePoint {
   value: number | null
   success_count: number
   eligible_count: number
-}
-
-export interface MonitorV2Model {
-  name: string
-  status: MonitorV2ModelStatus
 }
 
 export interface MonitorV2Group {
@@ -54,7 +47,6 @@ export interface MonitorV2Group {
   latency_p95: MonitorV2Metric
   cache_hit: MonitorV2Metric
   timeline: MonitorV2TimelinePoint[]
-  models: MonitorV2Model[]
 }
 
 export interface MonitorV2Snapshot {

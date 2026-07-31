@@ -38,17 +38,9 @@ const messages: Record<string, string> = {
   'monitorV2.metric.cache': '缓存命中率',
   'monitorV2.metric.insufficient_data': '样本不足',
   'monitorV2.metric.not_provided': '未提供',
-  'monitorV2.samples': '{count} 个样本',
   'monitorV2.baseRate': '基础倍率',
   'monitorV2.availability': '有效调用',
   'monitorV2.callEvidence': '{success} / {eligible} 次有效调用成功',
-  'monitorV2.models': '{count} 个模型',
-  'monitorV2.viewModels': '查看模型',
-  'monitorV2.hideModels': '收起模型',
-  'monitorV2.noModels': '暂未发布模型',
-  'monitorV2.details.metrics': '高分位指标',
-  'monitorV2.details.definition': 'P95 表示 95% 的成功请求快于该数值。',
-  'monitorV2.modelStatus': '状态：{status}',
   'monitorV2.empty.title': '暂无可见分组',
   'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
   'monitorV2.notes.metrics': '指标按所选时间范围汇总，样本不足时不显示推测值。',
@@ -76,7 +68,7 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '3',
+  contract_version: '4',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',
@@ -113,10 +105,6 @@ const snapshot: MonitorV2Snapshot = {
           eligible_count: 200,
         },
       ],
-      models: [
-        { name: 'gpt-5.4', status: 'operational' },
-        { name: 'gpt-5.4-offline', status: 'unavailable' },
-      ],
     },
     {
       id: 8,
@@ -142,7 +130,6 @@ const snapshot: MonitorV2Snapshot = {
       latency_p95: { state: 'insufficient_data', value: null, sample_count: 0 },
       cache_hit: { state: 'insufficient_data', value: null, sample_count: 0 },
       timeline: [],
-      models: [],
     },
   ],
 }
@@ -189,7 +176,7 @@ describe('MonitorV2View', () => {
     document.dispatchEvent(new Event('visibilitychange'))
   }
 
-  it('leads with public rate, call evidence, and sample-aware metrics', () => {
+  it('leads with public rate, call evidence, and aggregate metrics', () => {
     const wrapper = mountView()
 
     expect(wrapper.text()).toContain('OpenAI 旗舰组')
@@ -206,13 +193,9 @@ describe('MonitorV2View', () => {
     expect(wrapper.text()).toContain('880 ms')
     expect(wrapper.text()).toContain('总延迟 P95')
     expect(wrapper.text()).toContain('2.4 s')
-    expect(wrapper.text()).toContain('9,842 个样本')
-    expect(wrapper.text()).toContain('P95 表示 95% 的成功请求快于该数值。')
-    expect(wrapper.text()).toContain('状态：运行中')
-    const unavailableModel = wrapper
-      .findAll('li')
-      .find((item) => item.text().includes('gpt-5.4-offline'))
-    expect(unavailableModel?.get('span').classes()).toContain('bg-red-500')
+    for (const forbidden of ['个样本', '个模型', '查看模型', '收起模型', 'gpt-5.4', '状态：运行中']) {
+      expect(wrapper.text()).not.toContain(forbidden)
+    }
     const unconfiguredCard = wrapper.findAll('article')[1]
     expect(unconfiguredCard.text()).not.toMatch(/\b0 ms\b/)
   })

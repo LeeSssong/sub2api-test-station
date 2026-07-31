@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -375,10 +374,6 @@ func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, MonitorV2StatusInsufficientData, snapshot.Groups[0].Status)
-	require.Equal(t, []MonitorV2Model{{
-		Name:   "gpt-5.4",
-		Status: MonitorV2StatusInsufficientData,
-	}}, snapshot.Groups[0].Models)
 }
 
 func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
@@ -409,10 +404,6 @@ func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Status)
-	require.Equal(t, []MonitorV2Model{{
-		Name:   "gpt-5.6-sol",
-		Status: MonitorV2StatusOperational,
-	}}, snapshot.Groups[0].Models)
 }
 
 func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
@@ -453,7 +444,6 @@ func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, MonitorV2StatusUnconfigured, snapshot.Groups[0].Status)
-	require.Empty(t, snapshot.Groups[0].Models)
 }
 
 func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
@@ -557,7 +547,6 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, MonitorV2MetricAvailable, first.CacheHit.State)
 	require.Equal(t, int64(20), first.CacheHit.SampleCount)
 	require.Equal(t, 40.0, *first.CacheHit.Value)
-	require.Equal(t, []MonitorV2Model{{Name: "gpt-5.4", Status: MonitorStatusOperational}}, first.Models)
 	require.Len(t, first.Timeline, 1)
 	require.Equal(t, int64(11), first.Timeline[0].SuccessCount)
 	require.Equal(t, int64(12), first.Timeline[0].EligibleCount)
@@ -571,7 +560,7 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Nil(t, second.Availability.Value)
 }
 
-func TestMonitorV2SnapshotPublishesProbeModelsForMatchingPublicGroupWithoutChannel(t *testing.T) {
+func TestMonitorV2SnapshotMatchesProbeForPublicGroupWithoutChannel(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{
@@ -598,10 +587,6 @@ func TestMonitorV2SnapshotPublishesProbeModelsForMatchingPublicGroupWithoutChann
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Status)
-	require.Equal(t, []MonitorV2Model{{
-		Name:   "gpt-5.4",
-		Status: MonitorStatusOperational,
-	}}, snapshot.Groups[0].Models)
 }
 
 func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) {
@@ -638,7 +623,7 @@ func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) 
 	require.ErrorContains(t, err, "too many public groups")
 }
 
-func TestMonitorV2SnapshotBoundsModelsTimelineAndStrings(t *testing.T) {
+func TestMonitorV2SnapshotBoundsTimelineAndStrings(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	group := Group{
 		ID:          1,
@@ -647,27 +632,6 @@ func TestMonitorV2SnapshotBoundsModelsTimelineAndStrings(t *testing.T) {
 		Status:      StatusActive,
 		IsExclusive: false,
 	}
-
-	t.Run("models", func(t *testing.T) {
-		models := make([]SupportedModel, 201)
-		for i := range models {
-			models[i] = SupportedModel{Name: fmt.Sprintf("gpt-%03d", i)}
-		}
-		svc := NewMonitorV2Service(
-			&monitorV2GroupRepoStub{groups: []Group{group}},
-			&monitorV2ChannelReaderStub{channels: []AvailableChannel{{
-				Status:          StatusActive,
-				Groups:          []AvailableGroupRef{{ID: group.ID, Name: group.Name}},
-				SupportedModels: models,
-			}}},
-			&monitorV2ProbeReaderStub{},
-			nil,
-			&monitorV2RepoStub{},
-		)
-
-		_, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
-		require.ErrorContains(t, err, "too many models")
-	})
 
 	t.Run("timeline", func(t *testing.T) {
 		points := make([]*OpsThroughputTrendPoint, 65)

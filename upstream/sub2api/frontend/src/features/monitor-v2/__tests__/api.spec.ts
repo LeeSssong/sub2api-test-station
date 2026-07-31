@@ -15,7 +15,7 @@ import {
 } from '../api'
 
 const validPayload = {
-	contract_version: '3',
+	contract_version: '4',
 	refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',
@@ -52,7 +52,6 @@ const validPayload = {
           eligible_count: 12,
         },
       ],
-      models: [{ name: 'gpt-5.4', status: 'operational' }],
     },
   ],
 }
@@ -62,7 +61,7 @@ describe('Monitor V2 API contract', () => {
     get.mockReset()
   })
 
-	it('returns a validated version 3 snapshot', async () => {
+	it('returns a validated version 4 snapshot', async () => {
     get.mockResolvedValue({ data: validPayload })
 
     const snapshot = await getMonitorV2Snapshot('7d')
@@ -156,6 +155,15 @@ describe('Monitor V2 API contract', () => {
     ).toThrow('ttft_p95')
   })
 
+  it('rejects legacy model information in a v4 payload', () => {
+    expect(() =>
+      validateMonitorV2Snapshot({
+        ...validPayload,
+        groups: [{ ...validPayload.groups[0], models: [] }],
+      })
+    ).toThrow(MonitorV2ContractError)
+  })
+
   it('rejects oversized group arrays before mapping them', () => {
     expect(() =>
       validateMonitorV2Snapshot({
@@ -168,22 +176,7 @@ describe('Monitor V2 API contract', () => {
     ).toThrow('at most 100')
   })
 
-  it('rejects oversized model and timeline arrays', () => {
-    expect(() =>
-      validateMonitorV2Snapshot({
-        ...validPayload,
-        groups: [
-          {
-            ...validPayload.groups[0],
-            models: Array.from({ length: 201 }, (_, index) => ({
-              name: `gpt-${index}`,
-              status: 'operational',
-            })),
-          },
-        ],
-      })
-    ).toThrow('models')
-
+  it('rejects oversized timeline arrays', () => {
     expect(() =>
       validateMonitorV2Snapshot({
         ...validPayload,
@@ -212,20 +205,6 @@ describe('Monitor V2 API contract', () => {
         ],
       })
     ).toThrow('name')
-  })
-
-  it('rejects unknown model statuses', () => {
-    expect(() =>
-      validateMonitorV2Snapshot({
-        ...validPayload,
-        groups: [
-          {
-            ...validPayload.groups[0],
-            models: [{ name: 'gpt-5.4', status: 'mystery' }],
-          },
-        ],
-      })
-    ).toThrow('models[0].status')
   })
 
   it('rejects available metrics without eligible samples', () => {

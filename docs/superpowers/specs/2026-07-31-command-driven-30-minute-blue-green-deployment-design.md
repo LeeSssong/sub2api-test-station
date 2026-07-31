@@ -36,14 +36,25 @@
 
 ## 4. 蓝绿架构
 
-生产环境定义两个可交换的 Sub2API 槽：
+生产环境定义两个可交换的 Sub2API API 槽和一个唯一后台进程：
 
 - sub2api-blue
 - sub2api-green
+- sub2api-worker
 
 任一时刻只有一个槽接收公网流量。Caddy 从 root-only 状态文件解析活动 upstream，只允许 sub2api-blue:8080 或 sub2api-green:8080。
 
-切流前必须完成 Caddy 配置校验；切流使用 graceful reload，不重建 Caddy。两个槽共享 PostgreSQL、Redis 和必要的只读配置。非活动槽以明确的 candidate/API-only 模式启动，避免重复调度和重复消费。
+切流前必须完成 Caddy 配置校验；切流使用 graceful reload，不重建 Caddy。两个 API 槽共享 PostgreSQL、Redis 和必要的只读配置，并始终以 API-only 模式运行。`sub2api-worker` 是唯一允许执行数据库迁移、启动 scheduler/monitor、消费共享队列和运行其它全局单例后台任务的进程。
+
+应用启动角色由 `SERVER_PROCESS_ROLE` 明确指定：
+
+- `all`：兼容现有单体部署，运行 HTTP、迁移、请求级后台任务和全局单例后台任务；
+- `api`：运行 HTTP/API 和当前实例请求链路必需的本地后台任务，不执行迁移、secret bootstrap、simple-mode seed、启动期 Setting 迁移、调度器、监控器或共享队列消费；
+- `worker`：执行迁移和全局单例后台任务，不承接公网流量；内部 HTTP 健康入口可以保留，但不能加入 Caddy upstream。
+
+请求级本地后台任务和全局共享后台任务必须逐项分类，不能用一个粗粒度总开关关闭所有 `Start`。例如，API 请求产生的 deferred account last-used flush、当前实例的 usage writer、内容审核请求 worker 等可留在 `api`；token refresh、过期清理、聚合、monitor、scheduled test、backup、billing probe、Prompt Audit 共享任务消费等只在 `worker/all` 启动。Prompt Audit 的 API 槽只加载配置和入队，唯一 worker 负责消费。
+
+`api` 角色以只读方式核对当前镜像内嵌迁移集合：`schema_migrations` 中必须存在所有已知迁移且 checksum 匹配；该检查不得执行 DDL、INSERT、secret bootstrap 或 seed。缺失迁移、checksum 不匹配，或镜像迁移集合 hash 与当前活动发布不一致时，自动蓝绿流程必须在生产变更前输出 `downtime_required=true`。第一版不自动推断 expand/contract 兼容性。
 
 发布记录至少包含：
 
@@ -125,11 +136,23 @@
 
 只有用户看过这些信息并明确授权“允许停机部署”，才能进入单独的停机发布流程。
 
+### 7.1 首次拓扑迁移门禁
+
+当前生产若仍是 legacy 单 `sub2api` 服务，首次建立 `sub2api-blue`、`sub2api-green`、`sub2api-worker` 和 Caddy 活动 upstream 状态不等同于后续稳态蓝绿发布。首次迁移至少要验证：
+
+- legacy 实例与新 worker 不会同时运行同一全局单例后台任务；
+- relay-ops 改接 Caddy 内部活动路由时，`/pricing` 等公开路径不会短暂 502；
+- PostgreSQL、Redis、Caddy、Compose project、网络和卷身份保持不变；
+- 新拓扑失败时可切回 legacy upstream，且旧实例的数据兼容性仍成立。
+
+只要无法在隔离演练和生产预检中证明上述条件，首次拓扑迁移必须返回 `downtime_required=true`，列出预计不可用秒数和回滚步骤，并等待用户明确授权。稳态拓扑建立以后，普通 Sub2API 版本更新才进入 30 分钟无感蓝绿路径。
+
 ## 8. 实施范围
 
 本次实施包括：
 
 - Sub2API candidate/API-only 运行模式；
+- 唯一 `sub2api-worker` 运行角色和只读迁移核验；
 - 生产 Compose 蓝绿槽定义和资源约束；
 - Caddy upstream allowlist、配置校验、原子状态更新和 graceful reload；
 - 单一命令的预检、构建、传输、候选验收、切流、公网验收和回切编排；

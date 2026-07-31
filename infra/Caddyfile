@@ -5,6 +5,10 @@
 	}
 }
 
+:8081 {
+	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}
+}
+
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
@@ -100,7 +104,7 @@
 	@sub2api_official_index path /__sub2api-official-index
 	handle @sub2api_official_index {
 		rewrite * /
-		reverse_proxy sub2api:8080
+		reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}
 	}
 
 	@legacy_ops path /ops /ops/*
@@ -126,7 +130,7 @@
 		method GET
 		path /api/v1/admin/system/check-updates
 	}
-	reverse_proxy @sub2api_version_check sub2api:8080
+	reverse_proxy @sub2api_version_check {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}
 
 	@sub2api_update {
 		method POST
@@ -168,7 +172,7 @@
 	}
 	reverse_proxy @relay_ops_public relay-ops:8100
 
-	reverse_proxy sub2api:8080 {
+	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {
 		flush_interval -1
 		header_down Content-Security-Policy "frame-src " "frame-src 'self' https://shop.xingqiaolab.top https://catfk.com "
 		transport http {

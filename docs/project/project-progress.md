@@ -183,7 +183,7 @@
 7. **Sub2API 0.1.166 管理员切换**：解决合格镜像已交付但运行版本仍需管理员确认切换；优化官方版本合并、合格镜像和回滚边界；影响网关运行时；**状态：进行中，外部阻塞/待管理员切换**；[证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
 8. **无人值守 Sub2API 发布生产激活**：解决自动发现、构建和候选交付尚未进入真实生产激活；优化无秘密构建、强制 SSH 和 compare-and-swap 发布准备；影响发布运维；**状态：进行中，待真实 workflow 和生产 forced-command 验收**；[证据](../superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md)。
 9. **Feishu 通知合并生产部署**：解决多通知路径重复和边界不统一；优化通知合并、纯出站契约和本地回归；**状态：进行中，待生产部署和公网验证**；[证据](../superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md)。
-10. **原生 P0/P1 Feishu Bridge**：解决原生运维 P0/P1 事件尚缺生产出站桥接；优化只读事件、持续提醒、恢复和去重设计；**状态：进行中，待部署/待验证**；[证据](../superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md)。
+10. **原生 P0/P1 Feishu Bridge 独立扩展**：解决原生 `ops_alert_events` 尚未接入飞书出站链路；优化只读事件同步、P0/P1 持续提醒、恢复和去重设计；影响原生运维告警通知；**状态：进行中，设计/实施计划已完成，尚未完成生产部署和验证**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
 11. **全站账务总账**：解决用量、充值、余额、成本和对账分散；优化统一账务数据模型和收口入口；影响全站财务与运营；**状态：进行中，待实现、部署和三方验收**；[证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)、[当前状态](current-state.md)。
 12. **首页 CTA/主题/品牌/更新准备**：解决首页转化、品牌一致性和更新提示尚未收口；优化 CTA、主题、品牌资产和版本更新准备；影响公开首页和用户转化；**状态：进行中，待生产发布与验收**；[证据](current-state.md)、[0.1.166 合格镜像](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
 13. **用量明细/支持卡片/上游账号状态等后续运营功能**：解决用户和管理员缺少细粒度用量、支持入口和上游状态视图；优化后续运营功能清单与原生能力复用方向；影响用户支持和运营效率；**状态：进行中，待设计、实现、部署和验证**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。

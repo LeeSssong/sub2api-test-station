@@ -96,20 +96,10 @@ export default {
       insufficient_data: 'Insufficient data',
       not_provided: 'Not provided'
     },
-    samples: '{count} samples',
     baseRate: 'Base multiplier',
     peakRate: '{start}-{end} peak multiplier {rate}×',
     availability: 'Eligible calls',
     callEvidence: '{success} / {eligible} eligible calls succeeded',
-    models: '{count} models',
-    viewModels: 'View models',
-    hideModels: 'Hide models',
-    noModels: 'No published models',
-    modelStatus: 'Status: {status}',
-    details: {
-      metrics: 'Tail latency',
-      definition: 'P95 means 95% of successful requests completed within this value; samples are the corresponding successful requests.'
-    },
     timeline: {
       noData: 'No eligible calls in this period'
     },

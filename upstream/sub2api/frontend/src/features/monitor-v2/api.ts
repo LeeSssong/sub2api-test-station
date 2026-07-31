@@ -6,8 +6,6 @@ import {
   type MonitorV2GroupStatus,
   type MonitorV2Metric,
   type MonitorV2MetricState,
-  type MonitorV2Model,
-  type MonitorV2ModelStatus,
   type MonitorV2RefreshIntervalSeconds,
   type MonitorV2Snapshot,
   type MonitorV2TimelinePoint,
@@ -35,9 +33,7 @@ const GROUP_STATUSES = new Set<MonitorV2GroupStatus>([
   'unconfigured',
   'insufficient_data',
 ])
-const MODEL_STATUSES = new Set<MonitorV2ModelStatus>(GROUP_STATUSES)
 const MAX_GROUPS = 100
-const MAX_MODELS_PER_GROUP = 200
 const MAX_TIMELINE_POINTS = 64
 const MAX_TEXT_LENGTH = 256
 const PEAK_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
@@ -192,18 +188,6 @@ function timelinePoint(value: unknown, path: string): MonitorV2TimelinePoint {
   }
 }
 
-function model(value: unknown, path: string): MonitorV2Model {
-  const source = record(value, path)
-  const status = text(source.status, `${path}.status`) as MonitorV2ModelStatus
-  if (!MODEL_STATUSES.has(status)) {
-    throw new MonitorV2ContractError(`${path}.status is unsupported`)
-  }
-  return {
-    name: text(source.name, `${path}.name`),
-    status,
-  }
-}
-
 function group(value: unknown, path: string): MonitorV2Group {
   const source = record(value, path)
   const status = text(source.status, `${path}.status`) as MonitorV2GroupStatus
@@ -218,13 +202,8 @@ function group(value: unknown, path: string): MonitorV2Group {
       `${path}.timeline must contain at most ${MAX_TIMELINE_POINTS} points`
     )
   }
-  if (!Array.isArray(source.models)) {
-    throw new MonitorV2ContractError(`${path}.models must be an array`)
-  }
-  if (source.models.length > MAX_MODELS_PER_GROUP) {
-    throw new MonitorV2ContractError(
-      `${path}.models must contain at most ${MAX_MODELS_PER_GROUP} models`
-    )
+  if (Object.prototype.hasOwnProperty.call(source, 'models')) {
+    throw new MonitorV2ContractError(`${path}.models is not supported`)
   }
   const peakRateEnabled = boolean(source.peak_rate_enabled, `${path}.peak_rate_enabled`)
   const peakStart = text(source.peak_start ?? '', `${path}.peak_start`, true)
@@ -266,7 +245,6 @@ function group(value: unknown, path: string): MonitorV2Group {
     timeline: source.timeline.map((point, index) =>
       timelinePoint(point, `${path}.timeline[${index}]`)
     ),
-    models: source.models.map((entry, index) => model(entry, `${path}.models[${index}]`)),
   }
 }
 

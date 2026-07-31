@@ -96,20 +96,10 @@ export default {
       insufficient_data: '样本不足',
       not_provided: '未提供'
     },
-    samples: '{count} 个样本',
     baseRate: '基础倍率',
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
     availability: '有效调用',
     callEvidence: '{success} / {eligible} 次有效调用成功',
-    models: '{count} 个模型',
-    viewModels: '查看模型',
-    hideModels: '收起模型',
-    noModels: '暂未发布模型',
-    modelStatus: '状态：{status}',
-    details: {
-      metrics: '高分位指标',
-      definition: 'P95 表示 95% 的成功请求耗时不超过该值；样本数为对应成功请求数。'
-    },
     timeline: {
       noData: '该时段暂无有效调用'
     },

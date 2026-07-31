@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MonitorV2ContractVersion = "3"
+	MonitorV2ContractVersion = "4"
 
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
@@ -28,7 +28,6 @@ const (
 	MonitorV2MetricNotProvided      = "not_provided"
 
 	monitorV2MaxGroups      = 100
-	monitorV2MaxModels      = 200
 	monitorV2MaxTimeline    = 64
 	monitorV2MaxTextLength  = 256
 	monitorV2MetricWorkers  = 4
@@ -97,11 +96,6 @@ type MonitorV2TimelinePoint struct {
 	EligibleCount int64
 }
 
-type MonitorV2Model struct {
-	Name   string
-	Status string
-}
-
 type MonitorV2Group struct {
 	ID                 int64
 	Name               string
@@ -120,7 +114,6 @@ type MonitorV2Group struct {
 	LatencyP95         MonitorV2Metric
 	CacheHit           MonitorV2Metric
 	Timeline           []MonitorV2TimelinePoint
-	Models             []MonitorV2Model
 }
 
 type MonitorV2Snapshot struct {
@@ -133,7 +126,6 @@ type MonitorV2Snapshot struct {
 
 type MonitorV2Service struct {
 	groupRepo GroupRepository
-	channels  MonitorV2ChannelReader
 	probes    MonitorV2ProbeReader
 	ops       MonitorV2OpsReader
 	repo      MonitorV2Repository
@@ -142,7 +134,7 @@ type MonitorV2Service struct {
 
 func NewMonitorV2Service(
 	groupRepo GroupRepository,
-	channels MonitorV2ChannelReader,
+	_ MonitorV2ChannelReader,
 	probes MonitorV2ProbeReader,
 	ops MonitorV2OpsReader,
 	repo MonitorV2Repository,
@@ -154,7 +146,6 @@ func NewMonitorV2Service(
 	}
 	return &MonitorV2Service{
 		groupRepo: groupRepo,
-		channels:  channels,
 		probes:    probes,
 		ops:       ops,
 		repo:      repo,
@@ -198,10 +189,8 @@ func (s *MonitorV2Service) Snapshot(
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV2MaxGroups)
 	}
 
-	channels, _ := s.listChannels(ctx)
 	probes, _ := s.listProbes(ctx)
 	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
-	modelsByGroup := monitorV2ModelsByGroup(visibleGroups, channels, probes)
 	probesByGroup := monitorV2ProbesByGroup(visibleGroups, probes)
 
 	cards := make([]MonitorV2Group, len(visibleGroups))
@@ -223,7 +212,6 @@ func (s *MonitorV2Service) Snapshot(
 				ctx,
 				group,
 				probesByGroup[group.ID],
-				modelsByGroup[group.ID],
 				cacheStats[group.ID],
 				window,
 				start,
@@ -268,26 +256,11 @@ func monitorV2ValidateSnapshotBounds(groups []MonitorV2Group) error {
 		if len([]rune(group.Platform)) > monitorV2MaxTextLength {
 			return fmt.Errorf("group platform too long for monitor v2")
 		}
-		if len(group.Models) > monitorV2MaxModels {
-			return fmt.Errorf("too many models for monitor v2 group %d: %d exceeds %d", group.ID, len(group.Models), monitorV2MaxModels)
-		}
 		if len(group.Timeline) > monitorV2MaxTimeline {
 			return fmt.Errorf("too many timeline points for monitor v2 group %d: %d exceeds %d", group.ID, len(group.Timeline), monitorV2MaxTimeline)
 		}
-		for _, model := range group.Models {
-			if len([]rune(model.Name)) > monitorV2MaxTextLength {
-				return fmt.Errorf("model name too long for monitor v2 group %d", group.ID)
-			}
-		}
 	}
 	return nil
-}
-
-func (s *MonitorV2Service) listChannels(ctx context.Context) ([]AvailableChannel, error) {
-	if s.channels == nil {
-		return nil, nil
-	}
-	return s.channels.ListAvailable(ctx)
 }
 
 func (s *MonitorV2Service) listProbes(ctx context.Context) ([]*UserMonitorView, error) {
@@ -312,7 +285,6 @@ func (s *MonitorV2Service) buildGroup(
 	ctx context.Context,
 	group Group,
 	probes []*UserMonitorView,
-	models []MonitorV2Model,
 	cache MonitorV2CacheStats,
 	window MonitorV2Window,
 	start, end time.Time,
@@ -336,7 +308,6 @@ func (s *MonitorV2Service) buildGroup(
 		LatencyP95:         monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		CacheHit:           monitorV2CacheMetric(cache),
 		Timeline:           []MonitorV2TimelinePoint{},
-		Models:             monitorV2ApplyProbeStatuses(models, probes, end),
 	}
 	if s.ops == nil {
 		return card
@@ -419,64 +390,6 @@ func monitorV2ProbesByGroup(groups []Group, views []*UserMonitorView) map[int64]
 	return out
 }
 
-func monitorV2ModelsByGroup(
-	visibleGroups []Group,
-	channels []AvailableChannel,
-	probes []*UserMonitorView,
-) map[int64][]MonitorV2Model {
-	visibleIDs, groupNameToID := monitorV2VisibleGroupLookup(visibleGroups)
-	modelSets := make(map[int64]map[string]string)
-	for i := range channels {
-		channel := channels[i]
-		if channel.Status != StatusActive {
-			continue
-		}
-		for _, group := range channel.Groups {
-			if modelSets[group.ID] == nil {
-				modelSets[group.ID] = make(map[string]string)
-			}
-			for _, model := range channel.SupportedModels {
-				name := strings.TrimSpace(model.Name)
-				if name != "" {
-					modelSets[group.ID][strings.ToLower(name)] = name
-				}
-			}
-		}
-	}
-	for _, probe := range probes {
-		if probe == nil {
-			continue
-		}
-		groupID := monitorV2ProbeGroupID(probe, visibleIDs, groupNameToID)
-		if groupID == 0 {
-			continue
-		}
-		if modelSets[groupID] == nil {
-			modelSets[groupID] = make(map[string]string)
-		}
-		if name := strings.TrimSpace(probe.PrimaryModel); name != "" {
-			modelSets[groupID][strings.ToLower(name)] = name
-		}
-		for _, extra := range probe.ExtraModels {
-			if name := strings.TrimSpace(extra.Model); name != "" {
-				modelSets[groupID][strings.ToLower(name)] = name
-			}
-		}
-	}
-	out := make(map[int64][]MonitorV2Model, len(modelSets))
-	for groupID, names := range modelSets {
-		models := make([]MonitorV2Model, 0, len(names))
-		for _, name := range names {
-			models = append(models, MonitorV2Model{Name: name})
-		}
-		sort.Slice(models, func(i, j int) bool {
-			return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
-		})
-		out[groupID] = models
-	}
-	return out
-}
-
 func monitorV2VisibleGroupLookup(groups []Group) (map[int64]struct{}, map[string]int64) {
 	visibleIDs := make(map[int64]struct{}, len(groups))
 	groupNameToID := make(map[string]int64, len(groups))
@@ -505,41 +418,6 @@ func monitorV2ProbeGroupID(
 		return 0
 	}
 	return groupNameToID[monitorV2GroupKey(probe.GroupName)]
-}
-
-func monitorV2ApplyProbeStatuses(
-	models []MonitorV2Model,
-	probes []*UserMonitorView,
-	now time.Time,
-) []MonitorV2Model {
-	statuses := make(map[string][]string)
-	for _, probe := range probes {
-		if probe == nil {
-			continue
-		}
-		if model := strings.TrimSpace(probe.PrimaryModel); model != "" {
-			status := probe.PrimaryStatus
-			if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, probe.PrimaryCheckedAt, now) {
-				status = MonitorV2StatusInsufficientData
-			}
-			statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], status)
-		}
-		for _, extra := range probe.ExtraModels {
-			model := strings.TrimSpace(extra.Model)
-			if model != "" {
-				status := extra.Status
-				if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, extra.CheckedAt, now) {
-					status = MonitorV2StatusInsufficientData
-				}
-				statuses[strings.ToLower(model)] = append(statuses[strings.ToLower(model)], status)
-			}
-		}
-	}
-	out := append([]MonitorV2Model(nil), models...)
-	for i := range out {
-		out[i].Status = monitorV2ProbeStatuses(statuses[strings.ToLower(out[i].Name)])
-	}
-	return out
 }
 
 func monitorV2GroupStatus(probes []*UserMonitorView, now time.Time) string {

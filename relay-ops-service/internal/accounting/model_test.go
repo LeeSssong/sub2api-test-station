@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-var shanghai = time.FixedZone("Asia/Shanghai", 8*60*60)
+var testShanghai = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 func TestBuildSnapshotExcludesInternalRevenueButIncludesInternalCost(t *testing.T) {
 	usage := UsageTotals{
@@ -17,7 +17,7 @@ func TestBuildSnapshotExcludesInternalRevenueButIncludesInternalCost(t *testing.
 	}
 	cash := CashEventTotals{OutflowCNY: decimal.RequireFromString("5.00")}
 
-	got := BuildSnapshot(time.Date(2026, 8, 2, 0, 0, 0, 0, shanghai), usage, cash)
+	got := BuildSnapshot(time.Date(2026, 8, 2, 0, 0, 0, 0, testShanghai), usage, cash)
 
 	if got.ExternalRevenueCNY.StringFixed(2) != "12.50" {
 		t.Fatalf("external revenue = %s", got.ExternalRevenueCNY.StringFixed(2))
@@ -36,7 +36,7 @@ func TestBuildSnapshotExcludesInternalRevenueButIncludesInternalCost(t *testing.
 func TestCashEventValidationRejectsSecretsAndInvalidAmounts(t *testing.T) {
 	_, err := ValidateCashEvent(CashEventInput{
 		EventType: "account_purchase",
-		PaidAt:    time.Date(2026, 8, 2, 1, 0, 0, 0, shanghai),
+		PaidAt:    time.Date(2026, 8, 2, 1, 0, 0, 0, testShanghai),
 		AmountCNY: decimal.NewFromInt(-1),
 		Notes:     "token=super-secret-value",
 	})
@@ -48,7 +48,7 @@ func TestCashEventValidationRejectsSecretsAndInvalidAmounts(t *testing.T) {
 func TestValidateCashEventRules(t *testing.T) {
 	valid := CashEventInput{
 		EventType:  "account_purchase",
-		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, shanghai),
+		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, testShanghai),
 		AmountCNY:  decimal.RequireFromString("12.50"),
 		SourceKind: SourceKindOwnedOAuth,
 		Notes:      "monthly account",
@@ -77,7 +77,7 @@ func TestValidateCashEventRules(t *testing.T) {
 		{EventType: "account_purchase", PaidAt: valid.PaidAt, AmountCNY: decimal.RequireFromString("-1"), SourceKind: valid.SourceKind},
 		{EventType: "refund", PaidAt: valid.PaidAt, AmountCNY: decimal.RequireFromString("1"), SourceKind: valid.SourceKind},
 		{EventType: "account_purchase", PaidAt: valid.PaidAt, AmountCNY: valid.AmountCNY, SourceKind: "invalid"},
-		{EventType: "account_purchase", PaidAt: valid.PaidAt, AmountCNY: valid.AmountCNY, SourceKind: valid.SourceKind, AccountID: ptrToInt64(0)},
+		{EventType: "account_purchase", PaidAt: valid.PaidAt, AmountCNY: valid.AmountCNY, SourceKind: valid.SourceKind, AccountID: testInt64Ptr(0)},
 		{EventType: "account_purchase", PaidAt: time.Time{}, AmountCNY: valid.AmountCNY, SourceKind: valid.SourceKind},
 	}
 	for _, input := range tests {
@@ -91,7 +91,7 @@ func TestValidateCashEventRules(t *testing.T) {
 func TestValidateCashEventRejectsCredentialLikeNotesAndLongNotes(t *testing.T) {
 	base := CashEventInput{
 		EventType:  "account_purchase",
-		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, shanghai),
+		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, testShanghai),
 		AmountCNY:  decimal.RequireFromString("1"),
 		SourceKind: SourceKindOwnedOAuth,
 	}
@@ -114,6 +114,52 @@ func TestValidateCashEventRejectsCredentialLikeNotesAndLongNotes(t *testing.T) {
 	_, err := ValidateCashEvent(input)
 	if err == nil {
 		t.Fatal("overlong note accepted")
+	}
+}
+
+func TestValidateCashEventAcceptsNormalPurchaseNotes(t *testing.T) {
+	base := CashEventInput{
+		EventType:  EventTypeAccountPurchase,
+		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, testShanghai),
+		AmountCNY:  decimal.RequireFromString("12.50"),
+		SourceKind: SourceKindOwnedOAuth,
+	}
+	for _, notes := range []string{
+		"",
+		"7月31日购买 Claude OAuth 账号 10 个",
+		"账号采购费用，已支付 200 元",
+		"Upstream API top-up for August",
+		"monthly account purchase",
+		"OAuth token purchase for August",
+	} {
+		input := base
+		input.Notes = notes
+		if _, err := ValidateCashEvent(input); err != nil {
+			t.Errorf("normal note %q rejected: %v", notes, err)
+		}
+	}
+}
+
+func TestValidateCashEventRejectsBareCredentialValues(t *testing.T) {
+	base := CashEventInput{
+		EventType:  EventTypeAccountPurchase,
+		PaidAt:     time.Date(2026, 8, 2, 1, 0, 0, 0, testShanghai),
+		AmountCNY:  decimal.RequireFromString("12.50"),
+		SourceKind: SourceKindOwnedOAuth,
+	}
+	for _, notes := range []string{
+		"sk-1234567890abcdefghijklmnop",
+		"copied sk-proj-1234567890abcdefghijklmnop by mistake",
+		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature0123456789",
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"AbCdEf0123456789AbCdEf0123456789AbCdEf0123456789",
+		"AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUv",
+	} {
+		input := base
+		input.Notes = notes
+		if _, err := ValidateCashEvent(input); err == nil {
+			t.Errorf("bare credential accepted: %q", notes)
+		}
 	}
 }
 
@@ -149,6 +195,6 @@ func TestLocalDayAndDayWindow(t *testing.T) {
 	}
 }
 
-func ptrToInt64(value int64) *int64 {
+func testInt64Ptr(value int64) *int64 {
 	return &value
 }

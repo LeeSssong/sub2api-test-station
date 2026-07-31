@@ -92,7 +92,12 @@ type DailySnapshot struct {
 	UpstreamAPIKeyCostCNY   decimal.Decimal
 }
 
-var credentialLikeNotePattern = regexp.MustCompile(`(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|authorization|bearer|password|passwd|secret|cookie|private[_-]?key|token)\s*(?:=|:|\s)\s*\S+`)
+var (
+	credentialLikeNotePattern = regexp.MustCompile(`(?i)(?:(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|password|passwd|secret|cookie|private[_-]?key)\s*(?:=|:|\s)\s*\S+|token\s*(?:=|:)\s*\S+|(?:authorization|bearer)\s+(?:bearer\s+)?\S+)`)
+	openAIKeyPattern          = regexp.MustCompile(`(?i)(?:^|[^a-z0-9_-])sk-(?:proj-)?[a-z0-9_-]{16,}(?:$|[^a-z0-9_-])`)
+	jwtPattern                = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?:$|[^A-Za-z0-9_-])`)
+	opaqueTokenPattern        = regexp.MustCompile(`[A-Za-z0-9_+/=-]{40,}`)
+)
 
 var (
 	accountingLocation = func() *time.Location {
@@ -152,10 +157,35 @@ func ValidateCashEvent(input CashEventInput) (CashEventInput, error) {
 	if len([]byte(input.Notes)) > 500 {
 		return CashEventInput{}, fmt.Errorf("notes must be at most 500 UTF-8 bytes")
 	}
-	if credentialLikeNotePattern.MatchString(input.Notes) {
+	if containsCredentialLikeValue(input.Notes) {
 		return CashEventInput{}, fmt.Errorf("notes must not contain credential-like values")
 	}
 	return input, nil
+}
+
+func containsCredentialLikeValue(notes string) bool {
+	if credentialLikeNotePattern.MatchString(notes) ||
+		openAIKeyPattern.MatchString(notes) ||
+		jwtPattern.MatchString(notes) {
+		return true
+	}
+	for _, candidate := range opaqueTokenPattern.FindAllString(notes, -1) {
+		var hasLetter, hasDigit, hasBase64Punctuation bool
+		for _, char := range candidate {
+			switch {
+			case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z':
+				hasLetter = true
+			case char >= '0' && char <= '9':
+				hasDigit = true
+			case char == '_' || char == '+' || char == '/' || char == '=' || char == '-':
+				hasBase64Punctuation = true
+			}
+		}
+		if hasLetter && (len(candidate) >= 48 || hasDigit || hasBase64Punctuation) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClassifySourceKind maps the native account type names to accounting source

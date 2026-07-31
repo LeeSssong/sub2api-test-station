@@ -6,26 +6,28 @@
 
 ## 统计口径
 
-本次回填审阅了 `docs/superpowers/reports/` 下截至 2026-07-30 的 60 份报告，并结合项目当前状态和 Git 历史，将同一功能的阶段性报告合并为 45 个独立事项。只有同时满足“已推送到服务端 + 已部署 + 已验证生效”才计入“生产已部署并验证”。本地测试、离线准备、代码合并、镜像生成、候选资格或报告完成，均不能标记为已完成。事项按独立交付结果合并统计，不按报告文件数量统计；历史暂停或阻塞事项保留在进行中区，不制造完成结论。
+本次回填审阅了 `docs/superpowers/reports/` 下截至 2026-07-30 的 60 份报告，并结合项目当前状态和 Git 历史，将同一功能的阶段性报告合并为 49 个独立事项。只有同时满足“已推送到服务端 + 已部署 + 已验证生效”才计入“生产工程代码/配置已部署并验证”。只有仍存在运行时代码或生产配置差异，才计入“工程代码/配置差异待部署”；文档、研究、报告、离线证据、历史验证和外部验收本身不构成工程部署差异。事项按独立交付结果合并统计，不按报告文件数量统计；历史暂停或阻塞事项保留在进行中区，不制造完成结论。
 
 ## 统计摘要
 
 | 分区 | 独立事项 | 判定 |
 |---|---:|---|
-| 生产已部署并验证 | 18 | 已推送、已部署、已验证生效 |
-| 仅本地/离线准备 | 14 | 有本地或离线证据，不能标记已完成 |
-| 待部署/待验证/阻塞 | 13 | 进行中；必要时注明外部阻塞/历史保留 |
-| **合并后的独立事项合计** | **45** | **当前总账快照** |
+| 生产工程代码/配置已部署并验证 | 18 | 已推送、已部署、已验证生效 |
+| 工程代码/配置差异待部署 | 4 | 仍存在运行时代码或生产配置差异 |
+| 持续实施 | 4 | 工程实现尚未完成，或仍在推进中 |
+| 运维/研究跟进（非工程部署差异） | 23 | 文档、研究、历史证据或外部验收跟进 |
+| **合并后的独立事项合计** | **49** | **当前总账快照** |
 
 ## 当前最重要进行中事项
 
-1. **Neko/Wawazz 生产分流门禁**：生产配置和质量证据仍需同快照复核，当前不能以历史样本替代新鲜 `GO`。
-2. **D04 受控开放与 v3 readiness**：开放注册由 Sub2API 原生能力控制，v3 活动账号和质量门禁尚未形成可放行结论。
-3. **生产备份异地副本与 7 天留存**：方案和验收清单已有，真实连续备份、异地副本及独立恢复演练仍待完成。
-4. **无人值守发布、Feishu 合并部署和原生 P0/P1 Bridge**：代码或本地验证已具备，但生产激活/部署/公网验证尚未全部闭环。
-5. **全站账务总账与后续运营功能**：用量、支持、上游状态、首页转化和品牌更新仍属于后续运营交付，不计入已完成。
+1. **2026-07-31 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：`main@c49c0a6ec` 已推送并构建镜像，但其 relay-ops 与生产遗留通知策略不兼容，两次原地重建均导致 Caddy 被依赖链阻塞、生产公网中断。事故恢复已将生产恢复到旧版本；先完成蓝绿发布设计、兼容性门禁和逐项工程差异审计，设计获确认前不修改生产。**状态：进行中（设计与审计）**；`accounting-ledger` 继续排除。
+2. **2026-07-31 生产站点中断恢复**：11:56 首次故障后于 13:28 回滚恢复；14:10–14:11，“调度优化”任务误将事故回滚判断为外部覆盖，再次覆盖 Compose 并强制重建 Sub2API/relay-ops/Caddy，造成第二次中断。14:15 已再次恢复至 11:53 发布前快照；公网健康连续 5 次返回 200，首页、价格和文档入口正常，五个容器运行正常且重启计数为 0。**状态：恢复已验证；永久兼容性修复仍未推送、部署和验证**。
+3. **Sub2API 低延迟/会话隔离/Monitor 自动刷新工程差异**：生产仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置实现。**状态：工程代码/配置差异待部署**。
+4. **relay-ops 原生 P0/P1 Bridge 与蓝绿发布机制**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；可复用蓝绿机制尚不存在。**状态：持续实施**。
+5. **Caddy/homepage 运行时差异与全站账务总账**：Caddy/homepage 运行时改动须独立发布；`accounting-ledger` 仍在 `codex/accounting-ledger`，未合并。**状态：工程差异待部署/持续实施**。
+6. **Neko/Wawazz 门禁、D04 readiness、备份留存和后续运营**：均保留最新证据和外部验收跟进，不因文档或历史报告单独记为工程未部署。
 
-## 生产已部署并验证（18 项）
+## 生产工程代码/配置已部署并验证（18 项）
 
 1. **首版生产 Compose/Caddy/Sub2API/PostgreSQL/Redis**
    - **解决的问题：** 建立可运行的首条生产链路和基础服务边界。
@@ -134,7 +136,7 @@
 
 16. **Monitor 可靠性与管理员可见分组**
     - **解决的问题：** 监控刷新可靠性和管理员视图分组不足。
-    - **做了什么优化：** 完成合格镜像、生产提升、可靠刷新和管理员可见分组。
+    - **做了什么优化：** 完成合格镜像、生产提升和管理员可见分组；后续自动刷新实现另列为工程差异。
     - **影响范围：** 原生监控页面、管理员观察和运维判断。
     - **状态：** 已完成；生产 UI、健康和部署提升已验收。
     - **证据：** [Monitor 可靠性与管理员可见性](../superpowers/reports/2026-07-30-monitor-reliability-admin-visibility-production-verification.md)
@@ -153,9 +155,9 @@
     - **状态：** 已完成；部署、公网审计和生产健康均已通过。
     - **证据：** [原生运维重定向与纯提醒生产验证](../superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md)
 
-## 仅本地/离线准备（14 项）
+## 运维/研究跟进（23 项）
 
-以下事项有代码、模拟、离线报告或候选研究证据，但没有同时满足生产推送、部署和生效验证，**不能标记为已完成**。
+以下事项是文档、研究、离线证据、历史验证或外部验收跟进，不因缺少一次工程部署而分类为“工程代码/配置差异待部署”。
 
 1. **离线部署基线**：解决基础设施契约和本地启动验证问题；优化 Compose/Caddy 基线；影响基础设施准备；**状态：准备完成，不能标记已完成**；[证据](../superpowers/reports/2026-07-15-l1-2-offline-baseline-verification.md)。
 2. **人工账本模拟**：解决充值、用量和对账规则缺少可重复样例；优化链式事件和模拟校验；影响账务设计；**状态：准备完成，不能标记已完成**；[证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)。
@@ -172,22 +174,30 @@
 13. **XM 目录发现与非功能基线**：解决 XM 目录发现和 SSE/拓扑非功能信息不足；优化只读发现与非功能记录；影响目录研究；**状态：准备完成，不能标记已完成**；[证据](../superpowers/reports/2026-07-21-xm-upstream-discovery.md)、[非功能基线](../superpowers/reports/2026-07-21-upstream-sse-capacity-and-topology-nonfunctional-verification.md)。
 14. **GPT Codex 缓存节省本地实现**：解决缓存节省和计价收益缺少本地计算基线；优化缓存字段、节省估算和验证样例；影响成本分析；**状态：准备完成，不能标记已完成**；[证据](../superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md)。
 
-## 待部署/待验证/阻塞（13 项）
+15. **Neko/Wawazz 生产分流门禁**：解决候选上游分流缺少同快照质量门禁；优化账号发现、余额新鲜度和自然质量判定；影响生产路由；**状态：运维跟进，外部质量证据和配置复核未完成**；[证据](../superpowers/reports/2026-07-20-neko-wawazz-production-split-verification.md)、[v3 readiness](../superpowers/reports/2026-07-22-d04-v3-active-upstream-readiness-verification.md)。
+16. **D04 受控开放/轻量门禁/v3 readiness**：解决开放注册与活动上游准入条件不清；优化由原生账号列表动态发现并保留只读门禁；**状态：运维跟进，外部阻塞/历史保留；没有新鲜 GO 不得放行**；[证据](../superpowers/reports/2026-07-21-d04-controlled-launch-v2-verification.md)、[轻量门禁](../superpowers/reports/2026-07-22-d04-lightweight-launch-gate-verification.md)、[v3 readiness](../superpowers/reports/2026-07-22-d04-v3-active-upstream-readiness-verification.md)。
+17. **生产备份异地副本与 7 天留存**：解决备份异地性、持续性和恢复演练缺口；优化 `pg_dump`、restic 和 R2 验收方案；影响数据库恢复和灾备；**状态：运维跟进，外部阻塞；真实连续 7 天备份与独立恢复待完成**；[证据](../superpowers/reports/2026-07-22-production-backup-restore-verification.md)。
+18. **GPT Codex 缓存定价 24 小时门禁**：解决缓存收益实现缺少生产价格和持续观察门槛；优化 24 小时观察与价格变更门禁；影响成本和定价；**状态：运维跟进，待价格观察与验证**；[证据](../superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md)。
+19. **模型发布资格监控**：解决模型目录发现与真正发布资格混淆；优化只读发现和资格前置检查；影响模型发布；**状态：运维跟进，历史阻塞保留；资格测试、余额和覆盖证据不足**；[证据](../superpowers/reports/2026-07-23-model-release-read-only-monitor-verification.md)、[滚动模型策略](../superpowers/reports/2026-07-22-sub2api-native-rolling-model-policy-verification.md)。
+20. **账号倍率监控 SSH 复核**：解决生产账号倍率与监控结果可能漂移；优化只读倍率检查和 SSH 复核清单；影响路由与价格；**状态：运维跟进，待新鲜生产复核**；[证据](../superpowers/reports/2026-07-26-account-monitor-multiplier-verification.md)。
+21. **Sub2API 0.1.166 管理员切换**：解决合格镜像已交付但运行版本仍需管理员确认切换；优化官方版本合并、合格镜像和回滚边界；影响网关运行时；**状态：运维跟进，外部阻塞/待管理员切换；不单独计为工程部署差异**；[证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
+22. **无人值守 Sub2API 发布生产激活**：解决自动发现、构建和候选交付尚未进入真实生产激活；优化无秘密构建、强制 SSH 和 compare-and-swap 发布准备；影响发布运维；**状态：运维跟进，待真实 workflow 和生产 forced-command 验收；不单独计为工程部署差异**；[证据](../superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md)。
+23. **Feishu 通知合并生产部署**：解决多通知路径重复和边界不统一；优化通知合并、纯出站契约和本地回归；**状态：运维跟进，待 48 小时生产观察和公网验证；运行时实现已在生产基础上，不能仅因观察未完成称为工程未部署**；[证据](../superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md)。
 
-1. **Neko/Wawazz 生产分流门禁**：解决候选上游分流缺少同快照质量门禁；优化账号发现、余额新鲜度和自然质量判定；影响生产路由；**状态：进行中，外部质量证据和配置复核未完成**；[证据](../superpowers/reports/2026-07-20-neko-wawazz-production-split-verification.md)、[v3 readiness](../superpowers/reports/2026-07-22-d04-v3-active-upstream-readiness-verification.md)。
-2. **D04 受控开放/轻量门禁/v3 readiness**：解决开放注册与活动上游准入条件不清；优化由原生账号列表动态发现并保留只读门禁；**状态：进行中，外部阻塞/历史保留；没有新鲜 GO 不得放行**；[证据](../superpowers/reports/2026-07-21-d04-controlled-launch-v2-verification.md)、[轻量门禁](../superpowers/reports/2026-07-22-d04-lightweight-launch-gate-verification.md)、[v3 readiness](../superpowers/reports/2026-07-22-d04-v3-active-upstream-readiness-verification.md)。
-3. **生产备份异地副本与 7 天留存**：解决备份异地性、持续性和恢复演练缺口；优化 `pg_dump`、restic 和 R2 验收方案；影响数据库恢复和灾备；**状态：进行中，外部阻塞；真实连续 7 天备份与独立恢复待完成**；[证据](../superpowers/reports/2026-07-22-production-backup-restore-verification.md)。
-4. **GPT Codex 缓存定价 24 小时门禁**：解决缓存收益实现缺少生产价格和持续观察门槛；优化 24 小时观察与价格变更门禁；影响成本和定价；**状态：进行中，待部署/待验证**；[证据](../superpowers/reports/2026-07-22-gpt-codex-cache-savings-verification.md)。
-5. **模型发布资格监控**：解决模型目录发现与真正发布资格混淆；优化只读发现和资格前置检查；影响模型发布；**状态：进行中，历史阻塞保留；资格测试、余额和覆盖证据不足**；[证据](../superpowers/reports/2026-07-23-model-release-read-only-monitor-verification.md)、[滚动模型策略](../superpowers/reports/2026-07-22-sub2api-native-rolling-model-policy-verification.md)。
-6. **账号倍率监控 SSH 复核**：解决生产账号倍率与监控结果可能漂移；优化只读倍率检查和 SSH 复核清单；影响路由与价格；**状态：进行中，待新鲜生产复核**；[证据](../superpowers/reports/2026-07-26-account-monitor-multiplier-verification.md)。
-7. **Sub2API 0.1.166 管理员切换**：解决合格镜像已交付但运行版本仍需管理员确认切换；优化官方版本合并、合格镜像和回滚边界；影响网关运行时；**状态：进行中，外部阻塞/待管理员切换**；[证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
-8. **无人值守 Sub2API 发布生产激活**：解决自动发现、构建和候选交付尚未进入真实生产激活；优化无秘密构建、强制 SSH 和 compare-and-swap 发布准备；影响发布运维；**状态：进行中，待真实 workflow 和生产 forced-command 验收**；[证据](../superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md)。
-9. **Feishu 通知合并生产部署**：解决多通知路径重复和边界不统一；优化通知合并、纯出站契约和本地回归；**状态：进行中，待生产部署和公网验证**；[证据](../superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md)。
-10. **原生 P0/P1 Feishu Bridge 独立扩展**：解决原生 `ops_alert_events` 尚未接入飞书出站链路；优化只读事件同步、P0/P1 持续提醒、恢复和去重设计；影响原生运维告警通知；**状态：进行中，设计/实施计划已完成，尚未完成生产部署和验证**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
-11. **全站账务总账**：解决用量、充值、余额、成本和对账分散；优化统一账务数据模型和收口入口；影响全站财务与运营；**状态：进行中，待实现、部署和三方验收**；[证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)、[当前状态](current-state.md)。
-12. **首页 CTA/主题/品牌/更新准备**：解决首页转化、品牌一致性和更新提示尚未收口；优化 CTA、主题、品牌资产和版本更新准备；影响公开首页和用户转化；**状态：进行中，待生产发布与验收**；[证据](current-state.md)、[0.1.166 合格镜像](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
-13. **用量明细/支持卡片/上游账号状态等后续运营功能**：解决用户和管理员缺少细粒度用量、支持入口和上游状态视图；优化后续运营功能清单与原生能力复用方向；影响用户支持和运营效率；**状态：进行中，待设计、实现、部署和验证**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
+## 工程代码/配置差异待部署（4 项）
+
+1. **Sub2API 全局 OpenAI 低延迟配置**：生产尚未应用 `cded84a7e` 对应的全局 relay latency 配置；**状态：工程代码/配置差异待部署**。
+2. **Sub2API WebSocket `store=false` 会话隔离修复**：生产尚未应用 `c49c0a6ec`；**状态：工程代码/配置差异待部署**。
+3. **Monitor 页面自动刷新后端/前端/设置**：生产尚未应用自动刷新实现及其设置暴露；既有 Monitor 可靠性和长窗口能力不等于该实现已部署；**状态：工程代码/配置差异待部署**；[证据](../superpowers/reports/2026-07-30-monitor-reliability-admin-visibility-production-verification.md)、[长窗口](../superpowers/reports/2026-07-30-monitor-v2-long-window-buckets-production-verification.md)。
+4. **Caddy/homepage 运行时改动**：生产 Caddy 镜像仍为 `79b0f0a724bb412cfe94d0e2ffb35a4796e4ba7e`，首页运行时改动须独立于 Sub2API 发布；**状态：工程代码/配置差异待部署**；[当前状态](current-state.md)、[0.1.166 合格镜像证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
+
+## 持续实施（4 项）
+
+1. **可复用 Sub2API 蓝绿发布机制**：当前不存在可复用的蓝绿机制；需先完成候选、兼容性门禁、回滚和切换设计与实现；**状态：持续实施**。
+2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
+3. **全站账务总账**：`codex/accounting-ledger` 仍在进行中，未合并到 `main`；Task 1–3 已实现并通过独立复审，Task 4 受保护的极简现金台账与日报页面/API 正在实施，仍待后续实现、推送、部署和三方验收；**状态：持续实施**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-ledger-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[历史证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)、[当前状态](current-state.md)。
+4. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
 
 ## 总账维护规则
 
-以后每次任务都必须在实施前先登记到本文件，并将初始状态写为“进行中”。任务收尾时，只有完成服务端推送、生产部署和生效验证，才可转入“生产已部署并验证”；否则保留在“仅本地/离线准备”或“待部署/待验证/阻塞”，并补充最新证据。每次收尾同时更新统计摘要和 current-state 入口。
+以后每次任务都必须在实施前先登记到本文件，并将初始状态写为“进行中”。任务收尾时，只有完成服务端推送、生产部署和生效验证，才可转入“生产工程代码/配置已部署并验证”；仍存在运行时代码或生产配置差异的事项进入“工程代码/配置差异待部署”，尚未完成实现的进入“持续实施”，文档、研究、离线证据和外部验收进入“运维/研究跟进”，不得仅因这些材料缺失而声称工程未部署。每次收尾同时更新统计摘要和 current-state 入口。

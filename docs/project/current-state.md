@@ -8,12 +8,13 @@
 
 > 2026-07-30 起，D04 内测服务及 relay-ops 自建运维控制面均已退役。网站采用 Sub2API 原生“开放注册 + 邀请码”和原生 `/admin/ops`：旧 `/ops`、`/ops/` 与 `/ops/*` 统一返回 `302` 到 `/admin/ops`。`relay-ops` 只保留公开定价、采集与出站通知，不再暴露运维浏览器/API 控制面，也不能修改注册、邀请码、路由、账号、额度或余额。
 
-- 当前阶段：`L1-2` 至 `L1-9` 的离线准备、`M0` 主机基线和 `M1` 核心站点部署均已有历史成果；其中离线成果属于“准备完成”，只有部署并验证生效的站点能力计入生产完成。Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 是当前运行边界。
+- 当前阶段：`L1-2` 至 `L1-9` 的离线准备、`M0` 主机基线和 `M1` 核心站点部署均已有历史成果；其中离线成果属于“准备完成”，只有部署并验证生效的站点能力计入生产完成。Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 是当前运行边界。总账将状态区分为“生产工程代码/配置已部署并验证、工程代码/配置差异待部署、持续实施、运维/研究跟进”；文档、研究、历史证据和外部验收不单独构成工程未部署。
 - 历史准备完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。生产完成数量和当前进行中事项以项目全局进度总账为准。
 - 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果由 Sub2API 原生 `/admin/ops` 承载，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
 - 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe 和模型发布继续关闭。飞书只允许出站告警、持续提醒、恢复和日报；入站回调、命令控制与确认接手均已退役。
+- 当前工程差异：生产 Sub2API 仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置；relay-ops 仍缺安全完整的 Native P0/P1 Bridge（通知策略兼容性和只读数据库接线未完成）；可复用蓝绿发布机制尚不存在；Caddy/homepage 运行时改动须独立于 Sub2API 发布。生产快照为 Sub2API `e0752a27b333501d36eda8bcdd68ff7e31cef33f`、relay-ops `785aca6f62557a540dd5b314ed958a36afac0adb`、Caddy `79b0f0a724bb412cfe94d0e2ffb35a4796e4ba7e`。
 - 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
-- 下一步：管理员按业务需要在 Sub2API 后台维护开放注册、邀请码和原生运维；账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不恢复 relay-ops 控制面或飞书入站写能力。
+- 下一步：先完成蓝绿机制、兼容性门禁和上述工程差异审计，再分别安排 Sub2API、relay-ops 与 Caddy/homepage 的部署；管理员按业务需要在 Sub2API 后台维护开放注册、邀请码和原生运维。账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不恢复 relay-ops 控制面或飞书入站写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
 最新验证：`docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md`、`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md`、`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`；旧 relay-ops 运维页、飞书命令控制、模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。

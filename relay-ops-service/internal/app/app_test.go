@@ -45,6 +45,38 @@ func TestAcceptanceAnalysisRunnerDoesNotWrapAnUnconfiguredAgentAsANonNilInterfac
 	}
 }
 
+func TestConfiguredAccountingServiceIsEnabledOnlyAndUsesRuntimeConfiguration(t *testing.T) {
+	if service := configuredAccountingService(config.Config{}, nil); service != nil {
+		t.Fatalf("disabled accounting service = %#v, want nil", service)
+	}
+
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	startDate := time.Date(2026, 8, 2, 0, 0, 0, 0, shanghai)
+	service := configuredAccountingService(config.Config{
+		AccountingEnabled:           true,
+		Timezone:                    shanghai,
+		AccountingLedgerStartDate:   startDate,
+		AccountingInternalUserIDs:   []int64{7, 9},
+		AccountingInternalAPIKeyIDs: []int64{11},
+	}, nil)
+	if service == nil {
+		t.Fatal("enabled accounting service = nil")
+	}
+	if service.Timezone != shanghai || !service.StartDate.Equal(startDate) {
+		t.Fatalf("accounting schedule = timezone %v, start %v", service.Timezone, service.StartDate)
+	}
+	if len(service.Exclusions.InternalUserIDs) != 2 ||
+		service.Exclusions.InternalUserIDs[0] != 7 ||
+		service.Exclusions.InternalUserIDs[1] != 9 ||
+		len(service.Exclusions.InternalAPIKeyIDs) != 1 ||
+		service.Exclusions.InternalAPIKeyIDs[0] != 11 {
+		t.Fatalf("accounting exclusions = %#v", service.Exclusions)
+	}
+}
+
 func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {
 	chatFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
 	if err := os.WriteFile(chatFile, []byte("oc_alert_group\n"), 0o600); err != nil {

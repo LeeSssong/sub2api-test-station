@@ -282,6 +282,52 @@ func TestSiteMonitorDoesNotChangeClosedOrExistingJobScheduling(t *testing.T) {
 	}
 }
 
+func TestTickDoesNotRunAccountingBeforeShanghai0010(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	s := Scheduler{
+		Store:    newFakeJobStore(),
+		Timezone: shanghai,
+		Clock:    func() time.Time { return time.Date(2026, 8, 3, 0, 9, 0, 0, shanghai) },
+		AccountingDaily: func(context.Context) error {
+			calls++
+			return nil
+		},
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("accounting calls = %d, want 0", calls)
+	}
+}
+
+func TestTickRunsAccountingOnceAfterShanghai0010(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	s := Scheduler{
+		Store:    newFakeJobStore(),
+		Timezone: shanghai,
+		Clock:    func() time.Time { return time.Date(2026, 8, 3, 0, 10, 0, 0, shanghai) },
+		AccountingDaily: func(context.Context) error {
+			calls++
+			return nil
+		},
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("accounting calls = %d, want 1", calls)
+	}
+}
+
 type fakeJobStore struct {
 	mu  sync.Mutex
 	due map[string]time.Time

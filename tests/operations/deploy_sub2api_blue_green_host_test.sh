@@ -105,6 +105,17 @@ if [[ "${FAKE_PAUSE_AFTER_LOCK_MKDIR:-}" == 1 && "$1" == "${FAKE_LOCK_DIR:-}" ]]
   done
 fi
 EOF
+  cat >"$CASE_DIR/bin/rm" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_PAUSE_BEFORE_STALE_RM:-}" == 1 && "$*" == *"${FAKE_STALE_OWNER_PATH:?}"* ]]; then
+  : >"${FAKE_STALE_RM_READY_FILE:?}"
+  while [[ ! -e "${FAKE_STALE_RM_RELEASE_FILE:?}" ]]; do
+    /bin/sleep 1
+  done
+fi
+/bin/rm "$@"
+EOF
   cat >"$CASE_DIR/bin/df" <<'EOF'
 #!/usr/bin/env bash
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
@@ -450,9 +461,6 @@ test_failures_and_recovery() {
 {"schema_version":1,"attempt_id":"restart","mode":"production","started_epoch":1785513590,"phase":"worker_update","cutover_attempted":true,"cutover_applied":true,"worker_updated":true,"previous":{"active_slot":"blue","active_upstream":"sub2api-blue:8080","blue_image":"$PREVIOUS_IMAGE","green_image":"$PREVIOUS_IMAGE","worker_image":"$PREVIOUS_IMAGE","source_commit":"$(printf 'f%.0s' {1..40})","source_tree":"$(printf '1%.0s' {1..40})","migrations_hash":"$MIGRATIONS_HASH","postgres_id":"postgres-id","redis_id":"redis-id","caddy_id":"caddy-id"},"candidate":{"slot":"green","upstream":"sub2api-green:8080","image":"$IMAGE"}}
 EOF
   chmod 0600 "$CASE_DIR/records/restart.partial"
-  mkdir "$CASE_DIR/records/.blue-green.lock"
-  printf '2147483647\n' >"$CASE_DIR/records/.blue-green.lock/owner.pid"
-  chmod 0600 "$CASE_DIR/records/.blue-green.lock/owner.pid"
   if run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
     fail 'restart recovery should finish the interrupted attempt as failed'
   fi
@@ -636,6 +644,66 @@ test_review_paused_lock_creator_is_never_reclaimed() {
   wait "$first_pid" || fail "first deployer did not retain its lock: $(cat "$CASE_DIR/first.stderr")"
 }
 
+test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other() {
+  local first_pid second_pid first_status second_status attempts=0
+  setup_case dead_pid_lock_race
+  write_meminfo
+  mkdir "$CASE_DIR/records/.blue-green.lock"
+  printf '2147483647\n' >"$CASE_DIR/records/.blue-green.lock/owner.pid"
+  chmod 0600 "$CASE_DIR/records/.blue-green.lock/owner.pid"
+
+  (
+    run_executor \
+      FAKE_PAUSE_BEFORE_STALE_RM=1 \
+      FAKE_STALE_OWNER_PATH="$CASE_DIR/records/.blue-green.lock/owner.pid" \
+      FAKE_STALE_RM_READY_FILE="$CASE_DIR/first-rm-ready" \
+      FAKE_STALE_RM_RELEASE_FILE="$CASE_DIR/first-rm-release" \
+      FAKE_PAUSE_AFTER_LOCK_MKDIR=1 \
+      FAKE_LOCK_DIR="$CASE_DIR/records/.blue-green.lock" \
+      FAKE_LOCK_CREATED_FILE="$CASE_DIR/first-recreated" \
+      FAKE_LOCK_RELEASE_FILE="$CASE_DIR/first-mkdir-release"
+  ) >"$CASE_DIR/first.stdout" 2>"$CASE_DIR/first.stderr" &
+  first_pid=$!
+  while [[ ! -e "$CASE_DIR/first-rm-ready" ]] && kill -0 "$first_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
+    /bin/sleep 1
+    attempts=$((attempts + 1))
+  done
+
+  (
+    run_executor \
+      FAKE_PAUSE_BEFORE_STALE_RM=1 \
+      FAKE_STALE_OWNER_PATH="$CASE_DIR/records/.blue-green.lock/owner.pid" \
+      FAKE_STALE_RM_READY_FILE="$CASE_DIR/second-rm-ready" \
+      FAKE_STALE_RM_RELEASE_FILE="$CASE_DIR/second-rm-release"
+  ) >"$CASE_DIR/second.stdout" 2>"$CASE_DIR/second.stderr" &
+  second_pid=$!
+
+  if [[ -e "$CASE_DIR/first-rm-ready" ]]; then
+    attempts=0
+    while [[ ! -e "$CASE_DIR/second-rm-ready" ]] && kill -0 "$second_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
+      /bin/sleep 1
+      attempts=$((attempts + 1))
+    done
+    [[ -e "$CASE_DIR/second-rm-ready" ]] || fail 'both contenders did not observe the same dead PID owner'
+    : >"$CASE_DIR/first-rm-release"
+    attempts=0
+    while [[ ! -e "$CASE_DIR/first-recreated" ]] && kill -0 "$first_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
+      /bin/sleep 1
+      attempts=$((attempts + 1))
+    done
+    [[ -e "$CASE_DIR/first-recreated" ]] || fail 'first stale-lock reclaimer did not recreate the lock directory'
+    : >"$CASE_DIR/second-rm-release"
+    : >"$CASE_DIR/first-mkdir-release"
+  fi
+
+  if wait "$first_pid"; then first_status=0; else first_status=$?; fi
+  if wait "$second_pid"; then second_status=0; else second_status=$?; fi
+  [[ "$first_status" -ne 0 && "$second_status" -ne 0 ]] \
+    || fail 'dead PID lock reclaim allowed a concurrent deployer to continue'
+  ! grep -Eq 'docker .*compose .* up |caddy caddy reload' "$EVENT_LOG" \
+    || fail 'dead PID lock reclaimer mutated Docker or Caddy'
+}
+
 case "${ONLY_TEST:-all}" in
   all)
     test_validation_failures
@@ -654,10 +722,15 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: recovery checkpoints and credential cleanup\n'
     test_review_paused_lock_creator_is_never_reclaimed
     printf 'PASS: ownerless lock fail-closed concurrency\n'
+    test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other
+    printf 'PASS: stale PID lock fail-closed concurrency\n'
     ;;
   network) test_review_network_probe_image_policy ;;
   worker) test_review_worker_health_wait ;;
   recovery) test_review_recovery_and_cleanup ;;
-  lock) test_review_paused_lock_creator_is_never_reclaimed ;;
+  lock)
+    test_review_paused_lock_creator_is_never_reclaimed
+    test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other
+    ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

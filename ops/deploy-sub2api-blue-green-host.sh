@@ -164,14 +164,7 @@ acquire_lock() {
   if kill -0 "$owner_pid" 2>/dev/null; then
     fail 'another blue-green release is in progress'
   fi
-
-  rm -f -- "$lock_owner_path" || fail 'could not remove stale blue-green lock owner'
-  rmdir "$lock_dir" 2>/dev/null || fail 'could not remove stale blue-green release lock'
-  if ! mkdir "$lock_dir" 2>/dev/null; then
-    fail 'another blue-green release is in progress'
-  fi
-  lock_owned=true
-  persist_lock_owner
+  fail 'blue-green release lock owner is stale; manual recovery is required'
 }
 
 acquire_lock

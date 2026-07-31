@@ -49,6 +49,9 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+	// auditLog records committed system-driven multiplier changes without making
+	// the probe persistence transaction depend on the audit writer.
+	auditLog *service.AuditLogService
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{
@@ -71,8 +74,8 @@ const postgresParameterBatchSize = 50000
 
 // NewAccountRepository 创建账户仓储实例。
 // 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
-func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
-	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
+func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache, auditLog *service.AuditLogService) service.AccountRepository {
+	return newAccountRepositoryWithSQLAndAudit(client, sqlDB, schedulerCache, auditLog)
 }
 
 // NewAdminAccountRepository exposes the account repository's atomic duplication capability
@@ -84,7 +87,11 @@ func NewAdminAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCac
 // newAccountRepositoryWithSQL 是内部构造函数，支持依赖注入 SQL 执行器。
 // 这种设计便于单元测试时注入 mock 对象。
 func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache) *accountRepository {
-	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache}
+	return newAccountRepositoryWithSQLAndAudit(client, sqlq, schedulerCache, nil)
+}
+
+func newAccountRepositoryWithSQLAndAudit(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache, auditLog *service.AuditLogService) *accountRepository {
+	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache, auditLog: auditLog}
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
@@ -2534,25 +2541,31 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 	if dbent.TxFromContext(ctx) == nil {
 		tx, err := r.client.Tx(ctx)
 		if errors.Is(err, dbent.ErrTxStarted) {
-			return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+			_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+			return err
 		}
 		if err != nil {
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
 
-		if err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+		auditEntry, err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot)
+		if err != nil {
 			return err
 		}
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+		if auditEntry != nil && r.auditLog != nil {
+			r.auditLog.Record(auditEntry)
 		}
 		// The durable outbox event is committed with the snapshot. This direct
 		// cache write only reduces visibility latency on the current instance.
 		r.syncSchedulerAccountSnapshot(ctx, account.ID)
 		return nil
 	}
-	return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+	_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+	return err
 }
 
 // UpdateAccountMultiplierMeasurement stores sanitized monitor evidence only
@@ -2651,14 +2664,14 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	ctx context.Context,
 	account *service.Account,
 	snapshot *service.UpstreamBillingProbeSnapshot,
-) error {
+) (*service.AuditLog, error) {
 	payload, err := json.Marshal(map[string]any{service.UpstreamBillingProbeExtraKey: snapshot})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	credentials, err := json.Marshal(account.Credentials)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var expectedSnapshot any
 	if account.Extra != nil {
@@ -2666,7 +2679,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	}
 	expectedSnapshotJSON, err := json.Marshal(expectedSnapshot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var expectedEnabled any
 	if account.Extra != nil {
@@ -2674,15 +2687,21 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	}
 	expectedEnabledJSON, err := json.Marshal(expectedEnabled)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	policy, policyValid := service.UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra)
+	decisionPolicy := policy
+	if !policyValid {
+		decisionPolicy = "invalid"
+	}
+	decision := service.DecideUpstreamBillingRateMultiplierSync(snapshot, account, decisionPolicy)
 	client := clientFromContext(ctx, r.client)
 	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !proxyMatches {
-		return service.ErrUpstreamBillingProbeIdentityChanged
+		return nil, service.ErrUpstreamBillingProbeIdentityChanged
 	}
 	var proxyID any
 	if account.ProxyID != nil {
@@ -2701,16 +2720,71 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			AND deleted_at IS NULL
 	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if affected == 0 {
-		return service.ErrUpstreamBillingProbeIdentityChanged
+		return nil, service.ErrUpstreamBillingProbeIdentityChanged
 	}
-	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil)
+
+	var auditEntry *service.AuditLog
+	if decision.RateMultiplier != nil {
+		var expectedRate any
+		if account.RateMultiplier != nil {
+			expectedRate = *account.RateMultiplier
+		}
+		result, err = client.ExecContext(ctx, `
+			UPDATE accounts
+			SET rate_multiplier = $1, updated_at = NOW()
+			WHERE id = $2
+				AND rate_multiplier IS NOT DISTINCT FROM $3
+				AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'
+				AND deleted_at IS NULL
+		`, *decision.RateMultiplier, account.ID, expectedRate)
+		if err != nil {
+			return nil, err
+		}
+		affected, err = result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if affected > 0 {
+			auditEntry = newUpstreamBillingRateMultiplierAuditLog(ctx, account, snapshot, policy, account.BillingRateMultiplier(), *decision.RateMultiplier)
+		}
+	}
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil); err != nil {
+		return nil, err
+	}
+	return auditEntry, nil
+}
+
+func newUpstreamBillingRateMultiplierAuditLog(ctx context.Context, account *service.Account, snapshot *service.UpstreamBillingProbeSnapshot, policy string, oldMultiplier, newMultiplier float64) *service.AuditLog {
+	probeAt := snapshot.LastAttemptAt
+	if snapshot.ReceivedAt != nil {
+		probeAt = *snapshot.ReceivedAt
+	}
+	return &service.AuditLog{
+		Action:     "system.accounts.rate_multiplier.sync",
+		Method:     "SYSTEM",
+		Path:       "/internal/upstream-billing-probe",
+		ActorEmail: "system",
+		ActorRole:  "system",
+		AuthMethod: "system",
+		StatusCode: 200,
+		Extra: map[string]any{
+			"account_id":          account.ID,
+			"old_rate_multiplier": oldMultiplier,
+			"new_rate_multiplier": newMultiplier,
+			"source":              "native_billing",
+			"probe_timestamp":     probeAt.UTC().Format(time.RFC3339Nano),
+			"trigger":             service.UpstreamBillingRateMultiplierSyncTriggerFromContext(ctx),
+			"policy":              policy,
+			"actor":               "system",
+		},
+	}
 }
 
 func lockAndMatchProbeProxyIdentity(ctx context.Context, client *dbent.Client, account *service.Account) (bool, error) {

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-EXECUTOR="$ROOT/ops/deploy-sub2api-blue-green-host.sh"
+EXECUTOR=${EXECUTOR_UNDER_TEST:-"$ROOT/ops/deploy-sub2api-blue-green-host.sh"}
 FIXTURE=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-blue-green-host.XXXXXX")
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf -- "$FIXTURE"' EXIT
@@ -105,16 +105,23 @@ if [[ "${FAKE_PAUSE_AFTER_LOCK_MKDIR:-}" == 1 && "$1" == "${FAKE_LOCK_DIR:-}" ]]
   done
 fi
 EOF
-  cat >"$CASE_DIR/bin/rm" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${FAKE_PAUSE_BEFORE_STALE_RM:-}" == 1 && "$*" == *"${FAKE_STALE_OWNER_PATH:?}"* ]]; then
-  : >"${FAKE_STALE_RM_READY_FILE:?}"
-  while [[ ! -e "${FAKE_STALE_RM_RELEASE_FILE:?}" ]]; do
-    /bin/sleep 1
-  done
-fi
-/bin/rm "$@"
+  cat >"$CASE_DIR/kill-hook.bash" <<'EOF'
+kill() {
+  if [[ "${FAKE_PAUSE_AFTER_DEAD_PID_KILL:-}" == 1 \
+      && "$#" -eq 2 \
+      && "$1" == -0 \
+      && "$2" == "${FAKE_DEAD_PID:?}" ]]; then
+    if builtin kill "$@"; then
+      return 0
+    fi
+    printf '%s\n' "$2" >"${FAKE_DEAD_PID_READY_FILE:?}"
+    while [[ ! -e "${FAKE_DEAD_PID_RELEASE_FILE:?}" ]]; do
+      /bin/sleep 1
+    done
+    return 1
+  fi
+  builtin kill "$@"
+}
 EOF
   cat >"$CASE_DIR/bin/df" <<'EOF'
 #!/usr/bin/env bash
@@ -228,6 +235,7 @@ EOF
 run_executor() {
   env \
     PATH="$CASE_DIR/bin:$PATH" \
+    BASH_ENV="$CASE_DIR/kill-hook.bash" \
     FAKE_EVENT_LOG="$EVENT_LOG" \
     RELEASE_EVENT_LOG="$EVENT_LOG" \
     EXPECTED_IMAGE="$IMAGE" \
@@ -644,62 +652,60 @@ test_review_paused_lock_creator_is_never_reclaimed() {
   wait "$first_pid" || fail "first deployer did not retain its lock: $(cat "$CASE_DIR/first.stderr")"
 }
 
-test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other() {
-  local first_pid second_pid first_status second_status attempts=0
+test_review_concurrent_dead_pid_observers_fail_closed() {
+  local stale_pid=2147483647 first_pid second_pid first_status second_status attempts=0
   setup_case dead_pid_lock_race
   write_meminfo
   mkdir "$CASE_DIR/records/.blue-green.lock"
-  printf '2147483647\n' >"$CASE_DIR/records/.blue-green.lock/owner.pid"
+  printf '%s\n' "$stale_pid" >"$CASE_DIR/records/.blue-green.lock/owner.pid"
   chmod 0600 "$CASE_DIR/records/.blue-green.lock/owner.pid"
 
   (
     run_executor \
-      FAKE_PAUSE_BEFORE_STALE_RM=1 \
-      FAKE_STALE_OWNER_PATH="$CASE_DIR/records/.blue-green.lock/owner.pid" \
-      FAKE_STALE_RM_READY_FILE="$CASE_DIR/first-rm-ready" \
-      FAKE_STALE_RM_RELEASE_FILE="$CASE_DIR/first-rm-release" \
-      FAKE_PAUSE_AFTER_LOCK_MKDIR=1 \
-      FAKE_LOCK_DIR="$CASE_DIR/records/.blue-green.lock" \
-      FAKE_LOCK_CREATED_FILE="$CASE_DIR/first-recreated" \
-      FAKE_LOCK_RELEASE_FILE="$CASE_DIR/first-mkdir-release"
+      FAKE_PAUSE_AFTER_DEAD_PID_KILL=1 \
+      FAKE_DEAD_PID="$stale_pid" \
+      FAKE_DEAD_PID_READY_FILE="$CASE_DIR/first-kill-ready" \
+      FAKE_DEAD_PID_RELEASE_FILE="$CASE_DIR/first-kill-release"
   ) >"$CASE_DIR/first.stdout" 2>"$CASE_DIR/first.stderr" &
   first_pid=$!
-  while [[ ! -e "$CASE_DIR/first-rm-ready" ]] && kill -0 "$first_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
-    /bin/sleep 1
-    attempts=$((attempts + 1))
-  done
 
   (
     run_executor \
-      FAKE_PAUSE_BEFORE_STALE_RM=1 \
-      FAKE_STALE_OWNER_PATH="$CASE_DIR/records/.blue-green.lock/owner.pid" \
-      FAKE_STALE_RM_READY_FILE="$CASE_DIR/second-rm-ready" \
-      FAKE_STALE_RM_RELEASE_FILE="$CASE_DIR/second-rm-release"
+      FAKE_PAUSE_AFTER_DEAD_PID_KILL=1 \
+      FAKE_DEAD_PID="$stale_pid" \
+      FAKE_DEAD_PID_READY_FILE="$CASE_DIR/second-kill-ready" \
+      FAKE_DEAD_PID_RELEASE_FILE="$CASE_DIR/second-kill-release"
   ) >"$CASE_DIR/second.stdout" 2>"$CASE_DIR/second.stderr" &
   second_pid=$!
 
-  if [[ -e "$CASE_DIR/first-rm-ready" ]]; then
-    attempts=0
-    while [[ ! -e "$CASE_DIR/second-rm-ready" ]] && kill -0 "$second_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
-      /bin/sleep 1
-      attempts=$((attempts + 1))
-    done
-    [[ -e "$CASE_DIR/second-rm-ready" ]] || fail 'both contenders did not observe the same dead PID owner'
-    : >"$CASE_DIR/first-rm-release"
-    attempts=0
-    while [[ ! -e "$CASE_DIR/first-recreated" ]] && kill -0 "$first_pid" 2>/dev/null && [[ "$attempts" -lt 3 ]]; do
-      /bin/sleep 1
-      attempts=$((attempts + 1))
-    done
-    [[ -e "$CASE_DIR/first-recreated" ]] || fail 'first stale-lock reclaimer did not recreate the lock directory'
-    : >"$CASE_DIR/second-rm-release"
-    : >"$CASE_DIR/first-mkdir-release"
+  while [[ (! -e "$CASE_DIR/first-kill-ready" || ! -e "$CASE_DIR/second-kill-ready") && "$attempts" -lt 10 ]]; do
+    /bin/sleep 1
+    attempts=$((attempts + 1))
+  done
+  if [[ ! -e "$CASE_DIR/first-kill-ready" || ! -e "$CASE_DIR/second-kill-ready" ]]; then
+    : >"$CASE_DIR/first-kill-release"
+    : >"$CASE_DIR/second-kill-release"
+    wait "$first_pid" || true
+    wait "$second_pid" || true
+    fail 'both contenders did not pause after observing the same dead PID owner'
   fi
+  [[ "$(cat "$CASE_DIR/first-kill-ready")" == "$stale_pid" \
+      && "$(cat "$CASE_DIR/second-kill-ready")" == "$stale_pid" ]] \
+    || fail 'dead PID observation markers did not identify the stale owner'
+  kill -0 "$first_pid" 2>/dev/null && kill -0 "$second_pid" 2>/dev/null \
+    || fail 'both contenders were not simultaneously paused after the dead PID observation'
+
+  : >"$CASE_DIR/first-kill-release"
+  : >"$CASE_DIR/second-kill-release"
 
   if wait "$first_pid"; then first_status=0; else first_status=$?; fi
   if wait "$second_pid"; then second_status=0; else second_status=$?; fi
   [[ "$first_status" -ne 0 && "$second_status" -ne 0 ]] \
     || fail 'dead PID lock reclaim allowed a concurrent deployer to continue'
+  [[ -d "$CASE_DIR/records/.blue-green.lock" \
+      && -f "$CASE_DIR/records/.blue-green.lock/owner.pid" \
+      && "$(cat "$CASE_DIR/records/.blue-green.lock/owner.pid")" == "$stale_pid" ]] \
+    || fail 'concurrent dead PID observers changed the protected stale lock'
   ! grep -Eq 'docker .*compose .* up |caddy caddy reload' "$EVENT_LOG" \
     || fail 'dead PID lock reclaimer mutated Docker or Caddy'
 }
@@ -722,7 +728,7 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: recovery checkpoints and credential cleanup\n'
     test_review_paused_lock_creator_is_never_reclaimed
     printf 'PASS: ownerless lock fail-closed concurrency\n'
-    test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other
+    test_review_concurrent_dead_pid_observers_fail_closed
     printf 'PASS: stale PID lock fail-closed concurrency\n'
     ;;
   network) test_review_network_probe_image_policy ;;
@@ -730,7 +736,7 @@ case "${ONLY_TEST:-all}" in
   recovery) test_review_recovery_and_cleanup ;;
   lock)
     test_review_paused_lock_creator_is_never_reclaimed
-    test_review_dead_pid_lock_reclaimers_cannot_overtake_each_other
+    test_review_concurrent_dead_pid_observers_fail_closed
     ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

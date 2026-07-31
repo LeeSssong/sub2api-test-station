@@ -198,7 +198,7 @@
 
 ## 持续实施（4 项）
 
-1. **30 分钟指令驱动 Sub2API 蓝绿发布**：用户已批准“任务测试完成后等待生产指令，指令后 30 分钟内构建镜像并蓝绿无感切流；必然停机时二次授权”；设计与实施计划已批准，正在隔离工作树实施 API/worker 运行角色、双槽 Compose、Caddy 切流和发布编排；**状态：进行中**；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)。
+1. **30 分钟指令驱动 Sub2API 蓝绿发布**：用户已批准“任务测试完成后等待生产指令，指令后 30 分钟内构建镜像并蓝绿无感切流；必然停机时二次授权”；设计与实施计划已批准，正在隔离工作树实施 API/worker 运行角色、双槽 Compose、Caddy 切流和发布编排；Task 1 的进程角色配置已完成，Task 2 生命周期隔离已完成本地实现与验证，仍待合并、推送、部署和生产生效验证；**状态：进行中**；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)。
 2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
 3. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
 

@@ -49,9 +49,9 @@ func TestPromptServiceHasExplicitIdempotentLifecycle(t *testing.T) {
 	)
 
 	require.Nil(t, service.cancel, "construction must not start background work")
-	require.NoError(t, service.Start(context.Background()))
+	require.NoError(t, service.Start(context.Background(), PromptStartMode{ConsumeSharedQueue: true}))
 	require.NotNil(t, service.cancel)
-	require.NoError(t, service.Start(context.Background()), "Start must be idempotent")
+	require.NoError(t, service.Start(context.Background(), PromptStartMode{ConsumeSharedQueue: true}), "Start must be idempotent")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -62,7 +62,7 @@ func TestPromptServiceHasExplicitIdempotentLifecycle(t *testing.T) {
 
 func TestPromptServiceStartReportsDependencyFailureWithoutPanic(t *testing.T) {
 	service := &PromptService{}
-	require.Error(t, service.Start(context.Background()))
+	require.Error(t, service.Start(context.Background(), PromptStartMode{ConsumeSharedQueue: true}))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, service.Shutdown(ctx))

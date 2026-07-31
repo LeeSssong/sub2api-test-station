@@ -23,13 +23,22 @@ type PromptService struct {
 	metrics   *AtomicMetrics
 	clock     Clock
 
-	lifecycleMu  sync.Mutex
-	cancel       context.CancelFunc
-	background   context.Context
-	enqueueWG    sync.WaitGroup
-	enqueueSlots chan struct{}
-	probeMu      sync.RWMutex
-	probes       map[string]ProbeResult
+	runnerStart    func(context.Context) error
+	runnerShutdown func(context.Context) error
+
+	lifecycleMu   sync.Mutex
+	cancel        context.CancelFunc
+	background    context.Context
+	configStarted bool
+	runnerStarted bool
+	enqueueWG     sync.WaitGroup
+	enqueueSlots  chan struct{}
+	probeMu       sync.RWMutex
+	probes        map[string]ProbeResult
+}
+
+type PromptStartMode struct {
+	ConsumeSharedQueue bool
 }
 
 func NewPromptService(
@@ -42,15 +51,21 @@ func NewPromptService(
 	enqueuer := NewEnqueuer(config, repo, payload, metrics)
 	evaluator := NewGuardEvaluator(scanner, repo, metrics)
 	runner := NewRunner(config, repo, payload, scanner, metrics)
-	return &PromptService{
+	service := &PromptService{
 		config: config, repo: repo, payload: payload, scanner: scanner, metrics: metrics,
 		enqueuer: enqueuer, evaluator: evaluator, runner: runner, clock: realClock{},
 		enqueueSlots: make(chan struct{}, 128), probes: map[string]ProbeResult{},
 	}
+	service.runnerStart = runner.Start
+	service.runnerShutdown = runner.Shutdown
+	return service
 }
 
-func (s *PromptService) Start(ctx context.Context) error {
-	if s == nil || s.config == nil || s.runner == nil {
+func (s *PromptService) Start(ctx context.Context, mode PromptStartMode) error {
+	if s == nil || s.config == nil {
+		return errors.New("prompt audit service unavailable")
+	}
+	if mode.ConsumeSharedQueue && s.runner == nil && s.runnerStart == nil {
 		return errors.New("prompt audit service unavailable")
 	}
 	s.lifecycleMu.Lock()
@@ -62,7 +77,28 @@ func (s *PromptService) Start(ctx context.Context) error {
 	s.background, s.cancel = background, cancel
 	s.lifecycleMu.Unlock()
 	configErr := s.config.Start(background)
-	workerErr := s.runner.Start(background)
+	if configErr == nil {
+		s.lifecycleMu.Lock()
+		s.configStarted = true
+		s.lifecycleMu.Unlock()
+	}
+	var workerErr error
+	if mode.ConsumeSharedQueue {
+		startRunner := s.runnerStart
+		if startRunner == nil && s.runner != nil {
+			startRunner = s.runner.Start
+		}
+		if startRunner == nil {
+			workerErr = errors.New("prompt audit worker unavailable")
+		} else {
+			workerErr = startRunner(background)
+			if workerErr == nil {
+				s.lifecycleMu.Lock()
+				s.runnerStarted = true
+				s.lifecycleMu.Unlock()
+			}
+		}
+	}
 	return errors.Join(configErr, workerErr)
 }
 
@@ -73,13 +109,24 @@ func (s *PromptService) Shutdown(ctx context.Context) error {
 	s.lifecycleMu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
+	s.background = nil
+	configStarted := s.configStarted
+	s.configStarted = false
+	runnerStarted := s.runnerStarted
+	s.runnerStarted = false
 	s.lifecycleMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	var workerErr error
-	if s.runner != nil {
-		workerErr = s.runner.Shutdown(ctx)
+	if runnerStarted {
+		shutdownRunner := s.runnerShutdown
+		if shutdownRunner == nil && s.runner != nil {
+			shutdownRunner = s.runner.Shutdown
+		}
+		if shutdownRunner != nil {
+			workerErr = shutdownRunner(ctx)
+		}
 	}
 	done := make(chan struct{})
 	go func() { s.enqueueWG.Wait(); close(done) }()
@@ -91,7 +138,7 @@ func (s *PromptService) Shutdown(ctx context.Context) error {
 		}
 	}
 	var configErr error
-	if s.config != nil {
+	if configStarted && s.config != nil {
 		configErr = s.config.Shutdown(ctx)
 	}
 	if workerErr != nil {

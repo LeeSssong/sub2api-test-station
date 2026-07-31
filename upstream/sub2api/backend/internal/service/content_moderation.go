@@ -569,6 +569,19 @@ func NewContentModerationService(
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
 ) *ContentModerationService {
+	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, true)
+}
+
+func newContentModerationService(
+	settingRepo SettingRepository,
+	repo ContentModerationRepository,
+	hashCache ContentModerationHashCache,
+	groupRepo GroupRepository,
+	userRepo UserRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	emailService *EmailService,
+	startWorkers bool,
+) *ContentModerationService {
 	svc := &ContentModerationService{
 		settingRepo:          settingRepo,
 		repo:                 repo,
@@ -582,7 +595,7 @@ func NewContentModerationService(
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
 	}
-	if settingRepo != nil && repo != nil {
+	if startWorkers && settingRepo != nil && repo != nil {
 		for i := 0; i < svc.workerCount; i++ {
 			go svc.worker(i)
 		}

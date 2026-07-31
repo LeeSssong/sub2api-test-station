@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -154,7 +155,9 @@ func runMainServer() {
 	}
 	defer app.Cleanup()
 	if app.PromptAudit != nil {
-		if err := app.PromptAudit.Start(context.Background()); err != nil {
+		if err := app.PromptAudit.Start(context.Background(), securityaudit.PromptStartMode{
+			ConsumeSharedQueue: cfg.Server.ProcessRole.RunsSingletonJobs(),
+		}); err != nil {
 			// Startup continues so unrelated APIs stay up. Fail-closed (unavailable)
 			// applies only when a persisted blocking policy was observed; without
 			// blocking intent, Prompt Audit stays ModeOff so the gateway remains

@@ -84,9 +84,12 @@ func DecideUpstreamBillingRateMultiplierSync(
 	if snapshot.Data == nil {
 		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonMissingEffectiveRate}
 	}
+	if _, exists := snapshot.Data["effective_rate_multiplier"]; !exists {
+		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonMissingEffectiveRate}
+	}
 	rate, ok := resolveAccountExtraNumber(snapshot.Data, "effective_rate_multiplier")
 	if !ok {
-		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonMissingEffectiveRate}
+		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate}
 	}
 	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 || rate > upstreamBillingRateMultiplierMax {
 		return UpstreamBillingRateMultiplierDecision{Reason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate}

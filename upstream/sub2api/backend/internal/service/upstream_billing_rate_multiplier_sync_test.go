@@ -49,6 +49,16 @@ func TestDecideUpstreamBillingRateMultiplierSync(t *testing.T) {
 			wantReason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate,
 		},
 		{
+			name:    "malformed multiplier is rejected",
+			account: &Account{RateMultiplier: &managedRate},
+			snapshot: &UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusOK,
+				Data:   map[string]any{"effective_rate_multiplier": "not-a-number"},
+			},
+			policy:     UpstreamBillingRateMultiplierPolicyManaged,
+			wantReason: UpstreamBillingRateMultiplierDecisionReasonInvalidEffectiveRate,
+		},
+		{
 			name:    "unchanged managed snapshot is a no-op",
 			account: &Account{RateMultiplier: &currentRate},
 			snapshot: &UpstreamBillingProbeSnapshot{

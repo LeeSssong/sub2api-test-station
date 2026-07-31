@@ -8,7 +8,8 @@ Added a backward-compatible `accounts.extra` policy key and pure decision
 logic for native billing multiplier synchronization. Missing policy values
 default to `upstream_managed`; explicit `manual_override` prevents writes;
 malformed policy values are rejected. The decision function validates only
-`effective_rate_multiplier`, requires a finite positive value within the
+`effective_rate_multiplier`, distinguishes a missing field from a malformed
+present field, and requires a finite positive value within the
 current `decimal(10,4)` account-column bound, and suppresses idempotent writes.
 
 No repository, audit, cache, scheduler, lifecycle, or production deployment

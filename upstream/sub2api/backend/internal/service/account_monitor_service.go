@@ -216,15 +216,13 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				members = append(members, account.ID)
 			}
 		}
-		groupAggregates := globalAggregates
+		groupAggregates := map[int64]AccountMonitorAggregate(nil)
+		groupEvidenceAvailable := false
 		if provider, ok := s.repo.(AccountMonitorGroupAggregateRepository); ok && len(members) > 0 {
 			loaded, err := provider.ListGroupAggregates(ctx, group.ID, members, now.Add(-AccountMonitorGroupEvidenceWindow))
-			if err != nil {
-				// A group-specific evidence read must not make the whole monitor
-				// page unavailable; global evidence remains a safe fallback.
-				groupAggregates = globalAggregates
-			} else {
+			if err == nil {
 				groupAggregates = loaded
+				groupEvidenceAvailable = true
 			}
 		}
 
@@ -237,7 +235,7 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			}
 			groupAggregate := groupAggregates[accountID]
 			globalAggregate := globalAggregates[accountID]
-			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, latest[accountID], settings, now)
+			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, groupEvidenceAvailable, latest[accountID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			row.SampleCount = evidence.SampleCount
 			row.SuccessRate = evidence.SuccessRate
@@ -248,7 +246,9 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				row.CheckedAt = &checkedAt
 			}
 			costEligible := account.BillingRateMultiplier() <= group.RateMultiplier
-			serviceEligible := account.Status == StatusActive && account.Schedulable && !accountMonitorAccountPaused(account, now)
+			serviceEligible := account.Status == StatusActive && account.Schedulable &&
+				!accountMonitorAccountPaused(account, now) &&
+				!(account.AutoPauseOnExpired && account.ExpiresAt != nil && !account.ExpiresAt.After(now))
 			row.Eligible = evidence.Source != "stale" && costEligible && serviceEligible
 			if row.Eligible {
 				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, account.BillingRateMultiplier(), group.ScoreWeights, evidence)
@@ -319,22 +319,26 @@ func accountMonitorAccountPaused(account Account, now time.Time) bool {
 func accountMonitorEvidence(
 	groupAggregate AccountMonitorAggregate,
 	globalAggregate AccountMonitorAggregate,
+	groupEvidenceAvailable bool,
 	latest AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	now time.Time,
 ) (AccountMonitorQualityEvidence, AccountMonitorAggregate) {
 	aggregate := groupAggregate
 	source := "group"
-	if aggregate.SampleCount < AccountMonitorGroupEvidenceMinSamples {
+	if !groupEvidenceAvailable || aggregate.SampleCount < AccountMonitorGroupEvidenceMinSamples {
 		aggregate = globalAggregate
 		source = "global_fallback"
 	}
 	if aggregate.SampleCount < AccountMonitorGroupEvidenceMinSamples {
 		source = "stale"
 	}
-	observedAt := latest.CheckedAt
-	if observedAt.IsZero() && aggregate.LastCheckedAt != nil {
+	observedAt := time.Time{}
+	if aggregate.LastCheckedAt != nil {
 		observedAt = *aggregate.LastCheckedAt
+	}
+	if observedAt.IsZero() {
+		observedAt = latest.CheckedAt
 	}
 	if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
 		source = "stale"

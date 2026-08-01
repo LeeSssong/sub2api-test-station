@@ -151,7 +151,7 @@ func TestAccountMonitorRepositoryPersistsGroupScoreWeightsAndReadsNativeGroups(t
 	}
 }
 
-func TestAccountMonitorRepositoryReadsGroupScopedQualityEvidence(t *testing.T) {
+func TestAccountMonitorRepositoryKeepsHistoricalGroupEvidenceIndependentOfCurrentMembership(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -160,17 +160,17 @@ func TestAccountMonitorRepositoryReadsGroupScopedQualityEvidence(t *testing.T) {
 	repo := NewAccountMonitorRepository(db)
 	since := time.Date(2026, 8, 1, 7, 55, 0, 0, time.UTC)
 	lastChecked := time.Date(2026, 8, 1, 7, 59, 0, 0, time.UTC)
-	mock.ExpectQuery("JOIN account_groups ag").WithArgs(int64(7), sqlmock.AnyArg(), since).
+	mock.ExpectQuery("(?s)SELECT.*u\\.account_id.*FROM usage_logs u.*u\\.group_id = \\$1.*u\\.account_id = ANY\\(\\$2\\).*u\\.created_at >= \\$3").WithArgs(int64(7), sqlmock.AnyArg(), since).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"account_id", "sample_count", "success_count", "error_count", "success_rate",
-			"ttft_p50", "latency_p95", "last_checked_at",
-		}).AddRow(11, 4, 3, 1, 0.75, 80.0, 300.0, lastChecked))
+			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
+		}).AddRow(11, 4, 3, 1, 0.75, 80.0, 120.0, 240.0, 300.0, lastChecked))
 	aggregates, err := repo.(*accountMonitorRepository).ListGroupAggregates(context.Background(), 7, []int64{11}, since)
 	if err != nil {
 		t.Fatal(err)
 	}
 	row := aggregates[11]
-	if row.SampleCount != 4 || row.SuccessRate != 0.75 || row.TTFTP50MS == nil || *row.TTFTP50MS != 80 || row.LatencyP95MS == nil || *row.LatencyP95MS != 300 {
+	if row.SampleCount != 4 || row.SuccessRate != 0.75 || row.TTFTP50MS == nil || *row.TTFTP50MS != 80 || row.TTFTP95MS == nil || *row.TTFTP95MS != 120 || row.LatencyP50MS == nil || *row.LatencyP50MS != 240 || row.LatencyP95MS == nil || *row.LatencyP95MS != 300 {
 		t.Fatalf("group aggregate = %#v", row)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

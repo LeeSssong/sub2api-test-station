@@ -14,9 +14,9 @@
 |---|---:|---|
 | 生产工程代码/配置已部署并验证 | 18 | 已推送、已部署、已验证生效 |
 | 工程代码/配置差异待部署 | 8 | 仍存在运行时代码或生产配置差异 |
-| 持续实施 | 4 | 工程实现尚未完成，或仍在推进中 |
+| 持续实施 | 5 | 工程实现尚未完成，或仍在推进中 |
 | 运维/研究跟进（非工程部署差异） | 23 | 文档、研究、历史证据或外部验收跟进 |
-| **合并后的独立事项合计** | **53** | **当前总账快照** |
+| **合并后的独立事项合计** | **54** | **当前总账快照** |
 
 ## 当前最重要进行中事项
 
@@ -29,6 +29,7 @@
 7. **账号上游倍率自动同步**：托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发已合并到 `main`；最终修复完成显式策略意图、提交顺序安全的 Redis 版本 fencing、按模式隔离 singleflight 和 `UpdateLastUsed` 持久化版本单调性。后端、前端及真实 PostgreSQL/Redis 集成回归通过，最终独立复审批准合并；尚未推送、部署或线上验证。**状态：工程差异待部署**。
 8. **Monitor V2 卡片信息精简**：已合并移除各指标样本数量、模型折叠区及接口 `models` 字段，保留性能指标、有效调用、P95 与趋势；前后端测试已通过，但尚未推送、部署或生产验证。**状态：工程差异待部署**。
 9. **Monitor 当前状态与飞书历史错误码修复**：已按“最新一次渠道探测”口径完成本地实现与回归，修正最新成功被历史失败压过，以及 `balance_exhausted` 残留导致账号正在运行却被告警为无可用账号。**状态：工程差异待部署（本地验证通过，待推送、部署和线上验证）**。
+10. **`api.xingqiaolab.top` TLS 兼容性修复**：轮换站点证书并显式设置兼容 TLS 策略，仅对 Caddy 的 API 站点执行配置校验和平滑 reload；上线后以 TLS 1.2/1.3 握手、`/v1/usage` 请求及 CC Switch 3.16.5 刷新用量成功为完成门禁。**状态：进行中**。
 
 ## 生产工程代码/配置已部署并验证（18 项）
 
@@ -198,11 +199,12 @@
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
 8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。本地后端、relay-ops 与前端回归通过，尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
 
-## 持续实施（5 项）
+## 持续实施（6 项）
 
 1. **30 分钟指令驱动 Sub2API 蓝绿发布**：用户已批准“任务测试完成后等待生产指令，指令后 30 分钟内构建镜像并蓝绿无感切流；必然停机时二次授权”；设计已收敛，进入 candidate/API-only 模式、双槽 Compose、Caddy 切流和发布编排实施；**状态：进行中**；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)。
 2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
 3. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
+4. **`api.xingqiaolab.top` TLS 兼容性修复**：已确认 CC Switch 3.16.5 用量查询在 HTTP 请求到达生产入口前发生 TLS 握手兼容性失败；本次仅轮换 API 域名证书、显式启用 TLS 1.2/1.3 并平滑 reload Caddy，不重建 Compose 或其他服务。完成门禁为配置已推送到服务器、生产已加载、TLS 1.2/1.3 与 `/v1/usage` 已验证，并由 CC Switch 3.16.5 实测刷新成功。**状态：进行中**。
 
 ## 总账维护规则
 

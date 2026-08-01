@@ -50,7 +50,7 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 	newMultiplier := 0.25
 	mock.ExpectBegin()
 	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts")+`.*`+regexp.QuoteMeta("SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")+`.*`+regexp.QuoteMeta("COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb")).
-		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "null").
+		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")+`.*`+regexp.QuoteMeta("COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'")).
 		WithArgs(newMultiplier, int64(17), oldMultiplier).
@@ -80,6 +80,8 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 		RateMultiplier: &oldMultiplier,
 		Extra: map[string]any{
 			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+			service.UpstreamBillingProbeEnabledExtraKey:         true,
+			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
 		},
 	}
 
@@ -87,7 +89,7 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
 		Status:     service.UpstreamBillingProbeStatusOK,
 		ReceivedAt: &observedAt,
 		Data:       map[string]any{"effective_rate_multiplier": probeMultiplier},
-	})
+	}, &newMultiplier)
 
 	require.NoError(t, err)
 	auditLog.Stop()
@@ -144,11 +146,13 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitFailureDoesNotRefreshSchedulerO
 		RateMultiplier: &oldMultiplier,
 		Extra: map[string]any{
 			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+			service.UpstreamBillingProbeEnabledExtraKey:         true,
+			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
 		},
 	}, &service.UpstreamBillingProbeSnapshot{
 		Status: service.UpstreamBillingProbeStatusOK,
 		Data:   map[string]any{"effective_rate_multiplier": newMultiplier},
-	})
+	}, &newMultiplier)
 
 	require.EqualError(t, err, "commit failed")
 	auditLog.Stop()
@@ -224,6 +228,14 @@ func TestUpdateUpstreamBillingProbeSnapshotPreservesSnapshotWithoutMultiplierCha
 			if tt.policy != "" {
 				extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = tt.policy
 			}
+			var rateMultiplier *float64
+			if tt.snapshot.Status == service.UpstreamBillingProbeStatusOK && tt.snapshot.Data["effective_rate_multiplier"] != float64(0) {
+				value := tt.multiplier
+				if observed, ok := tt.snapshot.Data["effective_rate_multiplier"].(float64); ok {
+					value = observed
+				}
+				rateMultiplier = &value
+			}
 			err = repo.UpdateUpstreamBillingProbeSnapshot(context.Background(), &service.Account{
 				ID:             19,
 				Platform:       service.PlatformOpenAI,
@@ -231,7 +243,7 @@ func TestUpdateUpstreamBillingProbeSnapshotPreservesSnapshotWithoutMultiplierCha
 				Credentials:    map[string]any{"api_key": "sk-test"},
 				RateMultiplier: &tt.multiplier,
 				Extra:          extra,
-			}, tt.snapshot)
+			}, tt.snapshot, rateMultiplier)
 
 			require.NoError(t, err)
 			auditLog.Stop()

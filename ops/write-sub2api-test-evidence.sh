@@ -48,10 +48,13 @@ migrations_dir="$worktree/upstream/sub2api/backend/migrations"
 [[ -d "$migrations_dir" && ! -L "$migrations_dir" ]] || fail 'migration directory is invalid'
 migrations_hash=$(ruby -rdigest -e '
   directory = ARGV.fetch(0)
+  go_space = /[\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/
   files = Dir.children(directory).select { |name| name.end_with?(".sql") }.sort
   digest = Digest::SHA256.new
   files.each do |name|
-    content = File.binread(File.join(directory, name)).strip
+    content = File.binread(File.join(directory, name)).force_encoding(Encoding::UTF_8)
+    abort "migration is not valid UTF-8: #{name}" unless content.valid_encoding?
+    content = content.sub(/\A#{go_space}+/, "").sub(/#{go_space}+\z/, "")
     next if content.empty?
     digest << name << "\0" << Digest::SHA256.hexdigest(content) << "\n"
   end

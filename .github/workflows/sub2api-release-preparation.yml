@@ -206,12 +206,15 @@ jobs:
             )
             abort unless paths_status.success?
             migration_hash = Digest::SHA256.new
+            go_space = /[\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/
             migration_paths.lines.map(&:strip).select { |path|
               path.match?(%r{\Aupstream/sub2api/backend/migrations/[^/]+[.]sql\z})
             }.sort.each do |path|
               content, content_status = Open3.capture2("git", "show", "#{source_commit}:#{path}")
               abort unless content_status.success?
-              content = content.strip
+              content = content.force_encoding(Encoding::UTF_8)
+              abort unless content.valid_encoding?
+              content = content.sub(/\A#{go_space}+/, "").sub(/#{go_space}+\z/, "")
               next if content.empty?
               migration_hash << File.basename(path) << "\0" << Digest::SHA256.hexdigest(content) << "\n"
             end

@@ -139,6 +139,18 @@ test_writer_schema_and_permissions() {
   fi
 }
 
+test_migration_hash_matches_go_trim_space_for_unicode_whitespace() {
+  setup_case unicode-whitespace
+  printf '\343\200\200CREATE TABLE example ();\343\200\200\n' >"$CASE_DIR/repo/upstream/sub2api/backend/migrations/001_init.sql"
+  git -C "$CASE_DIR/repo" add upstream/sub2api/backend/migrations/001_init.sql
+  git -C "$CASE_DIR/repo" commit -qm unicode-whitespace
+  write_evidence
+  ruby -rjson -e '
+    value = JSON.parse(File.binread(ARGV.fetch(0)))
+    abort unless value.fetch("migrations_hash") == "6bf880ea3cbbdb3e0e723512267b4e7d3bfacbaf29e9148c85dbc92c867d337e"
+  ' "$EVIDENCE" || fail 'migration hash does not match Go strings.TrimSpace normalization'
+}
+
 test_evidence_rejected_before_transport() {
   local bad_commit
   setup_case dirty
@@ -254,6 +266,7 @@ test_rejects_unattested_build_context_before_transport() {
 }
 
 test_writer_schema_and_permissions
+test_migration_hash_matches_go_trim_space_for_unicode_whitespace
 test_evidence_rejected_before_transport
 test_build_publish_and_host_invocation
 test_downtime_gate_is_propagated_without_retry

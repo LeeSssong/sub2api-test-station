@@ -6,12 +6,14 @@ import (
 )
 
 const (
-	AccountMonitorSchemaVersion          = 2
-	AccountMonitorDefaultIntervalSeconds = 300
-	AccountMonitorMinIntervalSeconds     = 15
-	AccountMonitorMaxIntervalSeconds     = 3600
-	AccountMonitorHistoryDays            = 7
-	AccountMonitorDefaultHistoryLimit    = 50
+	AccountMonitorSchemaVersion           = 2
+	AccountMonitorDefaultIntervalSeconds  = 300
+	AccountMonitorMinIntervalSeconds      = 15
+	AccountMonitorMaxIntervalSeconds      = 3600
+	AccountMonitorHistoryDays             = 7
+	AccountMonitorDefaultHistoryLimit     = 50
+	AccountMonitorGroupEvidenceWindow     = 5 * time.Minute
+	AccountMonitorGroupEvidenceMinSamples = 3
 )
 
 var DefaultAccountMonitorScoreWeights = AccountMonitorScoreWeights{
@@ -28,12 +30,31 @@ type AccountMonitorScoreWeights struct {
 }
 
 type AccountMonitorGroup struct {
-	ID              int64                      `json:"id"`
-	Name            string                     `json:"name"`
-	RateMultiplier  float64                    `json:"rate_multiplier"`
-	CustomerVisible bool                       `json:"customer_visible"`
-	NativeOrder     int                        `json:"native_order"`
-	ScoreWeights    AccountMonitorScoreWeights `json:"score_weights"`
+	ID               int64                        `json:"id"`
+	Name             string                       `json:"name"`
+	RateMultiplier   float64                      `json:"rate_multiplier"`
+	CustomerVisible  bool                         `json:"customer_visible"`
+	NativeOrder      int                          `json:"native_order"`
+	ScoreWeights     AccountMonitorScoreWeights   `json:"score_weights"`
+	OperationalState string                       `json:"operational_state"`
+	Accounts         []AccountMonitorGroupAccount `json:"accounts,omitempty"`
+}
+
+type AccountMonitorQualityEvidence struct {
+	Source       string    `json:"source"`
+	SampleCount  int       `json:"sample_count"`
+	SuccessRate  float64   `json:"success_rate"`
+	TTFTP50MS    *float64  `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS *float64  `json:"latency_p95_ms,omitempty"`
+	ObservedAt   time.Time `json:"observed_at"`
+}
+
+type AccountMonitorGroupAccount struct {
+	AccountMonitorAccount
+	QualityScore *float64                      `json:"quality_score,omitempty"`
+	GroupRank    *int                          `json:"group_rank,omitempty"`
+	Eligible     bool                          `json:"eligible"`
+	Evidence     AccountMonitorQualityEvidence `json:"evidence"`
 }
 
 type AccountMonitorSettings struct {
@@ -144,4 +165,11 @@ type AccountMonitorRepository interface {
 	LoadGroupScoreWeights(ctx context.Context, groupID int64) (AccountMonitorScoreWeights, error)
 	SaveGroupScoreWeights(ctx context.Context, groupID, actorID int64, weights AccountMonitorScoreWeights) error
 	ResetGroupScoreWeights(ctx context.Context, groupID int64) error
+}
+
+// AccountMonitorGroupAggregateRepository is optional so existing repository
+// adapters can continue serving the global projection while group evidence is
+// rolled out.
+type AccountMonitorGroupAggregateRepository interface {
+	ListGroupAggregates(ctx context.Context, groupID int64, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
 }

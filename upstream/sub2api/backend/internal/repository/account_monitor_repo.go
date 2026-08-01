@@ -130,6 +130,64 @@ func (r *accountMonitorRepository) ListAggregates(
 	return result, nil
 }
 
+func (r *accountMonitorRepository) ListGroupAggregates(
+	ctx context.Context,
+	groupID int64,
+	accountIDs []int64,
+	since time.Time,
+) (map[int64]service.AccountMonitorAggregate, error) {
+	result := make(map[int64]service.AccountMonitorAggregate, len(accountIDs))
+	if groupID <= 0 || len(accountIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			r.account_id,
+			COUNT(*)::int,
+			COUNT(*) FILTER (WHERE r.status = 'success')::int,
+			COUNT(*) FILTER (WHERE r.status <> 'success')::int,
+			COALESCE(
+				COUNT(*) FILTER (WHERE r.status = 'success')::double precision /
+				NULLIF(COUNT(*), 0),
+				0
+			),
+			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY r.ttft_ms)
+				FILTER (WHERE r.ttft_ms IS NOT NULL),
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY r.latency_ms)
+				FILTER (WHERE r.latency_ms IS NOT NULL),
+			MAX(r.checked_at)
+		FROM account_monitor_results r
+		JOIN account_groups ag ON ag.account_id = r.account_id AND ag.group_id = $1
+		WHERE r.account_id = ANY($2) AND r.checked_at >= $3
+		GROUP BY r.account_id
+	`, groupID, pq.Array(accountIDs), since.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var accountID int64
+		var aggregate service.AccountMonitorAggregate
+		if err := rows.Scan(
+			&accountID,
+			&aggregate.SampleCount,
+			&aggregate.SuccessCount,
+			&aggregate.ErrorCount,
+			&aggregate.SuccessRate,
+			&aggregate.TTFTP50MS,
+			&aggregate.LatencyP95MS,
+			&aggregate.LastCheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		result[accountID] = aggregate
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *accountMonitorRepository) ListLatest(
 	ctx context.Context,
 	accountIDs []int64,

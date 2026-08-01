@@ -26,11 +26,14 @@ type accountMonitorAccountRepoStub struct {
 
 type accountMonitorRepoStub struct {
 	AccountMonitorRepository
-	mu       sync.Mutex
-	results  []AccountMonitorProbeResult
-	settings AccountMonitorSettings
-	groups   []AccountMonitorGroup
-	weights  map[int64]AccountMonitorScoreWeights
+	mu              sync.Mutex
+	results         []AccountMonitorProbeResult
+	settings        AccountMonitorSettings
+	groups          []AccountMonitorGroup
+	weights         map[int64]AccountMonitorScoreWeights
+	aggregates      map[int64]AccountMonitorAggregate
+	groupAggregates map[int64]map[int64]AccountMonitorAggregate
+	latest          map[int64]AccountMonitorLatest
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -45,11 +48,15 @@ func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error 
 }
 
 func (s *accountMonitorRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]AccountMonitorAggregate, error) {
-	return map[int64]AccountMonitorAggregate{}, nil
+	return s.aggregates, nil
+}
+
+func (s *accountMonitorRepoStub) ListGroupAggregates(_ context.Context, groupID int64, _ []int64, _ time.Time) (map[int64]AccountMonitorAggregate, error) {
+	return s.groupAggregates[groupID], nil
 }
 
 func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64]AccountMonitorLatest, error) {
-	return map[int64]AccountMonitorLatest{}, nil
+	return s.latest, nil
 }
 
 func (s *accountMonitorRepoStub) LoadSettings(context.Context) (AccountMonitorSettings, error) {
@@ -283,6 +290,101 @@ func TestAccountMonitorServiceProjectsNativeGroupVisibilityAndWeights(t *testing
 		t.Fatalf("group projection = %#v", page.Groups[0])
 	}
 }
+
+func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	groupOne := &Group{ID: 1, Name: "standard", RateMultiplier: 1.0}
+	groupTwo := &Group{ID: 2, Name: "discount", RateMultiplier: 0.10}
+	account := Account{ID: 41, Name: "shared", Status: StatusActive, Schedulable: true, Priority: 99,
+		RateMultiplier: &rate, Platform: PlatformOpenAI, GroupIDs: []int64{1, 2}, Groups: []*Group{groupOne, groupTwo}}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{
+			{ID: 1, Name: "standard", RateMultiplier: 1.0, CustomerVisible: true,
+				ScoreWeights: AccountMonitorScoreWeights{Cost: 60, Success: 20, TTFT: 10, Latency: 10}},
+			{ID: 2, Name: "discount", RateMultiplier: 0.10, CustomerVisible: true,
+				ScoreWeights: AccountMonitorScoreWeights{Cost: 10, Success: 70, TTFT: 10, Latency: 10}},
+		},
+		aggregates: map[int64]AccountMonitorAggregate{41: {
+			SampleCount: 4, SuccessRate: 0.9, LastCheckedAt: &now,
+			TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(400),
+		}},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{
+			1: {41: {SampleCount: 4, SuccessRate: 0.9, LastCheckedAt: &now, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(400)}},
+			2: {41: {SampleCount: 4, SuccessRate: 0.9, LastCheckedAt: &now, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(400)}},
+		},
+		latest: map[int64]AccountMonitorLatest{41: {Status: "success", CheckedAt: now}},
+	}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{account}}
+	page, err := NewAccountMonitorService(repo, accountRepo, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Groups) != 2 || len(page.Groups[0].Accounts) != 1 || len(page.Groups[1].Accounts) != 1 {
+		t.Fatalf("group accounts = %#v", page.Groups)
+	}
+	first, second := page.Groups[0].Accounts[0], page.Groups[1].Accounts[0]
+	if first.Priority != second.Priority || first.Priority != 99 {
+		t.Fatalf("priority leaked into group projection: first=%d second=%d", first.Priority, second.Priority)
+	}
+	if first.QualityScore == nil || second.QualityScore == nil || *first.QualityScore <= *second.QualityScore {
+		t.Fatalf("cost-weighted quality scores = %v, %v", first.QualityScore, second.QualityScore)
+	}
+	if !first.Eligible || first.GroupRank == nil || *first.GroupRank != 1 {
+		t.Fatalf("first group account = %#v", first)
+	}
+}
+
+func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	group := &Group{ID: 7, Name: "public", RateMultiplier: 1.0}
+	account := Account{ID: 52, Name: "fallback", Status: StatusActive, Schedulable: true,
+		RateMultiplier: &rate, Platform: PlatformOpenAI, GroupIDs: []int64{7}, Groups: []*Group{group}}
+	repo := &accountMonitorRepoStub{
+		settings:        AccountMonitorSettings{IntervalSeconds: 300},
+		groups:          []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1.0, CustomerVisible: true}},
+		aggregates:      map[int64]AccountMonitorAggregate{52: {SampleCount: 4, SuccessRate: 0.75, LastCheckedAt: &now, TTFTP50MS: floatPtr(80), LatencyP95MS: floatPtr(300)}},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {52: {SampleCount: 1, SuccessRate: 1, LastCheckedAt: &now}}},
+		latest:          map[int64]AccountMonitorLatest{52: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Groups[0].Accounts[0]
+	if row.Evidence.Source != "global_fallback" || row.Evidence.SampleCount != 4 || !row.Eligible {
+		t.Fatalf("fallback evidence = %#v", row)
+	}
+
+	stale := now.Add(-20 * time.Minute)
+	repo.latest[52] = AccountMonitorLatest{Status: "success", CheckedAt: stale}
+	page, err = NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row = page.Groups[0].Accounts[0]
+	if row.Evidence.Source != "stale" || row.Eligible || row.QualityScore != nil {
+		t.Fatalf("stale evidence = %#v", row)
+	}
+}
+
+func TestAccountMonitorClosedGroupWithNoAccountsIsNotAFalseRedFailure(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 88, Name: "closed", RateMultiplier: 1.0, CustomerVisible: false}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Groups) != 1 || page.Groups[0].OperationalState != "closed" || len(page.Groups[0].Accounts) != 0 {
+		t.Fatalf("closed group = %#v", page.Groups)
+	}
+}
+
+func floatPtr(value float64) *float64 { return &value }
 
 func TestAccountMonitorUsageWindowNormalizesNativePercentage(t *testing.T) {
 	progress := &UsageProgress{

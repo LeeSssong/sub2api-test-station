@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -132,6 +133,8 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			AccountType:  account.Type,
 			Status:       account.Status,
 			Schedulable:  account.Schedulable,
+			Priority:     account.Priority,
+			HomepageURL:  accountMonitorHomepageURL(account),
 			GroupIDs:     append([]int64(nil), account.GroupIDs...),
 			GroupNames:   accountGroupNames(account),
 			ModelID:      monitorModelForAccount(&account),
@@ -169,6 +172,21 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		Settings:      settings,
 		Accounts:      rows,
 	}}, nil
+}
+
+func accountMonitorHomepageURL(account Account) string {
+	if account.Type != AccountTypeAPIKey || account.Credentials == nil {
+		return ""
+	}
+	raw, ok := account.Credentials["base_url"].(string)
+	if !ok || raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func (s *AccountMonitorService) resolveMultiplier(account *Account, now time.Time) AccountMonitorMultiplier {

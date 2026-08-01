@@ -7,9 +7,10 @@
     <header class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="truncate text-base font-semibold text-gray-900 dark:text-white">
+          <a v-if="account.homepage_url" :href="account.homepage_url" target="_blank" rel="noopener noreferrer" class="truncate text-base font-semibold text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400">
             {{ account.name }}
-          </h2>
+          </a>
+          <h2 v-else class="truncate text-base font-semibold text-gray-900 dark:text-white">{{ account.name }}</h2>
           <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ account.account_id }}</span>
           <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-dark-700 dark:text-gray-300">
             {{ account.platform }}
@@ -36,6 +37,11 @@
         :value="multiplierValue"
         :hint="multiplierHint"
       />
+    </div>
+    <div class="mt-3 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+      <label :for="`account-weight-${account.account_id}`">账号权重</label>
+      <input :id="`account-weight-${account.account_id}`" v-model.number="draftWeight" type="number" min="0" step="1" class="input h-8 w-20 px-2 py-1 font-mono" :disabled="savingWeight" @change="saveWeight" />
+      <span v-if="savingWeight">保存中...</span>
     </div>
 
     <div class="mt-4 grid grid-cols-2 gap-3 border-y border-gray-100 py-3 dark:border-dark-700">
@@ -102,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
@@ -113,13 +119,23 @@ import type { Account } from '@/types'
 const props = defineProps<{
   account: AccountMonitorAccount
   running?: boolean
+  savingWeight?: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'refresh', accountID: number): void
   (event: 'settings'): void
   (event: 'history', accountID: number): void
+  (event: 'updateWeight', accountID: number, priority: number): void
 }>()
+
+const draftWeight = ref(props.account.priority ?? 0)
+watch(() => props.account.priority, (value) => { draftWeight.value = value ?? 0 })
+function saveWeight() {
+  const value = Math.max(0, Math.round(Number(draftWeight.value) || 0))
+  draftWeight.value = value
+  if (value !== props.account.priority) emit('updateWeight', props.account.account_id, value)
+}
 
 const { t } = useI18n()
 

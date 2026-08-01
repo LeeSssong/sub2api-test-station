@@ -90,16 +90,37 @@
         {{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
       </div>
 
-      <div v-else class="grid gap-4 xl:grid-cols-2">
-        <AccountMonitorCard
-          v-for="account in filteredAccounts"
-          :key="account.account_id"
-          :account="account"
-          :running="runningAccounts.has(account.account_id)"
-          @refresh="handleRunOne"
-          @settings="showSettings = true"
-          @history="openHistory"
-        />
+      <div v-else class="space-y-6">
+        <section v-for="group in groupedAccounts" :key="group.key" data-test="monitor-group">
+          <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ group.name }}</h2>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                可用 {{ group.available }} 个 · 不可用 {{ group.unavailable }} 个 · 按质量分降序
+              </p>
+            </div>
+            <div v-if="group.key !== unavailableGroupKey" class="flex items-center gap-2 text-xs text-gray-500">
+              <span>价格 {{ scoreWeights.cost }}%</span><span>成功率 {{ scoreWeights.success }}%</span>
+              <span>TTFT {{ scoreWeights.ttft }}%</span><span>总耗时 {{ scoreWeights.latency }}%</span>
+            </div>
+          </header>
+          <div class="grid gap-4 xl:grid-cols-2">
+            <div v-for="item in group.accounts" :key="item.account.account_id" class="relative">
+              <div v-if="item.score !== null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white" :title="item.scoreHint">
+                {{ item.score }} 分
+              </div>
+              <AccountMonitorCard
+                :account="item.account"
+                :running="runningAccounts.has(item.account.account_id)"
+                :saving-weight="savingWeights.has(item.account.account_id)"
+                @refresh="handleRunOne"
+                @update-weight="updateWeight"
+                @settings="showSettings = true"
+                @history="openHistory"
+              />
+            </div>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -203,6 +224,7 @@ const status = ref('')
 const groupId = ref('')
 const runningAll = ref(false)
 const runningAccounts = ref(new Set<number>())
+const savingWeights = ref(new Set<number>())
 const showSettings = ref(false)
 const savingSettings = ref(false)
 const settingsError = ref<string | null>(null)
@@ -244,6 +266,41 @@ const filteredAccounts = computed(() => {
 const availableCount = computed(() => accounts.value.filter((account) => account.latest_status === 'success').length)
 const unavailableCount = computed(() => Math.max(0, accounts.value.length - availableCount.value))
 const coverageRatio = computed(() => Number(ledger.value?.coverage_ratio ?? 0))
+const unavailableGroupKey = '__unavailable__'
+const scoreWeights = { cost: 30, success: 30, ttft: 20, latency: 20 }
+
+function qualityScore(account: AccountMonitorAccount): number | null {
+  if (account.latest_status !== 'success' || account.stale) return null
+  const multiplier = account.multiplier.value
+  const cost = multiplier == null ? 50 : Math.max(0, Math.min(100, 100 - multiplier * 100))
+  const success = Math.max(0, Math.min(100, account.success_rate * 100))
+  const ttft = account.ttft_p50_ms == null ? 50 : Math.max(0, Math.min(100, 100 - account.ttft_p50_ms / 50))
+  const latency = account.latency_p95_ms == null ? 50 : Math.max(0, Math.min(100, 100 - account.latency_p95_ms / 100))
+  return Math.round((cost * scoreWeights.cost + success * scoreWeights.success + ttft * scoreWeights.ttft + latency * scoreWeights.latency) / 100)
+}
+
+const groupedAccounts = computed(() => {
+  const groups = new Map<string, { key: string; name: string; accounts: { account: AccountMonitorAccount; score: number | null; scoreHint: string }[]; available: number; unavailable: number }>()
+  for (const account of filteredAccounts.value) {
+    const unavailable = account.latest_status !== 'success' || account.stale
+    const selectedGroupIndex = groupId.value ? account.group_ids.indexOf(Number(groupId.value)) : -1
+    const names = unavailable
+      ? ['不可用账号']
+      : selectedGroupIndex >= 0
+        ? [account.group_names[selectedGroupIndex] || '未分组']
+        : (account.group_names.length ? account.group_names : ['未分组'])
+    for (const name of names) {
+      const key = unavailable ? unavailableGroupKey : name
+      const group = groups.get(key) ?? { key, name, accounts: [], available: 0, unavailable: 0 }
+      const score = qualityScore(account)
+      group.accounts.push({ account, score, scoreHint: score === null ? '' : `价格 ${scoreWeights.cost}% · 成功率 ${scoreWeights.success}% · TTFT ${scoreWeights.ttft}% · 总耗时 ${scoreWeights.latency}%` })
+      if (unavailable) group.unavailable += 1
+      else group.available += 1
+      groups.set(key, group)
+    }
+  }
+  return [...groups.values()].map((group) => ({ ...group, accounts: group.accounts.sort((a, b) => (b.score ?? -1) - (a.score ?? -1)) }))
+})
 
 function displayStatus(account: AccountMonitorAccount): string {
   if (account.stale) return 'stale'
@@ -337,6 +394,23 @@ async function handleRunOne(accountID: number) {
     const next = new Set(runningAccounts.value)
     next.delete(accountID)
     runningAccounts.value = next
+  }
+}
+
+async function updateWeight(accountID: number, priority: number) {
+  if (savingWeights.value.has(accountID)) return
+  savingWeights.value = new Set(savingWeights.value).add(accountID)
+  try {
+    const updated = await adminAPI.accounts.update(accountID, { priority })
+    const account = accounts.value.find((item) => item.account_id === accountID)
+    if (account) account.priority = updated.priority
+    appStore.showSuccess('账号权重已更新')
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '账号权重更新失败'))
+  } finally {
+    const next = new Set(savingWeights.value)
+    next.delete(accountID)
+    savingWeights.value = next
   }
 }
 

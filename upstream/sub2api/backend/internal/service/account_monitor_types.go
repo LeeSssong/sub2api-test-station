@@ -75,6 +75,8 @@ type AccountMonitorAccount struct {
 	AccountType  string                      `json:"account_type"`
 	Status       string                      `json:"status"`
 	Schedulable  bool                        `json:"schedulable"`
+	Priority     int                         `json:"priority"`
+	HomepageURL  string                      `json:"homepage_url,omitempty"`
 	GroupIDs     []int64                     `json:"group_ids"`
 	GroupNames   []string                    `json:"group_names"`
 	ModelID      string                      `json:"model_id"`

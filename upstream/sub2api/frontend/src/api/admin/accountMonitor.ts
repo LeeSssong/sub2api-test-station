@@ -43,6 +43,8 @@ export interface AccountMonitorAccount {
   account_type: string
   status: string
   schedulable: boolean
+  priority: number
+  homepage_url?: string
   group_ids: number[]
   group_names: string[]
   model_id: string

@@ -830,7 +830,9 @@ chmod 0600 "$candidate_env.tmp"
 mv "$candidate_env.tmp" "$candidate_env"
 compose_candidate=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$candidate_env" -f "$base_compose")
-"${compose_candidate[@]}" pull "sub2api-$candidate_slot" >/dev/null
+if ! docker image inspect "$candidate_image" >/dev/null 2>&1; then
+  "${compose_candidate[@]}" pull "sub2api-$candidate_slot" >/dev/null
+fi
 
 failure_reason=candidate_start_failed
 "${compose_candidate[@]}" up --no-deps -d "sub2api-$candidate_slot" >/dev/null

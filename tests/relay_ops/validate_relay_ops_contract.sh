@@ -134,7 +134,7 @@ require 'redir @legacy_ops /admin/ops 302' infra/Caddyfile
 require '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile
 require 'respond @retired_relay_ops_api 404' infra/Caddyfile
 require 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
-require 'reverse_proxy sub2api:8080' infra/Caddyfile
+require 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile
 forbid 'internal-test-service' infra/Caddyfile
 forbid 'path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/login/2fa' infra/Caddyfile
 forbid 'path /api/v1/settings/public' infra/Caddyfile
@@ -153,7 +153,14 @@ require 'ListAccountMonitors' relay-ops-service/internal/sub2api/client.go
 require '/api/v1/admin/account-monitors' relay-ops-service/internal/sub2api/client.go
 
 ports_owner=$(awk '/^  [a-zA-Z0-9_-]+:/{service=$1} /^    ports:/{print service}' "$COMPOSE_FILE")
-[[ "$ports_owner" == 'caddy:' ]] || fail 'only caddy may publish host ports'
+[[ "$ports_owner" == 'nginx-tls-front:' ]] || fail 'only nginx TLS front may publish host ports'
+SUB2API_RELEASE_ENV_FILE="$ROOT/config/releases/sub2api.env" \
+SUB2API_BLUE_IMAGE=example.invalid/sub2api-blue@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+SUB2API_GREEN_IMAGE=example.invalid/sub2api-green@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+SUB2API_WORKER_IMAGE=example.invalid/sub2api-worker@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
+SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 \
+SUB2API_ACTIVE_SLOT=blue \
+SUB2API_PREVIOUS_SLOT=green \
 docker compose \
   --env-file infra/.env.example \
   --env-file config/releases/sub2api.env \

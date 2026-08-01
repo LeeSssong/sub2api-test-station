@@ -48,13 +48,12 @@ require_file infra/Caddyfile.bootstrap
 require_file infra/Dockerfile.relay-ops
 require_file upstream/sub2api/Dockerfile
 require_file tests/relay_ops/validate_relay_ops_contract.sh
-require_file config/releases/sub2api.env
-require_file infra/compose.sub2api-release.yaml
-require_file tests/infra/validate-official-sub2api-release.sh
+require_file tests/infra/validate-nginx-tls-front.sh
+require_file tests/operations/sub2api_blue_green_topology_test.sh
 require_file tests/infra/audit-public-links.sh
 test -x tests/infra/audit-public-links.sh || fail 'public link audit must be executable'
 
-require_fixed 'trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.18.0.1/32}' infra/Caddyfile
+require_fixed 'trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.30.0.3/32}' infra/Caddyfile
 require_fixed 'trusted_proxies_strict' infra/Caddyfile
 require_fixed '@docs_root path /docs' infra/Caddyfile
 require_fixed 'redir @docs_root /docs/ 308' infra/Caddyfile
@@ -64,20 +63,26 @@ require_fixed '@docs_assets path /docs/*' infra/Caddyfile
 require_fixed "script-src 'none'" infra/Caddyfile
 
 docs_line=$(rg -n -F '@docs_root path /docs' infra/Caddyfile | head -n1 | cut -d: -f1)
-proxy_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | head -n1 | cut -d: -f1)
+proxy_line=$(rg -n -F 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile | tail -n1 | cut -d: -f1)
 [[ -n "$docs_line" && -n "$proxy_line" && "$docs_line" -lt "$proxy_line" ]] || \
   fail 'docs handlers must appear before the Sub2API fallback proxy'
 
+SUB2API_RELEASE_ENV_FILE="$ROOT/config/releases/sub2api.env" \
+SUB2API_BLUE_IMAGE=example.invalid/sub2api-blue@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+SUB2API_GREEN_IMAGE=example.invalid/sub2api-green@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+SUB2API_WORKER_IMAGE=example.invalid/sub2api-worker@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
+SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 \
+SUB2API_ACTIVE_SLOT=blue \
+SUB2API_PREVIOUS_SLOT=green \
 docker compose \
   --project-name sub2api-deploy \
   --project-directory "$ROOT" \
   --env-file infra/.env.example \
-  --env-file config/releases/sub2api.env \
   -f infra/compose.yaml \
-  -f infra/compose.sub2api-release.yaml \
   config --quiet || fail 'docker compose config failed'
 
-bash tests/infra/validate-official-sub2api-release.sh || fail 'official Sub2API release contract failed'
+bash tests/infra/validate-nginx-tls-front.sh || fail 'nginx TLS front contract failed'
+bash tests/operations/sub2api_blue_green_topology_test.sh || fail 'blue/green release topology contract failed'
 
 SITE_ADDRESS=api.example.com docker compose \
   -f infra/compose.bootstrap.yaml \
@@ -93,13 +98,14 @@ for image in "${images[@]}"; do
   require_fixed "image: $image" infra/compose.yaml
 done
 
-require_fixed 'image: ${SUB2API_IMAGE:?SUB2API_IMAGE is required}' infra/compose.yaml
-require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}' infra/compose.yaml
-require_fixed 'SUB2API_IMAGE=weishaw/sub2api:0.1.164@sha256:a94c25fb4c50c3bf21155142d745ff11a8d9199e4cf72d9a2424d75ccbfc1659' config/releases/sub2api.env
+for image in \
+  'image: ${SUB2API_BLUE_IMAGE:?SUB2API_BLUE_IMAGE is required}' \
+  'image: ${SUB2API_GREEN_IMAGE:?SUB2API_GREEN_IMAGE is required}' \
+  'image: ${SUB2API_WORKER_IMAGE:?SUB2API_WORKER_IMAGE is required}'; do
+  require_fixed "$image" infra/compose.yaml
+done
 
-if rg -n '^[[:space:]]*SUB2API_IMAGE[[:space:]]*=' infra/.env.example; then
-  fail 'release env must be the sole SUB2API_IMAGE source'
-fi
+require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}' infra/compose.yaml
 
 if rg -n ':latest([[:space:]]|$)' infra/compose.yaml; then
   fail 'mutable latest tag is forbidden'
@@ -109,7 +115,7 @@ ports_owner=$(awk '
   /^  [a-zA-Z0-9_-]+:/ { service=$1 }
   /^    ports:/ { print service }
 ' infra/compose.yaml)
-[[ "$ports_owner" == 'caddy:' ]] || fail 'only caddy may publish host ports'
+[[ "$ports_owner" == 'nginx-tls-front:' ]] || fail 'only nginx TLS front may publish host ports'
 require_fixed 'ports: ["80:80", "443:443"]' infra/compose.yaml
 
 for setting in \
@@ -121,8 +127,8 @@ for setting in \
   'REDIS_POOL_SIZE=64' \
   'REDIS_MIN_IDLE_CONNS=5' \
   'SERVER_TRUSTED_PROXIES=172.16.0.0/12' \
-  'SERVER_MAX_REQUEST_BODY_SIZE=16777216' \
-  'GATEWAY_MAX_BODY_SIZE=16777216' \
+  'SERVER_MAX_REQUEST_BODY_SIZE=134217728' \
+  'GATEWAY_MAX_BODY_SIZE=134217728' \
   'GATEWAY_TEXT_MAX_BODY_SIZE=16777216' \
   'SUB2API_DATA_DIR=./data' \
   'POSTGRES_DATA_DIR=./postgres_data' \
@@ -140,8 +146,8 @@ for setting in \
   'SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: ${SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS:-true}' \
   'SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:-}' \
   'SERVER_TRUSTED_PROXIES: ${SERVER_TRUSTED_PROXIES:-172.16.0.0/12}' \
-  'SERVER_MAX_REQUEST_BODY_SIZE: ${SERVER_MAX_REQUEST_BODY_SIZE:-16777216}' \
-  'GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-16777216}' \
+  'SERVER_MAX_REQUEST_BODY_SIZE: ${SERVER_MAX_REQUEST_BODY_SIZE:-134217728}' \
+  'GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-134217728}' \
   'GATEWAY_TEXT_MAX_BODY_SIZE: ${GATEWAY_TEXT_MAX_BODY_SIZE:-16777216}' \
   'source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}' \
   'source: ${POSTGRES_DATA_DIR:?POSTGRES_DATA_DIR is required}' \
@@ -149,7 +155,7 @@ for setting in \
   require_fixed "$setting" infra/compose.yaml
 done
 
-require_fixed 'reverse_proxy sub2api:8080' infra/Caddyfile
+require_fixed 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile
 require_fixed 'flush_interval -1' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require_fixed '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile
@@ -188,7 +194,7 @@ binary_response_lines=$(rg '^[[:space:]]*respond @sub2api_binary_mutation' infra
   fail 'binary mutation response must be the unique exact JSON 409 response with no near-match responder'
 
 binary_mutation_line=$(rg -n -F '@sub2api_binary_mutation {' infra/Caddyfile | head -n1 | cut -d: -f1)
-proxy_line=$(rg -n -F 'reverse_proxy sub2api:8080' infra/Caddyfile | head -n1 | cut -d: -f1)
+proxy_line=$(rg -n -F 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile | tail -n1 | cut -d: -f1)
 [[ -n "$binary_mutation_line" && -n "$proxy_line" && "$binary_mutation_line" -lt "$proxy_line" ]] || \
   fail 'binary mutation guard must appear before the Sub2API fallback proxy'
 

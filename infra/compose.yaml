@@ -230,7 +230,7 @@ services:
     restart: unless-stopped
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}
-      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}
       SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
     command:
       - /bin/sh
@@ -246,8 +246,13 @@ services:
             ;;
         esac
         exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-    ports: ["80:80", "443:443"]
-    expose: ["8081"]
+    expose: ["80", "443", "8081"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ${SUB2API_RELEASE_ENV_FILE:?SUB2API_RELEASE_ENV_FILE is required}:/run/sub2api-release/release.env:ro
@@ -255,8 +260,48 @@ services:
       - /run/sub2api-updater:/run/sub2api-updater:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      default: {}
+      tls_front:
+        ipv4_address: 172.30.0.2
+        aliases: [caddy-tls-origin]
+    logging: *logging
+
+  nginx-tls-front:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    restart: unless-stopped
+    depends_on:
+      caddy: {condition: service_healthy}
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?required}
+      NGINX_TLS_CERT_ROOT: /data/caddy/certificates
+      NGINX_TLS_CERT_SOURCE: ${NGINX_TLS_CERT_SOURCE:-}
+      NGINX_TLS_KEY_SOURCE: ${NGINX_TLS_KEY_SOURCE:-}
+      NGINX_TLS_CERT_FILE: /run/nginx-tls/${SITE_ADDRESS}.crt
+      NGINX_TLS_KEY_FILE: /run/nginx-tls/${SITE_ADDRESS}.key
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx-tls-front.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx-tls-front-entrypoint.sh:/usr/local/bin/nginx-tls-front-entrypoint.sh:ro
+      - caddy_data:/data:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/nginx-tls-front-entrypoint.sh"]
+    networks:
+      tls_front:
+        ipv4_address: 172.30.0.3
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $$SITE_ADDRESS\" -q -T 5 -O /dev/null https://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     logging: *logging
 
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  tls_front:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/29

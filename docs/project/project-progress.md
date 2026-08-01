@@ -31,7 +31,7 @@
 8. **账号上游倍率自动同步**：托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发已合并到 `main`；最终修复完成显式策略意图、提交顺序安全的 Redis 版本 fencing、按模式隔离 singleflight 和 `UpdateLastUsed` 持久化版本单调性。后端、前端及真实 PostgreSQL/Redis 集成回归通过，最终独立复审批准合并；尚未推送、部署或线上验证。**状态：工程差异待部署**。
 9. **Monitor V2 卡片信息精简**：已合并移除各指标样本数量、模型折叠区及接口 `models` 字段，保留性能指标、有效调用、P95 与趋势；前后端测试已通过，但尚未推送、部署或生产验证。**状态：工程差异待部署**。
 10. **Monitor 当前状态与飞书历史错误码修复**：已按“最新一次渠道探测”口径完成本地实现与回归，修正最新成功被历史失败压过，以及 `balance_exhausted` 残留导致账号正在运行却被告警为无可用账号。**状态：工程差异待部署（本地验证通过，待推送、部署和线上验证）**。
-11. **`api.xingqiaolab.top` TLS 兼容性修复**：Caddy RSA-2048/TLS 1.2/1.3 策略已部署，但 CC Switch 3.16.5 刷新仍失败且本机 TLS 1.2 连接仍被重置；nginx TLS 终止层的本地配置、模板语法、续期转发和 Compose 契约已完成验证。上线后以 TLS 1.2/1.3 握手、`/v1/usage` 请求及 CC Switch 3.16.5 刷新用量成功为完成门禁。**状态：进行中（待生产部署和客户端验收）**。
+11. **`api.xingqiaolab.top` TLS 兼容性修复**：Caddy RSA-2048/TLS 1.2/1.3 策略已部署，但 CC Switch 刷新仍失败。2026-08-01 完成 nginx TLS 前置层受控生产切换，Compose、Caddy、nginx 及未受影响服务门禁通过；但受影响 Mac 上 TLS 1.2 仍在 ClientHello 阶段被重置，CC Switch 3.18.0 实际刷新仍显示“查询失败”，因而已回滚到 Caddy 直接接管 80/443。同一公网 IP 上仅 SNI `api.xingqiaolab.top` 的 TLS 1.2 被重置，替换 SNI、无 SNI 及服务器本机访问均成功，根因已收敛为客户端到源站之间的域名特异网络干预。**状态：进行中（nginx 代码已推送、生产试部署已回滚；待使用兼容域名或新公网/CDN 入口完成客户端验收）**。
 
 ## 生产工程代码/配置已部署并验证（18 项）
 
@@ -201,7 +201,7 @@
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
 8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。本地后端、relay-ops 与前端回归通过，尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
 9. **30 分钟指令驱动 Sub2API 蓝绿发布**：API/worker 角色、双槽 Compose、restart-stable Caddy 路由、停机门禁、恢复/回滚、候选等待、运行态证明和 host deadline 已完成本地实现与 focused 验证；2026-08-01 已补足 controller 向 host executor 传递绝对 deadline 的契约。生产预检确认无 host executor / `release-state`、Caddy 仍是遗留单实例上游，首次切换双槽需停机 bootstrap。**状态：工程差异待部署**；[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)。
-10. **`api.xingqiaolab.top` TLS 兼容性修复**：RSA/TLS 1.2/1.3 兼容策略已通过固定 Caddy runtime 配置校验，尚未推送、部署或客户端验收。**状态：工程差异待部署**。
+10. **`api.xingqiaolab.top` TLS 兼容性修复**：nginx TLS 前置实现已以 `95a81dc37` 推送到 `main`；2026-08-01 生产切换后服务端 TLS 1.2/1.3 均正常，但受影响客户端和 CC Switch 验收仍失败，已完成受控回滚。后续需改用不被干预的兼容域名或更换公网/CDN 入口，nginx 配置当前不在生产生效。**状态：工程差异待部署（前置层方案未通过客户端门禁）**。
 
 ## 持续实施（2 项）
 

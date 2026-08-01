@@ -44,6 +44,14 @@
         </div>
       </section>
 
+      <section class="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800 sm:grid-cols-2 xl:grid-cols-5" data-test="reconciliation-summary">
+        <div><p class="text-xs text-gray-500">可用账号</p><p class="text-2xl font-semibold text-green-600">{{ availableCount }}</p></div>
+        <div><p class="text-xs text-gray-500">不可用账号</p><p class="text-2xl font-semibold text-red-600">{{ unavailableCount }}</p></div>
+        <div><p class="text-xs text-gray-500">成本覆盖率</p><p class="text-2xl font-semibold" :class="coverageRatio >= 1 ? 'text-green-600' : 'text-amber-600'">{{ formatCoverage(ledger?.coverage_ratio) }}</p></div>
+        <div><p class="text-xs text-gray-500">待对账笔数</p><p class="text-2xl font-semibold text-amber-600">{{ ledger?.pending_attempts ?? '-' }}</p></div>
+        <button type="button" class="btn btn-secondary self-end" data-test="open-exceptions" @click="openExceptions">异常明细</button>
+      </section>
+
       <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800 sm:flex-row sm:items-center">
         <AccountMonitorFilters
           :search="search"
@@ -139,6 +147,27 @@
         {{ t('admin.accountMonitor.history.empty') }}
       </div>
     </BaseDialog>
+
+    <BaseDialog :show="exceptionsOpen" title="对账异常明细" width="wide" @close="exceptionsOpen = false">
+      <div v-if="exceptionsLoading" class="py-8 text-center text-sm text-gray-500">加载中...</div>
+      <div v-else-if="exceptions.length" class="space-y-3">
+        <div v-for="item in exceptions" :key="item.id" class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50">
+          <div class="grid gap-1 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
+            <span>本地请求：<code>{{ item.attempt.local_request_id }}</code></span>
+            <span>上游请求：<code>{{ item.attempt.upstream_request_id || '-' }}</code></span>
+            <span>模型：{{ item.attempt.model }}</span>
+            <span>原因：{{ item.reason_code }}</span>
+          </div>
+          <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="submitAdjustment(item)">
+            <label class="text-xs text-gray-500">上游实际扣费
+              <input v-model="adjustmentAmounts[item.attempt.id]" class="input mt-1 w-32" inputmode="decimal" required placeholder="0.000000" />
+            </label>
+            <button type="submit" class="btn btn-primary" :disabled="adjustingID === item.attempt.id">补登记</button>
+          </form>
+        </div>
+      </div>
+      <div v-else class="py-8 text-center text-sm text-gray-500">当前没有未解决异常</div>
+    </BaseDialog>
   </AppLayout>
 </template>
 
@@ -151,6 +180,7 @@ import type {
   AccountMonitorHistoryItem,
   AccountMonitorProjection,
 } from '@/api/admin/accountMonitor'
+import type { ReconciliationException, ReconciliationSummary } from '@/api/admin/reconciliation'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -179,6 +209,12 @@ const settingsError = ref<string | null>(null)
 const historyAccount = ref<number | null>(null)
 const historyLoading = ref(false)
 const historyItems = ref<AccountMonitorHistoryItem[]>([])
+const ledger = ref<ReconciliationSummary | null>(null)
+const exceptions = ref<ReconciliationException[]>([])
+const exceptionsOpen = ref(false)
+const exceptionsLoading = ref(false)
+const adjustmentAmounts = ref<Record<number, string>>({})
+const adjustingID = ref<number | null>(null)
 
 let abortController: AbortController | null = null
 
@@ -205,6 +241,9 @@ const filteredAccounts = computed(() => {
     ].some((value) => value.toLowerCase().includes(query))
   })
 })
+const availableCount = computed(() => accounts.value.filter((account) => account.latest_status === 'success').length)
+const unavailableCount = computed(() => Math.max(0, accounts.value.length - availableCount.value))
+const coverageRatio = computed(() => Number(ledger.value?.coverage_ratio ?? 0))
 
 function displayStatus(account: AccountMonitorAccount): string {
   if (account.stale) return 'stale'
@@ -222,6 +261,7 @@ async function load() {
     if (controller.signal.aborted || abortController !== controller) return
     projection.value = result
     accounts.value = result.accounts.filter((account) => account.status === 'active' && account.schedulable)
+    await loadLedger()
   } catch (err: unknown) {
     if (controller.signal.aborted) return
     error.value = extractApiErrorMessage(err, t('admin.accountMonitor.loadError'))
@@ -234,17 +274,54 @@ async function load() {
   }
 }
 
+async function loadLedger() {
+  try {
+    ledger.value = await adminAPI.reconciliation.summary()
+  } catch {
+    ledger.value = null
+  }
+}
+
 async function handleRunAll() {
   if (runningAll.value) return
   runningAll.value = true
   try {
     await adminAPI.accountMonitor.runAll()
+    await adminAPI.reconciliation.refresh()
     await load()
     appStore.showSuccess(t('admin.accountMonitor.messages.refreshAllSuccess'))
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.accountMonitor.messages.refreshFailed')))
   } finally {
     runningAll.value = false
+  }
+}
+
+async function openExceptions() {
+  exceptionsOpen.value = true
+  exceptionsLoading.value = true
+  try {
+    exceptions.value = (await adminAPI.reconciliation.exceptions({ limit: 100 })).items
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '对账异常加载失败'))
+  } finally {
+    exceptionsLoading.value = false
+  }
+}
+
+async function submitAdjustment(item: ReconciliationException) {
+  const amount = adjustmentAmounts.value[item.attempt.id]?.trim()
+  if (!amount) return
+  adjustingID.value = item.attempt.id
+  try {
+    await adminAPI.reconciliation.adjust(item.attempt.id, amount)
+    exceptions.value = exceptions.value.filter((current) => current.id !== item.id)
+    await loadLedger()
+    appStore.showSuccess('补登记成功')
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '补登记失败'))
+  } finally {
+    adjustingID.value = null
   }
 }
 
@@ -299,6 +376,10 @@ function formatMs(value?: number | null): string {
 
 function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : t('common.time.never')
+}
+
+function formatCoverage(value?: number | null): string {
+  return value == null ? '-' : `${(value * 100).toFixed(2)}%`
 }
 
 onMounted(load)

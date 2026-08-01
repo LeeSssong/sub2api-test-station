@@ -13,8 +13,8 @@
 | 分区 | 独立事项 | 判定 |
 |---|---:|---|
 | 生产工程代码/配置已部署并验证 | 18 | 已推送、已部署、已验证生效 |
-| 工程代码/配置差异待部署 | 7 | 仍存在运行时代码或生产配置差异 |
-| 持续实施 | 4 | 工程实现尚未完成，或仍在推进中 |
+| 工程代码/配置差异待部署 | 8 | 仍存在运行时代码或生产配置差异 |
+| 持续实施 | 3 | 工程实现尚未完成，或仍在推进中 |
 | 运维/研究跟进（非工程部署差异） | 23 | 文档、研究、历史证据或外部验收跟进 |
 | **合并后的独立事项合计** | **52** | **当前总账快照** |
 
@@ -186,7 +186,7 @@
 22. **无人值守 Sub2API 发布生产激活**：解决自动发现、构建和候选交付尚未进入真实生产激活；优化无秘密构建、强制 SSH 和 compare-and-swap 发布准备；影响发布运维；**状态：运维跟进，待真实 workflow 和生产 forced-command 验收；不单独计为工程部署差异**；[证据](../superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md)。
 23. **Feishu 通知合并生产部署**：解决多通知路径重复和边界不统一；优化通知合并、纯出站契约和本地回归；**状态：运维跟进，待 48 小时生产观察和公网验证；运行时实现已在生产基础上，不能仅因观察未完成称为工程未部署**；[证据](../superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md)。
 
-## 工程代码/配置差异待部署（7 项）
+## 工程代码/配置差异待部署（8 项）
 
 1. **Sub2API 全局 OpenAI 低延迟配置**：生产尚未应用 `cded84a7e` 对应的全局 relay latency 配置；**状态：工程代码/配置差异待部署**。
 2. **Sub2API WebSocket `store=false` 会话隔离修复**：生产尚未应用 `c49c0a6ec`；**状态：工程代码/配置差异待部署**。
@@ -195,12 +195,12 @@
 5. **全站账务总账**：代码、迁移、受保护账务页面/API、00:10 日调度、清账脚本、本地端到端和隔离 PostgreSQL 验证已合并到 `main`；尚未推送、部署、清账激活或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[本地验证](../superpowers/reports/2026-07-31-whole-site-accounting-ledger-task7-local-verification.md)。
 6. **账号上游倍率自动同步**：上游倍率解析后的托管账号回写、审计和缓存同步已合并到 `main`，本地测试已通过；尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
+8. **30 分钟指令驱动 Sub2API 蓝绿发布**：双槽 Compose、唯一 worker、Caddy 无中断切流、回切、停机门禁、状态记录和主机执行器已完成本地实现；蓝转绿、绿转蓝、候选失败、Caddy reload 失败、公共验收回切、共享容器身份保持、单 worker、旧 slot 保留和 1800 秒演练均通过离线验证。**状态：准备完成（待生产部署与验收）**；本轮没有连接生产、推送镜像、部署或线上生效验证；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)、[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)、[本地验证](../superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md)。
 
-## 持续实施（4 项）
+## 持续实施（3 项）
 
-1. **30 分钟指令驱动 Sub2API 蓝绿发布**：用户已批准“任务测试完成后等待生产指令，指令后 30 分钟内构建镜像并蓝绿无感切流；必然停机时二次授权”；设计与实施计划已批准，正在隔离工作树实施 API/worker 运行角色、双槽 Compose、Caddy 切流和发布编排；Task 1 的进程角色配置已完成，Task 2 生命周期隔离已完成本地实现与验证，仍待合并、推送、部署和生产生效验证；**状态：进行中**；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)。
-2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
-3. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
+1. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
+2. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
 
 ## 总账维护规则
 

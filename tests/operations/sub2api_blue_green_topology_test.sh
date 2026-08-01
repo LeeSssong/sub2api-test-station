@@ -15,6 +15,7 @@ for command in docker ruby; do
 done
 
 mkdir -p "$FIXTURE/sub2api-data" "$FIXTURE/postgres-data" "$FIXTURE/redis-data"
+mkdir -p "$FIXTURE/rehearsal-sub2api-data" "$FIXTURE/rehearsal-postgres-data" "$FIXTURE/rehearsal-redis-data"
 
 cat >"$FIXTURE/secret.env" <<EOF
 POSTGRES_USER=sub2api
@@ -30,6 +31,113 @@ POSTGRES_DATA_DIR=$FIXTURE/postgres-data
 REDIS_DATA_DIR=$FIXTURE/redis-data
 SITE_ADDRESS=sub2api.example.test
 EOF
+
+cat >"$FIXTURE/rehearsal-secret.env" <<EOF
+POSTGRES_USER=sub2api
+POSTGRES_PASSWORD=postgres-rehearsal-password
+POSTGRES_DB=sub2api
+REDIS_PASSWORD=redis-rehearsal-password
+ADMIN_EMAIL=admin@rehearsal.test
+ADMIN_PASSWORD=admin-rehearsal-password
+JWT_SECRET=jwt-rehearsal-secret
+TOTP_ENCRYPTION_KEY=totp-rehearsal-key
+REHEARSAL_SUB2API_DATA_DIR=$FIXTURE/rehearsal-sub2api-data
+REHEARSAL_POSTGRES_DATA_DIR=$FIXTURE/rehearsal-postgres-data
+REHEARSAL_REDIS_DATA_DIR=$FIXTURE/rehearsal-redis-data
+EOF
+
+cat >"$FIXTURE/rehearsal-release.env" <<'EOF'
+SUB2API_BLUE_IMAGE=example.invalid/sub2api-blue@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SUB2API_GREEN_IMAGE=example.invalid/sub2api-green@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+SUB2API_WORKER_IMAGE=example.invalid/sub2api-worker@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080
+REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=false
+REHEARSAL_ROLLBACK_IMAGE=example.invalid/sub2api-legacy@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+EOF
+
+rehearsal_compose=(docker compose --env-file "$FIXTURE/rehearsal-secret.env" --env-file "$FIXTURE/rehearsal-release.env" -f "$ROOT/infra/compose.sub2api-rehearsal.yaml")
+"${rehearsal_compose[@]}" config --format json >"$FIXTURE/rehearsal-compose.json"
+
+ruby -rjson - "$FIXTURE/rehearsal-compose.json" "$FIXTURE" "$FIXTURE/rehearsal-caddy-command" <<'RUBY'
+config = JSON.parse(File.read(ARGV.fetch(0)))
+fixture = ARGV.fetch(1)
+command_path = ARGV.fetch(2)
+services = config.fetch("services")
+
+def assert!(condition, message)
+  abort "FAIL: #{message}" unless condition
+end
+
+def environment(service)
+  service.fetch("environment", {})
+end
+
+def bind_source(service, target)
+  service.fetch("volumes", []).find { |volume| volume["type"] == "bind" && volume["target"] == target }&.fetch("source")
+end
+
+assert!(config["name"] == "sub2api-blue-green-rehearsal", "rehearsal Compose project name must be isolated")
+%w[postgres redis sub2api-blue sub2api-green sub2api-worker caddy].each do |name|
+  assert!(services.key?(name), "rehearsal topology is missing #{name}")
+end
+assert!(!services.key?("sub2api"), "legacy single-slot rehearsal service must be removed")
+
+blue = services.fetch("sub2api-blue")
+green = services.fetch("sub2api-green")
+worker = services.fetch("sub2api-worker")
+caddy = services.fetch("caddy")
+
+assert!(environment(blue)["SERVER_PROCESS_ROLE"] == "api", "rehearsal blue slot must be API-only")
+assert!(environment(green)["SERVER_PROCESS_ROLE"] == "api", "rehearsal green slot must be API-only")
+assert!(environment(worker)["SERVER_PROCESS_ROLE"] == "worker", "rehearsal must have one singleton worker role")
+worker_roles = services.count { |_name, service| environment(service)["SERVER_PROCESS_ROLE"] == "worker" }
+assert!(worker_roles == 1, "rehearsal topology must contain exactly one worker role")
+
+app_data = File.join(fixture, "rehearsal-sub2api-data")
+assert!(bind_source(blue, "/app/data") == app_data, "rehearsal blue slot must use isolated app storage")
+assert!(bind_source(green, "/app/data") == app_data, "rehearsal green slot must share isolated app storage")
+assert!(bind_source(worker, "/app/data") == app_data, "rehearsal worker must share isolated app storage")
+assert!(bind_source(services.fetch("postgres"), "/var/lib/postgresql/data") == File.join(fixture, "rehearsal-postgres-data"),
+        "rehearsal PostgreSQL must use isolated storage")
+assert!(bind_source(services.fetch("redis"), "/data") == File.join(fixture, "rehearsal-redis-data"),
+        "rehearsal Redis must use isolated storage")
+
+services.each do |name, service|
+  service.fetch("volumes", []).each do |volume|
+    next unless volume["type"] == "bind"
+    assert!(volume.fetch("source").start_with?(fixture + "/"), "#{name} must never mount a non-fixture path")
+  end
+  service.fetch("ports", []).each do |port|
+    assert!(port["host_ip"] == "127.0.0.1", "#{name} may publish only localhost rehearsal ports")
+  end
+end
+
+assert!(environment(caddy)["SUB2API_ACTIVE_UPSTREAM"] == "sub2api-blue:8080", "rehearsal Caddy must start on the selected slot")
+assert!(environment(caddy)["REHEARSAL_FAIL_PUBLIC_ACCEPTANCE"] == "false", "rehearsal failure hook must be deterministic and disabled by default")
+command = caddy.fetch("command")
+command_text = command.is_a?(Array) ? command.join("\n") : ""
+assert!(command_text.include?("{$$REHEARSAL_FAIL_PUBLIC_ACCEPTANCE}"),
+        "rehearsal Caddy must preserve its public-acceptance failure placeholder")
+assert!(command_text.include?("{$$SUB2API_ACTIVE_UPSTREAM}"),
+        "rehearsal Caddy must preserve its active-upstream placeholder")
+File.write(command_path, command.fetch(2))
+
+puts "PASS: isolated two-slot rehearsal topology"
+RUBY
+
+rehearsal_caddy_command=$(<"$FIXTURE/rehearsal-caddy-command")
+rehearsal_caddy_command=${rehearsal_caddy_command//\$\$/\$}
+rehearsal_caddy_command=${rehearsal_caddy_command/exec caddy run --config \/etc\/caddy\/Caddyfile --adapter caddyfile/exec caddy adapt --config \/etc\/caddy\/Caddyfile --adapter caddyfile --pretty}
+readonly REHEARSAL_CADDY_IMAGE=caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+for failure_hook in false true; do
+  adapted=$(docker run --rm \
+    --env "SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080" \
+    --env "REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=$failure_hook" \
+    "$REHEARSAL_CADDY_IMAGE" /bin/sh -ec "$rehearsal_caddy_command")
+  ruby -rjson -e 'JSON.parse(STDIN.read)' <<<"$adapted" \
+    || fail "rehearsal Caddy hook value $failure_hook did not adapt"
+done
+printf 'PASS: rehearsal Caddy failure hook adapts for false and true\n'
 
 cat >"$FIXTURE/release.env" <<'EOF'
 SUB2API_BLUE_IMAGE=example.invalid/sub2api-blue@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

@@ -14,6 +14,29 @@ fail() {
 
 [[ -f "$EXECUTOR" ]] || fail "host executor does not exist: $EXECUTOR"
 
+assert_rehearsal_topology_ready() {
+  local topology image
+  image="example.invalid/sub2api@sha256:$(printf '9%.0s' {1..64})"
+  topology=$(env \
+    POSTGRES_USER=sub2api POSTGRES_PASSWORD=rehearsal-postgres POSTGRES_DB=sub2api \
+    REDIS_PASSWORD=rehearsal-redis ADMIN_EMAIL=admin@rehearsal.test ADMIN_PASSWORD=rehearsal-admin \
+    JWT_SECRET=rehearsal-jwt TOTP_ENCRYPTION_KEY=rehearsal-totp \
+    REHEARSAL_SUB2API_DATA_DIR="$FIXTURE/app-data" \
+    REHEARSAL_POSTGRES_DATA_DIR="$FIXTURE/postgres-data" \
+    REHEARSAL_REDIS_DATA_DIR="$FIXTURE/redis-data" \
+    REHEARSAL_ROLLBACK_IMAGE="$image" SUB2API_BLUE_IMAGE="$image" \
+    SUB2API_GREEN_IMAGE="$image" SUB2API_WORKER_IMAGE="$image" \
+    SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=false \
+    docker compose -f "$ROOT/infra/compose.sub2api-rehearsal.yaml" config --format json) \
+    || fail 'rehearsal Compose topology did not render'
+  ruby -rjson -e '
+    value = JSON.parse(STDIN.read)
+    services = value.fetch("services")
+    abort unless value["name"] == "sub2api-blue-green-rehearsal"
+    abort unless %w[sub2api-blue sub2api-green sub2api-worker].all? { |name| services.key?(name) }
+  ' <<<"$topology" 2>/dev/null || fail 'isolated two-slot rehearsal topology is not ready'
+}
+
 REAL_JQ=$(command -v jq)
 IMAGE="example.invalid/sub2api@sha256:$(printf 'a%.0s' {1..64})"
 SOURCE_COMMIT=$(printf 'b%.0s' {1..40})
@@ -272,6 +295,20 @@ write_meminfo() {
   printf 'MemAvailable: %s kB\n' "${1:-2097152}" >"$CASE_DIR/meminfo"
 }
 
+set_active_green() {
+  "$REAL_JQ" '
+    .active_slot="green" |
+    .active_upstream="sub2api-green:8080"
+  ' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  sed -i.bak \
+    -e 's|^SUB2API_ACTIVE_UPSTREAM=.*|SUB2API_ACTIVE_UPSTREAM=sub2api-green:8080|' \
+    -e 's|^SUB2API_ACTIVE_SLOT=.*|SUB2API_ACTIVE_SLOT=green|' \
+    -e 's|^SUB2API_PREVIOUS_SLOT=.*|SUB2API_PREVIOUS_SLOT=blue|' "$CASE_DIR/release.env"
+  rm -f -- "$CASE_DIR/release.env.bak"
+}
+
 assert_no_mutation() {
   ! grep -Eq 'docker .*compose .* up |caddy caddy reload' "$EVENT_LOG" || fail "$1 mutated Docker/Caddy"
   grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail "$1 rewrote release env"
@@ -441,6 +478,46 @@ test_success_order_and_atomic_records() {
   [[ "$(stat -f '%Lp' "$record" 2>/dev/null || stat -c '%a' "$record")" == 600 ]] || fail 'record mode is not 0600'
   "$REAL_JQ" -e '.result == "succeeded" and .state == "promoted"' "$record" >/dev/null || fail 'success record invalid'
   [[ -z "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] || fail 'partial record remained after success'
+}
+
+test_two_slot_rehearsal_cycles() {
+  local started elapsed shared count scenario
+  started=$SECONDS
+
+  setup_case cycle_blue_to_green
+  write_meminfo
+  run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "blue-to-green rehearsal failed: $(cat "$CASE_DIR/stderr")"
+  grep -q '^SUB2API_ACTIVE_SLOT=green$' "$CASE_DIR/release.env" || fail 'blue-to-green did not promote green'
+  ! grep -Eq 'compose .* (stop|rm).*sub2api-blue|compose .* down' "$EVENT_LOG" || fail 'blue-to-green did not retain the prior blue slot'
+  [[ "$(grep -c 'up --no-deps -d --force-recreate sub2api-worker' "$EVENT_LOG")" == 1 ]] || fail 'blue-to-green did not update exactly one worker'
+  for shared in postgres redis caddy; do
+    count=$(grep -c "ps -q $shared" "$EVENT_LOG")
+    [[ "$count" -ge 2 ]] || fail "blue-to-green did not preserve and recheck $shared identity"
+  done
+
+  setup_case cycle_green_to_blue
+  write_meminfo
+  set_active_green
+  run_executor FAKE_CANDIDATE_SLOT=blue >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "green-to-blue rehearsal failed: $(cat "$CASE_DIR/stderr")"
+  grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail 'green-to-blue did not promote blue'
+  ! grep -Eq 'compose .* (stop|rm).*sub2api-green|compose .* down' "$EVENT_LOG" || fail 'green-to-blue did not retain the prior green slot'
+  [[ "$(grep -c 'up --no-deps -d --force-recreate sub2api-worker' "$EVENT_LOG")" == 1 ]] || fail 'green-to-blue did not update exactly one worker'
+
+  for scenario in candidate_health_failure reload_failure public_failure; do
+    setup_case "cycle-$scenario"
+    write_meminfo
+    expect_failure "$scenario" run_executor FAKE_SCENARIO="$scenario"
+    grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail "$scenario did not leave blue active"
+    ! grep -Eq 'compose .* (stop|rm).*sub2api-blue|compose .* down' "$EVENT_LOG" || fail "$scenario stopped the active blue slot"
+    if [[ "$scenario" == reload_failure || "$scenario" == public_failure ]]; then
+      grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+        || fail "$scenario did not restore the previous Caddy upstream"
+    fi
+  done
+
+  elapsed=$((SECONDS - started))
+  (( elapsed < 1800 )) || fail "rehearsal fixture exceeded 1800 seconds: $elapsed"
+  printf 'PASS: two-slot rehearsal cycles (%ss)\n' "$elapsed"
 }
 
 test_failures_and_recovery() {
@@ -712,12 +789,14 @@ test_review_concurrent_dead_pid_observers_fail_closed() {
 
 case "${ONLY_TEST:-all}" in
   all)
+    assert_rehearsal_topology_ready
     test_validation_failures
     printf 'PASS: fail-closed validation harness\n'
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
     test_success_order_and_atomic_records
     printf 'PASS: successful blue-green command order\n'
+    test_two_slot_rehearsal_cycles
     test_failures_and_recovery
     printf 'PASS: rollback and interruption recovery\n'
     test_review_network_probe_image_policy

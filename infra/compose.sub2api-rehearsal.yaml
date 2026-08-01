@@ -1,4 +1,44 @@
-name: sub2api-official-rehearsal
+name: sub2api-blue-green-rehearsal
+
+x-sub2api-environment: &sub2api-environment
+  AUTO_SETUP: "true"
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: "8080"
+  SERVER_MODE: release
+  RUN_MODE: standard
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+  DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+  DATABASE_DBNAME: ${POSTGRES_DB:?POSTGRES_DB is required}
+  DATABASE_SSLMODE: disable
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+  TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
+  TZ: ${TZ:-Asia/Shanghai}
+
+x-sub2api-service: &sub2api-service
+  restart: unless-stopped
+  expose: ["8080"]
+  volumes:
+    - type: bind
+      source: ${REHEARSAL_SUB2API_DATA_DIR:?REHEARSAL_SUB2API_DATA_DIR must be absolute}
+      target: /app/data
+      bind:
+        create_host_path: false
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  healthcheck: &sub2api-healthcheck
+    test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
 
 x-logging: &logging
   driver: json-file
@@ -50,103 +90,74 @@ services:
       start_period: 5s
     logging: *logging
 
-  sub2api:
-    image: ${REHEARSAL_ROLLBACK_IMAGE:?REHEARSAL_ROLLBACK_IMAGE is required}
-    restart: unless-stopped
-    expose: ["8080"]
+  sub2api-blue:
+    <<: *sub2api-service
+    image: ${SUB2API_BLUE_IMAGE:?SUB2API_BLUE_IMAGE is required}
     environment:
-      AUTO_SETUP: "true"
-      SERVER_HOST: 0.0.0.0
-      SERVER_PORT: "8080"
-      SERVER_MODE: release
-      RUN_MODE: standard
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      DATABASE_DBNAME: ${POSTGRES_DB:?POSTGRES_DB is required}
-      DATABASE_SSLMODE: disable
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
-      TZ: ${TZ:-Asia/Shanghai}
-    volumes:
-      - type: bind
-        source: ${REHEARSAL_SUB2API_DATA_DIR:?REHEARSAL_SUB2API_DATA_DIR must be absolute}
-        target: /app/data
-        bind:
-          create_host_path: false
-    depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: api
+    healthcheck: *sub2api-healthcheck
+    logging: *logging
+
+  sub2api-green:
+    <<: *sub2api-service
+    image: ${SUB2API_GREEN_IMAGE:?SUB2API_GREEN_IMAGE is required}
+    environment:
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: api
+    healthcheck: *sub2api-healthcheck
+    logging: *logging
+
+  sub2api-worker:
+    <<: *sub2api-service
+    image: ${SUB2API_WORKER_IMAGE:?SUB2API_WORKER_IMAGE is required}
+    environment:
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: worker
+    healthcheck: *sub2api-healthcheck
     logging: *logging
 
   caddy:
     build:
       context: ..
       dockerfile: infra/Dockerfile.caddy
-    image: xingqiao-caddy:sub2api-official-rehearsal
+    image: xingqiao-caddy:sub2api-blue-green-rehearsal
     restart: unless-stopped
     environment:
-      XDG_CONFIG_HOME: /tmp/config
-      XDG_DATA_HOME: /tmp/data
+      SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
+      REHEARSAL_FAIL_PUBLIC_ACCEPTANCE: ${REHEARSAL_FAIL_PUBLIC_ACCEPTANCE:-false}
+      XDG_CONFIG_HOME: /config
+      XDG_DATA_HOME: /data
     command:
       - /bin/sh
       - -ec
       - |
-        cat >/tmp/Caddyfile <<'EOF'
+        case "$$SUB2API_ACTIVE_UPSTREAM" in
+          sub2api-blue:8080|sub2api-green:8080) ;;
+          *) echo "invalid SUB2API_ACTIVE_UPSTREAM: $$SUB2API_ACTIVE_UPSTREAM" >&2; exit 64 ;;
+        esac
+        case "$$REHEARSAL_FAIL_PUBLIC_ACCEPTANCE" in
+          true|false) ;;
+          *) echo "invalid REHEARSAL_FAIL_PUBLIC_ACCEPTANCE" >&2; exit 64 ;;
+        esac
+        cat >/etc/caddy/Caddyfile <<'EOF'
         :8080 {
-          @guard {
-            method POST
-            path /api/v1/admin/system/update /api/v1/admin/system/rollback
+          @forced_public_failure {
+            path /health
+            expression {$$REHEARSAL_FAIL_PUBLIC_ACCEPTANCE} == true
           }
-          respond @guard `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED"}` 409
-
-          @support_index path /support /support/
-          handle @support_index {
-            root * /srv/home
-            rewrite * /index.html
-            header Cache-Control "no-store, max-age=0"
-            header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
-            header X-Frame-Options SAMEORIGIN
-            file_server
-          }
-
-          @support_assets path /support/*
-          handle @support_assets {
-            root * /srv/home
-            file_server
-          }
-
-          @homepage_assets path /home-assets/*
-          handle @homepage_assets {
-            root * /srv/home
-            file_server
-          }
-
-          reverse_proxy sub2api:8080
+          respond @forced_public_failure `{"status":"forced_rehearsal_failure"}` 503
+          reverse_proxy {$$SUB2API_ACTIVE_UPSTREAM}
         }
         EOF
-        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports: ["127.0.0.1:18080:8080"]
-    depends_on:
-      sub2api: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 5s
-    tmpfs: [/tmp]
+    tmpfs: [/tmp, /etc/caddy, /data, /config]
     read_only: true
     logging: *logging

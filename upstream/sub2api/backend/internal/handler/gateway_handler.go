@@ -23,7 +23,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -57,6 +59,94 @@ type GatewayHandler struct {
 	maxAccountSwitchesGemini  int
 	cfg                       *config.Config
 	settingService            *service.SettingService
+}
+
+// UsageRecord is the minimal API-Key-visible billing record used by external
+// reconciliation workers. It deliberately excludes user, key, group and
+// upstream credential fields.
+type UsageRecord struct {
+	ID                int64     `json:"id"`
+	RequestID         string    `json:"request_id"`
+	UpstreamRequestID string    `json:"upstream_request_id,omitempty"`
+	AccountID         int64     `json:"account_id"`
+	Model             string    `json:"model"`
+	InputTokens       int       `json:"input_tokens"`
+	OutputTokens      int       `json:"output_tokens"`
+	ActualCost        float64   `json:"actual_cost"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// UsageRecords exposes only the authenticated API key's immutable usage rows.
+// Cursor is a page number encoded as a decimal string to keep the endpoint
+// stateless while the underlying repository remains page based.
+func (h *GatewayHandler) UsageRecords(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if h.usageService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "server_error", "Usage service is unavailable")
+		return
+	}
+	limit := 1000
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 1000 {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "limit must be between 1 and 1000")
+			return
+		}
+		limit = parsed
+	}
+	page := 1
+	if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "cursor is invalid")
+			return
+		}
+		page = parsed
+	}
+	var startTime, endTime *time.Time
+	if raw := strings.TrimSpace(c.Query("start_timestamp")); raw != "" {
+		unix, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "start_timestamp is invalid")
+			return
+		}
+		value := time.Unix(unix, 0).UTC()
+		startTime = &value
+	}
+	if raw := strings.TrimSpace(c.Query("end_timestamp")); raw != "" {
+		unix, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "end_timestamp is invalid")
+			return
+		}
+		value := time.Unix(unix, 0).UTC()
+		endTime = &value
+	}
+	params := pagination.PaginationParams{Page: page, PageSize: limit, SortBy: "created_at", SortOrder: pagination.SortOrderDesc}
+	logs, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, usagestats.UsageLogFilters{
+		APIKeyID: apiKey.ID, StartTime: startTime, EndTime: endTime, ExactTotal: false,
+	})
+	if err != nil {
+		h.errorResponse(c, http.StatusInternalServerError, "server_error", "Unable to read usage records")
+		return
+	}
+	items := make([]UsageRecord, 0, len(logs))
+	for _, log := range logs {
+		items = append(items, UsageRecord{
+			ID: log.ID, RequestID: log.RequestID, AccountID: log.AccountID, Model: log.Model,
+			InputTokens: log.InputTokens, OutputTokens: log.OutputTokens, ActualCost: log.ActualCost,
+			CreatedAt: log.CreatedAt.UTC(),
+		})
+	}
+	nextCursor := ""
+	if result != nil && page < result.Pages {
+		nextCursor = strconv.Itoa(page + 1)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "next_cursor": nextCursor, "has_more": nextCursor != ""})
 }
 
 // NewGatewayHandler creates a new GatewayHandler

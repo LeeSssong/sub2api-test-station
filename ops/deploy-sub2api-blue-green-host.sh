@@ -145,6 +145,9 @@ else
 fi
 
 network_curl_image=${NETWORK_CURL_IMAGE:-}
+preloaded_image=${RELEASE_PRELOADED_IMAGE:-false}
+[[ "$preloaded_image" == true || "$preloaded_image" == false ]] \
+  || fail 'RELEASE_PRELOADED_IMAGE must be true or false'
 network_curl_allowlist=${NETWORK_CURL_IMAGE_ALLOWLIST:-}
 if [[ "$mode" == production ]]; then
   [[ "$network_curl_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] \
@@ -787,7 +790,6 @@ chmod 0600 "$candidate_env"
 candidate_blue=$state_blue_image
 candidate_green=$state_green_image
 if [[ "$candidate_slot" == blue ]]; then candidate_blue=$requested_image; else candidate_green=$requested_image; fi
-candidate_image=$requested_image
 awk \
   -v blue="$candidate_blue" -v green="$candidate_green" '
   /^SUB2API_BLUE_IMAGE=/ { print "SUB2API_BLUE_IMAGE=" blue; next }
@@ -831,7 +833,7 @@ chmod 0600 "$candidate_env.tmp"
 mv "$candidate_env.tmp" "$candidate_env"
 compose_candidate=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$candidate_env" -f "$base_compose")
-if ! docker image inspect "$candidate_image" >/dev/null 2>&1; then
+if [[ "$preloaded_image" == false ]]; then
   "${compose_candidate[@]}" pull "sub2api-$candidate_slot" >/dev/null
 fi
 
@@ -846,12 +848,12 @@ candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
 docker run --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
   jq -e '.status == "ok"' >/dev/null
-docker run --rm --user 0:0 --network "$network_name" -v "$admin_header:/run/key:ro" "$network_curl_image" \
+docker run --rm --network "$network_name" --user 0:0 -v "$admin_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/api/v1/admin/system/version" | \
   jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null
 docker run --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 \
   "$candidate_url/api/v1/settings/public" | jq -e 'type == "object"' >/dev/null
-docker run --rm --user 0:0 --network "$network_name" -v "$gateway_header:/run/key:ro" "$network_curl_image" \
+docker run --rm --network "$network_name" --user 0:0 -v "$gateway_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/v1/models" | \
   jq -e '.data | type == "array"' >/dev/null
 write_partial candidate_accepted

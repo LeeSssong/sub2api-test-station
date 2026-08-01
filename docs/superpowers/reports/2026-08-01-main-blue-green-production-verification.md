@@ -37,6 +37,14 @@
 - host executor 已安装到 `/usr/local/libexec/deploy-sub2api-blue-green-host.sh`，`release-state` 位于 `/var/lib/sub2api/release-state`，语法、权限和 schema 检查通过。
 - 本地 focused 回归通过：release controller 测试、host executor final-review 测试、shell syntax 和 `git diff --check`。
 
+## 2026-08-01 对账发布追加验收
+
+- 主干后续发布提交：`6f0609799`（包含生产主机 GNU `stat` 门禁兼容、预加载镜像支持和 curl header 读取修复）；均已推送到 `origin/main`。
+- Sub2API immutable image：`xingqiao-sub2api@sha256:0387df2e011e12aa18e2fce525c0967d08d16810b669507e220697c242faad66`，活动槽切换为 green；blue 保留用于回滚。
+- relay-ops immutable runtime image：生产容器使用 `xingqiao-relay-ops:release-48244833b`，容器 healthy；对账迁移已在 `relay_ops` 数据库创建/确认 `upstream_cost_attempts`、`upstream_reconciliation_exceptions` 及 `accounting_daily_snapshots.reconciliation_status`。
+- 唯一 worker 仍为 1，PostgreSQL、Redis、Caddy 容器身份与发布前一致；未重建共享服务。
+- 通过 Caddy 公网入口验证账号监控对账 summary、exceptions 和 refresh 管理 API 返回 200；TLS 兼容策略及 `/health`、`/v1/models`、relay-ops healthz 复验通过。
+
 ## 备份与回滚
 
 - 拓扑切换备份：`/opt/sub2api/production/backups/blue-green-bootstrap-20260801T110506Z`

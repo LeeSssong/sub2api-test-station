@@ -26,6 +26,7 @@ assert_rehearsal_topology_ready() {
     REHEARSAL_REDIS_DATA_DIR="$FIXTURE/redis-data" \
     REHEARSAL_ROLLBACK_IMAGE="$image" SUB2API_BLUE_IMAGE="$image" \
     SUB2API_GREEN_IMAGE="$image" SUB2API_WORKER_IMAGE="$image" \
+		SUB2API_RELEASE_ENV_FILE="$FIXTURE/rehearsal-release.env" \
     SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=false \
     docker compose -f "$ROOT/infra/compose.sub2api-rehearsal.yaml" config --format json) \
     || fail 'rehearsal Compose topology did not render'
@@ -156,7 +157,9 @@ EOF
 set -euo pipefail
 printf 'curl %s\n' "$*" >>"${FAKE_EVENT_LOG:?}"
 case "${FAKE_SCENARIO:-success}:$*" in
-  public_failure:*example.invalid*|caddy_rollback_failure:*example.invalid*) exit 22 ;;
+	public_failure:*example.invalid*) exit 22 ;;
+	rollback_shared_id_drift:*example.invalid*) [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]] && exit 22 ;;
+	caddy_rollback_failure:*example.invalid*) exit 22 ;;
 esac
 case "$*" in
   *'/health'*) printf '{"status":"ok"}\n' ;;
@@ -173,6 +176,7 @@ scenario=${FAKE_SCENARIO:-success}
 case "$*" in
   'context show') printf '%s\n' "${FAKE_DOCKER_CONTEXT:-default}" ;;
   image\ inspect*)
+	[[ "$scenario" != image_unavailable ]] || exit 1
     qualified=true
     source_commit=${EXPECTED_SOURCE_COMMIT:?}
     source_tree=${EXPECTED_SOURCE_TREE:?}
@@ -196,10 +200,32 @@ JSON
     ;;
   *' ps -q postgres') printf 'postgres-id\n' ;;
   *' ps -q redis') printf 'redis-id\n' ;;
-  *' ps -q caddy') printf 'caddy-id\n' ;;
+  *' ps -q caddy')
+    [[ "$scenario" != rollback_shared_id_drift || ! -e "${FAKE_EVENT_LOG}.cutover-seen" ]] \
+      || { printf 'changed-caddy-id\n'; exit 0; }
+    printf 'caddy-id\n'
+    ;;
   *' ps -q sub2api-blue') printf 'blue-id\n' ;;
   *' ps -q sub2api-green') printf 'green-id\n' ;;
-  *' ps -q sub2api-worker') printf 'worker-id\n' ;;
+	*' ps -q sub2api-worker')
+		if [[ "$scenario" == multiple_workers ]]; then printf 'worker-id\nworker-id-2\n'; else printf 'worker-id\n'; fi
+		;;
+	'ps -q --filter label=com.docker.compose.project=sub2api --filter label=com.docker.compose.service=sub2api')
+		[[ "$scenario" != legacy_all_role ]] || printf 'legacy-id\n'
+		;;
+	'inspect blue-id --format {{.Config.Image}}')
+		if [[ "$scenario" == active_image_drift ]]; then printf '%s\n' "${EXPECTED_IMAGE:?}"; else printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}"; fi
+		;;
+	'inspect green-id --format {{.Config.Image}}') printf '%s\n' "${EXPECTED_IMAGE:?}" ;;
+	'inspect worker-id --format {{.Config.Image}}') printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}" ;;
+	'inspect blue-id --format {{range .Config.Env}}{{println .}}{{end}}')
+		if [[ "$scenario" == active_role_all ]]; then printf 'SERVER_PROCESS_ROLE=all\n'; else printf 'SERVER_PROCESS_ROLE=api\n'; fi
+		;;
+	'inspect green-id --format {{range .Config.Env}}{{println .}}{{end}}') printf 'SERVER_PROCESS_ROLE=api\n' ;;
+	'inspect worker-id --format {{range .Config.Env}}{{println .}}{{end}}')
+		if [[ "$scenario" == worker_role_all ]]; then printf 'SERVER_PROCESS_ROLE=all\n'; else printf 'SERVER_PROCESS_ROLE=worker\n'; fi
+		;;
+	'inspect legacy-id --format {{range .Config.Env}}{{println .}}{{end}}') printf 'SERVER_PROCESS_ROLE=all\n' ;;
   *'exec -T postgres '*'psql'*) printf '%s\n' "${FAKE_DB_HEADROOM:-30}" ;;
   *'pull sub2api-green') : ;;
   *'up --no-deps -d sub2api-green')
@@ -215,9 +241,15 @@ JSON
   *'exec -T -e SUB2API_ACTIVE_UPSTREAM='*' caddy caddy validate'*)
     [[ "$scenario" != caddy_validate_failure ]] || exit 1
     ;;
-  *'exec -T -e SUB2API_ACTIVE_UPSTREAM='*' caddy caddy reload'*)
+	*'exec -T -e SUB2API_ACTIVE_UPSTREAM='*' caddy caddy reload'*)
     if [[ "$scenario" == reload_failure && "$*" == *sub2api-green:8080* ]]; then exit 1; fi
     if [[ "$scenario" == caddy_rollback_failure && "$*" == *sub2api-blue:8080* ]]; then exit 1; fi
+		if [[ "$*" == *sub2api-green:8080* ]]; then
+			: >"${FAKE_EVENT_LOG}.cutover-seen"
+			: >"${FAKE_EVENT_LOG}.live-route-green"
+		else
+			rm -f -- "${FAKE_EVENT_LOG}.live-route-green"
+		fi
     ;;
   *'up --no-deps -d --force-recreate sub2api-worker')
     if [[ "$scenario" == worker_update_failure && ! -e "${FAKE_EVENT_LOG}.worker-failed" ]]; then
@@ -245,6 +277,25 @@ JSON
     [[ "$scenario" != worker_health_failure && "$scenario" != worker_health_timeout && "$scenario" != worker_rollback_failure ]] || { printf 'unhealthy\n'; exit 0; }
     printf 'healthy\n'
     ;;
+	'inspect green-id --format {{.State.Health.Status}}')
+		if [[ "$scenario" == candidate_starting_then_healthy ]]; then
+			count_file="${FAKE_EVENT_LOG}.candidate-health-count"
+			count=0
+			[[ -f "$count_file" ]] && count=$(cat "$count_file")
+			count=$((count + 1))
+			printf '%s\n' "$count" >"$count_file"
+			[[ "$count" -lt 2 ]] && { printf 'starting\n'; exit 0; }
+		fi
+		[[ "$scenario" != candidate_unhealthy ]] || { printf 'unhealthy\n'; exit 0; }
+		[[ "$scenario" != candidate_health_timeout ]] || { printf 'starting\n'; exit 0; }
+		printf 'healthy\n'
+		;;
+	'inspect blue-id --format {{.State.Health.Status}}') printf 'healthy\n' ;;
+	*'exec -T caddy wget -qO- http://127.0.0.1:2019/config/'*)
+		upstream=sub2api-blue:8080
+		[[ "$scenario" == live_route_green || -e "${FAKE_EVENT_LOG}.live-route-green" ]] && upstream=sub2api-green:8080
+		printf '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"upstreams":[{"dial":"%s"}]}]}]}}}}}\n' "$upstream"
+		;;
   *'logs --no-color --tail 200 sub2api-worker')
     [[ "$scenario" != worker_log_failure ]] || { printf 'panic: worker failed\n'; exit 0; }
     printf 'worker ready\n'
@@ -256,6 +307,7 @@ EOF
 }
 
 run_executor() {
+	local executor_mode=${EXECUTOR_MODE:-production}
   env \
     PATH="$CASE_DIR/bin:$PATH" \
     BASH_ENV="$CASE_DIR/kill-hook.bash" \
@@ -281,14 +333,123 @@ run_executor() {
     MEMINFO_FILE="$CASE_DIR/meminfo" \
     WORKER_HEALTH_TIMEOUT_SECONDS=2 \
     WORKER_HEALTH_POLL_SECONDS=1 \
+		CANDIDATE_HEALTH_TIMEOUT_SECONDS=2 \
+		CANDIDATE_HEALTH_POLL_SECONDS=1 \
     COMPOSE_PROJECT_NAME=sub2api \
     "$@" bash "$EXECUTOR" \
-      --mode production \
+		--mode "$executor_mode" \
       --image "$IMAGE" \
       --source-commit "$SOURCE_COMMIT" \
       --source-tree "$SOURCE_TREE" \
-      --tested-tree "$TESTED_TREE" \
-      --migrations-hash "$MIGRATIONS_HASH"
+		--tested-tree "$TESTED_TREE" \
+		--migrations-hash "$MIGRATIONS_HASH" \
+		--deadline-epoch "${RELEASE_DEADLINE_EPOCH:-1785515400}"
+}
+
+run_rehearsal_executor() {
+	EXECUTOR_MODE=rehearsal run_executor "$@"
+}
+
+test_final_review_rehearsal_isolation() {
+	setup_case rehearsal_production_scope
+	write_meminfo
+	expect_failure rehearsal_production_scope run_rehearsal_executor
+	assert_no_mutation rehearsal_production_scope
+}
+
+test_final_review_candidate_readiness() {
+	setup_case candidate_starting_then_healthy
+	write_meminfo
+	run_executor FAKE_SCENARIO=candidate_starting_then_healthy >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+		|| fail "delayed candidate readiness should succeed: $(cat "$CASE_DIR/stderr")"
+	[[ "$(grep -c 'inspect green-id --format {{.State.Health.Status}}' "$EVENT_LOG" || true)" -ge 2 ]] \
+		|| fail 'candidate starting state was not polled'
+	grep -q '^sleep 1$' "$EVENT_LOG" || fail 'candidate readiness did not wait before retrying'
+
+	setup_case candidate_unhealthy
+	write_meminfo
+	expect_failure candidate_unhealthy run_executor FAKE_SCENARIO=candidate_unhealthy
+	! grep -q 'caddy caddy reload' "$EVENT_LOG" || fail 'unhealthy candidate reached Caddy mutation'
+
+	setup_case candidate_timeout
+	write_meminfo
+	expect_failure candidate_timeout run_executor FAKE_SCENARIO=candidate_health_timeout \
+		FAKE_EPOCH_SEQUENCE=1785513600,1785513600,1785513602 CANDIDATE_HEALTH_TIMEOUT_SECONDS=1
+	grep -q 'candidate did not become healthy before timeout' "$CASE_DIR/stderr" \
+		|| fail 'candidate readiness timeout was not bounded'
+}
+
+test_final_review_runtime_singletons() {
+	setup_case worker_role_all
+	write_meminfo
+	expect_failure worker_role_all run_executor FAKE_SCENARIO=worker_role_all
+	assert_no_mutation worker_role_all
+
+	setup_case legacy_all_role
+	write_meminfo
+	expect_failure legacy_all_role run_executor FAKE_SCENARIO=legacy_all_role
+	assert_no_mutation legacy_all_role
+
+	for scenario in multiple_workers active_image_drift active_role_all; do
+		setup_case "$scenario"
+		write_meminfo
+		expect_failure "$scenario" run_executor FAKE_SCENARIO="$scenario"
+		assert_no_mutation "$scenario"
+	done
+}
+
+test_final_review_recovery_precedes_new_image() {
+	setup_case recovery_before_image
+	write_meminfo
+	write_review_partial "$CASE_DIR/records/recovery-before-image.partial" recovery-before-image true true true green sub2api-green:8080 "$IMAGE"
+	expect_failure recovery_before_image run_executor FAKE_SCENARIO=image_unavailable
+	grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+		|| fail 'partial recovery did not run before rejecting the unavailable next image'
+}
+
+test_final_review_rollback_proof() {
+	setup_case rollback_public_unhealthy
+	write_meminfo
+	expect_failure rollback_public_unhealthy run_executor FAKE_SCENARIO=public_failure
+	record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+	"$REAL_JQ" -e '.state == "rollback_failed" and .rolled_back == false' "$record" >/dev/null \
+		|| fail 'unhealthy previous public route was finalized as a completed rollback'
+	[[ -n "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] \
+		|| fail 'failed rollback proof discarded the recovery checkpoint'
+
+	setup_case rollback_shared_id_drift
+	write_meminfo
+	expect_failure rollback_shared_id_drift run_executor FAKE_SCENARIO=rollback_shared_id_drift
+	record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+	"$REAL_JQ" -e '.state == "rollback_failed" and .rolled_back == false' "$record" >/dev/null \
+		|| fail 'shared-ID drift was finalized as a completed rollback'
+	[[ -n "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] \
+		|| fail 'shared-ID rollback failure discarded the recovery checkpoint'
+}
+
+test_final_review_live_route_mismatch() {
+	setup_case live_route_mismatch
+	write_meminfo
+	expect_failure live_route_mismatch run_executor FAKE_SCENARIO=live_route_green
+	assert_no_mutation live_route_mismatch
+}
+
+test_final_review_restart_stable_route() {
+	setup_case restart_stable_route
+	write_meminfo
+	run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+		|| fail "restart-stable route release failed: $(cat "$CASE_DIR/stderr")"
+	grep -q 'exec -T caddy wget -qO- http://127.0.0.1:2019/config/' "$EVENT_LOG" \
+		|| fail 'live Caddy route was not proved after persistence'
+	grep -q '^SUB2API_ACTIVE_UPSTREAM=sub2api-green:8080$' "$CASE_DIR/release.env" \
+		|| fail 'restart source did not persist the promoted route'
+}
+
+test_final_review_host_deadline() {
+	setup_case expired_deadline
+	write_meminfo
+	expect_failure expired_deadline run_executor FAKE_EPOCH=1785515401
+	assert_no_mutation expired_deadline
 }
 
 write_meminfo() {
@@ -809,6 +970,15 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: ownerless lock fail-closed concurrency\n'
     test_review_concurrent_dead_pid_observers_fail_closed
     printf 'PASS: stale PID lock fail-closed concurrency\n'
+		test_final_review_rehearsal_isolation
+		test_final_review_candidate_readiness
+		test_final_review_runtime_singletons
+		test_final_review_recovery_precedes_new_image
+		test_final_review_rollback_proof
+		test_final_review_live_route_mismatch
+		test_final_review_restart_stable_route
+		test_final_review_host_deadline
+		printf 'PASS: final-review host safety regressions\n'
     ;;
   network) test_review_network_probe_image_policy ;;
   worker) test_review_worker_health_wait ;;
@@ -817,5 +987,15 @@ case "${ONLY_TEST:-all}" in
     test_review_paused_lock_creator_is_never_reclaimed
     test_review_concurrent_dead_pid_observers_fail_closed
     ;;
+	final-review)
+		test_final_review_rehearsal_isolation
+		test_final_review_candidate_readiness
+		test_final_review_runtime_singletons
+		test_final_review_recovery_precedes_new_image
+		test_final_review_rollback_proof
+		test_final_review_live_route_mismatch
+		test_final_review_restart_stable_route
+		test_final_review_host_deadline
+		;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

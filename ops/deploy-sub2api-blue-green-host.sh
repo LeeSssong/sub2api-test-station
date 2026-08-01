@@ -19,6 +19,7 @@ source_commit=''
 source_tree=''
 tested_tree=''
 migrations_hash=''
+deadline_epoch=''
 
 while (($#)); do
   case "$1" in
@@ -28,6 +29,7 @@ while (($#)); do
     --source-tree) (($# >= 2)) || fail '--source-tree requires a value'; [[ -z "$source_tree" ]] || fail '--source-tree may be supplied once'; source_tree=$2; shift 2 ;;
     --tested-tree) (($# >= 2)) || fail '--tested-tree requires a value'; [[ -z "$tested_tree" ]] || fail '--tested-tree may be supplied once'; tested_tree=$2; shift 2 ;;
     --migrations-hash) (($# >= 2)) || fail '--migrations-hash requires a value'; [[ -z "$migrations_hash" ]] || fail '--migrations-hash may be supplied once'; migrations_hash=$2; shift 2 ;;
+		--deadline-epoch) (($# >= 2)) || fail '--deadline-epoch requires a value'; [[ -z "$deadline_epoch" ]] || fail '--deadline-epoch may be supplied once'; deadline_epoch=$2; shift 2 ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
@@ -38,11 +40,34 @@ done
 [[ "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail '--source-tree must be 40 lowercase hex'
 [[ "$tested_tree" =~ ^[a-f0-9]{40}$ ]] || fail '--tested-tree must be 40 lowercase hex'
 [[ "$migrations_hash" =~ ^[a-f0-9]{64}$ ]] || fail '--migrations-hash must be 64 lowercase hex'
+[[ "$deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail '--deadline-epoch must be a Unix epoch'
 [[ "$source_tree" == "$tested_tree" ]] || fail 'source tree does not equal tested tree'
 
-for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename sleep; do
+for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename sleep perl; do
   command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
 done
+
+check_deadline() {
+	local now
+	now=$(date -u +%s) || fail 'release deadline clock failed'
+	[[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline_epoch" ]] || fail 'release exceeded its end-to-end deadline'
+}
+
+check_deadline
+deadline_remaining=$((deadline_epoch - $(date -u +%s)))
+(( deadline_remaining > 0 )) || fail 'release exceeded its end-to-end deadline'
+parent_pid=$$
+perl -e '($pid, $seconds) = @ARGV; sleep $seconds; kill "TERM", $pid' "$parent_pid" "$deadline_remaining" &
+deadline_watchdog_pid=$!
+
+stop_deadline_watchdog() {
+	if [[ -n "${deadline_watchdog_pid:-}" ]]; then
+		kill "$deadline_watchdog_pid" 2>/dev/null || true
+		wait "$deadline_watchdog_pid" 2>/dev/null || true
+		deadline_watchdog_pid=''
+	fi
+}
+trap stop_deadline_watchdog EXIT
 
 canonical_directory() {
   local value=$1 label=$2 physical
@@ -86,7 +111,6 @@ record_root=$(canonical_directory "${RELEASE_RECORD_ROOT:?RELEASE_RECORD_ROOT is
 admin_key_file=$(canonical_file "${ADMIN_API_KEY_FILE:?ADMIN_API_KEY_FILE is required}" 'ADMIN_API_KEY_FILE')
 gateway_key_file=$(canonical_file "${GATEWAY_API_KEY_FILE:?GATEWAY_API_KEY_FILE is required}" 'GATEWAY_API_KEY_FILE')
 base_url=${BASE_URL:?BASE_URL is required}
-[[ "$base_url" == https://* ]] || fail 'BASE_URL must be HTTPS'
 
 [[ "$(mode_of "$release_env")" == 600 ]] || fail 'RELEASE_ENV mode must be 0600'
 [[ "$(mode_of "$secret_env")" == 600 ]] || fail 'SECRET_ENV mode must be 0600'
@@ -94,6 +118,7 @@ base_url=${BASE_URL:?BASE_URL is required}
 [[ "$(mode_of "$gateway_key_file")" == 600 ]] || fail 'GATEWAY_API_KEY_FILE mode must be 0600'
 
 if [[ "$mode" == production ]]; then
+	[[ "$base_url" == https://* ]] || fail 'production BASE_URL must be HTTPS'
   [[ "$(uname -s)" == Linux ]] || fail 'production deployment must run on Linux'
   [[ -z "${DOCKER_HOST:-}" ]] || fail 'production deployment must not use DOCKER_HOST'
   [[ "${DOCKER_CONTEXT:-default}" == default ]] || fail 'production DOCKER_CONTEXT must be default'
@@ -102,8 +127,21 @@ if [[ "$mode" == production ]]; then
   [[ "$compose_project" == sub2api ]] || fail 'production COMPOSE_PROJECT_NAME must be sub2api'
 else
   compose_project=${COMPOSE_PROJECT_NAME:-sub2api-blue-green-rehearsal}
-  [[ "$compose_project" == sub2api-blue-green-rehearsal || "$compose_project" == sub2api ]] \
-    || fail 'rehearsal COMPOSE_PROJECT_NAME is invalid'
+	[[ "$compose_project" == sub2api-blue-green-rehearsal ]] \
+		|| fail 'rehearsal COMPOSE_PROJECT_NAME must be sub2api-blue-green-rehearsal'
+	rehearsal_root=$(canonical_directory "${REHEARSAL_ROOT:?REHEARSAL_ROOT is required in rehearsal mode}" 'REHEARSAL_ROOT')
+	[[ "$base_compose" == "$deploy_root/compose.sub2api-rehearsal.yaml" ]] \
+		|| fail 'rehearsal BASE_COMPOSE must be the isolated rehearsal topology'
+	case "$secret_env" in "$rehearsal_root"/*) ;; *) fail 'rehearsal SECRET_ENV must be inside REHEARSAL_ROOT' ;; esac
+	case "$release_env" in "$rehearsal_root"/*) ;; *) fail 'rehearsal RELEASE_ENV must be inside REHEARSAL_ROOT' ;; esac
+	case "$release_state" in "$rehearsal_root"/*) ;; *) fail 'rehearsal RELEASE_STATE must be inside REHEARSAL_ROOT' ;; esac
+	case "$record_root" in "$rehearsal_root"/*) ;; *) fail 'rehearsal RELEASE_RECORD_ROOT must be inside REHEARSAL_ROOT' ;; esac
+	case "$admin_key_file" in "$rehearsal_root"/*) ;; *) fail 'rehearsal ADMIN_API_KEY_FILE must be inside REHEARSAL_ROOT' ;; esac
+	case "$gateway_key_file" in "$rehearsal_root"/*) ;; *) fail 'rehearsal GATEWAY_API_KEY_FILE must be inside REHEARSAL_ROOT' ;; esac
+	[[ "$release_state" == "$record_root/release-state.json" ]] \
+		|| fail 'rehearsal RELEASE_STATE must use the rehearsal record namespace'
+	[[ "$base_url" =~ ^https?://(localhost|127\.0\.0\.1)(:[1-9][0-9]{0,4})?$ ]] \
+		|| fail 'rehearsal BASE_URL must be localhost-only'
 fi
 
 network_curl_image=${NETWORK_CURL_IMAGE:-}
@@ -127,6 +165,7 @@ lock_owner_path="$lock_dir/owner.pid"
 lock_owned=false
 
 cleanup_lock() {
+	stop_deadline_watchdog
   if [[ "${lock_owned:-false}" == true ]]; then
     rm -f -- "$lock_owner_path"
     rmdir "$lock_dir" 2>/dev/null || true
@@ -200,6 +239,7 @@ record_path="$record_root/$attempt_id.json"
 
 compose_current=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$release_env" -f "$base_compose")
+export SUB2API_RELEASE_ENV_FILE="$release_env"
 
 write_final_record() {
   local result=$1 state=$2 reason=$3 temporary
@@ -374,6 +414,63 @@ wait_for_worker_healthy() {
   done
 }
 
+wait_for_candidate_healthy() {
+	local service=$1 timeout=${CANDIDATE_HEALTH_TIMEOUT_SECONDS:-90} poll=${CANDIDATE_HEALTH_POLL_SECONDS:-1}
+	local deadline now remaining attempts=0 max_attempts candidate_status candidate_id
+	[[ "$timeout" =~ ^[1-9][0-9]*$ && "$poll" =~ ^[1-9][0-9]*$ ]] || return 1
+	deadline=$(( $(date -u +%s) + timeout ))
+	max_attempts=$((timeout / poll + 1))
+	while true; do
+		check_deadline
+		candidate_id=$(resolve_container_id "$service") || return 1
+		candidate_status=$(docker inspect "$candidate_id" --format '{{.State.Health.Status}}') || return 1
+		[[ "$candidate_status" == healthy ]] && return 0
+		[[ "$candidate_status" != unhealthy ]] || return 1
+		attempts=$((attempts + 1))
+		[[ "$attempts" -lt "$max_attempts" ]] || return 1
+		now=$(date -u +%s)
+		[[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline" ]] || return 1
+		remaining=$((deadline - now))
+		if [[ "$poll" -lt "$remaining" ]]; then sleep "$poll"; else sleep "$remaining"; fi
+	done
+}
+
+container_role() {
+	local container_id=$1
+	docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '
+		$1 == "SERVER_PROCESS_ROLE" { value=$2; count++ }
+		END { if (count != 1) exit 1; print value }
+	'
+}
+
+live_caddy_upstream() {
+	local config
+	config=$("${compose_current[@]}" exec -T caddy wget -qO- http://127.0.0.1:2019/config/) || return 1
+	jq -er '
+		[.. | objects | .dial? // empty |
+		 select(. == "sub2api-blue:8080" or . == "sub2api-green:8080")] |
+		unique | if length == 1 then .[0] else error("active upstream is not unique") end
+	' <<<"$config"
+}
+
+write_acceptance_headers() {
+	[[ -n "$admin_header" && -n "$gateway_header" ]] && return 0
+	admin_header="$record_root/.$attempt_id.admin.header"
+	gateway_header="$record_root/.$attempt_id.gateway.header"
+	printf 'X-API-Key: %s\n' "$(tr -d '\r\n' <"$admin_key_file")" >"$admin_header"
+	printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$gateway_key_file")" >"$gateway_header"
+	chmod 0600 "$admin_header" "$gateway_header"
+}
+
+public_acceptance() {
+	write_acceptance_headers || return 1
+	curl -fsS --connect-timeout 5 --max-time 15 "$base_url/health" | jq -e '.status == "ok"' >/dev/null || return 1
+	curl -fsS --connect-timeout 5 --max-time 15 -H "@$admin_header" "$base_url/api/v1/admin/system/version" | \
+		jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null || return 1
+	curl -fsS --connect-timeout 5 --max-time 15 -H "@$gateway_header" "$base_url/v1/models" | \
+		jq -e '.data | type == "array"' >/dev/null || return 1
+}
+
 worker_logs_are_acceptable() {
   local worker_logs
   worker_logs=$("${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
@@ -405,6 +502,15 @@ restore_previous() {
       [[ "$rollback_ok" == false ]] || worker_logs_are_acceptable || rollback_ok=false
     fi
   fi
+	if [[ "$rollback_ok" == true && "$cutover_attempted" == true ]]; then
+		[[ "$(live_caddy_upstream)" == "$previous_upstream" ]] || rollback_ok=false
+		[[ "$rollback_ok" == false ]] || public_acceptance || rollback_ok=false
+	fi
+	if [[ "$rollback_ok" == true ]]; then
+		[[ "$(resolve_container_id postgres)" == "$rollback_postgres_id" ]] || rollback_ok=false
+		[[ "$rollback_ok" == false || "$(resolve_container_id redis)" == "$rollback_redis_id" ]] || rollback_ok=false
+		[[ "$rollback_ok" == false || "$(resolve_container_id caddy)" == "$rollback_caddy_id" ]] || rollback_ok=false
+	fi
   if [[ "$rollback_ok" == true && ( "$persistence_started" == true || "$state_persisted" == true || "$worker_update_started" == true ) ]]; then
     current_blue=$rollback_blue_image
     current_green=$rollback_green_image
@@ -541,21 +647,6 @@ existing_partials=$(find "$record_root" -maxdepth 1 -type f -name '*.partial' -p
 partial_count=$(printf '%s\n' "$existing_partials" | awk 'NF { count++ } END { print count + 0 }')
 [[ "$partial_count" -le 1 ]] || fail 'multiple partial release records are present'
 
-# Inspect immutable provenance before reading any mutable deployment state.
-image_json=$(docker image inspect "$requested_image") || fail 'could not inspect requested image'
-jq -e \
-  --arg image "$requested_image" --arg source_commit "$source_commit" \
-  --arg source_tree "$source_tree" --arg tested_tree "$tested_tree" \
-  --arg migrations_hash "$migrations_hash" '
-  length == 1 and
-  (.[0].RepoDigests | type == "array" and index($image) != null) and
-  .[0].Config.Labels["com.xingqiao.sub2api.qualified"] == "true" and
-  .[0].Config.Labels["com.xingqiao.sub2api.source.commit"] == $source_commit and
-  .[0].Config.Labels["com.xingqiao.sub2api.source.tree"] == $source_tree and
-  .[0].Config.Labels["com.xingqiao.sub2api.tested.tree"] == $tested_tree and
-  .[0].Config.Labels["com.xingqiao.sub2api.migrations.sha256"] == $migrations_hash
-' <<<"$image_json" >/dev/null || fail 'requested image labels do not match qualified source/test evidence'
-
 if [[ ! -e "$release_state" ]]; then
   gate legacy_topology_bootstrap 'steady-state blue-green release state is absent; bootstrap requires maintenance authorization' 600
 fi
@@ -598,6 +689,22 @@ if [[ "$partial_count" == 1 ]]; then
   fi
 fi
 
+# Recovery above depends only on protected checkpoint/state data. New image
+# availability and provenance must never block repairing an interrupted release.
+image_json=$(docker image inspect "$requested_image") || fail 'could not inspect requested image'
+jq -e \
+  --arg image "$requested_image" --arg source_commit "$source_commit" \
+  --arg source_tree "$source_tree" --arg tested_tree "$tested_tree" \
+  --arg migrations_hash "$migrations_hash" '
+  length == 1 and
+  (.[0].RepoDigests | type == "array" and index($image) != null) and
+  .[0].Config.Labels["com.xingqiao.sub2api.qualified"] == "true" and
+  .[0].Config.Labels["com.xingqiao.sub2api.source.commit"] == $source_commit and
+  .[0].Config.Labels["com.xingqiao.sub2api.source.tree"] == $source_tree and
+  .[0].Config.Labels["com.xingqiao.sub2api.tested.tree"] == $tested_tree and
+  .[0].Config.Labels["com.xingqiao.sub2api.migrations.sha256"] == $migrations_hash
+' <<<"$image_json" >/dev/null || fail 'requested image labels do not match qualified source/test evidence'
+
 case "$state_active_slot:$state_active_upstream" in
   blue:sub2api-blue:8080) candidate_slot=green; candidate_upstream=sub2api-green:8080 ;;
   green:sub2api-green:8080) candidate_slot=blue; candidate_upstream=sub2api-blue:8080 ;;
@@ -615,6 +722,9 @@ rollback_postgres_id=$state_postgres_id
 rollback_redis_id=$state_redis_id
 rollback_caddy_id=$state_caddy_id
 validate_upstream "$candidate_upstream" || gate invalid_candidate_upstream 'candidate Caddy upstream is not allowlisted' 300
+
+live_upstream=$(live_caddy_upstream) || fail 'live Caddy upstream is not uniquely resolvable'
+[[ "$live_upstream" == "$state_active_upstream" ]] || fail 'live Caddy upstream does not match release state'
 
 [[ "$(managed_env_value SUB2API_BLUE_IMAGE)" == "$state_blue_image" ]] || fail 'RELEASE_ENV blue image does not match state'
 [[ "$(managed_env_value SUB2API_GREEN_IMAGE)" == "$state_green_image" ]] || fail 'RELEASE_ENV green image does not match state'
@@ -634,6 +744,25 @@ redis_id=$(resolve_container_id redis) || gate legacy_topology_bootstrap 'Redis 
 caddy_id=$(resolve_container_id caddy) || gate legacy_topology_bootstrap 'Caddy container identity is not uniquely resolvable' 600
 [[ "$postgres_id" == "$state_postgres_id" && "$redis_id" == "$state_redis_id" && "$caddy_id" == "$state_caddy_id" ]] \
   || gate shared_container_identity_changed 'PostgreSQL, Redis, or Caddy identity differs from the active release state' 600
+
+active_service="sub2api-$state_active_slot"
+active_image=$state_blue_image
+[[ "$state_active_slot" == green ]] && active_image=$state_green_image
+active_container_id=$(resolve_container_id "$active_service") \
+	|| gate invalid_runtime_cardinality 'active API container identity is not uniquely resolvable' 600
+worker_container_id=$(resolve_container_id sub2api-worker) \
+	|| gate invalid_runtime_cardinality 'worker container identity is not uniquely resolvable' 600
+[[ "$(docker inspect "$active_container_id" --format '{{.Config.Image}}')" == "$active_image" ]] \
+	|| gate active_runtime_drift 'active API image differs from release state' 600
+[[ "$(docker inspect "$worker_container_id" --format '{{.Config.Image}}')" == "$state_worker_image" ]] \
+	|| gate active_runtime_drift 'worker image differs from release state' 600
+[[ "$(container_role "$active_container_id")" == api ]] \
+	|| gate invalid_runtime_role 'active API runtime role is not api' 600
+[[ "$(container_role "$worker_container_id")" == worker ]] \
+	|| gate invalid_runtime_role 'worker runtime role is not worker' 600
+legacy_all_ids=$(docker ps -q --filter "label=com.docker.compose.project=$compose_project" \
+	--filter label=com.docker.compose.service=sub2api) || fail 'legacy runtime lookup failed'
+[[ -z "$legacy_all_ids" ]] || gate invalid_runtime_cardinality 'legacy all-role runtime is still present' 600
 
 available_kb=$(df -Pk "$deploy_root" | awk 'NR == 2 { print $4 }')
 [[ "$available_kb" =~ ^[0-9]+$ && "$available_kb" -ge "${MIN_FREE_KB:-2097152}" ]] \
@@ -706,12 +835,9 @@ compose_candidate=(docker compose --project-name "$compose_project" --project-di
 failure_reason=candidate_start_failed
 "${compose_candidate[@]}" up --no-deps -d "sub2api-$candidate_slot" >/dev/null
 write_partial candidate_started
+	wait_for_candidate_healthy "sub2api-$candidate_slot" || fail 'candidate did not become healthy before timeout'
 
-admin_header="$record_root/.$attempt_id.admin.header"
-gateway_header="$record_root/.$attempt_id.gateway.header"
-printf 'X-API-Key: %s\n' "$(tr -d '\r\n' <"$admin_key_file")" >"$admin_header"
-printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$gateway_key_file")" >"$gateway_header"
-chmod 0600 "$admin_header" "$gateway_header"
+write_acceptance_headers
 network_name="${compose_project}_default"
 candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
@@ -741,11 +867,7 @@ cutover_applied=true
 write_partial cutover_applied
 
 failure_reason=public_acceptance_failed
-curl -fsS --connect-timeout 5 --max-time 15 "$base_url/health" | jq -e '.status == "ok"' >/dev/null
-curl -fsS --connect-timeout 5 --max-time 15 -H "@$admin_header" "$base_url/api/v1/admin/system/version" | \
-  jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null
-curl -fsS --connect-timeout 5 --max-time 15 -H "@$gateway_header" "$base_url/v1/models" | \
-  jq -e '.data | type == "array"' >/dev/null
+public_acceptance
 write_partial public_accepted
 
 failure_reason=state_persist_failed
@@ -760,6 +882,7 @@ write_state_values "$candidate_slot" "$candidate_upstream" "$candidate_blue" "$c
 trace_event 'persist release-state'
 state_persisted=true
 write_partial state_persisted
+[[ "$(live_caddy_upstream)" == "$candidate_upstream" ]] || fail 'persisted route does not match live Caddy upstream'
 
 failure_reason=worker_update_failed
 worker_update_started=true

@@ -132,6 +132,8 @@ services:
       - /bin/sh
       - -ec
       - |
+        SUB2API_ACTIVE_UPSTREAM=$$(awk -F= '$$1 == "SUB2API_ACTIVE_UPSTREAM" { value=$$2; count++ } END { if (count != 1) exit 1; print value }' /run/sub2api-release/release.env)
+        export SUB2API_ACTIVE_UPSTREAM
         case "$$SUB2API_ACTIVE_UPSTREAM" in
           sub2api-blue:8080|sub2api-green:8080) ;;
           *) echo "invalid SUB2API_ACTIVE_UPSTREAM: $$SUB2API_ACTIVE_UPSTREAM" >&2; exit 64 ;;
@@ -152,6 +154,8 @@ services:
         EOF
         exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports: ["127.0.0.1:18080:8080"]
+    volumes:
+      - ${SUB2API_RELEASE_ENV_FILE:?SUB2API_RELEASE_ENV_FILE is required}:/run/sub2api-release/release.env:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 10s

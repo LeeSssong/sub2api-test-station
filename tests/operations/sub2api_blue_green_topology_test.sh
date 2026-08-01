@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-FIXTURE=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-blue-green-topology.XXXXXX")
+FIXTURE=$(mktemp -d "/tmp/sub2api-blue-green-topology.XXXXXX")
+FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf -- "$FIXTURE"' EXIT
 
 fail() {
@@ -55,7 +56,7 @@ REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=false
 REHEARSAL_ROLLBACK_IMAGE=example.invalid/sub2api-legacy@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 EOF
 
-rehearsal_compose=(docker compose --env-file "$FIXTURE/rehearsal-secret.env" --env-file "$FIXTURE/rehearsal-release.env" -f "$ROOT/infra/compose.sub2api-rehearsal.yaml")
+rehearsal_compose=(env SUB2API_RELEASE_ENV_FILE="$FIXTURE/rehearsal-release.env" docker compose --env-file "$FIXTURE/rehearsal-secret.env" --env-file "$FIXTURE/rehearsal-release.env" -f "$ROOT/infra/compose.sub2api-rehearsal.yaml")
 "${rehearsal_compose[@]}" config --format json >"$FIXTURE/rehearsal-compose.json"
 
 ruby -rjson - "$FIXTURE/rehearsal-compose.json" "$FIXTURE" "$FIXTURE/rehearsal-caddy-command" <<'RUBY'
@@ -130,10 +131,12 @@ rehearsal_caddy_command=${rehearsal_caddy_command//\$\$/\$}
 rehearsal_caddy_command=${rehearsal_caddy_command/exec caddy run --config \/etc\/caddy\/Caddyfile --adapter caddyfile/exec caddy adapt --config \/etc\/caddy\/Caddyfile --adapter caddyfile --pretty}
 readonly REHEARSAL_CADDY_IMAGE=caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
 for failure_hook in false true; do
-  adapted=$(docker run --rm \
+  adapted=$(docker run --rm -i \
     --env "SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080" \
     --env "REHEARSAL_FAIL_PUBLIC_ACCEPTANCE=$failure_hook" \
-    "$REHEARSAL_CADDY_IMAGE" /bin/sh -ec "$rehearsal_caddy_command")
+	    "$REHEARSAL_CADDY_IMAGE" /bin/sh -ec \
+			'cat >/tmp/release.env; command=${1//\/run\/sub2api-release\/release.env/\/tmp\/release.env}; /bin/sh -ec "$command"' \
+			sh "$rehearsal_caddy_command" <"$FIXTURE/rehearsal-release.env")
   ruby -rjson -e 'JSON.parse(STDIN.read)' <<<"$adapted" \
     || fail "rehearsal Caddy hook value $failure_hook did not adapt"
 done
@@ -151,7 +154,7 @@ SUB2API_PREVIOUS_SLOT=green
 SUB2API_IMAGE=example.invalid/sub2api-legacy@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 EOF
 
-compose=(docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/release.env" -f "$ROOT/infra/compose.yaml")
+compose=(env SUB2API_RELEASE_ENV_FILE="$FIXTURE/release.env" docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/release.env" -f "$ROOT/infra/compose.yaml")
 "${compose[@]}" config --format json >"$FIXTURE/compose.json"
 
 cat >"$FIXTURE/invalid-release.env" <<'EOF'
@@ -164,7 +167,7 @@ SUB2API_PREVIOUS_SLOT=green
 SUB2API_IMAGE=example.invalid/sub2api-legacy@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 EOF
 
-invalid_compose=(docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/invalid-release.env" -f "$ROOT/infra/compose.yaml")
+invalid_compose=(env SUB2API_RELEASE_ENV_FILE="$FIXTURE/invalid-release.env" docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/invalid-release.env" -f "$ROOT/infra/compose.yaml")
 "${invalid_compose[@]}" config --format json >"$FIXTURE/invalid-compose.json"
 
 ruby -rjson - "$FIXTURE/compose.json" "$FIXTURE" <<'RUBY'
@@ -267,11 +270,14 @@ abort "FAIL: Caddy command must be a shell guard" unless command.is_a?(Array) &&
 puts command.fetch(2)
 RUBY
 )
+caddy_guard=${caddy_guard//\$\$/\$}
 
-if invalid_output=$(docker run --rm \
+if invalid_output=$(docker run --rm -i \
   --env "SITE_ADDRESS=sub2api.example.test" \
   --env "SUB2API_ACTIVE_UPSTREAM=untrusted-upstream:8080" \
-  "$CADDY_RUNTIME_IMAGE" /bin/sh -ec "$caddy_guard" 2>&1); then
+  "$CADDY_RUNTIME_IMAGE" /bin/sh -ec \
+	'cat >/tmp/release.env; guard=${1//\/run\/sub2api-release\/release.env/\/tmp\/release.env}; /bin/sh -ec "$guard"' \
+	sh "$caddy_guard" <"$FIXTURE/invalid-release.env" 2>&1); then
   fail "Caddy startup accepted an invalid active upstream"
 fi
 [[ "$invalid_output" == *"invalid SUB2API_ACTIVE_UPSTREAM"* ]] || fail "Caddy did not report its invalid active upstream"

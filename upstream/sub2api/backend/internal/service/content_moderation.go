@@ -89,12 +89,14 @@ const (
 	maxContentModerationModelFilterModels        = 1000
 	maxContentModerationModelFilterRunes         = 200
 
+	contentModerationRuntimeCacheTTL       = time.Second
+	contentModerationRuntimeRefreshTimeout = 5 * time.Second
+)
+
+var (
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute
 	contentModerationCleanupDelay    = 5 * time.Minute
-
-	contentModerationRuntimeCacheTTL       = time.Second
-	contentModerationRuntimeRefreshTimeout = 5 * time.Second
 )
 
 var contentModerationCategoryOrder = []string{
@@ -521,6 +523,15 @@ type ContentModerationService struct {
 	runtimeRefreshRetryAt    atomic.Int64
 	keyHealthMu              sync.Mutex
 	keyHealth                map[string]*contentModerationKeyHealth
+	cleanupCancel            context.CancelFunc
+	cleanupWG                sync.WaitGroup
+	cleanupStopOnce          sync.Once
+}
+
+type contentModerationCleanupSchedule struct {
+	delay    time.Duration
+	interval time.Duration
+	timeout  time.Duration
 }
 
 type contentModerationRuntimeSnapshot struct {
@@ -569,7 +580,7 @@ func NewContentModerationService(
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
 ) *ContentModerationService {
-	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, true)
+	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, true, true)
 }
 
 func newContentModerationService(
@@ -580,7 +591,8 @@ func newContentModerationService(
 	userRepo UserRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
-	startWorkers bool,
+	startRequestWorkers bool,
+	startCleanupWorker bool,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
 		settingRepo:          settingRepo,
@@ -595,13 +607,32 @@ func newContentModerationService(
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
 	}
-	if startWorkers && settingRepo != nil && repo != nil {
+	if startRequestWorkers && settingRepo != nil && repo != nil {
 		for i := 0; i < svc.workerCount; i++ {
 			go svc.worker(i)
 		}
-		go svc.cleanupWorker()
+	}
+	if startCleanupWorker && settingRepo != nil && repo != nil {
+		svc.startCleanupWorker(contentModerationCleanupSchedule{
+			delay:    contentModerationCleanupDelay,
+			interval: contentModerationCleanupInterval,
+			timeout:  contentModerationCleanupTimeout,
+		})
 	}
 	return svc
+}
+
+// Stop cancels the cleanup lifecycle and waits for its worker to exit.
+func (s *ContentModerationService) Stop() {
+	if s == nil {
+		return
+	}
+	s.cleanupStopOnce.Do(func() {
+		if s.cleanupCancel != nil {
+			s.cleanupCancel()
+		}
+	})
+	s.cleanupWG.Wait()
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
@@ -1431,21 +1462,35 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 	}, nil
 }
 
-func (s *ContentModerationService) cleanupWorker() {
-	timer := time.NewTimer(contentModerationCleanupDelay)
+func (s *ContentModerationService) startCleanupWorker(schedule contentModerationCleanupSchedule) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cleanupCancel = cancel
+	s.cleanupWG.Add(1)
+	go func() {
+		defer s.cleanupWG.Done()
+		s.cleanupWorker(ctx, schedule)
+	}()
+}
+
+func (s *ContentModerationService) cleanupWorker(ctx context.Context, schedule contentModerationCleanupSchedule) {
+	timer := time.NewTimer(schedule.delay)
 	defer timer.Stop()
 	for {
-		<-timer.C
-		s.runCleanupOnce()
-		timer.Reset(contentModerationCleanupInterval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			s.runCleanupOnce(ctx, schedule.timeout)
+			timer.Reset(schedule.interval)
+		}
 	}
 }
 
-func (s *ContentModerationService) runCleanupOnce() {
+func (s *ContentModerationService) runCleanupOnce(parent context.Context, timeout time.Duration) {
 	if s == nil || s.repo == nil || s.settingRepo == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), contentModerationCleanupTimeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {

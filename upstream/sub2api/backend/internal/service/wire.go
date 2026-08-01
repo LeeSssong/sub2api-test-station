@@ -51,6 +51,12 @@ func shouldStartSingleton(cfg *config.Config) bool {
 // ProvidePricingService creates and initializes PricingService
 func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient) (*PricingService, error) {
 	svc := NewPricingService(cfg, remoteClient)
+	if !shouldStartSingleton(cfg) {
+		if err := svc.InitializeReadOnly(); err != nil {
+			println("[Service] Warning: read-only pricing initialization failed:", err.Error())
+		}
+		return svc, nil
+	}
 	if err := svc.Initialize(); err != nil {
 		// Pricing service initialization failure should not block startup, use fallback prices
 		println("[Service] Warning: Pricing service initialization failed:", err.Error())
@@ -764,7 +770,10 @@ func ProvideContentModerationService(
 	emailService *EmailService,
 	cfg *config.Config,
 ) *ContentModerationService {
-	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, shouldStartRequestLocal(cfg))
+	return newContentModerationService(
+		settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService,
+		shouldStartRequestLocal(cfg), shouldStartSingleton(cfg),
+	)
 }
 
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.

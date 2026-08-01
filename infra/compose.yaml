@@ -236,6 +236,8 @@ services:
       - /bin/sh
       - -ec
       - |
+        SUB2API_ACTIVE_UPSTREAM=$$(awk -F= '$$1 == "SUB2API_ACTIVE_UPSTREAM" { value=$$2; count++ } END { if (count != 1) exit 1; print value }' /run/sub2api-release/release.env)
+        export SUB2API_ACTIVE_UPSTREAM
         case "$$SUB2API_ACTIVE_UPSTREAM" in
           sub2api-blue:8080|sub2api-green:8080) ;;
           *)
@@ -248,6 +250,7 @@ services:
     expose: ["8081"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${SUB2API_RELEASE_ENV_FILE:?SUB2API_RELEASE_ENV_FILE is required}:/run/sub2api-release/release.env:ro
       - ./sub2api-update-ui:/srv/sub2api-update-ui:ro
       - /run/sub2api-updater:/run/sub2api-updater:ro
       - caddy_data:/data

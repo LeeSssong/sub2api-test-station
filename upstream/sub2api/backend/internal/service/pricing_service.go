@@ -209,6 +209,34 @@ func (s *PricingService) Initialize() error {
 	return nil
 }
 
+// InitializeReadOnly loads pricing data already present on disk without
+// creating files, contacting remote sources, or starting the refresh scheduler.
+// API processes share the data directory with the singleton worker and must not
+// compete with it for refresh ownership.
+func (s *PricingService) InitializeReadOnly() error {
+	if s == nil || s.cfg == nil {
+		return nil
+	}
+
+	pricingFile := s.getPricingFilePath()
+	if err := s.loadPricingData(pricingFile); err == nil {
+		logger.LegacyPrintf("service.pricing", "[Pricing] Read-only service initialized with %d models", len(s.pricingData))
+		return nil
+	}
+
+	if strings.TrimSpace(s.cfg.Pricing.FallbackFile) != "" {
+		if err := s.loadPricingData(s.cfg.Pricing.FallbackFile); err == nil {
+			logger.LegacyPrintf("service.pricing", "[Pricing] Read-only service initialized from fallback with %d models", len(s.pricingData))
+			return nil
+		}
+	}
+
+	// Preserve startup availability when no cache has been populated yet.
+	// Billing lookups retain their existing built-in fallback behavior.
+	logger.LegacyPrintf("service.pricing", "[Pricing] Read-only initialization found no local pricing data")
+	return nil
+}
+
 // Stop 停止价格服务
 func (s *PricingService) Stop() {
 	close(s.stopCh)

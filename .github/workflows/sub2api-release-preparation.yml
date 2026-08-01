@@ -194,16 +194,39 @@ jobs:
       - name: Export validated build inputs
         id: build-inputs
         run: |
-          ruby -rjson -e '
+          ruby -rdigest -rjson -ropen3 -e '
             metadata = JSON.parse(File.binread(ARGV.fetch(0)))
             report = JSON.parse(File.binread(ARGV.fetch(1)))
+            source_commit = report.fetch("candidate_commit")
+            source_tree, tree_status = Open3.capture2("git", "rev-parse", "#{source_commit}^{tree}")
+            abort unless tree_status.success?
+            migration_paths, paths_status = Open3.capture2(
+              "git", "ls-tree", "-r", "--name-only", source_commit,
+              "--", "upstream/sub2api/backend/migrations"
+            )
+            abort unless paths_status.success?
+            migration_hash = Digest::SHA256.new
+            migration_paths.lines.map(&:strip).select { |path|
+              path.match?(%r{\Aupstream/sub2api/backend/migrations/[^/]+[.]sql\z})
+            }.sort.each do |path|
+              content, content_status = Open3.capture2("git", "show", "#{source_commit}:#{path}")
+              abort unless content_status.success?
+              content = content.strip
+              next if content.empty?
+              migration_hash << File.basename(path) << "\0" << Digest::SHA256.hexdigest(content) << "\n"
+            end
             values = {
               "version" => metadata.fetch("version"),
               "official_commit" => metadata.fetch("official_commit"),
-              "source_commit" => report.fetch("candidate_commit")
+              "source_commit" => source_commit,
+              "source_tree" => source_tree.strip,
+              "tested_tree" => source_tree.strip,
+              "migrations_hash" => migration_hash.hexdigest
             }
             abort unless values.fetch("version").match?(/\A[0-9]+(?:[.][0-9]+){1,2}\z/)
             abort unless values.values_at("official_commit", "source_commit").all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
+            abort unless values.values_at("source_tree", "tested_tree").all? { |tree| tree.match?(/\A[0-9a-f]{40}\z/) }
+            abort unless values.fetch("migrations_hash").match?(/\A[0-9a-f]{64}\z/)
             File.open(ENV.fetch("GITHUB_OUTPUT"), "a", 0o600) do |file|
               values.each { |key, value| file.puts "#{key}=#{value}" }
             end
@@ -221,6 +244,9 @@ jobs:
             --label com.xingqiao.sub2api.upstream.version=${{ steps['build-inputs'].outputs.version }} \
             --label com.xingqiao.sub2api.upstream.commit=${{ steps['build-inputs'].outputs.official_commit }} \
             --label com.xingqiao.sub2api.source.commit=${{ steps['build-inputs'].outputs.source_commit }} \
+            --label com.xingqiao.sub2api.source.tree=${{ steps['build-inputs'].outputs.source_tree }} \
+            --label com.xingqiao.sub2api.tested.tree=${{ steps['build-inputs'].outputs.tested_tree }} \
+            --label com.xingqiao.sub2api.migrations.sha256=${{ steps['build-inputs'].outputs.migrations_hash }} \
             --tag xingqiao-sub2api:upstream-${{ steps['build-inputs'].outputs.version }} \
             --output type=docker,dest=.release/preparation/candidate-image.tar \
             upstream/sub2api

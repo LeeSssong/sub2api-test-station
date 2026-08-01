@@ -46,43 +46,52 @@ func (s Service) ReconcileAccount(ctx context.Context, accountID int64, adapterT
 		}
 		byKey[attempt.LocalRequestID] = attempt
 	}
-	transactions, _, err := adapter.ListTransactions(ctx, billing.CostQuery{Start: &start, End: &end, Limit: 1000})
-	if err != nil {
-		return ReconcileResult{}, err
-	}
 	result := ReconcileResult{Scanned: len(attempts)}
-	seen := make(map[int64]struct{})
-	for _, transaction := range transactions {
-		key := strings.TrimSpace(transaction.UpstreamRequestID)
-		if key == "" {
-			key = strings.TrimSpace(transaction.RequestID)
-		}
-		attempt, ok := byKey[key]
-		if !ok {
-			continue
-		}
-		if _, duplicate := seen[attempt.ID]; duplicate {
-			continue
-		}
-		seen[attempt.ID] = struct{}{}
-		sourceType := SourceAutomaticCharge
-		if transaction.Type == "refund" {
-			sourceType = SourceAutomaticRefund
-		}
-		amount := decimal.NewFromInt(int64(transaction.Cost)).Div(decimal.NewFromInt(1000000))
-		_, _, err := s.Repository.CreateAutomaticUpstreamCost(ctx, AutomaticTransactionInput{
-			AttemptID: attempt.ID, AccountID: accountID, SourceType: sourceType,
-			SourceRecordID: transaction.SourceID, Amount: amount, Currency: "USD",
-			OccurredAt: transaction.OccurredAt, IdempotencyKey: fmt.Sprintf("%s:%s", adapterType, transaction.SourceID),
-		})
+	seen := make(map[string]struct{})
+	cursor := ""
+	for {
+		transactions, nextCursor, err := adapter.ListTransactions(ctx, billing.CostQuery{Start: &start, End: &end, Cursor: cursor, Limit: 1000})
 		if err != nil {
 			return result, err
 		}
-		result.Matched++
+		for _, transaction := range transactions {
+			key := strings.TrimSpace(transaction.UpstreamRequestID)
+			if key == "" {
+				key = strings.TrimSpace(transaction.RequestID)
+			}
+			attempt, ok := byKey[key]
+			if !ok {
+				continue
+			}
+			transactionKey := transaction.SourceID + ":" + transaction.Type
+			if _, duplicate := seen[transactionKey]; duplicate {
+				continue
+			}
+			seen[transactionKey] = struct{}{}
+			sourceType := SourceAutomaticCharge
+			if transaction.Type == "refund" {
+				sourceType = SourceAutomaticRefund
+			}
+			amount := decimal.NewFromInt(int64(transaction.Cost)).Div(decimal.NewFromInt(1000000))
+			_, _, err := s.Repository.CreateAutomaticUpstreamCost(ctx, AutomaticTransactionInput{
+				AttemptID: attempt.ID, AccountID: accountID, SourceType: sourceType,
+				SourceRecordID: transaction.SourceID, Amount: amount, Currency: "USD",
+				OccurredAt: transaction.OccurredAt, IdempotencyKey: fmt.Sprintf("%s:%s", adapterType, transaction.SourceID),
+			})
+			if err != nil {
+				return result, err
+			}
+			result.Matched++
+		}
+		if nextCursor == "" || nextCursor == cursor {
+			break
+		}
+		cursor = nextCursor
 	}
-	result.Pending = len(attempts) - result.Matched
-	if result.Pending < 0 {
-		result.Pending = 0
+	for _, attempt := range attempts {
+		if attempt.ReconcileStatus == StatusPending || attempt.ReconcileStatus == StatusException {
+			result.Pending++
+		}
 	}
 	return result, nil
 }

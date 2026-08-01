@@ -24,6 +24,7 @@ import (
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
+	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
 
@@ -120,17 +121,25 @@ type AccountingService interface {
 	RecomputeDate(context.Context, time.Time) (accounting.DailySnapshot, error)
 }
 
+type ReconciliationService interface {
+	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+	ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error)
+	CreateManualUpstreamCost(context.Context, reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error)
+	RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+}
+
 type Dependencies struct {
-	BaseOrigin    string
-	Auth          adminauth.Verifier
-	Pricing       PricingSource
-	Candidates    CandidateService
-	Upstreams     ProductionUpstreamService
-	Billing       BillingSessionService
-	Acceptance    SyntheticAcceptanceService
-	DailyReport   DailyReportAcceptanceService
-	QualityReview QualityReviewService
-	Accounting    AccountingService
+	BaseOrigin     string
+	Auth           adminauth.Verifier
+	Pricing        PricingSource
+	Candidates     CandidateService
+	Upstreams      ProductionUpstreamService
+	Billing        BillingSessionService
+	Acceptance     SyntheticAcceptanceService
+	DailyReport    DailyReportAcceptanceService
+	QualityReview  QualityReviewService
+	Accounting     AccountingService
+	Reconciliation ReconciliationService
 }
 
 type server struct {
@@ -167,6 +176,14 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 		accountingMux.HandleFunc("POST /relay-ops/api/accounting/cash-events", s.createAccountingCashEvent)
 		mux.HandleFunc("GET /relay-ops/static/accounting.js", s.accountingScript)
 		mux.Handle("/relay-ops/", adminauth.RequireAdmin(dependencies.Auth, accountingMux))
+	}
+	if dependencies.Reconciliation != nil {
+		reconciliationMux := http.NewServeMux()
+		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/summary", s.reconciliationSummary)
+		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/exceptions", s.reconciliationExceptions)
+		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/refresh", s.reconciliationRefresh)
+		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/exceptions/{id}/adjust", s.reconciliationManualAdjust)
+		mux.Handle("/relay-ops/api/reconciliation/", adminauth.RequireAdmin(dependencies.Auth, reconciliationMux))
 	}
 	return mux, nil
 }

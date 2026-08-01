@@ -108,22 +108,20 @@ func (h *GatewayHandler) UsageRecords(c *gin.Context) {
 		page = parsed
 	}
 	var startTime, endTime *time.Time
-	if raw := strings.TrimSpace(c.Query("start_timestamp")); raw != "" {
-		unix, err := strconv.ParseInt(raw, 10, 64)
+	if raw := strings.TrimSpace(firstQuery(c, "start_timestamp", "start_time")); raw != "" {
+		value, err := parseUsageRecordTime(raw)
 		if err != nil {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "start_timestamp is invalid")
 			return
 		}
-		value := time.Unix(unix, 0).UTC()
 		startTime = &value
 	}
-	if raw := strings.TrimSpace(c.Query("end_timestamp")); raw != "" {
-		unix, err := strconv.ParseInt(raw, 10, 64)
+	if raw := strings.TrimSpace(firstQuery(c, "end_timestamp", "end_time")); raw != "" {
+		value, err := parseUsageRecordTime(raw)
 		if err != nil {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "end_timestamp is invalid")
 			return
 		}
-		value := time.Unix(unix, 0).UTC()
 		endTime = &value
 	}
 	params := pagination.PaginationParams{Page: page, PageSize: limit, SortBy: "created_at", SortOrder: pagination.SortOrderDesc}
@@ -147,6 +145,22 @@ func (h *GatewayHandler) UsageRecords(c *gin.Context) {
 		nextCursor = strconv.Itoa(page + 1)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": items, "next_cursor": nextCursor, "has_more": nextCursor != ""})
+}
+
+func firstQuery(c *gin.Context, names ...string) string {
+	for _, name := range names {
+		if value := c.Query(name); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func parseUsageRecordTime(raw string) (time.Time, error) {
+	if unix, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return time.Unix(unix, 0).UTC(), nil
+	}
+	return time.Parse(time.RFC3339Nano, raw)
 }
 
 // NewGatewayHandler creates a new GatewayHandler

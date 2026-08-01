@@ -69,13 +69,23 @@ type DigestNotificationSummary struct {
 }
 
 type HealthDigestView struct {
-	Date         string
-	PublicGroups int
-	Summary      DigestNotificationSummary
-	Quality      QualityLine
-	Profit       ProfitLine
-	Pending      []PendingItem
-	Traffic      TrafficLine
+	Date           string
+	PublicGroups   int
+	Summary        DigestNotificationSummary
+	Quality        QualityLine
+	Profit         ProfitLine
+	Pending        []PendingItem
+	Traffic        TrafficLine
+	Reconciliation *ReconciliationLine
+}
+
+type ReconciliationLine struct {
+	CoverageRatio float64
+	PendingCount  int64
+	UpstreamCost  float64
+	UserCharge    float64
+	PaperProfit   float64
+	Currency      string
 }
 
 func RenderHealthDigest(view HealthDigestView) FeishuMessage {
@@ -194,6 +204,12 @@ func profitLines(view HealthDigestView) []string {
 	if profit.TotalAccounts > 0 {
 		lines = append(lines, fmt.Sprintf("利润覆盖 %d/%d 个账号｜%d 个采用上游公开定价",
 			profit.PricedAccounts, profit.TotalAccounts, profit.UpstreamPricedAccounts))
+	}
+	if view.Reconciliation != nil {
+		r := view.Reconciliation
+		lines = append(lines, fmt.Sprintf("真实账单对账 %.2f%%｜待补账 %d 笔｜上游成本 %s %s｜纸面利润 %s %s",
+			r.CoverageRatio*100, r.PendingCount, formatUSD(r.UpstreamCost), r.Currency,
+			formatUSD(r.PaperProfit), r.Currency))
 	}
 	return lines
 }

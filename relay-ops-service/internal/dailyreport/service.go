@@ -13,6 +13,7 @@ import (
 	"example.invalid/relay-ops-service/internal/notificationpolicy"
 	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
+	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/store"
 	"example.invalid/relay-ops-service/internal/sub2api"
 )
@@ -120,6 +121,18 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	view.Date = date
 	view.PublicGroups = publicGroups
 	view.Summary = digestSummary(summary)
+	if reader, ok := s.Reader.(interface {
+		ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+	}); ok {
+		if ledger, ledgerErr := reader.ReadReconciliationSummary(ctx, 0, summaryFrom.UTC(), summaryTo.UTC(), "USD"); ledgerErr == nil {
+			coverage, _ := ledger.CoverageRatio.Float64()
+			upstream, _ := ledger.UpstreamCost.Float64()
+			userCharge, _ := ledger.UserCharge.Float64()
+			profit, _ := ledger.PaperProfit.Float64()
+			view.Reconciliation = &notify.ReconciliationLine{CoverageRatio: coverage, PendingCount: ledger.PendingAttempts,
+				UpstreamCost: upstream, UserCharge: userCharge, PaperProfit: profit, Currency: ledger.Currency}
+		}
+	}
 	message := notify.RenderHealthDigest(view)
 	result := Result{
 		ReportDate: date, Groups: publicGroups, Notification: "not_configured",

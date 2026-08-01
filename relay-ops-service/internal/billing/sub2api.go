@@ -42,10 +42,10 @@ func (a *Sub2APIAdapter) ListTransactions(ctx context.Context, q CostQuery) ([]C
 		values.Set("cursor", q.Cursor)
 	}
 	if q.Start != nil {
-		values.Set("start_time", q.Start.UTC().Format(time.RFC3339))
+		values.Set("start_timestamp", strconv.FormatInt(q.Start.Unix(), 10))
 	}
 	if q.End != nil {
-		values.Set("end_time", q.End.UTC().Format(time.RFC3339))
+		values.Set("end_timestamp", strconv.FormatInt(q.End.Unix(), 10))
 	}
 	var response struct {
 		Data       []sub2APIUsage `json:"data"`

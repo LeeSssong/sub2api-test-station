@@ -232,7 +232,7 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 			reconcile_status, completed_at, matched_at, created_at, updated_at
 		FROM relay_ops.upstream_cost_attempts
 		WHERE account_id=$1 AND completed_at >= $2 AND completed_at < $3
-			AND reconcile_status IN ('pending','exception')
+			AND reconcile_status IN ('pending','exception','matched','manual')
 		ORDER BY completed_at, id LIMIT $4`, accountID, start.UTC(), end.UTC(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list pending upstream cost attempts: %w", err)
@@ -303,6 +303,56 @@ func (s *Store) ReadReconciliationSummary(ctx context.Context, accountID int64, 
 	summary.Currency = currency
 	summary.ObservedAt = time.Now().UTC()
 	return summary, nil
+}
+
+func (s *Store) ListUpstreamCostExceptions(ctx context.Context, accountID int64, limit int) ([]reconciliation.Exception, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT e.id, e.reason_code, e.details, e.retry_count, e.first_detected_at, e.last_checked_at,
+			a.id, a.attempt_id, a.local_request_id, a.account_id, a.adapter_type,
+			COALESCE(a.upstream_request_id,''), a.model, a.input_tokens, a.output_tokens,
+			a.user_charge::text, a.currency, a.request_status, a.reconcile_status,
+			a.completed_at, a.matched_at, a.created_at, a.updated_at
+		FROM relay_ops.upstream_reconciliation_exceptions e
+		JOIN relay_ops.upstream_cost_attempts a ON a.id=e.attempt_id
+		WHERE ($1=0 OR a.account_id=$1) AND e.resolved_at IS NULL
+		ORDER BY e.last_checked_at DESC, e.id DESC LIMIT $2`, accountID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list upstream cost exceptions: %w", err)
+	}
+	defer rows.Close()
+	items := make([]reconciliation.Exception, 0)
+	for rows.Next() {
+		var item reconciliation.Exception
+		var amount string
+		if err := rows.Scan(&item.ID, &item.ReasonCode, &item.Details, &item.RetryCount,
+			&item.FirstDetectedAt, &item.LastCheckedAt, &item.Attempt.ID, &item.Attempt.AttemptID,
+			&item.Attempt.LocalRequestID, &item.Attempt.AccountID, &item.Attempt.AdapterType,
+			&item.Attempt.UpstreamRequestID, &item.Attempt.Model, &item.Attempt.InputTokens,
+			&item.Attempt.OutputTokens, &amount, &item.Attempt.Currency, &item.Attempt.RequestStatus,
+			&item.Attempt.ReconcileStatus, &item.Attempt.CompletedAt, &item.Attempt.MatchedAt,
+			&item.Attempt.CreatedAt, &item.Attempt.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan upstream cost exception: %w", err)
+		}
+		item.Attempt.UserCharge, err = decimalFromText(amount)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate upstream cost exceptions: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Store) RefreshReconciliation(ctx context.Context, accountID int64, start, end time.Time, currency string) (reconciliation.Summary, error) {
+	if _, err := s.MarkOverdueUpstreamCostExceptions(ctx, time.Now().UTC(), 10*time.Minute); err != nil {
+		return reconciliation.Summary{}, err
+	}
+	return s.ReadReconciliationSummary(ctx, accountID, start, end, currency)
 }
 
 func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

@@ -292,6 +292,15 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	var accountingDaily func(context.Context) error
 	if accountingService != nil {
 		accountingDaily = func(runCtx context.Context) error {
+			location := cfg.Timezone
+			if location == nil {
+				location = time.FixedZone("Asia/Shanghai", 8*60*60)
+			}
+			local := time.Now().In(location)
+			dayEnd := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+			if _, err := database.RefreshReconciliation(runCtx, 0, dayEnd.AddDate(0, 0, -1).UTC(), dayEnd.UTC(), "USD"); err != nil {
+				return err
+			}
 			_, err := accountingService.RecomputeRecent(runCtx)
 			return err
 		}
@@ -395,6 +404,10 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			}
 			return retryService.Run(runCtx)
 		},
+		ReconciliationSweep: func(runCtx context.Context) error {
+			_, err := database.MarkOverdueUpstreamCostExceptions(runCtx, time.Now().UTC(), 10*time.Minute)
+			return err
+		},
 		GroupAvailability: func(runCtx context.Context) error {
 			return runGroupAvailability(
 				runCtx, reader, database, cfg.NotificationPolicy, time.Now().UTC(),
@@ -406,10 +419,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	operations, err := newOperationsServer(httpserver.Dependencies{
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
-		Billing:       billing.SessionRegistrationService{Repository: database},
-		Acceptance:    acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
-		DailyReport:   dailyReportService,
-		QualityReview: qualityReview,
+		Billing:        billing.SessionRegistrationService{Repository: database},
+		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
+		DailyReport:    dailyReportService,
+		Reconciliation: database,
+		QualityReview:  qualityReview,
 	}, accountingService)
 	if err != nil {
 		return nil, err

@@ -35,7 +35,7 @@ evidence_parent=$(dirname "$evidence")
 [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail '--evidence parent must be a non-symlink directory'
 evidence_parent_physical=$(cd "$evidence_parent" && pwd -P)
 [[ "$evidence_parent_physical/$(basename "$evidence")" == "$evidence" ]] || fail '--evidence path must be canonical'
-mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 [[ "$(mode_of "$evidence")" == 600 ]] || fail '--evidence mode must be 0600'
 
 worktree=${RELEASE_WORKTREE:-$(pwd -P)}

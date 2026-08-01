@@ -787,6 +787,7 @@ chmod 0600 "$candidate_env"
 candidate_blue=$state_blue_image
 candidate_green=$state_green_image
 if [[ "$candidate_slot" == blue ]]; then candidate_blue=$requested_image; else candidate_green=$requested_image; fi
+candidate_image=$requested_image
 awk \
   -v blue="$candidate_blue" -v green="$candidate_green" '
   /^SUB2API_BLUE_IMAGE=/ { print "SUB2API_BLUE_IMAGE=" blue; next }

@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**更新时间：** 2026-07-31
+**更新时间：** 2026-08-01
 
 **唯一总账：** 本文件是项目事项、部署状态和验证证据的唯一全局入口。
 
@@ -20,7 +20,7 @@
 
 ## 当前最重要进行中事项
 
-1. **2026-07-31 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：`main@c49c0a6ec` 已推送并构建镜像，但其 relay-ops 与生产遗留通知策略不兼容，两次原地重建均导致 Caddy 被依赖链阻塞、生产公网中断。事故恢复已将生产恢复到旧版本；可复用蓝绿机制已完成本地实现与验证，但尚未推送、部署或线上验证，首次生产拓扑 bootstrap、真实切流和生效验收仍待明确生产指令与门禁处理；relay-ops 兼容性和逐项工程差异审计仍是独立未完成事项。**状态：蓝绿机制准备完成（待生产部署与验收）；兼容性与差异审计继续进行**；账务总账、倍率同步和 Monitor 卡片精简已合并到 `main`，统一排队待部署。
+1. **2026-07-31 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：`main@c49c0a6ec` 已推送并构建镜像，但其 relay-ops 与生产遗留通知策略不兼容，两次原地重建均导致 Caddy 被依赖链阻塞、生产公网中断。事故恢复已将生产恢复到旧版本；可复用蓝绿机制正在处理最终整分支审查发现，尚未推送、部署或线上验证，首次生产拓扑 bootstrap、真实切流和生效验收仍待明确生产指令与门禁处理；relay-ops 兼容性和逐项工程差异审计仍是独立未完成事项。**状态：蓝绿机制进行中（最终整分支审查修复）；兼容性与差异审计继续进行**；账务总账、倍率同步和 Monitor 卡片精简已合并到 `main`，统一排队待部署。
 2. **2026-07-31 生产站点中断恢复**：11:56 首次故障后于 13:28 回滚恢复；14:10–14:11，“调度优化”任务误将事故回滚判断为外部覆盖，再次覆盖 Compose 并强制重建 Sub2API/relay-ops/Caddy，造成第二次中断。14:15 已再次恢复至 11:53 发布前快照；公网健康连续 5 次返回 200，首页、价格和文档入口正常，五个容器运行正常且重启计数为 0。**状态：恢复已验证；永久兼容性修复仍未推送、部署和验证**。
 3. **Sub2API 低延迟/会话隔离/Monitor 自动刷新工程差异**：生产仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置实现。**状态：工程代码/配置差异待部署**。
 4. **relay-ops 原生 P0/P1 Bridge 与生产兼容性**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；该问题不因蓝绿机制已完成本地实现与验证而关闭。蓝绿机制本身仍未推送、部署或线上验证，生产 bootstrap 与验收状态见下方第 8 项。**状态：持续实施（仅 Bridge 与 relay-ops 兼容性）**。
@@ -195,7 +195,7 @@
 5. **全站账务总账**：代码、迁移、受保护账务页面/API、00:10 日调度、清账脚本、本地端到端和隔离 PostgreSQL 验证已合并到 `main`；尚未推送、部署、清账激活或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[本地验证](../superpowers/reports/2026-07-31-whole-site-accounting-ledger-task7-local-verification.md)。
 6. **账号上游倍率自动同步**：上游倍率解析后的托管账号回写、审计和缓存同步已合并到 `main`，本地测试已通过；尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
-8. **30 分钟指令驱动 Sub2API 蓝绿发布**：双槽 Compose、唯一 worker、Caddy 无中断切流、回切、停机门禁、状态记录和主机执行器已完成本地实现；蓝转绿、绿转蓝、候选失败、Caddy reload 失败、公共验收回切、共享容器身份保持、单 worker、旧 slot 保留和 1800 秒演练均通过离线验证。**状态：准备完成（待生产部署与验收）**；本轮没有连接生产、推送镜像、部署或线上生效验证；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)、[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)、[本地验证](../superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md)。
+8. **30 分钟指令驱动 Sub2API 蓝绿发布**：双槽 Compose、唯一 worker、Caddy 无中断切流、回切、停机门禁、状态记录和主机执行器已完成首轮本地实现；最终整分支审查发现的 API 启动零写、受限 SSH 传输、演练隔离、重启后路由持久性、不可变构建、候选就绪、singleton 运行态证明、恢复/回滚验收与端到端 deadline 问题正在集中修复。**状态：进行中（最终整分支审查修复）**；本轮不得连接生产、推送镜像、部署或线上生效验证；[设计](../superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md)、[计划](../superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md)、[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)、[本地验证](../superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md)。
 
 ## 持续实施（3 项）
 

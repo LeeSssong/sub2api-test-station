@@ -79,10 +79,11 @@ func TestLockAndMergeAccountProbeExtraUsesCurrentDatabaseSnapshot(t *testing.T) 
 			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 			t.Cleanup(func() { _ = client.Close() })
 
-			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
+			nextUpdatedAt := time.Date(2026, time.July, 31, 12, 0, 0, 1_000, time.UTC)
+			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
 				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
-					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, tt.databaseSnapshot, nil, nil, nil))
+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, tt.databaseSnapshot, nil, nil, nil, []byte(`"upstream_managed"`), nextUpdatedAt))
 
 			account := &service.Account{
 				ID:          27,
@@ -93,6 +94,7 @@ func TestLockAndMergeAccountProbeExtraUsesCurrentDatabaseSnapshot(t *testing.T) 
 			}
 			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil)
 			require.NoError(t, err)
+			require.Equal(t, nextUpdatedAt, account.UpdatedAt)
 			if tt.wantSnapshot == nil {
 				require.NotContains(t, got, service.UpstreamBillingProbeExtraKey)
 			} else {
@@ -115,8 +117,8 @@ func TestLockAndMergeAccountProbeExtraProtectsOllamaManagedFields(t *testing.T) 
 
 			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
 				WithArgs(int64(29), service.PlatformAnthropic, service.AccountTypeAPIKey, `{"api_key":"key","base_url":"https://ollama.com"}`, nil).
-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
-					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`)))
+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), []byte(`"upstream_managed"`), time.Now()))
 
 			account := &service.Account{
 				ID: 29, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
@@ -138,6 +140,42 @@ func TestLockAndMergeAccountProbeExtraProtectsOllamaManagedFields(t *testing.T) 
 				require.NotContains(t, got, service.OllamaCloudUsageAutoRefreshExtraKey)
 				require.NotContains(t, got, service.OllamaCloudUsageSnapshotExtraKey)
 			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestLockAndMergeAccountProbeExtraPreservesLockedRatePolicyUnlessExplicit(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		lockedPolicy   string
+		explicitPolicy *string
+		wantPolicy     string
+	}{
+		{name: "omitted intent preserves concurrent manual override", lockedPolicy: service.UpstreamBillingRateMultiplierPolicyManualOverride, wantPolicy: service.UpstreamBillingRateMultiplierPolicyManualOverride},
+		{name: "explicit managed intent replaces locked manual override", lockedPolicy: service.UpstreamBillingRateMultiplierPolicyManualOverride, explicitPolicy: func() *string { value := service.UpstreamBillingRateMultiplierPolicyManaged; return &value }(), wantPolicy: service.UpstreamBillingRateMultiplierPolicyManaged},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+			t.Cleanup(func() { _ = client.Close() })
+
+			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("extra -> 'upstream_billing_rate_multiplier_policy'")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
+				WithArgs(int64(31), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+					AddRow(true, false, true, nil, nil, nil, nil, nil, []byte(`"`+tt.lockedPolicy+`"`), time.Now()))
+
+			account := &service.Account{
+				ID: 31, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+				Credentials:                map[string]any{"api_key": "sk-test"},
+				Extra:                      map[string]any{service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged},
+				RateMultiplierPolicyIntent: tt.explicitPolicy,
+			}
+			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPolicy, got[service.UpstreamBillingRateMultiplierPolicyExtraKey])
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -200,6 +238,7 @@ func TestBulkUpdateNilProbeRemovesKeyInsteadOfWritingJSONNull(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, exec.execQueries)
 	require.Contains(t, normalizeSQLWhitespace(exec.execQueries[0]), "- 'upstream_billing_probe'")
+	require.Contains(t, normalizeSQLWhitespace(exec.execQueries[0]), "updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")
 }
 
 func TestBulkUpdateDisablingProbeRemovesSnapshot(t *testing.T) {
@@ -275,8 +314,8 @@ func TestUpdateWithUpstreamBillingProbeEnabledRollsBackWhenOutboxFails(t *testin
 	mock.ExpectBegin()
 	mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
 		WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
-		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
-			AddRow(true, false, true, []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil))
+		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+			AddRow(true, false, true, []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, []byte(`"upstream_managed"`), time.Now()))
 	mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`(?s)SELECT .* FROM "accounts" WHERE "id" = \$1`).

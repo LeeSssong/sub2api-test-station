@@ -343,6 +343,36 @@ describe('EditAccountModal', () => {
     })
   })
 
+  it('treats a legacy OpenAI API key account as managed and submits explicit policy intent', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    const select = wrapper.get<HTMLSelectElement>('[data-testid="edit-rate-multiplier-policy"]')
+    expect(select.element.value).toBe('upstream_managed')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.rate_multiplier_policy).toBe('upstream_managed')
+  })
+
+  it('loads manual override and lets the administrator return the account to managed mode', async () => {
+    const account = buildAccount()
+    account.extra = {
+      upstream_billing_rate_multiplier_policy: 'manual_override'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    const select = wrapper.get<HTMLSelectElement>('[data-testid="edit-rate-multiplier-policy"]')
+    expect(select.element.value).toBe('manual_override')
+    await select.setValue('upstream_managed')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.rate_multiplier_policy).toBe('upstream_managed')
+  })
+
   it('preserves model mappings when editing the whitelist', async () => {
     const account = buildAccount()
     account.credentials.model_mapping = {

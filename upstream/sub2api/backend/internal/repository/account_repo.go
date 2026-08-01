@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -483,7 +484,8 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 		SetStatus(account.Status).
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(schedulable).
-		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+		SetAutoPauseOnExpired(account.AutoPauseOnExpired).
+		SetUpdatedAt(account.UpdatedAt)
 
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
@@ -579,7 +581,9 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 			extra -> 'upstream_billing_probe',
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
-			extra -> 'ollama_cloud_usage_snapshot'
+			extra -> 'ollama_cloud_usage_snapshot',
+			extra -> 'upstream_billing_rate_multiplier_policy',
+			GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
 		FOR NO KEY UPDATE
@@ -604,6 +608,8 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		currentOllamaSession         []byte
 		currentOllamaAutoRefresh     []byte
 		currentOllamaSnapshot        []byte
+		currentRateMultiplierPolicy  []byte
+		nextUpdatedAt                time.Time
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
@@ -614,12 +620,15 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
+		&currentRateMultiplierPolicy,
+		&nextUpdatedAt,
 	); err != nil {
 		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	account.UpdatedAt = nextUpdatedAt
 
 	extra := copyJSONMap(normalizeJSONMap(account.Extra))
 	for _, key := range []string{
@@ -628,8 +637,20 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		service.OllamaCloudUsageSessionExtraKey,
 		service.OllamaCloudUsageAutoRefreshExtraKey,
 		service.OllamaCloudUsageSnapshotExtraKey,
+		service.UpstreamBillingRateMultiplierPolicyExtraKey,
 	} {
 		delete(extra, key)
+	}
+	if account.RateMultiplierPolicyIntent != nil {
+		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = *account.RateMultiplierPolicyIntent
+	} else {
+		policy := service.UpstreamBillingRateMultiplierPolicyManaged
+		if value, ok, err := decodeAccountExtraJSON(currentRateMultiplierPolicy); err != nil {
+			return nil, err
+		} else if raw, isString := value.(string); ok && isString && raw == service.UpstreamBillingRateMultiplierPolicyManualOverride {
+			policy = raw
+		}
+		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = policy
 	}
 	probeExplicitlyDisabled := false
 	probeAccount := account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeAPIKey
@@ -740,7 +761,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 				THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
 				ELSE extra
 			END,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $2 AND deleted_at IS NULL
 	`, string(payload), id)
 	if err != nil {
@@ -1207,10 +1228,7 @@ func (r *accountRepository) ListByPlatform(ctx context.Context, platform string)
 
 func (r *accountRepository) UpdateLastUsed(ctx context.Context, id int64) error {
 	now := time.Now()
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetLastUsedAt(now).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id, "last_used_at = $1", "", now)
 	if err != nil {
 		return err
 	}
@@ -1242,7 +1260,7 @@ func (r *accountRepository) BatchUpdateLastUsed(ctx context.Context, updates map
 		idx += 2
 	}
 
-	caseSQL += " END, updated_at = NOW() WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
+	caseSQL += " END, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
 	args = append(args, pq.Array(ids))
 
 	_, err := r.sql.ExecContext(ctx, caseSQL, args...)
@@ -1261,12 +1279,9 @@ func (r *accountRepository) BatchUpdateLastUsed(ctx context.Context, updates map
 }
 
 func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg string) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetStatus(service.StatusError).
-		SetErrorMessage(errorMsg).
-		SetSchedulable(false).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"status = $1, error_message = $2, schedulable = FALSE",
+		"", service.StatusError, errorMsg)
 	if err != nil {
 		return err
 	}
@@ -1275,6 +1290,23 @@ func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg str
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
 	return nil
+}
+
+// execAccountMonotonicUpdate serializes the account-row version with the
+// database clock and the previously committed row version. The SET/WHERE SQL
+// fragments are repository-owned constants; args are bound normally.
+func (r *accountRepository) execAccountMonotonicUpdate(ctx context.Context, id int64, setSQL, whereSQL string, args ...any) (int64, error) {
+	args = append(args, id)
+	where := "deleted_at IS NULL"
+	if whereSQL != "" {
+		where = "(" + whereSQL + ") AND " + where
+	}
+	query := fmt.Sprintf("UPDATE accounts SET %s, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE %s AND id = $%d", setSQL, where, len(args))
+	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (r *accountRepository) SetGrokCredentialErrorIfMatch(
@@ -1289,7 +1321,7 @@ func (r *accountRepository) SetGrokCredentialErrorIfMatch(
 		SET status = $1,
 			error_message = $2,
 			schedulable = false,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $3
 			AND a.deleted_at IS NULL
 			AND a.status = $4
@@ -1349,7 +1381,7 @@ func (r *accountRepository) SetGrokOAuthErrorIfCredentialsUnchanged(
 		SET status = $1,
 			error_message = $2,
 			schedulable = FALSE,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $3
 			AND a.deleted_at IS NULL
 			AND a.platform = $4
@@ -1412,7 +1444,7 @@ func (r *accountRepository) UpdateGrokOAuthCredentialsIfUnchanged(
 		WITH updated AS (
 		UPDATE accounts AS a
 		SET credentials = $1::jsonb,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $2
 			AND a.deleted_at IS NULL
 			AND a.platform = $3
@@ -1470,7 +1502,7 @@ func (r *accountRepository) SetGrokOAuthRefreshErrorIfCredentialsUnchanged(
 		SET status = $1,
 			error_message = $2,
 			schedulable = FALSE,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $3
 			AND a.deleted_at IS NULL
 			AND a.platform = $4
@@ -1530,7 +1562,7 @@ func (r *accountRepository) SetGrokOAuthRefreshTempUnschedulableIfCredentialsUnc
 		UPDATE accounts AS a
 		SET temp_unschedulable_until = $1,
 			temp_unschedulable_reason = $2,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $3
 			AND a.deleted_at IS NULL
 			AND a.platform = $4
@@ -1647,11 +1679,9 @@ func (r *accountRepository) syncSchedulerAccountSnapshots(ctx context.Context, a
 }
 
 func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetStatus(service.StatusActive).
-		SetErrorMessage("").
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"status = $1, error_message = $2",
+		"", service.StatusActive, "")
 	if err != nil {
 		return err
 	}
@@ -2060,11 +2090,9 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 
 func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
 	now := time.Now()
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetRateLimitedAt(now).
-		SetRateLimitResetAt(resetAt).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"rate_limited_at = $1, rate_limit_reset_at = $2",
+		"", now, resetAt)
 	if err != nil {
 		return err
 	}
@@ -2080,17 +2108,9 @@ func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetA
 // later reset boundary observed by another request or instance.
 func (r *accountRepository) SetRateLimitedIfLater(ctx context.Context, id int64, resetAt time.Time) error {
 	now := time.Now()
-	updated, err := r.client.Account.Update().
-		Where(
-			dbaccount.IDEQ(id),
-			dbaccount.Or(
-				dbaccount.RateLimitResetAtIsNil(),
-				dbaccount.RateLimitResetAtLT(resetAt),
-			),
-		).
-		SetRateLimitedAt(now).
-		SetRateLimitResetAt(resetAt).
-		Save(ctx)
+	updated, err := r.execAccountMonotonicUpdate(ctx, id,
+		"rate_limited_at = $1, rate_limit_reset_at = $2",
+		"rate_limit_reset_at IS NULL OR rate_limit_reset_at < $2", now, resetAt)
 	if err != nil {
 		return err
 	}
@@ -2111,17 +2131,10 @@ func (r *accountRepository) SetRateLimitedIfLater(ctx context.Context, id int64,
 // by a successful request. Matching both timestamps prevents a stale success
 // from erasing a later clear/re-arm generation with an equal or shorter reset.
 func (r *accountRepository) ClearRateLimitIfObserved(ctx context.Context, id int64, observedLimitedAt, observedResetAt time.Time) (bool, error) {
-	updated, err := r.client.Account.Update().
-		Where(
-			dbaccount.IDEQ(id),
-			dbaccount.PlatformEQ(service.PlatformGrok),
-			dbaccount.TypeEQ(service.AccountTypeOAuth),
-			dbaccount.RateLimitedAtEQ(observedLimitedAt),
-			dbaccount.RateLimitResetAtEQ(observedResetAt),
-		).
-		ClearRateLimitedAt().
-		ClearRateLimitResetAt().
-		Save(ctx)
+	updated, err := r.execAccountMonotonicUpdate(ctx, id,
+		"rate_limited_at = NULL, rate_limit_reset_at = NULL",
+		"platform = $1 AND type = $2 AND rate_limited_at = $3 AND rate_limit_reset_at = $4",
+		service.PlatformGrok, service.AccountTypeOAuth, observedLimitedAt, observedResetAt)
 	if err != nil {
 		return false, err
 	}
@@ -2165,7 +2178,7 @@ func (r *accountRepository) SetModelRateLimit(ctx context.Context, id int64, sco
 				$2::jsonb,
 				true
 			),
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $3 AND deleted_at IS NULL`,
 		scope,
 		raw,
@@ -2190,10 +2203,8 @@ func (r *accountRepository) SetModelRateLimit(ctx context.Context, id int64, sco
 }
 
 func (r *accountRepository) SetOverloaded(ctx context.Context, id int64, until time.Time) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetOverloadUntil(until).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"overload_until = $1", "", until)
 	if err != nil {
 		return err
 	}
@@ -2209,7 +2220,7 @@ func (r *accountRepository) SetTempUnschedulable(ctx context.Context, id int64, 
 		UPDATE accounts
 		SET temp_unschedulable_until = $1,
 			temp_unschedulable_reason = $2,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $3
 			AND deleted_at IS NULL
 			AND (temp_unschedulable_until IS NULL OR temp_unschedulable_until < $1)
@@ -2246,7 +2257,7 @@ func (r *accountRepository) SetGrokCredentialTempUnschedulableIfMatch(
 				ELSE a.temp_unschedulable_until
 			END,
 			temp_unschedulable_reason = $2,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE a.id = $3
 			AND a.deleted_at IS NULL
 			AND a.status = $4
@@ -2281,7 +2292,7 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 		UPDATE accounts
 		SET temp_unschedulable_until = NULL,
 			temp_unschedulable_reason = NULL,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $1
 			AND deleted_at IS NULL
 	`, id)
@@ -2296,12 +2307,8 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 }
 
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		ClearRateLimitedAt().
-		ClearRateLimitResetAt().
-		ClearOverloadUntil().
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"rate_limited_at = NULL, rate_limit_reset_at = NULL, overload_until = NULL", "")
 	if err != nil {
 		return err
 	}
@@ -2316,7 +2323,7 @@ func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id 
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(
 		ctx,
-		"UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) - 'antigravity_quota_scopes', updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
+		"UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) - 'antigravity_quota_scopes', updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
@@ -2340,7 +2347,7 @@ func (r *accountRepository) ClearModelRateLimits(ctx context.Context, id int64) 
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(
 		ctx,
-		"UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) - 'model_rate_limits', updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
+		"UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) - 'model_rate_limits', updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
@@ -2362,16 +2369,17 @@ func (r *accountRepository) ClearModelRateLimits(ctx context.Context, id int64) 
 }
 
 func (r *accountRepository) UpdateSessionWindow(ctx context.Context, id int64, start, end *time.Time, status string) error {
-	builder := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetSessionWindowStatus(status)
+	setSQL := "session_window_status = $1"
+	args := []any{status}
 	if start != nil {
-		builder.SetSessionWindowStart(*start)
+		setSQL += fmt.Sprintf(", session_window_start = $%d", len(args)+1)
+		args = append(args, *start)
 	}
 	if end != nil {
-		builder.SetSessionWindowEnd(*end)
+		setSQL += fmt.Sprintf(", session_window_end = $%d", len(args)+1)
+		args = append(args, *end)
 	}
-	_, err := builder.Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id, setSQL, "", args...)
 	if err != nil {
 		return err
 	}
@@ -2385,10 +2393,8 @@ func (r *accountRepository) UpdateSessionWindow(ctx context.Context, id int64, s
 }
 
 func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64, end time.Time) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetSessionWindowEnd(end).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"session_window_end = $1", "", end)
 	if err != nil {
 		return err
 	}
@@ -2399,10 +2405,8 @@ func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetSchedulable(schedulable).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id,
+		"schedulable = $1", "", schedulable)
 	if err != nil {
 		return err
 	}
@@ -2419,7 +2423,7 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 	rows, err := r.sql.QueryContext(ctx, `
 		UPDATE accounts
 		SET schedulable = FALSE,
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE deleted_at IS NULL
 			AND schedulable = TRUE
 			AND auto_pause_on_expired = TRUE
@@ -2491,7 +2495,7 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	}
 	result, err := client.ExecContext(
 		ctx,
-		"UPDATE accounts SET extra = "+extraExpression+", updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
+		"UPDATE accounts SET extra = "+extraExpression+", updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = $2 AND deleted_at IS NULL",
 		string(payload), id,
 	)
 
@@ -2636,7 +2640,7 @@ func (r *accountRepository) updateAccountMultiplierMeasurementInTx(
 	}
 	result, err := client.ExecContext(ctx, `
 		UPDATE accounts
-		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $2
 			AND platform = $3
 			AND type = $4
@@ -2710,7 +2714,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	}
 	result, err := client.ExecContext(ctx, `
 		UPDATE accounts
-		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $2
 			AND platform = $3
 			AND type = $4
@@ -2739,10 +2743,10 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 		}
 		result, err = client.ExecContext(ctx, `
 			UPDATE accounts
-			SET rate_multiplier = $1, updated_at = NOW()
+			SET rate_multiplier = $1, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 			WHERE id = $2
 				AND rate_multiplier IS NOT DISTINCT FROM $3
-			AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'manual_override') = 'upstream_managed'
+			AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'
 				AND deleted_at IS NULL
 		`, *decision.RateMultiplier, account.ID, expectedRate)
 		if err != nil {
@@ -2999,7 +3003,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		return 0, nil
 	}
 
-	setClauses = append(setClauses, "updated_at = NOW()")
+	setClauses = append(setClauses, "updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")
 
 	whereClause := " WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
 	args = append(args, pq.Array(ids))
@@ -3766,7 +3770,7 @@ func (r *accountRepository) IncrementQuotaUsed(ctx context.Context, id int64, am
 				   THEN jsonb_build_object('quota_weekly_reset_at', `+nextWeeklyResetAtExpr+`)
 				   ELSE '{}'::jsonb END
 			ELSE '{}'::jsonb END
-		), updated_at = NOW()
+		), updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $2 AND deleted_at IS NULL
 		RETURNING
 			COALESCE((extra->>'quota_used')::numeric, 0),
@@ -3803,7 +3807,7 @@ func (r *accountRepository) ResetQuotaUsed(ctx context.Context, id int64) error 
 		`UPDATE accounts SET extra = (
 			COALESCE(extra, '{}'::jsonb)
 			|| '{"quota_used": 0, "quota_daily_used": 0, "quota_weekly_used": 0}'::jsonb
-		) - 'quota_daily_start' - 'quota_weekly_start' - 'quota_daily_reset_at' - 'quota_weekly_reset_at', updated_at = NOW()
+		) - 'quota_daily_start' - 'quota_weekly_start' - 'quota_daily_reset_at' - 'quota_weekly_reset_at', updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $1 AND deleted_at IS NULL`,
 		id)
 	if err != nil {
@@ -3821,7 +3825,7 @@ func (r *accountRepository) ResetQuotaUsed(ctx context.Context, id int64) error 
 // 若影响行数为 0，则返回 ErrAccountNotInFallback（账号存在但不在 fallback 状态）。
 func (r *accountRepository) RevertProxyFallback(ctx context.Context, accountID int64) error {
 	res, err := r.sql.ExecContext(ctx, `
-		UPDATE accounts SET proxy_id=proxy_fallback_origin_id, proxy_fallback_origin_id=NULL, updated_at=NOW()
+		UPDATE accounts SET proxy_id=proxy_fallback_origin_id, proxy_fallback_origin_id=NULL, updated_at=GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id=$1 AND proxy_fallback_origin_id IS NOT NULL AND deleted_at IS NULL`, accountID)
 	if err != nil {
 		return err

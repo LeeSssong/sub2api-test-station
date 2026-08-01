@@ -241,7 +241,7 @@ func (r *accountRepository) updateOllamaCloudUsageGroup(
 					- 'ollama_cloud_usage_session'
 					- 'ollama_cloud_usage_auto_refresh'
 					- 'ollama_cloud_usage_snapshot') || $1::jsonb,
-				updated_at = NOW()
+				updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 			WHERE deleted_at IS NULL
 				AND `+ollamaCloudUsageEligibleSQL+`
 				AND credentials ->> 'api_key' = $2

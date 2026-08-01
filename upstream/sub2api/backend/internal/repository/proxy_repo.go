@@ -227,7 +227,7 @@ func invalidateProxyProbeSnapshots(ctx context.Context, exec sqlExecutor, proxyI
 		SET extra = COALESCE(extra, '{}'::jsonb)
 				- 'upstream_billing_probe'
 				- 'ollama_cloud_usage_snapshot',
-			updated_at = NOW()
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE proxy_id = $1
 			AND type = 'apikey'
 			AND (
@@ -751,7 +751,7 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 					THEN extra - 'upstream_billing_probe'
 					ELSE extra
 				END,
-				updated_at=NOW()
+				updated_at=GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL
 			RETURNING id`, proxyID)
 	} else {
@@ -762,7 +762,7 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 					THEN extra - 'upstream_billing_probe'
 					ELSE extra
 				END,
-				updated_at=NOW()
+				updated_at=GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL
 			RETURNING id`, proxyID, *target)
 	}

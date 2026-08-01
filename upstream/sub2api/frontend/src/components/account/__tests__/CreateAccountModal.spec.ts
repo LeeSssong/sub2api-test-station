@@ -173,6 +173,27 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
+  it('creates OpenAI API key accounts in upstream-managed multiplier mode by default', async () => {
+    const wrapper = await submitApiKeyAccount('openai')
+
+    expect(wrapper.get('[data-testid="create-rate-multiplier-policy"]').element).toBeTruthy()
+    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('upstream_managed')
+  })
+
+  it('submits an explicit manual multiplier override selected by the administrator', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('manual account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-rate-multiplier-policy"]').setValue('manual_override')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('manual_override')
+    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier).toBe(1)
+  })
+
   it('waits for the initial upstream billing probe before refreshing the account list', async () => {
     let resolveProbe: (() => void) | undefined
     probeUpstreamBillingMock.mockImplementationOnce(

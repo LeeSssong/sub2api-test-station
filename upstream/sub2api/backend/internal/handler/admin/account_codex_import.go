@@ -31,6 +31,7 @@ type CodexSessionImportRequest struct {
 	Concurrency             *int           `json:"concurrency"`
 	Priority                *int           `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
+	RateMultiplierPolicy    *string        `json:"rate_multiplier_policy"`
 	LoadFactor              *int           `json:"load_factor"`
 	ExpiresAt               *int64         `json:"expires_at"`
 	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
@@ -277,14 +278,15 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			mergedCredentials := mergeCodexImportCredentials(existing.Credentials, credentials, item)
 			mergedExtra := mergeCodexImportMap(existing.Extra, extra)
 			updateInput := &service.UpdateAccountInput{
-				Credentials:        mergedCredentials,
-				Extra:              mergedExtra,
-				Concurrency:        req.Concurrency,
-				Priority:           req.Priority,
-				RateMultiplier:     req.RateMultiplier,
-				LoadFactor:         req.LoadFactor,
-				ExpiresAt:          effectiveExpiresAt,
-				AutoPauseOnExpired: autoPauseOnExpired,
+				Credentials:          mergedCredentials,
+				Extra:                mergedExtra,
+				Concurrency:          req.Concurrency,
+				Priority:             req.Priority,
+				RateMultiplier:       req.RateMultiplier,
+				RateMultiplierPolicy: req.RateMultiplierPolicy,
+				LoadFactor:           req.LoadFactor,
+				ExpiresAt:            effectiveExpiresAt,
+				AutoPauseOnExpired:   autoPauseOnExpired,
 			}
 			if req.ProxyID != nil {
 				updateInput.ProxyID = req.ProxyID
@@ -339,6 +341,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			Concurrency:           concurrency,
 			Priority:              priority,
 			RateMultiplier:        req.RateMultiplier,
+			RateMultiplierPolicy:  req.RateMultiplierPolicy,
 			LoadFactor:            req.LoadFactor,
 			GroupIDs:              req.GroupIDs,
 			ExpiresAt:             effectiveExpiresAt,

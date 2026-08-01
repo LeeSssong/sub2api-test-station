@@ -186,9 +186,9 @@ func TestUpstreamBillingRateMultiplierPolicyFromExtra(t *testing.T) {
 		wantValid  bool
 	}{
 		{
-			name:       "missing policy preserves legacy configured multiplier",
+			name:       "missing policy defaults to upstream managed",
 			extra:      map[string]any{},
-			wantPolicy: UpstreamBillingRateMultiplierPolicyManualOverride,
+			wantPolicy: UpstreamBillingRateMultiplierPolicyManaged,
 			wantValid:  true,
 		},
 		{
@@ -218,7 +218,27 @@ func TestUpstreamBillingRateMultiplierPolicyFromExtra(t *testing.T) {
 	}
 }
 
-func TestLegacyAccountWithoutPolicyIsNotOverwrittenByFirstProbe(t *testing.T) {
+func TestValidateUpstreamBillingRateMultiplierPolicyIntentRejectsInvalidRequests(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy string
+		rate   *float64
+	}{
+		{name: "unknown policy", policy: "automatic"},
+		{name: "manual override without multiplier", policy: UpstreamBillingRateMultiplierPolicyManualOverride},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateUpstreamBillingRateMultiplierPolicyIntent(&tt.policy, tt.rate)
+			if err == nil {
+				t.Fatal("expected invalid policy intent to be rejected")
+			}
+		})
+	}
+}
+
+func TestLegacyAccountWithoutPolicyUsesManagedProbeMultiplier(t *testing.T) {
 	configuredRate := 0.8
 	policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(map[string]any{})
 	decision := DecideUpstreamBillingRateMultiplierSync(&UpstreamBillingProbeSnapshot{
@@ -229,11 +249,11 @@ func TestLegacyAccountWithoutPolicyIsNotOverwrittenByFirstProbe(t *testing.T) {
 	if !valid {
 		t.Fatal("legacy account policy must remain valid")
 	}
-	if decision.Reason != UpstreamBillingRateMultiplierDecisionReasonManualOverride {
-		t.Fatalf("decision reason = %q, want %q", decision.Reason, UpstreamBillingRateMultiplierDecisionReasonManualOverride)
+	if decision.Reason != UpstreamBillingRateMultiplierDecisionReasonUpdated {
+		t.Fatalf("decision reason = %q, want %q", decision.Reason, UpstreamBillingRateMultiplierDecisionReasonUpdated)
 	}
-	if decision.RateMultiplier != nil {
-		t.Fatalf("legacy configured multiplier would be overwritten with %v", *decision.RateMultiplier)
+	if decision.RateMultiplier == nil || *decision.RateMultiplier != 0.07 {
+		t.Fatalf("legacy account multiplier decision = %v, want 0.07", decision.RateMultiplier)
 	}
 }
 

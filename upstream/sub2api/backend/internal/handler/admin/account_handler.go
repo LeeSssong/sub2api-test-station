@@ -45,6 +45,15 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 	}
 }
 
+type upstreamBillingProber interface {
+	GetSettings(context.Context) (*service.UpstreamBillingProbeSettings, error)
+	UpdateSettings(context.Context, *service.UpstreamBillingProbeSettings) error
+	SetAccountEnabled(context.Context, int64, bool) error
+	ProbeAccount(context.Context, int64) (*service.UpstreamBillingProbeSnapshot, error)
+	ProbeAccounts(context.Context, []int64) []service.UpstreamBillingProbeResult
+	ProbeLifecycleAccount(context.Context, int64) (*service.UpstreamBillingProbeSnapshot, error)
+}
+
 // AccountHandler handles admin account management
 type AccountHandler struct {
 	adminService            service.AdminService
@@ -62,7 +71,7 @@ type AccountHandler struct {
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
 	grokImportProber        grokImportProber
-	upstreamBillingProbe    *service.UpstreamBillingProbeService
+	upstreamBillingProbe    upstreamBillingProber
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 }
 
@@ -122,6 +131,7 @@ type CreateAccountRequest struct {
 	Concurrency             int            `json:"concurrency"`
 	Priority                int            `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
+	RateMultiplierPolicy    *string        `json:"rate_multiplier_policy"`
 	LoadFactor              *int           `json:"load_factor"`
 	GroupIDs                []int64        `json:"group_ids"`
 	ExpiresAt               *int64         `json:"expires_at"`
@@ -142,6 +152,7 @@ type UpdateAccountRequest struct {
 	Concurrency             *int           `json:"concurrency"`
 	Priority                *int           `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
+	RateMultiplierPolicy    *string        `json:"rate_multiplier_policy"`
 	LoadFactor              *int           `json:"load_factor"`
 	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
 	GroupIDs                *[]int64       `json:"group_ids"`
@@ -159,6 +170,7 @@ type BulkUpdateAccountsRequest struct {
 	Concurrency             *int                      `json:"concurrency"`
 	Priority                *int                      `json:"priority"`
 	RateMultiplier          *float64                  `json:"rate_multiplier"`
+	RateMultiplierPolicy    *string                   `json:"rate_multiplier_policy"`
 	LoadFactor              *int                      `json:"load_factor"`
 	Status                  string                    `json:"status" binding:"omitempty,oneof=active inactive error"`
 	Schedulable             *bool                     `json:"schedulable"`
@@ -855,6 +867,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
 			RateMultiplier:        req.RateMultiplier,
+			RateMultiplierPolicy:  req.RateMultiplierPolicy,
 			LoadFactor:            req.LoadFactor,
 			GroupIDs:              req.GroupIDs,
 			ExpiresAt:             req.ExpiresAt,
@@ -897,6 +910,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	// OpenAI APIKey 账号创建后异步探测上游 /v1/responses 能力。
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
+	h.scheduleUpstreamBillingLifecycleProbe(createdAccount)
 	h.scheduleGrokImportProbe(createdAccount)
 	response.Success(c, result.Data)
 }
@@ -982,6 +996,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
 		RateMultiplier:        req.RateMultiplier,
+		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		GroupIDs:              req.GroupIDs,
@@ -1010,8 +1025,37 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	if len(req.Credentials) > 0 {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
+	h.scheduleUpstreamBillingLifecycleProbe(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// scheduleUpstreamBillingLifecycleProbe refreshes native billing evidence once
+// after a successful eligible account create or edit. It is deliberately
+// asynchronous and best effort: account writes remain successful if the
+// remote billing endpoint is unavailable.
+func (h *AccountHandler) scheduleUpstreamBillingLifecycleProbe(account *service.Account) {
+	if account == nil || account.Platform != service.PlatformOpenAI || account.Type != service.AccountTypeAPIKey || !account.IsActive() {
+		return
+	}
+	h.scheduleUpstreamBillingLifecycleProbeByID(account.ID)
+}
+
+func (h *AccountHandler) scheduleUpstreamBillingLifecycleProbeByID(accountID int64) {
+	if h.upstreamBillingProbe == nil || accountID <= 0 {
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("upstream_billing_lifecycle_probe_panic", "account_id", accountID, "recover", r)
+			}
+		}()
+		probeCtx := service.WithUpstreamBillingRateMultiplierSyncTrigger(context.Background(), service.UpstreamBillingRateMultiplierSyncTriggerLifecycle)
+		if _, err := h.upstreamBillingProbe.ProbeLifecycleAccount(probeCtx, accountID); err != nil {
+			slog.Warn("upstream_billing_lifecycle_probe_failed", "account_id", accountID, "error", err)
+		}
+	}()
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。
@@ -1745,6 +1789,7 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 				Concurrency:           item.Concurrency,
 				Priority:              item.Priority,
 				RateMultiplier:        item.RateMultiplier,
+				RateMultiplierPolicy:  item.RateMultiplierPolicy,
 				GroupIDs:              item.GroupIDs,
 				ExpiresAt:             item.ExpiresAt,
 				AutoPauseOnExpired:    item.AutoPauseOnExpired,
@@ -1934,6 +1979,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		req.Concurrency != nil ||
 		req.Priority != nil ||
 		req.RateMultiplier != nil ||
+		req.RateMultiplierPolicy != nil ||
 		req.LoadFactor != nil ||
 		req.Status != "" ||
 		req.Schedulable != nil ||
@@ -1955,6 +2001,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		Concurrency:           req.Concurrency,
 		Priority:              req.Priority,
 		RateMultiplier:        req.RateMultiplier,
+		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		Schedulable:           req.Schedulable,

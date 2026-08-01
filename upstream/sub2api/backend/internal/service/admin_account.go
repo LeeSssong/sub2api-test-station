@@ -305,6 +305,9 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		SkipDefaultGroupBind:  true,
 		SkipMixedChannelCheck: true,
 	}
+	if policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(source.Extra); valid {
+		input.RateMultiplierPolicy = &policy
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
@@ -453,7 +456,12 @@ func normalizeGrokMediaEligibilityUpdateExtra(account *Account, input *UpdateAcc
 }
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	policy, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
+	if err != nil {
+		return nil, err
+	}
 	// Probe/session state is system-managed. New accounts always start with automatic refresh disabled.
+	delete(accountExtra, UpstreamBillingRateMultiplierPolicyExtraKey)
 	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingProbeExtraKey)
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
@@ -507,14 +515,12 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	if account.Extra == nil {
 		account.Extra = make(map[string]any)
 	}
-	// New accounts always persist an explicit policy. A supplied multiplier is
-	// an operator decision, so it wins over a simultaneous extra opt-in and is
-	// protected from the first billing probe.
-	if input.RateMultiplier != nil {
-		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
-	} else if _, exists := account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey]; !exists {
-		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManaged
+	// Policy is caller intent, never inferred from the multiplier field or
+	// smuggled through extra. New accounts default to managed mode.
+	if policy == "" {
+		policy = UpstreamBillingRateMultiplierPolicyManaged
 	}
+	account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policy
 	if input.LoadFactor != nil && *input.LoadFactor > 0 {
 		if *input.LoadFactor > 10000 {
 			return nil, errors.New("load_factor must be <= 10000")
@@ -610,6 +616,10 @@ type accountProbeEnabledAtomicUpdater interface {
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
+	policyIntent, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
+	if err != nil {
+		return nil, err
+	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -690,6 +700,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		delete(normalizedExtra, UpstreamBillingProbeEnabledExtraKey)
 		delete(normalizedExtra, UpstreamBillingProbeExtraKey)
+		delete(normalizedExtra, UpstreamBillingRateMultiplierPolicyExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
@@ -703,6 +714,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			grokBillingExtraKey,
 			UpstreamBillingProbeEnabledExtraKey,
 			UpstreamBillingProbeExtraKey,
+			UpstreamBillingRateMultiplierPolicyExtraKey,
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
@@ -778,12 +790,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
 		account.RateMultiplier = input.RateMultiplier
+	}
+	if policyIntent != "" {
 		if account.Extra == nil {
 			account.Extra = make(map[string]any)
 		}
-		// This is persisted together with the multiplier by accountRepo.Update,
-		// fencing an in-flight probe's conditional multiplier update.
-		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
+		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policyIntent
+		account.RateMultiplierPolicyIntent = &policyIntent
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {
@@ -892,9 +905,15 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	policyIntent, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
+	if err != nil {
+		return nil, err
+	}
+	input.Extra = maps.Clone(input.Extra)
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingProbeExtraKey)
+	delete(input.Extra, UpstreamBillingRateMultiplierPolicyExtraKey)
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
@@ -1054,12 +1073,12 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 	if input.RateMultiplier != nil {
 		repoUpdates.RateMultiplier = input.RateMultiplier
+	}
+	if policyIntent != "" {
 		if repoUpdates.Extra == nil {
 			repoUpdates.Extra = make(map[string]any)
 		}
-		// BulkUpdate writes columns and JSONB extra in one UPDATE statement, so
-		// each selected account is protected atomically from a concurrent probe.
-		repoUpdates.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = UpstreamBillingRateMultiplierPolicyManualOverride
+		repoUpdates.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policyIntent
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {

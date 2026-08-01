@@ -39,7 +39,7 @@
 
 ## 2026-08-01 对账发布追加验收
 
-- 主干后续发布提交：`6f0609799`（包含生产主机 GNU `stat` 门禁兼容、预加载镜像支持和 curl header 读取修复）；均已推送到 `origin/main`。
+- 主干后续发布提交截至 `fab36ffa8`（包含生产主机 GNU `stat` 门禁兼容、显式预加载镜像支持、curl header 读取修复及回归稳定性修复）；均已推送到 `origin/main` 并同步生产 host executor。
 - Sub2API immutable image：`xingqiao-sub2api@sha256:0387df2e011e12aa18e2fce525c0967d08d16810b669507e220697c242faad66`，活动槽切换为 green；blue 保留用于回滚。
 - relay-ops immutable runtime image：生产容器使用 `xingqiao-relay-ops:release-48244833b`，容器 healthy；对账迁移已在 `relay_ops` 数据库创建/确认 `upstream_cost_attempts`、`upstream_reconciliation_exceptions` 及 `accounting_daily_snapshots.reconciliation_status`。
 - 唯一 worker 仍为 1，PostgreSQL、Redis、Caddy 容器身份与发布前一致；未重建共享服务。

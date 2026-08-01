@@ -846,12 +846,12 @@ candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
 docker run --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
   jq -e '.status == "ok"' >/dev/null
-docker run --rm --network "$network_name" -v "$admin_header:/run/key:ro" "$network_curl_image" \
+docker run --rm --user 0:0 --network "$network_name" -v "$admin_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/api/v1/admin/system/version" | \
   jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null
 docker run --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 \
   "$candidate_url/api/v1/settings/public" | jq -e 'type == "object"' >/dev/null
-docker run --rm --network "$network_name" -v "$gateway_header:/run/key:ro" "$network_curl_image" \
+docker run --rm --user 0:0 --network "$network_name" -v "$gateway_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/v1/models" | \
   jq -e '.data | type == "array"' >/dev/null
 write_partial candidate_accepted

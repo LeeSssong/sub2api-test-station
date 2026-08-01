@@ -424,17 +424,95 @@ func monitorV2GroupStatus(probes []*UserMonitorView, now time.Time) string {
 	if len(probes) == 0 {
 		return MonitorV2StatusUnconfigured
 	}
-	statuses := make([]string, 0, len(probes))
+	type observation struct {
+		status    string
+		checkedAt time.Time
+	}
+	observations := make([]observation, 0, len(probes))
 	for _, probe := range probes {
-		if probe != nil {
-			status := probe.PrimaryStatus
-			if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, probe.PrimaryCheckedAt, now) {
-				status = MonitorV2StatusInsufficientData
+		if probe == nil {
+			continue
+		}
+		if monitorV2ProbeObservationFresh(probe.IntervalSeconds, probe.PrimaryCheckedAt, now) {
+			observations = append(observations, observation{
+				status:    monitorV2NormalizeProbeStatus(probe.PrimaryStatus),
+				checkedAt: probe.PrimaryCheckedAt,
+			})
+		}
+		for _, point := range probe.Timeline {
+			if !monitorV2ProbeObservationFresh(probe.IntervalSeconds, point.CheckedAt, now) {
+				continue
 			}
-			statuses = append(statuses, status)
+			observations = append(observations, observation{
+				status:    monitorV2NormalizeProbeStatus(point.Status),
+				checkedAt: point.CheckedAt,
+			})
 		}
 	}
-	return monitorV2ProbeStatuses(statuses)
+
+	latestIndex := -1
+	for i := range observations {
+		if observations[i].status == "" {
+			continue
+		}
+		if latestIndex == -1 || observations[i].checkedAt.After(observations[latestIndex].checkedAt) ||
+			(observations[i].checkedAt.Equal(observations[latestIndex].checkedAt) &&
+				monitorV2ProbeStatusPriority(observations[i].status) > monitorV2ProbeStatusPriority(observations[latestIndex].status)) {
+			latestIndex = i
+		}
+	}
+	if latestIndex == -1 {
+		return MonitorV2StatusInsufficientData
+	}
+
+	latest := observations[latestIndex]
+	switch latest.status {
+	case MonitorStatusOperational:
+		return MonitorV2StatusOperational
+	case MonitorStatusDegraded:
+		return MonitorV2StatusDegraded
+	case MonitorStatusFailed, MonitorStatusError:
+		for _, candidate := range observations {
+			if candidate.checkedAt.Before(latest.checkedAt) && monitorV2ProbeStatusSuccessful(candidate.status) {
+				return MonitorV2StatusDegraded
+			}
+		}
+		return MonitorV2StatusUnavailable
+	default:
+		return MonitorV2StatusInsufficientData
+	}
+}
+
+func monitorV2NormalizeProbeStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case MonitorStatusOperational:
+		return MonitorStatusOperational
+	case MonitorStatusDegraded:
+		return MonitorStatusDegraded
+	case MonitorStatusFailed:
+		return MonitorStatusFailed
+	case MonitorStatusError:
+		return MonitorStatusError
+	default:
+		return ""
+	}
+}
+
+func monitorV2ProbeStatusSuccessful(status string) bool {
+	return status == MonitorStatusOperational || status == MonitorStatusDegraded
+}
+
+func monitorV2ProbeStatusPriority(status string) int {
+	switch status {
+	case MonitorStatusOperational:
+		return 3
+	case MonitorStatusDegraded:
+		return 2
+	case MonitorStatusFailed, MonitorStatusError:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func monitorV2ProbeObservationFresh(intervalSeconds int, checkedAt, now time.Time) bool {
@@ -442,35 +520,6 @@ func monitorV2ProbeObservationFresh(intervalSeconds int, checkedAt, now time.Tim
 		return false
 	}
 	return !checkedAt.Before(now.UTC().Add(-2 * time.Duration(intervalSeconds) * time.Second))
-}
-
-func monitorV2ProbeStatuses(statuses []string) string {
-	if len(statuses) == 0 {
-		return MonitorV2StatusInsufficientData
-	}
-	operational := 0
-	failed := 0
-	degraded := 0
-	for _, status := range statuses {
-		switch strings.ToLower(strings.TrimSpace(status)) {
-		case MonitorStatusOperational:
-			operational++
-		case MonitorStatusDegraded:
-			degraded++
-		case MonitorStatusFailed, MonitorStatusError:
-			failed++
-		}
-	}
-	switch {
-	case operational == len(statuses):
-		return MonitorV2StatusOperational
-	case failed == len(statuses):
-		return MonitorV2StatusUnavailable
-	case operational+degraded+failed == 0:
-		return MonitorV2StatusInsufficientData
-	default:
-		return MonitorV2StatusDegraded
-	}
 }
 
 func monitorV2UnavailableMetric(state string) MonitorV2Metric {

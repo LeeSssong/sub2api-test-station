@@ -15,10 +15,10 @@ import (
 // time window. Two fallbacks keep accounts without window data judged instead
 // of silently dropped:
 //
-//   - ErrorCode: an empty (or all-success) window carries no error evidence,
-//     so the projection's live error code fills in — a freshly exhausted
-//     account must classify Unavailable even before a probe lands in the
-//     window.
+//   - ErrorCode: only a window with no samples falls back to the projection's
+//     live error code. Once probes exist, the latest probe owns the status: a
+//     later success must clear a historical balance_exhausted error instead of
+//     inheriting it from the cumulative projection.
 //   - Rates: with zero window samples the projection's cumulative figures are
 //     used, so the account is judged exactly as before this window existed.
 //     Judging it Unknown instead would remove it from group capacity (Total),
@@ -27,12 +27,10 @@ import (
 func windowSample(account sub2api.AccountMonitorAccount, slice accounthealth.DaySlice) accounthealth.AccountSample {
 	sample := accounthealth.AccountSampleFrom(slice, account.AccountID, account.Name, account.GroupNames)
 	sample.Unschedulable = account.Status == "active" && !account.Schedulable
-	if sample.ErrorCode == "" {
-		if sample.Unschedulable {
-			sample.ErrorCode = "unschedulable"
-		} else {
-			sample.ErrorCode = account.ErrorCode
-		}
+	if sample.Unschedulable && sample.ErrorCode == "" {
+		sample.ErrorCode = "unschedulable"
+	} else if slice.SampleCount == 0 && sample.ErrorCode == "" {
+		sample.ErrorCode = account.ErrorCode
 	}
 	if slice.SampleCount == 0 {
 		sample.SuccessRate = account.SuccessRate
@@ -255,6 +253,10 @@ func BuildGroupAvailability(
 	for _, account := range projection.Accounts {
 		slice := accounthealth.Aggregate(toHistoryEntries(histories[account.AccountID]), from, now)
 		sample := windowSample(account, slice)
+		// Capacity is a current-state signal: the newest rolling-window probe
+		// wins over older failures. Daily health intentionally does not set this
+		// override and continues to use the day's aggregate success rate.
+		sample.LatestStatus = slice.LatestStatus
 		verdicts = append(verdicts, accounthealth.ClassifyAccount(sample))
 		// 与日报待处理层统一走 problemLabel：同一个运维群不该一边收到
 		// 「余额耗尽」、一边收到裸的 balance_exhausted。

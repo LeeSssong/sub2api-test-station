@@ -376,6 +376,69 @@ func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
 	require.Equal(t, MonitorV2StatusInsufficientData, snapshot.Groups[0].Status)
 }
 
+func TestMonitorV2GroupStatusUsesLatestProbeObservation(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+
+	t.Run("latest success wins over an older failure", func(t *testing.T) {
+		probes := []*UserMonitorView{
+			{
+				PrimaryStatus:    MonitorStatusFailed,
+				IntervalSeconds:  60,
+				PrimaryCheckedAt: now.Add(-30 * time.Second),
+			},
+			{
+				PrimaryStatus:    MonitorStatusOperational,
+				IntervalSeconds:  60,
+				PrimaryCheckedAt: now,
+			},
+		}
+
+		require.Equal(t, MonitorV2StatusOperational, monitorV2GroupStatus(probes, now))
+	})
+
+	t.Run("latest failure with a recent success is degraded", func(t *testing.T) {
+		probes := []*UserMonitorView{{
+			PrimaryStatus:    MonitorStatusFailed,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
+			Timeline: []UserMonitorTimelinePoint{{
+				Status:    MonitorStatusOperational,
+				CheckedAt: now.Add(-60 * time.Second),
+			}},
+		}}
+
+		require.Equal(t, MonitorV2StatusDegraded, monitorV2GroupStatus(probes, now))
+	})
+
+	t.Run("continuous failures remain unavailable", func(t *testing.T) {
+		probes := []*UserMonitorView{{
+			PrimaryStatus:    MonitorStatusFailed,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
+			Timeline: []UserMonitorTimelinePoint{{
+				Status:    MonitorStatusFailed,
+				CheckedAt: now.Add(-60 * time.Second),
+			}},
+		}}
+
+		require.Equal(t, MonitorV2StatusUnavailable, monitorV2GroupStatus(probes, now))
+	})
+
+	t.Run("expired success does not mask the latest failure", func(t *testing.T) {
+		probes := []*UserMonitorView{{
+			PrimaryStatus:    MonitorStatusFailed,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
+			Timeline: []UserMonitorTimelinePoint{{
+				Status:    MonitorStatusOperational,
+				CheckedAt: now.Add(-2*time.Minute - time.Second),
+			}},
+		}}
+
+		require.Equal(t, MonitorV2StatusUnavailable, monitorV2GroupStatus(probes, now))
+	})
+}
+
 func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
 	groupID := int64(16)

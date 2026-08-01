@@ -26,6 +26,7 @@ type AccountSample struct {
 	SuccessRate   float64
 	SampleCount   int
 	TTFTP95MS     *float64
+	LatestStatus  string
 	ErrorCode     string
 	Unschedulable bool
 }
@@ -51,6 +52,15 @@ func ClassifyAccount(sample AccountSample) AccountVerdict {
 
 func tierFor(sample AccountSample) Tier {
 	if sample.Unschedulable {
+		return TierUnavailable
+	}
+	// Rolling capacity alerts set LatestStatus so the newest probe is the
+	// current availability truth. Daily-report samples leave it empty and keep
+	// using their aggregate success-rate tiers.
+	if sample.LatestStatus != "" {
+		if sample.LatestStatus == statusSuccess {
+			return TierHealthy
+		}
 		return TierUnavailable
 	}
 	// balance_exhausted 短路必须先于零样本判定：窗口口径下「0 样本」是常态

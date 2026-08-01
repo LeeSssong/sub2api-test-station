@@ -17,6 +17,8 @@ func TestClassifyAccount(t *testing.T) {
 		{"降级下边界", AccountSample{SuccessRate: 0.50, SampleCount: 10}, TierDegraded, false},
 		{"不可用上边界", AccountSample{SuccessRate: 0.499, SampleCount: 10}, TierUnavailable, false},
 		{"余额耗尽直判不可用", AccountSample{SuccessRate: 1.0, SampleCount: 10, ErrorCode: ErrorCodeBalanceExhausted}, TierUnavailable, false},
+		{"最新成功覆盖窗口旧失败", AccountSample{SuccessRate: 0.01, SampleCount: 100, LatestStatus: statusSuccess}, TierHealthy, false},
+		{"最新失败覆盖窗口旧成功", AccountSample{SuccessRate: 0.99, SampleCount: 100, LatestStatus: "failed"}, TierUnavailable, false},
 		{"活跃但未参与调度", AccountSample{SuccessRate: 1.0, SampleCount: 10, Unschedulable: true}, TierUnavailable, false},
 		{"无样本判未知", AccountSample{SuccessRate: 0, SampleCount: 0}, TierUnknown, false},
 		// 窗口口径下零样本是常态（新增账号、跨零点后第一小时）。余额耗尽的

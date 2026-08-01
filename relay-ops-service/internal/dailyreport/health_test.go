@@ -404,6 +404,105 @@ func TestBuildGroupAvailabilityAlertsOnRollingWindowFailures(t *testing.T) {
 	}
 }
 
+func TestBuildGroupAvailabilityLatestSuccessClearsHistoricalBalanceError(t *testing.T) {
+	now := time.Date(2026, 7, 27, 1, 0, 0, 0, time.UTC)
+	projection := sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+		Accounts: []sub2api.AccountMonitorAccount{{
+			AccountID: 22, Name: "Plus-XN-0.09", GroupIDs: []int64{6}, GroupNames: []string{"GPT-Plus"},
+			SuccessRate: 0, SampleCount: 200, ErrorCode: accounthealth.ErrorCodeBalanceExhausted,
+		}},
+	}
+	entries := make([]sub2api.AccountMonitorHistoryEntry, 0, 12)
+	for i := 0; i < 12; i++ {
+		entry := sub2api.AccountMonitorHistoryEntry{
+			AccountID: 22, Status: "failed", ErrorCode: accounthealth.ErrorCodeBalanceExhausted,
+			CheckedAt: now.Add(-time.Duration(12-i) * 5 * time.Minute),
+		}
+		if i == 11 {
+			entry.Status = "success"
+			entry.ErrorCode = ""
+		}
+		entries = append(entries, entry)
+	}
+
+	views := BuildGroupAvailability(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries}, now)
+	if len(views) != 1 {
+		t.Fatalf("views = %+v", views)
+	}
+	view := views[0]
+	if view.Alerting || view.Alert.Available != 1 || view.Alert.Total != 1 {
+		t.Fatalf("latest success must restore capacity: %+v", view)
+	}
+	if len(view.Alert.Down) != 0 {
+		t.Fatalf("latest success must not remain in Down: %+v", view.Alert.Down)
+	}
+}
+
+func TestBuildGroupAvailabilityLatestBalanceErrorRemainsUnavailable(t *testing.T) {
+	now := time.Date(2026, 7, 27, 1, 0, 0, 0, time.UTC)
+	projection := sub2api.AccountMonitorProjection{
+		SchemaVersion: 2,
+		Settings:      sub2api.AccountMonitorSettings{IntervalSeconds: 300},
+		Accounts: []sub2api.AccountMonitorAccount{{
+			AccountID: 22, Name: "Plus-XN-0.09", GroupIDs: []int64{6}, GroupNames: []string{"GPT-Plus"},
+			SuccessRate: 1, SampleCount: 200,
+		}},
+	}
+	entries := []sub2api.AccountMonitorHistoryEntry{
+		{AccountID: 22, Status: "success", CheckedAt: now.Add(-20 * time.Minute)},
+		{AccountID: 22, Status: "failed", ErrorCode: accounthealth.ErrorCodeBalanceExhausted, CheckedAt: now.Add(-10 * time.Minute)},
+	}
+
+	views := BuildGroupAvailability(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries}, now)
+	if len(views) != 1 {
+		t.Fatalf("views = %+v", views)
+	}
+	view := views[0]
+	if !view.Alerting || view.Alert.Available != 0 || view.Alert.Total != 1 {
+		t.Fatalf("latest balance error must remain unavailable: %+v", view)
+	}
+	if len(view.Alert.Down) != 1 || view.Alert.Down[0].ErrorCode != "余额耗尽" {
+		t.Fatalf("Down = %+v, want readable balance error", view.Alert.Down)
+	}
+}
+
+func TestWindowSampleKeepsUnschedulableReasonAfterSuccessfulProbe(t *testing.T) {
+	sample := windowSample(
+		sub2api.AccountMonitorAccount{Status: "active", Schedulable: false},
+		accounthealth.DaySlice{SampleCount: 1, SuccessCount: 1, SuccessRate: 1},
+	)
+	if !sample.Unschedulable || sample.ErrorCode != "unschedulable" {
+		t.Fatalf("sample = %+v, want unschedulable reason", sample)
+	}
+}
+
+func TestBuildHealthDigestKeepsDailyAggregateTierAfterLatestSuccess(t *testing.T) {
+	loc := time.UTC
+	now := time.Date(2026, 7, 27, 9, 0, 0, 0, loc)
+	projection := sub2api.AccountMonitorProjection{Accounts: []sub2api.AccountMonitorAccount{{
+		AccountID: 22, Name: "Plus-XN-0.09", GroupNames: []string{"GPT-Plus"},
+	}}}
+	entries := make([]sub2api.AccountMonitorHistoryEntry, 0, 12)
+	for i := 0; i < 12; i++ {
+		entry := sub2api.AccountMonitorHistoryEntry{
+			AccountID: 22, Status: "failed", ErrorCode: "http_error",
+			CheckedAt: now.Add(-time.Duration(12-i) * 5 * time.Minute),
+		}
+		if i == 11 {
+			entry.Status = "success"
+			entry.ErrorCode = ""
+		}
+		entries = append(entries, entry)
+	}
+
+	view := BuildHealthDigest(projection, map[int64][]sub2api.AccountMonitorHistoryEntry{22: entries}, loc, now)
+	if view.Quality.Unavailable != 1 || view.Quality.Healthy != 0 {
+		t.Fatalf("daily digest must keep aggregate tier: %+v", view.Quality)
+	}
+}
+
 func TestBuildHealthDigestOmitsUnsupportedMeasurementFromPending(t *testing.T) {
 	projection, histories, loc, now := fixture()
 	// Pro-SHUAI-0.17 是 measured+failed：上游不支持自动测算，不该每天进待办

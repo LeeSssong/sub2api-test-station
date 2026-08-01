@@ -33,6 +33,7 @@ type DaySlice struct {
 	SuccessCount  int
 	SuccessRate   float64
 	TTFTP95MS     *float64
+	LatestStatus  string
 	LastErrorCode string
 }
 
@@ -82,6 +83,8 @@ func RollingWindowLimitFor(intervalSeconds int) int {
 // window [from, to). It is the shared primitive behind SliceByDay's calendar
 // days and the alert job's rolling hour. The returned Date carries the date of
 // `from` in its own location; callers slicing arbitrary windows may ignore it.
+// When multiple entries share CheckedAt, callers must provide the newest entry
+// first. This matches Sub2API's checked_at DESC, id DESC history contract.
 func Aggregate(entries []HistoryEntry, from, to time.Time) DaySlice {
 	window := make([]HistoryEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -122,22 +125,24 @@ func summarize(date string, entries []HistoryEntry) DaySlice {
 	if len(entries) == 0 {
 		return slice
 	}
-	ordered := append([]HistoryEntry(nil), entries...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		return ordered[i].CheckedAt.Before(ordered[j].CheckedAt)
-	})
-
-	ttfts := make([]float64, 0, len(ordered))
-	for _, entry := range ordered {
+	ttfts := make([]float64, 0, len(entries))
+	latestIndex := -1
+	for index, entry := range entries {
 		if entry.Status == statusSuccess {
 			slice.SuccessCount++
 			if entry.TTFTMS != nil {
 				ttfts = append(ttfts, *entry.TTFTMS)
 			}
-			continue
 		}
-		if entry.ErrorCode != "" {
-			slice.LastErrorCode = entry.ErrorCode
+		if latestIndex == -1 || entry.CheckedAt.After(entries[latestIndex].CheckedAt) {
+			latestIndex = index
+		}
+	}
+	if latestIndex >= 0 {
+		latest := entries[latestIndex]
+		slice.LatestStatus = latest.Status
+		if latest.Status != statusSuccess {
+			slice.LastErrorCode = latest.ErrorCode
 		}
 	}
 	slice.SuccessRate = float64(slice.SuccessCount) / float64(slice.SampleCount)

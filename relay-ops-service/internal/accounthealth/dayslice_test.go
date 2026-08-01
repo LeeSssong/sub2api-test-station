@@ -180,3 +180,51 @@ func TestSliceByDayEmptyAndNoSuccess(t *testing.T) {
 		t.Fatalf("LastErrorCode = %q", today.LastErrorCode)
 	}
 }
+
+func TestAggregateUsesLatestProbeForErrorCode(t *testing.T) {
+	from := time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+
+	latestSuccess := Aggregate([]HistoryEntry{
+		{CheckedAt: from.Add(10 * time.Minute), Status: "failed", ErrorCode: ErrorCodeBalanceExhausted},
+		{CheckedAt: from.Add(20 * time.Minute), Status: "success"},
+	}, from, to)
+	if latestSuccess.LastErrorCode != "" {
+		t.Fatalf("LastErrorCode = %q, want empty after latest success", latestSuccess.LastErrorCode)
+	}
+	if latestSuccess.LatestStatus != statusSuccess {
+		t.Fatalf("LatestStatus = %q, want success", latestSuccess.LatestStatus)
+	}
+
+	latestFailure := Aggregate([]HistoryEntry{
+		{CheckedAt: from.Add(10 * time.Minute), Status: "success"},
+		{CheckedAt: from.Add(20 * time.Minute), Status: "failed", ErrorCode: ErrorCodeBalanceExhausted},
+	}, from, to)
+	if latestFailure.LastErrorCode != ErrorCodeBalanceExhausted {
+		t.Fatalf("LastErrorCode = %q, want %q after latest failure", latestFailure.LastErrorCode, ErrorCodeBalanceExhausted)
+	}
+	if latestFailure.LatestStatus != "failed" {
+		t.Fatalf("LatestStatus = %q, want failed", latestFailure.LatestStatus)
+	}
+
+	latestFailureWithoutCode := Aggregate([]HistoryEntry{
+		{CheckedAt: from.Add(10 * time.Minute), Status: "failed", ErrorCode: ErrorCodeBalanceExhausted},
+		{CheckedAt: from.Add(20 * time.Minute), Status: "failed"},
+	}, from, to)
+	if latestFailureWithoutCode.LastErrorCode != "" {
+		t.Fatalf("LastErrorCode = %q, want empty when latest failure has no code", latestFailureWithoutCode.LastErrorCode)
+	}
+}
+
+func TestAggregateKeepsFirstInputAsNewestWhenTimestampsTie(t *testing.T) {
+	checkedAt := time.Date(2026, 7, 27, 8, 20, 0, 0, time.UTC)
+	slice := Aggregate([]HistoryEntry{
+		// 上游历史接口按 checked_at DESC, id DESC 返回；时间相同时，较新的
+		// id 在前。聚合必须保留第一个结果，不能因稳定升序排序被旧记录覆盖。
+		{CheckedAt: checkedAt, Status: "success"},
+		{CheckedAt: checkedAt, Status: "failed", ErrorCode: ErrorCodeBalanceExhausted},
+	}, checkedAt.Add(-time.Hour), checkedAt.Add(time.Hour))
+	if slice.LatestStatus != statusSuccess || slice.LastErrorCode != "" {
+		t.Fatalf("slice = %+v, want first same-time entry to remain latest success", slice)
+	}
+}

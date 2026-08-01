@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -25,8 +26,11 @@ type accountMonitorAccountRepoStub struct {
 
 type accountMonitorRepoStub struct {
 	AccountMonitorRepository
-	mu      sync.Mutex
-	results []AccountMonitorProbeResult
+	mu       sync.Mutex
+	results  []AccountMonitorProbeResult
+	settings AccountMonitorSettings
+	groups   []AccountMonitorGroup
+	weights  map[int64]AccountMonitorScoreWeights
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -37,6 +41,46 @@ func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountM
 }
 
 func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error {
+	return nil
+}
+
+func (s *accountMonitorRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]AccountMonitorAggregate, error) {
+	return map[int64]AccountMonitorAggregate{}, nil
+}
+
+func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64]AccountMonitorLatest, error) {
+	return map[int64]AccountMonitorLatest{}, nil
+}
+
+func (s *accountMonitorRepoStub) LoadSettings(context.Context) (AccountMonitorSettings, error) {
+	if s.settings.IntervalSeconds == 0 {
+		return AccountMonitorSettings{}, sql.ErrNoRows
+	}
+	return s.settings, nil
+}
+
+func (s *accountMonitorRepoStub) ListGroups(context.Context) ([]AccountMonitorGroup, error) {
+	return append([]AccountMonitorGroup(nil), s.groups...), nil
+}
+
+func (s *accountMonitorRepoStub) LoadGroupScoreWeights(_ context.Context, groupID int64) (AccountMonitorScoreWeights, error) {
+	if weights, ok := s.weights[groupID]; ok {
+		return weights, nil
+	}
+	return AccountMonitorScoreWeights{}, sql.ErrNoRows
+}
+
+func (s *accountMonitorRepoStub) SaveGroupScoreWeights(_ context.Context, groupID, actorID int64, weights AccountMonitorScoreWeights) error {
+	if s.weights == nil {
+		s.weights = make(map[int64]AccountMonitorScoreWeights)
+	}
+	weights.UpdatedBy = actorID
+	s.weights[groupID] = weights
+	return nil
+}
+
+func (s *accountMonitorRepoStub) ResetGroupScoreWeights(_ context.Context, groupID int64) error {
+	delete(s.weights, groupID)
 	return nil
 }
 
@@ -179,6 +223,64 @@ func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) 
 	}
 	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
+	}
+}
+
+func TestAccountMonitorServiceRejectsScoreWeightsThatDoNotSumTo100(t *testing.T) {
+	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	_, err := svc.UpdateGroupScoreWeights(context.Background(), 7, 3, AccountMonitorScoreWeights{
+		Cost: 20, Success: 30, TTFT: 20, Latency: 20,
+	})
+	if err == nil || !strings.Contains(err.Error(), "sum to 100") {
+		t.Fatalf("err = %v, want sum to 100 validation", err)
+	}
+}
+
+func TestAccountMonitorServiceUpdatesAndResetsGroupScoreWeights(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+
+	updated, err := svc.UpdateGroupScoreWeights(context.Background(), 7, 3, AccountMonitorScoreWeights{
+		Cost: 20, Success: 40, TTFT: 20, Latency: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Cost != 20 || updated.Success != 40 || updated.TTFT != 20 || updated.Latency != 20 || updated.UpdatedBy != 3 {
+		t.Fatalf("updated weights = %#v", updated)
+	}
+
+	reset, err := svc.ResetGroupScoreWeights(context.Background(), 7, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset != DefaultAccountMonitorScoreWeights {
+		t.Fatalf("reset weights = %#v, want %#v", reset, DefaultAccountMonitorScoreWeights)
+	}
+}
+
+func TestAccountMonitorServiceProjectsNativeGroupVisibilityAndWeights(t *testing.T) {
+	updatedAt := time.Date(2026, 8, 1, 8, 0, 0, 0, time.UTC)
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{
+			{ID: 7, Name: "public", RateMultiplier: 1.25, CustomerVisible: true, NativeOrder: 4,
+				ScoreWeights: AccountMonitorScoreWeights{Cost: 20, Success: 40, TTFT: 20, Latency: 20, UpdatedBy: 3, UpdatedAt: updatedAt}},
+			{ID: 8, Name: "exclusive", RateMultiplier: 2, CustomerVisible: false, NativeOrder: 9,
+				ScoreWeights: DefaultAccountMonitorScoreWeights},
+		},
+	}
+	accounts := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 11, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI}}}
+	svc := NewAccountMonitorService(repo, accounts, nil, nil, nil)
+	page, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Groups) != 2 || !page.Groups[0].CustomerVisible || page.Groups[1].CustomerVisible {
+		t.Fatalf("groups = %#v", page.Groups)
+	}
+	if page.Groups[0].RateMultiplier != 1.25 || page.Groups[0].NativeOrder != 4 || page.Groups[0].ScoreWeights.Success != 40 {
+		t.Fatalf("group projection = %#v", page.Groups[0])
 	}
 }
 

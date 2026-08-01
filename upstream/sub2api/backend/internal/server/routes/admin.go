@@ -109,7 +109,7 @@ func RegisterAdminRoutes(
 		registerChannelMonitorRoutes(admin, h)
 
 		// 账号监控
-		registerAccountMonitorRoutes(admin, h)
+		registerAccountMonitorRoutes(admin, h, stepUpAuth)
 
 		// 风控中心
 		registerContentModerationRoutes(admin, h)
@@ -756,7 +756,7 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	monitors := admin.Group("/account-monitors")
 	{
 		monitors.GET("", h.Admin.AccountMonitor.List)
@@ -764,6 +764,9 @@ func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		monitors.POST("/run", h.Admin.AccountMonitor.Run)
 		monitors.POST("/:account_id/run", h.Admin.AccountMonitor.RunOne)
 		monitors.GET("/:account_id/history", h.Admin.AccountMonitor.History)
+		monitors.GET("/groups/:group_id/score-weights", h.Admin.AccountMonitor.GetGroupScoreWeights)
+		monitors.PUT("/groups/:group_id/score-weights", gin.HandlerFunc(stepUpAuth), h.Admin.AccountMonitor.UpdateGroupScoreWeights)
+		monitors.DELETE("/groups/:group_id/score-weights", gin.HandlerFunc(stepUpAuth), h.Admin.AccountMonitor.ResetGroupScoreWeights)
 	}
 }
 

@@ -35,6 +35,13 @@ type accountMonitorHistoryResponse struct {
 	Items []dto.AccountMonitorHistoryItem `json:"items"`
 }
 
+type accountMonitorScoreWeightsRequest struct {
+	Cost    int `json:"cost"`
+	Success int `json:"success"`
+	TTFT    int `json:"ttft"`
+	Latency int `json:"latency"`
+}
+
 func (h *AccountMonitorHandler) List(c *gin.Context) {
 	page, err := h.monitorService.List(c.Request.Context())
 	if err != nil {
@@ -118,4 +125,55 @@ func (h *AccountMonitorHandler) History(c *gin.Context) {
 		})
 	}
 	response.Success(c, accountMonitorHistoryResponse{Items: items})
+}
+
+func (h *AccountMonitorHandler) GetGroupScoreWeights(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_GROUP_ID", "invalid group id"))
+		return
+	}
+	weights, err := h.monitorService.GetGroupScoreWeights(c.Request.Context(), groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, weights)
+}
+
+func (h *AccountMonitorHandler) UpdateGroupScoreWeights(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_GROUP_ID", "invalid group id"))
+		return
+	}
+	var req accountMonitorScoreWeightsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	weights, err := h.monitorService.UpdateGroupScoreWeights(c.Request.Context(), groupID, subject.UserID, service.AccountMonitorScoreWeights{
+		Cost: req.Cost, Success: req.Success, TTFT: req.TTFT, Latency: req.Latency,
+	})
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_SCORE_WEIGHTS", err.Error()))
+		return
+	}
+	response.Success(c, weights)
+}
+
+func (h *AccountMonitorHandler) ResetGroupScoreWeights(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_GROUP_ID", "invalid group id"))
+		return
+	}
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	weights, err := h.monitorService.ResetGroupScoreWeights(c.Request.Context(), groupID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, weights)
 }

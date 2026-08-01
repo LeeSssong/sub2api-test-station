@@ -99,3 +99,54 @@ func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *test
 		t.Fatal(err)
 	}
 }
+
+func TestAccountMonitorRepositoryPersistsGroupScoreWeightsAndReadsNativeGroups(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	updatedAt := time.Date(2026, 8, 1, 8, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery("SELECT[[:space:]]+cost_weight").WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"cost_weight", "success_weight", "ttft_weight", "latency_weight", "updated_by", "updated_at"}).
+			AddRow(15, 45, 20, 20, 3, updatedAt))
+	weights, err := repo.LoadGroupScoreWeights(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if weights != (service.AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20, UpdatedBy: 3, UpdatedAt: updatedAt}) {
+		t.Fatalf("weights = %#v", weights)
+	}
+
+	mock.ExpectExec("INSERT INTO account_monitor_group_score_weights").WithArgs(int64(7), 20, 40, 20, 20, int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := repo.SaveGroupScoreWeights(context.Background(), 7, 9, service.AccountMonitorScoreWeights{Cost: 20, Success: 40, TTFT: 20, Latency: 20}); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectExec("DELETE FROM account_monitor_group_score_weights").WithArgs(int64(7)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := repo.ResetGroupScoreWeights(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectQuery("SELECT[[:space:]]+g.id").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "rate_multiplier", "customer_visible", "native_order", "cost_weight", "success_weight", "ttft_weight", "latency_weight", "updated_by", "updated_at"}).
+			AddRow(7, "public", 1.25, true, 4, 15, 45, 20, 20, 0, time.Time{}).
+			AddRow(8, "private", 2.0, false, 9, 20, 40, 20, 20, 3, updatedAt))
+	groups, err := repo.ListGroups(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || groups[0].ID != 7 || !groups[0].CustomerVisible || groups[1].CustomerVisible {
+		t.Fatalf("groups = %#v", groups)
+	}
+	if groups[1].ScoreWeights.UpdatedBy != 3 || groups[1].ScoreWeights.Success != 40 {
+		t.Fatalf("group weights = %#v", groups[1].ScoreWeights)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -121,6 +121,15 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
+	groups, err := s.repo.ListGroups(ctx)
+	if err != nil {
+		return AccountMonitorPage{}, fmt.Errorf("list account monitor groups: %w", err)
+	}
+	for i := range groups {
+		if groups[i].ScoreWeights == (AccountMonitorScoreWeights{}) {
+			groups[i].ScoreWeights = DefaultAccountMonitorScoreWeights
+		}
+	}
 
 	observedAt := time.Now().UTC()
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
@@ -170,6 +179,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		ObservedAt:    observedAt,
 		Stale:         len(rows) == 0 || anyMonitorRowStale(rows),
 		Settings:      settings,
+		Groups:        groups,
 		Accounts:      rows,
 	}}, nil
 }
@@ -366,6 +376,74 @@ func (s *AccountMonitorService) UpdateSettings(
 		return AccountMonitorSettings{}, err
 	}
 	return s.loadSettings(ctx)
+}
+
+func (s *AccountMonitorService) GetGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	weights, err := s.repo.LoadGroupScoreWeights(ctx, groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DefaultAccountMonitorScoreWeights, nil
+	}
+	if err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("load group score weights: %w", err)
+	}
+	if err := validateAccountMonitorScoreWeights(weights); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("stored group score weights: %w", err)
+	}
+	return weights, nil
+}
+
+func (s *AccountMonitorService) UpdateGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+	actorID int64,
+	weights AccountMonitorScoreWeights,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	if actorID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid actor id")
+	}
+	if err := validateAccountMonitorScoreWeights(weights); err != nil {
+		return AccountMonitorScoreWeights{}, err
+	}
+	if err := s.repo.SaveGroupScoreWeights(ctx, groupID, actorID, weights); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("save group score weights: %w", err)
+	}
+	return s.GetGroupScoreWeights(ctx, groupID)
+}
+
+func (s *AccountMonitorService) ResetGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+	actorID int64,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	if actorID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid actor id")
+	}
+	if err := s.repo.ResetGroupScoreWeights(ctx, groupID); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("reset group score weights: %w", err)
+	}
+	return DefaultAccountMonitorScoreWeights, nil
+}
+
+func validateAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) error {
+	if weights.Cost < 0 || weights.Success < 0 || weights.TTFT < 0 || weights.Latency < 0 {
+		return errors.New("score weights must be non-negative")
+	}
+	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
+		return errors.New("score weights must sum to 100")
+	}
+	return nil
 }
 
 func (s *AccountMonitorService) History(

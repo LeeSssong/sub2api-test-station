@@ -14,6 +14,28 @@ const (
 	AccountMonitorDefaultHistoryLimit    = 50
 )
 
+var DefaultAccountMonitorScoreWeights = AccountMonitorScoreWeights{
+	Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+}
+
+type AccountMonitorScoreWeights struct {
+	Cost      int       `json:"cost"`
+	Success   int       `json:"success"`
+	TTFT      int       `json:"ttft"`
+	Latency   int       `json:"latency"`
+	UpdatedBy int64     `json:"updated_by"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type AccountMonitorGroup struct {
+	ID              int64                      `json:"id"`
+	Name            string                     `json:"name"`
+	RateMultiplier  float64                    `json:"rate_multiplier"`
+	CustomerVisible bool                       `json:"customer_visible"`
+	NativeOrder     int                        `json:"native_order"`
+	ScoreWeights    AccountMonitorScoreWeights `json:"score_weights"`
+}
+
 type AccountMonitorSettings struct {
 	IntervalSeconds int       `json:"interval_seconds"`
 	UpdatedBy       int64     `json:"updated_by"`
@@ -102,6 +124,7 @@ type AccountMonitorProjection struct {
 	ObservedAt    time.Time               `json:"observed_at"`
 	Stale         bool                    `json:"stale"`
 	Settings      AccountMonitorSettings  `json:"settings"`
+	Groups        []AccountMonitorGroup   `json:"groups"`
 	Accounts      []AccountMonitorAccount `json:"accounts"`
 }
 
@@ -117,4 +140,8 @@ type AccountMonitorRepository interface {
 	ListLatest(ctx context.Context, accountIDs []int64) (map[int64]AccountMonitorLatest, error)
 	ListHistory(ctx context.Context, accountID int64, limit int) ([]AccountMonitorProbeResult, error)
 	DeleteBefore(ctx context.Context, before time.Time) error
+	ListGroups(ctx context.Context) ([]AccountMonitorGroup, error)
+	LoadGroupScoreWeights(ctx context.Context, groupID int64) (AccountMonitorScoreWeights, error)
+	SaveGroupScoreWeights(ctx context.Context, groupID, actorID int64, weights AccountMonitorScoreWeights) error
+	ResetGroupScoreWeights(ctx context.Context, groupID int64) error
 }

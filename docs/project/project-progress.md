@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**更新时间：** 2026-07-31
+**更新时间：** 2026-08-01
 
 **唯一总账：** 本文件是项目事项、部署状态和验证证据的唯一全局入口。
 
@@ -26,7 +26,7 @@
 4. **relay-ops 原生 P0/P1 Bridge 与蓝绿发布机制**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；可复用蓝绿机制尚不存在。**状态：持续实施**。
 5. **Caddy/homepage 运行时差异与全站账务总账**：Caddy/homepage 运行时改动须独立发布；`accounting-ledger` 仍在 `codex/accounting-ledger`，未合并。**状态：工程差异待部署/持续实施**。
 6. **Neko/Wawazz 门禁、D04 readiness、备份留存和后续运营**：均保留最新证据和外部验收跟进，不因文档或历史报告单独记为工程未部署。
-7. **账号上游倍率自动同步**：上游 billing probe 已解析账号有效倍率，本分支已完成托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发。最终复审提出的显式策略意图、提交顺序安全的 Redis 版本 fencing、按模式隔离 singleflight 三项修复已在本地实现并通过必需后端测试、51 个前端定向测试、Vue 类型检查及集成测试编译；真实 PostgreSQL/Redis 顺序测试因本机缺少 rootless Docker 未执行。尚未推送、部署或线上验证。**状态：进行中；待最终独立复审、推送、部署和线上验证**。
+7. **账号上游倍率自动同步**：上游 billing probe 已解析账号有效倍率，本分支已完成托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发。最终三轮修复还完成了显式策略意图、提交顺序安全的 Redis 版本 fencing、按模式隔离 singleflight 和 `UpdateLastUsed` 持久化版本单调性。必需后端测试、51 个前端定向测试、Vue 类型检查及三条真实 PostgreSQL/Redis 集成回归已通过，最终独立复审批准合并。尚未推送、部署或线上验证。**状态：进行中；待推送、部署和线上验证**。
 
 ## 生产工程代码/配置已部署并验证（18 项）
 
@@ -192,13 +192,13 @@
 3. **Monitor 页面自动刷新后端/前端/设置**：生产尚未应用自动刷新实现及其设置暴露；既有 Monitor 可靠性和长窗口能力不等于该实现已部署；**状态：工程代码/配置差异待部署**；[证据](../superpowers/reports/2026-07-30-monitor-reliability-admin-visibility-production-verification.md)、[长窗口](../superpowers/reports/2026-07-30-monitor-v2-long-window-buckets-production-verification.md)。
 4. **Caddy/homepage 运行时改动**：生产 Caddy 镜像仍为 `79b0f0a724bb412cfe94d0e2ffb35a4796e4ba7e`，首页运行时改动须独立于 Sub2API 发布；**状态：工程代码/配置差异待部署**；[当前状态](current-state.md)、[0.1.166 合格镜像证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
 
-## 持续实施（4 项）
+## 持续实施（5 项）
 
 1. **可复用 Sub2API 蓝绿发布机制**：当前不存在可复用的蓝绿机制；需先完成候选、兼容性门禁、回滚和切换设计与实现；**状态：持续实施**。
 2. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线，当前实现不安全；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)、[计划](../superpowers/plans/2026-07-30-native-p0-p1-feishu-bridge-implementation-plan.md)。
 3. **全站账务总账**：`codex/accounting-ledger` 仍在进行中，未合并到 `main`；Task 1–3 已实现并通过独立复审，Task 4 受保护的极简现金台账与日报页面/API 正在实施，仍待后续实现、推送、部署和三方验收；**状态：持续实施**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-ledger-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[历史证据](../superpowers/reports/2026-07-15-manual-ledger-verification.md)、[当前状态](current-state.md)。
 4. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计、实现、部署和验证；**状态：持续实施**；[证据](current-state.md)、[Sub2API 原生运维简化](../superpowers/reports/2026-07-22-sub2api-native-ops-simplification-verification.md)。
-5. **账号上游倍率自动同步**：解决 billing probe 结果与实际计费倍率漂移；将同步 `effective_rate_multiplier` 到托管账号的 `accounts.rate_multiplier`，保留手工覆盖并刷新缓存/调度器快照。第二轮收窄修复已完成本地实现：行锁内保留省略策略、所有剩余 Ent 账号更新时间戳统一为数据库单调版本，并修正 lifecycle 注释；受影响后端测试和 integration-tag 编译通过，真实 PostgreSQL/Redis 集成执行仍因本机缺少 rootless Docker 受阻。尚未完成独立复审、推送、部署或线上验证。**状态：进行中；尚待第二轮独立复审、服务端推送、生产部署和生效验证**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
+5. **账号上游倍率自动同步**：解决 billing probe 结果与实际计费倍率漂移；将同步 `effective_rate_multiplier` 到托管账号的 `accounts.rate_multiplier`，保留手工覆盖并刷新缓存/调度器快照。第三轮收窄修复及独立复审已完成：行锁内保留省略策略，账号变更及 `UpdateLastUsed` 均使用数据库单调 `updated_at` 版本，保留原有 last-used outbox 契约。受影响后端测试通过；经 Colima 运行的三条真实 PostgreSQL/Redis 集成回归亦通过。独立复审未发现剩余 Critical/Important 问题，分支达到合并准备状态；尚未完成服务端推送、生产部署或线上验证。**状态：进行中；尚待服务端推送、生产部署和生效验证**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 
 ## 总账维护规则
 

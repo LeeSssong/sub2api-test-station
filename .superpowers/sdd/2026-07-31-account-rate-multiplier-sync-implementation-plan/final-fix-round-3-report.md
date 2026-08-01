@@ -2,8 +2,8 @@
 
 Base commit: `6f3c1d619`.
 
-Status: local implementation complete; remains `进行中` pending scoped
-independent re-review, push, deployment, and production verification.
+Status: scoped independent re-review approved; remains `进行中` pending
+push, deployment, and production verification.
 
 ## Remaining durable account-row version finding
 
@@ -30,7 +30,22 @@ independent re-review, push, deployment, and production verification.
 - `go test ./internal/repository -run '^Test(UpdateLastUsedAdvancesDurableAccountVersionAndPublishesLastUsedEvent|ExecAccountMonotonicUpdateUsesLockedDatabaseVersionExpression)$' -count=1` - passed.
 - `go test ./internal/repository -run 'Test(UpdateLastUsed|ExecAccountMonotonicUpdate|SchedulerCache|UpdateUpstreamBillingProbeSnapshot)' -count=1` - passed.
 - `go test ./internal/repository -count=1` - passed.
+- `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true SUB2API_TEST_POSTGRES_IMAGE=postgres:18-alpine go test -tags=integration ./internal/repository -run '^(TestManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesCache|TestSchedulerCacheNewerManualSnapshotWinsAgainstStaleManagedWriteIntegration|TestProbeTransactionStartedBeforeNormalEditPublishesStrictlyNewerCacheVersion)$' -count=1` - passed (`ok .../internal/repository 3.433s`).
 - `git diff --check` - passed before commit.
 
 No push, deployment, production access, or production verification was
-performed. The remaining required step is an independent scoped review.
+performed. The temporary local `redis:8.4-alpine` compatibility tag used to
+avoid a Docker Hub metadata fetch was removed after validation.
+
+## Independent review
+
+The requested range `341a6c902..8d6a1f8d8` and the excluded range-start fix
+commit `341a6c902` were reviewed together against the round-2 finding, this
+report, the SDD ledger, and the project progress ledger. No Critical or
+Important finding remains in the scoped fix. `UpdateLastUsed` retains the
+existing event type and payload while advancing the durable account-row
+version in the same PostgreSQL statement as `last_used_at`.
+
+Verdict: **APPROVED / merge-ready after this review commit**. This verdict is
+limited to branch integration readiness; the project item stays `进行中` until
+server push, deployment, and production verification are all complete.

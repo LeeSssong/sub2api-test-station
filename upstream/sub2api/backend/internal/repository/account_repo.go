@@ -1227,10 +1227,7 @@ func (r *accountRepository) ListByPlatform(ctx context.Context, platform string)
 
 func (r *accountRepository) UpdateLastUsed(ctx context.Context, id int64) error {
 	now := time.Now()
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetLastUsedAt(now).
-		Save(ctx)
+	_, err := r.execAccountMonotonicUpdate(ctx, id, "last_used_at = $1", "", now)
 	if err != nil {
 		return err
 	}

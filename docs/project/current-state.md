@@ -1,8 +1,8 @@
 # 项目当前状态
 
-**更新日期：** 2026-07-31
+**更新日期：** 2026-08-01
 **权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
-**项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（2026-07-31 快照；以该总账的生产部署与验证口径为准）
+**项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（2026-08-01 快照；以该总账的生产部署与验证口径为准）
 
 ## 当前指针
 
@@ -12,12 +12,12 @@
 - 历史准备完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。生产完成数量和当前进行中事项以项目全局进度总账为准。
 - 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果由 Sub2API 原生 `/admin/ops` 承载，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
 - 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe 和模型发布继续关闭。飞书只允许出站告警、持续提醒、恢复和日报；入站回调、命令控制与确认接手均已退役。
-- 当前工程差异：生产 Sub2API 仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置；relay-ops 仍缺安全完整的 Native P0/P1 Bridge（通知策略兼容性和只读数据库接线未完成）；Caddy/homepage 运行时改动须独立于 Sub2API 发布。指令驱动蓝绿发布已完成本地实现、双槽隔离演练和完整离线验证，当前状态为 `准备完成（待生产部署与验收）`；本轮没有连接生产、推送镜像、部署或线上生效验证。生产快照为 Sub2API `e0752a27b333501d36eda8bcdd68ff7e31cef33f`、relay-ops `785aca6f62557a540dd5b314ed958a36afac0adb`、Caddy `79b0f0a724bb412cfe94d0e2ffb35a4796e4ba7e`。
+- 当前工程差异：`main@754ab2efe` 已于 2026-08-01 完成生产蓝绿发布，包含全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离、Monitor 自动刷新与状态修复、账号倍率同步、全站账务总账、Monitor 卡片精简和 Caddy/homepage；TLS 1.2/1.3 与 RSA 2048 证书已验收。生产运行 blue/green 双 API 和唯一 worker，活动槽为 blue；host executor、`release.env` 和 `release-state` 已安装。Native P0/P1 Bridge 未接线通道保持策略关闭；真实上游逐笔成本对账已完成实现和本地验证，当前等待本轮主干推送、生产部署与线上验收。
 - 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
-- 下一步：等待用户明确的 `部署生产` 指令；若首次拓扑门禁返回 `downtime_required=true`，必须先展示原因并等待独立的 `允许停机部署` 授权，再安排生产部署和生效验收。蓝绿设计、实施计划、生产运行手册和本地验证报告分别见下方链接。管理员按业务需要在 Sub2API 后台维护开放注册、邀请码和原生运维。账号质量巡检继续用于容量、稳定性和路由决策，不作为注册门禁。当前不应用模型发布，也不恢复 relay-ops 控制面或飞书入站写能力。
+- 下一步：后续普通 Sub2API 发布使用已安装的双槽 executor，无迁移集合变化和共享容器身份变化时不安排停机。真实上游逐笔成本对账任务完成、测试和审查后，按相同蓝绿流程发布。管理员继续在 Sub2API 后台维护开放注册、邀请码和原生运维；不恢复 relay-ops 控制面或飞书入站写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md`、`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md`、`docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md` 和 `docs/superpowers/reports/2026-07-23-account-quality-monitor-verification.md`。蓝绿设计：`docs/superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md`；实施计划：`docs/superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md`；生产运行手册：`docs/runbooks/sub2api-blue-green-production-deployment.md`。旧 relay-ops 运维页、飞书命令控制、模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
+最新验证：`docs/superpowers/reports/2026-08-01-main-blue-green-production-verification.md`、`docs/superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md`、`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md` 和 `docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`。蓝绿设计：`docs/superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md`；实施计划：`docs/superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md`；生产运行手册：`docs/runbooks/sub2api-blue-green-production-deployment.md`。旧 relay-ops 运维页、飞书命令控制、模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
 
 ## 产品
 

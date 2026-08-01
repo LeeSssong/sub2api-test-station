@@ -21,9 +21,42 @@ type BuildInfo struct {
 	BuildType string
 }
 
+// ShouldStartRequestLocal reports whether work owned by requests accepted by
+// this process should run for the configured process role.
+func ShouldStartRequestLocal(role config.ProcessRole) bool {
+	return role == config.ProcessRoleAll || role == config.ProcessRoleAPI
+}
+
+// ShouldStartSingleton reports whether process-wide schedulers and shared
+// queue consumers should run for the configured process role.
+func ShouldStartSingleton(role config.ProcessRole) bool {
+	return role == config.ProcessRoleAll || role == config.ProcessRoleWorker
+}
+
+func configuredProcessRole(cfg *config.Config) config.ProcessRole {
+	if cfg == nil || cfg.Server.ProcessRole == "" {
+		return config.ProcessRoleAll
+	}
+	return cfg.Server.ProcessRole
+}
+
+func shouldStartRequestLocal(cfg *config.Config) bool {
+	return ShouldStartRequestLocal(configuredProcessRole(cfg))
+}
+
+func shouldStartSingleton(cfg *config.Config) bool {
+	return ShouldStartSingleton(configuredProcessRole(cfg))
+}
+
 // ProvidePricingService creates and initializes PricingService
 func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient) (*PricingService, error) {
 	svc := NewPricingService(cfg, remoteClient)
+	if !shouldStartSingleton(cfg) {
+		if err := svc.InitializeReadOnly(); err != nil {
+			println("[Service] Warning: read-only pricing initialization failed:", err.Error())
+		}
+		return svc, nil
+	}
 	if err := svc.Initialize(); err != nil {
 		// Pricing service initialization failure should not block startup, use fallback prices
 		println("[Service] Warning: Pricing service initialization failed:", err.Error())
@@ -37,7 +70,16 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 }
 
 // ProvideEmailQueueService creates EmailQueueService with default worker count
-func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
+
+func ProvideEmailQueueService(emailService *EmailService, cfg *config.Config) *EmailQueueService {
+	if !shouldStartRequestLocal(cfg) {
+		return &EmailQueueService{
+			emailService: emailService,
+			taskChan:     make(chan EmailTask, 100),
+			stopChan:     make(chan struct{}),
+			workers:      3,
+		}
+	}
 	return NewEmailQueueService(emailService, 3)
 }
 
@@ -52,7 +94,9 @@ func ProvideBatchImageModelPricingResolver(resolver *ModelPricingResolver) *Batc
 
 func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo AccountRepository, cfg *config.Config) *BatchImageCleanupService {
 	svc := NewBatchImageCleanupService(repo, accountRepo, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -92,7 +136,9 @@ func ProvideTokenRefreshService(
 	// 调用侧显式注入后台刷新策略，避免策略漂移
 	svc.SetRefreshPolicy(DefaultBackgroundRefreshPolicy())
 	svc.SetAccountRuntimeBlocker(runtimeBlocker)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -256,65 +302,81 @@ func ProvideGrokTokenProvider(
 func ProvideDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *DashboardAggregationService {
 	svc := NewDashboardAggregationService(repo, timingWheel, cfg)
 	svc.SetLeaderLock(lockCache, db)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideUsageCleanupService 创建并启动使用记录清理任务服务
 func ProvideUsageCleanupService(repo UsageCleanupRepository, timingWheel *TimingWheelService, dashboardAgg *DashboardAggregationService, cfg *config.Config) *UsageCleanupService {
 	svc := NewUsageCleanupService(repo, timingWheel, dashboardAgg, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideAccountExpiryService creates and starts AccountExpiryService.
-func ProvideAccountExpiryService(accountRepo AccountRepository) *AccountExpiryService {
+func ProvideAccountExpiryService(accountRepo AccountRepository, cfg *config.Config) *AccountExpiryService {
 	svc := NewAccountExpiryService(accountRepo, time.Minute)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideProxyExpiryService creates and starts ProxyExpiryService.
-func ProvideProxyExpiryService(proxyRepo ProxyRepository) *ProxyExpiryService {
+func ProvideProxyExpiryService(proxyRepo ProxyRepository, cfg *config.Config) *ProxyExpiryService {
 	svc := NewProxyExpiryService(proxyRepo, time.Minute)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideSubscriptionExpiryService creates and starts SubscriptionExpiryService.
-func ProvideSubscriptionExpiryService(userSubRepo UserSubscriptionRepository, settingRepo SettingRepository, notificationEmailService *NotificationEmailService, lockCache LeaderLockCache, db *sql.DB) *SubscriptionExpiryService {
+func ProvideSubscriptionExpiryService(userSubRepo UserSubscriptionRepository, settingRepo SettingRepository, notificationEmailService *NotificationEmailService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *SubscriptionExpiryService {
 	svc := NewSubscriptionExpiryService(userSubRepo, time.Minute)
 	svc.SetSettingRepository(settingRepo)
 	svc.SetNotificationEmailService(notificationEmailService)
 	svc.SetLeaderLock(lockCache, db)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideTimingWheelService creates and starts TimingWheelService
-func ProvideTimingWheelService() (*TimingWheelService, error) {
+func ProvideTimingWheelService(cfg *config.Config) (*TimingWheelService, error) {
 	svc, err := NewTimingWheelService()
 	if err != nil {
 		return nil, err
 	}
-	svc.Start()
+	if shouldStartRequestLocal(cfg) || shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc, nil
 }
 
 // ProvideDeferredService creates and starts DeferredService
-func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWheelService) *DeferredService {
+func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWheelService, cfg *config.Config) *DeferredService {
 	svc := NewDeferredService(accountRepo, timingWheel, 10*time.Second)
-	svc.Start()
+	if shouldStartRequestLocal(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
-	if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
-		logger.LegacyPrintf("service.concurrency", "Warning: startup cleanup stale process slots failed: %v", err)
+	if shouldStartRequestLocal(cfg) {
+		if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
+			logger.LegacyPrintf("service.concurrency", "Warning: startup cleanup stale process slots failed: %v", err)
+		}
 	}
-	if cfg != nil {
+	if cfg != nil && shouldStartRequestLocal(cfg) {
 		svc.SetAccountLoadBatchCacheTTL(time.Duration(cfg.Gateway.Scheduling.LoadBatchCacheTTLMS) * time.Millisecond)
 		svc.StartSlotCleanupWorker(accountRepo, cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
@@ -324,7 +386,7 @@ func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountReposi
 // ProvideUserMessageQueueService 创建用户消息串行队列服务并启动清理 worker
 func ProvideUserMessageQueueService(cache UserMsgQueueCache, rpmCache RPMCache, cfg *config.Config) *UserMessageQueueService {
 	svc := NewUserMessageQueueService(cache, rpmCache, &cfg.Gateway.UserMessageQueue)
-	if cfg.Gateway.UserMessageQueue.CleanupIntervalSeconds > 0 {
+	if shouldStartRequestLocal(cfg) && cfg.Gateway.UserMessageQueue.CleanupIntervalSeconds > 0 {
 		svc.StartCleanupWorker(time.Duration(cfg.Gateway.UserMessageQueue.CleanupIntervalSeconds) * time.Second)
 	}
 	return svc
@@ -339,7 +401,9 @@ func ProvideSchedulerSnapshotService(
 	cfg *config.Config,
 ) *SchedulerSnapshotService {
 	svc := NewSchedulerSnapshotService(cache, outboxRepo, accountRepo, groupRepo, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -374,7 +438,9 @@ func ProvideOpsMetricsCollector(
 	cfg *config.Config,
 ) *OpsMetricsCollector {
 	collector := NewOpsMetricsCollector(opsRepo, settingRepo, accountRepo, concurrencyService, db, redisClient, cfg)
-	collector.Start()
+	if shouldStartSingleton(cfg) {
+		collector.Start()
+	}
 	return collector
 }
 
@@ -387,7 +453,9 @@ func ProvideOpsAggregationService(
 	cfg *config.Config,
 ) *OpsAggregationService {
 	svc := NewOpsAggregationService(opsRepo, settingRepo, db, redisClient, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -401,7 +469,9 @@ func ProvideOpsAlertEvaluatorService(
 	proxyRepo ProxyRepository,
 ) *OpsAlertEvaluatorService {
 	svc := NewOpsAlertEvaluatorService(opsService, opsRepo, emailService, redisClient, cfg, proxyRepo)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -420,25 +490,31 @@ func ProvideOpsCleanupService(
 	opsService *OpsService,
 ) *OpsCleanupService {
 	svc := NewOpsCleanupService(opsRepo, db, redisClient, cfg, channelMonitorSvc, settingRepo)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	if opsService != nil {
 		opsService.SetCleanupReloader(svc)
 	}
 	return svc
 }
 
-func ProvideOpsSystemLogSink(opsRepo OpsRepository) *OpsSystemLogSink {
+func ProvideOpsSystemLogSink(opsRepo OpsRepository, cfg *config.Config) *OpsSystemLogSink {
 	sink := NewOpsSystemLogSink(opsRepo)
-	sink.Start()
-	logger.SetSink(sink)
+	if shouldStartRequestLocal(cfg) {
+		sink.Start()
+		logger.SetSink(sink)
+	}
 	return sink
 }
 
 // ProvideAuditLogService 创建操作审计日志服务并启动异步写入与保留期清理协程。
 // 停止逻辑挂在 cmd/server 的 provideCleanup。
-func ProvideAuditLogService(repo AuditLogRepository, settingService *SettingService) *AuditLogService {
+func ProvideAuditLogService(repo AuditLogRepository, settingService *SettingService, cfg *config.Config) *AuditLogService {
 	svc := NewAuditLogService(repo, settingService)
-	svc.Start()
+	if shouldStartRequestLocal(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -477,7 +553,9 @@ func ProvideSystemOperationLockService(repo IdempotencyRepository, cfg *config.C
 
 func ProvideIdempotencyCleanupService(repo IdempotencyRepository, cfg *config.Config) *IdempotencyCleanupService {
 	svc := NewIdempotencyCleanupService(repo, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -498,7 +576,9 @@ func ProvideScheduledTestRunnerService(
 	cfg *config.Config,
 ) *ScheduledTestRunnerService {
 	svc := NewScheduledTestRunnerService(planRepo, scheduledSvc, accountTestSvc, rateLimitSvc, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -511,14 +591,18 @@ func ProvideOpsScheduledReportService(
 	cfg *config.Config,
 ) *OpsScheduledReportService {
 	svc := NewOpsScheduledReportService(opsService, userService, emailService, redisClient, cfg)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
 // ProvideAPIKeyAuthCacheInvalidator 提供 API Key 认证缓存失效能力
-func ProvideAPIKeyAuthCacheInvalidator(apiKeyService *APIKeyService) APIKeyAuthCacheInvalidator {
+func ProvideAPIKeyAuthCacheInvalidator(apiKeyService *APIKeyService, cfg *config.Config) APIKeyAuthCacheInvalidator {
 	// Start Pub/Sub subscriber for L1 cache invalidation across instances
-	apiKeyService.StartAuthCacheInvalidationSubscriber(context.Background())
+	if shouldStartRequestLocal(cfg) {
+		apiKeyService.StartAuthCacheInvalidationSubscriber(context.Background())
+	}
 	return apiKeyService
 }
 
@@ -560,7 +644,9 @@ func ProvideBackupService(
 	dumper DBDumper,
 ) *BackupService {
 	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, dumper)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -601,17 +687,24 @@ func ProvideOpsService(
 		svc.SetOpenAIQuotaAutoPauseSettingsSink(settingService.SetOpenAIQuotaAutoPauseSettings)
 		// Optional warm-up so the first scheduled request after process start observes
 		// a populated cache rather than zero defaults. Best-effort, sync-bounded.
-		settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
+		if shouldStartSingleton(cfg) {
+			settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
+		}
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
-	svc.StartRuntimeSettingsRefresh(context.Background())
+	if shouldStartSingleton(cfg) {
+		svc.StartRuntimeSettingsRefresh(context.Background())
+	}
 	return svc
 }
 
 // ProvideOpsIngressRejectAggregator starts the bounded security aggregation
 // runtime and attaches it to OpsService, which is the middleware recorder.
-func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsService) *OpsIngressRejectAggregator {
+func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsService, cfg *config.Config) *OpsIngressRejectAggregator {
+	if !shouldStartRequestLocal(cfg) {
+		return nil
+	}
 	repo, ok := opsRepo.(OpsIngressRejectRepository)
 	if !ok {
 		return nil
@@ -630,11 +723,13 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	if err := svc.LoadForwardedClientIPSettings(context.Background()); err != nil {
 		logger.LegacyPrintf("service.setting", "Warning: load forwarded client IP settings failed: %v", err)
 	}
-	if err := svc.MigrateOpenAIAllowClaudeCodeCodexPluginSetting(context.Background()); err != nil {
-		logger.LegacyPrintf("service.setting", "Warning: migrate openai allow Claude Code Codex plugin setting failed: %v", err)
-	}
-	if err := svc.MigrateCodexBodyFingerprintToSignals(context.Background()); err != nil {
-		logger.LegacyPrintf("service.setting", "Warning: migrate codex body fingerprint to signals failed: %v", err)
+	if configuredProcessRole(cfg).RunsMigrations() {
+		if err := svc.MigrateOpenAIAllowClaudeCodeCodexPluginSetting(context.Background()); err != nil {
+			logger.LegacyPrintf("service.setting", "Warning: migrate openai allow Claude Code Codex plugin setting failed: %v", err)
+		}
+		if err := svc.MigrateCodexBodyFingerprintToSignals(context.Background()); err != nil {
+			logger.LegacyPrintf("service.setting", "Warning: migrate codex body fingerprint to signals failed: %v", err)
+		}
 	}
 	antigravity.SetUserAgentVersionResolver(svc.GetAntigravityUserAgentVersion)
 	return svc
@@ -652,6 +747,33 @@ func ProvideBillingCacheService(
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *BillingCacheService {
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo)
+}
+
+// ProvideUsageRecordWorkerPool starts the request-owned usage writer only on
+// roles that serve API traffic.
+func ProvideUsageRecordWorkerPool(cfg *config.Config) *UsageRecordWorkerPool {
+	if !shouldStartRequestLocal(cfg) {
+		return &UsageRecordWorkerPool{}
+	}
+	return NewUsageRecordWorkerPool(cfg)
+}
+
+// ProvideContentModerationService starts only the in-memory workers fed by
+// requests accepted by this process.
+func ProvideContentModerationService(
+	settingRepo SettingRepository,
+	repo ContentModerationRepository,
+	hashCache ContentModerationHashCache,
+	groupRepo GroupRepository,
+	userRepo UserRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	emailService *EmailService,
+	cfg *config.Config,
+) *ContentModerationService {
+	return newContentModerationService(
+		settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService,
+		shouldStartRequestLocal(cfg), shouldStartSingleton(cfg),
+	)
 }
 
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
@@ -748,7 +870,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
-	NewUsageRecordWorkerPool,
+	ProvideUsageRecordWorkerPool,
 	ProvideSchedulerSnapshotService,
 	NewIdentityService,
 	NewCRSSyncService,
@@ -778,7 +900,7 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
-	NewContentModerationService,
+	ProvideContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
@@ -797,7 +919,9 @@ var ProviderSet = wire.NewSet(
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {
 	svc := NewUserPlatformQuotaUsageFlusher(cfg, cache, quotaRepo, tw)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -822,10 +946,12 @@ func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, 
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.
-func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache LeaderLockCache, db *sql.DB) *PaymentOrderExpiryService {
+func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *PaymentOrderExpiryService {
 	svc := NewPaymentOrderExpiryService(paymentSvc, 60*time.Second)
 	svc.SetLeaderLock(lockCache, db)
-	svc.Start()
+	if shouldStartSingleton(cfg) {
+		svc.Start()
+	}
 	return svc
 }
 
@@ -861,10 +987,12 @@ func ProvideMonitorV2Service(
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
 // settingService 用于 runner 每次 fire 读取功能开关。
-func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService) *ChannelMonitorRunner {
+func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService, cfg *config.Config) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
 	svc.SetScheduler(r)
-	r.Start()
+	if shouldStartSingleton(cfg) {
+		r.Start()
+	}
 	return r
 }
 
@@ -886,8 +1014,10 @@ func ProvideAccountMonitorAccountRepository(repo AccountRepository) AccountMonit
 	return repo
 }
 
-func ProvideAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {
+func ProvideAccountMonitorRunner(svc *AccountMonitorService, cfg *config.Config) *AccountMonitorRunner {
 	runner := NewAccountMonitorRunner(svc)
-	runner.Start()
+	if shouldStartSingleton(cfg) {
+		runner.Start()
+	}
 	return runner
 }

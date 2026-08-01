@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -66,32 +68,63 @@ func main() {
 		return
 	}
 
-	// CLI setup mode
-	if *setupMode {
-		if err := setup.RunCLI(); err != nil {
-			log.Fatalf("Setup failed: %v", err)
-		}
-		return
+	roleValue := os.Getenv("SERVER_PROCESS_ROLE")
+	if strings.TrimSpace(roleValue) == "" {
+		roleValue = string(config.ProcessRoleAll)
+	}
+	role, err := config.ParseProcessRole(roleValue)
+	if err != nil {
+		log.Fatalf("Invalid process role: %v", err)
 	}
 
-	// Check if setup is needed
-	if setup.NeedsSetup() {
-		// Check if auto-setup is enabled (for Docker deployment)
-		if setup.AutoSetupEnabled() {
+	err = runStartup(role, *setupMode, startupActions{
+		runCLI:           setup.RunCLI,
+		needsSetup:       setup.NeedsSetup,
+		autoSetupEnabled: setup.AutoSetupEnabled,
+		autoSetup:        setup.AutoSetupFromEnv,
+		runSetupServer:   runSetupServer,
+		runMainServer:    runMainServer,
+	})
+	if err != nil {
+		log.Fatalf("Startup failed: %v", err)
+	}
+}
+
+type startupActions struct {
+	runCLI           func() error
+	needsSetup       func() bool
+	autoSetupEnabled func() bool
+	autoSetup        func() error
+	runSetupServer   func()
+	runMainServer    func()
+}
+
+func runStartup(role config.ProcessRole, setupMode bool, actions startupActions) error {
+	if setupMode {
+		if role == config.ProcessRoleAPI {
+			return errors.New("api process role cannot run setup")
+		}
+		return actions.runCLI()
+	}
+
+	if actions.needsSetup() {
+		if role == config.ProcessRoleAPI {
+			return errors.New("api process role cannot run setup when setup is required")
+		}
+		if actions.autoSetupEnabled() {
 			log.Println("Auto setup mode enabled...")
-			if err := setup.AutoSetupFromEnv(); err != nil {
-				log.Fatalf("Auto setup failed: %v", err)
+			if err := actions.autoSetup(); err != nil {
+				return fmt.Errorf("auto setup: %w", err)
 			}
-			// Continue to main server after auto-setup
 		} else {
 			log.Println("First run detected, starting setup wizard...")
-			runSetupServer()
-			return
+			actions.runSetupServer()
+			return nil
 		}
 	}
 
-	// Normal server mode
-	runMainServer()
+	actions.runMainServer()
+	return nil
 }
 
 func runSetupServer() {
@@ -154,7 +187,9 @@ func runMainServer() {
 	}
 	defer app.Cleanup()
 	if app.PromptAudit != nil {
-		if err := app.PromptAudit.Start(context.Background()); err != nil {
+		if err := app.PromptAudit.Start(context.Background(), securityaudit.PromptStartMode{
+			ConsumeSharedQueue: cfg.Server.ProcessRole.RunsSingletonJobs(),
+		}); err != nil {
 			// Startup continues so unrelated APIs stay up. Fail-closed (unavailable)
 			// applies only when a persisted blocking policy was observed; without
 			// blocking intent, Prompt Audit stays ModeOff so the gateway remains

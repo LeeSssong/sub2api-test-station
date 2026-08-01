@@ -66,8 +66,10 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 		entClient:           entClient,
 	}
 	svc.initSubCache(cfg)
-	svc.initMaintenanceQueue(cfg)
-	svc.StartSubCacheInvalidationSubscriber(context.Background())
+	if shouldStartRequestLocal(cfg) {
+		svc.initMaintenanceQueue(cfg)
+		svc.StartSubCacheInvalidationSubscriber(context.Background())
+	}
 	return svc
 }
 

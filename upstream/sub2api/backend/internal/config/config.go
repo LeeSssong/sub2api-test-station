@@ -23,6 +23,36 @@ const (
 	RunModeSimple   = "simple"
 )
 
+type ProcessRole string
+
+const (
+	ProcessRoleAll    ProcessRole = "all"
+	ProcessRoleAPI    ProcessRole = "api"
+	ProcessRoleWorker ProcessRole = "worker"
+)
+
+func ParseProcessRole(value string) (ProcessRole, error) {
+	role := ProcessRole(strings.ToLower(strings.TrimSpace(value)))
+	switch role {
+	case ProcessRoleAll, ProcessRoleAPI, ProcessRoleWorker:
+		return role, nil
+	default:
+		return "", fmt.Errorf("server.process_role must be one of: all/api/worker")
+	}
+}
+
+func (r ProcessRole) ServesAPI() bool {
+	return r == ProcessRoleAll || r == ProcessRoleAPI
+}
+
+func (r ProcessRole) RunsMigrations() bool {
+	return r == ProcessRoleAll || r == ProcessRoleWorker
+}
+
+func (r ProcessRole) RunsSingletonJobs() bool {
+	return r == ProcessRoleAll || r == ProcessRoleWorker
+}
+
 // 使用量记录队列溢出策略
 const (
 	UsageRecordOverflowPolicyDrop   = "drop"
@@ -658,18 +688,19 @@ type PricingConfig struct {
 }
 
 type ServerConfig struct {
-	Host                     string    `mapstructure:"host"`
-	Port                     int       `mapstructure:"port"`
-	Mode                     string    `mapstructure:"mode"`                  // debug/release
-	EnableServerTiming       bool      `mapstructure:"enable_server_timing"`  // Admin UI Server-Timing response header
-	FrontendURL              string    `mapstructure:"frontend_url"`          // 前端基础 URL，用于生成邮件中的外部链接
-	ReadHeaderTimeout        int       `mapstructure:"read_header_timeout"`   // 读取请求头超时（秒）
-	MaxHeaderBytes           int       `mapstructure:"max_header_bytes"`      // 请求头最大字节数（HTTP/2 映射为 header-list 上限）
-	IdleTimeout              int       `mapstructure:"idle_timeout"`          // 空闲连接超时（秒）
-	TrustedProxies           []string  `mapstructure:"trusted_proxies"`       // 可信代理列表（CIDR/IP）
-	TrustedProxiesConfigured bool      `mapstructure:"-" json:"-" yaml:"-"`   // 是否显式配置了可信代理列表
-	MaxRequestBodySize       int64     `mapstructure:"max_request_body_size"` // 全局最大请求体限制
-	H2C                      H2CConfig `mapstructure:"h2c"`                   // HTTP/2 Cleartext 配置
+	Host                     string      `mapstructure:"host"`
+	Port                     int         `mapstructure:"port"`
+	Mode                     string      `mapstructure:"mode"` // debug/release
+	ProcessRole              ProcessRole `mapstructure:"process_role"`
+	EnableServerTiming       bool        `mapstructure:"enable_server_timing"`  // Admin UI Server-Timing response header
+	FrontendURL              string      `mapstructure:"frontend_url"`          // 前端基础 URL，用于生成邮件中的外部链接
+	ReadHeaderTimeout        int         `mapstructure:"read_header_timeout"`   // 读取请求头超时（秒）
+	MaxHeaderBytes           int         `mapstructure:"max_header_bytes"`      // 请求头最大字节数（HTTP/2 映射为 header-list 上限）
+	IdleTimeout              int         `mapstructure:"idle_timeout"`          // 空闲连接超时（秒）
+	TrustedProxies           []string    `mapstructure:"trusted_proxies"`       // 可信代理列表（CIDR/IP）
+	TrustedProxiesConfigured bool        `mapstructure:"-" json:"-" yaml:"-"`   // 是否显式配置了可信代理列表
+	MaxRequestBodySize       int64       `mapstructure:"max_request_body_size"` // 全局最大请求体限制
+	H2C                      H2CConfig   `mapstructure:"h2c"`                   // HTTP/2 Cleartext 配置
 }
 
 // H2CConfig HTTP/2 Cleartext 配置
@@ -1673,6 +1704,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	trustedProxiesEnv, trustedProxiesEnvConfigured := os.LookupEnv("SERVER_TRUSTED_PROXIES")
 	forwardedClientIPHeadersEnv, forwardedClientIPHeadersEnvConfigured := os.LookupEnv("SECURITY_FORWARDED_CLIENT_IP_HEADERS")
+	processRoleEnv, processRoleEnvConfigured := os.LookupEnv("SERVER_PROCESS_ROLE")
 	trustedProxiesConfigured := viper.InConfig("server.trusted_proxies") ||
 		viper.IsSet("server.trusted_proxies") || trustedProxiesEnvConfigured
 
@@ -1685,6 +1717,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	if forwardedClientIPHeadersEnvConfigured {
 		cfg.Security.ForwardedClientIPHeaders = normalizeStringSlice(strings.Split(forwardedClientIPHeadersEnv, ","))
+	}
+	if processRoleEnvConfigured {
+		cfg.Server.ProcessRole = ProcessRole(processRoleEnv)
 	}
 	cfg.Server.TrustedProxiesConfigured = trustedProxiesConfigured
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
@@ -1851,6 +1886,7 @@ func setDefaults() {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.mode", "release")
+	viper.SetDefault("server.process_role", ProcessRoleAll)
 	viper.SetDefault("server.enable_server_timing", false)
 	viper.SetDefault("server.frontend_url", "")
 	viper.SetDefault("server.read_header_timeout", 10) // 10秒读取请求头
@@ -2476,6 +2512,12 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	processRole, err := ParseProcessRole(string(c.Server.ProcessRole))
+	if err != nil {
+		return err
+	}
+	c.Server.ProcessRole = processRole
+
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

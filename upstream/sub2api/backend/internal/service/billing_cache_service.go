@@ -150,7 +150,9 @@ func NewBillingCacheService(
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
 	}
 	svc.circuitBreaker = newBillingCircuitBreaker(cfg.Billing.CircuitBreaker)
-	svc.startCacheWriteWorkers()
+	if shouldStartRequestLocal(cfg) {
+		svc.startCacheWriteWorkers()
+	}
 	return svc
 }
 

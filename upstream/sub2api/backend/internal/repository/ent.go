@@ -18,6 +18,68 @@ import (
 	"github.com/lib/pq"
 )
 
+type initEntStartupHooks struct {
+	applyMigrations      func(context.Context, *sql.DB) error
+	verifyMigrations     func(context.Context, *sql.DB) error
+	bootstrapSecrets     func(context.Context, *ent.Client, *config.Config) error
+	validateConfig       func(*config.Config) error
+	seedDefaultGroups    func(context.Context, *ent.Client) error
+	seedAdminConcurrency func(context.Context, *ent.Client) error
+}
+
+func productionInitEntStartupHooks() initEntStartupHooks {
+	return initEntStartupHooks{
+		applyMigrations: func(ctx context.Context, db *sql.DB) error {
+			return applyMigrationsFS(ctx, db, migrations.FS)
+		},
+		verifyMigrations: func(ctx context.Context, db *sql.DB) error {
+			return verifyMigrationsFS(ctx, db, migrations.FS)
+		},
+		bootstrapSecrets:     ensureBootstrapSecrets,
+		validateConfig:       func(cfg *config.Config) error { return cfg.Validate() },
+		seedDefaultGroups:    ensureSimpleModeDefaultGroups,
+		seedAdminConcurrency: ensureSimpleModeAdminConcurrency,
+	}
+}
+
+func normalizeInitEntProcessRole(cfg *config.Config) error {
+	role, err := config.ParseProcessRole(string(cfg.Server.ProcessRole))
+	if err != nil {
+		return err
+	}
+	cfg.Server.ProcessRole = role
+	return nil
+}
+
+func initEntStartup(ctx context.Context, cfg *config.Config, db *sql.DB, client *ent.Client, hooks initEntStartupHooks) error {
+	if cfg.Server.ProcessRole.RunsMigrations() {
+		if err := hooks.applyMigrations(ctx, db); err != nil {
+			return err
+		}
+		if err := hooks.bootstrapSecrets(ctx, client, cfg); err != nil {
+			return err
+		}
+	} else if err := hooks.verifyMigrations(ctx, db); err != nil {
+		return err
+	}
+
+	if err := hooks.validateConfig(cfg); err != nil {
+		return fmt.Errorf("validate config after secret bootstrap: %w", err)
+	}
+
+	if cfg.Server.ProcessRole.RunsMigrations() && cfg.RunMode == config.RunModeSimple {
+		seedCtx, seedCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer seedCancel()
+		if err := hooks.seedDefaultGroups(seedCtx, client); err != nil {
+			return err
+		}
+		if err := hooks.seedAdminConcurrency(seedCtx, client); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // InitEnt 初始化 Ent ORM 客户端并返回客户端实例和底层的 *sql.DB。
 //
 // 该函数执行以下操作：
@@ -36,6 +98,10 @@ import (
 //   - *sql.DB: 底层的 SQL 数据库连接，可用于直接执行原生 SQL
 //   - error: 初始化过程中的错误
 func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
+	if err := normalizeInitEntProcessRole(cfg); err != nil {
+		return nil, nil, err
+	}
+
 	// 优先初始化时区设置，确保所有时间操作使用统一的时区。
 	// 这对于跨时区部署和日志时间戳的一致性至关重要。
 	if err := timezone.Init(cfg.Timezone); err != nil {
@@ -63,46 +129,16 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 		}
 	}
 	applyDBPoolSettings(drv.DB(), cfg)
+	client := ent.NewClient(ent.Driver(drv))
 
 	// 确保数据库 schema 已准备就绪。
 	// SQL 迁移文件是 schema 的权威来源（source of truth）。
 	// 这种方式比 Ent 的自动迁移更可控，支持复杂的迁移场景。
 	migrationCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := applyMigrationsFS(migrationCtx, drv.DB(), migrations.FS); err != nil {
-		_ = drv.Close() // 迁移失败时关闭驱动，避免资源泄露
-		return nil, nil, err
-	}
-
-	// 创建 Ent 客户端，绑定到已配置的数据库驱动。
-	client := ent.NewClient(ent.Driver(drv))
-
-	// 启动阶段：从配置或数据库中确保系统密钥可用。
-	if err := ensureBootstrapSecrets(migrationCtx, client, cfg); err != nil {
+	if err := initEntStartup(migrationCtx, cfg, drv.DB(), client, productionInitEntStartupHooks()); err != nil {
 		_ = client.Close()
 		return nil, nil, err
-	}
-
-	// 在密钥补齐后执行完整配置校验，避免空 jwt.secret 导致服务运行时失败。
-	if err := cfg.Validate(); err != nil {
-		_ = client.Close()
-		return nil, nil, fmt.Errorf("validate config after secret bootstrap: %w", err)
-	}
-
-	// SIMPLE 模式：启动时补齐各平台默认分组。
-	// - anthropic/openai/gemini: 确保存在 <platform>-default
-	// - antigravity: 仅要求存在 >=2 个未软删除分组（用于 claude/gemini 混合调度场景）
-	if cfg.RunMode == config.RunModeSimple {
-		seedCtx, seedCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer seedCancel()
-		if err := ensureSimpleModeDefaultGroups(seedCtx, client); err != nil {
-			_ = client.Close()
-			return nil, nil, err
-		}
-		if err := ensureSimpleModeAdminConcurrency(seedCtx, client); err != nil {
-			_ = client.Close()
-			return nil, nil, err
-		}
 	}
 
 	return client, drv.DB(), nil

@@ -1,67 +1,75 @@
 name: sub2api
 
+x-sub2api-environment: &sub2api-environment
+  AUTO_SETUP: "true"
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: "8080"
+  SERVER_MODE: release
+  RUN_MODE: standard
+  SERVER_TRUSTED_PROXIES: ${SERVER_TRUSTED_PROXIES:-172.16.0.0/12}
+  SERVER_MAX_REQUEST_BODY_SIZE: ${SERVER_MAX_REQUEST_BODY_SIZE:-134217728}
+  GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-134217728}
+  GATEWAY_TEXT_MAX_BODY_SIZE: ${GATEWAY_TEXT_MAX_BODY_SIZE:-16777216}
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_USER: ${POSTGRES_USER}
+  DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?required}
+  DATABASE_DBNAME: ${POSTGRES_DB}
+  DATABASE_SSLMODE: disable
+  DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+  DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+  REDIS_DB: "0"
+  REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-64}
+  REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
+  ADMIN_EMAIL: ${ADMIN_EMAIL}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?required}
+  JWT_SECRET: ${JWT_SECRET:?required}
+  TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
+  TZ: ${TZ:-Asia/Shanghai}
+  SECURITY_URL_ALLOWLIST_ENABLED: ${SECURITY_URL_ALLOWLIST_ENABLED:-false}
+  SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: ${SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP:-true}
+  SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: ${SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS:-true}
+  SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:-}
+
+  # OpenAI low-latency relay baseline. These are global gateway settings;
+  # no account credentials or account-specific fields are configured here.
+  GATEWAY_OPENAI_WS_ENABLED: ${GATEWAY_OPENAI_WS_ENABLED:-true}
+  GATEWAY_OPENAI_WS_RESPONSES_WEBSOCKETS_V2: ${GATEWAY_OPENAI_WS_RESPONSES_WEBSOCKETS_V2:-true}
+  GATEWAY_OPENAI_WS_MIN_IDLE_PER_ACCOUNT: ${GATEWAY_OPENAI_WS_MIN_IDLE_PER_ACCOUNT:-4}
+  GATEWAY_OPENAI_WS_MAX_IDLE_PER_ACCOUNT: ${GATEWAY_OPENAI_WS_MAX_IDLE_PER_ACCOUNT:-12}
+  GATEWAY_OPENAI_WS_DYNAMIC_MAX_CONNS_BY_ACCOUNT_CONCURRENCY_ENABLED: ${GATEWAY_OPENAI_WS_DYNAMIC_MAX_CONNS_BY_ACCOUNT_CONCURRENCY_ENABLED:-true}
+  GATEWAY_OPENAI_WS_POOL_TARGET_UTILIZATION: ${GATEWAY_OPENAI_WS_POOL_TARGET_UTILIZATION:-0.70}
+  GATEWAY_OPENAI_WS_QUEUE_LIMIT_PER_CONN: ${GATEWAY_OPENAI_WS_QUEUE_LIMIT_PER_CONN:-16}
+  GATEWAY_OPENAI_WS_EVENT_FLUSH_BATCH_SIZE: ${GATEWAY_OPENAI_WS_EVENT_FLUSH_BATCH_SIZE:-1}
+  GATEWAY_OPENAI_WS_EVENT_FLUSH_INTERVAL_MS: ${GATEWAY_OPENAI_WS_EVENT_FLUSH_INTERVAL_MS:-10}
+  GATEWAY_OPENAI_WS_STORE_DISABLED_CONN_MODE: ${GATEWAY_OPENAI_WS_STORE_DISABLED_CONN_MODE:-strict}
+  GATEWAY_OPENAI_WS_STORE_DISABLED_FORCE_NEW_CONN: ${GATEWAY_OPENAI_WS_STORE_DISABLED_FORCE_NEW_CONN:-true}
+  GATEWAY_OPENAI_WS_PREWARM_GENERATE_ENABLED: ${GATEWAY_OPENAI_WS_PREWARM_GENERATE_ENABLED:-false}
+  GATEWAY_OPENAI_WS_LB_TOP_K: ${GATEWAY_OPENAI_WS_LB_TOP_K:-7}
+  GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_QUEUE: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_QUEUE:-1.2}
+  GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_ERROR_RATE: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_ERROR_RATE:-1.2}
+  GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_TTFT: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_TTFT:-1.5}
+  GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ENABLED: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ENABLED:-true}
+  GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_TTFT_MS: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_TTFT_MS:-8000}
+  GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ERROR_RATE: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ERROR_RATE:-0.30}
+  GATEWAY_OPENAI_HTTP2_ENABLED: ${GATEWAY_OPENAI_HTTP2_ENABLED:-true}
+  GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1: ${GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1:-true}
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "20m", max-file: "5"}
+
 services:
-  sub2api:
-    image: ${SUB2API_IMAGE:?SUB2API_IMAGE is required}
+  sub2api-blue:
+    image: ${SUB2API_BLUE_IMAGE:?SUB2API_BLUE_IMAGE is required}
     restart: unless-stopped
     expose: ["8080"]
     environment:
-      AUTO_SETUP: "true"
-      SERVER_HOST: 0.0.0.0
-      SERVER_PORT: "8080"
-      SERVER_MODE: release
-      RUN_MODE: standard
-      SERVER_TRUSTED_PROXIES: ${SERVER_TRUSTED_PROXIES:-172.16.0.0/12}
-      SERVER_MAX_REQUEST_BODY_SIZE: ${SERVER_MAX_REQUEST_BODY_SIZE:-134217728}
-      GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-134217728}
-      GATEWAY_TEXT_MAX_BODY_SIZE: ${GATEWAY_TEXT_MAX_BODY_SIZE:-16777216}
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      DATABASE_USER: ${POSTGRES_USER}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?required}
-      DATABASE_DBNAME: ${POSTGRES_DB}
-      DATABASE_SSLMODE: disable
-      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
-      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
-      REDIS_DB: "0"
-      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-64}
-      REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?required}
-      JWT_SECRET: ${JWT_SECRET:?required}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
-      TZ: ${TZ:-Asia/Shanghai}
-      SECURITY_URL_ALLOWLIST_ENABLED: ${SECURITY_URL_ALLOWLIST_ENABLED:-false}
-      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: ${SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP:-true}
-      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: ${SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS:-true}
-      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: ${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:-}
-
-      # OpenAI low-latency relay baseline. These are global gateway settings;
-      # no account credentials or account-specific fields are configured here.
-      GATEWAY_OPENAI_WS_ENABLED: ${GATEWAY_OPENAI_WS_ENABLED:-true}
-      GATEWAY_OPENAI_WS_RESPONSES_WEBSOCKETS_V2: ${GATEWAY_OPENAI_WS_RESPONSES_WEBSOCKETS_V2:-true}
-      GATEWAY_OPENAI_WS_MIN_IDLE_PER_ACCOUNT: ${GATEWAY_OPENAI_WS_MIN_IDLE_PER_ACCOUNT:-4}
-      GATEWAY_OPENAI_WS_MAX_IDLE_PER_ACCOUNT: ${GATEWAY_OPENAI_WS_MAX_IDLE_PER_ACCOUNT:-12}
-      GATEWAY_OPENAI_WS_DYNAMIC_MAX_CONNS_BY_ACCOUNT_CONCURRENCY_ENABLED: ${GATEWAY_OPENAI_WS_DYNAMIC_MAX_CONNS_BY_ACCOUNT_CONCURRENCY_ENABLED:-true}
-      GATEWAY_OPENAI_WS_POOL_TARGET_UTILIZATION: ${GATEWAY_OPENAI_WS_POOL_TARGET_UTILIZATION:-0.70}
-      GATEWAY_OPENAI_WS_QUEUE_LIMIT_PER_CONN: ${GATEWAY_OPENAI_WS_QUEUE_LIMIT_PER_CONN:-16}
-      GATEWAY_OPENAI_WS_EVENT_FLUSH_BATCH_SIZE: ${GATEWAY_OPENAI_WS_EVENT_FLUSH_BATCH_SIZE:-1}
-      GATEWAY_OPENAI_WS_EVENT_FLUSH_INTERVAL_MS: ${GATEWAY_OPENAI_WS_EVENT_FLUSH_INTERVAL_MS:-10}
-      GATEWAY_OPENAI_WS_STORE_DISABLED_CONN_MODE: ${GATEWAY_OPENAI_WS_STORE_DISABLED_CONN_MODE:-strict}
-      GATEWAY_OPENAI_WS_STORE_DISABLED_FORCE_NEW_CONN: ${GATEWAY_OPENAI_WS_STORE_DISABLED_FORCE_NEW_CONN:-true}
-      GATEWAY_OPENAI_WS_PREWARM_GENERATE_ENABLED: ${GATEWAY_OPENAI_WS_PREWARM_GENERATE_ENABLED:-false}
-      GATEWAY_OPENAI_WS_LB_TOP_K: ${GATEWAY_OPENAI_WS_LB_TOP_K:-7}
-      GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_QUEUE: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_QUEUE:-1.2}
-      GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_ERROR_RATE: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_ERROR_RATE:-1.2}
-      GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_TTFT: ${GATEWAY_OPENAI_WS_SCHEDULER_SCORE_WEIGHTS_TTFT:-1.5}
-      GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ENABLED: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ENABLED:-true}
-      GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_TTFT_MS: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_TTFT_MS:-8000}
-      GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ERROR_RATE: ${GATEWAY_OPENAI_SCHEDULER_STICKY_ESCAPE_ERROR_RATE:-0.30}
-      GATEWAY_OPENAI_HTTP2_ENABLED: ${GATEWAY_OPENAI_HTTP2_ENABLED:-true}
-      GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1: ${GATEWAY_OPENAI_HTTP2_ALLOW_PROXY_FALLBACK_TO_HTTP1:-true}
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: api
     volumes:
       - type: bind
         source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
@@ -69,16 +77,47 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
-    healthcheck:
+    healthcheck: &sub2api-healthcheck
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 45s
-    logging: &logging
-      driver: json-file
-      options: {max-size: "20m", max-file: "5"}
+    logging: *logging
 
+  sub2api-green:
+    image: ${SUB2API_GREEN_IMAGE:?SUB2API_GREEN_IMAGE is required}
+    restart: unless-stopped
+    expose: ["8080"]
+    environment:
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: api
+    volumes:
+      - type: bind
+        source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
+        target: /app/data
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck: *sub2api-healthcheck
+    logging: *logging
+
+  sub2api-worker:
+    image: ${SUB2API_WORKER_IMAGE:?SUB2API_WORKER_IMAGE is required}
+    restart: unless-stopped
+    expose: ["8080"]
+    environment:
+      <<: *sub2api-environment
+      SERVER_PROCESS_ROLE: worker
+    volumes:
+      - type: bind
+        source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
+        target: /app/data
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck: *sub2api-healthcheck
+    logging: *logging
   postgres:
     image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     restart: unless-stopped
@@ -118,7 +157,7 @@ services:
       RELAY_OPS_TIMEZONE: Asia/Shanghai
       RELAY_OPS_PUBLIC_BASE_URL: https://${SITE_ADDRESS}
       RELAY_OPS_DATABASE_URL_FILE: /run/secrets/relay-ops-database-url
-      RELAY_OPS_SUB2API_URL: http://sub2api:8080
+      RELAY_OPS_SUB2API_URL: http://caddy:8081
       RELAY_OPS_SUB2API_ADMIN_KEY_FILE: /run/secrets/sub2api-admin-api-key
       RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE: /run/relay-ops/account-quality/account-quality-result.json
       RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE: ${RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE:-}
@@ -155,7 +194,6 @@ services:
     cpus: 0.75
     depends_on:
       postgres: {condition: service_healthy}
-      sub2api: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8100/healthz"]
       interval: 30s
@@ -193,16 +231,30 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}
       CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.18.0.1/32}
+      SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        SUB2API_ACTIVE_UPSTREAM=$$(awk -F= '$$1 == "SUB2API_ACTIVE_UPSTREAM" { value=$$2; count++ } END { if (count != 1) exit 1; print value }' /run/sub2api-release/release.env)
+        export SUB2API_ACTIVE_UPSTREAM
+        case "$$SUB2API_ACTIVE_UPSTREAM" in
+          sub2api-blue:8080|sub2api-green:8080) ;;
+          *)
+            echo "invalid SUB2API_ACTIVE_UPSTREAM: $$SUB2API_ACTIVE_UPSTREAM" >&2
+            exit 64
+            ;;
+        esac
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports: ["80:80", "443:443"]
+    expose: ["8081"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${SUB2API_RELEASE_ENV_FILE:?SUB2API_RELEASE_ENV_FILE is required}:/run/sub2api-release/release.env:ro
       - ./sub2api-update-ui:/srv/sub2api-update-ui:ro
       - /run/sub2api-updater:/run/sub2api-updater:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      sub2api: {condition: service_healthy}
-      relay-ops: {condition: service_healthy}
     logging: *logging
 
 volumes:

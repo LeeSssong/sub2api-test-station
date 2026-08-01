@@ -20,7 +20,7 @@
 
 ## 当前最重要进行中事项
 
-1. **2026-07-31 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：`main@c49c0a6ec` 已推送并构建镜像，但其 relay-ops 与生产遗留通知策略不兼容，两次原地重建均导致 Caddy 被依赖链阻塞、生产公网中断。事故恢复已将生产恢复到旧版本；先完成蓝绿发布设计、兼容性门禁和逐项工程差异审计，设计获确认前不修改生产。**状态：进行中（设计与审计）**；账务总账、倍率同步和 Monitor 卡片精简已合并到 `main`，统一排队待部署。
+1. **2026-08-01 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：`main@17b229eeb` 已合并并推送全部已收口分支；发布 controller 已补足与 host executor 的绝对 deadline 参数契约并通过回归。生产只读预检显示仍为单实例拓扑，不存在 host executor 或 `release-state`，Caddy 仍指向静态 `sub2api:8080`；首次安装双槽拓扑需维护窗口。**状态：进行中（停机评估完成前）**；账务总账、倍率同步和 Monitor 卡片精简已统一排队待部署。
 2. **2026-07-31 生产站点中断恢复**：11:56 首次故障后于 13:28 回滚恢复；14:10–14:11，“调度优化”任务误将事故回滚判断为外部覆盖，再次覆盖 Compose 并强制重建 Sub2API/relay-ops/Caddy，造成第二次中断。14:15 已再次恢复至 11:53 发布前快照；公网健康连续 5 次返回 200，首页、价格和文档入口正常，五个容器运行正常且重启计数为 0。**状态：恢复已验证；永久兼容性修复仍未推送、部署和验证**。
 3. **Sub2API 低延迟/会话隔离/Monitor 自动刷新工程差异**：生产仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置实现。**状态：工程代码/配置差异待部署**。
 4. **relay-ops 原生 P0/P1 Bridge 与蓝绿发布机制**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；可复用蓝绿机制尚不存在。**状态：持续实施**。
@@ -198,7 +198,7 @@
 6. **账号上游倍率自动同步**：上游倍率解析后的托管账号回写、审计和缓存同步已合并到 `main`，本地测试已通过；尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
 8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。本地后端、relay-ops 与前端回归通过，尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
-9. **30 分钟指令驱动 Sub2API 蓝绿发布**：API/worker 角色、双槽 Compose、restart-stable Caddy 路由、停机门禁、恢复/回滚、候选等待、运行态证明和 host deadline 已完成本地实现与 focused 验证；首次生产由遗留单实例切换到双槽仍需停机 bootstrap。**状态：工程差异待部署**；[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)。
+9. **30 分钟指令驱动 Sub2API 蓝绿发布**：API/worker 角色、双槽 Compose、restart-stable Caddy 路由、停机门禁、恢复/回滚、候选等待、运行态证明和 host deadline 已完成本地实现与 focused 验证；2026-08-01 已补足 controller 向 host executor 传递绝对 deadline 的契约。生产预检确认无 host executor / `release-state`、Caddy 仍是遗留单实例上游，首次切换双槽需停机 bootstrap。**状态：工程差异待部署**；[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)。
 10. **`api.xingqiaolab.top` TLS 兼容性修复**：RSA/TLS 1.2/1.3 兼容策略已通过固定 Caddy runtime 配置校验，尚未推送、部署或客户端验收。**状态：工程差异待部署**。
 
 ## 持续实施（2 项）

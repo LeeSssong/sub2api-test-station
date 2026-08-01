@@ -179,13 +179,16 @@ immutable_image="$image_repository@$digest"
 host_output=''
 host_status=0
 host_timeout=$(stage_timeout)
+host_deadline_epoch=$(ruby -e 'print Time.now.utc.to_i + Integer(ARGV.fetch(0))' "$host_timeout") \
+  || fail 'could not calculate host deadline'
+[[ "$host_deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail 'host deadline is invalid'
 set +e
 host_output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$host_timeout" "$ssh_bin" \
   -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
   -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
   bash "$host_executor" --mode "$mode" --image "$immutable_image" \
   --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$source_tree" \
-  --migrations-hash "$migrations_hash")
+  --migrations-hash "$migrations_hash" --deadline-epoch "$host_deadline_epoch")
 host_status=$?
 set -e
 check_budget

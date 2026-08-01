@@ -222,6 +222,7 @@ test_build_publish_and_host_invocation() {
   grep -F -- "--label com.xingqiao.sub2api.tested.tree=$(git -C "$CASE_DIR/repo" rev-parse 'HEAD^{tree}')" "$CASE_DIR/docker.log" >/dev/null || fail 'tested tree label missing'
   grep -F -- '--label com.xingqiao.sub2api.migrations.sha256=' "$CASE_DIR/docker.log" >/dev/null || fail 'migrations label missing'
   grep -F -- "--image example.invalid/xingqiao-sub2api@sha256:$SHA256" "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive immutable digest'
+  grep -E -- '--deadline-epoch [1-9][0-9]{9}($| )' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive an absolute deadline'
   grep -F '"result":"succeeded"' "$CASE_DIR/stdout" >/dev/null || fail 'controller did not propagate host result'
 }
 

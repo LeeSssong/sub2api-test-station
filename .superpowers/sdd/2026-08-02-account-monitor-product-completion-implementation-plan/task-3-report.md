@@ -56,3 +56,29 @@ git diff --check
 
 - 本任务只完成本地工程验证，尚未推送、部署或进行生产页面验收；不能将项目事项标记为“已完成”。
 - Vitest 输出包含现有的 Browserslist 数据过期与 pnpm `overrides` 配置告警，不影响本任务测试结果。
+
+## Fix round 1
+
+修复重复 `account_id` 投影会在全站和分组范围内重复渲染账号卡片、重复计数和产生重复 Vue key 的问题。`activeGroupAccountSource` 现在保留每个账号 ID 的首个投影及其原有顺序，再交给筛选、五类分区、范围计数和账号账务请求使用；显式 `group.accounts: []` 仍保持为空分组，不回退到全站账号。
+
+RED：先增加全站和分组范围内重复账号 ID 的回归测试，然后执行：
+
+```sh
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+结果：测试文件失败，22 个测试中 1 个失败、21 个通过。新测试期望全站显示“当前展示 2 个账号”，实际显示“当前展示 3 个账号”，证明重复投影被重复计数和渲染。
+
+GREEN：实现稳定的 `account_id` 去重后执行：
+
+```sh
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts src/components/admin/account-monitor/AccountMonitorFilters.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts
+pnpm run typecheck
+cd ../../..
+git diff --check
+```
+
+结果：聚焦视图测试 22 个全部通过；4 个前端测试文件、38 个测试全部通过；`vue-tsc --noEmit` 通过；`git diff --check` 通过。测试输出仍包含现有的 Browserslist 数据过期与 pnpm `overrides` 配置告警，不影响结果。

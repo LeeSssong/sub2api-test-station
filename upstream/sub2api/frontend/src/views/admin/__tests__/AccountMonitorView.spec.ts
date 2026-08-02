@@ -283,6 +283,40 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('成本不合格0')
   })
 
+  it('deduplicates account projections by account ID in all-site and group scopes', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: [
+        { ...account, account_id: 7, name: '全站首个投影' },
+        { ...account, account_id: 7, name: '全站重复投影' },
+        { ...account, account_id: 8, name: '全站另一个账号' },
+      ],
+      groups: [{
+        ...projection().groups[0],
+        accounts: [
+          { ...account, account_id: 7, name: '分组首个投影', quality_score: 80, group_rank: 1 },
+          { ...account, account_id: 7, name: '分组重复投影', quality_score: 60, group_rank: 2 },
+          { ...account, account_id: 9, name: '分组另一个账号', quality_score: 70, group_rank: 3 },
+        ],
+      }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前展示 2 个账号')
+    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
+    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('全站首个投影')
+    expect(wrapper.get('[data-test="account-section-available"]').text()).not.toContain('全站重复投影')
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('可用2')
+    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
+    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('分组首个投影')
+    expect(wrapper.get('[data-test="account-section-available"]').text()).not.toContain('分组重复投影')
+  })
+
   it('keeps group summaries and the weight action row visible for empty and search-zero results', async () => {
     list.mockResolvedValueOnce({
       ...projection(),

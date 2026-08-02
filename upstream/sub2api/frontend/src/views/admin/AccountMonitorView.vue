@@ -298,11 +298,20 @@ const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((
   return left.id - right.id
 }))
 const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
+function uniqueAccountsByID(source: AccountMonitorAccount[]): AccountMonitorAccount[] {
+  const accountIDs = new Set<number>()
+  return source.filter((account) => {
+    if (accountIDs.has(account.account_id)) return false
+    accountIDs.add(account.account_id)
+    return true
+  })
+}
 const activeGroupAccountSource = computed(() => {
   const group = activeGroup.value
-  if (group?.accounts) return group.accounts
-  if (group) return accounts.value.filter((account) => account.group_ids.includes(group.id))
-  return accounts.value
+  const source = group?.accounts ?? (group
+    ? accounts.value.filter((account) => account.group_ids.includes(group.id))
+    : accounts.value)
+  return uniqueAccountsByID(source)
 })
 
 const filteredAccounts = computed(() => {

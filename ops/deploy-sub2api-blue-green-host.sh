@@ -242,6 +242,7 @@ persistence_started=false
 worker_update_started=false
 maintenance_transition=false
 maintenance_stopped=false
+maintenance_identity_refresh=false
 maintenance_deadline_epoch=''
 rollback_completed=false
 failure_reason='unexpected_exit'
@@ -781,8 +782,17 @@ fi
 postgres_id=$(resolve_container_id postgres) || gate legacy_topology_bootstrap 'PostgreSQL container identity is not uniquely resolvable' 600
 redis_id=$(resolve_container_id redis) || gate legacy_topology_bootstrap 'Redis container identity is not uniquely resolvable' 600
 caddy_id=$(resolve_container_id caddy) || gate legacy_topology_bootstrap 'Caddy container identity is not uniquely resolvable' 600
-[[ "$postgres_id" == "$state_postgres_id" && "$redis_id" == "$state_redis_id" && "$caddy_id" == "$state_caddy_id" ]] \
-  || gate shared_container_identity_changed 'PostgreSQL, Redis, or Caddy identity differs from the active release state' 600
+if [[ "$postgres_id" != "$state_postgres_id" || "$redis_id" != "$state_redis_id" || "$caddy_id" != "$state_caddy_id" ]]; then
+  if [[ "$maintenance_transition" == true && "$postgres_id" == "$state_postgres_id" && "$redis_id" == "$state_redis_id" ]]; then
+    expected_caddy_image=$("${compose_current[@]}" config --format json | jq -er '.services.caddy.image') \
+      || gate shared_container_identity_changed 'current Caddy image could not be proved during authorized maintenance' 600
+    [[ "$(docker inspect "$caddy_id" --format '{{.Config.Image}}')" == "$expected_caddy_image" ]] \
+      || gate shared_container_identity_changed 'Caddy identity changed to an unexpected image' 600
+    maintenance_identity_refresh=true
+  else
+    gate shared_container_identity_changed 'PostgreSQL, Redis, or Caddy identity differs from the active release state' 600
+  fi
+fi
 
 active_service="sub2api-$state_active_slot"
 active_image=$state_blue_image

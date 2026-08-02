@@ -51,9 +51,11 @@ hash below. No other migration transition is accepted:
 
 ```text
 from 176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0
-to   c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+to   e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 files 188_account_monitor_group_score_weights.sql
        193_usage_log_actual_response_model.sql
+       194_account_monitor_score_thresholds.sql
+       195_ops_metrics_duration_sample_count.sql
 ```
 
 Invoke the same controller with the explicit maintenance flag:

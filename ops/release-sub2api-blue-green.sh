@@ -197,7 +197,7 @@ host_args=(
 )
 if [[ "$maintenance_authorized" == true ]]; then
   host_args+=(--maintenance-authorized --maintenance-from-hash \
-    176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0)
+    c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408)
 fi
 host_output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$host_timeout" "$ssh_bin" \
   -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \

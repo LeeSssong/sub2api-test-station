@@ -26,7 +26,7 @@ maintenance_from_hash=''
 # The only migration transition permitted by the maintenance path. These
 # hashes cover the complete normalized migration set, so a modified file or
 # any additional migration fails closed before production is stopped.
-readonly MAINTENANCE_OLD_MIGRATIONS_HASH=176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0
+readonly MAINTENANCE_OLD_MIGRATIONS_HASH=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
 readonly MAINTENANCE_NEW_MIGRATIONS_HASH=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
 while (($#)); do

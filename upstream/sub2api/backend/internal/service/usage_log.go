@@ -108,6 +108,8 @@ type UsageLog struct {
 	AccountID int64
 	RequestID string
 	Model     string
+	// ActualResponseModel is the model returned by the OpenAI upstream response.
+	ActualResponseModel *string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.
 	// Empty should be treated as Model for backward compatibility with historical rows.
 	RequestedModel string

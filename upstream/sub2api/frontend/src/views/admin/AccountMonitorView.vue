@@ -85,8 +85,22 @@
         </p>
       </section>
 
-      <section v-if="sortedGroups.length" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
+      <section class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
         <div class="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="账号分组">
+          <div data-test="all-site-tab">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeGroupId === null"
+              class="shrink-0 rounded-lg border px-3 py-2 text-left text-sm transition-colors"
+              :class="activeGroupId === null ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300' : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-300'"
+              data-test="all-site-tab-button"
+              @click="selectAllSite"
+            >
+              <span class="block font-medium">全站</span>
+              <span class="mt-0.5 block text-[11px] opacity-75">全部账号</span>
+            </button>
+          </div>
           <div v-for="group in sortedGroups" :key="group.id" data-test="group-tab">
             <button
               type="button"
@@ -109,12 +123,10 @@
           :search="search"
           :platform="platform"
           :status="status"
-          :group-id="groupId"
           :accounts="accounts"
           @update:search="search = $event"
           @update:platform="platform = $event"
           @update:status="status = $event"
-          @update:group-id="selectFilterGroup"
         />
         <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
           {{ t('admin.accountMonitor.lastObserved', { time: formatDate(projection?.observed_at) }) }}
@@ -317,7 +329,6 @@ const error = ref<string | null>(null)
 const search = ref('')
 const platform = ref('')
 const status = ref('')
-const groupId = ref('')
 const runningAll = ref(false)
 const runningAccounts = ref(new Set<number>())
 const savingWeights = ref(new Set<number>())
@@ -371,7 +382,6 @@ const filteredAccounts = computed(() => {
   return activeGroupAccountSource.value.filter((account) => {
     if (platform.value && account.platform !== platform.value) return false
     if (status.value && displayStatus(account) !== status.value) return false
-    if (groupId.value && !account.group_ids.includes(Number(groupId.value))) return false
     if (!query) return true
     return [
       account.name,
@@ -427,7 +437,7 @@ async function load() {
     const result = await adminAPI.accountMonitor.list({ signal: controller.signal })
     if (controller.signal.aborted || abortController !== controller) return
     projection.value = result
-    accounts.value = result.accounts.filter((account) => account.status === 'active' && account.schedulable)
+    accounts.value = result.accounts
     ensureActiveGroup()
     await loadOperations()
   } catch (err: unknown) {
@@ -444,8 +454,7 @@ async function load() {
 
 function ensureActiveGroup() {
   if (activeGroupId.value !== null && sortedGroups.value.some((group) => group.id === activeGroupId.value)) return
-  activeGroupId.value = sortedGroups.value[0]?.id ?? null
-  groupId.value = activeGroupId.value === null ? '' : String(activeGroupId.value)
+  activeGroupId.value = null
 }
 
 async function loadOperations() {
@@ -493,7 +502,10 @@ async function loadOperations() {
   }
   const nextLedgers: Record<number, ReconciliationSummary | null> = {}
   for (const account of visibleAccounts) {
-    calls.push(adminAPI.reconciliation.operations({ group_id: groupID ?? undefined, account_id: account.account_id })
+    const accountScope = groupID === null
+      ? { account_id: account.account_id }
+      : { group_id: groupID, account_id: account.account_id }
+    calls.push(adminAPI.reconciliation.operations(accountScope)
       .then((summary) => { nextLedgers[account.account_id] = summary })
       .catch(() => { nextLedgers[account.account_id] = null }))
   }
@@ -503,19 +515,12 @@ async function loadOperations() {
 
 async function selectGroup(groupID: number) {
   activeGroupId.value = groupID
-  groupId.value = String(groupID)
   await loadOperations()
 }
 
-function selectFilterGroup(value: string) {
-  groupId.value = value
-  const parsed = Number(value)
-  if (Number.isInteger(parsed) && parsed > 0) {
-    void selectGroup(parsed)
-    return
-  }
-  activeGroupId.value = sortedGroups.value[0]?.id ?? null
-  void loadOperations()
+async function selectAllSite() {
+  activeGroupId.value = null
+  await loadOperations()
 }
 
 async function handleRunAll() {

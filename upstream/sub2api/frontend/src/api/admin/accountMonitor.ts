@@ -72,6 +72,10 @@ export interface AccountMonitorAccount {
   account_type: string
   status: string
   schedulable: boolean
+  management_state: string
+  service_state: string
+  group_eligibility: string
+  monitor_bucket: string
   priority: number
   homepage_url?: string
   group_ids: number[]

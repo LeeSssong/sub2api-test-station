@@ -19,6 +19,10 @@ const accounts = [
     account_type: 'api_key',
     status: 'active',
     schedulable: true,
+    management_state: 'enabled',
+    service_state: 'available',
+    group_eligibility: 'eligible',
+    monitor_bucket: 'available',
     group_ids: [9, 3],
     group_names: ['Zulu', 'Alpha'],
     model_id: 'gpt-5.4',
@@ -37,6 +41,10 @@ const accounts = [
     account_type: 'api_key',
     status: 'active',
     schedulable: true,
+    management_state: 'enabled',
+    service_state: 'available',
+    group_eligibility: 'eligible',
+    monitor_bucket: 'available',
     group_ids: [3, 5],
     group_names: ['Alpha', 'Beta'],
     model_id: 'gpt-5.4',
@@ -51,29 +59,13 @@ const accounts = [
 ]
 
 describe('AccountMonitorFilters', () => {
-  it('derives unique group options ordered by name and id', () => {
+  it('仅提供搜索、平台和服务状态筛选，不重复提供分组范围选择', () => {
     const wrapper = mount(AccountMonitorFilters, {
-      props: { search: '', platform: '', status: '', groupId: '', accounts },
+      props: { search: '', platform: '', status: '', accounts },
       global: { stubs: { Icon: true } },
     })
 
-    const options = wrapper.findAll('[data-test="group-filter"] option')
-    expect(options.map((option) => option.text())).toEqual([
-      'admin.accountMonitor.filters.allGroups',
-      'Alpha',
-      'Beta',
-      'Zulu',
-    ])
-    expect(options.map((option) => option.attributes('value'))).toEqual(['', '3', '5', '9'])
-  })
-
-  it('emits the selected group id', async () => {
-    const wrapper = mount(AccountMonitorFilters, {
-      props: { search: '', platform: '', status: '', groupId: '', accounts },
-      global: { stubs: { Icon: true } },
-    })
-
-    await wrapper.get('[data-test="group-filter"]').setValue('5')
-    expect(wrapper.emitted('update:groupId')).toEqual([['5']])
+    expect(wrapper.find('[data-test="group-filter"]').exists()).toBe(false)
+    expect(wrapper.findAll('select')).toHaveLength(2)
   })
 })

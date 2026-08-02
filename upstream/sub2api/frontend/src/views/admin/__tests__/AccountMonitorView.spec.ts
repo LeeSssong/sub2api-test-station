@@ -74,6 +74,10 @@ const account = {
   account_type: 'oauth',
   status: 'active',
   schedulable: true,
+  management_state: 'enabled',
+  service_state: 'available',
+  group_eligibility: 'eligible',
+  monitor_bucket: 'available',
   group_ids: [3],
   group_names: ['Production'],
   model_id: 'claude-sonnet-4-5',
@@ -155,13 +159,12 @@ function mountView() {
           `,
         },
         AccountMonitorFilters: {
-          props: ['search', 'platform', 'status', 'groupId'],
-          emits: ['update:search', 'update:platform', 'update:status', 'update:groupId'],
+          props: ['search', 'platform', 'status'],
+          emits: ['update:search', 'update:platform', 'update:status'],
           template: `
             <div data-test="filters">
-              <button data-test="select-group-3" @click="$emit('update:groupId', '3')">group 3</button>
-              <button data-test="select-group-5" @click="$emit('update:groupId', '5')">group 5</button>
-              <button data-test="search-backup" @click="$emit('update:search', 'backup')">search backup</button>
+              <button data-test="search-backup" @click="$emit('update:search', '备份')">搜索备份</button>
+              <button data-test="filter-failed" @click="$emit('update:status', 'failed')">筛选失败</button>
             </div>
           `,
         },
@@ -265,13 +268,15 @@ describe('admin account monitor view', () => {
     expect(wrapper.find('[data-test="unattributed-group-ledger"]').exists()).toBe(false)
   })
 
-  it('shows historical cumulative economics and scoped service health by default', async () => {
+  it('切换分组后显示分组历史经营与服务健康', async () => {
     reconciliationOperations.mockImplementation((params: { group_id?: number; start?: string }) => {
       if (params.start && params.group_id === 3) return Promise.resolve({ total_attempts: 50, matched_attempts: 50, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '10', user_charge: '20', paper_profit: '10', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
       if (params.start) return Promise.resolve({ total_attempts: 100, matched_attempts: 100, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '30', user_charge: '60', paper_profit: '30', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z', unattributed_attempts: 4, unattributed_user_charge: '8', unattributed_upstream_cost: '3' })
       return Promise.resolve({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
     })
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
 
     expect(reconciliationOperations).toHaveBeenCalledWith(expect.objectContaining({ start: '1970-01-01T00:00:00.000Z' }))
@@ -282,7 +287,7 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="group-health-summary"]').text()).toContain('TTFT 100 ms')
   })
 
-  it('orders group tabs by rate and reloads scoped group operations on selection', async () => {
+  it('全站 Tab 固定在首位，切换分组后加载分组账务', async () => {
     list.mockResolvedValueOnce({
       ...projection(),
       groups: [
@@ -298,9 +303,11 @@ describe('admin account monitor view', () => {
     const wrapper = mountView()
     await flushPromises()
 
+    expect(wrapper.get('[data-test="all-site-tab"]').text()).toContain('全站')
     expect(wrapper.findAll('[data-test="group-tab"] .font-medium').map((tab) => tab.text())).toEqual(['Production', 'Overflow', 'Archive'])
+    expect(wrapper.text()).toContain('Archive Claude')
     expect(wrapper.text()).toContain('Production Claude')
-    expect(reconciliationOperations).toHaveBeenCalledWith({ group_id: 3 })
+    expect(reconciliationOperations).not.toHaveBeenCalledWith({ group_id: 3 })
 
     await wrapper.get('[data-test="group-tab-1"]').trigger('click')
     await flushPromises()
@@ -308,6 +315,53 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).toContain('Archive Claude')
     expect(reconciliationOperations).toHaveBeenCalledWith({ group_id: 1 })
     expect(reconciliationOperations).toHaveBeenCalledWith({ group_id: 1, account_id: 8 })
+  })
+
+  it('首次加载默认全站，展示全部唯一账号且账务请求不带分组范围', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: [
+        { ...account, account_id: 7, name: '生产账号', group_ids: [3], group_names: ['生产组'] },
+        { ...account, account_id: 8, name: '未分组账号', group_ids: [], group_names: [] },
+        {
+          ...account,
+          account_id: 9,
+          name: '暂停账号',
+          status: 'paused',
+          schedulable: false,
+          management_state: 'paused',
+          service_state: 'unavailable',
+          group_eligibility: 'not_applicable',
+          monitor_bucket: 'paused',
+          group_ids: [3],
+          group_names: ['生产组'],
+        },
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="all-site-tab"]').text()).toContain('全站')
+    expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(3)
+    expect(wrapper.text()).toContain('生产账号')
+    expect(wrapper.text()).toContain('未分组账号')
+    expect(wrapper.text()).toContain('暂停账号')
+    expect(reconciliationOperations.mock.calls.map(([params]) => params)).not.toContainEqual(expect.objectContaining({ group_id: expect.any(Number) }))
+    expect(reconciliationOperations.mock.calls.map(([params]) => params).every((params) => !Object.hasOwn(params, 'group_id'))).toBe(true)
+  })
+
+  it('没有分组时仍保留全站 Tab', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      groups: [],
+      accounts: [{ ...account, name: '未分组账号', group_ids: [], group_names: [] }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="all-site-tab-button"]').text()).toContain('全站')
+    expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
   })
 
   it('opens the daily ledger history from the all-site overview', async () => {
@@ -319,7 +373,7 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="ledger-history-drawer"]').text()).toBe('global')
   })
 
-  it('keeps the newest group operations response when tabs are switched quickly', async () => {
+  it('快速切换分组时保留最新分组账务响应', async () => {
     let resolveProduction: ((value: Record<string, unknown>) => void) | undefined
     reconciliationOperations.mockImplementation((params: { group_id?: number; account_id?: number }) => {
       if (params.group_id === 3 && params.account_id === undefined) {
@@ -341,6 +395,7 @@ describe('admin account monitor view', () => {
     })
     const wrapper = mountView()
     await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await wrapper.get('[data-test="group-tab-1"]').trigger('click')
     await flushPromises()
 
@@ -351,8 +406,10 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="group-operations-overview"]').text()).not.toContain('$9.00')
   })
 
-  it('saves and resets only the selected group score weights', async () => {
+  it('只保存和重置当前选中分组的评分权重', async () => {
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
 
     await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
@@ -367,12 +424,14 @@ describe('admin account monitor view', () => {
     expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
   })
 
-  it('describes a closed group as intentionally not user-facing', async () => {
+  it('说明关闭分组并非面向用户的服务异常', async () => {
     list.mockResolvedValueOnce({
       ...projection(),
       groups: [{ ...projection().groups[0], customer_visible: false, operational_state: 'closed' }],
     })
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-test="group-operations-overview"]').text()).toContain('当前分组未向用户开放')
@@ -423,38 +482,53 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).toContain('timeout')
   })
 
-  it('filters multi-group accounts and composes with search', async () => {
+  it('分组 Tab 与搜索、服务状态筛选可组合使用', async () => {
     list.mockResolvedValueOnce({
       ...projection(),
+      groups: [
+        ...projection().groups,
+        {
+          ...projection().groups[0],
+          id: 5,
+          name: 'Overflow',
+          native_order: 1,
+        },
+      ],
       accounts: [
         account,
         {
           ...account,
           account_id: 8,
-          name: 'Backup Claude',
+          name: '备份账号',
           group_ids: [3, 5],
           group_names: ['Production', 'Overflow'],
+          latest_status: 'failed',
         },
         {
           ...account,
           account_id: 9,
-          name: 'Other Claude',
+          name: '其他账号',
           group_ids: [5],
           group_names: ['Overflow'],
+          latest_status: 'failed',
         },
       ],
     })
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-test="select-group-5"]').trigger('click')
+    await wrapper.get('[data-test="group-tab-5"]').trigger('click')
     expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('Backup Claude')
-    expect(wrapper.text()).toContain('Other Claude')
+    expect(wrapper.text()).toContain('备份账号')
+    expect(wrapper.text()).toContain('其他账号')
     expect(wrapper.text()).not.toContain('Primary Claude')
 
     await wrapper.get('[data-test="search-backup"]').trigger('click')
     expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('Backup Claude')
+    expect(wrapper.text()).toContain('备份账号')
+
+    await wrapper.get('[data-test="filter-failed"]').trigger('click')
+    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('备份账号')
   })
 })

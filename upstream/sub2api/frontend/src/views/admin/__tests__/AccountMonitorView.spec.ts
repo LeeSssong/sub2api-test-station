@@ -158,8 +158,8 @@ describe('admin account monitor view', () => {
     runAll.mockReset().mockResolvedValue({ completed: 1 })
     runOne.mockReset().mockResolvedValue({ account_id: 7, status: 'success' })
     history.mockReset().mockResolvedValue({ items: [] })
-    reconciliationSummary.mockReset().mockResolvedValue({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'USD', observed_at: '2026-07-25T08:01:00Z' })
-    reconciliationRefresh.mockReset().mockResolvedValue({ coverage_ratio: 1, pending_attempts: 0 })
+    reconciliationSummary.mockReset().mockResolvedValue({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'USD', observed_at: '2026-07-25T08:01:00Z' })
+    reconciliationRefresh.mockReset().mockResolvedValue({ coverage_known: true, coverage_ratio: 1, pending_attempts: 0 })
     reconciliationExceptions.mockReset().mockResolvedValue({ items: [] })
     reconciliationAdjust.mockReset().mockResolvedValue({})
   })
@@ -172,6 +172,23 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).toContain('0.10x')
     expect(wrapper.text()).toContain('success')
     expect(wrapper.get('[data-test="monitor-card"]').exists()).toBe(true)
+  })
+
+  it('shows unknown coverage instead of a green 100 percent for an empty ledger window', async () => {
+    reconciliationSummary.mockResolvedValueOnce({
+      total_attempts: 0, matched_attempts: 0, pending_attempts: 0, conflict_attempts: 0,
+      coverage_known: false, coverage_ratio: 0, upstream_cost: '0', user_charge: '0', paper_profit: '0', currency: 'USD', observed_at: '2026-08-01T00:00:00Z',
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const summary = wrapper.get('[data-test="reconciliation-summary"]')
+    expect(summary.text()).toContain('成本覆盖率')
+    expect(summary.text()).toContain('-')
+    const coverageValue = summary.findAll('p.text-2xl')[2]
+    expect(coverageValue.classes()).toContain('text-gray-500')
+    expect(coverageValue.classes()).not.toContain('text-green-600')
   })
 
   it('updates the global interval from the header and card settings action', async () => {

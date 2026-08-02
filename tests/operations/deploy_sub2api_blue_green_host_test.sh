@@ -216,7 +216,13 @@ JSON
 	'inspect blue-id --format {{.Config.Image}}')
 		if [[ "$scenario" == active_image_drift ]]; then printf '%s\n' "${EXPECTED_IMAGE:?}"; else printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}"; fi
 		;;
-	'inspect green-id --format {{.Config.Image}}') printf '%s\n' "${EXPECTED_IMAGE:?}" ;;
+	'inspect green-id --format {{.Config.Image}}')
+		if [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then
+			printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}"
+		else
+			printf '%s\n' "${EXPECTED_IMAGE:?}"
+		fi
+		;;
 	'inspect worker-id --format {{.Config.Image}}') printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}" ;;
 	'inspect blue-id --format {{range .Config.Env}}{{println .}}{{end}}')
 		if [[ "$scenario" == active_role_all ]]; then printf 'SERVER_PROCESS_ROLE=all\n'; else printf 'SERVER_PROCESS_ROLE=api\n'; fi
@@ -468,6 +474,7 @@ set_active_green() {
     -e 's|^SUB2API_ACTIVE_SLOT=.*|SUB2API_ACTIVE_SLOT=green|' \
     -e 's|^SUB2API_PREVIOUS_SLOT=.*|SUB2API_PREVIOUS_SLOT=blue|' "$CASE_DIR/release.env"
   rm -f -- "$CASE_DIR/release.env.bak"
+  : >"${EVENT_LOG}.live-route-green"
 }
 
 assert_no_mutation() {
@@ -659,6 +666,7 @@ test_two_slot_rehearsal_cycles() {
   setup_case cycle_green_to_blue
   write_meminfo
   set_active_green
+  [[ -e "${EVENT_LOG}.live-route-green" ]] || fail 'green-to-blue fixture did not mark the active green Caddy route'
   run_executor FAKE_CANDIDATE_SLOT=blue >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "green-to-blue rehearsal failed: $(cat "$CASE_DIR/stderr")"
   grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail 'green-to-blue did not promote blue'
   ! grep -Eq 'compose .* (stop|rm).*sub2api-green|compose .* down' "$EVENT_LOG" || fail 'green-to-blue did not retain the prior green slot'
@@ -811,6 +819,7 @@ test_review_recovery_and_cleanup() {
     -e 's|^SUB2API_ACTIVE_SLOT=.*|SUB2API_ACTIVE_SLOT=green|' \
     -e 's|^SUB2API_PREVIOUS_SLOT=.*|SUB2API_PREVIOUS_SLOT=blue|' "$CASE_DIR/release.env"
   rm -f -- "$CASE_DIR/release.env.bak"
+  : >"${EVENT_LOG}.live-route-green"
   write_review_partial "$CASE_DIR/records/committed.partial" committed true true true green sub2api-green:8080 "$IMAGE"
   "$REAL_JQ" -n --arg image "$IMAGE" '
     {schema_version:1, attempt_id:"committed", mode:"production",
@@ -840,6 +849,7 @@ test_review_recovery_and_cleanup() {
     -e 's|^SUB2API_ACTIVE_SLOT=.*|SUB2API_ACTIVE_SLOT=green|' \
     -e 's|^SUB2API_PREVIOUS_SLOT=.*|SUB2API_PREVIOUS_SLOT=blue|' "$CASE_DIR/release.env"
   rm -f -- "$CASE_DIR/release.env.bak"
+  : >"${EVENT_LOG}.live-route-green"
   printf '{"attempt_id":"malformed-committed","candidate":{"slot":"green","upstream":"sub2api-green:8080","image":"%s"}}\n' "$IMAGE" \
     >"$CASE_DIR/records/malformed-committed.partial"
   chmod 0600 "$CASE_DIR/records/malformed-committed.partial"

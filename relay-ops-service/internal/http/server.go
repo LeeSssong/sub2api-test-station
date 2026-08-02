@@ -124,7 +124,7 @@ type AccountingService interface {
 type ReconciliationService interface {
 	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
 	ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error)
-	CreateManualUpstreamCost(context.Context, reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error)
+	CreateManualUpstreamCostForException(context.Context, int64, reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error)
 	RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
 }
 
@@ -298,9 +298,10 @@ func (s *server) configureBillingSession(w http.ResponseWriter, request *http.Re
 		return
 	}
 	var input struct {
-		AuthMode   string `json:"auth_mode"`
-		SecretFile string `json:"secret_file"`
-		LoginURL   string `json:"login_url"`
+		AuthMode         string `json:"auth_mode"`
+		SecretFile       string `json:"secret_file"`
+		LoginURL         string `json:"login_url"`
+		BillingAccountID int64  `json:"billing_account_id"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 16<<10))
 	decoder.DisallowUnknownFields()
@@ -310,13 +311,13 @@ func (s *server) configureBillingSession(w http.ResponseWriter, request *http.Re
 	}
 	actor, _ := adminauth.ActorFromContext(request.Context())
 	configured, err := s.dependencies.Billing.Configure(request.Context(), actor, billing.SessionInput{
-		UpstreamID: domain.UpstreamID(id), AuthMode: input.AuthMode, SecretFile: input.SecretFile, LoginURL: input.LoginURL,
+		UpstreamID: domain.UpstreamID(id), AuthMode: input.AuthMode, SecretFile: input.SecretFile, LoginURL: input.LoginURL, BillingAccountID: input.BillingAccountID,
 	})
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "BILLING_SESSION_REJECTED")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"upstream_id": configured.UpstreamID, "auth_mode": configured.AuthMode, "login_url": configured.LoginURL, "status": "active"})
+	writeJSON(w, http.StatusCreated, map[string]any{"upstream_id": configured.UpstreamID, "auth_mode": configured.AuthMode, "login_url": configured.LoginURL, "billing_account_id": configured.BillingAccountID, "status": "active"})
 }
 
 func (s *server) listUpstreams(w http.ResponseWriter, request *http.Request) {
@@ -328,7 +329,7 @@ func (s *server) listUpstreams(w http.ResponseWriter, request *http.Request) {
 	}
 	views := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		views = append(views, map[string]any{"id": item.ID, "name": item.Name, "role": item.Role, "base_url": item.BaseURL, "group_ids": item.GroupIDs, "monitor_id": item.MonitorID, "enabled": item.Enabled})
+		views = append(views, map[string]any{"id": item.ID, "name": item.Name, "role": item.Role, "base_url": item.BaseURL, "adapter_type": item.AdapterType, "group_ids": item.GroupIDs, "monitor_id": item.MonitorID, "enabled": item.Enabled})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": views})
 }
@@ -341,6 +342,7 @@ func (s *server) createUpstream(w http.ResponseWriter, request *http.Request) {
 	var input struct {
 		Name           string   `json:"name"`
 		BaseURL        string   `json:"base_url"`
+		AdapterType    string   `json:"adapter_type"`
 		PricingURL     string   `json:"pricing_url"`
 		UsageURL       string   `json:"usage_url"`
 		PerformanceURL string   `json:"performance_url"`
@@ -356,7 +358,7 @@ func (s *server) createUpstream(w http.ResponseWriter, request *http.Request) {
 	}
 	actor, _ := adminauth.ActorFromContext(request.Context())
 	created, err := s.dependencies.Upstreams.CreateProduction(request.Context(), actor, upstreams.ProductionInput{
-		Name: input.Name, BaseURL: input.BaseURL, PricingURL: input.PricingURL, UsageURL: input.UsageURL,
+		Name: input.Name, BaseURL: input.BaseURL, AdapterType: input.AdapterType, PricingURL: input.PricingURL, UsageURL: input.UsageURL,
 		PerformanceURL: input.PerformanceURL, GroupIDs: input.GroupIDs, GroupNames: input.GroupNames, MonitorID: input.MonitorID,
 	})
 	if err != nil {
@@ -367,7 +369,7 @@ func (s *server) createUpstream(w http.ResponseWriter, request *http.Request) {
 		writeAPIError(w, status, "UPSTREAM_REJECTED")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": created.ID, "name": created.Name, "role": created.Role, "base_url": created.BaseURL, "group_ids": created.GroupIDs, "monitor_id": created.MonitorID, "enabled": created.Enabled})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": created.ID, "name": created.Name, "role": created.Role, "base_url": created.BaseURL, "adapter_type": created.AdapterType, "group_ids": created.GroupIDs, "monitor_id": created.MonitorID, "enabled": created.Enabled})
 }
 
 func (s *server) disableUpstream(w http.ResponseWriter, request *http.Request) {

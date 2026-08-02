@@ -7,12 +7,60 @@ import (
 	"strings"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
 const upstreamCostAmountScale = 10
+
+// RecordUpstreamCostSnapshot appends the cumulative total reported by an
+// upstream billing API. Snapshots intentionally remain independent from the
+// per-request reconciliation transaction ledger.
+func (s *Store) RecordUpstreamCostSnapshot(ctx context.Context, accountID int64, adapterType reconciliation.AdapterType, snapshot billing.CostSnapshot) error {
+	if accountID <= 0 || (adapterType != reconciliation.AdapterNewAPI && adapterType != reconciliation.AdapterSub2API) || snapshot.ObservedAt.IsZero() {
+		return fmt.Errorf("upstream cost snapshot is invalid")
+	}
+	amount := decimal.NewFromInt(int64(snapshot.ActualCost)).Div(decimal.NewFromInt(1_000_000))
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.upstream_cost_snapshots
+			(account_id, adapter_type, cumulative_amount, currency, observed_at)
+		VALUES ($1, $2, $3, 'USD', $4)
+		ON CONFLICT (account_id, observed_at) DO UPDATE
+		SET adapter_type=EXCLUDED.adapter_type, cumulative_amount=EXCLUDED.cumulative_amount,
+			currency=EXCLUDED.currency`,
+		accountID, adapterType, amount.String(), snapshot.ObservedAt.UTC().Truncate(time.Microsecond))
+	if err != nil {
+		return fmt.Errorf("record upstream cost snapshot: %w", err)
+	}
+	return nil
+}
+
+// UpdateDailyReconciliation records the matching evidence used to close one
+// accounting day. The caller only invokes it after collection has succeeded.
+func (s *Store) UpdateDailyReconciliation(ctx context.Context, reportDate time.Time, summary reconciliation.Summary) error {
+	if reportDate.IsZero() || summary.PendingAttempts < 0 || summary.ConflictAttempts < 0 {
+		return fmt.Errorf("daily reconciliation summary is invalid")
+	}
+	status := "closed"
+	if summary.PendingAttempts > 0 || summary.ConflictAttempts > 0 || summary.CollectionPartial {
+		status = "exception"
+	}
+	result, err := s.pool.Exec(ctx, `
+		UPDATE relay_ops.accounting_daily_snapshots
+		SET reconciliation_status=$2, cost_coverage_ratio=$3, pending_cost_count=$4,
+			upstream_actual_cost=$5, upstream_cost_currency=$6, computed_at=NOW()
+		WHERE report_date=$1`, reportDate.Format("2006-01-02"), status, summary.CoverageRatio.String(),
+		summary.PendingAttempts+summary.ConflictAttempts, summary.UpstreamCost.String(), summary.Currency)
+	if err != nil {
+		return fmt.Errorf("update daily reconciliation: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return fmt.Errorf("daily accounting snapshot is missing")
+	}
+	return nil
+}
 
 func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliation.AttemptInput) (reconciliation.Attempt, bool, error) {
 	input, err := reconciliation.ValidateAttempt(raw)
@@ -90,19 +138,29 @@ func (s *Store) CreateAutomaticUpstreamCost(ctx context.Context, raw reconciliat
 	if err != nil {
 		return reconciliation.Transaction{}, false, err
 	}
+	if !sameTransaction(transaction, input.AttemptID, input.AccountID, input.SourceType, input.Amount, input.Currency) {
+		return reconciliation.Transaction{}, false, ErrConflict
+	}
 	if effective {
+		checkedAt := time.Now().UTC()
 		if _, err := tx.Exec(ctx, `
 			UPDATE relay_ops.upstream_cost_attempts
 			SET reconcile_status='matched', matched_at=$2, updated_at=NOW()
-			WHERE id=$1;
+			WHERE id=$1`, input.AttemptID, checkedAt); err != nil {
+			return reconciliation.Transaction{}, false, fmt.Errorf("mark automatic upstream cost matched: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
 			UPDATE relay_ops.upstream_reconciliation_exceptions
 			SET resolved_at=$2, resolution_type='automatic', last_checked_at=$2
-			WHERE attempt_id=$1 AND resolved_at IS NULL`, input.AttemptID, time.Now().UTC()); err != nil {
+			WHERE attempt_id=$1 AND resolved_at IS NULL`, input.AttemptID, checkedAt); err != nil {
 			return reconciliation.Transaction{}, false, fmt.Errorf("mark automatic upstream cost matched: %w", err)
 		}
 	} else {
 		if _, err := tx.Exec(ctx, `
-			UPDATE relay_ops.upstream_cost_attempts SET reconcile_status='conflict', updated_at=NOW() WHERE id=$1;
+			UPDATE relay_ops.upstream_cost_attempts SET reconcile_status='conflict', updated_at=NOW() WHERE id=$1`, input.AttemptID); err != nil {
+			return reconciliation.Transaction{}, false, fmt.Errorf("mark upstream cost conflict: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO relay_ops.upstream_reconciliation_exceptions
 				(attempt_id, reason_code, details, first_detected_at, last_checked_at)
 			VALUES ($1, 'late_automatic_after_manual', $2, NOW(), NOW())
@@ -128,13 +186,90 @@ func (s *Store) CreateManualUpstreamCost(ctx context.Context, raw reconciliation
 		return reconciliation.Transaction{}, false, fmt.Errorf("begin manual upstream cost: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	transaction, inserted, err := createManualUpstreamCost(ctx, tx, input)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("commit manual upstream cost: %w", err)
+	}
+	return transaction, inserted, nil
+}
+
+// CreateManualUpstreamCostForException keeps the operator-facing exception ID
+// separate from the internal attempt primary key and resolves them under lock.
+func (s *Store) CreateManualUpstreamCostForException(ctx context.Context, exceptionID int64, raw reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error) {
+	if exceptionID <= 0 {
+		return reconciliation.Transaction{}, false, fmt.Errorf("exception_id must be positive")
+	}
+	var attemptID int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT attempt_id FROM relay_ops.upstream_reconciliation_exceptions WHERE id=$1`, exceptionID).Scan(&attemptID); err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("read upstream reconciliation exception: %w", err)
+	}
+	raw.AttemptID = attemptID
+	input, err := reconciliation.ValidateManualAdjustment(raw)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("begin manual upstream cost by exception: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	accountID, currency, status, err := lockManualUpstreamCostAttempt(ctx, tx, input.AttemptID)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	var lockedAttemptID int64
+	if err := tx.QueryRow(ctx, `
+		SELECT attempt_id FROM relay_ops.upstream_reconciliation_exceptions
+		WHERE id=$1 FOR UPDATE`, exceptionID).Scan(&lockedAttemptID); err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("lock upstream reconciliation exception: %w", err)
+	}
+	if lockedAttemptID != input.AttemptID {
+		return reconciliation.Transaction{}, false, ErrConflict
+	}
+	transaction, inserted, err := createManualUpstreamCostForLockedAttempt(ctx, tx, input, accountID, currency, status)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("commit manual upstream cost by exception: %w", err)
+	}
+	return transaction, inserted, nil
+}
+
+func createManualUpstreamCost(ctx context.Context, tx pgx.Tx, input reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error) {
+	accountID, currency, status, err := lockManualUpstreamCostAttempt(ctx, tx, input.AttemptID)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	return createManualUpstreamCostForLockedAttempt(ctx, tx, input, accountID, currency, status)
+}
+
+func lockManualUpstreamCostAttempt(ctx context.Context, tx pgx.Tx, attemptID int64) (int64, string, string, error) {
 	var accountID int64
 	var currency string
 	var status string
-	if err := tx.QueryRow(ctx, `SELECT account_id, currency, reconcile_status FROM relay_ops.upstream_cost_attempts WHERE id=$1 FOR UPDATE`, input.AttemptID).Scan(&accountID, &currency, &status); err != nil {
-		return reconciliation.Transaction{}, false, fmt.Errorf("lock manual upstream cost attempt: %w", err)
+	if err := tx.QueryRow(ctx, `SELECT account_id, currency, reconcile_status FROM relay_ops.upstream_cost_attempts WHERE id=$1 FOR UPDATE`, attemptID).Scan(&accountID, &currency, &status); err != nil {
+		return 0, "", "", fmt.Errorf("lock manual upstream cost attempt: %w", err)
 	}
-	if status == string(reconciliation.StatusMatched) || status == string(reconciliation.StatusConflict) {
+	return accountID, currency, status, nil
+}
+
+func createManualUpstreamCostForLockedAttempt(ctx context.Context, tx pgx.Tx, input reconciliation.ManualAdjustmentInput, accountID int64, currency, status string) (reconciliation.Transaction, bool, error) {
+	existing, found, err := getUpstreamCostTransactionByIdempotencyKey(ctx, tx, input.IdempotencyKey)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	if found {
+		if !sameTransaction(existing, input.AttemptID, accountID, reconciliation.SourceManualAdjustment, input.Amount, currency) {
+			return reconciliation.Transaction{}, false, ErrConflict
+		}
+		return existing, false, nil
+	}
+	if status == string(reconciliation.StatusMatched) || status == string(reconciliation.StatusManual) || status == string(reconciliation.StatusConflict) {
 		return reconciliation.Transaction{}, false, ErrConflict
 	}
 	actorID := input.ActorUserID
@@ -144,18 +279,59 @@ func (s *Store) CreateManualUpstreamCost(ctx context.Context, raw reconciliation
 	if err != nil {
 		return reconciliation.Transaction{}, false, err
 	}
+	if !sameTransaction(transaction, input.AttemptID, accountID, reconciliation.SourceManualAdjustment, input.Amount, currency) {
+		return reconciliation.Transaction{}, false, ErrConflict
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE relay_ops.upstream_cost_attempts
-		SET reconcile_status='manual', matched_at=NOW(), updated_at=NOW() WHERE id=$1;
+		SET reconcile_status='manual', matched_at=NOW(), updated_at=NOW() WHERE id=$1`, input.AttemptID); err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("mark manual upstream cost matched: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
 		UPDATE relay_ops.upstream_reconciliation_exceptions
 		SET resolved_at=NOW(), resolution_type='manual', last_checked_at=NOW()
 		WHERE attempt_id=$1 AND resolved_at IS NULL`, input.AttemptID); err != nil {
-		return reconciliation.Transaction{}, false, fmt.Errorf("mark manual upstream cost matched: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return reconciliation.Transaction{}, false, fmt.Errorf("commit manual upstream cost: %w", err)
+		return reconciliation.Transaction{}, false, fmt.Errorf("resolve manual upstream cost exception: %w", err)
 	}
 	return transaction, inserted, nil
+}
+
+func getUpstreamCostTransactionByIdempotencyKey(ctx context.Context, tx pgx.Tx, idempotencyKey string) (reconciliation.Transaction, bool, error) {
+	var transaction reconciliation.Transaction
+	var amountText string
+	var attemptIDValue *int64
+	var sourceRecordIDValue *string
+	err := tx.QueryRow(ctx, `
+		SELECT id, attempt_id, account_id, source_type, source_record_id, amount::text, currency,
+			effective, occurred_at, idempotency_key, notes, created_by_user_id, created_at
+		FROM relay_ops.upstream_cost_transactions
+		WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(
+		&transaction.ID, &attemptIDValue, &transaction.AccountID, &transaction.SourceType,
+		&sourceRecordIDValue, &amountText, &transaction.Currency, &transaction.Effective,
+		&transaction.OccurredAt, &transaction.IdempotencyKey, &transaction.Notes,
+		&transaction.CreatedByUserID, &transaction.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return reconciliation.Transaction{}, false, nil
+	}
+	if err != nil {
+		return reconciliation.Transaction{}, false, fmt.Errorf("lookup upstream cost transaction idempotency key: %w", err)
+	}
+	transaction.AttemptID = attemptIDValue
+	if sourceRecordIDValue != nil {
+		transaction.SourceRecordID = *sourceRecordIDValue
+	}
+	transaction.Amount, err = decimalFromText(amountText)
+	if err != nil {
+		return reconciliation.Transaction{}, false, err
+	}
+	return transaction, true, nil
+}
+
+func sameTransaction(transaction reconciliation.Transaction, attemptID, accountID int64, sourceType reconciliation.TransactionSource, amount decimal.Decimal, currency string) bool {
+	return transaction.AttemptID != nil && *transaction.AttemptID == attemptID &&
+		transaction.AccountID == accountID && transaction.SourceType == sourceType &&
+		transaction.Amount.Equal(amount.Round(upstreamCostAmountScale)) && transaction.Currency == currency
 }
 
 type reconciliationExecer interface {
@@ -222,7 +398,7 @@ func (s *Store) MarkOverdueUpstreamCostExceptions(ctx context.Context, now time.
 	return result.RowsAffected(), nil
 }
 
-func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID int64, start, end time.Time, limit int) ([]reconciliation.Attempt, error) {
+func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID int64, start, end time.Time, after reconciliation.AttemptCursor, limit int) ([]reconciliation.Attempt, error) {
 	if limit <= 0 || limit > 5000 {
 		limit = 5000
 	}
@@ -233,7 +409,8 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 		FROM relay_ops.upstream_cost_attempts
 		WHERE account_id=$1 AND completed_at >= $2 AND completed_at < $3
 			AND reconcile_status IN ('pending','exception','matched','manual')
-		ORDER BY completed_at, id LIMIT $4`, accountID, start.UTC(), end.UTC(), limit)
+			AND ($4 = '0001-01-01T00:00:00Z'::timestamptz OR completed_at > $4 OR (completed_at = $4 AND id > $5))
+		ORDER BY completed_at, id LIMIT $6`, accountID, start.UTC(), end.UTC(), after.CompletedAt.UTC().Format(time.RFC3339Nano), after.ID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list pending upstream cost attempts: %w", err)
 	}
@@ -281,10 +458,11 @@ func (s *Store) ReadReconciliationSummary(ctx context.Context, accountID int64, 
 		SELECT COUNT(*), COUNT(*) FILTER (WHERE reconcile_status IN ('matched','manual')),
 			COUNT(*) FILTER (WHERE reconcile_status IN ('pending','exception')),
 			COUNT(*) FILTER (WHERE reconcile_status='conflict'),
-			CASE WHEN COUNT(*)=0 THEN 1 ELSE COUNT(*) FILTER (WHERE reconcile_status IN ('matched','manual'))::numeric/COUNT(*) END::text,
+			COUNT(*) > 0,
+			CASE WHEN COUNT(*)=0 THEN 0 ELSE COUNT(*) FILTER (WHERE reconcile_status IN ('matched','manual'))::numeric/COUNT(*) END::text,
 			COALESCE((SELECT upstream_cost FROM costs),0)::text, COALESCE(SUM(user_charge),0)::text
 		FROM attempts`, accountID, start.UTC(), end.UTC(), currency).Scan(
-		&summary.TotalAttempts, &summary.MatchedAttempts, &summary.PendingAttempts, &summary.ConflictAttempts,
+		&summary.TotalAttempts, &summary.MatchedAttempts, &summary.PendingAttempts, &summary.ConflictAttempts, &summary.CoverageKnown,
 		&coverageText, &upstreamText, &userText)
 	if err != nil {
 		return reconciliation.Summary{}, fmt.Errorf("read reconciliation summary: %w", err)

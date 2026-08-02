@@ -36,6 +36,24 @@ export interface AccountMonitorMultiplier {
   observed_at?: string | null
 }
 
+export interface AccountMonitorScoreWeights {
+  cost: number
+  success: number
+  ttft: number
+  latency: number
+  updated_by?: number
+  updated_at?: string
+}
+
+export interface AccountMonitorQualityEvidence {
+  source: 'group' | 'global_fallback' | 'stale' | string
+  sample_count: number
+  success_rate: number
+  ttft_p50_ms?: number | null
+  latency_p95_ms?: number | null
+  observed_at?: string | null
+}
+
 export interface AccountMonitorAccount {
   account_id: number
   name: string
@@ -63,6 +81,21 @@ export interface AccountMonitorAccount {
   latest?: AccountMonitorLatest | null
   checked_at?: string | null
   stale: boolean
+  quality_score?: number | null
+  group_rank?: number | null
+  eligible?: boolean
+  evidence?: AccountMonitorQualityEvidence
+}
+
+export interface AccountMonitorGroup {
+  id: number
+  name: string
+  rate_multiplier: number
+  customer_visible: boolean
+  native_order: number
+  score_weights: AccountMonitorScoreWeights
+  operational_state: 'operational' | 'unavailable' | 'closed' | string
+  accounts?: AccountMonitorAccount[]
 }
 
 export interface AccountMonitorProjection {
@@ -70,6 +103,7 @@ export interface AccountMonitorProjection {
   observed_at: string
   stale: boolean
   settings: AccountMonitorSettings
+  groups?: AccountMonitorGroup[]
   accounts: AccountMonitorAccount[]
 }
 
@@ -136,12 +170,40 @@ export async function history(accountID: number, limit = 25): Promise<AccountMon
   return data
 }
 
+export async function getGroupScoreWeights(groupID: number): Promise<AccountMonitorScoreWeights> {
+  const { data } = await apiClient.get<AccountMonitorScoreWeights>(
+    `/admin/account-monitors/groups/${groupID}/score-weights`,
+  )
+  return data
+}
+
+export async function updateGroupScoreWeights(
+  groupID: number,
+  weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>,
+): Promise<AccountMonitorScoreWeights> {
+  const { data } = await apiClient.put<AccountMonitorScoreWeights>(
+    `/admin/account-monitors/groups/${groupID}/score-weights`,
+    weights,
+  )
+  return data
+}
+
+export async function resetGroupScoreWeights(groupID: number): Promise<AccountMonitorScoreWeights> {
+  const { data } = await apiClient.delete<AccountMonitorScoreWeights>(
+    `/admin/account-monitors/groups/${groupID}/score-weights`,
+  )
+  return data
+}
+
 const accountMonitorAPI = {
   list,
   updateSettings,
   runAll,
   runOne,
   history,
+  getGroupScoreWeights,
+  updateGroupScoreWeights,
+  resetGroupScoreWeights,
 }
 
 export default accountMonitorAPI

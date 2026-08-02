@@ -29,6 +29,7 @@ import (
 	"example.invalid/relay-ops-service/internal/pricingevents"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
+	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/scheduler"
 	"example.invalid/relay-ops-service/internal/store"
 	"example.invalid/relay-ops-service/internal/sub2api"
@@ -269,7 +270,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
 	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
 	dailyReportService := dailyreport.Service{
-		Reader: reader, Summary: database, Notifier: oneShotNotifier,
+		Reader: reader, Summary: database, Reconciliation: database, Notifier: oneShotNotifier,
 		Decisions: database, Policy: cfg.NotificationPolicy,
 		Timezone: cfg.Timezone, Fallback: pricingFallback,
 	}
@@ -289,6 +290,21 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	escalationService := alerting.Service{Repository: database, Sender: notifier}
 	retryService := notify.DeliveryRetryService{Repository: database, Client: notificationTransport}
 	usageReader := billing.SessionReader{Reporter: database}
+	costCollector := reconciliation.Collector{
+		Sources:    database,
+		Reconciler: reconciliation.Service{Repository: database},
+		Snapshots:  database,
+	}
+	reconciliationRuntime := reconciliation.RuntimeService{
+		Repository: database,
+		Importer: reconciliation.UsageImporter{
+			Sources:  database,
+			Reader:   reader,
+			Attempts: database,
+		},
+		Collector: costCollector,
+		Grace:     10 * time.Minute,
+	}
 	var accountingDaily func(context.Context) error
 	if accountingService != nil {
 		accountingDaily = func(runCtx context.Context) error {
@@ -298,11 +314,28 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			}
 			local := time.Now().In(location)
 			dayEnd := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-			if _, err := database.RefreshReconciliation(runCtx, 0, dayEnd.AddDate(0, 0, -1).UTC(), dayEnd.UTC(), "USD"); err != nil {
+			collection, err := reconciliationRuntime.DailyClose(runCtx, dayEnd.AddDate(0, 0, -3).UTC(), dayEnd.UTC())
+			if err != nil {
 				return err
 			}
-			_, err := accountingService.RecomputeRecent(runCtx)
-			return err
+			if collection.AccountsTotal == 0 {
+				return fmt.Errorf("daily accounting requires at least one configured billing source")
+			}
+			if collection.TransactionsObserved > 0 && collection.Scanned == 0 {
+				return fmt.Errorf("daily accounting observed %d upstream billing records without local cost attempts", collection.TransactionsObserved)
+			}
+			summary, err := reconciliationRuntime.ReadReconciliationSummary(runCtx, 0, dayEnd.AddDate(0, 0, -1).UTC(), dayEnd.UTC(), "USD")
+			if err != nil {
+				return err
+			}
+			if summary.PendingAttempts > 0 || summary.ConflictAttempts > 0 {
+				return fmt.Errorf("daily accounting blocked by %d pending and %d conflicting upstream costs", summary.PendingAttempts, summary.ConflictAttempts)
+			}
+			_, err = accountingService.RecomputeRecent(runCtx)
+			if err != nil {
+				return err
+			}
+			return database.UpdateDailyReconciliation(runCtx, dayEnd.AddDate(0, 0, -1), summary)
 		}
 	}
 	scheduled := &scheduler.Scheduler{
@@ -405,7 +438,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			return retryService.Run(runCtx)
 		},
 		ReconciliationSweep: func(runCtx context.Context) error {
-			_, err := database.MarkOverdueUpstreamCostExceptions(runCtx, time.Now().UTC(), 10*time.Minute)
+			now := time.Now().UTC()
+			_, err := reconciliationRuntime.Sweep(runCtx, now.Add(-24*time.Hour), now)
 			return err
 		},
 		GroupAvailability: func(runCtx context.Context) error {
@@ -422,7 +456,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Billing:        billing.SessionRegistrationService{Repository: database},
 		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
 		DailyReport:    dailyReportService,
-		Reconciliation: database,
+		Reconciliation: reconciliationRuntime,
 		QualityReview:  qualityReview,
 	}, accountingService)
 	if err != nil {

@@ -113,13 +113,32 @@ func (a *NewAPIAdapter) ListTransactions(ctx context.Context, q CostQuery) ([]Co
 }
 
 func (a *NewAPIAdapter) ReadSnapshot(ctx context.Context) (CostSnapshot, error) {
-	rows, _, err := a.ListTransactions(ctx, CostQuery{Limit: 1000})
-	if err != nil {
-		return CostSnapshot{}, err
-	}
 	var total domain.MicroUSD
-	for _, row := range rows {
-		total += row.Cost
+	cursor := ""
+	seenCursors := make(map[string]struct{})
+	for {
+		rows, nextCursor, err := a.ListTransactions(ctx, CostQuery{Cursor: cursor, Limit: 1000})
+		if err != nil {
+			return CostSnapshot{}, err
+		}
+		for _, row := range rows {
+			if (row.Cost > 0 && total > domain.MicroUSD(math.MaxInt64)-row.Cost) ||
+				(row.Cost < 0 && total < domain.MicroUSD(math.MinInt64)-row.Cost) {
+				return CostSnapshot{}, fmt.Errorf("New API cumulative cost overflows")
+			}
+			total += row.Cost
+		}
+		if nextCursor == "" {
+			break
+		}
+		if nextCursor == cursor {
+			return CostSnapshot{}, fmt.Errorf("New API billing cursor did not advance")
+		}
+		if _, repeated := seenCursors[nextCursor]; repeated {
+			return CostSnapshot{}, fmt.Errorf("New API billing cursor repeated")
+		}
+		seenCursors[nextCursor] = struct{}{}
+		cursor = nextCursor
 	}
 	return CostSnapshot{ActualCost: total, ObservedAt: time.Now().UTC()}, nil
 }

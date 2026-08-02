@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,6 +175,44 @@ func TestReaderListsAccountsAcrossPages(t *testing.T) {
 	}
 	if got, want := strings.Join(requests, ","), "1,2"; got != want {
 		t.Fatalf("pages = %q, want %q", got, want)
+	}
+}
+
+func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	queries := make([]url.Values, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/usage" {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.Query())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			fmt.Fprint(w, `{"data":{"items":[{"id":101,"account_id":8,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":2,"page":1,"page_size":1000}}`)
+		case "2":
+			fmt.Fprint(w, `{"data":{"items":[{"id":102,"account_id":8,"request_id":"request-102","model":"gpt-5.6-sol","input_tokens":11,"output_tokens":6,"total_cost":0.13,"created_at":"2026-08-01T00:02:00Z"}],"total":2,"page":2,"page_size":1000}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	logs, err := newTestReader(t, server.URL).ListUsageLogs(context.Background(), UsageLogQuery{AccountID: 8, Start: start, End: start.Add(time.Hour)})
+	if err != nil || len(logs) != 2 || logs[1].ID != 102 {
+		t.Fatalf("logs=%#v err=%v", logs, err)
+	}
+	if len(queries) != 2 {
+		t.Fatalf("queries=%#v", queries)
+	}
+	for _, query := range queries {
+		if query.Get("account_id") != "8" || query.Get("page_size") != "1000" || query.Get("exact_total") != "true" ||
+			query.Get("start_time") != start.Format(time.RFC3339Nano) || query.Get("end_time") != start.Add(time.Hour).Format(time.RFC3339Nano) {
+			t.Fatalf("query=%s", query.Encode())
+		}
 	}
 }
 

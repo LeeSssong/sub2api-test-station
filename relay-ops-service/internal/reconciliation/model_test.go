@@ -38,7 +38,7 @@ func TestCoverageRatio(t *testing.T) {
 	if got := CoverageRatio(998, 1000).StringFixed(3); got != "0.998" {
 		t.Fatalf("CoverageRatio = %s", got)
 	}
-	if got := CoverageRatio(0, 0); !got.Equal(decimal.NewFromInt(1)) {
+	if got := CoverageRatio(0, 0); !got.IsZero() {
 		t.Fatalf("empty CoverageRatio = %s", got)
 	}
 }

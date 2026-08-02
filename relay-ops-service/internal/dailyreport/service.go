@@ -28,6 +28,10 @@ type DigestSummaryReader interface {
 	) (DailyNotificationSummary, error)
 }
 
+type ReconciliationSummaryReader interface {
+	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+}
+
 type EventSender interface {
 	SendOneShot(context.Context, notify.OneShotIdentity, notify.FeishuMessage) error
 }
@@ -45,6 +49,7 @@ type Result struct {
 type Service struct {
 	Reader    opsmetrics.Reader
 	Summary   DigestSummaryReader
+	Reconciliation ReconciliationSummaryReader
 	Notifier  EventSender
 	Decisions DecisionRecorder
 	Policy    notificationpolicy.Policy
@@ -121,10 +126,8 @@ func (s Service) Run(ctx context.Context) (Result, error) {
 	view.Date = date
 	view.PublicGroups = publicGroups
 	view.Summary = digestSummary(summary)
-	if reader, ok := s.Reader.(interface {
-		ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
-	}); ok {
-		if ledger, ledgerErr := reader.ReadReconciliationSummary(ctx, 0, summaryFrom.UTC(), summaryTo.UTC(), "USD"); ledgerErr == nil {
+	if s.Reconciliation != nil {
+		if ledger, ledgerErr := s.Reconciliation.ReadReconciliationSummary(ctx, 0, summaryFrom.UTC(), summaryTo.UTC(), "USD"); ledgerErr == nil {
 			coverage, _ := ledger.CoverageRatio.Float64()
 			upstream, _ := ledger.UpstreamCost.Float64()
 			userCharge, _ := ledger.UserCharge.Float64()

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/reconciliation"
+	"example.invalid/relay-ops-service/internal/upstreams"
 	"github.com/shopspring/decimal"
 )
 
@@ -56,6 +59,38 @@ func TestRetiredOpsAndAcknowledgementRoutesAreNotMounted(t *testing.T) {
 		if recorder.Code != http.StatusNotFound {
 			t.Fatalf("%s %s status=%d want=404", tt.method, tt.path, recorder.Code)
 		}
+	}
+}
+
+func TestCreateUpstreamPassesAdapterTypeAndReturnsIt(t *testing.T) {
+	t.Parallel()
+
+	upstreamService := &fakeProductionUpstreamService{}
+	instance := &server{dependencies: Dependencies{
+		BaseOrigin: "https://api.example.com",
+		Upstreams:  upstreamService,
+	}}
+	handler := adminauth.RequireAdmin(fakeAdminVerifier{identity: adminauth.Identity{UserID: 9, Role: "admin", Status: "active"}}, http.HandlerFunc(instance.createUpstream))
+	request := httptest.NewRequest(http.MethodPost, "/relay-ops/api/upstreams", strings.NewReader(`{"name":"billing source","base_url":"https://billing.example/v1","adapter_type":"sub2api","pricing_url":"https://billing.example/pricing","group_ids":[3]}`))
+	request.Header.Set("Authorization", "Bearer admin")
+	request.Header.Set("Origin", "https://api.example.com")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if upstreamService.input.AdapterType != "sub2api" {
+		t.Fatalf("adapter type passed to service = %q", upstreamService.input.AdapterType)
+	}
+	var response map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response["adapter_type"] != "sub2api" {
+		t.Fatalf("response adapter_type = %#v", response["adapter_type"])
 	}
 }
 
@@ -400,6 +435,23 @@ type fakeAccounting struct {
 	listErr        error
 }
 
+type fakeProductionUpstreamService struct {
+	input upstreams.ProductionInput
+}
+
+func (service *fakeProductionUpstreamService) List(context.Context, domain.AdminActor) ([]upstreams.Source, error) {
+	return nil, nil
+}
+
+func (service *fakeProductionUpstreamService) CreateProduction(_ context.Context, _ domain.AdminActor, input upstreams.ProductionInput) (upstreams.Source, error) {
+	service.input = input
+	return upstreams.Source{ID: 17, Name: input.Name, Role: upstreams.RoleProduction, BaseURL: input.BaseURL, AdapterType: input.AdapterType, GroupIDs: input.GroupIDs, Enabled: true}, nil
+}
+
+func (service *fakeProductionUpstreamService) Disable(context.Context, domain.AdminActor, domain.UpstreamID) error {
+	return nil
+}
+
 func (service *fakeAccounting) CreateCashEvent(_ context.Context, actor domain.AdminActor, input accounting.CashEventInput, idempotencyKey string) (accounting.CashEvent, bool, error) {
 	service.createCalls++
 	service.actor = actor
@@ -445,4 +497,63 @@ func authenticatedJSONRequest(method, path, body string) *http.Request {
 	request.Header.Set("Origin", "https://api.example.com")
 	request.Header.Set("Content-Type", "application/json")
 	return request
+}
+
+func TestReconciliationManualAdjustmentTargetsException(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{created: true}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	request := authenticatedJSONRequest(http.MethodPost, "/relay-ops/api/reconciliation/exceptions/73/adjust",
+		`{"amount":"0.23","notes":"confirmed by upstream"}`)
+	request.Header.Set("Idempotency-Key", "browser-retry-key")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.exceptionID != 73 || service.input.AttemptID != 0 || service.input.ActorUserID != 9 ||
+		!service.input.Amount.Equal(decimal.RequireFromString("0.23")) || service.input.Notes != "confirmed by upstream" ||
+		service.input.IdempotencyKey != "manual:exception:73:browser-retry-key" {
+		t.Fatalf("manual adjustment call = %#v", service)
+	}
+}
+
+func newReconciliationTestServer(t *testing.T, service ReconciliationService, identity adminauth.Identity) http.Handler {
+	t.Helper()
+	server, err := NewServer(Dependencies{
+		BaseOrigin:     "https://api.example.com",
+		Auth:           fakeAdminVerifier{identity: identity},
+		Pricing:        fakePricing{},
+		Reconciliation: service,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+type fakeReconciliation struct {
+	exceptionID int64
+	input       reconciliation.ManualAdjustmentInput
+	created     bool
+}
+
+func (s *fakeReconciliation) ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error) {
+	return reconciliation.Summary{}, nil
+}
+
+func (s *fakeReconciliation) ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error) {
+	return nil, nil
+}
+
+func (s *fakeReconciliation) CreateManualUpstreamCostForException(_ context.Context, exceptionID int64, input reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error) {
+	s.exceptionID = exceptionID
+	s.input = input
+	return reconciliation.Transaction{ID: 18, SourceType: reconciliation.SourceManualAdjustment}, s.created, nil
+}
+
+func (s *fakeReconciliation) RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error) {
+	return reconciliation.Summary{}, nil
 }

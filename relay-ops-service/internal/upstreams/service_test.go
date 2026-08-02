@@ -16,7 +16,7 @@ func TestCreateProductionNormalizesURLsAndRequiresNoProbeKey(t *testing.T) {
 	created, err := service.CreateProduction(context.Background(), domain.AdminActor{UserID: 42}, ProductionInput{
 		Name: " Neko ", BaseURL: "https://API.NEKO.example/v1/", PricingURL: "https://api.neko.example/pricing",
 		UsageURL: "https://api.neko.example/usage", PerformanceURL: "https://api.neko.example/performance",
-		GroupIDs: []int64{7, 3, 7}, MonitorID: 19,
+		AdapterType: AdapterSub2API, GroupIDs: []int64{7, 3, 7}, MonitorID: 19,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,15 +30,28 @@ func TestCreateProductionNormalizesURLsAndRequiresNoProbeKey(t *testing.T) {
 	if created.Role != RoleProduction || !created.Enabled || created.MonitorID != 19 {
 		t.Fatalf("created = %#v", created)
 	}
+	if created.AdapterType != AdapterSub2API || repository.record.Source.AdapterType != AdapterSub2API {
+		t.Fatalf("adapter type = created %q persisted %q", created.AdapterType, repository.record.Source.AdapterType)
+	}
 	if repository.record.Audit.ActorUserID != 42 || repository.record.Audit.Action != "upstream.production.create" {
 		t.Fatalf("audit = %#v", repository.record.Audit)
+	}
+}
+
+func TestCreateProductionRejectsUnsupportedAdapterType(t *testing.T) {
+	service := Service{Repository: &fakeRepository{}, Resolver: publicResolver{}}
+	_, err := service.CreateProduction(context.Background(), domain.AdminActor{UserID: 1}, ProductionInput{
+		Name: "unsupported", AdapterType: "openai", BaseURL: "https://public.example/v1", PricingURL: "https://public.example/pricing", GroupIDs: []int64{1},
+	})
+	if !errors.Is(err, ErrAdapterTypeInvalid) {
+		t.Fatalf("error = %v, want ErrAdapterTypeInvalid", err)
 	}
 }
 
 func TestCreateProductionRejectsUnsafeURLAndMissingGroups(t *testing.T) {
 	service := Service{Repository: &fakeRepository{}, Resolver: privateResolver{}}
 	_, err := service.CreateProduction(context.Background(), domain.AdminActor{UserID: 1}, ProductionInput{
-		Name: "unsafe", BaseURL: "https://private.example/v1", PricingURL: "https://private.example/pricing", GroupIDs: []int64{1},
+		Name: "unsafe", AdapterType: AdapterNewAPI, BaseURL: "https://private.example/v1", PricingURL: "https://private.example/pricing", GroupIDs: []int64{1},
 	})
 	if err == nil {
 		t.Fatal("expected private URL rejection")
@@ -46,7 +59,7 @@ func TestCreateProductionRejectsUnsafeURLAndMissingGroups(t *testing.T) {
 
 	service.Resolver = publicResolver{}
 	_, err = service.CreateProduction(context.Background(), domain.AdminActor{UserID: 1}, ProductionInput{
-		Name: "missing-groups", BaseURL: "https://public.example/v1", PricingURL: "https://public.example/pricing",
+		Name: "missing-groups", AdapterType: AdapterNewAPI, BaseURL: "https://public.example/v1", PricingURL: "https://public.example/pricing",
 	})
 	if !errors.Is(err, ErrGroupRequired) {
 		t.Fatalf("error = %v, want ErrGroupRequired", err)

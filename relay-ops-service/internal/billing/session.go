@@ -9,8 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,12 +20,14 @@ import (
 var ErrUsageSchema = errors.New("upstream usage page schema changed")
 
 type SessionConfig struct {
-	UpstreamID   domain.UpstreamID
-	UpstreamName string
-	UsageURL     string
-	LoginURL     string
-	AuthMode     string
-	SecretRef    string
+	UpstreamID       domain.UpstreamID
+	UpstreamName     string
+	UsageURL         string
+	LoginURL         string
+	AuthMode         string
+	SecretRef        string
+	Scope            string
+	BillingAccountID int64
 }
 
 type UsageEvidence struct {
@@ -60,6 +60,9 @@ type SessionReader struct {
 	Resolver pricing.Resolver
 	Reporter SessionReporter
 	Now      func() time.Time
+	// SecretRoot is test-only configurable. Production defaults to the same
+	// root and secure reader used by billing adapters.
+	SecretRoot string
 }
 
 func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageEvidence, error) {
@@ -76,13 +79,9 @@ func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageE
 	if err := pricing.ValidateRemoteURL(ctx, resolver, cfg.LoginURL); err != nil {
 		return UsageEvidence{}, err
 	}
-	secretPath, err := sessionSecretPath(cfg.SecretRef)
+	secret, err := readBillingSecret(cfg.SecretRef, s.secretRoot())
 	if err != nil {
-		return UsageEvidence{}, err
-	}
-	secret, err := readSessionSecret(secretPath)
-	if err != nil {
-		return UsageEvidence{}, err
+		return UsageEvidence{}, fmt.Errorf("usage session secret is unavailable")
 	}
 	defer clearSessionSecret(secret)
 	now := time.Now().UTC()
@@ -130,6 +129,13 @@ func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageE
 		_ = s.Reporter.RecordHealthy(ctx, cfg.UpstreamID, now)
 	}
 	return evidence, nil
+}
+
+func (s SessionReader) secretRoot() string {
+	if strings.TrimSpace(s.SecretRoot) != "" {
+		return s.SecretRoot
+	}
+	return billingSecretRoot
 }
 
 func (s SessionReader) request(ctx context.Context, resolver pricing.Resolver, cfg SessionConfig, secret []byte) (int, []byte, string, error) {
@@ -223,37 +229,6 @@ func costField(document map[string]any, key string) (domain.MicroUSD, bool) {
 	}
 	parsed, err := domain.ParseMicroUSD(fmt.Sprint(value))
 	return parsed, err == nil
-}
-
-func sessionSecretPath(reference string) (string, error) {
-	if !strings.HasPrefix(reference, "file:") {
-		return "", fmt.Errorf("usage session secret must use file scheme")
-	}
-	path := filepath.Clean(strings.TrimPrefix(reference, "file:"))
-	if !filepath.IsAbs(path) {
-		return "", fmt.Errorf("usage session secret path must be absolute")
-	}
-	return path, nil
-}
-
-func readSessionSecret(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("usage session secret is unavailable or unsafe")
-	}
-	permissions := info.Mode().Perm()
-	if !info.Mode().IsRegular() || (permissions != 0o600 && permissions != 0o640) || info.Size() <= 0 || info.Size() > 64<<10 {
-		return nil, fmt.Errorf("usage session secret is unavailable or unsafe")
-	}
-	value, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("usage session secret is unavailable")
-	}
-	value = bytes.TrimSpace(value)
-	if len(value) == 0 {
-		return nil, fmt.Errorf("usage session secret is empty")
-	}
-	return value, nil
 }
 
 func clearSessionSecret(value []byte) {

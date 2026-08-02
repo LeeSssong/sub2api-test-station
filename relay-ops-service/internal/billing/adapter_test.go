@@ -18,7 +18,11 @@ func TestNewAPIAdapterReadsTokenLogs(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/log/token":
-			fmt.Fprint(w, `{"data":[{"id":91,"type":2,"quota":125000,"request_id":"newapi-req","upstream_request_id":"provider-req","model_name":"gpt-test","prompt_tokens":11,"completion_tokens":7,"created_at":1785578400},{"id":92,"type":6,"quota":25000,"request_id":"refund-req","created_at":"2026-08-01T10:01:00Z"}],"next_cursor":"next"}`)
+			if r.URL.Query().Get("cursor") == "next" {
+				fmt.Fprint(w, `{"data":[{"id":92,"type":6,"quota":25000,"request_id":"refund-req","created_at":"2026-08-01T10:01:00Z"}]}`)
+				return
+			}
+			fmt.Fprint(w, `{"data":[{"id":91,"type":2,"quota":125000,"request_id":"newapi-req","upstream_request_id":"provider-req","model_name":"gpt-test","prompt_tokens":11,"completion_tokens":7,"created_at":1785578400}],"next_cursor":"next"}`)
 		case "/api/status":
 			fmt.Fprint(w, `{"data":{"quota_per_unit":500000}}`)
 		default:
@@ -34,14 +38,11 @@ func TestNewAPIAdapterReadsTokenLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cursor != "next" || len(rows) != 2 {
+	if cursor != "next" || len(rows) != 1 {
 		t.Fatalf("rows=%#v cursor=%q", rows, cursor)
 	}
 	if rows[0].Cost != domain.MicroUSD(250000) || rows[0].RequestID != "newapi-req" || rows[0].UpstreamRequestID != "provider-req" {
 		t.Fatalf("charge=%#v", rows[0])
-	}
-	if rows[1].Cost != domain.MicroUSD(-50000) || rows[1].Type != "refund" {
-		t.Fatalf("refund=%#v", rows[1])
 	}
 	snapshot, err := adapter.ReadSnapshot(context.Background())
 	if err != nil || snapshot.ActualCost != 200000 {

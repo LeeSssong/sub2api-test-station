@@ -25,7 +25,7 @@ func TestSessionReaderExtractsBearerUsageWithoutLeakingCredential(t *testing.T) 
 		}
 		return billingResponse(http.StatusOK, `{"standard_cost":"10.000000","actual_cost":"1.000000"}`)
 	})}
-	reader := SessionReader{Client: client, Resolver: billingResolver{}}
+	reader := SessionReader{Client: client, Resolver: billingResolver{}, SecretRoot: filepath.Dir(secret)}
 	evidence, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 7, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "bearer", SecretRef: "file:" + secret})
 	if err != nil || evidence.StandardCost != 10_000_000 || evidence.ActualCost != 1_000_000 || evidence.EffectiveMultiplier != 1_000 {
 		t.Fatalf("evidence=%#v err=%v", evidence, err)
@@ -43,8 +43,9 @@ func TestSessionReaderClassifiesExpiredSessionAfterOneRetry(t *testing.T) {
 		return billingResponse(http.StatusUnauthorized, `{"error":"cookie-secret-must-not-leak"}`)
 	})}
 	reporter := &fakeSessionReporter{notify: true}
-	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }}
-	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 8, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + writeSessionSecret(t, 0o600, "session=cookie-secret")})
+	secret := writeSessionSecret(t, 0o600, "session=cookie-secret")
+	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }, SecretRoot: filepath.Dir(secret)}
+	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 8, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + secret})
 	var expired *SessionExpiredError
 	if !errors.As(err, &expired) || expired.LoginURL != "https://usage.example/login" || calls != 2 {
 		t.Fatalf("error=%v calls=%d", err, calls)
@@ -62,8 +63,9 @@ func TestSessionReaderClassifiesLoginHTMLAsExpired(t *testing.T) {
 		return billingResponse(http.StatusOK, `<form action="/login"><input type="password"></form>`)
 	})}
 	reporter := &fakeSessionReporter{notify: true}
-	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }}
-	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 10, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + writeSessionSecret(t, 0o600, "session=opaque")})
+	secret := writeSessionSecret(t, 0o600, "session=opaque")
+	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }, SecretRoot: filepath.Dir(secret)}
+	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 10, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + secret})
 	var expired *SessionExpiredError
 	if !errors.As(err, &expired) || !expired.Notify || calls != 2 {
 		t.Fatalf("error=%v calls=%d expired=%#v", err, calls, expired)
@@ -72,18 +74,21 @@ func TestSessionReaderClassifiesLoginHTMLAsExpired(t *testing.T) {
 
 func TestSessionReaderRejectsUnsafeURLsWritableSecretsAndSchemaChanges(t *testing.T) {
 	t.Parallel()
-	base := SessionConfig{UpstreamID: 9, UsageURL: "https://127.0.0.1/usage", LoginURL: "https://usage.example/login", AuthMode: "bearer", SecretRef: "file:" + writeSessionSecret(t, 0o600, "token-value")}
-	if _, err := (SessionReader{Resolver: billingResolver{}}).ReadUsage(context.Background(), base); !pricing.IsUnsafeURL(err) {
+	secret := writeSessionSecret(t, 0o600, "token-value")
+	base := SessionConfig{UpstreamID: 9, UsageURL: "https://127.0.0.1/usage", LoginURL: "https://usage.example/login", AuthMode: "bearer", SecretRef: "file:" + secret}
+	if _, err := (SessionReader{Resolver: billingResolver{}, SecretRoot: filepath.Dir(secret)}).ReadUsage(context.Background(), base); !pricing.IsUnsafeURL(err) {
 		t.Fatalf("unsafe error=%v", err)
 	}
 	base.UsageURL = "https://usage.example/usage"
-	base.SecretRef = "file:" + writeSessionSecret(t, 0o666, "token-value")
-	if _, err := (SessionReader{Resolver: billingResolver{}}).ReadUsage(context.Background(), base); err == nil {
+	secret = writeSessionSecret(t, 0o666, "token-value")
+	base.SecretRef = "file:" + secret
+	if _, err := (SessionReader{Resolver: billingResolver{}, SecretRoot: filepath.Dir(secret)}).ReadUsage(context.Background(), base); err == nil {
 		t.Fatal("writable session secret accepted")
 	}
-	base.SecretRef = "file:" + writeSessionSecret(t, 0o600, "token-value")
+	secret = writeSessionSecret(t, 0o600, "token-value")
+	base.SecretRef = "file:" + secret
 	client := &http.Client{Transport: billingTransport(func(*http.Request) *http.Response { return billingResponse(http.StatusOK, `{"balance":"9"}`) })}
-	if _, err := (SessionReader{Client: client, Resolver: billingResolver{}}).ReadUsage(context.Background(), base); !errors.Is(err, ErrUsageSchema) {
+	if _, err := (SessionReader{Client: client, Resolver: billingResolver{}, SecretRoot: filepath.Dir(secret)}).ReadUsage(context.Background(), base); !errors.Is(err, ErrUsageSchema) {
 		t.Fatalf("schema error=%v", err)
 	}
 }

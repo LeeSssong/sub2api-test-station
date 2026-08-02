@@ -51,6 +51,9 @@ var accountingLedgerMigration string
 //go:embed migrations/009_upstream_cost_reconciliation.sql
 var upstreamCostReconciliationMigration string
 
+//go:embed migrations/010_billing_account_mapping.sql
+var billingAccountMappingMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
@@ -153,7 +156,53 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.pool.Exec(ctx, initialMigration); err != nil {
 		return fmt.Errorf("migrate relay ops schema: %w", err)
 	}
+	if err := s.preflightBillingAccountMapping(ctx); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, billingAccountMappingMigration); err != nil {
+		return fmt.Errorf("migrate relay ops billing account mapping schema: %w", err)
+	}
 	return nil
+}
+
+// preflightBillingAccountMapping prevents migration 010 from failing with an
+// opaque unique-index error when a partially migrated legacy database already
+// contains duplicate active billing readers. It only reports the conflict; it
+// never mutates sessions or secret references.
+func (s *Store) preflightBillingAccountMapping(ctx context.Context) error {
+	var billingAccountColumnExists bool
+	if err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema='relay_ops'
+				AND table_name='auth_sessions'
+				AND column_name='billing_account_id'
+		)`).Scan(&billingAccountColumnExists); err != nil {
+		return fmt.Errorf("preflight migration 010 billing account mapping: %w", err)
+	}
+	if !billingAccountColumnExists {
+		return nil
+	}
+
+	var billingAccountID, mappingCount int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT billing_account_id, COUNT(*)
+		FROM relay_ops.auth_sessions
+		WHERE billing_account_id IS NOT NULL
+			AND status='active'
+			AND scope='billing_read'
+		GROUP BY billing_account_id
+		HAVING COUNT(*) > 1
+		ORDER BY billing_account_id
+		LIMIT 1`).Scan(&billingAccountID, &mappingCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("preflight migration 010 billing account mapping: %w", err)
+	}
+	return fmt.Errorf("migration 010 blocked: billing account %d has %d active billing_read mappings; resolve duplicate mappings before retrying migration", billingAccountID, mappingCount)
 }
 
 func (s *Store) LoadNativeOpsAlertCursor(ctx context.Context) (NativeOpsAlertCursor, bool, error) {
@@ -481,6 +530,243 @@ func (s *Store) CreateProduction(ctx context.Context, record upstreams.Productio
 	return domain.UpstreamID(id), nil
 }
 
+// ProvisionBillingSource creates a production source and its active billing
+// bearer mapping in one transaction. A repeated, byte-for-byte equivalent
+// declaration is a no-op; any divergent pre-existing state is rejected.
+func (s *Store) ProvisionBillingSource(ctx context.Context, record billing.BillingProvisionRecord) (billing.BillingProvisionResult, error) {
+	source := record.Production.Source
+	secretRef := strings.TrimSpace(record.Session.Secret.SecretRef)
+	if source.Name == "" || source.Role != upstreams.RoleProduction || !source.Enabled || record.Session.BillingAccountID <= 0 || secretRef == "" || secretRef != record.Session.Secret.SecretRef {
+		return billing.BillingProvisionResult{}, fmt.Errorf("billing provision record is invalid")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("begin billing provision: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	// Lock the secret reference before the source identity. SELECT ... FOR UPDATE
+	// cannot protect an absent auth_session row, so two different new sources
+	// could otherwise both bind the same bearer in parallel. Every provisioner
+	// acquires these keys in this order to avoid lock cycles.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, billingProvisionLockKey("secret", secretRef)); err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("lock billing secret reference: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, billingProvisionLockKey("source", source.Name)); err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("lock billing source: %w", err)
+	}
+
+	var existing upstreams.Source
+	err = tx.QueryRow(ctx, `
+		SELECT id, display_name, role, base_url, COALESCE(pricing_url, ''), COALESCE(usage_url, ''),
+			COALESCE(performance_url, ''), adapter_type, COALESCE(sub2api_channel_monitor_id, 0), enabled
+		FROM relay_ops.upstreams WHERE display_name=$1 FOR UPDATE`, source.Name).Scan(
+		&existing.ID, &existing.Name, &existing.Role, &existing.BaseURL, &existing.PricingURL, &existing.UsageURL,
+		&existing.PerformanceURL, &existing.AdapterType, &existing.MonitorID, &existing.Enabled,
+	)
+	createdUpstream := false
+	if errors.Is(err, pgx.ErrNoRows) {
+		var id int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO relay_ops.upstreams
+				(display_name, role, base_url, pricing_url, usage_url, performance_url, adapter_type, sub2api_channel_monitor_id, enabled)
+			VALUES ($1, 'production', $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, NULLIF($7, 0), TRUE)
+			RETURNING id`,
+			source.Name, source.BaseURL, source.PricingURL, source.UsageURL, source.PerformanceURL, source.AdapterType, source.MonitorID,
+		).Scan(&id); err != nil {
+			return billing.BillingProvisionResult{}, provisionStoreError(err)
+		}
+		existing = source
+		existing.ID = domain.UpstreamID(id)
+		createdUpstream = true
+		if err := linkProvisionGroups(ctx, tx, existing.ID, source.GroupIDs); err != nil {
+			return billing.BillingProvisionResult{}, err
+		}
+		if err := insertProvisionAudit(ctx, tx, record.Production.Audit, existing.ID); err != nil {
+			return billing.BillingProvisionResult{}, err
+		}
+	} else if err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("find billing provision upstream: %w", err)
+	} else {
+		groups, err := provisionGroupIDs(ctx, tx, existing.ID)
+		if err != nil {
+			return billing.BillingProvisionResult{}, err
+		}
+		if !sameProvisionSource(existing, source, groups) {
+			return billing.BillingProvisionResult{}, billing.ErrBillingProvisionConflict
+		}
+	}
+
+	var existingSecretRef, existingAuthMode, existingStatus, existingLoginURL, existingScope string
+	var existingAccountID sql.NullInt64
+	err = tx.QueryRow(ctx, `
+		SELECT secret_ref, auth_mode, status, login_url, scope, billing_account_id
+		FROM relay_ops.auth_sessions WHERE upstream_id=$1 FOR UPDATE`, existing.ID).Scan(
+		&existingSecretRef, &existingAuthMode, &existingStatus, &existingLoginURL, &existingScope, &existingAccountID,
+	)
+	createdSession := false
+	if errors.Is(err, pgx.ErrNoRows) {
+		var mappedUpstreamID int64
+		err = tx.QueryRow(ctx, `
+			SELECT upstream_id FROM relay_ops.auth_sessions
+			WHERE billing_account_id=$1 AND status='active' AND scope='billing_read'
+			FOR UPDATE`, record.Session.BillingAccountID).Scan(&mappedUpstreamID)
+		if err == nil && mappedUpstreamID != int64(existing.ID) {
+			return billing.BillingProvisionResult{}, billing.ErrBillingProvisionConflict
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return billing.BillingProvisionResult{}, fmt.Errorf("check billing account mapping: %w", err)
+		}
+		var secretUpstreamID int64
+		err = tx.QueryRow(ctx, `SELECT upstream_id FROM relay_ops.auth_sessions WHERE secret_ref=$1 FOR UPDATE`, secretRef).Scan(&secretUpstreamID)
+		if err == nil && secretUpstreamID != int64(existing.ID) {
+			return billing.BillingProvisionResult{}, billing.ErrBillingProvisionConflict
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return billing.BillingProvisionResult{}, fmt.Errorf("check billing secret reference: %w", err)
+		}
+		secret := record.Session.Secret
+		secret.SecretRef = secretRef
+		secret.OwnerScope = strconv.FormatInt(int64(existing.ID), 10)
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO relay_ops.secret_refs (secret_ref, kind, owner_scope, fingerprint, last_four)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (secret_ref) DO UPDATE SET kind=EXCLUDED.kind, owner_scope=EXCLUDED.owner_scope,
+				fingerprint=EXCLUDED.fingerprint, last_four=EXCLUDED.last_four, status='active'`,
+			secret.SecretRef, secret.Kind, secret.OwnerScope, secret.Fingerprint, secret.LastFour); err != nil {
+			return billing.BillingProvisionResult{}, fmt.Errorf("store billing secret reference: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope, billing_account_id)
+			VALUES ($1, $2, 'bearer', 'active', $3, 'billing_read', $4)`,
+			existing.ID, secret.SecretRef, record.Session.LoginURL, record.Session.BillingAccountID); err != nil {
+			return billing.BillingProvisionResult{}, provisionStoreError(err)
+		}
+		if err := insertSessionProvisionAudit(ctx, tx, record.Session.Audit, existing.ID); err != nil {
+			return billing.BillingProvisionResult{}, err
+		}
+		createdSession = true
+	} else if err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("find billing session: %w", err)
+	} else if existingSecretRef != secretRef || existingAuthMode != "bearer" || existingStatus != "active" || existingLoginURL != record.Session.LoginURL || existingScope != "billing_read" || !existingAccountID.Valid || existingAccountID.Int64 != record.Session.BillingAccountID {
+		return billing.BillingProvisionResult{}, billing.ErrBillingProvisionConflict
+	} else if err := verifyProvisionSecret(ctx, tx, secretRef, record.Session.Secret, existing.ID); err != nil {
+		return billing.BillingProvisionResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return billing.BillingProvisionResult{}, fmt.Errorf("commit billing provision: %w", err)
+	}
+	return billing.BillingProvisionResult{UpstreamID: existing.ID, BillingAccountID: record.Session.BillingAccountID, AlreadyConfigured: !createdUpstream && !createdSession}, nil
+}
+
+func billingProvisionLockKey(kind, value string) string {
+	return "billing-provision:" + kind + ":" + value
+}
+
+// verifyProvisionSecret makes an idempotent re-run exact: a rotated bearer
+// must use a deliberate rotation flow instead of silently retaining stale
+// fingerprint audit evidence.
+func verifyProvisionSecret(ctx context.Context, tx pgx.Tx, secretRef string, expected billing.SessionSecretRef, upstreamID domain.UpstreamID) error {
+	var kind, ownerScope, fingerprint, lastFour, status string
+	err := tx.QueryRow(ctx, `
+		SELECT kind, owner_scope, fingerprint, last_four, status
+		FROM relay_ops.secret_refs WHERE secret_ref=$1 FOR UPDATE`, secretRef).Scan(
+		&kind, &ownerScope, &fingerprint, &lastFour, &status,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return billing.ErrBillingProvisionConflict
+	}
+	if err != nil {
+		return fmt.Errorf("find billing secret reference: %w", err)
+	}
+	if kind != expected.Kind || ownerScope != strconv.FormatInt(int64(upstreamID), 10) || fingerprint != expected.Fingerprint || lastFour != expected.LastFour || status != "active" {
+		return billing.ErrBillingProvisionConflict
+	}
+	return nil
+}
+
+func linkProvisionGroups(ctx context.Context, tx pgx.Tx, upstreamID domain.UpstreamID, groupIDs []int64) error {
+	for _, groupID := range groupIDs {
+		command, err := tx.Exec(ctx, `
+			INSERT INTO relay_ops.upstream_public_groups (upstream_id, group_id)
+			SELECT $1, group_id FROM relay_ops.public_groups
+			WHERE group_id=$2 AND enabled=TRUE AND customer_visible=TRUE`, upstreamID, groupID)
+		if err != nil {
+			return fmt.Errorf("link billing provision public group: %w", err)
+		}
+		if command.RowsAffected() != 1 {
+			return upstreams.ErrGroupUnavailable
+		}
+	}
+	return nil
+}
+
+func provisionGroupIDs(ctx context.Context, tx pgx.Tx, upstreamID domain.UpstreamID) ([]int64, error) {
+	rows, err := tx.Query(ctx, `SELECT group_id FROM relay_ops.upstream_public_groups WHERE upstream_id=$1 ORDER BY group_id`, upstreamID)
+	if err != nil {
+		return nil, fmt.Errorf("list billing provision groups: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan billing provision group: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate billing provision groups: %w", err)
+	}
+	return ids, nil
+}
+
+func sameProvisionSource(existing, expected upstreams.Source, groups []int64) bool {
+	if existing.Name != expected.Name || existing.Role != upstreams.RoleProduction || !existing.Enabled || existing.BaseURL != expected.BaseURL || existing.PricingURL != expected.PricingURL || existing.UsageURL != expected.UsageURL || existing.PerformanceURL != expected.PerformanceURL || existing.AdapterType != expected.AdapterType || existing.MonitorID != expected.MonitorID || len(groups) != len(expected.GroupIDs) {
+		return false
+	}
+	for index := range groups {
+		if groups[index] != expected.GroupIDs[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func insertProvisionAudit(ctx context.Context, tx pgx.Tx, audit upstreams.AuditEvent, upstreamID domain.UpstreamID) error {
+	afterSummary, err := json.Marshal(audit.AfterSummary)
+	if err != nil {
+		return fmt.Errorf("encode billing provision upstream audit: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events (actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`, audit.ActorUserID, audit.Action, audit.ObjectType, strconv.FormatInt(int64(upstreamID), 10), afterSummary); err != nil {
+		return fmt.Errorf("insert billing provision upstream audit: %w", err)
+	}
+	return nil
+}
+
+func insertSessionProvisionAudit(ctx context.Context, tx pgx.Tx, audit billing.SessionAuditEvent, upstreamID domain.UpstreamID) error {
+	afterSummary, err := json.Marshal(audit.AfterSummary)
+	if err != nil {
+		return fmt.Errorf("encode billing provision session audit: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO relay_ops.audit_events (actor_user_id, action, object_type, object_id, after_summary)
+		VALUES ($1, $2, $3, $4, $5)`, audit.ActorUserID, audit.Action, audit.ObjectType, strconv.FormatInt(int64(upstreamID), 10), afterSummary); err != nil {
+		return fmt.Errorf("insert billing provision session audit: %w", err)
+	}
+	return nil
+}
+
+func provisionStoreError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return billing.ErrBillingProvisionConflict
+	}
+	return fmt.Errorf("persist billing provision: %w", err)
+}
+
 func (s *Store) ResolvePublicGroupIDs(ctx context.Context, names []string) ([]int64, error) {
 	clean := make([]string, 0, len(names))
 	seen := map[string]struct{}{}
@@ -741,11 +1027,13 @@ func (s *Store) UpsertUsageSession(ctx context.Context, record billing.SessionRe
 		return billing.SessionConfig{}, fmt.Errorf("store usage session secret reference: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope)
-		VALUES ($1, $2, $3, 'active', $4, 'usage_read')
+		INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope, billing_account_id)
+		VALUES ($1, $2, $3, 'active', $4, $5, $6)
 		ON CONFLICT (upstream_id) DO UPDATE SET secret_ref=EXCLUDED.secret_ref, auth_mode=EXCLUDED.auth_mode,
-			status='active', login_url=EXCLUDED.login_url, last_failure_reason=NULL`,
-		record.Config.UpstreamID, record.Secret.SecretRef, record.Config.AuthMode, record.Config.LoginURL); err != nil {
+			status='active', login_url=EXCLUDED.login_url, scope=EXCLUDED.scope,
+			billing_account_id=EXCLUDED.billing_account_id, last_failure_reason=NULL`,
+		record.Config.UpstreamID, record.Secret.SecretRef, record.Config.AuthMode, record.Config.LoginURL,
+		record.Config.Scope, nullableBillingAccountID(record.Config.BillingAccountID)); err != nil {
 		return billing.SessionConfig{}, fmt.Errorf("store usage session: %w", err)
 	}
 	afterSummary, err := json.Marshal(record.Audit.AfterSummary)
@@ -789,6 +1077,44 @@ func (s *Store) ListUsageSessions(ctx context.Context) ([]billing.SessionConfig,
 		return nil, fmt.Errorf("iterate usage sessions: %w", err)
 	}
 	return result, nil
+}
+
+// ListBillingSources returns only the non-secret coordinates of enabled
+// production billing sources. Credential material remains in the mounted
+// secret referenced by SecretRef.
+func (s *Store) ListBillingSources(ctx context.Context) ([]billing.BillingSource, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.billing_account_id, u.base_url, u.adapter_type, a.secret_ref
+		FROM relay_ops.upstreams u
+		JOIN relay_ops.auth_sessions a ON a.upstream_id=u.id
+		WHERE u.role='production' AND u.enabled=TRUE AND a.status='active' AND a.auth_mode='bearer'
+			AND u.adapter_type IN ('newapi', 'sub2api')
+			AND a.scope='billing_read' AND a.billing_account_id IS NOT NULL
+			AND COALESCE(u.base_url, '') <> '' AND COALESCE(a.secret_ref, '') <> ''
+		ORDER BY u.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list billing sources: %w", err)
+	}
+	defer rows.Close()
+	sources := make([]billing.BillingSource, 0)
+	for rows.Next() {
+		var source billing.BillingSource
+		if err := rows.Scan(&source.AccountID, &source.BaseURL, &source.AdapterType, &source.SecretRef); err != nil {
+			return nil, fmt.Errorf("scan billing source: %w", err)
+		}
+		sources = append(sources, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate billing sources: %w", err)
+	}
+	return sources, nil
+}
+
+func nullableBillingAccountID(accountID int64) any {
+	if accountID <= 0 {
+		return nil
+	}
+	return accountID
 }
 
 func (s *Store) RecordHealthy(ctx context.Context, upstreamID domain.UpstreamID, observedAt time.Time) error {

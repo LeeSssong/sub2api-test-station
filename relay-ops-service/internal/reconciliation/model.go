@@ -104,16 +104,18 @@ type Exception struct {
 }
 
 type Summary struct {
-	TotalAttempts    int64           `json:"total_attempts"`
-	MatchedAttempts  int64           `json:"matched_attempts"`
-	PendingAttempts  int64           `json:"pending_attempts"`
-	ConflictAttempts int64           `json:"conflict_attempts"`
-	CoverageRatio    decimal.Decimal `json:"coverage_ratio"`
-	UpstreamCost     decimal.Decimal `json:"upstream_cost"`
-	UserCharge       decimal.Decimal `json:"user_charge"`
-	PaperProfit      decimal.Decimal `json:"paper_profit"`
-	Currency         string          `json:"currency"`
-	ObservedAt       time.Time       `json:"observed_at"`
+	TotalAttempts     int64           `json:"total_attempts"`
+	MatchedAttempts   int64           `json:"matched_attempts"`
+	PendingAttempts   int64           `json:"pending_attempts"`
+	ConflictAttempts  int64           `json:"conflict_attempts"`
+	CoverageKnown     bool            `json:"coverage_known"`
+	CoverageRatio     decimal.Decimal `json:"coverage_ratio"`
+	UpstreamCost      decimal.Decimal `json:"upstream_cost"`
+	UserCharge        decimal.Decimal `json:"user_charge"`
+	PaperProfit       decimal.Decimal `json:"paper_profit"`
+	Currency          string          `json:"currency"`
+	ObservedAt        time.Time       `json:"observed_at"`
+	CollectionPartial bool            `json:"collection_partial"`
 }
 
 func ValidateAttempt(input AttemptInput) (AttemptInput, error) {
@@ -202,7 +204,7 @@ func ValidateAutomaticTransaction(input AutomaticTransactionInput) (AutomaticTra
 
 func CoverageRatio(matched, total int64) decimal.Decimal {
 	if total <= 0 {
-		return decimal.NewFromInt(1)
+		return decimal.Zero
 	}
 	if matched < 0 {
 		matched = 0

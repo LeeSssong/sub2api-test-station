@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,8 @@ import (
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
+
+func int64Pointer(value int64) *int64 { return &value }
 
 func TestQualityReportsAreAppendOnlyAndRetrievable(t *testing.T) {
 	st := openTestStore(t)
@@ -85,6 +88,205 @@ func TestMigrateIsIdempotentAndUpstreamIdentityIsUnique(t *testing.T) {
 	second.Name = "Neko duplicate"
 	if _, err := st.CreateUpstream(ctx, second); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate base URL error = %v, want ErrConflict", err)
+	}
+}
+
+func TestMigrateRejectsDuplicateActiveBillingAccountMappings(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if _, err := st.pool.Exec(ctx, initialMigration); err != nil {
+		t.Fatalf("migrate legacy schema: %v", err)
+	}
+	if _, err := st.pool.Exec(ctx, `ALTER TABLE relay_ops.auth_sessions ADD COLUMN billing_account_id BIGINT`); err != nil {
+		t.Fatalf("add legacy billing account mapping column: %v", err)
+	}
+	for _, name := range []string{"duplicate-billing-one", "duplicate-billing-two"} {
+		upstreamID, err := st.CreateUpstream(ctx, Upstream{
+			Name: name, Role: "production", BaseURL: "https://" + name + ".example/v1", AdapterType: "newapi", Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("CreateUpstream %q: %v", name, err)
+		}
+		if _, err := st.pool.Exec(ctx, `
+			INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope, billing_account_id)
+			VALUES ($1, 'file:/run/secrets/upstream-sessions/redacted', 'bearer', 'active', 'https://billing.example/login', 'billing_read', 8123)`, upstreamID); err != nil {
+			t.Fatalf("insert legacy duplicate mapping %q: %v", name, err)
+		}
+	}
+
+	err := st.Migrate(ctx)
+	if err == nil {
+		t.Fatal("Migrate succeeded with duplicate active billing mappings")
+	}
+	for _, want := range []string{"migration 010 blocked", "billing account 8123", "2 active billing_read mappings"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Migrate error = %q, want actionable diagnostic containing %q", err, want)
+		}
+	}
+	var count int
+	if err := st.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM relay_ops.auth_sessions
+		WHERE billing_account_id=8123 AND status='active' AND scope='billing_read'`).Scan(&count); err != nil {
+		t.Fatalf("count legacy duplicate mappings: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("legacy duplicate mappings = %d, want 2 (preflight must not mutate data)", count)
+	}
+}
+
+func TestProvisionBillingSourceIsAtomicIdempotentAndRejectsConflicts(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		INSERT INTO relay_ops.public_groups
+			(group_id, name, enabled, customer_visible, user_multiplier_bps, source_revision, last_seen_at)
+		VALUES (71, 'billing-public', TRUE, TRUE, 10000, 'test', NOW())`); err != nil {
+		t.Fatal(err)
+	}
+	record := billing.BillingProvisionRecord{
+		Production: upstreams.ProductionRecord{
+			Source: upstreams.Source{
+				Name: "billing-primary", Role: upstreams.RoleProduction, BaseURL: "https://billing-primary.example/v1",
+				PricingURL: "https://billing-primary.example/pricing", UsageURL: "https://billing-primary.example/usage",
+				AdapterType: upstreams.AdapterSub2API, GroupIDs: []int64{71}, Enabled: true,
+			},
+			Audit: upstreams.AuditEvent{ActorUserID: 42, Action: "upstream.production.create", ObjectType: "upstream", AfterSummary: map[string]string{"name": "billing-primary"}},
+		},
+		Session: billing.BillingReadSessionRecord{
+			LoginURL: "https://billing-primary.example/login", BillingAccountID: 8123,
+			Secret: billing.SessionSecretRef{SecretRef: "file:/run/secrets/upstream-sessions/billing-primary", Kind: "upstream_usage_session", Fingerprint: strings.Repeat("a", 64), LastFour: "token"},
+			Audit:  billing.SessionAuditEvent{ActorUserID: 42, Action: "upstream.billing_session.provision", ObjectType: "auth_session", AfterSummary: map[string]string{"scope": "billing_read"}},
+		},
+	}
+	first, err := st.ProvisionBillingSource(ctx, record)
+	if err != nil || first.AlreadyConfigured || first.UpstreamID <= 0 || first.BillingAccountID != 8123 {
+		t.Fatalf("first provision=%#v err=%v", first, err)
+	}
+	second, err := st.ProvisionBillingSource(ctx, record)
+	if err != nil || !second.AlreadyConfigured || second.UpstreamID != first.UpstreamID {
+		t.Fatalf("idempotent provision=%#v err=%v", second, err)
+	}
+	rotatedSecret := record
+	rotatedSecret.Session.Secret.Fingerprint = strings.Repeat("d", 64)
+	if _, err := st.ProvisionBillingSource(ctx, rotatedSecret); !errors.Is(err, billing.ErrBillingProvisionConflict) {
+		t.Fatalf("rotated bearer declaration error=%v, want billing provision conflict", err)
+	}
+	var sessions, audits int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.auth_sessions WHERE billing_account_id=8123`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.audit_events WHERE object_id=$1`, strconv.FormatInt(int64(first.UpstreamID), 10)).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 1 || audits != 2 {
+		t.Fatalf("sessions=%d audits=%d", sessions, audits)
+	}
+	conflict := record
+	conflict.Production.Source.Name = "billing-secondary"
+	conflict.Production.Source.BaseURL = "https://billing-secondary.example/v1"
+	conflict.Production.Source.PricingURL = "https://billing-secondary.example/pricing"
+	conflict.Production.Source.UsageURL = "https://billing-secondary.example/usage"
+	conflict.Session.Secret.SecretRef = "file:/run/secrets/upstream-sessions/billing-secondary"
+	conflict.Session.Secret.Fingerprint = strings.Repeat("b", 64)
+	if _, err := st.ProvisionBillingSource(ctx, conflict); !errors.Is(err, billing.ErrBillingProvisionConflict) {
+		t.Fatalf("duplicate billing account error=%v", err)
+	}
+	secretConflict := record
+	secretConflict.Production.Source.Name = "billing-secret-reuse"
+	secretConflict.Production.Source.BaseURL = "https://billing-secret-reuse.example/v1"
+	secretConflict.Production.Source.PricingURL = "https://billing-secret-reuse.example/pricing"
+	secretConflict.Production.Source.UsageURL = "https://billing-secret-reuse.example/usage"
+	secretConflict.Session.BillingAccountID = 9123
+	if _, err := st.ProvisionBillingSource(ctx, secretConflict); !errors.Is(err, billing.ErrBillingProvisionConflict) {
+		t.Fatalf("reused billing secret reference error=%v", err)
+	}
+}
+
+func TestProvisionBillingSourceConcurrentSecretReferenceConflicts(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		CREATE OR REPLACE FUNCTION relay_ops.delay_billing_secret_insert() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.secret_ref = 'file:/run/secrets/upstream-sessions/shared-billing-token' THEN
+				PERFORM pg_sleep(0.2);
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE TRIGGER delay_billing_secret_insert
+			BEFORE INSERT ON relay_ops.secret_refs
+			FOR EACH ROW EXECUTE FUNCTION relay_ops.delay_billing_secret_insert();`); err != nil {
+		t.Fatalf("install concurrent secret reference test barrier: %v", err)
+	}
+
+	record := func(name string, billingAccountID int64) billing.BillingProvisionRecord {
+		return billing.BillingProvisionRecord{
+			Production: upstreams.ProductionRecord{
+				Source: upstreams.Source{
+					Name: name, Role: upstreams.RoleProduction, BaseURL: "https://" + name + ".example/v1",
+					PricingURL: "https://" + name + ".example/pricing", UsageURL: "https://" + name + ".example/usage",
+					AdapterType: upstreams.AdapterSub2API, Enabled: true,
+				},
+				Audit: upstreams.AuditEvent{ActorUserID: 42, Action: "upstream.production.create", ObjectType: "upstream", AfterSummary: map[string]string{"name": name}},
+			},
+			Session: billing.BillingReadSessionRecord{
+				LoginURL: "https://" + name + ".example/login", BillingAccountID: billingAccountID,
+				Secret: billing.SessionSecretRef{SecretRef: "file:/run/secrets/upstream-sessions/shared-billing-token", Kind: "upstream_usage_session", Fingerprint: strings.Repeat("c", 64), LastFour: "token"},
+				Audit:  billing.SessionAuditEvent{ActorUserID: 42, Action: "upstream.billing_session.provision", ObjectType: "auth_session", AfterSummary: map[string]string{"scope": "billing_read"}},
+			},
+		}
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, input := range []billing.BillingProvisionRecord{record("billing-concurrent-one", 8123), record("billing-concurrent-two", 9123)} {
+		go func(input billing.BillingProvisionRecord) {
+			<-start
+			_, err := st.ProvisionBillingSource(ctx, input)
+			results <- err
+		}(input)
+	}
+	close(start)
+
+	var success, conflicts int
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			success++
+		case errors.Is(err, billing.ErrBillingProvisionConflict):
+			conflicts++
+		default:
+			t.Fatalf("concurrent billing provision error = %v", err)
+		}
+	}
+	if success != 1 || conflicts != 1 {
+		t.Fatalf("concurrent shared secret results: success=%d conflicts=%d, want one of each", success, conflicts)
+	}
+	var sessions int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.auth_sessions WHERE secret_ref=$1`, "file:/run/secrets/upstream-sessions/shared-billing-token").Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 1 {
+		t.Fatalf("sessions using shared secret reference=%d, want 1", sessions)
+	}
+}
+
+func TestBillingProvisionLockKeysUseSeparateNamespaces(t *testing.T) {
+	secret := billingProvisionLockKey("secret", "X")
+	source := billingProvisionLockKey("source", "X")
+	if secret == source {
+		t.Fatalf("secret and source lock keys must differ: %q", secret)
+	}
+	if secret != "billing-provision:secret:X" || source != "billing-provision:source:X" {
+		t.Fatalf("billing lock keys = %q, %q", secret, source)
 	}
 }
 
@@ -418,6 +620,65 @@ func TestUsageSessionNotificationsSuppressForTwentyFourHoursAndCostsAppend(t *te
 	}
 	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.cost_observations WHERE upstream_id=$1`, id).Scan(&costCount); err != nil || costCount != 1 {
 		t.Fatalf("cost count=%d err=%v", costCount, err)
+	}
+}
+
+func TestListBillingSourcesUsesEnabledProductionActiveSessions(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	eligible, err := st.CreateUpstream(ctx, Upstream{Name: "billing-active", Role: "production", BaseURL: "https://billing-active.example/v1", AdapterType: "sub2api", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := st.CreateUpstream(ctx, Upstream{Name: "billing-disabled", Role: "production", BaseURL: "https://billing-disabled.example/v1", AdapterType: "newapi", Enabled: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsupported, err := st.CreateUpstream(ctx, Upstream{Name: "billing-unsupported", Role: "production", BaseURL: "https://billing-unsupported.example/v1", AdapterType: "openai", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieSession, err := st.CreateUpstream(ctx, Upstream{Name: "billing-cookie", Role: "production", BaseURL: "https://billing-cookie.example/v1", AdapterType: "newapi", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageBearer, err := st.CreateUpstream(ctx, Upstream{Name: "billing-usage-only", Role: "production", BaseURL: "https://billing-usage-only.example/v1", AdapterType: "newapi", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		id               domain.UpstreamID
+		status           string
+		authMode         string
+		ref              string
+		scope            string
+		billingAccountID *int64
+	}{
+		{eligible, "active", "bearer", "file:/run/secrets/upstream-sessions/active", "billing_read", int64Pointer(731)},
+		{disabled, "active", "bearer", "file:/run/secrets/upstream-sessions/disabled", "billing_read", int64Pointer(732)},
+		{unsupported, "active", "bearer", "file:/run/secrets/upstream-sessions/unsupported", "billing_read", int64Pointer(733)},
+		{cookieSession, "active", "cookie", "file:/run/secrets/upstream-sessions/cookie", "usage_read", nil},
+		{usageBearer, "active", "bearer", "file:/run/secrets/upstream-sessions/usage-only", "usage_read", int64Pointer(734)},
+	} {
+		if _, err := st.pool.Exec(ctx, `
+			INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope, billing_account_id)
+			VALUES ($1, $2, $3, $4, 'https://billing.example/login', $5, $6)`, row.id, row.ref, row.authMode, row.status, row.scope, row.billingAccountID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sources, err := st.ListBillingSources(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("sources=%#v", sources)
+	}
+	got := sources[0]
+	if got.AccountID != 731 || got.BaseURL != "https://billing-active.example/v1" || got.AdapterType != "sub2api" || got.SecretRef != "file:/run/secrets/upstream-sessions/active" {
+		t.Fatalf("source=%#v", got)
 	}
 }
 

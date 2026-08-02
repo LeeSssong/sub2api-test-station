@@ -25,6 +25,8 @@ const (
 	accountPageSize  = 100
 	maxAccountPages  = 20
 	maxAccounts      = accountPageSize * maxAccountPages
+	usagePageSize    = 1000
+	maxUsagePages    = 1000
 )
 
 var errResponseTooLarge = errors.New("Sub2API response exceeds size limit")
@@ -316,6 +318,69 @@ func (c *HTTPReader) GetUsageStats(ctx context.Context, query UsageQuery) (Usage
 		return UsageStats{}, err
 	}
 	return stats, nil
+}
+
+// ListUsageLogs reads the complete, bounded result set for an exact time
+// window. Reconciliation uses the durable usage ledger as the source of local
+// request attempts, so a failed import can safely be retried.
+func (c *HTTPReader) ListUsageLogs(ctx context.Context, query UsageLogQuery) ([]UsageLog, error) {
+	if query.AccountID <= 0 || query.Start.IsZero() || query.End.IsZero() || !query.Start.Before(query.End) {
+		return nil, errSchemaMismatch
+	}
+	type usagePage struct {
+		Items    *[]UsageLog `json:"items"`
+		Total    *int        `json:"total"`
+		Page     *int        `json:"page"`
+		PageSize *int        `json:"page_size"`
+	}
+	logs := make([]UsageLog, 0)
+	seen := make(map[int64]struct{})
+	expectedTotal := -1
+	for page := 1; page <= maxUsagePages; page++ {
+		values := url.Values{
+			"account_id":  {strconv.FormatInt(query.AccountID, 10)},
+			"exact_total": {"true"},
+			"page":        {strconv.Itoa(page)},
+			"page_size":   {strconv.Itoa(usagePageSize)},
+			"sort_by":     {"created_at"},
+			"sort_order":  {"asc"},
+			"start_time":  {query.Start.UTC().Format(time.RFC3339Nano)},
+			"end_time":    {query.End.UTC().Format(time.RFC3339Nano)},
+		}
+		var response usagePage
+		if err := c.get(ctx, "/api/v1/admin/usage", values, &response); err != nil {
+			return nil, err
+		}
+		if response.Items == nil || response.Total == nil || response.Page == nil || response.PageSize == nil ||
+			*response.Page != page || *response.PageSize != usagePageSize || *response.Total < 0 {
+			return nil, errSchemaMismatch
+		}
+		if expectedTotal == -1 {
+			expectedTotal = *response.Total
+		} else if expectedTotal != *response.Total {
+			return nil, errSchemaMismatch
+		}
+		for _, log := range *response.Items {
+			if log.ID <= 0 || log.AccountID != query.AccountID || log.CreatedAt.IsZero() ||
+				log.CreatedAt.Before(query.Start) || !log.CreatedAt.Before(query.End) ||
+				math.IsNaN(log.TotalCost) || math.IsInf(log.TotalCost, 0) || log.TotalCost < 0 ||
+				log.InputTokens < 0 || log.OutputTokens < 0 {
+				return nil, errSchemaMismatch
+			}
+			if _, duplicate := seen[log.ID]; duplicate {
+				return nil, errSchemaMismatch
+			}
+			seen[log.ID] = struct{}{}
+			logs = append(logs, log)
+		}
+		if len(logs) == expectedTotal {
+			return logs, nil
+		}
+		if len(*response.Items) == 0 || len(logs) > expectedTotal {
+			return nil, errSchemaMismatch
+		}
+	}
+	return nil, errSchemaMismatch
 }
 
 func (c *HTTPReader) ListOpsAlertEvents(ctx context.Context, cursor OpsAlertEventCursor) ([]OpsAlertEvent, error) {

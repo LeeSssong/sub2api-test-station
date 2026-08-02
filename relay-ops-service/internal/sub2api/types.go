@@ -19,6 +19,12 @@ type AccountReader interface {
 	ListAccounts(context.Context) ([]Account, error)
 }
 
+// UsageLogReader is the narrow, administrator-only projection used by the
+// reconciliation importer. It deliberately contains no API key or user data.
+type UsageLogReader interface {
+	ListUsageLogs(context.Context, UsageLogQuery) ([]UsageLog, error)
+}
+
 type AccountMonitorReader interface {
 	ListAccountMonitors(context.Context) (AccountMonitorProjection, error)
 	ListAccountMonitorHistory(context.Context, int64, int) ([]AccountMonitorHistoryEntry, error)
@@ -276,6 +282,25 @@ type UsageQuery struct {
 	StartDate string
 	EndDate   string
 	Timezone  string
+}
+
+type UsageLogQuery struct {
+	AccountID int64
+	Start     time.Time
+	End       time.Time
+}
+
+type UsageLog struct {
+	ID           int64     `json:"id"`
+	AccountID    int64     `json:"account_id"`
+	RequestID    string    `json:"request_id"`
+	Model        string    `json:"model"`
+	InputTokens  int64     `json:"input_tokens"`
+	OutputTokens int64     `json:"output_tokens"`
+	// TotalCost is the amount calculated under this site's user pricing rule.
+	// It is intentionally distinct from account-rate and upstream billing data.
+	TotalCost float64   `json:"total_cost"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type UsageStats struct {

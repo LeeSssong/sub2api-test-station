@@ -141,6 +141,7 @@ services:
     logging: *logging
 
   relay-ops:
+    image: ${RELAY_OPS_IMAGE:-sub2api-relay-ops:local}
     build:
       context: ..
       dockerfile: infra/Dockerfile.relay-ops
@@ -200,6 +201,34 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    logging: *logging
+
+  # This profile is deliberately separate from the read-only /ops service.
+  # Invoke it only through ops/provision-billing-source.sh as root.
+  relay-ops-provision:
+    profiles: ["provision"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.relay-ops
+    restart: "no"
+    entrypoint: ["/provision-billing-source"]
+    environment:
+      RELAY_OPS_MODE: closed
+      RELAY_OPS_TIMEZONE: Asia/Shanghai
+      RELAY_OPS_DATABASE_URL_FILE: /run/secrets/relay-ops-database-url
+      RELAY_OPS_SUB2API_ADMIN_KEY_FILE: /run/secrets/sub2api-admin-api-key
+    volumes:
+      - ${RELAY_OPS_DATABASE_URL_HOST_FILE:-./secrets/relay-ops-database-url}:/run/secrets/relay-ops-database-url:ro
+      - ${RELAY_OPS_SUB2API_ADMIN_KEY_HOST_FILE:-./secrets/sub2api-admin-api-key}:/run/secrets/sub2api-admin-api-key:ro
+      - ${RELAY_OPS_USAGE_SESSIONS_HOST_DIR:-./secrets/upstream-sessions}:/run/secrets/upstream-sessions:ro
+      - ${RELAY_OPS_BILLING_SOURCE_DECLARATION_HOST_FILE:-/dev/null}:/run/secrets/billing-source-declaration.json:ro
+    read_only: true
+    tmpfs: [/tmp]
+    user: "0:0"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 192m
+    cpus: 0.25
     logging: *logging
 
   redis:

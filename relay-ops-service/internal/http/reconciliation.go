@@ -135,12 +135,15 @@ func (s *server) reconciliationManualAdjust(w http.ResponseWriter, request *http
 		return
 	}
 	actor, _ := adminauth.ActorFromContext(request.Context())
-	idempotencyKey := request.Header.Get("Idempotency-Key")
-	if strings.TrimSpace(idempotencyKey) == "" {
-		idempotencyKey = "manual:attempt:" + strconv.FormatInt(exceptionID, 10) + ":" + amount.String()
+	// Scope a client retry key to the exception. A browser-provided key must
+	// never be able to reuse a transaction from another account/exception.
+	idempotencyKey := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
+	if idempotencyKey == "" {
+		idempotencyKey = amount.String()
 	}
-	transaction, created, err := s.dependencies.Reconciliation.CreateManualUpstreamCost(request.Context(), reconciliation.ManualAdjustmentInput{
-		AttemptID: exceptionID, Amount: amount, Notes: body.Notes, ActorUserID: actor.UserID,
+	idempotencyKey = "manual:exception:" + strconv.FormatInt(exceptionID, 10) + ":" + idempotencyKey
+	transaction, created, err := s.dependencies.Reconciliation.CreateManualUpstreamCostForException(request.Context(), exceptionID, reconciliation.ManualAdjustmentInput{
+		Amount: amount, Notes: body.Notes, ActorUserID: actor.UserID,
 		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {

@@ -47,7 +47,7 @@
       <section class="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800 sm:grid-cols-2 xl:grid-cols-5" data-test="reconciliation-summary">
         <div><p class="text-xs text-gray-500">可用账号</p><p class="text-2xl font-semibold text-green-600">{{ availableCount }}</p></div>
         <div><p class="text-xs text-gray-500">不可用账号</p><p class="text-2xl font-semibold text-red-600">{{ unavailableCount }}</p></div>
-        <div><p class="text-xs text-gray-500">成本覆盖率</p><p class="text-2xl font-semibold" :class="coverageRatio >= 1 ? 'text-green-600' : 'text-amber-600'">{{ formatCoverage(ledger?.coverage_ratio) }}</p></div>
+        <div><p class="text-xs text-gray-500">成本覆盖率</p><p class="text-2xl font-semibold" :class="coverageClass">{{ formatCoverage(ledger) }}</p></div>
         <div><p class="text-xs text-gray-500">待对账笔数</p><p class="text-2xl font-semibold text-amber-600">{{ ledger?.pending_attempts ?? '-' }}</p></div>
         <button type="button" class="btn btn-secondary self-end" data-test="open-exceptions" @click="openExceptions">异常明细</button>
       </section>
@@ -266,6 +266,10 @@ const filteredAccounts = computed(() => {
 const availableCount = computed(() => accounts.value.filter((account) => account.latest_status === 'success').length)
 const unavailableCount = computed(() => Math.max(0, accounts.value.length - availableCount.value))
 const coverageRatio = computed(() => Number(ledger.value?.coverage_ratio ?? 0))
+const coverageClass = computed(() => {
+  if (!ledger.value?.coverage_known) return 'text-gray-500'
+  return coverageRatio.value >= 1 ? 'text-green-600' : 'text-amber-600'
+})
 const unavailableGroupKey = '__unavailable__'
 const scoreWeights = { cost: 30, success: 30, ttft: 20, latency: 20 }
 
@@ -452,8 +456,8 @@ function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : t('common.time.never')
 }
 
-function formatCoverage(value?: number | null): string {
-  return value == null ? '-' : `${(value * 100).toFixed(2)}%`
+function formatCoverage(summary?: { coverage_known: boolean; coverage_ratio: number } | null): string {
+  return !summary?.coverage_known ? '-' : `${(summary.coverage_ratio * 100).toFixed(2)}%`
 }
 
 onMounted(load)

@@ -15,11 +15,17 @@ import (
 
 const RoleProduction = "production"
 
+const (
+	AdapterSub2API = "sub2api"
+	AdapterNewAPI  = "newapi"
+)
+
 var (
-	ErrConflict         = errors.New("upstream already exists")
-	ErrGroupRequired    = errors.New("at least one public group is required")
-	ErrGroupUnavailable = errors.New("public group is unavailable")
-	ErrNotFound         = errors.New("production upstream not found")
+	ErrConflict           = errors.New("upstream already exists")
+	ErrAdapterTypeInvalid = errors.New("unsupported upstream adapter type")
+	ErrGroupRequired      = errors.New("at least one public group is required")
+	ErrGroupUnavailable   = errors.New("public group is unavailable")
+	ErrNotFound           = errors.New("production upstream not found")
 )
 
 type Resolver interface {
@@ -29,6 +35,7 @@ type Resolver interface {
 type ProductionInput struct {
 	Name           string
 	BaseURL        string
+	AdapterType    string
 	PricingURL     string
 	UsageURL       string
 	PerformanceURL string
@@ -76,30 +83,54 @@ type Service struct {
 }
 
 func (s Service) CreateProduction(ctx context.Context, actor domain.AdminActor, input ProductionInput) (Source, error) {
+	record, err := s.PrepareProduction(ctx, actor, input)
+	if err != nil {
+		return Source{}, err
+	}
+	id, err := s.Repository.CreateProduction(ctx, record)
+	if err != nil {
+		return Source{}, err
+	}
+	record.Source.ID = id
+	return record.Source, nil
+}
+
+// PrepareProduction applies the same validation and normalization as
+// CreateProduction without performing a write. Root-only provisioning uses it
+// to construct the record for its single database transaction.
+func (s Service) PrepareProduction(ctx context.Context, actor domain.AdminActor, input ProductionInput) (ProductionRecord, error) {
 	if s.Repository == nil {
-		return Source{}, fmt.Errorf("upstream repository is required")
+		// A repository is necessary only when group names must be resolved. This
+		// permits the non-browser provisioner to use already-declared numeric IDs.
+		if len(input.GroupNames) > 0 {
+			return ProductionRecord{}, fmt.Errorf("upstream repository is required")
+		}
 	}
 	if actor.UserID <= 0 {
-		return Source{}, fmt.Errorf("administrator identity is required")
+		return ProductionRecord{}, fmt.Errorf("administrator identity is required")
 	}
 	var err error
 	name := strings.TrimSpace(input.Name)
 	if name == "" || len(name) > 100 {
-		return Source{}, fmt.Errorf("upstream name must be 1-100 characters")
+		return ProductionRecord{}, fmt.Errorf("upstream name must be 1-100 characters")
+	}
+	adapterType, err := normalizeAdapterType(input.AdapterType)
+	if err != nil {
+		return ProductionRecord{}, err
 	}
 	groupIDs := input.GroupIDs
 	if len(groupIDs) == 0 && len(input.GroupNames) > 0 {
 		groupIDs, err = s.Repository.ResolvePublicGroupIDs(ctx, input.GroupNames)
 		if err != nil {
-			return Source{}, err
+			return ProductionRecord{}, err
 		}
 	}
 	groups, err := normalizeGroupIDs(groupIDs)
 	if err != nil {
-		return Source{}, err
+		return ProductionRecord{}, err
 	}
 	if input.MonitorID < 0 {
-		return Source{}, fmt.Errorf("monitor ID must not be negative")
+		return ProductionRecord{}, fmt.Errorf("monitor ID must not be negative")
 	}
 	resolver := s.Resolver
 	if resolver == nil {
@@ -107,38 +138,41 @@ func (s Service) CreateProduction(ctx context.Context, actor domain.AdminActor, 
 	}
 	baseURL, err := normalizeURL(ctx, resolver, input.BaseURL, true, true)
 	if err != nil {
-		return Source{}, fmt.Errorf("base URL: %w", err)
+		return ProductionRecord{}, fmt.Errorf("base URL: %w", err)
 	}
 	pricingURL, err := normalizeURL(ctx, resolver, input.PricingURL, true, false)
 	if err != nil {
-		return Source{}, fmt.Errorf("pricing URL: %w", err)
+		return ProductionRecord{}, fmt.Errorf("pricing URL: %w", err)
 	}
 	usageURL, err := normalizeURL(ctx, resolver, input.UsageURL, false, false)
 	if err != nil {
-		return Source{}, fmt.Errorf("usage URL: %w", err)
+		return ProductionRecord{}, fmt.Errorf("usage URL: %w", err)
 	}
 	performanceURL, err := normalizeURL(ctx, resolver, input.PerformanceURL, false, false)
 	if err != nil {
-		return Source{}, fmt.Errorf("performance URL: %w", err)
+		return ProductionRecord{}, fmt.Errorf("performance URL: %w", err)
 	}
 	source := Source{
 		Name: name, Role: RoleProduction, BaseURL: baseURL, PricingURL: pricingURL,
-		UsageURL: usageURL, PerformanceURL: performanceURL, AdapterType: "unknown",
+		UsageURL: usageURL, PerformanceURL: performanceURL, AdapterType: adapterType,
 		MonitorID: input.MonitorID, GroupIDs: groups, Enabled: true,
 	}
-	record := ProductionRecord{
+	return ProductionRecord{
 		Source: source,
 		Audit: AuditEvent{
 			ActorUserID: actor.UserID, Action: "upstream.production.create", ObjectType: "upstream",
-			AfterSummary: map[string]string{"name": name, "base_url": baseURL, "group_count": fmt.Sprint(len(groups))},
+			AfterSummary: map[string]string{"name": name, "base_url": baseURL, "adapter_type": adapterType, "group_count": fmt.Sprint(len(groups))},
 		},
+	}, nil
+}
+
+func normalizeAdapterType(value string) (string, error) {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case AdapterSub2API, AdapterNewAPI:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("%w: must be %q or %q", ErrAdapterTypeInvalid, AdapterNewAPI, AdapterSub2API)
 	}
-	id, err := s.Repository.CreateProduction(ctx, record)
-	if err != nil {
-		return Source{}, err
-	}
-	source.ID = id
-	return source, nil
 }
 
 func (s Service) List(ctx context.Context, actor domain.AdminActor) ([]Source, error) {

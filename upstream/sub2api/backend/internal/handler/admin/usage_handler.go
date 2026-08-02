@@ -160,10 +160,18 @@ func (h *UsageHandler) List(c *gin.Context) {
 		billingType = &bt
 	}
 
-	// Parse date range
+	// Parse date range. start_time/end_time are used by the reconciliation
+	// importer and preserve the usual half-open [start, end) semantics.
 	var startTime, endTime *time.Time
 	userTZ := c.Query("timezone") // Get user's timezone from request
-	if startDateStr := c.Query("start_date"); startDateStr != "" {
+	if startTimeRaw := strings.TrimSpace(c.Query("start_time")); startTimeRaw != "" {
+		t, err := time.Parse(time.RFC3339Nano, startTimeRaw)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_time format, use RFC3339")
+			return
+		}
+		startTime = &t
+	} else if startDateStr := c.Query("start_date"); startDateStr != "" {
 		t, err := timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
 		if err != nil {
 			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
@@ -172,7 +180,14 @@ func (h *UsageHandler) List(c *gin.Context) {
 		startTime = &t
 	}
 
-	if endDateStr := c.Query("end_date"); endDateStr != "" {
+	if endTimeRaw := strings.TrimSpace(c.Query("end_time")); endTimeRaw != "" {
+		t, err := time.Parse(time.RFC3339Nano, endTimeRaw)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_time format, use RFC3339")
+			return
+		}
+		endTime = &t
+	} else if endDateStr := c.Query("end_date"); endDateStr != "" {
 		t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
 		if err != nil {
 			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
@@ -181,6 +196,10 @@ func (h *UsageHandler) List(c *gin.Context) {
 		// Use half-open range [start, end), move to next calendar day start (DST-safe).
 		t = t.AddDate(0, 0, 1)
 		endTime = &t
+	}
+	if startTime != nil && endTime != nil && !startTime.Before(*endTime) {
+		response.BadRequest(c, "start_time must be before end_time")
+		return
 	}
 
 	params := pagination.PaginationParams{

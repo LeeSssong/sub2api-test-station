@@ -49,6 +49,69 @@ func reconciliationWindow(request *http.Request) (int64, time.Time, time.Time, s
 	return accountID, start, end, currency, nil
 }
 
+func operationsScope(request *http.Request, history bool) (reconciliation.OperationsScope, error) {
+	query := request.URL.Query()
+	timezone := strings.TrimSpace(query.Get("timezone"))
+	if timezone == "" {
+		timezone = "Asia/Shanghai"
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return reconciliation.OperationsScope{}, errors.New("invalid timezone")
+	}
+	parseOptionalID := func(name string) (*int64, error) {
+		raw := strings.TrimSpace(query.Get(name))
+		if raw == "" {
+			return nil, nil
+		}
+		value, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || value <= 0 {
+			return nil, errors.New("invalid " + name)
+		}
+		return &value, nil
+	}
+	groupID, err := parseOptionalID("group_id")
+	if err != nil {
+		return reconciliation.OperationsScope{}, err
+	}
+	accountID, err := parseOptionalID("account_id")
+	if err != nil {
+		return reconciliation.OperationsScope{}, err
+	}
+	now := time.Now().In(location)
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	start, end := dayStart, now
+	if history {
+		start = dayStart.AddDate(0, 0, -29)
+	}
+	if raw := strings.TrimSpace(query.Get("start")); raw != "" {
+		start, err = time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return reconciliation.OperationsScope{}, err
+		}
+	}
+	if raw := strings.TrimSpace(query.Get("end")); raw != "" {
+		end, err = time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return reconciliation.OperationsScope{}, err
+		}
+	}
+	currency := strings.ToUpper(strings.TrimSpace(query.Get("currency")))
+	if currency == "" {
+		currency = "USD"
+	}
+	scope, err := reconciliation.ValidateOperationsScope(reconciliation.OperationsScope{
+		GroupID: groupID, AccountID: accountID, Start: start, End: end, Currency: currency, Timezone: location.String(),
+	})
+	if err != nil {
+		return reconciliation.OperationsScope{}, err
+	}
+	if history && scope.End.Sub(scope.Start) > 366*24*time.Hour {
+		return reconciliation.OperationsScope{}, errors.New("history window exceeds 366 days")
+	}
+	return scope, nil
+}
+
 func (s *server) reconciliationSummary(w http.ResponseWriter, request *http.Request) {
 	accountID, start, end, currency, err := reconciliationWindow(request)
 	if err != nil {
@@ -61,6 +124,34 @@ func (s *server) reconciliationSummary(w http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *server) reconciliationOperations(w http.ResponseWriter, request *http.Request) {
+	scope, err := operationsScope(request, false)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_OPERATIONS_SCOPE")
+		return
+	}
+	summary, err := s.dependencies.Reconciliation.ReadOperationsSummary(request.Context(), scope)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "OPERATIONS_SUMMARY_FAILED")
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *server) reconciliationOperationsHistory(w http.ResponseWriter, request *http.Request) {
+	scope, err := operationsScope(request, true)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_OPERATIONS_SCOPE")
+		return
+	}
+	items, err := s.dependencies.Reconciliation.ListOperationsDaily(request.Context(), scope)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "OPERATIONS_HISTORY_FAILED")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *server) reconciliationExceptions(w http.ResponseWriter, request *http.Request) {

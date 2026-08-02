@@ -127,12 +127,37 @@ type AccountMonitorAccount struct {
 	CheckedAt    *time.Time                  `json:"checked_at,omitempty"`
 	Stale        bool                        `json:"stale"`
 }
+
+type AccountMonitorHealthSummary struct {
+	TotalAccounts       int      `json:"total_accounts"`
+	AvailableAccounts   int      `json:"available_accounts"`
+	UnavailableAccounts int      `json:"unavailable_accounts"`
+	PendingAccounts     int      `json:"pending_accounts"`
+	PausedAccounts      int      `json:"paused_accounts"`
+	SuccessRate         float64  `json:"success_rate"`
+	TTFTP50MS           *float64 `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS        *float64 `json:"latency_p95_ms,omitempty"`
+}
+
+type AccountMonitorGroup struct {
+	ID               int64                       `json:"id"`
+	Name             string                      `json:"name"`
+	RateMultiplier   float64                     `json:"rate_multiplier"`
+	CustomerVisible  bool                        `json:"customer_visible"`
+	NativeOrder      int                         `json:"native_order"`
+	OperationalState string                      `json:"operational_state"`
+	Health           AccountMonitorHealthSummary `json:"health"`
+	Accounts         []AccountMonitorAccount     `json:"accounts,omitempty"`
+}
+
 type AccountMonitorProjection struct {
-	SchemaVersion int                     `json:"schema_version"`
-	ObservedAt    time.Time               `json:"observed_at"`
-	Stale         bool                    `json:"stale"`
-	Settings      AccountMonitorSettings  `json:"settings"`
-	Accounts      []AccountMonitorAccount `json:"accounts"`
+	SchemaVersion int                         `json:"schema_version"`
+	ObservedAt    time.Time                   `json:"observed_at"`
+	Stale         bool                        `json:"stale"`
+	Settings      AccountMonitorSettings      `json:"settings"`
+	Health        AccountMonitorHealthSummary `json:"health"`
+	Groups        []AccountMonitorGroup       `json:"groups"`
+	Accounts      []AccountMonitorAccount     `json:"accounts"`
 }
 
 type AccountMonitorHistoryEntry struct {
@@ -291,16 +316,44 @@ type UsageLogQuery struct {
 }
 
 type UsageLog struct {
-	ID           int64     `json:"id"`
-	AccountID    int64     `json:"account_id"`
-	RequestID    string    `json:"request_id"`
-	Model        string    `json:"model"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
+	ID           int64  `json:"id"`
+	AccountID    int64  `json:"account_id"`
+	GroupID      *int64 `json:"group_id"`
+	RequestID    string `json:"request_id"`
+	Model        string `json:"model"`
+	InputTokens  int64  `json:"input_tokens"`
+	OutputTokens int64  `json:"output_tokens"`
 	// TotalCost is the amount calculated under this site's user pricing rule.
 	// It is intentionally distinct from account-rate and upstream billing data.
 	TotalCost float64   `json:"total_cost"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+func (l *UsageLog) UnmarshalJSON(data []byte) error {
+	type alias UsageLog
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	groupRaw, ok := fields["group_id"]
+	if !ok {
+		return errSchemaMismatch
+	}
+	if string(groupRaw) == "null" {
+		decoded.GroupID = nil
+	} else {
+		var groupID int64
+		if err := json.Unmarshal(groupRaw, &groupID); err != nil || groupID <= 0 {
+			return errSchemaMismatch
+		}
+		decoded.GroupID = &groupID
+	}
+	*l = UsageLog(decoded)
+	return nil
 }
 
 type UsageStats struct {

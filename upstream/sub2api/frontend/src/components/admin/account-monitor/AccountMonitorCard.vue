@@ -53,9 +53,9 @@
         <span v-if="!operations.coverage_known || Number(operations.pending_attempts ?? 0) > 0" class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">待对账</span>
       </div>
       <div class="grid grid-cols-2 gap-2 text-xs">
-        <LedgerMetric label="上游真实扣费" :value="formatMoney(operations.upstream_cost)" />
-        <LedgerMetric label="用户实际计费" :value="formatMoney(operations.user_charge)" />
-        <LedgerMetric label="纸面利润" :value="formatMoney(operations.paper_profit)" />
+        <LedgerMetric label="上游真实扣费" :value="formatMoney(operations.upstream_cost, operations.currency)" />
+        <LedgerMetric label="用户实际计费" :value="formatMoney(operations.user_charge, operations.currency)" />
+        <LedgerMetric label="纸面利润" :value="formatMoney(operations.paper_profit, operations.currency)" />
         <LedgerMetric label="利润率" :value="profitMarginLabel" />
       </div>
     </section>
@@ -115,7 +115,6 @@ const emit = defineEmits<{
   (event: 'settings'): void
   (event: 'history', accountID: number): void
   (event: 'updatePriority', accountID: number, priority: number): void
-  (event: 'updateWeight', accountID: number, priority: number): void
 }>()
 
 const { t } = useI18n()
@@ -126,7 +125,6 @@ function savePriority() {
   draftPriority.value = value
   if (value !== props.account.priority) {
     emit('updatePriority', props.account.account_id, value)
-    emit('updateWeight', props.account.account_id, value)
   }
 }
 
@@ -190,9 +188,17 @@ function formatPercent(value: number): string { return `${Math.round(value * 100
 function formatScore(value: number): string { return value.toFixed(1).replace(/\.0$/, '') }
 function formatMs(value?: number | null): string { return value == null ? '-' : `${Math.round(value)} ms` }
 function formatDate(value: string): string { return new Date(value).toLocaleString() }
-function formatMoney(value: string | number | null | undefined): string {
+function formatMoney(value: string | number | null | undefined, currency?: string | null): string {
   const amount = Number(value)
-  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : '—'
+  if (!Number.isFinite(amount)) return '—'
+  try {
+    if (currency) {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+    }
+    return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+  } catch {
+    return amount.toFixed(2)
+  }
 }
 
 const Metric = defineComponent({

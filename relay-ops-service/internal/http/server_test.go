@@ -520,6 +520,88 @@ func TestReconciliationManualAdjustmentTargetsException(t *testing.T) {
 	}
 }
 
+func TestOperationsRoutesReturnScopedSummaryAndDailyHistory(t *testing.T) {
+	t.Parallel()
+
+	groupID := int64(3)
+	margin := decimal.RequireFromString("0.80")
+	service := &fakeReconciliation{
+		operations: reconciliation.OperationsSummary{
+			Scope:         reconciliation.OperationsScope{GroupID: &groupID},
+			TotalAttempts: 4, UpstreamCost: decimal.RequireFromString("0.80"),
+			UserCharge: decimal.RequireFromString("4.00"), PaperProfit: decimal.RequireFromString("3.20"),
+			ProfitMargin: &margin, UnattributedAttempts: 1, Currency: "USD",
+		},
+		daily: []reconciliation.OperationsDailyRow{{
+			Day: "2026-08-01", TotalAttempts: 4, UpstreamCost: decimal.RequireFromString("0.80"),
+			UserCharge: decimal.RequireFromString("4.00"), PaperProfit: decimal.RequireFromString("3.20"), Currency: "USD",
+		}},
+	}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	query := "?group_id=3&start=2026-08-01T00:00:00Z&end=2026-08-02T00:00:00Z&currency=USD&timezone=UTC"
+	request := authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/operations"+query, "")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("operations status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	for _, want := range []string{`"group_id":3`, `"profit_margin":"0.8"`, `"unattributed_attempts":1`} {
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Fatalf("operations response missing %s: %s", want, recorder.Body.String())
+		}
+	}
+	if service.operationsScope.GroupID == nil || *service.operationsScope.GroupID != 3 || service.operationsScope.Timezone != "UTC" {
+		t.Fatalf("operations scope = %#v", service.operationsScope)
+	}
+
+	request = authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/operations/history"+query, "")
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"day":"2026-08-01"`) {
+		t.Fatalf("history status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.historyScope.GroupID == nil || *service.historyScope.GroupID != 3 {
+		t.Fatalf("history scope = %#v", service.historyScope)
+	}
+}
+
+func TestOperationsRoutesRejectInvalidScopeAndRequireAdmin(t *testing.T) {
+	t.Parallel()
+
+	server := newReconciliationTestServer(t, &fakeReconciliation{}, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	invalid := authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/operations?group_id=0", "")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, invalid)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "INVALID_OPERATIONS_SCOPE") {
+		t.Fatalf("invalid scope status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodGet, "/relay-ops/api/reconciliation/operations", nil)
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, unauthenticated)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestOperationsHistoryDefaultsToThirtyNaturalDays(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	request := authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/operations/history?timezone=Asia/Shanghai", "")
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("history status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.historyScope.Timezone != "Asia/Shanghai" || !service.historyScope.Start.Before(service.historyScope.End) ||
+		service.historyScope.End.Sub(service.historyScope.Start) < 29*24*time.Hour ||
+		service.historyScope.End.Sub(service.historyScope.Start) > 31*24*time.Hour {
+		t.Fatalf("default history scope = %#v", service.historyScope)
+	}
+}
+
 func newReconciliationTestServer(t *testing.T, service ReconciliationService, identity adminauth.Identity) http.Handler {
 	t.Helper()
 	server, err := NewServer(Dependencies{
@@ -535,9 +617,13 @@ func newReconciliationTestServer(t *testing.T, service ReconciliationService, id
 }
 
 type fakeReconciliation struct {
-	exceptionID int64
-	input       reconciliation.ManualAdjustmentInput
-	created     bool
+	exceptionID     int64
+	input           reconciliation.ManualAdjustmentInput
+	created         bool
+	operations      reconciliation.OperationsSummary
+	daily           []reconciliation.OperationsDailyRow
+	operationsScope reconciliation.OperationsScope
+	historyScope    reconciliation.OperationsScope
 }
 
 func (s *fakeReconciliation) ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error) {
@@ -556,4 +642,14 @@ func (s *fakeReconciliation) CreateManualUpstreamCostForException(_ context.Cont
 
 func (s *fakeReconciliation) RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error) {
 	return reconciliation.Summary{}, nil
+}
+
+func (s *fakeReconciliation) ReadOperationsSummary(_ context.Context, scope reconciliation.OperationsScope) (reconciliation.OperationsSummary, error) {
+	s.operationsScope = scope
+	return s.operations, nil
+}
+
+func (s *fakeReconciliation) ListOperationsDaily(_ context.Context, scope reconciliation.OperationsScope) ([]reconciliation.OperationsDailyRow, error) {
+	s.historyScope = scope
+	return s.daily, nil
 }

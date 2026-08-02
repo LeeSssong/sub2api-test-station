@@ -78,6 +78,7 @@ func (i UsageImporter) importSource(ctx context.Context, source billing.BillingS
 			LocalRequestID: localRequestID,
 			AccountID:      source.AccountID,
 			AdapterType:    adapterType,
+			GroupID:        log.GroupID,
 			Model:          log.Model,
 			InputTokens:    log.InputTokens,
 			OutputTokens:   log.OutputTokens,

@@ -44,12 +44,64 @@
         </div>
       </section>
 
-      <section class="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800 sm:grid-cols-2 xl:grid-cols-5" data-test="reconciliation-summary">
-        <div><p class="text-xs text-gray-500">可用账号</p><p class="text-2xl font-semibold text-green-600">{{ availableCount }}</p></div>
-        <div><p class="text-xs text-gray-500">不可用账号</p><p class="text-2xl font-semibold text-red-600">{{ unavailableCount }}</p></div>
-        <div><p class="text-xs text-gray-500">成本覆盖率</p><p class="text-2xl font-semibold" :class="coverageClass">{{ formatCoverage(ledger) }}</p></div>
-        <div><p class="text-xs text-gray-500">待对账笔数</p><p class="text-2xl font-semibold text-amber-600">{{ ledger?.pending_attempts ?? '-' }}</p></div>
-        <button type="button" class="btn btn-secondary self-end" data-test="open-exceptions" @click="openExceptions">异常明细</button>
+      <section class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="operations-overview">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">全站经营总览</h2>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">默认今日 · 成本仅采用已对账的真实上游账单</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-ledger-history" @click="openLedgerHistory()">历史按日</button>
+            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-exceptions" @click="openExceptions">异常明细</button>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <LedgerMetric label="用户实际计费" :value="formatMoney(globalLedger?.user_charge, globalLedger?.currency)" />
+          <LedgerMetric label="上游真实扣费" :value="formatMoney(globalLedger?.upstream_cost, globalLedger?.currency)" />
+          <LedgerMetric label="纸面利润" :value="formatMoney(globalLedger?.paper_profit, globalLedger?.currency)" />
+          <LedgerMetric label="利润率" :value="formatProfitMargin(globalLedger)" />
+          <LedgerMetric label="成本覆盖率" :value="formatCoverage(globalLedger)" :value-class="coverageClass(globalLedger)" />
+          <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="global-health-summary">
+            <p class="text-xs text-gray-500 dark:text-gray-400">服务健康</p>
+            <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ globalHealth.available_accounts }}</span><span class="mx-1 text-gray-400">/</span>{{ globalHealth.total_accounts }}</p>
+            <p class="mt-0.5 text-xs text-gray-500">{{ globalHealth.unavailable_accounts }} 不可用 · {{ globalHealth.pending_accounts }} 待确认 · {{ globalHealth.paused_accounts }} 暂停</p>
+            <p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(globalHealth.success_rate) }} · TTFT {{ formatMs(globalHealth.ttft_p50_ms) }} · P95 {{ formatMs(globalHealth.latency_p95_ms) }}</p>
+          </div>
+        </div>
+        <div v-if="globalLifetimeLedger" class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400" data-test="global-lifetime-ledger">
+            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
+            <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
+            <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
+            <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
+            <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
+          </div>
+          <p v-if="hasUnattributedLedger(globalLifetimeLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="global-lifetime-unattributed-group-ledger">
+            历史累计未归属分组：{{ globalLifetimeLedger.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLifetimeLedger.unattributed_user_charge, globalLifetimeLedger.currency) }} · 成本 {{ formatMoney(globalLifetimeLedger.unattributed_upstream_cost, globalLifetimeLedger.currency) }}（已计入全站，不计入任何分组）
+          </p>
+        </div>
+        <p v-if="hasUnattributedLedger(globalLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="unattributed-group-ledger">
+          今日未归属分组：{{ globalLedger?.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLedger?.unattributed_user_charge, globalLedger?.currency) }} · 成本 {{ formatMoney(globalLedger?.unattributed_upstream_cost, globalLedger?.currency) }}（已计入全站，不计入任何分组）
+        </p>
+      </section>
+
+      <section v-if="sortedGroups.length" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
+        <div class="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="账号分组">
+          <div v-for="group in sortedGroups" :key="group.id" data-test="group-tab">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeGroupId === group.id"
+              class="shrink-0 rounded-lg border px-3 py-2 text-left text-sm transition-colors"
+              :class="activeGroupId === group.id ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300' : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-300'"
+              :data-test="`group-tab-${group.id}`"
+              @click="selectGroup(group.id)"
+            >
+              <span class="block font-medium">{{ group.name }}</span>
+              <span class="mt-0.5 block text-[11px] opacity-75">{{ formatMultiplier(group.rate_multiplier) }} · {{ groupOperationalLabel(group) }}</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800 sm:flex-row sm:items-center">
@@ -62,7 +114,7 @@
           @update:search="search = $event"
           @update:platform="platform = $event"
           @update:status="status = $event"
-          @update:group-id="groupId = $event"
+          @update:group-id="selectFilterGroup"
         />
         <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
           {{ t('admin.accountMonitor.lastObserved', { time: formatDate(projection?.observed_at) }) }}
@@ -90,31 +142,51 @@
         {{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
       </div>
 
-      <div v-else class="space-y-6">
-        <section v-for="group in groupedAccounts" :key="group.key" data-test="monitor-group">
-          <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div v-else class="space-y-4">
+        <section v-if="activeGroup" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="group-operations-overview">
+          <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ group.name }}</h2>
-              <p class="text-xs text-gray-500 dark:text-gray-400">
-                可用 {{ group.available }} 个 · 不可用 {{ group.unavailable }} 个 · 按质量分降序
-              </p>
-            </div>
-            <div v-if="group.key !== unavailableGroupKey" class="flex items-center gap-2 text-xs text-gray-500">
-              <span>价格 {{ scoreWeights.cost }}%</span><span>成功率 {{ scoreWeights.success }}%</span>
-              <span>TTFT {{ scoreWeights.ttft }}%</span><span>总耗时 {{ scoreWeights.latency }}%</span>
-            </div>
-          </header>
-          <div class="grid gap-4 xl:grid-cols-2">
-            <div v-for="item in group.accounts" :key="item.account.account_id" class="relative">
-              <div v-if="item.score !== null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white" :title="item.scoreHint">
-                {{ item.score }} 分
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ activeGroup.name }}</h2>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="activeGroup.operational_state === 'closed' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : activeGroup.operational_state === 'operational' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'">{{ groupOperationalLabel(activeGroup) }}</span>
               </div>
+              <p v-if="activeGroup.operational_state === 'closed'" class="mt-1 text-xs text-gray-500 dark:text-gray-400">当前分组未向用户开放，空账号不会作为服务故障持续告警。</p>
+              <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">按质量评分从高到低，仅影响监控展示；全局调度优先级仍由账号卡片直接修改。</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="openLedgerHistory({ group_id: activeGroup.id })">本组历史</button>
+              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="edit-group-score-weights" @click="showScoreDialog = true">评分权重</button>
+            </div>
+          </div>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <LedgerMetric label="用户实际计费" :value="formatMoney(groupLedger?.user_charge, groupLedger?.currency)" />
+            <LedgerMetric label="上游真实扣费" :value="formatMoney(groupLedger?.upstream_cost, groupLedger?.currency)" />
+            <LedgerMetric label="纸面利润" :value="formatMoney(groupLedger?.paper_profit, groupLedger?.currency)" />
+            <LedgerMetric label="利润率" :value="formatProfitMargin(groupLedger)" />
+            <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="group-health-summary"><p class="text-xs text-gray-500">服务健康</p><p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ groupHealth.available_accounts }}</span> / {{ groupHealth.total_accounts }}</p><p class="mt-0.5 text-xs text-gray-500">{{ groupHealth.unavailable_accounts }} 不可用 · {{ groupHealth.pending_accounts }} 待确认 · {{ groupHealth.paused_accounts }} 暂停</p><p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(groupHealth.success_rate) }} · TTFT {{ formatMs(groupHealth.ttft_p50_ms) }} · P95 {{ formatMs(groupHealth.latency_p95_ms) }}</p></div>
+          </div>
+          <div v-if="groupLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="group-lifetime-ledger">
+            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
+            <span>营收 {{ formatMoney(groupLifetimeLedger.user_charge, groupLifetimeLedger.currency) }}</span>
+            <span>成本 {{ formatMoney(groupLifetimeLedger.upstream_cost, groupLifetimeLedger.currency) }}</span>
+            <span>利润 {{ formatMoney(groupLifetimeLedger.paper_profit, groupLifetimeLedger.currency) }}</span>
+            <span>利润率 {{ formatProfitMargin(groupLifetimeLedger) }}</span>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">评分组成：成本优势 {{ activeGroup.score_weights.cost }}% · 成功率 {{ activeGroup.score_weights.success }}% · TTFT {{ activeGroup.score_weights.ttft }}% · 总耗时 {{ activeGroup.score_weights.latency }}%</p>
+        </section>
+
+        <section data-test="monitor-group">
+          <div class="grid gap-4 xl:grid-cols-2">
+            <div v-for="account in scopedAccounts" :key="account.account_id" class="relative">
+              <div v-if="account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div>
               <AccountMonitorCard
-                :account="item.account"
-                :running="runningAccounts.has(item.account.account_id)"
-                :saving-weight="savingWeights.has(item.account.account_id)"
+                :account="account"
+                :operations="accountLedgers[account.account_id] ?? null"
+                :group-operational-state="activeGroup?.operational_state"
+                :running="runningAccounts.has(account.account_id)"
+                :saving-weight="savingWeights.has(account.account_id)"
                 @refresh="handleRunOne"
-                @update-weight="updateWeight"
+                @update-priority="updateWeight"
                 @settings="showSettings = true"
                 @history="openHistory"
               />
@@ -131,6 +203,25 @@
       :error="settingsError"
       @close="showSettings = false"
       @save="saveSettings"
+    />
+
+    <AccountMonitorGroupScoreDialog
+      v-if="activeGroup"
+      :show="showScoreDialog"
+      :group-id="activeGroup.id"
+      :group-name="activeGroup.name"
+      :weights="activeGroup.score_weights"
+      :saving="savingScoreWeights"
+      :error="scoreWeightsError"
+      @close="showScoreDialog = false"
+      @save="saveGroupScoreWeights"
+      @reset="resetGroupScoreWeights"
+    />
+
+    <AccountMonitorLedgerHistoryDrawer
+      :show="ledgerHistoryScope !== null"
+      :scope="ledgerHistoryScope ?? undefined"
+      @close="ledgerHistoryScope = null"
     />
 
     <BaseDialog
@@ -193,20 +284,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
+  AccountMonitorGroup,
+  AccountMonitorHealthSummary,
   AccountMonitorHistoryItem,
   AccountMonitorProjection,
+  AccountMonitorScoreWeights,
 } from '@/api/admin/accountMonitor'
-import type { ReconciliationException, ReconciliationSummary } from '@/api/admin/reconciliation'
+import type { OperationsScopeParams, ReconciliationException, ReconciliationSummary } from '@/api/admin/reconciliation'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
+import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
+import AccountMonitorLedgerHistoryDrawer from '@/components/admin/account-monitor/AccountMonitorLedgerHistoryDrawer.vue'
 import AccountMonitorSettingsDialog from '@/components/admin/account-monitor/AccountMonitorSettingsDialog.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -231,7 +327,16 @@ const settingsError = ref<string | null>(null)
 const historyAccount = ref<number | null>(null)
 const historyLoading = ref(false)
 const historyItems = ref<AccountMonitorHistoryItem[]>([])
-const ledger = ref<ReconciliationSummary | null>(null)
+const globalLedger = ref<ReconciliationSummary | null>(null)
+const groupLedger = ref<ReconciliationSummary | null>(null)
+const globalLifetimeLedger = ref<ReconciliationSummary | null>(null)
+const groupLifetimeLedger = ref<ReconciliationSummary | null>(null)
+const accountLedgers = ref<Record<number, ReconciliationSummary | null>>({})
+const activeGroupId = ref<number | null>(null)
+const ledgerHistoryScope = ref<OperationsScopeParams | null>(null)
+const showScoreDialog = ref(false)
+const savingScoreWeights = ref(false)
+const scoreWeightsError = ref<string | null>(null)
 const exceptions = ref<ReconciliationException[]>([])
 const exceptionsOpen = ref(false)
 const exceptionsLoading = ref(false)
@@ -239,6 +344,7 @@ const adjustmentAmounts = ref<Record<number, string>>({})
 const adjustingID = ref<number | null>(null)
 
 let abortController: AbortController | null = null
+let operationsGeneration = 0
 
 const intervalSeconds = computed(() => projection.value?.settings.interval_seconds ?? 300)
 const intervalLabel = computed(() => {
@@ -247,9 +353,22 @@ const intervalLabel = computed(() => {
   return t('admin.accountMonitor.intervalSeconds', { count: seconds })
 })
 
+const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((left, right) => {
+  if (right.rate_multiplier !== left.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
+  if (left.native_order !== right.native_order) return left.native_order - right.native_order
+  return left.id - right.id
+}))
+const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
+const activeGroupAccountSource = computed(() => {
+  const group = activeGroup.value
+  if (group?.accounts?.length) return group.accounts
+  if (group) return accounts.value.filter((account) => account.group_ids.includes(group.id))
+  return accounts.value
+})
+
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
-  return accounts.value.filter((account) => {
+  return activeGroupAccountSource.value.filter((account) => {
     if (platform.value && account.platform !== platform.value) return false
     if (status.value && displayStatus(account) !== status.value) return false
     if (groupId.value && !account.group_ids.includes(Number(groupId.value))) return false
@@ -263,48 +382,35 @@ const filteredAccounts = computed(() => {
     ].some((value) => value.toLowerCase().includes(query))
   })
 })
-const availableCount = computed(() => accounts.value.filter((account) => account.latest_status === 'success').length)
-const unavailableCount = computed(() => Math.max(0, accounts.value.length - availableCount.value))
-const coverageRatio = computed(() => Number(ledger.value?.coverage_ratio ?? 0))
-const coverageClass = computed(() => {
-  if (!ledger.value?.coverage_known) return 'text-gray-500'
-  return coverageRatio.value >= 1 ? 'text-green-600' : 'text-amber-600'
-})
-const unavailableGroupKey = '__unavailable__'
-const scoreWeights = { cost: 30, success: 30, ttft: 20, latency: 20 }
-
-function qualityScore(account: AccountMonitorAccount): number | null {
-  if (account.latest_status !== 'success' || account.stale) return null
-  const multiplier = account.multiplier.value
-  const cost = multiplier == null ? 50 : Math.max(0, Math.min(100, 100 - multiplier * 100))
-  const success = Math.max(0, Math.min(100, account.success_rate * 100))
-  const ttft = account.ttft_p50_ms == null ? 50 : Math.max(0, Math.min(100, 100 - account.ttft_p50_ms / 50))
-  const latency = account.latency_p95_ms == null ? 50 : Math.max(0, Math.min(100, 100 - account.latency_p95_ms / 100))
-  return Math.round((cost * scoreWeights.cost + success * scoreWeights.success + ttft * scoreWeights.ttft + latency * scoreWeights.latency) / 100)
+const scopedAccounts = computed(() => [...filteredAccounts.value].sort((left, right) => {
+  const leftScore = left.quality_score ?? -1
+  const rightScore = right.quality_score ?? -1
+  if (rightScore !== leftScore) return rightScore - leftScore
+  const leftRank = left.group_rank ?? Number.MAX_SAFE_INTEGER
+  const rightRank = right.group_rank ?? Number.MAX_SAFE_INTEGER
+  if (leftRank !== rightRank) return leftRank - rightRank
+  return left.account_id - right.account_id
+}))
+const emptyHealth: AccountMonitorHealthSummary = {
+  total_accounts: 0,
+  available_accounts: 0,
+  unavailable_accounts: 0,
+  pending_accounts: 0,
+  paused_accounts: 0,
+  success_rate: 0,
 }
-
-const groupedAccounts = computed(() => {
-  const groups = new Map<string, { key: string; name: string; accounts: { account: AccountMonitorAccount; score: number | null; scoreHint: string }[]; available: number; unavailable: number }>()
-  for (const account of filteredAccounts.value) {
-    const unavailable = account.latest_status !== 'success' || account.stale
-    const selectedGroupIndex = groupId.value ? account.group_ids.indexOf(Number(groupId.value)) : -1
-    const names = unavailable
-      ? ['不可用账号']
-      : selectedGroupIndex >= 0
-        ? [account.group_names[selectedGroupIndex] || '未分组']
-        : (account.group_names.length ? account.group_names : ['未分组'])
-    for (const name of names) {
-      const key = unavailable ? unavailableGroupKey : name
-      const group = groups.get(key) ?? { key, name, accounts: [], available: 0, unavailable: 0 }
-      const score = qualityScore(account)
-      group.accounts.push({ account, score, scoreHint: score === null ? '' : `价格 ${scoreWeights.cost}% · 成功率 ${scoreWeights.success}% · TTFT ${scoreWeights.ttft}% · 总耗时 ${scoreWeights.latency}%` })
-      if (unavailable) group.unavailable += 1
-      else group.available += 1
-      groups.set(key, group)
-    }
+const globalHealth = computed(() => projection.value?.health ?? emptyHealth)
+const groupHealth = computed(() => activeGroup.value?.health ?? emptyHealth)
+function hasUnattributedLedger(summary?: ReconciliationSummary | null): boolean {
+  if (!summary) return false
+  const hasAmount = (value: string | number | null | undefined) => {
+    const amount = Number(value)
+    return Number.isFinite(amount) && amount !== 0
   }
-  return [...groups.values()].map((group) => ({ ...group, accounts: group.accounts.sort((a, b) => (b.score ?? -1) - (a.score ?? -1)) }))
-})
+  return Number(summary.unattributed_attempts) > 0
+    || hasAmount(summary.unattributed_user_charge)
+    || hasAmount(summary.unattributed_upstream_cost)
+}
 
 function displayStatus(account: AccountMonitorAccount): string {
   if (account.stale) return 'stale'
@@ -322,7 +428,8 @@ async function load() {
     if (controller.signal.aborted || abortController !== controller) return
     projection.value = result
     accounts.value = result.accounts.filter((account) => account.status === 'active' && account.schedulable)
-    await loadLedger()
+    ensureActiveGroup()
+    await loadOperations()
   } catch (err: unknown) {
     if (controller.signal.aborted) return
     error.value = extractApiErrorMessage(err, t('admin.accountMonitor.loadError'))
@@ -335,12 +442,80 @@ async function load() {
   }
 }
 
-async function loadLedger() {
-  try {
-    ledger.value = await adminAPI.reconciliation.summary()
-  } catch {
-    ledger.value = null
+function ensureActiveGroup() {
+  if (activeGroupId.value !== null && sortedGroups.value.some((group) => group.id === activeGroupId.value)) return
+  activeGroupId.value = sortedGroups.value[0]?.id ?? null
+  groupId.value = activeGroupId.value === null ? '' : String(activeGroupId.value)
+}
+
+async function loadOperations() {
+  const groupID = activeGroupId.value
+  const generation = ++operationsGeneration
+  const isCurrent = () => generation === operationsGeneration && activeGroupId.value === groupID
+  const lifetimeScope = { start: '1970-01-01T00:00:00.000Z', end: new Date().toISOString() }
+  const visibleAccounts = scopedAccounts.value
+  const calls: Promise<void>[] = [
+    adminAPI.reconciliation.operations({})
+      .then((summary) => {
+        if (isCurrent()) globalLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) globalLedger.value = null
+      }),
+    adminAPI.reconciliation.operations(lifetimeScope)
+      .then((summary) => {
+        if (isCurrent()) globalLifetimeLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) globalLifetimeLedger.value = null
+      }),
+  ]
+  if (groupID !== null) {
+    calls.push(adminAPI.reconciliation.operations({ group_id: groupID })
+      .then((summary) => {
+        if (isCurrent()) groupLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) groupLedger.value = null
+      }))
+    calls.push(adminAPI.reconciliation.operations({ group_id: groupID, ...lifetimeScope })
+      .then((summary) => {
+        if (isCurrent()) groupLifetimeLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) groupLifetimeLedger.value = null
+      }))
+  } else {
+    if (isCurrent()) {
+      groupLedger.value = null
+      groupLifetimeLedger.value = null
+    }
   }
+  const nextLedgers: Record<number, ReconciliationSummary | null> = {}
+  for (const account of visibleAccounts) {
+    calls.push(adminAPI.reconciliation.operations({ group_id: groupID ?? undefined, account_id: account.account_id })
+      .then((summary) => { nextLedgers[account.account_id] = summary })
+      .catch(() => { nextLedgers[account.account_id] = null }))
+  }
+  await Promise.all(calls)
+  if (isCurrent()) accountLedgers.value = nextLedgers
+}
+
+async function selectGroup(groupID: number) {
+  activeGroupId.value = groupID
+  groupId.value = String(groupID)
+  await loadOperations()
+}
+
+function selectFilterGroup(value: string) {
+  groupId.value = value
+  const parsed = Number(value)
+  if (Number.isInteger(parsed) && parsed > 0) {
+    void selectGroup(parsed)
+    return
+  }
+  activeGroupId.value = sortedGroups.value[0]?.id ?? null
+  void loadOperations()
 }
 
 async function handleRunAll() {
@@ -377,7 +552,7 @@ async function submitAdjustment(item: ReconciliationException) {
   try {
     await adminAPI.reconciliation.adjust(item.attempt.id, amount)
     exceptions.value = exceptions.value.filter((current) => current.id !== item.id)
-    await loadLedger()
+    await loadOperations()
     appStore.showSuccess('补登记成功')
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, '补登记失败'))
@@ -408,13 +583,51 @@ async function updateWeight(accountID: number, priority: number) {
     const updated = await adminAPI.accounts.update(accountID, { priority })
     const account = accounts.value.find((item) => item.account_id === accountID)
     if (account) account.priority = updated.priority
-    appStore.showSuccess('账号权重已更新')
+    await load()
+    appStore.showSuccess('全局调度优先级已更新')
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, '账号权重更新失败'))
   } finally {
     const next = new Set(savingWeights.value)
     next.delete(accountID)
     savingWeights.value = next
+  }
+}
+
+async function saveGroupScoreWeights(weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>) {
+  if (!activeGroup.value) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    const updated = await adminAPI.accountMonitor.updateGroupScoreWeights(activeGroup.value.id, weights)
+    projection.value = projection.value
+      ? { ...projection.value, groups: (projection.value.groups ?? []).map((group) => group.id === activeGroup.value?.id ? { ...group, score_weights: updated } : group) }
+      : projection.value
+    showScoreDialog.value = false
+    await load()
+    appStore.showSuccess('分组评分权重已更新')
+  } catch (err: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(err, '分组评分权重更新失败')
+  } finally {
+    savingScoreWeights.value = false
+  }
+}
+
+async function resetGroupScoreWeights() {
+  if (!activeGroup.value) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    const updated = await adminAPI.accountMonitor.resetGroupScoreWeights(activeGroup.value.id)
+    projection.value = projection.value
+      ? { ...projection.value, groups: (projection.value.groups ?? []).map((group) => group.id === activeGroup.value?.id ? { ...group, score_weights: updated } : group) }
+      : projection.value
+    await load()
+    appStore.showSuccess('已恢复默认评分权重')
+  } catch (err: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(err, '恢复默认评分权重失败')
+  } finally {
+    savingScoreWeights.value = false
   }
 }
 
@@ -452,13 +665,70 @@ function formatMs(value?: number | null): string {
   return value == null ? '-' : `${Math.round(value)} ms`
 }
 
+function formatHealthPercent(value?: number | null): string {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : '—'
+}
+
 function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : t('common.time.never')
+}
+
+function openLedgerHistory(scope: OperationsScopeParams = {}) {
+  ledgerHistoryScope.value = scope
+}
+
+function coverageClass(summary?: { coverage_known: boolean; coverage_ratio: number } | null): string {
+  if (!summary?.coverage_known) return 'text-gray-500'
+  return Number(summary.coverage_ratio) >= 1 ? 'text-green-600' : 'text-amber-600'
 }
 
 function formatCoverage(summary?: { coverage_known: boolean; coverage_ratio: number } | null): string {
   return !summary?.coverage_known ? '-' : `${(summary.coverage_ratio * 100).toFixed(2)}%`
 }
+
+function formatProfitMargin(summary?: ReconciliationSummary | null): string {
+  if (!summary?.coverage_known || Number(summary.pending_attempts) > 0) return '待对账'
+  const margin = Number(summary.profit_margin)
+  return Number.isFinite(margin) ? `${(margin * 100).toFixed(1)}%` : '—'
+}
+
+function formatMoney(value?: string | number | null, currency?: string | null): string {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return '—'
+  try {
+    if (currency) {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+    }
+    return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+  } catch {
+    return amount.toFixed(2)
+  }
+}
+
+function formatMultiplier(value: number): string {
+  return `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value)}x`
+}
+
+function groupOperationalLabel(group: AccountMonitorGroup): string {
+  if (group.operational_state === 'closed') return '已关闭'
+  if (group.operational_state === 'operational') return '运行中'
+  return '暂无可用账号'
+}
+
+const LedgerMetric = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    value: { type: String, required: true },
+    valueClass: { type: String, default: 'text-gray-900 dark:text-white' },
+  },
+  setup(metricProps) {
+    return () => h('div', { class: 'rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70' }, [
+      h('p', { class: 'text-xs text-gray-500 dark:text-gray-400' }, metricProps.label),
+      h('p', { class: ['mt-1 font-mono text-lg font-semibold', metricProps.valueClass] }, metricProps.value),
+    ])
+  },
+})
 
 onMounted(load)
 onUnmounted(() => abortController?.abort())

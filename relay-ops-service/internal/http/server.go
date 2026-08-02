@@ -123,6 +123,8 @@ type AccountingService interface {
 
 type ReconciliationService interface {
 	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+	ReadOperationsSummary(context.Context, reconciliation.OperationsScope) (reconciliation.OperationsSummary, error)
+	ListOperationsDaily(context.Context, reconciliation.OperationsScope) ([]reconciliation.OperationsDailyRow, error)
 	ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error)
 	CreateManualUpstreamCostForException(context.Context, int64, reconciliation.ManualAdjustmentInput) (reconciliation.Transaction, bool, error)
 	RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
@@ -180,6 +182,8 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if dependencies.Reconciliation != nil {
 		reconciliationMux := http.NewServeMux()
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/summary", s.reconciliationSummary)
+		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/operations", s.reconciliationOperations)
+		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/operations/history", s.reconciliationOperationsHistory)
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/exceptions", s.reconciliationExceptions)
 		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/refresh", s.reconciliationRefresh)
 		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/exceptions/{id}/adjust", s.reconciliationManualAdjust)

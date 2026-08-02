@@ -41,6 +41,8 @@ func (i *runtimeImporter) Import(_ context.Context, accountID int64, start, end 
 
 type runtimeRepository struct {
 	summary Summary
+	operationsSummary OperationsSummary
+	dailyRows         []OperationsDailyRow
 }
 
 func (r runtimeRepository) ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (Summary, error) {
@@ -57,6 +59,14 @@ func (runtimeRepository) CreateManualUpstreamCostForException(context.Context, i
 
 func (runtimeRepository) MarkOverdueUpstreamCostExceptions(context.Context, time.Time, time.Duration) (int64, error) {
 	return 0, nil
+}
+
+func (r runtimeRepository) ReadOperationsSummary(context.Context, OperationsScope) (OperationsSummary, error) {
+	return r.operationsSummary, nil
+}
+
+func (r runtimeRepository) ListOperationsDaily(context.Context, OperationsScope) ([]OperationsDailyRow, error) {
+	return r.dailyRows, nil
 }
 
 func TestRuntimeServiceRefreshCollectsBeforeReadingSummary(t *testing.T) {
@@ -112,3 +122,28 @@ func TestRuntimeServiceDailyCloseUsesDailyTrigger(t *testing.T) {
 		t.Fatalf("request=%#v", collector.request)
 	}
 }
+
+func TestRuntimeServiceForwardsOperationsSummaryAndHistory(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	scope := OperationsScope{GroupID: runtimePtrInt64(17), Start: start, End: start.Add(24 * time.Hour), Currency: "USD", Timezone: "UTC"}
+	wantSummary := OperationsSummary{TotalAttempts: 4, Scope: scope}
+	wantDaily := []OperationsDailyRow{{Day: "2026-08-01", TotalAttempts: 4}}
+	service := RuntimeService{Repository: runtimeRepository{operationsSummary: wantSummary, dailyRows: wantDaily}}
+
+	gotSummary, err := service.ReadOperationsSummary(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotSummary.TotalAttempts != wantSummary.TotalAttempts || gotSummary.Scope != wantSummary.Scope {
+		t.Fatalf("summary=%#v", gotSummary)
+	}
+	gotDaily, err := service.ListOperationsDaily(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotDaily) != 1 || gotDaily[0].Day != wantDaily[0].Day || gotDaily[0].TotalAttempts != wantDaily[0].TotalAttempts {
+		t.Fatalf("daily=%#v", gotDaily)
+	}
+}
+
+func runtimePtrInt64(value int64) *int64 { return &value }

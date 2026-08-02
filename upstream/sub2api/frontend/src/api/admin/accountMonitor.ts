@@ -45,6 +45,17 @@ export interface AccountMonitorScoreWeights {
   updated_at?: string
 }
 
+export interface AccountMonitorHealthSummary {
+  total_accounts: number
+  available_accounts: number
+  unavailable_accounts: number
+  pending_accounts: number
+  paused_accounts: number
+  success_rate: number
+  ttft_p50_ms?: number | null
+  latency_p95_ms?: number | null
+}
+
 export interface AccountMonitorQualityEvidence {
   source: 'group' | 'global_fallback' | 'stale' | string
   sample_count: number
@@ -95,6 +106,7 @@ export interface AccountMonitorGroup {
   native_order: number
   score_weights: AccountMonitorScoreWeights
   operational_state: 'operational' | 'unavailable' | 'closed' | string
+  health: AccountMonitorHealthSummary
   accounts?: AccountMonitorAccount[]
 }
 
@@ -103,6 +115,7 @@ export interface AccountMonitorProjection {
   observed_at: string
   stale: boolean
   settings: AccountMonitorSettings
+  health: AccountMonitorHealthSummary
   groups?: AccountMonitorGroup[]
   accounts: AccountMonitorAccount[]
 }

@@ -192,9 +192,9 @@ func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Query().Get("page") {
 		case "1":
-			fmt.Fprint(w, `{"data":{"items":[{"id":101,"account_id":8,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":2,"page":1,"page_size":1000}}`)
+			fmt.Fprint(w, `{"data":{"items":[{"id":101,"account_id":8,"group_id":3,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":2,"page":1,"page_size":1000}}`)
 		case "2":
-			fmt.Fprint(w, `{"data":{"items":[{"id":102,"account_id":8,"request_id":"request-102","model":"gpt-5.6-sol","input_tokens":11,"output_tokens":6,"total_cost":0.13,"created_at":"2026-08-01T00:02:00Z"}],"total":2,"page":2,"page_size":1000}}`)
+			fmt.Fprint(w, `{"data":{"items":[{"id":102,"account_id":8,"group_id":null,"request_id":"request-102","model":"gpt-5.6-sol","input_tokens":11,"output_tokens":6,"total_cost":0.13,"created_at":"2026-08-01T00:02:00Z"}],"total":2,"page":2,"page_size":1000}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -205,6 +205,12 @@ func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
 	if err != nil || len(logs) != 2 || logs[1].ID != 102 {
 		t.Fatalf("logs=%#v err=%v", logs, err)
 	}
+	if logs[0].GroupID == nil || *logs[0].GroupID != 3 {
+		t.Fatalf("first group_id = %v, want 3", logs[0].GroupID)
+	}
+	if logs[1].GroupID != nil {
+		t.Fatalf("second group_id = %v, want nil", *logs[1].GroupID)
+	}
 	if len(queries) != 2 {
 		t.Fatalf("queries=%#v", queries)
 	}
@@ -213,6 +219,40 @@ func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
 			query.Get("start_time") != start.Format(time.RFC3339Nano) || query.Get("end_time") != start.Add(time.Hour).Format(time.RFC3339Nano) {
 			t.Fatalf("query=%s", query.Encode())
 		}
+	}
+}
+
+func TestReaderRejectsUsageLogsWithMissingOrInvalidGroupID(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing group_id",
+			body: `{"data":{"items":[{"id":101,"account_id":8,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":1,"page":1,"page_size":1000}}`,
+		},
+		{
+			name: "zero group_id",
+			body: `{"data":{"items":[{"id":101,"account_id":8,"group_id":0,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":1,"page":1,"page_size":1000}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, tt.body)
+			}))
+			defer server.Close()
+
+			_, err := newTestReader(t, server.URL).ListUsageLogs(context.Background(), UsageLogQuery{AccountID: 8, Start: start, End: start.Add(time.Hour)})
+			if !errors.Is(err, errSchemaMismatch) {
+				t.Fatalf("error = %v, want schema mismatch", err)
+			}
+		})
 	}
 }
 

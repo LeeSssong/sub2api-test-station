@@ -101,7 +101,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
-	accounts, err := s.listPool(ctx)
+	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
@@ -121,9 +121,19 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
+	groups, err := s.repo.ListGroups(ctx)
+	if err != nil {
+		return AccountMonitorPage{}, fmt.Errorf("list account monitor groups: %w", err)
+	}
+	for i := range groups {
+		if groups[i].ScoreWeights == (AccountMonitorScoreWeights{}) {
+			groups[i].ScoreWeights = DefaultAccountMonitorScoreWeights
+		}
+	}
 
 	observedAt := time.Now().UTC()
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
+	schedulableIDs := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
 		aggregate := aggregates[account.ID]
 		row := AccountMonitorAccount{
@@ -163,6 +173,16 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		}
 		row.UsageWindows = s.loadUsageWindows(ctx, account.ID)
 		rows = append(rows, row)
+		if account.Schedulable {
+			schedulableIDs = append(schedulableIDs, account.ID)
+		}
+	}
+	groups = s.projectGroupQualityEvidence(ctx, groups, accounts, rows, aggregates, latest, settings, observedAt)
+	health := summarizeAccountMonitorHealth(rows)
+	if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok {
+		if aggregate, err := provider.LoadAggregate(ctx, schedulableIDs, observedAt.Add(-AccountMonitorHistoryDays*24*time.Hour)); err == nil {
+			health = applyAccountMonitorAggregate(health, aggregate)
+		}
 	}
 
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
@@ -170,8 +190,345 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		ObservedAt:    observedAt,
 		Stale:         len(rows) == 0 || anyMonitorRowStale(rows),
 		Settings:      settings,
+		Health:        health,
+		Groups:        groups,
 		Accounts:      rows,
 	}}, nil
+}
+
+func (s *AccountMonitorService) projectGroupQualityEvidence(
+	ctx context.Context,
+	groups []AccountMonitorGroup,
+	accounts []Account,
+	rows []AccountMonitorAccount,
+	globalAggregates map[int64]AccountMonitorAggregate,
+	latest map[int64]AccountMonitorLatest,
+	settings AccountMonitorSettings,
+	now time.Time,
+) []AccountMonitorGroup {
+	rowsByID := make(map[int64]AccountMonitorAccount, len(rows))
+	accountsByID := make(map[int64]Account, len(accounts))
+	for i := range rows {
+		rowsByID[rows[i].AccountID] = rows[i]
+	}
+	for i := range accounts {
+		accountsByID[accounts[i].ID] = accounts[i]
+	}
+	for i := range groups {
+		group := &groups[i]
+		members := make([]int64, 0)
+		for _, account := range accounts {
+			if accountMonitorAccountInGroup(account, group.ID) {
+				members = append(members, account.ID)
+			}
+		}
+		groupAggregates := map[int64]AccountMonitorAggregate(nil)
+		groupEvidenceAvailable := false
+		if provider, ok := s.repo.(AccountMonitorGroupAggregateRepository); ok && len(members) > 0 {
+			loaded, err := provider.ListGroupAggregates(ctx, group.ID, members, now.Add(-AccountMonitorGroupEvidenceWindow))
+			if err == nil {
+				groupAggregates = loaded
+				groupEvidenceAvailable = true
+			}
+		}
+		combinedAggregate := AccountMonitorAggregate{}
+		combinedAggregateAvailable := false
+		if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok {
+			loaded, err := provider.LoadGroupAggregate(ctx, group.ID, now.Add(-AccountMonitorGroupEvidenceWindow))
+			if err == nil {
+				combinedAggregate = loaded
+				combinedAggregateAvailable = true
+			}
+		}
+		if !group.CustomerVisible && (!combinedAggregateAvailable || combinedAggregate.ErrorCount == 0) {
+			group.OperationalState = "closed"
+			group.Accounts = nil
+			continue
+		}
+
+		projected := make([]AccountMonitorGroupAccount, 0, len(members))
+		for _, accountID := range members {
+			base, ok := rowsByID[accountID]
+			account, accountOK := accountsByID[accountID]
+			if !ok || !accountOK {
+				continue
+			}
+			groupAggregate := groupAggregates[accountID]
+			globalAggregate := globalAggregates[accountID]
+			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, groupEvidenceAvailable, latest[accountID], settings, now)
+			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
+			row.SampleCount = evidence.SampleCount
+			row.SuccessRate = evidence.SuccessRate
+			row.TTFTP50MS = evidence.TTFTP50MS
+			row.LatencyP95MS = evidence.LatencyP95MS
+			if checkedAt := evidence.ObservedAt; !checkedAt.IsZero() {
+				checkedAt = checkedAt.UTC()
+				row.CheckedAt = &checkedAt
+			}
+			costEligible := account.BillingRateMultiplier() <= group.RateMultiplier
+			serviceEligible := account.Status == StatusActive && account.Schedulable &&
+				!accountMonitorAccountPaused(account, now) &&
+				!(account.AutoPauseOnExpired && account.ExpiresAt != nil && !account.ExpiresAt.After(now))
+			row.Eligible = evidence.Source != "stale" && costEligible && serviceEligible
+			if row.Eligible {
+				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, account.BillingRateMultiplier(), group.ScoreWeights, evidence)
+			}
+			projected = append(projected, row)
+		}
+		sort.SliceStable(projected, func(left, right int) bool {
+			if projected[left].Eligible != projected[right].Eligible {
+				return projected[left].Eligible
+			}
+			if projected[left].Eligible && projected[right].Eligible {
+				leftScore, rightScore := 0.0, 0.0
+				if projected[left].QualityScore != nil {
+					leftScore = *projected[left].QualityScore
+				}
+				if projected[right].QualityScore != nil {
+					rightScore = *projected[right].QualityScore
+				}
+				if leftScore != rightScore {
+					return leftScore > rightScore
+				}
+			}
+			return projected[left].AccountID < projected[right].AccountID
+		})
+		rank := 0
+		for j := range projected {
+			if projected[j].Eligible {
+				rank++
+				value := rank
+				projected[j].GroupRank = &value
+			}
+		}
+		group.Accounts = projected
+		group.Health = summarizeGroupHealth(projected)
+		if combinedAggregateAvailable {
+			group.Health = applyAccountMonitorAggregate(group.Health, combinedAggregate)
+		}
+		if group.Health.AvailableAccounts > 0 {
+			group.OperationalState = "operational"
+		} else {
+			group.OperationalState = "unavailable"
+		}
+	}
+	return groups
+}
+
+func accountMonitorAccountInGroup(account Account, groupID int64) bool {
+	for _, id := range account.GroupIDs {
+		if id == groupID {
+			return true
+		}
+	}
+	for _, group := range account.Groups {
+		if group != nil && group.ID == groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func accountMonitorAccountPaused(account Account, now time.Time) bool {
+	for _, until := range []*time.Time{account.TempUnschedulableUntil, account.RateLimitResetAt, account.OverloadUntil} {
+		if until != nil && until.After(now) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AccountMonitorService) listMonitorAccounts(ctx context.Context) ([]Account, error) {
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
+	if err != nil {
+		return nil, fmt.Errorf("list active monitor accounts: %w", err)
+	}
+	filtered := accounts[:0]
+	for _, account := range accounts {
+		if account.Status == StatusActive {
+			filtered = append(filtered, account)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
+	return filtered, nil
+}
+
+func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorHealthSummary {
+	samples := make([]accountMonitorHealthSample, 0, len(rows))
+	for _, row := range rows {
+		samples = append(samples, accountMonitorHealthSample{
+			schedulable: row.Schedulable,
+			available:   row.LatestStatus == "success" && !row.Stale,
+			pending:     row.Stale || row.Latest == nil,
+			sampleCount: row.SampleCount,
+			successRate: row.SuccessRate,
+			ttftP50MS:   row.TTFTP50MS,
+			latencyP95:  row.LatencyP95MS,
+		})
+	}
+	return summarizeHealthSamples(samples)
+}
+
+func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealthSummary {
+	samples := make([]accountMonitorHealthSample, 0, len(rows))
+	for _, row := range rows {
+		samples = append(samples, accountMonitorHealthSample{
+			schedulable: row.Schedulable,
+			available:   row.Eligible && row.LatestStatus == "success" && row.Evidence.Source != "stale" && row.Evidence.SuccessRate > 0,
+			pending:     row.Evidence.Source == "stale" || row.CheckedAt == nil,
+			sampleCount: row.SampleCount,
+			successRate: row.SuccessRate,
+			ttftP50MS:   row.TTFTP50MS,
+			latencyP95:  row.LatencyP95MS,
+		})
+	}
+	return summarizeHealthSamples(samples)
+}
+
+func applyAccountMonitorAggregate(summary AccountMonitorHealthSummary, aggregate AccountMonitorAggregate) AccountMonitorHealthSummary {
+	if aggregate.SampleCount == 0 {
+		return summary
+	}
+	summary.SuccessRate = aggregate.SuccessRate
+	summary.TTFTP50MS = aggregate.TTFTP50MS
+	summary.LatencyP95MS = aggregate.LatencyP95MS
+	return summary
+}
+
+type accountMonitorHealthSample struct {
+	schedulable bool
+	available   bool
+	pending     bool
+	sampleCount int
+	successRate float64
+	ttftP50MS   *float64
+	latencyP95  *float64
+}
+
+func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHealthSummary {
+	var summary AccountMonitorHealthSummary
+	summary.TotalAccounts = len(rows)
+	var samples float64
+	var successes float64
+	var ttftWeighted float64
+	var ttftSamples float64
+	var latencyWeighted float64
+	var latencySamples float64
+	for _, row := range rows {
+		if !row.schedulable {
+			summary.PausedAccounts++
+			continue
+		}
+		if row.pending {
+			summary.PendingAccounts++
+		} else if row.available {
+			summary.AvailableAccounts++
+		} else {
+			summary.UnavailableAccounts++
+		}
+		weight := float64(row.sampleCount)
+		if weight <= 0 {
+			continue
+		}
+		samples += weight
+		successes += row.successRate * weight
+		if row.ttftP50MS != nil {
+			ttftWeighted += *row.ttftP50MS * weight
+			ttftSamples += weight
+		}
+		if row.latencyP95 != nil {
+			latencyWeighted += *row.latencyP95 * weight
+			latencySamples += weight
+		}
+	}
+	if samples > 0 {
+		summary.SuccessRate = successes / samples
+	}
+	if ttftSamples > 0 {
+		value := ttftWeighted / ttftSamples
+		summary.TTFTP50MS = &value
+	}
+	if latencySamples > 0 {
+		value := latencyWeighted / latencySamples
+		summary.LatencyP95MS = &value
+	}
+	return summary
+}
+
+func accountMonitorEvidence(
+	groupAggregate AccountMonitorAggregate,
+	globalAggregate AccountMonitorAggregate,
+	groupEvidenceAvailable bool,
+	latest AccountMonitorLatest,
+	settings AccountMonitorSettings,
+	now time.Time,
+) (AccountMonitorQualityEvidence, AccountMonitorAggregate) {
+	aggregate := groupAggregate
+	source := "group"
+	if !groupEvidenceAvailable || aggregate.SampleCount < AccountMonitorGroupEvidenceMinSamples {
+		aggregate = globalAggregate
+		source = "global_fallback"
+	}
+	if aggregate.SampleCount < AccountMonitorGroupEvidenceMinSamples {
+		source = "stale"
+	}
+	observedAt := time.Time{}
+	if aggregate.LastCheckedAt != nil {
+		observedAt = *aggregate.LastCheckedAt
+	}
+	if observedAt.IsZero() {
+		observedAt = latest.CheckedAt
+	}
+	if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
+		source = "stale"
+	}
+	evidence := AccountMonitorQualityEvidence{
+		Source: source, SampleCount: aggregate.SampleCount, SuccessRate: aggregate.SuccessRate,
+		TTFTP50MS: aggregate.TTFTP50MS, LatencyP95MS: aggregate.LatencyP95MS, ObservedAt: observedAt.UTC(),
+	}
+	if source == "stale" {
+		return evidence, aggregate
+	}
+	return evidence, aggregate
+}
+
+// CalculateAccountMonitorQualityScore is deliberately pure: it only uses the
+// group/account billing multipliers, score weights, and supplied evidence.
+func CalculateAccountMonitorQualityScore(
+	groupMultiplier float64,
+	accountMultiplier float64,
+	weights AccountMonitorScoreWeights,
+	evidence AccountMonitorQualityEvidence,
+) *float64 {
+	if groupMultiplier <= 0 || evidence.Source == "stale" {
+		return nil
+	}
+	clamp01 := func(value float64) float64 {
+		if value < 0 {
+			return 0
+		}
+		if value > 1 {
+			return 1
+		}
+		return value
+	}
+	latencyScore := func(value *float64) float64 {
+		if value == nil {
+			return 0
+		}
+		return clamp01(1 - (*value / 1000))
+	}
+	costAdvantage := float64(weights.Cost) * (groupMultiplier - accountMultiplier) / groupMultiplier
+	if costAdvantage < 0 {
+		costAdvantage = 0
+	}
+	if costAdvantage > float64(weights.Cost) {
+		costAdvantage = float64(weights.Cost)
+	}
+	score := costAdvantage + float64(weights.Success)*clamp01(evidence.SuccessRate) +
+		float64(weights.TTFT)*latencyScore(evidence.TTFTP50MS) +
+		float64(weights.Latency)*latencyScore(evidence.LatencyP95MS)
+	return &score
 }
 
 func accountMonitorHomepageURL(account Account) string {
@@ -366,6 +723,74 @@ func (s *AccountMonitorService) UpdateSettings(
 		return AccountMonitorSettings{}, err
 	}
 	return s.loadSettings(ctx)
+}
+
+func (s *AccountMonitorService) GetGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	weights, err := s.repo.LoadGroupScoreWeights(ctx, groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DefaultAccountMonitorScoreWeights, nil
+	}
+	if err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("load group score weights: %w", err)
+	}
+	if err := validateAccountMonitorScoreWeights(weights); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("stored group score weights: %w", err)
+	}
+	return weights, nil
+}
+
+func (s *AccountMonitorService) UpdateGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+	actorID int64,
+	weights AccountMonitorScoreWeights,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	if actorID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid actor id")
+	}
+	if err := validateAccountMonitorScoreWeights(weights); err != nil {
+		return AccountMonitorScoreWeights{}, err
+	}
+	if err := s.repo.SaveGroupScoreWeights(ctx, groupID, actorID, weights); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("save group score weights: %w", err)
+	}
+	return s.GetGroupScoreWeights(ctx, groupID)
+}
+
+func (s *AccountMonitorService) ResetGroupScoreWeights(
+	ctx context.Context,
+	groupID int64,
+	actorID int64,
+) (AccountMonitorScoreWeights, error) {
+	if groupID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid group id")
+	}
+	if actorID <= 0 {
+		return AccountMonitorScoreWeights{}, errors.New("invalid actor id")
+	}
+	if err := s.repo.ResetGroupScoreWeights(ctx, groupID); err != nil {
+		return AccountMonitorScoreWeights{}, fmt.Errorf("reset group score weights: %w", err)
+	}
+	return DefaultAccountMonitorScoreWeights, nil
+}
+
+func validateAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) error {
+	if weights.Cost < 0 || weights.Success < 0 || weights.TTFT < 0 || weights.Latency < 0 {
+		return errors.New("score weights must be non-negative")
+	}
+	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
+		return errors.New("score weights must sum to 100")
+	}
+	return nil
 }
 
 func (s *AccountMonitorService) History(

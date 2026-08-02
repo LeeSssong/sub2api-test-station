@@ -12,7 +12,7 @@
           </a>
           <h2 v-else class="truncate text-base font-semibold text-gray-900 dark:text-white">{{ account.name }}</h2>
           <span class="font-mono text-xs text-gray-500 dark:text-slate-400">#{{ account.account_id }}</span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-slate-800 dark:text-slate-300">{{ account.platform }}</span>
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-slate-800 dark:text-slate-300">{{ platformLabel(account.platform) }}</span>
         </div>
         <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-slate-400">
           <span v-if="account.group_names.length">{{ account.group_names.join(', ') }}</span>
@@ -312,6 +312,17 @@ function probeSampleLabel(value?: number | null): string { return `基于 ${Math
 function callSampleLabel(value?: number | null): string { return `基于 ${Math.max(0, Number(value) || 0)} 次调用` }
 function formatPercent(value: number): string { return `${Math.round(value * 100)}%` }
 function formatScore(value: number): string { return String(Math.round(value)) }
+function platformLabel(value: string): string {
+  const labels: Record<string, string> = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    vertex: 'Vertex AI',
+    bedrock: 'Bedrock',
+    azure_openai: 'Azure OpenAI',
+  }
+  return labels[value] ?? '其他平台'
+}
 function formatMs(value?: number | null): string { return value == null ? '-' : `${Math.round(value)} ms` }
 function formatDate(value: string): string { return new Date(value).toLocaleString() }
 function formatMoney(value: string | number | null | undefined, currency?: string | null): string {

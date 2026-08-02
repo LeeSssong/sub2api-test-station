@@ -177,6 +177,16 @@ describe('AccountMonitorCard', () => {
     expect(latest?.attributes('style')).toContain('height: 40%')
   })
 
+  it('uses a human-readable platform label', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: { account },
+      global: { stubs: { Icon: true } },
+    })
+
+    expect(wrapper.text()).toContain('OpenAI')
+    expect(wrapper.text()).not.toContain('openai')
+  })
+
   it('keeps today calls collapsed until its keyboard-accessible button is activated', async () => {
     const wrapper = mount(AccountMonitorCard, {
       props: { account },

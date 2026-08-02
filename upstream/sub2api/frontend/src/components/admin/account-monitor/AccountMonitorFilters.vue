@@ -17,7 +17,7 @@
       @change="emit('update:platform', ($event.target as HTMLSelectElement).value)"
     >
       <option value="">{{ t('common.all') }}</option>
-      <option v-for="item in platforms" :key="item" :value="item">{{ item }}</option>
+      <option v-for="item in platforms" :key="item.value" :value="item.value">{{ item.label }}</option>
     </select>
     <select
       :value="status"
@@ -56,5 +56,15 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const platforms = computed(() => [...new Set(props.accounts.map((account) => account.platform))].sort())
+const platformLabels: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  vertex: 'Vertex AI',
+  bedrock: 'Bedrock',
+  azure_openai: 'Azure OpenAI',
+}
+const platforms = computed(() => [...new Set(props.accounts.map((account) => account.platform))]
+  .sort()
+  .map((value) => ({ value, label: platformLabels[value] ?? '其他平台' })))
 </script>

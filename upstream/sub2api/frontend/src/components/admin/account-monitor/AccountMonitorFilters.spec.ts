@@ -84,4 +84,15 @@ describe('AccountMonitorFilters', () => {
       { value: 'paused', text: '暂停' },
     ])
   })
+
+  it('renders platform names for people while preserving their database values', () => {
+    const wrapper = mount(AccountMonitorFilters, {
+      props: { search: '', platform: '', status: '', accounts },
+      global: { stubs: { Icon: true } },
+    })
+
+    const option = wrapper.findAll('select')[0].findAll('option')[1]
+    expect(option.attributes('value')).toBe('openai')
+    expect(option.text()).toBe('OpenAI')
+  })
 })

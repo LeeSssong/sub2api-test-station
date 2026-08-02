@@ -145,7 +145,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			Schedulable:  account.Schedulable,
 			Priority:     account.Priority,
 			HomepageURL:  accountMonitorHomepageURL(account),
-			GroupIDs:     append([]int64(nil), account.GroupIDs...),
+			GroupIDs:     append([]int64{}, account.GroupIDs...),
 			GroupNames:   accountGroupNames(account),
 			ModelID:      monitorModelForAccount(&account),
 			LatestStatus: "unavailable",

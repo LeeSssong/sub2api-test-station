@@ -22,7 +22,7 @@ ARG NPM_CONFIG_REGISTRY=
 # it on the native host arch instead of under QEMU emulation for the target.
 FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
 ARG NPM_CONFIG_REGISTRY
-ARG FRONTEND_NODE_MAX_OLD_SPACE_SIZE=1536
+ARG FRONTEND_NODE_MAX_OLD_SPACE_SIZE=3072
 
 WORKDIR /app/frontend
 ENV NODE_OPTIONS=--max-old-space-size=${FRONTEND_NODE_MAX_OLD_SPACE_SIZE}

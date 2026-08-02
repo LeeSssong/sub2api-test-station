@@ -236,10 +236,17 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				members = append(members, account.ID)
 			}
 		}
+		monitoredMembers := make([]int64, 0, len(members))
+		for _, accountID := range members {
+			account, ok := accountsByID[accountID]
+			if ok && accountMonitorManagementState(account, now) == accountMonitorManagementEnabled {
+				monitoredMembers = append(monitoredMembers, accountID)
+			}
+		}
 		groupAggregates := map[int64]AccountMonitorAggregate(nil)
 		groupEvidenceAvailable := false
-		if provider, ok := s.repo.(AccountMonitorGroupAggregateRepository); ok && len(members) > 0 {
-			loaded, err := provider.ListGroupAggregates(ctx, group.ID, members, now.Add(-AccountMonitorGroupEvidenceWindow))
+		if provider, ok := s.repo.(AccountMonitorGroupAggregateRepository); ok && len(monitoredMembers) > 0 {
+			loaded, err := provider.ListGroupAggregates(ctx, group.ID, monitoredMembers, now.Add(-AccountMonitorGroupEvidenceWindow))
 			if err == nil {
 				groupAggregates = loaded
 				groupEvidenceAvailable = true
@@ -247,8 +254,8 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 		}
 		combinedAggregate := AccountMonitorAggregate{}
 		combinedAggregateAvailable := false
-		if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok {
-			loaded, err := provider.LoadGroupAggregate(ctx, group.ID, now.Add(-AccountMonitorGroupEvidenceWindow))
+		if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok && len(monitoredMembers) > 0 {
+			loaded, err := provider.LoadGroupAggregate(ctx, group.ID, monitoredMembers, now.Add(-AccountMonitorGroupEvidenceWindow))
 			if err == nil {
 				combinedAggregate = loaded
 				combinedAggregateAvailable = true
@@ -261,8 +268,13 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			if !ok || !accountOK {
 				continue
 			}
+			managementState := accountMonitorManagementState(account, now)
 			groupAggregate := groupAggregates[accountID]
 			globalAggregate := globalAggregates[accountID]
+			if managementState == accountMonitorManagementPaused {
+				groupAggregate = AccountMonitorAggregate{}
+				globalAggregate = AccountMonitorAggregate{}
+			}
 			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, groupEvidenceAvailable, latest[accountID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			row.SampleCount = evidence.SampleCount
@@ -273,7 +285,7 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				checkedAt = checkedAt.UTC()
 				row.CheckedAt = &checkedAt
 			}
-			row.ManagementState = accountMonitorManagementState(account, now)
+			row.ManagementState = managementState
 			row.ServiceState = accountMonitorGroupServiceState(row, evidence, row.ManagementState)
 			row.GroupEligibility = accountMonitorGroupEligibility(row, group.RateMultiplier)
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -361,8 +373,17 @@ func (s *AccountMonitorService) listMonitorAccounts(ctx context.Context) ([]Acco
 	if err != nil {
 		return nil, fmt.Errorf("list active monitor accounts: %w", err)
 	}
-	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
-	return accounts, nil
+	sort.SliceStable(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
+	unique := accounts[:0]
+	seen := make(map[int64]struct{}, len(accounts))
+	for _, account := range accounts {
+		if _, ok := seen[account.ID]; ok {
+			continue
+		}
+		seen[account.ID] = struct{}{}
+		unique = append(unique, account)
+	}
+	return unique, nil
 }
 
 func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorHealthSummary {

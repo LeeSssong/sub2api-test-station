@@ -199,5 +199,5 @@ type AccountMonitorGroupAggregateRepository interface {
 // averaged to produce a valid global or group percentile.
 type AccountMonitorCombinedAggregateRepository interface {
 	LoadAggregate(ctx context.Context, accountIDs []int64, since time.Time) (AccountMonitorAggregate, error)
-	LoadGroupAggregate(ctx context.Context, groupID int64, since time.Time) (AccountMonitorAggregate, error)
+	LoadGroupAggregate(ctx context.Context, groupID int64, accountIDs []int64, since time.Time) (AccountMonitorAggregate, error)
 }

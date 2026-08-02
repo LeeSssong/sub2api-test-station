@@ -32,7 +32,7 @@
       <Metric data-test="multiplier-metric" :label="t('admin.accountMonitor.metrics.multiplier')" :value="multiplierValue" :hint="multiplierHint" />
     </div>
 
-    <section class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-900/80" data-test="quality-summary">
+    <section v-if="scope === 'group'" class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-900/80" data-test="quality-summary">
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">质量评分</span>
         <span v-if="account.quality_score != null" class="font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ formatScore(account.quality_score) }}</span>
@@ -105,10 +105,11 @@ import type { Account } from '@/types'
 const props = withDefaults(defineProps<{
   account: AccountMonitorAccount
   operations?: ReconciliationSummary | null
+  scope?: 'all' | 'group'
   groupOperationalState?: string
   running?: boolean
   savingWeight?: boolean
-}>(), { operations: null, groupOperationalState: 'operational', running: false, savingWeight: false })
+}>(), { operations: null, scope: 'group', groupOperationalState: 'operational', running: false, savingWeight: false })
 
 const emit = defineEmits<{
   (event: 'refresh', accountID: number): void

@@ -122,6 +122,26 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.text()).not.toContain('98.0%')
   })
 
+  it('hides quality score and group rank in the all-site scope', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account,
+        scope: 'all',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-test="quality-summary"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('质量评分')
+    expect(wrapper.text()).not.toContain('组内第 1')
+  })
+
   it('keeps a closed group informational instead of using a failure red border', () => {
     const wrapper = mount(AccountMonitorCard, {
       props: { account: { ...account, eligible: false }, groupOperationalState: 'closed' },

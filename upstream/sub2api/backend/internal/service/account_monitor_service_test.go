@@ -35,6 +35,7 @@ type accountMonitorRepoStub struct {
 	groupAggregates    map[int64]map[int64]AccountMonitorAggregate
 	aggregate          AccountMonitorAggregate
 	groupAggregate     map[int64]AccountMonitorAggregate
+	groupAggregateIDs  map[int64][]int64
 	groupAggregatesErr error
 	latest             map[int64]AccountMonitorLatest
 	aggregateIDs       []int64
@@ -67,7 +68,11 @@ func (s *accountMonitorRepoStub) LoadAggregate(_ context.Context, accountIDs []i
 	return s.aggregate, nil
 }
 
-func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID int64, _ time.Time) (AccountMonitorAggregate, error) {
+func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID int64, accountIDs []int64, _ time.Time) (AccountMonitorAggregate, error) {
+	if s.groupAggregateIDs == nil {
+		s.groupAggregateIDs = make(map[int64][]int64)
+	}
+	s.groupAggregateIDs[groupID] = append([]int64(nil), accountIDs...)
 	return s.groupAggregate[groupID], nil
 }
 
@@ -259,6 +264,26 @@ func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) 
 	}
 	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
+	}
+}
+
+func TestAccountMonitorListDeduplicatesAccountsByIDWithStableOrder(t *testing.T) {
+	service := NewAccountMonitorService(nil, &accountMonitorAccountRepoStub{accounts: []Account{
+		{ID: 9, Name: "second source"},
+		{ID: 2, Name: "first source"},
+		{ID: 2, Name: "duplicate source"},
+		{ID: 9, Name: "duplicate second"},
+	}}, nil, nil, nil)
+
+	accounts, err := service.listMonitorAccounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
+		t.Fatalf("accounts = %#v, want one stable row per ID", accounts)
+	}
+	if accounts[0].Name != "first source" || accounts[1].Name != "second source" {
+		t.Fatalf("deduplication did not preserve first source row: %#v", accounts)
 	}
 }
 
@@ -838,6 +863,32 @@ func TestAccountMonitorCombinedHealthExcludesPausedAccounts(t *testing.T) {
 	}
 	if len(repo.aggregateIDs) != 1 || repo.aggregateIDs[0] != 92 || page.Health.SuccessRate != 1 {
 		t.Fatalf("combined health scope includes paused accounts: ids=%v health=%#v", repo.aggregateIDs, page.Health)
+	}
+}
+
+func TestAccountMonitorGroupCombinedHealthExcludesPausedHistory(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	accounts := []Account{
+		{ID: 91, Name: "paused", Status: StatusActive, Schedulable: false, RateMultiplier: &rate, GroupIDs: []int64{9}},
+		{ID: 92, Name: "active", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{9}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings:       AccountMonitorSettings{IntervalSeconds: 300},
+		groups:         []AccountMonitorGroup{{ID: 9, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates:     map[int64]AccountMonitorAggregate{91: {SampleCount: 100, SuccessRate: 0.1, LastCheckedAt: &now}, 92: {SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now}},
+		groupAggregate: map[int64]AccountMonitorAggregate{9: {SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:         map[int64]AccountMonitorLatest{92: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.groupAggregateIDs[9]; len(got) != 1 || got[0] != 92 {
+		t.Fatalf("group combined health scope includes paused accounts: ids=%v", got)
+	}
+	if page.Groups[0].Health.SuccessRate != 1 {
+		t.Fatalf("group health includes paused history: %#v", page.Groups[0].Health)
 	}
 }
 

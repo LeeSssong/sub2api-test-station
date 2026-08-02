@@ -131,7 +131,7 @@
         </template>
 
         <div v-if="!filteredAccounts.length" class="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400" data-test="account-empty">{{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}</div>
-        <div v-else class="space-y-6" data-test="monitor-group"><template v-for="bucket in monitorBuckets" :key="bucket.key"><section v-if="accountSections[bucket.key].length" :data-test="`account-section-${bucket.key}`"><div class="mb-3 flex items-center gap-2"><h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ bucket.label }}</h2><span class="font-mono text-sm text-gray-500 dark:text-gray-400">{{ accountSections[bucket.key].length }}</span></div><div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]"><div v-for="account in accountSections[bucket.key]" :key="account.account_id" class="relative"><div v-if="activeGroup && bucket.key === 'available' && account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div><AccountMonitorCard :account="account" :operations="accountLedgers[account.account_id] ?? null" :group-operational-state="activeGroup?.operational_state" :running="runningAccounts.has(account.account_id)" :saving-weight="savingWeights.has(account.account_id)" @refresh="handleRunOne" @update-priority="updateWeight" @settings="showSettings = true" @history="openHistory" /></div></div></section></template></div>
+          <div v-else class="space-y-6" data-test="monitor-group"><template v-for="bucket in monitorBuckets" :key="bucket.key"><section v-if="accountSections[bucket.key].length" :data-test="`account-section-${bucket.key}`"><div class="mb-3 flex items-center gap-2"><h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ bucket.label }}</h2><span class="font-mono text-sm text-gray-500 dark:text-gray-400">{{ accountSections[bucket.key].length }}</span></div><div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]"><div v-for="account in accountSections[bucket.key]" :key="account.account_id" class="relative"><div v-if="activeGroup && bucket.key === 'available' && account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div><AccountMonitorCard :account="account" :scope="activeGroup ? 'group' : 'all'" :operations="accountLedgers[account.account_id] ?? null" :group-operational-state="activeGroup?.operational_state" :running="runningAccounts.has(account.account_id)" :saving-weight="savingWeights.has(account.account_id)" @refresh="handleRunOne" @update-priority="updateWeight" @settings="showSettings = true" @history="openHistory" /></div></div></section></template></div>
       </div>
     </div>
 
@@ -284,6 +284,7 @@ const adjustingID = ref<number | null>(null)
 
 let abortController: AbortController | null = null
 let operationsGeneration = 0
+const accountOperationsConcurrency = 6
 
 const intervalSeconds = computed(() => projection.value?.settings.interval_seconds ?? 300)
 const intervalLabel = computed(() => {
@@ -463,14 +464,23 @@ async function loadOperations() {
     }
   }
   const nextLedgers: Record<number, ReconciliationSummary | null> = {}
-  for (const account of visibleAccounts) {
-    const accountScope = groupID === null
-      ? { account_id: account.account_id }
-      : { group_id: groupID, account_id: account.account_id }
-    calls.push(adminAPI.reconciliation.operations(accountScope)
-      .then((summary) => { nextLedgers[account.account_id] = summary })
-      .catch(() => { nextLedgers[account.account_id] = null }))
+  let nextAccountIndex = 0
+  const loadAccountWorker = async () => {
+    while (nextAccountIndex < visibleAccounts.length) {
+      const account = visibleAccounts[nextAccountIndex]
+      nextAccountIndex += 1
+      const accountScope = groupID === null
+        ? { account_id: account.account_id }
+        : { group_id: groupID, account_id: account.account_id }
+      try {
+        nextLedgers[account.account_id] = await adminAPI.reconciliation.operations(accountScope)
+      } catch {
+        nextLedgers[account.account_id] = null
+      }
+    }
   }
+  const workerCount = Math.min(accountOperationsConcurrency, visibleAccounts.length)
+  for (let index = 0; index < workerCount; index += 1) calls.push(loadAccountWorker())
   await Promise.all(calls)
   if (isCurrent()) accountLedgers.value = nextLedgers
 }

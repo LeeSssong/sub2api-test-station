@@ -146,7 +146,7 @@ function mountView() {
         AppLayout: { template: '<div><slot /></div>' },
         BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="base-dialog"><slot /></div>' },
         AccountMonitorCard: {
-          props: ['account', 'operations', 'groupOperationalState'],
+          props: ['account', 'scope', 'operations', 'groupOperationalState'],
           emits: ['refresh', 'settings', 'history'],
           template: `
             <article data-test="monitor-card">
@@ -154,6 +154,7 @@ function mountView() {
               <span>{{ account.multiplier.value?.toFixed(2) }}x</span>
               <span>{{ account.latest_status }}</span>
               <span>{{ account.error_code }}</span>
+              <span data-test="card-scope">{{ scope }}</span>
               <span>{{ operations?.currency }}</span>
               <button data-test="card-refresh" @click="$emit('refresh', account.account_id)">refresh</button>
               <button data-test="card-settings" @click="$emit('settings')">settings</button>
@@ -469,9 +470,49 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).toContain('未分组账号')
     expect(wrapper.text()).toContain('暂停账号')
     expect(wrapper.text()).toContain('当前展示 3 个账号')
+    expect(wrapper.findAll('[data-test="card-scope"]').every((node) => node.text() === 'all')).toBe(true)
     expect(wrapper.text()).not.toContain('admin.accountMonitor.monitoredCount')
     expect(reconciliationOperations.mock.calls.map(([params]) => params)).not.toContainEqual(expect.objectContaining({ group_id: expect.any(Number) }))
     expect(reconciliationOperations.mock.calls.map(([params]) => params).every((params) => !Object.hasOwn(params, 'group_id'))).toBe(true)
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="card-scope"]').every((node) => node.text() === 'group')).toBe(true)
+  })
+
+  it('limits concurrent per-account operations requests', async () => {
+    const accountCount = 12
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: Array.from({ length: accountCount }, (_, index) => ({
+        ...account,
+        account_id: index + 1,
+        name: `账号${index + 1}`,
+        group_ids: [],
+        group_names: [],
+      })),
+      groups: [],
+    })
+    let inFlight = 0
+    let maxInFlight = 0
+    reconciliationOperations.mockImplementation((params: { account_id?: number }) => {
+      if (params.account_id === undefined) return Promise.resolve({})
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          inFlight -= 1
+          resolve({})
+        }, 0)
+      })
+    })
+
+    mountView()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    await flushPromises()
+
+    expect(maxInFlight).toBeLessThanOrEqual(6)
+    expect(reconciliationOperations.mock.calls.filter(([params]) => params.account_id !== undefined)).toHaveLength(accountCount)
   })
 
   it('没有分组时仍保留全站 Tab', async () => {

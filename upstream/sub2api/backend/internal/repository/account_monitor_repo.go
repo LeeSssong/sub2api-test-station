@@ -245,9 +245,10 @@ func (r *accountMonitorRepository) ListGroupAggregates(
 func (r *accountMonitorRepository) LoadGroupAggregate(
 	ctx context.Context,
 	groupID int64,
+	accountIDs []int64,
 	since time.Time,
 ) (service.AccountMonitorAggregate, error) {
-	if groupID <= 0 {
+	if groupID <= 0 || len(accountIDs) == 0 {
 		return service.AccountMonitorAggregate{}, nil
 	}
 	return r.loadAggregate(ctx, `
@@ -259,12 +260,13 @@ func (r *accountMonitorRepository) LoadGroupAggregate(
 				u.duration_ms,
 				u.created_at
 			FROM usage_logs u
-			WHERE u.group_id = $1 AND u.created_at >= $2
+			WHERE u.group_id = $1 AND u.account_id = ANY($2) AND u.created_at >= $3
 		), group_errors AS (
 			SELECT e.request_id, e.account_id, e.created_at
 			FROM ops_error_logs e
 			WHERE e.group_id = $1
-				AND e.created_at >= $2
+				AND e.account_id = ANY($2)
+				AND e.created_at >= $3
 				AND COALESCE(e.is_count_tokens, FALSE) = FALSE
 				AND COALESCE(e.status_code, 0) >= 400
 		), group_requests AS (
@@ -312,7 +314,7 @@ func (r *accountMonitorRepository) LoadGroupAggregate(
 				FILTER (WHERE duration_ms IS NOT NULL),
 			MAX(created_at)
 		FROM group_requests
-	`, groupID, since.UTC())
+		`, groupID, pq.Array(accountIDs), since.UTC())
 }
 
 func (r *accountMonitorRepository) loadAggregate(

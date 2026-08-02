@@ -188,12 +188,12 @@ func TestAccountMonitorRepositoryGroupAggregateIncludesStandaloneErrors(t *testi
 	since := time.Date(2026, 8, 1, 7, 55, 0, 0, time.UTC)
 	lastChecked := time.Date(2026, 8, 1, 7, 59, 0, 0, time.UTC)
 	mock.ExpectQuery("(?s)WITH group_usage AS.*group_errors AS.*FROM ops_error_logs.*UNION ALL.*FROM group_errors").
-		WithArgs(int64(7), since).
+		WithArgs(int64(7), sqlmock.AnyArg(), since).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"sample_count", "success_count", "error_count", "success_rate",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
 		}).AddRow(1, 0, 1, 0.0, nil, nil, nil, nil, lastChecked))
-	aggregate, err := repo.(*accountMonitorRepository).LoadGroupAggregate(context.Background(), 7, since)
+	aggregate, err := repo.(*accountMonitorRepository).LoadGroupAggregate(context.Background(), 7, []int64{11}, since)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,12 +214,12 @@ func TestAccountMonitorRepositoryGroupAggregateDoesNotCorrelateNullRequestIDs(t 
 	repo := NewAccountMonitorRepository(db)
 	since := time.Date(2026, 8, 1, 7, 55, 0, 0, time.UTC)
 	mock.ExpectQuery(`(?s)group_errors AS.*u\.request_id IS NOT NULL.*e\.request_id IS NOT NULL`).
-		WithArgs(int64(7), since).
+		WithArgs(int64(7), sqlmock.AnyArg(), since).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"sample_count", "success_count", "error_count", "success_rate",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
 		}).AddRow(1, 1, 0, 1.0, nil, nil, nil, nil, since))
-	if _, err := repo.(*accountMonitorRepository).LoadGroupAggregate(context.Background(), 7, since); err != nil {
+	if _, err := repo.(*accountMonitorRepository).LoadGroupAggregate(context.Background(), 7, []int64{11}, since); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

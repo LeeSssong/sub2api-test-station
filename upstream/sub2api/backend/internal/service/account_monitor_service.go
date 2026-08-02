@@ -22,8 +22,18 @@ import (
 )
 
 const (
-	accountMonitorMultiplierRefreshTimeout = 2 * time.Minute
-	accountMonitorProbeTimeout             = 60 * time.Second
+	accountMonitorMultiplierRefreshTimeout     = 2 * time.Minute
+	accountMonitorProbeTimeout                 = 60 * time.Second
+	accountMonitorManagementEnabled            = "enabled"
+	accountMonitorManagementPaused             = "paused"
+	accountMonitorServiceAvailable             = "available"
+	accountMonitorServiceUnavailable           = "unavailable"
+	accountMonitorServicePending               = "pending"
+	accountMonitorServiceNotMonitored          = "not_monitored"
+	accountMonitorEligibilityEligible          = "eligible"
+	accountMonitorEligibilityCostIneligible    = "cost_ineligible"
+	accountMonitorEligibilityMultiplierPending = "multiplier_pending"
+	accountMonitorEligibilityNotApplicable     = "not_applicable"
 )
 
 type accountMonitorProbeConnection func(
@@ -172,9 +182,12 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			row.Stale = true
 		}
 		row.UsageWindows = s.loadUsageWindows(ctx, account.ID)
-		row.MonitorBucket = accountMonitorGlobalBucket(account, row, observedAt)
+		row.ManagementState = accountMonitorManagementState(account, observedAt)
+		row.ServiceState = accountMonitorServiceState(row, row.ManagementState)
+		row.GroupEligibility = accountMonitorEligibilityNotApplicable
+		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 		rows = append(rows, row)
-		if !accountMonitorAccountPaused(account, observedAt) {
+		if row.ManagementState == accountMonitorManagementEnabled {
 			schedulableIDs = append(schedulableIDs, account.ID)
 		}
 	}
@@ -260,12 +273,15 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				checkedAt = checkedAt.UTC()
 				row.CheckedAt = &checkedAt
 			}
-			costEligible := account.BillingRateMultiplier() <= group.RateMultiplier
-			serviceEligible := !accountMonitorAccountPaused(account, now)
-			row.MonitorBucket = accountMonitorGroupBucket(account, row, evidence, costEligible, now)
-			row.Eligible = evidence.Source != "stale" && costEligible && serviceEligible
+			row.ManagementState = accountMonitorManagementState(account, now)
+			row.ServiceState = accountMonitorGroupServiceState(row, evidence, row.ManagementState)
+			row.GroupEligibility = accountMonitorGroupEligibility(row, group.RateMultiplier)
+			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
+			row.Eligible = row.ManagementState == accountMonitorManagementEnabled &&
+				row.ServiceState == accountMonitorServiceAvailable &&
+				row.GroupEligibility == accountMonitorEligibilityEligible
 			if row.Eligible {
-				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, account.BillingRateMultiplier(), group.ScoreWeights, evidence)
+				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, *row.Multiplier.Value, group.ScoreWeights, evidence)
 			}
 			projected = append(projected, row)
 		}
@@ -353,12 +369,12 @@ func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorH
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			bucket:      row.MonitorBucket,
-			serviceable: row.MonitorBucket != "paused",
-			sampleCount: row.SampleCount,
-			successRate: row.SuccessRate,
-			ttftP50MS:   row.TTFTP50MS,
-			latencyP95:  row.LatencyP95MS,
+			managementState: row.ManagementState,
+			serviceState:    row.ServiceState,
+			sampleCount:     row.SampleCount,
+			successRate:     row.SuccessRate,
+			ttftP50MS:       row.TTFTP50MS,
+			latencyP95:      row.LatencyP95MS,
 		})
 	}
 	return summarizeHealthSamples(samples)
@@ -368,12 +384,12 @@ func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealt
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			bucket:      row.MonitorBucket,
-			serviceable: row.MonitorBucket != "paused",
-			sampleCount: row.SampleCount,
-			successRate: row.SuccessRate,
-			ttftP50MS:   row.TTFTP50MS,
-			latencyP95:  row.LatencyP95MS,
+			managementState: row.ManagementState,
+			serviceState:    row.ServiceState,
+			sampleCount:     row.SampleCount,
+			successRate:     row.SuccessRate,
+			ttftP50MS:       row.TTFTP50MS,
+			latencyP95:      row.LatencyP95MS,
 		})
 	}
 	return summarizeHealthSamples(samples)
@@ -390,12 +406,12 @@ func applyAccountMonitorAggregate(summary AccountMonitorHealthSummary, aggregate
 }
 
 type accountMonitorHealthSample struct {
-	bucket      string
-	serviceable bool
-	sampleCount int
-	successRate float64
-	ttftP50MS   *float64
-	latencyP95  *float64
+	managementState string
+	serviceState    string
+	sampleCount     int
+	successRate     float64
+	ttftP50MS       *float64
+	latencyP95      *float64
 }
 
 func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHealthSummary {
@@ -408,18 +424,18 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 	var latencyWeighted float64
 	var latencySamples float64
 	for _, row := range rows {
-		switch row.bucket {
-		case "paused":
+		if row.managementState == accountMonitorManagementPaused {
 			summary.PausedAccounts++
-		case "pending":
+			continue
+		}
+		summary.MonitoringAccounts++
+		switch row.serviceState {
+		case accountMonitorServicePending:
 			summary.PendingAccounts++
-		case "available":
+		case accountMonitorServiceAvailable:
 			summary.AvailableAccounts++
 		default:
 			summary.UnavailableAccounts++
-		}
-		if !row.serviceable {
-			continue
 		}
 		weight := float64(row.sampleCount)
 		if weight <= 0 {
@@ -450,39 +466,70 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 	return summary
 }
 
-func accountMonitorGlobalBucket(account Account, row AccountMonitorAccount, now time.Time) string {
+func accountMonitorManagementState(account Account, now time.Time) string {
 	if accountMonitorAccountPaused(account, now) {
-		return "paused"
+		return accountMonitorManagementPaused
 	}
-	if row.Stale || row.Latest == nil {
-		return "pending"
-	}
-	if row.LatestStatus == "success" {
-		return "available"
-	}
-	return "unavailable"
+	return accountMonitorManagementEnabled
 }
 
-func accountMonitorGroupBucket(
-	account Account,
+func accountMonitorServiceState(row AccountMonitorAccount, managementState string) string {
+	if managementState == accountMonitorManagementPaused {
+		return accountMonitorServiceNotMonitored
+	}
+	if row.Stale || row.Latest == nil {
+		return accountMonitorServicePending
+	}
+	if row.LatestStatus == "success" {
+		return accountMonitorServiceAvailable
+	}
+	return accountMonitorServiceUnavailable
+}
+
+func accountMonitorGroupServiceState(
 	row AccountMonitorGroupAccount,
 	evidence AccountMonitorQualityEvidence,
-	costEligible bool,
-	now time.Time,
+	managementState string,
 ) string {
-	if accountMonitorAccountPaused(account, now) {
-		return "paused"
+	if managementState == accountMonitorManagementPaused {
+		return accountMonitorServiceNotMonitored
 	}
 	if evidence.Source == "stale" || row.CheckedAt == nil {
-		return "pending"
-	}
-	if !costEligible {
-		return "cost_ineligible"
+		return accountMonitorServicePending
 	}
 	if row.LatestStatus == "success" && evidence.SuccessRate > 0 {
-		return "available"
+		return accountMonitorServiceAvailable
 	}
-	return "unavailable"
+	return accountMonitorServiceUnavailable
+}
+
+func accountMonitorGroupEligibility(row AccountMonitorGroupAccount, groupMultiplier float64) string {
+	if row.ManagementState == accountMonitorManagementPaused {
+		return accountMonitorEligibilityNotApplicable
+	}
+	if row.Multiplier.Status != AccountMonitorMultiplierStatusOK || row.Multiplier.Value == nil {
+		return accountMonitorEligibilityMultiplierPending
+	}
+	if *row.Multiplier.Value > groupMultiplier {
+		return accountMonitorEligibilityCostIneligible
+	}
+	return accountMonitorEligibilityEligible
+}
+
+func accountMonitorBucket(managementState, serviceState, groupEligibility string) string {
+	if managementState == accountMonitorManagementPaused {
+		return accountMonitorManagementPaused
+	}
+	if serviceState == accountMonitorServicePending || groupEligibility == accountMonitorEligibilityMultiplierPending {
+		return accountMonitorServicePending
+	}
+	if groupEligibility == accountMonitorEligibilityCostIneligible {
+		return accountMonitorEligibilityCostIneligible
+	}
+	if serviceState == accountMonitorServiceAvailable {
+		return accountMonitorServiceAvailable
+	}
+	return accountMonitorServiceUnavailable
 }
 
 func accountMonitorEvidence(
@@ -1134,7 +1181,7 @@ func leadingDigits(value string) int {
 
 func anyMonitorRowStale(rows []AccountMonitorAccount) bool {
 	for _, row := range rows {
-		if row.Stale {
+		if row.ManagementState == accountMonitorManagementEnabled && row.Stale {
 			return true
 		}
 	}

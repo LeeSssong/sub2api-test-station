@@ -45,6 +45,7 @@ type AccountMonitorGroup struct {
 // never participates in routing or scheduler selection.
 type AccountMonitorHealthSummary struct {
 	TotalAccounts       int      `json:"total_accounts"`
+	MonitoringAccounts  int      `json:"monitoring_accounts"`
 	AvailableAccounts   int      `json:"available_accounts"`
 	UnavailableAccounts int      `json:"unavailable_accounts"`
 	PendingAccounts     int      `json:"pending_accounts"`
@@ -126,33 +127,36 @@ type AccountMonitorMultiplier struct {
 }
 
 type AccountMonitorAccount struct {
-	AccountID     int64                       `json:"account_id"`
-	Name          string                      `json:"name"`
-	Platform      string                      `json:"platform"`
-	AccountType   string                      `json:"account_type"`
-	Status        string                      `json:"status"`
-	Schedulable   bool                        `json:"schedulable"`
-	Priority      int                         `json:"priority"`
-	HomepageURL   string                      `json:"homepage_url,omitempty"`
-	GroupIDs      []int64                     `json:"group_ids"`
-	GroupNames    []string                    `json:"group_names"`
-	ModelID       string                      `json:"model_id"`
-	LatestStatus  string                      `json:"latest_status"`
-	ErrorCode     string                      `json:"error_code,omitempty"`
-	SampleCount   int                         `json:"sample_count"`
-	SuccessRate   float64                     `json:"success_rate"`
-	TTFTP50MS     *float64                    `json:"ttft_p50_ms,omitempty"`
-	TTFTP95MS     *float64                    `json:"ttft_p95_ms,omitempty"`
-	LatencyP95MS  *float64                    `json:"latency_p95_ms,omitempty"`
-	Multiplier    AccountMonitorMultiplier    `json:"multiplier"`
-	RequestCount  int64                       `json:"request_count"`
-	ErrorCount    int64                       `json:"error_count"`
-	TodayStats    *WindowStats                `json:"today_stats,omitempty"`
-	UsageWindows  []AccountMonitorUsageWindow `json:"usage_windows,omitempty"`
-	Latest        *AccountMonitorLatest       `json:"latest,omitempty"`
-	CheckedAt     *time.Time                  `json:"checked_at,omitempty"`
-	Stale         bool                        `json:"stale"`
-	MonitorBucket string                      `json:"monitor_bucket"`
+	AccountID        int64                       `json:"account_id"`
+	Name             string                      `json:"name"`
+	Platform         string                      `json:"platform"`
+	AccountType      string                      `json:"account_type"`
+	Status           string                      `json:"status"`
+	Schedulable      bool                        `json:"schedulable"`
+	Priority         int                         `json:"priority"`
+	HomepageURL      string                      `json:"homepage_url,omitempty"`
+	GroupIDs         []int64                     `json:"group_ids"`
+	GroupNames       []string                    `json:"group_names"`
+	ModelID          string                      `json:"model_id"`
+	LatestStatus     string                      `json:"latest_status"`
+	ErrorCode        string                      `json:"error_code,omitempty"`
+	SampleCount      int                         `json:"sample_count"`
+	SuccessRate      float64                     `json:"success_rate"`
+	TTFTP50MS        *float64                    `json:"ttft_p50_ms,omitempty"`
+	TTFTP95MS        *float64                    `json:"ttft_p95_ms,omitempty"`
+	LatencyP95MS     *float64                    `json:"latency_p95_ms,omitempty"`
+	Multiplier       AccountMonitorMultiplier    `json:"multiplier"`
+	RequestCount     int64                       `json:"request_count"`
+	ErrorCount       int64                       `json:"error_count"`
+	TodayStats       *WindowStats                `json:"today_stats,omitempty"`
+	UsageWindows     []AccountMonitorUsageWindow `json:"usage_windows,omitempty"`
+	Latest           *AccountMonitorLatest       `json:"latest,omitempty"`
+	CheckedAt        *time.Time                  `json:"checked_at,omitempty"`
+	Stale            bool                        `json:"stale"`
+	ManagementState  string                      `json:"management_state"`
+	ServiceState     string                      `json:"service_state"`
+	GroupEligibility string                      `json:"group_eligibility"`
+	MonitorBucket    string                      `json:"monitor_bucket"`
 }
 
 type AccountMonitorProjection struct {

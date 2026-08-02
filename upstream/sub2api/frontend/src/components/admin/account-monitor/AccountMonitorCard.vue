@@ -255,14 +255,23 @@ const probeBars = computed<ProbeBar[]>(() => {
   }))
   for (const point of points) {
     const timestamp = formatDate(point.checked_at)
-    if (point.status === 'success') {
+    if (point.status === 'success' || point.status === 'operational' || point.status === 'ok') {
       const latency = point.latency_ms ?? point.ttft_ms
       bars.push({
         colorClass: 'bg-emerald-500 dark:bg-emerald-400',
         height: latencyBarHeight(latency),
         title: `${timestamp} · 成功${latency == null ? '' : ` · ${formatMs(latency)}`}`,
       })
-    } else if (point.status === 'failed') {
+    } else if (point.status === 'unavailable' || point.status === 'model_unavailable' || point.status === 'degraded') {
+      // A channel probe that cannot produce a model response still completed
+      // its reachability check; keep it green but visibly shorter than a
+      // latency-backed success.
+      bars.push({
+        colorClass: 'bg-emerald-500 dark:bg-emerald-400',
+        height: 40,
+        title: `${timestamp} · 探测完成（无可用模型）`,
+      })
+    } else if (point.status === 'failed' || point.status === 'error') {
       bars.push({
         colorClass: 'bg-red-500 dark:bg-red-400',
         height: 28,
@@ -282,8 +291,8 @@ const probeBars = computed<ProbeBar[]>(() => {
 const timelineAriaLabel = computed(() => {
   const points = props.account.timeline ?? []
   if (!points.length) return '近期暂无探测结果'
-  const successes = points.filter((point) => point.status === 'success').length
-  const failures = points.filter((point) => point.status === 'failed').length
+  const successes = points.filter((point) => ['success', 'operational', 'ok', 'unavailable', 'model_unavailable', 'degraded'].includes(point.status)).length
+  const failures = points.filter((point) => ['failed', 'error'].includes(point.status)).length
   return `近期 ${points.length} 次探测，成功 ${successes} 次，失败 ${failures} 次`
 })
 

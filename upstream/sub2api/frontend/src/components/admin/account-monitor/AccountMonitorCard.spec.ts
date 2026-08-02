@@ -160,6 +160,23 @@ describe('AccountMonitorCard', () => {
     )
   })
 
+  it('renders unavailable model probes as green short bars', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          timeline: [{ status: 'model_unavailable', checked_at: '2026-07-25T08:05:00Z' }],
+        },
+      },
+      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
+    })
+
+    const bars = wrapper.findAll('[data-test="probe-bar"]')
+    const latest = bars.at(-1)
+    expect(latest?.classes()).toContain('bg-emerald-500')
+    expect(latest?.attributes('style')).toContain('height: 40%')
+  })
+
   it('keeps today calls collapsed until its keyboard-accessible button is activated', async () => {
     const wrapper = mount(AccountMonitorCard, {
       props: { account },

@@ -19,7 +19,7 @@
               <div class="mt-2 grid grid-cols-3 gap-2 text-xs">
                 <LedgerCell label="成本" :value="formatMoney(item.upstream_cost, item.currency)" />
                 <LedgerCell label="计费" :value="formatMoney(item.user_charge, item.currency)" />
-                <LedgerCell label="利润" :value="formatMoney(item.paper_profit, item.currency)" />
+                <LedgerCell label="账号利润" :value="formatMoney(item.paper_profit, item.currency)" />
               </div>
             </div>
           </div>

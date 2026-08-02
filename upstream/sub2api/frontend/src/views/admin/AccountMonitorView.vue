@@ -61,11 +61,19 @@
           <LedgerMetric label="纸面利润" :value="formatMoney(globalLedger?.paper_profit, globalLedger?.currency)" />
           <LedgerMetric label="利润率" :value="formatProfitMargin(globalLedger)" />
           <LedgerMetric label="成本覆盖率" :value="formatCoverage(globalLedger)" :value-class="coverageClass(globalLedger)" />
-          <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70">
+          <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="global-health-summary">
             <p class="text-xs text-gray-500 dark:text-gray-400">服务健康</p>
-            <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ availableCount }}</span><span class="mx-1 text-gray-400">/</span>{{ accounts.length }}</p>
-            <p class="mt-0.5 text-xs text-gray-500">{{ unavailableCount }} 个不可用</p>
+            <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ globalHealth.available_accounts }}</span><span class="mx-1 text-gray-400">/</span>{{ globalHealth.total_accounts }}</p>
+            <p class="mt-0.5 text-xs text-gray-500">{{ globalHealth.unavailable_accounts }} 不可用 · {{ globalHealth.pending_accounts }} 待确认 · {{ globalHealth.paused_accounts }} 暂停</p>
+            <p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(globalHealth.success_rate) }} · TTFT {{ formatMs(globalHealth.ttft_p50_ms) }} · P95 {{ formatMs(globalHealth.latency_p95_ms) }}</p>
           </div>
+        </div>
+        <div v-if="globalLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="global-lifetime-ledger">
+          <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
+          <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
+          <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
+          <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
+          <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
         </div>
       </section>
 
@@ -147,7 +155,14 @@
             <LedgerMetric label="上游真实扣费" :value="formatMoney(groupLedger?.upstream_cost, groupLedger?.currency)" />
             <LedgerMetric label="纸面利润" :value="formatMoney(groupLedger?.paper_profit, groupLedger?.currency)" />
             <LedgerMetric label="利润率" :value="formatProfitMargin(groupLedger)" />
-            <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70"><p class="text-xs text-gray-500">服务健康</p><p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{ selectedAvailableCount }} / {{ scopedAccounts.length }}</p><p class="mt-0.5 text-xs text-gray-500">{{ groupLedger?.pending_attempts ?? 0 }} 笔待对账</p></div>
+            <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="group-health-summary"><p class="text-xs text-gray-500">服务健康</p><p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ groupHealth.available_accounts }}</span> / {{ groupHealth.total_accounts }}</p><p class="mt-0.5 text-xs text-gray-500">{{ groupHealth.unavailable_accounts }} 不可用 · {{ groupHealth.pending_accounts }} 待确认 · {{ groupHealth.paused_accounts }} 暂停</p><p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(groupHealth.success_rate) }} · TTFT {{ formatMs(groupHealth.ttft_p50_ms) }} · P95 {{ formatMs(groupHealth.latency_p95_ms) }}</p></div>
+          </div>
+          <div v-if="groupLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="group-lifetime-ledger">
+            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
+            <span>营收 {{ formatMoney(groupLifetimeLedger.user_charge, groupLifetimeLedger.currency) }}</span>
+            <span>成本 {{ formatMoney(groupLifetimeLedger.upstream_cost, groupLifetimeLedger.currency) }}</span>
+            <span>利润 {{ formatMoney(groupLifetimeLedger.paper_profit, groupLifetimeLedger.currency) }}</span>
+            <span>利润率 {{ formatProfitMargin(groupLifetimeLedger) }}</span>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">评分组成：成本优势 {{ activeGroup.score_weights.cost }}% · 成功率 {{ activeGroup.score_weights.success }}% · TTFT {{ activeGroup.score_weights.ttft }}% · 总耗时 {{ activeGroup.score_weights.latency }}%</p>
         </section>
@@ -164,7 +179,6 @@
                 :saving-weight="savingWeights.has(account.account_id)"
                 @refresh="handleRunOne"
                 @update-priority="updateWeight"
-                @update-weight="updateWeight"
                 @settings="showSettings = true"
                 @history="openHistory"
               />
@@ -268,6 +282,7 @@ import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
   AccountMonitorGroup,
+  AccountMonitorHealthSummary,
   AccountMonitorHistoryItem,
   AccountMonitorProjection,
   AccountMonitorScoreWeights,
@@ -306,6 +321,8 @@ const historyLoading = ref(false)
 const historyItems = ref<AccountMonitorHistoryItem[]>([])
 const globalLedger = ref<ReconciliationSummary | null>(null)
 const groupLedger = ref<ReconciliationSummary | null>(null)
+const globalLifetimeLedger = ref<ReconciliationSummary | null>(null)
+const groupLifetimeLedger = ref<ReconciliationSummary | null>(null)
 const accountLedgers = ref<Record<number, ReconciliationSummary | null>>({})
 const activeGroupId = ref<number | null>(null)
 const ledgerHistoryScope = ref<OperationsScopeParams | null>(null)
@@ -366,9 +383,16 @@ const scopedAccounts = computed(() => [...filteredAccounts.value].sort((left, ri
   if (leftRank !== rightRank) return leftRank - rightRank
   return left.account_id - right.account_id
 }))
-const availableCount = computed(() => accounts.value.filter((account) => account.latest_status === 'success').length)
-const unavailableCount = computed(() => Math.max(0, accounts.value.length - availableCount.value))
-const selectedAvailableCount = computed(() => scopedAccounts.value.filter((account) => account.latest_status === 'success' && !account.stale && account.eligible !== false).length)
+const emptyHealth: AccountMonitorHealthSummary = {
+  total_accounts: 0,
+  available_accounts: 0,
+  unavailable_accounts: 0,
+  pending_accounts: 0,
+  paused_accounts: 0,
+  success_rate: 0,
+}
+const globalHealth = computed(() => projection.value?.health ?? emptyHealth)
+const groupHealth = computed(() => activeGroup.value?.health ?? emptyHealth)
 
 function displayStatus(account: AccountMonitorAccount): string {
   if (account.stale) return 'stale'
@@ -410,6 +434,7 @@ async function loadOperations() {
   const groupID = activeGroupId.value
   const generation = ++operationsGeneration
   const isCurrent = () => generation === operationsGeneration && activeGroupId.value === groupID
+  const lifetimeScope = { start: '1970-01-01T00:00:00.000Z', end: new Date().toISOString() }
   const visibleAccounts = scopedAccounts.value
   const calls: Promise<void>[] = [
     adminAPI.reconciliation.operations({})
@@ -418,6 +443,13 @@ async function loadOperations() {
       })
       .catch(() => {
         if (isCurrent()) globalLedger.value = null
+      }),
+    adminAPI.reconciliation.operations(lifetimeScope)
+      .then((summary) => {
+        if (isCurrent()) globalLifetimeLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) globalLifetimeLedger.value = null
       }),
   ]
   if (groupID !== null) {
@@ -428,8 +460,18 @@ async function loadOperations() {
       .catch(() => {
         if (isCurrent()) groupLedger.value = null
       }))
+    calls.push(adminAPI.reconciliation.operations({ group_id: groupID, ...lifetimeScope })
+      .then((summary) => {
+        if (isCurrent()) groupLifetimeLedger.value = summary
+      })
+      .catch(() => {
+        if (isCurrent()) groupLifetimeLedger.value = null
+      }))
   } else {
-    if (isCurrent()) groupLedger.value = null
+    if (isCurrent()) {
+      groupLedger.value = null
+      groupLifetimeLedger.value = null
+    }
   }
   const nextLedgers: Record<number, ReconciliationSummary | null> = {}
   for (const account of visibleAccounts) {
@@ -603,6 +645,11 @@ async function openHistory(accountID: number) {
 
 function formatMs(value?: number | null): string {
   return value == null ? '-' : `${Math.round(value)} ms`
+}
+
+function formatHealthPercent(value?: number | null): string {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : '—'
 }
 
 function formatDate(value?: string | null): string {

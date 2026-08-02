@@ -127,12 +127,37 @@ type AccountMonitorAccount struct {
 	CheckedAt    *time.Time                  `json:"checked_at,omitempty"`
 	Stale        bool                        `json:"stale"`
 }
+
+type AccountMonitorHealthSummary struct {
+	TotalAccounts       int      `json:"total_accounts"`
+	AvailableAccounts   int      `json:"available_accounts"`
+	UnavailableAccounts int      `json:"unavailable_accounts"`
+	PendingAccounts     int      `json:"pending_accounts"`
+	PausedAccounts      int      `json:"paused_accounts"`
+	SuccessRate         float64  `json:"success_rate"`
+	TTFTP50MS           *float64 `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS        *float64 `json:"latency_p95_ms,omitempty"`
+}
+
+type AccountMonitorGroup struct {
+	ID               int64                       `json:"id"`
+	Name             string                      `json:"name"`
+	RateMultiplier   float64                     `json:"rate_multiplier"`
+	CustomerVisible  bool                        `json:"customer_visible"`
+	NativeOrder      int                         `json:"native_order"`
+	OperationalState string                      `json:"operational_state"`
+	Health           AccountMonitorHealthSummary `json:"health"`
+	Accounts         []AccountMonitorAccount     `json:"accounts,omitempty"`
+}
+
 type AccountMonitorProjection struct {
-	SchemaVersion int                     `json:"schema_version"`
-	ObservedAt    time.Time               `json:"observed_at"`
-	Stale         bool                    `json:"stale"`
-	Settings      AccountMonitorSettings  `json:"settings"`
-	Accounts      []AccountMonitorAccount `json:"accounts"`
+	SchemaVersion int                         `json:"schema_version"`
+	ObservedAt    time.Time                   `json:"observed_at"`
+	Stale         bool                        `json:"stale"`
+	Settings      AccountMonitorSettings      `json:"settings"`
+	Health        AccountMonitorHealthSummary `json:"health"`
+	Groups        []AccountMonitorGroup       `json:"groups"`
+	Accounts      []AccountMonitorAccount     `json:"accounts"`
 }
 
 type AccountMonitorHistoryEntry struct {

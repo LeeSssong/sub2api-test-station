@@ -101,6 +101,16 @@ const projection = () => ({
     updated_by: 1,
     updated_at: '2026-07-25T07:55:00Z',
   },
+  health: {
+    total_accounts: 3,
+    available_accounts: 1,
+    unavailable_accounts: 1,
+    pending_accounts: 1,
+    paused_accounts: 0,
+    success_rate: 0.9,
+    ttft_p50_ms: 120,
+    latency_p95_ms: 840,
+  },
   accounts: [account],
   groups: [{
     id: 3,
@@ -110,6 +120,16 @@ const projection = () => ({
     native_order: 0,
     score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 },
     operational_state: 'operational',
+    health: {
+      total_accounts: 2,
+      available_accounts: 1,
+      unavailable_accounts: 0,
+      pending_accounts: 0,
+      paused_accounts: 1,
+      success_rate: 0.95,
+      ttft_p50_ms: 100,
+      latency_p95_ms: 700,
+    },
   }],
 })
 
@@ -209,6 +229,22 @@ describe('admin account monitor view', () => {
     const summary = wrapper.get('[data-test="operations-overview"]')
     expect(summary.text()).toContain('€1.00')
     expect(summary.text()).not.toContain('$1.00')
+  })
+
+  it('shows historical cumulative economics and scoped service health by default', async () => {
+    reconciliationOperations.mockImplementation((params: { group_id?: number; start?: string }) => {
+      if (params.start && params.group_id === 3) return Promise.resolve({ total_attempts: 50, matched_attempts: 50, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '10', user_charge: '20', paper_profit: '10', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
+      if (params.start) return Promise.resolve({ total_attempts: 100, matched_attempts: 100, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '30', user_charge: '60', paper_profit: '30', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
+      return Promise.resolve({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(reconciliationOperations).toHaveBeenCalledWith(expect.objectContaining({ start: '1970-01-01T00:00:00.000Z' }))
+    expect(wrapper.get('[data-test="global-lifetime-ledger"]').text()).toContain('€60.00')
+    expect(wrapper.get('[data-test="group-lifetime-ledger"]').text()).toContain('€20.00')
+    expect(wrapper.get('[data-test="global-health-summary"]').text()).toContain('成功率 90.0%')
+    expect(wrapper.get('[data-test="group-health-summary"]').text()).toContain('TTFT 100 ms')
   })
 
   it('orders group tabs by rate and reloads scoped group operations on selection', async () => {

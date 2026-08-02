@@ -295,6 +295,44 @@ func TestAccountMonitorServiceProjectsNativeGroupVisibilityAndWeights(t *testing
 	}
 }
 
+func TestAccountMonitorProjectionIncludesGlobalAndGroupHealthSummaries(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	paused := Account{ID: 12, Name: "paused", Status: StatusActive, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	ready := Account{ID: 13, Name: "ready", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	pending := Account{ID: 14, Name: "pending", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			12: {SampleCount: 10, SuccessRate: 0.5, TTFTP50MS: floatPtr(500), LatencyP95MS: floatPtr(1500), LastCheckedAt: &now},
+			13: {SampleCount: 10, SuccessRate: 0.9, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(400), LastCheckedAt: &now},
+			14: {SampleCount: 0, SuccessRate: 0},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			12: {Status: "success", CheckedAt: now},
+			13: {Status: "success", CheckedAt: now},
+		},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {
+			12: {SampleCount: 10, SuccessRate: 0.5, TTFTP50MS: floatPtr(500), LatencyP95MS: floatPtr(1500), LastCheckedAt: &now},
+			13: {SampleCount: 10, SuccessRate: 0.9, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(400), LastCheckedAt: &now},
+		}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{paused, ready, pending}}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Health.TotalAccounts != 3 || page.Health.AvailableAccounts != 1 || page.Health.PausedAccounts != 1 || page.Health.PendingAccounts != 1 {
+		t.Fatalf("global health = %#v", page.Health)
+	}
+	if page.Health.SuccessRate <= 0.6 || page.Health.TTFTP50MS == nil || page.Health.LatencyP95MS == nil {
+		t.Fatalf("global quality health = %#v", page.Health)
+	}
+	if page.Groups[0].Health.TotalAccounts != 3 || page.Groups[0].Health.AvailableAccounts != 1 || page.Groups[0].Health.PausedAccounts != 1 || page.Groups[0].Health.PendingAccounts != 1 {
+		t.Fatalf("group health = %#v", page.Groups[0].Health)
+	}
+}
+
 func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02

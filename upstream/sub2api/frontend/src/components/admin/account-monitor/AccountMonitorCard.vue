@@ -115,7 +115,6 @@ const emit = defineEmits<{
   (event: 'settings'): void
   (event: 'history', accountID: number): void
   (event: 'updatePriority', accountID: number, priority: number): void
-  (event: 'updateWeight', accountID: number, priority: number): void
 }>()
 
 const { t } = useI18n()
@@ -126,7 +125,6 @@ function savePriority() {
   draftPriority.value = value
   if (value !== props.account.priority) {
     emit('updatePriority', props.account.account_id, value)
-    emit('updateWeight', props.account.account_id, value)
   }
 }
 

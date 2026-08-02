@@ -37,7 +37,21 @@ type AccountMonitorGroup struct {
 	NativeOrder      int                          `json:"native_order"`
 	ScoreWeights     AccountMonitorScoreWeights   `json:"score_weights"`
 	OperationalState string                       `json:"operational_state"`
+	Health           AccountMonitorHealthSummary  `json:"health"`
 	Accounts         []AccountMonitorGroupAccount `json:"accounts,omitempty"`
+}
+
+// AccountMonitorHealthSummary is a display-only operational projection. It
+// never participates in routing or scheduler selection.
+type AccountMonitorHealthSummary struct {
+	TotalAccounts       int      `json:"total_accounts"`
+	AvailableAccounts   int      `json:"available_accounts"`
+	UnavailableAccounts int      `json:"unavailable_accounts"`
+	PendingAccounts     int      `json:"pending_accounts"`
+	PausedAccounts      int      `json:"paused_accounts"`
+	SuccessRate         float64  `json:"success_rate"`
+	TTFTP50MS           *float64 `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS        *float64 `json:"latency_p95_ms,omitempty"`
 }
 
 type AccountMonitorQualityEvidence struct {
@@ -141,12 +155,13 @@ type AccountMonitorAccount struct {
 }
 
 type AccountMonitorProjection struct {
-	SchemaVersion int                     `json:"schema_version"`
-	ObservedAt    time.Time               `json:"observed_at"`
-	Stale         bool                    `json:"stale"`
-	Settings      AccountMonitorSettings  `json:"settings"`
-	Groups        []AccountMonitorGroup   `json:"groups"`
-	Accounts      []AccountMonitorAccount `json:"accounts"`
+	SchemaVersion int                         `json:"schema_version"`
+	ObservedAt    time.Time                   `json:"observed_at"`
+	Stale         bool                        `json:"stale"`
+	Settings      AccountMonitorSettings      `json:"settings"`
+	Health        AccountMonitorHealthSummary `json:"health"`
+	Groups        []AccountMonitorGroup       `json:"groups"`
+	Accounts      []AccountMonitorAccount     `json:"accounts"`
 }
 
 type AccountMonitorPage struct {

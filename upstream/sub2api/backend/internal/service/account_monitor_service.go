@@ -101,7 +101,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
-	accounts, err := s.listPool(ctx)
+	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
@@ -174,12 +174,14 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		rows = append(rows, row)
 	}
 	groups = s.projectGroupQualityEvidence(ctx, groups, accounts, rows, aggregates, latest, settings, observedAt)
+	health := summarizeAccountMonitorHealth(rows)
 
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion,
 		ObservedAt:    observedAt,
 		Stale:         len(rows) == 0 || anyMonitorRowStale(rows),
 		Settings:      settings,
+		Health:        health,
 		Groups:        groups,
 		Accounts:      rows,
 	}}, nil
@@ -282,6 +284,7 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			}
 		}
 		group.Accounts = projected
+		group.Health = summarizeGroupHealth(projected)
 		if len(projected) == 0 {
 			group.OperationalState = "unavailable"
 		} else if rank > 0 {
@@ -314,6 +317,113 @@ func accountMonitorAccountPaused(account Account, now time.Time) bool {
 		}
 	}
 	return false
+}
+
+func (s *AccountMonitorService) listMonitorAccounts(ctx context.Context) ([]Account, error) {
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
+	if err != nil {
+		return nil, fmt.Errorf("list active monitor accounts: %w", err)
+	}
+	filtered := accounts[:0]
+	for _, account := range accounts {
+		if account.Status == StatusActive {
+			filtered = append(filtered, account)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
+	return filtered, nil
+}
+
+func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorHealthSummary {
+	samples := make([]accountMonitorHealthSample, 0, len(rows))
+	for _, row := range rows {
+		samples = append(samples, accountMonitorHealthSample{
+			schedulable: row.Schedulable,
+			available:   row.LatestStatus == "success" && !row.Stale,
+			pending:     row.Stale || row.Latest == nil,
+			sampleCount: row.SampleCount,
+			successRate: row.SuccessRate,
+			ttftP50MS:   row.TTFTP50MS,
+			latencyP95:  row.LatencyP95MS,
+		})
+	}
+	return summarizeHealthSamples(samples)
+}
+
+func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealthSummary {
+	samples := make([]accountMonitorHealthSample, 0, len(rows))
+	for _, row := range rows {
+		samples = append(samples, accountMonitorHealthSample{
+			schedulable: row.Schedulable,
+			available:   row.Eligible && row.LatestStatus == "success" && row.Evidence.Source != "stale",
+			pending:     row.Evidence.Source == "stale" || row.CheckedAt == nil,
+			sampleCount: row.SampleCount,
+			successRate: row.SuccessRate,
+			ttftP50MS:   row.TTFTP50MS,
+			latencyP95:  row.LatencyP95MS,
+		})
+	}
+	return summarizeHealthSamples(samples)
+}
+
+type accountMonitorHealthSample struct {
+	schedulable bool
+	available   bool
+	pending     bool
+	sampleCount int
+	successRate float64
+	ttftP50MS   *float64
+	latencyP95  *float64
+}
+
+func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHealthSummary {
+	var summary AccountMonitorHealthSummary
+	summary.TotalAccounts = len(rows)
+	var samples float64
+	var successes float64
+	var ttftWeighted float64
+	var ttftSamples float64
+	var latencyWeighted float64
+	var latencySamples float64
+	for _, row := range rows {
+		if !row.schedulable {
+			summary.PausedAccounts++
+			continue
+		}
+		if row.pending {
+			summary.PendingAccounts++
+		} else if row.available {
+			summary.AvailableAccounts++
+		} else {
+			summary.UnavailableAccounts++
+		}
+		weight := float64(row.sampleCount)
+		if weight <= 0 {
+			continue
+		}
+		samples += weight
+		successes += row.successRate * weight
+		if row.ttftP50MS != nil {
+			ttftWeighted += *row.ttftP50MS * weight
+			ttftSamples += weight
+		}
+		if row.latencyP95 != nil {
+			latencyWeighted += *row.latencyP95 * weight
+			latencySamples += weight
+		}
+	}
+	if samples > 0 {
+		summary.SuccessRate = successes / samples
+	}
+	if ttftSamples > 0 {
+		value := ttftWeighted / ttftSamples
+		summary.TTFTP50MS = &value
+	}
+	if latencySamples > 0 {
+		value := latencyWeighted / latencySamples
+		summary.LatencyP95MS = &value
+	}
+	return summary
 }
 
 func accountMonitorEvidence(

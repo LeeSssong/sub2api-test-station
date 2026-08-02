@@ -68,13 +68,21 @@
             <p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(globalHealth.success_rate) }} · TTFT {{ formatMs(globalHealth.ttft_p50_ms) }} · P95 {{ formatMs(globalHealth.latency_p95_ms) }}</p>
           </div>
         </div>
-        <div v-if="globalLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="global-lifetime-ledger">
-          <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
-          <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
-          <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
-          <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
-          <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
+        <div v-if="globalLifetimeLedger" class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400" data-test="global-lifetime-ledger">
+            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
+            <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
+            <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
+            <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
+            <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
+          </div>
+          <p v-if="hasUnattributedLedger(globalLifetimeLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="global-lifetime-unattributed-group-ledger">
+            历史累计未归属分组：{{ globalLifetimeLedger.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLifetimeLedger.unattributed_user_charge, globalLifetimeLedger.currency) }} · 成本 {{ formatMoney(globalLifetimeLedger.unattributed_upstream_cost, globalLifetimeLedger.currency) }}（已计入全站，不计入任何分组）
+          </p>
         </div>
+        <p v-if="hasUnattributedLedger(globalLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="unattributed-group-ledger">
+          今日未归属分组：{{ globalLedger?.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLedger?.unattributed_user_charge, globalLedger?.currency) }} · 成本 {{ formatMoney(globalLedger?.unattributed_upstream_cost, globalLedger?.currency) }}（已计入全站，不计入任何分组）
+        </p>
       </section>
 
       <section v-if="sortedGroups.length" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
@@ -393,6 +401,16 @@ const emptyHealth: AccountMonitorHealthSummary = {
 }
 const globalHealth = computed(() => projection.value?.health ?? emptyHealth)
 const groupHealth = computed(() => activeGroup.value?.health ?? emptyHealth)
+function hasUnattributedLedger(summary?: ReconciliationSummary | null): boolean {
+  if (!summary) return false
+  const hasAmount = (value: string | number | null | undefined) => {
+    const amount = Number(value)
+    return Number.isFinite(amount) && amount !== 0
+  }
+  return Number(summary.unattributed_attempts) > 0
+    || hasAmount(summary.unattributed_user_charge)
+    || hasAmount(summary.unattributed_upstream_cost)
+}
 
 function displayStatus(account: AccountMonitorAccount): string {
   if (account.stale) return 'stale'

@@ -133,6 +133,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 
 	observedAt := time.Now().UTC()
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
+	schedulableIDs := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
 		aggregate := aggregates[account.ID]
 		row := AccountMonitorAccount{
@@ -172,9 +173,17 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		}
 		row.UsageWindows = s.loadUsageWindows(ctx, account.ID)
 		rows = append(rows, row)
+		if account.Schedulable {
+			schedulableIDs = append(schedulableIDs, account.ID)
+		}
 	}
 	groups = s.projectGroupQualityEvidence(ctx, groups, accounts, rows, aggregates, latest, settings, observedAt)
 	health := summarizeAccountMonitorHealth(rows)
+	if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok {
+		if aggregate, err := provider.LoadAggregate(ctx, schedulableIDs, observedAt.Add(-AccountMonitorHistoryDays*24*time.Hour)); err == nil {
+			health = applyAccountMonitorAggregate(health, aggregate)
+		}
+	}
 
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion,
@@ -207,11 +216,6 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 	}
 	for i := range groups {
 		group := &groups[i]
-		if !group.CustomerVisible {
-			group.OperationalState = "closed"
-			group.Accounts = nil
-			continue
-		}
 		members := make([]int64, 0)
 		for _, account := range accounts {
 			if accountMonitorAccountInGroup(account, group.ID) {
@@ -226,6 +230,20 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				groupAggregates = loaded
 				groupEvidenceAvailable = true
 			}
+		}
+		combinedAggregate := AccountMonitorAggregate{}
+		combinedAggregateAvailable := false
+		if provider, ok := s.repo.(AccountMonitorCombinedAggregateRepository); ok {
+			loaded, err := provider.LoadGroupAggregate(ctx, group.ID, now.Add(-AccountMonitorGroupEvidenceWindow))
+			if err == nil {
+				combinedAggregate = loaded
+				combinedAggregateAvailable = true
+			}
+		}
+		if !group.CustomerVisible && (!combinedAggregateAvailable || combinedAggregate.ErrorCount == 0) {
+			group.OperationalState = "closed"
+			group.Accounts = nil
+			continue
 		}
 
 		projected := make([]AccountMonitorGroupAccount, 0, len(members))
@@ -285,9 +303,10 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 		}
 		group.Accounts = projected
 		group.Health = summarizeGroupHealth(projected)
-		if len(projected) == 0 {
-			group.OperationalState = "unavailable"
-		} else if rank > 0 {
+		if combinedAggregateAvailable {
+			group.Health = applyAccountMonitorAggregate(group.Health, combinedAggregate)
+		}
+		if group.Health.AvailableAccounts > 0 {
 			group.OperationalState = "operational"
 		} else {
 			group.OperationalState = "unavailable"
@@ -355,7 +374,7 @@ func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealt
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
 			schedulable: row.Schedulable,
-			available:   row.Eligible && row.LatestStatus == "success" && row.Evidence.Source != "stale",
+			available:   row.Eligible && row.LatestStatus == "success" && row.Evidence.Source != "stale" && row.Evidence.SuccessRate > 0,
 			pending:     row.Evidence.Source == "stale" || row.CheckedAt == nil,
 			sampleCount: row.SampleCount,
 			successRate: row.SuccessRate,
@@ -364,6 +383,16 @@ func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealt
 		})
 	}
 	return summarizeHealthSamples(samples)
+}
+
+func applyAccountMonitorAggregate(summary AccountMonitorHealthSummary, aggregate AccountMonitorAggregate) AccountMonitorHealthSummary {
+	if aggregate.SampleCount == 0 {
+		return summary
+	}
+	summary.SuccessRate = aggregate.SuccessRate
+	summary.TTFTP50MS = aggregate.TTFTP50MS
+	summary.LatencyP95MS = aggregate.LatencyP95MS
+	return summary
 }
 
 type accountMonitorHealthSample struct {

@@ -33,8 +33,11 @@ type accountMonitorRepoStub struct {
 	weights            map[int64]AccountMonitorScoreWeights
 	aggregates         map[int64]AccountMonitorAggregate
 	groupAggregates    map[int64]map[int64]AccountMonitorAggregate
+	aggregate          AccountMonitorAggregate
+	groupAggregate     map[int64]AccountMonitorAggregate
 	groupAggregatesErr error
 	latest             map[int64]AccountMonitorLatest
+	aggregateIDs       []int64
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -57,6 +60,15 @@ func (s *accountMonitorRepoStub) ListGroupAggregates(_ context.Context, groupID 
 		return nil, s.groupAggregatesErr
 	}
 	return s.groupAggregates[groupID], nil
+}
+
+func (s *accountMonitorRepoStub) LoadAggregate(_ context.Context, accountIDs []int64, _ time.Time) (AccountMonitorAggregate, error) {
+	s.aggregateIDs = append([]int64(nil), accountIDs...)
+	return s.aggregate, nil
+}
+
+func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID int64, _ time.Time) (AccountMonitorAggregate, error) {
+	return s.groupAggregate[groupID], nil
 }
 
 func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64]AccountMonitorLatest, error) {
@@ -491,6 +503,112 @@ func TestAccountMonitorClosedGroupWithNoAccountsIsNotAFalseRedFailure(t *testing
 	}
 	if len(page.Groups) != 1 || page.Groups[0].OperationalState != "closed" || len(page.Groups[0].Accounts) != 0 {
 		t.Fatalf("closed group = %#v", page.Groups)
+	}
+}
+
+func TestAccountMonitorHealthUsesExactCombinedPercentiles(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	accounts := []Account{
+		{ID: 81, Name: "fast", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{9}},
+		{ID: 82, Name: "slow", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{9}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 9, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			81: {SampleCount: 90, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastCheckedAt: &now},
+			82: {SampleCount: 10, SuccessRate: 0.5, TTFTP50MS: floatPtr(900), LatencyP95MS: floatPtr(1500), LastCheckedAt: &now},
+		},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{9: {
+			81: {SampleCount: 90, SuccessRate: 1, TTFTP50MS: floatPtr(120), LatencyP95MS: floatPtr(240), LastCheckedAt: &now},
+			82: {SampleCount: 10, SuccessRate: 0.5, TTFTP50MS: floatPtr(800), LatencyP95MS: floatPtr(1400), LastCheckedAt: &now},
+		}},
+		aggregate: AccountMonitorAggregate{SampleCount: 100, SuccessRate: 0.95, TTFTP50MS: floatPtr(110), LatencyP95MS: floatPtr(260)},
+		groupAggregate: map[int64]AccountMonitorAggregate{
+			9: {SampleCount: 100, SuccessRate: 0.9, TTFTP50MS: floatPtr(130), LatencyP95MS: floatPtr(300)},
+		},
+		latest: map[int64]AccountMonitorLatest{81: {Status: "success", CheckedAt: now}, 82: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Health.TTFTP50MS == nil || *page.Health.TTFTP50MS != 110 || page.Health.LatencyP95MS == nil || *page.Health.LatencyP95MS != 260 {
+		t.Fatalf("global percentiles must come from the combined request set: %#v", page.Health)
+	}
+	groupHealth := page.Groups[0].Health
+	if groupHealth.TTFTP50MS == nil || *groupHealth.TTFTP50MS != 130 || groupHealth.LatencyP95MS == nil || *groupHealth.LatencyP95MS != 300 {
+		t.Fatalf("group percentiles must come from the combined request set: %#v", groupHealth)
+	}
+}
+
+func TestAccountMonitorCombinedHealthExcludesPausedAccounts(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	accounts := []Account{
+		{ID: 91, Name: "paused", Status: StatusActive, Schedulable: false, RateMultiplier: &rate},
+		{ID: 92, Name: "active", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates: map[int64]AccountMonitorAggregate{
+			91: {SampleCount: 100, SuccessRate: 0.1, LastCheckedAt: &now},
+			92: {SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		aggregate: AccountMonitorAggregate{SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now},
+		latest:    map[int64]AccountMonitorLatest{92: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.aggregateIDs) != 1 || repo.aggregateIDs[0] != 92 || page.Health.SuccessRate != 1 {
+		t.Fatalf("combined health scope includes paused accounts: ids=%v health=%#v", repo.aggregateIDs, page.Health)
+	}
+}
+
+func TestAccountMonitorClosedGroupWithRequestsSurfacesUnavailableState(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	account := Account{ID: 89, Name: "failed", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{88}}
+	repo := &accountMonitorRepoStub{
+		settings:       AccountMonitorSettings{IntervalSeconds: 300},
+		groups:         []AccountMonitorGroup{{ID: 88, Name: "closed", RateMultiplier: 1, CustomerVisible: false}},
+		aggregates:     map[int64]AccountMonitorAggregate{89: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now}},
+		groupAggregate: map[int64]AccountMonitorAggregate{88: {SampleCount: 1, ErrorCount: 1, SuccessRate: 0, LastCheckedAt: &now}},
+		latest:         map[int64]AccountMonitorLatest{89: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := page.Groups[0]
+	if group.OperationalState != "unavailable" || len(group.Accounts) != 1 || group.Health.UnavailableAccounts != 1 {
+		t.Fatalf("closed group with requests must surface its genuine failure: %#v", group)
+	}
+}
+
+func TestAccountMonitorClosedGroupWithSuccessfulTrafficRemainsClosed(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	account := Account{ID: 90, Name: "healthy", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{88}}
+	repo := &accountMonitorRepoStub{
+		settings:   AccountMonitorSettings{IntervalSeconds: 300},
+		groups:     []AccountMonitorGroup{{ID: 88, Name: "closed", RateMultiplier: 1, CustomerVisible: false}},
+		aggregates: map[int64]AccountMonitorAggregate{90: {SampleCount: 4, SuccessCount: 4, SuccessRate: 1, LastCheckedAt: &now}},
+		groupAggregate: map[int64]AccountMonitorAggregate{
+			88: {SampleCount: 4, SuccessCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{90: {Status: "failed", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := page.Groups[0]
+	if group.OperationalState != "closed" || len(group.Accounts) != 0 {
+		t.Fatalf("closed group with successful traffic must remain suppressed: %#v", group)
 	}
 }
 

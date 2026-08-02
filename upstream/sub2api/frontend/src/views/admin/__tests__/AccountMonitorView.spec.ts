@@ -231,10 +231,44 @@ describe('admin account monitor view', () => {
     expect(summary.text()).not.toContain('$1.00')
   })
 
+  it('discloses global ledger amounts that are not attributed to any group', async () => {
+    reconciliationOperations.mockResolvedValue({
+      total_attempts: 10,
+      matched_attempts: 10,
+      pending_attempts: 0,
+      conflict_attempts: 0,
+      coverage_known: true,
+      coverage_ratio: 1,
+      upstream_cost: '1',
+      user_charge: '2',
+      paper_profit: '1',
+      currency: 'EUR',
+      observed_at: '2026-07-25T08:01:00Z',
+      unattributed_attempts: 2,
+      unattributed_user_charge: '0.50',
+      unattributed_upstream_cost: '0.10',
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const note = wrapper.get('[data-test="unattributed-group-ledger"]')
+    expect(note.text()).toContain('未归属分组')
+    expect(note.text()).toContain('2 笔请求')
+    expect(note.text()).toContain('营收 €0.50')
+    expect(note.text()).toContain('成本 €0.10')
+  })
+
+  it('hides the unattributed-group note when the ledger has no unattributed amounts', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="unattributed-group-ledger"]').exists()).toBe(false)
+  })
+
   it('shows historical cumulative economics and scoped service health by default', async () => {
     reconciliationOperations.mockImplementation((params: { group_id?: number; start?: string }) => {
       if (params.start && params.group_id === 3) return Promise.resolve({ total_attempts: 50, matched_attempts: 50, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '10', user_charge: '20', paper_profit: '10', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-      if (params.start) return Promise.resolve({ total_attempts: 100, matched_attempts: 100, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '30', user_charge: '60', paper_profit: '30', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
+      if (params.start) return Promise.resolve({ total_attempts: 100, matched_attempts: 100, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '30', user_charge: '60', paper_profit: '30', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z', unattributed_attempts: 4, unattributed_user_charge: '8', unattributed_upstream_cost: '3' })
       return Promise.resolve({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
     })
     const wrapper = mountView()
@@ -242,6 +276,7 @@ describe('admin account monitor view', () => {
 
     expect(reconciliationOperations).toHaveBeenCalledWith(expect.objectContaining({ start: '1970-01-01T00:00:00.000Z' }))
     expect(wrapper.get('[data-test="global-lifetime-ledger"]').text()).toContain('€60.00')
+    expect(wrapper.get('[data-test="global-lifetime-unattributed-group-ledger"]').text()).toContain('历史累计未归属分组：4 笔请求')
     expect(wrapper.get('[data-test="group-lifetime-ledger"]').text()).toContain('€20.00')
     expect(wrapper.get('[data-test="global-health-summary"]').text()).toContain('成功率 90.0%')
     expect(wrapper.get('[data-test="group-health-summary"]').text()).toContain('TTFT 100 ms')

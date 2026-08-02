@@ -11,6 +11,9 @@ export interface ReconciliationSummary {
   user_charge: string | number
   paper_profit: string | number
   profit_margin?: string | number | null
+  unattributed_attempts?: number
+  unattributed_user_charge?: string | number
+  unattributed_upstream_cost?: string | number
   currency: string
   observed_at: string
 }

@@ -250,8 +250,10 @@ describe('admin account monitor view', () => {
 
   it('keeps the newest group operations response when tabs are switched quickly', async () => {
     let resolveProduction: ((value: Record<string, unknown>) => void) | undefined
-    reconciliationOperations.mockImplementation((params: { group_id?: number }) => {
-      if (params.group_id === 3) return new Promise((resolve) => { resolveProduction = resolve })
+    reconciliationOperations.mockImplementation((params: { group_id?: number; account_id?: number }) => {
+      if (params.group_id === 3 && params.account_id === undefined) {
+        return new Promise((resolve) => { resolveProduction = resolve })
+      }
       if (params.group_id === 1) return Promise.resolve({ total_attempts: 2, matched_attempts: 2, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '2', user_charge: '4', paper_profit: '2', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
       return Promise.resolve({ total_attempts: 1, matched_attempts: 1, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
     })

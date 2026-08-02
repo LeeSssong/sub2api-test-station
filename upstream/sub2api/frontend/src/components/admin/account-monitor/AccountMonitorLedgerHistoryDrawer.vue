@@ -17,9 +17,9 @@
             <div v-for="item in items" :key="item.day" class="rounded-lg border border-slate-200 p-3 dark:border-slate-800 dark:bg-slate-900/50">
               <div class="flex items-center justify-between text-sm font-medium text-slate-900 dark:text-white"><span>{{ item.day }}</span><span class="font-mono">{{ item.currency }}</span></div>
               <div class="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <LedgerCell label="成本" :value="formatMoney(item.upstream_cost)" />
-                <LedgerCell label="计费" :value="formatMoney(item.user_charge)" />
-                <LedgerCell label="利润" :value="formatMoney(item.paper_profit)" />
+                <LedgerCell label="成本" :value="formatMoney(item.upstream_cost, item.currency)" />
+                <LedgerCell label="计费" :value="formatMoney(item.user_charge, item.currency)" />
+                <LedgerCell label="利润" :value="formatMoney(item.paper_profit, item.currency)" />
               </div>
             </div>
           </div>
@@ -59,9 +59,17 @@ async function load() {
   }
 }
 watch(() => props.show, (show) => { if (show) void load() }, { immediate: true })
-function formatMoney(value: string | number | null | undefined): string {
+function formatMoney(value: string | number | null | undefined, currency?: string | null): string {
   const amount = Number(value)
-  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : '—'
+  if (!Number.isFinite(amount)) return '—'
+  try {
+    if (currency) {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+    }
+    return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+  } catch {
+    return amount.toFixed(2)
+  }
 }
 const LedgerCell = defineComponent({
   props: { label: { type: String, required: true }, value: { type: String, required: true } },

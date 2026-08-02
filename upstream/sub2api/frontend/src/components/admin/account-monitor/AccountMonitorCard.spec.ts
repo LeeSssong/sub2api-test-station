@@ -7,7 +7,7 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key }),
+    useI18n: () => ({ t: (key: string) => key === 'admin.accountMonitor.status.paused' ? '暂停' : key }),
   }
 })
 
@@ -18,6 +18,10 @@ const account = {
   account_type: 'oauth',
   status: 'active',
   schedulable: true,
+  management_state: 'enabled',
+  service_state: 'available',
+  group_eligibility: 'eligible',
+  monitor_bucket: 'available',
   group_ids: [3],
   group_names: ['Production'],
   model_id: 'gpt-4o-mini',
@@ -132,6 +136,62 @@ describe('AccountMonitorCard', () => {
 
     expect(wrapper.text()).toContain('已关闭')
     expect(wrapper.classes()).not.toContain('border-red-500')
+  })
+
+  it('shows paused accounts as 暂停 without a failed service badge', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          status: 'paused',
+          schedulable: false,
+          management_state: 'paused',
+          service_state: 'not_monitored',
+          group_eligibility: 'not_applicable',
+          monitor_bucket: 'paused',
+          latest_status: 'failed',
+          eligible: false,
+          checked_at: null,
+          latest: null,
+        },
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('暂停')
+    expect(wrapper.text()).not.toContain('admin.accountMonitor.status.failed')
+    expect(wrapper.classes()).not.toContain('border-red-500')
+  })
+
+  it('shows service-available accounts as healthy even when cost-ineligible', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          service_state: 'available',
+          group_eligibility: 'cost_ineligible',
+          latest_status: 'failed',
+          eligible: false,
+        },
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('admin.accountMonitor.status.success')
+    expect(wrapper.text()).not.toContain('admin.accountMonitor.status.failed')
+    expect(wrapper.classes()).toContain('border-emerald-500')
   })
 
   it('reuses account-management today stats and usage-window components', () => {

@@ -37,6 +37,8 @@ export default {
       failed: 'Failed',
       balance_exhausted: 'Balance exhausted',
       stale: 'Stale',
+      pending: 'Pending',
+      paused: 'Paused',
       unavailable: 'No result',
       noHistory: 'No history',
     },

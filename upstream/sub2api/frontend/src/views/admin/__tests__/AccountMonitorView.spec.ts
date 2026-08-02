@@ -330,7 +330,7 @@ describe('admin account monitor view', () => {
           status: 'paused',
           schedulable: false,
           management_state: 'paused',
-          service_state: 'unavailable',
+          service_state: 'not_monitored',
           group_eligibility: 'not_applicable',
           monitor_bucket: 'paused',
           group_ids: [3],

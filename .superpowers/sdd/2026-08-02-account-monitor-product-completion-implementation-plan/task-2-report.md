@@ -54,3 +54,61 @@ pnpm run typecheck
 
 - 无功能性 concern。
 - 验证环境仍提示 pnpm overrides 配置弃用、Node localStorage experimental 和 Browserslist 数据过期；这些均为既有非阻塞告警，未在本任务范围内修改。
+
+## Fix Round 1（卡片服务状态契约）
+
+### RED 证据
+
+命令：
+
+```sh
+pnpm exec vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts
+```
+
+工作目录：`upstream/sub2api/frontend`
+
+结果：失败，12 个测试中 2 个失败、10 个通过。新增的真实 `AccountMonitorCard` 渲染用例确认旧逻辑错误读取 `eligible` 与 `latest_status`：
+
+- 暂停账号（`management_state=paused`、`service_state=not_monitored`）未显示“暂停”，实际显示“暂无结果”。
+- 服务可用但成本不合格的账号（`service_state=available`、`group_eligibility=cost_ineligible`）实际显示失败，未显示正常。
+
+### GREEN 证据
+
+命令：
+
+```sh
+pnpm exec vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts
+pnpm exec vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts src/components/admin/account-monitor/AccountMonitorFilters.spec.ts && pnpm run typecheck
+```
+
+工作目录：`upstream/sub2api/frontend`
+
+结果：卡片目标测试 12/12 通过。完整目标命令中 3 个测试文件、29 个测试全部通过；`vue-tsc --noEmit` 退出码为 0。
+
+### 文件清单
+
+- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.vue`
+  - 服务徽标优先读取 `management_state`；暂停账号显示“暂停”。
+  - 启用账号仅按 `service_state` 映射正常、失败、待确认和暂无结果，不再将 `group_eligibility`、`eligible` 或 `latest_status` 当作服务健康。
+- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts`
+  - 新增真实卡片渲染覆盖：暂停状态与服务可用/成本不合格状态。
+- `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
+  - 将暂停夹具改为后端契约要求的 `service_state=not_monitored`。
+- `upstream/sub2api/frontend/src/i18n/locales/zh/admin/index.ts`
+  - 新增中文“暂停”“待确认”状态文案。
+- `upstream/sub2api/frontend/src/i18n/locales/en/admin/index.ts`
+  - 为非中文 locale 补齐同一状态键。
+- `docs/project/project-progress.md`
+  - 按项目总账规则登记本轮本地修复为“进行中”。
+
+### 自审
+
+- 暂停优先于分组关闭和旧探测字段，卡片可见中文“暂停”，且不显示失败红框。
+- `group_eligibility=cost_ineligible` 不再影响服务徽标；`service_state=available` 显示正常和绿色边框。
+- 未改 dispatch priority、路由、评分端点、摘要布局或 Task 3 的五分区布局。
+- `git diff --check` 无输出。
+
+### Concerns
+
+- 本轮仅完成本地验证，尚未推送、部署或线上验证，因此项目总账保持“进行中”。
+- 验证环境仍有 pnpm overrides 配置弃用、Node localStorage experimental 和 Browserslist 数据过期告警，均为既有非阻塞告警，未在本任务范围内修改。

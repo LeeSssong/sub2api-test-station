@@ -37,6 +37,8 @@ export default {
       failed: '失败',
       balance_exhausted: '余额不足',
       stale: '数据过期',
+      pending: '待确认',
+      paused: '暂停',
       unavailable: '暂无结果',
       noHistory: '暂无历史',
     },

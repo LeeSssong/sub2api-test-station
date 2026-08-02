@@ -140,12 +140,12 @@ const usageAccount = computed(() => ({
 } as Account))
 
 const status = computed(() => {
+  if (props.account.management_state === 'paused') return 'paused'
   if (props.groupOperationalState === 'closed') return 'closed'
-  if (!props.account.checked_at && !props.account.latest) return 'unavailable'
-  if (props.account.error_code === 'balance_exhausted') return 'balance_exhausted'
-  if (props.account.stale || props.account.evidence?.source === 'stale') return 'stale'
-  if (props.account.eligible === false || props.account.latest_status !== 'success') return 'failed'
-  return props.account.latest_status || 'unavailable'
+  if (props.account.service_state === 'available') return 'success'
+  if (props.account.service_state === 'unavailable') return 'failed'
+  if (props.account.service_state === 'pending') return 'pending'
+  return 'unavailable'
 })
 
 const statusLabel = computed(() => status.value === 'closed' ? '已关闭' : t(`admin.accountMonitor.status.${status.value}`))
@@ -161,16 +161,14 @@ const multiplierHint = computed(() => multiplierStatusHint(props.account.multipl
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300': status.value === 'success',
   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': status.value === 'failed',
-  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': status.value === 'balance_exhausted',
-  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300': status.value === 'stale',
-  'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300': status.value === 'unavailable' || status.value === 'closed',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300': status.value === 'pending',
+  'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300': status.value === 'unavailable' || status.value === 'closed' || status.value === 'paused',
 }))
 const statusBorderClass = computed(() => ({
   'border-emerald-500': status.value === 'success',
   'border-red-500': status.value === 'failed',
-  'border-orange-500': status.value === 'balance_exhausted',
-  'border-amber-500': status.value === 'stale',
-  'border-slate-300 dark:border-slate-700': status.value === 'unavailable' || status.value === 'closed',
+  'border-amber-500': status.value === 'pending',
+  'border-slate-300 dark:border-slate-700': status.value === 'unavailable' || status.value === 'closed' || status.value === 'paused',
 }))
 const profitMarginLabel = computed(() => {
   if (!props.operations?.coverage_known || Number(props.operations?.pending_attempts ?? 0) > 0) return '待对账'

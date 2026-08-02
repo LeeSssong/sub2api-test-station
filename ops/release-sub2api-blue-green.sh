@@ -10,6 +10,7 @@ fail() {
 
 mode=''
 evidence=''
+maintenance_authorized=false
 while (($#)); do
   case "$1" in
     --mode)
@@ -24,11 +25,17 @@ while (($#)); do
       evidence=$2
       shift 2
       ;;
+		--maintenance-authorized)
+			[[ "$maintenance_authorized" == false ]] || fail '--maintenance-authorized may be supplied once'
+			maintenance_authorized=true
+			shift
+			;;
     *) fail "unknown argument: $1" ;;
   esac
 done
 
 [[ "$mode" == rehearsal || "$mode" == production ]] || fail '--mode must be rehearsal or production'
+[[ "$maintenance_authorized" == false || "$mode" == production ]] || fail '--maintenance-authorized is only valid in production mode'
 [[ "$evidence" == /* && -f "$evidence" && -r "$evidence" && ! -L "$evidence" ]] \
   || fail '--evidence must be an absolute readable non-symlink file'
 evidence_parent=$(dirname "$evidence")
@@ -183,12 +190,19 @@ host_deadline_epoch=$(ruby -e 'print Time.now.utc.to_i + Integer(ARGV.fetch(0))'
   || fail 'could not calculate host deadline'
 [[ "$host_deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail 'host deadline is invalid'
 set +e
+host_args=(
+  bash "$host_executor" --mode "$mode" --image "$immutable_image"
+  --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$source_tree"
+  --migrations-hash "$migrations_hash" --deadline-epoch "$host_deadline_epoch"
+)
+if [[ "$maintenance_authorized" == true ]]; then
+  host_args+=(--maintenance-authorized --maintenance-from-hash \
+    176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0)
+fi
 host_output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$host_timeout" "$ssh_bin" \
   -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
   -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
-  bash "$host_executor" --mode "$mode" --image "$immutable_image" \
-  --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$source_tree" \
-  --migrations-hash "$migrations_hash" --deadline-epoch "$host_deadline_epoch")
+  "${host_args[@]}")
 host_status=$?
 set -e
 check_budget

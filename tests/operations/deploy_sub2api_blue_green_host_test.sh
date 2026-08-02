@@ -190,12 +190,14 @@ JSON
   *' config --format json')
     role=api
     [[ "$scenario" == candidate_role ]] && role=worker
-    if [[ "${FAKE_CANDIDATE_SLOT:-green}" == blue ]]; then
-      printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
-        "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}"
-    else
-      printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
-        "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${PREVIOUS_IMAGE_FOR_FAKE:?}"
+		if [[ "${FAKE_CANDIDATE_SLOT:-green}" == blue ]]; then
+		  worker_image=${EXPECTED_WORKER_IMAGE:-${PREVIOUS_IMAGE_FOR_FAKE:?}}
+		  printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
+		    "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${EXPECTED_IMAGE:?}" "$role" "$worker_image"
+		else
+		  worker_image=${EXPECTED_WORKER_IMAGE:-${PREVIOUS_IMAGE_FOR_FAKE:?}}
+		  printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
+		    "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}" "$worker_image"
     fi
     ;;
   *' ps -q postgres') printf 'postgres-id\n' ;;
@@ -314,6 +316,12 @@ EOF
 
 run_executor() {
 	local executor_mode=${EXECUTOR_MODE:-production}
+  local expected_worker_image=$PREVIOUS_IMAGE
+  local maintenance_args=()
+  if [[ "${MAINTENANCE_MODE:-false}" == true ]]; then
+    expected_worker_image=$IMAGE
+    maintenance_args=(--maintenance-authorized --maintenance-from-hash "${MAINTENANCE_FROM_HASH:?}")
+  fi
   env \
     PATH="$CASE_DIR/bin:$PATH" \
     BASH_ENV="$CASE_DIR/kill-hook.bash" \
@@ -324,6 +332,7 @@ run_executor() {
     EXPECTED_SOURCE_TREE="$SOURCE_TREE" \
     EXPECTED_TESTED_TREE="$TESTED_TREE" \
     EXPECTED_MIGRATIONS_HASH="$MIGRATIONS_HASH" \
+    EXPECTED_WORKER_IMAGE="$expected_worker_image" \
     PREVIOUS_IMAGE_FOR_FAKE="$PREVIOUS_IMAGE" \
     DEPLOY_ROOT="$CASE_DIR/deploy" \
     BASE_COMPOSE="$CASE_DIR/compose.yaml" \
@@ -349,7 +358,8 @@ run_executor() {
       --source-tree "$SOURCE_TREE" \
 		--tested-tree "$TESTED_TREE" \
 		--migrations-hash "$MIGRATIONS_HASH" \
-		--deadline-epoch "${RELEASE_DEADLINE_EPOCH:-1785515400}"
+		--deadline-epoch "${RELEASE_DEADLINE_EPOCH:-1785515400}" \
+    "${maintenance_args[@]}"
 }
 
 run_rehearsal_executor() {
@@ -608,6 +618,55 @@ test_downtime_gates() {
     MIGRATIONS_HASH=$(printf 'd%.0s' {1..64})
     unset FAKE_DISK_KB FAKE_DB_HEADROOM || true
   done
+}
+
+test_authorized_maintenance_transition() {
+  local old_hash=176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0
+  local new_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+
+  setup_case maintenance_unauthorized
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  expect_failure maintenance_unauthorized run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'unauthorized migration transition was not gated'
+  assert_no_mutation maintenance_unauthorized
+
+  setup_case maintenance_illegal_set
+  write_meminfo
+  MIGRATIONS_HASH=$(printf '8%.0s' {1..64})
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_illegal_set run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'illegal migration set was not gated'
+  assert_no_mutation maintenance_illegal_set
+
+  setup_case maintenance_success
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "authorized maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance path did not stop API and worker'
+  ! grep -Eq 'compose .* stop .*postgres|compose .* stop .*redis|compose .* stop .*caddy' "$EVENT_LOG" \
+    || fail 'maintenance path stopped a shared service'
+
+  setup_case maintenance_rollback
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_rollback run_executor \
+    FAKE_SCENARIO=candidate_health_failure
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance rollback did not enter maintenance path'
+  grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" || fail 'maintenance rollback did not restore active API'
+}
+
+test_caddy_reconciliation_route() {
+  grep -q '/relay-ops/api/reconciliation/\*' "$ROOT/infra/Caddyfile" \
+    || fail 'Caddy does not route reconciliation API to relay-ops'
 }
 
 test_success_order_and_atomic_records() {
@@ -965,6 +1024,9 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: fail-closed validation harness\n'
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
+    test_authorized_maintenance_transition
+    test_caddy_reconciliation_route
+    printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
     printf 'PASS: successful blue-green command order\n'
     test_two_slot_rehearsal_cycles
@@ -1006,6 +1068,10 @@ case "${ONLY_TEST:-all}" in
 		test_final_review_live_route_mismatch
 		test_final_review_restart_stable_route
 		test_final_review_host_deadline
+		;;
+	maintenance)
+		test_authorized_maintenance_transition
+		test_caddy_reconciliation_route
 		;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

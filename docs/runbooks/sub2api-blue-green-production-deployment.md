@@ -41,6 +41,77 @@ bash ops/release-sub2api-blue-green.sh \
   --evidence "$SUB2API_TEST_EVIDENCE"
 ```
 
+## Authorized additive-migration maintenance release
+
+Use this path only after the host preflight has emitted `downtime_required=true`
+for `migration_set_changed` and the user has explicitly authorized
+`允许停机部署`. The controller requires `--maintenance-authorized`; the host
+executor additionally requires `--maintenance-from-hash` to equal the active
+hash below. No other migration transition is accepted:
+
+```text
+from 176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0
+to   c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+files 188_account_monitor_group_score_weights.sql
+       193_usage_log_actual_response_model.sql
+```
+
+Invoke the same controller with the explicit maintenance flag:
+
+```bash
+bash ops/release-sub2api-blue-green.sh \
+  --mode production \
+  --evidence "$SUB2API_TEST_EVIDENCE" \
+  --maintenance-authorized
+```
+
+The host executor enforces a bounded (default 300-second, maximum 600-second)
+unavailable window, stops only the API and worker services, starts the candidate
+worker to apply the additive migrations, then restores the API route through the
+existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
+recreated. On any failure, the existing partial record and rollback path restore
+the previous API/worker images and Caddy upstream; preserve the `.partial` and
+failure record if rollback itself fails.
+
+Exact manual recovery command (only after reviewing the preserved partial record):
+
+```bash
+sudo -n env RELEASE_PRELOADED_IMAGE=true \
+  bash /usr/local/libexec/deploy-sub2api-blue-green-host.sh \
+  --mode production --image '<previous-immutable-image>' \
+  --source-commit '<previous-40-hex-commit>' --source-tree '<previous-40-hex-tree>' \
+  --tested-tree '<previous-40-hex-tree>' \
+  --migrations-hash 176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0 \
+  --deadline-epoch "$(date -u +%s -d '+600 seconds')"
+```
+
+Do not edit `RELEASE_STATE`, skip hash checks, or stop shared services during
+recovery.
+
+When the Caddy route file itself changes, stage it in the reviewed deploy root,
+then validate and reload the existing container atomically (never recreate it):
+
+```bash
+cd "$DEPLOY_ROOT"
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+sudo -n cp -a Caddyfile "Caddyfile.$stamp.bak"
+caddy_id=$(docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" ps -q caddy)
+docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" exec -T \
+  -e SUB2API_ACTIVE_UPSTREAM="$(jq -r .active_upstream "$RELEASE_STATE")" \
+  caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" exec -T \
+  -e SUB2API_ACTIVE_UPSTREAM="$(jq -r .active_upstream "$RELEASE_STATE")" \
+  caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+test "$(docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" ps -q caddy)" = "$caddy_id"
+```
+
+If validation or reload fails, restore `Caddyfile.$stamp.bak`, validate/reload
+again, and retain the backup and command output as recovery evidence.
+
 Do not run this command from this document, substitute guessed values, paste secrets, or run it before authorization. The controller rejects a dirty or mismatched tree. Its 1800-second monotonic budget includes build, push, digest resolution, SSH execution, cutover, and acceptance; each stage is also capped at 600 seconds.
 
 ## First-Topology Bootstrap Gate

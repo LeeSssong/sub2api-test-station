@@ -174,7 +174,7 @@
 	respond @sub2api_restart_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
 
 	@relay_ops_public {
-		path /pricing /relay-ops/static/*
+		path /pricing /relay-ops/static/* /relay-ops/api/reconciliation/*
 	}
 	reverse_proxy @relay_ops_public relay-ops:8100
 

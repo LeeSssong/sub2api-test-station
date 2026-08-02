@@ -20,6 +20,14 @@ source_tree=''
 tested_tree=''
 migrations_hash=''
 deadline_epoch=''
+maintenance_authorized=false
+maintenance_from_hash=''
+
+# The only migration transition permitted by the maintenance path. These
+# hashes cover the complete normalized migration set, so a modified file or
+# any additional migration fails closed before production is stopped.
+readonly MAINTENANCE_OLD_MIGRATIONS_HASH=176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0
+readonly MAINTENANCE_NEW_MIGRATIONS_HASH=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
 
 while (($#)); do
   case "$1" in
@@ -30,11 +38,18 @@ while (($#)); do
     --tested-tree) (($# >= 2)) || fail '--tested-tree requires a value'; [[ -z "$tested_tree" ]] || fail '--tested-tree may be supplied once'; tested_tree=$2; shift 2 ;;
     --migrations-hash) (($# >= 2)) || fail '--migrations-hash requires a value'; [[ -z "$migrations_hash" ]] || fail '--migrations-hash may be supplied once'; migrations_hash=$2; shift 2 ;;
 		--deadline-epoch) (($# >= 2)) || fail '--deadline-epoch requires a value'; [[ -z "$deadline_epoch" ]] || fail '--deadline-epoch may be supplied once'; deadline_epoch=$2; shift 2 ;;
+		--maintenance-authorized) [[ "$maintenance_authorized" == false ]] || fail '--maintenance-authorized may be supplied once'; maintenance_authorized=true; shift ;;
+		--maintenance-from-hash) (($# >= 2)) || fail '--maintenance-from-hash requires a value'; [[ -z "$maintenance_from_hash" ]] || fail '--maintenance-from-hash may be supplied once'; maintenance_from_hash=$2; shift 2 ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
 
 [[ "$mode" == rehearsal || "$mode" == production ]] || fail '--mode must be rehearsal or production'
+[[ "$maintenance_authorized" == false || "$mode" == production ]] || fail '--maintenance-authorized is only valid in production mode'
+[[ -z "$maintenance_from_hash" || "$maintenance_from_hash" =~ ^[a-f0-9]{64}$ ]] || fail '--maintenance-from-hash must be 64 lowercase hex'
+if [[ "$maintenance_authorized" == true ]]; then
+  [[ "$maintenance_from_hash" == "$MAINTENANCE_OLD_MIGRATIONS_HASH" ]] || fail '--maintenance-from-hash must equal the approved active migration hash'
+fi
 [[ "$requested_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail '--image must be an immutable repository sha256 digest'
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ ]] || fail '--source-commit must be 40 lowercase hex'
 [[ "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail '--source-tree must be 40 lowercase hex'
@@ -51,6 +66,14 @@ check_deadline() {
 	local now
 	now=$(date -u +%s) || fail 'release deadline clock failed'
 	[[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline_epoch" ]] || fail 'release exceeded its end-to-end deadline'
+}
+
+check_maintenance_deadline() {
+  [[ -z "$maintenance_deadline_epoch" ]] && return 0
+  local now
+  now=$(date -u +%s) || fail 'maintenance deadline clock failed'
+  [[ "$now" =~ ^[0-9]+$ && "$now" -lt "$maintenance_deadline_epoch" ]] \
+    || fail 'maintenance unavailable window expired'
 }
 
 check_deadline
@@ -217,6 +240,9 @@ cutover_applied=false
 state_persisted=false
 persistence_started=false
 worker_update_started=false
+maintenance_transition=false
+maintenance_stopped=false
+maintenance_deadline_epoch=''
 rollback_completed=false
 failure_reason='unexpected_exit'
 candidate_slot=''
@@ -500,6 +526,9 @@ restore_previous() {
     if [[ "$rollback_ok" == true ]]; then
       compose_rollback=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
         --env-file "$secret_env" --env-file "$rollback_env" -f "$base_compose")
+      if [[ "$maintenance_stopped" == true ]]; then
+        "${compose_rollback[@]}" up --no-deps -d "sub2api-$previous_slot" >/dev/null 2>&1 || rollback_ok=false
+      fi
       "${compose_rollback[@]}" up --no-deps -d --force-recreate sub2api-worker >/dev/null 2>&1 || rollback_ok=false
       [[ "$rollback_ok" == false ]] || wait_for_worker_healthy || rollback_ok=false
       [[ "$rollback_ok" == false ]] || worker_logs_are_acceptable || rollback_ok=false
@@ -739,7 +768,14 @@ state_previous_slot=green
 [[ "$(managed_env_value SUB2API_PREVIOUS_SLOT)" == "$state_previous_slot" ]] || fail 'RELEASE_ENV previous slot does not match state'
 
 if [[ "$migrations_hash" != "$state_migrations_hash" ]]; then
-  gate migration_set_changed 'candidate migration set differs from the active release' 300
+  if [[ "$maintenance_authorized" == true \
+      && "$maintenance_from_hash" == "$state_migrations_hash" \
+      && "$state_migrations_hash" == "$MAINTENANCE_OLD_MIGRATIONS_HASH" \
+      && "$migrations_hash" == "$MAINTENANCE_NEW_MIGRATIONS_HASH" ]]; then
+    maintenance_transition=true
+  else
+    gate migration_set_changed 'candidate migration set differs from the active release' 300
+  fi
 fi
 
 postgres_id=$(resolve_container_id postgres) || gate legacy_topology_bootstrap 'PostgreSQL container identity is not uniquely resolvable' 600
@@ -789,11 +825,14 @@ cp "$release_env" "$candidate_env"
 chmod 0600 "$candidate_env"
 candidate_blue=$state_blue_image
 candidate_green=$state_green_image
+candidate_worker=$state_worker_image
 if [[ "$candidate_slot" == blue ]]; then candidate_blue=$requested_image; else candidate_green=$requested_image; fi
+[[ "$maintenance_transition" == true ]] && candidate_worker=$requested_image
 awk \
-  -v blue="$candidate_blue" -v green="$candidate_green" '
+  -v blue="$candidate_blue" -v green="$candidate_green" -v worker="$candidate_worker" '
   /^SUB2API_BLUE_IMAGE=/ { print "SUB2API_BLUE_IMAGE=" blue; next }
   /^SUB2API_GREEN_IMAGE=/ { print "SUB2API_GREEN_IMAGE=" green; next }
+  /^SUB2API_WORKER_IMAGE=/ { print "SUB2API_WORKER_IMAGE=" worker; next }
   { print }
 ' "$candidate_env" >"$candidate_env.tmp"
 chmod 0600 "$candidate_env.tmp"
@@ -804,7 +843,7 @@ candidate_config=$("${compose_candidate[@]}" config --format json) || gate inval
 active_image=$state_blue_image
 [[ "$state_active_slot" == green ]] && active_image=$state_green_image
 jq -e --arg service "sub2api-$candidate_slot" --arg active_service "sub2api-$state_active_slot" \
-  --arg image "$requested_image" --arg active_image "$active_image" --arg worker_image "$state_worker_image" '
+  --arg image "$requested_image" --arg active_image "$active_image" --arg worker_image "$candidate_worker" '
   .services[$service].image == $image and
   .services[$active_service].image == $active_image and
   .services["sub2api-worker"].image == $worker_image
@@ -814,19 +853,35 @@ jq -e --arg service "sub2api-$candidate_slot" --arg active_service "sub2api-$sta
   .services[$active_service].environment.SERVER_PROCESS_ROLE == "api" and
   .services["sub2api-worker"].environment.SERVER_PROCESS_ROLE == "worker"
 ' <<<"$candidate_config" >/dev/null 2>&1 || gate candidate_role_not_api 'inactive candidate slot is not configured with SERVER_PROCESS_ROLE=api' 600
-rm -f -- "$candidate_env"
-candidate_env=''
-
 partial_path="$record_root/$attempt_id.partial"
 write_partial preflight_complete
 
 failure_reason=candidate_pull_failed
+if [[ "$maintenance_transition" == true ]]; then
+  maintenance_window_seconds=${MAINTENANCE_UNAVAILABLE_SECONDS:-300}
+  [[ "$maintenance_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_window_seconds" -le 600 ]] \
+    || fail 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 600'
+  maintenance_deadline_epoch=$(( $(date -u +%s) + maintenance_window_seconds ))
+  trace_event 'maintenance stop api-worker'
+  "${compose_current[@]}" stop sub2api-blue sub2api-green sub2api-worker >/dev/null
+  maintenance_stopped=true
+  [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired after stopping API and worker'
+  trace_event 'maintenance start worker for migrations'
+  if [[ "$preloaded_image" == false ]]; then
+    "${compose_candidate[@]}" pull sub2api-worker >/dev/null
+  fi
+  "${compose_candidate[@]}" up --no-deps -d --force-recreate sub2api-worker >/dev/null
+  worker_update_started=true
+  wait_for_worker_healthy || fail 'maintenance worker did not become healthy before timeout'
+  [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired while applying migrations'
+fi
 candidate_env="$record_root/.$attempt_id.candidate.env"
 cp "$release_env" "$candidate_env"
 chmod 0600 "$candidate_env"
-awk -v blue="$candidate_blue" -v green="$candidate_green" '
+awk -v blue="$candidate_blue" -v green="$candidate_green" -v worker="$candidate_worker" '
   /^SUB2API_BLUE_IMAGE=/ { print "SUB2API_BLUE_IMAGE=" blue; next }
   /^SUB2API_GREEN_IMAGE=/ { print "SUB2API_GREEN_IMAGE=" green; next }
+  /^SUB2API_WORKER_IMAGE=/ { print "SUB2API_WORKER_IMAGE=" worker; next }
   { print }
 ' "$candidate_env" >"$candidate_env.tmp"
 chmod 0600 "$candidate_env.tmp"
@@ -838,9 +893,11 @@ if [[ "$preloaded_image" == false ]]; then
 fi
 
 failure_reason=candidate_start_failed
+check_maintenance_deadline
 "${compose_candidate[@]}" up --no-deps -d "sub2api-$candidate_slot" >/dev/null
 write_partial candidate_started
 	wait_for_candidate_healthy "sub2api-$candidate_slot" || fail 'candidate did not become healthy before timeout'
+check_maintenance_deadline
 
 write_acceptance_headers
 network_name="${compose_project}_default"
@@ -857,6 +914,7 @@ docker run --rm --network "$network_name" --user 0:0 -v "$gateway_header:/run/ke
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/v1/models" | \
   jq -e '.data | type == "array"' >/dev/null
 write_partial candidate_accepted
+check_maintenance_deadline
 
 failure_reason=caddy_validate_failed
 "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
@@ -874,6 +932,7 @@ write_partial cutover_applied
 failure_reason=public_acceptance_failed
 public_acceptance
 write_partial public_accepted
+check_maintenance_deadline
 
 failure_reason=state_persist_failed
 persistence_started=true

@@ -235,6 +235,12 @@ host_deadline_epoch=$(ruby -e 'print Time.now.utc.to_i + Integer(ARGV.fetch(0))'
 [[ "$host_deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail 'host deadline is invalid'
 set +e
 host_args=(
+  sudo -n
+)
+if [[ "$transport" == preloaded ]]; then
+  host_args+=(env RELEASE_PRELOADED_IMAGE=true)
+fi
+host_args+=(
   bash "$host_executor" --mode "$mode" --image "$immutable_image"
   --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$source_tree"
   --migrations-hash "$migrations_hash" --deadline-epoch "$host_deadline_epoch"

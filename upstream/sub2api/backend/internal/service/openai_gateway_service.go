@@ -233,6 +233,9 @@ type OpenAIForwardResult struct {
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Empty when no mapping was applied (requested model was used as-is).
 	UpstreamModel string
+	// ActualResponseModel is the model reported by the raw upstream response.
+	// It is audit-only and must never be used to rewrite the client response.
+	ActualResponseModel string
 	// UpstreamEndpoint is the actual upstream API path used for this request.
 	// It avoids guessing when one downstream protocol can use multiple upstream endpoints.
 	UpstreamEndpoint string
@@ -268,6 +271,27 @@ type OpenAIForwardResult struct {
 
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool
+}
+
+// UpdateActualResponseModel persists the audit-only model observed in an
+// OpenAI upstream response. Missing values are intentionally a no-op, and
+// repository failures are best-effort so response forwarding is unaffected.
+func (s *OpenAIGatewayService) UpdateActualResponseModel(ctx context.Context, result *OpenAIForwardResult) {
+	if s == nil || s.usageLogRepo == nil || result == nil {
+		return
+	}
+	requestID := strings.TrimSpace(result.RequestID)
+	model := strings.TrimSpace(result.ActualResponseModel)
+	if requestID == "" || model == "" {
+		return
+	}
+	if err := s.usageLogRepo.UpdateActualResponseModelByRequestID(ctx, requestID, model); err != nil {
+		logger.L().With(
+			zap.String("component", "service.openai_gateway"),
+			zap.String("request_id", requestID),
+			zap.String("actual_response_model", model),
+		).Warn("openai.actual_response_model_update_failed", zap.Error(err))
+	}
 }
 
 // SucceededForScheduling reports whether this result is an upstream success

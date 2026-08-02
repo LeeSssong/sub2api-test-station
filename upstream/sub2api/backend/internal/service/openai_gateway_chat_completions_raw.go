@@ -259,6 +259,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	actualResponseModel := ""
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
@@ -302,6 +303,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
+				if actualResponseModel == "" {
+					actualResponseModel = ExtractOpenAIResponseModelSSEEvent("", []byte(trimmedPayload))
+				}
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
@@ -356,16 +360,17 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     serviceTier,
-		Stream:          true,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
+		RequestID:           requestID,
+		Usage:               usage,
+		Model:               originalModel,
+		BillingModel:        billingModel,
+		UpstreamModel:       upstreamModel,
+		ReasoningEffort:     reasoningEffort,
+		ServiceTier:         serviceTier,
+		Stream:              true,
+		Duration:            time.Since(startTime),
+		FirstTokenMs:        firstTokenMs,
+		ActualResponseModel: actualResponseModel,
 	}, nil
 }
 
@@ -443,15 +448,16 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 	_, _ = c.Writer.Write(respBody)
 
 	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     serviceTier,
-		Stream:          false,
-		Duration:        time.Since(startTime),
+		RequestID:           requestID,
+		Usage:               usage,
+		Model:               originalModel,
+		BillingModel:        billingModel,
+		UpstreamModel:       upstreamModel,
+		ReasoningEffort:     reasoningEffort,
+		ServiceTier:         serviceTier,
+		Stream:              false,
+		Duration:            time.Since(startTime),
+		ActualResponseModel: ExtractOpenAIResponseModelJSON(respBody),
 	}, nil
 }
 

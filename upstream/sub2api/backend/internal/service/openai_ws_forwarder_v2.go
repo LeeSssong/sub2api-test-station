@@ -338,6 +338,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
 	responseID := ""
+	actualResponseModel := ""
 	var finalResponse []byte
 	wroteDownstream := false
 	needModelReplace := originalModel != mappedModel
@@ -510,7 +511,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
+			if actualResponseModel == "" {
+				actualResponseModel = ExtractOpenAIResponseModelJSON(message)
+			}
 			continue
+		}
+		if actualResponseModel == "" {
+			actualResponseModel = ExtractOpenAIResponseModelSSEEvent(eventType, message)
 		}
 		eventCount++
 		if firstEventType == "" {
@@ -702,6 +709,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, errors.New("ws finished without final response")
 		}
 
+		if actualResponseModel == "" {
+			actualResponseModel = ExtractOpenAIResponseModelJSON(finalResponse)
+		}
 		if needModelReplace {
 			finalResponse = s.replaceModelInResponseBody(finalResponse, mappedModel, originalModel)
 		}
@@ -752,6 +762,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Usage:                 *usage,
 		Model:                 originalModel,
 		UpstreamModel:         mappedModel,
+		ActualResponseModel:   actualResponseModel,
 		ImageCount:            imageCounter.Count(),
 		ImageOutputSizes:      imageCounter.Sizes(),
 		ServiceTier:           extractOpenAIServiceTier(reqBody),

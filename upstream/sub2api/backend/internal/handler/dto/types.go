@@ -611,6 +611,10 @@ type UserUsageDetail struct {
 type AdminUsageLog struct {
 	UsageLog
 
+	// ActualResponseModel is the model reported by the raw upstream response.
+	// It is audit-only and omitted when the upstream did not provide one.
+	ActualResponseModel *string `json:"actual_response_model,omitempty"`
+
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Omitted when no mapping was applied (requested model was used as-is).
 	UpstreamModel *string `json:"upstream_model,omitempty"`

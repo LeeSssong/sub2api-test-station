@@ -34,11 +34,21 @@ func ExtractOpenAIResponseModelJSON(body []byte) string {
 func ExtractOpenAIResponseModelSSEEvent(eventType string, data []byte) string {
 	event := strings.ToLower(strings.TrimSpace(eventType))
 	if event == "" {
-		return ExtractOpenAIResponseModelJSON(data)
+		// Standard Chat Completions streams omit an SSE event name. Restrict
+		// extraction to the documented chunk object so arbitrary unnamed JSON
+		// payloads cannot be mistaken for OpenAI response events.
+		var chunk struct {
+			Object string `json:"object"`
+			Model  string `json:"model"`
+		}
+		if json.Unmarshal(data, &chunk) != nil || chunk.Object != "chat.completion.chunk" {
+			return ""
+		}
+		return normalizeActualResponseModel(chunk.Model)
 	}
 
 	switch event {
-	case "message", "response.completed", "response.failed", "response.incomplete", "response.output_item.done":
+	case "message", "response.completed", "response.done", "response.failed", "response.incomplete", "response.output_item.done":
 		return ExtractOpenAIResponseModelJSON(data)
 	default:
 		return ""

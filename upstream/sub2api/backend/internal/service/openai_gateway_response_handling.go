@@ -23,19 +23,21 @@ import (
 
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
-	usage            *OpenAIUsage
-	firstTokenMs     *int
-	responseID       string
-	imageCount       int
-	imageOutputSizes []string
+	usage               *OpenAIUsage
+	firstTokenMs        *int
+	responseID          string
+	actualResponseModel string
+	imageCount          int
+	imageOutputSizes    []string
 }
 
 type openaiNonStreamingResult struct {
 	*OpenAIUsage
-	usage            *OpenAIUsage
-	responseID       string
-	imageCount       int
-	imageOutputSizes []string
+	usage               *OpenAIUsage
+	responseID          string
+	actualResponseModel string
+	imageCount          int
+	imageOutputSizes    []string
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
@@ -136,6 +138,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
 	responseID := ""
+	actualResponseModel := ""
 	var firstOutputScanGuard atomic.Bool
 	firstOutputScanGuard.Store(guardFirstOutput)
 	scanner := bufio.NewScanner(resp.Body)
@@ -290,11 +293,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	streamSeenImages := make(map[string]struct{})
 	resultWithUsage := func() *openaiStreamingResult {
 		return &openaiStreamingResult{
-			usage:            usage,
-			firstTokenMs:     firstTokenMs,
-			responseID:       responseID,
-			imageCount:       imageCounter.Count(),
-			imageOutputSizes: imageCounter.Sizes(),
+			usage:               usage,
+			firstTokenMs:        firstTokenMs,
+			responseID:          responseID,
+			actualResponseModel: actualResponseModel,
+			imageCount:          imageCounter.Count(),
+			imageOutputSizes:    imageCounter.Sizes(),
 		}
 	}
 	flushPending := func(disconnectMessage string) {
@@ -406,6 +410,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			dataBytes := []byte(data)
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
+			if actualResponseModel == "" {
+				actualResponseModel = ExtractOpenAIResponseModelSSEEvent(eventType, dataBytes)
+			}
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
 			if openAIStreamEventIsTerminalWithType(data, eventTypeRaw) {
 				sawTerminalEvent = true
@@ -1148,6 +1155,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
 	usage := &usageValue
+	actualResponseModel := ExtractOpenAIResponseModelJSON(body)
 
 	// Replace model in response if needed
 	if originalModel != mappedModel {
@@ -1175,11 +1183,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	}
 
 	return &openaiNonStreamingResult{
-		OpenAIUsage:      usage,
-		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
-		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
-		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
+		OpenAIUsage:         usage,
+		usage:               usage,
+		responseID:          extractOpenAIResponseIDFromJSONBytes(body),
+		actualResponseModel: actualResponseModel,
+		imageCount:          countOpenAIResponseImageOutputsFromJSONBytes(body),
+		imageOutputSizes:    collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 	}, nil
 }
 
@@ -1207,9 +1216,11 @@ func bodyHasSSEFraming(body []byte) bool {
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	actualResponseModel := ""
 
 	usage := &OpenAIUsage{}
 	if ok {
+		actualResponseModel = ExtractOpenAIResponseModelJSON(finalResponse)
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -1249,6 +1260,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
+		forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
+			if actualResponseModel == "" {
+				actualResponseModel = ExtractOpenAIResponseModelSSEEvent(strings.TrimSpace(gjson.GetBytes(data, "type").String()), data)
+			}
+		})
 		if originalModel != mappedModel {
 			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
 		}
@@ -1269,11 +1285,12 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	}
 
 	return &openaiNonStreamingResult{
-		OpenAIUsage:      usage,
-		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
-		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
-		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
+		OpenAIUsage:         usage,
+		usage:               usage,
+		responseID:          extractOpenAIResponseIDFromJSONBytes(body),
+		actualResponseModel: actualResponseModel,
+		imageCount:          countOpenAIImageOutputsFromSSEBody(bodyText),
+		imageOutputSizes:    collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 	}, nil
 }
 

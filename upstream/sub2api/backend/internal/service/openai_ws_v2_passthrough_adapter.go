@@ -1091,6 +1091,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					truncateOpenAIWSLogValue(usageRaw, openAIWSLogValueMaxLen),
 				)
 			},
+			OnResponseModel: func(eventType string, payload []byte) string {
+				return ExtractOpenAIResponseModelSSEEvent(eventType, payload)
+			},
 			OnTurnComplete: func(turn openaiwsv2.RelayTurnResult) {
 				turnNo := int(completedTurns.Add(1))
 				turnRequestModel, turnUpstreamModel := usageMeta.turnModels(turn.RequestModel)
@@ -1107,6 +1110,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					UpstreamModel:         openAIWSDifferentModel(turnRequestModel, turnUpstreamModel),
 					ServiceTier:           usageMeta.serviceTier.Load(),
 					ReasoningEffort:       usageMeta.reasoningEffort.Load(),
+					ActualResponseModel:   turn.ActualResponseModel,
 					Stream:                true,
 					OpenAIWSMode:          true,
 					UpstreamTerminalEvent: normalizeOpenAIWSTerminalEvent(turn.TerminalEventType),
@@ -1232,6 +1236,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		ResponseHeaders:       cloneHeader(handshakeHeaders),
 		Duration:              relayResult.Duration,
 		FirstTokenMs:          relayResult.FirstTokenMs,
+		ActualResponseModel:   relayResult.ActualResponseModel,
 	}
 
 	turnCount := int(completedTurns.Load())

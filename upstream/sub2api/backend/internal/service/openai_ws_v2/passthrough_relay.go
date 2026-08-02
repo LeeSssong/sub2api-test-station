@@ -35,6 +35,7 @@ type RelayResult struct {
 	RequestID               string
 	TerminalEventType       string
 	FirstTokenMs            *int
+	ActualResponseModel     string
 	Duration                time.Duration
 	ClientToUpstreamFrames  int64
 	UpstreamToClientFrames  int64
@@ -42,12 +43,13 @@ type RelayResult struct {
 }
 
 type RelayTurnResult struct {
-	RequestModel      string
-	Usage             Usage
-	RequestID         string
-	TerminalEventType string
-	Duration          time.Duration
-	FirstTokenMs      *int
+	RequestModel        string
+	Usage               Usage
+	RequestID           string
+	TerminalEventType   string
+	Duration            time.Duration
+	FirstTokenMs        *int
+	ActualResponseModel string
 }
 
 type RelayExit struct {
@@ -65,6 +67,7 @@ type RelayOptions struct {
 	FirstMessageSent                bool
 	StartClientAfterFirstDownstream bool
 	OnUsageParseFailure             func(eventType string, usageRaw string)
+	OnResponseModel                 func(eventType string, payload []byte) string
 	OnTurnComplete                  func(turn RelayTurnResult)
 	BeforeWriteClient               func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error
 	BeforeClientWrite               func(msgType coderws.MessageType, payload []byte)
@@ -86,14 +89,15 @@ type RelayTraceEvent struct {
 }
 
 type relayState struct {
-	usage             Usage
-	requestModelMu    sync.RWMutex
-	requestModel      string
-	lastResponseID    string
-	terminalEventType string
-	firstTokenMs      *int
-	turnTimingByID    map[string]*relayTurnTiming
-	activeTurn        *relayTurnTiming
+	usage               Usage
+	requestModelMu      sync.RWMutex
+	requestModel        string
+	lastResponseID      string
+	terminalEventType   string
+	actualResponseModel string
+	firstTokenMs        *int
+	turnTimingByID      map[string]*relayTurnTiming
+	activeTurn          *relayTurnTiming
 }
 
 type relayExitSignal struct {
@@ -104,12 +108,13 @@ type relayExitSignal struct {
 }
 
 type observedUpstreamEvent struct {
-	terminal   bool
-	eventType  string
-	responseID string
-	usage      Usage
-	duration   time.Duration
-	firstToken *int
+	terminal            bool
+	eventType           string
+	responseID          string
+	actualResponseModel string
+	usage               Usage
+	duration            time.Duration
+	firstToken          *int
 }
 
 type relayTurnTiming struct {
@@ -228,7 +233,7 @@ func Relay(
 	if !options.StartClientAfterFirstDownstream {
 		startClientReader()
 	}
-	go runUpstreamToClient(
+	go runUpstreamToClientWithResponseModel(
 		relayCtx,
 		upstreamConn,
 		writeClient,
@@ -236,6 +241,7 @@ func Relay(
 		nowFn,
 		state,
 		options.OnUsageParseFailure,
+		options.OnResponseModel,
 		options.OnTurnComplete,
 		options.BeforeWriteClient,
 		options.BeforeClientWrite,
@@ -441,6 +447,8 @@ func runClientToUpstream(
 	}
 }
 
+// runUpstreamToClient preserves the pre-audit helper signature for internal
+// callers and tests that do not need response-model observation.
 func runUpstreamToClient(
 	ctx context.Context,
 	upstreamConn FrameConn,
@@ -449,6 +457,36 @@ func runUpstreamToClient(
 	nowFn func() time.Time,
 	state *relayState,
 	onUsageParseFailure func(eventType string, usageRaw string),
+	onTurnComplete func(turn RelayTurnResult),
+	beforeWriteClient func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error,
+	beforeClientWrite func(msgType coderws.MessageType, payload []byte),
+	afterClientWrite func(msgType coderws.MessageType, payload []byte, writeErr error),
+	afterWriteClient func(msgType coderws.MessageType, payload []byte),
+	dropDownstreamWrites *atomic.Bool,
+	forwardedFrames *atomic.Int64,
+	droppedFrames *atomic.Int64,
+	markActivity func(),
+	onTrace func(event RelayTraceEvent),
+	exitCh chan<- relayExitSignal,
+) {
+	runUpstreamToClientWithResponseModel(
+		ctx, upstreamConn, writeClient, startAt, nowFn, state,
+		onUsageParseFailure, nil, onTurnComplete, beforeWriteClient,
+		beforeClientWrite, afterClientWrite, afterWriteClient,
+		dropDownstreamWrites, forwardedFrames, droppedFrames, markActivity,
+		onTrace, exitCh,
+	)
+}
+
+func runUpstreamToClientWithResponseModel(
+	ctx context.Context,
+	upstreamConn FrameConn,
+	writeClient func(msgType coderws.MessageType, payload []byte) error,
+	startAt time.Time,
+	nowFn func() time.Time,
+	state *relayState,
+	onUsageParseFailure func(eventType string, usageRaw string),
+	onResponseModel func(eventType string, payload []byte) string,
 	onTurnComplete func(turn RelayTurnResult),
 	beforeWriteClient func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error,
 	beforeClientWrite func(msgType coderws.MessageType, payload []byte),
@@ -502,7 +540,7 @@ func runUpstreamToClient(
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
-			observedEvent = observeUpstreamMessage(state, payload, startAt, nowFn, onUsageParseFailure)
+			observedEvent = observeUpstreamMessageWithResponseModel(state, payload, startAt, nowFn, onUsageParseFailure, onResponseModel)
 		case coderws.MessageBinary:
 			// binary frame 直接透传，不进入 JSON 观测路径（避免无效解析开销）。
 		}
@@ -635,12 +673,27 @@ func relayErrorString(err error) string {
 	return err.Error()
 }
 
+// observeUpstreamMessage preserves the pre-audit helper signature for
+// internal callers and tests that do not need response-model observation.
 func observeUpstreamMessage(
 	state *relayState,
 	message []byte,
 	startAt time.Time,
 	nowFn func() time.Time,
 	onUsageParseFailure func(eventType string, usageRaw string),
+) observedUpstreamEvent {
+	return observeUpstreamMessageWithResponseModel(
+		state, message, startAt, nowFn, onUsageParseFailure, nil,
+	)
+}
+
+func observeUpstreamMessageWithResponseModel(
+	state *relayState,
+	message []byte,
+	startAt time.Time,
+	nowFn func() time.Time,
+	onUsageParseFailure func(eventType string, usageRaw string),
+	onResponseModel func(eventType string, payload []byte) string,
 ) observedUpstreamEvent {
 	if state == nil || len(message) == 0 {
 		return observedUpstreamEvent{}
@@ -677,6 +730,12 @@ func observeUpstreamMessage(
 		eventType:  eventType,
 		responseID: responseID,
 		usage:      parsedUsage,
+	}
+	if onResponseModel != nil {
+		observed.actualResponseModel = onResponseModel(eventType, message)
+		if observed.actualResponseModel != "" {
+			state.actualResponseModel = observed.actualResponseModel
+		}
 	}
 	if responseID != "" {
 		turnTiming := openAIWSRelayGetOrInitTurnTiming(state, responseID, now)
@@ -723,12 +782,13 @@ func emitTurnComplete(
 		requestModel = state.currentRequestModel()
 	}
 	onTurnComplete(RelayTurnResult{
-		RequestModel:      requestModel,
-		Usage:             observed.usage,
-		RequestID:         responseID,
-		TerminalEventType: observed.eventType,
-		Duration:          observed.duration,
-		FirstTokenMs:      openAIWSRelayCloneIntPtr(observed.firstToken),
+		RequestModel:        requestModel,
+		Usage:               observed.usage,
+		RequestID:           responseID,
+		TerminalEventType:   observed.eventType,
+		Duration:            observed.duration,
+		FirstTokenMs:        openAIWSRelayCloneIntPtr(observed.firstToken),
+		ActualResponseModel: observed.actualResponseModel,
 	})
 }
 
@@ -886,6 +946,7 @@ func enrichResult(result *RelayResult, state *relayState, duration time.Duration
 	result.RequestID = state.lastResponseID
 	result.TerminalEventType = state.terminalEventType
 	result.FirstTokenMs = state.firstTokenMs
+	result.ActualResponseModel = state.actualResponseModel
 }
 
 func (s *relayState) setRequestModel(model string) {

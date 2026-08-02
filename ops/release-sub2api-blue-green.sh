@@ -43,6 +43,7 @@ evidence_parent=$(dirname "$evidence")
 evidence_parent_physical=$(cd "$evidence_parent" && pwd -P)
 [[ "$evidence_parent_physical/$(basename "$evidence")" == "$evidence" ]] || fail '--evidence path must be canonical'
 mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+sha256_file() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi; }
 [[ "$(mode_of "$evidence")" == 600 ]] || fail '--evidence mode must be 0600'
 
 worktree=${RELEASE_WORKTREE:-$(pwd -P)}
@@ -90,6 +91,7 @@ ruby -rjson -rtime -e '
 
 docker_bin=${RELEASE_DOCKER_BIN:-docker}
 ssh_bin=${RELEASE_SSH_BIN:-ssh}
+scp_bin=${RELEASE_SCP_BIN:-scp}
 image_repository=${SUB2API_IMAGE_REPOSITORY:-}
 build_context=${RELEASE_BUILD_CONTEXT:-"$worktree/upstream/sub2api"}
 ssh_target=${RELEASE_SSH_TARGET:-}
@@ -97,6 +99,7 @@ ssh_key=${RELEASE_SSH_KEY:-}
 ssh_known_hosts=${RELEASE_SSH_KNOWN_HOSTS:-}
 ssh_port=${RELEASE_SSH_PORT:-}
 host_executor=${RELEASE_HOST_EXECUTOR_PATH:-/usr/local/libexec/deploy-sub2api-blue-green-host.sh}
+transport=${RELEASE_TRANSPORT:-registry}
 
 [[ "$image_repository" =~ ^[a-z0-9][a-z0-9._/-]*$ && "$image_repository" == */* ]] || fail 'SUB2API_IMAGE_REPOSITORY is invalid'
 [[ "$build_context" == /* && -d "$build_context" && ! -L "$build_context" ]] || fail 'RELEASE_BUILD_CONTEXT is invalid'
@@ -110,9 +113,13 @@ esac
 [[ "$ssh_known_hosts" == /* && -f "$ssh_known_hosts" && ! -L "$ssh_known_hosts" && "$(mode_of "$ssh_known_hosts")" == 600 ]] || fail 'RELEASE_SSH_KNOWN_HOSTS must be a 0600 non-symlink file'
 [[ "$ssh_port" =~ ^[1-9][0-9]{0,4}$ && "$ssh_port" -le 65535 ]] || fail 'RELEASE_SSH_PORT is invalid'
 [[ "$host_executor" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail 'RELEASE_HOST_EXECUTOR_PATH is invalid'
+[[ "$transport" == registry || "$transport" == preloaded ]] || fail 'RELEASE_TRANSPORT must be registry or preloaded'
 command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker Buildx is required'
 command -v "$ssh_bin" >/dev/null 2>&1 || fail 'SSH is required'
 command -v perl >/dev/null 2>&1 || fail 'Perl is required for stage timeouts'
+if [[ "$transport" == preloaded ]]; then
+  command -v "$scp_bin" >/dev/null 2>&1 || fail 'SCP is required for preloaded transport'
+fi
 
 monotonic_bin=${RELEASE_MONOTONIC_BIN:-}
 if [[ -n "$monotonic_bin" ]]; then
@@ -162,26 +169,63 @@ run_stage() {
 }
 
 tag="$image_repository:release-$source_commit"
-run_stage build "$docker_bin" buildx build \
-  --platform linux/amd64 \
-  --provenance=false \
-  --sbom=false \
-  --push \
-  --label com.xingqiao.sub2api.qualified=true \
-  --label "com.xingqiao.sub2api.source.commit=$source_commit" \
-  --label "com.xingqiao.sub2api.source.tree=$source_tree" \
-  --label "com.xingqiao.sub2api.tested.tree=$source_tree" \
-  --label "com.xingqiao.sub2api.migrations.sha256=$migrations_hash" \
-  --tag "$tag" \
-  "$build_context"
+archive=''
+archive_sha256=''
+image_id=''
+remote_tmp=''
+staged_archive="/var/lib/sub2api/release-staging/sub2api-$source_commit.tar"
+cleanup_archive() { [[ -z "$archive" ]] || rm -f -- "$archive"; }
+trap cleanup_archive EXIT
+if [[ "$transport" == registry ]]; then
+  run_stage build "$docker_bin" buildx build \
+    --platform linux/amd64 \
+    --provenance=false \
+    --sbom=false \
+    --push \
+    --label com.xingqiao.sub2api.qualified=true \
+    --label "com.xingqiao.sub2api.source.commit=$source_commit" \
+    --label "com.xingqiao.sub2api.source.tree=$source_tree" \
+    --label "com.xingqiao.sub2api.tested.tree=$source_tree" \
+    --label "com.xingqiao.sub2api.migrations.sha256=$migrations_hash" \
+    --tag "$tag" \
+    "$build_context"
 
-digest_timeout=$(stage_timeout)
-digest=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$digest_timeout" "$docker_bin" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tag") \
-  || fail 'digest resolution failed or exceeded its timeout'
-check_budget
-digest=$(printf '%s' "$digest" | tr -d '[:space:]')
-[[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'published image did not resolve to an immutable sha256 digest'
-immutable_image="$image_repository@$digest"
+  digest_timeout=$(stage_timeout)
+  digest=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$digest_timeout" "$docker_bin" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tag") \
+    || fail 'digest resolution failed or exceeded its timeout'
+  check_budget
+  digest=$(printf '%s' "$digest" | tr -d '[:space:]')
+  [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'published image did not resolve to an immutable sha256 digest'
+  immutable_image="$image_repository@$digest"
+  preloaded_args=()
+else
+  archive=$(mktemp "${TMPDIR:-/tmp}/sub2api-$source_commit.XXXXXX")
+  run_stage build "$docker_bin" buildx build \
+    --platform linux/amd64 \
+    --provenance=false \
+    --sbom=false \
+    --load \
+    --label com.xingqiao.sub2api.qualified=true \
+    --label "com.xingqiao.sub2api.source.commit=$source_commit" \
+    --label "com.xingqiao.sub2api.source.tree=$source_tree" \
+    --label "com.xingqiao.sub2api.tested.tree=$source_tree" \
+    --label "com.xingqiao.sub2api.migrations.sha256=$migrations_hash" \
+    --tag "$tag" \
+    "$build_context"
+  image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$docker_bin" image inspect --format '{{.Id}}' "$tag" | tr -d '[:space:]') \
+    || fail 'local image ID resolution failed'
+  [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'preloaded image did not resolve to an immutable image ID'
+  run_stage archive "$docker_bin" image save --output "$archive" "$tag"
+  archive_sha256=$(sha256_file "$archive" 2>/dev/null)
+  [[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'image archive checksum failed'
+  remote_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -p /tmp ".sub2api-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') \
+    || fail 'remote staging allocation failed'
+  [[ "$remote_tmp" =~ ^/tmp/\.sub2api-$source_commit\.[A-Za-z0-9]{6}$ ]] || fail 'remote staging path is invalid'
+  run_stage transfer "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp"
+  run_stage stage "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" sudo -n install -o root -g root -m 600 "$remote_tmp" "$staged_archive" '&&' sudo -n rm -f -- "$remote_tmp"
+  immutable_image="$tag"
+  preloaded_args=(--preloaded-archive "$staged_archive" --preloaded-archive-sha256 "$archive_sha256" --preloaded-image-id "$image_id")
+fi
 
 host_output=''
 host_status=0
@@ -195,6 +239,9 @@ host_args=(
   --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$source_tree"
   --migrations-hash "$migrations_hash" --deadline-epoch "$host_deadline_epoch"
 )
+if [[ "$transport" == preloaded ]]; then
+  host_args+=("${preloaded_args[@]}")
+fi
 if [[ "$maintenance_authorized" == true ]]; then
   host_args+=(--maintenance-authorized --maintenance-from-hash \
     c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408)

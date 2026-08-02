@@ -71,6 +71,36 @@ inspect_image_id_rollback() { run_rollback_capture "$docker_bin" inspect "$1" --
 inspect_health() { run_capture "$docker_bin" inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null | tr -d '[:space:]'; }
 inspect_health_rollback() { run_rollback_capture "$docker_bin" inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null | tr -d '[:space:]'; }
 has_json_status() { local body=$1 expected=$2; printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"'"$expected"'"'; }
+validate_provenance() {
+  local image_json=$1 image_id=$2 commit=$3 tree=$4 tested=$5 migrations=$6
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$image_json" "$image_id" "$commit" "$tree" "$tested" "$migrations" <<'PY'
+import json
+import sys
+
+image_json, image_id, commit, tree, tested, migrations = sys.argv[1:]
+value = json.loads(image_json)
+labels = (value.get("Config") or {}).get("Labels") or {}
+expected = {
+    "Id": image_id,
+    "com.xingqiao.relay-ops.qualified": "true",
+    "com.xingqiao.relay-ops.source.commit": commit,
+    "com.xingqiao.relay-ops.source.tree": tree,
+    "com.xingqiao.relay-ops.tested.tree": tested,
+    "com.xingqiao.relay-ops.migrations.sha256": migrations,
+}
+if not isinstance(value, dict) or value.get("Id") != expected["Id"]:
+    raise SystemExit(1)
+for key, wanted in list(expected.items())[1:]:
+    if labels.get(key) != wanted:
+        raise SystemExit(1)
+PY
+  elif command -v ruby >/dev/null 2>&1; then
+    ruby -rjson -e 'id,commit,tree,tested,migrations=ARGV; v=JSON.parse(STDIN.read); labels=v.dig("Config","Labels") || {}; abort unless v.is_a?(Hash) && v["Id"]==id && labels["com.xingqiao.relay-ops.qualified"]=="true" && labels["com.xingqiao.relay-ops.source.commit"]==commit && labels["com.xingqiao.relay-ops.source.tree"]==tree && labels["com.xingqiao.relay-ops.tested.tree"]==tested && labels["com.xingqiao.relay-ops.migrations.sha256"]==migrations' "$image_id" "$commit" "$tree" "$tested" "$migrations" <<<"$image_json"
+  else
+    fail 'Ruby or Python 3 is required for JSON validation'
+  fi
+}
 wait_for_health() { local id=$1 end=$(( $(date -u +%s) + health_budget )) now health; (( end > deadline_epoch )) && end=$deadline_epoch; while :; do health=$(inspect_health "$id") || return 1; [[ "$health" == healthy ]] && return 0; now=$(date -u +%s); (( now >= end )) && return 1; sleep "$poll_seconds"; done; }
 wait_for_health_rollback() { local id=$1 end=$(( $(date -u +%s) + rollback_budget )) now health; while :; do health=$(inspect_health_rollback "$id") || return 1; [[ "$health" == healthy ]] && return 0; now=$(date -u +%s); (( now >= end )) && return 1; sleep "$poll_seconds"; done; }
 probe_endpoints() { local runner=$1 health_body ready_body; if [[ "$runner" == rollback ]]; then health_body=$(run_rollback_capture "$docker_bin" exec "$before_caddy" wget -qO- http://relay-ops:8100/healthz 2>/dev/null) || return 1; ready_body=$(run_rollback_capture "$docker_bin" exec "$before_caddy" wget -qO- http://relay-ops:8100/readyz 2>/dev/null) || return 1; else health_body=$(run_capture "$docker_bin" exec "$before_caddy" wget -qO- http://relay-ops:8100/healthz 2>/dev/null) || return 1; ready_body=$(run_capture "$docker_bin" exec "$before_caddy" wget -qO- http://relay-ops:8100/readyz 2>/dev/null) || return 1; fi; has_json_status "$health_body" ok && has_json_status "$ready_body" ready; }
@@ -91,10 +121,55 @@ if [[ "$preloaded" == true ]]; then
   run_quiet "$docker_bin" load --input "$preloaded_archive" || fail 'preloaded image load failed'
   [[ "$(inspect_local_image_id "$requested_image")" == "$preloaded_image_id" ]] || fail 'preloaded image ID mismatch after load'
   image_json=$(run_capture "$docker_bin" image inspect --format '{{json .}}' "$requested_image" 2>/dev/null) || fail 'preloaded image inspection failed'
-  ruby -rjson -e 'id,commit,tree,tested,migrations=ARGV; v=JSON.parse(STDIN.read); labels=v.dig("Config","Labels") || {}; abort unless v.is_a?(Hash) && v["Id"]==id && labels["com.xingqiao.relay-ops.qualified"]=="true" && labels["com.xingqiao.relay-ops.source.commit"]==commit && labels["com.xingqiao.relay-ops.source.tree"]==tree && labels["com.xingqiao.relay-ops.tested.tree"]==tested && labels["com.xingqiao.relay-ops.migrations.sha256"]==migrations' "$preloaded_image_id" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" <<<"$image_json" || fail 'preloaded image provenance labels do not match release identity'
+  validate_provenance "$image_json" "$preloaded_image_id" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" || fail 'preloaded image provenance labels do not match release identity'
 fi
 state_parent=$(dirname "$release_state"); state_tmp=$(mktemp "$state_parent/.relay-ops-state.XXXXXX"); chmod 0600 "$state_tmp"
-write_state() { local current=$1 previous=$2 result=$3 ids_json; ids_json=$(ruby -rjson -e 'h={}; ARGV.each{|x| k,v=x.split("=",2); h[k]=v}; print JSON.generate(h)' "postgres=$before_postgres" "redis=$before_redis" "caddy=$before_caddy" "sub2api-blue=$before_blue" "sub2api-green=$before_green" "sub2api-worker=$before_worker"); ruby -rjson -e 'p,c,pr,r,commit,tree,tested,mig,cid,pid,ids=ARGV; x={schema_version:1,service:"relay-ops",current_image:c,current_image_id:cid,previous_image:pr,previous_image_id:pid,result:r,source_commit:commit,source_tree:tree,tested_tree:tested,migrations_hash:mig,shared_container_ids:JSON.parse(ids)}; File.write(p,JSON.generate(x)+"\n")' "$state_tmp" "$current" "$previous" "$result" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" "${preloaded_image_id:-$requested_image}" "$previous_image_id" "$ids_json"; chmod 0600 "$state_tmp"; mv -f "$state_tmp" "$release_state"; }
+write_state() {
+  local current=$1 previous=$2 result=$3
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$state_tmp" "$current" "$previous" "$result" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" "${preloaded_image_id:-$requested_image}" "$previous_image_id" "$before_postgres" "$before_redis" "$before_caddy" "$before_blue" "$before_green" "$before_worker" <<'PY'
+import json
+import os
+import sys
+
+(path, current, previous, result, commit, tree, tested, migrations,
+ current_id, previous_id, postgres, redis, caddy, blue, green, worker) = sys.argv[1:]
+state = {
+    "schema_version": 1,
+    "service": "relay-ops",
+    "current_image": current,
+    "current_image_id": current_id,
+    "previous_image": previous,
+    "previous_image_id": previous_id,
+    "result": result,
+    "source_commit": commit,
+    "source_tree": tree,
+    "tested_tree": tested,
+    "migrations_hash": migrations,
+    "shared_container_ids": {
+        "postgres": postgres,
+        "redis": redis,
+        "caddy": caddy,
+        "sub2api-blue": blue,
+        "sub2api-green": green,
+        "sub2api-worker": worker,
+    },
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(state, handle, separators=(",", ":"))
+    handle.write("\n")
+os.chmod(path, 0o600)
+PY
+  elif command -v ruby >/dev/null 2>&1; then
+    local ids_json
+    ids_json=$(ruby -rjson -e 'h={}; ARGV.each{|x| k,v=x.split("=",2); h[k]=v}; print JSON.generate(h)' "postgres=$before_postgres" "redis=$before_redis" "caddy=$before_caddy" "sub2api-blue=$before_blue" "sub2api-green=$before_green" "sub2api-worker=$before_worker")
+    ruby -rjson -e 'p,c,pr,r,commit,tree,tested,mig,cid,pid,ids=ARGV; x={schema_version:1,service:"relay-ops",current_image:c,current_image_id:cid,previous_image:pr,previous_image_id:pid,result:r,source_commit:commit,source_tree:tree,tested_tree:tested,migrations_hash:mig,shared_container_ids:JSON.parse(ids)}; File.write(p,JSON.generate(x)+"\n")' "$state_tmp" "$current" "$previous" "$result" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" "${preloaded_image_id:-$requested_image}" "$previous_image_id" "$ids_json"
+  else
+    fail 'Ruby or Python 3 is required for release-state persistence'
+  fi
+  chmod 0600 "$state_tmp"
+  mv -f "$state_tmp" "$release_state"
+}
 write_state "$requested_image" "$previous_image" prechange
 post_checks() { check_deadline; local id image image_id; id=$(compose_service_id relay-ops) || return 1; image=$(inspect_image "$id"); image_id=$(inspect_image_id "$id"); if [[ "$preloaded" == true ]]; then [[ "$image" == "$requested_image" && "$image_id" == "$preloaded_image_id" ]] || return 1; else [[ "$image" == "$requested_image" ]] || return 1; fi; wait_for_health "$id" || return 1; probe_endpoints normal || return 1; [[ "$(compose_service_id postgres)" == "$before_postgres" && "$(compose_service_id redis)" == "$before_redis" && "$(compose_service_id caddy)" == "$before_caddy" && "$(compose_service_id sub2api-blue)" == "$before_blue" && "$(compose_service_id sub2api-green)" == "$before_green" && "$(compose_service_id sub2api-worker)" == "$before_worker" ]] || return 1; return 0; }
 rollback() { export RELAY_OPS_IMAGE="$previous_image"; if [[ "$preloaded" == false ]]; then run_rollback_quiet "${compose[@]}" pull relay-ops || return 1; fi; run_rollback_quiet "${compose[@]}" up -d --no-deps --pull never --force-recreate relay-ops || return 1; local id; id=$(compose_service_id_rollback relay-ops) || return 1; [[ "$(inspect_image_rollback "$id")" == "$previous_image" && "$(inspect_image_id_rollback "$id")" == "$previous_image_id" ]] || return 1; wait_for_health_rollback "$id" || return 1; probe_endpoints rollback || return 1; [[ "$(compose_service_id_rollback postgres)" == "$before_postgres" && "$(compose_service_id_rollback redis)" == "$before_redis" && "$(compose_service_id_rollback caddy)" == "$before_caddy" && "$(compose_service_id_rollback sub2api-blue)" == "$before_blue" && "$(compose_service_id_rollback sub2api-green)" == "$before_green" && "$(compose_service_id_rollback sub2api-worker)" == "$before_worker" ]] || return 1; }

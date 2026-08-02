@@ -109,6 +109,19 @@ test_preloaded_image_skips_pull_and_records_immutable_image_id() {
   ruby -rjson -e 'v=JSON.parse(File.binread(ARGV[0])); abort unless v["current_image_id"] == ARGV[1]' "$CASE_DIR/records/release-state.json" "sha256:$(printf 'a%.0s' {1..64})" || fail 'preloaded image ID was not persisted'
 }
 
+test_preloaded_image_works_without_ruby_runtime() {
+  setup_case preloaded_without_ruby
+  cat >"$CASE_DIR/bin/ruby" <<'SH'
+#!/usr/bin/env bash
+printf 'ruby runtime intentionally unavailable\n' >&2
+exit 127
+SH
+  chmod +x "$CASE_DIR/bin/ruby"
+  run_preloaded_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "python fallback failed without ruby: $(cat "$CASE_DIR/stderr")"
+  grep -F -- 'load --input' "$CASE_DIR/events.log" >/dev/null || fail 'python fallback did not load preloaded archive'
+  ruby -rjson -e 'v=JSON.parse(File.binread(ARGV[0])); abort unless v["result"] == "succeeded" && v["current_image_id"] == ARGV[1]' "$CASE_DIR/records/release-state.json" "sha256:$(printf 'a%.0s' {1..64})" || fail 'python fallback did not persist release state'
+}
+
 test_failed_checks_restore_previous_digest() {
   setup_case rollback
   if run_executor FAKE_SCENARIO=health_failure >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then fail 'failed post-check unexpectedly succeeded'; fi
@@ -138,6 +151,7 @@ test_waits_for_health_transition() {
 
 test_success_only_recreates_relay_ops
 test_preloaded_image_skips_pull_and_records_immutable_image_id
+test_preloaded_image_works_without_ruby_runtime
 test_failed_checks_restore_previous_digest
 test_rejects_ambiguous_required_service
 test_rejects_nonready_internal_endpoint

@@ -15,6 +15,8 @@ const {
   reconciliationAdjust,
   updateGroupScoreWeights,
   resetGroupScoreWeights,
+  showError,
+  showSuccess,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   updateSettings: vi.fn(),
@@ -27,6 +29,8 @@ const {
   reconciliationAdjust: vi.fn(),
   updateGroupScoreWeights: vi.fn(),
   resetGroupScoreWeights: vi.fn(),
+  showError: vi.fn(),
+  showSuccess: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -51,8 +55,8 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
   }),
 }))
 
@@ -226,6 +230,8 @@ describe('admin account monitor view', () => {
     reconciliationAdjust.mockReset().mockResolvedValue({})
     updateGroupScoreWeights.mockReset().mockResolvedValue({ cost: 20, success: 40, ttft: 20, latency: 20 })
     resetGroupScoreWeights.mockReset().mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20 })
+    showError.mockReset()
+    showSuccess.mockReset()
   })
 
   it('renders monitored account quality and today-stat projection', async () => {
@@ -588,6 +594,56 @@ describe('admin account monitor view', () => {
     expect(reconciliationExceptions).toHaveBeenCalledWith({ limit: 100 })
     expect(wrapper.text()).toContain('missing_upstream_record')
     expect(wrapper.text()).toContain('补登记')
+  })
+
+  it('shows an actionable error instead of an empty exception state when the API is unavailable', async () => {
+    reconciliationExceptions.mockRejectedValueOnce(new Error('异常明细返回了无效数据，请检查账务服务连接'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
+    expect(wrapper.text()).not.toContain('当前没有未解决异常')
+    expect(showError).toHaveBeenCalledWith('异常明细返回了无效数据，请检查账务服务连接')
+  })
+
+  it('submits a manual exception adjustment and removes it after success', async () => {
+    reconciliationExceptions.mockResolvedValueOnce({
+      items: [{
+        id: 11,
+        reason_code: 'missing_upstream_record',
+        details: '待匹配',
+        retry_count: 1,
+        first_detected_at: '2026-07-25T08:00:00Z',
+        last_checked_at: '2026-07-25T08:01:00Z',
+        attempt: {
+          id: 21,
+          attempt_id: 'attempt-21',
+          local_request_id: 'local-21',
+          upstream_request_id: '',
+          account_id: 7,
+          model: 'claude-sonnet-4-5',
+          user_charge: '1',
+          currency: 'USD',
+          completed_at: '2026-07-25T08:00:00Z',
+          reconcile_status: 'pending',
+        },
+      }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[placeholder="0.000000"]').setValue('0.25')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(reconciliationAdjust).toHaveBeenCalledWith(21, '0.25')
+    expect(wrapper.text()).not.toContain('missing_upstream_record')
+    expect(showSuccess).toHaveBeenCalledWith('补登记成功')
   })
 
   it('快速切换分组时保留最新分组账务响应', async () => {

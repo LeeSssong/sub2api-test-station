@@ -88,7 +88,8 @@ export async function exceptions(params: { account_id?: number; limit?: number }
 export async function refresh(params: { account_id?: number } = {}): Promise<ReconciliationSummary> {
   const { data } = await apiClient.post<unknown>(`${base()}/refresh`, null, { params }); return summaryResponse(data, '账务刷新')
 }
-export async function adjust(attemptID: number, amount: string, notes = ''): Promise<unknown> {
-  const { data } = await apiClient.post(`${base()}/exceptions/${attemptID}/adjust`, { amount, notes }); return data
+export async function adjust(attemptID: number, amount: string, notes = ''): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.post<unknown>(`${base()}/exceptions/${attemptID}/adjust`, { amount, notes })
+  return objectResponse(data, '异常补登记')
 }
 export default { summary, operations, history, exceptions, refresh, adjust }

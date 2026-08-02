@@ -201,6 +201,7 @@
 
     <BaseDialog :show="exceptionsOpen" title="对账异常明细" width="wide" @close="exceptionsOpen = false">
       <div v-if="exceptionsLoading" class="py-8 text-center text-sm text-gray-500">加载中...</div>
+      <div v-else-if="exceptionsError" class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300" data-test="exceptions-error">{{ exceptionsError }}</div>
       <div v-else-if="exceptions.length" class="space-y-3">
         <div v-for="item in exceptions" :key="item.id" class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50">
           <div class="grid gap-1 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
@@ -279,6 +280,7 @@ const scoreWeightsError = ref<string | null>(null)
 const exceptions = ref<ReconciliationException[]>([])
 const exceptionsOpen = ref(false)
 const exceptionsLoading = ref(false)
+const exceptionsError = ref<string | null>(null)
 const adjustmentAmounts = ref<Record<number, string>>({})
 const adjustingID = ref<number | null>(null)
 
@@ -516,10 +518,13 @@ async function handleRunAll() {
 async function openExceptions() {
   exceptionsOpen.value = true
   exceptionsLoading.value = true
+  exceptionsError.value = null
+  exceptions.value = []
   try {
     exceptions.value = (await adminAPI.reconciliation.exceptions({ limit: 100 })).items
   } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, '对账异常加载失败'))
+    exceptionsError.value = extractApiErrorMessage(err, '对账异常加载失败')
+    appStore.showError(exceptionsError.value)
   } finally {
     exceptionsLoading.value = false
   }

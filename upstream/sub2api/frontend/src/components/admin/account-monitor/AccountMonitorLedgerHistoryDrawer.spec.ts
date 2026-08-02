@@ -35,4 +35,18 @@ describe('AccountMonitorLedgerHistoryDrawer', () => {
     expect(document.body.textContent).toContain('$0.02')
     wrapper.unmount()
   })
+
+  it('shows the API error instead of a misleading empty history state', async () => {
+    history.mockRejectedValueOnce(new Error('历史按日返回了无效数据，请检查账务服务连接'))
+    const wrapper = mount(AccountMonitorLedgerHistoryDrawer, {
+      props: { show: true },
+      global: { stubs: { Icon: true } },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('历史按日返回了无效数据')
+    expect(document.body.textContent).not.toContain('暂无账务记录')
+    wrapper.unmount()
+  })
 })

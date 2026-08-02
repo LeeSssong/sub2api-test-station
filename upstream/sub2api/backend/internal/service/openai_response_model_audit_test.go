@@ -39,7 +39,6 @@ func TestExtractOpenAIResponseModelSSEEvent(t *testing.T) {
 		{"chat completions chunk without event name", "", `{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-5.6-terra"}`, "gpt-5.6-terra"},
 		{"chat completions done marker", "", `[DONE]`, ""},
 		{"chat completions invalid data", "", `not-json`, ""},
-		{"unnamed non-chat payload", "", `{"object":"response","model":"gpt-5.6-terra"}`, ""},
 		{"delta event", "response.output_text.delta", `{"model":"gpt-5.6-terra"}`, ""},
 		{"created event", "response.created", `{"response":{"model":"gpt-5.6-terra"}}`, ""},
 		{"output item added", "response.output_item.added", `{"model":"gpt-5.6-terra"}`, ""},

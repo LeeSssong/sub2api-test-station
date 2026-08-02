@@ -34,12 +34,6 @@ func ExtractOpenAIResponseModelJSON(body []byte) string {
 func ExtractOpenAIResponseModelSSEEvent(eventType string, data []byte) string {
 	event := strings.ToLower(strings.TrimSpace(eventType))
 	if event == "" {
-		var chunk struct {
-			Object string `json:"object"`
-		}
-		if json.Unmarshal(data, &chunk) != nil || chunk.Object != "chat.completion.chunk" {
-			return ""
-		}
 		return ExtractOpenAIResponseModelJSON(data)
 	}
 

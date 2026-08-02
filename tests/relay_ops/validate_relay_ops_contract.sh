@@ -128,7 +128,7 @@ forbid 'd04-readiness-snapshot' infra/Dockerfile.relay-ops
 require 'ops/collect-account-quality-pulse.rb' infra/Dockerfile.relay-ops
 require 'ops/analyze-account-monitor.rb' infra/Dockerfile.relay-ops
 require 'config/upstream-benchmarks/quality-first-fast-v1.yaml' infra/Dockerfile.relay-ops
-require 'path /pricing /relay-ops/static/*' infra/Caddyfile
+require 'path /healthz /readyz /pricing /relay-ops/*' infra/Caddyfile
 require '@legacy_ops path /ops /ops/*' infra/Caddyfile
 require 'redir @legacy_ops /admin/ops 302' infra/Caddyfile
 require '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile

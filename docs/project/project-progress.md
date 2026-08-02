@@ -23,9 +23,9 @@
 0. **OpenAI 模型映射审计**：仅覆盖 OpenAI-compatible HTTP JSON、SSE 与 Responses WebSocket；新增 `usage_logs.actual_response_model`，记录上游原始响应模型并在管理员 usage log 展示。**状态：进行中（本地实现与验证阶段，尚未推送、部署或线上验证）**。
 0.1. **账号监控全站经营、分组运营与账号质量**：已确认产品规格；本轮接通真实账单分组归属、唯一 Attempt 运营聚合、每组评分规则和管理员监控工作台。**状态：进行中（已推送；待生产部署与线上验证）**。
 
-1. **账号监控真实上游成本与对账闭环**：统一真实账单适配器、Attempt/异常/补登记流水、管理员刷新、日切调度、飞书日报及现有 `AccountMonitorView.vue` 可见页面已推送、部署并通过公网接口验收；本轮继续接通按显式账单账号映射和专用凭证主动采集最新逐笔账单与累计快照，日结在采集或对账未闭合时必须阻断。手工补登记重试幂等性、逐笔请求 ID 回退、迁移重复映射预检、root-only 账单 provisioning、relay-ops 不可变发布路径及蓝绿演练夹具已完成本地实现与回归。**状态：进行中（代码已推送；本地 SSH 身份可只读连接生产，但 registry 凭据、relay-ops host executor 和 immutable 生产基线尚未配置，待部署和线上验证）**。
+1. **账号监控真实上游成本与对账闭环**：统一真实账单适配器、Attempt/异常/补登记流水、管理员刷新、日切调度、飞书日报及现有 `AccountMonitorView.vue` 可见页面已推送、部署并通过公网接口验收；本轮继续接通按显式账单账号映射和专用凭证主动采集最新逐笔账单与累计快照，日结在采集或对账未闭合时必须阻断。手工补登记重试幂等性、逐笔请求 ID 回退、迁移重复映射预检、root-only 账单 provisioning、relay-ops 不可变发布路径及蓝绿演练夹具已完成本地实现与回归。**状态：进行中（relay-ops `d3860531d` 已通过预加载 immutable 镜像部署，生产 host executor 与 root-only provisioning wrapper 已安装并验收；Caddy 路由修复正在发布，生产仍无真实只读账单 bearer/session，账单快照/Attempt/对账运行及日切快照均为 0）**。
 
-**本轮新增登记：** `relay-ops` 不可变镜像发布路径（独立 controller/host executor、仅重建 `relay-ops`、失败后按上一 digest 回滚）；**状态：进行中（已推送；生产 SSH 可达且远端健康/ready 只读复核通过，但无 registry 登录、远端缺少 relay-ops host executor，现行容器仍为旧 tag `xingqiao-relay-ops:release-48244833b`，未部署本提交、未进行新版本线上验证）**。
+**本轮新增登记：** `relay-ops` 不可变镜像发布路径及 root-only 账单 provisioning wrapper（提交 `df4870470`）；**状态：进行中（immutable relay-ops 已部署，host executor/wrapper 已安装；本轮补充 Caddy 公网 `/healthz`、`/readyz` 和 `/relay-ops/*` 路由并验证受保护 API，实时账单仍待唯一外部输入：合法供应商 bearer/session 与 billing account mapping）**。
 
 2. **2026-08-01 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：双槽 API、唯一 worker、host executor、Caddy 路由和停机 bootstrap 已完成生产部署；本轮对账应用已追加发布并验证。**状态：已完成**。
 3. **2026-07-31 生产站点中断恢复**：11:56 首次故障后于 13:28 回滚恢复；14:10–14:11，“调度优化”任务误将事故回滚判断为外部覆盖，再次覆盖 Compose 并强制重建 Sub2API/relay-ops/Caddy，造成第二次中断。14:15 已再次恢复至 11:53 发布前快照；公网健康连续 5 次返回 200，首页、价格和文档入口正常，五个容器运行正常且重启计数为 0。**状态：恢复已验证；永久兼容性修复仍未推送、部署和验证**。

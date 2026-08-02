@@ -33,8 +33,14 @@ setup_case() {
 set -euo pipefail
 printf 'docker %s\n' "$*" >>"${FAKE_DOCKER_LOG:?}"
 case "$1 ${2:-} ${3:-}" in
-  'buildx build '*) exit 0 ;;
+  'buildx build '*)
+    if [[ "${FAKE_TRANSPORT:-registry}" == preloaded ]]; then
+      printf 'sha256:%s\n' "${FAKE_IMAGE_ID:?}" >"${FAKE_IMAGE_ID_FILE:?}"
+    fi
+    exit 0 ;;
   'buildx imagetools inspect') printf 'sha256:%s\n' "${FAKE_DIGEST:?}"; exit 0 ;;
+  'image inspect '*) printf '%s\n' "${FAKE_IMAGE_ID:?}"; exit 0 ;;
+  'image save '*) : >"${FAKE_ARCHIVE:?}"; exit 0 ;;
 esac
 exit 64
 SH
@@ -43,18 +49,28 @@ SH
 set -euo pipefail
 printf 'ssh %s\n' "$*" >>"${FAKE_SSH_LOG:?}"
 if [[ -n "${FAKE_SSH_SLEEP:-}" ]]; then sleep "$FAKE_SSH_SLEEP"; fi
+if [[ "$*" == *' mktemp -p /tmp '* ]]; then
+  printf '/tmp/.relay-ops-%s.Abc123\n' "${FAKE_SOURCE_COMMIT:?}"
+  exit 0
+fi
 printf '{"schema_version":1,"result":"succeeded","rollback_proven":false}\n'
 SH
-  chmod +x "$CASE_DIR/bin/docker" "$CASE_DIR/bin/ssh"
+  cat >"$CASE_DIR/bin/scp" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'scp %s\n' "$*" >>"${FAKE_SSH_LOG:?}"
+exit 0
+SH
+  chmod +x "$CASE_DIR/bin/docker" "$CASE_DIR/bin/ssh" "$CASE_DIR/bin/scp"
 }
 write_evidence() {
   EVIDENCE="$CASE_DIR/evidence.json"
   (cd "$CASE_DIR/repo" && bash "$WRITER" --output "$EVIDENCE" --command 'bash tests/operations/release_relay_ops_test.sh')
 }
 run_controller() {
-  env PATH="$CASE_DIR/bin:$PATH" FAKE_DOCKER_LOG="$CASE_DIR/docker.log" FAKE_SSH_LOG="$CASE_DIR/ssh.log" FAKE_DIGEST="$SHA256" \
+  env PATH="$CASE_DIR/bin:$PATH" FAKE_DOCKER_LOG="$CASE_DIR/docker.log" FAKE_SSH_LOG="$CASE_DIR/ssh.log" FAKE_DIGEST="$SHA256" FAKE_SOURCE_COMMIT="$(git -C "$CASE_DIR/repo" rev-parse HEAD)" FAKE_IMAGE_ID="sha256:$(printf 'c%.0s' {1..64})" FAKE_IMAGE_ID_FILE="$CASE_DIR/image-id" FAKE_ARCHIVE="$CASE_DIR/image.tar" \
     RELEASE_WORKTREE="$CASE_DIR/repo" RELEASE_BUILD_CONTEXT="$CASE_DIR/repo" RELAY_OPS_IMAGE_REPOSITORY='example.invalid/xingqiao-relay-ops' \
-    RELEASE_SSH_BIN="$CASE_DIR/bin/ssh" RELEASE_SSH_TARGET='release@example.invalid' RELEASE_SSH_KEY="$CASE_DIR/id_ed25519" \
+    RELEASE_SSH_BIN="$CASE_DIR/bin/ssh" RELEASE_SCP_BIN="$CASE_DIR/bin/scp" RELEASE_SSH_TARGET='release@example.invalid' RELEASE_SSH_KEY="$CASE_DIR/id_ed25519" \
     RELEASE_SSH_KNOWN_HOSTS="$CASE_DIR/known_hosts" RELEASE_SSH_PORT=22 "$@" bash "$CONTROLLER" --mode production --evidence "$EVIDENCE"
 }
 expect_failure_before_transport() {
@@ -86,7 +102,18 @@ test_bounds_host_ssh_stage() {
   grep -F -- 'ssh ' "$CASE_DIR/ssh.log" >/dev/null || fail 'SSH stage was not invoked'
 }
 
+test_preloaded_transport_uploads_verified_archive() {
+  setup_case preloaded; write_evidence
+  run_controller RELEASE_TRANSPORT=preloaded >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail 'preloaded controller failed'
+  grep -F -- '--load' "$CASE_DIR/docker.log" >/dev/null || fail 'preloaded build did not load image'
+  grep -F -- 'image save' "$CASE_DIR/docker.log" >/dev/null || fail 'preloaded image archive missing'
+  grep -F -- 'scp ' "$CASE_DIR/ssh.log" >/dev/null || fail 'preloaded archive was not transferred'
+  grep -F -- 'sudo -n' "$CASE_DIR/ssh.log" >/dev/null || fail 'preloaded host executor was not root-gated'
+  grep -F -- '--preloaded-archive-sha256' "$CASE_DIR/ssh.log" >/dev/null || fail 'archive checksum was not sent'
+}
+
 test_writer_and_build
 test_rejects_dirty_tree
 test_bounds_host_ssh_stage
+test_preloaded_transport_uploads_verified_archive
 printf 'PASS: relay-ops release controller\n'

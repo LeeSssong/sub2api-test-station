@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 fail() { printf 'relay_ops_host status=failed: %s\n' "$1" >&2; exit 1; }
-mode=''; requested_image=''; source_commit=''; source_tree=''; tested_tree=''; migrations_hash=''; deadline_epoch=''
+mode=''; requested_image=''; source_commit=''; source_tree=''; tested_tree=''; migrations_hash=''; deadline_epoch=''; preloaded_archive=''; preloaded_archive_sha256=''; preloaded_image_id=''
 while (($#)); do
   case "$1" in
     --mode) (($# >= 2)) || fail '--mode requires a value'; mode=$2; shift 2 ;;
@@ -13,11 +13,25 @@ while (($#)); do
     --tested-tree) (($# >= 2)) || fail '--tested-tree requires a value'; tested_tree=$2; shift 2 ;;
     --migrations-hash) (($# >= 2)) || fail '--migrations-hash requires a value'; migrations_hash=$2; shift 2 ;;
     --deadline-epoch) (($# >= 2)) || fail '--deadline-epoch requires a value'; deadline_epoch=$2; shift 2 ;;
+    --preloaded-archive) (($# >= 2)) || fail '--preloaded-archive requires a value'; preloaded_archive=$2; shift 2 ;;
+    --preloaded-archive-sha256) (($# >= 2)) || fail '--preloaded-archive-sha256 requires a value'; preloaded_archive_sha256=$2; shift 2 ;;
+    --preloaded-image-id) (($# >= 2)) || fail '--preloaded-image-id requires a value'; preloaded_image_id=$2; shift 2 ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
 [[ "$mode" == production ]] || fail '--mode must be production'
-[[ "$requested_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail '--image must be immutable'
+preloaded=${RELEASE_PRELOADED_IMAGE:-false}; [[ "$preloaded" == true || "$preloaded" == false ]] || fail 'RELEASE_PRELOADED_IMAGE must be true or false'
+release_staging_root=${RELEASE_STAGING_ROOT:-/var/lib/sub2api/release-staging}
+[[ "$release_staging_root" == /* && "$release_staging_root" != */ && ! -L "$release_staging_root" ]] || fail 'RELEASE_STAGING_ROOT is invalid'
+if [[ "$preloaded" == true ]]; then
+  [[ "$requested_image" =~ ^[^[:space:]@]+:release-[a-f0-9]{40}$ ]] || fail '--image must be a release tag in preloaded mode'
+  [[ "$preloaded_archive" == "$release_staging_root"/* && "$(basename "$preloaded_archive")" =~ ^[A-Za-z0-9._-]+\.tar$ ]] || fail '--preloaded-archive is invalid'
+  [[ "$preloaded_archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail '--preloaded-archive-sha256 is invalid'
+  [[ "$preloaded_image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail '--preloaded-image-id is invalid'
+else
+  [[ "$requested_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail '--image must be immutable'
+  [[ -z "$preloaded_archive$preloaded_archive_sha256$preloaded_image_id" ]] || fail 'preloaded arguments require RELEASE_PRELOADED_IMAGE=true'
+fi
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ && "$tested_tree" == "$source_tree" && "$migrations_hash" =~ ^[a-f0-9]{64}$ ]] || fail 'release identity is invalid'
 [[ "$deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail '--deadline-epoch is invalid'
 [[ "$(id -u)" == 0 ]] || fail 'production executor must run as root'
@@ -36,7 +50,8 @@ secure_file "$base_compose" BASE_COMPOSE; secure_file "$secret_env" SECRET_ENV
 canonical_path "$release_state" RELEASE_STATE; [[ ! -e "$release_state" || "$(owner_of "$release_state")" == 0 ]] || fail 'RELEASE_STATE must be root-owned'; [[ ! -e "$release_state" || "$(mode_of "$release_state")" == 600 ]] || fail 'RELEASE_STATE must be 0600'
 [[ "$(uname -s)" == Linux ]] || fail 'production deployment must run on Linux'; [[ -z "${DOCKER_HOST:-}" && "${DOCKER_CONTEXT:-default}" == default ]] || fail 'production Docker context must be local'
 docker_bin=${DOCKER_BIN:-docker}; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker is required'; command -v perl >/dev/null 2>&1 || fail 'Perl is required'; [[ "$("$docker_bin" context show 2>/dev/null)" == default ]] || fail 'Docker context must be default'
-compose=("$docker_bin" compose --project-directory "$deploy_root" --env-file "$secret_env" -f "$base_compose"); export RELAY_OPS_IMAGE="$requested_image"
+compose_project=${RELAY_OPS_COMPOSE_PROJECT:-sub2api}; [[ "$compose_project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'RELAY_OPS_COMPOSE_PROJECT is invalid'
+compose=("$docker_bin" compose --project-name "$compose_project" --project-directory "$deploy_root" --env-file "$secret_env" -f "$base_compose"); export RELAY_OPS_IMAGE="$requested_image"
 stage_budget=${RELAY_OPS_STAGE_TIMEOUT_SECONDS:-120}; rollback_budget=${RELAY_OPS_ROLLBACK_TIMEOUT_SECONDS:-120}; health_budget=${RELAY_OPS_HEALTH_TIMEOUT_SECONDS:-120}; poll_seconds=${RELAY_OPS_HEALTH_POLL_SECONDS:-1}
 [[ "$stage_budget" =~ ^[1-9][0-9]*$ && "$stage_budget" -le 600 && "$rollback_budget" =~ ^[1-9][0-9]*$ && "$rollback_budget" -le 600 && "$health_budget" =~ ^[1-9][0-9]*$ && "$health_budget" -le 600 && "$poll_seconds" =~ ^[1-9][0-9]*$ && "$poll_seconds" -le 30 ]] || fail 'release timeout configuration is invalid'
 tmp=$(mktemp); state_tmp=''; trap 'rm -f -- "$tmp" "$state_tmp"' EXIT
@@ -48,7 +63,10 @@ run_rollback_capture() { perl -e 'alarm shift @ARGV; exec @ARGV' "$rollback_budg
 compose_service_id() { local service=$1 id; local -a ids=(); while IFS= read -r id; do [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]] || return 1; ids+=("$id"); done < <(run_capture "${compose[@]}" ps -q "$service" 2>/dev/null); [[ ${#ids[@]} -eq 1 ]] || return 1; printf '%s' "${ids[0]}"; }
 compose_service_id_rollback() { local service=$1 id; local -a ids=(); while IFS= read -r id; do [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]] || return 1; ids+=("$id"); done < <(run_rollback_capture "${compose[@]}" ps -q "$service" 2>/dev/null); [[ ${#ids[@]} -eq 1 ]] || return 1; printf '%s' "${ids[0]}"; }
 inspect_image() { run_capture "$docker_bin" inspect "$1" --format '{{.Config.Image}}' 2>/dev/null | tr -d '[:space:]'; }
+inspect_image_id() { run_capture "$docker_bin" inspect "$1" --format '{{.Image}}' 2>/dev/null | tr -d '[:space:]'; }
+inspect_local_image_id() { run_capture "$docker_bin" image inspect "$1" --format '{{.Id}}' 2>/dev/null | tr -d '[:space:]'; }
 inspect_image_rollback() { run_rollback_capture "$docker_bin" inspect "$1" --format '{{.Config.Image}}' 2>/dev/null | tr -d '[:space:]'; }
+inspect_image_id_rollback() { run_rollback_capture "$docker_bin" inspect "$1" --format '{{.Image}}' 2>/dev/null | tr -d '[:space:]'; }
 inspect_health() { run_capture "$docker_bin" inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null | tr -d '[:space:]'; }
 inspect_health_rollback() { run_rollback_capture "$docker_bin" inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null | tr -d '[:space:]'; }
 has_json_status() { local body=$1 expected=$2; printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"'"$expected"'"'; }
@@ -64,13 +82,22 @@ before_blue=$(compose_service_id sub2api-blue) || fail 'required service is not 
 before_green=$(compose_service_id sub2api-green) || fail 'required service is not uniquely running: sub2api-green'
 before_worker=$(compose_service_id sub2api-worker) || fail 'required service is not uniquely running: sub2api-worker'
 before_relay_ops=$(compose_service_id relay-ops) || fail 'required service is not uniquely running: relay-ops'
-previous_image=$(inspect_image "$before_relay_ops"); [[ "$previous_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail 'previous relay-ops image is not immutable'
+previous_image=$(inspect_image "$before_relay_ops"); previous_image_id=$(inspect_image_id "$before_relay_ops"); [[ "$previous_image" =~ ^[^[:space:]@]+(@sha256:[a-f0-9]{64}|:[A-Za-z0-9._-]+)$ && "$previous_image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'previous relay-ops image baseline is invalid'
+if [[ "$preloaded" == true ]]; then
+  secure_directory "$release_staging_root" RELEASE_STAGING_ROOT
+  secure_file "$preloaded_archive" PRELOADED_ARCHIVE
+  [[ "$(shasum -a 256 "$preloaded_archive" 2>/dev/null | awk '{print $1}')" == "$preloaded_archive_sha256" ]] || fail 'preloaded image archive checksum mismatch'
+  run_quiet "$docker_bin" load --input "$preloaded_archive" || fail 'preloaded image load failed'
+  [[ "$(inspect_local_image_id "$requested_image")" == "$preloaded_image_id" ]] || fail 'preloaded image ID mismatch after load'
+  image_json=$(run_capture "$docker_bin" image inspect --format '{{json .}}' "$requested_image" 2>/dev/null) || fail 'preloaded image inspection failed'
+  ruby -rjson -e 'id,commit,tree,tested,migrations=ARGV; v=JSON.parse(STDIN.read); labels=v.dig("Config","Labels") || {}; abort unless v.is_a?(Hash) && v["Id"]==id && labels["com.xingqiao.relay-ops.qualified"]=="true" && labels["com.xingqiao.relay-ops.source.commit"]==commit && labels["com.xingqiao.relay-ops.source.tree"]==tree && labels["com.xingqiao.relay-ops.tested.tree"]==tested && labels["com.xingqiao.relay-ops.migrations.sha256"]==migrations' "$preloaded_image_id" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" <<<"$image_json" || fail 'preloaded image provenance labels do not match release identity'
+fi
 state_parent=$(dirname "$release_state"); state_tmp=$(mktemp "$state_parent/.relay-ops-state.XXXXXX"); chmod 0600 "$state_tmp"
-write_state() { local current=$1 previous=$2 result=$3 ids_json; ids_json=$(ruby -rjson -e 'h={}; ARGV.each{|x| k,v=x.split("=",2); h[k]=v}; print JSON.generate(h)' "postgres=$before_postgres" "redis=$before_redis" "caddy=$before_caddy" "sub2api-blue=$before_blue" "sub2api-green=$before_green" "sub2api-worker=$before_worker"); ruby -rjson -e 'p,c,pr,r,commit,tree,tested,mig,ids=ARGV; x={schema_version:1,service:"relay-ops",current_image:c,previous_image:pr,result:r,source_commit:commit,source_tree:tree,tested_tree:tested,migrations_hash:mig,shared_container_ids:JSON.parse(ids)}; File.write(p,JSON.generate(x)+"\n")' "$state_tmp" "$current" "$previous" "$result" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" "$ids_json"; chmod 0600 "$state_tmp"; mv -f "$state_tmp" "$release_state"; }
+write_state() { local current=$1 previous=$2 result=$3 ids_json; ids_json=$(ruby -rjson -e 'h={}; ARGV.each{|x| k,v=x.split("=",2); h[k]=v}; print JSON.generate(h)' "postgres=$before_postgres" "redis=$before_redis" "caddy=$before_caddy" "sub2api-blue=$before_blue" "sub2api-green=$before_green" "sub2api-worker=$before_worker"); ruby -rjson -e 'p,c,pr,r,commit,tree,tested,mig,cid,pid,ids=ARGV; x={schema_version:1,service:"relay-ops",current_image:c,current_image_id:cid,previous_image:pr,previous_image_id:pid,result:r,source_commit:commit,source_tree:tree,tested_tree:tested,migrations_hash:mig,shared_container_ids:JSON.parse(ids)}; File.write(p,JSON.generate(x)+"\n")' "$state_tmp" "$current" "$previous" "$result" "$source_commit" "$source_tree" "$tested_tree" "$migrations_hash" "${preloaded_image_id:-$requested_image}" "$previous_image_id" "$ids_json"; chmod 0600 "$state_tmp"; mv -f "$state_tmp" "$release_state"; }
 write_state "$requested_image" "$previous_image" prechange
-post_checks() { check_deadline; local id image; id=$(compose_service_id relay-ops) || return 1; image=$(inspect_image "$id"); [[ "$image" == "$requested_image" ]] || return 1; wait_for_health "$id" || return 1; probe_endpoints normal || return 1; [[ "$(compose_service_id postgres)" == "$before_postgres" && "$(compose_service_id redis)" == "$before_redis" && "$(compose_service_id caddy)" == "$before_caddy" && "$(compose_service_id sub2api-blue)" == "$before_blue" && "$(compose_service_id sub2api-green)" == "$before_green" && "$(compose_service_id sub2api-worker)" == "$before_worker" ]] || return 1; return 0; }
-rollback() { export RELAY_OPS_IMAGE="$previous_image"; run_rollback_quiet "${compose[@]}" pull relay-ops || return 1; run_rollback_quiet "${compose[@]}" up -d --no-deps --force-recreate relay-ops || return 1; local id; id=$(compose_service_id_rollback relay-ops) || return 1; [[ "$(inspect_image_rollback "$id")" == "$previous_image" ]] || return 1; wait_for_health_rollback "$id" || return 1; probe_endpoints rollback || return 1; [[ "$(compose_service_id_rollback postgres)" == "$before_postgres" && "$(compose_service_id_rollback redis)" == "$before_redis" && "$(compose_service_id_rollback caddy)" == "$before_caddy" && "$(compose_service_id_rollback sub2api-blue)" == "$before_blue" && "$(compose_service_id_rollback sub2api-green)" == "$before_green" && "$(compose_service_id_rollback sub2api-worker)" == "$before_worker" ]] || return 1; }
-if ! run_quiet "${compose[@]}" pull relay-ops || ! run_quiet "${compose[@]}" up -d --no-deps --force-recreate relay-ops || ! post_checks; then
+post_checks() { check_deadline; local id image image_id; id=$(compose_service_id relay-ops) || return 1; image=$(inspect_image "$id"); image_id=$(inspect_image_id "$id"); if [[ "$preloaded" == true ]]; then [[ "$image" == "$requested_image" && "$image_id" == "$preloaded_image_id" ]] || return 1; else [[ "$image" == "$requested_image" ]] || return 1; fi; wait_for_health "$id" || return 1; probe_endpoints normal || return 1; [[ "$(compose_service_id postgres)" == "$before_postgres" && "$(compose_service_id redis)" == "$before_redis" && "$(compose_service_id caddy)" == "$before_caddy" && "$(compose_service_id sub2api-blue)" == "$before_blue" && "$(compose_service_id sub2api-green)" == "$before_green" && "$(compose_service_id sub2api-worker)" == "$before_worker" ]] || return 1; return 0; }
+rollback() { export RELAY_OPS_IMAGE="$previous_image"; if [[ "$preloaded" == false ]]; then run_rollback_quiet "${compose[@]}" pull relay-ops || return 1; fi; run_rollback_quiet "${compose[@]}" up -d --no-deps --pull never --force-recreate relay-ops || return 1; local id; id=$(compose_service_id_rollback relay-ops) || return 1; [[ "$(inspect_image_rollback "$id")" == "$previous_image" && "$(inspect_image_id_rollback "$id")" == "$previous_image_id" ]] || return 1; wait_for_health_rollback "$id" || return 1; probe_endpoints rollback || return 1; [[ "$(compose_service_id_rollback postgres)" == "$before_postgres" && "$(compose_service_id_rollback redis)" == "$before_redis" && "$(compose_service_id_rollback caddy)" == "$before_caddy" && "$(compose_service_id_rollback sub2api-blue)" == "$before_blue" && "$(compose_service_id_rollback sub2api-green)" == "$before_green" && "$(compose_service_id_rollback sub2api-worker)" == "$before_worker" ]] || return 1; }
+if ! { if [[ "$preloaded" == true ]]; then run_quiet "${compose[@]}" up -d --no-deps --pull never --force-recreate relay-ops; else run_quiet "${compose[@]}" pull relay-ops && run_quiet "${compose[@]}" up -d --no-deps --force-recreate relay-ops; fi; } || ! post_checks; then
   if rollback; then write_state "$previous_image" "$previous_image" rolled_back; printf '{"schema_version":1,"result":"failed_rolled_back","requested_image":"%s","rollback_proven":true}\n' "$requested_image"; exit 1; fi
   fail 'post-change checks failed and rollback could not be proven'
 fi

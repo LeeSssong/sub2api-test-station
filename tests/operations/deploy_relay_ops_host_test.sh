@@ -12,7 +12,7 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 IMAGE="example.invalid/relay-ops@sha256:$(printf 'a%.0s' {1..64})"
 PREVIOUS="example.invalid/relay-ops@sha256:$(printf 'b%.0s' {1..64})"
 setup_case() {
-  CASE_DIR="$FIXTURE/$1"; rm -rf -- "$CASE_DIR"; mkdir -p "$CASE_DIR/bin" "$CASE_DIR/deploy" "$CASE_DIR/records"
+  CASE_DIR="$FIXTURE/$1"; rm -rf -- "$CASE_DIR"; mkdir -p "$CASE_DIR/bin" "$CASE_DIR/deploy" "$CASE_DIR/records" "$CASE_DIR/staging"
   printf 'secret=value\n' >"$CASE_DIR/secret.env"; chmod 0600 "$CASE_DIR/secret.env"
   printf 'services: {}\n' >"$CASE_DIR/compose.yaml"
   : >"$CASE_DIR/events.log"
@@ -43,6 +43,10 @@ case "$*" in
   *' ps -q sub2api-worker') printf 'worker-id\n' ;;
   *' ps -q relay-ops') printf 'relay-id\n' ;;
   *'Config.Image'*) [[ -e "${FAKE_EVENT_LOG}.rollback" ]] && printf '%s\n' "${FAKE_RELAY_IMAGE:?}" || { [[ -e "${FAKE_EVENT_LOG}.new" ]] && printf '%s\n' "${FAKE_REQUESTED_IMAGE:?}" || printf '%s\n' "${FAKE_RELAY_IMAGE:?}"; } ;;
+  *'inspect relay-id --format {{.Image}}'*) [[ -e "${FAKE_EVENT_LOG}.rollback" ]] && printf '%s\n' "${FAKE_RELAY_IMAGE_ID:?}" || { [[ -e "${FAKE_EVENT_LOG}.new" ]] && printf '%s\n' "${FAKE_REQUESTED_IMAGE_ID:?}" || printf '%s\n' "${FAKE_RELAY_IMAGE_ID:?}"; } ;;
+  *'image inspect '*"{{.Id}}"*) printf '%s\n' "${FAKE_REQUESTED_IMAGE_ID:?}" ;;
+  *'image inspect '*"{{json .}}"*) printf '{"Id":"%s","Config":{"Labels":{"com.xingqiao.relay-ops.qualified":"true","com.xingqiao.relay-ops.source.commit":"%s","com.xingqiao.relay-ops.source.tree":"%s","com.xingqiao.relay-ops.tested.tree":"%s","com.xingqiao.relay-ops.migrations.sha256":"%s"}}}\n' "${FAKE_REQUESTED_IMAGE_ID:?}" "${FAKE_SOURCE_COMMIT:?}" "${FAKE_SOURCE_TREE:?}" "${FAKE_TESTED_TREE:?}" "${FAKE_MIGRATIONS_HASH:?}" ;;
+  *' load --input '*) ;;
   *'State.Health.Status'*)
     if [[ "${FAKE_SCENARIO:-}" == health_starting && ! -e "${FAKE_EVENT_LOG}.health_once" ]]; then
       : >"${FAKE_EVENT_LOG}.health_once"; printf 'starting\n'
@@ -59,7 +63,7 @@ case "$*" in
   *' inspect green-id --format {{.Id}}') printf 'green-id\n' ;;
   *' inspect worker-id --format {{.Id}}') printf 'worker-id\n' ;;
   *' pull relay-ops') ;;
-  *' up -d --no-deps --force-recreate relay-ops') [[ -e "${FAKE_EVENT_LOG}.new" ]] && : >"${FAKE_EVENT_LOG}.rollback" || : >"${FAKE_EVENT_LOG}.new" ;;
+  *' up -d --no-deps '*'--force-recreate relay-ops') [[ -e "${FAKE_EVENT_LOG}.new" ]] && : >"${FAKE_EVENT_LOG}.rollback" || : >"${FAKE_EVENT_LOG}.new" ;;
   *'exec caddy-id wget -qO- http://relay-ops:8100/healthz') [[ "${FAKE_SCENARIO:-}" == bad_health ]] && { printf '{"status":"wrong"}\n'; exit 0; }; printf '{"status":"ok"}\n' ;;
   *'exec caddy-id wget -qO- http://relay-ops:8100/readyz') [[ "${FAKE_SCENARIO:-}" == bad_ready ]] && { printf '{"status":"wrong"}\n'; exit 0; }; printf '{"status":"ready"}\n' ;;
   *) exit 0 ;;
@@ -68,11 +72,22 @@ SH
   chmod +x "$CASE_DIR/bin/id" "$CASE_DIR/bin/uname" "$CASE_DIR/bin/stat" "$CASE_DIR/bin/docker"
 }
 run_executor() {
-  env PATH="$CASE_DIR/bin:$PATH" FAKE_EVENT_LOG="$CASE_DIR/events.log" FAKE_RELAY_IMAGE="$PREVIOUS" FAKE_REQUESTED_IMAGE="$IMAGE" DEPLOY_ROOT="$CASE_DIR/deploy" BASE_COMPOSE="$CASE_DIR/compose.yaml" SECRET_ENV="$CASE_DIR/secret.env" RELAY_OPS_HEALTH_TIMEOUT_SECONDS=2 RELAY_OPS_HEALTH_POLL_SECONDS=1 \
+  env PATH="$CASE_DIR/bin:$PATH" FAKE_EVENT_LOG="$CASE_DIR/events.log" FAKE_RELAY_IMAGE="$PREVIOUS" FAKE_REQUESTED_IMAGE="$IMAGE" FAKE_RELAY_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" FAKE_REQUESTED_IMAGE_ID="sha256:$(printf 'a%.0s' {1..64})" FAKE_SOURCE_COMMIT="$(printf 'c%.0s' {1..40})" FAKE_SOURCE_TREE="$(printf 'd%.0s' {1..40})" FAKE_TESTED_TREE="$(printf 'd%.0s' {1..40})" FAKE_MIGRATIONS_HASH="$(printf 'e%.0s' {1..64})" DEPLOY_ROOT="$CASE_DIR/deploy" BASE_COMPOSE="$CASE_DIR/compose.yaml" SECRET_ENV="$CASE_DIR/secret.env" RELAY_OPS_HEALTH_TIMEOUT_SECONDS=2 RELAY_OPS_HEALTH_POLL_SECONDS=1 \
     RELEASE_STATE="$CASE_DIR/records/release-state.json" RELEASE_RECORD_ROOT="$CASE_DIR/records" RELEASE_IMAGE="$IMAGE" \
     DOCKER_BIN="$CASE_DIR/bin/docker" "$@" bash "$EXECUTOR" --mode production --image "$IMAGE" \
     --source-commit "$(printf 'c%.0s' {1..40})" --source-tree "$(printf 'd%.0s' {1..40})" --tested-tree "$(printf 'd%.0s' {1..40})" \
     --migrations-hash "$(printf 'e%.0s' {1..64})" --deadline-epoch "$(( $(date +%s) + 300 ))"
+}
+
+run_preloaded_executor() {
+  local commit image_id archive_sha image
+  commit=$(printf 'c%.0s' {1..40})
+  image="example.invalid/relay-ops:release-$commit"
+  image_id="sha256:$(printf 'a%.0s' {1..64})"
+  printf 'preloaded-image\n' >"$CASE_DIR/staging/image.tar"
+  chmod 0600 "$CASE_DIR/staging/image.tar"
+  archive_sha=$(shasum -a 256 "$CASE_DIR/staging/image.tar" | awk '{print $1}')
+  env PATH="$CASE_DIR/bin:$PATH" FAKE_EVENT_LOG="$CASE_DIR/events.log" FAKE_RELAY_IMAGE="$PREVIOUS" FAKE_REQUESTED_IMAGE="$image" FAKE_RELAY_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" FAKE_REQUESTED_IMAGE_ID="$image_id" FAKE_SOURCE_COMMIT="$commit" FAKE_SOURCE_TREE="$(printf 'd%.0s' {1..40})" FAKE_TESTED_TREE="$(printf 'd%.0s' {1..40})" FAKE_MIGRATIONS_HASH="$(printf 'e%.0s' {1..64})" DEPLOY_ROOT="$CASE_DIR/deploy" BASE_COMPOSE="$CASE_DIR/compose.yaml" SECRET_ENV="$CASE_DIR/secret.env" RELEASE_STATE="$CASE_DIR/records/release-state.json" RELEASE_RECORD_ROOT="$CASE_DIR/records" RELEASE_PRELOADED_IMAGE=true RELEASE_STAGING_ROOT="$CASE_DIR/staging" RELAY_OPS_HEALTH_TIMEOUT_SECONDS=2 RELAY_OPS_HEALTH_POLL_SECONDS=1 DOCKER_BIN="$CASE_DIR/bin/docker" bash "$EXECUTOR" --mode production --image "$image" --preloaded-archive "$CASE_DIR/staging/image.tar" --preloaded-archive-sha256 "$archive_sha" --preloaded-image-id "$image_id" --source-commit "$commit" --source-tree "$(printf 'd%.0s' {1..40})" --tested-tree "$(printf 'd%.0s' {1..40})" --migrations-hash "$(printf 'e%.0s' {1..64})" --deadline-epoch "$(( $(date +%s) + 300 ))"
 }
 
 test_success_only_recreates_relay_ops() {
@@ -83,6 +98,15 @@ test_success_only_recreates_relay_ops() {
   ! grep -E 'up .*postgres|up .*redis|up .*caddy|up .*sub2api-' "$CASE_DIR/events.log" >/dev/null || fail 'shared service recreation detected'
   [[ -f "$CASE_DIR/records/release-state.json" ]] || fail 'release state missing'
   [[ "$(stat -f '%Lp' "$CASE_DIR/records/release-state.json" 2>/dev/null || stat -c '%a' "$CASE_DIR/records/release-state.json")" == 600 ]] || fail 'release state is not 0600'
+}
+
+test_preloaded_image_skips_pull_and_records_immutable_image_id() {
+  setup_case preloaded
+  run_preloaded_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "preloaded executor failed: $(cat "$CASE_DIR/stderr")"
+  grep -F -- 'load --input' "$CASE_DIR/events.log" >/dev/null || fail 'preloaded archive was not loaded'
+  ! grep -F -- 'pull relay-ops' "$CASE_DIR/events.log" >/dev/null || fail 'preloaded executor unexpectedly pulled relay-ops'
+  grep -F -- 'up -d --no-deps --pull never --force-recreate relay-ops' "$CASE_DIR/events.log" >/dev/null || fail 'preloaded relay-only recreate missing'
+  ruby -rjson -e 'v=JSON.parse(File.binread(ARGV[0])); abort unless v["current_image_id"] == ARGV[1]' "$CASE_DIR/records/release-state.json" "sha256:$(printf 'a%.0s' {1..64})" || fail 'preloaded image ID was not persisted'
 }
 
 test_failed_checks_restore_previous_digest() {
@@ -113,6 +137,7 @@ test_waits_for_health_transition() {
 }
 
 test_success_only_recreates_relay_ops
+test_preloaded_image_skips_pull_and_records_immutable_image_id
 test_failed_checks_restore_previous_digest
 test_rejects_ambiguous_required_service
 test_rejects_nonready_internal_endpoint

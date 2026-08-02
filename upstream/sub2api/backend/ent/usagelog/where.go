@@ -90,6 +90,11 @@ func UpstreamModel(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamModel, v))
 }
 
+// ActualResponseModel applies equality check predicate on the "actual_response_model" field. It's identical to ActualResponseModelEQ.
+func ActualResponseModel(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldActualResponseModel, v))
+}
+
 // ChannelID applies equality check predicate on the "channel_id" field. It's identical to ChannelIDEQ.
 func ChannelID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldChannelID, v))
@@ -613,6 +618,81 @@ func UpstreamModelEqualFold(v string) predicate.UsageLog {
 // UpstreamModelContainsFold applies the ContainsFold predicate on the "upstream_model" field.
 func UpstreamModelContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldUpstreamModel, v))
+}
+
+// ActualResponseModelEQ applies the EQ predicate on the "actual_response_model" field.
+func ActualResponseModelEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelNEQ applies the NEQ predicate on the "actual_response_model" field.
+func ActualResponseModelNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelIn applies the In predicate on the "actual_response_model" field.
+func ActualResponseModelIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldActualResponseModel, vs...))
+}
+
+// ActualResponseModelNotIn applies the NotIn predicate on the "actual_response_model" field.
+func ActualResponseModelNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldActualResponseModel, vs...))
+}
+
+// ActualResponseModelGT applies the GT predicate on the "actual_response_model" field.
+func ActualResponseModelGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelGTE applies the GTE predicate on the "actual_response_model" field.
+func ActualResponseModelGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelLT applies the LT predicate on the "actual_response_model" field.
+func ActualResponseModelLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelLTE applies the LTE predicate on the "actual_response_model" field.
+func ActualResponseModelLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelContains applies the Contains predicate on the "actual_response_model" field.
+func ActualResponseModelContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelHasPrefix applies the HasPrefix predicate on the "actual_response_model" field.
+func ActualResponseModelHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelHasSuffix applies the HasSuffix predicate on the "actual_response_model" field.
+func ActualResponseModelHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelIsNil applies the IsNil predicate on the "actual_response_model" field.
+func ActualResponseModelIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldActualResponseModel))
+}
+
+// ActualResponseModelNotNil applies the NotNil predicate on the "actual_response_model" field.
+func ActualResponseModelNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldActualResponseModel))
+}
+
+// ActualResponseModelEqualFold applies the EqualFold predicate on the "actual_response_model" field.
+func ActualResponseModelEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldActualResponseModel, v))
+}
+
+// ActualResponseModelContainsFold applies the ContainsFold predicate on the "actual_response_model" field.
+func ActualResponseModelContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldActualResponseModel, v))
 }
 
 // ChannelIDEQ applies the EQ predicate on the "channel_id" field.

@@ -85,6 +85,20 @@ func (_c *UsageLogCreate) SetNillableUpstreamModel(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetActualResponseModel sets the "actual_response_model" field.
+func (_c *UsageLogCreate) SetActualResponseModel(v string) *UsageLogCreate {
+	_c.mutation.SetActualResponseModel(v)
+	return _c
+}
+
+// SetNillableActualResponseModel sets the "actual_response_model" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableActualResponseModel(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetActualResponseModel(*v)
+	}
+	return _c
+}
+
 // SetChannelID sets the "channel_id" field.
 func (_c *UsageLogCreate) SetChannelID(v int64) *UsageLogCreate {
 	_c.mutation.SetChannelID(v)
@@ -788,6 +802,11 @@ func (_c *UsageLogCreate) check() error {
 			return &ValidationError{Name: "upstream_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_model": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.ActualResponseModel(); ok {
+		if err := usagelog.ActualResponseModelValidator(v); err != nil {
+			return &ValidationError{Name: "actual_response_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.actual_response_model": %w`, err)}
+		}
+	}
 	if v, ok := _c.mutation.ModelMappingChain(); ok {
 		if err := usagelog.ModelMappingChainValidator(v); err != nil {
 			return &ValidationError{Name: "model_mapping_chain", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model_mapping_chain": %w`, err)}
@@ -949,6 +968,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UpstreamModel(); ok {
 		_spec.SetField(usagelog.FieldUpstreamModel, field.TypeString, value)
 		_node.UpstreamModel = &value
+	}
+	if value, ok := _c.mutation.ActualResponseModel(); ok {
+		_spec.SetField(usagelog.FieldActualResponseModel, field.TypeString, value)
+		_node.ActualResponseModel = &value
 	}
 	if value, ok := _c.mutation.ChannelID(); ok {
 		_spec.SetField(usagelog.FieldChannelID, field.TypeInt64, value)
@@ -1324,6 +1347,24 @@ func (u *UsageLogUpsert) UpdateUpstreamModel() *UsageLogUpsert {
 // ClearUpstreamModel clears the value of the "upstream_model" field.
 func (u *UsageLogUpsert) ClearUpstreamModel() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldUpstreamModel)
+	return u
+}
+
+// SetActualResponseModel sets the "actual_response_model" field.
+func (u *UsageLogUpsert) SetActualResponseModel(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldActualResponseModel, v)
+	return u
+}
+
+// UpdateActualResponseModel sets the "actual_response_model" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateActualResponseModel() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldActualResponseModel)
+	return u
+}
+
+// ClearActualResponseModel clears the value of the "actual_response_model" field.
+func (u *UsageLogUpsert) ClearActualResponseModel() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldActualResponseModel)
 	return u
 }
 
@@ -2159,6 +2200,27 @@ func (u *UsageLogUpsertOne) UpdateUpstreamModel() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearUpstreamModel() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearUpstreamModel()
+	})
+}
+
+// SetActualResponseModel sets the "actual_response_model" field.
+func (u *UsageLogUpsertOne) SetActualResponseModel(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetActualResponseModel(v)
+	})
+}
+
+// UpdateActualResponseModel sets the "actual_response_model" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateActualResponseModel() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateActualResponseModel()
+	})
+}
+
+// ClearActualResponseModel clears the value of the "actual_response_model" field.
+func (u *UsageLogUpsertOne) ClearActualResponseModel() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearActualResponseModel()
 	})
 }
 
@@ -3273,6 +3335,27 @@ func (u *UsageLogUpsertBulk) UpdateUpstreamModel() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearUpstreamModel() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearUpstreamModel()
+	})
+}
+
+// SetActualResponseModel sets the "actual_response_model" field.
+func (u *UsageLogUpsertBulk) SetActualResponseModel(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetActualResponseModel(v)
+	})
+}
+
+// UpdateActualResponseModel sets the "actual_response_model" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateActualResponseModel() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateActualResponseModel()
+	})
+}
+
+// ClearActualResponseModel clears the value of the "actual_response_model" field.
+func (u *UsageLogUpsertBulk) ClearActualResponseModel() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearActualResponseModel()
 	})
 }
 

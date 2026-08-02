@@ -142,6 +142,26 @@ func (_u *UsageLogUpdate) ClearUpstreamModel() *UsageLogUpdate {
 	return _u
 }
 
+// SetActualResponseModel sets the "actual_response_model" field.
+func (_u *UsageLogUpdate) SetActualResponseModel(v string) *UsageLogUpdate {
+	_u.mutation.SetActualResponseModel(v)
+	return _u
+}
+
+// SetNillableActualResponseModel sets the "actual_response_model" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableActualResponseModel(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetActualResponseModel(*v)
+	}
+	return _u
+}
+
+// ClearActualResponseModel clears the value of the "actual_response_model" field.
+func (_u *UsageLogUpdate) ClearActualResponseModel() *UsageLogUpdate {
+	_u.mutation.ClearActualResponseModel()
+	return _u
+}
+
 // SetChannelID sets the "channel_id" field.
 func (_u *UsageLogUpdate) SetChannelID(v int64) *UsageLogUpdate {
 	_u.mutation.ResetChannelID()
@@ -1016,6 +1036,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "upstream_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_model": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ActualResponseModel(); ok {
+		if err := usagelog.ActualResponseModelValidator(v); err != nil {
+			return &ValidationError{Name: "actual_response_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.actual_response_model": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ModelMappingChain(); ok {
 		if err := usagelog.ModelMappingChainValidator(v); err != nil {
 			return &ValidationError{Name: "model_mapping_chain", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model_mapping_chain": %w`, err)}
@@ -1107,6 +1132,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.UpstreamModelCleared() {
 		_spec.ClearField(usagelog.FieldUpstreamModel, field.TypeString)
+	}
+	if value, ok := _u.mutation.ActualResponseModel(); ok {
+		_spec.SetField(usagelog.FieldActualResponseModel, field.TypeString, value)
+	}
+	if _u.mutation.ActualResponseModelCleared() {
+		_spec.ClearField(usagelog.FieldActualResponseModel, field.TypeString)
 	}
 	if value, ok := _u.mutation.ChannelID(); ok {
 		_spec.SetField(usagelog.FieldChannelID, field.TypeInt64, value)
@@ -1596,6 +1627,26 @@ func (_u *UsageLogUpdateOne) SetNillableUpstreamModel(v *string) *UsageLogUpdate
 // ClearUpstreamModel clears the value of the "upstream_model" field.
 func (_u *UsageLogUpdateOne) ClearUpstreamModel() *UsageLogUpdateOne {
 	_u.mutation.ClearUpstreamModel()
+	return _u
+}
+
+// SetActualResponseModel sets the "actual_response_model" field.
+func (_u *UsageLogUpdateOne) SetActualResponseModel(v string) *UsageLogUpdateOne {
+	_u.mutation.SetActualResponseModel(v)
+	return _u
+}
+
+// SetNillableActualResponseModel sets the "actual_response_model" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableActualResponseModel(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetActualResponseModel(*v)
+	}
+	return _u
+}
+
+// ClearActualResponseModel clears the value of the "actual_response_model" field.
+func (_u *UsageLogUpdateOne) ClearActualResponseModel() *UsageLogUpdateOne {
+	_u.mutation.ClearActualResponseModel()
 	return _u
 }
 
@@ -2486,6 +2537,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "upstream_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_model": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ActualResponseModel(); ok {
+		if err := usagelog.ActualResponseModelValidator(v); err != nil {
+			return &ValidationError{Name: "actual_response_model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.actual_response_model": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ModelMappingChain(); ok {
 		if err := usagelog.ModelMappingChainValidator(v); err != nil {
 			return &ValidationError{Name: "model_mapping_chain", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model_mapping_chain": %w`, err)}
@@ -2594,6 +2650,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.UpstreamModelCleared() {
 		_spec.ClearField(usagelog.FieldUpstreamModel, field.TypeString)
+	}
+	if value, ok := _u.mutation.ActualResponseModel(); ok {
+		_spec.SetField(usagelog.FieldActualResponseModel, field.TypeString, value)
+	}
+	if _u.mutation.ActualResponseModelCleared() {
+		_spec.ClearField(usagelog.FieldActualResponseModel, field.TypeString)
 	}
 	if value, ok := _u.mutation.ChannelID(); ok {
 		_spec.SetField(usagelog.FieldChannelID, field.TypeInt64, value)

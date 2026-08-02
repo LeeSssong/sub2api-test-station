@@ -24,6 +24,7 @@
 
 **Files:**
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_service.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_types.go`
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
 
 **Interfaces:**
@@ -39,6 +40,7 @@
 ### Task 2: 默认全站 Tab 与无隐式筛选
 
 **Files:**
+- Modify: `upstream/sub2api/frontend/src/api/admin/accountMonitor.ts`
 - Modify: `upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue`
 - Modify: `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorFilters.vue`
@@ -57,6 +59,7 @@
 ### Task 3: 双维度摘要、权重入口与账号分区
 
 **Files:**
+- Modify: `upstream/sub2api/frontend/src/api/admin/accountMonitor.ts`
 - Modify: `upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue`
 - Modify: `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
 - Optionally create: `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorScopeSummary.vue`

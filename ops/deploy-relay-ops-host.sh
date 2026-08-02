@@ -91,7 +91,14 @@ expected = {
 }
 if not isinstance(value, dict) or value.get("Id") != expected["Id"]:
     raise SystemExit(1)
-for key, wanted in list(expected.items())[1:]:
+for key in (
+    "com.xingqiao.relay-ops.qualified",
+    "com.xingqiao.relay-ops.source.commit",
+    "com.xingqiao.relay-ops.source.tree",
+    "com.xingqiao.relay-ops.tested.tree",
+    "com.xingqiao.relay-ops.migrations.sha256",
+):
+    wanted = expected[key]
     if labels.get(key) != wanted:
         raise SystemExit(1)
 PY

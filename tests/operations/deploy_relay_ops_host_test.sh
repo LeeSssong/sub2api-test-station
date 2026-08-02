@@ -70,7 +70,7 @@ case "$*" in
   *' inspect worker-id --format {{.Id}}') printf 'worker-id\n' ;;
   *' pull relay-ops') ;;
   *' up -d --no-deps '*'--force-recreate relay-ops') [[ -e "${FAKE_EVENT_LOG}.new" ]] && : >"${FAKE_EVENT_LOG}.rollback" || : >"${FAKE_EVENT_LOG}.new" ;;
-  *'exec caddy-id wget -qO- http://relay-ops:8100/healthz') [[ "${FAKE_SCENARIO:-}" == bad_health ]] && { printf '{"status":"wrong"}\n'; exit 0; }; printf '{"status":"ok"}\n' ;;
+  *'exec caddy-id wget -qO- http://relay-ops:8100/healthz') [[ "${FAKE_SCENARIO:-}" == bad_health ]] && { printf '{"status":"wrong"}\n'; exit 0; }; printf '{"status":"alive"}\n' ;;
   *'exec caddy-id wget -qO- http://relay-ops:8100/readyz') [[ "${FAKE_SCENARIO:-}" == bad_ready ]] && { printf '{"status":"wrong"}\n'; exit 0; }; printf '{"status":"ready"}\n' ;;
   *) exit 0 ;;
 esac

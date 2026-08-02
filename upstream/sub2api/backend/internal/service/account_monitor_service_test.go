@@ -651,6 +651,37 @@ func TestAccountMonitorProjectionIncludesReusableTodayStatsWithoutSecrets(t *tes
 	}
 }
 
+func TestAccountMonitorProjectionSerializesUngroupedAccountListsAsEmptyArrays(t *testing.T) {
+	service := NewAccountMonitorService(
+		&accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}},
+		&accountMonitorAccountRepoStub{accounts: []Account{{
+			ID:          91,
+			Name:        "ungrouped",
+			Status:      StatusActive,
+			Schedulable: true,
+			Platform:    PlatformOpenAI,
+		}}},
+		nil,
+		nil,
+		nil,
+	)
+
+	page, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, expected := range []string{`"group_ids":[]`, `"group_names":[]`} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("projection %s missing %s", text, expected)
+		}
+	}
+}
+
 func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnectivity(t *testing.T) {
 	monitorRepo := &accountMonitorRepoStub{}
 	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{

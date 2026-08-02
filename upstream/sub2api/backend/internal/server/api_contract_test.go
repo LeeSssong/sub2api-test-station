@@ -2493,6 +2493,10 @@ func (r *stubUsageLogRepo) Delete(ctx context.Context, id int64) error {
 	return errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) UpdateActualResponseModelByRequestID(ctx context.Context, requestID, model string) error {
+	return nil
+}
+
 func (r *stubUsageLogRepo) ListByUser(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {
 	logs := r.userLogs[userID]
 	total := int64(len(logs))

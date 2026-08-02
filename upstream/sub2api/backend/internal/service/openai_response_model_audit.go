@@ -33,10 +33,22 @@ func ExtractOpenAIResponseModelJSON(body []byte) string {
 // ExtractOpenAIResponseModelSSEEvent extracts models only from terminal/relevant OpenAI SSE events.
 func ExtractOpenAIResponseModelSSEEvent(eventType string, data []byte) string {
 	event := strings.ToLower(strings.TrimSpace(eventType))
-	if event == "" || strings.Contains(event, "delta") || strings.Contains(event, "created") || strings.Contains(event, "in_progress") {
+	if event == "" {
+		var chunk struct {
+			Object string `json:"object"`
+		}
+		if json.Unmarshal(data, &chunk) != nil || chunk.Object != "chat.completion.chunk" {
+			return ""
+		}
+		return ExtractOpenAIResponseModelJSON(data)
+	}
+
+	switch event {
+	case "message", "response.completed", "response.failed", "response.incomplete", "response.output_item.done":
+		return ExtractOpenAIResponseModelJSON(data)
+	default:
 		return ""
 	}
-	return ExtractOpenAIResponseModelJSON(data)
 }
 
 func normalizeActualResponseModel(model string) string {

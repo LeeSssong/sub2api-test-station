@@ -31,6 +31,7 @@ type AttemptInput struct {
 	AccountID         int64
 	AdapterType       AdapterType
 	UpstreamRequestID string
+	GroupID           *int64
 	Model             string
 	InputTokens       int64
 	OutputTokens      int64
@@ -135,6 +136,9 @@ func ValidateAttempt(input AttemptInput) (AttemptInput, error) {
 	}
 	if input.AdapterType != AdapterSub2API && input.AdapterType != AdapterNewAPI {
 		return AttemptInput{}, fmt.Errorf("adapter_type is invalid")
+	}
+	if input.GroupID != nil && *input.GroupID <= 0 {
+		return AttemptInput{}, fmt.Errorf("group_id must be positive")
 	}
 	if input.InputTokens < 0 || input.OutputTokens < 0 || input.UserCharge.IsNegative() {
 		return AttemptInput{}, fmt.Errorf("tokens and user_charge must be non-negative")

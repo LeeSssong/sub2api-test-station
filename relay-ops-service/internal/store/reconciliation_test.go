@@ -57,6 +57,54 @@ func TestCreateAutomaticUpstreamCostMatchesAndResolvesException(t *testing.T) {
 	}
 }
 
+func TestRecordUpstreamCostAttemptPreservesGroupScopeAndRejectsConflict(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	groupID := int64(3)
+	attempt, inserted, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+		AttemptID:      "group-scope-attempt",
+		LocalRequestID: "group-scope-local-request",
+		AccountID:      8123,
+		AdapterType:    reconciliation.AdapterSub2API,
+		GroupID:        &groupID,
+		Model:          "gpt-test",
+		UserCharge:     decimal.RequireFromString("2.00"),
+		Currency:       "USD",
+		RequestStatus:  "success",
+		CompletedAt:    time.Now().UTC(),
+	})
+	if err != nil || !inserted {
+		t.Fatalf("RecordUpstreamCostAttempt = %#v inserted %v err %v", attempt, inserted, err)
+	}
+	if attempt.GroupID == nil || *attempt.GroupID != groupID {
+		t.Fatalf("stored group_id = %v, want 3", attempt.GroupID)
+	}
+
+	retry, inserted, err := st.RecordUpstreamCostAttempt(ctx, attempt.AttemptInput)
+	if err != nil || inserted || retry.GroupID == nil || *retry.GroupID != groupID {
+		t.Fatalf("retry = %#v inserted %v err %v, want idempotent same group", retry, inserted, err)
+	}
+
+	changed := attempt.AttemptInput
+	changed.GroupID = ptrInt64(8)
+	if _, _, err := st.RecordUpstreamCostAttempt(ctx, changed); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed group_id error = %v, want ErrConflict", err)
+	}
+
+	nilGroup := attempt.AttemptInput
+	nilGroup.AttemptID = "nil-group-scope-attempt"
+	nilGroup.LocalRequestID = "nil-group-scope-local-request"
+	nilGroup.GroupID = nil
+	storedNil, inserted, err := st.RecordUpstreamCostAttempt(ctx, nilGroup)
+	if err != nil || !inserted || storedNil.GroupID != nil {
+		t.Fatalf("nil group attempt = %#v inserted %v err %v, want nil group", storedNil, inserted, err)
+	}
+}
+
 func TestCreateAutomaticUpstreamCostAfterManualCreatesConflictException(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
@@ -311,3 +359,5 @@ func exceptionIsLockedNowait(ctx context.Context, st *Store, exceptionID int64) 
 	}
 	return false, err
 }
+
+func ptrInt64(value int64) *int64 { return &value }

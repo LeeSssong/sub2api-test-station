@@ -70,21 +70,22 @@ func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliatio
 	var attempt reconciliation.Attempt
 	var userCharge string
 	var upstreamRequestID *string
+	var groupID *int64
 	var inserted bool
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO relay_ops.upstream_cost_attempts (
 			attempt_id, local_request_id, account_id, adapter_type, upstream_request_id,
-			model, input_tokens, output_tokens, user_charge, currency, request_status, completed_at
-		) VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12)
+			group_id, model, input_tokens, output_tokens, user_charge, currency, request_status, completed_at
+		) VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (attempt_id) DO UPDATE SET attempt_id=EXCLUDED.attempt_id
 		RETURNING id, attempt_id, local_request_id, account_id, adapter_type, upstream_request_id,
-			model, input_tokens, output_tokens, user_charge::text, currency, request_status,
+			group_id, model, input_tokens, output_tokens, user_charge::text, currency, request_status,
 			reconcile_status, completed_at, matched_at, created_at, updated_at, (xmax=0)`,
 		input.AttemptID, input.LocalRequestID, input.AccountID, input.AdapterType, input.UpstreamRequestID,
-		input.Model, input.InputTokens, input.OutputTokens, input.UserCharge.Round(upstreamCostAmountScale).String(),
+		input.GroupID, input.Model, input.InputTokens, input.OutputTokens, input.UserCharge.Round(upstreamCostAmountScale).String(),
 		input.Currency, input.RequestStatus, input.CompletedAt,
 	).Scan(&attempt.ID, &attempt.AttemptID, &attempt.LocalRequestID, &attempt.AccountID, &attempt.AdapterType,
-		&upstreamRequestID, &attempt.Model, &attempt.InputTokens, &attempt.OutputTokens, &userCharge,
+		&upstreamRequestID, &groupID, &attempt.Model, &attempt.InputTokens, &attempt.OutputTokens, &userCharge,
 		&attempt.Currency, &attempt.RequestStatus, &attempt.ReconcileStatus, &attempt.CompletedAt,
 		&attempt.MatchedAt, &attempt.CreatedAt, &attempt.UpdatedAt, &inserted)
 	if err != nil {
@@ -97,6 +98,7 @@ func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliatio
 	if upstreamRequestID != nil {
 		attempt.UpstreamRequestID = *upstreamRequestID
 	}
+	attempt.GroupID = groupID
 	if !inserted && !sameAttempt(attempt, input) {
 		return reconciliation.Attempt{}, false, ErrConflict
 	}
@@ -106,7 +108,7 @@ func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliatio
 func sameAttempt(stored reconciliation.Attempt, input reconciliation.AttemptInput) bool {
 	return stored.AttemptID == input.AttemptID && stored.LocalRequestID == input.LocalRequestID &&
 		stored.AccountID == input.AccountID && stored.AdapterType == input.AdapterType &&
-		stored.UpstreamRequestID == input.UpstreamRequestID && stored.Model == input.Model &&
+		stored.UpstreamRequestID == input.UpstreamRequestID && sameInt64Ptr(stored.GroupID, input.GroupID) && stored.Model == input.Model &&
 		stored.InputTokens == input.InputTokens && stored.OutputTokens == input.OutputTokens &&
 		stored.UserCharge.Equal(input.UserCharge.Round(upstreamCostAmountScale)) &&
 		stored.Currency == input.Currency && stored.RequestStatus == input.RequestStatus &&
@@ -404,7 +406,7 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, attempt_id, local_request_id, account_id, adapter_type, COALESCE(upstream_request_id,''),
-			model, input_tokens, output_tokens, user_charge::text, currency, request_status,
+			group_id, model, input_tokens, output_tokens, user_charge::text, currency, request_status,
 			reconcile_status, completed_at, matched_at, created_at, updated_at
 		FROM relay_ops.upstream_cost_attempts
 		WHERE account_id=$1 AND completed_at >= $2 AND completed_at < $3
@@ -420,7 +422,7 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 		var item reconciliation.Attempt
 		var amount string
 		if err := rows.Scan(&item.ID, &item.AttemptID, &item.LocalRequestID, &item.AccountID, &item.AdapterType,
-			&item.UpstreamRequestID, &item.Model, &item.InputTokens, &item.OutputTokens, &amount, &item.Currency,
+			&item.UpstreamRequestID, &item.GroupID, &item.Model, &item.InputTokens, &item.OutputTokens, &amount, &item.Currency,
 			&item.RequestStatus, &item.ReconcileStatus, &item.CompletedAt, &item.MatchedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan pending upstream cost attempt: %w", err)
 		}
@@ -490,7 +492,7 @@ func (s *Store) ListUpstreamCostExceptions(ctx context.Context, accountID int64,
 	rows, err := s.pool.Query(ctx, `
 		SELECT e.id, e.reason_code, e.details, e.retry_count, e.first_detected_at, e.last_checked_at,
 			a.id, a.attempt_id, a.local_request_id, a.account_id, a.adapter_type,
-			COALESCE(a.upstream_request_id,''), a.model, a.input_tokens, a.output_tokens,
+			COALESCE(a.upstream_request_id,''), a.group_id, a.model, a.input_tokens, a.output_tokens,
 			a.user_charge::text, a.currency, a.request_status, a.reconcile_status,
 			a.completed_at, a.matched_at, a.created_at, a.updated_at
 		FROM relay_ops.upstream_reconciliation_exceptions e
@@ -508,7 +510,7 @@ func (s *Store) ListUpstreamCostExceptions(ctx context.Context, accountID int64,
 		if err := rows.Scan(&item.ID, &item.ReasonCode, &item.Details, &item.RetryCount,
 			&item.FirstDetectedAt, &item.LastCheckedAt, &item.Attempt.ID, &item.Attempt.AttemptID,
 			&item.Attempt.LocalRequestID, &item.Attempt.AccountID, &item.Attempt.AdapterType,
-			&item.Attempt.UpstreamRequestID, &item.Attempt.Model, &item.Attempt.InputTokens,
+			&item.Attempt.UpstreamRequestID, &item.Attempt.GroupID, &item.Attempt.Model, &item.Attempt.InputTokens,
 			&item.Attempt.OutputTokens, &amount, &item.Attempt.Currency, &item.Attempt.RequestStatus,
 			&item.Attempt.ReconcileStatus, &item.Attempt.CompletedAt, &item.Attempt.MatchedAt,
 			&item.Attempt.CreatedAt, &item.Attempt.UpdatedAt); err != nil {

@@ -54,6 +54,9 @@ var upstreamCostReconciliationMigration string
 //go:embed migrations/010_billing_account_mapping.sql
 var billingAccountMappingMigration string
 
+//go:embed migrations/011_reconciliation_group_scope.sql
+var reconciliationGroupScopeMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
@@ -63,6 +66,7 @@ func init() {
 	initialMigration += "\n" + nativeOpsAlertBridgeMigration
 	initialMigration += "\n" + accountingLedgerMigration
 	initialMigration += "\n" + upstreamCostReconciliationMigration
+	initialMigration += "\n" + reconciliationGroupScopeMigration
 }
 
 type Store struct {

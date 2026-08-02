@@ -53,6 +53,7 @@ func TestUsageImporterCreatesIdempotentAttemptsAndContinuesAfterSourceFailure(t 
 			logs: map[int64][]sub2api.UsageLog{8: {{
 				ID: 81, AccountID: 8, RequestID: "request-81", Model: "gpt-5.6-sol",
 				InputTokens: 120, OutputTokens: 60, TotalCost: 0.1234, CreatedAt: start.Add(time.Minute),
+				GroupID: ptrInt64(3),
 			}}},
 		},
 		Attempts: attempts,
@@ -66,9 +67,37 @@ func TestUsageImporterCreatesIdempotentAttemptsAndContinuesAfterSourceFailure(t 
 	if !ok || created.LocalRequestID != "request-81" || created.AdapterType != AdapterSub2API || created.UserCharge.String() != "0.1234" {
 		t.Fatalf("attempt=%#v", created)
 	}
+	if created.GroupID == nil || *created.GroupID != 3 {
+		t.Fatalf("attempt group_id = %v, want 3", created.GroupID)
+	}
 
 	result, err = importer.Import(context.Background(), 8, start, start.Add(time.Hour))
 	if result.SourcesTotal != 1 || result.Inserted != 0 || err != nil {
 		t.Fatalf("repeat result=%#v err=%v", result, err)
 	}
 }
+
+func TestUsageImporterPreservesNilGroupScope(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	attempts := &importerAttempts{items: make(map[string]AttemptInput)}
+	importer := UsageImporter{
+		Sources: importerSources{items: []billing.BillingSource{{AccountID: 8, AdapterType: "sub2api"}}},
+		Reader: importerReader{logs: map[int64][]sub2api.UsageLog{8: {{
+			ID: 82, AccountID: 8, RequestID: "request-82", Model: "gpt-5.6-sol",
+			InputTokens: 10, OutputTokens: 5, TotalCost: 0.02, CreatedAt: start.Add(time.Minute),
+			GroupID: nil,
+		}}}},
+		Attempts: attempts,
+	}
+
+	result, err := importer.Import(context.Background(), 8, start, start.Add(time.Hour))
+	if err != nil || result.Inserted != 1 {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	created := attempts.items["sub2api-usage:8:82"]
+	if created.GroupID != nil {
+		t.Fatalf("attempt group_id = %v, want nil", *created.GroupID)
+	}
+}
+
+func ptrInt64(value int64) *int64 { return &value }

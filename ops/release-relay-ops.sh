@@ -16,6 +16,7 @@ mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 owner_of() { stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"; }
 secure_parent() { local p=$1 label=$2 mode; [[ -d "$p" && ! -L "$p" ]] || fail "$label is invalid"; [[ "$(cd "$p" && pwd -P)" == "$p" ]] || fail "$label must be canonical"; mode=$(mode_of "$p"); (( (8#$mode & 8#022) == 0 )) || fail "$label must not be group/other writable"; }
 secure_credential() { local p=$1 label=$2; [[ "$p" == /* && -f "$p" && -r "$p" && ! -L "$p" ]] || fail "$label is invalid"; secure_parent "$(dirname "$p")" "$label parent"; [[ "$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")" == "$p" ]] || fail "$label must be canonical"; [[ "$(mode_of "$p")" == 600 ]] || fail "$label must be 0600"; [[ "$(owner_of "$p")" == "$(id -u)" ]] || fail "$label must be owned by the release user"; }
+sha256_file() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi; }
 [[ "$evidence" == /* && -f "$evidence" && -r "$evidence" && ! -L "$evidence" ]] || fail '--evidence is invalid'
 evidence_parent=$(dirname "$evidence"); secure_parent "$evidence_parent" '--evidence parent'; [[ "$(cd "$evidence_parent" && pwd -P)/$(basename "$evidence")" == "$evidence" ]] || fail '--evidence must be canonical'; [[ "$(mode_of "$evidence")" == 600 ]] || fail '--evidence mode must be 0600'
 
@@ -46,7 +47,7 @@ else
   image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" image inspect --format '{{.Id}}' "$tag" 2>/dev/null | tr -d '[:space:]') || fail 'local image ID resolution failed'
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'preloaded image did not resolve to an immutable image ID'
   perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" image save --output "$archive" "$tag" >/dev/null || fail 'image archive creation failed'
-  archive_sha256=$(shasum -a 256 "$archive" 2>/dev/null | awk '{print $1}')
+  archive_sha256=$(sha256_file "$archive" 2>/dev/null)
   [[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'image archive checksum failed'
   remote_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -p /tmp ".relay-ops-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') || fail 'remote staging allocation failed'
   [[ "$remote_tmp" =~ ^/tmp/\.relay-ops-$source_commit\.[A-Za-z0-9]{6}$ ]] || fail 'remote staging path is invalid'

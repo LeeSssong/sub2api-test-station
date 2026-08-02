@@ -44,6 +44,7 @@ mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 owner_of() { stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"; }
 secure_directory() { local p=$1 label=$2 mode; canonical_directory "$p" "$label"; [[ "$(owner_of "$p")" == 0 ]] || fail "$label must be root-owned"; mode=$(mode_of "$p"); (( (8#$mode & 8#022) == 0 )) || fail "$label must not be group/other writable"; }
 secure_file() { local p=$1 label=$2 mode; canonical_file "$p" "$label"; [[ "$(owner_of "$p")" == 0 ]] || fail "$label must be root-owned"; mode=$(mode_of "$p"); (( (8#$mode & 8#022) == 0 )) || fail "$label must not be group/other writable"; }
+sha256_file() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi; }
 deploy_root=${DEPLOY_ROOT:?DEPLOY_ROOT is required}; base_compose=${BASE_COMPOSE:?BASE_COMPOSE is required}; secret_env=${SECRET_ENV:?SECRET_ENV is required}; release_state=${RELEASE_STATE:?RELEASE_STATE is required}; record_root=${RELEASE_RECORD_ROOT:?RELEASE_RECORD_ROOT is required}
 secure_directory "$deploy_root" DEPLOY_ROOT; secure_directory "$record_root" RELEASE_RECORD_ROOT; secure_directory "$(dirname "$base_compose")" BASE_COMPOSE_PARENT; secure_directory "$(dirname "$secret_env")" SECRET_ENV_PARENT; secure_directory "$(dirname "$release_state")" RELEASE_STATE_PARENT
 secure_file "$base_compose" BASE_COMPOSE; secure_file "$secret_env" SECRET_ENV
@@ -86,7 +87,7 @@ previous_image=$(inspect_image "$before_relay_ops"); previous_image_id=$(inspect
 if [[ "$preloaded" == true ]]; then
   secure_directory "$release_staging_root" RELEASE_STAGING_ROOT
   secure_file "$preloaded_archive" PRELOADED_ARCHIVE
-  [[ "$(shasum -a 256 "$preloaded_archive" 2>/dev/null | awk '{print $1}')" == "$preloaded_archive_sha256" ]] || fail 'preloaded image archive checksum mismatch'
+  [[ "$(sha256_file "$preloaded_archive" 2>/dev/null)" == "$preloaded_archive_sha256" ]] || fail 'preloaded image archive checksum mismatch'
   run_quiet "$docker_bin" load --input "$preloaded_archive" || fail 'preloaded image load failed'
   [[ "$(inspect_local_image_id "$requested_image")" == "$preloaded_image_id" ]] || fail 'preloaded image ID mismatch after load'
   image_json=$(run_capture "$docker_bin" image inspect --format '{{json .}}' "$requested_image" 2>/dev/null) || fail 'preloaded image inspection failed'

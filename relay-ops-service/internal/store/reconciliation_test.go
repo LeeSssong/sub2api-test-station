@@ -105,6 +105,101 @@ func TestRecordUpstreamCostAttemptPreservesGroupScopeAndRejectsConflict(t *testi
 	}
 }
 
+func TestOperationsSummaryAndDailyHistoryScopeUniqueAttemptsAndUnattributed(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	dayOne := time.Date(2026, 8, 1, 4, 0, 0, 0, time.UTC)
+	dayTwo := time.Date(2026, 8, 2, 4, 0, 0, 0, time.UTC)
+	records := []struct {
+		attemptID string
+		groupID   *int64
+		charge    string
+		cost      string
+		status    string
+		completed time.Time
+	}{
+		{attemptID: "ops-group-3", groupID: ptrInt64(3), charge: "2.00", cost: "0.20", status: "success", completed: dayOne},
+		{attemptID: "ops-group-8", groupID: ptrInt64(8), charge: "3.00", cost: "0.30", status: "success", completed: dayOne.Add(time.Minute)},
+		{attemptID: "ops-unattributed", groupID: nil, charge: "1.00", cost: "0.10", status: "success", completed: dayOne.Add(2 * time.Minute)},
+		{attemptID: "ops-failed-billed", groupID: ptrInt64(8), charge: "0.00", cost: "0.20", status: "failed", completed: dayTwo},
+	}
+	for _, record := range records {
+		attempt, inserted, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+			AttemptID: record.attemptID, LocalRequestID: record.attemptID + "-request", AccountID: 8123,
+			AdapterType: reconciliation.AdapterSub2API, GroupID: record.groupID, Model: "gpt-test",
+			UserCharge: decimal.RequireFromString(record.charge), Currency: "USD", RequestStatus: record.status,
+			CompletedAt: record.completed,
+		})
+		if err != nil || !inserted {
+			t.Fatalf("RecordUpstreamCostAttempt %s = %#v inserted %v err %v", record.attemptID, attempt, inserted, err)
+		}
+		if _, inserted, err := st.CreateAutomaticUpstreamCost(ctx, reconciliation.AutomaticTransactionInput{
+			AttemptID: attempt.ID, AccountID: 8123, SourceType: reconciliation.SourceAutomaticCharge,
+			SourceRecordID: record.attemptID + "-charge", Amount: decimal.RequireFromString(record.cost),
+			Currency: "USD", OccurredAt: record.completed, IdempotencyKey: "ops:" + record.attemptID,
+		}); err != nil || !inserted {
+			t.Fatalf("CreateAutomaticUpstreamCost %s inserted %v err %v", record.attemptID, inserted, err)
+		}
+	}
+
+	start := dayOne.Add(-time.Hour)
+	end := dayTwo.Add(24 * time.Hour)
+	global, err := st.ReadOperationsSummary(ctx, reconciliation.OperationsScope{
+		Start: start, End: end, Currency: "USD", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("ReadOperationsSummary global: %v", err)
+	}
+	if global.TotalAttempts != 4 || global.MatchedAttempts != 4 || !global.CoverageKnown ||
+		!global.UpstreamCost.Equal(decimal.RequireFromString("0.80")) ||
+		!global.UserCharge.Equal(decimal.RequireFromString("6.00")) ||
+		global.UnattributedAttempts != 1 ||
+		!global.UnattributedUserCharge.Equal(decimal.RequireFromString("1.00")) ||
+		!global.UnattributedUpstreamCost.Equal(decimal.RequireFromString("0.10")) {
+		t.Fatalf("global operations = %#v", global)
+	}
+
+	groupID := int64(3)
+	groupThree, err := st.ReadOperationsSummary(ctx, reconciliation.OperationsScope{
+		GroupID: &groupID, Start: start, End: end, Currency: "USD", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("ReadOperationsSummary group 3: %v", err)
+	}
+	if groupThree.TotalAttempts != 1 || !groupThree.UserCharge.Equal(decimal.RequireFromString("2.00")) ||
+		!groupThree.UpstreamCost.Equal(decimal.RequireFromString("0.20")) || groupThree.UnattributedAttempts != 0 {
+		t.Fatalf("group 3 operations = %#v", groupThree)
+	}
+
+	daily, err := st.ListOperationsDaily(ctx, reconciliation.OperationsScope{
+		Start: start, End: end, Currency: "USD", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("ListOperationsDaily: %v", err)
+	}
+	if len(daily) != 2 || daily[0].Day != "2026-08-01" || daily[1].Day != "2026-08-02" ||
+		!daily[0].UpstreamCost.Equal(decimal.RequireFromString("0.60")) ||
+		!daily[1].UpstreamCost.Equal(decimal.RequireFromString("0.20")) ||
+		daily[1].ProfitMargin != nil {
+		t.Fatalf("daily operations = %#v", daily)
+	}
+
+	groupDaily, err := st.ListOperationsDaily(ctx, reconciliation.OperationsScope{
+		GroupID: &groupID, Start: start, End: end, Currency: "USD", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("ListOperationsDaily group 3: %v", err)
+	}
+	if len(groupDaily) != 1 || groupDaily[0].Day != "2026-08-01" ||
+		!groupDaily[0].UserCharge.Equal(decimal.RequireFromString("2.00")) {
+		t.Fatalf("group daily operations = %#v", groupDaily)
+	}
+}
+
 func TestCreateAutomaticUpstreamCostAfterManualCreatesConflictException(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

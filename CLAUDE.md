@@ -93,11 +93,11 @@ sudo -n docker compose --project-name sub2api --env-file .env -f compose.yaml co
 
 `/ops` 页面的模板错误**编译期发现不了**（`server.go` 里是 `_ = ExecuteTemplate(...)`，错误被丢弃），改动 `ops.html` 或它依赖的结构体后，必须实际打开页面确认整页渲染完整。
 
-## Sub2API 本体不可改
+## Sub2API 本体变更边界
 
-生产运行官方镜像（`xingqiao-sub2api:upstream-0.1.165`，pinned digest）。`upstream/sub2api/` 只是只读源码快照，改它不会进生产。
+`upstream/sub2api/` 已作为当前生产 Sub2API 不可变镜像的受控源码输入，不再是“修改后不会进入生产”的只读快照。只有用户明确批准且已登记总账的任务可以修改该目录；必须绑定 source commit、tested tree、完整迁移 hash 和 linux/amd64 不可变镜像，并通过现有 blue/green 或已授权维护发布器进入生产。
 
-需要的行为必须外置到 relay-ops、Caddy、配置或其他独立发布的组件；做不到就退役该需求。详见 `docs/superpowers/specs/2026-07-24-official-sub2api-image-migration-design.md`。
+不得为了临时绕过门禁直接修改生产容器、跳过迁移 hash、从脏工作区 rsync、或把未写入批准计划的功能顺带部署。旧的官方镜像迁移设计保留为历史背景，不再覆盖当前生产发布事实。
 
 ## 验证
 

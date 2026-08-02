@@ -8,7 +8,7 @@
               {{ t('admin.accountMonitor.title') }}
             </h1>
             <span class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
-              {{ t('admin.accountMonitor.monitoredCount', { count: filteredAccounts.length }) }}
+              当前展示 {{ filteredAccounts.length }} 个账号
             </span>
           </div>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -42,47 +42,6 @@
             {{ runningAll ? t('admin.accountMonitor.actions.running') : t('admin.accountMonitor.actions.refreshAll') }}
           </button>
         </div>
-      </section>
-
-      <section class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="operations-overview">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">全站经营总览</h2>
-            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">默认今日 · 成本仅采用已对账的真实上游账单</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-ledger-history" @click="openLedgerHistory()">历史按日</button>
-            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-exceptions" @click="openExceptions">异常明细</button>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <LedgerMetric label="用户实际计费" :value="formatMoney(globalLedger?.user_charge, globalLedger?.currency)" />
-          <LedgerMetric label="上游真实扣费" :value="formatMoney(globalLedger?.upstream_cost, globalLedger?.currency)" />
-          <LedgerMetric label="纸面利润" :value="formatMoney(globalLedger?.paper_profit, globalLedger?.currency)" />
-          <LedgerMetric label="利润率" :value="formatProfitMargin(globalLedger)" />
-          <LedgerMetric label="成本覆盖率" :value="formatCoverage(globalLedger)" :value-class="coverageClass(globalLedger)" />
-          <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="global-health-summary">
-            <p class="text-xs text-gray-500 dark:text-gray-400">服务健康</p>
-            <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ globalHealth.available_accounts }}</span><span class="mx-1 text-gray-400">/</span>{{ globalHealth.total_accounts }}</p>
-            <p class="mt-0.5 text-xs text-gray-500">{{ globalHealth.unavailable_accounts }} 不可用 · {{ globalHealth.pending_accounts }} 待确认 · {{ globalHealth.paused_accounts }} 暂停</p>
-            <p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(globalHealth.success_rate) }} · TTFT {{ formatMs(globalHealth.ttft_p50_ms) }} · P95 {{ formatMs(globalHealth.latency_p95_ms) }}</p>
-          </div>
-        </div>
-        <div v-if="globalLifetimeLedger" class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400" data-test="global-lifetime-ledger">
-            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
-            <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
-            <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
-            <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
-            <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
-          </div>
-          <p v-if="hasUnattributedLedger(globalLifetimeLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="global-lifetime-unattributed-group-ledger">
-            历史累计未归属分组：{{ globalLifetimeLedger.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLifetimeLedger.unattributed_user_charge, globalLifetimeLedger.currency) }} · 成本 {{ formatMoney(globalLifetimeLedger.unattributed_upstream_cost, globalLifetimeLedger.currency) }}（已计入全站，不计入任何分组）
-          </p>
-        </div>
-        <p v-if="hasUnattributedLedger(globalLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="unattributed-group-ledger">
-          今日未归属分组：{{ globalLedger?.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLedger?.unattributed_user_charge, globalLedger?.currency) }} · 成本 {{ formatMoney(globalLedger?.unattributed_upstream_cost, globalLedger?.currency) }}（已计入全站，不计入任何分组）
-        </p>
       </section>
 
       <section class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
@@ -147,64 +106,32 @@
         </button>
       </div>
 
-      <div
-        v-else-if="!filteredAccounts.length"
-        class="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
-      >
-        {{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
-      </div>
+      <div v-else class="space-y-5">
+        <div v-if="!activeGroup" class="grid gap-6 xl:grid-cols-2">
+          <section data-test="global-operating-summary">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><h2 class="text-base font-semibold text-gray-900 dark:text-white">全站经营数据</h2><p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">默认今日 · 成本仅采用已对账的真实上游账单</p></div>
+              <div class="flex items-center gap-2"><button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-ledger-history" @click="openLedgerHistory()">历史按日</button><button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-exceptions" @click="openExceptions">异常明细</button></div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3" data-test="operations-overview">
+              <LedgerMetric label="用户实际计费" :value="formatMoney(globalLedger?.user_charge, globalLedger?.currency)" /><LedgerMetric label="上游真实扣费" :value="formatMoney(globalLedger?.upstream_cost, globalLedger?.currency)" /><LedgerMetric label="纸面利润" :value="formatMoney(globalLedger?.paper_profit, globalLedger?.currency)" /><LedgerMetric label="利润率" :value="formatProfitMargin(globalLedger)" /><LedgerMetric label="成本覆盖率" :value="formatCoverage(globalLedger)" :value-class="coverageClass(globalLedger)" /><LedgerMetric label="待对账" :value="String(globalLedger?.pending_attempts ?? 0)" />
+            </div>
+            <div v-if="globalLifetimeLedger" class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700"><div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400" data-test="global-lifetime-ledger"><span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span><span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span><span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span><span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span><span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span></div><p v-if="hasUnattributedLedger(globalLifetimeLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="global-lifetime-unattributed-group-ledger">历史累计未归属分组：{{ globalLifetimeLedger.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLifetimeLedger.unattributed_user_charge, globalLifetimeLedger.currency) }} · 成本 {{ formatMoney(globalLifetimeLedger.unattributed_upstream_cost, globalLifetimeLedger.currency) }}（已计入全站，不计入任何分组）</p></div>
+            <p v-if="hasUnattributedLedger(globalLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="unattributed-group-ledger">今日未归属分组：{{ globalLedger?.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLedger?.unattributed_user_charge, globalLedger?.currency) }} · 成本 {{ formatMoney(globalLedger?.unattributed_upstream_cost, globalLedger?.currency) }}（已计入全站，不计入任何分组）</p>
+          </section>
+          <section data-test="global-service-summary"><div class="mb-3"><h2 class="text-base font-semibold text-gray-900 dark:text-white">全站账号数据</h2><p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">账号存量、监控覆盖与服务质量</p></div><div class="grid grid-cols-2 gap-3 sm:grid-cols-3"><LedgerMetric label="账号总数" :value="String(globalHealth.total_accounts)" /><LedgerMetric label="监控中" :value="String(globalHealth.monitoring_accounts)" /><LedgerMetric label="可用" :value="String(globalHealth.available_accounts)" value-class="text-emerald-600" /><LedgerMetric label="不可用" :value="String(globalHealth.unavailable_accounts)" value-class="text-red-600" /><LedgerMetric label="成本不合格" :value="String(scopeAccountSections.cost_ineligible.length)" value-class="text-amber-600" /><LedgerMetric label="待确认" :value="String(globalHealth.pending_accounts)" value-class="text-amber-600" /><LedgerMetric label="暂停" :value="String(globalHealth.paused_accounts)" /><LedgerMetric label="成功率" :value="formatHealthPercent(globalHealth.success_rate)" /><LedgerMetric label="TTFT P50" :value="formatMs(globalHealth.ttft_p50_ms)" /><LedgerMetric label="延迟 P95" :value="formatMs(globalHealth.latency_p95_ms)" /></div></section>
+        </div>
 
-      <div v-else class="space-y-4">
-        <section v-if="activeGroup" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="group-operations-overview">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ activeGroup.name }}</h2>
-                <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="activeGroup.operational_state === 'closed' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : activeGroup.operational_state === 'operational' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'">{{ groupOperationalLabel(activeGroup) }}</span>
-              </div>
-              <p v-if="activeGroup.operational_state === 'closed'" class="mt-1 text-xs text-gray-500 dark:text-gray-400">当前分组未向用户开放，空账号不会作为服务故障持续告警。</p>
-              <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">按质量评分从高到低，仅影响监控展示；全局调度优先级仍由账号卡片直接修改。</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="openLedgerHistory({ group_id: activeGroup.id })">本组历史</button>
-              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="edit-group-score-weights" @click="showScoreDialog = true">评分权重</button>
-            </div>
+        <template v-else>
+          <div class="grid gap-6 xl:grid-cols-2">
+            <section data-test="group-operating-summary"><div class="mb-3 flex flex-wrap items-start justify-between gap-2"><div><div class="flex items-center gap-2"><h2 class="text-base font-semibold text-gray-900 dark:text-white">分组经营数据 · {{ activeGroup.name }}</h2><span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="activeGroup.operational_state === 'closed' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : activeGroup.operational_state === 'operational' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'">{{ groupOperationalLabel(activeGroup) }}</span></div><p v-if="activeGroup.operational_state === 'closed'" class="mt-1 text-xs text-gray-500 dark:text-gray-400">当前分组未向用户开放，空账号不会作为服务故障持续告警。</p></div><button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="openLedgerHistory({ group_id: activeGroup.id })">本组历史</button></div><div class="grid grid-cols-2 gap-3 sm:grid-cols-3" data-test="group-operations-overview"><LedgerMetric label="用户实际计费" :value="formatMoney(groupLedger?.user_charge, groupLedger?.currency)" /><LedgerMetric label="上游真实扣费" :value="formatMoney(groupLedger?.upstream_cost, groupLedger?.currency)" /><LedgerMetric label="纸面利润" :value="formatMoney(groupLedger?.paper_profit, groupLedger?.currency)" /><LedgerMetric label="利润率" :value="formatProfitMargin(groupLedger)" /><LedgerMetric label="成本覆盖率" :value="formatCoverage(groupLedger)" :value-class="coverageClass(groupLedger)" /><LedgerMetric label="待对账" :value="String(groupLedger?.pending_attempts ?? 0)" /></div><div v-if="groupLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="group-lifetime-ledger"><span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span><span>营收 {{ formatMoney(groupLifetimeLedger.user_charge, groupLifetimeLedger.currency) }}</span><span>成本 {{ formatMoney(groupLifetimeLedger.upstream_cost, groupLifetimeLedger.currency) }}</span><span>利润 {{ formatMoney(groupLifetimeLedger.paper_profit, groupLifetimeLedger.currency) }}</span><span>利润率 {{ formatProfitMargin(groupLifetimeLedger) }}</span></div></section>
+            <section data-test="group-service-summary"><div class="mb-3"><h2 class="text-base font-semibold text-gray-900 dark:text-white">分组服务数据</h2><p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">当前分组内账号的监控覆盖与服务质量</p></div><div class="grid grid-cols-2 gap-3 sm:grid-cols-3"><LedgerMetric label="账号总数" :value="String(groupHealth.total_accounts)" /><LedgerMetric label="监控中" :value="String(groupHealth.monitoring_accounts)" /><LedgerMetric label="可用" :value="String(groupHealth.available_accounts)" value-class="text-emerald-600" /><LedgerMetric label="不可用" :value="String(groupHealth.unavailable_accounts)" value-class="text-red-600" /><LedgerMetric label="成本不合格" :value="String(scopeAccountSections.cost_ineligible.length)" value-class="text-amber-600" /><LedgerMetric label="待确认" :value="String(groupHealth.pending_accounts)" value-class="text-amber-600" /><LedgerMetric label="暂停" :value="String(groupHealth.paused_accounts)" /><LedgerMetric label="成功率" :value="formatHealthPercent(groupHealth.success_rate)" /><LedgerMetric label="TTFT P50" :value="formatMs(groupHealth.ttft_p50_ms)" /><LedgerMetric label="延迟 P95" :value="formatMs(groupHealth.latency_p95_ms)" /></div></section>
           </div>
-          <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <LedgerMetric label="用户实际计费" :value="formatMoney(groupLedger?.user_charge, groupLedger?.currency)" />
-            <LedgerMetric label="上游真实扣费" :value="formatMoney(groupLedger?.upstream_cost, groupLedger?.currency)" />
-            <LedgerMetric label="纸面利润" :value="formatMoney(groupLedger?.paper_profit, groupLedger?.currency)" />
-            <LedgerMetric label="利润率" :value="formatProfitMargin(groupLedger)" />
-            <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="group-health-summary"><p class="text-xs text-gray-500">服务健康</p><p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ groupHealth.available_accounts }}</span> / {{ groupHealth.total_accounts }}</p><p class="mt-0.5 text-xs text-gray-500">{{ groupHealth.unavailable_accounts }} 不可用 · {{ groupHealth.pending_accounts }} 待确认 · {{ groupHealth.paused_accounts }} 暂停</p><p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(groupHealth.success_rate) }} · TTFT {{ formatMs(groupHealth.ttft_p50_ms) }} · P95 {{ formatMs(groupHealth.latency_p95_ms) }}</p></div>
-          </div>
-          <div v-if="groupLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="group-lifetime-ledger">
-            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
-            <span>营收 {{ formatMoney(groupLifetimeLedger.user_charge, groupLifetimeLedger.currency) }}</span>
-            <span>成本 {{ formatMoney(groupLifetimeLedger.upstream_cost, groupLifetimeLedger.currency) }}</span>
-            <span>利润 {{ formatMoney(groupLifetimeLedger.paper_profit, groupLifetimeLedger.currency) }}</span>
-            <span>利润率 {{ formatProfitMargin(groupLifetimeLedger) }}</span>
-          </div>
-          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">评分组成：成本优势 {{ activeGroup.score_weights.cost }}% · 成功率 {{ activeGroup.score_weights.success }}% · TTFT {{ activeGroup.score_weights.ttft }}% · 总耗时 {{ activeGroup.score_weights.latency }}%</p>
-        </section>
+          <section class="flex flex-wrap items-center gap-x-4 gap-y-3 border-y border-gray-200 py-3 dark:border-dark-700" data-test="group-scope-action-row"><div class="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><span v-for="bucket in monitorBuckets" :key="bucket.key" class="rounded border border-gray-200 px-2 py-1 dark:border-dark-600"><span>{{ bucket.label }}</span><span class="ml-1 font-mono font-semibold text-gray-900 dark:text-white">{{ scopeAccountSections[bucket.key].length }}</span></span></div><div class="ml-auto flex flex-wrap items-center gap-3"><span class="text-xs text-gray-500 dark:text-gray-400">成本 {{ activeGroup.score_weights.cost }} · 成功 {{ activeGroup.score_weights.success }} · TTFT {{ activeGroup.score_weights.ttft }} · 延迟 {{ activeGroup.score_weights.latency }}</span><button type="button" class="btn btn-primary px-3 py-1.5 text-xs" data-test="edit-group-score-weights" @click="showScoreDialog = true">评分权重</button></div></section>
+        </template>
 
-        <section data-test="monitor-group">
-          <div class="grid gap-4 xl:grid-cols-2">
-            <div v-for="account in scopedAccounts" :key="account.account_id" class="relative">
-              <div v-if="account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div>
-              <AccountMonitorCard
-                :account="account"
-                :operations="accountLedgers[account.account_id] ?? null"
-                :group-operational-state="activeGroup?.operational_state"
-                :running="runningAccounts.has(account.account_id)"
-                :saving-weight="savingWeights.has(account.account_id)"
-                @refresh="handleRunOne"
-                @update-priority="updateWeight"
-                @settings="showSettings = true"
-                @history="openHistory"
-              />
-            </div>
-          </div>
-        </section>
+        <div v-if="!filteredAccounts.length" class="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400" data-test="account-empty">{{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}</div>
+        <div v-else class="space-y-6" data-test="monitor-group"><template v-for="bucket in monitorBuckets" :key="bucket.key"><section v-if="accountSections[bucket.key].length" :data-test="`account-section-${bucket.key}`"><div class="mb-3 flex items-center gap-2"><h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ bucket.label }}</h2><span class="font-mono text-sm text-gray-500 dark:text-gray-400">{{ accountSections[bucket.key].length }}</span></div><div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]"><div v-for="account in accountSections[bucket.key]" :key="account.account_id" class="relative"><div v-if="activeGroup && bucket.key === 'available' && account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div><AccountMonitorCard :account="account" :operations="accountLedgers[account.account_id] ?? null" :group-operational-state="activeGroup?.operational_state" :running="runningAccounts.has(account.account_id)" :saving-weight="savingWeights.has(account.account_id)" @refresh="handleRunOne" @update-priority="updateWeight" @settings="showSettings = true" @history="openHistory" /></div></div></section></template></div>
       </div>
     </div>
 
@@ -259,7 +186,7 @@
           <tbody>
             <tr v-for="item in historyItems" :key="`${item.checked_at}-${item.model_id}`" class="border-b border-gray-100 dark:border-dark-800">
               <td class="whitespace-nowrap px-3 py-2 text-gray-600 dark:text-gray-300">{{ formatDate(item.checked_at) }}</td>
-              <td class="px-3 py-2">{{ item.status }}</td>
+              <td class="px-3 py-2">{{ historyStatusLabel(item.status) }}</td>
               <td class="px-3 py-2 font-mono">{{ formatMs(item.ttft_ms) }}</td>
               <td class="px-3 py-2 font-mono">{{ formatMs(item.latency_ms) }}</td>
               <td class="px-3 py-2 text-red-600 dark:text-red-400">{{ item.error_code || '-' }}</td>
@@ -301,6 +228,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
+  AccountMonitorBucket,
   AccountMonitorGroup,
   AccountMonitorHealthSummary,
   AccountMonitorHistoryItem,
@@ -372,7 +300,7 @@ const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((
 const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
 const activeGroupAccountSource = computed(() => {
   const group = activeGroup.value
-  if (group?.accounts?.length) return group.accounts
+  if (group?.accounts) return group.accounts
   if (group) return accounts.value.filter((account) => account.group_ids.includes(group.id))
   return accounts.value
 })
@@ -381,7 +309,7 @@ const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
   return activeGroupAccountSource.value.filter((account) => {
     if (platform.value && account.platform !== platform.value) return false
-    if (status.value && displayStatus(account) !== status.value) return false
+    if (status.value && account.monitor_bucket !== status.value) return false
     if (!query) return true
     return [
       account.name,
@@ -392,17 +320,40 @@ const filteredAccounts = computed(() => {
     ].some((value) => value.toLowerCase().includes(query))
   })
 })
-const scopedAccounts = computed(() => [...filteredAccounts.value].sort((left, right) => {
-  const leftScore = left.quality_score ?? -1
-  const rightScore = right.quality_score ?? -1
-  if (rightScore !== leftScore) return rightScore - leftScore
-  const leftRank = left.group_rank ?? Number.MAX_SAFE_INTEGER
-  const rightRank = right.group_rank ?? Number.MAX_SAFE_INTEGER
-  if (leftRank !== rightRank) return leftRank - rightRank
-  return left.account_id - right.account_id
-}))
+const monitorBuckets: { key: AccountMonitorBucket; label: string }[] = [
+  { key: 'available', label: '可用' },
+  { key: 'unavailable', label: '不可用' },
+  { key: 'cost_ineligible', label: '成本不合格' },
+  { key: 'pending', label: '待确认' },
+  { key: 'paused', label: '暂停' },
+]
+function partitionAccounts(source: AccountMonitorAccount[]): Record<AccountMonitorBucket, AccountMonitorAccount[]> {
+  const sections: Record<AccountMonitorBucket, AccountMonitorAccount[]> = {
+    available: [],
+    unavailable: [],
+    cost_ineligible: [],
+    pending: [],
+    paused: [],
+  }
+  for (const account of source) sections[account.monitor_bucket].push(account)
+  for (const bucket of monitorBuckets) {
+    sections[bucket.key].sort((left, right) => {
+      if (activeGroup.value && bucket.key === 'available') {
+        const scoreDifference = (right.quality_score ?? -1) - (left.quality_score ?? -1)
+        if (scoreDifference !== 0) return scoreDifference
+        const rankDifference = (left.group_rank ?? Number.MAX_SAFE_INTEGER) - (right.group_rank ?? Number.MAX_SAFE_INTEGER)
+        if (rankDifference !== 0) return rankDifference
+      }
+      return left.account_id - right.account_id
+    })
+  }
+  return sections
+}
+const accountSections = computed(() => partitionAccounts(filteredAccounts.value))
+const scopeAccountSections = computed(() => partitionAccounts(activeGroupAccountSource.value))
 const emptyHealth: AccountMonitorHealthSummary = {
   total_accounts: 0,
+  monitoring_accounts: 0,
   available_accounts: 0,
   unavailable_accounts: 0,
   pending_accounts: 0,
@@ -422,9 +373,11 @@ function hasUnattributedLedger(summary?: ReconciliationSummary | null): boolean 
     || hasAmount(summary.unattributed_upstream_cost)
 }
 
-function displayStatus(account: AccountMonitorAccount): string {
-  if (account.stale) return 'stale'
-  return account.latest_status || 'unavailable'
+function historyStatusLabel(status: string): string {
+  if (status === 'success') return '成功'
+  if (status === 'failed') return '失败'
+  if (status === 'unavailable') return '不可用'
+  return '未知状态'
 }
 
 async function load() {
@@ -462,7 +415,7 @@ async function loadOperations() {
   const generation = ++operationsGeneration
   const isCurrent = () => generation === operationsGeneration && activeGroupId.value === groupID
   const lifetimeScope = { start: '1970-01-01T00:00:00.000Z', end: new Date().toISOString() }
-  const visibleAccounts = scopedAccounts.value
+  const visibleAccounts = activeGroupAccountSource.value
   const calls: Promise<void>[] = [
     adminAPI.reconciliation.operations({})
       .then((summary) => {

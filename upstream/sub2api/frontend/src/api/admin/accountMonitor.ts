@@ -47,6 +47,7 @@ export interface AccountMonitorScoreWeights {
 
 export interface AccountMonitorHealthSummary {
   total_accounts: number
+  monitoring_accounts: number
   available_accounts: number
   unavailable_accounts: number
   pending_accounts: number
@@ -55,6 +56,8 @@ export interface AccountMonitorHealthSummary {
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
 }
+
+export type AccountMonitorBucket = 'available' | 'unavailable' | 'cost_ineligible' | 'pending' | 'paused'
 
 export interface AccountMonitorQualityEvidence {
   source: 'group' | 'global_fallback' | 'stale' | string
@@ -75,7 +78,7 @@ export interface AccountMonitorAccount {
   management_state: string
   service_state: string
   group_eligibility: string
-  monitor_bucket: string
+  monitor_bucket: AccountMonitorBucket
   priority: number
   homepage_url?: string
   group_ids: number[]

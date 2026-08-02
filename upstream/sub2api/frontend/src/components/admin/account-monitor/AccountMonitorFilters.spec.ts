@@ -68,4 +68,20 @@ describe('AccountMonitorFilters', () => {
     expect(wrapper.find('[data-test="group-filter"]').exists()).toBe(false)
     expect(wrapper.findAll('select')).toHaveLength(2)
   })
+
+  it('uses exactly the five Chinese monitor-bucket options for status filtering', () => {
+    const wrapper = mount(AccountMonitorFilters, {
+      props: { search: '', platform: '', status: '', accounts },
+      global: { stubs: { Icon: true } },
+    })
+
+    const options = wrapper.findAll('select')[1].findAll('option').map((option) => ({ value: option.attributes('value'), text: option.text() }))
+    expect(options.slice(1)).toEqual([
+      { value: 'available', text: '可用' },
+      { value: 'unavailable', text: '不可用' },
+      { value: 'cost_ineligible', text: '成本不合格' },
+      { value: 'pending', text: '待确认' },
+      { value: 'paused', text: '暂停' },
+    ])
+  })
 })

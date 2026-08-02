@@ -107,6 +107,7 @@ const projection = () => ({
   },
   health: {
     total_accounts: 3,
+    monitoring_accounts: 3,
     available_accounts: 1,
     unavailable_accounts: 1,
     pending_accounts: 1,
@@ -126,6 +127,7 @@ const projection = () => ({
     operational_state: 'operational',
     health: {
       total_accounts: 2,
+      monitoring_accounts: 1,
       available_accounts: 1,
       unavailable_accounts: 0,
       pending_accounts: 0,
@@ -142,6 +144,7 @@ function mountView() {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
+        BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="base-dialog"><slot /></div>' },
         AccountMonitorCard: {
           props: ['account', 'operations', 'groupOperationalState'],
           emits: ['refresh', 'settings', 'history'],
@@ -164,7 +167,7 @@ function mountView() {
           template: `
             <div data-test="filters">
               <button data-test="search-backup" @click="$emit('update:search', '备份')">搜索备份</button>
-              <button data-test="filter-failed" @click="$emit('update:status', 'failed')">筛选失败</button>
+              <button data-test="filter-available" @click="$emit('update:status', 'available')">筛选可用</button>
             </div>
           `,
         },
@@ -234,6 +237,91 @@ describe('admin account monitor view', () => {
     expect(summary.text()).not.toContain('$1.00')
   })
 
+  it('keeps all-site operating and account-service summaries independent', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="global-operating-summary"]').text()).toContain('全站经营数据')
+    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('全站账号数据')
+    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('监控中')
+    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('成本不合格0')
+  })
+
+  it('partitions accounts into exactly five monitor buckets and only ranks group available accounts', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      accounts: [
+        { ...account, account_id: 9, name: '全站可用后', monitor_bucket: 'available', quality_score: 99, group_rank: 1 },
+        { ...account, account_id: 7, name: '全站可用前', monitor_bucket: 'available', quality_score: 1, group_rank: 9 },
+        { ...account, account_id: 8, name: '不可用', monitor_bucket: 'unavailable', service_state: 'unavailable' },
+        { ...account, account_id: 10, name: '成本不合格', monitor_bucket: 'cost_ineligible', group_eligibility: 'cost_ineligible' },
+        { ...account, account_id: 11, name: '待确认', monitor_bucket: 'pending', service_state: 'pending' },
+        { ...account, account_id: 12, name: '暂停', monitor_bucket: 'paused', management_state: 'paused', service_state: 'not_monitored' },
+      ],
+      groups: [{
+        ...projection().groups[0],
+        accounts: [
+          { ...account, account_id: 7, name: '组内低分', monitor_bucket: 'available', quality_score: 70, group_rank: 2 },
+          { ...account, account_id: 9, name: '组内高分', monitor_bucket: 'available', quality_score: 90, group_rank: 1 },
+        ],
+      }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
+    expect(wrapper.get('[data-test="account-section-unavailable"]').text()).toContain('不可用')
+    expect(wrapper.get('[data-test="account-section-cost_ineligible"]').text()).toContain('成本不合格')
+    expect(wrapper.get('[data-test="account-section-pending"]').text()).toContain('待确认')
+    expect(wrapper.get('[data-test="account-section-paused"]').text()).toContain('暂停')
+    expect(wrapper.get('[data-test="account-section-available"]').text().indexOf('全站可用前')).toBeLessThan(wrapper.get('[data-test="account-section-available"]').text().indexOf('全站可用后'))
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="account-section-available"]').text().indexOf('组内高分')).toBeLessThan(wrapper.get('[data-test="account-section-available"]').text().indexOf('组内低分'))
+    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('成本不合格0')
+  })
+
+  it('keeps group summaries and the weight action row visible for empty and search-zero results', async () => {
+    list.mockResolvedValueOnce({
+      ...projection(),
+      groups: [{ ...projection().groups[0], accounts: [] }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="group-operating-summary"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="group-service-summary"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('评分权重')
+    expect(wrapper.get('[data-test="account-empty"]').exists()).toBe(true)
+  })
+
+  it('keeps group summaries and scope counts visible when search returns no accounts', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="search-backup"]').trigger('click')
+
+    expect(wrapper.get('[data-test="group-operating-summary"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="group-service-summary"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('可用1')
+    expect(wrapper.get('[data-test="account-empty"]').exists()).toBe(true)
+  })
+
+  it('renders Chinese protocol history statuses', async () => {
+    history.mockResolvedValueOnce({ items: [{ account_id: 7, model_id: 'claude-sonnet-4-5', status: 'success', checked_at: '2026-07-25T08:00:00Z' }] })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="card-history"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('成功')
+    expect(wrapper.get('[data-test="base-dialog"]').text()).not.toContain('success')
+  })
+
   it('discloses global ledger amounts that are not attributed to any group', async () => {
     reconciliationOperations.mockResolvedValue({
       total_attempts: 10,
@@ -280,11 +368,10 @@ describe('admin account monitor view', () => {
     await flushPromises()
 
     expect(reconciliationOperations).toHaveBeenCalledWith(expect.objectContaining({ start: '1970-01-01T00:00:00.000Z' }))
-    expect(wrapper.get('[data-test="global-lifetime-ledger"]').text()).toContain('€60.00')
-    expect(wrapper.get('[data-test="global-lifetime-unattributed-group-ledger"]').text()).toContain('历史累计未归属分组：4 笔请求')
     expect(wrapper.get('[data-test="group-lifetime-ledger"]').text()).toContain('€20.00')
-    expect(wrapper.get('[data-test="global-health-summary"]').text()).toContain('成功率 90.0%')
-    expect(wrapper.get('[data-test="group-health-summary"]').text()).toContain('TTFT 100 ms')
+    expect(wrapper.find('[data-test="global-lifetime-unattributed-group-ledger"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('成功率95.0%')
+    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('TTFT P50100 ms')
   })
 
   it('全站 Tab 固定在首位，切换分组后加载分组账务', async () => {
@@ -347,6 +434,8 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).toContain('生产账号')
     expect(wrapper.text()).toContain('未分组账号')
     expect(wrapper.text()).toContain('暂停账号')
+    expect(wrapper.text()).toContain('当前展示 3 个账号')
+    expect(wrapper.text()).not.toContain('admin.accountMonitor.monitoredCount')
     expect(reconciliationOperations.mock.calls.map(([params]) => params)).not.toContainEqual(expect.objectContaining({ group_id: expect.any(Number) }))
     expect(reconciliationOperations.mock.calls.map(([params]) => params).every((params) => !Object.hasOwn(params, 'group_id'))).toBe(true)
   })
@@ -434,7 +523,7 @@ describe('admin account monitor view', () => {
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-test="group-operations-overview"]').text()).toContain('当前分组未向用户开放')
+    expect(wrapper.get('[data-test="group-operating-summary"]').text()).toContain('当前分组未向用户开放')
   })
 
   it('updates the global interval from the header and card settings action', async () => {
@@ -527,7 +616,7 @@ describe('admin account monitor view', () => {
     expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('备份账号')
 
-    await wrapper.get('[data-test="filter-failed"]').trigger('click')
+    await wrapper.get('[data-test="filter-available"]').trigger('click')
     expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('备份账号')
   })

@@ -26,9 +26,11 @@
       @change="emit('update:status', ($event.target as HTMLSelectElement).value)"
     >
       <option value="">{{ t('common.all') }}</option>
-      <option value="success">{{ t('admin.accountMonitor.status.success') }}</option>
-      <option value="failed">{{ t('admin.accountMonitor.status.failed') }}</option>
-      <option value="unavailable">{{ t('admin.accountMonitor.status.noHistory') }}</option>
+      <option value="available">可用</option>
+      <option value="unavailable">不可用</option>
+      <option value="cost_ineligible">成本不合格</option>
+      <option value="pending">待确认</option>
+      <option value="paused">暂停</option>
     </select>
   </div>
 </template>

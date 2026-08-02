@@ -21,6 +21,8 @@ type UsageImportRunner interface {
 
 type RuntimeRepository interface {
 	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (Summary, error)
+	ReadOperationsSummary(context.Context, OperationsScope) (OperationsSummary, error)
+	ListOperationsDaily(context.Context, OperationsScope) ([]OperationsDailyRow, error)
 	ListUpstreamCostExceptions(context.Context, int64, int) ([]Exception, error)
 	CreateManualUpstreamCostForException(context.Context, int64, ManualAdjustmentInput) (Transaction, bool, error)
 	MarkOverdueUpstreamCostExceptions(context.Context, time.Time, time.Duration) (int64, error)
@@ -41,6 +43,20 @@ func (s RuntimeService) ReadReconciliationSummary(ctx context.Context, accountID
 		return Summary{}, fmt.Errorf("reconciliation repository is required")
 	}
 	return s.Repository.ReadReconciliationSummary(ctx, accountID, start, end, currency)
+}
+
+func (s RuntimeService) ReadOperationsSummary(ctx context.Context, scope OperationsScope) (OperationsSummary, error) {
+	if s.Repository == nil {
+		return OperationsSummary{}, fmt.Errorf("reconciliation repository is required")
+	}
+	return s.Repository.ReadOperationsSummary(ctx, scope)
+}
+
+func (s RuntimeService) ListOperationsDaily(ctx context.Context, scope OperationsScope) ([]OperationsDailyRow, error) {
+	if s.Repository == nil {
+		return nil, fmt.Errorf("reconciliation repository is required")
+	}
+	return s.Repository.ListOperationsDaily(ctx, scope)
 }
 
 func (s RuntimeService) ListUpstreamCostExceptions(ctx context.Context, accountID int64, limit int) ([]Exception, error) {

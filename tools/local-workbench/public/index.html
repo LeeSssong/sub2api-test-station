@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>本地提链支付工作台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23244f45'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="workbench">
+      <aside class="intake-pane" aria-label="批次录入">
+        <header class="app-header">
+          <p class="eyebrow">Local workstation</p>
+          <h1>提链支付</h1>
+        </header>
+
+        <section class="entry-section" aria-labelledby="entry-heading">
+          <div class="section-heading">
+            <h2 id="entry-heading">新建批次</h2>
+            <button class="icon-button" id="add-row" type="button" title="添加行" aria-label="添加行">
+              <i data-lucide="plus"></i>
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table id="entry-table">
+              <thead>
+                <tr>
+                  <th scope="col">Access token</th>
+                  <th scope="col">提链 CDK</th>
+                  <th scope="col">支付 CDK</th>
+                  <th scope="col"><span class="sr-only">删除</span></th>
+                </tr>
+              </thead>
+              <tbody id="entry-rows"></tbody>
+            </table>
+          </div>
+          <textarea id="paste-input" aria-label="粘贴 Excel 数据" placeholder="粘贴 Excel 三列数据"></textarea>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+          <button class="start-button" id="start-batch" type="button">
+            <i data-lucide="play"></i>
+            <span>启动批次</span>
+          </button>
+        </section>
+
+        <section class="history-section" aria-labelledby="history-heading">
+          <div class="section-heading">
+            <h2 id="history-heading">历史批次</h2>
+            <span id="history-count" class="count">0</span>
+          </div>
+          <nav id="batch-history" class="batch-history" aria-label="历史批次"></nav>
+        </section>
+      </aside>
+
+      <section class="detail-pane" aria-labelledby="detail-heading">
+        <header class="detail-header">
+          <div>
+            <p class="eyebrow">当前批次</p>
+            <h2 id="detail-heading">尚未选择批次</h2>
+          </div>
+          <span id="batch-status" class="status status-idle">等待输入</span>
+        </header>
+        <div id="summary" class="summary" hidden></div>
+        <div id="empty-detail" class="empty-detail">
+          <i data-lucide="list-checks"></i>
+          <p>从左侧创建批次后在此查看状态</p>
+        </div>
+        <div id="task-detail" class="task-detail" hidden>
+          <div class="task-list-header">
+            <span>行</span>
+            <span>提链</span>
+            <span>支付</span>
+            <span>最终状态</span>
+          </div>
+          <div id="task-list" class="task-list"></div>
+        </div>
+      </section>
+    </main>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

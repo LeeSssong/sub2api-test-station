@@ -307,6 +307,114 @@ func TestAccountMonitorServiceProjectsNativeGroupVisibilityAndWeights(t *testing
 	}
 }
 
+func TestAccountMonitorProjectionBucketsEveryAccountAndPreservesClosedGroupAccounts(t *testing.T) {
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+	expired := now.Add(-time.Hour)
+	cheapRate := 0.5
+	expensiveRate := 2.0
+	accounts := []Account{
+		{ID: 1, Name: "disabled", Status: StatusDisabled, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 2, Name: "unschedulable", Status: StatusActive, Schedulable: false, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 3, Name: "available", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 4, Name: "unavailable", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 5, Name: "pending", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 6, Name: "cost-ineligible", Status: StatusActive, Schedulable: true, RateMultiplier: &expensiveRate, GroupIDs: []int64{7}},
+		{ID: 7, Name: "temporarily-paused", Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 8, Name: "expired-auto-pause", Status: StatusActive, Schedulable: true, AutoPauseOnExpired: true, ExpiresAt: &expired, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "closed", RateMultiplier: 1, CustomerVisible: false}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		}},
+		latest: map[int64]AccountMonitorLatest{
+			1: {Status: "success", CheckedAt: now},
+			2: {Status: "success", CheckedAt: now},
+			3: {Status: "success", CheckedAt: now},
+			4: {Status: "failed", CheckedAt: now},
+			6: {Status: "success", CheckedAt: now},
+			7: {Status: "success", CheckedAt: now},
+			8: {Status: "success", CheckedAt: now},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Accounts) != 8 {
+		t.Fatalf("global accounts = %#v, want every account", page.Accounts)
+	}
+	globalBuckets := make(map[int64]string, len(page.Accounts))
+	for _, account := range page.Accounts {
+		globalBuckets[account.AccountID] = account.MonitorBucket
+	}
+	if want := map[int64]string{1: "paused", 2: "paused", 3: "available", 4: "unavailable", 5: "pending", 6: "available", 7: "paused", 8: "paused"}; !mapsEqual(globalBuckets, want) {
+		t.Fatalf("global monitor buckets = %#v, want %#v", globalBuckets, want)
+	}
+	encoded, err := json.Marshal(page.Accounts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["monitor_bucket"] != "paused" {
+		t.Fatalf("monitor bucket JSON contract = %#v", payload)
+	}
+	if page.Health.AvailableAccounts+page.Health.UnavailableAccounts+page.Health.PendingAccounts+page.Health.PausedAccounts != page.Health.TotalAccounts {
+		t.Fatalf("global health is not a four-way partition: %#v", page.Health)
+	}
+
+	group := page.Groups[0]
+	if group.OperationalState != "closed" || len(group.Accounts) != 8 {
+		t.Fatalf("closed group projection = %#v", group)
+	}
+	groupBuckets := make(map[int64]string, len(group.Accounts))
+	for _, account := range group.Accounts {
+		groupBuckets[account.AccountID] = account.MonitorBucket
+	}
+	if want := map[int64]string{1: "paused", 2: "paused", 3: "available", 4: "unavailable", 5: "pending", 6: "cost_ineligible", 7: "paused", 8: "paused"}; !mapsEqual(groupBuckets, want) {
+		t.Fatalf("group monitor buckets = %#v, want %#v", groupBuckets, want)
+	}
+	if group.Health.AvailableAccounts+group.Health.UnavailableAccounts+group.Health.PendingAccounts+group.Health.PausedAccounts != group.Health.TotalAccounts {
+		t.Fatalf("group health is not a four-way partition: %#v", group.Health)
+	}
+	if group.Health.UnavailableAccounts != 2 {
+		t.Fatalf("cost-ineligible group account must count as unavailable: %#v", group.Health)
+	}
+}
+
+func mapsEqual(left, right map[int64]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		if rightValue, ok := right[key]; !ok || rightValue != leftValue {
+			return false
+		}
+	}
+	return true
+}
+
 func TestAccountMonitorProjectionIncludesGlobalAndGroupHealthSummaries(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
@@ -568,7 +676,7 @@ func TestAccountMonitorCombinedHealthExcludesPausedAccounts(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorClosedGroupWithRequestsSurfacesUnavailableState(t *testing.T) {
+func TestAccountMonitorClosedGroupWithRequestsKeepsClosedStateAndAccounts(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
 	account := Account{ID: 89, Name: "failed", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{88}}
@@ -584,8 +692,8 @@ func TestAccountMonitorClosedGroupWithRequestsSurfacesUnavailableState(t *testin
 		t.Fatal(err)
 	}
 	group := page.Groups[0]
-	if group.OperationalState != "unavailable" || len(group.Accounts) != 1 || group.Health.UnavailableAccounts != 1 {
-		t.Fatalf("closed group with requests must surface its genuine failure: %#v", group)
+	if group.OperationalState != "closed" || len(group.Accounts) != 1 || group.Health.UnavailableAccounts != 1 {
+		t.Fatalf("closed group with requests must remain inspectable: %#v", group)
 	}
 }
 
@@ -607,8 +715,8 @@ func TestAccountMonitorClosedGroupWithSuccessfulTrafficRemainsClosed(t *testing.
 		t.Fatal(err)
 	}
 	group := page.Groups[0]
-	if group.OperationalState != "closed" || len(group.Accounts) != 0 {
-		t.Fatalf("closed group with successful traffic must remain suppressed: %#v", group)
+	if group.OperationalState != "closed" || len(group.Accounts) != 1 {
+		t.Fatalf("closed group with successful traffic must remain inspectable: %#v", group)
 	}
 }
 

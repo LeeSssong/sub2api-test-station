@@ -172,8 +172,9 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			row.Stale = true
 		}
 		row.UsageWindows = s.loadUsageWindows(ctx, account.ID)
+		row.MonitorBucket = accountMonitorGlobalBucket(account, row, observedAt)
 		rows = append(rows, row)
-		if account.Schedulable {
+		if !accountMonitorAccountPaused(account, observedAt) {
 			schedulableIDs = append(schedulableIDs, account.ID)
 		}
 	}
@@ -240,12 +241,6 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				combinedAggregateAvailable = true
 			}
 		}
-		if !group.CustomerVisible && (!combinedAggregateAvailable || combinedAggregate.ErrorCount == 0) {
-			group.OperationalState = "closed"
-			group.Accounts = nil
-			continue
-		}
-
 		projected := make([]AccountMonitorGroupAccount, 0, len(members))
 		for _, accountID := range members {
 			base, ok := rowsByID[accountID]
@@ -266,9 +261,8 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 				row.CheckedAt = &checkedAt
 			}
 			costEligible := account.BillingRateMultiplier() <= group.RateMultiplier
-			serviceEligible := account.Status == StatusActive && account.Schedulable &&
-				!accountMonitorAccountPaused(account, now) &&
-				!(account.AutoPauseOnExpired && account.ExpiresAt != nil && !account.ExpiresAt.After(now))
+			serviceEligible := !accountMonitorAccountPaused(account, now)
+			row.MonitorBucket = accountMonitorGroupBucket(account, row, evidence, costEligible, now)
 			row.Eligible = evidence.Source != "stale" && costEligible && serviceEligible
 			if row.Eligible {
 				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, account.BillingRateMultiplier(), group.ScoreWeights, evidence)
@@ -306,7 +300,9 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 		if combinedAggregateAvailable {
 			group.Health = applyAccountMonitorAggregate(group.Health, combinedAggregate)
 		}
-		if group.Health.AvailableAccounts > 0 {
+		if !group.CustomerVisible {
+			group.OperationalState = "closed"
+		} else if group.Health.AvailableAccounts > 0 {
 			group.OperationalState = "operational"
 		} else {
 			group.OperationalState = "unavailable"
@@ -330,6 +326,12 @@ func accountMonitorAccountInGroup(account Account, groupID int64) bool {
 }
 
 func accountMonitorAccountPaused(account Account, now time.Time) bool {
+	if account.Status != StatusActive || !account.Schedulable {
+		return true
+	}
+	if account.AutoPauseOnExpired && account.ExpiresAt != nil && !account.ExpiresAt.After(now) {
+		return true
+	}
 	for _, until := range []*time.Time{account.TempUnschedulableUntil, account.RateLimitResetAt, account.OverloadUntil} {
 		if until != nil && until.After(now) {
 			return true
@@ -343,23 +345,16 @@ func (s *AccountMonitorService) listMonitorAccounts(ctx context.Context) ([]Acco
 	if err != nil {
 		return nil, fmt.Errorf("list active monitor accounts: %w", err)
 	}
-	filtered := accounts[:0]
-	for _, account := range accounts {
-		if account.Status == StatusActive {
-			filtered = append(filtered, account)
-		}
-	}
-	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
-	return filtered, nil
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
+	return accounts, nil
 }
 
 func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorHealthSummary {
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			schedulable: row.Schedulable,
-			available:   row.LatestStatus == "success" && !row.Stale,
-			pending:     row.Stale || row.Latest == nil,
+			bucket:      row.MonitorBucket,
+			serviceable: row.MonitorBucket != "paused",
 			sampleCount: row.SampleCount,
 			successRate: row.SuccessRate,
 			ttftP50MS:   row.TTFTP50MS,
@@ -373,9 +368,8 @@ func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealt
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			schedulable: row.Schedulable,
-			available:   row.Eligible && row.LatestStatus == "success" && row.Evidence.Source != "stale" && row.Evidence.SuccessRate > 0,
-			pending:     row.Evidence.Source == "stale" || row.CheckedAt == nil,
+			bucket:      row.MonitorBucket,
+			serviceable: row.MonitorBucket != "paused",
 			sampleCount: row.SampleCount,
 			successRate: row.SuccessRate,
 			ttftP50MS:   row.TTFTP50MS,
@@ -396,9 +390,8 @@ func applyAccountMonitorAggregate(summary AccountMonitorHealthSummary, aggregate
 }
 
 type accountMonitorHealthSample struct {
-	schedulable bool
-	available   bool
-	pending     bool
+	bucket      string
+	serviceable bool
 	sampleCount int
 	successRate float64
 	ttftP50MS   *float64
@@ -415,16 +408,18 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 	var latencyWeighted float64
 	var latencySamples float64
 	for _, row := range rows {
-		if !row.schedulable {
+		switch row.bucket {
+		case "paused":
 			summary.PausedAccounts++
-			continue
-		}
-		if row.pending {
+		case "pending":
 			summary.PendingAccounts++
-		} else if row.available {
+		case "available":
 			summary.AvailableAccounts++
-		} else {
+		default:
 			summary.UnavailableAccounts++
+		}
+		if !row.serviceable {
+			continue
 		}
 		weight := float64(row.sampleCount)
 		if weight <= 0 {
@@ -453,6 +448,41 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 		summary.LatencyP95MS = &value
 	}
 	return summary
+}
+
+func accountMonitorGlobalBucket(account Account, row AccountMonitorAccount, now time.Time) string {
+	if accountMonitorAccountPaused(account, now) {
+		return "paused"
+	}
+	if row.Stale || row.Latest == nil {
+		return "pending"
+	}
+	if row.LatestStatus == "success" {
+		return "available"
+	}
+	return "unavailable"
+}
+
+func accountMonitorGroupBucket(
+	account Account,
+	row AccountMonitorGroupAccount,
+	evidence AccountMonitorQualityEvidence,
+	costEligible bool,
+	now time.Time,
+) string {
+	if accountMonitorAccountPaused(account, now) {
+		return "paused"
+	}
+	if evidence.Source == "stale" || row.CheckedAt == nil {
+		return "pending"
+	}
+	if !costEligible {
+		return "cost_ineligible"
+	}
+	if row.LatestStatus == "success" && evidence.SuccessRate > 0 {
+		return "available"
+	}
+	return "unavailable"
 }
 
 func accountMonitorEvidence(

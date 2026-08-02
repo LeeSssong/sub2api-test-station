@@ -1,4 +1,20 @@
-.git
-homepage/node_modules
-homepage/dist
-output
+# Relay-ops images need only the paths copied by infra/Dockerfile.relay-ops.
+# Keeping this allowlist prevents release builds from uploading local worktrees,
+# dependency trees, and generated output as Docker build context.
+*
+!infra/
+!infra/Dockerfile.relay-ops
+!relay-ops-service/
+!relay-ops-service/**
+!ops/
+!ops/analyze-account-monitor.rb
+!ops/collect-account-quality-pulse.rb
+!ops/upstream-benchmark.rb
+!ops/upstream-benchmark-nonfunctional.rb
+!ops/upstream-benchmark-protocols.rb
+!ops/upstream-benchmark-v2.rb
+!config/
+!config/upstream-benchmarks/
+!config/upstream-benchmarks/candidate-watch-v2.yaml
+!config/upstream-benchmarks/mvp-text-v2.yaml
+!config/upstream-benchmarks/quality-first-fast-v1.yaml

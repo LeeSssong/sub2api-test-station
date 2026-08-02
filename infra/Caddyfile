@@ -119,6 +119,14 @@
 	@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events
 	respond @retired_relay_ops_api 404
 
+	# Keep relay-ops health and authenticated operator APIs ahead of the
+	# Sub2API HTML fallback. The relay-ops service enforces admin auth for
+	# /relay-ops/* application routes; health/readiness are intentionally safe.
+	@relay_ops_public {
+		path /healthz /readyz /pricing /relay-ops/*
+	}
+	reverse_proxy @relay_ops_public relay-ops:8100
+
 	@sub2api_html {
 		header Accept *text/html*
 		not {

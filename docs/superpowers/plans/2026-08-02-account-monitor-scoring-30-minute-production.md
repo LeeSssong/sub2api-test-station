@@ -15,7 +15,7 @@
 - 默认权重固定为 `15/45/20/20`，只影响监控排名。
 - 用户已经确认接受本次迁移所需的受控维护停机；不可用窗口上限 300 秒。
 - 只发布账号评分与监控入口，不修复无关全量测试或改写账务/飞书实现。
-- 总时间预算 1800 秒；第 22 分钟仍未开始生产变更则停止，不临时扩大范围。
+- 目标在 30 分钟内完成；完成更新、生产部署和线上验证优先，不得仅因超过目标时间停止，也不得临时扩大范围。
 - 总账由协调任务更新；本任务不得修改 `docs/project/project-progress.md`。
 
 ---
@@ -81,7 +81,7 @@ bash ops/release-sub2api-blue-green.sh \
   --maintenance-authorized
 ```
 
-Expected: 总预算由 controller 限制为 1800 秒；维护不可用窗口不超过 300 秒；只停止 API/worker；PostgreSQL、Redis、Caddy 身份不变。失败时证明恢复旧 API/worker 镜像和 Caddy 上游。
+Expected: controller 保留阶段超时，维护不可用窗口不超过 300 秒；只停止 API/worker；PostgreSQL、Redis、Caddy 身份不变。失败时证明恢复旧 API/worker 镜像和 Caddy 上游，并在原任务范围内继续修复到完成。
 
 - [ ] **Step 5（22-28 分钟）：线上验收**
 

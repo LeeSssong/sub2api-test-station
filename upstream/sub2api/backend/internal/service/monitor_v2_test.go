@@ -66,8 +66,7 @@ func (s *monitorV2OpsReaderStub) GetDashboardOverview(
 		ErrorCountSLA:   slaErrors,
 		RequestCountSLA: success + slaErrors,
 		Duration: OpsPercentiles{
-			P50: &durationP50,
-			P95: &durationP95,
+			P50: &durationP50, P95: &durationP95, SampleCount: success,
 		},
 		TTFT: OpsPercentiles{
 			P50:         &ttftP50,
@@ -177,7 +176,7 @@ func TestMonitorV2SnapshotScopeControlsExclusiveGroups(t *testing.T) {
 	require.Equal(t, []int64{1, 2}, []int64{adminSnapshot.Groups[0].ID, adminSnapshot.Groups[1].ID})
 }
 
-func TestMonitorV2SnapshotKeepsLatestExpectedTimelineBuckets(t *testing.T) {
+func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {
 	now := time.Date(2026, 7, 30, 5, 17, 0, 0, time.UTC)
 	group := Group{
 		ID:          16,
@@ -188,34 +187,24 @@ func TestMonitorV2SnapshotKeepsLatestExpectedTimelineBuckets(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		window     MonitorV2Window
-		bucket     time.Duration
-		pointCount int
-		wantCount  int
+		name   string
+		window MonitorV2Window
 	}{
-		{name: "7d", window: MonitorV2Window7D, bucket: 6 * time.Hour, pointCount: 29, wantCount: 28},
-		{name: "30d", window: MonitorV2Window30D, bucket: 24 * time.Hour, pointCount: 31, wantCount: 30},
+		{name: "7d", window: MonitorV2Window7D},
+		{name: "30d", window: MonitorV2Window30D},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			firstBucket := now.Add(-time.Duration(tt.wantCount) * tt.bucket).Truncate(tt.bucket)
-			points := make([]*OpsThroughputTrendPoint, tt.pointCount)
-			for i := range points {
-				points[i] = &OpsThroughputTrendPoint{
-					BucketStart:  firstBucket.Add(time.Duration(i) * tt.bucket),
-					RequestCount: 1,
-				}
+			points := []UserMonitorTimelinePoint{
+				{Status: "operational", LatencyMs: intPtr(250), CheckedAt: now.Add(-2 * time.Hour)},
+				{Status: "failed", LatencyMs: intPtr(900), CheckedAt: now.Add(-time.Hour)},
 			}
 			svc := NewMonitorV2Service(
 				&monitorV2GroupRepoStub{groups: []Group{group}},
 				&monitorV2ChannelReaderStub{},
-				&monitorV2ProbeReaderStub{},
-				&monitorV2OpsReaderStub{
-					throughputTrend: &OpsThroughputTrendResponse{Points: points},
-					errorTrend:      &OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{}},
-				},
+				&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(group.ID), Timeline: points}}},
+				&monitorV2OpsReaderStub{},
 				&monitorV2RepoStub{},
 			)
 
@@ -223,9 +212,10 @@ func TestMonitorV2SnapshotKeepsLatestExpectedTimelineBuckets(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Len(t, snapshot.Groups, 1)
-			require.Len(t, snapshot.Groups[0].Timeline, tt.wantCount)
-			require.Equal(t, points[1].BucketStart, snapshot.Groups[0].Timeline[0].BucketStart)
-			require.Equal(t, points[len(points)-1].BucketStart, snapshot.Groups[0].Timeline[tt.wantCount-1].BucketStart)
+			require.Len(t, snapshot.Groups[0].Timeline, 2)
+			require.Equal(t, points[0].CheckedAt, snapshot.Groups[0].Timeline[0].BucketStart)
+			require.Equal(t, int64(1), snapshot.Groups[0].Timeline[0].SuccessCount)
+			require.Equal(t, int64(0), snapshot.Groups[0].Timeline[1].SuccessCount)
 		})
 	}
 }
@@ -469,6 +459,23 @@ func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Status)
 }
 
+func TestMonitorV2ProbeTimelineTreatsUnavailableAsSuccessfulProbe(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	points := monitorV2ProbeTimeline([]*UserMonitorView{{
+		Timeline: []UserMonitorTimelinePoint{{
+			Status:    "unavailable",
+			CheckedAt: now,
+		}},
+	}}, now.Add(-time.Minute), now)
+
+	require.Len(t, points, 1)
+	require.Equal(t, int64(1), points[0].SuccessCount)
+	require.Equal(t, int64(1), points[0].EligibleCount)
+	require.NotNil(t, points[0].Value)
+	require.Equal(t, float64(100), *points[0].Value)
+	require.Nil(t, points[0].LatencyMS)
+}
+
 func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
 	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
 	hiddenGroupID := int64(17)
@@ -566,6 +573,7 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 			PrimaryStatus:    MonitorStatusOperational,
 			IntervalSeconds:  60,
 			PrimaryCheckedAt: now,
+			Timeline:         []UserMonitorTimelinePoint{{Status: "operational", LatencyMs: intPtr(320), CheckedAt: now}},
 		},
 	}
 
@@ -611,8 +619,9 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, int64(20), first.CacheHit.SampleCount)
 	require.Equal(t, 40.0, *first.CacheHit.Value)
 	require.Len(t, first.Timeline, 1)
-	require.Equal(t, int64(11), first.Timeline[0].SuccessCount)
-	require.Equal(t, int64(12), first.Timeline[0].EligibleCount)
+	require.Equal(t, int64(1), first.Timeline[0].SuccessCount)
+	require.Equal(t, int64(1), first.Timeline[0].EligibleCount)
+	require.Equal(t, 320, *first.Timeline[0].LatencyMS)
 
 	second := snapshot.Groups[1]
 	require.Equal(t, int64(2), second.ID)
@@ -697,25 +706,21 @@ func TestMonitorV2SnapshotBoundsTimelineAndStrings(t *testing.T) {
 	}
 
 	t.Run("timeline", func(t *testing.T) {
-		points := make([]*OpsThroughputTrendPoint, 65)
+		points := make([]UserMonitorTimelinePoint, 65)
 		for i := range points {
-			points[i] = &OpsThroughputTrendPoint{
-				BucketStart:  now.Add(time.Duration(i) * time.Minute),
-				RequestCount: 1,
-			}
+			points[i] = UserMonitorTimelinePoint{Status: "operational", CheckedAt: now.Add(-time.Duration(65-i) * time.Minute)}
 		}
 		svc := NewMonitorV2Service(
 			&monitorV2GroupRepoStub{groups: []Group{group}},
 			&monitorV2ChannelReaderStub{},
-			&monitorV2ProbeReaderStub{},
-			&monitorV2OpsReaderStub{
-				throughputTrend: &OpsThroughputTrendResponse{Points: points},
-			},
+			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(group.ID), Timeline: points}}},
+			&monitorV2OpsReaderStub{},
 			&monitorV2RepoStub{},
 		)
 
-		_, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
-		require.ErrorContains(t, err, "too many timeline points")
+		snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+		require.NoError(t, err)
+		require.Len(t, snapshot.Groups[0].Timeline, monitorV2MaxTimeline)
 	})
 
 	t.Run("group name", func(t *testing.T) {

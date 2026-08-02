@@ -590,31 +590,35 @@ func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) Accou
 			status = AccountMonitorMultiplierStatusFailed
 		}
 		return AccountMonitorMultiplier{
-			Source:     AccountMonitorMultiplierSourceMeasured,
-			Status:     status,
-			ObservedAt: observedAt,
+			Source:      AccountMonitorMultiplierSourceMeasured,
+			Status:      status,
+			ObservedAt:  observedAt,
+			SampleCount: snapshot.SampleCount,
 		}
 	}
 	if snapshot.FreshUntil == nil || !now.Before(*snapshot.FreshUntil) {
 		return AccountMonitorMultiplier{
-			Source:     AccountMonitorMultiplierSourceMeasured,
-			Status:     AccountMonitorMultiplierStatusStale,
-			ObservedAt: observedAt,
+			Source:      AccountMonitorMultiplierSourceMeasured,
+			Status:      AccountMonitorMultiplierStatusStale,
+			ObservedAt:  observedAt,
+			SampleCount: snapshot.SampleCount,
 		}
 	}
 	if snapshot.Value == nil || *snapshot.Value <= 0 ||
 		math.IsNaN(*snapshot.Value) || math.IsInf(*snapshot.Value, 0) {
 		return AccountMonitorMultiplier{
-			Source:     AccountMonitorMultiplierSourceMeasured,
-			Status:     AccountMonitorMultiplierStatusFailed,
-			ObservedAt: observedAt,
+			Source:      AccountMonitorMultiplierSourceMeasured,
+			Status:      AccountMonitorMultiplierStatusFailed,
+			ObservedAt:  observedAt,
+			SampleCount: snapshot.SampleCount,
 		}
 	}
 	return AccountMonitorMultiplier{
-		Value:      float64PointerCopy(*snapshot.Value),
-		Source:     AccountMonitorMultiplierSourceMeasured,
-		Status:     AccountMonitorMultiplierStatusOK,
-		ObservedAt: observedAt,
+		Value:       float64PointerCopy(*snapshot.Value),
+		Source:      AccountMonitorMultiplierSourceMeasured,
+		Status:      AccountMonitorMultiplierStatusOK,
+		ObservedAt:  observedAt,
+		SampleCount: snapshot.SampleCount,
 	}
 }
 

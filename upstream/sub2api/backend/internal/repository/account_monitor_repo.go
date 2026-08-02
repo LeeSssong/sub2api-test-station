@@ -84,9 +84,12 @@ func (r *accountMonitorRepository) ListAggregates(
 			COUNT(*) FILTER (WHERE status <> 'success')::int,
 			COALESCE(
 				COUNT(*) FILTER (WHERE status = 'success')::double precision /
-				NULLIF(COUNT(*), 0),
+					NULLIF(COUNT(*), 0),
 				0
 			),
+			COUNT(*)::int,
+			COUNT(ttft_ms)::int,
+			COUNT(latency_ms)::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ttft_ms)
 				FILTER (WHERE ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_ms)
@@ -114,6 +117,9 @@ func (r *accountMonitorRepository) ListAggregates(
 			&aggregate.SuccessCount,
 			&aggregate.ErrorCount,
 			&aggregate.SuccessRate,
+			&aggregate.SuccessSampleCount,
+			&aggregate.TTFTSampleCount,
+			&aggregate.LatencySampleCount,
 			&aggregate.TTFTP50MS,
 			&aggregate.TTFTP95MS,
 			&aggregate.LatencyP50MS,
@@ -148,6 +154,9 @@ func (r *accountMonitorRepository) LoadAggregate(
 				NULLIF(COUNT(*), 0),
 				0
 			),
+			COUNT(*)::int,
+			COUNT(ttft_ms)::int,
+			COUNT(latency_ms)::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ttft_ms)
 				FILTER (WHERE ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_ms)
@@ -173,7 +182,26 @@ func (r *accountMonitorRepository) ListGroupAggregates(
 		return result, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		WITH group_requests AS (
+		WITH group_usage AS (
+			SELECT
+				u.request_id,
+				u.account_id,
+				u.first_token_ms,
+				u.duration_ms,
+				u.created_at
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+		), group_errors AS (
+			SELECT e.request_id, e.account_id, e.created_at
+			FROM ops_error_logs e
+			WHERE e.group_id = $1
+				AND e.account_id = ANY($2)
+				AND e.created_at >= $3
+				AND COALESCE(e.is_count_tokens, FALSE) = FALSE
+				AND COALESCE(e.status_code, 0) >= 400
+		), group_requests AS (
 			SELECT
 				u.account_id,
 				u.first_token_ms,
@@ -181,15 +209,24 @@ func (r *accountMonitorRepository) ListGroupAggregates(
 				u.created_at,
 				EXISTS (
 					SELECT 1
-					FROM ops_error_logs e
-					WHERE e.request_id = u.request_id
+					FROM group_errors e
+					WHERE e.request_id IS NOT NULL
+						AND u.request_id IS NOT NULL
+						AND e.request_id = u.request_id
 						AND e.account_id = u.account_id
-						AND e.group_id = u.group_id
 				) AS has_error
-			FROM usage_logs u
-			WHERE u.group_id = $1
-				AND u.account_id = ANY($2)
-				AND u.created_at >= $3
+			FROM group_usage u
+			UNION ALL
+			SELECT e.account_id, NULL, NULL, e.created_at, TRUE
+			FROM group_errors e
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM group_usage u
+				WHERE u.request_id IS NOT NULL
+					AND e.request_id IS NOT NULL
+					AND u.request_id = e.request_id
+					AND u.account_id = e.account_id
+			)
 		)
 		SELECT
 			account_id,
@@ -201,6 +238,9 @@ func (r *accountMonitorRepository) ListGroupAggregates(
 				NULLIF(COUNT(*), 0),
 				0
 			),
+			COUNT(*)::int,
+			COUNT(first_token_ms)::int,
+			COUNT(duration_ms)::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_token_ms)
 				FILTER (WHERE first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms)
@@ -226,6 +266,9 @@ func (r *accountMonitorRepository) ListGroupAggregates(
 			&aggregate.SuccessCount,
 			&aggregate.ErrorCount,
 			&aggregate.SuccessRate,
+			&aggregate.SuccessSampleCount,
+			&aggregate.TTFTSampleCount,
+			&aggregate.LatencySampleCount,
 			&aggregate.TTFTP50MS,
 			&aggregate.TTFTP95MS,
 			&aggregate.LatencyP50MS,
@@ -304,6 +347,9 @@ func (r *accountMonitorRepository) LoadGroupAggregate(
 				NULLIF(COUNT(*), 0),
 				0
 			),
+			COUNT(*)::int,
+			COUNT(first_token_ms)::int,
+			COUNT(duration_ms)::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_token_ms)
 				FILTER (WHERE first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms)
@@ -328,6 +374,9 @@ func (r *accountMonitorRepository) loadAggregate(
 		&aggregate.SuccessCount,
 		&aggregate.ErrorCount,
 		&aggregate.SuccessRate,
+		&aggregate.SuccessSampleCount,
+		&aggregate.TTFTSampleCount,
+		&aggregate.LatencySampleCount,
 		&aggregate.TTFTP50MS,
 		&aggregate.TTFTP95MS,
 		&aggregate.LatencyP50MS,
@@ -376,6 +425,45 @@ func (r *accountMonitorRepository) ListLatest(
 			return nil, err
 		}
 		result[accountID] = latest
+	}
+	return result, rows.Err()
+}
+
+func (r *accountMonitorRepository) ListTimelines(
+	ctx context.Context,
+	accountIDs []int64,
+	perAccountLimit int,
+) (map[int64][]service.AccountMonitorTimelinePoint, error) {
+	result := make(map[int64][]service.AccountMonitorTimelinePoint, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+	if perAccountLimit <= 0 || perAccountLimit > 200 {
+		perAccountLimit = service.AccountMonitorTimelineLimit
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ranked.account_id, ranked.status, ranked.error_code, ranked.http_status,
+			ranked.ttft_ms, ranked.latency_ms, ranked.checked_at
+		FROM (
+			SELECT account_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at,
+				ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY checked_at DESC, id DESC) AS position
+			FROM account_monitor_results
+			WHERE account_id = ANY($1)
+		) ranked
+		WHERE ranked.position <= $2
+		ORDER BY account_id, checked_at ASC
+	`, pq.Array(accountIDs), perAccountLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var accountID int64
+		var point service.AccountMonitorTimelinePoint
+		if err := rows.Scan(&accountID, &point.Status, &point.ErrorCode, &point.HTTPStatus, &point.TTFTMS, &point.LatencyMS, &point.CheckedAt); err != nil {
+			return nil, err
+		}
+		result[accountID] = append(result[accountID], point)
 	}
 	return result, rows.Err()
 }
@@ -445,10 +533,15 @@ func (r *accountMonitorRepository) ListGroups(ctx context.Context) ([]service.Ac
 			COALESCE(w.success_weight, 45),
 			COALESCE(w.ttft_weight, 20),
 			COALESCE(w.latency_weight, 20),
+			COALESCE(w.ttft_target_ms, 1000),
+			COALESCE(w.ttft_limit_ms, 5000),
+			COALESCE(w.latency_target_ms, 10000),
+			COALESCE(w.latency_limit_ms, 60000),
 			COALESCE(w.updated_by, 0),
 			w.updated_at
 		FROM groups g
 		LEFT JOIN account_monitor_group_score_weights w ON w.group_id = g.id
+		WHERE g.deleted_at IS NULL
 		ORDER BY g.sort_order ASC, g.id ASC
 	`)
 	if err != nil {
@@ -470,6 +563,10 @@ func (r *accountMonitorRepository) ListGroups(ctx context.Context) ([]service.Ac
 			&group.ScoreWeights.Success,
 			&group.ScoreWeights.TTFT,
 			&group.ScoreWeights.Latency,
+			&group.ScoreWeights.TTFTTargetMS,
+			&group.ScoreWeights.TTFTLimitMS,
+			&group.ScoreWeights.LatencyTargetMS,
+			&group.ScoreWeights.LatencyLimitMS,
 			&group.ScoreWeights.UpdatedBy,
 			&updatedAt,
 		); err != nil {
@@ -489,7 +586,9 @@ func (r *accountMonitorRepository) LoadGroupScoreWeights(ctx context.Context, gr
 	}
 	var weights service.AccountMonitorScoreWeights
 	err := r.db.QueryRowContext(ctx, `
-		SELECT cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at
+		SELECT cost_weight, success_weight, ttft_weight, latency_weight,
+			ttft_target_ms, ttft_limit_ms, latency_target_ms, latency_limit_ms,
+			updated_by, updated_at
 		FROM account_monitor_group_score_weights
 		WHERE group_id = $1
 	`, groupID).Scan(
@@ -497,6 +596,10 @@ func (r *accountMonitorRepository) LoadGroupScoreWeights(ctx context.Context, gr
 		&weights.Success,
 		&weights.TTFT,
 		&weights.Latency,
+		&weights.TTFTTargetMS,
+		&weights.TTFTLimitMS,
+		&weights.LatencyTargetMS,
+		&weights.LatencyLimitMS,
 		&weights.UpdatedBy,
 		&weights.UpdatedAt,
 	)
@@ -519,16 +622,23 @@ func (r *accountMonitorRepository) SaveGroupScoreWeights(
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO account_monitor_group_score_weights (
-			group_id, cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+			group_id, cost_weight, success_weight, ttft_weight, latency_weight,
+			ttft_target_ms, ttft_limit_ms, latency_target_ms, latency_limit_ms,
+			updated_by, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 		ON CONFLICT (group_id) DO UPDATE SET
 			cost_weight = EXCLUDED.cost_weight,
 			success_weight = EXCLUDED.success_weight,
 			ttft_weight = EXCLUDED.ttft_weight,
 			latency_weight = EXCLUDED.latency_weight,
+			ttft_target_ms = EXCLUDED.ttft_target_ms,
+			ttft_limit_ms = EXCLUDED.ttft_limit_ms,
+			latency_target_ms = EXCLUDED.latency_target_ms,
+			latency_limit_ms = EXCLUDED.latency_limit_ms,
 			updated_by = EXCLUDED.updated_by,
 			updated_at = EXCLUDED.updated_at
-	`, groupID, weights.Cost, weights.Success, weights.TTFT, weights.Latency, actorID)
+	`, groupID, weights.Cost, weights.Success, weights.TTFT, weights.Latency,
+		weights.TTFTTargetMS, weights.TTFTLimitMS, weights.LatencyTargetMS, weights.LatencyLimitMS, actorID)
 	return err
 }
 
@@ -549,6 +659,12 @@ func validateGroupScoreWeights(weights service.AccountMonitorScoreWeights) error
 	}
 	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
 		return errors.New("score weights must sum to 100")
+	}
+	if weights.TTFTTargetMS < 0 || weights.TTFTLimitMS <= weights.TTFTTargetMS {
+		return errors.New("ttft target must be non-negative and less than limit")
+	}
+	if weights.LatencyTargetMS < 0 || weights.LatencyLimitMS <= weights.LatencyTargetMS {
+		return errors.New("latency target must be non-negative and less than limit")
 	}
 	return nil
 }

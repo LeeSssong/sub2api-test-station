@@ -667,6 +667,10 @@ test_authorized_maintenance_transition() {
 test_caddy_reconciliation_route() {
   grep -q '/relay-ops/api/reconciliation/\*' "$ROOT/infra/Caddyfile" \
     || fail 'Caddy does not route reconciliation API to relay-ops'
+  ! grep -Eq 'path .* /relay-ops/\*' "$ROOT/infra/Caddyfile" \
+    || fail 'Caddy exposes retired relay-ops pages through a broad public matcher'
+  grep -q '@retired_relay_ops_pages path /relay-ops/\*' "$ROOT/infra/Caddyfile" \
+    || fail 'Caddy does not explicitly retire relay-ops pages'
 }
 
 test_success_order_and_atomic_records() {

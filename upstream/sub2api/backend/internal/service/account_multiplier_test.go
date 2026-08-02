@@ -185,6 +185,9 @@ func TestAccountMultiplierResolveUsesFreshMeasurementOnlyAfterUnsupportedDeclara
 	if got.Value == nil || math.Abs(*got.Value-value) > 1e-9 {
 		t.Fatalf("Resolve().Value = %#v", got.Value)
 	}
+	if got.SampleCount != 3 {
+		t.Fatalf("Resolve().SampleCount = %d, want measured sample count 3", got.SampleCount)
+	}
 
 	account.Extra[UpstreamBillingProbeExtraKey] = UpstreamBillingProbeSnapshot{
 		Status: UpstreamBillingProbeStatusFailed,

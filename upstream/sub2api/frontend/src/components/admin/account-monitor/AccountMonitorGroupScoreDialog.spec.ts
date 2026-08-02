@@ -17,7 +17,7 @@ describe('AccountMonitorGroupScoreDialog', () => {
     })
 
     const inputs = wrapper.findAll('input')
-    expect(inputs).toHaveLength(4)
+    expect(inputs).toHaveLength(8)
     await inputs[3].setValue(19)
 
     expect(wrapper.get('[data-test="score-total"]').text()).toContain('99')
@@ -34,9 +34,25 @@ describe('AccountMonitorGroupScoreDialog', () => {
     })
 
     await wrapper.get('[data-test="save-score-weights"]').trigger('click')
-    expect(wrapper.emitted('save')?.[0]).toEqual([{ cost: 15, success: 45, ttft: 20, latency: 20 }])
+    expect(wrapper.emitted('save')?.[0]).toEqual([{
+      cost: 15, success: 45, ttft: 20, latency: 20,
+      ttft_target_ms: 1000, ttft_limit_ms: 5000,
+      latency_target_ms: 10000, latency_limit_ms: 60000,
+    }])
 
     await wrapper.get('[data-test="reset-score-weights"]').trigger('click')
     expect(wrapper.emitted('reset')).toHaveLength(1)
+  })
+
+  it('blocks invalid target and limit ranges', async () => {
+    const wrapper = mount(AccountMonitorGroupScoreDialog, {
+      props: { show: true, groupId: 3, groupName: 'Production', weights },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+    })
+
+    const inputs = wrapper.findAll('input')
+    await inputs[5].setValue(500)
+    expect(wrapper.get('[data-test="save-score-weights"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('每项上限必须大于目标值')
   })
 })

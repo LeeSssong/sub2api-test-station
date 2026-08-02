@@ -46,6 +46,7 @@ usage_agg AS (
     CASE WHEN GROUPING(platform) = 1 THEN NULL ELSE platform END AS platform,
     CASE WHEN GROUPING(group_id) = 1 THEN NULL ELSE group_id END AS group_id,
     COUNT(*) AS success_count,
+    COUNT(duration_ms) AS duration_sample_count,
     COUNT(*) FILTER (WHERE first_token_ms IS NOT NULL) AS ttft_sample_count,
     COALESCE(SUM(tokens), 0) AS token_consumed,
 
@@ -111,6 +112,7 @@ combined AS (
     COALESCE(u.group_id, e.group_id) AS group_id,
 
     COALESCE(u.success_count, 0) AS success_count,
+    COALESCE(u.duration_sample_count, 0) AS duration_sample_count,
     COALESCE(u.ttft_sample_count, 0) AS ttft_sample_count,
     COALESCE(e.error_count_total, 0) AS error_count_total,
     COALESCE(e.business_limited_count, 0) AS business_limited_count,
@@ -145,6 +147,7 @@ INSERT INTO ops_metrics_hourly (
   platform,
   group_id,
   success_count,
+  duration_sample_count,
   ttft_sample_count,
   error_count_total,
   business_limited_count,
@@ -172,6 +175,7 @@ SELECT
   NULLIF(platform, '') AS platform,
   group_id,
   success_count,
+  duration_sample_count,
   ttft_sample_count,
   error_count_total,
   business_limited_count,
@@ -198,6 +202,7 @@ WHERE bucket_start IS NOT NULL
   AND (platform IS NULL OR platform <> '')
 ON CONFLICT (bucket_start, COALESCE(platform, ''), COALESCE(group_id, 0)) DO UPDATE SET
   success_count = EXCLUDED.success_count,
+  duration_sample_count = EXCLUDED.duration_sample_count,
   ttft_sample_count = EXCLUDED.ttft_sample_count,
   error_count_total = EXCLUDED.error_count_total,
   business_limited_count = EXCLUDED.business_limited_count,
@@ -245,6 +250,7 @@ INSERT INTO ops_metrics_daily (
   platform,
   group_id,
   success_count,
+  duration_sample_count,
   ttft_sample_count,
   error_count_total,
   business_limited_count,
@@ -273,6 +279,7 @@ SELECT
   group_id,
 
   COALESCE(SUM(success_count), 0) AS success_count,
+  COALESCE(SUM(duration_sample_count), 0) AS duration_sample_count,
   COALESCE(SUM(ttft_sample_count), 0) AS ttft_sample_count,
   COALESCE(SUM(error_count_total), 0) AS error_count_total,
   COALESCE(SUM(business_limited_count), 0) AS business_limited_count,
@@ -283,14 +290,14 @@ SELECT
   COALESCE(SUM(token_consumed), 0) AS token_consumed,
 
   -- Approximation: weighted average for p50/p90, max for p95/p99 (conservative tail).
-  ROUND(SUM(duration_p50_ms::double precision * success_count) FILTER (WHERE duration_p50_ms IS NOT NULL)
-    / NULLIF(SUM(success_count) FILTER (WHERE duration_p50_ms IS NOT NULL), 0))::int AS duration_p50_ms,
-  ROUND(SUM(duration_p90_ms::double precision * success_count) FILTER (WHERE duration_p90_ms IS NOT NULL)
-    / NULLIF(SUM(success_count) FILTER (WHERE duration_p90_ms IS NOT NULL), 0))::int AS duration_p90_ms,
+  ROUND(SUM(duration_p50_ms::double precision * duration_sample_count) FILTER (WHERE duration_p50_ms IS NOT NULL)
+    / NULLIF(SUM(duration_sample_count) FILTER (WHERE duration_p50_ms IS NOT NULL), 0))::int AS duration_p50_ms,
+  ROUND(SUM(duration_p90_ms::double precision * duration_sample_count) FILTER (WHERE duration_p90_ms IS NOT NULL)
+    / NULLIF(SUM(duration_sample_count) FILTER (WHERE duration_p90_ms IS NOT NULL), 0))::int AS duration_p90_ms,
   MAX(duration_p95_ms) AS duration_p95_ms,
   MAX(duration_p99_ms) AS duration_p99_ms,
-  SUM(duration_avg_ms * success_count) FILTER (WHERE duration_avg_ms IS NOT NULL)
-    / NULLIF(SUM(success_count) FILTER (WHERE duration_avg_ms IS NOT NULL), 0) AS duration_avg_ms,
+  SUM(duration_avg_ms * duration_sample_count) FILTER (WHERE duration_avg_ms IS NOT NULL)
+    / NULLIF(SUM(duration_sample_count) FILTER (WHERE duration_avg_ms IS NOT NULL), 0) AS duration_avg_ms,
   MAX(duration_max_ms) AS duration_max_ms,
 
   -- TTFT is weighted by ttft_sample_count (streaming rows only), NOT success_count,
@@ -311,6 +318,7 @@ WHERE bucket_start >= $1 AND bucket_start < $2
 GROUP BY 1, 2, 3
 ON CONFLICT (bucket_date, COALESCE(platform, ''), COALESCE(group_id, 0)) DO UPDATE SET
   success_count = EXCLUDED.success_count,
+  duration_sample_count = EXCLUDED.duration_sample_count,
   ttft_sample_count = EXCLUDED.ttft_sample_count,
   error_count_total = EXCLUDED.error_count_total,
   business_limited_count = EXCLUDED.business_limited_count,

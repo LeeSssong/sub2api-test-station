@@ -38,6 +38,7 @@ type accountMonitorRepoStub struct {
 	groupAggregateIDs  map[int64][]int64
 	groupAggregatesErr error
 	latest             map[int64]AccountMonitorLatest
+	timelines          map[int64][]AccountMonitorTimelinePoint
 	aggregateIDs       []int64
 }
 
@@ -78,6 +79,10 @@ func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID i
 
 func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64]AccountMonitorLatest, error) {
 	return s.latest, nil
+}
+
+func (s *accountMonitorRepoStub) ListTimelines(context.Context, []int64, int) (map[int64][]AccountMonitorTimelinePoint, error) {
+	return s.timelines, nil
 }
 
 func (s *accountMonitorRepoStub) LoadSettings(context.Context) (AccountMonitorSettings, error) {
@@ -685,6 +690,86 @@ func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *te
 	}
 	if !first.Eligible || first.GroupRank == nil || *first.GroupRank != 1 {
 		t.Fatalf("first group account = %#v", first)
+	}
+}
+
+func TestCalculateAccountMonitorQualityScoreUsesConfiguredLinearThresholds(t *testing.T) {
+	ttft := 3000.0
+	latency := 35000.0
+	score := CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 40, TTFT: 30, Latency: 30,
+		TTFTTargetMS: 1000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.75, TTFTP50MS: &ttft, LatencyP95MS: &latency,
+	})
+	if score == nil || *score != 60 {
+		t.Fatalf("score = %v, want 60 (30 success + 15 TTFT + 15 latency)", score)
+	}
+
+	ttft = 5000
+	latency = 60000
+	score = CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 40, TTFT: 30, Latency: 30,
+		TTFTTargetMS: 1000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.75, TTFTP50MS: &ttft, LatencyP95MS: &latency,
+	})
+	if score == nil || *score != 30 {
+		t.Fatalf("score at upper limits = %v, want success component only", score)
+	}
+}
+
+func TestAccountMonitorProjectionKeepsRawScoreAndMetricSpecificEvidence(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	account := Account{ID: 71, Name: "precise", Status: StatusActive, Schedulable: true,
+		RateMultiplier: &rate, Platform: PlatformOpenAI, GroupIDs: []int64{7}}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true,
+			ScoreWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+				TTFTTargetMS: 1000, TTFTLimitMS: 5000, LatencyTargetMS: 10000, LatencyLimitMS: 60000}}},
+		aggregates: map[int64]AccountMonitorAggregate{71: {
+			SampleCount: 7, SuccessSampleCount: 7, TTFTSampleCount: 5, LatencySampleCount: 4,
+			SuccessRate: 6.0 / 7.0, TTFTP50MS: floatPtr(2000), LatencyP95MS: floatPtr(20000), LastCheckedAt: &now,
+		}},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {71: {
+			SampleCount: 7, SuccessSampleCount: 7, TTFTSampleCount: 5, LatencySampleCount: 4,
+			SuccessRate: 6.0 / 7.0, TTFTP50MS: floatPtr(2000), LatencyP95MS: floatPtr(20000), LastCheckedAt: &now,
+		}}},
+		latest: map[int64]AccountMonitorLatest{71: {Status: "success", CheckedAt: now}},
+		timelines: map[int64][]AccountMonitorTimelinePoint{71: {
+			{Status: "failed", CheckedAt: now.Add(-time.Minute)},
+			{Status: "success", TTFTMS: floatPtr(2000), LatencyMS: floatPtr(20000), CheckedAt: now},
+		}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Groups[0].Accounts[0]
+	if row.Evidence.SuccessSampleCount != 7 || row.Evidence.TTFTSampleCount != 5 || row.Evidence.LatencySampleCount != 4 {
+		t.Fatalf("metric-specific evidence = %#v", row.Evidence)
+	}
+	if len(row.Timeline) != 2 || row.Timeline[0].Status != "failed" || row.Timeline[1].Status != "success" {
+		t.Fatalf("timeline = %#v", row.Timeline)
+	}
+	if row.QualityScore == nil || *row.QualityScore == float64(int(*row.QualityScore)) {
+		t.Fatalf("quality score lost raw precision: %v", row.QualityScore)
+	}
+}
+
+func TestAccountMonitorScoreThresholdsRejectInvalidRanges(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	_, err := NewAccountMonitorService(repo, nil, nil, nil, nil).UpdateGroupScoreWeights(context.Background(), 7, 3, AccountMonitorScoreWeights{
+		Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+		TTFTTargetMS: 5000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	})
+	if err == nil {
+		t.Fatal("expected equal TTFT target and limit to be rejected")
 	}
 }
 

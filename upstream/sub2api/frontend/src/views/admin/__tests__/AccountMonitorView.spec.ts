@@ -83,15 +83,19 @@ const account = {
   model_id: 'claude-sonnet-4-5',
   latest_status: 'success',
   sample_count: 10,
+  success_sample_count: 10,
+  ttft_sample_count: 8,
+  latency_sample_count: 7,
   success_rate: 0.9,
   ttft_p50_ms: 120,
   ttft_p95_ms: 190,
   latency_p95_ms: 840,
-  multiplier: { value: 0.1, source: 'declared', status: 'ok' },
+  multiplier: { value: 0.1, source: 'declared', status: 'ok', sample_count: 0 },
   request_count: 12,
   error_count: 1,
   today_stats: { requests: 12, tokens: 100, cost: 0.1, standard_cost: 0.2, user_cost: 0.15 },
   usage_windows: [{ name: '5h', utilization: 0.2, requests: 2, tokens: 100 }],
+  timeline: [],
   checked_at: '2026-07-25T08:00:00Z',
   stale: false,
 }
@@ -113,6 +117,9 @@ const projection = () => ({
     pending_accounts: 1,
     paused_accounts: 0,
     success_rate: 0.9,
+    success_sample_count: 10,
+    ttft_sample_count: 8,
+    latency_sample_count: 7,
     ttft_p50_ms: 120,
     latency_p95_ms: 840,
   },
@@ -133,6 +140,9 @@ const projection = () => ({
       pending_accounts: 0,
       paused_accounts: 1,
       success_rate: 0.95,
+      success_sample_count: 10,
+      ttft_sample_count: 8,
+      latency_sample_count: 7,
       ttft_p50_ms: 100,
       latency_p95_ms: 700,
     },
@@ -248,6 +258,15 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('成本不合格0')
   })
 
+  it('uses account-profit wording and caps account cards at two columns', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="global-operating-summary"]').text()).toContain('账号利润')
+    expect(wrapper.text()).not.toContain('纸面利润')
+    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toContain('lg:grid-cols-2')
+  })
+
   it('partitions accounts into exactly five monitor buckets and only ranks group available accounts', async () => {
     list.mockResolvedValueOnce({
       ...projection(),
@@ -262,8 +281,8 @@ describe('admin account monitor view', () => {
       groups: [{
         ...projection().groups[0],
         accounts: [
-          { ...account, account_id: 7, name: '组内低分', monitor_bucket: 'available', quality_score: 70, group_rank: 2 },
-          { ...account, account_id: 9, name: '组内高分', monitor_bucket: 'available', quality_score: 90, group_rank: 1 },
+          { ...account, account_id: 7, name: '组内低分', monitor_bucket: 'available', quality_score: 90.41, group_rank: 2 },
+          { ...account, account_id: 9, name: '组内高分', monitor_bucket: 'available', quality_score: 90.49, group_rank: 1 },
         ],
       }],
     })
@@ -535,6 +554,40 @@ describe('admin account monitor view', () => {
     await wrapper.get('[data-test="open-ledger-history"]').trigger('click')
 
     expect(wrapper.get('[data-test="ledger-history-drawer"]').text()).toBe('global')
+  })
+
+  it('loads and renders reconciliation exceptions from the all-site overview', async () => {
+    reconciliationExceptions.mockResolvedValueOnce({
+      items: [{
+        id: 11,
+        reason_code: 'missing_upstream_record',
+        details: '待匹配',
+        retry_count: 1,
+        first_detected_at: '2026-07-25T08:00:00Z',
+        last_checked_at: '2026-07-25T08:01:00Z',
+        attempt: {
+          id: 21,
+          attempt_id: 'attempt-21',
+          local_request_id: 'local-21',
+          upstream_request_id: '',
+          account_id: 7,
+          model: 'claude-sonnet-4-5',
+          user_charge: '1',
+          currency: 'USD',
+          completed_at: '2026-07-25T08:00:00Z',
+          reconcile_status: 'pending',
+        },
+      }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
+    await flushPromises()
+
+    expect(reconciliationExceptions).toHaveBeenCalledWith({ limit: 100 })
+    expect(wrapper.text()).toContain('missing_upstream_record')
+    expect(wrapper.text()).toContain('补登记')
   })
 
   it('快速切换分组时保留最新分组账务响应', async () => {

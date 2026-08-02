@@ -1,4 +1,4 @@
-export const MONITOR_V2_CONTRACT_VERSION = '4' as const
+export const MONITOR_V2_CONTRACT_VERSION = '5' as const
 
 export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
@@ -27,6 +27,7 @@ export interface MonitorV2TimelinePoint {
   value: number | null
   success_count: number
   eligible_count: number
+  latency_ms: number | null
 }
 
 export interface MonitorV2Group {

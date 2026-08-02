@@ -91,7 +91,7 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-	require.Equal(t, "4", envelope.Data["contract_version"])
+	require.Equal(t, "5", envelope.Data["contract_version"])
 	require.Equal(t, float64(300), envelope.Data["refresh_interval_seconds"])
 	require.Equal(t, "7d", envelope.Data["window"])
 	groups, ok := envelope.Data["groups"].([]any)

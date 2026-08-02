@@ -44,6 +44,7 @@
         <dd class="mt-1 font-mono text-base font-semibold tabular-nums text-gray-950 dark:text-white">
           {{ metric.value }}
         </dd>
+        <dd class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{{ metric.samples }}</dd>
       </div>
     </dl>
 
@@ -53,6 +54,7 @@
         <dd class="mt-1 font-mono text-sm font-semibold tabular-nums text-gray-950 dark:text-white">
           {{ metric.value }}
         </dd>
+        <dd class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{{ metric.samples }}</dd>
       </div>
     </dl>
 
@@ -142,6 +144,9 @@ function metricRow(
     key,
     label,
     value: available ? formatter(metric.value as number) : t(`monitorV2.metric.${metric.state}`),
+    samples: metric.sample_count > 0
+      ? t('monitorV2.metric.samples', { count: numberFormat.format(metric.sample_count) })
+      : t('monitorV2.metric.noSamples'),
   }
 }
 

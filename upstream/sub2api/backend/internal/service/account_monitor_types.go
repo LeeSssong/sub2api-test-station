@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	AccountMonitorSchemaVersion           = 2
+	AccountMonitorSchemaVersion           = 3
 	AccountMonitorDefaultIntervalSeconds  = 300
 	AccountMonitorMinIntervalSeconds      = 15
 	AccountMonitorMaxIntervalSeconds      = 3600
@@ -14,19 +14,30 @@ const (
 	AccountMonitorDefaultHistoryLimit     = 50
 	AccountMonitorGroupEvidenceWindow     = 5 * time.Minute
 	AccountMonitorGroupEvidenceMinSamples = 3
+	AccountMonitorTimelineLimit           = 24
+	AccountMonitorDefaultTTFTTargetMS     = 1000
+	AccountMonitorDefaultTTFTLimitMS      = 5000
+	AccountMonitorDefaultLatencyTargetMS  = 10000
+	AccountMonitorDefaultLatencyLimitMS   = 60000
 )
 
 var DefaultAccountMonitorScoreWeights = AccountMonitorScoreWeights{
 	Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+	TTFTTargetMS: AccountMonitorDefaultTTFTTargetMS, TTFTLimitMS: AccountMonitorDefaultTTFTLimitMS,
+	LatencyTargetMS: AccountMonitorDefaultLatencyTargetMS, LatencyLimitMS: AccountMonitorDefaultLatencyLimitMS,
 }
 
 type AccountMonitorScoreWeights struct {
-	Cost      int       `json:"cost"`
-	Success   int       `json:"success"`
-	TTFT      int       `json:"ttft"`
-	Latency   int       `json:"latency"`
-	UpdatedBy int64     `json:"updated_by"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Cost            int       `json:"cost"`
+	Success         int       `json:"success"`
+	TTFT            int       `json:"ttft"`
+	Latency         int       `json:"latency"`
+	TTFTTargetMS    int       `json:"ttft_target_ms"`
+	TTFTLimitMS     int       `json:"ttft_limit_ms"`
+	LatencyTargetMS int       `json:"latency_target_ms"`
+	LatencyLimitMS  int       `json:"latency_limit_ms"`
+	UpdatedBy       int64     `json:"updated_by"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type AccountMonitorGroup struct {
@@ -51,17 +62,23 @@ type AccountMonitorHealthSummary struct {
 	PendingAccounts     int      `json:"pending_accounts"`
 	PausedAccounts      int      `json:"paused_accounts"`
 	SuccessRate         float64  `json:"success_rate"`
+	SuccessSampleCount  int      `json:"success_sample_count"`
+	TTFTSampleCount     int      `json:"ttft_sample_count"`
+	LatencySampleCount  int      `json:"latency_sample_count"`
 	TTFTP50MS           *float64 `json:"ttft_p50_ms,omitempty"`
 	LatencyP95MS        *float64 `json:"latency_p95_ms,omitempty"`
 }
 
 type AccountMonitorQualityEvidence struct {
-	Source       string    `json:"source"`
-	SampleCount  int       `json:"sample_count"`
-	SuccessRate  float64   `json:"success_rate"`
-	TTFTP50MS    *float64  `json:"ttft_p50_ms,omitempty"`
-	LatencyP95MS *float64  `json:"latency_p95_ms,omitempty"`
-	ObservedAt   time.Time `json:"observed_at"`
+	Source             string    `json:"source"`
+	SampleCount        int       `json:"sample_count"`
+	SuccessSampleCount int       `json:"success_sample_count"`
+	TTFTSampleCount    int       `json:"ttft_sample_count"`
+	LatencySampleCount int       `json:"latency_sample_count"`
+	SuccessRate        float64   `json:"success_rate"`
+	TTFTP50MS          *float64  `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS       *float64  `json:"latency_p95_ms,omitempty"`
+	ObservedAt         time.Time `json:"observed_at"`
 }
 
 type AccountMonitorGroupAccount struct {
@@ -90,16 +107,19 @@ type AccountMonitorProbeResult struct {
 }
 
 type AccountMonitorAggregate struct {
-	SampleCount       int
-	SuccessCount      int
-	ErrorCount        int
-	SuccessRate       float64
-	TTFTP50MS         *float64
-	TTFTP95MS         *float64
-	LatencyP50MS      *float64
-	LatencyP95MS      *float64
-	LastCheckedAt     *time.Time
-	ConsecutiveFailed int
+	SampleCount        int
+	SuccessCount       int
+	ErrorCount         int
+	SuccessRate        float64
+	SuccessSampleCount int
+	TTFTSampleCount    int
+	LatencySampleCount int
+	TTFTP50MS          *float64
+	TTFTP95MS          *float64
+	LatencyP50MS       *float64
+	LatencyP95MS       *float64
+	LastCheckedAt      *time.Time
+	ConsecutiveFailed  int
 }
 
 type AccountMonitorUsageWindow struct {
@@ -119,44 +139,58 @@ type AccountMonitorLatest struct {
 	CheckedAt  time.Time `json:"checked_at"`
 }
 
+type AccountMonitorTimelinePoint struct {
+	Status     string    `json:"status"`
+	ErrorCode  string    `json:"error_code,omitempty"`
+	HTTPStatus *int      `json:"http_status,omitempty"`
+	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
+	LatencyMS  *float64  `json:"latency_ms,omitempty"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
 type AccountMonitorMultiplier struct {
-	Value      *float64   `json:"value,omitempty"`
-	Source     string     `json:"source,omitempty"`
-	Status     string     `json:"status"`
-	ObservedAt *time.Time `json:"observed_at,omitempty"`
+	Value       *float64   `json:"value,omitempty"`
+	Source      string     `json:"source,omitempty"`
+	Status      string     `json:"status"`
+	ObservedAt  *time.Time `json:"observed_at,omitempty"`
+	SampleCount int        `json:"sample_count"`
 }
 
 type AccountMonitorAccount struct {
-	AccountID        int64                       `json:"account_id"`
-	Name             string                      `json:"name"`
-	Platform         string                      `json:"platform"`
-	AccountType      string                      `json:"account_type"`
-	Status           string                      `json:"status"`
-	Schedulable      bool                        `json:"schedulable"`
-	Priority         int                         `json:"priority"`
-	HomepageURL      string                      `json:"homepage_url,omitempty"`
-	GroupIDs         []int64                     `json:"group_ids"`
-	GroupNames       []string                    `json:"group_names"`
-	ModelID          string                      `json:"model_id"`
-	LatestStatus     string                      `json:"latest_status"`
-	ErrorCode        string                      `json:"error_code,omitempty"`
-	SampleCount      int                         `json:"sample_count"`
-	SuccessRate      float64                     `json:"success_rate"`
-	TTFTP50MS        *float64                    `json:"ttft_p50_ms,omitempty"`
-	TTFTP95MS        *float64                    `json:"ttft_p95_ms,omitempty"`
-	LatencyP95MS     *float64                    `json:"latency_p95_ms,omitempty"`
-	Multiplier       AccountMonitorMultiplier    `json:"multiplier"`
-	RequestCount     int64                       `json:"request_count"`
-	ErrorCount       int64                       `json:"error_count"`
-	TodayStats       *WindowStats                `json:"today_stats,omitempty"`
-	UsageWindows     []AccountMonitorUsageWindow `json:"usage_windows,omitempty"`
-	Latest           *AccountMonitorLatest       `json:"latest,omitempty"`
-	CheckedAt        *time.Time                  `json:"checked_at,omitempty"`
-	Stale            bool                        `json:"stale"`
-	ManagementState  string                      `json:"management_state"`
-	ServiceState     string                      `json:"service_state"`
-	GroupEligibility string                      `json:"group_eligibility"`
-	MonitorBucket    string                      `json:"monitor_bucket"`
+	AccountID          int64                         `json:"account_id"`
+	Name               string                        `json:"name"`
+	Platform           string                        `json:"platform"`
+	AccountType        string                        `json:"account_type"`
+	Status             string                        `json:"status"`
+	Schedulable        bool                          `json:"schedulable"`
+	Priority           int                           `json:"priority"`
+	HomepageURL        string                        `json:"homepage_url,omitempty"`
+	GroupIDs           []int64                       `json:"group_ids"`
+	GroupNames         []string                      `json:"group_names"`
+	ModelID            string                        `json:"model_id"`
+	LatestStatus       string                        `json:"latest_status"`
+	ErrorCode          string                        `json:"error_code,omitempty"`
+	SampleCount        int                           `json:"sample_count"`
+	SuccessSampleCount int                           `json:"success_sample_count"`
+	TTFTSampleCount    int                           `json:"ttft_sample_count"`
+	LatencySampleCount int                           `json:"latency_sample_count"`
+	SuccessRate        float64                       `json:"success_rate"`
+	TTFTP50MS          *float64                      `json:"ttft_p50_ms,omitempty"`
+	TTFTP95MS          *float64                      `json:"ttft_p95_ms,omitempty"`
+	LatencyP95MS       *float64                      `json:"latency_p95_ms,omitempty"`
+	Multiplier         AccountMonitorMultiplier      `json:"multiplier"`
+	RequestCount       int64                         `json:"request_count"`
+	ErrorCount         int64                         `json:"error_count"`
+	TodayStats         *WindowStats                  `json:"today_stats,omitempty"`
+	UsageWindows       []AccountMonitorUsageWindow   `json:"usage_windows,omitempty"`
+	Latest             *AccountMonitorLatest         `json:"latest,omitempty"`
+	Timeline           []AccountMonitorTimelinePoint `json:"timeline"`
+	CheckedAt          *time.Time                    `json:"checked_at,omitempty"`
+	Stale              bool                          `json:"stale"`
+	ManagementState    string                        `json:"management_state"`
+	ServiceState       string                        `json:"service_state"`
+	GroupEligibility   string                        `json:"group_eligibility"`
+	MonitorBucket      string                        `json:"monitor_bucket"`
 }
 
 type AccountMonitorProjection struct {
@@ -179,6 +213,7 @@ type AccountMonitorRepository interface {
 	InsertResult(ctx context.Context, result AccountMonitorProbeResult, runID string) error
 	ListAggregates(ctx context.Context, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
 	ListLatest(ctx context.Context, accountIDs []int64) (map[int64]AccountMonitorLatest, error)
+	ListTimelines(ctx context.Context, accountIDs []int64, perAccountLimit int) (map[int64][]AccountMonitorTimelinePoint, error)
 	ListHistory(ctx context.Context, accountID int64, limit int) ([]AccountMonitorProbeResult, error)
 	DeleteBefore(ctx context.Context, before time.Time) error
 	ListGroups(ctx context.Context) ([]AccountMonitorGroup, error)

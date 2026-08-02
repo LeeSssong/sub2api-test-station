@@ -34,6 +34,7 @@ export interface AccountMonitorMultiplier {
   source?: AccountMonitorMultiplierSource
   status: AccountMonitorMultiplierStatus
   observed_at?: string | null
+  sample_count: number
 }
 
 export interface AccountMonitorScoreWeights {
@@ -41,6 +42,10 @@ export interface AccountMonitorScoreWeights {
   success: number
   ttft: number
   latency: number
+  ttft_target_ms?: number
+  ttft_limit_ms?: number
+  latency_target_ms?: number
+  latency_limit_ms?: number
   updated_by?: number
   updated_at?: string
 }
@@ -53,6 +58,9 @@ export interface AccountMonitorHealthSummary {
   pending_accounts: number
   paused_accounts: number
   success_rate: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
 }
@@ -62,10 +70,22 @@ export type AccountMonitorBucket = 'available' | 'unavailable' | 'cost_ineligibl
 export interface AccountMonitorQualityEvidence {
   source: 'group' | 'global_fallback' | 'stale' | string
   sample_count: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   success_rate: number
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
   observed_at?: string | null
+}
+
+export interface AccountMonitorTimelinePoint {
+  status: AccountMonitorStatus
+  error_code?: string
+  http_status?: number | null
+  ttft_ms?: number | null
+  latency_ms?: number | null
+  checked_at: string
 }
 
 export interface AccountMonitorAccount {
@@ -87,6 +107,9 @@ export interface AccountMonitorAccount {
   latest_status: AccountMonitorStatus
   error_code?: string
   sample_count: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   success_rate: number
   ttft_p50_ms?: number | null
   ttft_p95_ms?: number | null
@@ -97,6 +120,7 @@ export interface AccountMonitorAccount {
   today_stats?: WindowStats | null
   usage_windows?: AccountMonitorUsageWindow[]
   latest?: AccountMonitorLatest | null
+  timeline: AccountMonitorTimelinePoint[]
   checked_at?: string | null
   stale: boolean
   quality_score?: number | null
@@ -199,7 +223,7 @@ export async function getGroupScoreWeights(groupID: number): Promise<AccountMoni
 
 export async function updateGroupScoreWeights(
   groupID: number,
-  weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>,
+  weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>,
 ): Promise<AccountMonitorScoreWeights> {
   const { data } = await apiClient.put<AccountMonitorScoreWeights>(
     `/admin/account-monitors/groups/${groupID}/score-weights`,

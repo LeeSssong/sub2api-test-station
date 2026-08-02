@@ -127,6 +127,10 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor latest: %w", err)
 	}
+	timelines, err := s.repo.ListTimelines(ctx, ids, AccountMonitorTimelineLimit)
+	if err != nil {
+		return AccountMonitorPage{}, fmt.Errorf("list account monitor timelines: %w", err)
+	}
 	today, err := s.loadTodayStats(ctx, ids)
 	if err != nil {
 		return AccountMonitorPage{}, err
@@ -136,9 +140,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor groups: %w", err)
 	}
 	for i := range groups {
-		if groups[i].ScoreWeights == (AccountMonitorScoreWeights{}) {
-			groups[i].ScoreWeights = DefaultAccountMonitorScoreWeights
-		}
+		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
 
 	observedAt := time.Now().UTC()
@@ -147,25 +149,29 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	for _, account := range accounts {
 		aggregate := aggregates[account.ID]
 		row := AccountMonitorAccount{
-			AccountID:    account.ID,
-			Name:         account.Name,
-			Platform:     account.Platform,
-			AccountType:  account.Type,
-			Status:       account.Status,
-			Schedulable:  account.Schedulable,
-			Priority:     account.Priority,
-			HomepageURL:  accountMonitorHomepageURL(account),
-			GroupIDs:     append([]int64{}, account.GroupIDs...),
-			GroupNames:   accountGroupNames(account),
-			ModelID:      monitorModelForAccount(&account),
-			LatestStatus: "unavailable",
-			SuccessRate:  aggregate.SuccessRate,
-			SampleCount:  aggregate.SampleCount,
-			TTFTP50MS:    aggregate.TTFTP50MS,
-			TTFTP95MS:    aggregate.TTFTP95MS,
-			LatencyP95MS: aggregate.LatencyP95MS,
-			Multiplier:   s.resolveMultiplier(&account, observedAt),
-			ErrorCount:   int64(aggregate.ErrorCount),
+			AccountID:          account.ID,
+			Name:               account.Name,
+			Platform:           account.Platform,
+			AccountType:        account.Type,
+			Status:             account.Status,
+			Schedulable:        account.Schedulable,
+			Priority:           account.Priority,
+			HomepageURL:        accountMonitorHomepageURL(account),
+			GroupIDs:           append([]int64{}, account.GroupIDs...),
+			GroupNames:         accountGroupNames(account),
+			ModelID:            monitorModelForAccount(&account),
+			LatestStatus:       "unavailable",
+			SuccessRate:        aggregate.SuccessRate,
+			SampleCount:        aggregate.SampleCount,
+			SuccessSampleCount: aggregate.SuccessSampleCount,
+			TTFTSampleCount:    aggregate.TTFTSampleCount,
+			LatencySampleCount: aggregate.LatencySampleCount,
+			TTFTP50MS:          aggregate.TTFTP50MS,
+			TTFTP95MS:          aggregate.TTFTP95MS,
+			LatencyP95MS:       aggregate.LatencyP95MS,
+			Multiplier:         s.resolveMultiplier(&account, observedAt),
+			ErrorCount:         int64(aggregate.ErrorCount),
+			Timeline:           append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
 		if stats := today[account.ID]; stats != nil {
 			row.RequestCount = stats.Requests
@@ -278,6 +284,9 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, groupEvidenceAvailable, latest[accountID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			row.SampleCount = evidence.SampleCount
+			row.SuccessSampleCount = evidence.SuccessSampleCount
+			row.TTFTSampleCount = evidence.TTFTSampleCount
+			row.LatencySampleCount = evidence.LatencySampleCount
 			row.SuccessRate = evidence.SuccessRate
 			row.TTFTP50MS = evidence.TTFTP50MS
 			row.LatencyP95MS = evidence.LatencyP95MS
@@ -390,12 +399,15 @@ func summarizeAccountMonitorHealth(rows []AccountMonitorAccount) AccountMonitorH
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			managementState: row.ManagementState,
-			serviceState:    row.ServiceState,
-			sampleCount:     row.SampleCount,
-			successRate:     row.SuccessRate,
-			ttftP50MS:       row.TTFTP50MS,
-			latencyP95:      row.LatencyP95MS,
+			managementState:    row.ManagementState,
+			serviceState:       row.ServiceState,
+			sampleCount:        row.SampleCount,
+			successSampleCount: row.SuccessSampleCount,
+			ttftSampleCount:    row.TTFTSampleCount,
+			latencySampleCount: row.LatencySampleCount,
+			successRate:        row.SuccessRate,
+			ttftP50MS:          row.TTFTP50MS,
+			latencyP95:         row.LatencyP95MS,
 		})
 	}
 	return summarizeHealthSamples(samples)
@@ -405,12 +417,15 @@ func summarizeGroupHealth(rows []AccountMonitorGroupAccount) AccountMonitorHealt
 	samples := make([]accountMonitorHealthSample, 0, len(rows))
 	for _, row := range rows {
 		samples = append(samples, accountMonitorHealthSample{
-			managementState: row.ManagementState,
-			serviceState:    row.ServiceState,
-			sampleCount:     row.SampleCount,
-			successRate:     row.SuccessRate,
-			ttftP50MS:       row.TTFTP50MS,
-			latencyP95:      row.LatencyP95MS,
+			managementState:    row.ManagementState,
+			serviceState:       row.ServiceState,
+			sampleCount:        row.SampleCount,
+			successSampleCount: row.SuccessSampleCount,
+			ttftSampleCount:    row.TTFTSampleCount,
+			latencySampleCount: row.LatencySampleCount,
+			successRate:        row.SuccessRate,
+			ttftP50MS:          row.TTFTP50MS,
+			latencyP95:         row.LatencyP95MS,
 		})
 	}
 	return summarizeHealthSamples(samples)
@@ -421,18 +436,27 @@ func applyAccountMonitorAggregate(summary AccountMonitorHealthSummary, aggregate
 		return summary
 	}
 	summary.SuccessRate = aggregate.SuccessRate
+	summary.SuccessSampleCount = aggregate.SuccessSampleCount
+	summary.TTFTSampleCount = aggregate.TTFTSampleCount
+	summary.LatencySampleCount = aggregate.LatencySampleCount
+	if summary.SuccessSampleCount == 0 {
+		summary.SuccessSampleCount = aggregate.SampleCount
+	}
 	summary.TTFTP50MS = aggregate.TTFTP50MS
 	summary.LatencyP95MS = aggregate.LatencyP95MS
 	return summary
 }
 
 type accountMonitorHealthSample struct {
-	managementState string
-	serviceState    string
-	sampleCount     int
-	successRate     float64
-	ttftP50MS       *float64
-	latencyP95      *float64
+	managementState    string
+	serviceState       string
+	sampleCount        int
+	successSampleCount int
+	ttftSampleCount    int
+	latencySampleCount int
+	successRate        float64
+	ttftP50MS          *float64
+	latencyP95         *float64
 }
 
 func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHealthSummary {
@@ -458,19 +482,34 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 		default:
 			summary.UnavailableAccounts++
 		}
-		weight := float64(row.sampleCount)
+		successCount := row.successSampleCount
+		if successCount == 0 {
+			successCount = row.sampleCount
+		}
+		weight := float64(successCount)
 		if weight <= 0 {
 			continue
 		}
 		samples += weight
+		summary.SuccessSampleCount += successCount
 		successes += row.successRate * weight
 		if row.ttftP50MS != nil {
-			ttftWeighted += *row.ttftP50MS * weight
-			ttftSamples += weight
+			count := row.ttftSampleCount
+			if count == 0 {
+				count = row.sampleCount
+			}
+			ttftWeighted += *row.ttftP50MS * float64(count)
+			ttftSamples += float64(count)
+			summary.TTFTSampleCount += count
 		}
 		if row.latencyP95 != nil {
-			latencyWeighted += *row.latencyP95 * weight
-			latencySamples += weight
+			count := row.latencySampleCount
+			if count == 0 {
+				count = row.sampleCount
+			}
+			latencyWeighted += *row.latencyP95 * float64(count)
+			latencySamples += float64(count)
+			summary.LatencySampleCount += count
 		}
 	}
 	if samples > 0 {
@@ -581,7 +620,9 @@ func accountMonitorEvidence(
 		source = "stale"
 	}
 	evidence := AccountMonitorQualityEvidence{
-		Source: source, SampleCount: aggregate.SampleCount, SuccessRate: aggregate.SuccessRate,
+		Source: source, SampleCount: aggregate.SampleCount,
+		SuccessSampleCount: aggregate.SuccessSampleCount, TTFTSampleCount: aggregate.TTFTSampleCount,
+		LatencySampleCount: aggregate.LatencySampleCount, SuccessRate: aggregate.SuccessRate,
 		TTFTP50MS: aggregate.TTFTP50MS, LatencyP95MS: aggregate.LatencyP95MS, ObservedAt: observedAt.UTC(),
 	}
 	if source == "stale" {
@@ -610,11 +651,20 @@ func CalculateAccountMonitorQualityScore(
 		}
 		return value
 	}
-	latencyScore := func(value *float64) float64 {
+	latencyScore := func(value *float64, targetMS, limitMS int) float64 {
 		if value == nil {
 			return 0
 		}
-		return clamp01(1 - (*value / 1000))
+		if limitMS <= targetMS || targetMS < 0 {
+			return 0
+		}
+		if *value <= float64(targetMS) {
+			return 1
+		}
+		if *value >= float64(limitMS) {
+			return 0
+		}
+		return (float64(limitMS) - *value) / float64(limitMS-targetMS)
 	}
 	costAdvantage := float64(weights.Cost) * (groupMultiplier - accountMultiplier) / groupMultiplier
 	if costAdvantage < 0 {
@@ -624,8 +674,8 @@ func CalculateAccountMonitorQualityScore(
 		costAdvantage = float64(weights.Cost)
 	}
 	score := costAdvantage + float64(weights.Success)*clamp01(evidence.SuccessRate) +
-		float64(weights.TTFT)*latencyScore(evidence.TTFTP50MS) +
-		float64(weights.Latency)*latencyScore(evidence.LatencyP95MS)
+		float64(weights.TTFT)*latencyScore(evidence.TTFTP50MS, weights.TTFTTargetMS, weights.TTFTLimitMS) +
+		float64(weights.Latency)*latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS)
 	return &score
 }
 
@@ -837,6 +887,7 @@ func (s *AccountMonitorService) GetGroupScoreWeights(
 	if err != nil {
 		return AccountMonitorScoreWeights{}, fmt.Errorf("load group score weights: %w", err)
 	}
+	weights = normalizeAccountMonitorScoreWeights(weights)
 	if err := validateAccountMonitorScoreWeights(weights); err != nil {
 		return AccountMonitorScoreWeights{}, fmt.Errorf("stored group score weights: %w", err)
 	}
@@ -855,6 +906,7 @@ func (s *AccountMonitorService) UpdateGroupScoreWeights(
 	if actorID <= 0 {
 		return AccountMonitorScoreWeights{}, errors.New("invalid actor id")
 	}
+	weights = normalizeAccountMonitorScoreWeights(weights)
 	if err := validateAccountMonitorScoreWeights(weights); err != nil {
 		return AccountMonitorScoreWeights{}, err
 	}
@@ -888,7 +940,28 @@ func validateAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) erro
 	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
 		return errors.New("score weights must sum to 100")
 	}
+	if weights.TTFTTargetMS < 0 || weights.TTFTLimitMS <= weights.TTFTTargetMS {
+		return errors.New("ttft target must be non-negative and less than limit")
+	}
+	if weights.LatencyTargetMS < 0 || weights.LatencyLimitMS <= weights.LatencyTargetMS {
+		return errors.New("latency target must be non-negative and less than limit")
+	}
 	return nil
+}
+
+func normalizeAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) AccountMonitorScoreWeights {
+	if weights == (AccountMonitorScoreWeights{}) {
+		return DefaultAccountMonitorScoreWeights
+	}
+	if weights.TTFTTargetMS == 0 && weights.TTFTLimitMS == 0 {
+		weights.TTFTTargetMS = AccountMonitorDefaultTTFTTargetMS
+		weights.TTFTLimitMS = AccountMonitorDefaultTTFTLimitMS
+	}
+	if weights.LatencyTargetMS == 0 && weights.LatencyLimitMS == 0 {
+		weights.LatencyTargetMS = AccountMonitorDefaultLatencyTargetMS
+		weights.LatencyLimitMS = AccountMonitorDefaultLatencyLimitMS
+	}
+	return weights
 }
 
 func (s *AccountMonitorService) History(

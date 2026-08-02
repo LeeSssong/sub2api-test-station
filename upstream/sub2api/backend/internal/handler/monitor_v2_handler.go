@@ -46,6 +46,7 @@ type monitorV2TimelinePointResponse struct {
 	Value         *float64 `json:"value"`
 	SuccessCount  int64    `json:"success_count"`
 	EligibleCount int64    `json:"eligible_count"`
+	LatencyMS     *int     `json:"latency_ms,omitempty"`
 }
 
 type monitorV2GroupResponse struct {
@@ -139,6 +140,7 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 				Value:         point.Value,
 				SuccessCount:  point.SuccessCount,
 				EligibleCount: point.EligibleCount,
+				LatencyMS:     point.LatencyMS,
 			})
 		}
 		groups = append(groups, monitorV2GroupResponse{

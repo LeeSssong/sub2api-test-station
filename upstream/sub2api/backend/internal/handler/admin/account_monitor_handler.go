@@ -36,10 +36,14 @@ type accountMonitorHistoryResponse struct {
 }
 
 type accountMonitorScoreWeightsRequest struct {
-	Cost    int `json:"cost"`
-	Success int `json:"success"`
-	TTFT    int `json:"ttft"`
-	Latency int `json:"latency"`
+	Cost            int  `json:"cost"`
+	Success         int  `json:"success"`
+	TTFT            int  `json:"ttft"`
+	Latency         int  `json:"latency"`
+	TTFTTargetMS    *int `json:"ttft_target_ms"`
+	TTFTLimitMS     *int `json:"ttft_limit_ms"`
+	LatencyTargetMS *int `json:"latency_target_ms"`
+	LatencyLimitMS  *int `json:"latency_limit_ms"`
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {
@@ -153,9 +157,29 @@ func (h *AccountMonitorHandler) UpdateGroupScoreWeights(c *gin.Context) {
 		return
 	}
 	subject, _ := middleware.GetAuthSubjectFromContext(c)
-	weights, err := h.monitorService.UpdateGroupScoreWeights(c.Request.Context(), groupID, subject.UserID, service.AccountMonitorScoreWeights{
+	current, err := h.monitorService.GetGroupScoreWeights(c.Request.Context(), groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	weights := service.AccountMonitorScoreWeights{
 		Cost: req.Cost, Success: req.Success, TTFT: req.TTFT, Latency: req.Latency,
-	})
+		TTFTTargetMS: current.TTFTTargetMS, TTFTLimitMS: current.TTFTLimitMS,
+		LatencyTargetMS: current.LatencyTargetMS, LatencyLimitMS: current.LatencyLimitMS,
+	}
+	if req.TTFTTargetMS != nil {
+		weights.TTFTTargetMS = *req.TTFTTargetMS
+	}
+	if req.TTFTLimitMS != nil {
+		weights.TTFTLimitMS = *req.TTFTLimitMS
+	}
+	if req.LatencyTargetMS != nil {
+		weights.LatencyTargetMS = *req.LatencyTargetMS
+	}
+	if req.LatencyLimitMS != nil {
+		weights.LatencyLimitMS = *req.LatencyLimitMS
+	}
+	weights, err = h.monitorService.UpdateGroupScoreWeights(c.Request.Context(), groupID, subject.UserID, weights)
 	if err != nil {
 		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_SCORE_WEIGHTS", err.Error()))
 		return

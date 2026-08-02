@@ -72,6 +72,13 @@
           <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
         </template>
 
+        <template #cell-actual_response_model="{ row }">
+          <span
+            data-testid="actual-response-model"
+            class="break-all text-sm text-gray-900 dark:text-white"
+          >{{ row.actual_response_model?.trim() || '-' }}</span>
+        </template>
+
         <template #cell-reasoning_effort="{ row }">
           <span class="text-sm text-gray-900 dark:text-white">
             {{ formatReasoningEffort(row.reasoning_effort) }}

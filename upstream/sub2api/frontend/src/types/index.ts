@@ -1538,6 +1538,8 @@ export interface UsageLog {
   account_id: number | null
   request_id: string
   model: string
+  /** Model reported by the upstream response, when available (admin audit field). */
+  actual_response_model?: string | null
   service_tier?: string | null
   reasoning_effort?: string | null
   inbound_endpoint?: string | null

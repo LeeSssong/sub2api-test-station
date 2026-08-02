@@ -70,6 +70,7 @@ const DataTableStub = {
     <div>
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-actual_response_model" :row="row" :value="row.actual_response_model" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -240,6 +241,40 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('shows the actual response model and leaves it blank when absent', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [
+          {
+            ...baseImageRow,
+            request_id: 'req-actual-model',
+            actual_response_model: 'gpt-5.6-terra',
+          },
+          {
+            ...baseImageRow,
+            request_id: 'req-no-actual-model',
+            actual_response_model: null,
+          },
+        ],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const rows = wrapper.findAll('[data-testid="actual-response-model"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toBe('gpt-5.6-terra')
+    expect(rows[1].text()).toBe('-')
   })
 
   it.each([

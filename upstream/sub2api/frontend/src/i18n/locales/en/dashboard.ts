@@ -349,6 +349,7 @@ export default {
     model: 'Model',
     requestedModel: 'Requested',
     upstreamModel: 'Upstream',
+    actualResponseModel: 'Actual Response Model',
     reasoningEffort: 'Reasoning Effort',
     endpoint: 'Endpoint',
     endpointDistribution: 'Endpoint Distribution',

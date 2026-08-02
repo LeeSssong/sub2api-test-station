@@ -354,6 +354,7 @@ export default {
     model: '模型',
     requestedModel: '请求',
     upstreamModel: '上游',
+    actualResponseModel: '实际响应模型',
     reasoningEffort: '推理强度',
     endpoint: '端点',
     endpointDistribution: '端点分布',

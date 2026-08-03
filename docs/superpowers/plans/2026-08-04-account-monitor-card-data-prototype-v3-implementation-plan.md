@@ -37,7 +37,7 @@
 - Consumes: `docs/superpowers/specs/2026-08-04-account-monitor-card-data-completion-design.md` and the current V2 prototype.
 - Produces: `state.group`, `state.accounts`, `state.range`, `renderGroupSummary()`, `renderCards()`, `setRange(range)`, `beginPriorityEdit(accountId)`, `savePriority(accountId)`, `cancelPriorityEdit(accountId)`, `beginCostEdit(accountId)`, `saveCost(accountId)`, `clearCost(accountId)`, `applyFilters()`, and `startConcurrencyTicker()` inside the standalone page.
 
-- [ ] **Step 1: Register the revised prototype scope in the project ledger before changing the prototype.**
+- [x] **Step 1: Register the revised prototype scope in the project ledger before changing the prototype.**
 
 Update the existing 2026-08-04 account-monitor prototype entry instead of adding a duplicate entry. Keep its state as `进行中` and make these decisions explicit:
 
@@ -53,7 +53,7 @@ rg -n "2026-08-04.*账号监控卡片" docs/project/project-progress.md
 
 Expected: one current 2026-08-04 entry describes the revised prototype and remains `进行中`.
 
-- [ ] **Step 2: Add a failing static acceptance check for the new semantic surfaces.**
+- [x] **Step 2: Add a failing static acceptance check for the new semantic surfaces.**
 
 Before editing `index.html`, run:
 
@@ -67,7 +67,7 @@ rg -q '采购成本' docs/prototypes/account-monitor-card-v2/index.html
 
 Expected: FAIL because V2 has no group summary, only one card, and no procurement-cost or current-concurrency surfaces.
 
-- [ ] **Step 3: Replace the single-card sample with the exact minimum data model.**
+- [x] **Step 3: Replace the single-card sample with the exact minimum data model.**
 
 Use this state shape and values as the page's single source of truth:
 
@@ -140,7 +140,7 @@ function compareAccounts(left, right) {
 }
 ```
 
-- [ ] **Step 4: Implement the stable responsive layout and both cost modes.**
+- [x] **Step 4: Implement the stable responsive layout and both cost modes.**
 
 Use a two-column account grid at desktop widths and one column below 900px:
 
@@ -178,7 +178,7 @@ function renderCost(account) {
 
 The group multiplier must not appear in either card. Preserve separate real-request and probe-failure disclosure text for both cards.
 
-- [ ] **Step 5: Implement inline global-priority and procurement-cost interactions.**
+- [x] **Step 5: Implement inline global-priority and procurement-cost interactions.**
 
 For priority:
 
@@ -196,7 +196,7 @@ For procurement cost:
 
 Use Lucide `pencil`, `check`, `x`, and `trash-2` icons with accessible labels and tooltips. Do not add persistent explanatory copy outside the existing compact helper lines.
 
-- [ ] **Step 6: Make every visible prototype control functional.**
+- [x] **Step 6: Make every visible prototype control functional.**
 
 - `setRange(range)` updates both cards' score, rank, request metrics, cost detail, and disclosure values from the same window object.
 - Group and all-site tabs update `state.scope`, selected state, score/rank labels, and group-summary visibility without losing edits.
@@ -227,7 +227,7 @@ function startConcurrencyTicker() {
 
 `renderConcurrencyOnly()` must update only `[data-concurrency-account-id]` text so the card DOM, open disclosures, and edit state do not reset every five seconds.
 
-- [ ] **Step 7: Run static and browser acceptance checks.**
+- [x] **Step 7: Run static and browser acceptance checks.**
 
 Run the static check again:
 
@@ -267,7 +267,7 @@ At a 390x844 mobile viewport, verify:
 
 Save screenshots as `prototype-v3-desktop.png` and `prototype-v3-mobile-top.png`.
 
-- [ ] **Step 8: Replace the QA report with V3 evidence and commit the prototype revision.**
+- [x] **Step 8: Replace the QA report with V3 evidence and commit the prototype revision.**
 
 Update `design-qa.md` so it names the V3 screenshots, both account modes, seven-field group summary, two-column/one-column behavior, inline editing checks, five-second concurrency check, and console/overflow results. Remove statements that V3 contradicts, including the old claim that group multiplier and cost UI are absent.
 

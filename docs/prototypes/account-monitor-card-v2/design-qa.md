@@ -46,4 +46,4 @@ Final result: passed
 - Operational helper text now meets the 4.5:1 WCAG AA contrast threshold on white plus every metric pastel surface.
 - Rejected priority and procurement-cost drafts remain in their inputs. The edited input is refocused after validation, and its stable error element is associated through `aria-describedby` and announced with `role="alert"`.
 - The selected time range exposes `aria-pressed="true"` on exactly one control. Switching to 7 days updates the score, request count, and failure count from that window.
-- Final-fix scope did not regenerate screenshots. The coordinator will capture replacement desktop and mobile images after independent browser verification.
+- Fresh independent browser verification on 2026-08-04 recaptured `prototype-v3-desktop.png` at 1440 x 1000 and `prototype-v3-mobile-top.png` at 390 x 844. Both viewports had matching document scroll/client widths (1440 / 1440 and 390 / 390), desktop retained exactly two ranked cards in score order, mobile used one card column, and the browser console reported 0 errors and 0 warnings.

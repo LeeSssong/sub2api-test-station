@@ -293,6 +293,34 @@ for upstream in sub2api-blue:8080 sub2api-green:8080; do
   adapted=$("${caddy[@]}" caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile --pretty 2>/dev/null)
   [[ "$adapted" == *"$upstream"* ]] || fail "Caddy did not adapt the allowed upstream $upstream"
   [[ "$adapted" != *"sub2api:8080"* ]] || fail "Caddy adapted a removed sub2api:8080 route"
+  printf '%s' "$adapted" | ruby -rjson -e '
+    config = JSON.parse(STDIN.read)
+    site_routes = config.dig("apps", "http", "servers", "srv0", "routes")
+    site_route = site_routes&.find do |route|
+      route.fetch("match", []).any? { |matcher| matcher.fetch("host", []).include?("sub2api.example.test") }
+    end
+    routes = site_route&.dig("handle", 0, "routes")
+    abort "FAIL: missing api.xingqiaolab.top adapted routes" unless routes.is_a?(Array)
+
+    reconciliation = routes.index do |route|
+      route.fetch("match", []).any? { |matcher| matcher["path"] == ["/relay-ops/api/reconciliation/*"] }
+    end
+    retired = routes.index do |route|
+      route.fetch("match", []).any? { |matcher| matcher["path"] == ["/relay-ops/*"] }
+    end
+
+    abort "FAIL: missing adapted reconciliation route" unless reconciliation
+    abort "FAIL: missing adapted retired relay-ops route" unless retired
+    abort "FAIL: reconciliation route must precede retired relay-ops response" unless reconciliation < retired
+
+    retired_matcher = routes.fetch(retired).fetch("match").fetch(0)
+    exclusions = retired_matcher.fetch("not", []).flat_map { |matcher| matcher.fetch("path", []) }
+    abort "FAIL: retired relay-ops matcher lost reconciliation exclusion" unless exclusions.include?("/relay-ops/api/reconciliation/*")
+
+    handlers = routes.fetch(reconciliation).fetch("handle", [])
+    serialized = JSON.generate(handlers)
+    abort "FAIL: reconciliation route does not proxy to relay-ops:8100" unless serialized.include?("reverse_proxy") && serialized.include?("relay-ops:8100")
+  '
 done
 
 printf 'PASS: Caddy validates both allowed blue/green upstreams\n'

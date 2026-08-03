@@ -934,6 +934,8 @@ test_authorized_maintenance_transition() {
 }
 
 test_caddy_reconciliation_route() {
+  sed -n '/handle @relay_ops_reconciliation {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'reverse_proxy relay-ops:8100' \
+    || fail 'Caddy does not preserve reconciliation proxy ordering ahead of the retired page response'
   grep -q '/relay-ops/api/reconciliation/\*' "$ROOT/infra/Caddyfile" \
     || fail 'Caddy does not route reconciliation API to relay-ops'
   ! sed -n '/@relay_ops_public {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q '/relay-ops/\*' \

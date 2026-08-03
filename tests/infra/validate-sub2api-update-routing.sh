@@ -49,7 +49,8 @@ require_fixed 'path / /home /home/' infra/Caddyfile
 require_fixed 'path /support /support/' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require_fixed '@relay_ops_reconciliation path /relay-ops/api/reconciliation/*' infra/Caddyfile
-require_fixed 'reverse_proxy @relay_ops_reconciliation relay-ops:8100' infra/Caddyfile
+require_fixed 'handle @relay_ops_reconciliation {' infra/Caddyfile
+require_fixed 'reverse_proxy relay-ops:8100' infra/Caddyfile
 require_fixed 'not path /relay-ops/api/reconciliation/*' infra/Caddyfile
 require_fixed '@legacy_ops path /ops /ops/*' infra/Caddyfile
 require_fixed 'redir @legacy_ops /admin/ops 302' infra/Caddyfile

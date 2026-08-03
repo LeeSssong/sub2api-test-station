@@ -135,7 +135,8 @@ require '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/inci
 require 'respond @retired_relay_ops_api 404' infra/Caddyfile
 require 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
 require '@relay_ops_reconciliation path /relay-ops/api/reconciliation/*' infra/Caddyfile
-require 'reverse_proxy @relay_ops_reconciliation relay-ops:8100' infra/Caddyfile
+require 'handle @relay_ops_reconciliation {' infra/Caddyfile
+require 'reverse_proxy relay-ops:8100' infra/Caddyfile
 require 'not path /relay-ops/api/reconciliation/*' infra/Caddyfile
 require 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile
 forbid 'internal-test-service' infra/Caddyfile

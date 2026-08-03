@@ -127,7 +127,9 @@
 	reverse_proxy @relay_ops_public relay-ops:8100
 
 	@relay_ops_reconciliation path /relay-ops/api/reconciliation/*
-	reverse_proxy @relay_ops_reconciliation relay-ops:8100
+	handle @relay_ops_reconciliation {
+		reverse_proxy relay-ops:8100
+	}
 
 	@retired_relay_ops_pages {
 		path /relay-ops/*

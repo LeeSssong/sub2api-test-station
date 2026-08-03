@@ -78,6 +78,9 @@ if [[ "$*" == *'verify_executor_path_chain'* && "${FAKE_EXECUTOR_ABSENT:-false}"
     && ! -e "${FAKE_EXECUTOR_INSTALLED_FILE:?}" ]]; then
   exit 1
 fi
+if [[ "$*" == *'verify_executor_directory_chain'* || "$*" == *'verify_executor_path_chain'* ]]; then
+  exit 0
+fi
 case "$*" in
   *'sudo -n install -o root -g root -m 0755 '* )
     printf 'install\n' >>"${FAKE_EXECUTOR_STAGE_LOG:?}"

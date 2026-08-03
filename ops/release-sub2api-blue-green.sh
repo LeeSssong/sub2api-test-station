@@ -102,6 +102,14 @@ readonly fixed_host_executor='/usr/local/libexec/deploy-sub2api-blue-green-host.
 host_executor=${RELEASE_HOST_EXECUTOR_PATH:-$fixed_host_executor}
 host_executor_source=${RELEASE_HOST_EXECUTOR_SOURCE:-}
 transport=${RELEASE_TRANSPORT:-registry}
+release_staging_root=${RELEASE_STAGING_ROOT:-/var/lib/sub2api/release-staging}
+[[ "$release_staging_root" == /* && "$release_staging_root" != */ && ! -L "$release_staging_root" ]] \
+  || fail 'RELEASE_STAGING_ROOT is invalid'
+if [[ "$mode" == rehearsal ]]; then
+  [[ -n "${REHEARSAL_ROOT:-}" ]] || fail 'REHEARSAL_ROOT is required in rehearsal mode'
+  [[ "$REHEARSAL_ROOT" == /* && "$REHEARSAL_ROOT" != */ && ! -L "$REHEARSAL_ROOT" ]] \
+    || fail 'REHEARSAL_ROOT is invalid'
+fi
 
 [[ "$image_repository" =~ ^[a-z0-9][a-z0-9._/-]*$ && "$image_repository" == */* ]] || fail 'SUB2API_IMAGE_REPOSITORY is invalid'
 [[ "$build_context" == /* && -d "$build_context" && ! -L "$build_context" ]] || fail 'RELEASE_BUILD_CONTEXT is invalid'
@@ -250,7 +258,7 @@ image_id=''
 remote_tmp=''
 remote_executor_tmp=''
 remote_executor_dest_tmp=''
-staged_archive="/var/lib/sub2api/release-staging/sub2api-$source_commit.tar"
+staged_archive="$release_staging_root/sub2api-$source_commit.tar"
 cleanup_archive() { [[ -z "$archive" ]] || rm -f -- "$archive"; }
 cleanup_remote_executor_staging() {
   local cleanup_paths=()
@@ -416,7 +424,11 @@ host_environment=(
   "ADMIN_API_KEY_FILE=${RELEASE_ADMIN_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-admin-api-key}"
   "GATEWAY_API_KEY_FILE=${RELEASE_GATEWAY_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-gateway-api-key}"
   "BASE_URL=${RELEASE_BASE_URL:-https://api.xingqiaolab.top}"
+  "RELEASE_STAGING_ROOT=$release_staging_root"
 )
+if [[ "$mode" == rehearsal ]]; then
+  host_environment+=("REHEARSAL_ROOT=$REHEARSAL_ROOT")
+fi
 if [[ "$mode" == production ]]; then
   [[ -n "${RELEASE_NETWORK_CURL_IMAGE:-}" ]] || fail 'RELEASE_NETWORK_CURL_IMAGE is required for production'
   [[ -n "${RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST:-}" ]] || fail 'RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST is required for production'

@@ -157,6 +157,13 @@ write_evidence() {
 }
 
 run_controller() {
+  local controller_mode=production
+  local argument
+  for argument in "$@"; do
+    case "$argument" in
+      RELEASE_TEST_MODE=*) controller_mode=${argument#RELEASE_TEST_MODE=} ;;
+    esac
+  done
   env \
     PATH="$CASE_DIR/bin:$PATH" \
     FAKE_DOCKER_LOG="$CASE_DIR/docker.log" \
@@ -185,7 +192,7 @@ run_controller() {
     RELEASE_NETWORK_CURL_IMAGE='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     RELEASE_MONOTONIC_BIN="$CASE_DIR/bin/monotonic" \
-    "$@" bash "$CONTROLLER" --mode production --evidence "$EVIDENCE"
+    "$@" bash "$CONTROLLER" --mode "$controller_mode" --evidence "$EVIDENCE"
 }
 
 expect_failure_before_transport() {
@@ -315,6 +322,7 @@ test_build_publish_and_host_invocation() {
   grep -F -- "--image example.invalid/xingqiao-sub2api@sha256:$SHA256" "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive immutable digest'
   grep -F -- 'DEPLOY_ROOT=/opt/sub2api/production' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive canonical deploy root'
   grep -F -- 'BASE_COMPOSE=/opt/sub2api/production/compose.yaml' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive canonical compose path'
+  grep -F -- 'RELEASE_STAGING_ROOT=/var/lib/sub2api/release-staging' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive release staging root'
   grep -F -- 'NETWORK_CURL_IMAGE=example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive approved network probe image'
   grep -F -- '--platform linux/amd64' "$CASE_DIR/docker.log" >/dev/null || fail 'build platform is not Linux AMD64'
   grep -F -- '--label com.xingqiao.sub2api.qualified=true' "$CASE_DIR/docker.log" >/dev/null || fail 'qualified label missing'
@@ -416,6 +424,35 @@ test_preloaded_transport_installs_executor_and_forwards_archive() {
   grep -F -- '--preloaded-image-id sha256:' "$CASE_DIR/ssh.log" >/dev/null || fail 'preloaded image ID was not forwarded to host'
 }
 
+test_custom_staging_root_and_rehearsal_root_survive_environment_reset() {
+  setup_case custom-paths
+  write_evidence
+  mkdir -p "$CASE_DIR/custom-staging" "$CASE_DIR/rehearsal-root"
+  run_controller RELEASE_TRANSPORT=preloaded RELEASE_STAGING_ROOT="$CASE_DIR/custom-staging" \
+    >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "custom staging root controller failed: $(cat "$CASE_DIR/stderr")"
+  grep -F -- "RELEASE_STAGING_ROOT=$CASE_DIR/custom-staging" "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'custom staging root was not forwarded to host'
+  grep -F -- "--preloaded-archive $CASE_DIR/custom-staging/sub2api-" "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'custom staging root was not used for the archive path'
+
+  setup_case rehearsal-path
+  write_evidence
+  mkdir -p "$CASE_DIR/rehearsal-root"
+  run_controller RELEASE_TEST_MODE=rehearsal REHEARSAL_ROOT="$CASE_DIR/rehearsal-root" \
+    >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "rehearsal controller failed: $(cat "$CASE_DIR/stderr")"
+  grep -F -- "REHEARSAL_ROOT=$CASE_DIR/rehearsal-root" "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'rehearsal root was not forwarded to host'
+
+  setup_case rehearsal-missing-root
+  write_evidence
+  if run_controller RELEASE_TEST_MODE=rehearsal >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
+    fail 'rehearsal without root unexpectedly succeeded'
+  fi
+  [[ ! -s "$CASE_DIR/docker.log" && ! -s "$CASE_DIR/ssh.log" ]] || fail 'missing rehearsal root reached transport'
+}
+
 test_preloaded_transport_binds_release_reference_to_image_id() {
   local source_commit first_id second_id first_tag second_tag
   setup_case preloaded-image-reference
@@ -497,5 +534,6 @@ test_total_budget_stops_before_host
 test_per_stage_timeout_stops_before_host
 test_rejects_unattested_build_context_before_transport
 test_preloaded_transport_installs_executor_and_forwards_archive
+test_custom_staging_root_and_rehearsal_root_survive_environment_reset
 test_preloaded_transport_binds_release_reference_to_image_id
 printf 'PASS: tested-tree evidence and blue-green release controller\n'

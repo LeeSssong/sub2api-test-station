@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => ({
-      'monitorV2.timeline.noData': '该时段暂无有效调用',
+      'monitorV2.timeline.noData': '暂无探测记录',
       'monitorV2.timeline.probeUnavailable': '探测完成（当前无可用模型）',
       'monitorV2.timeline.success': '成功',
       'monitorV2.timeline.failed': '失败',
@@ -35,7 +35,7 @@ describe('MonitorV2Timeline', () => {
     expect(bar.attributes('style')).toContain('height: 40%')
   })
 
-  it('treats a probe without an available model as a completed green short bar', () => {
+  it('keeps an empty bucket neutral instead of reporting a completed probe', () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [{
@@ -49,9 +49,9 @@ describe('MonitorV2Timeline', () => {
       },
     })
 
-    const bar = wrapper.find('[role="img"] span[title*="探测完成"]')
+    const bar = wrapper.find('[role="img"] span[title*="暂无探测记录"]')
     expect(bar.exists()).toBe(true)
-    expect(bar.classes()).toContain('bg-emerald-500')
+    expect(bar.classes()).toContain('bg-gray-300')
     expect(bar.attributes('style')).toContain('height: 20%')
   })
 })

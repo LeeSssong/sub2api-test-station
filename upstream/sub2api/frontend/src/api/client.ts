@@ -15,6 +15,15 @@ import {
 import { getAPIBaseURL } from './url'
 export { buildApiUrl, buildGatewayUrl } from './url'
 
+// Some admin UI integrations are mounted behind the same origin but use a
+// separate authentication boundary (for example relay-ops). Their 401
+// responses must not invalidate the Sub2API session.
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipSessionRecovery?: boolean
+  }
+}
+
 // ==================== Axios Instance Configuration ====================
 
 export const apiClient: AxiosInstance = axios.create({
@@ -128,7 +137,10 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean
+      skipSessionRecovery?: boolean
+    }
 
     // Handle common errors
     if (error.response) {
@@ -177,6 +189,19 @@ apiClient.interceptors.response.use(
           status,
           code: apiData.code,
           message: apiData.message || error.message,
+          metadata: apiData.metadata,
+        })
+      }
+
+      // Requests that belong to an external auth boundary must surface their
+      // 401 to the caller without refreshing or clearing the main session.
+      if (status === 401 && originalRequest.skipSessionRecovery) {
+        return Promise.reject({
+          status,
+          code: apiData.code,
+          reason: apiData.reason,
+          error: apiData.error,
+          message: apiData.message || apiData.detail || error.message,
           metadata: apiData.metadata,
         })
       }

@@ -67,29 +67,29 @@ function summaryResponse(value: unknown, operation: string): ReconciliationSumma
   return record as unknown as ReconciliationSummary
 }
 export async function summary(params: { account_id?: number } = {}): Promise<ReconciliationSummary> {
-  const { data } = await apiClient.get<unknown>(`${base()}/summary`, { params }); return summaryResponse(data, '账务汇总')
+  const { data } = await apiClient.get<unknown>(`${base()}/summary`, { params, skipSessionRecovery: true }); return summaryResponse(data, '账务汇总')
 }
 export async function operations(params: OperationsScopeParams = {}): Promise<ReconciliationSummary> {
-  const { data } = await apiClient.get<unknown>(`${base()}/operations`, { params })
+  const { data } = await apiClient.get<unknown>(`${base()}/operations`, { params, skipSessionRecovery: true })
   return summaryResponse(data, '经营数据')
 }
 export async function history(params: OperationsScopeParams = {}): Promise<{ items: OperationsDailyRow[] }> {
-  const { data } = await apiClient.get<unknown>(`${base()}/operations/history`, { params })
+  const { data } = await apiClient.get<unknown>(`${base()}/operations/history`, { params, skipSessionRecovery: true })
   const record = objectResponse(data, '历史按日')
   if (!Array.isArray(record.items)) throw new Error('历史按日返回了无效列表，请检查账务服务连接')
   return { items: record.items as OperationsDailyRow[] }
 }
 export async function exceptions(params: { account_id?: number; limit?: number } = {}): Promise<{ items: ReconciliationException[] }> {
-  const { data } = await apiClient.get<unknown>(`${base()}/exceptions`, { params })
+  const { data } = await apiClient.get<unknown>(`${base()}/exceptions`, { params, skipSessionRecovery: true })
   const record = objectResponse(data, '异常明细')
   if (!Array.isArray(record.items)) throw new Error('异常明细返回了无效列表，请检查账务服务连接')
   return { items: record.items as ReconciliationException[] }
 }
 export async function refresh(params: { account_id?: number } = {}): Promise<ReconciliationSummary> {
-  const { data } = await apiClient.post<unknown>(`${base()}/refresh`, null, { params }); return summaryResponse(data, '账务刷新')
+  const { data } = await apiClient.post<unknown>(`${base()}/refresh`, null, { params, skipSessionRecovery: true }); return summaryResponse(data, '账务刷新')
 }
 export async function adjust(attemptID: number, amount: string, notes = ''): Promise<Record<string, unknown>> {
-  const { data } = await apiClient.post<unknown>(`${base()}/exceptions/${attemptID}/adjust`, { amount, notes })
+  const { data } = await apiClient.post<unknown>(`${base()}/exceptions/${attemptID}/adjust`, { amount, notes }, { skipSessionRecovery: true })
   return objectResponse(data, '异常补登记')
 }
 export default { summary, operations, history, exceptions, refresh, adjust }

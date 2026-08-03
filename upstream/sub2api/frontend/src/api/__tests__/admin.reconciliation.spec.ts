@@ -23,8 +23,8 @@ describe('admin reconciliation operations API', () => {
 
     await expect(reconciliationAPI.operations(scope)).resolves.toEqual(summary)
     await expect(reconciliationAPI.history(scope)).resolves.toEqual(daily)
-    expect(get).toHaveBeenNthCalledWith(1, '/relay-ops/api/reconciliation/operations', { params: scope })
-    expect(get).toHaveBeenNthCalledWith(2, '/relay-ops/api/reconciliation/operations/history', { params: scope })
+    expect(get).toHaveBeenNthCalledWith(1, '/relay-ops/api/reconciliation/operations', { params: scope, skipSessionRecovery: true })
+    expect(get).toHaveBeenNthCalledWith(2, '/relay-ops/api/reconciliation/operations/history', { params: scope, skipSessionRecovery: true })
   })
 
   it('rejects an HTML fallback instead of displaying fake empty accounting data', async () => {
@@ -57,6 +57,7 @@ describe('admin reconciliation operations API', () => {
     expect(post).toHaveBeenLastCalledWith(
       '/relay-ops/api/reconciliation/exceptions/21/adjust',
       { amount: '0.25', notes: 'manual' },
+      { skipSessionRecovery: true },
     )
   })
 })

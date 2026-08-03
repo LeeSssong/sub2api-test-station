@@ -310,6 +310,47 @@ describe('API Client', () => {
   // --- 401 Token 刷新 ---
 
   describe('401 Token 刷新', () => {
+    it.each([
+      ['有 refresh_token', true],
+      ['无 refresh_token', false],
+    ])('relay-ops 对账 401（%s）不清除主站登录态，也不跳转登录页', async (_label, hasRefreshToken) => {
+      localStorage.setItem('auth_token', 'admin-token')
+      if (hasRefreshToken) localStorage.setItem('refresh_token', 'refresh-token')
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/admin/accounts/monitor', href: '/admin/accounts/monitor' },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'ADMIN_UNAUTHORIZED', message: '需要管理员认证' },
+        },
+        config: {
+          url: '/relay-ops/api/reconciliation/operations',
+          headers: { Authorization: 'Bearer admin-token' },
+          skipSessionRecovery: true,
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.get('/relay-ops/api/reconciliation/operations', { skipSessionRecovery: true })).rejects.toEqual(
+        expect.objectContaining({ status: 401, code: 'ADMIN_UNAUTHORIZED' })
+      )
+
+      expect(localStorage.getItem('auth_token')).toBe('admin-token')
+      expect(localStorage.getItem('refresh_token')).toBe(hasRefreshToken ? 'refresh-token' : null)
+      expect(window.location.pathname).toBe('/admin/accounts/monitor')
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
     it('无 refresh_token 时 401 清除 localStorage', async () => {
       localStorage.setItem('auth_token', 'expired-token')
       // 不设置 refresh_token

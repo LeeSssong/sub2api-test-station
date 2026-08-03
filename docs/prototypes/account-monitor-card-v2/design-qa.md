@@ -38,3 +38,12 @@ Final result: passed
 ## Findings
 
 - No actionable P0, P1, or P2 visual or interaction findings remain for this standalone V3 prototype.
+
+## Final Review Fix Verification
+
+- An injected unranked window now renders exactly `未排名`; it does not render an ordinal, `null`, or a rank denominator. Ranked account fixtures remain unchanged.
+- At the 390 x 844 CSS viewport, the priority editor wraps and both save/cancel controls retain at least 31 x 31 CSS-pixel hit targets without horizontal document overflow.
+- Operational helper text now meets the 4.5:1 WCAG AA contrast threshold on white plus every metric pastel surface.
+- Rejected priority and procurement-cost drafts remain in their inputs. The edited input is refocused after validation, and its stable error element is associated through `aria-describedby` and announced with `role="alert"`.
+- The selected time range exposes `aria-pressed="true"` on exactly one control. Switching to 7 days updates the score, request count, and failure count from that window.
+- Final-fix scope did not regenerate screenshots. The coordinator will capture replacement desktop and mobile images after independent browser verification.

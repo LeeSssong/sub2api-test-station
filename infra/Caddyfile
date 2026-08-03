@@ -129,7 +129,10 @@
 	@relay_ops_reconciliation path /relay-ops/api/reconciliation/*
 	reverse_proxy @relay_ops_reconciliation relay-ops:8100
 
-	@retired_relay_ops_pages path /relay-ops/*
+	@retired_relay_ops_pages {
+		path /relay-ops/*
+		not path /relay-ops/api/reconciliation/*
+	}
 	respond @retired_relay_ops_pages 404
 
 	@sub2api_html {

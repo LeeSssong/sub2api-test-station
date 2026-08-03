@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -721,7 +722,7 @@ func TestCalculateAccountMonitorQualityScoreUsesConfiguredLinearThresholds(t *te
 	}
 }
 
-func TestAccountMonitorProjectionKeepsRawScoreAndMetricSpecificEvidence(t *testing.T) {
+func TestAccountMonitorProjectionRoundsScoreAndKeepsMetricSpecificEvidence(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
 	account := Account{ID: 71, Name: "precise", Status: StatusActive, Schedulable: true,
@@ -756,8 +757,28 @@ func TestAccountMonitorProjectionKeepsRawScoreAndMetricSpecificEvidence(t *testi
 	if len(row.Timeline) != 2 || row.Timeline[0].Status != "failed" || row.Timeline[1].Status != "success" {
 		t.Fatalf("timeline = %#v", row.Timeline)
 	}
-	if row.QualityScore == nil || *row.QualityScore == float64(int(*row.QualityScore)) {
-		t.Fatalf("quality score lost raw precision: %v", row.QualityScore)
+	if row.QualityScore == nil || *row.QualityScore != math.Round(*row.QualityScore) {
+		t.Fatalf("quality score must be an integer: %v", row.QualityScore)
+	}
+}
+
+func TestCalculateAccountMonitorQualityScoreRoundsToNearestInteger(t *testing.T) {
+	score := CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 33, TTFT: 0, Latency: 0,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.5,
+	})
+	if score == nil || *score != 17 {
+		t.Fatalf("score = %v, want 17 after rounding 16.5", score)
+	}
+
+	score = CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 33, TTFT: 0, Latency: 0,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.49,
+	})
+	if score == nil || *score != 16 {
+		t.Fatalf("score = %v, want 16 after rounding 16.17", score)
 	}
 }
 

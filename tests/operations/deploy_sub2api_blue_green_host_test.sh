@@ -938,8 +938,10 @@ test_caddy_reconciliation_route() {
     || fail 'Caddy does not route reconciliation API to relay-ops'
   ! sed -n '/@relay_ops_public {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q '/relay-ops/\*' \
     || fail 'Caddy exposes retired relay-ops pages through the public matcher'
-  grep -q '@retired_relay_ops_pages path /relay-ops/\*' "$ROOT/infra/Caddyfile" \
+  grep -q '@retired_relay_ops_pages {' "$ROOT/infra/Caddyfile" \
     || fail 'Caddy does not explicitly retire relay-ops pages'
+  sed -n '/@retired_relay_ops_pages {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'not path /relay-ops/api/reconciliation/\*' \
+    || fail 'retired relay-ops matcher intercepts the reconciliation API before reverse_proxy'
 }
 
 test_success_order_and_atomic_records() {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
@@ -676,6 +677,7 @@ func CalculateAccountMonitorQualityScore(
 	score := costAdvantage + float64(weights.Success)*clamp01(evidence.SuccessRate) +
 		float64(weights.TTFT)*latencyScore(evidence.TTFTP50MS, weights.TTFTTargetMS, weights.TTFTLimitMS) +
 		float64(weights.Latency)*latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS)
+	score = math.Round(score)
 	return &score
 }
 

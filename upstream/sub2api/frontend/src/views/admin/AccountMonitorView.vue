@@ -302,7 +302,7 @@ const intervalLabel = computed(() => {
 })
 
 const monitorGroupByID = computed(() => new Map((projection.value?.groups ?? []).map((group) => [group.id, group])))
-const emptyGroupScoreWeights: AccountMonitorScoreWeights = { cost: 30, success: 30, ttft: 20, latency: 20 }
+const emptyGroupScoreWeights: AccountMonitorScoreWeights = { cost: 15, success: 45, ttft: 20, latency: 20 }
 const sortedGroups = computed<AccountMonitorGroup[]>(() => {
   const monitorGroups = monitorGroupByID.value
   const source = adminGroups.value.length

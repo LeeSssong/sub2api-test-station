@@ -207,7 +207,7 @@ function mountView() {
         AccountMonitorGroupScoreDialog: {
           props: ['show', 'groupId', 'weights'],
           emits: ['close', 'save', 'reset'],
-          template: '<div v-if="show" data-test="score-dialog"><span>{{ groupId }}</span><button data-test="save-score" @click="$emit(\'save\', { cost: 20, success: 40, ttft: 20, latency: 20 })">save</button><button data-test="reset-score" @click="$emit(\'reset\')">reset</button></div>',
+          template: '<div v-if="show" data-test="score-dialog"><span>{{ groupId }}</span><span data-test="score-dialog-weights">{{ weights.cost }}/{{ weights.success }}/{{ weights.ttft }}/{{ weights.latency }}</span><button data-test="save-score" @click="$emit(\'save\', { cost: 20, success: 40, ttft: 20, latency: 20 })">save</button><button data-test="reset-score" @click="$emit(\'reset\')">reset</button></div>',
         },
         AccountTodayStatsCell: true,
         AccountUsageCell: true,
@@ -597,6 +597,27 @@ describe('admin account monitor view', () => {
     await flushPromises()
     expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('账号总数1')
     expect(wrapper.text()).toContain('Primary Claude')
+    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('成本 30 · 成功 30 · TTFT 20 · 延迟 20')
+  })
+
+  it('falls back to backend default score weights when the monitor projection lacks a real group', async () => {
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([
+      { id: 42, name: '真实运营组', status: 'active', rate_multiplier: 1.25, sort_order: 0 },
+    ])
+    list.mockResolvedValueOnce({
+      ...projection(),
+      groups: [],
+      accounts: [{ ...account, account_id: 42, group_ids: [42], group_names: ['真实运营组'] }],
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="group-tab-42"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('成本 15 · 成功 45 · TTFT 20 · 延迟 20')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    expect(wrapper.get('[data-test="score-dialog-weights"]').text()).toBe('15/45/20/20')
   })
 
   it('opens the daily ledger history from the all-site overview', async () => {

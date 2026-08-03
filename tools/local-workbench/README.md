@@ -6,6 +6,8 @@
 
 需要 Node.js 22.5 或更高版本。
 
+在 macOS 上可直接双击项目根目录的 `start-local-workbench.command` 一键启动；脚本会使用独立后台会话运行服务并打开浏览器。
+
 ```bash
 cd tools/local-workbench
 npm start

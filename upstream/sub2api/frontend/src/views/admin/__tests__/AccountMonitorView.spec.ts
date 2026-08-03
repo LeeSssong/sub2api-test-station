@@ -5,6 +5,7 @@ import AccountMonitorView from '../AccountMonitorView.vue'
 
 const {
   list,
+  groupsGetAllIncludingInactive,
   updateSettings,
   runAll,
   runOne,
@@ -19,6 +20,7 @@ const {
   showSuccess,
 } = vi.hoisted(() => ({
   list: vi.fn(),
+  groupsGetAllIncludingInactive: vi.fn(),
   updateSettings: vi.fn(),
   runAll: vi.fn(),
   runOne: vi.fn(),
@@ -43,6 +45,9 @@ vi.mock('@/api/admin', () => ({
       history,
       updateGroupScoreWeights,
       resetGroupScoreWeights,
+    },
+    groups: {
+      getAllIncludingInactive: groupsGetAllIncludingInactive,
     },
     reconciliation: {
       operations: reconciliationOperations,
@@ -216,6 +221,7 @@ function mountView() {
 describe('admin account monitor view', () => {
   beforeEach(() => {
     list.mockReset().mockResolvedValue(projection())
+    groupsGetAllIncludingInactive.mockReset().mockResolvedValue([])
     updateSettings.mockReset().mockResolvedValue({
       interval_seconds: 60,
       updated_by: 1,
@@ -329,10 +335,11 @@ describe('admin account monitor view', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前展示 2 个账号')
-    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('当前展示 3 个账号')
+    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(3)
     expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('全站首个投影')
     expect(wrapper.get('[data-test="account-section-available"]').text()).not.toContain('全站重复投影')
+    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('分组另一个账号')
 
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
@@ -381,6 +388,18 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('失败')
     expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('响应格式异常')
     expect(wrapper.get('[data-test="base-dialog"]').text()).not.toContain('malformed_stream')
+  })
+
+  it('keeps account history open with a clear error when the response contract is invalid', async () => {
+    history.mockResolvedValueOnce({ rows: [] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="card-history"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="account-history-error"]').text()).toContain('账号历史返回了无效数据')
+    expect(showError).toHaveBeenCalledWith('账号历史返回了无效数据，请检查监控服务连接')
   })
 
   it('discloses global ledger amounts that are not attributed to any group', async () => {
@@ -554,6 +573,32 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
   })
 
+  it('uses /admin/groups as the authoritative group tab source and merges monitor metrics by ID', async () => {
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([
+      { id: 42, name: '真实运营组', status: 'active', rate_multiplier: 1.25, sort_order: 0 },
+      { id: 99, name: '已停用组', status: 'inactive', rate_multiplier: 1, sort_order: 1 },
+    ])
+    list.mockResolvedValueOnce({
+      ...projection(),
+      groups: [{ ...projection().groups[0], id: 42, name: '监控投影别名', health: { ...projection().groups[0].health, total_accounts: 1 } }],
+      accounts: [{ ...account, account_id: 42, group_ids: [42], group_names: ['真实运营组'] }],
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(groupsGetAllIncludingInactive).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-test="group-tab-42"]').text()).toContain('真实运营组')
+    expect(wrapper.find('[data-test="group-tab-42"]').text()).not.toContain('监控投影别名')
+    expect(wrapper.find('[data-test="group-tab-99"]').text()).toContain('已停用组')
+    expect(wrapper.find('[data-test="group-tab-3"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="group-tab-42"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('账号总数1')
+    expect(wrapper.text()).toContain('Primary Claude')
+  })
+
   it('opens the daily ledger history from the all-site overview', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -609,6 +654,18 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
     expect(wrapper.text()).not.toContain('当前没有未解决异常')
     expect(showError).toHaveBeenCalledWith('异常明细返回了无效数据，请检查账务服务连接')
+  })
+
+  it('rejects an invalid exception response instead of showing a false empty state', async () => {
+    reconciliationExceptions.mockResolvedValueOnce([])
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
+    expect(wrapper.text()).not.toContain('当前没有未解决异常')
   })
 
   it('submits a manual exception adjustment and removes it after success', async () => {

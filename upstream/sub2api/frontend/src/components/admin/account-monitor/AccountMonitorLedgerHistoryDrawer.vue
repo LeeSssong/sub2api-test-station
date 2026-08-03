@@ -35,6 +35,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { history as loadLedgerHistory } from '@/api/admin/reconciliation'
 import type { OperationsDailyRow, OperationsScopeParams } from '@/api/admin/reconciliation'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const props = defineProps<{ show: boolean; scope?: OperationsScopeParams }>()
 const emit = defineEmits<{ (event: 'close'): void }>()
@@ -51,9 +52,11 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    items.value = (await loadLedgerHistory(scopedParams.value)).items
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '账务历史加载失败'
+    const response = await loadLedgerHistory(scopedParams.value)
+    if (!response || !Array.isArray(response.items)) throw new Error('账务历史返回了无效数据，请检查账务服务连接')
+    items.value = response.items
+  } catch (err: unknown) {
+    error.value = extractApiErrorMessage(err, '账务历史加载失败')
   } finally {
     loading.value = false
   }

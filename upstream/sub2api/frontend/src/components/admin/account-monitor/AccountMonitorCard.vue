@@ -52,7 +52,7 @@
       <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
     </section>
 
-    <section v-if="scope === 'group'" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 dark:text-slate-500" data-test="quality-summary">
+    <section v-if="scope === 'group'" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-400 opacity-75 dark:text-slate-500" data-test="quality-summary">
       <span v-if="account.quality_score != null">组内评分 {{ formatScore(account.quality_score) }}</span>
       <span v-else>暂无组内评分</span>
       <span v-if="account.group_rank != null">组内第 {{ account.group_rank }}</span>
@@ -74,7 +74,7 @@
       </div>
     </section>
 
-    <div class="mt-2 flex min-h-7 items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500" data-test="priority-control">
+    <div class="mt-1 flex min-h-6 items-center gap-1 text-[10px] text-gray-400 opacity-75 dark:text-slate-500" data-test="priority-control">
       <template v-if="editingPriority">
         <label class="sr-only" :for="`account-priority-${account.account_id}`">调度优先级</label>
         <input ref="priorityInput" :id="`account-priority-${account.account_id}`" v-model.number="draftPriority" data-test="priority-input" type="number" min="0" step="1" class="input h-7 w-20 px-2 py-1 font-mono text-xs" :disabled="savingWeight" @keyup.enter="savePriority" @keyup.esc="cancelPriorityEdit" />
@@ -90,8 +90,8 @@
 
     <div class="mt-2 border-t border-gray-100 dark:border-slate-800">
       <button type="button" class="flex w-full items-center gap-2 py-2 text-left text-xs text-gray-500 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:text-slate-400 dark:hover:text-slate-100" data-test="today-toggle" :aria-expanded="todayExpanded" :aria-controls="todayPanelID" @click="todayExpanded = !todayExpanded">
-        <span class="font-medium text-gray-700 dark:text-slate-200">{{ t('admin.accountMonitor.today.title') }}</span>
-        <span class="min-w-0 flex-1 truncate">{{ todaySummary }}</span>
+        <span class="font-medium text-gray-600 dark:text-slate-300">{{ t('admin.accountMonitor.today.title') }}</span>
+        <span class="min-w-0 flex-1 truncate text-[10px]">{{ todaySummary }}</span>
         <Icon name="chevronDown" size="xs" class="transition-transform motion-reduce:transition-none" :class="{ 'rotate-180': todayExpanded }" />
       </button>
       <div v-if="todayExpanded" :id="todayPanelID" class="grid grid-cols-1 gap-3 border-t border-gray-100 py-3 dark:border-slate-800 sm:grid-cols-2">

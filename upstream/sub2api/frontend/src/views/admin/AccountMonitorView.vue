@@ -172,6 +172,9 @@
       <div v-if="historyLoading" class="py-8 text-center text-sm text-gray-500">
         {{ t('common.loading') }}
       </div>
+      <div v-else-if="historyError" class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300" data-test="account-history-error">
+        {{ historyError }}
+      </div>
       <div v-else-if="historyItems.length" class="overflow-x-auto">
         <table class="min-w-full text-left text-sm">
           <thead class="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-gray-400">
@@ -237,6 +240,7 @@ import type {
   AccountMonitorScoreWeights,
 } from '@/api/admin/accountMonitor'
 import type { OperationsScopeParams, ReconciliationException, ReconciliationSummary } from '@/api/admin/reconciliation'
+import type { AdminGroup } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -253,6 +257,7 @@ const appStore = useAppStore()
 
 const projection = ref<AccountMonitorProjection | null>(null)
 const accounts = ref<AccountMonitorAccount[]>([])
+const adminGroups = ref<AdminGroup[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const search = ref('')
@@ -267,6 +272,7 @@ const settingsError = ref<string | null>(null)
 const historyAccount = ref<number | null>(null)
 const historyLoading = ref(false)
 const historyItems = ref<AccountMonitorHistoryItem[]>([])
+const historyError = ref<string | null>(null)
 const globalLedger = ref<ReconciliationSummary | null>(null)
 const groupLedger = ref<ReconciliationSummary | null>(null)
 const globalLifetimeLedger = ref<ReconciliationSummary | null>(null)
@@ -295,11 +301,33 @@ const intervalLabel = computed(() => {
   return t('admin.accountMonitor.intervalSeconds', { count: seconds })
 })
 
-const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((left, right) => {
-  if (right.rate_multiplier !== left.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
-  if (left.native_order !== right.native_order) return left.native_order - right.native_order
-  return left.id - right.id
-}))
+const monitorGroupByID = computed(() => new Map((projection.value?.groups ?? []).map((group) => [group.id, group])))
+const emptyGroupScoreWeights: AccountMonitorScoreWeights = { cost: 30, success: 30, ttft: 20, latency: 20 }
+const sortedGroups = computed<AccountMonitorGroup[]>(() => {
+  const monitorGroups = monitorGroupByID.value
+  const source = adminGroups.value.length
+    ? adminGroups.value.map((group) => {
+      const monitor = monitorGroups.get(group.id)
+      const groupAccounts = monitor?.accounts ?? accounts.value.filter((account) => account.group_ids.includes(group.id))
+      return {
+        id: group.id,
+        name: group.name,
+        rate_multiplier: group.rate_multiplier,
+        customer_visible: group.status === 'active',
+        native_order: group.sort_order,
+        score_weights: monitor?.score_weights ?? emptyGroupScoreWeights,
+        operational_state: monitor?.operational_state ?? (group.status === 'active' ? 'operational' : 'closed'),
+        health: monitor?.health ?? emptyHealth,
+        accounts: groupAccounts,
+      }
+    })
+    : [...(projection.value?.groups ?? [])]
+  return source.sort((left, right) => {
+    if (!adminGroups.value.length && right.rate_multiplier !== left.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
+    if (left.native_order !== right.native_order) return left.native_order - right.native_order
+    return left.id - right.id
+  })
+})
 const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
 function uniqueAccountsByID(source: AccountMonitorAccount[]): AccountMonitorAccount[] {
   const accountIDs = new Set<number>()
@@ -425,10 +453,18 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const result = await adminAPI.accountMonitor.list({ signal: controller.signal })
+    const [result, groups] = await Promise.all([
+      adminAPI.accountMonitor.list({ signal: controller.signal }),
+      adminAPI.groups.getAllIncludingInactive().catch(() => [] as AdminGroup[]),
+    ])
     if (controller.signal.aborted || abortController !== controller) return
     projection.value = result
-    accounts.value = result.accounts
+    adminGroups.value = groups
+    const allProjectedAccounts = [
+      ...result.accounts,
+      ...(result.groups ?? []).flatMap((group) => group.accounts ?? []),
+    ]
+    accounts.value = uniqueAccountsByID(allProjectedAccounts)
     ensureActiveGroup()
     await loadOperations()
   } catch (err: unknown) {
@@ -544,7 +580,9 @@ async function openExceptions() {
   exceptionsError.value = null
   exceptions.value = []
   try {
-    exceptions.value = (await adminAPI.reconciliation.exceptions({ limit: 100 })).items
+    const response = await adminAPI.reconciliation.exceptions({ limit: 100 })
+    if (!response || !Array.isArray(response.items)) throw new Error('异常明细返回了无效数据，请检查账务服务连接')
+    exceptions.value = response.items
   } catch (err: unknown) {
     exceptionsError.value = extractApiErrorMessage(err, '对账异常加载失败')
     appStore.showError(exceptionsError.value)
@@ -658,12 +696,14 @@ async function openHistory(accountID: number) {
   historyAccount.value = accountID
   historyLoading.value = true
   historyItems.value = []
+  historyError.value = null
   try {
     const response = await adminAPI.accountMonitor.history(accountID, 25)
+    if (!response || !Array.isArray(response.items)) throw new Error('账号历史返回了无效数据，请检查监控服务连接')
     historyItems.value = response.items
   } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('admin.accountMonitor.history.loadError')))
-    historyAccount.value = null
+    historyError.value = extractApiErrorMessage(err, t('admin.accountMonitor.history.loadError'))
+    appStore.showError(historyError.value)
   } finally {
     historyLoading.value = false
   }

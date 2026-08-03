@@ -230,7 +230,8 @@ describe('AccountMonitorCard', () => {
     })
 
     expect(wrapper.text()).toContain('调度优先级 7')
-    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('text-[11px]')
+    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('text-[10px]')
+    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('opacity-75')
     expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(false)
 
     await wrapper.get('[data-test="edit-priority"]').trigger('click')
@@ -250,8 +251,9 @@ describe('AccountMonitorCard', () => {
       global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
     })
 
-    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-[11px]')
+    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-[10px]')
     expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-gray-400')
+    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('opacity-75')
   })
 
   it('shows pending reconciliation instead of a profit margin when coverage is unknown', () => {

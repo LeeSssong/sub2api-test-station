@@ -406,8 +406,27 @@ host_deadline_epoch=$(ruby -e 'print Time.now.utc.to_i + Integer(ARGV.fetch(0))'
 [[ "$host_deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail 'host deadline is invalid'
 set +e
 verify_remote_executor_path_chain
+host_environment=(
+  "DEPLOY_ROOT=${RELEASE_DEPLOY_ROOT:-/opt/sub2api/production}"
+  "BASE_COMPOSE=${RELEASE_BASE_COMPOSE:-/opt/sub2api/production/compose.yaml}"
+  "SECRET_ENV=${RELEASE_SECRET_ENV:-/opt/sub2api/production/.env}"
+  "RELEASE_ENV=${RELEASE_RELEASE_ENV:-/opt/sub2api/production/release.env}"
+  "RELEASE_STATE=${RELEASE_STATE_PATH:-/var/lib/sub2api/release-state}"
+  "RELEASE_RECORD_ROOT=${RELEASE_RECORD_ROOT_PATH:-/var/lib/sub2api/release-records}"
+  "ADMIN_API_KEY_FILE=${RELEASE_ADMIN_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-admin-api-key}"
+  "GATEWAY_API_KEY_FILE=${RELEASE_GATEWAY_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-gateway-api-key}"
+  "BASE_URL=${RELEASE_BASE_URL:-https://api.xingqiaolab.top}"
+)
+if [[ "$mode" == production ]]; then
+  [[ -n "${RELEASE_NETWORK_CURL_IMAGE:-}" ]] || fail 'RELEASE_NETWORK_CURL_IMAGE is required for production'
+  [[ -n "${RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST:-}" ]] || fail 'RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST is required for production'
+  host_environment+=(
+    "NETWORK_CURL_IMAGE=$RELEASE_NETWORK_CURL_IMAGE"
+    "NETWORK_CURL_IMAGE_ALLOWLIST=$RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST"
+  )
+fi
 host_args=(
-  sudo -n
+  sudo -n env "${host_environment[@]}"
 )
 if [[ "$transport" == preloaded ]]; then
   host_args+=(env RELEASE_PRELOADED_IMAGE=true)

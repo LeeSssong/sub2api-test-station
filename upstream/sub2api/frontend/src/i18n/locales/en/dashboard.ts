@@ -104,6 +104,7 @@ export default {
     callEvidence: '{success} / {eligible} eligible calls succeeded',
     timeline: {
       noData: 'No probes in this period',
+      probeUnavailable: 'Probe completed (no model available)',
       success: 'Probe succeeded',
       failed: 'Probe failed'
     },

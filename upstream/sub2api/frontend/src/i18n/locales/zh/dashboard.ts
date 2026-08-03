@@ -104,6 +104,7 @@ export default {
     callEvidence: '{success} / {eligible} 次有效调用成功',
     timeline: {
       noData: '该时段暂无探测记录',
+      probeUnavailable: '探测完成（当前无可用模型）',
       success: '探测成功',
       failed: '探测失败'
     },

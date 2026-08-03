@@ -137,9 +137,9 @@ describe('AccountMonitorCard', () => {
       global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
     })
 
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('基于 12 次探测')
-    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('基于 10 次探测')
-    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('基于 8 次探测')
+    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('基于 12 次调用')
+    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('基于 10 次调用')
+    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('基于 8 次调用')
     expect(wrapper.get('[data-test="multiplier-metric"]').text()).toContain('基于 9 次调用')
   })
 
@@ -175,6 +175,19 @@ describe('AccountMonitorCard', () => {
     const latest = bars.at(-1)
     expect(latest?.classes()).toContain('bg-emerald-500')
     expect(latest?.attributes('style')).toContain('height: 40%')
+  })
+
+  it('uses Chinese labels instead of raw failure codes on the card and probe tooltip', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: { account: { ...account, error_code: 'timeout' } },
+      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
+    })
+
+    expect(wrapper.text()).toContain('请求超时')
+    expect(wrapper.text()).not.toContain('timeout')
+    const latestProbe = wrapper.findAll('[data-test="probe-bar"]').at(-1)
+    expect(latestProbe?.attributes('title')).toContain('请求超时')
+    expect(latestProbe?.attributes('title')).not.toContain('timeout')
   })
 
   it('uses a human-readable platform label', () => {
@@ -217,6 +230,7 @@ describe('AccountMonitorCard', () => {
     })
 
     expect(wrapper.text()).toContain('调度优先级 7')
+    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('text-[11px]')
     expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(false)
 
     await wrapper.get('[data-test="edit-priority"]').trigger('click')
@@ -228,6 +242,16 @@ describe('AccountMonitorCard', () => {
     await wrapper.get('[data-test="save-priority"]').trigger('click')
 
     expect(wrapper.emitted('updatePriority')).toEqual([[7, 8]])
+  })
+
+  it('keeps quality summary visually secondary to probe and economics data', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: { account },
+      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
+    })
+
+    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-[11px]')
+    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-gray-400')
   })
 
   it('shows pending reconciliation instead of a profit margin when coverage is unknown', () => {

@@ -189,7 +189,7 @@
               <td class="px-3 py-2">{{ historyStatusLabel(item.status) }}</td>
               <td class="px-3 py-2 font-mono">{{ formatMs(item.ttft_ms) }}</td>
               <td class="px-3 py-2 font-mono">{{ formatMs(item.latency_ms) }}</td>
-              <td class="px-3 py-2 text-red-600 dark:text-red-400">{{ item.error_code || '-' }}</td>
+              <td class="px-3 py-2 text-red-600 dark:text-red-400">{{ monitorFailureLabel(item.error_code) || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -208,7 +208,7 @@
             <span>本地请求：<code>{{ item.attempt.local_request_id }}</code></span>
             <span>上游请求：<code>{{ item.attempt.upstream_request_id || '-' }}</code></span>
             <span>模型：{{ item.attempt.model }}</span>
-            <span>原因：{{ item.reason_code }}</span>
+            <span>原因：{{ reconciliationReasonLabel(item.reason_code) }}</span>
           </div>
           <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="submitAdjustment(item)">
             <label class="text-xs text-gray-500">上游实际扣费
@@ -395,6 +395,29 @@ function historyStatusLabel(status: string): string {
   return '未知状态'
 }
 
+function monitorFailureLabel(code?: string | null): string {
+  const labels: Record<string, string> = {
+    timeout: '请求超时',
+    balance_exhausted: '余额或额度不足',
+    model_unavailable: '当前模型不可用',
+    malformed_stream: '响应格式异常',
+    http_error: '上游服务返回异常',
+    account_test_error: '账号探测失败',
+  }
+  const normalized = code?.trim().toLowerCase()
+  if (!normalized) return ''
+  return labels[normalized] ?? '探测失败，请稍后重试'
+}
+
+function reconciliationReasonLabel(reasonCode?: string | null): string {
+  const labels: Record<string, string> = {
+    upstream_record_missing: '暂未获取到对应的上游账单',
+    missing_upstream_record: '暂未获取到对应的上游账单',
+    late_automatic_after_manual: '自动账单晚于人工补登记到达，需要核对',
+  }
+  return labels[reasonCode?.trim().toLowerCase() ?? ''] ?? '账务数据需要人工核对'
+}
+
 async function load() {
   abortController?.abort()
   const controller = new AbortController()
@@ -569,7 +592,7 @@ async function updateWeight(accountID: number, priority: number) {
     const account = accounts.value.find((item) => item.account_id === accountID)
     if (account) account.priority = updated.priority
     await load()
-    appStore.showSuccess('全局调度优先级已更新')
+    appStore.showSuccess('账号调度优先级已更新')
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, '账号权重更新失败'))
   } finally {

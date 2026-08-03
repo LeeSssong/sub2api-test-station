@@ -371,15 +371,16 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="account-empty"]').exists()).toBe(true)
   })
 
-  it('renders Chinese protocol history statuses', async () => {
-    history.mockResolvedValueOnce({ items: [{ account_id: 7, model_id: 'claude-sonnet-4-5', status: 'success', checked_at: '2026-07-25T08:00:00Z' }] })
+  it('renders Chinese protocol history statuses and failure explanations', async () => {
+    history.mockResolvedValueOnce({ items: [{ account_id: 7, model_id: 'claude-sonnet-4-5', status: 'failed', error_code: 'malformed_stream', checked_at: '2026-07-25T08:00:00Z' }] })
     const wrapper = mountView()
     await flushPromises()
     await wrapper.get('[data-test="card-history"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('成功')
-    expect(wrapper.get('[data-test="base-dialog"]').text()).not.toContain('success')
+    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('失败')
+    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('响应格式异常')
+    expect(wrapper.get('[data-test="base-dialog"]').text()).not.toContain('malformed_stream')
   })
 
   it('discloses global ledger amounts that are not attributed to any group', async () => {
@@ -592,7 +593,8 @@ describe('admin account monitor view', () => {
     await flushPromises()
 
     expect(reconciliationExceptions).toHaveBeenCalledWith({ limit: 100 })
-    expect(wrapper.text()).toContain('missing_upstream_record')
+    expect(wrapper.text()).toContain('暂未获取到对应的上游账单')
+    expect(wrapper.text()).not.toContain('missing_upstream_record')
     expect(wrapper.text()).toContain('补登记')
   })
 

@@ -53,9 +53,10 @@ function barHeight(point: MonitorV2TimelinePoint): string {
 }
 
 function toneClass(point: MonitorV2TimelinePoint): string {
-  if (point.state !== 'available' || point.value === null) {
-    return 'bg-gray-200 dark:bg-dark-700'
-  }
+  // The probe itself completed even when no model was available. Keep that
+  // outcome green, using the short bar to distinguish it from a latency-backed
+  // successful response.
+  if (point.state !== 'available' || point.value === null) return 'bg-emerald-500 dark:bg-emerald-400'
   if (point.success_count > 0) return 'bg-emerald-500 dark:bg-emerald-400'
   return 'bg-red-500 dark:bg-red-400'
 }
@@ -66,9 +67,7 @@ function pointTitle(point: MonitorV2TimelinePoint): string {
     day: 'numeric',
     hour: '2-digit',
   }).format(new Date(point.bucket_start))
-  if (point.state !== 'available' || point.value === null) {
-    return `${time} · ${t('monitorV2.timeline.noData')}`
-  }
+  if (point.state !== 'available' || point.value === null) return `${time} · ${t('monitorV2.timeline.probeUnavailable')}`
   const outcome = point.success_count > 0 ? t('monitorV2.timeline.success') : t('monitorV2.timeline.failed')
   const latency = point.latency_ms === null ? '' : ` · ${point.latency_ms} ms`
   return `${time} · ${outcome}${latency}`

@@ -100,7 +100,7 @@ case "$*" in
     printf '0:0:755\n'
     exit 0
     ;;
-  *stat* )
+  *'stat -c '* )
     printf '0:0:755\n'
     exit 0
     ;;
@@ -182,6 +182,8 @@ run_controller() {
     RELEASE_SSH_KEY="$CASE_DIR/id_ed25519" \
     RELEASE_SSH_KNOWN_HOSTS="$CASE_DIR/known_hosts" \
     RELEASE_SSH_PORT=22 \
+    RELEASE_NETWORK_CURL_IMAGE='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+    RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     RELEASE_MONOTONIC_BIN="$CASE_DIR/bin/monotonic" \
     "$@" bash "$CONTROLLER" --mode production --evidence "$EVIDENCE"
 }
@@ -311,6 +313,9 @@ test_build_publish_and_host_invocation() {
   ! grep -F -- 'sudo -n install -o root -g root -m 0755 /tmp/.sub2api-host-executor-'"$(git -C "$CASE_DIR/repo" rev-parse HEAD)"'.abc123 /usr/local/libexec/deploy-sub2api-blue-green-host.sh' "$CASE_DIR/ssh.log" >/dev/null \
     || fail 'controller directly installed the host executor over the final path'
   grep -F -- "--image example.invalid/xingqiao-sub2api@sha256:$SHA256" "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive immutable digest'
+  grep -F -- 'DEPLOY_ROOT=/opt/sub2api/production' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive canonical deploy root'
+  grep -F -- 'BASE_COMPOSE=/opt/sub2api/production/compose.yaml' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive canonical compose path'
+  grep -F -- 'NETWORK_CURL_IMAGE=example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive approved network probe image'
   grep -F -- '--platform linux/amd64' "$CASE_DIR/docker.log" >/dev/null || fail 'build platform is not Linux AMD64'
   grep -F -- '--label com.xingqiao.sub2api.qualified=true' "$CASE_DIR/docker.log" >/dev/null || fail 'qualified label missing'
   grep -F -- "--label com.xingqiao.sub2api.source.commit=$(git -C "$CASE_DIR/repo" rev-parse HEAD)" "$CASE_DIR/docker.log" >/dev/null || fail 'source commit label missing'

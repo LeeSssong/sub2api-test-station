@@ -52,8 +52,8 @@
       <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
     </section>
 
-    <section v-if="scope === 'group'" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-slate-400" data-test="quality-summary">
-      <span v-if="account.quality_score != null" class="font-medium text-gray-700 dark:text-slate-200">组内评分 {{ formatScore(account.quality_score) }}</span>
+    <section v-if="scope === 'group'" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 dark:text-slate-500" data-test="quality-summary">
+      <span v-if="account.quality_score != null">组内评分 {{ formatScore(account.quality_score) }}</span>
       <span v-else>暂无组内评分</span>
       <span v-if="account.group_rank != null">组内第 {{ account.group_rank }}</span>
       <span v-else>暂无组内排名</span>
@@ -74,7 +74,7 @@
       </div>
     </section>
 
-    <div class="mt-2 flex min-h-7 items-center gap-1 text-xs text-gray-400 dark:text-slate-500">
+    <div class="mt-2 flex min-h-7 items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500" data-test="priority-control">
       <template v-if="editingPriority">
         <label class="sr-only" :for="`account-priority-${account.account_id}`">调度优先级</label>
         <input ref="priorityInput" :id="`account-priority-${account.account_id}`" v-model.number="draftPriority" data-test="priority-input" type="number" min="0" step="1" class="input h-7 w-20 px-2 py-1 font-mono text-xs" :disabled="savingWeight" @keyup.enter="savePriority" @keyup.esc="cancelPriorityEdit" />
@@ -110,7 +110,7 @@
       <div class="min-w-0 text-xs text-gray-500 dark:text-slate-400">
         <span v-if="account.checked_at">{{ t('admin.accountMonitor.card.checkedAt', { time: formatDate(account.checked_at) }) }}</span>
         <span v-else>{{ t('admin.accountMonitor.status.noHistory') }}</span>
-        <span v-if="account.error_code" class="ml-2 text-red-600 dark:text-red-400">{{ account.error_code }}</span>
+        <span v-if="account.error_code" class="ml-2 text-red-600 dark:text-red-400">{{ monitorFailureLabel(account.error_code) }}</span>
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <button type="button" class="icon-button" :title="t('admin.accountMonitor.actions.settings')" :aria-label="t('admin.accountMonitor.actions.settings')" @click="emit('settings')"><Icon name="cog" size="sm" /></button>
@@ -275,7 +275,7 @@ const probeBars = computed<ProbeBar[]>(() => {
       bars.push({
         colorClass: 'bg-red-500 dark:bg-red-400',
         height: 28,
-        title: `${timestamp} · 失败${point.error_code ? ` · ${point.error_code}` : ''}`,
+        title: `${timestamp} · 失败${point.error_code ? ` · ${monitorFailureLabel(point.error_code)}` : ''}`,
       })
     } else {
       bars.push({
@@ -308,8 +308,19 @@ function multiplierStatusHint(source: string | undefined, statusValue: string, t
   if (source === 'measured') return translate('admin.accountMonitor.multiplier.measured')
   return ''
 }
-function probeSampleLabel(value?: number | null): string { return `基于 ${Math.max(0, Number(value) || 0)} 次探测` }
+function probeSampleLabel(value?: number | null): string { return `基于 ${Math.max(0, Number(value) || 0)} 次调用` }
 function callSampleLabel(value?: number | null): string { return `基于 ${Math.max(0, Number(value) || 0)} 次调用` }
+function monitorFailureLabel(code?: string | null): string {
+  const labels: Record<string, string> = {
+    timeout: '请求超时',
+    balance_exhausted: '余额或额度不足',
+    model_unavailable: '当前模型不可用',
+    malformed_stream: '响应格式异常',
+    http_error: '上游服务返回异常',
+    account_test_error: '账号探测失败',
+  }
+  return labels[code?.trim().toLowerCase() ?? ''] ?? '探测失败，请稍后重试'
+}
 function formatPercent(value: number): string { return `${Math.round(value * 100)}%` }
 function formatScore(value: number): string { return String(Math.round(value)) }
 function platformLabel(value: string): string {

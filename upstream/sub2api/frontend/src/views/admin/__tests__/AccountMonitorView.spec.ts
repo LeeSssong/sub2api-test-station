@@ -221,7 +221,9 @@ function mountView() {
 describe('admin account monitor view', () => {
   beforeEach(() => {
     list.mockReset().mockResolvedValue(projection())
-    groupsGetAllIncludingInactive.mockReset().mockResolvedValue([])
+    groupsGetAllIncludingInactive.mockReset().mockResolvedValue([
+      { id: 3, name: 'Production', status: 'active', rate_multiplier: 1, sort_order: 0 },
+    ])
     updateSettings.mockReset().mockResolvedValue({
       interval_seconds: 60,
       updated_by: 1,
@@ -402,6 +404,20 @@ describe('admin account monitor view', () => {
     expect(showError).toHaveBeenCalledWith('账号历史返回了无效数据，请检查监控服务连接')
   })
 
+  it('rejects structurally invalid account history items instead of rendering false values', async () => {
+    history.mockResolvedValueOnce({
+      items: [{ model_id: 'claude-sonnet-4-5', status: 'success', checked_at: '2026-07-25T08:00:00Z' }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="card-history"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="account-history-error"]').text()).toContain('账号历史返回了无效数据')
+    expect(wrapper.find('table').exists()).toBe(false)
+  })
+
   it('discloses global ledger amounts that are not attributed to any group', async () => {
     reconciliationOperations.mockResolvedValue({
       total_attempts: 10,
@@ -455,6 +471,11 @@ describe('admin account monitor view', () => {
   })
 
   it('全站 Tab 固定在首位，切换分组后加载分组账务', async () => {
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([
+      { id: 3, name: 'Production', status: 'active', rate_multiplier: 2, sort_order: 0 },
+      { id: 5, name: 'Overflow', status: 'active', rate_multiplier: 2, sort_order: 1 },
+      { id: 1, name: 'Archive', status: 'active', rate_multiplier: 0.5, sort_order: 2 },
+    ])
     list.mockResolvedValueOnce({
       ...projection(),
       groups: [
@@ -600,6 +621,29 @@ describe('admin account monitor view', () => {
     expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('成本 30 · 成功 30 · TTFT 20 · 延迟 20')
   })
 
+  it('renders no group tabs when /admin/groups succeeds with an empty array', async () => {
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([])
+    list.mockResolvedValueOnce(projection())
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="group-tab"]')).toHaveLength(0)
+    expect(wrapper.find('[data-test="group-tab-3"]').exists()).toBe(false)
+  })
+
+  it('shows a Chinese load error and no projection group tabs when /admin/groups fails', async () => {
+    groupsGetAllIncludingInactive.mockRejectedValueOnce(new Error('network unavailable'))
+    list.mockResolvedValueOnce(projection())
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('分组列表加载失败，请检查分组服务连接')
+    expect(wrapper.findAll('[data-test="group-tab"]')).toHaveLength(0)
+    expect(showError).toHaveBeenCalledWith('分组列表加载失败，请检查分组服务连接')
+  })
+
   it('falls back to backend default score weights when the monitor projection lacks a real group', async () => {
     groupsGetAllIncludingInactive.mockResolvedValueOnce([
       { id: 42, name: '真实运营组', status: 'active', rate_multiplier: 1.25, sort_order: 0 },
@@ -689,6 +733,29 @@ describe('admin account monitor view', () => {
     expect(wrapper.text()).not.toContain('当前没有未解决异常')
   })
 
+  it('rejects structurally invalid exception items instead of rendering false values', async () => {
+    reconciliationExceptions.mockResolvedValueOnce({
+      items: [{
+        id: 11,
+        reason_code: 'missing_upstream_record',
+        details: '待匹配',
+        retry_count: 1,
+        first_detected_at: '2026-07-25T08:00:00Z',
+        last_checked_at: '2026-07-25T08:01:00Z',
+        attempt: { id: 21 },
+      }],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
+    expect(wrapper.text()).not.toContain('当前没有未解决异常')
+    expect(wrapper.find('input[placeholder="0.000000"]').exists()).toBe(false)
+  })
+
   it('submits a manual exception adjustment and removes it after success', async () => {
     reconciliationExceptions.mockResolvedValueOnce({
       items: [{
@@ -735,6 +802,10 @@ describe('admin account monitor view', () => {
       if (params.group_id === 1) return Promise.resolve({ total_attempts: 2, matched_attempts: 2, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '2', user_charge: '4', paper_profit: '2', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
       return Promise.resolve({ total_attempts: 1, matched_attempts: 1, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
     })
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([
+      { id: 3, name: 'Production', status: 'active', rate_multiplier: 2, sort_order: 0 },
+      { id: 1, name: 'Archive', status: 'active', rate_multiplier: 1, sort_order: 1 },
+    ])
     list.mockResolvedValueOnce({
       ...projection(),
       groups: [
@@ -836,6 +907,10 @@ describe('admin account monitor view', () => {
   })
 
   it('分组 Tab 与搜索、服务状态筛选可组合使用', async () => {
+    groupsGetAllIncludingInactive.mockResolvedValueOnce([
+      { id: 3, name: 'Production', status: 'active', rate_multiplier: 1, sort_order: 0 },
+      { id: 5, name: 'Overflow', status: 'active', rate_multiplier: 1, sort_order: 1 },
+    ])
     list.mockResolvedValueOnce({
       ...projection(),
       groups: [

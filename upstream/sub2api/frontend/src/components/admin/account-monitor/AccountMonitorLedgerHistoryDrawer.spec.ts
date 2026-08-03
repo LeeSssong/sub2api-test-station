@@ -77,4 +77,21 @@ describe('AccountMonitorLedgerHistoryDrawer', () => {
     expect(document.body.textContent).not.toContain('暂无账务记录')
     wrapper.unmount()
   })
+
+  it('rejects structurally invalid daily rows instead of rendering false values', async () => {
+    history.mockResolvedValueOnce({
+      items: [{ day: '2026-07-24', upstream_cost: '0.02', user_charge: '1.00', paper_profit: '0.98' }],
+    })
+    const wrapper = mount(AccountMonitorLedgerHistoryDrawer, {
+      props: { show: true },
+      global: { stubs: { Icon: true } },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('历史按日返回了无效数据')
+    expect(document.body.textContent).not.toContain('2026-07-24')
+    expect(document.body.textContent).not.toContain('暂无账务记录')
+    wrapper.unmount()
+  })
 })

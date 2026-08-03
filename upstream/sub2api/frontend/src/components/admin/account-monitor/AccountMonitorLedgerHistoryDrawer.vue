@@ -53,7 +53,12 @@ async function load() {
   error.value = null
   try {
     const response = await loadLedgerHistory(scopedParams.value)
-    if (!response || !Array.isArray(response.items)) throw new Error('账务历史返回了无效数据，请检查账务服务连接')
+    if (!response || !Array.isArray(response.items)) {
+      throw new Error('账务历史返回了无效数据，请检查账务服务连接')
+    }
+    if (!response.items.every(isOperationsDailyRow)) {
+      throw new Error('历史按日返回了无效数据，请检查账务服务连接')
+    }
     items.value = response.items
   } catch (err: unknown) {
     error.value = extractApiErrorMessage(err, '账务历史加载失败')
@@ -62,6 +67,16 @@ async function load() {
   }
 }
 watch(() => props.show, (show) => { if (show) void load() }, { immediate: true })
+function isOperationsDailyRow(value: unknown): value is OperationsDailyRow {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  const isAmount = (amount: unknown) => typeof amount === 'string' || (typeof amount === 'number' && Number.isFinite(amount))
+  return typeof row.day === 'string'
+    && isAmount(row.upstream_cost)
+    && isAmount(row.user_charge)
+    && isAmount(row.paper_profit)
+    && typeof row.currency === 'string'
+}
 function formatMoney(value: string | number | null | undefined, currency?: string | null): string {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return '—'

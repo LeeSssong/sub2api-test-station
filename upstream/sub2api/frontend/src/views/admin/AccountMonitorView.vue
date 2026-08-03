@@ -305,25 +305,22 @@ const monitorGroupByID = computed(() => new Map((projection.value?.groups ?? [])
 const emptyGroupScoreWeights: AccountMonitorScoreWeights = { cost: 15, success: 45, ttft: 20, latency: 20 }
 const sortedGroups = computed<AccountMonitorGroup[]>(() => {
   const monitorGroups = monitorGroupByID.value
-  const source = adminGroups.value.length
-    ? adminGroups.value.map((group) => {
-      const monitor = monitorGroups.get(group.id)
-      const groupAccounts = monitor?.accounts ?? accounts.value.filter((account) => account.group_ids.includes(group.id))
-      return {
-        id: group.id,
-        name: group.name,
-        rate_multiplier: group.rate_multiplier,
-        customer_visible: group.status === 'active',
-        native_order: group.sort_order,
-        score_weights: monitor?.score_weights ?? emptyGroupScoreWeights,
-        operational_state: monitor?.operational_state ?? (group.status === 'active' ? 'operational' : 'closed'),
-        health: monitor?.health ?? emptyHealth,
-        accounts: groupAccounts,
-      }
-    })
-    : [...(projection.value?.groups ?? [])]
+  const source = adminGroups.value.map((group) => {
+    const monitor = monitorGroups.get(group.id)
+    const groupAccounts = monitor?.accounts ?? accounts.value.filter((account) => account.group_ids.includes(group.id))
+    return {
+      id: group.id,
+      name: group.name,
+      rate_multiplier: group.rate_multiplier,
+      customer_visible: group.status === 'active',
+      native_order: group.sort_order,
+      score_weights: monitor?.score_weights ?? emptyGroupScoreWeights,
+      operational_state: monitor?.operational_state ?? (group.status === 'active' ? 'operational' : 'closed'),
+      health: monitor?.health ?? emptyHealth,
+      accounts: groupAccounts,
+    }
+  })
   return source.sort((left, right) => {
-    if (!adminGroups.value.length && right.rate_multiplier !== left.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
     if (left.native_order !== right.native_order) return left.native_order - right.native_order
     return left.id - right.id
   })
@@ -446,16 +443,67 @@ function reconciliationReasonLabel(reasonCode?: string | null): string {
   return labels[reasonCode?.trim().toLowerCase() ?? ''] ?? '账务数据需要人工核对'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isStringOrNumber(value: unknown): value is string | number {
+  return typeof value === 'string' || isFiniteNumber(value)
+}
+
+function isAccountMonitorHistoryItem(value: unknown): value is AccountMonitorHistoryItem {
+  if (!isRecord(value)) return false
+  return isFiniteNumber(value.account_id)
+    && typeof value.model_id === 'string'
+    && typeof value.status === 'string'
+    && typeof value.checked_at === 'string'
+    && (value.error_code === undefined || typeof value.error_code === 'string')
+    && (value.http_status == null || isFiniteNumber(value.http_status))
+    && (value.ttft_ms == null || isFiniteNumber(value.ttft_ms))
+    && (value.latency_ms == null || isFiniteNumber(value.latency_ms))
+}
+
+function isReconciliationException(value: unknown): value is ReconciliationException {
+  if (!isRecord(value) || !isRecord(value.attempt)) return false
+  const attempt = value.attempt
+  return isFiniteNumber(value.id)
+    && typeof value.reason_code === 'string'
+    && typeof value.details === 'string'
+    && isFiniteNumber(value.retry_count)
+    && typeof value.first_detected_at === 'string'
+    && typeof value.last_checked_at === 'string'
+    && isFiniteNumber(attempt.id)
+    && typeof attempt.attempt_id === 'string'
+    && typeof attempt.local_request_id === 'string'
+    && (attempt.upstream_request_id === undefined || typeof attempt.upstream_request_id === 'string')
+    && isFiniteNumber(attempt.account_id)
+    && typeof attempt.model === 'string'
+    && isStringOrNumber(attempt.user_charge)
+    && typeof attempt.currency === 'string'
+    && typeof attempt.completed_at === 'string'
+    && typeof attempt.reconcile_status === 'string'
+}
+
 async function load() {
   abortController?.abort()
   const controller = new AbortController()
   abortController = controller
   loading.value = true
   error.value = null
+  adminGroups.value = []
   try {
     const [result, groups] = await Promise.all([
       adminAPI.accountMonitor.list({ signal: controller.signal }),
-      adminAPI.groups.getAllIncludingInactive().catch(() => [] as AdminGroup[]),
+      adminAPI.groups.getAllIncludingInactive().then((items) => {
+        if (!Array.isArray(items)) throw new Error('invalid group list')
+        return items
+      }).catch(() => {
+        throw new Error('分组列表加载失败，请检查分组服务连接')
+      }),
     ])
     if (controller.signal.aborted || abortController !== controller) return
     projection.value = result
@@ -581,7 +629,9 @@ async function openExceptions() {
   exceptions.value = []
   try {
     const response = await adminAPI.reconciliation.exceptions({ limit: 100 })
-    if (!response || !Array.isArray(response.items)) throw new Error('异常明细返回了无效数据，请检查账务服务连接')
+    if (!response || !Array.isArray(response.items) || !response.items.every(isReconciliationException)) {
+      throw new Error('异常明细返回了无效数据，请检查账务服务连接')
+    }
     exceptions.value = response.items
   } catch (err: unknown) {
     exceptionsError.value = extractApiErrorMessage(err, '对账异常加载失败')
@@ -699,7 +749,9 @@ async function openHistory(accountID: number) {
   historyError.value = null
   try {
     const response = await adminAPI.accountMonitor.history(accountID, 25)
-    if (!response || !Array.isArray(response.items)) throw new Error('账号历史返回了无效数据，请检查监控服务连接')
+    if (!response || !Array.isArray(response.items) || !response.items.every(isAccountMonitorHistoryItem)) {
+      throw new Error('账号历史返回了无效数据，请检查监控服务连接')
+    }
     historyItems.value = response.items
   } catch (err: unknown) {
     historyError.value = extractApiErrorMessage(err, t('admin.accountMonitor.history.loadError'))

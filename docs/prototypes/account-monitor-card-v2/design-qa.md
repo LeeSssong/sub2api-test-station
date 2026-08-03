@@ -21,8 +21,11 @@ Final result: passed
 
 - Priority pencil opened an inline integer editor. Saving `4` updated only the in-page priority value; invalid values retain the editor and show the required validation message. Cancel restores the stored value.
 - The multiplier-mode account opened an inline procurement-cost editor. Saving `50` rendered procurement mode with the displayed effective date; confirmation-based clear restored `0.62×` upstream-managed multiplier mode.
+- Clearing #113 now restores its dormant native `0.58×` multiplier while retaining its native `2026-09-01` expiry; this transition completed without a runtime error.
+- Saving procurement cost for #207 preserves its missing native expiry and renders `有效期缺失 · 无法计算等效倍率`, without a fabricated effective multiplier.
 - 7-day switching updated scores, ranks, request metrics, cost detail, and each call disclosure from the same account window. Group/all-site tabs updated selected state, labels, and group-summary visibility without resetting saved edits.
 - Search and status filtering apply to both cards. Each call disclosure uses its own account-specific `aria-controls`. Per-card and all-card refresh controls update the visible checked-at time only.
+- The non-functional `查看探测历史` footer control was removed; the remaining footer refresh control updates the checked-at timestamp.
 - A fresh five-second concurrency check changed `3 / 10` to `4 / 10` and `1 / 8` to `0 / 8`; the measured card width and height did not change.
 
 ## Browser Results

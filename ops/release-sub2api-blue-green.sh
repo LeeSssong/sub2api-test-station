@@ -98,7 +98,9 @@ ssh_target=${RELEASE_SSH_TARGET:-}
 ssh_key=${RELEASE_SSH_KEY:-}
 ssh_known_hosts=${RELEASE_SSH_KNOWN_HOSTS:-}
 ssh_port=${RELEASE_SSH_PORT:-}
-host_executor=${RELEASE_HOST_EXECUTOR_PATH:-/usr/local/libexec/deploy-sub2api-blue-green-host.sh}
+readonly fixed_host_executor='/usr/local/libexec/deploy-sub2api-blue-green-host.sh'
+host_executor=${RELEASE_HOST_EXECUTOR_PATH:-$fixed_host_executor}
+host_executor_source=${RELEASE_HOST_EXECUTOR_SOURCE:-}
 transport=${RELEASE_TRANSPORT:-registry}
 
 [[ "$image_repository" =~ ^[a-z0-9][a-z0-9._/-]*$ && "$image_repository" == */* ]] || fail 'SUB2API_IMAGE_REPOSITORY is invalid'
@@ -112,14 +114,31 @@ esac
 [[ "$ssh_key" == /* && -f "$ssh_key" && ! -L "$ssh_key" && "$(mode_of "$ssh_key")" == 600 ]] || fail 'RELEASE_SSH_KEY must be a 0600 non-symlink file'
 [[ "$ssh_known_hosts" == /* && -f "$ssh_known_hosts" && ! -L "$ssh_known_hosts" && "$(mode_of "$ssh_known_hosts")" == 600 ]] || fail 'RELEASE_SSH_KNOWN_HOSTS must be a 0600 non-symlink file'
 [[ "$ssh_port" =~ ^[1-9][0-9]{0,4}$ && "$ssh_port" -le 65535 ]] || fail 'RELEASE_SSH_PORT is invalid'
-[[ "$host_executor" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail 'RELEASE_HOST_EXECUTOR_PATH is invalid'
+[[ "$host_executor" == "$fixed_host_executor" ]] || fail 'RELEASE_HOST_EXECUTOR_PATH must use the fixed production executor path'
 [[ "$transport" == registry || "$transport" == preloaded ]] || fail 'RELEASE_TRANSPORT must be registry or preloaded'
 command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker Buildx is required'
 command -v "$ssh_bin" >/dev/null 2>&1 || fail 'SSH is required'
+command -v "$scp_bin" >/dev/null 2>&1 || fail 'SCP is required to install the host executor'
 command -v perl >/dev/null 2>&1 || fail 'Perl is required for stage timeouts'
-if [[ "$transport" == preloaded ]]; then
-  command -v "$scp_bin" >/dev/null 2>&1 || fail 'SCP is required for preloaded transport'
+
+if [[ -z "$host_executor_source" ]]; then
+  host_executor_source="$worktree/ops/deploy-sub2api-blue-green-host.sh"
 fi
+[[ "$host_executor_source" == "$worktree/ops/deploy-sub2api-blue-green-host.sh" ]] \
+  || fail 'RELEASE_HOST_EXECUTOR_SOURCE must use the fixed worktree executor path'
+[[ "$host_executor_source" == /* && -f "$host_executor_source" && -r "$host_executor_source" && ! -L "$host_executor_source" ]] \
+  || fail 'RELEASE_HOST_EXECUTOR_SOURCE must be an absolute readable non-symlink file'
+host_executor_source_parent=$(dirname "$host_executor_source")
+host_executor_source_physical=$(cd "$host_executor_source_parent" && pwd -P) \
+  || fail 'RELEASE_HOST_EXECUTOR_SOURCE parent cannot be canonicalized'
+[[ "$host_executor_source_physical/$(basename "$host_executor_source")" == "$host_executor_source" ]] \
+  || fail 'RELEASE_HOST_EXECUTOR_SOURCE must be canonical'
+case "$host_executor_source" in
+  "$worktree_physical"/*) ;;
+  *) fail 'RELEASE_HOST_EXECUTOR_SOURCE must be inside RELEASE_WORKTREE' ;;
+esac
+host_executor_sha256=$(sha256_file "$host_executor_source" 2>/dev/null) || fail 'host executor checksum failed'
+[[ "$host_executor_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'host executor checksum is invalid'
 
 monotonic_bin=${RELEASE_MONOTONIC_BIN:-}
 if [[ -n "$monotonic_bin" ]]; then
@@ -168,14 +187,158 @@ run_stage() {
   check_budget
 }
 
-tag="$image_repository:release-$source_commit"
+verify_remote_executor_directory_chain() {
+  local verification_script
+  verification_script='set -eu
+path=$2
+current=$path
+while :; do
+  [[ ! -L "$current" ]] || exit 1
+  metadata=$(stat -c "%u:%a:%F" -- "$current") || exit 1
+  IFS=: read -r owner mode kind <<<"$metadata"
+  [[ "$owner" == 0 ]] || exit 1
+  [[ "$mode" =~ ^[0-7]+$ ]] || exit 1
+  (( (8#$mode & 8#022) == 0 )) || exit 1
+  [[ "$kind" == "directory" ]] || exit 1
+  [[ "$current" == / ]] && break
+  current=${current%/*}
+  [[ -n "$current" ]] || current=/
+done'
+  check_budget
+  perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+    -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+    sudo -n bash -c "$verification_script" _ verify_executor_directory_chain "$(dirname "$host_executor")" \
+    >/dev/null 2>&1 || fail 'remote host executor parent chain is not root-owned, non-symlink, and non-writable'
+  check_budget
+}
+
+verify_remote_executor_path_chain() {
+  local verification_script
+  verification_script='set -eu
+path=$2
+current=$path
+while :; do
+  [[ ! -L "$current" ]] || exit 1
+  metadata=$(stat -c "%u:%a:%F" -- "$current") || exit 1
+  IFS=: read -r owner mode kind <<<"$metadata"
+  [[ "$owner" == 0 ]] || exit 1
+  [[ "$mode" =~ ^[0-7]+$ ]] || exit 1
+  (( (8#$mode & 8#022) == 0 )) || exit 1
+  if [[ "$current" == "$path" ]]; then
+    [[ "$kind" == "regular file" ]] || exit 1
+  else
+    [[ "$kind" == "directory" ]] || exit 1
+  fi
+  [[ "$current" == / ]] && break
+  current=${current%/*}
+  [[ -n "$current" ]] || current=/
+done'
+  check_budget
+  perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+    -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+    sudo -n bash -c "$verification_script" _ verify_executor_path_chain "$host_executor" \
+    >/dev/null 2>&1 || fail 'remote host executor path chain is not root-owned, non-symlink, and non-writable'
+  check_budget
+}
+
+registry_tag="$image_repository:release-$source_commit"
 archive=''
 archive_sha256=''
 image_id=''
 remote_tmp=''
+remote_executor_tmp=''
+remote_executor_dest_tmp=''
 staged_archive="/var/lib/sub2api/release-staging/sub2api-$source_commit.tar"
 cleanup_archive() { [[ -z "$archive" ]] || rm -f -- "$archive"; }
-trap cleanup_archive EXIT
+cleanup_remote_executor_staging() {
+  local cleanup_paths=()
+  [[ "$remote_tmp" =~ ^/tmp/\.sub2api-$source_commit\.[A-Za-z0-9]{6}$ ]] && cleanup_paths+=("$remote_tmp")
+  [[ "$remote_executor_tmp" =~ ^/tmp/\.sub2api-host-executor-$source_commit\.[A-Za-z0-9]{6}$ ]] && cleanup_paths+=("$remote_executor_tmp")
+  [[ "$remote_executor_dest_tmp" == "/usr/local/libexec/.deploy-sub2api-blue-green-host.sh."* ]] && cleanup_paths+=("$remote_executor_dest_tmp")
+  (( ${#cleanup_paths[@]} > 0 )) || return 0
+  perl -e 'alarm shift @ARGV; exec @ARGV' 30 "$ssh_bin" -T -i "$ssh_key" \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+    -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+    sudo -n rm -f -- "${cleanup_paths[@]}" >/dev/null 2>&1 || true
+}
+cleanup() {
+  cleanup_remote_executor_staging
+  cleanup_archive
+}
+trap cleanup EXIT
+
+# Install and attest the exact host executor before any image build. A stale or
+# tampered remote executor must fail the release before it can consume build
+# time or mutate production.
+host_executor_dir=$(dirname "$host_executor")
+host_executor_basename=$(basename "$host_executor")
+verify_remote_executor_directory_chain
+check_budget
+remote_executor_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  umask 077 '&&' mktemp -p /tmp ".sub2api-host-executor-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') \
+  || fail 'remote host executor staging allocation failed'
+[[ "$remote_executor_tmp" =~ ^/tmp/\.sub2api-host-executor-$source_commit\.[A-Za-z0-9]{6}$ ]] \
+  || fail 'remote host executor staging path is invalid'
+run_stage executor-transfer "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" \
+  "$host_executor_source" "$ssh_target:$remote_executor_tmp"
+check_budget
+remote_executor_dest_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  sudo -n mktemp -p "$host_executor_dir" ".${host_executor_basename}.XXXXXX" 2>/dev/null | tr -d '[:space:]') \
+  || fail 'remote host executor destination staging allocation failed'
+[[ "$remote_executor_dest_tmp" == "$host_executor_dir/.$host_executor_basename."* ]] \
+  || fail 'remote host executor destination staging path is invalid'
+remote_executor_dest_suffix=${remote_executor_dest_tmp##*.}
+[[ "$remote_executor_dest_suffix" =~ ^[A-Za-z0-9]{6}$ ]] \
+  || fail 'remote host executor destination staging suffix is invalid'
+remote_executor_metadata=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  sudo -n install -o root -g root -m 0755 "$remote_executor_tmp" "$remote_executor_dest_tmp" '&&' \
+  sudo -n bash -n "$remote_executor_dest_tmp" '&&' sudo -n stat -c '%u:%g:%a' "$remote_executor_dest_tmp" 2>/dev/null) \
+  || fail 'remote host executor staging installation or syntax validation failed'
+check_budget
+remote_executor_metadata=$(printf '%s\n' "$remote_executor_metadata" | awk 'NF { print $1; exit }')
+[[ "$remote_executor_metadata" == 0:0:755 || "$remote_executor_metadata" == 0:0:700 ]] \
+  || fail 'remote staged host executor ownership or mode is invalid'
+remote_executor_sha256=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  sudo -n sha256sum "$remote_executor_dest_tmp" 2>/dev/null) \
+  || fail 'remote staged host executor checksum verification failed'
+check_budget
+remote_executor_sha256=$(printf '%s\n' "$remote_executor_sha256" | awk 'NF { print $1; exit }')
+[[ "$remote_executor_sha256" == "$host_executor_sha256" ]] \
+  || fail 'remote staged host executor checksum does not match source'
+remote_executor_metadata=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  sudo -n mv -f -- "$remote_executor_dest_tmp" "$host_executor" '&&' \
+  sudo -n bash -n "$host_executor" '&&' sudo -n stat -c '%u:%g:%a' "$host_executor" 2>/dev/null) \
+  || fail 'remote host executor atomic installation or syntax validation failed'
+check_budget
+remote_executor_metadata=$(printf '%s\n' "$remote_executor_metadata" | awk 'NF { print $1; exit }')
+[[ "$remote_executor_metadata" == 0:0:755 || "$remote_executor_metadata" == 0:0:700 ]] \
+  || fail 'remote host executor ownership or mode is invalid'
+remote_executor_sha256=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
+  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
+  sudo -n sha256sum "$host_executor" '&&' sudo -n rm -f -- "$remote_executor_tmp" 2>/dev/null) \
+  || fail 'remote host executor checksum verification or staging cleanup failed'
+check_budget
+remote_executor_sha256=$(printf '%s\n' "$remote_executor_sha256" | awk 'NF { print $1; exit }')
+[[ "$remote_executor_sha256" == "$host_executor_sha256" ]] \
+  || fail 'remote host executor checksum does not match source'
+remote_executor_dest_tmp=''
+remote_executor_tmp=''
+verify_remote_executor_path_chain
+
 if [[ "$transport" == registry ]]; then
   run_stage build "$docker_bin" buildx build \
     --platform linux/amd64 \
@@ -187,11 +350,11 @@ if [[ "$transport" == registry ]]; then
     --label "com.xingqiao.sub2api.source.tree=$source_tree" \
     --label "com.xingqiao.sub2api.tested.tree=$source_tree" \
     --label "com.xingqiao.sub2api.migrations.sha256=$migrations_hash" \
-    --tag "$tag" \
+    --tag "$registry_tag" \
     "$build_context"
 
   digest_timeout=$(stage_timeout)
-  digest=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$digest_timeout" "$docker_bin" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tag") \
+  digest=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$digest_timeout" "$docker_bin" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$registry_tag") \
     || fail 'digest resolution failed or exceeded its timeout'
   check_budget
   digest=$(printf '%s' "$digest" | tr -d '[:space:]')
@@ -199,6 +362,10 @@ if [[ "$transport" == registry ]]; then
   immutable_image="$image_repository@$digest"
   preloaded_args=()
 else
+  temporary_tag_nonce=$(ruby -rsecurerandom -e 'print SecureRandom.hex(16)') \
+    || fail 'could not generate a unique preloaded build tag'
+  [[ "$temporary_tag_nonce" =~ ^[a-f0-9]{32}$ ]] || fail 'preloaded build tag nonce is invalid'
+  temporary_tag="$image_repository:build-$source_commit-$temporary_tag_nonce"
   archive=$(mktemp "${TMPDIR:-/tmp}/sub2api-$source_commit.XXXXXX")
   run_stage build "$docker_bin" buildx build \
     --platform linux/amd64 \
@@ -210,12 +377,17 @@ else
     --label "com.xingqiao.sub2api.source.tree=$source_tree" \
     --label "com.xingqiao.sub2api.tested.tree=$source_tree" \
     --label "com.xingqiao.sub2api.migrations.sha256=$migrations_hash" \
-    --tag "$tag" \
+    --tag "$temporary_tag" \
     "$build_context"
-  image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$docker_bin" image inspect --format '{{.Id}}' "$tag" | tr -d '[:space:]') \
+  image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$docker_bin" image inspect --format '{{.Id}}' "$temporary_tag" | tr -d '[:space:]') \
     || fail 'local image ID resolution failed'
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'preloaded image did not resolve to an immutable image ID'
-  run_stage archive "$docker_bin" image save --output "$archive" "$tag"
+  immutable_image="$image_repository:release-$source_commit-${image_id#sha256:}"
+  run_stage tag "$docker_bin" image tag "$temporary_tag" "$immutable_image"
+  tagged_image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$docker_bin" image inspect --format '{{.Id}}' "$immutable_image" | tr -d '[:space:]') \
+    || fail 'preloaded image ID-bound tag inspection failed'
+  [[ "$tagged_image_id" == "$image_id" ]] || fail 'preloaded image ID-bound tag does not resolve to the built image'
+  run_stage archive "$docker_bin" image save --output "$archive" "$immutable_image"
   archive_sha256=$(sha256_file "$archive" 2>/dev/null)
   [[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'image archive checksum failed'
   remote_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -p /tmp ".sub2api-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') \
@@ -223,7 +395,6 @@ else
   [[ "$remote_tmp" =~ ^/tmp/\.sub2api-$source_commit\.[A-Za-z0-9]{6}$ ]] || fail 'remote staging path is invalid'
   run_stage transfer "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp"
   run_stage stage "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" sudo -n install -o root -g root -m 600 "$remote_tmp" "$staged_archive" '&&' sudo -n rm -f -- "$remote_tmp"
-  immutable_image="$tag"
   preloaded_args=(--preloaded-archive "$staged_archive" --preloaded-archive-sha256 "$archive_sha256" --preloaded-image-id "$image_id")
 fi
 
@@ -234,6 +405,7 @@ host_deadline_epoch=$(ruby -e 'print Time.now.utc.to_i + Integer(ARGV.fetch(0))'
   || fail 'could not calculate host deadline'
 [[ "$host_deadline_epoch" =~ ^[1-9][0-9]{9}$ ]] || fail 'host deadline is invalid'
 set +e
+verify_remote_executor_path_chain
 host_args=(
   sudo -n
 )

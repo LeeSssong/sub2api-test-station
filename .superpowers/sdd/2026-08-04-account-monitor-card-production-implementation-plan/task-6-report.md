@@ -182,3 +182,51 @@ Both exited 0; build transformed 994 modules. `git diff --check` exited 0.
 
 - No browser screenshot comparison was run in this repair round; deployment and production validation were explicitly out of scope.
 - Existing frontend toolchain warnings remain (obsolete Browserslist data, dynamic/static import chunk warnings, and Node DEP0190); none was introduced by this change.
+
+---
+
+## Task 6 fix round 2 — 2026-08-04
+
+- status: READY_FOR_RE-REVIEW (local test repair only)
+- test commit SHA: `8d690a6e2`
+- production logic / QA harness / project progress / push / deploy: 未修改或执行。
+
+### Root cause
+
+The all-site production projection already sorts equal quality scores by account ID and assigns consecutive ranks. Its regression test supplied only different scores, so it could not exercise the equal-score branch. The view fixture separately represented equal-score accounts 10 and 11 as duplicate rank 1, which is not a production API response after the stable ranking projection.
+
+### Changes
+
+1. Reworked the focused `ListWindow` service case into three equally scored eligible accounts (10, 11, 20) plus one unranked account. It asserts top-level `page.Accounts` ID order, equal source scores, continuous `1, 2, 3` ranks, unranked-last behavior, and the JSON response shape.
+2. Replaced the View all-site fixture's duplicate ranks with unique continuous ranks `1, 2, 3, null`; the unranked row now uses a production-possible disabled/non-eligible state.
+3. The real-card view assertion now verifies visible ID order and every global rank label. The unrelated concurrency filter expectation was updated from renamed account 20's old fixture label to its new label.
+
+### RED
+
+```bash
+cd upstream/sub2api/frontend
+pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/components/admin/account-monitor/AccountMonitorFilters.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Observed after tightening the assertion against the old fixture: `3` files ran; Card and Filters passed, while View failed (`25 passed, 1 failed`) because cards 10 and 11 both rendered `全站排名第 1 / 3` and account 20 rendered `第 2 / 3`, instead of the required continuous `1, 2, 3` sequence.
+
+### GREEN
+
+```bash
+cd upstream/sub2api/backend
+go test -count=1 -run TestAccountMonitorListWindowProjectsRecentTimelineAndRanksGlobalScoreTiesByAccountID -v ./internal/service
+```
+
+Passed: the top-level same-score ordering/rank regression test passed.
+
+```bash
+cd upstream/sub2api/frontend
+pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/components/admin/account-monitor/AccountMonitorFilters.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: `3` files, `26` tests. `git diff --check` also exited 0.
+
+### Residual risks / concerns
+
+- This round intentionally did not change production code, run QA harness/browser checks, push, deploy, or validate production.
+- The frontend command retained pre-existing pnpm metadata, Node localStorage, and stale Browserslist warnings; no test failures remained.

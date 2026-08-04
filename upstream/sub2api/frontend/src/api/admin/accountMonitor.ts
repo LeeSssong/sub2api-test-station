@@ -2,6 +2,17 @@ import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
+export type AccountMonitorRange = '24h' | '7d' | '30d'
+
+export interface AccountMonitorConcurrencyItem {
+  account_id: number
+  current: number
+  limit: number
+}
+
+export interface AccountMonitorConcurrencyResponse {
+  items: AccountMonitorConcurrencyItem[]
+}
 
 export interface AccountMonitorSettings {
   interval_seconds: number
@@ -117,6 +128,14 @@ export interface AccountMonitorAccount {
   multiplier: AccountMonitorMultiplier
   request_count: number
   error_count: number
+  range?: AccountMonitorRange
+  base_cost?: number
+  effective_multiplier?: number | null
+  cost_mode?: 'multiplier' | 'procurement' | string
+  cost_score?: number
+  procurement_cost_cny?: number | null
+  procurement_cost_effective_at?: string | null
+  expires_at?: string | null
   today_stats?: WindowStats | null
   usage_windows?: AccountMonitorUsageWindow[]
   latest?: AccountMonitorLatest | null
@@ -132,7 +151,13 @@ export interface AccountMonitorAccount {
 export interface AccountMonitorGroup {
   id: number
   name: string
+  status?: string
+  platform?: string
   rate_multiplier: number
+  rpm_limit?: number
+  account_count?: number
+  active_account_count?: number
+  rate_limited_account_count?: number
   customer_visible: boolean
   native_order: number
   score_weights: AccountMonitorScoreWeights
@@ -143,6 +168,7 @@ export interface AccountMonitorGroup {
 
 export interface AccountMonitorProjection {
   schema_version: number
+  range?: AccountMonitorRange
   observed_at: string
   stale: boolean
   settings: AccountMonitorSettings
@@ -178,11 +204,27 @@ export interface AccountMonitorHistoryResponse {
   items: AccountMonitorHistoryItem[]
 }
 
-export async function list(options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection> {
-  const response = options?.signal
-    ? await apiClient.get<AccountMonitorProjection>('/admin/account-monitors', { signal: options.signal })
-    : await apiClient.get<AccountMonitorProjection>('/admin/account-monitors')
+export function list(range?: AccountMonitorRange, options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection>
+export function list(options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection>
+export async function list(
+  rangeOrOptions: AccountMonitorRange | { signal?: AbortSignal } = '24h',
+  options?: { signal?: AbortSignal },
+): Promise<AccountMonitorProjection> {
+  const range = typeof rangeOrOptions === 'string' ? rangeOrOptions : '24h'
+  const requestOptions = typeof rangeOrOptions === 'string' ? options : rangeOrOptions
+  const response = await apiClient.get<AccountMonitorProjection>('/admin/accounts/monitor', {
+    params: { range },
+    signal: requestOptions?.signal,
+  })
   const { data } = response
+  return data
+}
+
+export async function getConcurrency(accountIDs: number[]): Promise<AccountMonitorConcurrencyResponse> {
+  const { data } = await apiClient.post<AccountMonitorConcurrencyResponse>(
+    '/admin/accounts/monitor/concurrency',
+    { account_ids: accountIDs },
+  )
   return data
 }
 
@@ -241,6 +283,7 @@ export async function resetGroupScoreWeights(groupID: number): Promise<AccountMo
 
 const accountMonitorAPI = {
   list,
+  getConcurrency,
   updateSettings,
   runAll,
   runOne,

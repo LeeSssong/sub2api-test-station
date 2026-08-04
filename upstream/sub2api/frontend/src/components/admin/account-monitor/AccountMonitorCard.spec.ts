@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 
 import AccountMonitorCard from './AccountMonitorCard.vue'
 
@@ -7,13 +8,43 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key === 'admin.accountMonitor.status.paused' ? '暂停' : key }),
+    useI18n: () => ({
+      t: (key: string) => ({
+        'admin.accountMonitor.status.success': '正常',
+        'admin.accountMonitor.status.failed': '不可用',
+        'admin.accountMonitor.status.pending': '待确认',
+        'admin.accountMonitor.status.paused': '暂停',
+        'admin.accountMonitor.status.unavailable': '不可用',
+      }[key] ?? key),
+    }),
   }
 })
 
+type Deferred = {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (reason?: unknown) => void
+}
+
+function deferred(): Deferred {
+  let resolve!: () => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+}
+
 const account = {
-  account_id: 7,
-  name: 'Primary Codex',
+  account_id: 113,
+  name: '93_dowel.paddler@icloud.com',
   platform: 'openai',
   account_type: 'oauth',
   status: 'active',
@@ -22,398 +53,189 @@ const account = {
   service_state: 'available',
   group_eligibility: 'eligible',
   monitor_bucket: 'available',
+  priority: 1,
   group_ids: [3],
-  group_names: ['Production'],
+  group_names: ['GPT-PLUS-内测'],
   model_id: 'gpt-4o-mini',
   latest_status: 'success',
-  sample_count: 4,
-  success_sample_count: 4,
-  ttft_sample_count: 3,
-  latency_sample_count: 2,
-  success_rate: 1,
-  ttft_p50_ms: 80,
-  ttft_p95_ms: 100,
-  latency_p95_ms: 240,
-  multiplier: {
-    value: 0.1,
-    source: 'declared',
-    status: 'ok',
-    observed_at: '2026-07-25T08:00:00Z',
-    sample_count: 9,
-  },
-  request_count: 12,
-  error_count: 0,
-  today_stats: { requests: 12, tokens: 3400, cost: 0.4, standard_cost: 1, user_cost: 0.6 },
-  usage_windows: [{ name: '5h', utilization: 0.2, requests: 2, tokens: 100 }],
-  timeline: [
-    { status: 'success', ttft_ms: 80, latency_ms: 180, checked_at: '2026-07-25T07:55:00Z' },
-    { status: 'success', ttft_ms: 120, latency_ms: 1800, checked_at: '2026-07-25T08:00:00Z' },
-    { status: 'failed', error_code: 'timeout', latency_ms: 5000, checked_at: '2026-07-25T08:05:00Z' },
-  ],
-  checked_at: '2026-07-25T08:00:00Z',
+  sample_count: 72,
+  success_sample_count: 71,
+  ttft_sample_count: 71,
+  latency_sample_count: 71,
+  success_rate: 0.986,
+  ttft_p50_ms: 1018,
+  ttft_p95_ms: 1400,
+  latency_p95_ms: 1962,
+  multiplier: { value: 0.58, source: 'declared', status: 'ok', sample_count: 72 },
+  request_count: 72,
+  error_count: 1,
+  range: '24h',
+  base_cost: 18,
+  effective_multiplier: 0.48,
+  cost_mode: 'multiplier',
+  cost_score: 15,
+  timeline: [],
   stale: false,
-  quality_score: 92.5,
+  quality_score: 91,
   group_rank: 1,
   eligible: true,
-  evidence: {
-    source: 'group',
-    sample_count: 12,
-    success_sample_count: 12,
-    ttft_sample_count: 10,
-    latency_sample_count: 8,
-    success_rate: 0.98,
-    ttft_p50_ms: 80,
-    latency_p95_ms: 240,
-    observed_at: '2026-07-25T08:00:00Z',
-  },
+}
+
+function mountCard(overrides: Record<string, unknown> = {}) {
+  return mount(AccountMonitorCard, {
+    attachTo: document.body,
+    props: {
+      account,
+      concurrency: { account_id: 113, current: 3, limit: 10, delayed: false },
+      ...overrides,
+    },
+    global: { stubs: { Icon: true } },
+  })
 }
 
 describe('AccountMonitorCard', () => {
-  const operations = {
-    total_attempts: 12,
-    matched_attempts: 12,
-    pending_attempts: 0,
-    conflict_attempts: 0,
-    coverage_known: true,
-    coverage_ratio: 1,
-    upstream_cost: '0.02',
-    user_charge: '1.00',
-    paper_profit: '0.98',
-    profit_margin: '0.98',
-    currency: 'USD',
-    observed_at: '2026-07-25T08:01:00Z',
-  }
+  it('renders the V3 service, rank, cost, and concurrency information without operations labels', () => {
+    const wrapper = mountCard()
 
-  it('renders compact integer quality evidence and real upstream economics', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account,
-        operations,
-        groupOperationalState: 'operational',
-      },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
-      },
-    })
+    expect(wrapper.get('[data-test="monitor-card"]').text()).toContain('93_dowel.paddler@icloud.com')
+    expect(wrapper.text()).toContain('#113')
+    expect(wrapper.get('[data-test="status-badge"]').text()).toContain('正常')
+    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('91')
+    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
+    expect(wrapper.get('[data-test="priority-control"]').text()).toContain('1')
+    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
+    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1,018 ms')
+    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1,962 ms')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58x')
+    expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
 
-    expect(wrapper.text()).toContain('组内评分 93')
-    expect(wrapper.text()).not.toContain('92.5')
-    expect(wrapper.text()).toContain('组内第 1')
-    expect(wrapper.text()).toContain('调度优先级')
-    expect(wrapper.text()).not.toContain('全局调度优先级')
-    expect(wrapper.text()).toContain('上游真实扣费')
-    expect(wrapper.text()).toContain('用户实际计费')
-    expect(wrapper.text()).toContain('账号利润')
-    expect(wrapper.text()).not.toContain('纸面利润')
-    expect(wrapper.text()).toContain('利润率')
-    expect(wrapper.text()).toContain('$0.02')
-    expect(wrapper.text()).toContain('$1.00')
-    expect(wrapper.text()).toContain('$0.98')
-    expect(wrapper.text()).toContain('98.0%')
+    for (const label of ['分组倍率', '营收', '利润', '对账', '账务', '上游真实扣费', '用户实际计费']) {
+      expect(wrapper.text()).not.toContain(label)
+    }
   })
 
-  it('explains group fallback evidence in plain Chinese', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account: {
-          ...account,
-          evidence: { ...account.evidence, source: 'global_fallback' },
-        },
-      },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    expect(wrapper.text()).toContain('本组数据不足，参考近期探测')
-    expect(wrapper.text()).not.toContain('全局样本回退')
-  })
-
-  it('shows metric-specific sample evidence', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('基于 12 次调用')
-    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('基于 10 次调用')
-    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('基于 8 次调用')
-    expect(wrapper.get('[data-test="multiplier-metric"]').text()).toContain('基于 9 次调用')
-  })
-
-  it('renders recent probes as green success, red failure, and gray empty bars with latency height', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    const bars = wrapper.findAll('[data-test="probe-bar"]')
-    expect(bars).toHaveLength(24)
-    expect(bars.slice(0, 21).every((bar) => bar.classes().includes('bg-gray-200'))).toBe(true)
-    expect(bars[21].classes()).toContain('bg-emerald-500')
-    expect(bars[22].classes()).toContain('bg-emerald-500')
-    expect(bars[23].classes()).toContain('bg-red-500')
-    expect(Number.parseFloat((bars[21].element as HTMLElement).style.height)).toBeGreaterThan(
-      Number.parseFloat((bars[22].element as HTMLElement).style.height),
-    )
-  })
-
-  it('renders unavailable model probes as green short bars', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account: {
-          ...account,
-          timeline: [{ status: 'model_unavailable', checked_at: '2026-07-25T08:05:00Z' }],
-        },
-      },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    const bars = wrapper.findAll('[data-test="probe-bar"]')
-    const latest = bars.at(-1)
-    expect(latest?.classes()).toContain('bg-emerald-500')
-    expect(latest?.attributes('style')).toContain('height: 40%')
-  })
-
-  it('uses Chinese labels instead of raw failure codes on the card and probe tooltip', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account: { ...account, error_code: 'timeout' } },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    expect(wrapper.text()).toContain('请求超时')
-    expect(wrapper.text()).not.toContain('timeout')
-    const latestProbe = wrapper.findAll('[data-test="probe-bar"]').at(-1)
-    expect(latestProbe?.attributes('title')).toContain('请求超时')
-    expect(latestProbe?.attributes('title')).not.toContain('timeout')
-  })
-
-  it('uses a human-readable platform label', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: { stubs: { Icon: true } },
-    })
-
-    expect(wrapper.text()).toContain('OpenAI')
-    expect(wrapper.text()).not.toContain('openai')
-  })
-
-  it('keeps today calls collapsed until its keyboard-accessible button is activated', async () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: { props: ['stats'], template: '<div data-test="today-stats">{{ stats.requests }}</div>' },
-          AccountUsageCell: { props: ['account'], template: '<div data-test="usage-cell">{{ account.id }}</div>' },
-        },
+  it('renders procurement cost with its native expiry and window effective multiplier', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        procurement_cost_cny: 120,
+        procurement_cost_effective_at: '2026-08-04T00:00:00Z',
+        expires_at: '2026-09-01T00:00:00Z',
+        cost_mode: 'procurement',
+        effective_multiplier: 0.48,
       },
     })
 
-    const toggle = wrapper.get('[data-test="today-toggle"]')
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('[data-test="today-stats"]').exists()).toBe(false)
-
-    await toggle.trigger('click')
-
-    expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[data-test="today-stats"]').text()).toBe('12')
-    expect(wrapper.get('[data-test="usage-cell"]').text()).toBe('7')
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('¥120.00')
+    expect(cost).toContain('有效至 2026-09-01')
+    expect(cost).toContain('当前窗口等效倍率 0.48x')
+    expect(cost).not.toContain('0.58x')
   })
 
-  it('shows priority as secondary text and reveals the input only after edit is clicked', async () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account: { ...account, priority: 7 } },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
+  it('explains why a procurement amount cannot yield an effective multiplier', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        procurement_cost_cny: 120,
+        procurement_cost_effective_at: '2026-08-04T00:00:00Z',
+        expires_at: null,
+        cost_mode: 'procurement',
+        effective_multiplier: null,
+      },
     })
 
-    expect(wrapper.text()).toContain('调度优先级 7')
-    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('text-[10px]')
-    expect(wrapper.get('[data-test="priority-control"]').classes()).toContain('opacity-75')
-    expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('有效期缺失，无法计算等效倍率')
+  })
+
+  it('rejects priority values below one or with a fraction before asking the parent to save', async () => {
+    const updatePriority = vi.fn()
+    const wrapper = mountCard({ onUpdatePriority: updatePriority })
 
     await wrapper.get('[data-test="edit-priority"]').trigger('click')
-
-    expect((wrapper.get('[data-test="priority-input"]').element as HTMLInputElement).value).toBe('7')
-    expect(wrapper.text()).not.toContain('按回车保存')
-
-    await wrapper.get('[data-test="priority-input"]').setValue('8')
+    const input = wrapper.get<HTMLInputElement>('[data-test="priority-input"]')
+    await input.setValue('1.5')
     await wrapper.get('[data-test="save-priority"]').trigger('click')
 
-    expect(wrapper.emitted('updatePriority')).toEqual([[7, 8]])
+    expect(updatePriority).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="priority-error"]').text()).toContain('请输入大于或等于 1 的整数')
+    expect((wrapper.get<HTMLInputElement>('[data-test="priority-input"]').element).value).toBe('1.5')
   })
 
-  it('keeps quality summary visually secondary to probe and economics data', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: { stubs: { Icon: true, AccountTodayStatsCell: true, AccountUsageCell: true } },
-    })
-
-    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-[10px]')
-    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('text-gray-400')
-    expect(wrapper.get('[data-test="quality-summary"]').classes()).toContain('opacity-75')
-  })
-
-  it('shows pending reconciliation instead of a profit margin when coverage is unknown', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account,
-        operations: { ...operations, coverage_known: false, pending_attempts: 2, profit_margin: null },
-        groupOperationalState: 'operational',
-      },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
+  it('keeps priority editing until the parent confirms the save, then shows the saved value', async () => {
+    const pending = deferred()
+    const wrapper = mountCard({
+      onUpdatePriority: (_id: number, _value: number, completion: { resolve: () => void, reject: (reason?: unknown) => void }) => {
+        pending.promise.then(completion.resolve, completion.reject)
       },
     })
 
-    expect(wrapper.text()).toContain('待对账')
-    expect(wrapper.text()).not.toContain('98.0%')
+    await wrapper.get('[data-test="edit-priority"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('[data-test="priority-input"]').setValue('2')
+    await wrapper.get('[data-test="save-priority"]').trigger('click')
+
+    expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="save-priority"]').attributes('disabled')).toBeDefined()
+
+    pending.resolve()
+    await flushAsyncWork()
+
+    expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="priority-control"]').text()).toContain('2')
   })
 
-  it('hides quality score and group rank in the all-site scope', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account,
-        scope: 'all',
-      },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
+  it('preserves priority draft, focus, and local error when the parent rejects the save', async () => {
+    const wrapper = mountCard({
+      onUpdatePriority: (_id: number, _value: number, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('保存失败')),
+    })
+
+    await wrapper.get('[data-test="edit-priority"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('[data-test="priority-input"]').setValue('2')
+    await wrapper.get('[data-test="save-priority"]').trigger('click')
+    await flushAsyncWork()
+
+    const input = wrapper.get<HTMLInputElement>('[data-test="priority-input"]')
+    expect(input.element.value).toBe('2')
+    expect(wrapper.get('[data-test="priority-error"]').text()).toContain('保存失败')
+    expect(document.activeElement).toBe(input.element)
+  })
+
+  it('saves procurement cost after parent confirmation and clears it only after confirmation', async () => {
+    const savePending = deferred()
+    const clearPending = deferred()
+    const wrapper = mountCard({
+      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
+      onUpdateProcurementCost: (_id: number, value: number | null, completion: { resolve: () => void, reject: (reason?: unknown) => void }) => {
+        if (value === null) clearPending.promise.then(completion.resolve, completion.reject)
+        else savePending.promise.then(completion.resolve, completion.reject)
       },
     })
 
-    expect(wrapper.find('[data-test="quality-summary"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('质量评分')
-    expect(wrapper.text()).not.toContain('组内第 1')
+    await wrapper.get('[data-test="edit-cost"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('[data-test="cost-input"]').setValue('150.5')
+    await wrapper.get('[data-test="save-cost"]').trigger('click')
+    expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(true)
+
+    savePending.resolve()
+    await flushAsyncWork()
+    expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await wrapper.get('[data-test="clear-cost"]').trigger('click')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
+
+    clearPending.resolve()
+    await flushAsyncWork()
+    expect(confirmSpy).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58x')
+    confirmSpy.mockRestore()
   })
 
-  it('keeps a closed group informational instead of using a failure red border', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account: { ...account, eligible: false }, groupOperationalState: 'closed' },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
-      },
-    })
+  it('retains the last concurrency snapshot and marks it delayed', () => {
+    const wrapper = mountCard({ concurrency: { account_id: 113, current: 3, limit: 10, delayed: true } })
 
-    expect(wrapper.text()).toContain('已关闭')
-    expect(wrapper.classes()).not.toContain('border-red-500')
-  })
-
-  it('shows paused accounts as 暂停 without a failed service badge', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account: {
-          ...account,
-          status: 'paused',
-          schedulable: false,
-          management_state: 'paused',
-          service_state: 'not_monitored',
-          group_eligibility: 'not_applicable',
-          monitor_bucket: 'paused',
-          latest_status: 'failed',
-          eligible: false,
-          checked_at: null,
-          latest: null,
-        },
-      },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
-      },
-    })
-
-    expect(wrapper.text()).toContain('暂停')
-    expect(wrapper.text()).not.toContain('admin.accountMonitor.status.failed')
-    expect(wrapper.classes()).not.toContain('border-red-500')
-  })
-
-  it('shows service-available accounts as healthy even when cost-ineligible', () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: {
-        account: {
-          ...account,
-          service_state: 'available',
-          group_eligibility: 'cost_ineligible',
-          latest_status: 'failed',
-          eligible: false,
-        },
-      },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
-      },
-    })
-
-    expect(wrapper.text()).toContain('admin.accountMonitor.status.success')
-    expect(wrapper.text()).not.toContain('admin.accountMonitor.status.failed')
-    expect(wrapper.classes()).toContain('border-emerald-500')
-  })
-
-  it('reuses account-management today stats and usage-window components after expansion', async () => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: {
-            props: ['stats'],
-            template: '<div data-test="today-stats">{{ stats.requests }}/{{ stats.tokens }}</div>',
-          },
-          AccountUsageCell: {
-            props: ['account', 'todayStats'],
-            template: '<div data-test="usage-cell">{{ account.id }}:{{ account.type }}:{{ todayStats.requests }}</div>',
-          },
-        },
-      },
-    })
-
-    await wrapper.get('[data-test="today-toggle"]').trigger('click')
-
-    expect(wrapper.get('[data-test="today-stats"]').text()).toBe('12/3400')
-    expect(wrapper.get('[data-test="usage-cell"]').text()).toBe('7:oauth:12')
-  })
-
-  it.each([
-    [{ value: 0.07, source: 'declared', status: 'ok', sample_count: 0 }, '0.07x', 'admin.accountMonitor.multiplier.declared'],
-    [{ value: 0.25, source: 'measured', status: 'ok', sample_count: 5 }, '0.25x', 'admin.accountMonitor.multiplier.measured'],
-    [{ source: 'measured', status: 'stale', sample_count: 0 }, 'admin.accountMonitor.multiplier.stale', ''],
-    [{ status: 'unsupported', sample_count: 0 }, 'admin.accountMonitor.multiplier.unsupported', ''],
-    [{ source: 'measured', status: 'failed', sample_count: 0 }, 'admin.accountMonitor.multiplier.failed', ''],
-    [{ status: 'unavailable', sample_count: 0 }, 'admin.accountMonitor.multiplier.unavailable', ''],
-  ])('renders trusted multiplier state %#', (multiplier, value, source) => {
-    const wrapper = mount(AccountMonitorCard, {
-      props: { account: { ...account, multiplier } },
-      global: {
-        stubs: {
-          Icon: true,
-          AccountTodayStatsCell: true,
-          AccountUsageCell: true,
-        },
-      },
-    })
-
-    const metric = wrapper.get('[data-test="multiplier-metric"]')
-    expect(metric.text()).toContain(value)
-    if (source) expect(metric.text()).toContain(source)
-    if (multiplier.status !== 'ok') expect(metric.text()).not.toContain('1.00x')
+    expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
+    expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('数据延迟')
   })
 })

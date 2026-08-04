@@ -35,6 +35,10 @@ func (*accountMonitorRouteRepoStub) ListLatest(context.Context, []int64) (map[in
 	return nil, nil
 }
 
+func (*accountMonitorRouteRepoStub) ListTimelines(context.Context, []int64, int) (map[int64][]service.AccountMonitorTimelinePoint, error) {
+	return map[int64][]service.AccountMonitorTimelinePoint{}, nil
+}
+
 func (*accountMonitorRouteRepoStub) ListGroups(context.Context) ([]service.AccountMonitorGroup, error) {
 	return nil, nil
 }

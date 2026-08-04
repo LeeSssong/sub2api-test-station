@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="min-h-full bg-[#f4f7f9] px-5 py-8 dark:bg-slate-950 sm:py-9">
+    <div class="min-h-full bg-[#f4f7f9] px-5 py-8 dark:bg-slate-950 max-sm:px-3 max-sm:pt-[22px] sm:py-9">
       <div class="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px]" data-test="account-monitor-page">
       <header class="flex items-start justify-between gap-4">
         <div class="min-w-0">
@@ -31,7 +31,7 @@
         <button
           type="button"
           role="tab"
-          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors"
+          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
           :class="tabClass(activeGroupId === null)"
           :aria-selected="activeGroupId === null"
           data-test="all-site-tab-button"
@@ -47,7 +47,7 @@
           :key="group.id"
           type="button"
           role="tab"
-          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors"
+          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
           :class="tabClass(activeGroupId === group.id)"
           :aria-selected="activeGroupId === group.id"
           :data-test="`group-tab-${group.id}`"

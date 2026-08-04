@@ -401,6 +401,29 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
   })
 
+  it('uses the confirmed 12px horizontal and 22px top shell spacing below the mobile breakpoint', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const shell = wrapper.find('.min-h-full')
+    expect(shell.classes()).toEqual(expect.arrayContaining(['max-sm:px-3', 'max-sm:pt-[22px]']))
+  })
+
+  it('keeps a clicked group tab underline-only while retaining keyboard focus-visible feedback', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const groupTab = wrapper.get('[data-test="group-tab-3"]')
+    await groupTab.trigger('click')
+
+    expect(groupTab.attributes('aria-selected')).toBe('true')
+    expect(groupTab.classes()).toEqual(expect.arrayContaining([
+      'focus:outline-none',
+      'focus-visible:ring-2',
+      'focus-visible:ring-primary-500/30',
+    ]))
+  })
+
   it('polls one deduplicated batch for currently visible cards every five seconds, pauses hidden, and refreshes on return', async () => {
     vi.useFakeTimers()
     const wrapper = mountView()

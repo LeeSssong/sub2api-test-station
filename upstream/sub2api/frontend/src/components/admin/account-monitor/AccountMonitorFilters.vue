@@ -17,7 +17,7 @@
       :aria-label="t('admin.accountMonitor.filters.status')"
       @change="emit('update:status', ($event.target as HTMLSelectElement).value)"
     >
-      <option value="">{{ t('common.all') }}</option>
+      <option value="">全部状态</option>
       <option value="available">可用</option>
       <option value="unavailable">不可用</option>
       <option value="cost_ineligible">成本不合格</option>

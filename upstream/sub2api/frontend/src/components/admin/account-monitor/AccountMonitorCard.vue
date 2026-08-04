@@ -1,8 +1,8 @@
 <template>
-  <article class="card overflow-hidden border border-l-4 border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" :class="statusBorderClass" data-test="monitor-card">
-    <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-slate-800" :class="statusHeaderClass" data-test="monitor-card-header">
+  <article class="overflow-hidden rounded-lg border border-l-4 border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" :class="statusBorderClass" data-test="monitor-card">
+    <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-[18px] py-4 dark:border-slate-800 max-[430px]:px-[14px] max-[430px]:py-[14px]" :class="statusHeaderClass" data-test="monitor-card-header">
       <div class="min-w-0">
-        <h2 class="truncate text-base font-semibold text-gray-900 dark:text-white">
+        <h2 class="break-words text-base font-semibold text-gray-900 dark:text-white [overflow-wrap:anywhere]" data-test="account-identity">
           {{ account.name }} <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400">#{{ account.account_id }}</span>
         </h2>
       </div>
@@ -11,19 +11,19 @@
       </span>
     </header>
 
-    <div class="p-4">
+    <div class="px-[18px] pb-0 pt-4 max-[430px]:px-[14px]">
       <section class="grid grid-cols-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 divide-x divide-gray-200 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/50" aria-label="评分排名与优先级">
-        <div class="min-w-0 p-3" data-test="score-metric">
-          <div class="text-[11px] text-gray-500 dark:text-slate-400">账号分组评分</div>
+        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="score-metric">
+          <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
           <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
           <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">基于 {{ account.request_count }} 次真实请求</p>
         </div>
-        <div class="min-w-0 p-3" data-test="rank-metric">
-          <div class="text-[11px] text-gray-500 dark:text-slate-400">组内排名</div>
+        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
+          <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
           <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="account.group_rank != null" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
           <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号继续参与排名</p>
         </div>
-        <div class="min-w-0 p-3" data-test="priority-control">
+        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="priority-control">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">全局优先级</div>
           <template v-if="editingPriority">
             <div class="mt-1 flex h-8 items-center gap-1">
@@ -61,7 +61,7 @@
         <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="formatPercent(account.success_rate)" :detail="`${formatNumber(account.request_count)} 次真实请求，${formatNumber(account.error_count)} 次失败`" />
         <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P50" :value="formatMs(account.ttft_p50_ms)" :detail="sampleDetail(account.ttft_sample_count)" />
         <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
-        <div class="min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
+        <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</div>
           <template v-if="editingCost">
             <div class="mt-1 flex h-8 items-center gap-1">
@@ -94,7 +94,7 @@
             </div>
           </template>
         </div>
-        <div class="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-3 service-metric dark:border-slate-800 dark:bg-slate-900/50" data-test="concurrency-metric">
+        <div class="min-h-[116px] min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-3 service-metric dark:border-slate-800 dark:bg-slate-900/50" data-test="concurrency-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">当前并发</div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ concurrencyValue }}</div>
           <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">{{ concurrency?.delayed ? '数据延迟' : '近实时运维快照' }}</p>
@@ -140,9 +140,9 @@
         </div>
       </section>
 
-      <footer class="flex min-h-12 items-center justify-between gap-3 border-t border-gray-100 text-[11px] text-gray-500 dark:border-slate-800 dark:text-slate-400" data-test="card-footer">
+      <footer class="flex min-h-[52px] items-center justify-between gap-3 border-t border-gray-100 text-[11px] text-gray-500 dark:border-slate-800 dark:text-slate-400 max-[430px]:flex-col max-[430px]:items-start max-[430px]:gap-[3px] max-[430px]:py-[9px]" data-test="card-footer">
         <span>检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span>
-        <button class="icon-button shrink-0" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /></button>
+        <button class="icon-button shrink-0 max-[430px]:self-end" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /></button>
       </footer>
     </div>
   </article>
@@ -166,9 +166,10 @@ const props = withDefaults(defineProps<{
   concurrency?: CardConcurrency | null
   running?: boolean
   rankedAccountCount?: number
+  rankingScope?: 'group' | 'global'
   statisticsCutoff?: string | null
   selectedRange?: AccountMonitorRange
-}>(), { concurrency: null, running: false, rankedAccountCount: 0, statisticsCutoff: null, selectedRange: '24h' })
+}>(), { concurrency: null, running: false, rankedAccountCount: 0, rankingScope: 'group', statisticsCutoff: null, selectedRange: '24h' })
 
 const emit = defineEmits<{
   (event: 'updatePriority', accountID: number, priority: number, completion: SaveCompletion): void
@@ -223,13 +224,15 @@ const statusHeaderClass = computed(() => ({
 }))
 const scoreLabel = computed(() => props.account.quality_score == null ? '--' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(props.account.quality_score))
 const rankLabel = computed(() => props.account.group_rank == null ? '未排名' : `第 ${props.account.group_rank}`)
+const scoreTitle = computed(() => props.rankingScope === 'global' ? '账号服务评分' : '账号分组评分')
+const rankTitle = computed(() => props.rankingScope === 'global' ? '全站排名' : '组内排名')
 const concurrencyValue = computed(() => props.concurrency ? `${props.concurrency.current} / ${props.concurrency.limit}` : '-- / --')
 const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
 const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
-const statisticsCutoffLabel = computed(() => formatDateTime(props.statisticsCutoff))
+const statisticsCutoffLabel = computed(() => formatShortTime(props.statisticsCutoff))
 const timelinePoints = computed(() => (props.account.timeline ?? []).slice(-24))
 const probeBars = computed<ProbeBar[]>(() => {
   const bars: ProbeBar[] = Array.from({ length: Math.max(0, 24 - timelinePoints.value.length) }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: '暂无探测' }))
@@ -266,8 +269,8 @@ function formatPercent(value: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value)
 }
 function formatMs(value?: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '--'
-  return `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value)} ms`
+	if (value == null || !Number.isFinite(value)) return '--'
+	return `${Math.round(value)} ms`
 }
 function formatMultiplier(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '--'
@@ -281,6 +284,12 @@ function formatDateTime(value?: string | null): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '--'
   return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+}
+function formatShortTime(value?: string | null): string {
+	if (!value) return '--'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '--'
+	return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0))
@@ -427,9 +436,9 @@ const MetricCell = defineComponent({
       ttft: 'border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20',
       latency: 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
     }
-    return () => h('div', { ...attrs, class: ['min-w-0 rounded-lg border p-3 service-metric', toneClass[metricProps.tone], attrs.class] }, [
+    return () => h('div', { ...attrs, class: ['min-h-[116px] min-w-0 rounded-lg border p-3 service-metric', toneClass[metricProps.tone], attrs.class] }, [
       h('div', { class: 'text-[11px] text-gray-500 dark:text-slate-400' }, metricProps.label),
-      h('div', { class: 'mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white' }, metricProps.value),
+      h('div', { class: 'mt-1 whitespace-nowrap font-mono text-lg font-semibold text-gray-900 dark:text-white', 'data-test': `${metricProps.tone}-metric-value` }, metricProps.value),
       h('p', { class: 'mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500' }, metricProps.detail),
     ])
   },

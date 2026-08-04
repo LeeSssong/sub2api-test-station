@@ -19,7 +19,10 @@ import (
 
 type accountMonitorHandlerRepoStub struct {
 	service.AccountMonitorRepository
-	weights service.AccountMonitorScoreWeights
+	weights          service.AccountMonitorScoreWeights
+	latest           map[int64]service.AccountMonitorLatest
+	timelines        map[int64][]service.AccountMonitorTimelinePoint
+	windowAggregates map[int64]service.AccountMonitorWindowAggregate
 }
 
 func (*accountMonitorHandlerRepoStub) LoadSettings(context.Context) (service.AccountMonitorSettings, error) {
@@ -30,20 +33,20 @@ func (*accountMonitorHandlerRepoStub) ListGroups(context.Context) ([]service.Acc
 	return nil, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListLatest(context.Context, []int64) (map[int64]service.AccountMonitorLatest, error) {
-	return nil, nil
+func (s *accountMonitorHandlerRepoStub) ListLatest(context.Context, []int64) (map[int64]service.AccountMonitorLatest, error) {
+	return s.latest, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListTimelines(context.Context, []int64, int) (map[int64][]service.AccountMonitorTimelinePoint, error) {
-	return nil, nil
+func (s *accountMonitorHandlerRepoStub) ListTimelines(context.Context, []int64, int) (map[int64][]service.AccountMonitorTimelinePoint, error) {
+	return s.timelines, nil
 }
 
 func (*accountMonitorHandlerRepoStub) ListAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorAggregate, error) {
 	return nil, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListWindowAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorWindowAggregate, error) {
-	return nil, nil
+func (s *accountMonitorHandlerRepoStub) ListWindowAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorWindowAggregate, error) {
+	return s.windowAggregates, nil
 }
 
 func (s *accountMonitorHandlerRepoStub) LoadGroupScoreWeights(context.Context, int64) (service.AccountMonitorScoreWeights, error) {
@@ -133,6 +136,48 @@ func TestAccountMonitorHandlerDefaultsAndValidatesWindowRange(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorHandlerReturnsCompleteWindowTimelineAndGlobalRanking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 0.5
+	repo := &accountMonitorHandlerRepoStub{
+		latest: map[int64]service.AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		timelines: map[int64][]service.AccountMonitorTimelinePoint{7: {
+			{Status: "success", CheckedAt: now.Add(-time.Minute)},
+			{Status: "failed", CheckedAt: now},
+		}},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {
+			RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: &rate, LatencyP95MS: &rate, LastObservedAt: &now,
+		}},
+	}
+	accounts := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{
+		ID: 7, Name: "handler-account", Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate,
+	}}}
+	h := NewAccountMonitorHandler(service.NewAccountMonitorService(repo, accounts, nil, nil, nil), nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Accounts []struct {
+				Timeline     []service.AccountMonitorTimelinePoint `json:"timeline"`
+				QualityScore *float64                              `json:"quality_score"`
+				GroupRank    *int                                  `json:"group_rank"`
+			} `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Accounts) != 1 || len(payload.Data.Accounts[0].Timeline) != 2 || payload.Data.Accounts[0].Timeline[1].Status != "failed" || payload.Data.Accounts[0].QualityScore == nil || payload.Data.Accounts[0].GroupRank == nil || *payload.Data.Accounts[0].GroupRank != 1 {
+		t.Fatalf("window payload missing full account monitor fields: %s", res.Body.String())
+	}
+}
+
 type accountMonitorHandlerAccountRepoStub struct {
 	service.AccountRepository
 	accounts []*service.Account
@@ -141,8 +186,14 @@ type accountMonitorHandlerAccountRepoStub struct {
 	gotIDs   []int64
 }
 
-func (*accountMonitorHandlerAccountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]service.Account, error) {
-	return nil, nil
+func (s *accountMonitorHandlerAccountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]service.Account, error) {
+	accounts := make([]service.Account, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		if account != nil {
+			accounts = append(accounts, *account)
+		}
+	}
+	return accounts, nil
 }
 
 func (s *accountMonitorHandlerAccountRepoStub) GetByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {

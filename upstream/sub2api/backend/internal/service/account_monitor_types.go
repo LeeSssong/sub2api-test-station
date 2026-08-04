@@ -97,10 +97,7 @@ type AccountMonitorQualityEvidence struct {
 
 type AccountMonitorGroupAccount struct {
 	AccountMonitorAccount
-	QualityScore *float64                      `json:"quality_score,omitempty"`
-	GroupRank    *int                          `json:"group_rank,omitempty"`
-	Eligible     bool                          `json:"eligible"`
-	Evidence     AccountMonitorQualityEvidence `json:"evidence"`
+	Evidence AccountMonitorQualityEvidence `json:"evidence"`
 }
 
 type AccountMonitorSettings struct {
@@ -217,6 +214,9 @@ type AccountMonitorAccount struct {
 	EffectiveMultiplier        *float64                      `json:"effective_multiplier,omitempty"`
 	CostMode                   string                        `json:"cost_mode,omitempty"`
 	CostScore                  float64                       `json:"cost_score"`
+	QualityScore               *float64                      `json:"quality_score,omitempty"`
+	GroupRank                  *int                          `json:"group_rank,omitempty"`
+	Eligible                   bool                          `json:"eligible"`
 	TodayStats                 *WindowStats                  `json:"today_stats,omitempty"`
 	UsageWindows               []AccountMonitorUsageWindow   `json:"usage_windows,omitempty"`
 	Latest                     *AccountMonitorLatest         `json:"latest,omitempty"`

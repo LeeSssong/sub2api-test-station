@@ -78,7 +78,8 @@ describe('AccountMonitorFilters', () => {
     })
 
     const options = wrapper.get('[data-test="status-filter"]').findAll('option').map((option) => ({ value: option.attributes('value'), text: option.text() }))
-    expect(options.slice(1)).toEqual([
+    expect(options).toEqual([
+      { value: '', text: '全部状态' },
       { value: 'available', text: '可用' },
       { value: 'unavailable', text: '不可用' },
       { value: 'cost_ineligible', text: '成本不合格' },

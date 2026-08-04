@@ -41,6 +41,8 @@ type accountMonitorRepoStub struct {
 	groupAggregatesErr error
 	latest             map[int64]AccountMonitorLatest
 	timelines          map[int64][]AccountMonitorTimelinePoint
+	timelineIDs        []int64
+	timelineLimit      int
 	aggregateIDs       []int64
 	probeSince         time.Time
 	probeUntil         time.Time
@@ -95,7 +97,9 @@ func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64
 	return s.latest, nil
 }
 
-func (s *accountMonitorRepoStub) ListTimelines(context.Context, []int64, int) (map[int64][]AccountMonitorTimelinePoint, error) {
+func (s *accountMonitorRepoStub) ListTimelines(_ context.Context, ids []int64, limit int) (map[int64][]AccountMonitorTimelinePoint, error) {
+	s.timelineIDs = append([]int64(nil), ids...)
+	s.timelineLimit = limit
 	return s.timelines, nil
 }
 
@@ -1103,6 +1107,53 @@ func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.
 	}
 	if row.ExpiresAt == nil || !row.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expires_at = %#v, want %s", row.ExpiresAt, expiresAt)
+	}
+}
+
+func TestAccountMonitorListWindowProjectsRecentTimelineAndGlobalRankings(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 10, Name: "global-best", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 20, Name: "global-next", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 30, Name: "global-unranked", Status: StatusDisabled, Schedulable: false, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			10: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			10: {Status: "success", CheckedAt: now},
+			20: {Status: "success", CheckedAt: now},
+		},
+		timelines: map[int64][]AccountMonitorTimelinePoint{
+			10: {{Status: "success", CheckedAt: now.Add(-time.Minute)}, {Status: "failed", CheckedAt: now}},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slicesEqual(repo.timelineIDs, []int64{10, 20, 30}) || repo.timelineLimit != AccountMonitorTimelineLimit {
+		t.Fatalf("timeline query = ids %v limit %d, want ids [10 20 30] limit %d", repo.timelineIDs, repo.timelineLimit, AccountMonitorTimelineLimit)
+	}
+	if len(page.Accounts[0].Timeline) != 2 || page.Accounts[0].Timeline[1].Status != "failed" {
+		t.Fatalf("timeline projection = %#v, want latest native points", page.Accounts[0].Timeline)
+	}
+
+	payload, err := json.Marshal(page.Accounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0]["quality_score"] == nil || rows[0]["group_rank"] != float64(1) || rows[1]["group_rank"] != float64(2) || rows[2]["group_rank"] != nil {
+		t.Fatalf("global score/rank projection = %#v, want stable rankings 1, 2, nil", rows)
 	}
 }
 

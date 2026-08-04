@@ -266,6 +266,10 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor latest: %w", err)
 	}
+	timelines, err := s.repo.ListTimelines(ctx, ids, AccountMonitorTimelineLimit)
+	if err != nil {
+		return AccountMonitorPage{}, fmt.Errorf("list account monitor timelines: %w", err)
+	}
 	groups, err := s.repo.ListGroups(ctx)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor groups: %w", err)
@@ -287,7 +291,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
-			Timeline: []AccountMonitorTimelinePoint{},
+			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
 		cost := accountMonitorWindowCost(account, since, observedAt, window.BaseCost)
 		row.CostMode = cost.Mode
@@ -309,12 +313,82 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		rows = append(rows, row)
 	}
 
+	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, latest, settings, observedAt)
 	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, latest, settings, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
 		Health: summarizeAccountMonitorHealth(rows), Groups: groups, Accounts: rows,
 	}}, nil
+}
+
+func (s *AccountMonitorService) projectGlobalWindowQuality(
+	accounts []Account,
+	rows []AccountMonitorAccount,
+	windows map[int64]AccountMonitorWindowAggregate,
+	probes map[int64]AccountMonitorAggregate,
+	latest map[int64]AccountMonitorLatest,
+	settings AccountMonitorSettings,
+	now time.Time,
+) []AccountMonitorAccount {
+	accountsByID := make(map[int64]Account, len(accounts))
+	for _, account := range accounts {
+		accountsByID[account.ID] = account
+	}
+	for i := range rows {
+		row := &rows[i]
+		account, ok := accountsByID[row.AccountID]
+		if !ok {
+			continue
+		}
+		evidence := accountMonitorWindowEvidence(windows[row.AccountID], probes[row.AccountID], latest[row.AccountID], settings, now)
+		row.SampleCount = evidence.SampleCount
+		row.SuccessSampleCount = evidence.SuccessSampleCount
+		row.TTFTSampleCount = evidence.TTFTSampleCount
+		row.LatencySampleCount = evidence.LatencySampleCount
+		row.SuccessRate = evidence.SuccessRate
+		row.TTFTP50MS = evidence.TTFTP50MS
+		row.LatencyP95MS = evidence.LatencyP95MS
+		if !evidence.ObservedAt.IsZero() {
+			checkedAt := evidence.ObservedAt.UTC()
+			row.CheckedAt = &checkedAt
+		}
+		row.ManagementState = accountMonitorManagementState(account, now)
+		row.ServiceState = accountMonitorServiceState(*row, row.ManagementState)
+		row.GroupEligibility = accountMonitorEligibilityNotApplicable
+		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
+		row.Eligible = row.ManagementState == accountMonitorManagementEnabled && row.ServiceState == accountMonitorServiceAvailable && evidence.Source != "stale"
+		if row.Eligible {
+			row.QualityScore = CalculateAccountMonitorWindowQualityScore(1, row.EffectiveMultiplier, DefaultAccountMonitorScoreWeights, evidence)
+		}
+	}
+	sort.SliceStable(rows, func(left, right int) bool {
+		if rows[left].Eligible != rows[right].Eligible {
+			return rows[left].Eligible
+		}
+		if rows[left].Eligible {
+			leftScore, rightScore := 0.0, 0.0
+			if rows[left].QualityScore != nil {
+				leftScore = *rows[left].QualityScore
+			}
+			if rows[right].QualityScore != nil {
+				rightScore = *rows[right].QualityScore
+			}
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+		}
+		return rows[left].AccountID < rows[right].AccountID
+	})
+	rank := 0
+	for i := range rows {
+		if rows[i].Eligible {
+			rank++
+			value := rank
+			rows[i].GroupRank = &value
+		}
+	}
+	return rows
 }
 
 func (s *AccountMonitorService) projectGroupWindowQuality(

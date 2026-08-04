@@ -130,7 +130,11 @@ const baseAccount = {
   effective_multiplier: 0.48,
   cost_mode: 'multiplier',
   cost_score: 15,
-  timeline: [],
+  timeline: Array.from({ length: 24 }, (_, index) => ({
+    status: index === 7 ? 'failed' : 'success',
+    checked_at: `2026-08-04T04:${String(index).padStart(2, '0')}:00Z`,
+    latency_ms: 900 + index * 10,
+  })),
   checked_at: '2026-08-04T04:20:42Z',
   stale: false,
   quality_score: 91,
@@ -195,7 +199,7 @@ function projection(range: '24h' | '7d' | '30d' = '24h') {
         ttft_sample_count: 275,
         latency_sample_count: 275,
       },
-      accounts: rankedAccounts,
+      accounts: rankedAccounts.map((item) => ({ ...item, timeline: [...item.timeline] })),
     }],
   }
 }
@@ -296,6 +300,16 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('7 天调用')
   })
 
+  it('uses API-provided global service scores and stable global rankings on the all-site tab', async () => {
+    const wrapper = mountView({ useRealCard: true })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('账号服务评分')
+    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('全站排名')
+    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
+    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('/ 3')
+  })
+
   it('retains the last complete snapshot and selected range when a range request fails', async () => {
     list.mockResolvedValueOnce(projection('24h')).mockRejectedValueOnce(new Error('range unavailable'))
     const wrapper = mountView()
@@ -341,6 +355,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
     const summaryFields = wrapper.findAll('[data-test="group-summary-field"]')
     expect(summaryFields).toHaveLength(7)
+    expect(summaryFields.every((field) => field.classes().includes('min-h-[82px]'))).toBe(true)
     expect(summaryFields.map((field) => field.attributes('data-field'))).toEqual([
       'status',
       'platform',

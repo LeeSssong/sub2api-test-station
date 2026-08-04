@@ -105,7 +105,7 @@
         <div
           v-for="field in groupSummaryFields"
           :key="field.key"
-          class="min-w-0 border-b border-r border-gray-100 px-3 py-3 last:border-r-0 xl:border-b-0 dark:border-dark-700"
+          class="min-h-[82px] min-w-0 border-b border-r border-gray-100 px-3 py-3 last:border-r-0 xl:border-b-0 dark:border-dark-700"
           data-test="group-summary-field"
           :data-field="field.key"
         >
@@ -135,6 +135,7 @@
           :account="account"
           :concurrency="concurrencyByID[account.account_id] ?? null"
           :ranked-account-count="rankedAccountCount"
+          :ranking-scope="activeGroup ? 'group' : 'global'"
           :running="runningAll || runningAccountIDs.includes(account.account_id)"
           :statistics-cutoff="projection?.observed_at ?? null"
           :selected-range="activeRange"

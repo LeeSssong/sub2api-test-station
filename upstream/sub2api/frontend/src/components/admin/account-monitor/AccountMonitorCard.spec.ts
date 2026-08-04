@@ -112,8 +112,8 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
     expect(wrapper.get('[data-test="priority-control"]').text()).toContain('1')
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
-    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1,018 ms')
-    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1,962 ms')
+    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
+    expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1962 ms')
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
 
@@ -130,8 +130,10 @@ describe('AccountMonitorCard', () => {
     })
 
     const card = wrapper.get('[data-test="monitor-card"]')
-    expect(card.classes()).toEqual(expect.arrayContaining(['border-l-4', 'border-emerald-500']))
-    expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toContain('bg-emerald-50')
+    expect(card.classes()).toEqual(expect.arrayContaining(['border-l-4', 'border-emerald-500', 'rounded-lg']))
+    expect(card.classes()).not.toContain('card')
+    expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toEqual(expect.arrayContaining(['bg-emerald-50', 'px-[18px]', 'py-4']))
+    expect(wrapper.get('[data-test="score-metric"]').classes()).toEqual(expect.arrayContaining(['min-h-[121px]', 'p-[14px]']))
     expect(wrapper.findAll('.service-metric')).toHaveLength(5)
     expect(wrapper.get('[data-test="success-rate-metric"]').classes()).toContain('bg-emerald-50')
     expect(wrapper.get('[data-test="ttft-metric"]').classes()).toContain('bg-blue-50')
@@ -151,6 +153,25 @@ describe('AccountMonitorCard', () => {
     for (const label of ['营收', '利润', '经营', '账务', '对账', '流水', '历史', '异常', '调整']) {
       expect(wrapper.text()).not.toContain(label)
     }
+  })
+
+  it('keeps metric milliseconds on one line, wraps a mobile identity safely, and stacks the short cutoff footer', () => {
+    const wrapper = mountCard({
+      account: { ...account, name: 'a-very-long-account-name-that-must-not-be-truncated@example.com' },
+      statisticsCutoff: '2026-08-04T04:20:42Z',
+    })
+
+    expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
+    expect(wrapper.get('[data-test="ttft-metric-value"]').classes()).toContain('whitespace-nowrap')
+    expect(wrapper.get('[data-test="latency-metric-value"]').classes()).toContain('whitespace-nowrap')
+    const identity = wrapper.get('[data-test="account-identity"]')
+    expect(identity.classes()).toContain('break-words')
+    expect(identity.classes()).not.toContain('truncate')
+    expect(identity.text()).toContain('a-very-long-account-name-that-must-not-be-truncated@example.com')
+    expect(identity.text()).toContain('#113')
+    expect(wrapper.get('[data-test="card-footer"]').text()).toContain('统计截止 12:20')
+    expect(wrapper.get('[data-test="card-footer"]').text()).not.toContain('统计截止 2026')
+    expect(wrapper.get('[data-test="card-footer"]').classes()).toContain('max-[430px]:flex-col')
   })
 
   it('keeps the call disclosure aligned with the selected window instead of optional account range or probe totals', () => {

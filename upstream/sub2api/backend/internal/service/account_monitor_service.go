@@ -349,12 +349,9 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.SuccessRate = evidence.SuccessRate
 		row.TTFTP50MS = evidence.TTFTP50MS
 		row.LatencyP95MS = evidence.LatencyP95MS
-		if !evidence.ObservedAt.IsZero() {
-			checkedAt := evidence.ObservedAt.UTC()
-			row.CheckedAt = &checkedAt
-		}
+		row.CheckedAt = accountMonitorWindowCheckedAt(latest[row.AccountID], evidence)
 		row.ManagementState = accountMonitorManagementState(account, now)
-		row.ServiceState = accountMonitorServiceState(*row, row.ManagementState)
+		row.ServiceState = accountMonitorWindowServiceState(*row, evidence, row.ManagementState)
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 		row.Eligible = row.ManagementState == accountMonitorManagementEnabled && row.ServiceState == accountMonitorServiceAvailable && evidence.Source != "stale"
@@ -426,12 +423,9 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.SuccessRate = evidence.SuccessRate
 			row.TTFTP50MS = evidence.TTFTP50MS
 			row.LatencyP95MS = evidence.LatencyP95MS
-			if !evidence.ObservedAt.IsZero() {
-				checkedAt := evidence.ObservedAt.UTC()
-				row.CheckedAt = &checkedAt
-			}
+			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
-			row.ServiceState = accountMonitorServiceState(row.AccountMonitorAccount, row.ManagementState)
+			row.ServiceState = accountMonitorWindowServiceState(row.AccountMonitorAccount, evidence, row.ManagementState)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 			cost := accountMonitorWindowCost(account, windowStart, now, window.BaseCost)
@@ -807,6 +801,44 @@ func accountMonitorServiceState(row AccountMonitorAccount, managementState strin
 	return accountMonitorServiceUnavailable
 }
 
+func accountMonitorWindowServiceState(
+	row AccountMonitorAccount,
+	evidence AccountMonitorQualityEvidence,
+	managementState string,
+) string {
+	if managementState == accountMonitorManagementPaused {
+		return accountMonitorServiceNotMonitored
+	}
+	if row.Stale || row.Latest == nil {
+		return accountMonitorServicePending
+	}
+	if evidence.Source == "stale" {
+		return accountMonitorServicePending
+	}
+	if evidence.Source == "real_requests" {
+		if evidence.SuccessSampleCount > 0 {
+			return accountMonitorServiceAvailable
+		}
+		return accountMonitorServiceUnavailable
+	}
+	if row.LatestStatus == "success" {
+		return accountMonitorServiceAvailable
+	}
+	return accountMonitorServiceUnavailable
+}
+
+func accountMonitorWindowCheckedAt(latest AccountMonitorLatest, evidence AccountMonitorQualityEvidence) *time.Time {
+	if !latest.CheckedAt.IsZero() {
+		checkedAt := latest.CheckedAt.UTC()
+		return &checkedAt
+	}
+	if !evidence.ObservedAt.IsZero() {
+		checkedAt := evidence.ObservedAt.UTC()
+		return &checkedAt
+	}
+	return nil
+}
+
 func accountMonitorGroupServiceState(
 	row AccountMonitorGroupAccount,
 	evidence AccountMonitorQualityEvidence,
@@ -1026,7 +1058,7 @@ func accountMonitorWindowEvidence(
 ) AccountMonitorQualityEvidence {
 	if window.RequestCount >= AccountMonitorGroupEvidenceMinSamples {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: accountMonitorWindowSuccessSamples(window),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
 			ObservedAt: accountMonitorWindowObservedAt(window, latest),
@@ -1046,13 +1078,29 @@ func accountMonitorWindowEvidence(
 	}
 	if window.RequestCount > 0 {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: accountMonitorWindowSuccessSamples(window),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
 			ObservedAt: accountMonitorWindowObservedAt(window, latest),
 		}
 	}
 	return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: accountMonitorProbeObservedAt(probe, latest)}
+}
+
+func accountMonitorWindowSuccessSamples(window AccountMonitorWindowAggregate) int {
+	successCount := window.SuccessCount
+	// Keep compatibility with repository adapters that only populate the
+	// aggregate rate while preserving the explicit zero-success contract.
+	if successCount == 0 && window.RequestCount > 0 && window.SuccessRate > 0 {
+		successCount = int64(math.Round(float64(window.RequestCount) * window.SuccessRate))
+	}
+	if successCount < 0 {
+		return 0
+	}
+	if successCount > window.RequestCount {
+		return int(window.RequestCount)
+	}
+	return int(successCount)
 }
 
 func accountMonitorWindowObservedAt(window AccountMonitorWindowAggregate, latest AccountMonitorLatest) time.Time {

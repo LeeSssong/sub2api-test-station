@@ -596,6 +596,42 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.find('[data-account-id="10"] [data-test="card-delayed"]').exists()).toBe(true)
   })
 
+  it('keeps the old card snapshot and reports failure when a completed single probe cannot reload the current range', async () => {
+    list
+      .mockResolvedValueOnce(projection('24h'))
+      .mockRejectedValueOnce(new Error('monitor reload unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('refresh', 10)
+    await flushPromises()
+
+    expect(runOne).toHaveBeenCalledWith(10)
+    expect(list).toHaveBeenLastCalledWith('24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('探测已完成，但最新卡片加载失败，请重试')
+  })
+
+  it('reports explicit success only after a single probe and current-range reload both complete', async () => {
+    const refreshed = projection('24h')
+    refreshed.accounts = refreshed.accounts.map((item) => item.account_id === 10
+      ? { ...item, name: 'Rank one refreshed', checked_at: '2026-08-04T04:30:00Z' }
+      : item)
+    list
+      .mockResolvedValueOnce(projection('24h'))
+      .mockResolvedValueOnce(refreshed)
+    const wrapper = mountView()
+    await flushPromises()
+
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('refresh', 10)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Rank one refreshed')
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('账号探测与监控卡片已刷新')
+  })
+
   it('settles card save completions and reloads the current successful range after each save', async () => {
     const wrapper = mountView()
     await flushPromises()

@@ -301,7 +301,7 @@ function selectGroup(groupID: number | null, event: MouseEvent): void {
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
-async function load(range: AccountMonitorRange): Promise<boolean> {
+async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
   abortController?.abort()
   const controller = new AbortController()
   const generation = ++loadGeneration
@@ -324,7 +324,7 @@ async function load(range: AccountMonitorRange): Promise<boolean> {
   } catch (reason: unknown) {
     if (controller.signal.aborted || generation !== loadGeneration) return false
     rangeError.value = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError'))
-    appStore.showError(rangeError.value)
+    if (options.notifyError !== false) appStore.showError(rangeError.value)
     return false
   } finally {
     if (generation === loadGeneration) {
@@ -384,7 +384,11 @@ async function handleRunAll() {
   runningAll.value = true
   try {
     await adminAPI.accountMonitor.runAll()
-    await load(activeRange.value)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      appStore.showError('全部探测已完成，但最新卡片加载失败，请重试')
+      return
+    }
     appStore.showSuccess(t('admin.accountMonitor.messages.refreshAllSuccess'))
   } catch (reason: unknown) {
     appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
@@ -398,7 +402,12 @@ async function handleRunOne(accountID: number) {
   runningAccountIDs.value = [...runningAccountIDs.value, accountID]
   try {
     await adminAPI.accountMonitor.runOne(accountID)
-    await load(activeRange.value)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      appStore.showError('探测已完成，但最新卡片加载失败，请重试')
+      return
+    }
+    appStore.showSuccess('账号探测与监控卡片已刷新')
   } catch (reason: unknown) {
     appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
   } finally {

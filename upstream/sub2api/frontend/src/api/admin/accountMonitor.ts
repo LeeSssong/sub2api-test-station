@@ -244,6 +244,8 @@ export async function runAll(): Promise<AccountMonitorRunResponse> {
 export async function runOne(accountID: number): Promise<AccountMonitorRunOneResponse> {
   const { data } = await apiClient.post<AccountMonitorRunOneResponse>(
     `/admin/account-monitors/${accountID}/run`,
+    undefined,
+    { timeout: 240_000 },
   )
   return data
 }

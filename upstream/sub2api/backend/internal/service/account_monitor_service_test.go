@@ -1295,6 +1295,107 @@ func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *tes
 	}
 }
 
+func TestAccountMonitorWindowStateUsesRealRequestsAndKeepsLatestProbeTimeSeparate(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-5 * time.Minute)
+	latestCheckedAt := now.Add(-time.Minute)
+	rate := 0.5
+	accounts := []Account{
+		{ID: 118, Name: "real-success-78", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 119, Name: "real-success-742", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 120, Name: "real-all-failed", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 121, Name: "probe-fallback", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			118: {RequestCount: 78, SuccessCount: 78, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			119: {RequestCount: 742, SuccessCount: 742, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			120: {RequestCount: 3, SuccessCount: 0, ErrorCount: 3, SuccessRate: 0, LastObservedAt: &observedAt},
+			121: {RequestCount: 2, SuccessCount: 2, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+		},
+		aggregates: map[int64]AccountMonitorAggregate{
+			121: {SampleCount: 4, SuccessCount: 4, SuccessSampleCount: 4, SuccessRate: 1, LastCheckedAt: &latestCheckedAt},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			118: {Status: "failed", CheckedAt: latestCheckedAt},
+			119: {Status: "failed", CheckedAt: latestCheckedAt},
+			120: {Status: "success", CheckedAt: latestCheckedAt},
+			121: {Status: "success", CheckedAt: latestCheckedAt},
+		},
+		timelines: map[int64][]AccountMonitorTimelinePoint{
+			118: {{Status: "failed", CheckedAt: latestCheckedAt}},
+			119: {{Status: "failed", CheckedAt: latestCheckedAt}},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	globalByID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		globalByID[row.AccountID] = row
+	}
+	for _, accountID := range []int64{118, 119} {
+		row := globalByID[accountID]
+		if row.LatestStatus != "failed" || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("global real-success account %d = %#v, want failed probe fact but available and ranked", accountID, row)
+		}
+		if row.CheckedAt == nil || !row.CheckedAt.Equal(latestCheckedAt) {
+			t.Fatalf("global checked_at for account %d = %v, want latest probe time %s", accountID, row.CheckedAt, latestCheckedAt)
+		}
+	}
+	if row := globalByID[120]; row.LatestStatus != "success" || row.ServiceState != accountMonitorServiceUnavailable || row.MonitorBucket != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("global all-failed real-request account = %#v, want unavailable despite successful latest probe", row)
+	}
+	if row := globalByID[121]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("global probe fallback account = %#v, want existing latest-probe success behavior", row)
+	}
+
+	groupByID := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
+	for _, row := range page.Groups[0].Accounts {
+		groupByID[row.AccountID] = row
+	}
+	for _, accountID := range []int64{118, 119} {
+		row := groupByID[accountID]
+		if row.LatestStatus != "failed" || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("group real-success account %d = %#v, want failed probe fact but available and ranked", accountID, row)
+		}
+		if row.CheckedAt == nil || !row.CheckedAt.Equal(latestCheckedAt) || !row.Evidence.ObservedAt.Equal(observedAt) {
+			t.Fatalf("group timestamps for account %d = checked %v evidence %s, want latest %s and real-request %s", accountID, row.CheckedAt, row.Evidence.ObservedAt, latestCheckedAt, observedAt)
+		}
+		if len(row.Timeline) != 1 || row.Timeline[0].Status != "failed" {
+			t.Fatalf("group timeline for account %d = %#v, want failed probe fact preserved", accountID, row.Timeline)
+		}
+	}
+	if row := groupByID[120]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("group all-failed real-request account = %#v, want unavailable and unranked", row)
+	}
+	if row := groupByID[121]; row.Evidence.Source != "monitor_probe" || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("group probe fallback account = %#v, want monitor_probe and available", row)
+	}
+}
+
+func TestAccountMonitorWindowServiceStateKeepsProbeGateAndStalePending(t *testing.T) {
+	latestCheckedAt := time.Now().UTC()
+	base := AccountMonitorAccount{Latest: &AccountMonitorLatest{Status: "failed", CheckedAt: latestCheckedAt}, LatestStatus: "failed"}
+	probeSuccess := AccountMonitorQualityEvidence{Source: "monitor_probe", SuccessSampleCount: 4, SampleCount: 4}
+	if got := accountMonitorWindowServiceState(base, probeSuccess, accountMonitorManagementEnabled); got != accountMonitorServiceUnavailable {
+		t.Fatalf("failed latest probe with probe evidence = %q, want unavailable", got)
+	}
+	base.LatestStatus = "success"
+	if got := accountMonitorWindowServiceState(base, probeSuccess, accountMonitorManagementEnabled); got != accountMonitorServiceAvailable {
+		t.Fatalf("successful latest probe with probe evidence = %q, want available", got)
+	}
+	base.Stale = true
+	if got := accountMonitorWindowServiceState(base, AccountMonitorQualityEvidence{Source: "real_requests", SuccessSampleCount: 3}, accountMonitorManagementEnabled); got != accountMonitorServicePending {
+		t.Fatalf("stale real-request evidence = %q, want pending", got)
+	}
+}
+
 func TestSummarizeHealthSamplesWeightsSuccessRateByRequestSamples(t *testing.T) {
 	summary := summarizeHealthSamples([]accountMonitorHealthSample{
 		{serviceState: accountMonitorServiceAvailable, sampleCount: 100, successSampleCount: 1, successRate: 0.01},

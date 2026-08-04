@@ -168,7 +168,7 @@ export interface AccountMonitorGroup {
 
 export interface AccountMonitorProjection {
   schema_version: number
-  range?: AccountMonitorRange
+  range: AccountMonitorRange
   observed_at: string
   stale: boolean
   settings: AccountMonitorSettings

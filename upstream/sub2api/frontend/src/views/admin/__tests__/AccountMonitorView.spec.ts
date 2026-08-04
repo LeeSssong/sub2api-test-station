@@ -300,6 +300,25 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('range unavailable')
   })
 
+  it('retains the last complete snapshot when a response range does not match the request', async () => {
+    list
+      .mockResolvedValueOnce(projection('24h'))
+      .mockResolvedValueOnce({
+        ...projection('24h'),
+        accounts: [account(99, 'Mismatched response', 1)],
+      })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await selectRange(wrapper, '7d')
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).not.toContain('Mismatched response')
+    expect(wrapper.get('[data-test="range-24h"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-test="range-error"]').text()).toContain('7d')
+    expect(wrapper.get('[data-test="range-error"]').text()).toContain('24h')
+  })
+
   it('renders group tabs, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
     const wrapper = mountView()
     await flushPromises()

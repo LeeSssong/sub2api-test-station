@@ -301,6 +301,9 @@ async function load(range: AccountMonitorRange): Promise<boolean> {
   try {
     const result = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
+    if (result.range !== range) {
+      throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
+    }
     projection.value = result
     activeRange.value = range
     if (activeGroupId.value !== null && !(result.groups ?? []).some((group) => group.id === activeGroupId.value)) {

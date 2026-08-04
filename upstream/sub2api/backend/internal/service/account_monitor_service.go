@@ -747,16 +747,12 @@ func summarizeHealthSamples(rows []accountMonitorHealthSample) AccountMonitorHea
 		default:
 			summary.UnavailableAccounts++
 		}
-		successCount := row.successSampleCount
-		if successCount == 0 {
-			successCount = row.sampleCount
-		}
-		weight := float64(successCount)
+		weight := float64(row.sampleCount)
 		if weight <= 0 {
 			continue
 		}
 		samples += weight
-		summary.SuccessSampleCount += successCount
+		summary.SuccessSampleCount += row.successSampleCount
 		successes += row.successRate * weight
 		if row.ttftP50MS != nil {
 			count := row.ttftSampleCount

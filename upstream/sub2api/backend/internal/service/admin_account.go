@@ -457,6 +457,12 @@ func normalizeGrokMediaEligibilityUpdateExtra(account *Account, input *UpdateAcc
 }
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	priority := input.Priority
+	if priority == 0 {
+		priority = 50
+	} else if priority < 1 {
+		return nil, errors.New("priority must be >= 1")
+	}
 	policy, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
 	if err != nil {
 		return nil, err
@@ -477,7 +483,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Extra:       accountExtra,
 		ProxyID:     input.ProxyID,
 		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
-		Priority:    input.Priority,
+		Priority:    priority,
 		Status:      StatusActive,
 		Schedulable: true,
 	}

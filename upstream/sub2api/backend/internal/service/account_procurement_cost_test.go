@@ -100,3 +100,48 @@ func TestUpdateAccountRejectsPriorityBelowOne(t *testing.T) {
 		require.Equal(t, initialPriority, repo.account.Priority)
 	}
 }
+
+func TestCreateAccountRejectsPriorityBelowOne(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		priority int
+		want     int
+		wantErr  bool
+	}{
+		{name: "omitted default", priority: 0, want: 50},
+		{name: "negative rejected", priority: -1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &createPriorityRepoStub{}
+			svc := &adminServiceImpl{accountRepo: repo}
+			priority := tc.priority
+			created, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+				Name:                  "invalid-priority",
+				Platform:              PlatformOpenAI,
+				Type:                  AccountTypeAPIKey,
+				Priority:              priority,
+				SkipDefaultGroupBind:  true,
+				SkipMixedChannelCheck: true,
+			})
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Nil(t, created)
+				require.Nil(t, repo.created, "invalid priority must not reach persistence")
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, repo.created)
+			require.Equal(t, tc.want, repo.created.Priority)
+		})
+	}
+}
+
+type createPriorityRepoStub struct {
+	AccountRepository
+	created *Account
+}
+
+func (r *createPriorityRepoStub) Create(_ context.Context, account *Account) error {
+	r.created = account
+	return nil
+}

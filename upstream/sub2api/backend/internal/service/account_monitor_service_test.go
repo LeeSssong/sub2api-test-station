@@ -1295,6 +1295,28 @@ func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *tes
 	}
 }
 
+func TestSummarizeHealthSamplesWeightsSuccessRateByRequestSamples(t *testing.T) {
+	summary := summarizeHealthSamples([]accountMonitorHealthSample{
+		{serviceState: accountMonitorServiceAvailable, sampleCount: 100, successSampleCount: 1, successRate: 0.01},
+		{serviceState: accountMonitorServiceAvailable, sampleCount: 1, successSampleCount: 1, successRate: 1},
+	})
+	if summary.SuccessSampleCount != 2 {
+		t.Fatalf("success sample count = %d, want 2", summary.SuccessSampleCount)
+	}
+	if summary.SuccessRate < 0.019 || summary.SuccessRate > 0.020 {
+		t.Fatalf("success rate = %v, want approximately 2/101", summary.SuccessRate)
+	}
+}
+
+func TestSummarizeHealthSamplesPreservesZeroSuccessForAllFailedWindow(t *testing.T) {
+	summary := summarizeHealthSamples([]accountMonitorHealthSample{
+		{serviceState: accountMonitorServiceUnavailable, sampleCount: 4, successSampleCount: 0, successRate: 0},
+	})
+	if summary.SuccessSampleCount != 0 || summary.SuccessRate != 0 {
+		t.Fatalf("all-failed summary = %#v, want zero successful samples and rate", summary)
+	}
+}
+
 func TestAccountMonitorWindowCostKeepsNativeMultiplierWithoutWindowBaseCost(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)

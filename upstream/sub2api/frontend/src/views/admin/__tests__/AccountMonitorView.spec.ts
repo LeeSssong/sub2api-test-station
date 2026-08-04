@@ -146,13 +146,25 @@ function account(accountID: number, name: string, rank: number | null) {
   return { ...baseAccount, account_id: accountID, name, group_rank: rank }
 }
 
+function unrankedAccount(range: '24h' | '7d' | '30d') {
+  return {
+    ...account(30, `Unranked ${range}`, null),
+    status: 'disabled',
+    schedulable: false,
+    management_state: 'disabled',
+    service_state: 'not_monitored',
+    monitor_bucket: 'paused',
+    quality_score: null,
+    eligible: false,
+  }
+}
+
 function projection(range: '24h' | '7d' | '30d' = '24h') {
   const rankedAccounts = [
-    account(30, `Unranked ${range}`, null),
-    account(20, `Rank two ${range}`, 2),
-    account(11, `Rank one B ${range}`, 1),
     account(10, `Rank one A ${range}`, 1),
-    account(10, `Duplicate ${range}`, 1),
+    account(11, `Rank two ${range}`, 2),
+    account(20, `Rank three ${range}`, 3),
+    unrankedAccount(range),
   ]
   return {
     schema_version: 3,
@@ -304,10 +316,25 @@ describe('admin account monitor view V3', () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()
 
-    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('账号服务评分')
-    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('全站排名')
-    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
-    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('/ 3')
+    const cards = wrapper.findAll('[data-test="monitor-card"]')
+    expect(cards.map((card) => card.get('[data-test="account-identity"]').text())).toEqual([
+      'Rank one A 24h #10',
+      'Rank two 24h #11',
+      'Rank three 24h #20',
+      'Unranked 24h #30',
+    ])
+    expect(cards.map((card) => card.get('[data-test="score-metric"]').text())).toEqual([
+      expect.stringContaining('账号服务评分'),
+      expect.stringContaining('账号服务评分'),
+      expect.stringContaining('账号服务评分'),
+      expect.stringContaining('账号服务评分'),
+    ])
+    expect(cards.map((card) => card.get('[data-test="rank-metric"]').text())).toEqual([
+      expect.stringContaining('全站排名第 1/ 3'),
+      expect.stringContaining('全站排名第 2/ 3'),
+      expect.stringContaining('全站排名第 3/ 3'),
+      expect.stringContaining('全站排名未排名'),
+    ])
   })
 
   it('retains the last complete snapshot and selected range when a range request fails', async () => {
@@ -399,7 +426,7 @@ describe('admin account monitor view V3', () => {
     expect(getConcurrency).toHaveBeenLastCalledWith([10, 11, 20, 30])
 
     getConcurrency.mockClear()
-    await wrapper.get('input[type="search"]').setValue('Rank two')
+    await wrapper.get('input[type="search"]').setValue('Rank three')
     await flushPromises()
     expect(getConcurrency).toHaveBeenCalledTimes(1)
     expect(getConcurrency).toHaveBeenLastCalledWith([20])

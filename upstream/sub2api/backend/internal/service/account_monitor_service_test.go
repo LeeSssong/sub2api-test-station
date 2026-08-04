@@ -1110,22 +1110,25 @@ func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.
 	}
 }
 
-func TestAccountMonitorListWindowProjectsRecentTimelineAndGlobalRankings(t *testing.T) {
+func TestAccountMonitorListWindowProjectsRecentTimelineAndRanksGlobalScoreTiesByAccountID(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.5
 	accounts := []Account{
-		{ID: 10, Name: "global-best", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
-		{ID: 20, Name: "global-next", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 10, Name: "global-tie-one", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 11, Name: "global-tie-two", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 20, Name: "global-tie-three", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
 		{ID: 30, Name: "global-unranked", Status: StatusDisabled, Schedulable: false, RateMultiplier: &rate},
 	}
 	repo := &accountMonitorRepoStub{
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		windowAggregates: map[int64]AccountMonitorWindowAggregate{
 			10: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			11: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
 		},
 		latest: map[int64]AccountMonitorLatest{
 			10: {Status: "success", CheckedAt: now},
+			11: {Status: "success", CheckedAt: now},
 			20: {Status: "success", CheckedAt: now},
 		},
 		timelines: map[int64][]AccountMonitorTimelinePoint{
@@ -1137,11 +1140,34 @@ func TestAccountMonitorListWindowProjectsRecentTimelineAndGlobalRankings(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slicesEqual(repo.timelineIDs, []int64{10, 20, 30}) || repo.timelineLimit != AccountMonitorTimelineLimit {
-		t.Fatalf("timeline query = ids %v limit %d, want ids [10 20 30] limit %d", repo.timelineIDs, repo.timelineLimit, AccountMonitorTimelineLimit)
+	if !slicesEqual(repo.timelineIDs, []int64{10, 11, 20, 30}) || repo.timelineLimit != AccountMonitorTimelineLimit {
+		t.Fatalf("timeline query = ids %v limit %d, want ids [10 11 20 30] limit %d", repo.timelineIDs, repo.timelineLimit, AccountMonitorTimelineLimit)
 	}
 	if len(page.Accounts[0].Timeline) != 2 || page.Accounts[0].Timeline[1].Status != "failed" {
 		t.Fatalf("timeline projection = %#v, want latest native points", page.Accounts[0].Timeline)
+	}
+	if len(page.Accounts) != 4 {
+		t.Fatalf("top-level page accounts = %#v, want four accounts", page.Accounts)
+	}
+	if !slicesEqual([]int64{
+		page.Accounts[0].AccountID,
+		page.Accounts[1].AccountID,
+		page.Accounts[2].AccountID,
+		page.Accounts[3].AccountID,
+	}, []int64{10, 11, 20, 30}) {
+		t.Fatalf("top-level page accounts = %#v, want tied accounts ordered by account ID with unranked last", page.Accounts)
+	}
+	if page.Accounts[0].QualityScore == nil || page.Accounts[1].QualityScore == nil || page.Accounts[2].QualityScore == nil ||
+		*page.Accounts[0].QualityScore != *page.Accounts[1].QualityScore || *page.Accounts[1].QualityScore != *page.Accounts[2].QualityScore {
+		t.Fatalf("top-level quality scores = %#v, want equal scores for account IDs 10, 11, and 20", page.Accounts)
+	}
+	for index, wantRank := range []int{1, 2, 3} {
+		if page.Accounts[index].GroupRank == nil || *page.Accounts[index].GroupRank != wantRank {
+			t.Fatalf("top-level rank for account %d = %#v, want %d", page.Accounts[index].AccountID, page.Accounts[index].GroupRank, wantRank)
+		}
+	}
+	if page.Accounts[3].GroupRank != nil {
+		t.Fatalf("top-level unranked account = %#v, want nil rank", page.Accounts[3])
 	}
 
 	payload, err := json.Marshal(page.Accounts)
@@ -1152,8 +1178,8 @@ func TestAccountMonitorListWindowProjectsRecentTimelineAndGlobalRankings(t *test
 	if err := json.Unmarshal(payload, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if rows[0]["quality_score"] == nil || rows[0]["group_rank"] != float64(1) || rows[1]["group_rank"] != float64(2) || rows[2]["group_rank"] != nil {
-		t.Fatalf("global score/rank projection = %#v, want stable rankings 1, 2, nil", rows)
+	if rows[0]["quality_score"] == nil || rows[0]["group_rank"] != float64(1) || rows[1]["group_rank"] != float64(2) || rows[2]["group_rank"] != float64(3) || rows[3]["group_rank"] != nil {
+		t.Fatalf("global score/rank JSON projection = %#v, want stable rankings 1, 2, 3, nil", rows)
 	}
 }
 

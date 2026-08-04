@@ -83,4 +83,6 @@ git diff --check                                                   # PASS
 
 ## 提交
 
-- 提交 SHA：本报告随本次提交提交，最终 SHA 见 `git log`。
+- 本轮实现提交：`2d0c70be242b320cd0ecc6ed278c17ba50c72957`
+- Reviewer 修复提交：`6c7fab1b5579ca1a1ee18e835f676c3bee9f2b8c`
+- 本报告文档提交：`df854967842587c74eb94ba7a877f04a008188f7`

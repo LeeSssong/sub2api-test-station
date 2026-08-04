@@ -115,12 +115,15 @@ sudo -n env RELEASE_PRELOADED_IMAGE=true \
   --preloaded-image-id '<image-id-sha256>' \
   --source-commit '<previous-40-hex-commit>' --source-tree '<previous-40-hex-tree>' \
   --tested-tree '<previous-40-hex-tree>' \
-  --migrations-hash 176e6659b45bffbf11f5e1fce7dfbaf60906fe974553d7156fdc516231f4f5d0 \
-  --deadline-epoch "$(date -u +%s -d '+600 seconds')"
+   --migrations-hash '<previous-migrations-hash-from-preserved-partial-state>' \
+   --deadline-epoch "$(date -u +%s -d '+600 seconds')"
 ```
 
-Do not edit `RELEASE_STATE`, skip hash checks, or stop shared services during
-recovery.
+Replace the migrations placeholder only with the exact previous migration hash
+recorded in the preserved partial/state checkpoint (for this release it is
+`e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc`). Do not
+guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
+shared services during recovery.
 
 When the Caddy route file itself changes, stage it in the reviewed deploy root,
 then validate and reload the existing container atomically (never recreate it):

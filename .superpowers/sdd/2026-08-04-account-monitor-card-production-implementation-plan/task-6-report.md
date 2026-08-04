@@ -344,3 +344,59 @@ Passed: exited `0` with no output.
 - Same-viewport browser recapture and combined visual comparison remain for the coordinator's post-fix QA/re-review loop.
 - Existing pnpm metadata, Node localStorage, and stale Browserslist warnings remain; none was introduced by this change.
 - No push, deployment, production access, or project-completion update was performed.
+
+---
+
+## Task 6 final pointer-focus correction — 2026-08-04
+
+- status: READY_FOR-REVIEW
+- implementation/test commit SHA: `8bfd0df044eb4dab8128095011607187a3398479`
+- API / backend / cards / filters / QA harness / prototypes / project progress / push / deploy / production access: 未修改或执行。
+
+### Root cause
+
+The selected Tab already used `focus:outline-none` plus keyboard-only `focus-visible` ring utilities, but CSS alone did not clear an existing focus-visible state after a pointer selection. Both Tab buttons assigned `activeGroupId` inline and had no input-modality-aware post-selection behavior, so a mouse click could leave the full teal focus rectangle visible instead of the approved underline-only selected state.
+
+### Changes
+
+1. Replaced both inline Tab assignments with one `selectGroup` handler that preserves the existing all-site and dynamic-group selection values.
+2. Pointer-originated activation (`MouseEvent.detail > 0`) blurs the clicked button after selection, removing the retained full focus ring.
+3. Keyboard-originated activation (`detail === 0`) does not blur, preserving the existing `focus-visible` keyboard indicator.
+4. Added real-`MouseEvent` View regressions for both all-site and dynamic-group Tabs. They verify pointer blur plus scope selection, keyboard focus retention plus scope selection, and retain the existing selected underline/no-unconditional-ring contract.
+
+### RED
+
+```bash
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+After correcting the test harness to construct real `MouseEvent` instances with the read-only `detail` value, the production tree failed exactly on the missing pointer behavior: `1` file failed; `1` test failed and `13` passed; the group Tab `blur` spy was called `0` times instead of once.
+
+### GREEN
+
+```bash
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: `1` file, `14/14` tests.
+
+```bash
+cd upstream/sub2api/frontend
+pnpm typecheck
+```
+
+Passed: `vue-tsc --noEmit` exited `0`.
+
+```bash
+git diff --check -- upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: exited `0` with no output.
+
+### Residual risks / concerns
+
+- Same-state browser recapture at `390x844` remains required to prove pointer selection now renders underline-only while keyboard focus remains visible.
+- Independent scoped review remains required before Task 6 can close.
+- No push, deployment, production access, or project-completion update was performed.

@@ -79,7 +79,7 @@ git diff --check                                                   # PASS
 - 复审发现 `accountMonitorWindowSuccessSamples` 会根据 `SuccessRate` 伪造成功样本，导致不一致聚合（`RequestCount=3`、`SuccessCount=0`、`SuccessRate=0.5`）错误可用；同时真实请求证据在缺少 `LastObservedAt` 时回退到了 probe 时间。
 - RED：新增 `TestAccountMonitorWindowEvidenceUsesRawSuccessCountAndRealObservedAt` 首次失败，实际得到 `SuccessSampleCount=2` 与 probe `ObservedAt`。
 - GREEN：删除倍率推算 helper；真实请求证据严格使用 raw `SuccessCount`；`accountMonitorWindowObservedAt` 仅使用 `LastObservedAt`，缺失保持零值；补齐历史 account-monitor service/handler 测试夹具成功数。
-- 修复回合代码提交 SHA：待本轮代码提交后回填（文档随后单独提交回填该 SHA）。
+- 修复回合代码提交 SHA：`6c7fab1b5579ca1a1ee18e835f676c3bee9f2b8c`（本段随后以文档提交回填；最终工作树提交可用 `git log` 查看）。
 
 ## 提交
 

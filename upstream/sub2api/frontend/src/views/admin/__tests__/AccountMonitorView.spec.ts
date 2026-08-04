@@ -401,27 +401,61 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
   })
 
-  it('uses the confirmed 12px horizontal and 22px top shell spacing below the mobile breakpoint', async () => {
+  it('preserves accepted desktop shell spacing while applying only the confirmed mobile overrides', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     const shell = wrapper.find('.min-h-full')
-    expect(shell.classes()).toEqual(expect.arrayContaining(['max-sm:px-3', 'max-sm:pt-[22px]']))
+    const shellClasses = shell.classes()
+    expect(shellClasses).toEqual(expect.arrayContaining([
+      'px-5',
+      'py-8',
+      'sm:py-9',
+      'max-sm:px-3',
+      'max-sm:pt-[22px]',
+    ]))
+    expect(shellClasses.filter((className) => className.startsWith('max-sm:px-'))).toEqual(['max-sm:px-3'])
+    expect(shellClasses.filter((className) => className.startsWith('max-sm:pt-'))).toEqual(['max-sm:pt-[22px]'])
   })
 
-  it('keeps a clicked group tab underline-only while retaining keyboard focus-visible feedback', async () => {
+  it('keeps both tab variants pointer-clean with keyboard-only focus feedback and the selected teal underline', async () => {
     const wrapper = mountView()
     await flushPromises()
 
+    const allSiteTab = wrapper.get('[data-test="all-site-tab-button"]')
     const groupTab = wrapper.get('[data-test="group-tab-3"]')
+
+    for (const tab of [allSiteTab, groupTab]) {
+      expect(tab.classes()).toEqual(expect.arrayContaining([
+        'focus:outline-none',
+        'focus-visible:ring-2',
+        'focus-visible:ring-primary-500/30',
+      ]))
+    }
+
     await groupTab.trigger('click')
 
-    expect(groupTab.attributes('aria-selected')).toBe('true')
-    expect(groupTab.classes()).toEqual(expect.arrayContaining([
-      'focus:outline-none',
-      'focus-visible:ring-2',
-      'focus-visible:ring-primary-500/30',
+    const selectedGroupTab = wrapper.get('[data-test="group-tab-3"]')
+    expect(selectedGroupTab.attributes('aria-selected')).toBe('true')
+    expect(selectedGroupTab.classes()).toEqual(expect.arrayContaining([
+      'text-primary-700',
+      'after:absolute',
+      'after:inset-x-0',
+      'after:bottom-0',
+      'after:h-0.5',
+      'after:bg-primary-600',
     ]))
+
+    for (const tab of [wrapper.get('[data-test="all-site-tab-button"]'), selectedGroupTab]) {
+      const nonKeyboardFocusRectangleClasses = tab.classes().filter((className) => {
+        const variantsAndUtility = className.split(':')
+        const utility = variantsAndUtility.at(-1) ?? ''
+        if (variantsAndUtility.includes('focus-visible')) return false
+        return utility.startsWith('ring-')
+          || (utility.startsWith('outline-') && utility !== 'outline-none')
+      })
+      expect(nonKeyboardFocusRectangleClasses).toEqual([])
+    }
   })
 
   it('polls one deduplicated batch for currently visible cards every five seconds, pauses hidden, and refreshes on return', async () => {

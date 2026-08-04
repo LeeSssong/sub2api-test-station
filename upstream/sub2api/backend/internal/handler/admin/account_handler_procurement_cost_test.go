@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -90,6 +91,51 @@ func TestAccountHandlerUpdateProcurementCostRejectsInvalidNumbersBeforeServiceWr
 
 			require.Equal(t, http.StatusBadRequest, recorder.Code)
 			require.Zero(t, stub.updateAccountCalls)
+		})
+	}
+}
+
+func TestAccountHandlerUpdateRejectsPriorityBelowOneBeforeServiceWrite(t *testing.T) {
+	for _, priority := range []int{0, -1} {
+		t.Run("priority_"+strconv.Itoa(priority), func(t *testing.T) {
+			stub := newStubAdminService()
+			router := setupAccountProcurementCostRouter(stub)
+			body, err := json.Marshal(map[string]any{"priority": priority})
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPut, "/accounts/3", bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+			require.Equal(t, "priority must be >= 1", response["message"])
+			require.Zero(t, stub.updateAccountCalls)
+		})
+	}
+}
+
+func TestAccountHandlerBulkUpdateRejectsPriorityBelowOneBeforeServiceWrite(t *testing.T) {
+	for _, priority := range []int{0, -1} {
+		t.Run("priority_"+strconv.Itoa(priority), func(t *testing.T) {
+			stub := newStubAdminService()
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			router.POST("/accounts/bulk-update", handler.BulkUpdate)
+			body, err := json.Marshal(map[string]any{"account_ids": []int64{3}, "priority": priority})
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/accounts/bulk-update", bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+			require.Equal(t, "priority must be >= 1", response["message"])
+			require.Nil(t, stub.lastBulkUpdateAccountInput)
 		})
 	}
 }

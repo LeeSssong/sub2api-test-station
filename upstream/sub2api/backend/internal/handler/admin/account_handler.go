@@ -1003,6 +1003,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
 	}
+	if req.Priority != nil && *req.Priority < 1 {
+		response.BadRequest(c, "priority must be >= 1")
+		return
+	}
 	if req.ProcurementCostCNY.Provided && req.ProcurementCostCNY.Value != nil {
 		amount := *req.ProcurementCostCNY.Value
 		if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
@@ -2000,6 +2004,10 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
+		return
+	}
+	if req.Priority != nil && *req.Priority < 1 {
+		response.BadRequest(c, "priority must be >= 1")
 		return
 	}
 	if len(req.AccountIDs) == 0 && req.Filters == nil {

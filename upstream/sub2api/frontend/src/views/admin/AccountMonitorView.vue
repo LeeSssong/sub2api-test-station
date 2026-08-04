@@ -232,6 +232,7 @@ function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccou
 
 const allAccounts = computed(() => uniqueAccounts(projection.value?.accounts ?? []))
 const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((left, right) => {
+  if (left.rate_multiplier !== right.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
   if (left.native_order !== right.native_order) return left.native_order - right.native_order
   return left.id - right.id
 }))

@@ -1228,8 +1228,17 @@ func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T
 		t.Fatal(err)
 	}
 	rows := page.Groups[0].Accounts
-	if len(rows) != 2 || !rows[0].Eligible || rows[0].CostScore != 0 || rows[0].GroupRank == nil || *rows[0].GroupRank != 1 {
-		t.Fatalf("cost-invalid account must remain eligible and rankable: %#v", rows)
+	if len(rows) != 2 {
+		t.Fatalf("group rows = %#v, want both accounts", rows)
+	}
+	byID := map[int64]AccountMonitorGroupAccount{rows[0].AccountID: rows[0], rows[1].AccountID: rows[1]}
+	missing := byID[9]
+	priced := byID[10]
+	if !missing.Eligible || missing.CostScore != 0 || missing.EffectiveMultiplier != nil || missing.GroupRank == nil {
+		t.Fatalf("cost-invalid account must remain eligible and rankable without cost evidence: %#v", missing)
+	}
+	if !priced.Eligible || priced.CostScore <= 0 || priced.GroupRank == nil || *priced.GroupRank != 1 {
+		t.Fatalf("priced account should receive multiplier cost score and rank first: %#v", priced)
 	}
 }
 

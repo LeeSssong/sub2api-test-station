@@ -303,6 +303,27 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 30d')
   })
 
+  it('orders native group tabs by multiplier descending, then native order and id', async () => {
+    list.mockResolvedValueOnce({
+      ...projection('24h'),
+      groups: [
+        { ...projection('24h').groups[0], id: 30, name: 'Low multiplier', rate_multiplier: 0.8, native_order: 0 },
+        { ...projection('24h').groups[0], id: 20, name: 'Equal later', rate_multiplier: 1.2, native_order: 20 },
+        { ...projection('24h').groups[0], id: 10, name: 'High multiplier', rate_multiplier: 1.5, native_order: 99 },
+        { ...projection('24h').groups[0], id: 15, name: 'Equal earlier', rate_multiplier: 1.2, native_order: 10 },
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test^="group-tab-"]').map((tab) => tab.text())).toEqual([
+      'High multiplier 4',
+      'Equal earlier 4',
+      'Equal later 4',
+      'Low multiplier 4',
+    ])
+  })
+
   it('passes the committed selected range to real cards for their call disclosure', async () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()

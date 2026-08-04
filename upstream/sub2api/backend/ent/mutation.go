@@ -2282,60 +2282,63 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	deleted_at                  *time.Time
-	name                        *string
-	notes                       *string
-	platform                    *string
-	_type                       *string
-	credentials                 *map[string]interface{}
-	extra                       *map[string]interface{}
-	proxy_fallback_origin_id    *int64
-	addproxy_fallback_origin_id *int64
-	concurrency                 *int
-	addconcurrency              *int
-	load_factor                 *int
-	addload_factor              *int
-	priority                    *int
-	addpriority                 *int
-	rate_multiplier             *float64
-	addrate_multiplier          *float64
-	status                      *string
-	error_message               *string
-	last_used_at                *time.Time
-	expires_at                  *time.Time
-	auto_pause_on_expired       *bool
-	schedulable                 *bool
-	rate_limited_at             *time.Time
-	rate_limit_reset_at         *time.Time
-	overload_until              *time.Time
-	temp_unschedulable_until    *time.Time
-	temp_unschedulable_reason   *string
-	session_window_start        *time.Time
-	session_window_end          *time.Time
-	session_window_status       *string
-	quota_dimension             *account.QuotaDimension
-	clearedFields               map[string]struct{}
-	groups                      map[int64]struct{}
-	removedgroups               map[int64]struct{}
-	clearedgroups               bool
-	proxy                       *int64
-	clearedproxy                bool
-	parent                      *int64
-	clearedparent               bool
-	children                    map[int64]struct{}
-	removedchildren             map[int64]struct{}
-	clearedchildren             bool
-	usage_logs                  map[int64]struct{}
-	removedusage_logs           map[int64]struct{}
-	clearedusage_logs           bool
-	done                        bool
-	oldValue                    func(context.Context) (*Account, error)
-	predicates                  []predicate.Account
+	op                            Op
+	typ                           string
+	id                            *int64
+	created_at                    *time.Time
+	updated_at                    *time.Time
+	deleted_at                    *time.Time
+	name                          *string
+	notes                         *string
+	platform                      *string
+	_type                         *string
+	credentials                   *map[string]interface{}
+	extra                         *map[string]interface{}
+	proxy_fallback_origin_id      *int64
+	addproxy_fallback_origin_id   *int64
+	concurrency                   *int
+	addconcurrency                *int
+	load_factor                   *int
+	addload_factor                *int
+	priority                      *int
+	addpriority                   *int
+	rate_multiplier               *float64
+	addrate_multiplier            *float64
+	procurement_cost_cny          *float64
+	addprocurement_cost_cny       *float64
+	procurement_cost_effective_at *time.Time
+	status                        *string
+	error_message                 *string
+	last_used_at                  *time.Time
+	expires_at                    *time.Time
+	auto_pause_on_expired         *bool
+	schedulable                   *bool
+	rate_limited_at               *time.Time
+	rate_limit_reset_at           *time.Time
+	overload_until                *time.Time
+	temp_unschedulable_until      *time.Time
+	temp_unschedulable_reason     *string
+	session_window_start          *time.Time
+	session_window_end            *time.Time
+	session_window_status         *string
+	quota_dimension               *account.QuotaDimension
+	clearedFields                 map[string]struct{}
+	groups                        map[int64]struct{}
+	removedgroups                 map[int64]struct{}
+	clearedgroups                 bool
+	proxy                         *int64
+	clearedproxy                  bool
+	parent                        *int64
+	clearedparent                 bool
+	children                      map[int64]struct{}
+	removedchildren               map[int64]struct{}
+	clearedchildren               bool
+	usage_logs                    map[int64]struct{}
+	removedusage_logs             map[int64]struct{}
+	clearedusage_logs             bool
+	done                          bool
+	oldValue                      func(context.Context) (*Account, error)
+	predicates                    []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3141,6 +3144,125 @@ func (m *AccountMutation) AddedRateMultiplier() (r float64, exists bool) {
 func (m *AccountMutation) ResetRateMultiplier() {
 	m.rate_multiplier = nil
 	m.addrate_multiplier = nil
+}
+
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (m *AccountMutation) SetProcurementCostCny(f float64) {
+	m.procurement_cost_cny = &f
+	m.addprocurement_cost_cny = nil
+}
+
+// ProcurementCostCny returns the value of the "procurement_cost_cny" field in the mutation.
+func (m *AccountMutation) ProcurementCostCny() (r float64, exists bool) {
+	v := m.procurement_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcurementCostCny returns the old "procurement_cost_cny" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldProcurementCostCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcurementCostCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcurementCostCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcurementCostCny: %w", err)
+	}
+	return oldValue.ProcurementCostCny, nil
+}
+
+// AddProcurementCostCny adds f to the "procurement_cost_cny" field.
+func (m *AccountMutation) AddProcurementCostCny(f float64) {
+	if m.addprocurement_cost_cny != nil {
+		*m.addprocurement_cost_cny += f
+	} else {
+		m.addprocurement_cost_cny = &f
+	}
+}
+
+// AddedProcurementCostCny returns the value that was added to the "procurement_cost_cny" field in this mutation.
+func (m *AccountMutation) AddedProcurementCostCny() (r float64, exists bool) {
+	v := m.addprocurement_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (m *AccountMutation) ClearProcurementCostCny() {
+	m.procurement_cost_cny = nil
+	m.addprocurement_cost_cny = nil
+	m.clearedFields[account.FieldProcurementCostCny] = struct{}{}
+}
+
+// ProcurementCostCnyCleared returns if the "procurement_cost_cny" field was cleared in this mutation.
+func (m *AccountMutation) ProcurementCostCnyCleared() bool {
+	_, ok := m.clearedFields[account.FieldProcurementCostCny]
+	return ok
+}
+
+// ResetProcurementCostCny resets all changes to the "procurement_cost_cny" field.
+func (m *AccountMutation) ResetProcurementCostCny() {
+	m.procurement_cost_cny = nil
+	m.addprocurement_cost_cny = nil
+	delete(m.clearedFields, account.FieldProcurementCostCny)
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (m *AccountMutation) SetProcurementCostEffectiveAt(t time.Time) {
+	m.procurement_cost_effective_at = &t
+}
+
+// ProcurementCostEffectiveAt returns the value of the "procurement_cost_effective_at" field in the mutation.
+func (m *AccountMutation) ProcurementCostEffectiveAt() (r time.Time, exists bool) {
+	v := m.procurement_cost_effective_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcurementCostEffectiveAt returns the old "procurement_cost_effective_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldProcurementCostEffectiveAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcurementCostEffectiveAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcurementCostEffectiveAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcurementCostEffectiveAt: %w", err)
+	}
+	return oldValue.ProcurementCostEffectiveAt, nil
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (m *AccountMutation) ClearProcurementCostEffectiveAt() {
+	m.procurement_cost_effective_at = nil
+	m.clearedFields[account.FieldProcurementCostEffectiveAt] = struct{}{}
+}
+
+// ProcurementCostEffectiveAtCleared returns if the "procurement_cost_effective_at" field was cleared in this mutation.
+func (m *AccountMutation) ProcurementCostEffectiveAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldProcurementCostEffectiveAt]
+	return ok
+}
+
+// ResetProcurementCostEffectiveAt resets all changes to the "procurement_cost_effective_at" field.
+func (m *AccountMutation) ResetProcurementCostEffectiveAt() {
+	m.procurement_cost_effective_at = nil
+	delete(m.clearedFields, account.FieldProcurementCostEffectiveAt)
 }
 
 // SetStatus sets the "status" field.
@@ -4138,7 +4260,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 33)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4183,6 +4305,12 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, account.FieldRateMultiplier)
+	}
+	if m.procurement_cost_cny != nil {
+		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.procurement_cost_effective_at != nil {
+		fields = append(fields, account.FieldProcurementCostEffectiveAt)
 	}
 	if m.status != nil {
 		fields = append(fields, account.FieldStatus)
@@ -4270,6 +4398,10 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Priority()
 	case account.FieldRateMultiplier:
 		return m.RateMultiplier()
+	case account.FieldProcurementCostCny:
+		return m.ProcurementCostCny()
+	case account.FieldProcurementCostEffectiveAt:
+		return m.ProcurementCostEffectiveAt()
 	case account.FieldStatus:
 		return m.Status()
 	case account.FieldErrorMessage:
@@ -4341,6 +4473,10 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldPriority(ctx)
 	case account.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
+	case account.FieldProcurementCostCny:
+		return m.OldProcurementCostCny(ctx)
+	case account.FieldProcurementCostEffectiveAt:
+		return m.OldProcurementCostEffectiveAt(ctx)
 	case account.FieldStatus:
 		return m.OldStatus(ctx)
 	case account.FieldErrorMessage:
@@ -4487,6 +4623,20 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRateMultiplier(v)
 		return nil
+	case account.FieldProcurementCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcurementCostCny(v)
+		return nil
+	case account.FieldProcurementCostEffectiveAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcurementCostEffectiveAt(v)
+		return nil
 	case account.FieldStatus:
 		v, ok := value.(string)
 		if !ok {
@@ -4622,6 +4772,9 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addrate_multiplier != nil {
 		fields = append(fields, account.FieldRateMultiplier)
 	}
+	if m.addprocurement_cost_cny != nil {
+		fields = append(fields, account.FieldProcurementCostCny)
+	}
 	return fields
 }
 
@@ -4640,6 +4793,8 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPriority()
 	case account.FieldRateMultiplier:
 		return m.AddedRateMultiplier()
+	case account.FieldProcurementCostCny:
+		return m.AddedProcurementCostCny()
 	}
 	return nil, false
 }
@@ -4684,6 +4839,13 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddRateMultiplier(v)
 		return nil
+	case account.FieldProcurementCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProcurementCostCny(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Account numeric field %s", name)
 }
@@ -4706,6 +4868,12 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldLoadFactor) {
 		fields = append(fields, account.FieldLoadFactor)
+	}
+	if m.FieldCleared(account.FieldProcurementCostCny) {
+		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.FieldCleared(account.FieldProcurementCostEffectiveAt) {
+		fields = append(fields, account.FieldProcurementCostEffectiveAt)
 	}
 	if m.FieldCleared(account.FieldErrorMessage) {
 		fields = append(fields, account.FieldErrorMessage)
@@ -4771,6 +4939,12 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldLoadFactor:
 		m.ClearLoadFactor()
+		return nil
+	case account.FieldProcurementCostCny:
+		m.ClearProcurementCostCny()
+		return nil
+	case account.FieldProcurementCostEffectiveAt:
+		m.ClearProcurementCostEffectiveAt()
 		return nil
 	case account.FieldErrorMessage:
 		m.ClearErrorMessage()
@@ -4860,6 +5034,12 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldRateMultiplier:
 		m.ResetRateMultiplier()
+		return nil
+	case account.FieldProcurementCostCny:
+		m.ResetProcurementCostCny()
+		return nil
+	case account.FieldProcurementCostEffectiveAt:
+		m.ResetProcurementCostEffectiveAt()
 		return nil
 	case account.FieldStatus:
 		m.ResetStatus()

@@ -195,6 +195,34 @@ func (_c *AccountCreate) SetNillableRateMultiplier(v *float64) *AccountCreate {
 	return _c
 }
 
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (_c *AccountCreate) SetProcurementCostCny(v float64) *AccountCreate {
+	_c.mutation.SetProcurementCostCny(v)
+	return _c
+}
+
+// SetNillableProcurementCostCny sets the "procurement_cost_cny" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableProcurementCostCny(v *float64) *AccountCreate {
+	if v != nil {
+		_c.SetProcurementCostCny(*v)
+	}
+	return _c
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (_c *AccountCreate) SetProcurementCostEffectiveAt(v time.Time) *AccountCreate {
+	_c.mutation.SetProcurementCostEffectiveAt(v)
+	return _c
+}
+
+// SetNillableProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableProcurementCostEffectiveAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetProcurementCostEffectiveAt(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *AccountCreate) SetStatus(v string) *AccountCreate {
 	_c.mutation.SetStatus(v)
@@ -741,6 +769,14 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_spec.SetField(account.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
 	}
+	if value, ok := _c.mutation.ProcurementCostCny(); ok {
+		_spec.SetField(account.FieldProcurementCostCny, field.TypeFloat64, value)
+		_node.ProcurementCostCny = &value
+	}
+	if value, ok := _c.mutation.ProcurementCostEffectiveAt(); ok {
+		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)
+		_node.ProcurementCostEffectiveAt = &value
+	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeString, value)
 		_node.Status = value
@@ -1164,6 +1200,48 @@ func (u *AccountUpsert) UpdateRateMultiplier() *AccountUpsert {
 // AddRateMultiplier adds v to the "rate_multiplier" field.
 func (u *AccountUpsert) AddRateMultiplier(v float64) *AccountUpsert {
 	u.Add(account.FieldRateMultiplier, v)
+	return u
+}
+
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (u *AccountUpsert) SetProcurementCostCny(v float64) *AccountUpsert {
+	u.Set(account.FieldProcurementCostCny, v)
+	return u
+}
+
+// UpdateProcurementCostCny sets the "procurement_cost_cny" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateProcurementCostCny() *AccountUpsert {
+	u.SetExcluded(account.FieldProcurementCostCny)
+	return u
+}
+
+// AddProcurementCostCny adds v to the "procurement_cost_cny" field.
+func (u *AccountUpsert) AddProcurementCostCny(v float64) *AccountUpsert {
+	u.Add(account.FieldProcurementCostCny, v)
+	return u
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (u *AccountUpsert) ClearProcurementCostCny() *AccountUpsert {
+	u.SetNull(account.FieldProcurementCostCny)
+	return u
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (u *AccountUpsert) SetProcurementCostEffectiveAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldProcurementCostEffectiveAt, v)
+	return u
+}
+
+// UpdateProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateProcurementCostEffectiveAt() *AccountUpsert {
+	u.SetExcluded(account.FieldProcurementCostEffectiveAt)
+	return u
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (u *AccountUpsert) ClearProcurementCostEffectiveAt() *AccountUpsert {
+	u.SetNull(account.FieldProcurementCostEffectiveAt)
 	return u
 }
 
@@ -1739,6 +1817,55 @@ func (u *AccountUpsertOne) AddRateMultiplier(v float64) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateRateMultiplier() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (u *AccountUpsertOne) SetProcurementCostCny(v float64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProcurementCostCny(v)
+	})
+}
+
+// AddProcurementCostCny adds v to the "procurement_cost_cny" field.
+func (u *AccountUpsertOne) AddProcurementCostCny(v float64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProcurementCostCny(v)
+	})
+}
+
+// UpdateProcurementCostCny sets the "procurement_cost_cny" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateProcurementCostCny() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProcurementCostCny()
+	})
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (u *AccountUpsertOne) ClearProcurementCostCny() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProcurementCostCny()
+	})
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (u *AccountUpsertOne) SetProcurementCostEffectiveAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProcurementCostEffectiveAt(v)
+	})
+}
+
+// UpdateProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateProcurementCostEffectiveAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProcurementCostEffectiveAt()
+	})
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (u *AccountUpsertOne) ClearProcurementCostEffectiveAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProcurementCostEffectiveAt()
 	})
 }
 
@@ -2524,6 +2651,55 @@ func (u *AccountUpsertBulk) AddRateMultiplier(v float64) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateRateMultiplier() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (u *AccountUpsertBulk) SetProcurementCostCny(v float64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProcurementCostCny(v)
+	})
+}
+
+// AddProcurementCostCny adds v to the "procurement_cost_cny" field.
+func (u *AccountUpsertBulk) AddProcurementCostCny(v float64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProcurementCostCny(v)
+	})
+}
+
+// UpdateProcurementCostCny sets the "procurement_cost_cny" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateProcurementCostCny() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProcurementCostCny()
+	})
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (u *AccountUpsertBulk) ClearProcurementCostCny() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProcurementCostCny()
+	})
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (u *AccountUpsertBulk) SetProcurementCostEffectiveAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProcurementCostEffectiveAt(v)
+	})
+}
+
+// UpdateProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateProcurementCostEffectiveAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProcurementCostEffectiveAt()
+	})
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (u *AccountUpsertBulk) ClearProcurementCostEffectiveAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProcurementCostEffectiveAt()
 	})
 }
 

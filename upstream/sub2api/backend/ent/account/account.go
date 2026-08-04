@@ -46,6 +46,10 @@ const (
 	FieldPriority = "priority"
 	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
 	FieldRateMultiplier = "rate_multiplier"
+	// FieldProcurementCostCny holds the string denoting the procurement_cost_cny field in the database.
+	FieldProcurementCostCny = "procurement_cost_cny"
+	// FieldProcurementCostEffectiveAt holds the string denoting the procurement_cost_effective_at field in the database.
+	FieldProcurementCostEffectiveAt = "procurement_cost_effective_at"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldErrorMessage holds the string denoting the error_message field in the database.
@@ -146,6 +150,8 @@ var Columns = []string{
 	FieldLoadFactor,
 	FieldPriority,
 	FieldRateMultiplier,
+	FieldProcurementCostCny,
+	FieldProcurementCostEffectiveAt,
 	FieldStatus,
 	FieldErrorMessage,
 	FieldLastUsedAt,
@@ -319,6 +325,16 @@ func ByPriority(opts ...sql.OrderTermOption) OrderOption {
 // ByRateMultiplier orders the results by the rate_multiplier field.
 func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRateMultiplier, opts...).ToFunc()
+}
+
+// ByProcurementCostCny orders the results by the procurement_cost_cny field.
+func ByProcurementCostCny(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProcurementCostCny, opts...).ToFunc()
+}
+
+// ByProcurementCostEffectiveAt orders the results by the procurement_cost_effective_at field.
+func ByProcurementCostEffectiveAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProcurementCostEffectiveAt, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

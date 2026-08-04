@@ -363,22 +363,31 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
-	Name                  string
-	Notes                 *string
-	Type                  string // Account type: oauth, setup-token, apikey
-	Credentials           map[string]any
-	Extra                 map[string]any
-	ProxyID               *int64
-	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
-	Priority              *int     // 使用指针区分"未提供"和"设置为0"
-	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
-	RateMultiplierPolicy  *string  // 上游计费倍率策略：upstream_managed/manual_override
+	Name           string
+	Notes          *string
+	Type           string // Account type: oauth, setup-token, apikey
+	Credentials    map[string]any
+	Extra          map[string]any
+	ProxyID        *int64
+	Concurrency    *int     // 使用指针区分"未提供"和"设置为0"
+	Priority       *int     // 使用指针区分"未提供"和"设置为0"
+	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
+	// ProcurementCost is nil when the JSON field was omitted. A non-nil value with
+	// nil Value represents explicit JSON null and clears the stored cost.
+	ProcurementCost       *ProcurementCostUpdate
+	RateMultiplierPolicy  *string // 上游计费倍率策略：upstream_managed/manual_override
 	LoadFactor            *int
 	Status                string
 	GroupIDs              *[]int64
 	ExpiresAt             *int64
 	AutoPauseOnExpired    *bool
 	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
+}
+
+// ProcurementCostUpdate distinguishes an omitted update field from an explicit
+// null while preserving a valid zero amount.
+type ProcurementCostUpdate struct {
+	Value *float64
 }
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.

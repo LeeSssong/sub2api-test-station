@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -790,6 +791,20 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
 		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.ProcurementCost != nil {
+		if input.ProcurementCost.Value == nil {
+			account.ProcurementCostCNY = nil
+			account.ProcurementCostEffectiveAt = nil
+		} else {
+			amount := *input.ProcurementCost.Value
+			if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
+				return nil, errors.New("procurement_cost_cny must be a finite value >= 0")
+			}
+			effectiveAt := time.Now().UTC()
+			account.ProcurementCostCNY = &amount
+			account.ProcurementCostEffectiveAt = &effectiveAt
+		}
 	}
 	if policyIntent != "" {
 		if account.Extra == nil {

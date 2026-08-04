@@ -979,7 +979,7 @@ func accountMonitorWindowCost(account Account, windowStart, windowEnd time.Time,
 	}
 
 	result := accountMonitorWindowCostResult{Mode: "multiplier"}
-	if account.RateMultiplier == nil || *account.RateMultiplier < 0 || baseCost <= 0 {
+	if account.RateMultiplier == nil || *account.RateMultiplier < 0 {
 		return result
 	}
 	effectiveMultiplier := *account.RateMultiplier
@@ -1030,7 +1030,7 @@ func accountMonitorWindowEvidence(
 ) AccountMonitorQualityEvidence {
 	if window.RequestCount >= AccountMonitorGroupEvidenceMinSamples {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.RequestCount),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
 			ObservedAt: accountMonitorWindowObservedAt(window, latest),
@@ -1050,7 +1050,7 @@ func accountMonitorWindowEvidence(
 	}
 	if window.RequestCount > 0 {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.RequestCount),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
 			ObservedAt: accountMonitorWindowObservedAt(window, latest),

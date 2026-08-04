@@ -1279,10 +1279,38 @@ func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *tes
 	}
 
 	withThreeRequests := accountMonitorWindowEvidence(
-		AccountMonitorWindowAggregate{RequestCount: 3, SuccessRate: 1, LastObservedAt: &now}, probe, latest, settings, now,
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, probe, latest, settings, now,
 	)
-	if withThreeRequests.Source != "real_requests" || withThreeRequests.SampleCount != 3 || withThreeRequests.SuccessRate != 1 {
+	if withThreeRequests.Source != "real_requests" || withThreeRequests.SampleCount != 3 || withThreeRequests.SuccessSampleCount != 2 || withThreeRequests.SuccessRate != 2.0/3.0 {
 		t.Fatalf("three real requests must not use probe evidence: %#v", withThreeRequests)
+	}
+}
+
+func TestAccountMonitorWindowCostKeepsNativeMultiplierWithoutWindowBaseCost(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	rate := 0.75
+
+	got := accountMonitorWindowCost(Account{RateMultiplier: &rate}, start, end, 0)
+	if got.Mode != "multiplier" || !got.CostScoreEligible || got.EffectiveMultiplier == nil || *got.EffectiveMultiplier != rate {
+		t.Fatalf("native multiplier with no real request cost = %#v, want effective multiplier %.2f", got, rate)
+	}
+}
+
+func TestAccountMonitorWindowCostProcurementZeroBaseCostRemainsIneligible(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	effectiveAt := start.Add(-24 * time.Hour)
+	expiresAt := end.Add(24 * time.Hour)
+	purchaseCost := 24.0
+
+	got := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+		ExpiresAt:                  &expiresAt,
+	}, start, end, 0)
+	if got.Mode != "procurement" || got.CostScoreEligible || got.EffectiveMultiplier != nil {
+		t.Fatalf("procurement zero-base-cost result = %#v, want ineligible cost", got)
 	}
 }
 

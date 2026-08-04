@@ -782,8 +782,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Concurrency != nil {
 		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
-	// 只在指针非 nil 时更新 Priority（支持设置为 0）
+	// 只在指针非 nil 时更新 Priority；现有账号优先级必须是整数 >= 1。
 	if input.Priority != nil {
+		if *input.Priority < 1 {
+			return nil, errors.New("priority must be >= 1")
+		}
 		account.Priority = *input.Priority
 	}
 	if input.RateMultiplier != nil {
@@ -1047,6 +1050,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
+	}
+	if input.Priority != nil && *input.Priority < 1 {
+		return nil, errors.New("priority must be >= 1")
 	}
 
 	// 校验并规范化请求头覆写配置（批量路径为 JSONB 顶层 key 合并，直接校验增量即可）

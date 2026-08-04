@@ -137,6 +137,7 @@ type AccountMonitorAggregate struct {
 // Probe observations are intentionally kept separate from these fields.
 type AccountMonitorWindowAggregate struct {
 	RequestCount       int64
+	SuccessCount       int64
 	ErrorCount         int64
 	BaseCost           float64
 	SuccessRate        float64

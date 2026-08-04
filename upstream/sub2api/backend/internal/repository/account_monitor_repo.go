@@ -174,6 +174,7 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 		SELECT
 			account_id,
 			COUNT(*)::bigint,
+			COUNT(*) FILTER (WHERE NOT has_error)::bigint,
 			COUNT(*) FILTER (WHERE has_error)::bigint,
 			COALESCE(SUM(total_cost), 0)::double precision,
 			COALESCE(
@@ -201,6 +202,7 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 		if err := rows.Scan(
 			&accountID,
 			&aggregate.RequestCount,
+			&aggregate.SuccessCount,
 			&aggregate.ErrorCount,
 			&aggregate.BaseCost,
 			&aggregate.SuccessRate,

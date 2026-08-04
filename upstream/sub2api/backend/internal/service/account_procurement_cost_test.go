@@ -79,3 +79,24 @@ func TestUpdateAccountProcurementCostTransitions(t *testing.T) {
 		require.Nil(t, updated.ProcurementCostEffectiveAt)
 	})
 }
+
+func TestUpdateAccountRejectsPriorityBelowOne(t *testing.T) {
+	initialPriority := 7
+	repo := &procurementCostAccountRepoStub{account: &Account{
+		ID:       92,
+		Priority: initialPriority,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Status:   StatusActive,
+	}}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	for _, invalid := range []int{0, -1} {
+		priority := invalid
+		updated, err := svc.UpdateAccount(context.Background(), 92, &UpdateAccountInput{Priority: &priority})
+		require.Error(t, err)
+		require.Nil(t, updated)
+		require.Equal(t, 0, repo.updateCalls, "invalid priority must not reach persistence")
+		require.Equal(t, initialPriority, repo.account.Priority)
+	}
+}

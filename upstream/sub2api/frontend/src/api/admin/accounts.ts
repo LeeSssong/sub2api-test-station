@@ -953,6 +953,7 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  updateProcurementCost,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

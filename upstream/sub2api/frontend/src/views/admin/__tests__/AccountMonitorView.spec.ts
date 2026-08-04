@@ -1,85 +1,107 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 
 import AccountMonitorView from '../AccountMonitorView.vue'
 
 const {
   list,
   groupsGetAllIncludingInactive,
-  updateSettings,
+  getConcurrency,
   runAll,
   runOne,
-  history,
-  reconciliationOperations,
-  reconciliationRefresh,
+  updateAccount,
+  updateProcurementCost,
+  operations,
+  refreshReconciliation,
+  reconciliationHistory,
   reconciliationExceptions,
   reconciliationAdjust,
-  updateGroupScoreWeights,
-  resetGroupScoreWeights,
+  revenue,
+  accounting,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   groupsGetAllIncludingInactive: vi.fn(),
-  updateSettings: vi.fn(),
+  getConcurrency: vi.fn(),
   runAll: vi.fn(),
   runOne: vi.fn(),
-  history: vi.fn(),
-  reconciliationOperations: vi.fn(),
-  reconciliationRefresh: vi.fn(),
+  updateAccount: vi.fn(),
+  updateProcurementCost: vi.fn(),
+  operations: vi.fn(),
+  refreshReconciliation: vi.fn(),
+  reconciliationHistory: vi.fn(),
   reconciliationExceptions: vi.fn(),
   reconciliationAdjust: vi.fn(),
-  updateGroupScoreWeights: vi.fn(),
-  resetGroupScoreWeights: vi.fn(),
+  revenue: vi.fn(),
+  accounting: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    accountMonitor: {
-      list,
-      updateSettings,
-      runAll,
-      runOne,
-      history,
-      updateGroupScoreWeights,
-      resetGroupScoreWeights,
-    },
-    groups: {
-      getAllIncludingInactive: groupsGetAllIncludingInactive,
-    },
+    accountMonitor: { list, getConcurrency, runAll, runOne },
+    accounts: { update: updateAccount, updateProcurementCost },
+    groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
-      operations: reconciliationOperations,
-      refresh: reconciliationRefresh,
+      operations,
+      refresh: refreshReconciliation,
+      history: reconciliationHistory,
       exceptions: reconciliationExceptions,
       adjust: reconciliationAdjust,
     },
+    revenue: { list: revenue },
+    accounting: { list: accounting },
   },
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({
-    showError,
-    showSuccess,
-  }),
+  useAppStore: () => ({ showError, showSuccess }),
 }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  const labels: Record<string, string> = {
+    'admin.accountMonitor.title': '账号监控',
+    'admin.accountMonitor.description': '按分组比较账号服务质量、评分与调度优先级。',
+    'admin.accountMonitor.loadError': '账号监控数据加载失败',
+    'admin.accountMonitor.actions.refreshAll': '立即刷新全部',
+    'admin.accountMonitor.actions.running': '运行中...',
+    'admin.accountMonitor.empty.filtered': '没有符合当前筛选条件的账号。',
+    'admin.accountMonitor.empty.pool': '当前没有启用且可调度的账号。',
+    'admin.accountMonitor.messages.refreshAllSuccess': '全部账号刷新完成',
+    'admin.accountMonitor.messages.refreshFailed': '账号刷新失败',
+    'common.all': '全部',
+    'common.refresh': '刷新',
+  }
   return {
     ...actual,
-    useI18n: () => ({
-      t: (key: string, params?: Record<string, unknown>) =>
-        params ? `${key}:${JSON.stringify(params)}` : key,
-    }),
+    useI18n: () => ({ t: (key: string) => labels[key] ?? key }),
   }
 })
 
-const account = {
-  account_id: 7,
-  name: 'Primary Claude',
-  platform: 'anthropic',
+const AccountMonitorCardStub = defineComponent({
+  name: 'AccountMonitorCardStub',
+  props: {
+    account: { type: Object, required: true },
+    concurrency: { type: Object, default: null },
+  },
+  emits: ['updatePriority', 'updateProcurementCost', 'refresh'],
+  template: `
+    <article data-test="monitor-card" :data-account-id="account.account_id">
+      <span data-test="card-name">{{ account.name }}</span>
+      <span data-test="card-concurrency">{{ concurrency ? concurrency.current + ' / ' + concurrency.limit : '-- / --' }}</span>
+      <span v-if="concurrency?.delayed" data-test="card-delayed">数据延迟</span>
+    </article>
+  `,
+})
+
+const baseAccount = {
+  account_id: 10,
+  name: 'Rank one A',
+  platform: 'openai',
   account_type: 'oauth',
   status: 'active',
   schedulable: true,
@@ -87,876 +109,317 @@ const account = {
   service_state: 'available',
   group_eligibility: 'eligible',
   monitor_bucket: 'available',
+  priority: 1,
   group_ids: [3],
-  group_names: ['Production'],
-  model_id: 'claude-sonnet-4-5',
+  group_names: ['GPT-PLUS-内测'],
+  model_id: 'gpt-4o-mini',
   latest_status: 'success',
-  sample_count: 10,
-  success_sample_count: 10,
-  ttft_sample_count: 8,
-  latency_sample_count: 7,
-  success_rate: 0.9,
-  ttft_p50_ms: 120,
-  ttft_p95_ms: 190,
-  latency_p95_ms: 840,
-  multiplier: { value: 0.1, source: 'declared', status: 'ok', sample_count: 0 },
-  request_count: 12,
+  sample_count: 72,
+  success_sample_count: 71,
+  ttft_sample_count: 71,
+  latency_sample_count: 71,
+  success_rate: 0.986,
+  ttft_p50_ms: 1018,
+  ttft_p95_ms: 1400,
+  latency_p95_ms: 1962,
+  multiplier: { value: 0.58, source: 'declared', status: 'ok', sample_count: 72 },
+  request_count: 72,
   error_count: 1,
-  today_stats: { requests: 12, tokens: 100, cost: 0.1, standard_cost: 0.2, user_cost: 0.15 },
-  usage_windows: [{ name: '5h', utilization: 0.2, requests: 2, tokens: 100 }],
+  range: '24h',
+  base_cost: 18,
+  effective_multiplier: 0.48,
+  cost_mode: 'multiplier',
+  cost_score: 15,
   timeline: [],
-  checked_at: '2026-07-25T08:00:00Z',
+  checked_at: '2026-08-04T04:20:42Z',
   stale: false,
+  quality_score: 91,
+  group_rank: 1,
+  eligible: true,
 }
 
-const projection = () => ({
-  schema_version: 2,
-  observed_at: '2026-07-25T08:01:00Z',
-  stale: false,
-  settings: {
-    interval_seconds: 300,
-    updated_by: 1,
-    updated_at: '2026-07-25T07:55:00Z',
-  },
-  health: {
-    total_accounts: 3,
-    monitoring_accounts: 3,
-    available_accounts: 1,
-    unavailable_accounts: 1,
-    pending_accounts: 1,
-    paused_accounts: 0,
-    success_rate: 0.9,
-    success_sample_count: 10,
-    ttft_sample_count: 8,
-    latency_sample_count: 7,
-    ttft_p50_ms: 120,
-    latency_p95_ms: 840,
-  },
-  accounts: [account],
-  groups: [{
-    id: 3,
-    name: 'Production',
-    rate_multiplier: 1,
-    customer_visible: true,
-    native_order: 0,
-    score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 },
-    operational_state: 'operational',
+function account(accountID: number, name: string, rank: number | null) {
+  return { ...baseAccount, account_id: accountID, name, group_rank: rank }
+}
+
+function projection(range: '24h' | '7d' | '30d' = '24h') {
+  const rankedAccounts = [
+    account(30, `Unranked ${range}`, null),
+    account(20, `Rank two ${range}`, 2),
+    account(11, `Rank one B ${range}`, 1),
+    account(10, `Rank one A ${range}`, 1),
+    account(10, `Duplicate ${range}`, 1),
+  ]
+  return {
+    schema_version: 3,
+    range,
+    observed_at: '2026-08-04T04:20:42Z',
+    stale: false,
+    settings: { interval_seconds: 300, updated_by: 1, updated_at: '2026-08-04T04:15:00Z' },
     health: {
-      total_accounts: 2,
-      monitoring_accounts: 1,
-      available_accounts: 1,
+      total_accounts: 4,
+      monitoring_accounts: 4,
+      available_accounts: 4,
       unavailable_accounts: 0,
       pending_accounts: 0,
-      paused_accounts: 1,
-      success_rate: 0.95,
-      success_sample_count: 10,
-      ttft_sample_count: 8,
-      latency_sample_count: 7,
-      ttft_p50_ms: 100,
-      latency_p95_ms: 700,
+      paused_accounts: 0,
+      success_rate: 0.98,
+      success_sample_count: 280,
+      ttft_sample_count: 275,
+      latency_sample_count: 275,
     },
-  }],
-})
+    accounts: rankedAccounts,
+    groups: [{
+      id: 3,
+      name: 'GPT-PLUS-内测',
+      status: 'active',
+      platform: 'openai',
+      rate_multiplier: 1.2,
+      rpm_limit: 120,
+      account_count: 4,
+      active_account_count: 3,
+      rate_limited_account_count: 1,
+      customer_visible: true,
+      native_order: 0,
+      score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 },
+      operational_state: 'operational',
+      health: {
+        total_accounts: 4,
+        monitoring_accounts: 4,
+        available_accounts: 4,
+        unavailable_accounts: 0,
+        pending_accounts: 0,
+        paused_accounts: 0,
+        success_rate: 0.98,
+        success_sample_count: 280,
+        ttft_sample_count: 275,
+        latency_sample_count: 275,
+      },
+      accounts: rankedAccounts,
+    }],
+  }
+}
+
+const mountedWrappers: ReturnType<typeof mount>[] = []
+let documentHidden = false
 
 function mountView() {
-  return mount(AccountMonitorView, {
+  const wrapper = mount(AccountMonitorView, {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
-        BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="base-dialog"><slot /></div>' },
-        AccountMonitorCard: {
-          props: ['account', 'scope', 'operations', 'groupOperationalState'],
-          emits: ['refresh', 'settings', 'history'],
-          template: `
-            <article data-test="monitor-card">
-              <span>{{ account.name }}</span>
-              <span>{{ account.multiplier.value?.toFixed(2) }}x</span>
-              <span>{{ account.latest_status }}</span>
-              <span>{{ account.error_code }}</span>
-              <span data-test="card-scope">{{ scope }}</span>
-              <span>{{ operations?.currency }}</span>
-              <button data-test="card-refresh" @click="$emit('refresh', account.account_id)">refresh</button>
-              <button data-test="card-settings" @click="$emit('settings')">settings</button>
-              <button data-test="card-history" @click="$emit('history', account.account_id)">history</button>
-            </article>
-          `,
-        },
-        AccountMonitorFilters: {
-          props: ['search', 'platform', 'status'],
-          emits: ['update:search', 'update:platform', 'update:status'],
-          template: `
-            <div data-test="filters">
-              <button data-test="search-backup" @click="$emit('update:search', '备份')">搜索备份</button>
-              <button data-test="filter-available" @click="$emit('update:status', 'available')">筛选可用</button>
-            </div>
-          `,
-        },
-        AccountMonitorSettingsDialog: {
-          props: ['show', 'intervalSeconds'],
-          emits: ['close', 'save'],
-          template: `
-            <div v-if="show" data-test="settings-dialog">
-              <button data-test="save-settings" @click="$emit('save', 60)">save</button>
-            </div>
-          `,
-        },
-        AccountMonitorLedgerHistoryDrawer: {
-          props: ['show', 'scope'],
-          template: '<div v-if="show" data-test="ledger-history-drawer">{{ scope?.group_id ?? \'global\' }}</div>',
-        },
-        AccountMonitorGroupScoreDialog: {
-          props: ['show', 'groupId', 'weights'],
-          emits: ['close', 'save', 'reset'],
-          template: '<div v-if="show" data-test="score-dialog"><span>{{ groupId }}</span><span data-test="score-dialog-weights">{{ weights.cost }}/{{ weights.success }}/{{ weights.ttft }}/{{ weights.latency }}</span><button data-test="save-score" @click="$emit(\'save\', { cost: 20, success: 40, ttft: 20, latency: 20 })">save</button><button data-test="reset-score" @click="$emit(\'reset\')">reset</button></div>',
-        },
-        AccountTodayStatsCell: true,
-        AccountUsageCell: true,
-        HelpTooltip: true,
+        AccountMonitorCard: AccountMonitorCardStub,
         Icon: true,
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
-describe('admin account monitor view', () => {
+async function selectRange(wrapper: ReturnType<typeof mount>, range: '24h' | '7d' | '30d') {
+  await wrapper.get(`[data-test="range-${range}"]`).trigger('click')
+  await flushPromises()
+}
+
+describe('admin account monitor view V3', () => {
   beforeEach(() => {
-    list.mockReset().mockResolvedValue(projection())
-    groupsGetAllIncludingInactive.mockReset().mockResolvedValue([
-      { id: 3, name: 'Production', status: 'active', rate_multiplier: 1, sort_order: 0 },
-    ])
-    updateSettings.mockReset().mockResolvedValue({
-      interval_seconds: 60,
-      updated_by: 1,
-      updated_at: '2026-07-25T08:02:00Z',
+    vi.useRealTimers()
+    documentHidden = false
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => documentHidden })
+    list.mockReset().mockImplementation((range: '24h' | '7d' | '30d') => Promise.resolve(projection(range)))
+    groupsGetAllIncludingInactive.mockReset().mockResolvedValue([{
+      id: 3,
+      name: 'GPT-PLUS-内测',
+      status: 'active',
+      platform: 'openai',
+      rate_multiplier: 1.2,
+      rpm_limit: 120,
+      account_count: 4,
+      active_account_count: 3,
+      rate_limited_account_count: 1,
+      sort_order: 0,
+    }])
+    getConcurrency.mockReset().mockResolvedValue({
+      items: [
+        { account_id: 10, current: 3, limit: 8 },
+        { account_id: 11, current: 2, limit: 8 },
+        { account_id: 20, current: 1, limit: 8 },
+        { account_id: 30, current: 0, limit: 8 },
+      ],
     })
-    runAll.mockReset().mockResolvedValue({ completed: 1 })
-    runOne.mockReset().mockResolvedValue({ account_id: 7, status: 'success' })
-    history.mockReset().mockResolvedValue({ items: [] })
-    reconciliationOperations.mockReset().mockResolvedValue({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-    reconciliationRefresh.mockReset().mockResolvedValue({ coverage_known: true, coverage_ratio: 1, pending_attempts: 0 })
-    reconciliationExceptions.mockReset().mockResolvedValue({ items: [] })
-    reconciliationAdjust.mockReset().mockResolvedValue({})
-    updateGroupScoreWeights.mockReset().mockResolvedValue({ cost: 20, success: 40, ttft: 20, latency: 20 })
-    resetGroupScoreWeights.mockReset().mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20 })
+    runAll.mockReset().mockResolvedValue({ completed: 4 })
+    runOne.mockReset().mockResolvedValue({ account_id: 10, status: 'success' })
+    updateAccount.mockReset().mockResolvedValue({ ...baseAccount, priority: 4 })
+    updateProcurementCost.mockReset().mockResolvedValue({
+      id: 10,
+      procurement_cost_cny: 125.5,
+      procurement_cost_effective_at: '2026-08-04T04:30:00Z',
+    })
+    for (const forbidden of [operations, refreshReconciliation, reconciliationHistory, reconciliationExceptions, reconciliationAdjust, revenue, accounting]) {
+      forbidden.mockReset().mockResolvedValue({})
+    }
     showError.mockReset()
     showSuccess.mockReset()
   })
 
-  it('renders monitored account quality and today-stat projection', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Primary Claude')
-    expect(wrapper.text()).toContain('0.10x')
-    expect(wrapper.text()).toContain('success')
-    expect(wrapper.get('[data-test="monitor-card"]').exists()).toBe(true)
+  afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+    vi.useRealTimers()
+    delete (document as Document & { hidden?: boolean }).hidden
   })
 
-  it('uses the today global operations ledger and formats its returned currency', async () => {
+  it('loads 24h by default and commits only successful 24h, 7d, and 30d range snapshots', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(reconciliationOperations).toHaveBeenCalledWith({})
-    const summary = wrapper.get('[data-test="operations-overview"]')
-    expect(summary.text()).toContain('€1.00')
-    expect(summary.text()).not.toContain('$1.00')
+    expect(list).toHaveBeenNthCalledWith(1, '24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.get('[data-test="range-24h"]').attributes('aria-pressed')).toBe('true')
+
+    await selectRange(wrapper, '7d')
+    expect(list).toHaveBeenNthCalledWith(2, '7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.get('[data-test="range-7d"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('Rank one A 7d')
+
+    await selectRange(wrapper, '30d')
+    expect(list).toHaveBeenNthCalledWith(3, '30d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.get('[data-test="range-30d"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('Rank one A 30d')
   })
 
-  it('keeps all-site operating and account-service summaries independent', async () => {
+  it('retains the last complete snapshot and selected range when a range request fails', async () => {
+    list.mockResolvedValueOnce(projection('24h')).mockRejectedValueOnce(new Error('range unavailable'))
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-test="global-operating-summary"]').text()).toContain('全站经营数据')
-    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('全站账号数据')
-    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('监控中')
-    expect(wrapper.get('[data-test="global-service-summary"]').text()).toContain('成本不合格0')
+    await selectRange(wrapper, '7d')
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).not.toContain('Rank one A 7d')
+    expect(wrapper.get('[data-test="range-24h"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-test="range-error"]').text()).toContain('range unavailable')
   })
 
-  it('uses account-profit wording and caps account cards at two columns', async () => {
+  it('renders group tabs, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-test="global-operating-summary"]').text()).toContain('账号利润')
-    expect(wrapper.text()).not.toContain('纸面利润')
-    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toContain('lg:grid-cols-2')
-  })
-
-  it('partitions accounts into exactly five monitor buckets and only ranks group available accounts', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      accounts: [
-        { ...account, account_id: 9, name: '全站可用后', monitor_bucket: 'available', quality_score: 99, group_rank: 1 },
-        { ...account, account_id: 7, name: '全站可用前', monitor_bucket: 'available', quality_score: 1, group_rank: 9 },
-        { ...account, account_id: 8, name: '不可用', monitor_bucket: 'unavailable', service_state: 'unavailable' },
-        { ...account, account_id: 10, name: '成本不合格', monitor_bucket: 'cost_ineligible', group_eligibility: 'cost_ineligible' },
-        { ...account, account_id: 11, name: '待确认', monitor_bucket: 'pending', service_state: 'pending' },
-        { ...account, account_id: 12, name: '暂停', monitor_bucket: 'paused', management_state: 'paused', service_state: 'not_monitored' },
-      ],
-      groups: [{
-        ...projection().groups[0],
-        accounts: [
-          { ...account, account_id: 7, name: '组内低分', monitor_bucket: 'available', quality_score: 90.41, group_rank: 2 },
-          { ...account, account_id: 9, name: '组内高分', monitor_bucket: 'available', quality_score: 90.49, group_rank: 1 },
-        ],
-      }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
-    expect(wrapper.get('[data-test="account-section-unavailable"]').text()).toContain('不可用')
-    expect(wrapper.get('[data-test="account-section-cost_ineligible"]').text()).toContain('成本不合格')
-    expect(wrapper.get('[data-test="account-section-pending"]').text()).toContain('待确认')
-    expect(wrapper.get('[data-test="account-section-paused"]').text()).toContain('暂停')
-    expect(wrapper.get('[data-test="account-section-available"]').text().indexOf('全站可用前')).toBeLessThan(wrapper.get('[data-test="account-section-available"]').text().indexOf('全站可用后'))
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="account-section-available"]').text().indexOf('组内高分')).toBeLessThan(wrapper.get('[data-test="account-section-available"]').text().indexOf('组内低分'))
-    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('成本不合格0')
-  })
-
-  it('deduplicates account projections by account ID in all-site and group scopes', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      accounts: [
-        { ...account, account_id: 7, name: '全站首个投影' },
-        { ...account, account_id: 7, name: '全站重复投影' },
-        { ...account, account_id: 8, name: '全站另一个账号' },
-      ],
-      groups: [{
-        ...projection().groups[0],
-        accounts: [
-          { ...account, account_id: 7, name: '分组首个投影', quality_score: 80, group_rank: 1 },
-          { ...account, account_id: 7, name: '分组重复投影', quality_score: 60, group_rank: 2 },
-          { ...account, account_id: 9, name: '分组另一个账号', quality_score: 70, group_rank: 3 },
-        ],
-      }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('当前展示 3 个账号')
-    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(3)
-    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('全站首个投影')
-    expect(wrapper.get('[data-test="account-section-available"]').text()).not.toContain('全站重复投影')
-    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('分组另一个账号')
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('可用2')
-    expect(wrapper.get('[data-test="account-section-available"]').findAll('[data-test="monitor-card"]')).toHaveLength(2)
-    expect(wrapper.get('[data-test="account-section-available"]').text()).toContain('分组首个投影')
-    expect(wrapper.get('[data-test="account-section-available"]').text()).not.toContain('分组重复投影')
-  })
-
-  it('keeps group summaries and the weight action row visible for empty and search-zero results', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [{ ...projection().groups[0], accounts: [] }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="group-operating-summary"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="group-service-summary"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('评分权重')
-    expect(wrapper.get('[data-test="account-empty"]').exists()).toBe(true)
-  })
-
-  it('keeps group summaries and scope counts visible when search returns no accounts', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="search-backup"]').trigger('click')
-
-    expect(wrapper.get('[data-test="group-operating-summary"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="group-service-summary"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('可用1')
-    expect(wrapper.get('[data-test="account-empty"]').exists()).toBe(true)
-  })
-
-  it('renders Chinese protocol history statuses and failure explanations', async () => {
-    history.mockResolvedValueOnce({ items: [{ account_id: 7, model_id: 'claude-sonnet-4-5', status: 'failed', error_code: 'malformed_stream', checked_at: '2026-07-25T08:00:00Z' }] })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="card-history"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('失败')
-    expect(wrapper.get('[data-test="base-dialog"]').text()).toContain('响应格式异常')
-    expect(wrapper.get('[data-test="base-dialog"]').text()).not.toContain('malformed_stream')
-  })
-
-  it('keeps account history open with a clear error when the response contract is invalid', async () => {
-    history.mockResolvedValueOnce({ rows: [] })
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="card-history"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="account-history-error"]').text()).toContain('账号历史返回了无效数据')
-    expect(showError).toHaveBeenCalledWith('账号历史返回了无效数据，请检查监控服务连接')
-  })
-
-  it('rejects structurally invalid account history items instead of rendering false values', async () => {
-    history.mockResolvedValueOnce({
-      items: [{ model_id: 'claude-sonnet-4-5', status: 'success', checked_at: '2026-07-25T08:00:00Z' }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="card-history"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="account-history-error"]').text()).toContain('账号历史返回了无效数据')
-    expect(wrapper.find('table').exists()).toBe(false)
-  })
-
-  it('discloses global ledger amounts that are not attributed to any group', async () => {
-    reconciliationOperations.mockResolvedValue({
-      total_attempts: 10,
-      matched_attempts: 10,
-      pending_attempts: 0,
-      conflict_attempts: 0,
-      coverage_known: true,
-      coverage_ratio: 1,
-      upstream_cost: '1',
-      user_charge: '2',
-      paper_profit: '1',
-      currency: 'EUR',
-      observed_at: '2026-07-25T08:01:00Z',
-      unattributed_attempts: 2,
-      unattributed_user_charge: '0.50',
-      unattributed_upstream_cost: '0.10',
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    const note = wrapper.get('[data-test="unattributed-group-ledger"]')
-    expect(note.text()).toContain('未归属分组')
-    expect(note.text()).toContain('2 笔请求')
-    expect(note.text()).toContain('营收 €0.50')
-    expect(note.text()).toContain('成本 €0.10')
-  })
-
-  it('hides the unattributed-group note when the ledger has no unattributed amounts', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="unattributed-group-ledger"]').exists()).toBe(false)
-  })
-
-  it('切换分组后显示分组历史经营与服务健康', async () => {
-    reconciliationOperations.mockImplementation((params: { group_id?: number; start?: string }) => {
-      if (params.start && params.group_id === 3) return Promise.resolve({ total_attempts: 50, matched_attempts: 50, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '10', user_charge: '20', paper_profit: '10', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-      if (params.start) return Promise.resolve({ total_attempts: 100, matched_attempts: 100, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '30', user_charge: '60', paper_profit: '30', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z', unattributed_attempts: 4, unattributed_user_charge: '8', unattributed_upstream_cost: '3' })
-      return Promise.resolve({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', profit_margin: 0.5, currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-    })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(reconciliationOperations).toHaveBeenCalledWith(expect.objectContaining({ start: '1970-01-01T00:00:00.000Z' }))
-    expect(wrapper.get('[data-test="group-lifetime-ledger"]').text()).toContain('€20.00')
-    expect(wrapper.find('[data-test="global-lifetime-unattributed-group-ledger"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('成功率95.0%')
-    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('TTFT P50100 ms')
-  })
-
-  it('全站 Tab 固定在首位，切换分组后加载分组账务', async () => {
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([
-      { id: 3, name: 'Production', status: 'active', rate_multiplier: 2, sort_order: 0 },
-      { id: 5, name: 'Overflow', status: 'active', rate_multiplier: 2, sort_order: 1 },
-      { id: 1, name: 'Archive', status: 'active', rate_multiplier: 0.5, sort_order: 2 },
-    ])
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [
-        { id: 1, name: 'Archive', rate_multiplier: 0.5, customer_visible: true, native_order: 0, score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 }, operational_state: 'operational' },
-        { id: 3, name: 'Production', rate_multiplier: 2, customer_visible: true, native_order: 1, score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 }, operational_state: 'operational' },
-        { id: 5, name: 'Overflow', rate_multiplier: 2, customer_visible: true, native_order: 2, score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 }, operational_state: 'operational' },
-      ],
-      accounts: [
-        { ...account, account_id: 8, name: 'Archive Claude', group_ids: [1], group_names: ['Archive'], quality_score: 50 },
-        { ...account, account_id: 7, name: 'Production Claude', group_ids: [3, 5], group_names: ['Production', 'Overflow'], quality_score: 90 },
-      ],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="all-site-tab"]').text()).toContain('全站')
-    expect(wrapper.findAll('[data-test="group-tab"] .font-medium').map((tab) => tab.text())).toEqual(['Production', 'Overflow', 'Archive'])
-    expect(wrapper.text()).toContain('Archive Claude')
-    expect(wrapper.text()).toContain('Production Claude')
-    expect(reconciliationOperations).not.toHaveBeenCalledWith({ group_id: 3 })
-
-    await wrapper.get('[data-test="group-tab-1"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Archive Claude')
-    expect(reconciliationOperations).toHaveBeenCalledWith({ group_id: 1 })
-    expect(reconciliationOperations).toHaveBeenCalledWith({ group_id: 1, account_id: 8 })
-  })
-
-  it('首次加载默认全站，展示全部唯一账号且账务请求不带分组范围', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      accounts: [
-        { ...account, account_id: 7, name: '生产账号', group_ids: [3], group_names: ['生产组'] },
-        { ...account, account_id: 8, name: '未分组账号', group_ids: [], group_names: [] },
-        {
-          ...account,
-          account_id: 9,
-          name: '暂停账号',
-          status: 'paused',
-          schedulable: false,
-          management_state: 'paused',
-          service_state: 'not_monitored',
-          group_eligibility: 'not_applicable',
-          monitor_bucket: 'paused',
-          group_ids: [3],
-          group_names: ['生产组'],
-        },
-      ],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="all-site-tab"]').text()).toContain('全站')
     expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(3)
-    expect(wrapper.text()).toContain('生产账号')
-    expect(wrapper.text()).toContain('未分组账号')
-    expect(wrapper.text()).toContain('暂停账号')
-    expect(wrapper.text()).toContain('当前展示 3 个账号')
-    expect(wrapper.findAll('[data-test="card-scope"]').every((node) => node.text() === 'all')).toBe(true)
-    expect(wrapper.text()).not.toContain('admin.accountMonitor.monitoredCount')
-    expect(reconciliationOperations.mock.calls.map(([params]) => params)).not.toContainEqual(expect.objectContaining({ group_id: expect.any(Number) }))
-    expect(reconciliationOperations.mock.calls.map(([params]) => params).every((params) => !Object.hasOwn(params, 'group_id'))).toBe(true)
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.findAll('[data-test="card-scope"]').every((node) => node.text() === 'group')).toBe(true)
-  })
-
-  it('limits concurrent per-account operations requests', async () => {
-    const accountCount = 12
-    list.mockResolvedValueOnce({
-      ...projection(),
-      accounts: Array.from({ length: accountCount }, (_, index) => ({
-        ...account,
-        account_id: index + 1,
-        name: `账号${index + 1}`,
-        group_ids: [],
-        group_names: [],
-      })),
-      groups: [],
-    })
-    let inFlight = 0
-    let maxInFlight = 0
-    reconciliationOperations.mockImplementation((params: { account_id?: number }) => {
-      if (params.account_id === undefined) return Promise.resolve({})
-      inFlight += 1
-      maxInFlight = Math.max(maxInFlight, inFlight)
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          inFlight -= 1
-          resolve({})
-        }, 0)
-      })
-    })
-
-    mountView()
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    await flushPromises()
-
-    expect(maxInFlight).toBeLessThanOrEqual(6)
-    expect(reconciliationOperations.mock.calls.filter(([params]) => params.account_id !== undefined)).toHaveLength(accountCount)
-  })
-
-  it('没有分组时仍保留全站 Tab', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [],
-      accounts: [{ ...account, name: '未分组账号', group_ids: [], group_names: [] }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="all-site-tab-button"]').text()).toContain('全站')
-    expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
-  })
-
-  it('uses /admin/groups as the authoritative group tab source and merges monitor metrics by ID', async () => {
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([
-      { id: 42, name: '真实运营组', status: 'active', rate_multiplier: 1.25, sort_order: 0 },
-      { id: 99, name: '已停用组', status: 'inactive', rate_multiplier: 1, sort_order: 1 },
-    ])
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [{ ...projection().groups[0], id: 42, name: '监控投影别名', health: { ...projection().groups[0].health, total_accounts: 1 } }],
-      accounts: [{ ...account, account_id: 42, group_ids: [42], group_names: ['真实运营组'] }],
-    })
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(groupsGetAllIncludingInactive).toHaveBeenCalledOnce()
-    expect(wrapper.find('[data-test="group-tab-42"]').text()).toContain('真实运营组')
-    expect(wrapper.find('[data-test="group-tab-42"]').text()).not.toContain('监控投影别名')
-    expect(wrapper.find('[data-test="group-tab-99"]').text()).toContain('已停用组')
-    expect(wrapper.find('[data-test="group-tab-3"]').exists()).toBe(false)
-
-    await wrapper.get('[data-test="group-tab-42"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-test="group-service-summary"]').text()).toContain('账号总数1')
-    expect(wrapper.text()).toContain('Primary Claude')
-    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('成本 30 · 成功 30 · TTFT 20 · 延迟 20')
-  })
-
-  it('renders no group tabs when /admin/groups succeeds with an empty array', async () => {
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([])
-    list.mockResolvedValueOnce(projection())
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.findAll('[data-test="group-tab"]')).toHaveLength(0)
-    expect(wrapper.find('[data-test="group-tab-3"]').exists()).toBe(false)
-  })
-
-  it('shows a Chinese load error and no projection group tabs when /admin/groups fails', async () => {
-    groupsGetAllIncludingInactive.mockRejectedValueOnce(new Error('network unavailable'))
-    list.mockResolvedValueOnce(projection())
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('分组列表加载失败，请检查分组服务连接')
-    expect(wrapper.findAll('[data-test="group-tab"]')).toHaveLength(0)
-    expect(showError).toHaveBeenCalledWith('分组列表加载失败，请检查分组服务连接')
-  })
-
-  it('falls back to backend default score weights when the monitor projection lacks a real group', async () => {
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([
-      { id: 42, name: '真实运营组', status: 'active', rate_multiplier: 1.25, sort_order: 0 },
-    ])
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [],
-      accounts: [{ ...account, account_id: 42, group_ids: [42], group_names: ['真实运营组'] }],
-    })
-
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-42"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="group-scope-action-row"]').text()).toContain('成本 15 · 成功 45 · TTFT 20 · 延迟 20')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    expect(wrapper.get('[data-test="score-dialog-weights"]').text()).toBe('15/45/20/20')
-  })
-
-  it('opens the daily ledger history from the all-site overview', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-ledger-history"]').trigger('click')
-
-    expect(wrapper.get('[data-test="ledger-history-drawer"]').text()).toBe('global')
-  })
-
-  it('loads and renders reconciliation exceptions from the all-site overview', async () => {
-    reconciliationExceptions.mockResolvedValueOnce({
-      items: [{
-        id: 11,
-        reason_code: 'missing_upstream_record',
-        details: '待匹配',
-        retry_count: 1,
-        first_detected_at: '2026-07-25T08:00:00Z',
-        last_checked_at: '2026-07-25T08:01:00Z',
-        attempt: {
-          id: 21,
-          attempt_id: 'attempt-21',
-          local_request_id: 'local-21',
-          upstream_request_id: '',
-          account_id: 7,
-          model: 'claude-sonnet-4-5',
-          user_charge: '1',
-          currency: 'USD',
-          completed_at: '2026-07-25T08:00:00Z',
-          reconcile_status: 'pending',
-        },
-      }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
-    await flushPromises()
-
-    expect(reconciliationExceptions).toHaveBeenCalledWith({ limit: 100 })
-    expect(wrapper.text()).toContain('暂未获取到对应的上游账单')
-    expect(wrapper.text()).not.toContain('missing_upstream_record')
-    expect(wrapper.text()).toContain('补登记')
-  })
-
-  it('shows an actionable error instead of an empty exception state when the API is unavailable', async () => {
-    reconciliationExceptions.mockRejectedValueOnce(new Error('异常明细返回了无效数据，请检查账务服务连接'))
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
-    expect(wrapper.text()).not.toContain('当前没有未解决异常')
-    expect(showError).toHaveBeenCalledWith('异常明细返回了无效数据，请检查账务服务连接')
-  })
-
-  it('rejects an invalid exception response instead of showing a false empty state', async () => {
-    reconciliationExceptions.mockResolvedValueOnce([])
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
-    expect(wrapper.text()).not.toContain('当前没有未解决异常')
-  })
-
-  it('rejects structurally invalid exception items instead of rendering false values', async () => {
-    reconciliationExceptions.mockResolvedValueOnce({
-      items: [{
-        id: 11,
-        reason_code: 'missing_upstream_record',
-        details: '待匹配',
-        retry_count: 1,
-        first_detected_at: '2026-07-25T08:00:00Z',
-        last_checked_at: '2026-07-25T08:01:00Z',
-        attempt: { id: 21 },
-      }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="exceptions-error"]').text()).toContain('异常明细返回了无效数据')
-    expect(wrapper.text()).not.toContain('当前没有未解决异常')
-    expect(wrapper.find('input[placeholder="0.000000"]').exists()).toBe(false)
-  })
-
-  it('submits a manual exception adjustment and removes it after success', async () => {
-    reconciliationExceptions.mockResolvedValueOnce({
-      items: [{
-        id: 11,
-        reason_code: 'missing_upstream_record',
-        details: '待匹配',
-        retry_count: 1,
-        first_detected_at: '2026-07-25T08:00:00Z',
-        last_checked_at: '2026-07-25T08:01:00Z',
-        attempt: {
-          id: 21,
-          attempt_id: 'attempt-21',
-          local_request_id: 'local-21',
-          upstream_request_id: '',
-          account_id: 7,
-          model: 'claude-sonnet-4-5',
-          user_charge: '1',
-          currency: 'USD',
-          completed_at: '2026-07-25T08:00:00Z',
-          reconcile_status: 'pending',
-        },
-      }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="open-exceptions"]').trigger('click')
-    await flushPromises()
-
-    await wrapper.find('input[placeholder="0.000000"]').setValue('0.25')
-    await wrapper.find('form').trigger('submit')
-    await flushPromises()
-
-    expect(reconciliationAdjust).toHaveBeenCalledWith(21, '0.25')
-    expect(wrapper.text()).not.toContain('missing_upstream_record')
-    expect(showSuccess).toHaveBeenCalledWith('补登记成功')
-  })
-
-  it('快速切换分组时保留最新分组账务响应', async () => {
-    let resolveProduction: ((value: Record<string, unknown>) => void) | undefined
-    reconciliationOperations.mockImplementation((params: { group_id?: number; account_id?: number }) => {
-      if (params.group_id === 3 && params.account_id === undefined) {
-        return new Promise((resolve) => { resolveProduction = resolve })
-      }
-      if (params.group_id === 1) return Promise.resolve({ total_attempts: 2, matched_attempts: 2, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '2', user_charge: '4', paper_profit: '2', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-      return Promise.resolve({ total_attempts: 1, matched_attempts: 1, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
-    })
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([
-      { id: 3, name: 'Production', status: 'active', rate_multiplier: 2, sort_order: 0 },
-      { id: 1, name: 'Archive', status: 'active', rate_multiplier: 1, sort_order: 1 },
-    ])
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [
-        { id: 3, name: 'Production', rate_multiplier: 2, customer_visible: true, native_order: 0, score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 }, operational_state: 'operational' },
-        { id: 1, name: 'Archive', rate_multiplier: 1, customer_visible: true, native_order: 1, score_weights: { cost: 30, success: 30, ttft: 20, latency: 20 }, operational_state: 'operational' },
-      ],
-      accounts: [
-        { ...account, account_id: 7, group_ids: [3], group_names: ['Production'] },
-        { ...account, account_id: 8, name: 'Archive Claude', group_ids: [1], group_names: ['Archive'] },
-      ],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="group-tab-1"]').trigger('click')
-    await flushPromises()
-
-    resolveProduction?.({ total_attempts: 9, matched_attempts: 9, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '9', user_charge: '18', paper_profit: '9', currency: 'USD', observed_at: '2026-07-25T08:01:00Z' })
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="group-operations-overview"]').text()).toContain('€2.00')
-    expect(wrapper.get('[data-test="group-operations-overview"]').text()).not.toContain('$9.00')
-  })
-
-  it('只保存和重置当前选中分组的评分权重', async () => {
-    const wrapper = mountView()
-    await flushPromises()
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
 
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    expect(wrapper.get('[data-test="score-dialog"]').text()).toContain('3')
-    await wrapper.get('[data-test="save-score"]').trigger('click')
-    await flushPromises()
-    expect(updateGroupScoreWeights).toHaveBeenCalledWith(3, { cost: 20, success: 40, ttft: 20, latency: 20 })
-
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    await wrapper.get('[data-test="reset-score"]').trigger('click')
-    await flushPromises()
-    expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
-  })
-
-  it('说明关闭分组并非面向用户的服务异常', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [{ ...projection().groups[0], customer_visible: false, operational_state: 'closed' }],
-    })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="group-operating-summary"]').text()).toContain('当前分组未向用户开放')
-  })
-
-  it('updates the global interval from the header and card settings action', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="open-settings"]').trigger('click')
-    await wrapper.get('[data-test="save-settings"]').trigger('click')
-    await flushPromises()
-
-    expect(updateSettings).toHaveBeenCalledWith(60)
-
-    await wrapper.get('[data-test="card-settings"]').trigger('click')
-    expect(wrapper.get('[data-test="settings-dialog"]').exists()).toBe(true)
-  })
-
-  it('runs the whole pool and one account, including history loading', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="run-all"]').trigger('click')
-    await wrapper.get('[data-test="card-refresh"]').trigger('click')
-    await wrapper.get('[data-test="card-history"]').trigger('click')
-    await flushPromises()
-
-    expect(runAll).toHaveBeenCalledOnce()
-    expect(runOne).toHaveBeenCalledWith(7)
-    expect(history).toHaveBeenCalledWith(7, 25)
-  })
-
-  it('shows stale, failed, and no-history states without removing the card', async () => {
-    list.mockResolvedValueOnce({
-      ...projection(),
-      stale: true,
-      accounts: [
-        { ...account, latest_status: 'failed', error_code: 'timeout', sample_count: 0, stale: true },
-      ],
-    })
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="monitor-card"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('failed')
-    expect(wrapper.text()).toContain('timeout')
-  })
-
-  it('分组 Tab 与搜索、服务状态筛选可组合使用', async () => {
-    groupsGetAllIncludingInactive.mockResolvedValueOnce([
-      { id: 3, name: 'Production', status: 'active', rate_multiplier: 1, sort_order: 0 },
-      { id: 5, name: 'Overflow', status: 'active', rate_multiplier: 1, sort_order: 1 },
+    expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
+    const summaryFields = wrapper.findAll('[data-test="group-summary-field"]')
+    expect(summaryFields).toHaveLength(7)
+    expect(summaryFields.map((field) => field.attributes('data-field'))).toEqual([
+      'status',
+      'platform',
+      'rate_multiplier',
+      'rpm_limit',
+      'account_count',
+      'active_account_count',
+      'rate_limited_account_count',
     ])
-    list.mockResolvedValueOnce({
-      ...projection(),
-      groups: [
-        ...projection().groups,
-        {
-          ...projection().groups[0],
-          id: 5,
-          name: 'Overflow',
-          native_order: 1,
-        },
-      ],
-      accounts: [
-        account,
-        {
-          ...account,
-          account_id: 8,
-          name: '备份账号',
-          group_ids: [3, 5],
-          group_names: ['Production', 'Overflow'],
-          latest_status: 'failed',
-        },
-        {
-          ...account,
-          account_id: 9,
-          name: '其他账号',
-          group_ids: [5],
-          group_names: ['Overflow'],
-          latest_status: 'failed',
-        },
-      ],
-    })
+    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20x')
+    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
+
+    const cards = wrapper.findAll('[data-test="monitor-card"]')
+    expect(cards).toHaveLength(4)
+    expect(cards.map((card) => Number(card.attributes('data-account-id')))).toEqual([10, 11, 20, 30])
+    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
+  })
+
+  it('polls one deduplicated batch for currently visible cards every five seconds, pauses hidden, and refreshes on return', async () => {
+    vi.useFakeTimers()
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-test="group-tab-5"]').trigger('click')
-    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('备份账号')
-    expect(wrapper.text()).toContain('其他账号')
-    expect(wrapper.text()).not.toContain('Primary Claude')
+    expect(getConcurrency).toHaveBeenCalledTimes(1)
+    expect(getConcurrency).toHaveBeenLastCalledWith([10, 11, 20, 30])
 
-    await wrapper.get('[data-test="search-backup"]').trigger('click')
-    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('备份账号')
+    getConcurrency.mockClear()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(getConcurrency).toHaveBeenCalledTimes(1)
 
-    await wrapper.get('[data-test="filter-available"]').trigger('click')
-    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('备份账号')
+    documentHidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    getConcurrency.mockClear()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getConcurrency).not.toHaveBeenCalled()
+
+    documentHidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(getConcurrency).toHaveBeenCalledTimes(1)
+    expect(getConcurrency).toHaveBeenLastCalledWith([10, 11, 20, 30])
+
+    getConcurrency.mockClear()
+    await wrapper.get('input[type="search"]').setValue('Rank two')
+    await flushPromises()
+    expect(getConcurrency).toHaveBeenCalledTimes(1)
+    expect(getConcurrency).toHaveBeenLastCalledWith([20])
+  })
+
+  it('retains the last successful concurrency values and marks them delayed after a poll failure', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-account-id="10"] [data-test="card-concurrency"]').text()).toBe('3 / 8')
+
+    getConcurrency.mockRejectedValueOnce(new Error('concurrency unavailable'))
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(wrapper.find('[data-account-id="10"] [data-test="card-concurrency"]').text()).toBe('3 / 8')
+    expect(wrapper.find('[data-account-id="10"] [data-test="card-delayed"]').exists()).toBe(true)
+  })
+
+  it('settles card save completions and reloads the current successful range after each save', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    list.mockClear()
+
+    const priorityCompletion = { resolve: vi.fn(), reject: vi.fn() }
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 4, priorityCompletion)
+    await flushPromises()
+
+    expect(updateAccount).toHaveBeenCalledWith(10, { priority: 4 })
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(priorityCompletion.resolve).toHaveBeenCalledOnce()
+    expect(priorityCompletion.reject).not.toHaveBeenCalled()
+
+    list.mockClear()
+    const costCompletion = { resolve: vi.fn(), reject: vi.fn() }
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateProcurementCost', 10, 125.5, costCompletion)
+    await flushPromises()
+
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, 125.5)
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(costCompletion.resolve).toHaveBeenCalledOnce()
+    expect(costCompletion.reject).not.toHaveBeenCalled()
+
+    updateAccount.mockRejectedValueOnce(new Error('priority rejected'))
+    const rejectedCompletion = { resolve: vi.fn(), reject: vi.fn() }
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 6, rejectedCompletion)
+    await flushPromises()
+
+    expect(rejectedCompletion.resolve).not.toHaveBeenCalled()
+    expect(rejectedCompletion.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'priority rejected' }))
+  })
+
+  it('invokes and renders no revenue, operations, profit, accounting, ledger, history, reconciliation, adjustment, or exception surface', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    for (const forbidden of [operations, refreshReconciliation, reconciliationHistory, reconciliationExceptions, reconciliationAdjust, revenue, accounting]) {
+      expect(forbidden).not.toHaveBeenCalled()
+    }
+    const forbiddenText = [
+      '营收', '经营', '利润', '账务', '台账', '历史', '对账', '补登记', '调整', '异常',
+      'revenue', 'operations', 'profit', 'accounting', 'ledger', 'history', 'reconciliation', 'adjustment', 'exception',
+    ]
+    const text = wrapper.text().toLowerCase()
+    for (const label of forbiddenText) expect(text).not.toContain(label)
   })
 })

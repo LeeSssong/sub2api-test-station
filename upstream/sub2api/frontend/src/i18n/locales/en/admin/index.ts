@@ -18,7 +18,7 @@ export default {
   ...promptAudit,
   accountMonitor: {
     title: 'Account Monitor',
-    description: 'Monitor only active, schedulable upstream accounts and review quality, multipliers, and usage windows in one place.',
+    description: 'Compare account service quality, scores, and scheduling priority by group.',
     monitoredCount: '{count} accounts monitored',
     interval: 'Global interval',
     intervalMinutes: '{count} min',

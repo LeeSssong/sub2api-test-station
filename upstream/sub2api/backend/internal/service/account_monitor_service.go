@@ -809,22 +809,26 @@ func accountMonitorWindowServiceState(
 	if managementState == accountMonitorManagementPaused {
 		return accountMonitorServiceNotMonitored
 	}
+	if accountMonitorWindowHasThresholdQualifiedRealRequests(evidence) {
+		if evidence.SuccessSampleCount > 0 {
+			return accountMonitorServiceAvailable
+		}
+		return accountMonitorServiceUnavailable
+	}
 	if row.Stale || row.Latest == nil {
 		return accountMonitorServicePending
 	}
 	if evidence.Source == "stale" {
 		return accountMonitorServicePending
 	}
-	if evidence.Source == "real_requests" {
-		if evidence.SuccessSampleCount > 0 {
-			return accountMonitorServiceAvailable
-		}
-		return accountMonitorServiceUnavailable
-	}
 	if row.LatestStatus == "success" {
 		return accountMonitorServiceAvailable
 	}
 	return accountMonitorServiceUnavailable
+}
+
+func accountMonitorWindowHasThresholdQualifiedRealRequests(evidence AccountMonitorQualityEvidence) bool {
+	return evidence.Source == "real_requests" && evidence.SampleCount >= AccountMonitorGroupEvidenceMinSamples
 }
 
 func accountMonitorWindowCheckedAt(latest AccountMonitorLatest, evidence AccountMonitorQualityEvidence) *time.Time {

@@ -1414,6 +1414,96 @@ func TestAccountMonitorWindowEvidenceUsesRawSuccessCountAndRealObservedAt(t *tes
 	}
 }
 
+func TestAccountMonitorWindowServiceStateUsesOnlyThresholdQualifiedRealRequestsBeforeProbeGate(t *testing.T) {
+	now := time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+	thresholdQualified := AccountMonitorQualityEvidence{Source: "real_requests", SampleCount: 3, SuccessSampleCount: 1}
+	if got := accountMonitorWindowServiceState(AccountMonitorAccount{Stale: true}, thresholdQualified, accountMonitorManagementEnabled); got != accountMonitorServiceAvailable {
+		t.Fatalf("threshold-qualified real requests with absent latest probe = %q, want available", got)
+	}
+
+	belowThreshold := AccountMonitorQualityEvidence{Source: "real_requests", SampleCount: 2, SuccessSampleCount: 2}
+	failedLatest := AccountMonitorAccount{
+		Latest:       &AccountMonitorLatest{Status: "failed", CheckedAt: now},
+		LatestStatus: "failed",
+	}
+	if got := accountMonitorWindowServiceState(failedLatest, belowThreshold, accountMonitorManagementEnabled); got != accountMonitorServiceUnavailable {
+		t.Fatalf("subthreshold real requests with failed latest probe = %q, want unavailable", got)
+	}
+}
+
+func TestAccountMonitorWindowThresholdQualifiedRealRequestsIgnoreAbsentLatestInGlobalAndGroupProjections(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-time.Hour)
+	rate := 0.5
+	accounts := []Account{
+		{ID: 201, Name: "threshold-success", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 202, Name: "threshold-failed", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			201: {RequestCount: 3, SuccessCount: 3, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			202: {RequestCount: 3, SuccessCount: 0, ErrorCount: 3, SuccessRate: 0, LastObservedAt: &observedAt},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	globalByID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		globalByID[row.AccountID] = row
+	}
+	if row := globalByID[201]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil || row.Latest != nil {
+		t.Fatalf("global threshold success = %#v, want available and ranked without latest probe", row)
+	}
+	if row := globalByID[202]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.Latest != nil {
+		t.Fatalf("global threshold failure = %#v, want unavailable and unranked without latest probe", row)
+	}
+
+	groupByID := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
+	for _, row := range page.Groups[0].Accounts {
+		groupByID[row.AccountID] = row
+	}
+	if row := groupByID[201]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil || row.Latest != nil {
+		t.Fatalf("group threshold success = %#v, want available and ranked without latest probe", row)
+	}
+	if row := groupByID[202]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.Latest != nil {
+		t.Fatalf("group threshold failure = %#v, want unavailable and unranked without latest probe", row)
+	}
+}
+
+func TestAccountMonitorWindowSubthresholdRealRequestsKeepLatestProbeGateInGlobalAndGroupProjections(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-time.Hour)
+	rate := 0.5
+	account := Account{ID: 203, Name: "subthreshold-success", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			203: {RequestCount: 2, SuccessCount: 2, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			203: {Status: "failed", CheckedAt: now},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := page.Accounts[0]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
+		t.Fatalf("global subthreshold success = %#v, want failed latest probe to make it unavailable and unranked", row)
+	}
+	if row := page.Groups[0].Accounts[0]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
+		t.Fatalf("group subthreshold success = %#v, want failed latest probe to make it unavailable and unranked", row)
+	}
+}
+
 func TestSummarizeHealthSamplesWeightsSuccessRateByRequestSamples(t *testing.T) {
 	summary := summarizeHealthSamples([]accountMonitorHealthSample{
 		{serviceState: accountMonitorServiceAvailable, sampleCount: 100, successSampleCount: 1, successRate: 0.01},

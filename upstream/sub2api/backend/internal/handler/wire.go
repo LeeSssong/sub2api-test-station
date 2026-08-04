@@ -115,6 +115,15 @@ func ProvideGatewayHandler(
 	return h
 }
 
+func ProvideAccountMonitorHandler(
+	monitorService *service.AccountMonitorService,
+	runner *service.AccountMonitorRunner,
+	accountRepo service.AccountRepository,
+	concurrencyService *service.ConcurrencyService,
+) *admin.AccountMonitorHandler {
+	return admin.NewAccountMonitorHandler(monitorService, runner, accountRepo, concurrencyService)
+}
+
 func ProvideOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
 	concurrencyService *service.ConcurrencyService,
@@ -274,7 +283,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewChannelHandler,
 	admin.NewChannelMonitorHandler,
 	admin.NewChannelMonitorRequestTemplateHandler,
-	admin.NewAccountMonitorHandler,
+	ProvideAccountMonitorHandler,
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
 	admin.NewAffiliateHandler,

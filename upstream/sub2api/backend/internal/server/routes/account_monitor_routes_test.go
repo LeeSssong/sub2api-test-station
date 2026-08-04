@@ -45,12 +45,32 @@ func (*accountMonitorRouteAccountRepoStub) ListAllWithFilters(context.Context, s
 	return nil, nil
 }
 
+func (*accountMonitorRouteAccountRepoStub) GetByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {
+	accounts := make([]*service.Account, 0, len(ids))
+	for _, id := range ids {
+		accounts = append(accounts, &service.Account{ID: id, Concurrency: 10})
+	}
+	return accounts, nil
+}
+
+type accountMonitorRouteConcurrencyCacheStub struct {
+	service.ConcurrencyCache
+}
+
+func (*accountMonitorRouteConcurrencyCacheStub) GetAccountConcurrencyBatch(_ context.Context, ids []int64) (map[int64]int, error) {
+	current := make(map[int64]int, len(ids))
+	for _, id := range ids {
+		current[id] = int(id)
+	}
+	return current, nil
+}
+
 func TestAccountMonitorRoutesRegisterWindowEndpointAndKeepLegacyEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &accountMonitorRouteRepoStub{}
 	monitorService := service.NewAccountMonitorService(repo, &accountMonitorRouteAccountRepoStub{}, nil, nil, nil)
 	handlers := &handler.Handlers{Admin: &handler.AdminHandlers{
-		AccountMonitor: adminhandler.NewAccountMonitorHandler(monitorService, nil),
+		AccountMonitor: adminhandler.NewAccountMonitorHandler(monitorService, nil, nil, nil),
 	}}
 	router := gin.New()
 	adminAuth := servermiddleware.AdminAuthMiddleware(func(c *gin.Context) {
@@ -87,6 +107,57 @@ func TestAccountMonitorRoutesRegisterWindowEndpointAndKeepLegacyEndpoint(t *test
 			}
 			if tt.wantContains != "" && !strings.Contains(recorder.Body.String(), tt.wantContains) {
 				t.Fatalf("body = %s, want %s", recorder.Body.String(), tt.wantContains)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorConcurrencyRouteRequiresAdminAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	accountRepo := &accountMonitorRouteAccountRepoStub{}
+	handlers := &handler.Handlers{Admin: &handler.AdminHandlers{
+		AccountMonitor: adminhandler.NewAccountMonitorHandler(
+			nil,
+			nil,
+			accountRepo,
+			service.NewConcurrencyService(&accountMonitorRouteConcurrencyCacheStub{}),
+		),
+	}}
+	router := gin.New()
+	adminAuth := servermiddleware.AdminAuthMiddleware(func(c *gin.Context) {
+		if c.GetHeader("Authorization") != "Bearer admin" {
+			servermiddleware.AbortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Authorization required")
+			return
+		}
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+		c.Set(string(servermiddleware.ContextKeyUserRole), service.RoleAdmin)
+		c.Next()
+	})
+	auditLog := servermiddleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
+	stepUp := servermiddleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() })
+	RegisterAdminRoutes(router.Group("/api/v1"), handlers, adminAuth, auditLog, stepUp, nil, nil)
+
+	for _, tt := range []struct {
+		name       string
+		authorized bool
+		wantStatus int
+	}{
+		{name: "unauthenticated", wantStatus: http.StatusUnauthorized},
+		{name: "authenticated admin", authorized: true, wantStatus: http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/monitor/concurrency", strings.NewReader(`{"account_ids":[1]}`))
+			req.Header.Set("Content-Type", "application/json")
+			if tt.authorized {
+				req.Header.Set("Authorization", "Bearer admin")
+			}
+			router.ServeHTTP(res, req)
+			if res.Code != tt.wantStatus {
+				t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+			}
+			if tt.authorized && !strings.Contains(res.Body.String(), `"items":[{"account_id":1,"current":1,"limit":10}]`) {
+				t.Fatalf("body = %s", res.Body.String())
 			}
 		})
 	}

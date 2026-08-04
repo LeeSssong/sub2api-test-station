@@ -33,6 +33,7 @@ type accountMonitorRepoStub struct {
 	groups             []AccountMonitorGroup
 	weights            map[int64]AccountMonitorScoreWeights
 	aggregates         map[int64]AccountMonitorAggregate
+	windowAggregates   map[int64]AccountMonitorWindowAggregate
 	groupAggregates    map[int64]map[int64]AccountMonitorAggregate
 	aggregate          AccountMonitorAggregate
 	groupAggregate     map[int64]AccountMonitorAggregate
@@ -56,6 +57,10 @@ func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error 
 
 func (s *accountMonitorRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]AccountMonitorAggregate, error) {
 	return s.aggregates, nil
+}
+
+func (s *accountMonitorRepoStub) ListWindowAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]AccountMonitorWindowAggregate, error) {
+	return s.windowAggregates, nil
 }
 
 func (s *accountMonitorRepoStub) ListGroupAggregates(_ context.Context, groupID int64, _ []int64, _ time.Time) (map[int64]AccountMonitorAggregate, error) {
@@ -1040,6 +1045,138 @@ func TestAccountMonitorClosedGroupWithSuccessfulTrafficRemainsClosed(t *testing.
 	if group.OperationalState != "closed" || len(group.Accounts) != 1 {
 		t.Fatalf("closed group with successful traffic must remain inspectable: %#v", group)
 	}
+}
+
+func TestAccountMonitorWindowCostUsesProcurementOverlapAndOneToOneMultiplier(t *testing.T) {
+	windowStart := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	windowEnd := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	effectiveAt := time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	purchaseCost := 24.0
+
+	got := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+		ExpiresAt:                  &expiresAt,
+	}, windowStart, windowEnd, 8)
+	if got.Mode != "procurement" || got.WindowCost != 8 || got.EffectiveMultiplier == nil || *got.EffectiveMultiplier != 1 {
+		t.Fatalf("procurement window cost = %#v, want CNY 8 and 1x", got)
+	}
+}
+
+func TestAccountMonitorWindowCostReturnsZeroCostScoreForInvalidCostInputs(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	effectiveAt := start.Add(-24 * time.Hour)
+	purchaseCost := 24.0
+
+	procurement := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+	}, start, end, 8)
+	if procurement.CostScoreEligible || procurement.EffectiveMultiplier != nil {
+		t.Fatalf("missing expiry must have zero cost score: %#v", procurement)
+	}
+
+	multiplier := accountMonitorWindowCost(Account{}, start, end, 8)
+	if multiplier.Mode != "multiplier" || multiplier.CostScoreEligible || multiplier.EffectiveMultiplier != nil {
+		t.Fatalf("missing multiplier must have zero cost score: %#v", multiplier)
+	}
+}
+
+func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T) {
+	now := time.Now().UTC()
+	cheap := 0.5
+	accounts := []Account{
+		{ID: 9, Name: "cost-missing", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}},
+		{ID: 10, Name: "priced", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &cheap},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			9:  {RequestCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			10: {RequestCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{9: {Status: "success", CheckedAt: now}, 10: {Status: "success", CheckedAt: now}},
+	}
+	multiplier := &accountMonitorMultiplierStub{results: map[int64]AccountMonitorMultiplier{
+		9:  {Status: AccountMonitorMultiplierStatusUnavailable},
+		10: {Value: &cheap, Status: AccountMonitorMultiplierStatusOK},
+	}}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, multiplier).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := page.Groups[0].Accounts
+	if len(rows) != 2 || !rows[0].Eligible || rows[0].CostScore != 0 || rows[0].GroupRank == nil || *rows[0].GroupRank != 1 {
+		t.Fatalf("cost-invalid account must remain eligible and rankable: %#v", rows)
+	}
+}
+
+func TestAccountMonitorWindowRankingUsesScoreThenAccountIDAndPlacesUnrankedLast(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 30, Name: "tie-later", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 10, Name: "best", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 20, Name: "tie-earlier", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 40, Name: "unranked", Status: StatusDisabled, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			10: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			30: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{10: {Status: "success", CheckedAt: now}, 20: {Status: "success", CheckedAt: now}, 30: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := page.Groups[0].Accounts
+	if got := []int64{rows[0].AccountID, rows[1].AccountID, rows[2].AccountID, rows[3].AccountID}; !slicesEqual(got, []int64{10, 20, 30, 40}) {
+		t.Fatalf("rank order = %v, want [10 20 30 40]", got)
+	}
+	if rows[0].GroupRank == nil || *rows[0].GroupRank != 1 || rows[1].GroupRank == nil || *rows[1].GroupRank != 2 || rows[2].GroupRank == nil || *rows[2].GroupRank != 3 || rows[3].GroupRank != nil {
+		t.Fatalf("ranks = %#v", rows)
+	}
+}
+
+func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *testing.T) {
+	now := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	probe := AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 0.75, LastCheckedAt: &now}
+	latest := AccountMonitorLatest{Status: "success", CheckedAt: now}
+	settings := AccountMonitorSettings{IntervalSeconds: 300}
+
+	withTwoRequests := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 2, SuccessRate: 1, LastObservedAt: &now}, probe, latest, settings, now,
+	)
+	if withTwoRequests.Source != "monitor_probe" || withTwoRequests.SampleCount != 4 || withTwoRequests.SuccessRate != 0.75 {
+		t.Fatalf("two real requests should use probe evidence: %#v", withTwoRequests)
+	}
+
+	withThreeRequests := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessRate: 1, LastObservedAt: &now}, probe, latest, settings, now,
+	)
+	if withThreeRequests.Source != "real_requests" || withThreeRequests.SampleCount != 3 || withThreeRequests.SuccessRate != 1 {
+		t.Fatalf("three real requests must not use probe evidence: %#v", withThreeRequests)
+	}
+}
+
+func slicesEqual(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func floatPtr(value float64) *float64 { return &value }

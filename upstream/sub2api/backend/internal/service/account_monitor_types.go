@@ -21,6 +21,14 @@ const (
 	AccountMonitorDefaultLatencyLimitMS   = 60000
 )
 
+type AccountMonitorRange string
+
+const (
+	AccountMonitorRange24Hours AccountMonitorRange = "24h"
+	AccountMonitorRange7Days   AccountMonitorRange = "7d"
+	AccountMonitorRange30Days  AccountMonitorRange = "30d"
+)
+
 var DefaultAccountMonitorScoreWeights = AccountMonitorScoreWeights{
 	Cost: 15, Success: 45, TTFT: 20, Latency: 20,
 	TTFTTargetMS: AccountMonitorDefaultTTFTTargetMS, TTFTLimitMS: AccountMonitorDefaultTTFTLimitMS,
@@ -41,15 +49,21 @@ type AccountMonitorScoreWeights struct {
 }
 
 type AccountMonitorGroup struct {
-	ID               int64                        `json:"id"`
-	Name             string                       `json:"name"`
-	RateMultiplier   float64                      `json:"rate_multiplier"`
-	CustomerVisible  bool                         `json:"customer_visible"`
-	NativeOrder      int                          `json:"native_order"`
-	ScoreWeights     AccountMonitorScoreWeights   `json:"score_weights"`
-	OperationalState string                       `json:"operational_state"`
-	Health           AccountMonitorHealthSummary  `json:"health"`
-	Accounts         []AccountMonitorGroupAccount `json:"accounts,omitempty"`
+	ID                      int64                        `json:"id"`
+	Name                    string                       `json:"name"`
+	Status                  string                       `json:"status"`
+	Platform                string                       `json:"platform"`
+	RateMultiplier          float64                      `json:"rate_multiplier"`
+	RPMLimit                int                          `json:"rpm_limit"`
+	AccountCount            int64                        `json:"account_count"`
+	ActiveAccountCount      int64                        `json:"active_account_count"`
+	RateLimitedAccountCount int64                        `json:"rate_limited_account_count"`
+	CustomerVisible         bool                         `json:"customer_visible"`
+	NativeOrder             int                          `json:"native_order"`
+	ScoreWeights            AccountMonitorScoreWeights   `json:"score_weights"`
+	OperationalState        string                       `json:"operational_state"`
+	Health                  AccountMonitorHealthSummary  `json:"health"`
+	Accounts                []AccountMonitorGroupAccount `json:"accounts,omitempty"`
 }
 
 // AccountMonitorHealthSummary is a display-only operational projection. It
@@ -122,6 +136,20 @@ type AccountMonitorAggregate struct {
 	ConsecutiveFailed  int
 }
 
+// AccountMonitorWindowAggregate contains real request evidence from usage_logs.
+// Probe observations are intentionally kept separate from these fields.
+type AccountMonitorWindowAggregate struct {
+	RequestCount       int64
+	ErrorCount         int64
+	BaseCost           float64
+	SuccessRate        float64
+	TTFTSampleCount    int
+	LatencySampleCount int
+	TTFTP50MS          *float64
+	LatencyP95MS       *float64
+	LastObservedAt     *time.Time
+}
+
 type AccountMonitorUsageWindow struct {
 	Name        string     `json:"name"`
 	Utilization float64    `json:"utilization"`
@@ -157,44 +185,50 @@ type AccountMonitorMultiplier struct {
 }
 
 type AccountMonitorAccount struct {
-	AccountID          int64                         `json:"account_id"`
-	Name               string                        `json:"name"`
-	Platform           string                        `json:"platform"`
-	AccountType        string                        `json:"account_type"`
-	Status             string                        `json:"status"`
-	Schedulable        bool                          `json:"schedulable"`
-	Priority           int                           `json:"priority"`
-	HomepageURL        string                        `json:"homepage_url,omitempty"`
-	GroupIDs           []int64                       `json:"group_ids"`
-	GroupNames         []string                      `json:"group_names"`
-	ModelID            string                        `json:"model_id"`
-	LatestStatus       string                        `json:"latest_status"`
-	ErrorCode          string                        `json:"error_code,omitempty"`
-	SampleCount        int                           `json:"sample_count"`
-	SuccessSampleCount int                           `json:"success_sample_count"`
-	TTFTSampleCount    int                           `json:"ttft_sample_count"`
-	LatencySampleCount int                           `json:"latency_sample_count"`
-	SuccessRate        float64                       `json:"success_rate"`
-	TTFTP50MS          *float64                      `json:"ttft_p50_ms,omitempty"`
-	TTFTP95MS          *float64                      `json:"ttft_p95_ms,omitempty"`
-	LatencyP95MS       *float64                      `json:"latency_p95_ms,omitempty"`
-	Multiplier         AccountMonitorMultiplier      `json:"multiplier"`
-	RequestCount       int64                         `json:"request_count"`
-	ErrorCount         int64                         `json:"error_count"`
-	TodayStats         *WindowStats                  `json:"today_stats,omitempty"`
-	UsageWindows       []AccountMonitorUsageWindow   `json:"usage_windows,omitempty"`
-	Latest             *AccountMonitorLatest         `json:"latest,omitempty"`
-	Timeline           []AccountMonitorTimelinePoint `json:"timeline"`
-	CheckedAt          *time.Time                    `json:"checked_at,omitempty"`
-	Stale              bool                          `json:"stale"`
-	ManagementState    string                        `json:"management_state"`
-	ServiceState       string                        `json:"service_state"`
-	GroupEligibility   string                        `json:"group_eligibility"`
-	MonitorBucket      string                        `json:"monitor_bucket"`
+	AccountID           int64                         `json:"account_id"`
+	Name                string                        `json:"name"`
+	Platform            string                        `json:"platform"`
+	AccountType         string                        `json:"account_type"`
+	Status              string                        `json:"status"`
+	Schedulable         bool                          `json:"schedulable"`
+	Priority            int                           `json:"priority"`
+	HomepageURL         string                        `json:"homepage_url,omitempty"`
+	GroupIDs            []int64                       `json:"group_ids"`
+	GroupNames          []string                      `json:"group_names"`
+	ModelID             string                        `json:"model_id"`
+	LatestStatus        string                        `json:"latest_status"`
+	ErrorCode           string                        `json:"error_code,omitempty"`
+	SampleCount         int                           `json:"sample_count"`
+	SuccessSampleCount  int                           `json:"success_sample_count"`
+	TTFTSampleCount     int                           `json:"ttft_sample_count"`
+	LatencySampleCount  int                           `json:"latency_sample_count"`
+	SuccessRate         float64                       `json:"success_rate"`
+	TTFTP50MS           *float64                      `json:"ttft_p50_ms,omitempty"`
+	TTFTP95MS           *float64                      `json:"ttft_p95_ms,omitempty"`
+	LatencyP95MS        *float64                      `json:"latency_p95_ms,omitempty"`
+	Multiplier          AccountMonitorMultiplier      `json:"multiplier"`
+	RequestCount        int64                         `json:"request_count"`
+	ErrorCount          int64                         `json:"error_count"`
+	Range               AccountMonitorRange           `json:"range,omitempty"`
+	BaseCost            float64                       `json:"base_cost"`
+	EffectiveMultiplier *float64                      `json:"effective_multiplier,omitempty"`
+	CostMode            string                        `json:"cost_mode,omitempty"`
+	CostScore           float64                       `json:"cost_score"`
+	TodayStats          *WindowStats                  `json:"today_stats,omitempty"`
+	UsageWindows        []AccountMonitorUsageWindow   `json:"usage_windows,omitempty"`
+	Latest              *AccountMonitorLatest         `json:"latest,omitempty"`
+	Timeline            []AccountMonitorTimelinePoint `json:"timeline"`
+	CheckedAt           *time.Time                    `json:"checked_at,omitempty"`
+	Stale               bool                          `json:"stale"`
+	ManagementState     string                        `json:"management_state"`
+	ServiceState        string                        `json:"service_state"`
+	GroupEligibility    string                        `json:"group_eligibility"`
+	MonitorBucket       string                        `json:"monitor_bucket"`
 }
 
 type AccountMonitorProjection struct {
 	SchemaVersion int                         `json:"schema_version"`
+	Range         AccountMonitorRange         `json:"range,omitempty"`
 	ObservedAt    time.Time                   `json:"observed_at"`
 	Stale         bool                        `json:"stale"`
 	Settings      AccountMonitorSettings      `json:"settings"`
@@ -212,6 +246,7 @@ type AccountMonitorRepository interface {
 	SaveSettings(ctx context.Context, settings AccountMonitorSettings) error
 	InsertResult(ctx context.Context, result AccountMonitorProbeResult, runID string) error
 	ListAggregates(ctx context.Context, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
+	ListWindowAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 	ListLatest(ctx context.Context, accountIDs []int64) (map[int64]AccountMonitorLatest, error)
 	ListTimelines(ctx context.Context, accountIDs []int64, perAccountLimit int) (map[int64][]AccountMonitorTimelinePoint, error)
 	ListHistory(ctx context.Context, accountID int64, limit int) ([]AccountMonitorProbeResult, error)

@@ -47,7 +47,12 @@ type accountMonitorScoreWeightsRequest struct {
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {
-	page, err := h.monitorService.List(c.Request.Context())
+	rawRange := c.Query("range")
+	if _, _, err := service.ParseAccountMonitorRange(rawRange); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MONITOR_RANGE", err.Error()))
+		return
+	}
+	page, err := h.monitorService.ListWindow(c.Request.Context(), rawRange)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

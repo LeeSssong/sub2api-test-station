@@ -136,6 +136,90 @@ func (r *accountMonitorRepository) ListAggregates(
 	return result, nil
 }
 
+func (r *accountMonitorRepository) ListWindowAggregates(
+	ctx context.Context,
+	accountIDs []int64,
+	since, until time.Time,
+) (map[int64]service.AccountMonitorWindowAggregate, error) {
+	result := make(map[int64]service.AccountMonitorWindowAggregate, len(accountIDs))
+	if len(accountIDs) == 0 || !until.After(since) {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		WITH window_usage AS (
+			SELECT
+				u.account_id,
+				u.first_token_ms,
+				u.duration_ms,
+				u.total_cost,
+				u.created_at,
+				EXISTS (
+					SELECT 1
+					FROM ops_error_logs e
+					WHERE e.account_id = u.account_id
+						AND e.request_id IS NOT NULL
+						AND u.request_id IS NOT NULL
+						AND e.request_id = u.request_id
+						AND e.created_at >= $2
+						AND e.created_at < $3
+						AND COALESCE(e.is_count_tokens, FALSE) = FALSE
+						AND COALESCE(e.status_code, 0) >= 400
+				) AS has_error
+			FROM usage_logs u
+			WHERE u.account_id = ANY($1)
+				AND u.created_at >= $2
+				AND u.created_at < $3
+		)
+		SELECT
+			account_id,
+			COUNT(*)::bigint,
+			COUNT(*) FILTER (WHERE has_error)::bigint,
+			COALESCE(SUM(total_cost), 0)::double precision,
+			COALESCE(
+				COUNT(*) FILTER (WHERE NOT has_error)::double precision / NULLIF(COUNT(*), 0),
+				0
+			),
+			COUNT(first_token_ms)::int,
+			COUNT(duration_ms)::int,
+			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_token_ms)
+				FILTER (WHERE first_token_ms IS NOT NULL),
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)
+				FILTER (WHERE duration_ms IS NOT NULL),
+			MAX(created_at)
+		FROM window_usage
+		GROUP BY account_id
+	`, pq.Array(accountIDs), since.UTC(), until.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var accountID int64
+		var aggregate service.AccountMonitorWindowAggregate
+		if err := rows.Scan(
+			&accountID,
+			&aggregate.RequestCount,
+			&aggregate.ErrorCount,
+			&aggregate.BaseCost,
+			&aggregate.SuccessRate,
+			&aggregate.TTFTSampleCount,
+			&aggregate.LatencySampleCount,
+			&aggregate.TTFTP50MS,
+			&aggregate.LatencyP95MS,
+			&aggregate.LastObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		result[accountID] = aggregate
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *accountMonitorRepository) LoadAggregate(
 	ctx context.Context,
 	accountIDs []int64,
@@ -526,7 +610,13 @@ func (r *accountMonitorRepository) ListGroups(ctx context.Context) ([]service.Ac
 		SELECT
 			g.id,
 			g.name,
+			g.status,
+			g.platform,
 			g.rate_multiplier,
+			g.rpm_limit,
+			COALESCE(c.account_count, 0),
+			COALESCE(c.active_account_count, 0),
+			COALESCE(c.rate_limited_account_count, 0),
 			(g.status = 'active' AND NOT g.is_exclusive) AS customer_visible,
 			g.sort_order AS native_order,
 			COALESCE(w.cost_weight, 15),
@@ -541,6 +631,23 @@ func (r *accountMonitorRepository) ListGroups(ctx context.Context) ([]service.Ac
 			w.updated_at
 		FROM groups g
 		LEFT JOIN account_monitor_group_score_weights w ON w.group_id = g.id
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) FILTER (WHERE a.deleted_at IS NULL)::bigint AS account_count,
+				COUNT(*) FILTER (WHERE a.deleted_at IS NULL
+					AND a.status = 'active' AND a.schedulable = TRUE
+					AND (a.expires_at IS NULL OR a.expires_at > NOW() OR a.auto_pause_on_expired = FALSE)
+					AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= NOW())
+					AND (a.overload_until IS NULL OR a.overload_until <= NOW())
+					AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW()))::bigint AS active_account_count,
+				COUNT(*) FILTER (WHERE a.deleted_at IS NULL
+					AND a.status = 'active' AND a.schedulable = TRUE
+					AND (a.expires_at IS NULL OR a.expires_at > NOW() OR a.auto_pause_on_expired = FALSE)
+					AND (a.rate_limit_reset_at > NOW() OR a.overload_until > NOW() OR a.temp_unschedulable_until > NOW()))::bigint AS rate_limited_account_count
+			FROM account_groups ag
+			JOIN accounts a ON a.id = ag.account_id
+			WHERE ag.group_id = g.id
+		) c ON TRUE
 		WHERE g.deleted_at IS NULL
 		ORDER BY g.sort_order ASC, g.id ASC
 	`)
@@ -556,7 +663,13 @@ func (r *accountMonitorRepository) ListGroups(ctx context.Context) ([]service.Ac
 		if err := rows.Scan(
 			&group.ID,
 			&group.Name,
+			&group.Status,
+			&group.Platform,
 			&group.RateMultiplier,
+			&group.RPMLimit,
+			&group.AccountCount,
+			&group.ActiveAccountCount,
+			&group.RateLimitedAccountCount,
 			&group.CustomerVisible,
 			&group.NativeOrder,
 			&group.ScoreWeights.Cost,

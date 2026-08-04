@@ -74,6 +74,13 @@ git diff --check                                                   # PASS
 - 总账已恢复为“进行中”，历史提交 `82095b80770236eac24adb0bdb1b80cd639675cb` 的推送/部署/线上验证事实保留。
 - 本提交必须经过独立审查；随后才可推送、部署，并针对生产账号 #118/#119 验证真实成功请求优先、probe 红柱保留、`latest.checked_at` 与卡片检查时间更新及成功/失败提示。
 
+## Reviewer fix round 1
+
+- 复审发现 `accountMonitorWindowSuccessSamples` 会根据 `SuccessRate` 伪造成功样本，导致不一致聚合（`RequestCount=3`、`SuccessCount=0`、`SuccessRate=0.5`）错误可用；同时真实请求证据在缺少 `LastObservedAt` 时回退到了 probe 时间。
+- RED：新增 `TestAccountMonitorWindowEvidenceUsesRawSuccessCountAndRealObservedAt` 首次失败，实际得到 `SuccessSampleCount=2` 与 probe `ObservedAt`。
+- GREEN：删除倍率推算 helper；真实请求证据严格使用 raw `SuccessCount`；`accountMonitorWindowObservedAt` 仅使用 `LastObservedAt`，缺失保持零值；补齐历史 account-monitor service/handler 测试夹具成功数。
+- 修复回合代码提交 SHA：待本轮代码提交后回填（文档随后单独提交回填该 SHA）。
+
 ## 提交
 
 - 提交 SHA：本报告随本次提交提交，最终 SHA 见 `git log`。

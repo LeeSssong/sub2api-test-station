@@ -1058,10 +1058,10 @@ func accountMonitorWindowEvidence(
 ) AccountMonitorQualityEvidence {
 	if window.RequestCount >= AccountMonitorGroupEvidenceMinSamples {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: accountMonitorWindowSuccessSamples(window),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
-			ObservedAt: accountMonitorWindowObservedAt(window, latest),
+			ObservedAt: accountMonitorWindowObservedAt(window),
 		}
 	}
 	if probe.SampleCount > 0 {
@@ -1078,36 +1078,20 @@ func accountMonitorWindowEvidence(
 	}
 	if window.RequestCount > 0 {
 		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: accountMonitorWindowSuccessSamples(window),
+			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
 			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
 			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
-			ObservedAt: accountMonitorWindowObservedAt(window, latest),
+			ObservedAt: accountMonitorWindowObservedAt(window),
 		}
 	}
 	return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: accountMonitorProbeObservedAt(probe, latest)}
 }
 
-func accountMonitorWindowSuccessSamples(window AccountMonitorWindowAggregate) int {
-	successCount := window.SuccessCount
-	// Keep compatibility with repository adapters that only populate the
-	// aggregate rate while preserving the explicit zero-success contract.
-	if successCount == 0 && window.RequestCount > 0 && window.SuccessRate > 0 {
-		successCount = int64(math.Round(float64(window.RequestCount) * window.SuccessRate))
-	}
-	if successCount < 0 {
-		return 0
-	}
-	if successCount > window.RequestCount {
-		return int(window.RequestCount)
-	}
-	return int(successCount)
-}
-
-func accountMonitorWindowObservedAt(window AccountMonitorWindowAggregate, latest AccountMonitorLatest) time.Time {
+func accountMonitorWindowObservedAt(window AccountMonitorWindowAggregate) time.Time {
 	if window.LastObservedAt != nil {
 		return window.LastObservedAt.UTC()
 	}
-	return latest.CheckedAt.UTC()
+	return time.Time{}
 }
 
 func accountMonitorProbeObservedAt(probe AccountMonitorAggregate, latest AccountMonitorLatest) time.Time {

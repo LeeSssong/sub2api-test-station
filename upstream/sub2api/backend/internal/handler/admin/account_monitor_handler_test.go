@@ -147,7 +147,7 @@ func TestAccountMonitorHandlerReturnsCompleteWindowTimelineAndGlobalRanking(t *t
 			{Status: "failed", CheckedAt: now},
 		}},
 		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {
-			RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: &rate, LatencyP95MS: &rate, LastObservedAt: &now,
+			RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: &rate, LatencyP95MS: &rate, LastObservedAt: &now,
 		}},
 	}
 	accounts := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{

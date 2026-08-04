@@ -1084,7 +1084,7 @@ func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.
 	repo := &accountMonitorRepoStub{
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		windowAggregates: map[int64]AccountMonitorWindowAggregate{
-			113: {RequestCount: 3, BaseCost: 10, SuccessRate: 1, LastObservedAt: &now},
+			113: {RequestCount: 3, SuccessCount: 3, BaseCost: 10, SuccessRate: 1, LastObservedAt: &now},
 		},
 	}
 
@@ -1122,9 +1122,9 @@ func TestAccountMonitorListWindowProjectsRecentTimelineAndRanksGlobalScoreTiesBy
 	repo := &accountMonitorRepoStub{
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		windowAggregates: map[int64]AccountMonitorWindowAggregate{
-			10: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			11: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			10: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			11: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
 		},
 		latest: map[int64]AccountMonitorLatest{
 			10: {Status: "success", CheckedAt: now},
@@ -1214,8 +1214,8 @@ func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
 		windowAggregates: map[int64]AccountMonitorWindowAggregate{
-			9:  {RequestCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			10: {RequestCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			9:  {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			10: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
 		},
 		latest: map[int64]AccountMonitorLatest{9: {Status: "success", CheckedAt: now}, 10: {Status: "success", CheckedAt: now}},
 	}
@@ -1255,9 +1255,9 @@ func TestAccountMonitorWindowRankingUsesScoreThenAccountIDAndPlacesUnrankedLast(
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
 		windowAggregates: map[int64]AccountMonitorWindowAggregate{
-			10: {RequestCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			20: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-			30: {RequestCount: 3, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			10: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, SuccessCount: 1, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			30: {RequestCount: 3, SuccessCount: 1, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
 		},
 		latest: map[int64]AccountMonitorLatest{10: {Status: "success", CheckedAt: now}, 20: {Status: "success", CheckedAt: now}, 30: {Status: "success", CheckedAt: now}},
 	}
@@ -1393,6 +1393,24 @@ func TestAccountMonitorWindowServiceStateKeepsProbeGateAndStalePending(t *testin
 	base.Stale = true
 	if got := accountMonitorWindowServiceState(base, AccountMonitorQualityEvidence{Source: "real_requests", SuccessSampleCount: 3}, accountMonitorManagementEnabled); got != accountMonitorServicePending {
 		t.Fatalf("stale real-request evidence = %q, want pending", got)
+	}
+}
+
+func TestAccountMonitorWindowEvidenceUsesRawSuccessCountAndRealObservedAt(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	latestCheckedAt := now.Add(-time.Minute)
+	evidence := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 0, SuccessRate: 0.5},
+		AccountMonitorAggregate{},
+		AccountMonitorLatest{Status: "success", CheckedAt: latestCheckedAt},
+		AccountMonitorSettings{IntervalSeconds: 300},
+		now,
+	)
+	if evidence.Source != "real_requests" || evidence.SuccessSampleCount != 0 {
+		t.Fatalf("inconsistent real-request aggregate evidence = %#v, want raw zero success samples", evidence)
+	}
+	if !evidence.ObservedAt.IsZero() {
+		t.Fatalf("real-request evidence observed_at = %s, want zero without LastObservedAt", evidence.ObservedAt)
 	}
 }
 

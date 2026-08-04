@@ -890,8 +890,10 @@ test_downtime_gates() {
 }
 
 test_authorized_maintenance_transition() {
-  local old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
-  local new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+  local old_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+  local new_hash=337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+  local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+  local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
   setup_case maintenance_unauthorized
   write_meminfo
@@ -911,6 +913,15 @@ test_authorized_maintenance_transition() {
   grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'illegal migration set was not gated'
   assert_no_mutation maintenance_illegal_set
 
+  setup_case maintenance_legacy_transition
+  write_meminfo
+  MIGRATIONS_HASH=$legacy_new_hash
+  "$REAL_JQ" --arg hash "$legacy_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$legacy_old_hash expect_failure maintenance_legacy_transition run_executor
+  grep -q 'approved active migration hash' "$CASE_DIR/stderr" || fail 'retired migration transition was not rejected'
+  assert_no_mutation maintenance_legacy_transition
+
   setup_case maintenance_success
   write_meminfo
   MIGRATIONS_HASH=$new_hash
@@ -921,6 +932,8 @@ test_authorized_maintenance_transition() {
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance path did not stop API and worker'
   ! grep -Eq 'compose .* stop .*postgres|compose .* stop .*redis|compose .* stop .*caddy' "$EVENT_LOG" \
     || fail 'maintenance path stopped a shared service'
+  ! grep -Eq 'compose .* (up|pull|rm|restart|recreate).*postgres|compose .* (up|pull|rm|restart|recreate).*redis|compose .* (up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'maintenance path rebuilt a shared service'
 
   setup_case maintenance_rollback
   write_meminfo
@@ -931,6 +944,9 @@ test_authorized_maintenance_transition() {
     FAKE_SCENARIO=candidate_health_failure
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance rollback did not enter maintenance path'
   grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" || fail 'maintenance rollback did not restore active API'
+  grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" || fail 'maintenance rollback did not restore worker'
+  ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'maintenance rollback touched a shared service'
 }
 
 test_caddy_reconciliation_route() {

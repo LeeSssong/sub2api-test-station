@@ -76,12 +76,9 @@ executor additionally requires `--maintenance-from-hash` to equal the active
 hash below. No other migration transition is accepted:
 
 ```text
-from c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
-to   e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
-files 188_account_monitor_group_score_weights.sql
-       193_usage_log_actual_response_model.sql
-       194_account_monitor_score_thresholds.sql
-       195_ops_metrics_duration_sample_count.sql
+from e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+to   337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+files 196_account_procurement_cost.sql — adds nullable procurement cost, nullable effective time, and a non-negative procurement-cost constraint.
 ```
 
 Invoke the same controller with the explicit maintenance flag:
@@ -95,11 +92,13 @@ bash ops/release-sub2api-blue-green.sh \
 
 The host executor enforces a bounded (default 300-second, maximum 600-second)
 unavailable window, stops only the API and worker services, starts the candidate
-worker to apply the additive migrations, then restores the API route through the
+worker to apply the additive migration, then restores the API route through the
 existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
-recreated. On any failure, the existing partial record and rollback path restore
-the previous API/worker images and Caddy upstream; preserve the `.partial` and
-failure record if rollback itself fails.
+recreated. `196_account_procurement_cost.sql` is forward-compatible: it only
+adds nullable columns and a non-negative constraint. An application rollback
+restores the previous API/worker images and Caddy upstream; it does not
+automatically remove those database fields or the constraint. Preserve the
+`.partial` and failure record if rollback itself fails.
 
 Exact manual recovery command (only after reviewing the preserved partial record):
 

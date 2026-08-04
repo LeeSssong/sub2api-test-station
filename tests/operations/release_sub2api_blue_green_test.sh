@@ -192,7 +192,8 @@ run_controller() {
     RELEASE_NETWORK_CURL_IMAGE='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     RELEASE_NETWORK_CURL_IMAGE_ALLOWLIST='example.invalid/curl@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     RELEASE_MONOTONIC_BIN="$CASE_DIR/bin/monotonic" \
-    "$@" bash "$CONTROLLER" --mode "$controller_mode" --evidence "$EVIDENCE"
+    "$@" bash "$CONTROLLER" --mode "$controller_mode" --evidence "$EVIDENCE" \
+    ${CONTROLLER_MAINTENANCE_AUTHORIZED:+--maintenance-authorized}
 }
 
 expect_failure_before_transport() {
@@ -332,6 +333,20 @@ test_build_publish_and_host_invocation() {
   grep -F -- '--label com.xingqiao.sub2api.migrations.sha256=' "$CASE_DIR/docker.log" >/dev/null || fail 'migrations label missing'
   grep -E -- '--deadline-epoch [1-9][0-9]{9}($| )' "$CASE_DIR/ssh.log" >/dev/null || fail 'host did not receive an absolute deadline'
   grep -F '"result":"succeeded"' "$CASE_DIR/stdout" >/dev/null || fail 'controller did not propagate host result'
+}
+
+test_maintenance_controller_forwards_exact_current_migration_hash() {
+  local current_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+  local legacy_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+
+  setup_case maintenance-current-hash
+  write_evidence
+  CONTROLLER_MAINTENANCE_AUTHORIZED=true run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "maintenance controller failed: $(cat "$CASE_DIR/stderr")"
+  grep -F -- "--maintenance-authorized --maintenance-from-hash $current_hash" "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'maintenance controller did not forward the current production migration hash'
+  ! grep -F -- "$legacy_hash" "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'maintenance controller forwarded the retired migration hash'
 }
 
 test_downtime_gate_is_propagated_without_retry() {
@@ -526,6 +541,7 @@ test_writer_schema_and_permissions
 test_migration_hash_matches_go_trim_space_for_unicode_whitespace
 test_evidence_rejected_before_transport
 test_build_publish_and_host_invocation
+test_maintenance_controller_forwards_exact_current_migration_hash
 test_downtime_gate_is_propagated_without_retry
 test_executor_install_failures_stop_before_build
 test_executor_parent_chain_rejects_before_build

@@ -230,3 +230,62 @@ Passed: `3` files, `26` tests. `git diff --check` also exited 0.
 
 - This round intentionally did not change production code, run QA harness/browser checks, push, deploy, or validate production.
 - The frontend command retained pre-existing pnpm metadata, Node localStorage, and stale Browserslist warnings; no test failures remained.
+
+---
+
+## Task 6 fix round 4 — 2026-08-04
+
+- status: READY_FOR_RE-REVIEW (test-gate repair only)
+- test commit SHA: `d70a86d80`
+- production code / API / backend / QA harness / project progress / push / deploy / production access: 未修改或执行。
+
+### Root cause
+
+The fix-round-3 production classes already satisfied the accepted desktop/mobile spacing and pointer-versus-keyboard focus behavior. The two focused tests only checked the newly added mobile and focus tokens, so they would not fail if desktop spacing disappeared, conflicting mobile overrides were added, the selected teal underline was removed, or a non-`focus-visible` outline/ring reintroduced a pointer-focus rectangle.
+
+### Changes
+
+1. The shell test now requires `px-5`, `py-8`, `sm:py-9`, `max-sm:px-3`, and `max-sm:pt-[22px]` together.
+2. The same test requires the complete `max-sm:px-*` and `max-sm:pt-*` token sets to be exactly the accepted overrides, rejecting conflicting additions.
+3. The Tab test checks both the all-site Tab and a dynamic group Tab for `focus:outline-none`, `focus-visible:ring-2`, and `focus-visible:ring-primary-500/30`.
+4. After selecting the group, the test requires `text-primary-700` plus the complete pseudo-element underline tokens through `after:bg-primary-600`.
+5. Both Tab variants reject ring utilities and visible outline utilities unless guarded by `focus-visible`; `outline-none` remains the required pointer-focus suppression.
+
+### Required verification
+
+```bash
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: `1` file, `12/12` tests.
+
+```bash
+cd upstream/sub2api/frontend
+pnpm typecheck
+```
+
+Passed: `vue-tsc --noEmit` exited `0` with no type errors.
+
+```bash
+git diff --check -- upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: exited `0` with no output.
+
+### Command-scope note
+
+Before using the explicit focused Vitest command, this command was also run:
+
+```bash
+cd upstream/sub2api/frontend
+pnpm test:run -- src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+In this repository the extra `--` caused Vitest to execute the full frontend suite rather than only the requested spec. The target `AccountMonitorView.spec.ts` still passed `12/12`; the unrelated full run ended with `1478` passed and `1` pre-existing failure in `src/api/__tests__/admin.accountMonitor.spec.ts`, whose legacy `/admin/account-monitors` expectation conflicts with the current `/admin/accounts/monitor` request. This broad command was not used as the required focused gate.
+
+### Residual risks / concerns
+
+- The required focused spec and typecheck are green. The unrelated existing API-spec failure remains outside this test-only brief.
+- Existing pnpm metadata, Node localStorage, and stale Browserslist warnings remain; none was introduced by this change.
+- No browser QA, push, deploy, production access, or project-completion update was performed.

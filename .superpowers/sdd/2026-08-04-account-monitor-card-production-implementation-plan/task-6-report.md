@@ -289,3 +289,58 @@ In this repository the extra `--` caused Vitest to execute the full frontend sui
 - The required focused spec and typecheck are green. The unrelated existing API-spec failure remains outside this test-only brief.
 - Existing pnpm metadata, Node localStorage, and stale Browserslist warnings remain; none was introduced by this change.
 - No browser QA, push, deploy, production access, or project-completion update was performed.
+
+---
+
+## Task 6 fix round 5 — 2026-08-04
+
+- status: READY_FOR_RE-REVIEW
+- implementation/test commit SHA: `db88d32e54a84b6adf05b4e328bb00a9d9c30ddd`
+- API / backend / cards / filters / QA harness / prototypes / project progress / push / deploy / production access: 未修改或执行。
+
+### Root cause
+
+The production header retained a uniform Tailwind `text-2xl` title and `mt-1` description spacing. It had no narrow-screen description width limit, so the confirmed Chinese description stayed on one line at 390px and shifted every following section upward relative to the approved prototype.
+
+### Changes
+
+1. Replaced the uniform title utility with the prototype's `27px` desktop size, `23px` size at `max-width:430px`, and `1.25` line height.
+2. Replaced the description's 4px top margin with `7px` and added the prototype's `34ch` width limit below 760px.
+3. Expanded the focused View test so the new title and description tokens are asserted together with the accepted desktop `20px / 32px / 36px` and mobile `12px / 22px` shell tokens. The test rejects the old `text-2xl` and `mt-1` utilities plus conflicting responsive title/description overrides.
+
+### RED
+
+```bash
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Before the production change, the focused spec failed exactly on the old title classes: `1` file failed; `1` test failed and `11` passed. The assertion received `text-2xl` instead of `text-[27px]`, `leading-[1.25]`, and `max-[430px]:text-[23px]`.
+
+### GREEN
+
+```bash
+cd upstream/sub2api/frontend
+pnpm exec vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: `1` file, `12/12` tests.
+
+```bash
+cd upstream/sub2api/frontend
+pnpm typecheck
+```
+
+Passed: `vue-tsc --noEmit` exited `0`.
+
+```bash
+git diff --check -- upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts
+```
+
+Passed: exited `0` with no output.
+
+### Residual risks / concerns
+
+- Same-viewport browser recapture and combined visual comparison remain for the coordinator's post-fix QA/re-review loop.
+- Existing pnpm metadata, Node localStorage, and stale Browserslist warnings remain; none was introduced by this change.
+- No push, deployment, production access, or project-completion update was performed.

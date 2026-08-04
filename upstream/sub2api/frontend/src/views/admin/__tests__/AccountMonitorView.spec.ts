@@ -480,6 +480,56 @@ describe('admin account monitor view V3', () => {
     }
   })
 
+  it('blurs pointer-originated all-site and dynamic-group selections after selecting the requested scope', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const groupTab = wrapper.get('[data-test="group-tab-3"]')
+    const groupBlur = vi.spyOn(groupTab.element as HTMLButtonElement, 'blur')
+    groupTab.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    await flushPromises()
+
+    expect(groupBlur).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
+
+    const allSiteTab = wrapper.get('[data-test="all-site-tab-button"]')
+    const allSiteBlur = vi.spyOn(allSiteTab.element as HTMLButtonElement, 'blur')
+    allSiteTab.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    await flushPromises()
+
+    expect(allSiteBlur).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
+  })
+
+  it('keeps keyboard-originated all-site and dynamic-group activation focused with the focus-visible contract', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const groupTab = wrapper.get('[data-test="group-tab-3"]')
+    const groupBlur = vi.spyOn(groupTab.element as HTMLButtonElement, 'blur')
+    groupTab.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    await flushPromises()
+
+    expect(groupBlur).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
+
+    const allSiteTab = wrapper.get('[data-test="all-site-tab-button"]')
+    const allSiteBlur = vi.spyOn(allSiteTab.element as HTMLButtonElement, 'blur')
+    allSiteTab.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    await flushPromises()
+
+    expect(allSiteBlur).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
+
+    for (const tab of [wrapper.get('[data-test="all-site-tab-button"]'), wrapper.get('[data-test="group-tab-3"]')]) {
+      expect(tab.classes()).toEqual(expect.arrayContaining([
+        'focus:outline-none',
+        'focus-visible:ring-2',
+        'focus-visible:ring-primary-500/30',
+      ]))
+    }
+  })
+
   it('polls one deduplicated batch for currently visible cards every five seconds, pauses hidden, and refreshes on return', async () => {
     vi.useFakeTimers()
     const wrapper = mountView()

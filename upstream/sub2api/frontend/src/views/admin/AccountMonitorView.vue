@@ -35,7 +35,7 @@
           :class="tabClass(activeGroupId === null)"
           :aria-selected="activeGroupId === null"
           data-test="all-site-tab-button"
-          @click="activeGroupId = null"
+          @click="selectGroup(null, $event)"
         >
           全站
           <span class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-300">
@@ -51,7 +51,7 @@
           :class="tabClass(activeGroupId === group.id)"
           :aria-selected="activeGroupId === group.id"
           :data-test="`group-tab-${group.id}`"
-          @click="activeGroupId = group.id"
+          @click="selectGroup(group.id, $event)"
         >
           {{ group.name }}
           <span class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-300">
@@ -292,6 +292,11 @@ function formatNativeNumber(value?: number): string {
 }
 function groupAccountCount(group: AccountMonitorGroup): number {
   return group.account_count ?? uniqueAccounts(group.accounts ?? []).length
+}
+
+function selectGroup(groupID: number | null, event: MouseEvent): void {
+  activeGroupId.value = groupID
+  if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
 async function load(range: AccountMonitorRange): Promise<boolean> {

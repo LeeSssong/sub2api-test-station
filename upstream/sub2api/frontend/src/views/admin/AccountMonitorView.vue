@@ -4,10 +4,10 @@
       <div class="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px]" data-test="account-monitor-page">
       <header class="flex items-start justify-between gap-4">
         <div class="min-w-0">
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
+          <h1 class="text-[27px] font-semibold leading-[1.25] text-gray-900 max-[430px]:text-[23px] dark:text-white">
             {{ t('admin.accountMonitor.title') }}
           </h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <p class="mt-[7px] text-sm text-gray-500 max-[760px]:max-w-[34ch] dark:text-gray-400">
             {{ t('admin.accountMonitor.description') }}
           </p>
         </div>

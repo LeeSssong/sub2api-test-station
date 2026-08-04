@@ -401,7 +401,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
   })
 
-  it('preserves accepted desktop shell spacing while applying only the confirmed mobile overrides', async () => {
+  it('preserves the accepted shell spacing and exact responsive page-header typography', async () => {
     const wrapper = mountView()
     await flushPromises()
 
@@ -416,6 +416,27 @@ describe('admin account monitor view V3', () => {
     ]))
     expect(shellClasses.filter((className) => className.startsWith('max-sm:px-'))).toEqual(['max-sm:px-3'])
     expect(shellClasses.filter((className) => className.startsWith('max-sm:pt-'))).toEqual(['max-sm:pt-[22px]'])
+
+    const titleClasses = wrapper.get('h1').classes()
+    expect(titleClasses).toEqual(expect.arrayContaining([
+      'text-[27px]',
+      'leading-[1.25]',
+      'max-[430px]:text-[23px]',
+    ]))
+    expect(titleClasses).not.toContain('text-2xl')
+    expect(titleClasses.filter((className) => className.startsWith('max-[430px]:text-'))).toEqual([
+      'max-[430px]:text-[23px]',
+    ])
+
+    const descriptionClasses = wrapper.get('header p').classes()
+    expect(descriptionClasses).toEqual(expect.arrayContaining([
+      'mt-[7px]',
+      'max-[760px]:max-w-[34ch]',
+    ]))
+    expect(descriptionClasses).not.toContain('mt-1')
+    expect(descriptionClasses.filter((className) => className.startsWith('max-[760px]:max-w-'))).toEqual([
+      'max-[760px]:max-w-[34ch]',
+    ])
   })
 
   it('keeps both tab variants pointer-clean with keyboard-only focus feedback and the selected teal underline', async () => {

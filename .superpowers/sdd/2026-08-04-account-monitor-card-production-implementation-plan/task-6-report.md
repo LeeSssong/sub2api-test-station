@@ -1,8 +1,21 @@
 # Task 6 report — 账号监控 V3 设计还原
 
-- status: DONE
-- commit SHA: `e85dad1645efe000a3169e62529a8632ef7aa368`
+- status: READY_FOR_DEPLOYMENT_LOCAL
+- final implementation-code SHA: `0221b82c22997c7a319fdde2ba4d75552cf85fee`
+- delivery evidence and recovery documents: included by the current documentation commit on top of that implementation SHA.
 - push/deploy: 未执行。
+
+## Final local closure — 2026-08-04
+
+- Final implementation HEAD: `0221b82c2` on `codex/account-monitor-completion`.
+- Fresh exact-viewport evidence after the pointer-focus correction:
+  - `docs/prototypes/account-monitor-card-v2/implementation-v3-final-desktop-1440.png`
+  - `docs/prototypes/account-monitor-card-v2/implementation-v3-final-mobile-390.png`
+  - `docs/prototypes/account-monitor-card-v2/comparison-v3-final-desktop.png`
+  - `docs/prototypes/account-monitor-card-v2/comparison-v3-final-mobile.png`
+- `design-qa.md` is now `final result: passed`. Pointer-selected tabs retain only the teal underline; keyboard activation retains `focus-visible`.
+- The final verification pass found and repaired a test-only nil embedded-interface panic by adding an explicit `ListTimelines` stub in `account_monitor_routes_test.go` (`0221b82c2`). No production behavior changed.
+- Local verification is complete for the affected backend packages, focused frontend tests, typecheck, production build, browser QA, and whitespace checks. Push, deployment, production access, and online effectiveness verification remain intentionally unexecuted.
 
 ## Root-cause confirmation
 
@@ -344,6 +357,12 @@ Passed: exited `0` with no output.
 - Same-viewport browser recapture and combined visual comparison remain for the coordinator's post-fix QA/re-review loop.
 - Existing pnpm metadata, Node localStorage, and stale Browserslist warnings remain; none was introduced by this change.
 - No push, deployment, production access, or project-completion update was performed.
+
+### Same-state visual correction
+
+The first browser recapture showed that `34ch` computed to roughly 300px in the production font stack, so the 21-character Chinese description remained on one line. Browser DOM range measurement reported 266px through `优先`, 280px through `级`, and 294px through `。`. The below-760px width was therefore narrowed to 272px, which lies between the intended break thresholds, and the exact responsive-token test now rejects the ineffective `34ch` value.
+
+Focused view spec: 12/12 passed. `pnpm typecheck` and `git diff --check` passed. A fresh browser recapture is still required before visual QA can pass.
 
 ---
 

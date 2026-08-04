@@ -1,6 +1,34 @@
 # Account Monitor Card Prototype V3 Design QA
 
-Final result: passed
+final result: passed
+
+## Production implementation comparison — 2026-08-04
+
+- Source visual truth: `prototype-v3-desktop.png` and `prototype-v3-mobile-top.png`.
+- Implementation screenshots: `implementation-v3-final-desktop-1440.png` and `implementation-v3-final-mobile-390.png`.
+- Combined same-state evidence: `comparison-v3-final-desktop.png` and `comparison-v3-final-mobile.png`.
+- Viewports and pixels: desktop source/implementation both 1440 x 1000 at a 1440 x 1000 CSS viewport; mobile source/implementation both 390 x 844 at a 390 x 844 CSS viewport; density normalized 1:1.
+- State: light theme, `GPT-PLUS-内测` selected, all statuses, 24-hour range, accounts #113 and #207.
+- Browser checks: mobile account identity is complete; no horizontal document overflow; console 0 errors and 0 warnings.
+
+### Final visual result
+
+- No actionable P0/P1/P2 visual differences remain. The pointer-selected group Tab now shows only the confirmed teal underline; the mouse path blurs the selected tab while keyboard activation retains `focus-visible`.
+- Fresh recapture after the final correction used the same selected `GPT-PLUS-内测` state at 1440 x 1000 and 390 x 844. The mobile description wraps after `优先`, the first card begins at the expected source position, and no horizontal overflow is present.
+
+### Required fidelity surfaces
+
+- Fonts and typography: the corrected implementation now matches the source title sizing, description offset, two-line mobile wrap, and resulting vertical rhythm.
+- Spacing and layout rhythm: desktop keeps two 612px cards; mobile keeps a 358px single-column card with no horizontal overflow, and the first card aligns at ~680px Y in both source and implementation.
+- Colors and visual tokens: no actionable P0/P1/P2 difference found in the combined evidence.
+- Image and icon fidelity: no raster imagery is present; existing icon-library controls remain consistent with the source.
+- Copy and content: visible labels and example data match the selected source state.
+
+### Comparison history
+
+- Iteration 1: mobile shell used 20px / 32px instead of 12px / 22px and showed a default browser outline. Shell spacing was corrected and the default outline was removed.
+- Iteration 2: the source description wrapped to two lines but production stayed on one line, shifting downstream content upward. Title sizing, 7px offset, and a measured 272px mobile width corrected the geometry; post-fix evidence is `comparison-v3-passed-mobile.png` and `comparison-v3-passed-desktop.png`.
+- Iteration 3: the corrected geometry revealed a pointer-selected full teal focus rectangle. The final pointer/keyboard focus correction removed that rectangle without changing the selected underline or keyboard-visible focus behavior.
 
 ## Evidence
 
@@ -46,4 +74,4 @@ Final result: passed
 - Operational helper text now meets the 4.5:1 WCAG AA contrast threshold on white plus every metric pastel surface.
 - Rejected priority and procurement-cost drafts remain in their inputs. The edited input is refocused after validation, and its stable error element is associated through `aria-describedby` and announced with `role="alert"`.
 - The selected time range exposes `aria-pressed="true"` on exactly one control. Switching to 7 days updates the score, request count, and failure count from that window.
-- Fresh independent browser verification on 2026-08-04 recaptured `prototype-v3-desktop.png` at 1440 x 1000 and `prototype-v3-mobile-top.png` at 390 x 844. Both viewports had matching document scroll/client widths (1440 / 1440 and 390 / 390), desktop retained exactly two ranked cards in score order, mobile used one card column, and the browser console reported 0 errors and 0 warnings.
+- Fresh independent browser verification on 2026-08-04 recaptured the implementation at exact 1440 x 1000 and 390 x 844 outer viewports after the final pointer-focus correction. Document scroll/client widths matched at both sizes (desktop 1440 / 1440; mobile 382 / 382 inside the browser's 390px outer viewport), desktop retained exactly two ranked cards in score order, mobile used one card column, the selected group tab had no focus outline after pointer activation, and the browser console reported 0 errors and 0 warnings.

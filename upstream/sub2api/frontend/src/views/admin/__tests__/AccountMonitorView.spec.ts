@@ -431,11 +431,12 @@ describe('admin account monitor view V3', () => {
     const descriptionClasses = wrapper.get('header p').classes()
     expect(descriptionClasses).toEqual(expect.arrayContaining([
       'mt-[7px]',
-      'max-[760px]:max-w-[34ch]',
+      'max-[760px]:max-w-[272px]',
     ]))
     expect(descriptionClasses).not.toContain('mt-1')
+    expect(descriptionClasses).not.toContain('max-[760px]:max-w-[34ch]')
     expect(descriptionClasses.filter((className) => className.startsWith('max-[760px]:max-w-'))).toEqual([
-      'max-[760px]:max-w-[34ch]',
+      'max-[760px]:max-w-[272px]',
     ])
   })
 

@@ -7,7 +7,7 @@
           <h1 class="text-[27px] font-semibold leading-[1.25] text-gray-900 max-[430px]:text-[23px] dark:text-white">
             {{ t('admin.accountMonitor.title') }}
           </h1>
-          <p class="mt-[7px] text-sm text-gray-500 max-[760px]:max-w-[34ch] dark:text-gray-400">
+          <p class="mt-[7px] text-sm text-gray-500 max-[760px]:max-w-[272px] dark:text-gray-400">
             {{ t('admin.accountMonitor.description') }}
           </p>
         </div>

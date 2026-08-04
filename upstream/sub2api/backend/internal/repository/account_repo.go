@@ -128,7 +128,7 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		builder.SetRateMultiplier(*account.RateMultiplier)
 	}
 	if account.ProcurementCostCNY != nil {
-		builder.SetProcurementCostCNY(*account.ProcurementCostCNY)
+		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
 	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
@@ -497,9 +497,9 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 		builder.SetRateMultiplier(*account.RateMultiplier)
 	}
 	if account.ProcurementCostCNY != nil {
-		builder.SetProcurementCostCNY(*account.ProcurementCostCNY)
+		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
 	} else {
-		builder.ClearProcurementCostCNY()
+		builder.ClearProcurementCostCny()
 	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
@@ -3419,7 +3419,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	}
 
 	rateMultiplier := m.RateMultiplier
-	procurementCostCNY := m.ProcurementCostCNY
+	procurementCostCNY := m.ProcurementCostCny
 
 	return &service.Account{
 		ID:                         m.ID,

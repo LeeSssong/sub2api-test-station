@@ -757,6 +757,8 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	admin.GET("/accounts/monitor", h.Admin.AccountMonitor.List)
+
 	monitors := admin.Group("/account-monitors")
 	{
 		monitors.GET("", h.Admin.AccountMonitor.List)

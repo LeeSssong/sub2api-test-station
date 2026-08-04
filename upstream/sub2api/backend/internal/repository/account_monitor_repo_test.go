@@ -74,15 +74,16 @@ func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *test
 	defer db.Close()
 	repo := NewAccountMonitorRepository(db)
 	since := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 7, 25, 8, 0, 0, 0, time.UTC)
 	lastChecked := time.Date(2026, 7, 25, 7, 59, 0, 0, time.UTC)
 
-	mock.ExpectQuery("SELECT[[:space:]]+account_id").WithArgs(sqlmock.AnyArg(), since).
+	mock.ExpectQuery(`(?s)SELECT[[:space:]]+account_id.*checked_at >= \$2.*checked_at < \$3`).WithArgs(sqlmock.AnyArg(), since, until).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"account_id", "sample_count", "success_count", "error_count", "success_rate",
 			"success_sample_count", "ttft_sample_count", "latency_sample_count",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
 		}).AddRow(7, 4, 3, 1, 0.75, 4, 3, 2, 80.0, 120.0, 200.0, 300.0, lastChecked))
-	aggregates, err := repo.ListAggregates(context.Background(), []int64{7}, since)
+	aggregates, err := repo.ListAggregates(context.Background(), []int64{7}, since, until)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +124,36 @@ func TestAccountMonitorRepositoryListsRealRequestWindowMetrics(t *testing.T) {
 	got := aggregates[7]
 	if got.RequestCount != 4 || got.ErrorCount != 1 || got.BaseCost != 8 || got.SuccessRate != 0.75 || got.TTFTP50MS == nil || *got.TTFTP50MS != 80 || got.LatencyP95MS == nil || *got.LatencyP95MS != 300 || got.LastObservedAt == nil || !got.LastObservedAt.Equal(observedAt) {
 		t.Fatalf("window aggregate = %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryCorrelatesOnlyMatchingWindowErrors(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	since := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+
+	// Every clause below excludes a distinct false positive: another account or
+	// request, NULL request IDs, token-count calls, non-error statuses, and rows
+	// before the selected window or at its exclusive upper boundary.
+	mock.ExpectQuery(`(?s)EXISTS \(.*FROM ops_error_logs e.*e\.account_id = u\.account_id.*e\.request_id IS NOT NULL.*u\.request_id IS NOT NULL.*e\.request_id = u\.request_id.*e\.created_at >= \$2.*e\.created_at < \$3.*COALESCE\(e\.is_count_tokens, FALSE\) = FALSE.*COALESCE\(e\.status_code, 0\) >= 400.*FROM usage_logs u.*u\.created_at >= \$2.*u\.created_at < \$3.*COUNT\(\*\) FILTER \(WHERE has_error\)`).
+		WithArgs(sqlmock.AnyArg(), since, until).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count", "error_count", "base_cost", "success_rate", "ttft_sample_count", "latency_sample_count", "ttft_p50", "latency_p95", "last_observed_at"}).
+			AddRow(7, 6, 1, 8.0, 5.0/6.0, 5, 6, 80.0, 300.0, until.Add(-time.Minute)))
+
+	aggregates, err := repo.ListWindowAggregates(context.Background(), []int64{7}, since, until)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := aggregates[7].ErrorCount; got != 1 {
+		t.Fatalf("error count = %d, want only the matching HTTP error", got)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

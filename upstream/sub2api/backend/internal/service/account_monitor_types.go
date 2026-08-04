@@ -245,7 +245,7 @@ type AccountMonitorRepository interface {
 	LoadSettings(ctx context.Context) (AccountMonitorSettings, error)
 	SaveSettings(ctx context.Context, settings AccountMonitorSettings) error
 	InsertResult(ctx context.Context, result AccountMonitorProbeResult, runID string) error
-	ListAggregates(ctx context.Context, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
+	ListAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error)
 	ListWindowAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 	ListLatest(ctx context.Context, accountIDs []int64) (map[int64]AccountMonitorLatest, error)
 	ListTimelines(ctx context.Context, accountIDs []int64, perAccountLimit int) (map[int64][]AccountMonitorTimelinePoint, error)

@@ -42,6 +42,10 @@ type accountMonitorRepoStub struct {
 	latest             map[int64]AccountMonitorLatest
 	timelines          map[int64][]AccountMonitorTimelinePoint
 	aggregateIDs       []int64
+	probeSince         time.Time
+	probeUntil         time.Time
+	windowSince        time.Time
+	windowUntil        time.Time
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -55,11 +59,15 @@ func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error 
 	return nil
 }
 
-func (s *accountMonitorRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]AccountMonitorAggregate, error) {
+func (s *accountMonitorRepoStub) ListAggregates(_ context.Context, _ []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error) {
+	s.probeSince = since
+	s.probeUntil = until
 	return s.aggregates, nil
 }
 
-func (s *accountMonitorRepoStub) ListWindowAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]AccountMonitorWindowAggregate, error) {
+func (s *accountMonitorRepoStub) ListWindowAggregates(_ context.Context, _ []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error) {
+	s.windowSince = since
+	s.windowUntil = until
 	return s.windowAggregates, nil
 }
 
@@ -1164,6 +1172,25 @@ func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *tes
 	)
 	if withThreeRequests.Source != "real_requests" || withThreeRequests.SampleCount != 3 || withThreeRequests.SuccessRate != 1 {
 		t.Fatalf("three real requests must not use probe evidence: %#v", withThreeRequests)
+	}
+}
+
+func TestAccountMonitorWindowProbeFallbackUsesSelectedUpperBound(t *testing.T) {
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repo.probeSince.Equal(repo.windowSince) || !repo.probeUntil.Equal(repo.windowUntil) {
+		t.Fatalf("probe window = [%s, %s), request window = [%s, %s)", repo.probeSince, repo.probeUntil, repo.windowSince, repo.windowUntil)
+	}
+	if !repo.probeUntil.Equal(page.ObservedAt) {
+		t.Fatalf("probe upper bound = %s, observed_at = %s", repo.probeUntil, page.ObservedAt)
+	}
+	if got := repo.probeUntil.Sub(repo.probeSince); got != 24*time.Hour {
+		t.Fatalf("probe window duration = %s, want 24h", got)
 	}
 }
 

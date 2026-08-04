@@ -120,7 +120,8 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	for _, account := range accounts {
 		ids = append(ids, account.ID)
 	}
-	aggregates, err := s.repo.ListAggregates(ctx, ids, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
+	observedAt := time.Now().UTC()
+	aggregates, err := s.repo.ListAggregates(ctx, ids, observedAt.Add(-AccountMonitorHistoryDays*24*time.Hour), observedAt)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor aggregates: %w", err)
 	}
@@ -144,7 +145,6 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
 
-	observedAt := time.Now().UTC()
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	schedulableIDs := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
@@ -255,7 +255,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor window aggregates: %w", err)
 	}
-	probeAggregates, err := s.repo.ListAggregates(ctx, ids, since)
+	probeAggregates, err := s.repo.ListAggregates(ctx, ids, since, observedAt)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor probe aggregates: %w", err)
 	}

@@ -34,7 +34,7 @@ func (*accountMonitorHandlerRepoStub) ListTimelines(context.Context, []int64, in
 	return nil, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]service.AccountMonitorAggregate, error) {
+func (*accountMonitorHandlerRepoStub) ListAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorAggregate, error) {
 	return nil, nil
 }
 

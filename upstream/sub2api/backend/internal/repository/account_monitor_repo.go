@@ -69,10 +69,10 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 func (r *accountMonitorRepository) ListAggregates(
 	ctx context.Context,
 	accountIDs []int64,
-	since time.Time,
+	since, until time.Time,
 ) (map[int64]service.AccountMonitorAggregate, error) {
 	result := make(map[int64]service.AccountMonitorAggregate, len(accountIDs))
-	if len(accountIDs) == 0 {
+	if len(accountIDs) == 0 || !until.After(since) {
 		return result, nil
 	}
 
@@ -100,9 +100,9 @@ func (r *accountMonitorRepository) ListAggregates(
 				FILTER (WHERE latency_ms IS NOT NULL),
 			MAX(checked_at)
 		FROM account_monitor_results
-		WHERE account_id = ANY($1) AND checked_at >= $2
+		WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3
 		GROUP BY account_id
-	`, pq.Array(accountIDs), since.UTC())
+	`, pq.Array(accountIDs), since.UTC(), until.UTC())
 	if err != nil {
 		return nil, err
 	}

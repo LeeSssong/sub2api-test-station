@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="flex min-h-full flex-col gap-5 p-4 sm:p-6">
+    <div class="min-h-full bg-[#f4f7f9] px-5 py-8 dark:bg-slate-950 sm:py-9">
+      <div class="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px]" data-test="account-monitor-page">
       <header class="flex items-start justify-between gap-4">
         <div class="min-w-0">
           <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
@@ -62,11 +63,8 @@
       <section class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center" aria-label="账号筛选">
         <AccountMonitorFilters
           :search="search"
-          :platform="platform"
           :status="status"
-          :accounts="scopedAccounts"
           @update:search="search = $event"
-          @update:platform="platform = $event"
           @update:status="status = $event"
         />
         <div class="grid grid-cols-3 rounded-lg border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-800" role="group" aria-label="统计时间范围">
@@ -136,11 +134,16 @@
           :key="account.account_id"
           :account="account"
           :concurrency="concurrencyByID[account.account_id] ?? null"
+          :ranked-account-count="rankedAccountCount"
+          :running="runningAll || runningAccountIDs.includes(account.account_id)"
+          :statistics-cutoff="projection?.observed_at ?? null"
+          :selected-range="activeRange"
           @refresh="handleRunOne"
           @update-priority="updatePriority"
           @update-procurement-cost="updateProcurementCost"
         />
       </section>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -191,10 +194,10 @@ const activeRange = ref<AccountMonitorRange>('24h')
 const pendingRange = ref<AccountMonitorRange | null>(null)
 const activeGroupId = ref<number | null>(null)
 const search = ref('')
-const platform = ref('')
 const status = ref('')
 const loading = ref(false)
 const runningAll = ref(false)
+const runningAccountIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
 
@@ -242,13 +245,13 @@ const scopedAccounts = computed(() => {
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
   return scopedAccounts.value.filter((account) => {
-    if (platform.value && account.platform !== platform.value) return false
     if (status.value && account.monitor_bucket !== status.value) return false
     if (!query) return true
     return [account.name, String(account.account_id), account.platform, account.model_id, ...account.group_names]
       .some((value) => value.toLowerCase().includes(query))
   })
 })
+const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => account.group_rank != null).length)
 const visibleAccountIDs = computed(() => filteredAccounts.value.map((account) => account.account_id))
 const visibleAccountIDKey = computed(() => visibleAccountIDs.value.join(','))
 const groupSummaryFields = computed(() => {
@@ -281,7 +284,7 @@ function formatGroupStatus(value?: string): string {
   return value || '--'
 }
 function formatMultiplier(value?: number): string {
-  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}x`
+  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}×`
 }
 function formatNativeNumber(value?: number): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)
@@ -383,11 +386,15 @@ async function handleRunAll() {
 }
 
 async function handleRunOne(accountID: number) {
+  if (runningAccountIDs.value.includes(accountID)) return
+  runningAccountIDs.value = [...runningAccountIDs.value, accountID]
   try {
     await adminAPI.accountMonitor.runOne(accountID)
     await load(activeRange.value)
   } catch (reason: unknown) {
     appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
+  } finally {
+    runningAccountIDs.value = runningAccountIDs.value.filter((id) => id !== accountID)
   }
 }
 

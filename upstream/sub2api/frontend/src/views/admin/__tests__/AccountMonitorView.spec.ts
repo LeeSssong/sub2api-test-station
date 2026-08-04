@@ -203,12 +203,12 @@ function projection(range: '24h' | '7d' | '30d' = '24h') {
 const mountedWrappers: ReturnType<typeof mount>[] = []
 let documentHidden = false
 
-function mountView() {
+function mountView(options: { useRealCard?: boolean } = {}) {
   const wrapper = mount(AccountMonitorView, {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
-        AccountMonitorCard: AccountMonitorCardStub,
+        ...(options.useRealCard ? {} : { AccountMonitorCard: AccountMonitorCardStub }),
         Icon: true,
       },
     },
@@ -287,6 +287,15 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 30d')
   })
 
+  it('passes the committed selected range to real cards for their call disclosure', async () => {
+    const wrapper = mountView({ useRealCard: true })
+    await flushPromises()
+
+    await selectRange(wrapper, '7d')
+
+    expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('7 天调用')
+  })
+
   it('retains the last complete snapshot and selected range when a range request fails', async () => {
     list.mockResolvedValueOnce(projection('24h')).mockRejectedValueOnce(new Error('range unavailable'))
     const wrapper = mountView()
@@ -319,10 +328,12 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('24h')
   })
 
-  it('renders group tabs, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
+  it('renders the constrained V3 shell, one status selector, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
     const wrapper = mountView()
     await flushPromises()
 
+    expect(wrapper.get('[data-test="account-monitor-page"]').classes()).toEqual(expect.arrayContaining(['mx-auto', 'w-full', 'max-w-[1240px]']))
+    expect(wrapper.findAll('select')).toHaveLength(1)
     expect(wrapper.get('[data-test="all-site-tab-button"]').attributes('aria-selected')).toBe('true')
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
@@ -339,7 +350,7 @@ describe('admin account monitor view V3', () => {
       'active_account_count',
       'rate_limited_account_count',
     ])
-    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20x')
+    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20×')
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
 
     const cards = wrapper.findAll('[data-test="monitor-card"]')

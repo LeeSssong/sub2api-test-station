@@ -59,14 +59,16 @@ const accounts = [
 ]
 
 describe('AccountMonitorFilters', () => {
-  it('仅提供搜索、平台和服务状态筛选，不重复提供分组范围选择', () => {
+  it('catches the rejected V3 platform selector regression by rendering only search and one status selector', () => {
     const wrapper = mount(AccountMonitorFilters, {
       props: { search: '', platform: '', status: '', accounts },
       global: { stubs: { Icon: true } },
     })
 
     expect(wrapper.find('[data-test="group-filter"]').exists()).toBe(false)
-    expect(wrapper.findAll('select')).toHaveLength(2)
+    expect(wrapper.findAll('select')).toHaveLength(1)
+    expect(wrapper.find('[data-test="platform-filter"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="status-filter"]').attributes('aria-label')).toBe('admin.accountMonitor.filters.status')
   })
 
   it('uses exactly the five Chinese monitor-bucket options for status filtering', () => {
@@ -75,7 +77,7 @@ describe('AccountMonitorFilters', () => {
       global: { stubs: { Icon: true } },
     })
 
-    const options = wrapper.findAll('select')[1].findAll('option').map((option) => ({ value: option.attributes('value'), text: option.text() }))
+    const options = wrapper.get('[data-test="status-filter"]').findAll('option').map((option) => ({ value: option.attributes('value'), text: option.text() }))
     expect(options.slice(1)).toEqual([
       { value: 'available', text: '可用' },
       { value: 'unavailable', text: '不可用' },
@@ -85,14 +87,4 @@ describe('AccountMonitorFilters', () => {
     ])
   })
 
-  it('renders platform names for people while preserving their database values', () => {
-    const wrapper = mount(AccountMonitorFilters, {
-      props: { search: '', platform: '', status: '', accounts },
-      global: { stubs: { Icon: true } },
-    })
-
-    const option = wrapper.findAll('select')[0].findAll('option')[1]
-    expect(option.attributes('value')).toBe('openai')
-    expect(option.text()).toBe('OpenAI')
-  })
 })

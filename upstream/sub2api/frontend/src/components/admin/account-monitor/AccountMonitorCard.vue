@@ -1,6 +1,6 @@
 <template>
-  <article class="card overflow-hidden border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" data-test="monitor-card">
-    <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-slate-800">
+  <article class="card overflow-hidden border border-l-4 border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" :class="statusBorderClass" data-test="monitor-card">
+    <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-slate-800" :class="statusHeaderClass" data-test="monitor-card-header">
       <div class="min-w-0">
         <h2 class="truncate text-base font-semibold text-gray-900 dark:text-white">
           {{ account.name }} <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400">#{{ account.account_id }}</span>
@@ -12,16 +12,16 @@
     </header>
 
     <div class="p-4">
-      <section class="grid grid-cols-3 divide-x divide-gray-100 border border-gray-100 dark:divide-slate-800 dark:border-slate-800" aria-label="评分排名与优先级">
+      <section class="grid grid-cols-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 divide-x divide-gray-200 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/50" aria-label="评分排名与优先级">
         <div class="min-w-0 p-3" data-test="score-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">账号分组评分</div>
-          <div class="mt-1 font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</div>
-          <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">/ 100</p>
+          <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
+          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">基于 {{ account.request_count }} 次真实请求</p>
         </div>
         <div class="min-w-0 p-3" data-test="rank-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">组内排名</div>
-          <div class="mt-1 truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</div>
-          <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号参与排名</p>
+          <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="account.group_rank != null" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
+          <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号继续参与排名</p>
         </div>
         <div class="min-w-0 p-3" data-test="priority-control">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">全局优先级</div>
@@ -57,18 +57,12 @@
         </div>
       </section>
 
-      <section class="mt-4 grid grid-cols-1 gap-px overflow-hidden border border-gray-100 bg-gray-100 sm:grid-cols-2 xl:grid-cols-5 dark:border-slate-800 dark:bg-slate-800" aria-label="账号服务指标">
-        <MetricCell data-test="success-rate-metric" label="成功率" :value="formatPercent(account.success_rate)" :detail="`${account.request_count} 次真实请求，${account.error_count} 次失败`" />
-        <MetricCell data-test="ttft-metric" label="TTFT P50" :value="formatMs(account.ttft_p50_ms)" :detail="sampleDetail(account.ttft_sample_count)" />
-        <MetricCell data-test="latency-metric" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
-        <div class="min-w-0 bg-white p-3 dark:bg-slate-950" data-test="cost-metric">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</span>
-            <div v-if="!editingCost" class="flex shrink-0 items-center gap-1">
-              <button class="icon-button h-8 w-8" data-test="edit-cost" type="button" :title="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" :aria-label="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" @click="beginCostEdit"><Icon name="edit" size="xs" /></button>
-              <button v-if="displayedProcurementCost != null" class="icon-button h-8 w-8" data-test="clear-cost" type="button" title="清空采购成本" aria-label="清空采购成本" @click="confirmClearCost"><Icon name="trash" size="xs" /></button>
-            </div>
-          </div>
+      <section class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5" aria-label="账号服务指标">
+        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="formatPercent(account.success_rate)" :detail="`${formatNumber(account.request_count)} 次真实请求，${formatNumber(account.error_count)} 次失败`" />
+        <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P50" :value="formatMs(account.ttft_p50_ms)" :detail="sampleDetail(account.ttft_sample_count)" />
+        <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
+        <div class="min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
+          <div class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</div>
           <template v-if="editingCost">
             <div class="mt-1 flex h-8 items-center gap-1">
               <label class="sr-only" :for="`account-cost-${account.account_id}`">采购成本（人民币）</label>
@@ -93,15 +87,63 @@
           </template>
           <template v-else>
             <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>
-            <p class="mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500">{{ costDetail }}</p>
+            <p class="mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
+            <div class="mt-2 flex items-center gap-1" data-test="cost-actions">
+              <button class="icon-button h-8 w-8" data-test="edit-cost" type="button" :title="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" :aria-label="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" @click="beginCostEdit"><Icon name="edit" size="xs" /></button>
+              <button v-if="displayedProcurementCost != null" class="icon-button h-8 w-8" data-test="clear-cost" type="button" title="清空采购成本" aria-label="清空采购成本" @click="confirmClearCost"><Icon name="trash" size="xs" /></button>
+            </div>
           </template>
         </div>
-        <div class="min-w-0 bg-white p-3 dark:bg-slate-950" data-test="concurrency-metric">
+        <div class="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-3 service-metric dark:border-slate-800 dark:bg-slate-900/50" data-test="concurrency-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">当前并发</div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ concurrencyValue }}</div>
           <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">{{ concurrency?.delayed ? '数据延迟' : '近实时运维快照' }}</p>
         </div>
       </section>
+
+      <section class="mt-4 border-t border-gray-100 py-4 dark:border-slate-800" aria-label="近期探测" data-test="probe-section">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-sm font-semibold text-gray-800 dark:text-slate-100">近期探测</h3>
+          <span class="text-[11px] text-gray-500 dark:text-slate-400" data-test="probe-summary">{{ probeSummary }}</span>
+        </div>
+        <div class="mt-3 grid h-9 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="timelineAriaLabel">
+          <span
+            v-for="(bar, index) in probeBars"
+            :key="`${account.account_id}-${index}`"
+            class="min-w-0 rounded-sm transition-[height,background-color] duration-200 motion-reduce:transition-none"
+            :class="bar.colorClass"
+            :style="{ height: `${bar.height}%` }"
+            :title="bar.title"
+            data-test="probe-bar"
+            aria-hidden="true"
+          />
+        </div>
+        <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
+      </section>
+
+      <section class="border-t border-gray-100 dark:border-slate-800" data-test="calls-disclosure">
+        <button
+          class="flex min-h-12 w-full items-center gap-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+          data-test="calls-toggle"
+          type="button"
+          :aria-controls="callsPanelID"
+          :aria-expanded="callsExpanded"
+          @click="callsExpanded = !callsExpanded"
+        >
+          <span class="font-semibold text-gray-800 dark:text-slate-100">{{ callsTitle }}</span>
+          <span class="text-[11px] text-gray-500 dark:text-slate-400">{{ callsSummary }}</span>
+          <Icon name="chevronDown" size="xs" class="ml-auto transition-transform motion-reduce:transition-none" :class="{ 'rotate-180': callsExpanded }" />
+        </button>
+        <div v-if="callsExpanded" :id="callsPanelID" class="grid grid-cols-2 gap-2 border-t border-gray-100 pb-3 pt-3 dark:border-slate-800">
+          <div class="rounded-md bg-gray-50 p-2.5 dark:bg-slate-900/50"><div class="text-[10px] text-gray-500 dark:text-slate-400">成功请求</div><div class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ successfulRequestCount }}</div></div>
+          <div class="rounded-md bg-gray-50 p-2.5 dark:bg-slate-900/50"><div class="text-[10px] text-gray-500 dark:text-slate-400">失败请求</div><div class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ account.error_count }}</div></div>
+        </div>
+      </section>
+
+      <footer class="flex min-h-12 items-center justify-between gap-3 border-t border-gray-100 text-[11px] text-gray-500 dark:border-slate-800 dark:text-slate-400" data-test="card-footer">
+        <span>检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span>
+        <button class="icon-button shrink-0" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /></button>
+      </footer>
     </div>
   </article>
 </template>
@@ -109,7 +151,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { AccountMonitorAccount, AccountMonitorConcurrencyItem } from '@/api/admin/accountMonitor'
+import type { AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorRange } from '@/api/admin/accountMonitor'
 
 type SaveCompletion = {
   resolve: () => void
@@ -117,23 +159,21 @@ type SaveCompletion = {
 }
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
+type ProbeBar = { colorClass: string, height: number, title: string }
 
 const props = withDefaults(defineProps<{
   account: AccountMonitorAccount
   concurrency?: CardConcurrency | null
-  operations?: unknown
-  scope?: 'all' | 'group'
-  groupOperationalState?: string
   running?: boolean
-  savingWeight?: boolean
-}>(), { concurrency: null })
+  rankedAccountCount?: number
+  statisticsCutoff?: string | null
+  selectedRange?: AccountMonitorRange
+}>(), { concurrency: null, running: false, rankedAccountCount: 0, statisticsCutoff: null, selectedRange: '24h' })
 
 const emit = defineEmits<{
   (event: 'updatePriority', accountID: number, priority: number, completion: SaveCompletion): void
   (event: 'updateProcurementCost', accountID: number, cost: number | null, completion: SaveCompletion): void
   (event: 'refresh', accountID: number): void
-  (event: 'settings'): void
-  (event: 'history', accountID: number): void
 }>()
 
 const displayedPriority = ref(props.account.priority)
@@ -148,6 +188,7 @@ const priorityError = ref('')
 const costError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const costInput = ref<HTMLInputElement | null>(null)
+const callsExpanded = ref(false)
 
 watch(() => props.account.priority, (value) => {
   if (!editingPriority.value && !savingPriority.value) displayedPriority.value = value
@@ -168,14 +209,52 @@ const statusBadgeClass = computed(() => ({
   'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': statusLabel.value === '暂停',
   'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': statusLabel.value === '不可用',
 }))
+const statusBorderClass = computed(() => ({
+  'border-emerald-500': statusLabel.value === '正常',
+  'border-amber-500': statusLabel.value === '待确认',
+  'border-gray-300 dark:border-slate-700': statusLabel.value === '暂停',
+  'border-red-500': statusLabel.value === '不可用',
+}))
+const statusHeaderClass = computed(() => ({
+  'border-emerald-100 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20': statusLabel.value === '正常',
+  'border-amber-100 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20': statusLabel.value === '待确认',
+  'bg-gray-50 dark:bg-slate-900/50': statusLabel.value === '暂停',
+  'border-red-100 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20': statusLabel.value === '不可用',
+}))
 const scoreLabel = computed(() => props.account.quality_score == null ? '--' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(props.account.quality_score))
 const rankLabel = computed(() => props.account.group_rank == null ? '未排名' : `第 ${props.account.group_rank}`)
 const concurrencyValue = computed(() => props.concurrency ? `${props.concurrency.current} / ${props.concurrency.limit}` : '-- / --')
-const costValue = computed(() => displayedProcurementCost.value == null
-  ? formatMultiplier(props.account.multiplier.value)
-  : `¥${displayedProcurementCost.value.toFixed(2)}`)
+const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
+const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
+const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
+const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
+const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
+const statisticsCutoffLabel = computed(() => formatDateTime(props.statisticsCutoff))
+const timelinePoints = computed(() => (props.account.timeline ?? []).slice(-24))
+const probeBars = computed<ProbeBar[]>(() => {
+  const bars: ProbeBar[] = Array.from({ length: Math.max(0, 24 - timelinePoints.value.length) }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: '暂无探测' }))
+  for (const point of timelinePoints.value) {
+    const timestamp = formatDateTime(point.checked_at)
+    if (isCompletedProbe(point.status)) {
+      const latency = point.latency_ms ?? point.ttft_ms
+      bars.push({ colorClass: 'bg-emerald-500 dark:bg-emerald-400', height: point.status === 'unavailable' || point.status === 'model_unavailable' || point.status === 'degraded' ? 40 : latencyBarHeight(latency), title: `${timestamp} · ${latency == null ? '探测完成' : `成功 · ${formatMs(latency)}`}` })
+    } else if (isFailedProbe(point.status)) {
+      bars.push({ colorClass: 'bg-red-500 dark:bg-red-400', height: 28, title: `${timestamp} · 探测失败` })
+    } else {
+      bars.push({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: `${timestamp} · 暂无结果` })
+    }
+  }
+  return bars
+})
+const probeSummary = computed(() => {
+  const successes = timelinePoints.value.filter((point) => isCompletedProbe(point.status)).length
+  const failures = timelinePoints.value.filter((point) => isFailedProbe(point.status)).length
+  return `${timelinePoints.value.length} 次结果 · ${successes} 成功 · ${failures} 失败`
+})
+const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
+const costValue = computed(() => displayedProcurementCost.value == null ? formatMultiplier(props.account.multiplier.value) : `¥${displayedProcurementCost.value.toFixed(2)}`)
 const costDetail = computed(() => {
-  if (displayedProcurementCost.value == null) return '账号倍率模式'
+  if (displayedProcurementCost.value == null) return '上游托管倍率'
   if (!props.account.expires_at) return '有效期缺失，无法计算等效倍率'
   const effective = props.account.effective_multiplier
   if (effective == null || !Number.isFinite(effective)) return '缺少窗口基础成本，无法计算等效倍率'
@@ -192,13 +271,33 @@ function formatMs(value?: number | null): string {
 }
 function formatMultiplier(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '--'
-  return `${value.toFixed(2)}x`
+  return `${value.toFixed(2)}×`
 }
 function formatDate(value: string): string {
   return value.slice(0, 10)
 }
+function formatDateTime(value?: string | null): string {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+}
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0))
+}
 function sampleDetail(count: number): string {
-  return `基于 ${count} 次有效响应`
+  return `基于 ${formatNumber(count)} 次有效响应`
+}
+function isCompletedProbe(status: string): boolean {
+  return ['success', 'operational', 'ok', 'unavailable', 'model_unavailable', 'degraded'].includes(status)
+}
+function isFailedProbe(status: string): boolean {
+  return ['failed', 'error'].includes(status)
+}
+function latencyBarHeight(value?: number | null): number {
+  if (value == null || !Number.isFinite(value)) return 65
+  const ratio = Math.log10(Math.max(100, value) / 100)
+  return Math.round(Math.max(35, Math.min(100, 100 - ratio * 32.5)))
 }
 function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error && reason.message ? reason.message : fallback
@@ -237,17 +336,20 @@ async function savePriority() {
   }
   savingPriority.value = true
   priorityError.value = ''
+  let shouldRefocus = false
   try {
     await waitForPrioritySave(props.account.account_id, priority)
     displayedPriority.value = priority
     editingPriority.value = false
   } catch (reason) {
-    savingPriority.value = false
     priorityError.value = errorMessage(reason, '保存全局优先级失败')
-    await nextTick()
-    priorityInput.value?.focus()
+    shouldRefocus = true
   } finally {
     savingPriority.value = false
+    if (shouldRefocus) {
+      await nextTick()
+      priorityInput.value?.focus()
+    }
   }
 }
 async function beginCostEdit() {
@@ -274,34 +376,40 @@ async function saveCost() {
   }
   savingCost.value = true
   costError.value = ''
+  let shouldRefocus = false
   try {
     await waitForCostSave(props.account.account_id, cost)
     displayedProcurementCost.value = cost
     editingCost.value = false
   } catch (reason) {
-    savingCost.value = false
     costError.value = errorMessage(reason, '保存采购成本失败')
-    await nextTick()
-    costInput.value?.focus()
+    shouldRefocus = true
   } finally {
     savingCost.value = false
+    if (shouldRefocus) {
+      await nextTick()
+      costInput.value?.focus()
+    }
   }
 }
 async function confirmClearCost() {
   if (!window.confirm('确认清空采购成本并恢复倍率模式？')) return
   savingCost.value = true
   costError.value = ''
+  let shouldRefocus = false
   try {
     await waitForCostSave(props.account.account_id, null)
     displayedProcurementCost.value = null
   } catch (reason) {
-    savingCost.value = false
     costError.value = errorMessage(reason, '清空采购成本失败')
     editingCost.value = true
-    await nextTick()
-    costInput.value?.focus()
+    shouldRefocus = true
   } finally {
     savingCost.value = false
+    if (shouldRefocus) {
+      await nextTick()
+      costInput.value?.focus()
+    }
   }
 }
 
@@ -311,9 +419,15 @@ const MetricCell = defineComponent({
     label: { type: String, required: true },
     value: { type: String, required: true },
     detail: { type: String, required: true },
+    tone: { type: String, required: true },
   },
   setup(metricProps, { attrs }) {
-    return () => h('div', { ...attrs, class: ['min-w-0 bg-white p-3 dark:bg-slate-950', attrs.class] }, [
+    const toneClass: Record<string, string> = {
+      success: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20',
+      ttft: 'border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20',
+      latency: 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
+    }
+    return () => h('div', { ...attrs, class: ['min-w-0 rounded-lg border p-3 service-metric', toneClass[metricProps.tone], attrs.class] }, [
       h('div', { class: 'text-[11px] text-gray-500 dark:text-slate-400' }, metricProps.label),
       h('div', { class: 'mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white' }, metricProps.value),
       h('p', { class: 'mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500' }, metricProps.detail),

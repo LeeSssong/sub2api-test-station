@@ -74,7 +74,11 @@ const account = {
   effective_multiplier: 0.48,
   cost_mode: 'multiplier',
   cost_score: 15,
-  timeline: [],
+  timeline: Array.from({ length: 24 }, (_, index) => ({
+    status: index === 7 ? 'failed' : 'success',
+    checked_at: `2026-08-04T04:${String(index).padStart(2, '0')}:00Z`,
+    latency_ms: 900 + index * 10,
+  })),
   stale: false,
   quality_score: 91,
   group_rank: 1,
@@ -110,12 +114,55 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1,018 ms')
     expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1,962 ms')
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58x')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
 
     for (const label of ['分组倍率', '营收', '利润', '对账', '账务', '上游真实扣费', '用户实际计费']) {
       expect(wrapper.text()).not.toContain(label)
     }
+  })
+
+  it('restores the rejected V3 green service card shell, five colored metrics, probe bars, and service-only footer', async () => {
+    const refresh = vi.fn()
+    const wrapper = mountCard({
+      statisticsCutoff: '2026-08-04T04:20:42Z',
+      onRefresh: refresh,
+    })
+
+    const card = wrapper.get('[data-test="monitor-card"]')
+    expect(card.classes()).toEqual(expect.arrayContaining(['border-l-4', 'border-emerald-500']))
+    expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toContain('bg-emerald-50')
+    expect(wrapper.findAll('.service-metric')).toHaveLength(5)
+    expect(wrapper.get('[data-test="success-rate-metric"]').classes()).toContain('bg-emerald-50')
+    expect(wrapper.get('[data-test="ttft-metric"]').classes()).toContain('bg-blue-50')
+    expect(wrapper.get('[data-test="latency-metric"]').classes()).toContain('bg-amber-50')
+    expect(wrapper.get('[data-test="cost-metric"]').classes()).toContain('bg-violet-50')
+    expect(wrapper.get('[data-test="concurrency-metric"]').classes()).toContain('bg-gray-50')
+    expect(wrapper.findAll('[data-test="probe-bar"]')).toHaveLength(24)
+    expect(wrapper.get('[data-test="probe-summary"]').text()).toContain('24 次结果 · 23 成功 · 1 失败')
+    expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('24 小时调用')
+    expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('72 次请求 · 1 次失败')
+    expect(wrapper.get('[data-test="card-footer"]').text()).toContain('检查于')
+    expect(wrapper.get('[data-test="card-footer"]').text()).toContain('统计截止')
+
+    await wrapper.get('[data-test="refresh-account"]').trigger('click')
+    expect(refresh).toHaveBeenCalledWith(113)
+
+    for (const label of ['营收', '利润', '经营', '账务', '对账', '流水', '历史', '异常', '调整']) {
+      expect(wrapper.text()).not.toContain(label)
+    }
+  })
+
+  it('keeps the call disclosure aligned with the selected window instead of optional account range or probe totals', () => {
+    const wrapper = mountCard({
+      account: { ...account, range: '24h', request_count: 426, error_count: 8 },
+      selectedRange: '7d',
+    })
+
+    const disclosure = wrapper.get('[data-test="calls-disclosure"]').text()
+    expect(disclosure).toContain('7 天调用')
+    expect(disclosure).toContain('426 次请求 · 8 次失败')
+    expect(disclosure).not.toContain('24 次请求')
   })
 
   it('renders procurement cost with its native expiry and window effective multiplier', () => {
@@ -133,8 +180,24 @@ describe('AccountMonitorCard', () => {
     const cost = wrapper.get('[data-test="cost-metric"]').text()
     expect(cost).toContain('¥120.00')
     expect(cost).toContain('有效至 2026-09-01')
-    expect(cost).toContain('当前窗口等效倍率 0.48x')
-    expect(cost).not.toContain('0.58x')
+    expect(cost).toContain('当前窗口等效倍率 0.48×')
+    expect(cost).not.toContain('0.58×')
+  })
+
+  it('keeps procurement cost actions below the metric detail so the V3 five-tile label does not collapse', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        procurement_cost_cny: 120,
+        procurement_cost_effective_at: '2026-08-04T00:00:00Z',
+        expires_at: '2026-09-01T00:00:00Z',
+        cost_mode: 'procurement',
+      },
+    })
+
+    const detail = wrapper.get('[data-test="cost-detail"]')
+    const actions = wrapper.get('[data-test="cost-actions"]')
+    expect(detail.element.compareDocumentPosition(actions.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('explains why a procurement amount cannot yield an effective multiplier', () => {
@@ -176,7 +239,9 @@ describe('AccountMonitorCard', () => {
 
     await wrapper.get('[data-test="edit-priority"]').trigger('click')
     await wrapper.get<HTMLInputElement>('[data-test="priority-input"]').setValue('2')
-    await wrapper.get('[data-test="save-priority"]').trigger('click')
+    const saveButton = wrapper.get<HTMLButtonElement>('[data-test="save-priority"]')
+    saveButton.element.focus()
+    await saveButton.trigger('click')
 
     expect(wrapper.find('[data-test="priority-input"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="save-priority"]').attributes('disabled')).toBeDefined()
@@ -217,7 +282,9 @@ describe('AccountMonitorCard', () => {
 
     await wrapper.get('[data-test="edit-cost"]').trigger('click')
     await wrapper.get<HTMLInputElement>('[data-test="cost-input"]').setValue('150.5')
-    await wrapper.get('[data-test="save-cost"]').trigger('click')
+    const saveButton = wrapper.get<HTMLButtonElement>('[data-test="save-cost"]')
+    saveButton.element.focus()
+    await saveButton.trigger('click')
     expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(true)
 
     savePending.resolve()
@@ -226,13 +293,15 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await wrapper.get('[data-test="clear-cost"]').trigger('click')
+    const clearButton = wrapper.get<HTMLButtonElement>('[data-test="clear-cost"]')
+    clearButton.element.focus()
+    await clearButton.trigger('click')
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
 
     clearPending.resolve()
     await flushAsyncWork()
     expect(confirmSpy).toHaveBeenCalledOnce()
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58x')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
     confirmSpy.mockRestore()
   })
 

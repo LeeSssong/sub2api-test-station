@@ -1,5 +1,5 @@
 <template>
-  <div class="flex w-full flex-wrap items-center gap-2">
+  <div class="grid w-full grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_152px]">
     <div class="relative min-w-[220px] flex-1">
       <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
       <input
@@ -11,17 +11,9 @@
       />
     </div>
     <select
-      :value="platform"
-      class="input w-auto min-w-[140px]"
-      :aria-label="t('admin.accountMonitor.filters.platform')"
-      @change="emit('update:platform', ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="">{{ t('common.all') }}</option>
-      <option v-for="item in platforms" :key="item.value" :value="item.value">{{ item.label }}</option>
-    </select>
-    <select
       :value="status"
-      class="input w-auto min-w-[140px]"
+      class="input w-full"
+      data-test="status-filter"
       :aria-label="t('admin.accountMonitor.filters.status')"
       @change="emit('update:status', ($event.target as HTMLSelectElement).value)"
     >
@@ -36,35 +28,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import type { AccountMonitorAccount } from '@/api/admin/accountMonitor'
 
-const props = defineProps<{
+defineProps<{
   search: string
-  platform: string
   status: string
-  accounts: AccountMonitorAccount[]
 }>()
 
 const emit = defineEmits<{
   (event: 'update:search', value: string): void
-  (event: 'update:platform', value: string): void
   (event: 'update:status', value: string): void
 }>()
 
 const { t } = useI18n()
-
-const platformLabels: Record<string, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  gemini: 'Gemini',
-  vertex: 'Vertex AI',
-  bedrock: 'Bedrock',
-  azure_openai: 'Azure OpenAI',
-}
-const platforms = computed(() => [...new Set(props.accounts.map((account) => account.platform))]
-  .sort()
-  .map((value) => ({ value, label: platformLabels[value] ?? '其他平台' })))
 </script>

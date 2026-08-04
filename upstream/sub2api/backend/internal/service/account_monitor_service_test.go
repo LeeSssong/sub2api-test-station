@@ -1072,6 +1072,40 @@ func TestAccountMonitorWindowCostUsesProcurementOverlapAndOneToOneMultiplier(t *
 	}
 }
 
+func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.T) {
+	now := time.Now().UTC()
+	purchaseCost := 120.50
+	effectiveAt := now.Add(-24 * time.Hour)
+	expiresAt := now.Add(29 * 24 * time.Hour)
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			113: {RequestCount: 3, BaseCost: 10, SuccessRate: 1, LastObservedAt: &now},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 113, Name: "procurement", Status: StatusActive, Schedulable: true,
+		ProcurementCostCNY: &purchaseCost, ProcurementCostEffectiveAt: &effectiveAt, ExpiresAt: &expiresAt,
+	}}}, nil, nil, nil).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Accounts) != 1 {
+		t.Fatalf("accounts = %#v, want one account", page.Accounts)
+	}
+	row := page.Accounts[0]
+	if row.ProcurementCostCNY == nil || *row.ProcurementCostCNY != purchaseCost {
+		t.Fatalf("procurement_cost_cny = %#v, want %v", row.ProcurementCostCNY, purchaseCost)
+	}
+	if row.ProcurementCostEffectiveAt == nil || !row.ProcurementCostEffectiveAt.Equal(effectiveAt) {
+		t.Fatalf("procurement_cost_effective_at = %#v, want %s", row.ProcurementCostEffectiveAt, effectiveAt)
+	}
+	if row.ExpiresAt == nil || !row.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at = %#v, want %s", row.ExpiresAt, expiresAt)
+	}
+}
+
 func TestAccountMonitorWindowCostReturnsZeroCostScoreForInvalidCostInputs(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)

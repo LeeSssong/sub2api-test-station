@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
@@ -92,6 +92,10 @@ function mountCard(overrides: Record<string, unknown> = {}) {
     global: { stubs: { Icon: true } },
   })
 }
+
+afterEach(() => {
+  document.body.replaceChildren()
+})
 
 describe('AccountMonitorCard', () => {
   it('renders the V3 service, rank, cost, and concurrency information without operations labels', () => {
@@ -229,6 +233,40 @@ describe('AccountMonitorCard', () => {
     await flushAsyncWork()
     expect(confirmSpy).toHaveBeenCalledOnce()
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58x')
+    confirmSpy.mockRestore()
+  })
+
+  it('preserves procurement cost draft, focus, and local error when the parent rejects a save', async () => {
+    const wrapper = mountCard({
+      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
+      onUpdateProcurementCost: (_id: number, _cost: number | null, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('保存采购成本失败')),
+    })
+
+    await wrapper.get('[data-test="edit-cost"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('[data-test="cost-input"]').setValue('150.5')
+    await wrapper.get('[data-test="save-cost"]').trigger('click')
+    await flushAsyncWork()
+
+    const input = wrapper.get<HTMLInputElement>('[data-test="cost-input"]')
+    expect(input.element.value).toBe('150.5')
+    expect(wrapper.get('[data-test="cost-error"]').text()).toContain('保存采购成本失败')
+    expect(document.activeElement).toBe(input.element)
+  })
+
+  it('preserves procurement cost value, draft, focus, and local error when the parent rejects clearing it', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountCard({
+      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
+      onUpdateProcurementCost: (_id: number, _cost: number | null, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('清空采购成本失败')),
+    })
+
+    await wrapper.get('[data-test="clear-cost"]').trigger('click')
+    await flushAsyncWork()
+
+    const input = wrapper.get<HTMLInputElement>('[data-test="cost-input"]')
+    expect(input.element.value).toBe('120')
+    expect(wrapper.get('[data-test="cost-error"]').text()).toContain('清空采购成本失败')
+    expect(document.activeElement).toBe(input.element)
     confirmSpy.mockRestore()
   })
 

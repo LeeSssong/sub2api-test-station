@@ -242,6 +242,7 @@ async function savePriority() {
     displayedPriority.value = priority
     editingPriority.value = false
   } catch (reason) {
+    savingPriority.value = false
     priorityError.value = errorMessage(reason, '保存全局优先级失败')
     await nextTick()
     priorityInput.value?.focus()
@@ -278,6 +279,7 @@ async function saveCost() {
     displayedProcurementCost.value = cost
     editingCost.value = false
   } catch (reason) {
+    savingCost.value = false
     costError.value = errorMessage(reason, '保存采购成本失败')
     await nextTick()
     costInput.value?.focus()
@@ -293,6 +295,7 @@ async function confirmClearCost() {
     await waitForCostSave(props.account.account_id, null)
     displayedProcurementCost.value = null
   } catch (reason) {
+    savingCost.value = false
     costError.value = errorMessage(reason, '清空采购成本失败')
     editingCost.value = true
     await nextTick()

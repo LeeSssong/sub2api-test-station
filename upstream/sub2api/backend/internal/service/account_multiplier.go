@@ -32,6 +32,7 @@ const (
 
 	AccountMonitorMultiplierSourceDeclared = "declared"
 	AccountMonitorMultiplierSourceMeasured = "measured"
+	AccountMonitorMultiplierSourceManual   = "manual"
 
 	AccountMonitorMultiplierStatusOK          = "ok"
 	AccountMonitorMultiplierStatusStale       = "stale"
@@ -532,6 +533,23 @@ func (s *AccountMultiplierService) Resolve(account *Account, now time.Time) Acco
 	if account == nil {
 		return unavailableAccountMultiplier()
 	}
+	// A manual override is an explicit administrator declaration. It takes
+	// precedence over native/measured evidence so a later managed probe cannot
+	// make the card appear to have silently changed pricing semantics.
+	if policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra); valid &&
+		policy == UpstreamBillingRateMultiplierPolicyManualOverride && account.RateMultiplier != nil {
+		value := *account.RateMultiplier
+		if value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0) {
+			return AccountMonitorMultiplier{
+				Value:       float64PointerCopy(value),
+				Source:      AccountMonitorMultiplierSourceManual,
+				Status:      AccountMonitorMultiplierStatusOK,
+				ObservedAt:  accountUpdatedAt(account),
+				SampleCount: 0,
+			}
+		}
+		return AccountMonitorMultiplier{Source: AccountMonitorMultiplierSourceManual, Status: AccountMonitorMultiplierStatusFailed}
+	}
 	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
 	if snapshot == nil {
 		if account.Extra != nil {
@@ -574,6 +592,14 @@ func (s *AccountMultiplierService) Resolve(account *Account, now time.Time) Acco
 		Status:     AccountMonitorMultiplierStatusOK,
 		ObservedAt: accountMultiplierObservedAt(snapshot),
 	}
+}
+
+func accountUpdatedAt(account *Account) *time.Time {
+	if account == nil || account.UpdatedAt.IsZero() {
+		return nil
+	}
+	value := account.UpdatedAt
+	return &value
 }
 
 func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) AccountMonitorMultiplier {

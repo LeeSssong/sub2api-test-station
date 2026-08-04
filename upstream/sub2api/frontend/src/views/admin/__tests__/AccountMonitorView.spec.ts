@@ -88,7 +88,7 @@ const AccountMonitorCardStub = defineComponent({
     account: { type: Object, required: true },
     concurrency: { type: Object, default: null },
   },
-  emits: ['updatePriority', 'updateProcurementCost', 'refresh'],
+  emits: ['updatePriority', 'updateProcurementCost', 'updateMultiplier', 'refresh'],
   template: `
     <article data-test="monitor-card" :data-account-id="account.account_id">
       <span data-test="card-name">{{ account.name }}</span>
@@ -620,6 +620,19 @@ describe('admin account monitor view V3', () => {
     expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(costCompletion.resolve).toHaveBeenCalledOnce()
     expect(costCompletion.reject).not.toHaveBeenCalled()
+
+    list.mockClear()
+    const multiplierCompletion = { resolve: vi.fn(), reject: vi.fn() }
+    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateMultiplier', 10, 0.08, multiplierCompletion)
+    await flushPromises()
+
+    expect(updateAccount).toHaveBeenCalledWith(10, {
+      rate_multiplier: 0.08,
+      rate_multiplier_policy: 'manual_override',
+    })
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(multiplierCompletion.resolve).toHaveBeenCalledOnce()
+    expect(multiplierCompletion.reject).not.toHaveBeenCalled()
 
     updateAccount.mockRejectedValueOnce(new Error('priority rejected'))
     const rejectedCompletion = { resolve: vi.fn(), reject: vi.fn() }

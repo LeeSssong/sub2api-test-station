@@ -68,6 +68,26 @@ func TestAccountMultiplierResolveDoesNotUseLocalBillingMultiplier(t *testing.T) 
 	}
 }
 
+func TestAccountMultiplierResolveUsesManualOverrideWithoutNativeProbe(t *testing.T) {
+	now := time.Date(2026, 8, 4, 9, 30, 0, 0, time.UTC)
+	manualRate := 0.08
+	account := &Account{
+		RateMultiplier: &manualRate,
+		Extra: map[string]any{
+			UpstreamBillingRateMultiplierPolicyExtraKey: UpstreamBillingRateMultiplierPolicyManualOverride,
+		},
+	}
+
+	got := NewAccountMultiplierService(nil, nil, nil).Resolve(account, now)
+
+	if got.Status != AccountMonitorMultiplierStatusOK || got.Source != AccountMonitorMultiplierSourceManual {
+		t.Fatalf("Resolve() = %#v, want valid manual multiplier", got)
+	}
+	if got.Value == nil || math.Abs(*got.Value-manualRate) > 1e-9 {
+		t.Fatalf("Resolve().Value = %#v, want %v", got.Value, manualRate)
+	}
+}
+
 func TestAccountMultiplierResolveRejectsExpiredAndNonFiniteDeclaration(t *testing.T) {
 	now := time.Date(2026, 7, 26, 9, 30, 0, 0, time.UTC)
 	tests := []struct {

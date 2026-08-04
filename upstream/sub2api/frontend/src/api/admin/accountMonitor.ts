@@ -37,7 +37,7 @@ export interface AccountMonitorLatest {
   checked_at: string
 }
 
-export type AccountMonitorMultiplierSource = 'declared' | 'measured' | string
+export type AccountMonitorMultiplierSource = 'declared' | 'measured' | 'manual' | string
 export type AccountMonitorMultiplierStatus = 'ok' | 'stale' | 'unsupported' | 'failed' | 'unavailable' | string
 
 export interface AccountMonitorMultiplier {

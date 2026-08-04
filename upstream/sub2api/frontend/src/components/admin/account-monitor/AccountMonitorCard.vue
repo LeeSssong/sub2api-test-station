@@ -63,7 +63,29 @@
         <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</div>
-          <template v-if="editingCost">
+          <template v-if="editingMultiplier">
+            <div class="mt-1 flex h-8 items-center gap-1">
+              <label class="sr-only" :for="`account-multiplier-${account.account_id}`">账号倍率</label>
+              <input
+                :id="`account-multiplier-${account.account_id}`"
+                ref="multiplierInput"
+                v-model="draftMultiplier"
+                class="input h-8 min-w-0 flex-1 px-2 py-1 font-mono text-sm"
+                data-test="multiplier-input"
+                inputmode="decimal"
+                min="0"
+                step="0.01"
+                type="number"
+                :disabled="savingMultiplier"
+                @keyup.enter="saveMultiplier"
+                @keyup.esc="cancelMultiplierEdit"
+              >
+              <button class="icon-button h-8 w-8 shrink-0" data-test="save-multiplier" type="button" title="保存账号倍率" aria-label="保存账号倍率" :disabled="savingMultiplier" @click="saveMultiplier"><Icon name="check" size="xs" /></button>
+              <button class="icon-button h-8 w-8 shrink-0" data-test="cancel-multiplier" type="button" title="取消编辑账号倍率" aria-label="取消编辑账号倍率" :disabled="savingMultiplier" @click="cancelMultiplierEdit"><Icon name="x" size="xs" /></button>
+            </div>
+            <p v-if="multiplierError" class="mt-1 text-[11px] text-red-600 dark:text-red-400" data-test="multiplier-error" role="alert">{{ multiplierError }}</p>
+          </template>
+          <template v-else-if="editingCost">
             <div class="mt-1 flex h-8 items-center gap-1">
               <label class="sr-only" :for="`account-cost-${account.account_id}`">采购成本（人民币）</label>
               <input
@@ -90,6 +112,7 @@
             <p class="mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
             <div class="mt-2 flex items-center gap-1" data-test="cost-actions">
               <button class="icon-button h-8 w-8" data-test="edit-cost" type="button" :title="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" :aria-label="displayedProcurementCost == null ? '录入采购成本' : '编辑采购成本'" @click="beginCostEdit"><Icon name="edit" size="xs" /></button>
+              <button v-if="displayedProcurementCost == null && manualMultiplierEditable" class="icon-button h-8 w-8" data-test="edit-multiplier" type="button" :title="manualMultiplierAvailable ? '编辑账号倍率' : '录入账号倍率'" :aria-label="manualMultiplierAvailable ? '编辑账号倍率' : '录入账号倍率'" @click="beginMultiplierEdit"><Icon name="edit" size="xs" /></button>
               <button v-if="displayedProcurementCost != null" class="icon-button h-8 w-8" data-test="clear-cost" type="button" title="清空采购成本" aria-label="清空采购成本" @click="confirmClearCost"><Icon name="trash" size="xs" /></button>
             </div>
           </template>
@@ -161,6 +184,11 @@ type SaveCompletion = {
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type ProbeBar = { colorClass: string, height: number, title: string }
 
+function manualMultiplierFromAccount(account: AccountMonitorAccount): number | null {
+  if (account.multiplier.source !== 'manual' || account.multiplier.value == null || !Number.isFinite(account.multiplier.value)) return null
+  return account.multiplier.value
+}
+
 const props = withDefaults(defineProps<{
   account: AccountMonitorAccount
   concurrency?: CardConcurrency | null
@@ -174,21 +202,28 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: 'updatePriority', accountID: number, priority: number, completion: SaveCompletion): void
   (event: 'updateProcurementCost', accountID: number, cost: number | null, completion: SaveCompletion): void
+  (event: 'updateMultiplier', accountID: number, multiplier: number, completion: SaveCompletion): void
   (event: 'refresh', accountID: number): void
 }>()
 
 const displayedPriority = ref(props.account.priority)
 const displayedProcurementCost = ref<number | null>(props.account.procurement_cost_cny ?? null)
+const displayedManualMultiplier = ref<number | null>(manualMultiplierFromAccount(props.account))
 const editingPriority = ref(false)
 const editingCost = ref(false)
+const editingMultiplier = ref(false)
 const savingPriority = ref(false)
 const savingCost = ref(false)
+const savingMultiplier = ref(false)
 const draftPriority = ref(String(displayedPriority.value))
 const draftCost = ref(displayedProcurementCost.value == null ? '' : String(displayedProcurementCost.value))
+const draftMultiplier = ref(displayedManualMultiplier.value == null ? '' : String(displayedManualMultiplier.value))
 const priorityError = ref('')
 const costError = ref('')
+const multiplierError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const costInput = ref<HTMLInputElement | null>(null)
+const multiplierInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
 
 watch(() => props.account.priority, (value) => {
@@ -196,6 +231,9 @@ watch(() => props.account.priority, (value) => {
 })
 watch(() => props.account.procurement_cost_cny, (value) => {
   if (!editingCost.value && !savingCost.value) displayedProcurementCost.value = value ?? null
+})
+watch(() => props.account.multiplier, (value) => {
+  if (!editingMultiplier.value && !savingMultiplier.value) displayedManualMultiplier.value = value?.source === 'manual' ? value.value ?? null : null
 })
 
 const statusLabel = computed(() => {
@@ -255,9 +293,24 @@ const probeSummary = computed(() => {
   return `${timelinePoints.value.length} 次结果 · ${successes} 成功 · ${failures} 失败`
 })
 const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
-const costValue = computed(() => displayedProcurementCost.value == null ? formatMultiplier(props.account.multiplier.value) : `¥${displayedProcurementCost.value.toFixed(2)}`)
+const manualMultiplierAvailable = computed(() => displayedManualMultiplier.value != null && Number.isFinite(displayedManualMultiplier.value))
+const nativeMultiplierAvailable = computed(() => {
+  const multiplier = props.account.multiplier
+  return multiplier.source !== 'manual' && multiplier.status === 'ok' && multiplier.value != null && Number.isFinite(multiplier.value)
+})
+const manualMultiplierEditable = computed(() => !nativeMultiplierAvailable.value)
+const costValue = computed(() => {
+  if (displayedProcurementCost.value != null) return `¥${displayedProcurementCost.value.toFixed(2)}`
+  if (manualMultiplierAvailable.value) return formatMultiplier(displayedManualMultiplier.value)
+  if (nativeMultiplierAvailable.value) return formatMultiplier(props.account.multiplier.value)
+  return '--'
+})
 const costDetail = computed(() => {
-  if (displayedProcurementCost.value == null) return '上游托管倍率'
+  if (displayedProcurementCost.value == null) {
+    if (manualMultiplierAvailable.value) return '手工录入倍率'
+    if (nativeMultiplierAvailable.value) return '上游托管倍率'
+    return '未录入账号倍率'
+  }
   if (!props.account.expires_at) return '有效期缺失，无法计算等效倍率'
   const effective = props.account.effective_multiplier
   if (effective == null || !Number.isFinite(effective)) return '缺少窗口基础成本，无法计算等效倍率'
@@ -317,6 +370,9 @@ function waitForPrioritySave(accountID: number, priority: number): Promise<void>
 function waitForCostSave(accountID: number, cost: number | null): Promise<void> {
   return new Promise((resolve, reject) => emit('updateProcurementCost', accountID, cost, { resolve, reject }))
 }
+function waitForMultiplierSave(accountID: number, multiplier: number): Promise<void> {
+  return new Promise((resolve, reject) => emit('updateMultiplier', accountID, multiplier, { resolve, reject }))
+}
 async function beginPriorityEdit() {
   draftPriority.value = String(displayedPriority.value)
   priorityError.value = ''
@@ -368,6 +424,47 @@ async function beginCostEdit() {
   await nextTick()
   costInput.value?.focus()
   costInput.value?.select()
+}
+
+async function beginMultiplierEdit() {
+  draftMultiplier.value = manualMultiplierAvailable.value ? String(displayedManualMultiplier.value) : ''
+  multiplierError.value = ''
+  editingMultiplier.value = true
+  await nextTick()
+  multiplierInput.value?.focus()
+  multiplierInput.value?.select()
+}
+function cancelMultiplierEdit() {
+  if (savingMultiplier.value) return
+  draftMultiplier.value = manualMultiplierAvailable.value ? String(displayedManualMultiplier.value) : ''
+  multiplierError.value = ''
+  editingMultiplier.value = false
+}
+async function saveMultiplier() {
+  const multiplier = Number(draftMultiplier.value)
+  if (!String(draftMultiplier.value).trim() || !Number.isFinite(multiplier) || multiplier < 0) {
+    multiplierError.value = '请输入大于或等于 0 的账号倍率'
+    await nextTick()
+    multiplierInput.value?.focus()
+    return
+  }
+  savingMultiplier.value = true
+  multiplierError.value = ''
+  let shouldRefocus = false
+  try {
+    await waitForMultiplierSave(props.account.account_id, multiplier)
+    displayedManualMultiplier.value = multiplier
+    editingMultiplier.value = false
+  } catch (reason) {
+    multiplierError.value = errorMessage(reason, '保存账号倍率失败')
+    shouldRefocus = true
+  } finally {
+    savingMultiplier.value = false
+    if (shouldRefocus) {
+      await nextTick()
+      multiplierInput.value?.focus()
+    }
+  }
 }
 function cancelCostEdit() {
   if (savingCost.value) return

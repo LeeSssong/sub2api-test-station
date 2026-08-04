@@ -142,6 +142,7 @@
           @refresh="handleRunOne"
           @update-priority="updatePriority"
           @update-procurement-cost="updateProcurementCost"
+          @update-multiplier="updateMultiplier"
         />
       </section>
       </div>
@@ -426,6 +427,21 @@ async function updateProcurementCost(accountID: number, cost: number | null, com
   } catch (reason: unknown) {
     completion.reject(reason)
     appStore.showError(extractApiErrorMessage(reason, cost == null ? '清空采购成本失败' : '保存采购成本失败'))
+  }
+}
+
+async function updateMultiplier(accountID: number, multiplier: number, completion: SaveCompletion) {
+  try {
+    await adminAPI.accounts.update(accountID, {
+      rate_multiplier: multiplier,
+      rate_multiplier_policy: 'manual_override',
+    })
+    await load(activeRange.value)
+    completion.resolve()
+    appStore.showSuccess('账号倍率已更新')
+  } catch (reason: unknown) {
+    completion.reject(reason)
+    appStore.showError(extractApiErrorMessage(reason, '保存账号倍率失败'))
   }
 }
 

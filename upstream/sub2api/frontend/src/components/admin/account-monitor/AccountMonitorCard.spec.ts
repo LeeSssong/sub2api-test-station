@@ -236,6 +236,56 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('有效期缺失，无法计算等效倍率')
   })
 
+  it('lets an account without procurement cost or native multiplier enter and edit a manual multiplier', async () => {
+    const updateMultiplier = vi.fn()
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        multiplier: { status: 'unavailable', sample_count: 0 },
+        procurement_cost_cny: null,
+        cost_mode: 'multiplier',
+      },
+      onUpdateMultiplier: updateMultiplier,
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('未录入账号倍率')
+    await wrapper.get('[data-test="edit-multiplier"]').trigger('click')
+    const input = wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]')
+    await input.setValue('-0.1')
+    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
+    expect(updateMultiplier).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="multiplier-error"]').text()).toContain('请输入大于或等于 0 的账号倍率')
+
+    await input.setValue('0.08')
+    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
+    expect(updateMultiplier).toHaveBeenCalledWith(113, 0.08, expect.objectContaining({ resolve: expect.any(Function), reject: expect.any(Function) }))
+  })
+
+  it('keeps manual multiplier draft, focus, and error after a rejected save, and renders a saved manual rate as editable', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 0 },
+        procurement_cost_cny: null,
+      },
+      onUpdateMultiplier: (_id: number, _value: number, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('保存账号倍率失败')),
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('手工录入倍率')
+    expect(wrapper.find('[data-test="edit-multiplier"]').exists()).toBe(true)
+    await wrapper.get('[data-test="edit-multiplier"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]').setValue('0.12')
+    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
+    await flushAsyncWork()
+
+    const input = wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]')
+    expect(input.element.value).toBe('0.12')
+    expect(wrapper.get('[data-test="multiplier-error"]').text()).toContain('保存账号倍率失败')
+    expect(document.activeElement).toBe(input.element)
+    expect(wrapper.text()).not.toContain('分组倍率')
+  })
+
   it('rejects priority values below one or with a fraction before asking the parent to save', async () => {
     const updatePriority = vi.fn()
     const wrapper = mountCard({ onUpdatePriority: updatePriority })

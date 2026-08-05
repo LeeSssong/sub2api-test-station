@@ -198,6 +198,7 @@ type Account struct {
 	Priority                   int                            `json:"priority"`
 	RateMultiplier             float64                        `json:"rate_multiplier"`
 	ProcurementCostCNY         *float64                       `json:"procurement_cost_cny"`
+	EstimatedUsableQuotaUSD    *float64                       `json:"estimated_usable_quota_usd"`
 	ProcurementCostEffectiveAt *time.Time                     `json:"procurement_cost_effective_at"`
 	Status                     string                         `json:"status"`
 	ErrorMessage               string                         `json:"error_message"`

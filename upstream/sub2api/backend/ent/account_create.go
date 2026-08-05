@@ -209,6 +209,20 @@ func (_c *AccountCreate) SetNillableProcurementCostCny(v *float64) *AccountCreat
 	return _c
 }
 
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (_c *AccountCreate) SetEstimatedUsableQuotaUsd(v float64) *AccountCreate {
+	_c.mutation.SetEstimatedUsableQuotaUsd(v)
+	return _c
+}
+
+// SetNillableEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableEstimatedUsableQuotaUsd(v *float64) *AccountCreate {
+	if v != nil {
+		_c.SetEstimatedUsableQuotaUsd(*v)
+	}
+	return _c
+}
+
 // SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
 func (_c *AccountCreate) SetProcurementCostEffectiveAt(v time.Time) *AccountCreate {
 	_c.mutation.SetProcurementCostEffectiveAt(v)
@@ -773,6 +787,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_spec.SetField(account.FieldProcurementCostCny, field.TypeFloat64, value)
 		_node.ProcurementCostCny = &value
 	}
+	if value, ok := _c.mutation.EstimatedUsableQuotaUsd(); ok {
+		_spec.SetField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64, value)
+		_node.EstimatedUsableQuotaUsd = &value
+	}
 	if value, ok := _c.mutation.ProcurementCostEffectiveAt(); ok {
 		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)
 		_node.ProcurementCostEffectiveAt = &value
@@ -1224,6 +1242,30 @@ func (u *AccountUpsert) AddProcurementCostCny(v float64) *AccountUpsert {
 // ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
 func (u *AccountUpsert) ClearProcurementCostCny() *AccountUpsert {
 	u.SetNull(account.FieldProcurementCostCny)
+	return u
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (u *AccountUpsert) SetEstimatedUsableQuotaUsd(v float64) *AccountUpsert {
+	u.Set(account.FieldEstimatedUsableQuotaUsd, v)
+	return u
+}
+
+// UpdateEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateEstimatedUsableQuotaUsd() *AccountUpsert {
+	u.SetExcluded(account.FieldEstimatedUsableQuotaUsd)
+	return u
+}
+
+// AddEstimatedUsableQuotaUsd adds v to the "estimated_usable_quota_usd" field.
+func (u *AccountUpsert) AddEstimatedUsableQuotaUsd(v float64) *AccountUpsert {
+	u.Add(account.FieldEstimatedUsableQuotaUsd, v)
+	return u
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (u *AccountUpsert) ClearEstimatedUsableQuotaUsd() *AccountUpsert {
+	u.SetNull(account.FieldEstimatedUsableQuotaUsd)
 	return u
 }
 
@@ -1845,6 +1887,34 @@ func (u *AccountUpsertOne) UpdateProcurementCostCny() *AccountUpsertOne {
 func (u *AccountUpsertOne) ClearProcurementCostCny() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearProcurementCostCny()
+	})
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertOne) SetEstimatedUsableQuotaUsd(v float64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetEstimatedUsableQuotaUsd(v)
+	})
+}
+
+// AddEstimatedUsableQuotaUsd adds v to the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertOne) AddEstimatedUsableQuotaUsd(v float64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddEstimatedUsableQuotaUsd(v)
+	})
+}
+
+// UpdateEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateEstimatedUsableQuotaUsd() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateEstimatedUsableQuotaUsd()
+	})
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertOne) ClearEstimatedUsableQuotaUsd() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearEstimatedUsableQuotaUsd()
 	})
 }
 
@@ -2679,6 +2749,34 @@ func (u *AccountUpsertBulk) UpdateProcurementCostCny() *AccountUpsertBulk {
 func (u *AccountUpsertBulk) ClearProcurementCostCny() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearProcurementCostCny()
+	})
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertBulk) SetEstimatedUsableQuotaUsd(v float64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetEstimatedUsableQuotaUsd(v)
+	})
+}
+
+// AddEstimatedUsableQuotaUsd adds v to the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertBulk) AddEstimatedUsableQuotaUsd(v float64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddEstimatedUsableQuotaUsd(v)
+	})
+}
+
+// UpdateEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateEstimatedUsableQuotaUsd() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateEstimatedUsableQuotaUsd()
+	})
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (u *AccountUpsertBulk) ClearEstimatedUsableQuotaUsd() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearEstimatedUsableQuotaUsd()
 	})
 }
 

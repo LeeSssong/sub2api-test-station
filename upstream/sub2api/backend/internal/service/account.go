@@ -36,6 +36,7 @@ type Account struct {
 	RateMultiplier *float64
 	// ProcurementCostCNY is the one-time procurement amount used by monitor cost scoring.
 	ProcurementCostCNY         *float64
+	EstimatedUsableQuotaUSD    *float64
 	ProcurementCostEffectiveAt *time.Time
 	// RateMultiplierPolicyIntent is transient caller intent. A nil value means
 	// the repository must preserve the policy from the locked database row.

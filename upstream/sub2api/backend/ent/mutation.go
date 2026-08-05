@@ -2306,6 +2306,8 @@ type AccountMutation struct {
 	addrate_multiplier            *float64
 	procurement_cost_cny          *float64
 	addprocurement_cost_cny       *float64
+	estimated_usable_quota_usd    *float64
+	addestimated_usable_quota_usd *float64
 	procurement_cost_effective_at *time.Time
 	status                        *string
 	error_message                 *string
@@ -3214,6 +3216,76 @@ func (m *AccountMutation) ResetProcurementCostCny() {
 	m.procurement_cost_cny = nil
 	m.addprocurement_cost_cny = nil
 	delete(m.clearedFields, account.FieldProcurementCostCny)
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) SetEstimatedUsableQuotaUsd(f float64) {
+	m.estimated_usable_quota_usd = &f
+	m.addestimated_usable_quota_usd = nil
+}
+
+// EstimatedUsableQuotaUsd returns the value of the "estimated_usable_quota_usd" field in the mutation.
+func (m *AccountMutation) EstimatedUsableQuotaUsd() (r float64, exists bool) {
+	v := m.estimated_usable_quota_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedUsableQuotaUsd returns the old "estimated_usable_quota_usd" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldEstimatedUsableQuotaUsd(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedUsableQuotaUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedUsableQuotaUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedUsableQuotaUsd: %w", err)
+	}
+	return oldValue.EstimatedUsableQuotaUsd, nil
+}
+
+// AddEstimatedUsableQuotaUsd adds f to the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) AddEstimatedUsableQuotaUsd(f float64) {
+	if m.addestimated_usable_quota_usd != nil {
+		*m.addestimated_usable_quota_usd += f
+	} else {
+		m.addestimated_usable_quota_usd = &f
+	}
+}
+
+// AddedEstimatedUsableQuotaUsd returns the value that was added to the "estimated_usable_quota_usd" field in this mutation.
+func (m *AccountMutation) AddedEstimatedUsableQuotaUsd() (r float64, exists bool) {
+	v := m.addestimated_usable_quota_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) ClearEstimatedUsableQuotaUsd() {
+	m.estimated_usable_quota_usd = nil
+	m.addestimated_usable_quota_usd = nil
+	m.clearedFields[account.FieldEstimatedUsableQuotaUsd] = struct{}{}
+}
+
+// EstimatedUsableQuotaUsdCleared returns if the "estimated_usable_quota_usd" field was cleared in this mutation.
+func (m *AccountMutation) EstimatedUsableQuotaUsdCleared() bool {
+	_, ok := m.clearedFields[account.FieldEstimatedUsableQuotaUsd]
+	return ok
+}
+
+// ResetEstimatedUsableQuotaUsd resets all changes to the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) ResetEstimatedUsableQuotaUsd() {
+	m.estimated_usable_quota_usd = nil
+	m.addestimated_usable_quota_usd = nil
+	delete(m.clearedFields, account.FieldEstimatedUsableQuotaUsd)
 }
 
 // SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
@@ -4260,7 +4332,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 33)
+	fields := make([]string, 0, 34)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4308,6 +4380,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.procurement_cost_cny != nil {
 		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.estimated_usable_quota_usd != nil {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
 	}
 	if m.procurement_cost_effective_at != nil {
 		fields = append(fields, account.FieldProcurementCostEffectiveAt)
@@ -4400,6 +4475,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.RateMultiplier()
 	case account.FieldProcurementCostCny:
 		return m.ProcurementCostCny()
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.EstimatedUsableQuotaUsd()
 	case account.FieldProcurementCostEffectiveAt:
 		return m.ProcurementCostEffectiveAt()
 	case account.FieldStatus:
@@ -4475,6 +4552,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldRateMultiplier(ctx)
 	case account.FieldProcurementCostCny:
 		return m.OldProcurementCostCny(ctx)
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.OldEstimatedUsableQuotaUsd(ctx)
 	case account.FieldProcurementCostEffectiveAt:
 		return m.OldProcurementCostEffectiveAt(ctx)
 	case account.FieldStatus:
@@ -4630,6 +4709,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetProcurementCostCny(v)
 		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedUsableQuotaUsd(v)
+		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -4775,6 +4861,9 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addprocurement_cost_cny != nil {
 		fields = append(fields, account.FieldProcurementCostCny)
 	}
+	if m.addestimated_usable_quota_usd != nil {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
+	}
 	return fields
 }
 
@@ -4795,6 +4884,8 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRateMultiplier()
 	case account.FieldProcurementCostCny:
 		return m.AddedProcurementCostCny()
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.AddedEstimatedUsableQuotaUsd()
 	}
 	return nil, false
 }
@@ -4846,6 +4937,13 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddProcurementCostCny(v)
 		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedUsableQuotaUsd(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Account numeric field %s", name)
 }
@@ -4871,6 +4969,9 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldProcurementCostCny) {
 		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.FieldCleared(account.FieldEstimatedUsableQuotaUsd) {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
 	}
 	if m.FieldCleared(account.FieldProcurementCostEffectiveAt) {
 		fields = append(fields, account.FieldProcurementCostEffectiveAt)
@@ -4942,6 +5043,9 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldProcurementCostCny:
 		m.ClearProcurementCostCny()
+		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		m.ClearEstimatedUsableQuotaUsd()
 		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		m.ClearProcurementCostEffectiveAt()
@@ -5037,6 +5141,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldProcurementCostCny:
 		m.ResetProcurementCostCny()
+		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		m.ResetEstimatedUsableQuotaUsd()
 		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		m.ResetProcurementCostEffectiveAt()

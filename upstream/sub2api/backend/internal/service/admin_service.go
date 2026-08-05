@@ -387,7 +387,8 @@ type UpdateAccountInput struct {
 // ProcurementCostUpdate distinguishes an omitted update field from an explicit
 // null while preserving a valid zero amount.
 type ProcurementCostUpdate struct {
-	Value *float64
+	Value                   *float64
+	EstimatedUsableQuotaUSD *float64
 }
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.

@@ -51,6 +51,8 @@ type Account struct {
 	RateMultiplier float64 `json:"rate_multiplier,omitempty"`
 	// ProcurementCostCny holds the value of the "procurement_cost_cny" field.
 	ProcurementCostCny *float64 `json:"procurement_cost_cny,omitempty"`
+	// EstimatedUsableQuotaUsd holds the value of the "estimated_usable_quota_usd" field.
+	EstimatedUsableQuotaUsd *float64 `json:"estimated_usable_quota_usd,omitempty"`
 	// ProcurementCostEffectiveAt holds the value of the "procurement_cost_effective_at" field.
 	ProcurementCostEffectiveAt *time.Time `json:"procurement_cost_effective_at,omitempty"`
 	// Status holds the value of the "status" field.
@@ -177,7 +179,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case account.FieldAutoPauseOnExpired, account.FieldSchedulable:
 			values[i] = new(sql.NullBool)
-		case account.FieldRateMultiplier, account.FieldProcurementCostCny:
+		case account.FieldRateMultiplier, account.FieldProcurementCostCny, account.FieldEstimatedUsableQuotaUsd:
 			values[i] = new(sql.NullFloat64)
 		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
@@ -311,6 +313,13 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ProcurementCostCny = new(float64)
 				*_m.ProcurementCostCny = value.Float64
+			}
+		case account.FieldEstimatedUsableQuotaUsd:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field estimated_usable_quota_usd", values[i])
+			} else if value.Valid {
+				_m.EstimatedUsableQuotaUsd = new(float64)
+				*_m.EstimatedUsableQuotaUsd = value.Float64
 			}
 		case account.FieldProcurementCostEffectiveAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -550,6 +559,11 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	if v := _m.ProcurementCostCny; v != nil {
 		builder.WriteString("procurement_cost_cny=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.EstimatedUsableQuotaUsd; v != nil {
+		builder.WriteString("estimated_usable_quota_usd=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

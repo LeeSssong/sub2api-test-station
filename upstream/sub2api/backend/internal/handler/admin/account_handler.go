@@ -154,6 +154,7 @@ type UpdateAccountRequest struct {
 	Priority                *int                   `json:"priority"`
 	RateMultiplier          *float64               `json:"rate_multiplier"`
 	ProcurementCostCNY      procurementCostRequest `json:"procurement_cost_cny"`
+	EstimatedUsableQuotaUSD procurementCostRequest `json:"estimated_usable_quota_usd"`
 	RateMultiplierPolicy    *string                `json:"rate_multiplier_policy"`
 	LoadFactor              *int                   `json:"load_factor"`
 	Status                  string                 `json:"status" binding:"omitempty,oneof=active inactive error"`
@@ -1007,10 +1008,23 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "priority must be >= 1")
 		return
 	}
+	if req.ProcurementCostCNY.Provided != req.EstimatedUsableQuotaUSD.Provided {
+		response.BadRequest(c, "procurement_cost_cny and estimated_usable_quota_usd must be provided together")
+		return
+	}
+	if req.ProcurementCostCNY.Provided && (req.ProcurementCostCNY.Value == nil) != (req.EstimatedUsableQuotaUSD.Value == nil) {
+		response.BadRequest(c, "procurement_cost_cny and estimated_usable_quota_usd must both be null when clearing")
+		return
+	}
 	if req.ProcurementCostCNY.Provided && req.ProcurementCostCNY.Value != nil {
 		amount := *req.ProcurementCostCNY.Value
 		if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
 			response.BadRequest(c, "procurement_cost_cny must be a finite value >= 0")
+			return
+		}
+		quota := *req.EstimatedUsableQuotaUSD.Value
+		if math.IsNaN(quota) || math.IsInf(quota, 0) || quota <= 0 {
+			response.BadRequest(c, "estimated_usable_quota_usd must be a finite value > 0")
 			return
 		}
 	}
@@ -1030,7 +1044,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
 		RateMultiplier:        req.RateMultiplier,
-		ProcurementCost:       toServiceProcurementCostUpdate(req.ProcurementCostCNY),
+		ProcurementCost:       toServiceProcurementCostUpdate(req.ProcurementCostCNY, req.EstimatedUsableQuotaUSD),
 		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
@@ -1065,11 +1079,11 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
-func toServiceProcurementCostUpdate(request procurementCostRequest) *service.ProcurementCostUpdate {
-	if !request.Provided {
+func toServiceProcurementCostUpdate(cost, quota procurementCostRequest) *service.ProcurementCostUpdate {
+	if !cost.Provided {
 		return nil
 	}
-	return &service.ProcurementCostUpdate{Value: request.Value}
+	return &service.ProcurementCostUpdate{Value: cost.Value, EstimatedUsableQuotaUSD: quota.Value}
 }
 
 // scheduleUpstreamBillingLifecycleProbe refreshes native billing evidence once

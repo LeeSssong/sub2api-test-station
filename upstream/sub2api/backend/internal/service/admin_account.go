@@ -802,16 +802,25 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.RateMultiplier = input.RateMultiplier
 	}
 	if input.ProcurementCost != nil {
-		if input.ProcurementCost.Value == nil {
+		if input.ProcurementCost.Value == nil && input.ProcurementCost.EstimatedUsableQuotaUSD == nil {
 			account.ProcurementCostCNY = nil
+			account.EstimatedUsableQuotaUSD = nil
 			account.ProcurementCostEffectiveAt = nil
 		} else {
+			if input.ProcurementCost.Value == nil || input.ProcurementCost.EstimatedUsableQuotaUSD == nil {
+				return nil, errors.New("procurement_cost_cny and estimated_usable_quota_usd must be provided together")
+			}
 			amount := *input.ProcurementCost.Value
 			if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
 				return nil, errors.New("procurement_cost_cny must be a finite value >= 0")
 			}
+			quota := *input.ProcurementCost.EstimatedUsableQuotaUSD
+			if math.IsNaN(quota) || math.IsInf(quota, 0) || quota <= 0 {
+				return nil, errors.New("estimated_usable_quota_usd must be a finite value > 0")
+			}
 			effectiveAt := time.Now().UTC()
 			account.ProcurementCostCNY = &amount
+			account.EstimatedUsableQuotaUSD = &quota
 			account.ProcurementCostEffectiveAt = &effectiveAt
 		}
 	}

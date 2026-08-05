@@ -243,6 +243,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Priority:                   a.Priority,
 		RateMultiplier:             a.BillingRateMultiplier(),
 		ProcurementCostCNY:         a.ProcurementCostCNY,
+		EstimatedUsableQuotaUSD:    a.EstimatedUsableQuotaUSD,
 		ProcurementCostEffectiveAt: a.ProcurementCostEffectiveAt,
 		Status:                     a.Status,
 		ErrorMessage:               a.ErrorMessage,

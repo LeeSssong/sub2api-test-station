@@ -172,6 +172,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			LatencyP95MS:               aggregate.LatencyP95MS,
 			Multiplier:                 s.resolveMultiplier(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
+			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			ErrorCount:                 int64(aggregate.ErrorCount),
@@ -281,19 +282,21 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		window := windowAggregates[account.ID]
+		resolvedMultiplier := s.resolveMultiplier(&account, observedAt)
 		row := AccountMonitorAccount{
 			AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type,
 			Status: account.Status, Schedulable: account.Schedulable, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
 			GroupNames: accountGroupNames(account), ModelID: monitorModelForAccount(&account),
-			LatestStatus: "unavailable", Multiplier: s.resolveMultiplier(&account, observedAt),
+			LatestStatus: "unavailable", Multiplier: resolvedMultiplier,
 			ProcurementCostCNY:         account.ProcurementCostCNY,
+			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
-		cost := accountMonitorWindowCost(account, since, observedAt, window.BaseCost)
+		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)
 		row.CostMode = cost.Mode
 		row.EffectiveMultiplier = cost.EffectiveMultiplier
 		if current, ok := latest[account.ID]; ok {
@@ -428,7 +431,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.ServiceState = accountMonitorWindowServiceState(row.AccountMonitorAccount, evidence, row.ManagementState)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
-			cost := accountMonitorWindowCost(account, windowStart, now, window.BaseCost)
+			cost := accountMonitorProjectedEffectiveCost(account, base.Multiplier, windowStart, now, window.BaseCost)
 			row.CostMode = cost.Mode
 			row.EffectiveMultiplier = cost.EffectiveMultiplier
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
@@ -984,7 +987,56 @@ type accountMonitorWindowCostResult struct {
 	CostScoreEligible   bool
 }
 
-func accountMonitorWindowCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
+func accountMonitorEffectiveCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
+	switch {
+	case account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey:
+		return accountMonitorMultiplierCost(account.RateMultiplier)
+	case account.Platform == PlatformOpenAI:
+		return accountMonitorProcurementQuotaCost(account.ProcurementCostCNY, account.EstimatedUsableQuotaUSD)
+	default:
+		return accountMonitorLegacyWindowCost(account, windowStart, windowEnd, baseCost)
+	}
+}
+
+func accountMonitorProjectedEffectiveCost(
+	account Account,
+	resolvedMultiplier AccountMonitorMultiplier,
+	windowStart, windowEnd time.Time,
+	baseCost float64,
+) accountMonitorWindowCostResult {
+	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
+		if resolvedMultiplier.Status != AccountMonitorMultiplierStatusOK {
+			return accountMonitorMultiplierCost(nil)
+		}
+		return accountMonitorMultiplierCost(resolvedMultiplier.Value)
+	}
+	return accountMonitorEffectiveCost(account, windowStart, windowEnd, baseCost)
+}
+
+func accountMonitorProcurementQuotaCost(cost, quota *float64) accountMonitorWindowCostResult {
+	result := accountMonitorWindowCostResult{Mode: "procurement"}
+	if cost == nil || quota == nil || math.IsNaN(*cost) || math.IsInf(*cost, 0) || *cost < 0 ||
+		math.IsNaN(*quota) || math.IsInf(*quota, 0) || *quota <= 0 {
+		return result
+	}
+	effectiveMultiplier := *cost / *quota
+	result.EffectiveMultiplier = &effectiveMultiplier
+	result.CostScoreEligible = true
+	return result
+}
+
+func accountMonitorMultiplierCost(multiplier *float64) accountMonitorWindowCostResult {
+	result := accountMonitorWindowCostResult{Mode: "multiplier"}
+	if multiplier == nil || math.IsNaN(*multiplier) || math.IsInf(*multiplier, 0) || *multiplier < 0 {
+		return result
+	}
+	effectiveMultiplier := *multiplier
+	result.EffectiveMultiplier = &effectiveMultiplier
+	result.CostScoreEligible = true
+	return result
+}
+
+func accountMonitorLegacyWindowCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
 	if account.ProcurementCostCNY != nil {
 		result := accountMonitorWindowCostResult{Mode: "procurement"}
 		if account.ProcurementCostEffectiveAt == nil || account.ExpiresAt == nil || baseCost <= 0 ||
@@ -1010,14 +1062,7 @@ func accountMonitorWindowCost(account Account, windowStart, windowEnd time.Time,
 		return result
 	}
 
-	result := accountMonitorWindowCostResult{Mode: "multiplier"}
-	if account.RateMultiplier == nil || *account.RateMultiplier < 0 {
-		return result
-	}
-	effectiveMultiplier := *account.RateMultiplier
-	result.EffectiveMultiplier = &effectiveMultiplier
-	result.CostScoreEligible = true
-	return result
+	return accountMonitorMultiplierCost(account.RateMultiplier)
 }
 
 func accountMonitorCostScore(groupMultiplier float64, effectiveMultiplier *float64, weights AccountMonitorScoreWeights) float64 {

@@ -130,6 +130,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	if account.ProcurementCostCNY != nil {
 		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
 	}
+	if account.EstimatedUsableQuotaUSD != nil {
+		builder.SetEstimatedUsableQuotaUsd(*account.EstimatedUsableQuotaUSD)
+	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
 	}
@@ -500,6 +503,11 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
 	} else {
 		builder.ClearProcurementCostCny()
+	}
+	if account.EstimatedUsableQuotaUSD != nil {
+		builder.SetEstimatedUsableQuotaUsd(*account.EstimatedUsableQuotaUSD)
+	} else {
+		builder.ClearEstimatedUsableQuotaUsd()
 	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
@@ -3420,6 +3428,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 
 	rateMultiplier := m.RateMultiplier
 	procurementCostCNY := m.ProcurementCostCny
+	estimatedUsableQuotaUSD := m.EstimatedUsableQuotaUsd
 
 	return &service.Account{
 		ID:                         m.ID,
@@ -3435,6 +3444,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Priority:                   m.Priority,
 		RateMultiplier:             &rateMultiplier,
 		ProcurementCostCNY:         procurementCostCNY,
+		EstimatedUsableQuotaUSD:    estimatedUsableQuotaUSD,
 		ProcurementCostEffectiveAt: m.ProcurementCostEffectiveAt,
 		LoadFactor:                 m.LoadFactor,
 		Status:                     m.Status,

@@ -125,6 +125,11 @@ func ProcurementCostCny(v float64) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldProcurementCostCny, v))
 }
 
+// EstimatedUsableQuotaUsd applies equality check predicate on the "estimated_usable_quota_usd" field. It's identical to EstimatedUsableQuotaUsdEQ.
+func EstimatedUsableQuotaUsd(v float64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldEstimatedUsableQuotaUsd, v))
+}
+
 // ProcurementCostEffectiveAt applies equality check predicate on the "procurement_cost_effective_at" field. It's identical to ProcurementCostEffectiveAtEQ.
 func ProcurementCostEffectiveAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldProcurementCostEffectiveAt, v))
@@ -903,6 +908,56 @@ func ProcurementCostCnyIsNil() predicate.Account {
 // ProcurementCostCnyNotNil applies the NotNil predicate on the "procurement_cost_cny" field.
 func ProcurementCostCnyNotNil() predicate.Account {
 	return predicate.Account(sql.FieldNotNull(FieldProcurementCostCny))
+}
+
+// EstimatedUsableQuotaUsdEQ applies the EQ predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdEQ(v float64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdNEQ applies the NEQ predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdNEQ(v float64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdIn applies the In predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdIn(vs ...float64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldEstimatedUsableQuotaUsd, vs...))
+}
+
+// EstimatedUsableQuotaUsdNotIn applies the NotIn predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdNotIn(vs ...float64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldEstimatedUsableQuotaUsd, vs...))
+}
+
+// EstimatedUsableQuotaUsdGT applies the GT predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdGT(v float64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdGTE applies the GTE predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdGTE(v float64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdLT applies the LT predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdLT(v float64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdLTE applies the LTE predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdLTE(v float64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldEstimatedUsableQuotaUsd, v))
+}
+
+// EstimatedUsableQuotaUsdIsNil applies the IsNil predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldEstimatedUsableQuotaUsd))
+}
+
+// EstimatedUsableQuotaUsdNotNil applies the NotNil predicate on the "estimated_usable_quota_usd" field.
+func EstimatedUsableQuotaUsdNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldEstimatedUsableQuotaUsd))
 }
 
 // ProcurementCostEffectiveAtEQ applies the EQ predicate on the "procurement_cost_effective_at" field.

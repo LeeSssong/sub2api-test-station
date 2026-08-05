@@ -295,6 +295,33 @@ func (_u *AccountUpdate) ClearProcurementCostCny() *AccountUpdate {
 	return _u
 }
 
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdate) SetEstimatedUsableQuotaUsd(v float64) *AccountUpdate {
+	_u.mutation.ResetEstimatedUsableQuotaUsd()
+	_u.mutation.SetEstimatedUsableQuotaUsd(v)
+	return _u
+}
+
+// SetNillableEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableEstimatedUsableQuotaUsd(v *float64) *AccountUpdate {
+	if v != nil {
+		_u.SetEstimatedUsableQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddEstimatedUsableQuotaUsd adds value to the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdate) AddEstimatedUsableQuotaUsd(v float64) *AccountUpdate {
+	_u.mutation.AddEstimatedUsableQuotaUsd(v)
+	return _u
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdate) ClearEstimatedUsableQuotaUsd() *AccountUpdate {
+	_u.mutation.ClearEstimatedUsableQuotaUsd()
+	return _u
+}
+
 // SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
 func (_u *AccountUpdate) SetProcurementCostEffectiveAt(v time.Time) *AccountUpdate {
 	_u.mutation.SetProcurementCostEffectiveAt(v)
@@ -924,6 +951,15 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.ProcurementCostCnyCleared() {
 		_spec.ClearField(account.FieldProcurementCostCny, field.TypeFloat64)
 	}
+	if value, ok := _u.mutation.EstimatedUsableQuotaUsd(); ok {
+		_spec.SetField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedEstimatedUsableQuotaUsd(); ok {
+		_spec.AddField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.EstimatedUsableQuotaUsdCleared() {
+		_spec.ClearField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64)
+	}
 	if value, ok := _u.mutation.ProcurementCostEffectiveAt(); ok {
 		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)
 	}
@@ -1494,6 +1530,33 @@ func (_u *AccountUpdateOne) AddProcurementCostCny(v float64) *AccountUpdateOne {
 // ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
 func (_u *AccountUpdateOne) ClearProcurementCostCny() *AccountUpdateOne {
 	_u.mutation.ClearProcurementCostCny()
+	return _u
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdateOne) SetEstimatedUsableQuotaUsd(v float64) *AccountUpdateOne {
+	_u.mutation.ResetEstimatedUsableQuotaUsd()
+	_u.mutation.SetEstimatedUsableQuotaUsd(v)
+	return _u
+}
+
+// SetNillableEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableEstimatedUsableQuotaUsd(v *float64) *AccountUpdateOne {
+	if v != nil {
+		_u.SetEstimatedUsableQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddEstimatedUsableQuotaUsd adds value to the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdateOne) AddEstimatedUsableQuotaUsd(v float64) *AccountUpdateOne {
+	_u.mutation.AddEstimatedUsableQuotaUsd(v)
+	return _u
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (_u *AccountUpdateOne) ClearEstimatedUsableQuotaUsd() *AccountUpdateOne {
+	_u.mutation.ClearEstimatedUsableQuotaUsd()
 	return _u
 }
 
@@ -2155,6 +2218,15 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if _u.mutation.ProcurementCostCnyCleared() {
 		_spec.ClearField(account.FieldProcurementCostCny, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.EstimatedUsableQuotaUsd(); ok {
+		_spec.SetField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedEstimatedUsableQuotaUsd(); ok {
+		_spec.AddField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.EstimatedUsableQuotaUsdCleared() {
+		_spec.ClearField(account.FieldEstimatedUsableQuotaUsd, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.ProcurementCostEffectiveAt(); ok {
 		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)

@@ -4,7 +4,9 @@
 
 **本轮登记（2026-08-05）：** 六阶段生产收口独立部署执行，状态：进行中。已确认按“基线收口 → relay-ops 账务代码部署（disabled）→ accounting 激活 → 全站账单能力盘点/必要平台适配器 → 真实授权映射与非零闭环 → 独立营收页 → Monitor/飞书 → OpenAI 实际响应模型审计”推进。每个可独立生产变更单元均使用新的实施代理和独立审查代理；只执行单元内验证及发布安全门禁；每次生产部署后立即停止并等待用户验收，用户未确认前不得开始下一部署单元。执行入口为 [独立部署单元实施计划](../superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md)，所有代理必须读取 [代理上下文合同](six-stage-production-closure-agent-context.md) 并在报告写入固定 `CONTEXT_ACK`。未满足“已推送 + 已部署 + 必要线上验证 + 用户验收”前保持进行中。
 
-**当前生产交付序列：** 已按 [当前生产交付决策总表](active-delivery-contract.md) 登记四个顺序生产任务。账号监控 V3 及其状态/单卡刷新收口已完成推送、生产部署和生效验证；全站账务运行时仍安全暂停，全站账单数据闭环、Monitor 与飞书联动继续作为独立后续事项推进。30 分钟仅为目标节奏，不是停止修复、跳过门禁或宣布完成的硬上限。只有当前协调任务可以更新总账、合并发布基线或宣布完成，实施任务不得并行修改同一基线。
+**Task 2 部署登记（2026-08-05）：** 状态：进行中（等待用户验收）。提交 `8fef0e03c80a55ec1a1cceedabd1949bf12bfe8b` 已推送到 canonical 分支和 `origin/main`，relay-ops 不可变镜像已部署，生产 accounting 唯一显式保持 `false`；镜像/源码/迁移身份、`/healthz`、`/readyz`、disabled accounting 404、未认证 reconciliation 401 及 PostgreSQL/Redis/Caddy/Sub2API 容器身份不变均已验证。用户明确验收前不得标记完成，不得启动 Task 3。
+
+**当前生产交付序列：** 已按 [当前生产交付决策总表](active-delivery-contract.md) 登记四个顺序生产任务。账号监控 V3 及其状态/单卡刷新收口已完成；Task 2 relay-ops 账务代码已在 accounting disabled 状态完成生产部署和必要线上验证，当前硬停止等待用户验收；Task 3 accounting 激活以及全站账单数据闭环、Monitor/飞书等后续单元均未启动。只有当前协调任务可以更新总账、合并发布基线或宣布完成，实施任务不得并行修改同一基线。
 
 **本轮登记（2026-08-02）：** 账号监控真实上游成本与对账闭环恢复核验，状态：进行中（仅在 `codex/relay-ops-public-route` 分支执行；先核对生产 Caddy 热配置、健康/认证路由、发布锁和真实只读账单输入；未满足“已推送 + 已部署 + 真实数据验证”前不得标记完成）。
 

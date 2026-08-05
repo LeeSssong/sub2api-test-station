@@ -1,8 +1,8 @@
-# relay-ops 账务代码部署前资格
+# relay-ops 账务代码生产部署与验证
 
 **日期：** 2026-08-05
-**范围：** Task 2 — relay-ops 不可变镜像生产发布准备；本报告不是生产发布记录。
-**部署权限：** 仅协调代理可推送并执行生产发布；本实施代理没有执行推送、镜像构建/上传、迁移、生产配置变更或线上验证。
+**范围：** Task 2 — relay-ops 不可变镜像生产发布，accounting 保持 disabled。
+**部署权限：** 实施代理只完成资格与修复；协调代理在独立审查后完成推送、不可变发布和必要线上验证。
 
 ## 部署前资格
 
@@ -42,3 +42,34 @@ ops/release-relay-ops.sh --mode production --evidence /private/var/tmp/relay-ops
 - 覆盖只传递给镜像构建期的 `go mod download`，不进入生产运行时环境；Dockerfile 未关闭 Go checksum database。
 - 此修复轮只完成本地 RED/GREEN 和 Task 2 四组专项回归。实际 push、带 `RELAY_OPS_BUILD_GOPROXY=https://goproxy.cn,direct` 的生产构建、运行时 `RELAY_OPS_ACCOUNTING_ENABLED=false` 复核，以及线上健康/认证/容器身份验证仍仅由协调代理执行。
 - 先前的 `0600` 证据绑定的是修复前提交 `de739afaf`，不能用于包含本修复的发布；协调代理必须在本提交已推送且树保持不变时重新生成与新 commit/tree/migrations hash 绑定的证据。
+
+## 生产发布结果
+
+协调代理重新运行 Task 2 四组专项命令并生成 root-user-owned `0600` evidence；证据绑定：
+
+- source commit：`8fef0e03c80a55ec1a1cceedabd1949bf12bfe8b`
+- tested/source tree：`059bd91cd63533f1a6e98c5ab636a265f441537e`
+- migrations hash：`044838bdb56aabb0ec779e3224936a3d56c5071bf516880a945a3103238035f5`
+- result：`passed`，commands：4
+
+生产构建显式使用 `RELAY_OPS_BUILD_GOPROXY=https://goproxy.cn,direct`；BuildKit 日志确认只有 `go mod download` 使用该构建参数，Go checksum database 未关闭。不可变预加载发布返回：
+
+- result：`succeeded`
+- requested image：`example.invalid/xingqiao-relay-ops:release-8fef0e03c80a55ec1a1cceedabd1949bf12bfe8b`
+- previous image：`example.invalid/xingqiao-relay-ops:release-d3860531ddc59217a29513bd5fa9d057e301826c`
+- image ID：`sha256:cbe11755570aacf38fb1c20510c288a37f20ab0bfb8f5e04c594e67c972bf979`
+- relay-ops container：`342d58ebdec7b323e80f3d6037c301e1ca778c7ffc16a730526d66f62764175e`
+- migration startup verified：`true`
+- shared services unchanged：`true`
+- restart count：`0`
+
+生产 secret 为 root-owned `0600`，且唯一显式设置 `RELAY_OPS_ACCOUNTING_ENABLED=false`；修改前文件保留 root-owned `0600` 备份。线上必要验证结果：
+
+```text
+/healthz = 200, status=alive
+/readyz = 200, status=ready
+/relay-ops/accounting = 404 (accounting disabled, route not mounted)
+/relay-ops/api/reconciliation/operations = 401 (unauthenticated)
+```
+
+PostgreSQL `2db52788ad73`、Redis `c45202c0d9e6`、Caddy `ace4a23b9650`、Sub2API blue `cfbaea1abd30`、green `9171b00cd77a`、worker `7e218a28a62d` 的容器 ID 均与发布前一致。本任务已推送、部署并完成必要线上验证，但按用户硬门禁保持“进行中 / 等待用户验收”；Task 3 未启动。

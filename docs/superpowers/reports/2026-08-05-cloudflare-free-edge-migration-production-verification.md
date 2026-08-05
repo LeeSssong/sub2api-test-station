@@ -70,11 +70,11 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 
 正式域名和源站保持不变；Cloudflare Free 迁移尚未进入 DNS 或代理变更阶段。下一步必须在不改变本基线边界的前提下完成 Cloudflare 记录逐条对账；在区域 Active、Universal SSL 覆盖正式域名前，不得修改权威 NS 或开启 `api` 橙色云。
 
-## Task 2：Cloudflare Free 区域与 DNS 对账证据（2026-08-06）
+## Task 2：Cloudflare Free 区域与 DNS 对账证据（2026-08-05）
 
-- **Cloudflare 方案页面：** 已登录到 `xingqiaolab.top` 区域；当前仍停留在 `select-plan` 路由，页面展示 Free `$0` 方案卡片，但未出现可核验的 Active/Pending 区域状态或两台分配 nameserver。因此本次不能把区域视为已就绪，也没有执行方案提交、权威 NS 替换或任何代理变更。
+- **Cloudflare 方案页面：** Free `$0` 已选中，当前登录会话停留在 `confirm-scanned-records` 页面。`Continue to activation` 尚未由本子任务提交：该确认页已被主线程的浏览器会话占用，无法重复接管，因此本次仍未取得可核验的 Pending 状态或两台分配 nameserver；没有执行权威 NS 替换。
 - **Cloudflare 导入记录：** DNS Records 页面可见 8 条记录，按类型为 `A 2`、`MX 2`、`TXT 4`，无 `AAAA`。`api.xingqiaolab.top` 和 `shop.xingqiaolab.top` 的 A 目标均为 `43.133.75.82`；MX 目标分别为根域 `mxbiz1.qq.com`（优先级 10）与 `send` 子域 `feedback-smtp.ap-northeast-1.amazonses.com`（优先级 10）。TXT 仅记录名称/数量（根域、`_dmarc`、`send`、`resend._domainkey`），未记录任何 TXT 内容。
-- **代理状态：** Cloudflare 页面当前将 `api` 与 `shop` 两条 A 记录显示为 `Proxied`。这不符合本迁移阶段“全部 DNS only”的门禁要求；未在本任务中修改。
+- **代理状态：** 主线程已在确认页将 `api` 与 `shop` 两条 A 记录改为 `DNS only`；本子任务未再次修改，也未开启橙云。
 - **DNSPod 交叉核对：** DNSPod 控制台登录页可达，但记录表在本次只读自动化读取中未稳定返回；通过当前公共 DNS 交叉查询确认权威 NS 仍为 `golf.dnspod.net.`、`train.dnspod.net.`，`api`/`shop` A 均为 `43.133.75.82`，MX 与上述两条目标一致，TXT 记录名称/数量与 Cloudflare 导入的 4 条一致。未记录 TXT 值。
 - **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果；Cloudflare DNSSEC 控件未能在当前未完成的方案页面中独立核验，因此不能把“Cloudflare DNSSEC 已禁用”作为已证明条件。
-- **Task 2 判定：** **阻塞，保持进行中。** 记录类型/数量与公共 DNS 结果一致，但 Cloudflare 仍停留在方案选择页、分配 nameserver 未显示，且 `api`/`shop` 仍为橙云代理；在这些条件未修复并复核前，禁止进入权威 NS 迁移。
+- **Task 2 判定：** **阻塞，保持进行中。** 记录类型/数量与公共 DNS 结果一致，`api`/`shop` 已为 DNS only；但 `Continue to activation` 尚未提交，Pending 状态、精确两台 nameserver 和 Cloudflare DNSSEC 开关仍未完成独立核验。在这些条件复核前，禁止进入权威 NS 迁移。

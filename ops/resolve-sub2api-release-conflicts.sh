@@ -47,8 +47,11 @@ completed=0
 index_path=
 cleanup() {
   if [[ "$mutation_started" == 1 && "$completed" != 1 ]]; then
-    tar -C "$repository" -xf "$temporary/worktree.tar" >/dev/null 2>&1 || true
-    cp -p -- "$temporary/index" "$index_path" >/dev/null 2>&1 || true
+    set +e
+    find "$repository" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} + >/dev/null 2>&1
+    tar -C "$repository" -xf "$temporary/worktree.tar" >/dev/null 2>&1
+    cp -p -- "$temporary/index" "$index_path" >/dev/null 2>&1
+    set -e
   fi
   rm -rf -- "$temporary"
 }
@@ -114,6 +117,16 @@ manifest_value() {
   "$(manifest_value target_tag_object)" == "$target_tag_object" &&
   "$(manifest_value target_commit)" == "$target_commit" ]] || fail target_identity_mismatch
 
+actual_base_commit=$(git -C "$repository" rev-parse "${base_commit}^{commit}" 2>/dev/null || true)
+[[ "$actual_base_commit" == "$base_commit" ]] || fail base_identity_mismatch
+actual_target_commit=$(git -C "$repository" rev-parse "${target_commit}^{commit}" 2>/dev/null || true)
+[[ "$actual_target_commit" == "$target_commit" ]] || fail target_identity_mismatch
+actual_tag_type=$(git -C "$repository" cat-file -t "$target_tag" 2>/dev/null || true)
+actual_tag_object=$(git -C "$repository" rev-parse "$target_tag" 2>/dev/null || true)
+actual_tag_commit=$(git -C "$repository" rev-parse "${target_tag}^{commit}" 2>/dev/null || true)
+[[ "$actual_tag_type" == tag && "$actual_tag_object" == "$target_tag_object" &&
+  "$actual_tag_commit" == "$target_commit" ]] || fail target_identity_mismatch
+
 expected_conflicts=$(awk -F '\t' '$1 == "conflict" { print $2 }' "$normalized" | LC_ALL=C sort)
 actual_conflicts=$(git -C "$repository" diff --name-only --diff-filter=U | LC_ALL=C sort)
 [[ -n "$actual_conflicts" && "$actual_conflicts" == "$expected_conflicts" ]] || fail conflict_set_mismatch
@@ -161,13 +174,7 @@ git_dir=$(git -C "$repository" rev-parse --absolute-git-dir 2>/dev/null) || fail
 index_path="$git_dir/index"
 [[ -f "$index_path" ]] || fail invalid_repository
 cp -p -- "$index_path" "$temporary/index" || fail snapshot_failed
-snapshot_files=()
-while IFS=$'\t' read -r kind snapshot_file _rest; do
-  case "$kind" in
-    conflict|clean) snapshot_files+=("$snapshot_file") ;;
-  esac
-done <"$normalized"
-tar -C "$repository" -cf "$temporary/worktree.tar" -- "${snapshot_files[@]}" || fail snapshot_failed
+tar -C "$repository" --exclude=.git -cf "$temporary/worktree.tar" . || fail snapshot_failed
 mutation_started=1
 git -C "$repository" checkout --conflict=merge -- "${semantic_conflicts[@]}"
 git -C "$repository" apply --check --unidiff-zero -- "$resolution_patch_path" || fail postimage_mismatch
@@ -189,8 +196,10 @@ GOFLAGS=-mod=mod go -C "$repository/backend" mod tidy || fail generation_failed
 GOFLAGS=-mod=mod go -C "$repository/backend" generate ./cmd/server || fail generation_failed
 [[ -f "$repository/backend/go.sum" && -f "$repository/backend/cmd/server/wire_gen.go" ]] || fail generation_failed
 
-unexpected_generated=$(git -C "$repository" diff --name-only | grep -Ev '^(backend/cmd/server/wire_gen[.]go|backend/go[.]sum)$' || true)
-[[ -z "$unexpected_generated" ]] || fail generation_scope_mismatch
+expected_generated=$(awk -F '\t' '$1 == "conflict" { print $2 } $1 == "clean" { print $2 } $1 == "generated" { print $2 }' "$normalized" | LC_ALL=C sort -u)
+actual_generated=$(git -C "$repository" status --porcelain=v1 --untracked-files=all |
+  sed -E 's/^.. //' | LC_ALL=C sort -u)
+[[ "$actual_generated" == "$expected_generated" ]] || fail generation_scope_mismatch
 git -C "$repository" add -- backend/cmd/server/wire_gen.go backend/go.sum
 
 verified_files=()

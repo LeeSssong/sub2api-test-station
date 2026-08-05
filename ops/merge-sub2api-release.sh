@@ -96,14 +96,16 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
   GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
     git -C "$official" merge -q --no-ff --no-edit "$target_commit"; then
   conflicts=$(git -C "$official" diff --name-only --diff-filter=U)
-  if ! "$(dirname "$0")/resolve-sub2api-release-conflicts.sh" \
-    --repository "$official" \
-    --base-version "$base_version" \
-    --base-commit "$base_commit" \
-    --target-version "$target_version" \
-    --target-tag "$target_tag" \
-    --target-tag-object "$tag_object" \
-    --target-commit "$target_commit"; then
+  if [[ "$target_version" == "0.1.171" ]]; then
+    "$(dirname "$0")/resolve-sub2api-release-conflicts.sh" \
+      --repository "$official" \
+      --base-version "$base_version" \
+      --base-commit "$base_commit" \
+      --target-version "$target_version" \
+      --target-tag "$target_tag" \
+      --target-tag-object "$tag_object" \
+      --target-commit "$target_commit"
+  else
     [[ "$conflicts" == 'backend/cmd/server/wire_gen.go' ]] || fail
 
     git -C "$official" checkout --theirs -- backend/cmd/server/wire_gen.go

@@ -1,23 +1,24 @@
 # 项目当前状态
 
-**更新日期：** 2026-08-01
-**权威计划：** `docs/superpowers/plans/2026-07-15-commercial-ai-api-relay-implementation-plan.md`
-**项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（2026-08-01 快照；以该总账的生产部署与验证口径为准）
+**更新日期：** 2026-08-05
+**权威计划：** `docs/superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md`
+**项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（以该总账的生产部署、验证和用户验收口径为准）
 
 ## 当前指针
 
-> 2026-07-30 起，D04 内测服务及 relay-ops 自建运维控制面均已退役。网站采用 Sub2API 原生“开放注册 + 邀请码”和原生 `/admin/ops`：旧 `/ops`、`/ops/` 与 `/ops/*` 统一返回 `302` 到 `/admin/ops`。`relay-ops` 只保留公开定价、采集与出站通知，不再暴露运维浏览器/API 控制面，也不能修改注册、邀请码、路由、账号、额度或余额。
+> 2026-07-30 起，D04 内测服务及 relay-ops 自建运维控制面均已退役。账号监控唯一管理员入口是 `/admin/accounts/monitor`；旧 `/ops` 路径仍重定向到原生 `/admin/ops`。`relay-ops` 不暴露独立 UI，只保留内部定时采集、对账、日结、价格采集、受保护数据接口和飞书出站。
 
 - 当前阶段：`L1-2` 至 `L1-9` 的离线准备、`M0` 主机基线和 `M1` 核心站点部署均已有历史成果；其中离线成果属于“准备完成”，只有部署并验证生效的站点能力计入生产完成。Sub2API、PostgreSQL、Redis、Caddy 和只读 relay-ops 是当前运行边界。总账将状态区分为“生产工程代码/配置已部署并验证、工程代码/配置差异待部署、持续实施、运维/研究跟进”；文档、研究、历史证据和外部验收不单独构成工程未部署。
 - 历史准备完成：项目机制、MVP 边界、首版技术栈、D01、D13、最终采购建议、核心网关本地基线、UP01 填报、精确定价映射、人工充值/余额/用量对账、ACC01 候选评估、PAY01 支付模拟、ROUTE01 路由韧性，以及 OPS01 日常检查、止损和 BKP01 备份恢复离线基线。生产完成数量和当前进行中事项以项目全局进度总账为准。
-- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；服务器每 15 分钟顺序运行账号质量脚本，结果由 Sub2API 原生 `/admin/ops` 承载，单账号失败不阻断后续账号；relay-ops 保持 `read_only + dry_run`。
+- 当前操作：OPS01 固定为 `report_only`，BKP01 固定为 `dry_run_only`；PAY01 保持支付关闭。当前活动上游发现规则是 Sub2API 原生 Admin 账户列表中未删除且 `status=active && schedulable=true` 的成员；账号质量、评分、服务健康只由 `/admin/accounts/monitor` 承载，营收、账务与对账只进入后续独立 `/admin/revenue`。relay-ops 仅作为内部后台服务运行，不拥有浏览器控制面。
 - 当前风险：上游余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险，但不再作为注册门禁。付费 probe 和模型发布继续关闭。飞书只允许出站告警、持续提醒、恢复和日报；入站回调、命令控制与确认接手均已退役。
-- 当前工程差异：`main@fab36ffa8` 已推送；其应用代码已通过 `main@48244833b` 的 immutable Sub2API 镜像和 `relay-ops@release-48244833b` 在生产 blue/green 双 API、唯一 worker 拓扑生效，活动槽为 green；后续提交为生产 host executor 兼容修复、验证文档和分支收口，已同步生产主机。账号监控对账汇总、异常列表、管理员刷新/补登记 API 已通过公网入口验证，新增对账迁移已在生产数据库生效；TLS 1.2/1.3 与 RSA 2048 证书已验收。Native P0/P1 Bridge 未接线通道保持策略关闭。
+- 当前生产运行：账号监控 V3 的 Sub2API 来源提交为 `05985e62ec88b04d1e647a815eecdb1cf1155776`，源码树为 `c37b383bf54e485d7393ff0793e30dd03f5e2328`，活动槽为 green，运行镜像为 `sha256:0d10260b745e2086326977303b15f6eb78e8e03de7858fe356dec046bf0e10e8`；评分迁移、API/UI 和状态/单卡刷新均已验收。当前记录的 relay-ops 生产身份为 `release-48244833b` / `xingqiao-relay-ops@sha256:c88f58e4f9cbee2338dc6b607fa3e1f4f54fa8adbb32790f29411d3a5f224c66`；PostgreSQL、Redis、Caddy 在账号监控发布中未重建。
 - 18:49 供应商页面复核覆盖上述早前样本：Wawazz 余额约 `$9.62`，累计 `5,996` 请求、`977.6M` Token、实际 `$51.3664`、平均响应 `14.56s`。GPT-Plus 状态页虽标“正常”，7 天可用性仅 `94.70%`，近 60 次包含多次约 `30s` 错误和降级；GPT-Pro 显示 `100.00%`。用户已确认高负载为预期业务，但余额、错误率、TTFT P95 和总耗时 P95 仍是生产风险。
-- 下一步：后续普通 Sub2API 发布使用已安装的双槽 executor，无迁移集合变化和共享容器身份变化时不安排停机。真实上游逐笔成本对账任务完成、测试和审查后，按相同蓝绿流程发布。管理员继续在 Sub2API 后台维护开放注册、邀请码和原生运维；不恢复 relay-ops 控制面或飞书入站写能力。
+- Git 基线：`codex/production-baseline-convergence` 仅收纳 `origin/codex/account-monitor-completion@bbfe4a36d` 与 `origin/main@138d26efa` 的版本历史；在协调代理推送、受控合并前，它不是新的生产运行时来源。
+- 六阶段剩余顺序：账务运行时部署、真实账单授权/映射与非零闭环、独立 `/admin/revenue`、Monitor/飞书闭环、OpenAI 实际响应模型展示均为进行中。每个生产部署或生产配置激活后必须停在“等待用户验收”，只有用户明确确认后才能进入下一个部署单元。不恢复 relay-ops 控制面或飞书入站写能力。
 
 L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-offline-baseline-plan.md`。  
-最新验证：`docs/superpowers/reports/2026-08-01-main-blue-green-production-verification.md`、`docs/superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md`、`docs/superpowers/reports/2026-07-30-native-ops-redirect-and-reminder-only-feishu-verification.md`、`docs/superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md` 和 `docs/superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md`。蓝绿设计：`docs/superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md`；实施计划：`docs/superpowers/plans/2026-07-31-command-driven-30-minute-blue-green-deployment.md`；生产运行手册：`docs/runbooks/sub2api-blue-green-production-deployment.md`。旧 relay-ops 运维页、飞书命令控制、模型发布任务、D04 v1/v2 和旧账号集合只保留历史证据。
+最新验证：`.superpowers/sdd/2026-08-04-account-monitor-card-production-implementation-plan/production-verification.md`、`docs/superpowers/reports/2026-08-01-main-blue-green-production-verification.md`、`docs/superpowers/reports/2026-07-31-command-driven-blue-green-local-verification.md` 和 `docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md`。蓝绿设计：`docs/superpowers/specs/2026-07-31-command-driven-30-minute-blue-green-deployment-design.md`；生产运行手册：`docs/runbooks/sub2api-blue-green-production-deployment.md`。旧 relay-ops 运维页、飞书命令控制、D04 v1/v2 和旧账号集合只保留历史证据。
 
 ## 产品
 

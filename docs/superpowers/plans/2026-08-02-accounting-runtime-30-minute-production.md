@@ -15,7 +15,7 @@
 - 账务范围是全站所有可计费账号，不按供应商名称限定。
 - 不暴露 relay-ops UI，不恢复 `/relay-ops/api/ops-view`。
 - 本任务不执行账单凭据 provisioning；真实数据闭环由下一任务完成。
-- 总时间预算 1800 秒；总账仅由协调任务更新。
+- 目标在 30 分钟内完成；完成更新、生产部署和线上验证优先，不得仅因超过目标时间停止。总账仅由协调任务更新。
 
 ---
 
@@ -66,7 +66,7 @@ Expected: 全部通过；Collector 遍历所有合法来源，Sweep/DailyClose �
 
 - [ ] **Step 4（13-22 分钟）：执行 relay-ops 不可变发布**
 
-按照 `docs/runbooks/relay-ops-release-path.md` 使用现有 controller/host executor；优先复用已构建且标签与当前 source tree、tested tree、迁移 hash 完全一致的 linux/amd64 镜像。只重建 relay-ops，脚本总 deadline 设为本任务第 30 分钟。
+按照 `docs/runbooks/relay-ops-release-path.md` 使用现有 controller/host executor；优先复用已构建且标签与当前 source tree、tested tree、迁移 hash 完全一致的 linux/amd64 镜像。只重建 relay-ops，脚本保留阶段超时，超过 30 分钟目标后仍在原范围内继续到生产验收完成。
 
 Expected: 新 relay-ops healthy；内部 `/healthz` 为 `alive`、`/readyz` 为 `ready`；迁移启动成功；所有共享容器 ID 不变；失败时恢复上一 immutable 镜像并复验健康。
 

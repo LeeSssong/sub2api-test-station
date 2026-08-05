@@ -12,13 +12,18 @@
 
 ## Status
 
-`execution_setup`
+`task_1_in_progress`
 
-User approved subagent-driven execution on a fresh worktree based on main. No implementation agent has been dispatched, business code is unchanged, and production is unchanged.
+User approved subagent-driven execution on a fresh worktree based on main. Dependencies are installed and the baseline is clean. Task 1 is ready for dispatch; business code is unchanged and production is unchanged.
+
+## Baseline Verification
+
+- Backend: `go test ./internal/service ./internal/handler/admin ./internal/repository` — PASS.
+- Frontend: 4 focused files, 37 tests — PASS.
 
 ## Tasks
 
-- Task 1: pending — estimated quota field and unified cost scoring
+- Task 1: in_progress — estimated quota field and unified cost scoring
 - Task 2: pending — balance snapshot and explicit refresh policy
 - Task 3: pending — restore group score-weight entry
 - Task 4: pending — lightweight cost dialog and balance card

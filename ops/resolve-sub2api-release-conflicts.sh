@@ -42,7 +42,14 @@ manifest="$record/manifest.json"
 [[ -f "$manifest" ]] || fail record_missing
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-release-resolution.XXXXXX")
+mutation_started=0
+completed=0
+index_path=
 cleanup() {
+  if [[ "$mutation_started" == 1 && "$completed" != 1 ]]; then
+    tar -C "$repository" -xf "$temporary/worktree.tar" >/dev/null 2>&1 || true
+    cp -p -- "$temporary/index" "$index_path" >/dev/null 2>&1 || true
+  fi
   rm -rf -- "$temporary"
 }
 trap cleanup EXIT
@@ -81,6 +88,15 @@ if ! ruby -rjson -e '
     abort unless entry.keys.sort == ["stages"]
     puts ["conflict", path, *blobs, generated_entry ? "generated" : "semantic"].join("\t")
   end
+  clean_preimages = manifest.fetch("clean_preimages")
+  abort unless clean_preimages.is_a?(Hash) && !clean_preimages.empty?
+  clean_preimages.keys.sort.each do |path|
+    blob = clean_preimages.fetch(path)
+    abort unless path.is_a?(String) && path.match?(/\A(?!\/)(?!.*(?:\A|\/)\.\.(?:\/|\z))[^\t\r\n]+\z/)
+    abort if conflicts.key?(path) || generated.include?(path)
+    abort unless blob.is_a?(String) && blob.match?(/\A[0-9a-f]{40}\z/)
+    puts ["clean", path, blob].join("\t")
+  end
   abort unless generated.sort == ["backend/cmd/server/wire_gen.go", "backend/go.sum"].sort
   abort unless (generated - conflicts.keys).empty?
 ' "$manifest" >"$normalized"; then
@@ -110,6 +126,12 @@ while IFS=$'\t' read -r kind conflict_file stage1 stage2 stage3 _resolution_kind
   [[ "$actual_stage1" == "$stage1" && "$actual_stage2" == "$stage2" && "$actual_stage3" == "$stage3" ]] || fail preimage_mismatch
 done <"$normalized"
 
+while IFS=$'\t' read -r kind clean_file expected_blob; do
+  [[ "$kind" == clean ]] || continue
+  actual_blob=$(git -C "$repository" rev-parse ":$clean_file" 2>/dev/null || true)
+  [[ "$actual_blob" == "$expected_blob" ]] || fail preimage_mismatch
+done <"$normalized"
+
 resolution_patch=$(awk -F '\t' '$1 == "resolution" { print $2 }' "$normalized")
 resolution_patch_blob=$(awk -F '\t' '$1 == "resolution" { print $3 }' "$normalized")
 resolution_patch_path="$record/$resolution_patch"
@@ -120,14 +142,45 @@ while IFS=$'\t' read -r kind conflict_file _stage1 _stage2 _stage3 resolution_ki
   [[ "$kind" == conflict && "$resolution_kind" == semantic ]] || continue
   semantic_conflicts+=("$conflict_file")
 done <"$normalized"
+
 [[ "${#semantic_conflicts[@]}" -gt 0 ]] || fail record_invalid
+
+allowed_patch_paths=$(awk -F '\t' '$1 == "conflict" && $6 == "semantic" { print $2 } $1 == "clean" { print $2 }' "$normalized" | LC_ALL=C sort -u)
+patch_paths=$(ruby -e '
+  paths = File.binread(ARGV.fetch(0)).lines.each_with_object([]) do |line, result|
+    next unless line.start_with?("diff --git a/")
+    match = line.match(/\Adiff --git a\/(.+) b\/\1\n\z/)
+    abort unless match
+    result << match[1]
+  end
+  puts paths.uniq.sort
+' "$resolution_patch_path") || fail record_invalid
+[[ "$patch_paths" == "$allowed_patch_paths" ]] || fail patch_scope_mismatch
+
+git_dir=$(git -C "$repository" rev-parse --absolute-git-dir 2>/dev/null) || fail invalid_repository
+index_path="$git_dir/index"
+[[ -f "$index_path" ]] || fail invalid_repository
+cp -p -- "$index_path" "$temporary/index" || fail snapshot_failed
+snapshot_files=()
+while IFS=$'\t' read -r kind snapshot_file _rest; do
+  case "$kind" in
+    conflict|clean) snapshot_files+=("$snapshot_file") ;;
+  esac
+done <"$normalized"
+tar -C "$repository" -cf "$temporary/worktree.tar" -- "${snapshot_files[@]}" || fail snapshot_failed
+mutation_started=1
 git -C "$repository" checkout --conflict=merge -- "${semantic_conflicts[@]}"
-git -C "$repository" apply --check -- "$resolution_patch_path" || fail postimage_mismatch
-git -C "$repository" apply -- "$resolution_patch_path"
+git -C "$repository" apply --check --unidiff-zero -- "$resolution_patch_path" || fail postimage_mismatch
+git -C "$repository" apply --unidiff-zero -- "$resolution_patch_path"
 
 while IFS=$'\t' read -r kind conflict_file _stage1 _stage2 _stage3 resolution_kind; do
   [[ "$kind" == conflict && "$resolution_kind" == semantic ]] || continue
   git -C "$repository" add -- "$conflict_file"
+done <"$normalized"
+
+while IFS=$'\t' read -r kind clean_file _expected_blob; do
+  [[ "$kind" == clean ]] || continue
+  git -C "$repository" add -- "$clean_file"
 done <"$normalized"
 
 git -C "$repository" checkout --theirs -- backend/cmd/server/wire_gen.go backend/go.sum
@@ -140,14 +193,19 @@ unexpected_generated=$(git -C "$repository" diff --name-only | grep -Ev '^(backe
 [[ -z "$unexpected_generated" ]] || fail generation_scope_mismatch
 git -C "$repository" add -- backend/cmd/server/wire_gen.go backend/go.sum
 
-conflict_files=()
+verified_files=()
 while IFS= read -r conflict_file; do
-  conflict_files+=("$conflict_file")
+  verified_files+=("$conflict_file")
 done <<<"$expected_conflicts"
-if git -C "$repository" grep -n -E '^(<<<<<<< |=======|>>>>>>> )' -- "${conflict_files[@]}" >/dev/null; then
+while IFS=$'\t' read -r kind clean_file _expected_blob; do
+  [[ "$kind" == clean ]] || continue
+  verified_files+=("$clean_file")
+done <"$normalized"
+if git -C "$repository" grep -n -E '^(<<<<<<< |=======|>>>>>>> )' -- "${verified_files[@]}" >/dev/null; then
   fail conflict_markers_present
 fi
 [[ -z "$(git -C "$repository" diff --name-only --diff-filter=U)" ]] || fail unmerged_entries_present
 git -C "$repository" diff --quiet || fail unstaged_changes_present
 
+completed=1
 printf 'sub2api_release_resolution status=succeeded base_version=%s target_version=%s\n' "$base_version" "$target_version"

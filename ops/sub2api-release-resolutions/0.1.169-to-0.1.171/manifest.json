@@ -6,11 +6,18 @@
   "target_tag_object": "afd154b92aac36c6dafb1fa8e181ca827c78c465",
   "target_commit": "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6",
   "resolution_patch": "resolution.patch",
-  "resolution_patch_blob": "d8c6e0a1eb92136e293a407075abcb8ac84c4dad",
+  "resolution_patch_blob": "0761d9a40f5a7d7279e16155cc16656612546bd1",
   "generated_paths": [
     "backend/cmd/server/wire_gen.go",
     "backend/go.sum"
   ],
+  "clean_preimages": {
+    "backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go": "f9fe019554aca0e86031dbf2599bb54a589e4483",
+    "backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go": "74ec06b9ae2fd8391d39ecc13c8bd509b7e08c70",
+    "backend/internal/service/content_moderation.go": "af4b19133f0cd2cbfb44c46a5782d4db27a1758d",
+    "backend/internal/service/wire.go": "fa447e4f80cdb8702c78ed13f6b11d997c692310",
+    "backend/internal/service/wire_test.go": "0e9399d43af7f3543273eeae3360888a3cf76b53"
+  },
   "conflicts": {
     "backend/cmd/server/wire_gen.go": {
       "stages": {

@@ -90,6 +90,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
 
       assert status.success?, output
       assert_equal "resolved\n", File.read(File.join(fixture[:repository], "semantic.txt"))
+      assert_equal "resolved clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
       assert_equal "generated wire\n", File.read(File.join(fixture[:repository], "backend/cmd/server/wire_gen.go"))
       assert_equal "generated sum\n", File.read(File.join(fixture[:repository], "backend/go.sum"))
       assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
@@ -107,6 +108,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       refute status.success?
       assert_includes output, "reason=target_identity_mismatch"
       assert_equal before, File.binread(semantic)
+      assert_equal "base clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
       refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
     end
   end
@@ -145,6 +147,56 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_v0171_resolution_rejects_clean_preimage_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("clean_preimages")["clean.txt"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+      semantic = File.join(fixture[:repository], "semantic.txt")
+      before = File.binread(semantic)
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      assert_equal before, File.binread(semantic)
+      assert_equal "base clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_restores_original_merge_state_when_generation_fails
+    with_resolver_fixture do |fixture|
+      File.write(File.join(fixture.fetch(:fake_bin), "go"), <<~SH)
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$1" == "-C" ]]
+        backend=$2
+        shift 2
+        case "$*" in
+          "mod tidy") printf 'partial generated sum\n' > "$backend/go.sum" ;;
+          "generate ./cmd/server") exit 65 ;;
+          *) exit 64 ;;
+        esac
+      SH
+      FileUtils.chmod(0o755, File.join(fixture.fetch(:fake_bin), "go"))
+      index_path = File.expand_path(git(fixture[:repository], "rev-parse", "--git-path", "index").strip, fixture[:repository])
+      before_index = File.binread(index_path)
+      before_files = resolver_fixture_files(fixture[:repository]).to_h do |path|
+        [path, File.binread(File.join(fixture[:repository], path))]
+      end
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=generation_failed"
+      assert_equal before_index, File.binread(index_path)
+      before_files.each do |path, content|
+        assert_equal content, File.binread(File.join(fixture[:repository], path)), path
+      end
+    end
+  end
+
   def test_unknown_future_release_has_no_resolution_record
     with_resolver_fixture do |fixture|
       status, output = run_resolver(
@@ -171,6 +223,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       configure_git(repository)
 
       File.write(File.join(repository, "semantic.txt"), "base\n")
+      File.write(File.join(repository, "clean.txt"), "base clean\n")
       File.write(File.join(repository, "backend/go.mod"), "module example.invalid/fixture\n\ngo 1.24\n")
       File.write(File.join(repository, "backend/go.sum"), "base sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "base wire\n")
@@ -206,6 +259,12 @@ class MergeSub2APIReleaseTest < Minitest::Test
         +++ b/semantic.txt
         @@ -1,#{conflict_lines.length} +1 @@
         #{conflict_lines.map { |line| "-#{line}" }.join}+resolved
+        diff --git a/clean.txt b/clean.txt
+        --- a/clean.txt
+        +++ b/clean.txt
+        @@ -1 +1 @@
+        -base clean
+        +resolved clean
       PATCH
       File.binwrite(semantic_path, original_conflict)
       conflicts = unmerged_stages(repository).transform_values do |stages|
@@ -225,6 +284,9 @@ class MergeSub2APIReleaseTest < Minitest::Test
           "backend/cmd/server/wire_gen.go",
           "backend/go.sum"
         ],
+        "clean_preimages" => {
+          "clean.txt" => git(repository, "rev-parse", ":clean.txt").strip
+        },
         "conflicts" => conflicts
       ) + "\n")
 
@@ -248,9 +310,19 @@ class MergeSub2APIReleaseTest < Minitest::Test
         repository: repository,
         records_root: records_root,
         manifest: manifest,
+        fake_bin: fake_bin,
         path: "#{fake_bin}:#{ENV.fetch("PATH")}"
       )
     end
+  end
+
+  def resolver_fixture_files(repository)
+    [
+      "semantic.txt",
+      "clean.txt",
+      "backend/go.sum",
+      "backend/cmd/server/wire_gen.go"
+    ].select { |path| File.exist?(File.join(repository, path)) }
   end
 
   def unmerged_stages(repository)

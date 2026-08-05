@@ -505,8 +505,8 @@ git commit -m "feat: add account cost dialog and balance display"
 ### Task 5: 整体回归、视觉验收与生产门禁
 
 **Files:**
-- Create: `.superpowers/sdd/2026-08-06-account-monitor-cost-balance/final-verification.md`
-- Modify: `.superpowers/sdd/2026-08-06-account-monitor-cost-balance/progress.md`
+- Create: `.superpowers/sdd/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan/final-verification.md`
+- Modify: `.superpowers/sdd/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan/progress.md`
 - Modify: `docs/project/project-progress.md`
 
 **Interfaces:**

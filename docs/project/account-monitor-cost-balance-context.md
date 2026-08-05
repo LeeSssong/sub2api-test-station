@@ -13,7 +13,7 @@
 3. `docs/superpowers/plans/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan.md`。
 4. `docs/project/account-monitor-v3-acceptance-contract.md`。
 5. `docs/project/project-progress.md` 顶部本轮登记。
-6. `.superpowers/sdd/2026-08-06-account-monitor-cost-balance/progress.md`。
+6. `.superpowers/sdd/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan/progress.md`。
 7. 自己收到的任务 brief；聊天摘要不得替代上述文件。
 
 代理首条报告必须包含：

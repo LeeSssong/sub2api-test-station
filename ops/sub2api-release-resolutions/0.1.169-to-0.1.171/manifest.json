@@ -1,0 +1,93 @@
+{
+  "base_version": "0.1.169",
+  "base_commit": "26d894ef4f50645a4bf1030e378ac892f17d0223",
+  "target_version": "0.1.171",
+  "target_tag": "v0.1.171",
+  "target_tag_object": "afd154b92aac36c6dafb1fa8e181ca827c78c465",
+  "target_commit": "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6",
+  "resolution_patch": "resolution.patch",
+  "resolution_patch_blob": "d8c6e0a1eb92136e293a407075abcb8ac84c4dad",
+  "generated_paths": [
+    "backend/cmd/server/wire_gen.go",
+    "backend/go.sum"
+  ],
+  "conflicts": {
+    "backend/cmd/server/wire_gen.go": {
+      "stages": {
+        "1": "dedf06d46744658b9c7635da629b481140f7d3e3",
+        "2": "c1a6b017b81d2a4a192cc15aa4124b2b76d86c97",
+        "3": "2369e09049590dea87947883865f88e949736a14"
+      }
+    },
+    "backend/go.sum": {
+      "stages": {
+        "1": "896cfa3be60b8f90cba4add48c7d4a570eb26c9d",
+        "2": "f6fc4dd4fae07857ff7a3813709ae207e1a268bb",
+        "3": "e9a4c1829ea0b743d6739add566182e1d193b30c"
+      }
+    },
+    "backend/internal/handler/admin/account_handler.go": {
+      "stages": {
+        "1": "7cdedad2ed0623f7e96a7a180a113dc204e5271c",
+        "2": "659bb4780460550105c628834e2a3ca8a0014c58",
+        "3": "9b80dd05d1fd8695c324155b02472a9bbe7dd57c"
+      }
+    },
+    "backend/internal/handler/admin/admin_service_stub_test.go": {
+      "stages": {
+        "1": "0eb661b93262e0562b184824df3bc77429706183",
+        "2": "c86c1a3766e1b421e5104d7d4d19122fe5477bd7",
+        "3": "4c3beb9b8a64e19eba9d2e1081d171fe891b3d7f"
+      }
+    },
+    "backend/internal/repository/account_repo.go": {
+      "stages": {
+        "1": "1d4f9d0d009b5bee482c36f41f8b34259fda01c4",
+        "2": "20c660b3365c9abab12f9defe41f74dee6bef35b",
+        "3": "010442eb6bcf3b80d4e7d65c27d8b9dd966259d4"
+      }
+    },
+    "backend/internal/repository/account_repo_upstream_billing_probe_update_test.go": {
+      "stages": {
+        "1": "497059ba5aebebd33c7a5cd698f151ef3caeb54f",
+        "2": "b3f30a8d8d53f9d8dc59a7ceafcdeaa3c6ba19c9",
+        "3": "46d78ac5b72395335ccd2e77ad45c7263ee49659"
+      }
+    },
+    "backend/internal/service/admin_account_upstream_billing_probe_test.go": {
+      "stages": {
+        "1": "88db65386153f5d935bbda2a72dc95cc333730ab",
+        "2": "c5963ee4b29ce665c878da085442c12e9f7dc04b",
+        "3": "f76dde0b2ea2bf08b6baab39e0a1d3d5f64a08fd"
+      }
+    },
+    "backend/internal/service/setting_parse.go": {
+      "stages": {
+        "1": "a4d409f9c14ee40a58206cfb8fa444c23a0fffea",
+        "2": "72301ace1ae168e7888e6bdfa5851fb5edc2ea86",
+        "3": "b0a356a6f2ff11d4950bd84f17db40c7c895431f"
+      }
+    },
+    "backend/internal/service/upstream_billing_probe_test.go": {
+      "stages": {
+        "1": "eecd866a901e9abfeeacda0d4b403c549ca0f4ab",
+        "2": "b187ef49392d066034d40067ccac5de3ad211ac3",
+        "3": "e032e9aa16ef8d09fb61fdf9cbb7c85aaca78ed9"
+      }
+    },
+    "frontend/src/components/account/EditAccountModal.vue": {
+      "stages": {
+        "1": "b15259ef3e5bf5afc7751aedc8ba1eafca204b39",
+        "2": "df61496b4a856e8ae6aeff1d251d0c1f7b7e039f",
+        "3": "51e0af9289aaee76065fd0863a25e1b5e5ea3b78"
+      }
+    },
+    "frontend/src/views/admin/SettingsView.vue": {
+      "stages": {
+        "1": "3a8baf4bd8d97e4416647a91c7f2301b174f9668",
+        "2": "369880ac129564a9b60997206f8dc65078e486c8",
+        "3": "a7e066f1c197cbe47174426f9212f0de050bdcf9"
+      }
+    }
+  }
+}

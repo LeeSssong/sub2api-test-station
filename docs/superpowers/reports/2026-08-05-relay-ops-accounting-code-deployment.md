@@ -32,3 +32,13 @@ ops/release-relay-ops.sh --mode production --evidence /private/var/tmp/relay-ops
 ```
 
 随后只验证镜像身份、`/healthz`、`/readyz`、账务/对账路由认证，以及 PostgreSQL、Redis、Caddy、Sub2API 容器身份未变，并停在用户验收门禁。不得由本报告推定生产已部署或已生效。
+
+## 构建代理阻断修复
+
+生产前的两次本地不可变镜像构建均在 `go mod download` 访问 `proxy.golang.org` 时失败，发生在归档上传和生产切换前。用户已批准将构建接口限定扩展为：Docker build 参数 `GOPROXY` 与发布控制器环境变量 `RELAY_OPS_BUILD_GOPROXY`。
+
+- 默认值保持 `https://proxy.golang.org,direct`；只有 `https://goproxy.cn,direct` 可以作为本次协调代理的构建期覆盖。
+- controller 在任何 Docker、SCP 或 SSH 副作用前拒绝非 allowlist 值；fake-Docker 回归同时覆盖默认、批准覆盖与非法覆盖。
+- 覆盖只传递给镜像构建期的 `go mod download`，不进入生产运行时环境；Dockerfile 未关闭 Go checksum database。
+- 此修复轮只完成本地 RED/GREEN 和 Task 2 四组专项回归。实际 push、带 `RELAY_OPS_BUILD_GOPROXY=https://goproxy.cn,direct` 的生产构建、运行时 `RELAY_OPS_ACCOUNTING_ENABLED=false` 复核，以及线上健康/认证/容器身份验证仍仅由协调代理执行。
+- 先前的 `0600` 证据绑定的是修复前提交 `de739afaf`，不能用于包含本修复的发布；协调代理必须在本提交已推送且树保持不变时重新生成与新 commit/tree/migrations hash 绑定的证据。

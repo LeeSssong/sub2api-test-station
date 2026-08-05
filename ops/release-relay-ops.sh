@@ -28,6 +28,11 @@ ruby -rjson -e 'p,commit,tree,migrations=ARGV; v=JSON.parse(File.binread(p)); ke
 
 docker_bin=${RELEASE_DOCKER_BIN:-docker}; ssh_bin=${RELEASE_SSH_BIN:-ssh}; image_repository=${RELAY_OPS_IMAGE_REPOSITORY:-}; build_context=${RELEASE_BUILD_CONTEXT:-$worktree}; ssh_target=${RELEASE_SSH_TARGET:-}; ssh_key=${RELEASE_SSH_KEY:-}; ssh_known_hosts=${RELEASE_SSH_KNOWN_HOSTS:-}; ssh_port=${RELEASE_SSH_PORT:-}; host_executor=${RELEASE_HOST_EXECUTOR_PATH:-/usr/local/libexec/deploy-relay-ops-host.sh}
 transport=${RELEASE_TRANSPORT:-registry}; scp_bin=${RELEASE_SCP_BIN:-scp}
+build_goproxy=${RELAY_OPS_BUILD_GOPROXY:-https://proxy.golang.org,direct}
+case "$build_goproxy" in
+  https://proxy.golang.org,direct|https://goproxy.cn,direct) ;;
+  *) fail 'RELAY_OPS_BUILD_GOPROXY is invalid' ;;
+esac
 [[ "$image_repository" =~ ^[a-z0-9][a-z0-9._/-]*/[a-z0-9][a-z0-9._/-]*$ ]] || fail 'RELAY_OPS_IMAGE_REPOSITORY is invalid'; [[ "$build_context" == /* && -d "$build_context" && ! -L "$build_context" && "$(cd "$build_context" && pwd -P)" == "$build_context" ]] || fail 'RELEASE_BUILD_CONTEXT is invalid'; case "$build_context" in "$worktree"|"$worktree"/*) ;; *) fail 'RELEASE_BUILD_CONTEXT must be inside RELEASE_WORKTREE' ;; esac
 [[ "$transport" == registry || "$transport" == preloaded ]] || fail 'RELEASE_TRANSPORT must be registry or preloaded'
 [[ "$ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || fail 'RELEASE_SSH_TARGET is invalid'; secure_credential "$ssh_key" RELEASE_SSH_KEY; secure_credential "$ssh_known_hosts" RELEASE_SSH_KNOWN_HOSTS; [[ "$ssh_port" =~ ^[1-9][0-9]{0,4}$ && "$ssh_port" -le 65535 ]] || fail 'RELEASE_SSH_PORT is invalid'; [[ "$host_executor" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail 'RELEASE_HOST_EXECUTOR_PATH is invalid'; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker Buildx is required'; command -v "$ssh_bin" >/dev/null 2>&1 || fail 'SSH is required'; command -v perl >/dev/null 2>&1 || fail 'Perl is required'
@@ -37,13 +42,13 @@ archive=''; archive_sha256=''; image_id=''; staged_archive="/var/lib/sub2api/rel
 cleanup_archive() { [[ -z "$archive" ]] || rm -f -- "$archive"; }
 trap cleanup_archive EXIT
 if [[ "$transport" == registry ]]; then
-  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" buildx build --platform linux/amd64 --provenance=false --sbom=false --push --file "$worktree/infra/Dockerfile.relay-ops" --label com.xingqiao.relay-ops.qualified=true --label "com.xingqiao.relay-ops.source.commit=$source_commit" --label "com.xingqiao.relay-ops.source.tree=$source_tree" --label "com.xingqiao.relay-ops.tested.tree=$source_tree" --label "com.xingqiao.relay-ops.migrations.sha256=$migrations_hash" --tag "$tag" "$build_context" >/dev/null || fail 'image build or push failed'
+  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg "GOPROXY=$build_goproxy" --push --file "$worktree/infra/Dockerfile.relay-ops" --label com.xingqiao.relay-ops.qualified=true --label "com.xingqiao.relay-ops.source.commit=$source_commit" --label "com.xingqiao.relay-ops.source.tree=$source_tree" --label "com.xingqiao.relay-ops.tested.tree=$source_tree" --label "com.xingqiao.relay-ops.migrations.sha256=$migrations_hash" --tag "$tag" "$build_context" >/dev/null || fail 'image build or push failed'
   digest=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tag" 2>/dev/null | tr -d '[:space:]') || fail 'digest resolution failed'
   [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'published image did not resolve to an immutable sha256 digest'
   requested_image="$image_repository@$digest"; preloaded_args=()
 else
   archive=$(mktemp "${TMPDIR:-/tmp}/relay-ops-$source_commit.XXXXXX")
-  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" buildx build --platform linux/amd64 --provenance=false --sbom=false --load --file "$worktree/infra/Dockerfile.relay-ops" --label com.xingqiao.relay-ops.qualified=true --label "com.xingqiao.relay-ops.source.commit=$source_commit" --label "com.xingqiao.relay-ops.source.tree=$source_tree" --label "com.xingqiao.relay-ops.tested.tree=$source_tree" --label "com.xingqiao.relay-ops.migrations.sha256=$migrations_hash" --tag "$tag" "$build_context" >/dev/null || fail 'image build or load failed'
+  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg "GOPROXY=$build_goproxy" --load --file "$worktree/infra/Dockerfile.relay-ops" --label com.xingqiao.relay-ops.qualified=true --label "com.xingqiao.relay-ops.source.commit=$source_commit" --label "com.xingqiao.relay-ops.source.tree=$source_tree" --label "com.xingqiao.relay-ops.tested.tree=$source_tree" --label "com.xingqiao.relay-ops.migrations.sha256=$migrations_hash" --tag "$tag" "$build_context" >/dev/null || fail 'image build or load failed'
   image_id=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" image inspect --format '{{.Id}}' "$tag" 2>/dev/null | tr -d '[:space:]') || fail 'local image ID resolution failed'
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'preloaded image did not resolve to an immutable image ID'
   perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$docker_bin" image save --output "$archive" "$tag" >/dev/null || fail 'image archive creation failed'

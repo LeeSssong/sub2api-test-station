@@ -74,9 +74,11 @@ run_controller() {
     RELEASE_SSH_KNOWN_HOSTS="$CASE_DIR/known_hosts" RELEASE_SSH_PORT=22 "$@" bash "$CONTROLLER" --mode production --evidence "$EVIDENCE"
 }
 expect_failure_before_transport() {
-  if run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then fail "$1 unexpectedly succeeded"; fi
-  [[ ! -s "$CASE_DIR/docker.log" ]] || fail "$1 invoked Docker before validation"
-  [[ ! -s "$CASE_DIR/ssh.log" ]] || fail "$1 invoked SSH before validation"
+  local label=$1
+  shift
+  if run_controller "$@" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then fail "$label unexpectedly succeeded"; fi
+  [[ ! -s "$CASE_DIR/docker.log" ]] || fail "$label invoked Docker before validation"
+  [[ ! -s "$CASE_DIR/ssh.log" ]] || fail "$label invoked SSH before validation"
 }
 
 test_writer_and_build() {
@@ -112,8 +114,28 @@ test_preloaded_transport_uploads_verified_archive() {
   grep -F -- '--preloaded-archive-sha256' "$CASE_DIR/ssh.log" >/dev/null || fail 'archive checksum was not sent'
 }
 
+test_default_build_goproxy_reaches_buildx() {
+  setup_case default_build_goproxy; write_evidence
+  run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail 'default build GOPROXY controller failed'
+  grep -F -- '--build-arg GOPROXY=https://proxy.golang.org,direct' "$CASE_DIR/docker.log" >/dev/null || fail 'default build GOPROXY was not passed to buildx'
+}
+
+test_approved_build_goproxy_reaches_buildx() {
+  setup_case approved_build_goproxy; write_evidence
+  run_controller RELAY_OPS_BUILD_GOPROXY=https://goproxy.cn,direct >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail 'approved build GOPROXY controller failed'
+  grep -F -- '--build-arg GOPROXY=https://goproxy.cn,direct' "$CASE_DIR/docker.log" >/dev/null || fail 'approved build GOPROXY was not passed to buildx'
+}
+
+test_rejects_unapproved_build_goproxy_before_transport() {
+  setup_case rejected_build_goproxy; write_evidence
+  expect_failure_before_transport rejected_build_goproxy RELAY_OPS_BUILD_GOPROXY=https://mirror.example.invalid,direct
+}
+
 test_writer_and_build
 test_rejects_dirty_tree
 test_bounds_host_ssh_stage
 test_preloaded_transport_uploads_verified_archive
+test_default_build_goproxy_reaches_buildx
+test_approved_build_goproxy_reaches_buildx
+test_rejects_unapproved_build_goproxy_before_transport
 printf 'PASS: relay-ops release controller\n'

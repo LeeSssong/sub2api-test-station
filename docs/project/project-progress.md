@@ -41,6 +41,7 @@
 10. **Monitor 当前状态与飞书历史错误码修复**：已按“最新一次渠道探测”口径完成本地实现与回归，修正最新成功被历史失败压过，以及 `balance_exhausted` 残留导致账号正在运行却被告警为无可用账号。**状态：工程差异待部署（本地验证通过，待推送、部署和线上验证）**。
 11. **`api.xingqiaolab.top` TLS 兼容性修复**：Caddy RSA-2048/TLS 1.2/1.3 策略已部署，但 CC Switch 刷新仍失败。2026-08-01 完成 nginx TLS 前置层受控生产切换，Compose、Caddy、nginx 及未受影响服务门禁通过；但受影响 Mac 上 TLS 1.2 仍在 ClientHello 阶段被重置，CC Switch 3.18.0 实际刷新仍显示“查询失败”，因而已回滚到 Caddy 直接接管 80/443。同一公网 IP 上仅 SNI `api.xingqiaolab.top` 的 TLS 1.2 被重置，替换 SNI、无 SNI 及服务器本机访问均成功，根因已收敛为客户端到源站之间的域名特异网络干预。**状态：进行中（nginx 代码已推送、生产试部署已回滚；待使用兼容域名或新公网/CDN 入口完成客户端验收）**。
 12. **账号监控分组经营与评分规则**：已接通真实账单分组归属、全站/分组/账号聚合与按日历史、跨分组唯一 Attempt 去重、分组关闭语义、可配置评分权重、账号卡片经营数据、分组 Tab 与历史入口，并修复 RuntimeService 对经营汇总/历史 API 的转发回归；本轮补齐首页“今日 + 历史累计”账务展示、全站/分组服务健康（可用/不可用/待确认/暂停、成功率、TTFT P50、总耗时 P95）及卡片优先级的单事件保存。账号监控目标套件、后端 `vet/build`、前端类型检查/构建、relay-ops 全量 Go 测试、生产同构 pnpm 9 frozen install 和 Linux/amd64 镜像构建通过；后端全量测试仍有既有 `usage_log_repo` 测试夹具字段数回归，非本事项代码。发布修复提交 `a0f343588` 已推送到 `origin/main`，合格候选为 `xingqiao-sub2api@sha256:dc5344a63881fbff40a360f613165f694b2f2c652d3c4ac0ef7ad015455699fa`。2026-08-02 正式 host executor 预检返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒，并在启动候选、切流量和执行迁移前停止；生产仍运行提交 `638ce8f01a9c1879f76c0415fe90ef78c782d089`，评分权重接口仍为 `404`。**状态：进行中（已推送、候选已构建并通过预检；待用户明确授权“允许停机部署”后执行维护发布与线上验证）**。
+13. **Cloudflare Free 公网入口迁移**：保持 `api.xingqiaolab.top` 和首尔源站不变，将权威 DNS 从 DNSPod 迁移到 Cloudflare Free；区域与边缘证书激活后才开启 `api` 橙色云，并以受影响 Mac 的 TLS 1.2/1.3、健康请求、真实 Codex 流式请求和站内日志作为保留门禁。**状态：进行中（已确认设计；正在采集直连基线，尚未修改权威 NS 或开启代理）**。
 
 ## 生产工程代码/配置已部署并验证（18 项）
 

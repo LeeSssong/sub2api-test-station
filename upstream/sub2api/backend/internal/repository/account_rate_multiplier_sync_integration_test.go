@@ -33,6 +33,11 @@ func TestManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesC
 		Platform:    service.PlatformOpenAI,
 		Type:        service.AccountTypeAPIKey,
 		Credentials: map[string]any{"api_key": "sk-integration"},
+		Extra: map[string]any{
+			service.UpstreamBillingProbeEnabledExtraKey:         true,
+			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
+			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+		},
 	})
 	t.Cleanup(func() {
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
@@ -55,7 +60,8 @@ func TestManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesC
 		ReceivedAt: &observedAt,
 		Data:       map[string]any{"effective_rate_multiplier": 0.249975},
 	}
-	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(ctx, loaded, snapshot))
+	newRate := 0.25
+	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(ctx, loaded, snapshot, &newRate))
 
 	var persisted string
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
@@ -66,7 +72,7 @@ func TestManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesC
 	reloaded, err := repo.GetByID(ctx, account.ID)
 	require.NoError(t, err)
 	require.Equal(t, 0.25, reloaded.BillingRateMultiplier())
-	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(ctx, reloaded, snapshot), "a repeated high-precision probe must be a multiplier no-op")
+	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(ctx, reloaded, snapshot, &newRate), "a repeated high-precision probe must be a multiplier no-op")
 
 	auditLog.Stop()
 	auditStopped = true
@@ -184,7 +190,7 @@ func TestProbeTransactionStartedBeforeNormalEditPublishesStrictlyNewerCacheVersi
 		ReceivedAt:    &observedAt,
 		Data:          map[string]any{"source": "version-order-integration"},
 	}
-	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(dbent.NewTxContext(ctx, probeTx), probeInput, snapshot))
+	require.NoError(t, repo.UpdateUpstreamBillingProbeSnapshot(dbent.NewTxContext(ctx, probeTx), probeInput, snapshot, nil))
 	require.NoError(t, probeTx.Commit())
 	probeCommitted = true
 

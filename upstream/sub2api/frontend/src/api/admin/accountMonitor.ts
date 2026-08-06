@@ -48,6 +48,15 @@ export interface AccountMonitorMultiplier {
   sample_count: number
 }
 
+export interface AccountMonitorBalance {
+  value_usd?: number | null
+  source?: 'sub2api' | 'newapi' | string
+  status: 'ok' | 'stale' | 'failed' | 'unsupported' | 'unavailable' | string
+  observed_at?: string | null
+  last_attempt_at?: string | null
+  failure_code?: string | null
+}
+
 export interface AccountMonitorScoreWeights {
   cost: number
   success: number
@@ -134,7 +143,9 @@ export interface AccountMonitorAccount {
   cost_mode?: 'multiplier' | 'procurement' | string
   cost_score?: number
   procurement_cost_cny?: number | null
+  estimated_usable_quota_usd?: number | null
   procurement_cost_effective_at?: string | null
+  balance?: AccountMonitorBalance | null
   expires_at?: string | null
   today_stats?: WindowStats | null
   usage_windows?: AccountMonitorUsageWindow[]

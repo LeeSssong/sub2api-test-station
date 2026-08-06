@@ -29,10 +29,12 @@ import type {
 
 export interface AccountProcurementCostUpdate {
   procurement_cost_cny: number | null
+  estimated_usable_quota_usd: number | null
 }
 
 export interface AccountWithProcurementCost extends Account {
   procurement_cost_cny?: number | null
+  estimated_usable_quota_usd?: number | null
   procurement_cost_effective_at?: string | null
 }
 
@@ -209,8 +211,12 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
 export async function updateProcurementCost(
   id: number,
   cost: number | null,
+  estimatedQuotaUSD: number | null,
 ): Promise<AccountWithProcurementCost> {
-  const payload: AccountProcurementCostUpdate = { procurement_cost_cny: cost }
+  const payload: AccountProcurementCostUpdate = {
+    procurement_cost_cny: cost,
+    estimated_usable_quota_usd: estimatedQuotaUSD,
+  }
   const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload)
   return data
 }

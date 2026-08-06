@@ -122,7 +122,7 @@
               aria-label="编辑评分权重"
               @click="openScoreDialog"
             >
-              <Icon name="settings" size="sm" />
+              <Icon name="edit" size="sm" />
             </button>
           </div>
           <div v-else class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
@@ -156,8 +156,7 @@
           :selected-range="activeRange"
           @refresh="handleRunOne"
           @update-priority="updatePriority"
-          @update-procurement-cost="updateProcurementCost"
-          @update-multiplier="updateMultiplier"
+          @edit-cost="openCostDialog"
         />
       </section>
       </div>
@@ -172,6 +171,18 @@
         @close="showScoreDialog = false"
         @save="saveScoreWeights"
         @reset="resetScoreWeights"
+      />
+      <AccountMonitorCostDialog
+        v-if="showCostDialog && selectedCostAccount"
+        :show="showCostDialog"
+        :account="selectedCostAccount"
+        :saving="savingCost"
+        :error="costDialogError"
+        @close="closeCostDialog"
+        @save-procurement="saveProcurementCost"
+        @save-multiplier="saveAccountMultiplier"
+        @restore-auto="restoreAccountMultiplier"
+        @clear="clearProcurementCost"
       />
     </div>
   </AppLayout>
@@ -190,6 +201,7 @@ import type {
   AccountMonitorScoreWeights,
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
+import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
 import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -236,6 +248,10 @@ const concurrencyByID = ref<Record<number, CardConcurrency>>({})
 const showScoreDialog = ref(false)
 const savingScoreWeights = ref(false)
 const scoreWeightsError = ref<string | null>(null)
+const showCostDialog = ref(false)
+const savingCost = ref(false)
+const costDialogError = ref<string | null>(null)
+const selectedCostAccount = ref<AccountMonitorAccount | null>(null)
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
@@ -472,30 +488,95 @@ async function updatePriority(accountID: number, priority: number, completion: S
   }
 }
 
-async function updateProcurementCost(accountID: number, cost: number | null, completion: SaveCompletion) {
+function openCostDialog(account: AccountMonitorAccount): void {
+  selectedCostAccount.value = account
+  costDialogError.value = null
+  showCostDialog.value = true
+}
+
+function closeCostDialog(): void {
+  if (savingCost.value) return
+  showCostDialog.value = false
+  costDialogError.value = null
+}
+
+async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
   try {
-    await adminAPI.accounts.updateProcurementCost(accountID, cost)
-    await load(activeRange.value)
-    completion.resolve()
-    appStore.showSuccess(cost == null ? '采购成本已清空' : '采购成本已更新')
+    await adminAPI.accounts.updateProcurementCost(account.account_id, cost, estimatedQuotaUSD)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) return
+    showCostDialog.value = false
+    appStore.showSuccess('采购成本与预计额度已更新')
   } catch (reason: unknown) {
-    completion.reject(reason)
-    appStore.showError(extractApiErrorMessage(reason, cost == null ? '清空采购成本失败' : '保存采购成本失败'))
+    costDialogError.value = extractApiErrorMessage(reason, '保存采购成本失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
   }
 }
 
-async function updateMultiplier(accountID: number, multiplier: number, completion: SaveCompletion) {
+async function saveAccountMultiplier(multiplier: number) {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
   try {
-    await adminAPI.accounts.update(accountID, {
+    await adminAPI.accounts.update(account.account_id, {
       rate_multiplier: multiplier,
       rate_multiplier_policy: 'manual_override',
     })
-    await load(activeRange.value)
-    completion.resolve()
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) return
+    showCostDialog.value = false
     appStore.showSuccess('账号倍率已更新')
   } catch (reason: unknown) {
-    completion.reject(reason)
-    appStore.showError(extractApiErrorMessage(reason, '保存账号倍率失败'))
+    costDialogError.value = extractApiErrorMessage(reason, '保存账号倍率失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
+  }
+}
+
+async function restoreAccountMultiplier() {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
+  try {
+    await adminAPI.accounts.update(account.account_id, { rate_multiplier_policy: 'upstream_managed' })
+    await adminAPI.accountMonitor.runOne(account.account_id)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) return
+    showCostDialog.value = false
+    appStore.showSuccess('已恢复自动获取倍率')
+  } catch (reason: unknown) {
+    costDialogError.value = extractApiErrorMessage(reason, '恢复自动倍率失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
+  }
+}
+
+async function clearProcurementCost() {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
+  try {
+    await adminAPI.accounts.updateProcurementCost(account.account_id, null, null)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) return
+    showCostDialog.value = false
+    appStore.showSuccess('采购成本已清空')
+  } catch (reason: unknown) {
+    costDialogError.value = extractApiErrorMessage(reason, '清空采购成本失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
   }
 }
 

@@ -92,13 +92,35 @@ const AccountMonitorCardStub = defineComponent({
     account: { type: Object, required: true },
     concurrency: { type: Object, default: null },
   },
-  emits: ['updatePriority', 'updateProcurementCost', 'updateMultiplier', 'refresh'],
+  emits: ['updatePriority', 'editCost', 'refresh'],
   template: `
     <article data-test="monitor-card" :data-account-id="account.account_id">
       <span data-test="card-name">{{ account.name }}</span>
       <span data-test="card-concurrency">{{ concurrency ? concurrency.current + ' / ' + concurrency.limit : '-- / --' }}</span>
       <span v-if="concurrency?.delayed" data-test="card-delayed">数据延迟</span>
+      <button data-test="edit-cost" type="button" @click="$emit('editCost', account)">edit</button>
     </article>
+  `,
+})
+
+const AccountMonitorCostDialogStub = defineComponent({
+  name: 'AccountMonitorCostDialogStub',
+  props: {
+    show: { type: Boolean, required: true },
+    account: { type: Object, required: true },
+    saving: { type: Boolean, default: false },
+    error: { type: String, default: null },
+  },
+  emits: ['close', 'saveProcurement', 'saveMultiplier', 'restoreAuto', 'clear'],
+  template: `
+    <div v-if="show" data-test="cost-dialog">
+      <span data-test="dialog-account">{{ account.account_id }}</span>
+      <span v-if="error" data-test="dialog-error">{{ error }}</span>
+      <button data-test="dialog-save-procurement" @click="$emit('saveProcurement', 4, 60)">save procurement</button>
+      <button data-test="dialog-save-multiplier" @click="$emit('saveMultiplier', 0.08)">save multiplier</button>
+      <button data-test="dialog-restore-auto" @click="$emit('restoreAuto')">restore</button>
+      <button data-test="dialog-clear" @click="$emit('clear')">clear</button>
+    </div>
   `,
 })
 
@@ -229,6 +251,7 @@ function mountView(options: { useRealCard?: boolean } = {}) {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         ...(options.useRealCard ? {} : { AccountMonitorCard: AccountMonitorCardStub }),
+        AccountMonitorCostDialog: AccountMonitorCostDialogStub,
         Icon: true,
       },
     },
@@ -735,51 +758,51 @@ describe('admin account monitor view V3', () => {
     expect(showSuccess).toHaveBeenCalledWith('账号探测与监控卡片已刷新')
   })
 
-  it('settles card save completions and reloads the current successful range after each save', async () => {
+  it('opens the page-level cost dialog and persists procurement, multiplier, restore, and clear actions', async () => {
     const wrapper = mountView()
     await flushPromises()
     await selectRange(wrapper, '7d')
-    list.mockClear()
-
-    const priorityCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 4, priorityCompletion)
-    await flushPromises()
-
-    expect(updateAccount).toHaveBeenCalledWith(10, { priority: 4 })
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(priorityCompletion.resolve).toHaveBeenCalledOnce()
-    expect(priorityCompletion.reject).not.toHaveBeenCalled()
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    expect(wrapper.get('[data-test="cost-dialog"]').get('[data-test="dialog-account"]').text()).toBe('10')
 
     list.mockClear()
-    const costCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateProcurementCost', 10, 125.5, costCompletion)
+    await wrapper.get('[data-test="dialog-save-procurement"]').trigger('click')
     await flushPromises()
-
-    expect(updateProcurementCost).toHaveBeenCalledWith(10, 125.5)
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, 4, 60)
     expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(costCompletion.resolve).toHaveBeenCalledOnce()
-    expect(costCompletion.reject).not.toHaveBeenCalled()
 
+    await card.get('[data-test="edit-cost"]').trigger('click')
     list.mockClear()
-    const multiplierCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateMultiplier', 10, 0.08, multiplierCompletion)
+    await wrapper.get('[data-test="dialog-save-multiplier"]').trigger('click')
+    await flushPromises()
+    expect(updateAccount).toHaveBeenCalledWith(10, { rate_multiplier: 0.08, rate_multiplier_policy: 'manual_override' })
+
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    list.mockClear()
+    await wrapper.get('[data-test="dialog-restore-auto"]').trigger('click')
+    await flushPromises()
+    expect(updateAccount).toHaveBeenCalledWith(10, { rate_multiplier_policy: 'upstream_managed' })
+    expect(runOne).toHaveBeenCalledWith(10)
+
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    list.mockClear()
+    await wrapper.get('[data-test="dialog-clear"]').trigger('click')
+    await flushPromises()
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, null, null)
+  })
+
+  it('keeps the cost dialog open and exposes the API error when a save fails', async () => {
+    updateProcurementCost.mockRejectedValueOnce(new Error('采购成本保存失败'))
+    const wrapper = mountView()
     await flushPromises()
 
-    expect(updateAccount).toHaveBeenCalledWith(10, {
-      rate_multiplier: 0.08,
-      rate_multiplier_policy: 'manual_override',
-    })
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(multiplierCompletion.resolve).toHaveBeenCalledOnce()
-    expect(multiplierCompletion.reject).not.toHaveBeenCalled()
-
-    updateAccount.mockRejectedValueOnce(new Error('priority rejected'))
-    const rejectedCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 6, rejectedCompletion)
+    await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+    await wrapper.get('[data-test="dialog-save-procurement"]').trigger('click')
     await flushPromises()
 
-    expect(rejectedCompletion.resolve).not.toHaveBeenCalled()
-    expect(rejectedCompletion.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'priority rejected' }))
+    expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('采购成本保存失败')
   })
 
   it('invokes and renders no revenue, operations, profit, accounting, ledger, history, reconciliation, adjustment, or exception surface', async () => {

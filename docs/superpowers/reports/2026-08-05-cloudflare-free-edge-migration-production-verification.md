@@ -120,15 +120,16 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 - The logged-in Chrome tab remained on `https://console.dnspod.cn/dns/list/detail/xingqiaolab.top/records`, but screenshot capture, DOM reads, and page scroll all timed out before the remaining rows could be observed.
 - Cloudflare DNSSEC Disabled was not inferred: no explicit Disabled control was observed in this round, so that gate remains open.
 
-### Fix round 3 correction evidence (2026-08-06)
+### Fix round 3 interim evidence (2026-08-06; superseded)
 
-- The logged-in Cloudflare DNS Records table was rechecked after the approved correction: `qcloudhk2048._domainkey` TXT is present and `resend._domainkey` is absent. No TXT content was copied or persisted.
+- An incomplete record view led to the incorrect interim conclusion that `resend._domainkey` should be absent. The complete DNSPod inventory later proved both DKIM records are enabled, so this conclusion is superseded by round 4. No TXT content was copied or persisted.
 - `api.xingqiaolab.top` remains A `43.133.75.82` with proxy status `DNS only`; the Cloudflare zone remains Pending.
 - No Tencent Cloud/DNSPod authoritative NS change, orange-cloud proxy enablement, container restart, or other production-service change was performed.
-- The Cloudflare DNS Settings page shows `Enable DNSSEC`, explicitly proving DNSSEC is currently Disabled. The remaining full DNS parity gates must still be verified before Task 3 can proceed.
+- The Cloudflare DNS Settings page shows `Enable DNSSEC`, explicitly proving DNSSEC is currently Disabled.
 
 ### Fix round 4 full-parity evidence (2026-08-06)
 
-- Authenticated DNSPod table extraction showed 14 rows: 12 enabled rows (default line, TTL 600) and 2 paused `inbox` forwarding MX rows. Cloudflare was corrected to contain the 12 enabled rows; paused rows were intentionally excluded.
-- Cloudflare post-correction verification showed 12 of 200 records and confirmed the added `resend._domainkey`, `inbox` TXT, `mail.inbox` A (DNS only), and `inbox` MX (priority 5), while retaining the previously imported records.
+- Authenticated DNSPod table extraction showed 14 rows: 12 enabled rows and 2 paused `inbox` forwarding MX rows to `mx1.forwardemail.net` and `mx2.forwardemail.net`, both priority 10. Cloudflare was corrected to contain the 12 enabled rows; the paused rows were intentionally excluded because Cloudflare has no equivalent paused state.
+- Cloudflare post-correction verification showed 12 of 200 records and confirmed restored `resend._domainkey` TXT, added `inbox` TXT, `mail.inbox` A `43.133.75.82` (DNS only), and `inbox` MX to `mail.inbox.xingqiaolab.top` (priority 5), while retaining `qcloudhk2048._domainkey` and the previously imported records. No TXT content was copied or persisted.
 - No authoritative NS, proxy status for `api`/`shop`, DNSSEC control, or production service was changed during the correction.
+- Task 2 remains in progress pending independent review of this corrected parity evidence.

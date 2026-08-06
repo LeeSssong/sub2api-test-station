@@ -142,7 +142,7 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
     expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1962 ms')
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('成本待确认')
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
 
     for (const label of ['分组倍率', '营收', '利润', '对账', '账务', '上游真实扣费', '用户实际计费']) {
@@ -230,6 +230,52 @@ describe('AccountMonitorCard', () => {
     expect(cost).toContain('预计可用额度 120 USD')
     expect(cost).toContain('预计成本倍率 1.00×')
     expect(cost).not.toContain('0.58×')
+  })
+
+  it('shows a saved manual multiplier for an OpenAI API Key account', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'apikey',
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
+  it('uses the OpenAI API Key multiplier even when stale procurement fields exist', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'apikey',
+        procurement_cost_cny: 120,
+        estimated_usable_quota_usd: 120,
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('0.08×')
+    expect(cost).not.toContain('¥120.00')
+  })
+
+  it('uses procurement as the sole source for OpenAI non-API-Key accounts', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'oauth',
+        procurement_cost_cny: null,
+        estimated_usable_quota_usd: null,
+        multiplier: { value: 0.08, source: 'declared', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('--')
+    expect(cost).toContain('成本待确认')
+    expect(cost).not.toContain('0.08×')
   })
 
   it('keeps procurement cost actions below the metric detail so the V3 five-tile label does not collapse', () => {

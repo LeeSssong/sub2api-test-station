@@ -221,20 +221,31 @@ const probeSummary = computed(() => {
   return `${timelinePoints.value.length} 次结果 · ${successes} 成功 · ${failures} 失败`
 })
 const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
-const nativeMultiplierAvailable = computed(() => {
+const multiplierAvailable = computed(() => {
   const multiplier = props.account.multiplier
-  return multiplier.source !== 'manual' && multiplier.status === 'ok' && multiplier.value != null && Number.isFinite(multiplier.value)
+  return multiplier.value != null
+    && Number.isFinite(multiplier.value)
+    && (multiplier.source === 'manual' || multiplier.status === 'ok')
 })
 const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && props.account.account_type === 'apikey')
+const isOpenAINonAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && !isOpenAIAPIKey.value)
 const costValue = computed(() => {
+  if (isOpenAIAPIKey.value) return multiplierAvailable.value ? formatMultiplier(props.account.multiplier.value) : '--'
+  if (isOpenAINonAPIKey.value) return props.account.procurement_cost_cny != null ? `¥${props.account.procurement_cost_cny.toFixed(2)}` : '--'
   if (props.account.procurement_cost_cny != null) return `¥${props.account.procurement_cost_cny.toFixed(2)}`
-  if (nativeMultiplierAvailable.value) return formatMultiplier(props.account.multiplier.value)
+  if (multiplierAvailable.value) return formatMultiplier(props.account.multiplier.value)
   return '--'
 })
 const costDetail = computed(() => {
+  if (isOpenAIAPIKey.value) {
+    if (props.account.multiplier.source === 'manual' && multiplierAvailable.value) return '手工录入倍率'
+    if (multiplierAvailable.value) return '上游托管倍率'
+    return '未录入账号倍率'
+  }
+  if (isOpenAINonAPIKey.value && props.account.procurement_cost_cny == null) return '成本待确认'
   if (props.account.procurement_cost_cny == null) {
     if (props.account.multiplier.source === 'manual') return '手工录入倍率'
-    if (nativeMultiplierAvailable.value) return '上游托管倍率'
+    if (multiplierAvailable.value) return '上游托管倍率'
     return '未录入账号倍率'
   }
   const quota = props.account.estimated_usable_quota_usd

@@ -805,6 +805,25 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('采购成本保存失败')
   })
 
+  it.each([
+    'dialog-save-procurement',
+    'dialog-save-multiplier',
+    'dialog-restore-auto',
+    'dialog-clear',
+  ])('surfaces a current-range reload failure inside the dialog for %s', async (button) => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('监控数据刷新失败'))
+    await wrapper.get(`[data-test="${button}"]`).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('最新监控卡片加载失败')
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
   it('invokes and renders no revenue, operations, profit, accounting, ledger, history, reconciliation, adjustment, or exception surface', async () => {
     const wrapper = mountView()
     await flushPromises()

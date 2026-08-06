@@ -500,6 +500,12 @@ function closeCostDialog(): void {
   costDialogError.value = null
 }
 
+function reportCostReloadFailure(operation: string): void {
+  const message = `${operation}成功，但最新监控卡片加载失败，请重试`
+  costDialogError.value = message
+  appStore.showError(message)
+}
+
 async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
   const account = selectedCostAccount.value
   if (!account || savingCost.value) return
@@ -508,7 +514,10 @@ async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
   try {
     await adminAPI.accounts.updateProcurementCost(account.account_id, cost, estimatedQuotaUSD)
     const reloaded = await load(activeRange.value, { notifyError: false })
-    if (!reloaded) return
+    if (!reloaded) {
+      reportCostReloadFailure('保存采购成本')
+      return
+    }
     showCostDialog.value = false
     appStore.showSuccess('采购成本与预计额度已更新')
   } catch (reason: unknown) {
@@ -530,7 +539,10 @@ async function saveAccountMultiplier(multiplier: number) {
       rate_multiplier_policy: 'manual_override',
     })
     const reloaded = await load(activeRange.value, { notifyError: false })
-    if (!reloaded) return
+    if (!reloaded) {
+      reportCostReloadFailure('保存账号倍率')
+      return
+    }
     showCostDialog.value = false
     appStore.showSuccess('账号倍率已更新')
   } catch (reason: unknown) {
@@ -550,7 +562,10 @@ async function restoreAccountMultiplier() {
     await adminAPI.accounts.update(account.account_id, { rate_multiplier_policy: 'upstream_managed' })
     await adminAPI.accountMonitor.runOne(account.account_id)
     const reloaded = await load(activeRange.value, { notifyError: false })
-    if (!reloaded) return
+    if (!reloaded) {
+      reportCostReloadFailure('恢复自动倍率')
+      return
+    }
     showCostDialog.value = false
     appStore.showSuccess('已恢复自动获取倍率')
   } catch (reason: unknown) {
@@ -569,7 +584,10 @@ async function clearProcurementCost() {
   try {
     await adminAPI.accounts.updateProcurementCost(account.account_id, null, null)
     const reloaded = await load(activeRange.value, { notifyError: false })
-    if (!reloaded) return
+    if (!reloaded) {
+      reportCostReloadFailure('清空采购成本')
+      return
+    }
     showCostDialog.value = false
     appStore.showSuccess('采购成本已清空')
   } catch (reason: unknown) {

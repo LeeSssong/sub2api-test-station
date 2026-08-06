@@ -30,7 +30,7 @@ Tasks 1-4 are implemented and independently reviewed. The earlier whole-branch v
 - Task 4: minor (deferred): non-API-Key desktop card retains an empty sixth metric track
 - Task 4: minor (deferred): multiplier dialog does not surface freshness/status metadata
 - Task 5: implementation complete at `ded650e06` — replaced custom multiplier policy and measurement value with official `accounts.rate_multiplier + upstream_billing_rate_sync_enabled`; migration 198 converts and deletes legacy JSON data without runtime compatibility. Fresh backend tests/vet and frontend focused tests/lint/typecheck/build passed; `git diff --check` and legacy-symbol search passed.
-- Task 6: in progress — push updated candidate and rerun the production migration gate. Independent reviewer dispatch was unavailable during the expedited pass; commit-level diff package `review-34b32ca6a..ded650e06.diff` is preserved for follow-up review.
+- Task 6: in progress — compatibility fix `4282c487d` accepts both `apikey` and `api_key`, keeps API Key cost bound to the native multiplier, and adds reload/card regression coverage. Fresh whole-branch independent review is running; push and production mutation have not yet occurred.
 
 ## Production Gate
 
@@ -42,3 +42,4 @@ Zero-downtime deployment is authorized. Any `downtime_required=true`, migration 
 - Native multiplier correction (2026-08-06): independent audit found the candidate still writes custom policy and persists a second measurement value, so Monitor score can diverge from real billing. User approved a one-time migration to official fields with no application compatibility branch; Task 5 now owns removal and migration before production gate recheck.
 - Production read-only inventory (2026-08-06): 74 non-deleted accounts; 38 legacy policy rows (all `upstream_managed`, zero `manual_override`), 16 measurement rows, and 29 OpenAI API-key rows with managed policy plus probe enabled. No production mutation was performed.
 - Merged migration set: production's full set plus `197_account_estimated_usable_quota.sql`; canonical hash `9f341792b3dcf631b84b6c8701150f471cbe803c842ce4a99f471374a05b2627`. Production gate must now be rechecked against this exact candidate.
+- Native convergence migration set: production's full set plus migrations 197 and 198; canonical candidate hash `0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d`, while the active production hash remains `ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39`. Under `ops/deploy-sub2api-blue-green-host.sh`, this mismatch reaches the fail-closed `migration_set_changed` downtime gate unless a separately reviewed maintenance hash pair is explicitly authorized. No production mutation has been performed.

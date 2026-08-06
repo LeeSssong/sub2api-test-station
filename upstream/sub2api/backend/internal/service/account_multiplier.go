@@ -223,7 +223,7 @@ func decodeNewAPINumber(body []byte, field string) (float64, error) {
 	return value, nil
 }
 
-func (s *AccountMultiplierService) Resolve(account *Account, _ time.Time) AccountMonitorMultiplier {
+func (s *AccountMultiplierService) Resolve(account *Account, now time.Time) AccountMonitorMultiplier {
 	if account == nil {
 		return unavailableAccountMultiplier()
 	}
@@ -234,6 +234,28 @@ func (s *AccountMultiplierService) Resolve(account *Account, _ time.Time) Accoun
 	value := account.BillingRateMultiplier()
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return AccountMonitorMultiplier{Source: source, Status: AccountMonitorMultiplierStatusFailed}
+	}
+	if source == AccountMonitorMultiplierSourceDeclared {
+		if now.IsZero() {
+			now = s.currentTime()
+		}
+		snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
+		status := AccountMonitorMultiplierStatusUnavailable
+		observedAt := snapshot.ReceivedAt
+		if snapshot != nil {
+			switch snapshot.Status {
+			case UpstreamBillingProbeStatusOK:
+				status = AccountMonitorMultiplierStatusOK
+				if snapshot.FreshUntil != nil && !snapshot.FreshUntil.After(now) {
+					status = AccountMonitorMultiplierStatusStale
+				}
+			case UpstreamBillingProbeStatusUnsupported:
+				status = AccountMonitorMultiplierStatusUnsupported
+			case UpstreamBillingProbeStatusFailed:
+				status = AccountMonitorMultiplierStatusFailed
+			}
+		}
+		return AccountMonitorMultiplier{Value: float64PointerCopy(value), Source: source, Status: status, ObservedAt: observedAt}
 	}
 	return AccountMonitorMultiplier{
 		Value:       float64PointerCopy(value),

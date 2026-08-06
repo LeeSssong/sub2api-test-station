@@ -50,10 +50,9 @@ export default {
     },
     multiplier: {
       declared: 'Declared upstream',
-      measured: 'Measured from quota',
       stale: 'Multiplier expired',
       unsupported: 'Not declared upstream',
-      failed: 'Measurement failed',
+      failed: 'Automatic probe failed',
       unavailable: 'No multiplier probe',
     },
     today: {

@@ -67,6 +67,40 @@ func TestRateMultiplierSingleSourceDerivesManualSourceFromOfficialSyncSwitch(t *
 	}
 }
 
+func TestRateMultiplierAutomaticUsesProbeFreshnessMetadata(t *testing.T) {
+	now := time.Date(2026, 8, 6, 9, 30, 0, 0, time.UTC)
+	nativeRate := 0.25
+	account := &Account{RateMultiplier: &nativeRate, Extra: map[string]any{
+		UpstreamBillingRateSyncEnabledExtraKey: true,
+		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+			Status:     UpstreamBillingProbeStatusOK,
+			ReceivedAt: probeTimePtr(now.Add(-2 * time.Hour)),
+			FreshUntil: probeTimePtr(now.Add(-time.Minute)),
+		},
+	}}
+
+	got := NewAccountMultiplierService(nil, nil, nil).Resolve(account, now)
+	if got.Status != AccountMonitorMultiplierStatusStale || got.Value == nil || *got.Value != nativeRate {
+		t.Fatalf("Resolve() = %#v, want stale native multiplier", got)
+	}
+	if got.ObservedAt == nil || !got.ObservedAt.Equal(now.Add(-2*time.Hour)) {
+		t.Fatalf("Resolve().ObservedAt = %#v, want probe received_at", got.ObservedAt)
+	}
+}
+
+func TestRateMultiplierAutomaticPreservesNativeValueOnProbeFailure(t *testing.T) {
+	nativeRate := 0.4
+	account := &Account{RateMultiplier: &nativeRate, Extra: map[string]any{
+		UpstreamBillingRateSyncEnabledExtraKey: true,
+		UpstreamBillingProbeExtraKey:           UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusFailed},
+	}}
+
+	got := NewAccountMultiplierService(nil, nil, nil).Resolve(account, time.Now())
+	if got.Status != AccountMonitorMultiplierStatusFailed || got.Value == nil || *got.Value != nativeRate {
+		t.Fatalf("Resolve() = %#v, want failed status with native multiplier", got)
+	}
+}
+
 func TestRateMultiplierSingleSourceUsesBillingDefaultForLegacyNilColumn(t *testing.T) {
 	got := NewAccountMultiplierService(nil, nil, nil).Resolve(&Account{}, time.Now())
 	if got.Value == nil || *got.Value != 1 || got.Source != AccountMonitorMultiplierSourceManual || got.Status != AccountMonitorMultiplierStatusOK {

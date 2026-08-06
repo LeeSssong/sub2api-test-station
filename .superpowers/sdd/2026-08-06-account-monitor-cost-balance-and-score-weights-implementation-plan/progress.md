@@ -12,9 +12,9 @@
 
 ## Status
 
-`task_1_in_progress`
+`task_5_in_progress`
 
-User approved subagent-driven execution on a fresh worktree based on main. Dependencies are installed and the baseline is clean. Task 1 is ready for dispatch; business code is unchanged and production is unchanged.
+Tasks 1-4 are implemented and independently reviewed. Task 5 focused verification and whole-branch review are clean; visual verification, push, production gate, deployment, and online verification remain. Production is unchanged.
 
 ## Baseline Verification
 
@@ -23,11 +23,13 @@ User approved subagent-driven execution on a fresh worktree based on main. Depen
 
 ## Tasks
 
-- Task 1: in_progress — estimated quota field and unified cost scoring
-- Task 2: pending — balance snapshot and explicit refresh policy
-- Task 3: pending — restore group score-weight entry
-- Task 4: pending — lightweight cost dialog and balance card
-- Task 5: pending — focused verification, whole-branch review, push, and production gate
+- Task 1: completed — estimated quota field and unified cost scoring; final reviewed commit `d2cc2d0dd`
+- Task 2: completed — balance snapshot and explicit refresh policy; fix round 1 reviewed and approved at `32b9c2602`
+- Task 3: complete — restored group score-weight entry; fix round 1 independently re-reviewed and approved at `5f45f1b0d`
+- Task 4: complete — initial implementation `3ebb24a2e`, fix `95a5277c6`; scoped re-review clean
+- Task 4: minor (deferred): non-API-Key desktop card retains an empty sixth metric track
+- Task 4: minor (deferred): multiplier dialog does not surface freshness/status metadata
+- Task 5: in progress — focused verification passed (backend tests/vet; frontend 53 tests, lint, typecheck, build); whole-branch review finding fixed in `13a318be7` and scoped re-review clean; visual verification, push, and production gate remain
 
 ## Production Gate
 

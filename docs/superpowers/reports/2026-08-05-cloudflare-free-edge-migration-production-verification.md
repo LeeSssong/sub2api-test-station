@@ -74,7 +74,7 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 
 - **Cloudflare 区域状态：** Free `$0` 方案已选中，`Continue to activation` 已成功提交；`xingqiaolab.top` 区域已创建，当前页面显示等待注册商 nameserver 传播（Pending）。
 - **Cloudflare 分配 NS：** `brian.ns.cloudflare.com.`、`gabriella.ns.cloudflare.com.`。本任务仅记录 Cloudflare 分配结果，没有在腾讯云/DNSPod 修改权威 NS。
-- **Cloudflare 导入记录：** DNS Records 页面可见 8 条记录，按类型为 `A 2`、`MX 2`、`TXT 4`，无 `AAAA`。`api.xingqiaolab.top` 和 `shop.xingqiaolab.top` 的 A 目标均为 `43.133.75.82`；MX 目标分别为根域 `mxbiz1.qq.com`（优先级 10）与 `send` 子域 `feedback-smtp.ap-northeast-1.amazonses.com`（优先级 10）。TXT 仅记录名称/数量（根域、`_dmarc`、`send`、`resend._domainkey`），未记录任何 TXT 内容。
+- **Cloudflare DNS 记录：** 2026-08-06 的登录态 DNS Records 页面已复核并纠正 DKIM 名称：`qcloudhk2048._domainkey` TXT 已存在，错误的 `resend._domainkey` 已不存在。`api.xingqiaolab.top` 仍为 A `43.133.75.82` 且保持 `DNS only`。本报告仅记录 TXT 名称，未记录任何 TXT 内容。早期导入证据中的其他记录数量与目标尚需结合完整表格做最终字段级对账。
 - **代理状态：** 主线程已在确认页将 `api` 与 `shop` 两条 A 记录改为 `DNS only`；本子任务未再次修改，也未开启橙云。
 - **DNSPod 逐条元数据核验：** 公共 DNS 只能交叉确认名称、类型、目标和 MX 优先级；以下 DNSPod 管理台字段仍未能读取，不能据此证明“每条已启用记录”的完整对账：
 
@@ -89,9 +89,9 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
   | `send` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
   | `@` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
 
-  因此目前只能确认部分 DNSPod 行的线路/TTL/enabled state，不能宣称所有 8 条记录均已完成字段级对账；未记录任何 TXT 值。截图还确认实际启用的 DNSPod DKIM 名称是 `qcloudhk2048._domainkey`，而既有 Cloudflare 导入证据记录的是 `resend._domainkey`。该名称不一致是明确的 parity blocker，除非 Cloudflare 记录表复核后证明已经纠正。
-- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，说明当前没有注册商侧 DS 阻塞；但 Cloudflare DNSSEC 设置页的只读导航在本轮超时，未能证明 Cloudflare 控制台明确显示 Disabled/关闭。
-- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、`api`/`shop` DNS-only 状态和公共 DS 结果已记录；其余 DNSPod 行的线路/TTL/enabled state、Cloudflare DNSSEC Disabled，以及 `qcloudhk2048._domainkey` 与 Cloudflare 既有 `resend._domainkey` 的名称差异仍未解决。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。
+  因此目前只能确认部分 DNSPod 行的线路/TTL/enabled state，不能宣称所有 8 条记录均已完成字段级对账；未记录任何 TXT 值。DNSPod 启用的 DKIM 名称为 `qcloudhk2048._domainkey`；2026-08-06 的 Cloudflare 记录表复核已确认该名称存在且 `resend._domainkey` 不存在，因此该特定名称差异已解决。
+- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，且 2026-08-06 登录态 Cloudflare DNS Settings 页面显示操作按钮 `Enable DNSSEC`，证明 Cloudflare DNSSEC 当前为 Disabled/未启用。
+- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、`api` DNS-only 状态、DKIM 名称纠正和 Cloudflare DNSSEC Disabled 已记录；其余 DNSPod 行的线路/TTL/enabled state 与 Cloudflare 完整记录的字段级对账仍未验证。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启或变更生产服务。
 
 ### Fix round 1 review evidence (2026-08-06)
 
@@ -115,3 +115,10 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 - This contradicts the earlier Cloudflare inventory evidence naming `resend._domainkey`; record counts/types alone are therefore insufficient, and Task 3 remains blocked pending a Cloudflare record-table recheck/correction.
 - The logged-in Chrome tab remained on `https://console.dnspod.cn/dns/list/detail/xingqiaolab.top/records`, but screenshot capture, DOM reads, and page scroll all timed out before the remaining rows could be observed.
 - Cloudflare DNSSEC Disabled was not inferred: no explicit Disabled control was observed in this round, so that gate remains open.
+
+### Fix round 3 correction evidence (2026-08-06)
+
+- The logged-in Cloudflare DNS Records table was rechecked after the approved correction: `qcloudhk2048._domainkey` TXT is present and `resend._domainkey` is absent. No TXT content was copied or persisted.
+- `api.xingqiaolab.top` remains A `43.133.75.82` with proxy status `DNS only`; the Cloudflare zone remains Pending.
+- No Tencent Cloud/DNSPod authoritative NS change, orange-cloud proxy enablement, container restart, or other production-service change was performed.
+- The Cloudflare DNS Settings page shows `Enable DNSSEC`, explicitly proving DNSSEC is currently Disabled. The remaining full DNS parity gates must still be verified before Task 3 can proceed.

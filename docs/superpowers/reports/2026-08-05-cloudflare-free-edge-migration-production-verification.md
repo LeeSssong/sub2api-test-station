@@ -68,13 +68,14 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 
 ## 当前门禁结论
 
-正式域名和源站保持不变；Cloudflare Free 迁移尚未进入 DNS 或代理变更阶段。下一步必须在不改变本基线边界的前提下完成 Cloudflare 记录逐条对账；在区域 Active、Universal SSL 覆盖正式域名前，不得修改权威 NS 或开启 `api` 橙色云。
+正式域名和源站保持不变；Cloudflare Free 区域已经创建并处于等待注册商 nameserver 传播的 Pending 阶段。当前权威 DNS 仍为 DNSPod，`api`/`shop` 在 Cloudflare 中保持 DNS only。下一步在修改权威 NS 前仍须执行 Task 3 的最终门禁与操作时确认；在区域 Active、Universal SSL 覆盖正式域名前，不得开启 `api` 橙色云。
 
-## Task 2：Cloudflare Free 区域与 DNS 对账证据（2026-08-05）
+## Task 2：Cloudflare Free 区域与 DNS 对账证据（2026-08-06）
 
-- **Cloudflare 方案页面：** Free `$0` 已选中，当前登录会话停留在 `confirm-scanned-records` 页面。`Continue to activation` 尚未由本子任务提交：该确认页已被主线程的浏览器会话占用，无法重复接管，因此本次仍未取得可核验的 Pending 状态或两台分配 nameserver；没有执行权威 NS 替换。
+- **Cloudflare 区域状态：** Free `$0` 方案已选中，`Continue to activation` 已成功提交；`xingqiaolab.top` 区域已创建，当前页面显示等待注册商 nameserver 传播（Pending）。
+- **Cloudflare 分配 NS：** `brian.ns.cloudflare.com.`、`gabriella.ns.cloudflare.com.`。本任务仅记录 Cloudflare 分配结果，没有在腾讯云/DNSPod 修改权威 NS。
 - **Cloudflare 导入记录：** DNS Records 页面可见 8 条记录，按类型为 `A 2`、`MX 2`、`TXT 4`，无 `AAAA`。`api.xingqiaolab.top` 和 `shop.xingqiaolab.top` 的 A 目标均为 `43.133.75.82`；MX 目标分别为根域 `mxbiz1.qq.com`（优先级 10）与 `send` 子域 `feedback-smtp.ap-northeast-1.amazonses.com`（优先级 10）。TXT 仅记录名称/数量（根域、`_dmarc`、`send`、`resend._domainkey`），未记录任何 TXT 内容。
 - **代理状态：** 主线程已在确认页将 `api` 与 `shop` 两条 A 记录改为 `DNS only`；本子任务未再次修改，也未开启橙云。
-- **DNSPod 交叉核对：** DNSPod 控制台登录页可达，但记录表在本次只读自动化读取中未稳定返回；通过当前公共 DNS 交叉查询确认权威 NS 仍为 `golf.dnspod.net.`、`train.dnspod.net.`，`api`/`shop` A 均为 `43.133.75.82`，MX 与上述两条目标一致，TXT 记录名称/数量与 Cloudflare 导入的 4 条一致。未记录 TXT 值。
-- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果；Cloudflare DNSSEC 控件未能在当前未完成的方案页面中独立核验，因此不能把“Cloudflare DNSSEC 已禁用”作为已证明条件。
-- **Task 2 判定：** **阻塞，保持进行中。** 记录类型/数量与公共 DNS 结果一致，`api`/`shop` 已为 DNS only；但 `Continue to activation` 尚未提交，Pending 状态、精确两台 nameserver 和 Cloudflare DNSSEC 开关仍未完成独立核验。在这些条件复核前，禁止进入权威 NS 迁移。
+- **DNSPod 交叉核对：** 当前公共权威 NS 仍为 `train.dnspod.net.`、`golf.dnspod.net.`；`api`/`shop` A 均为 `43.133.75.82`，MX 与上述两条目标一致，TXT 记录名称/数量与 Cloudflare 导入的 4 条一致。未记录 TXT 值。
+- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，当前不存在注册商侧 DS 阻塞；本任务未启用或修改 DNSSEC。
+- **Task 2 判定：** **完成。** Free/Pending 状态、8 条记录对账、`api`/`shop` DNS only、精确两台 Cloudflare nameserver 和无公共 DS 阻塞均已记录。Task 3 仍须在操作时确认后才能替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。

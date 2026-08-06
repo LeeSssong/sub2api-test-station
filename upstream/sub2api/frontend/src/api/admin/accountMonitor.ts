@@ -36,6 +36,47 @@ export interface AccountMonitorMultiplier {
   observed_at?: string | null
 }
 
+export type AccountMonitorCostGuardStatus =
+  | 'loss_confirmed'
+  | 'loss_observing'
+  | 'pricing_risk'
+  | 'loss_risk'
+  | 'zero_margin'
+  | 'cost_covered'
+  | 'insufficient_samples'
+  | 'unknown'
+  | string
+
+export type AccountMonitorCostSource =
+  | 'reconciled_bill'
+  | 'upstream_pricing'
+  | 'quota_measurement'
+  | 'unknown'
+  | string
+
+export type AccountMonitorUpstreamMultiplierSource =
+  | 'upstream_declared'
+  | 'upstream_pricing'
+  | 'quota_measurement'
+  | 'manual'
+  | 'unknown'
+  | string
+
+/** Lightweight, admin-only cost evidence projected for the active account group. */
+export interface AccountMonitorCostGuard {
+  upstream_multiplier?: number | null
+  upstream_multiplier_source?: AccountMonitorUpstreamMultiplierSource | null
+  equivalent_site_multiplier?: number | null
+  cost_source?: AccountMonitorCostSource | null
+  model?: string | null
+  sample_count?: number | null
+  required_sample_count?: number | null
+  group_multiplier?: number | null
+  gap?: number | null
+  status: AccountMonitorCostGuardStatus
+  observed_at?: string | null
+}
+
 export interface AccountMonitorScoreWeights {
   cost: number
   success: number
@@ -85,6 +126,7 @@ export interface AccountMonitorAccount {
   ttft_p95_ms?: number | null
   latency_p95_ms?: number | null
   multiplier: AccountMonitorMultiplier
+  cost_guard?: AccountMonitorCostGuard | null
   request_count: number
   error_count: number
   today_stats?: WindowStats | null

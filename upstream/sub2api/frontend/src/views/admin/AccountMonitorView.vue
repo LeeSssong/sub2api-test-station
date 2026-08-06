@@ -332,6 +332,7 @@ const groupLedger = ref<ReconciliationSummary | null>(null)
 const globalLifetimeLedger = ref<ReconciliationSummary | null>(null)
 const groupLifetimeLedger = ref<ReconciliationSummary | null>(null)
 const accountLedgers = ref<Record<number, ReconciliationSummary | null>>({})
+const accountCostGuards = ref<Record<number, import('@/api/admin/reconciliation').AccountMonitorCostGuard | null>>({})
 const activeGroupId = ref<number | null>(null)
 const ledgerHistoryScope = ref<OperationsScopeParams | null>(null)
 const showScoreDialog = ref(false)
@@ -361,9 +362,8 @@ const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((
 const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
 const activeGroupAccountSource = computed(() => {
   const group = activeGroup.value
-  if (group?.accounts?.length) return group.accounts
-  if (group) return accounts.value.filter((account) => account.group_ids.includes(group.id))
-  return accounts.value
+  const source = group?.accounts?.length ? group.accounts : group ? accounts.value.filter((account) => account.group_ids.includes(group.id)) : accounts.value
+  return source.map((account) => ({ ...account, cost_guard: accountCostGuards.value[account.account_id] ?? account.cost_guard ?? null }))
 })
 
 const filteredAccounts = computed(() => {
@@ -492,13 +492,23 @@ async function loadOperations() {
     }
   }
   const nextLedgers: Record<number, ReconciliationSummary | null> = {}
+  const nextCostGuards: Record<number, import('@/api/admin/reconciliation').AccountMonitorCostGuard | null> = {}
   for (const account of visibleAccounts) {
     calls.push(adminAPI.reconciliation.operations({ group_id: groupID ?? undefined, account_id: account.account_id })
       .then((summary) => { nextLedgers[account.account_id] = summary })
       .catch(() => { nextLedgers[account.account_id] = null }))
+    if (groupID !== null) {
+      const group = activeGroup.value
+      calls.push(adminAPI.reconciliation.costGuard({ account_id: account.account_id, group_id: groupID, group_multiplier: group?.rate_multiplier ?? 0 })
+        .then((guard) => { nextCostGuards[account.account_id] = guard })
+        .catch(() => { nextCostGuards[account.account_id] = null }))
+    }
   }
   await Promise.all(calls)
-  if (isCurrent()) accountLedgers.value = nextLedgers
+  if (isCurrent()) {
+    accountLedgers.value = nextLedgers
+    accountCostGuards.value = nextCostGuards
+  }
 }
 
 async function selectGroup(groupID: number) {

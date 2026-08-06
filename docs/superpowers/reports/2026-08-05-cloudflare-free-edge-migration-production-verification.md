@@ -76,6 +76,35 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 - **Cloudflare 分配 NS：** `brian.ns.cloudflare.com.`、`gabriella.ns.cloudflare.com.`。本任务仅记录 Cloudflare 分配结果，没有在腾讯云/DNSPod 修改权威 NS。
 - **Cloudflare 导入记录：** DNS Records 页面可见 8 条记录，按类型为 `A 2`、`MX 2`、`TXT 4`，无 `AAAA`。`api.xingqiaolab.top` 和 `shop.xingqiaolab.top` 的 A 目标均为 `43.133.75.82`；MX 目标分别为根域 `mxbiz1.qq.com`（优先级 10）与 `send` 子域 `feedback-smtp.ap-northeast-1.amazonses.com`（优先级 10）。TXT 仅记录名称/数量（根域、`_dmarc`、`send`、`resend._domainkey`），未记录任何 TXT 内容。
 - **代理状态：** 主线程已在确认页将 `api` 与 `shop` 两条 A 记录改为 `DNS only`；本子任务未再次修改，也未开启橙云。
-- **DNSPod 交叉核对：** 当前公共权威 NS 仍为 `train.dnspod.net.`、`golf.dnspod.net.`；`api`/`shop` A 均为 `43.133.75.82`，MX 与上述两条目标一致，TXT 记录名称/数量与 Cloudflare 导入的 4 条一致。未记录 TXT 值。
-- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，当前不存在注册商侧 DS 阻塞；本任务未启用或修改 DNSSEC。
-- **Task 2 判定：** **完成。** Free/Pending 状态、8 条记录对账、`api`/`shop` DNS only、精确两台 Cloudflare nameserver 和无公共 DS 阻塞均已记录。Task 3 仍须在操作时确认后才能替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。
+- **DNSPod 逐条元数据核验：** 公共 DNS 只能交叉确认名称、类型、目标和 MX 优先级；以下 DNSPod 管理台字段仍未能读取，不能据此证明“每条已启用记录”的完整对账：
+
+  | 主机记录 | 类型 | 目标/值记录口径 | 线路/线路类型 | TTL | 启用状态 |
+  |---|---|---|---|---|---|
+  | `api` | A | `43.133.75.82` | 未核验（DNSPod 记录页读取超时） | 未核验 | 未核验 |
+  | `shop` | A | `43.133.75.82` | 未核验（DNSPod 记录页读取超时） | 未核验 | 未核验 |
+  | `send` | MX | `feedback-smtp.ap-northeast-1.amazonses.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
+  | `@` | MX | `mxbiz1.qq.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
+  | `_dmarc` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `resend._domainkey` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `send` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `@` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+
+  因此目前只能确认 Cloudflare 导入的 8 条记录数量/类型与公共 DNS 结果一致，不能宣称已证明所有 DNSPod 线路、TTL 和 enabled state 等价；未记录任何 TXT 值。
+- **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，说明当前没有注册商侧 DS 阻塞；但 Cloudflare DNSSEC 设置页的只读导航在本轮超时，未能证明 Cloudflare 控制台明确显示 Disabled/关闭。
+- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、Cloudflare DNS-only 状态和公共 DS 结果已记录；DNSPod 每条记录的线路/TTL/enabled state 与 Cloudflare DNSSEC Disabled 仍待在可读的登录页面中复核。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。
+
+### Fix round 1 review evidence (2026-08-06)
+
+- DNSPod record-management URL reached: `https://console.dnspod.cn/dns/list/detail/xingqiaolab.top/records` (logged-in Chrome page title: `我的域名 - DNSPod-免费智能DNS解析服务商-电信_网通_教育网,智能DNS`).
+- Read-only attempts to obtain the table via `dom_cua.get_visible_dom()` and CDP `Runtime.evaluate` timed out before returning row metadata; no TXT content was emitted.
+- Cloudflare DNSSEC URL attempted: `https://dash.cloudflare.com/a2e1d7e8a44f705df43758078c7289e9/xingqiaolab.top/dns/settings`; read-only navigation timed out before a Disabled/Enabled control could be observed.
+- Safe public checks retained for context:
+
+  ```text
+  dig +short NS xingqiaolab.top
+  train.dnspod.net.
+  golf.dnspod.net.
+
+  dig +short DS xingqiaolab.top
+  (no output)
+  ```

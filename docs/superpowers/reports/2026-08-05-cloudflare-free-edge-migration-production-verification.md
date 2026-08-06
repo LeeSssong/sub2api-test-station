@@ -80,18 +80,18 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 
   | 主机记录 | 类型 | 目标/值记录口径 | 线路/线路类型 | TTL | 启用状态 |
   |---|---|---|---|---|---|
-  | `api` | A | `43.133.75.82` | 未核验（DNSPod 记录页读取超时） | 未核验 | 未核验 |
-  | `shop` | A | `43.133.75.82` | 未核验（DNSPod 记录页读取超时） | 未核验 | 未核验 |
+  | `api` | A | `43.133.75.82` | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
+  | `shop` | A | `43.133.75.82` | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
   | `send` | MX | `feedback-smtp.ap-northeast-1.amazonses.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
   | `@` | MX | `mxbiz1.qq.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
   | `_dmarc` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
-  | `resend._domainkey` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `qcloudhk2048._domainkey` | TXT | 仅记录名称，不记录值 | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
   | `send` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
   | `@` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
 
-  因此目前只能确认 Cloudflare 导入的 8 条记录数量/类型与公共 DNS 结果一致，不能宣称已证明所有 DNSPod 线路、TTL 和 enabled state 等价；未记录任何 TXT 值。
+  因此目前只能确认部分 DNSPod 行的线路/TTL/enabled state，不能宣称所有 8 条记录均已完成字段级对账；未记录任何 TXT 值。截图还确认实际启用的 DNSPod DKIM 名称是 `qcloudhk2048._domainkey`，而既有 Cloudflare 导入证据记录的是 `resend._domainkey`。该名称不一致是明确的 parity blocker，除非 Cloudflare 记录表复核后证明已经纠正。
 - **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，说明当前没有注册商侧 DS 阻塞；但 Cloudflare DNSSEC 设置页的只读导航在本轮超时，未能证明 Cloudflare 控制台明确显示 Disabled/关闭。
-- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、Cloudflare DNS-only 状态和公共 DS 结果已记录；DNSPod 每条记录的线路/TTL/enabled state 与 Cloudflare DNSSEC Disabled 仍待在可读的登录页面中复核。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。
+- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、`api`/`shop` DNS-only 状态和公共 DS 结果已记录；其余 DNSPod 行的线路/TTL/enabled state、Cloudflare DNSSEC Disabled，以及 `qcloudhk2048._domainkey` 与 Cloudflare 既有 `resend._domainkey` 的名称差异仍未解决。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启生产服务。
 
 ### Fix round 1 review evidence (2026-08-06)
 
@@ -108,3 +108,10 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
   dig +short DS xingqiaolab.top
   (no output)
   ```
+
+### Fix round 2 review evidence (2026-08-06)
+
+- User-provided current DNSPod screenshot proves the visible rows have green enabled indicators, line `默认`, TTL `600`; it visibly confirms `api` and `shop` A targets `43.133.75.82` and the enabled TXT record name `qcloudhk2048._domainkey`. No TXT value was copied or persisted.
+- This contradicts the earlier Cloudflare inventory evidence naming `resend._domainkey`; record counts/types alone are therefore insufficient, and Task 3 remains blocked pending a Cloudflare record-table recheck/correction.
+- The logged-in Chrome tab remained on `https://console.dnspod.cn/dns/list/detail/xingqiaolab.top/records`, but screenshot capture, DOM reads, and page scroll all timed out before the remaining rows could be observed.
+- Cloudflare DNSSEC Disabled was not inferred: no explicit Disabled control was observed in this round, so that gate remains open.

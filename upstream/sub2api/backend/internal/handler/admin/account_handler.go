@@ -132,12 +132,12 @@ type CreateAccountRequest struct {
 	Concurrency             int            `json:"concurrency"`
 	Priority                int            `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
-	RateMultiplierPolicy    *string        `json:"rate_multiplier_policy"`
 	LoadFactor              *int           `json:"load_factor"`
 	GroupIDs                []int64        `json:"group_ids"`
 	ExpiresAt               *int64         `json:"expires_at"`
 	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
 	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -155,7 +155,6 @@ type UpdateAccountRequest struct {
 	RateMultiplier          *float64               `json:"rate_multiplier"`
 	ProcurementCostCNY      procurementCostRequest `json:"procurement_cost_cny"`
 	EstimatedUsableQuotaUSD procurementCostRequest `json:"estimated_usable_quota_usd"`
-	RateMultiplierPolicy    *string                `json:"rate_multiplier_policy"`
 	LoadFactor              *int                   `json:"load_factor"`
 	Status                  string                 `json:"status" binding:"omitempty,oneof=active inactive error"`
 	GroupIDs                *[]int64               `json:"group_ids"`
@@ -196,7 +195,6 @@ type BulkUpdateAccountsRequest struct {
 	Concurrency             *int                      `json:"concurrency"`
 	Priority                *int                      `json:"priority"`
 	RateMultiplier          *float64                  `json:"rate_multiplier"`
-	RateMultiplierPolicy    *string                   `json:"rate_multiplier_policy"`
 	LoadFactor              *int                      `json:"load_factor"`
 	Status                  string                    `json:"status" binding:"omitempty,oneof=active inactive error"`
 	Schedulable             *bool                     `json:"schedulable"`
@@ -893,12 +891,12 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
 			RateMultiplier:        req.RateMultiplier,
-			RateMultiplierPolicy:  req.RateMultiplierPolicy,
 			LoadFactor:            req.LoadFactor,
 			GroupIDs:              req.GroupIDs,
 			ExpiresAt:             req.ExpiresAt,
 			AutoPauseOnExpired:    req.AutoPauseOnExpired,
 			ProbeEnabled:          req.ProbeEnabled,
+			RateSyncEnabled:       req.RateSyncEnabled,
 			SkipMixedChannelCheck: skipCheck,
 		})
 		if execErr != nil {
@@ -1047,7 +1045,6 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
 		RateMultiplier:        req.RateMultiplier,
 		ProcurementCost:       toServiceProcurementCostUpdate(req.ProcurementCostCNY, req.EstimatedUsableQuotaUSD),
-		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		GroupIDs:              req.GroupIDs,
@@ -1984,7 +1981,6 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 				Concurrency:           item.Concurrency,
 				Priority:              item.Priority,
 				RateMultiplier:        item.RateMultiplier,
-				RateMultiplierPolicy:  item.RateMultiplierPolicy,
 				GroupIDs:              item.GroupIDs,
 				ExpiresAt:             item.ExpiresAt,
 				AutoPauseOnExpired:    item.AutoPauseOnExpired,
@@ -2178,7 +2174,6 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		req.Concurrency != nil ||
 		req.Priority != nil ||
 		req.RateMultiplier != nil ||
-		req.RateMultiplierPolicy != nil ||
 		req.LoadFactor != nil ||
 		req.Status != "" ||
 		req.Schedulable != nil ||
@@ -2200,7 +2195,6 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		Concurrency:           req.Concurrency,
 		Priority:              req.Priority,
 		RateMultiplier:        req.RateMultiplier,
-		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		Schedulable:           req.Schedulable,

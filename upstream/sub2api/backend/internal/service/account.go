@@ -38,10 +38,7 @@ type Account struct {
 	ProcurementCostCNY         *float64
 	EstimatedUsableQuotaUSD    *float64
 	ProcurementCostEffectiveAt *time.Time
-	// RateMultiplierPolicyIntent is transient caller intent. A nil value means
-	// the repository must preserve the policy from the locked database row.
-	RateMultiplierPolicyIntent *string `json:"-"`
-	LoadFactor                 *int    // 调度负载因子；nil 表示使用 Concurrency
+	LoadFactor                 *int // 调度负载因子；nil 表示使用 Concurrency
 	Status                     string
 	ErrorMessage               string
 	LastUsedAt                 *time.Time

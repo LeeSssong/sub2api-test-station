@@ -59,6 +59,8 @@ vi.mock('vue-i18n', async () => {
 
 import CreateAccountModal from '../CreateAccountModal.vue'
 
+const legacyPolicyKey = ['rate', 'multiplier', 'policy'].join('_')
+
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
   props: { show: { type: Boolean, default: false } },
@@ -188,25 +190,35 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
-  it('creates OpenAI API key accounts in upstream-managed multiplier mode by default', async () => {
+  it('creates OpenAI API key accounts with official rate sync enabled by default', async () => {
     const wrapper = await submitApiKeyAccount('openai')
 
-    expect(wrapper.get('[data-testid="create-rate-multiplier-policy"]').element).toBeTruthy()
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('upstream_managed')
+    expect(wrapper.find('[data-testid="create-rate-multiplier-policy"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="create-upstream-billing-rate-sync"]').attributes('aria-checked')).toBe('true')
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    }))
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty('rate_multiplier')
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty(legacyPolicyKey)
   })
 
-  it('submits an explicit manual multiplier override selected by the administrator', async () => {
+  it('submits the native multiplier when official rate sync is disabled', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('manual account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
-    await wrapper.get('[data-testid="create-rate-multiplier-policy"]').setValue('manual_override')
+    await wrapper.get('[data-testid="create-upstream-billing-rate-sync"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('manual_override')
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier).toBe(1)
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      rate_multiplier: 1,
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: false,
+    }))
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty(legacyPolicyKey)
   })
 
   it('waits for the initial upstream billing probe before refreshing the account list', async () => {

@@ -182,13 +182,10 @@ type AccountMonitorMultiplier struct {
 	SampleCount int        `json:"sample_count"`
 }
 
-// AccountMonitorRefreshOptions keeps declaration, balance, and paid New API
-// evidence on separate refresh cadences.
+// AccountMonitorRefreshOptions keeps declaration and balance refreshes explicit.
 type AccountMonitorRefreshOptions struct {
-	RefreshDeclaration      bool
-	RefreshBalance          bool
-	MeasureNewAPIMultiplier bool
-	ForceNewAPIMeasurement  bool
+	RefreshDeclaration bool
+	RefreshBalance     bool
 }
 
 type AccountMonitorAccount struct {

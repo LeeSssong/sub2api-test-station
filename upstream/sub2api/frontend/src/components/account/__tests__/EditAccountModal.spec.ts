@@ -56,6 +56,8 @@ vi.mock('vue-i18n', async () => {
 
 import EditAccountModal from '../EditAccountModal.vue'
 
+const legacyPolicyKey = ['rate', 'multiplier', 'policy'].join('_')
+
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
   props: {
@@ -343,34 +345,37 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it('treats a legacy OpenAI API key account as managed and submits explicit policy intent', async () => {
+  it('uses only the official rate-sync control for OpenAI API key accounts', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
 
-    const select = wrapper.get<HTMLSelectElement>('[data-testid="edit-rate-multiplier-policy"]')
-    expect(select.element.value).toBe('upstream_managed')
+    expect(wrapper.find('[data-testid="edit-rate-multiplier-policy"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="upstream-billing-rate-sync"]').attributes('aria-checked')).toBe('false')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
-    expect(updateAccountMock.mock.calls[0]?.[1]?.rate_multiplier_policy).toBe('upstream_managed')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_billing_rate_sync_enabled).toBe(false)
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty(legacyPolicyKey)
   })
 
-  it('loads manual override and lets the administrator return the account to managed mode', async () => {
+  it('loads the official sync switch and omits the native rate while sync is enabled', async () => {
     const account = buildAccount()
     account.extra = {
-      upstream_billing_rate_multiplier_policy: 'manual_override'
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true
     }
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
 
-    const select = wrapper.get<HTMLSelectElement>('[data-testid="edit-rate-multiplier-policy"]')
-    expect(select.element.value).toBe('manual_override')
-    await select.setValue('upstream_managed')
+    expect(wrapper.get('[data-testid="upstream-billing-rate-sync"]').attributes('aria-checked')).toBe('true')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
-    expect(updateAccountMock.mock.calls[0]?.[1]?.rate_multiplier_policy).toBe('upstream_managed')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_billing_probe_enabled).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_billing_rate_sync_enabled).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('rate_multiplier')
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty(legacyPolicyKey)
   })
 
   it('preserves model mappings when editing the whitelist', async () => {

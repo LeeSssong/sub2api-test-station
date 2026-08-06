@@ -1168,9 +1168,28 @@
             </p>
           </div>
           <Toggle
-            v-model="upstreamBillingAutoProbeEnabled"
+            :model-value="upstreamBillingAutoProbeEnabled"
             data-testid="upstream-billing-auto-probe"
             :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
+            @update:model-value="handleUpstreamBillingAutoProbeChange"
+          />
+        </div>
+
+        <div
+          v-if="form.platform === 'openai' && form.type === 'apikey'"
+          class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+        >
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.syncRate') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.upstreamBilling.syncRateHint') }}
+            </p>
+          </div>
+          <Toggle
+            :model-value="upstreamBillingRateSyncEnabled"
+            data-testid="create-upstream-billing-rate-sync"
+            :aria-label="t('admin.accounts.upstreamBilling.syncRate')"
+            @update:model-value="handleUpstreamBillingRateSyncChange"
           />
         </div>
 
@@ -2756,17 +2775,9 @@
         <div>
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
           <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input"
-            :disabled="form.platform === 'openai' && form.type === 'apikey' && form.rate_multiplier_policy === 'upstream_managed'" />
+            :disabled="form.platform === 'openai' && form.type === 'apikey' && upstreamBillingRateSyncEnabled" />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
-      </div>
-      <div v-if="form.platform === 'openai' && form.type === 'apikey'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
-        <label class="input-label">{{ t('admin.accounts.billingRateMultiplierPolicy') }}</label>
-        <select v-model="form.rate_multiplier_policy" class="input" data-testid="create-rate-multiplier-policy">
-          <option value="upstream_managed">{{ t('admin.accounts.billingRateMultiplierPolicyManaged') }}</option>
-          <option value="manual_override">{{ t('admin.accounts.billingRateMultiplierPolicyManual') }}</option>
-        </select>
-        <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierPolicyHint') }}</p>
       </div>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
@@ -3741,6 +3752,21 @@ const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
+const upstreamBillingRateSyncEnabled = ref(true)
+
+const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
+  upstreamBillingRateSyncEnabled.value = enabled
+  if (enabled) {
+    upstreamBillingAutoProbeEnabled.value = true
+  }
+}
+
+const handleUpstreamBillingAutoProbeChange = (enabled: boolean) => {
+  upstreamBillingAutoProbeEnabled.value = enabled
+  if (!enabled) {
+    upstreamBillingRateSyncEnabled.value = false
+  }
+}
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
@@ -4123,7 +4149,6 @@ const form = reactive({
   load_factor: null as number | null,
   priority: 1,
   rate_multiplier: 1,
-  rate_multiplier_policy: 'upstream_managed' as 'upstream_managed' | 'manual_override',
   group_ids: [] as number[],
   expires_at: null as number | null
 })
@@ -4674,7 +4699,6 @@ const resetForm = () => {
   form.load_factor = null
   form.priority = 1
   form.rate_multiplier = 1
-  form.rate_multiplier_policy = 'upstream_managed'
   form.group_ids = []
   form.expires_at = null
   accountCategory.value = 'oauth-based'
@@ -4682,6 +4706,7 @@ const resetForm = () => {
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   upstreamBillingAutoProbeEnabled.value = true
+  upstreamBillingRateSyncEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -5183,12 +5208,20 @@ const handleSubmit = async () => {
 
   form.credentials = credentials
   const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const { rate_multiplier: rateMultiplier, ...accountForm } = form
+  const nativeRateSyncEnabled =
+    form.platform === 'openai' && form.type === 'apikey' && upstreamBillingRateSyncEnabled.value
 
   await doCreateAccount({
-    ...form,
+    ...accountForm,
+    ...(nativeRateSyncEnabled ? {} : { rate_multiplier: rateMultiplier }),
     group_ids: form.group_ids,
     extra,
     upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
+    upstream_billing_rate_sync_enabled:
+      form.platform === 'openai' && form.type === 'apikey'
+        ? upstreamBillingRateSyncEnabled.value
+        : undefined,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
 }
@@ -5314,13 +5347,16 @@ const createAccountAndFinish = async (
     concurrency: form.concurrency,
     load_factor: form.load_factor ?? undefined,
     priority: form.priority,
-    rate_multiplier: form.rate_multiplier,
-    rate_multiplier_policy: platform === 'openai' && type === 'apikey' ? form.rate_multiplier_policy : undefined,
+    ...(platform === 'openai' && type === 'apikey' && upstreamBillingRateSyncEnabled.value
+      ? {}
+      : { rate_multiplier: form.rate_multiplier }),
     group_ids: form.group_ids,
     expires_at: form.expires_at,
     // 上游倍率探测对全部 API-key 平台开放（antigravity upstream 走本 helper）；
     // 非 apikey 类型（bedrock/oauth）不传，后端不动作。
     upstream_billing_probe_enabled: type === 'apikey' ? upstreamBillingAutoProbeEnabled.value : undefined,
+    upstream_billing_rate_sync_enabled:
+      platform === 'openai' && type === 'apikey' ? upstreamBillingRateSyncEnabled.value : undefined,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
 }

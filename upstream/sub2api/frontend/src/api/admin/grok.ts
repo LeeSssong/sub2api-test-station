@@ -56,7 +56,6 @@ export interface GrokSSOToOAuthRequest {
   load_factor?: number
   priority?: number
   rate_multiplier?: number
-  rate_multiplier_policy?: 'upstream_managed' | 'manual_override'
   expires_at?: number | null
   auto_pause_on_expired?: boolean
 }

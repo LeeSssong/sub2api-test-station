@@ -992,7 +992,7 @@ type accountMonitorWindowCostResult struct {
 func accountMonitorEffectiveCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
 	switch {
 	case account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey:
-		return accountMonitorMultiplierCost(account.RateMultiplier)
+		return accountMonitorMultiplierValueCost(account.BillingRateMultiplier())
 	case account.Platform == PlatformOpenAI:
 		return accountMonitorProcurementQuotaCost(account.ProcurementCostCNY, account.EstimatedUsableQuotaUSD)
 	default:
@@ -1002,18 +1002,10 @@ func accountMonitorEffectiveCost(account Account, windowStart, windowEnd time.Ti
 
 func accountMonitorProjectedEffectiveCost(
 	account Account,
-	resolvedMultiplier AccountMonitorMultiplier,
+	_ AccountMonitorMultiplier,
 	windowStart, windowEnd time.Time,
 	baseCost float64,
 ) accountMonitorWindowCostResult {
-	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
-		switch resolvedMultiplier.Status {
-		case AccountMonitorMultiplierStatusOK, AccountMonitorMultiplierStatusStale, AccountMonitorMultiplierStatusFailed:
-			return accountMonitorMultiplierCost(resolvedMultiplier.Value)
-		default:
-			return accountMonitorMultiplierCost(nil)
-		}
-	}
 	return accountMonitorEffectiveCost(account, windowStart, windowEnd, baseCost)
 }
 
@@ -1038,6 +1030,10 @@ func accountMonitorMultiplierCost(multiplier *float64) accountMonitorWindowCostR
 	result.EffectiveMultiplier = &effectiveMultiplier
 	result.CostScoreEligible = true
 	return result
+}
+
+func accountMonitorMultiplierValueCost(multiplier float64) accountMonitorWindowCostResult {
+	return accountMonitorMultiplierCost(&multiplier)
 }
 
 func accountMonitorLegacyWindowCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
@@ -1066,7 +1062,7 @@ func accountMonitorLegacyWindowCost(account Account, windowStart, windowEnd time
 		return result
 	}
 
-	return accountMonitorMultiplierCost(account.RateMultiplier)
+	return accountMonitorMultiplierValueCost(account.BillingRateMultiplier())
 }
 
 func accountMonitorCostScore(groupMultiplier float64, effectiveMultiplier *float64, weights AccountMonitorScoreWeights) float64 {
@@ -1222,7 +1218,7 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
 			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
-				RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true,
+				RefreshDeclaration: true, RefreshBalance: true,
 			})
 			mu.Lock()
 			completed++
@@ -1278,7 +1274,7 @@ func (s *AccountMonitorService) RunOne(
 	}
 	completed = 1
 	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
-		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true,
+		RefreshDeclaration: true, RefreshBalance: true,
 	})
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID

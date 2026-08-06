@@ -34,9 +34,8 @@ func TestManagedBillingMultiplierPersistsQuantizedValueIdempotentlyAndRefreshesC
 		Type:        service.AccountTypeAPIKey,
 		Credentials: map[string]any{"api_key": "sk-integration"},
 		Extra: map[string]any{
-			service.UpstreamBillingProbeEnabledExtraKey:         true,
-			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
-			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+			service.UpstreamBillingProbeEnabledExtraKey:    true,
+			service.UpstreamBillingRateSyncEnabledExtraKey: true,
 		},
 	})
 	t.Cleanup(func() {
@@ -140,8 +139,7 @@ func TestProbeTransactionStartedBeforeNormalEditPublishesStrictlyNewerCacheVersi
 		Type:        service.AccountTypeAPIKey,
 		Credentials: map[string]any{"api_key": "sk-version-order"},
 		Extra: map[string]any{
-			service.UpstreamBillingProbeEnabledExtraKey:         true,
-			service.UpstreamBillingRateMultiplierPolicyExtraKey: service.UpstreamBillingRateMultiplierPolicyManaged,
+			service.UpstreamBillingProbeEnabledExtraKey: true,
 		},
 	})
 	t.Cleanup(func() {

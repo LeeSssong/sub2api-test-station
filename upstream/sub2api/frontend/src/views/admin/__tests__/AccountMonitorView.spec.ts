@@ -778,13 +778,19 @@ describe('admin account monitor view V3', () => {
     list.mockClear()
     await wrapper.get('[data-test="dialog-save-multiplier"]').trigger('click')
     await flushPromises()
-    expect(updateAccount).toHaveBeenCalledWith(10, { rate_multiplier: 0.08, rate_multiplier_policy: 'manual_override' })
+    expect(updateAccount).toHaveBeenCalledWith(10, {
+      rate_multiplier: 0.08,
+      upstream_billing_rate_sync_enabled: false,
+    })
 
     await card.get('[data-test="edit-cost"]').trigger('click')
     list.mockClear()
     await wrapper.get('[data-test="dialog-restore-auto"]').trigger('click')
     await flushPromises()
-    expect(updateAccount).toHaveBeenCalledWith(10, { rate_multiplier_policy: 'upstream_managed' })
+    expect(updateAccount).toHaveBeenCalledWith(10, {
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    })
     expect(runOne).toHaveBeenCalledWith(10)
 
     await card.get('[data-test="edit-cost"]').trigger('click')

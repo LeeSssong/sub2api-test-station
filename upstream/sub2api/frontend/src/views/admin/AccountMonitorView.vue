@@ -536,7 +536,7 @@ async function saveAccountMultiplier(multiplier: number) {
   try {
     await adminAPI.accounts.update(account.account_id, {
       rate_multiplier: multiplier,
-      rate_multiplier_policy: 'manual_override',
+      upstream_billing_rate_sync_enabled: false,
     })
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {
@@ -559,7 +559,10 @@ async function restoreAccountMultiplier() {
   savingCost.value = true
   costDialogError.value = null
   try {
-    await adminAPI.accounts.update(account.account_id, { rate_multiplier_policy: 'upstream_managed' })
+    await adminAPI.accounts.update(account.account_id, {
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    })
     await adminAPI.accountMonitor.runOne(account.account_id)
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {

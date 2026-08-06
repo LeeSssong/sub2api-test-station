@@ -306,9 +306,6 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		SkipDefaultGroupBind:  true,
 		SkipMixedChannelCheck: true,
 	}
-	if policy, valid := UpstreamBillingRateMultiplierPolicyFromExtra(source.Extra); valid {
-		input.RateMultiplierPolicy = &policy
-	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
@@ -463,12 +460,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	} else if priority < 1 {
 		return nil, errors.New("priority must be >= 1")
 	}
-	policy, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
-	if err != nil {
-		return nil, err
-	}
 	// Probe/session state is system-managed. New accounts always start with automatic refresh disabled.
-	delete(accountExtra, UpstreamBillingRateMultiplierPolicyExtraKey)
 	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingProbeExtraKey)
@@ -488,7 +480,13 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	if input.ProbeEnabled != nil && *input.ProbeEnabled {
+	probeEnabled := input.ProbeEnabled
+	rateSyncEnabled := input.RateSyncEnabled
+	if rateSyncEnabled != nil && *rateSyncEnabled {
+		enabled := true
+		probeEnabled = &enabled
+	}
+	if probeEnabled != nil && *probeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
@@ -496,6 +494,12 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 			account.Extra = make(map[string]any)
 		}
 		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
+	}
+	if rateSyncEnabled != nil {
+		if account.Extra == nil {
+			account.Extra = make(map[string]any)
+		}
+		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = *rateSyncEnabled
 	}
 	// 预计算固定时间重置的下次重置时间
 	if account.Extra != nil {
@@ -520,15 +524,6 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		}
 		account.RateMultiplier = input.RateMultiplier
 	}
-	if account.Extra == nil {
-		account.Extra = make(map[string]any)
-	}
-	// Policy is caller intent, never inferred from the multiplier field or
-	// smuggled through extra. New accounts default to managed mode.
-	if policy == "" {
-		policy = UpstreamBillingRateMultiplierPolicyManaged
-	}
-	account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policy
 	if input.LoadFactor != nil && *input.LoadFactor > 0 {
 		if *input.LoadFactor > 10000 {
 			return nil, errors.New("load_factor must be <= 10000")
@@ -620,10 +615,6 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
-	policyIntent, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
-	if err != nil {
-		return nil, err
-	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -709,7 +700,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, UpstreamBillingProbeEnabledExtraKey)
 		delete(normalizedExtra, UpstreamBillingRateSyncEnabledExtraKey)
 		delete(normalizedExtra, UpstreamBillingProbeExtraKey)
-		delete(normalizedExtra, UpstreamBillingRateMultiplierPolicyExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
@@ -724,7 +714,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			UpstreamBillingProbeEnabledExtraKey,
 			UpstreamBillingRateSyncEnabledExtraKey,
 			UpstreamBillingProbeExtraKey,
-			UpstreamBillingRateMultiplierPolicyExtraKey,
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
@@ -857,13 +846,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			account.ProcurementCostEffectiveAt = &effectiveAt
 		}
 	}
-	if policyIntent != "" {
-		if account.Extra == nil {
-			account.Extra = make(map[string]any)
-		}
-		account.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policyIntent
-		account.RateMultiplierPolicyIntent = &policyIntent
-	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {
 			account.LoadFactor = nil // 0 或负数表示清除
@@ -991,16 +973,11 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
-	policyIntent, err := validateUpstreamBillingRateMultiplierPolicyIntent(input.RateMultiplierPolicy, input.RateMultiplier)
-	if err != nil {
-		return nil, err
-	}
 	input.Extra = maps.Clone(input.Extra)
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingProbeExtraKey)
-	delete(input.Extra, UpstreamBillingRateMultiplierPolicyExtraKey)
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
@@ -1181,12 +1158,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 	if input.RateMultiplier != nil {
 		repoUpdates.RateMultiplier = input.RateMultiplier
-	}
-	if policyIntent != "" {
-		if repoUpdates.Extra == nil {
-			repoUpdates.Extra = make(map[string]any)
-		}
-		repoUpdates.Extra[UpstreamBillingRateMultiplierPolicyExtraKey] = policyIntent
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {

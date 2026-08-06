@@ -1119,6 +1119,27 @@ func TestAccountMonitorEffectiveCostUsesOpenAIAccountTypePrecedence(t *testing.T
 	}
 }
 
+func TestRateMultiplierSingleSourceIgnoresLegacyProjectionEvidenceForCost(t *testing.T) {
+	nativeRate := 0.25
+	legacyProjectedRate := 0.75
+	cost := accountMonitorProjectedEffectiveCost(Account{
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		RateMultiplier: &nativeRate,
+	}, AccountMonitorMultiplier{
+		Value:  &legacyProjectedRate,
+		Source: "measured",
+		Status: AccountMonitorMultiplierStatusOK,
+	}, time.Time{}, time.Time{}, 0)
+
+	if cost.EffectiveMultiplier == nil || math.Abs(*cost.EffectiveMultiplier-0.25) > 1e-9 {
+		t.Fatalf("effective multiplier = %#v, want native account rate 0.25", cost.EffectiveMultiplier)
+	}
+	if score := accountMonitorCostScore(1, cost.EffectiveMultiplier, DefaultAccountMonitorScoreWeights); score != 11.25 {
+		t.Fatalf("cost score = %v, want 11.25 from native account rate", score)
+	}
+}
+
 func TestAccountMonitorMissingOpenAIProcurementQuotaRetainsQualityRanking(t *testing.T) {
 	now := time.Now().UTC()
 	accounts := []Account{
@@ -1154,10 +1175,9 @@ func TestAccountMonitorMissingOpenAIProcurementQuotaRetainsQualityRanking(t *tes
 	}
 }
 
-func TestAccountMonitorMixedGroupRanksMeasuredAPIKeyAheadOfValidProcurementAccount(t *testing.T) {
+func TestAccountMonitorMixedGroupRanksUsingNativeAPIKeyMultiplier(t *testing.T) {
 	now := time.Now().UTC()
 	persistedMultiplier := 1.0
-	measuredMultiplier := 0.05
 	procurementCost := 4.0
 	estimatedQuota := 60.0
 	accounts := []Account{
@@ -1165,12 +1185,8 @@ func TestAccountMonitorMixedGroupRanksMeasuredAPIKeyAheadOfValidProcurementAccou
 			ID: 20, Name: "measured API key", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 			Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &persistedMultiplier,
 			Extra: map[string]any{
-				UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
-				AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
-					Version: AccountMultiplierMeasurementVersion, Status: AccountMonitorMultiplierStatusOK,
-					Source: AccountMonitorMultiplierSourceMeasured, Value: &measuredMultiplier, SampleCount: 3,
-					ObservedAt: probeTimePtr(now.Add(-time.Hour)), FreshUntil: probeTimePtr(now.Add(time.Hour)),
-				},
+				UpstreamBillingProbeExtraKey:   UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+				legacyMultiplierMeasurementKey: map[string]any{"value": 0.05},
 			},
 		},
 		{
@@ -1208,88 +1224,53 @@ func TestAccountMonitorMixedGroupRanksMeasuredAPIKeyAheadOfValidProcurementAccou
 		t.Fatalf("group rows = %#v, want both accounts", rows)
 	}
 	byID := map[int64]AccountMonitorGroupAccount{rows[0].AccountID: rows[0], rows[1].AccountID: rows[1]}
-	measured := byID[20]
+	apiKey := byID[20]
 	procurement := byID[21]
-	if measured.Multiplier.Value == nil || math.Abs(*measured.Multiplier.Value-measuredMultiplier) > 1e-9 {
-		t.Fatalf("card multiplier = %#v, want measured %.4fx", measured.Multiplier, measuredMultiplier)
+	if apiKey.Multiplier.Value == nil || math.Abs(*apiKey.Multiplier.Value-persistedMultiplier) > 1e-9 {
+		t.Fatalf("card multiplier = %#v, want native %.4fx", apiKey.Multiplier, persistedMultiplier)
 	}
-	if measured.EffectiveMultiplier == nil || math.Abs(*measured.EffectiveMultiplier-measuredMultiplier) > 1e-9 {
-		t.Fatalf("scoring multiplier = %#v, want active measured %.4fx instead of persisted %.4fx", measured.EffectiveMultiplier, measuredMultiplier, persistedMultiplier)
+	if apiKey.EffectiveMultiplier == nil || math.Abs(*apiKey.EffectiveMultiplier-persistedMultiplier) > 1e-9 {
+		t.Fatalf("scoring multiplier = %#v, want native %.4fx", apiKey.EffectiveMultiplier, persistedMultiplier)
 	}
 	if procurement.EffectiveMultiplier == nil || math.Abs(*procurement.EffectiveMultiplier-4.0/60.0) > 1e-9 {
 		t.Fatalf("procurement multiplier = %#v, want 4/60", procurement.EffectiveMultiplier)
 	}
-	if measured.GroupRank == nil || *measured.GroupRank != 1 || procurement.GroupRank == nil || *procurement.GroupRank != 2 {
-		t.Fatalf("mixed ranking = %#v, want measured API key first and procurement second", rows)
+	if procurement.GroupRank == nil || *procurement.GroupRank != 1 || apiKey.GroupRank == nil || *apiKey.GroupRank != 2 {
+		t.Fatalf("mixed ranking = %#v, want lower-cost procurement account first", rows)
 	}
 }
 
-func TestAccountMonitorAPIKeyCostScoringFollowsResolvedMultiplierStatus(t *testing.T) {
+func TestAccountMonitorAPIKeyCostScoringIgnoresResolverEvidence(t *testing.T) {
 	now := time.Now().UTC()
 	persistedMultiplier := 1.0
 	activeMultiplier := 0.2
-	for _, tt := range []struct {
-		name       string
-		resolved   AccountMonitorMultiplier
-		want       *float64
-		wantSource string
-	}{
-		{
-			name: "active manual override",
-			resolved: AccountMonitorMultiplier{
-				Value: &activeMultiplier, Source: AccountMonitorMultiplierSourceManual, Status: AccountMonitorMultiplierStatusOK,
-			},
-			want:       &activeMultiplier,
-			wantSource: AccountMonitorMultiplierSourceManual,
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			20: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
 		},
-		{
-			name:       "stale measured snapshot",
-			resolved:   AccountMonitorMultiplier{Source: AccountMonitorMultiplierSourceMeasured, Status: AccountMonitorMultiplierStatusStale},
-			wantSource: AccountMonitorMultiplierSourceMeasured,
-		},
-		{
-			name:       "failed measured snapshot",
-			resolved:   AccountMonitorMultiplier{Source: AccountMonitorMultiplierSourceMeasured, Status: AccountMonitorMultiplierStatusFailed},
-			wantSource: AccountMonitorMultiplierSourceMeasured,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := &accountMonitorRepoStub{
-				settings: AccountMonitorSettings{IntervalSeconds: 300},
-				windowAggregates: map[int64]AccountMonitorWindowAggregate{
-					20: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
-				},
-				latest: map[int64]AccountMonitorLatest{20: {Status: "success", CheckedAt: now}},
-			}
-			service := NewAccountMonitorService(
-				repo,
-				&accountMonitorAccountRepoStub{accounts: []Account{{
-					ID: 20, Name: "API key", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-					Status: StatusActive, Schedulable: true, RateMultiplier: &persistedMultiplier,
-				}}},
-				nil,
-				nil,
-				&accountMonitorMultiplierStub{result: tt.resolved},
-			)
+		latest: map[int64]AccountMonitorLatest{20: {Status: "success", CheckedAt: now}},
+	}
+	service := NewAccountMonitorService(
+		repo,
+		&accountMonitorAccountRepoStub{accounts: []Account{{
+			ID: 20, Name: "API key", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, RateMultiplier: &persistedMultiplier,
+		}}},
+		nil,
+		nil,
+		&accountMonitorMultiplierStub{result: AccountMonitorMultiplier{
+			Value: &activeMultiplier, Source: AccountMonitorMultiplierSourceDeclared, Status: AccountMonitorMultiplierStatusFailed,
+		}},
+	)
 
-			page, err := service.ListWindow(context.Background(), "24h")
-			if err != nil {
-				t.Fatal(err)
-			}
-			row := page.Accounts[0]
-			if row.Multiplier.Source != tt.wantSource || row.Multiplier.Status != tt.resolved.Status {
-				t.Fatalf("card multiplier = %#v, want source %q status %q", row.Multiplier, tt.wantSource, tt.resolved.Status)
-			}
-			if tt.want == nil {
-				if row.EffectiveMultiplier != nil || row.CostScore != 0 || row.QualityScore == nil || row.GroupRank == nil {
-					t.Fatalf("inactive multiplier must keep ranking with zero cost score: %#v", row)
-				}
-				return
-			}
-			if row.EffectiveMultiplier == nil || math.Abs(*row.EffectiveMultiplier-*tt.want) > 1e-9 {
-				t.Fatalf("scoring multiplier = %#v, want active %.4fx", row.EffectiveMultiplier, *tt.want)
-			}
-		})
+	page, err := service.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Accounts[0]
+	if row.EffectiveMultiplier == nil || math.Abs(*row.EffectiveMultiplier-persistedMultiplier) > 1e-9 {
+		t.Fatalf("scoring multiplier = %#v, want native %.4fx", row.EffectiveMultiplier, persistedMultiplier)
 	}
 }
 
@@ -1415,29 +1396,20 @@ func TestAccountMonitorWindowCostReturnsZeroCostScoreForInvalidCostInputs(t *tes
 	}
 
 	multiplier := accountMonitorEffectiveCost(Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, start, end, 8)
-	if multiplier.Mode != "multiplier" || multiplier.CostScoreEligible || multiplier.EffectiveMultiplier != nil {
-		t.Fatalf("missing multiplier must have zero cost score: %#v", multiplier)
+	if multiplier.Mode != "multiplier" || !multiplier.CostScoreEligible || multiplier.EffectiveMultiplier == nil || *multiplier.EffectiveMultiplier != 1 {
+		t.Fatalf("legacy nil multiplier must use BillingRateMultiplier default: %#v", multiplier)
 	}
 }
 
-func TestAccountMonitorWindowRetainsFailedMeasuredMultiplierForCostProjection(t *testing.T) {
+func TestAccountMonitorWindowIgnoresLegacyMeasurementForCostProjection(t *testing.T) {
 	now := time.Now().UTC()
 	value := 0.25
-	observedAt := now.Add(-time.Hour)
 	account := Account{
 		ID: 10, Name: "new-api", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-		Status: StatusActive, Schedulable: true, GroupIDs: []int64{7},
+		Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &value,
 		Extra: map[string]any{
-			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
-			AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
-				Version:       AccountMultiplierMeasurementVersion,
-				Status:        AccountMonitorMultiplierStatusFailed,
-				Source:        AccountMonitorMultiplierSourceMeasured,
-				Value:         &value,
-				ObservedAt:    &observedAt,
-				LastAttemptAt: now,
-				FailureCode:   "upstream_http_error",
-			},
+			UpstreamBillingProbeExtraKey:   UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+			legacyMultiplierMeasurementKey: map[string]any{"value": 0.75, "status": "failed"},
 		},
 	}
 	repo := &accountMonitorRepoStub{
@@ -1459,11 +1431,11 @@ func TestAccountMonitorWindowRetainsFailedMeasuredMultiplierForCostProjection(t 
 		t.Fatal(err)
 	}
 	row := page.Groups[0].Accounts[0]
-	if row.Multiplier.Status != AccountMonitorMultiplierStatusFailed || row.Multiplier.Value == nil || *row.Multiplier.Value != value {
-		t.Fatalf("failed measurement must retain resolver evidence: %#v", row.Multiplier)
+	if row.Multiplier.Status != AccountMonitorMultiplierStatusOK || row.Multiplier.Value == nil || *row.Multiplier.Value != value {
+		t.Fatalf("projection must use native multiplier: %#v", row.Multiplier)
 	}
 	if row.EffectiveMultiplier == nil || *row.EffectiveMultiplier != value || row.CostScore <= 0 {
-		t.Fatalf("failed retained multiplier must remain in cost scoring: %#v", row)
+		t.Fatalf("native multiplier must remain in cost scoring: %#v", row)
 	}
 }
 
@@ -1498,8 +1470,8 @@ func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T
 	byID := map[int64]AccountMonitorGroupAccount{rows[0].AccountID: rows[0], rows[1].AccountID: rows[1]}
 	missing := byID[9]
 	priced := byID[10]
-	if !missing.Eligible || missing.CostScore != 0 || missing.EffectiveMultiplier != nil || missing.GroupRank == nil {
-		t.Fatalf("cost-invalid account must remain eligible and rankable without cost evidence: %#v", missing)
+	if !missing.Eligible || missing.CostScore != 0 || missing.EffectiveMultiplier == nil || *missing.EffectiveMultiplier != 1 || missing.GroupRank == nil {
+		t.Fatalf("native default multiplier account must remain eligible and rankable: %#v", missing)
 	}
 	if !priced.Eligible || priced.CostScore <= 0 || priced.GroupRank == nil || *priced.GroupRank != 1 {
 		t.Fatalf("priced account should receive multiplier cost score and rank first: %#v", priced)
@@ -1938,7 +1910,7 @@ func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnecti
 		t.Fatalf("completed=%d results=%#v", completed, monitorRepo.results)
 	}
 	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 21, options: AccountMonitorRefreshOptions{
-		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true,
+		RefreshDeclaration: true, RefreshBalance: true,
 	}}) {
 		t.Fatalf("multiplier calls = %#v", multiplier.calls)
 	}
@@ -1963,7 +1935,7 @@ func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t
 		t.Fatalf("result=%#v persisted=%#v", result, monitorRepo.results)
 	}
 	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 23, options: AccountMonitorRefreshOptions{
-		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true,
+		RefreshDeclaration: true, RefreshBalance: true,
 	}}) {
 		t.Fatalf("multiplier calls = %#v", multiplier.calls)
 	}

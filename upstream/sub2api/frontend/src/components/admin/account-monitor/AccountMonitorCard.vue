@@ -285,6 +285,7 @@ function multiplierStatusHint(source: string | undefined, statusValue: string, t
 function multiplierSourceKey(source?: string | null): string {
   if (source === 'upstream_declared' || source === 'declared') return 'upstreamDeclared'
   if (source === 'upstream_pricing') return 'upstreamPricing'
+  if (source === 'quota_measurement' || source === 'measured') return 'quotaMeasurement'
   if (source === 'manual' || source === 'manual_config') return 'manual'
   return 'unknown'
 }

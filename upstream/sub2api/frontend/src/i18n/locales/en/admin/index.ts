@@ -68,6 +68,7 @@ export default {
       multiplierSources: {
         upstreamDeclared: 'Declared upstream',
         upstreamPricing: 'Upstream pricing',
+        quotaMeasurement: 'Quota measurement',
         manual: 'Manual configuration',
         unknown: 'Pending confirmation',
       },

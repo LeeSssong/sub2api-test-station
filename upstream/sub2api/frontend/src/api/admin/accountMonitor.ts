@@ -57,6 +57,7 @@ export type AccountMonitorCostSource =
 export type AccountMonitorUpstreamMultiplierSource =
   | 'upstream_declared'
   | 'upstream_pricing'
+  | 'quota_measurement'
   | 'manual'
   | 'unknown'
   | string

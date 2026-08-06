@@ -68,6 +68,7 @@ export default {
       multiplierSources: {
         upstreamDeclared: '上游声明',
         upstreamPricing: '上游定价',
+        quotaMeasurement: '额度测得',
         manual: '人工配置',
         unknown: '待确认',
       },

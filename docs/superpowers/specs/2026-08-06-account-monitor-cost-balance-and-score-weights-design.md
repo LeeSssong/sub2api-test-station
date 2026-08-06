@@ -20,7 +20,7 @@
 3. 为采购账号增加“预计可用额度（USD）”，用采购成本与预计额度计算统一成本倍率。
 4. 让采购账号与 API Key 上游账号在同一分组中使用同一套成本评分公式。
 5. 为 OpenAI API Key 上游展示标准化 USD 余额及其新鲜度。
-6. 余额和 Sub2API 声明倍率跟随账号健康探测；New API 付费倍率测量每 6 小时自动刷新，并支持单卡手动强制刷新。
+6. 余额和官方 billing probe 跟随账号健康探测；单卡手动刷新强制执行健康、余额与官方 billing probe，但不维护独立的 New API 付费倍率测量周期。
 7. 辅助刷新失败时保留最后一次有效数据，不让健康探测被辅助接口拖成失败。
 
 ## 非目标
@@ -115,28 +115,28 @@ cost_score = cost_weight * clamp(
 
 分组评分权重继续复用现有 GET、PUT、DELETE 接口，不创建重复接口。
 
-## 刷新模型
+## 倍率单一事实源与刷新模型
 
-将当前 `Refresh(account, force bool)` 改为显式选项，至少独立表达：
+官方 Sub2API `v0.1.171` 已原生支持通过 `accounts.rate_multiplier` 保存账号倍率，并以
+`extra.upstream_billing_rate_sync_enabled` 表达倍率归管理员手工维护还是归上游探测写回。
+本功能必须直接复用这两个原生字段和官方更新能力，不再维护
+`upstream_billing_rate_multiplier_policy`，也不再把
+`account_monitor_multiplier_measurement.value` 作为第二套倍率值。
 
-- 是否刷新 Sub2API 声明倍率。
-- 是否刷新余额。
-- 是否执行 New API 付费倍率测量。
-- New API 测量是否忽略新鲜度强制执行。
+- 账号监控展示、成本评分、真实请求计费统一读取 `accounts.rate_multiplier`。
+- `upstream_billing_rate_sync_enabled=false` 表示当前倍率由管理员手工填写。
+- `upstream_billing_rate_sync_enabled=true` 表示当前倍率由官方 billing probe 管理；来源标签只描述所有权，不参与数值选择。
+- 余额快照继续独立刷新；New API 余额解析保留，但删除账号监控自建的付费倍率测量、6 小时倍率 TTL 和强制倍率测量分支。
 
 ### 全量与定时探测
 
 每次账号健康探测周期都执行健康探测，并为符合条件的 OpenAI API Key 账号刷新余额。Sub2API 声明倍率也跟随同一探测周期刷新。
 
-New API 付费倍率测量的新鲜期从 24 小时改为 6 小时。全量或定时探测只有在最后一次成功测量已满 6 小时、从未测量，或失败重试窗口已到时才发送付费测量请求。6 小时内的普通全量刷新不得重复产生付费请求。
-
-`manual_override` 账号跳过自动付费测量，继续使用管理员保存的倍率。
+倍率写回频率完全跟随官方 `upstream_billing_rate_sync_enabled` 与 billing probe 调度，不再由账号监控维护独立 TTL。
 
 ### 单卡手动刷新
 
-单卡刷新始终重新执行健康探测、余额刷新和 Sub2API 声明倍率刷新。对于识别为 New API 的 API Key 账号，单卡刷新忽略 6 小时新鲜期，强制执行一次付费倍率测量。
-
-若账号仍处于 `manual_override`，强制测量结果只更新可观察的测量快照，不替换当前生效的手工倍率。管理员点击“恢复自动获取”后切回 `upstream_managed`，并触发单账号辅助刷新以尽快取得新的自动倍率。
+单卡刷新始终重新执行健康探测、余额刷新和官方 billing probe。手工倍率保存必须在同一次官方账号更新请求中写入 `rate_multiplier` 并关闭 `upstream_billing_rate_sync_enabled`。管理员点击“恢复自动获取”时开启官方 probe 与 rate sync，随后触发单账号刷新，使 `accounts.rate_multiplier` 尽快得到官方探测值。
 
 ### 失败隔离
 
@@ -162,8 +162,8 @@ New API 付费倍率测量的新鲜期从 24 小时改为 6 小时。全量或�
 OpenAI API Key 账号弹窗显示：
 
 - 当前倍率、来源、新鲜度和自动/手工策略。
-- 倍率输入，单位 `x`；保存时显式写入 `manual_override`。
-- “恢复自动获取”操作，切回 `upstream_managed` 并刷新当前账号。
+- 倍率输入，单位 `x`；保存时原子写入 `rate_multiplier` 并关闭官方倍率同步。
+- “恢复自动获取”操作，开启官方 probe 与倍率同步并刷新当前账号。
 
 OpenAI 非 API Key 账号弹窗显示：
 
@@ -190,7 +190,8 @@ OpenAI API Key 账号卡片显示“上游余额”指标：
 ## 兼容与迁移
 
 - 数据库迁移只增加可空正数约束字段，不回填 60 USD，不重写现有采购成本。
-- 现有手工倍率策略保持生效；升级不会自动切回自动倍率。
+- 新增清理迁移把旧 `upstream_billing_rate_multiplier_policy=manual_override` 转为原生 `upstream_billing_rate_sync_enabled=false`，把 `upstream_managed` 转为 `true`，保留现有 `accounts.rate_multiplier` 数值，然后删除旧策略键。
+- 同一迁移删除 `account_monitor_multiplier_measurement`，不保留运行时兼容读取；迁移后唯一倍率配置值为 `accounts.rate_multiplier`。
 - 现有分组评分权重数据和默认权重保持不变。
 - 旧采购成本账号升级后进入“成本待确认”，质量分继续排名；管理员保存预计额度后自动获得成本分。
 - 所有新快照字段使用版本化 JSON，无法解析的旧值按 `unavailable` 处理，不影响健康探测。
@@ -204,8 +205,9 @@ OpenAI API Key 账号卡片显示“上游余额”指标：
 - 混合分组中两类账号进入同一成本公式；不同分组倍率分别计算。
 - 缺预计额度的采购账号成本项为 0，但质量项仍计分并参与排名。
 - Sub2API 和 New API 余额解析、USD 归一化、最后有效值保留与失败状态均有测试。
-- 普通探测在 6 小时内不重复 New API 付费测量，满 6 小时后刷新；单卡刷新强制测量。
-- `manual_override` 跳过自动测量，单卡强测不覆盖手工生效值，“恢复自动获取”重新启用自动来源。
+- 手工保存原子关闭官方 rate sync 并写入原生倍率；恢复自动原子开启官方 probe/rate sync，并在探测后更新同一原生倍率字段。
+- 监控投影、成本评分、真实请求计费和 usage log 倍率快照均以 `accounts.rate_multiplier` 为源，不存在声明值、测量值与计费值分叉。
+- 清理迁移正确转换旧策略并删除两个旧 JSON 键，应用代码中不再暴露或写入 `rate_multiplier_policy`。
 - 任一辅助刷新失败不改变已落库的健康探测结果。
 
 ### 前端
@@ -219,4 +221,4 @@ OpenAI API Key 账号卡片显示“上游余额”指标：
 
 ### 发布与线上验收
 
-实现完成后必须通过受控不可变镜像和既有蓝绿/维护发布路径部署。线上至少验证一个 Sub2API API Key、一个 New API API Key、一个 60 USD 采购账号和一个 120 USD 采购账号；确认分组权重保存/重置、单卡强刷、6 小时门禁状态、余额来源、混合排名和失败保留行为。只有代码已推送、生产已部署且上述行为已验证生效，总账状态才可改为“已完成”。
+实现完成后必须通过受控不可变镜像和既有蓝绿/维护发布路径部署。线上至少验证一个 Sub2API API Key、一个 New API API Key、一个 60 USD 采购账号和一个 120 USD 采购账号；确认分组权重保存/重置、单卡强刷、官方倍率同步开关、余额来源、混合排名和失败保留行为。只有代码已推送、生产已部署且上述行为已验证生效，总账状态才可改为“已完成”。

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 恢复分组评分权重入口，以采购成本和预计可用额度统一混合分组成本评分，并为 OpenAI API Key 账号提供余额展示、6 小时 New API 倍率刷新和单卡强制刷新。
+**Goal:** 恢复分组评分权重入口，以采购成本和预计可用额度统一混合分组成本评分，并为 OpenAI API Key 账号提供余额展示、官方原生倍率控制和单卡强制刷新。
 
-**Architecture:** 在账号表增加预计可用额度字段，监控服务按 OpenAI 账号类型解析统一成本倍率；现有倍率服务改用显式刷新选项，并新增独立版本化余额快照。前端复用评分权重弹窗，新建一个页面级轻量成本弹窗，账号卡片只负责显示和发起编辑。所有实现保持账号监控只读评分边界，不接入生产调度。
+**Architecture:** 在账号表增加预计可用额度字段，监控服务按 OpenAI 账号类型解析统一成本倍率；余额使用独立版本化快照，倍率则统一复用官方 `accounts.rate_multiplier + upstream_billing_rate_sync_enabled`。前端复用评分权重弹窗，新建一个页面级轻量成本弹窗，账号卡片只负责显示和发起编辑。所有实现保持账号监控只读评分边界，不接入生产调度。
 
 **Tech Stack:** Go 1.24、Ent/PostgreSQL、Gin、Vue 3、TypeScript、Tailwind CSS、Vitest、Playwright、Docker Compose、现有 Sub2API 零停机原子发布脚本与 `sub2api-prod` SSH 别名。
 
@@ -15,8 +15,9 @@
 - 只实现本功能，不增加灰度流量、长期观察、营收/账务 UI、调度自动改权重或无关重构。
 - OpenAI API Key 只使用倍率；OpenAI 非 API Key 只使用采购成本除以预计额度；余额不参与评分。
 - 缺预计额度时成本项为 0，账号仍按质量维度参与排名。
-- New API 自动付费测量 TTL 固定为 6 小时；单卡刷新忽略 TTL 强制测量。
-- `manual_override` 跳过自动付费测量；单卡强测只更新快照，不覆盖生效的手工倍率。
+- 倍率值的唯一事实源是官方 `accounts.rate_multiplier`；账号监控不得持久化第二套倍率值。
+- 手工/自动所有权只使用官方 `upstream_billing_rate_sync_enabled`；删除自定义 `rate_multiplier_policy` 全栈语义。
+- 旧策略数据通过迁移一次性转入官方开关并删除旧 JSON 键，不保留应用层兼容分支。
 - 辅助刷新失败不得让健康探测失败，并必须保留最后一次有效值。
 - 每个任务一个实施提交、一次独立审查；代理不得 push、deploy 或修改项目总账。
 - 协调者只使用 `ssh -o BatchMode=yes sub2api-prod` 快速核验和发布，不输出凭据。
@@ -166,6 +167,8 @@ git commit -m "feat: unify account monitor procurement scoring"
 
 ### Task 2: 余额快照与显式刷新策略
 
+> **Final-state correction:** Task 2 的余额快照仍保留；其中自建 New API 付费倍率测量、6 小时 TTL、`manual_override` 优先级和 measurement value 持久化由 Task 5 全部删除。最终验收以 Task 5 的官方原生单一事实源为准。
+
 **Files:**
 - Create: `upstream/sub2api/backend/internal/service/account_monitor_balance.go`
 - Create: `upstream/sub2api/backend/internal/service/account_monitor_balance_test.go`
@@ -290,7 +293,7 @@ func TestAuxiliaryFailureDoesNotFailHealthProbe(t *testing.T) {
 }
 ```
 
-Implement `newManualOverrideMeasurementFixture` and `newAccountMultiplierServiceForTest` in `account_multiplier_test.go` with the existing fake HTTP upstream pattern; the fixture must expose a counted `/v1/chat/completions` handler and an account whose policy extra is `manual_override`.
+This historical Task 2 fixture is removed by Task 5 together with the paid New API multiplier measurement subsystem.
 
 - [ ] **Step 5: Implement explicit refresh options and 6-hour TTL**
 
@@ -413,7 +416,7 @@ git commit -m "fix: restore account monitor score weight controls"
 - Consumes: `estimated_usable_quota_usd`, `balance`, schema version 4 and existing account update API.
 - Produces: page-level `AccountMonitorCostDialog` events `saveProcurement`, `saveMultiplier`, `restoreAuto`, `clear`, and card event `editCost`.
 
-**Review gate:** A fresh reviewer must verify account-type dispatch, no manual mode selector, draft-only default 60, conditional balance rendering, error retention and mobile/desktop layout before Task 5 starts.
+**Review gate:** A fresh reviewer must verify account-type dispatch, no manual mode selector, draft-only default 60, conditional balance rendering, error retention and mobile/desktop layout before Task 5 starts. Task 5 then re-reviews the corrected native multiplier payloads.
 
 - [ ] **Step 1: Write modal and card tests that fail**
 
@@ -471,11 +474,12 @@ The card keeps the cost display and one edit icon, emits the selected account, a
 ```ts
 await adminAPI.accounts.update(accountID, {
   rate_multiplier: value,
-  rate_multiplier_policy: 'manual_override',
+  upstream_billing_rate_sync_enabled: false,
 })
 
 await adminAPI.accounts.update(accountID, {
-  rate_multiplier_policy: 'upstream_managed',
+  upstream_billing_probe_enabled: true,
+  upstream_billing_rate_sync_enabled: true,
 })
 await adminAPI.accountMonitor.runOne(accountID)
 ```
@@ -502,7 +506,113 @@ git add upstream/sub2api/frontend
 git commit -m "feat: add account cost dialog and balance display"
 ```
 
-### Task 5: 整体回归、视觉验收与生产门禁
+### Task 5: 收敛到官方原生倍率字段并迁移旧数据
+
+**Files:**
+- Create: `upstream/sub2api/backend/migrations/198_account_rate_multiplier_native_convergence.sql`
+- Create: `upstream/sub2api/backend/migrations/account_rate_multiplier_native_convergence_migration_test.go`
+- Delete: `upstream/sub2api/backend/internal/service/upstream_billing_rate_multiplier_sync.go`
+- Delete: `upstream/sub2api/backend/internal/service/upstream_billing_rate_multiplier_sync_test.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_multiplier.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_multiplier_test.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_service.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_types.go`
+- Modify: `upstream/sub2api/backend/internal/service/account.go`
+- Modify: `upstream/sub2api/backend/internal/service/admin_service.go`
+- Modify: `upstream/sub2api/backend/internal/service/admin_account.go`
+- Modify: `upstream/sub2api/backend/internal/handler/admin/account_handler.go`
+- Modify: `upstream/sub2api/backend/internal/handler/admin/account_data.go`
+- Modify: `upstream/sub2api/backend/internal/handler/admin/account_codex_import.go`
+- Modify: `upstream/sub2api/backend/internal/handler/admin/openai_oauth_handler.go`
+- Modify: `upstream/sub2api/backend/internal/handler/admin/grok_oauth_handler.go`
+- Modify: `upstream/sub2api/backend/internal/repository/account_repo.go`
+- Delete: `upstream/sub2api/backend/internal/repository/account_repo_account_multiplier_cas_test.go`
+- Modify: related backend repository/service/handler tests that currently assert `rate_multiplier_policy` or measurement-value persistence
+- Modify: `upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue`
+- Modify: `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
+- Modify: `upstream/sub2api/frontend/src/components/account/CreateAccountModal.vue`
+- Modify: `upstream/sub2api/frontend/src/components/account/EditAccountModal.vue`
+- Modify: related Create/Edit account tests and `upstream/sub2api/frontend/src/types/index.ts`
+- Modify: `upstream/sub2api/frontend/src/i18n/locales/en/admin/accounts.ts`
+- Modify: `upstream/sub2api/frontend/src/i18n/locales/zh/admin/accounts.ts`
+
+**Interfaces:**
+- Consumes: official `rate_multiplier`, `upstream_billing_probe_enabled` and `upstream_billing_rate_sync_enabled` account update fields.
+- Produces: migration 198 converting legacy policy data to the official sync switch and deleting legacy policy/measurement JSON keys.
+- Changes: Account Monitor multiplier projection and cost scoring always use `Account.BillingRateMultiplier()`; source is derived only from the official sync switch.
+- Removes: `rate_multiplier_policy`, `RateMultiplierPolicyIntent`, `account_monitor_multiplier_measurement.value`, paid New API multiplier measurement and their API/UI contracts.
+
+**Review gate:** A fresh reviewer must verify the migration conversion and deletion semantics, absence of application-layer compatibility branches, atomic manual-save/restore payloads, single-source scoring/billing consistency, and removal of the parallel measurement subsystem before Task 6 starts.
+
+- [ ] **Step 1: Write migration and backend single-source tests that fail**
+
+Add migration tests proving:
+
+```text
+manual_override -> upstream_billing_rate_sync_enabled=false
+upstream_managed -> upstream_billing_rate_sync_enabled=true
+accounts.rate_multiplier -> unchanged
+upstream_billing_rate_multiplier_policy -> removed
+account_monitor_multiplier_measurement -> removed
+```
+
+Add service tests proving Monitor projection and cost score use `Account.BillingRateMultiplier()` even when old declaration/measurement snapshots contain a different value, and that no policy type or measurement-value resolver remains.
+
+- [ ] **Step 2: Run focused backend tests and verify RED**
+
+Run:
+
+```bash
+cd upstream/sub2api/backend
+go test ./migrations ./internal/service ./internal/repository ./internal/handler/admin \
+  -run 'NativeConvergence|RateMultiplierSingleSource|AccountMonitor.*Multiplier|RateMultiplierPolicy' -count=1
+```
+
+Expected: FAIL because migration 198 does not exist and the current resolver/API still consume legacy policy and measurement values.
+
+- [ ] **Step 3: Implement migration and remove the parallel backend semantics**
+
+Migration 198 must update only rows containing either legacy JSON key, preserve `accounts.rate_multiplier`, write the official sync boolean from the legacy policy mapping, and remove both old keys atomically. Do not add an application compatibility fallback.
+
+Delete the policy DTO/input/export/import fields and repository locking logic. Keep the official probe CAS based on `upstream_billing_probe_enabled` and `upstream_billing_rate_sync_enabled`. Keep balance snapshot persistence and shared HTTP/number parsing helpers, but delete paid New API multiplier measurement, its TTL/options and its persisted value.
+
+- [ ] **Step 4: Write frontend payload tests and verify RED**
+
+Update tests to require exact payloads:
+
+```ts
+expect(update).toHaveBeenCalledWith(accountID, {
+  rate_multiplier: 0.25,
+  upstream_billing_rate_sync_enabled: false,
+})
+
+expect(update).toHaveBeenCalledWith(accountID, {
+  upstream_billing_probe_enabled: true,
+  upstream_billing_rate_sync_enabled: true,
+})
+```
+
+Also require Create/Edit account UI to expose only the official rate-sync toggle and multiplier input, with no policy selector or `rate_multiplier_policy` payload/type.
+
+Run the focused Vitest files and confirm they fail against the current policy-based implementation.
+
+- [ ] **Step 5: Implement the native frontend flow**
+
+Manual save writes the official multiplier and disables official sync in one request. Restore enables official probe and sync in one request, then invokes the existing single-account refresh. Derive the manual/automatic label from `account.extra.upstream_billing_rate_sync_enabled`; never read or write the legacy policy.
+
+- [ ] **Step 6: Run focused and broad verification, then commit**
+
+Run backend focused tests, full backend tests/vet, frontend focused tests, full unit tests, lint, typecheck and build. Run `git diff --check` and search the application tree to prove `rate_multiplier_policy`, `upstream_billing_rate_multiplier_policy` and `account_monitor_multiplier_measurement` remain only in migration 198 or historical documentation, not runtime code.
+
+Commit:
+
+```bash
+git add upstream/sub2api docs/superpowers/specs docs/superpowers/plans docs/project/project-progress.md
+git commit -m "refactor: use native account multiplier controls"
+```
+
+### Task 6: 整体回归、视觉验收与生产门禁
 
 **Files:**
 - Create: `.superpowers/sdd/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan/final-verification.md`
@@ -510,7 +620,7 @@ git commit -m "feat: add account cost dialog and balance display"
 - Modify: `docs/project/project-progress.md`
 
 **Interfaces:**
-- Consumes: Tasks 1-4 reviewed commits and the complete task contract.
+- Consumes: Tasks 1-5 reviewed commits and the complete task contract.
 - Produces: clean reviewed branch, focused verification evidence, pushed branch, and either verified zero-downtime production deployment or an explicit pre-mutation downtime stop.
 
 - [ ] **Step 1: Run final focused backend and frontend verification**

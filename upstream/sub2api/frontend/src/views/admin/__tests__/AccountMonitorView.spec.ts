@@ -10,6 +10,7 @@ const {
   runOne,
   history,
   reconciliationOperations,
+  reconciliationCostGuard,
   reconciliationRefresh,
   reconciliationExceptions,
   reconciliationAdjust,
@@ -22,6 +23,7 @@ const {
   runOne: vi.fn(),
   history: vi.fn(),
   reconciliationOperations: vi.fn(),
+  reconciliationCostGuard: vi.fn(),
   reconciliationRefresh: vi.fn(),
   reconciliationExceptions: vi.fn(),
   reconciliationAdjust: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('@/api/admin', () => ({
     },
     reconciliation: {
       operations: reconciliationOperations,
+      costGuard: reconciliationCostGuard,
       refresh: reconciliationRefresh,
       exceptions: reconciliationExceptions,
       adjust: reconciliationAdjust,
@@ -204,6 +207,7 @@ describe('admin account monitor view', () => {
     runOne.mockReset().mockResolvedValue({ account_id: 7, status: 'success' })
     history.mockReset().mockResolvedValue({ items: [] })
     reconciliationOperations.mockReset().mockResolvedValue({ total_attempts: 10, matched_attempts: 10, pending_attempts: 0, conflict_attempts: 0, coverage_known: true, coverage_ratio: 1, upstream_cost: '1', user_charge: '2', paper_profit: '1', currency: 'EUR', observed_at: '2026-07-25T08:01:00Z' })
+    reconciliationCostGuard.mockReset().mockResolvedValue({ status: 'unknown', group_multiplier: 1, required_sample_count: 6 })
     reconciliationRefresh.mockReset().mockResolvedValue({ coverage_known: true, coverage_ratio: 1, pending_attempts: 0 })
     reconciliationExceptions.mockReset().mockResolvedValue({ items: [] })
     reconciliationAdjust.mockReset().mockResolvedValue({})

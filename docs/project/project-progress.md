@@ -20,6 +20,8 @@
 
 ## 当前最重要进行中事项
 
+0.4. **账号卡片成本倒挂预警**：在管理员账号监控卡片接入 Sub2API/New API 通用上游原生倍率、本站标准费用折合成本倍率、逐笔账单证据和当前分组倒挂判定；至少 6 笔有效逐笔实际扣费样本才标记“确认亏损”，仅定价推算/额度测得标记“可能亏损”。本次不创建站点经营看板，不新增或迁移现有金额型投入产出区。**状态：进行中（独立 worktree 实施中）**。
+
 0.3. **管理员监控页会话失效修复**：`/admin/accounts/monitor` 首屏调用 `/relay-ops/api/reconciliation/*` 返回 `401` 时，原共享 API 客户端错误地清除主站 JWT 并跳转登录；已为对账请求隔离会话恢复逻辑，普通主站 API 的 `401` 行为保持不变。**状态：进行中（提交 `d4fb5e4a4b058f292a9df9f2c44d8bf01abfbe5f` 已推送并部署到蓝槽；本地 217/217 文件、1516/1516 用例、定向回归、类型检查和构建通过；生产 `/api/v1/auth/me`、账号监控和运维快照请求持续返回 200，核心容器健康；浏览器扩展接管并导航的最终视觉验收仍待完成）**。**生产证据：** `20260803T152958Z-production-326982.json`、[会话失效修复生产报告](../superpowers/reports/2026-08-03-account-monitor-session-recovery-production.md)。
 
 0. **OpenAI 模型映射审计**：仅覆盖 OpenAI-compatible HTTP JSON、SSE 与 Responses WebSocket；新增 `usage_logs.actual_response_model`，记录上游原始响应模型并在管理员 usage log 展示。**状态：工程代码/配置差异待部署（本地实现与验证已完成，尚未推送、部署或线上验证）**。

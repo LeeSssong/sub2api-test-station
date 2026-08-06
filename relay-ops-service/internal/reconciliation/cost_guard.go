@@ -94,26 +94,9 @@ func (s CostGuardService) ReadCostGuard(ctx context.Context, query CostGuardQuer
 			result.Status = "pricing_risk"
 		}
 	}
-	if s.Monitors != nil {
-		if projection, monitorErr := s.Monitors.ListAccountMonitors(ctx); monitorErr == nil {
-			for _, account := range projection.Accounts {
-				if account.AccountID != query.AccountID || account.Multiplier.Status != "ok" || account.Multiplier.Value == nil {
-					continue
-				}
-				value := decimal.NewFromFloat(*account.Multiplier.Value)
-				result.UpstreamMultiplier = &value
-				if account.Multiplier.Source == "declared" {
-					result.UpstreamMultiplierSource = "upstream_declared"
-				} else if account.Multiplier.Source == "measured" {
-					result.UpstreamMultiplierSource = "quota_measurement"
-				} else {
-					result.UpstreamMultiplierSource = "upstream_pricing"
-				}
-				break
-			}
-		}
-	}
-	if result.UpstreamMultiplier == nil && s.Accounts != nil {
+	// Resolve the generic upstream pricing mapping first. This gives New API's
+	// native /api/pricing group_ratio priority over any measured fallback.
+	if s.Accounts != nil {
 		accounts, accountErr := s.Accounts.ListAccounts(ctx)
 		if accountErr == nil {
 			for _, account := range accounts {
@@ -128,6 +111,25 @@ func (s CostGuardService) ReadCostGuard(ctx context.Context, query CostGuardQuer
 					} else {
 						result.UpstreamMultiplierSource = "unknown"
 					}
+				}
+				break
+			}
+		}
+	}
+	if result.UpstreamMultiplier == nil && s.Monitors != nil {
+		if projection, monitorErr := s.Monitors.ListAccountMonitors(ctx); monitorErr == nil {
+			for _, account := range projection.Accounts {
+				if account.AccountID != query.AccountID || account.Multiplier.Status != "ok" || account.Multiplier.Value == nil {
+					continue
+				}
+				value := decimal.NewFromFloat(*account.Multiplier.Value)
+				result.UpstreamMultiplier = &value
+				if account.Multiplier.Source == "declared" {
+					result.UpstreamMultiplierSource = "upstream_declared"
+				} else if account.Multiplier.Source == "measured" {
+					result.UpstreamMultiplierSource = "quota_measurement"
+				} else {
+					result.UpstreamMultiplierSource = "upstream_pricing"
 				}
 				break
 			}

@@ -52,12 +52,30 @@ export interface ReconciliationException {
   attempt: { id: number; attempt_id: string; local_request_id: string; upstream_request_id?: string; account_id: number; model: string; user_charge: string | number; currency: string; completed_at: string; reconcile_status: string }
 }
 
+export interface AccountMonitorCostGuard {
+  upstream_multiplier?: number | null
+  upstream_multiplier_source?: string | null
+  equivalent_site_multiplier?: number | null
+  cost_source?: string | null
+  model?: string | null
+  sample_count?: number | null
+  required_sample_count?: number | null
+  group_multiplier?: number | null
+  gap?: number | null
+  status: string
+  observed_at?: string | null
+}
+
 const base = () => buildGatewayUrl('/relay-ops/api/reconciliation')
 export async function summary(params: { account_id?: number } = {}): Promise<ReconciliationSummary> {
   const { data } = await apiClient.get<ReconciliationSummary>(`${base()}/summary`, { params }); return data
 }
 export async function operations(params: OperationsScopeParams = {}): Promise<ReconciliationSummary> {
   const { data } = await apiClient.get<ReconciliationSummary>(`${base()}/operations`, { params })
+  return data
+}
+export async function costGuard(params: { account_id: number; group_id: number; group_multiplier: number }): Promise<AccountMonitorCostGuard> {
+  const { data } = await apiClient.get<AccountMonitorCostGuard>(`${base()}/cost-guard`, { params })
   return data
 }
 export async function history(params: OperationsScopeParams = {}): Promise<{ items: OperationsDailyRow[] }> {
@@ -73,4 +91,4 @@ export async function refresh(params: { account_id?: number } = {}): Promise<Rec
 export async function adjust(attemptID: number, amount: string, notes = ''): Promise<unknown> {
   const { data } = await apiClient.post(`${base()}/exceptions/${attemptID}/adjust`, { amount, notes }); return data
 }
-export default { summary, operations, history, exceptions, refresh, adjust }
+export default { summary, operations, costGuard, history, exceptions, refresh, adjust }

@@ -12,7 +12,7 @@
 
 ## Status
 
-`task_5_in_progress`
+`production_sync_in_progress`
 
 Tasks 1-4 are implemented and independently reviewed. Task 5 focused verification and whole-branch review are clean, and the feature branch is pushed. The production gate stopped before build/mutation because the candidate migration set differs from production and requires downtime authorization. Production is unchanged.
 
@@ -36,3 +36,4 @@ Tasks 1-4 are implemented and independently reviewed. Task 5 focused verificatio
 Zero-downtime deployment is authorized. Any `downtime_required=true`, migration stop, or service-stop requirement must halt before production mutation.
 
 - Gate result (2026-08-06): stopped before image build or production mutation. Production source `9aab62c203ce9546d77ecf558558bb1a360a634e` contains migrations `192_group_profit_control.sql` and `193_group_profit_control_auth_cache_invalidation.sql`; the candidate branch lacks those files and adds `197_account_estimated_usable_quota.sql`. This is not zero-downtime eligible under the existing controller contract.
+- Root cause (2026-08-06): the candidate was based on `origin/main@69caeaf816e3e01f9e0c6059c3c5262a4a12c2f6`, while production runs the separate qualified release chain ending at `9aab62c203ce9546d77ecf558558bb1a360a634e`. The production chain has eight commits not present in the candidate. Current action: merge the complete qualified production chain into the candidate, resolve only genuine overlaps, then rerun migration and whole-branch reviews.

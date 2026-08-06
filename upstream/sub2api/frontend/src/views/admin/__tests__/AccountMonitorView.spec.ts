@@ -529,6 +529,7 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
     expect(showSuccess).not.toHaveBeenCalled()
   })
 
@@ -545,6 +546,7 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
     expect(showSuccess).not.toHaveBeenCalled()
   })
 

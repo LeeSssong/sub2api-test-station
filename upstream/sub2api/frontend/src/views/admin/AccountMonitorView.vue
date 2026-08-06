@@ -598,6 +598,12 @@ async function clearProcurementCost() {
   }
 }
 
+function reportScoreWeightsReloadFailure(operation: string): void {
+  const message = `${operation}成功，但最新监控卡片加载失败，请重试`
+  scoreWeightsError.value = message
+  appStore.showError(message)
+}
+
 async function saveScoreWeights(weights: EditableWeights) {
   const group = activeGroup.value
   if (!group) return
@@ -605,8 +611,11 @@ async function saveScoreWeights(weights: EditableWeights) {
   scoreWeightsError.value = null
   try {
     await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
-    const reloaded = await load(activeRange.value)
-    if (!reloaded) return
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportScoreWeightsReloadFailure('保存分组评分权重')
+      return
+    }
     showScoreDialog.value = false
     appStore.showSuccess('分组评分权重已更新')
   } catch (reason: unknown) {
@@ -624,8 +633,11 @@ async function resetScoreWeights() {
   scoreWeightsError.value = null
   try {
     await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
-    const reloaded = await load(activeRange.value)
-    if (!reloaded) return
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportScoreWeightsReloadFailure('恢复默认评分权重')
+      return
+    }
     showScoreDialog.value = false
     appStore.showSuccess('分组评分权重已恢复默认')
   } catch (reason: unknown) {

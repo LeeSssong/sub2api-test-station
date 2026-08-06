@@ -130,6 +130,10 @@ type ReconciliationService interface {
 	RefreshReconciliation(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
 }
 
+type CostGuardService interface {
+	ReadCostGuard(context.Context, reconciliation.CostGuardQuery) (reconciliation.CostGuard, error)
+}
+
 type Dependencies struct {
 	BaseOrigin     string
 	Auth           adminauth.Verifier
@@ -142,6 +146,7 @@ type Dependencies struct {
 	QualityReview  QualityReviewService
 	Accounting     AccountingService
 	Reconciliation ReconciliationService
+	CostGuard      CostGuardService
 }
 
 type server struct {
@@ -182,6 +187,9 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if dependencies.Reconciliation != nil {
 		reconciliationMux := http.NewServeMux()
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/summary", s.reconciliationSummary)
+		if dependencies.CostGuard != nil {
+			reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/cost-guard", s.reconciliationCostGuard)
+		}
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/operations", s.reconciliationOperations)
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/operations/history", s.reconciliationOperationsHistory)
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/exceptions", s.reconciliationExceptions)

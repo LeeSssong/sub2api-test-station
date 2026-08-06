@@ -64,7 +64,7 @@ func TestUsageImporterCreatesIdempotentAttemptsAndContinuesAfterSourceFailure(t 
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	created, ok := attempts.items["sub2api-usage:8:81"]
-	if !ok || created.LocalRequestID != "request-81" || created.AdapterType != AdapterSub2API || created.UserCharge.String() != "0.1234" {
+	if !ok || created.LocalRequestID != "request-81" || created.AdapterType != AdapterSub2API || created.UserCharge.String() != "0.1234" || created.SiteStandardCost.String() != "0.1234" {
 		t.Fatalf("attempt=%#v", created)
 	}
 	if created.GroupID == nil || *created.GroupID != 3 {

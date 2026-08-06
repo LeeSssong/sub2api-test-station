@@ -74,18 +74,19 @@ func (i UsageImporter) importSource(ctx context.Context, source billing.BillingS
 			localRequestID = fmt.Sprintf("sub2api-usage:%d:%d", source.AccountID, log.ID)
 		}
 		_, inserted, err := i.Attempts.RecordUpstreamCostAttempt(ctx, AttemptInput{
-			AttemptID:      fmt.Sprintf("sub2api-usage:%d:%d", source.AccountID, log.ID),
-			LocalRequestID: localRequestID,
-			AccountID:      source.AccountID,
-			AdapterType:    adapterType,
-			GroupID:        log.GroupID,
-			Model:          log.Model,
-			InputTokens:    log.InputTokens,
-			OutputTokens:   log.OutputTokens,
-			UserCharge:     decimal.NewFromFloat(log.TotalCost),
-			Currency:       "USD",
-			RequestStatus:  "success",
-			CompletedAt:    log.CreatedAt,
+			AttemptID:        fmt.Sprintf("sub2api-usage:%d:%d", source.AccountID, log.ID),
+			LocalRequestID:   localRequestID,
+			AccountID:        source.AccountID,
+			AdapterType:      adapterType,
+			GroupID:          log.GroupID,
+			Model:            log.Model,
+			InputTokens:      log.InputTokens,
+			OutputTokens:     log.OutputTokens,
+			UserCharge:       decimal.NewFromFloat(log.TotalCost),
+			SiteStandardCost: decimal.NewFromFloat(log.TotalCost),
+			Currency:         "USD",
+			RequestStatus:    "success",
+			CompletedAt:      log.CreatedAt,
 		})
 		if err != nil {
 			return err

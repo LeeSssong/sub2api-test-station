@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"example.invalid/relay-ops-service/internal/sub2api"
 )
 
 // CollectionRunner permits the runtime API and scheduler to share the same
@@ -31,11 +33,19 @@ type RuntimeRepository interface {
 // RuntimeService is the control-plane facade. Refreshes always collect first,
 // then read the persisted state so an operator sees the newest completed work.
 type RuntimeService struct {
-	Repository RuntimeRepository
-	Importer   UsageImportRunner
-	Collector  CollectionRunner
-	Now        func() time.Time
-	Grace      time.Duration
+	Repository          RuntimeRepository
+	CostGuardRepository CostGuardRepository
+	Accounts            sub2api.AccountReader
+	Monitors            sub2api.AccountMonitorReader
+	NativeResolve       func(context.Context, string) (float64, string, bool)
+	Importer            UsageImportRunner
+	Collector           CollectionRunner
+	Now                 func() time.Time
+	Grace               time.Duration
+}
+
+func (s RuntimeService) ReadCostGuard(ctx context.Context, query CostGuardQuery) (CostGuard, error) {
+	return CostGuardService{Repository: s.CostGuardRepository, Accounts: s.Accounts, Monitors: s.Monitors, NativeResolve: s.NativeResolve}.ReadCostGuard(ctx, query)
 }
 
 func (s RuntimeService) ReadReconciliationSummary(ctx context.Context, accountID int64, start, end time.Time, currency string) (Summary, error) {

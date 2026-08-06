@@ -36,9 +36,13 @@ type AttemptInput struct {
 	InputTokens       int64
 	OutputTokens      int64
 	UserCharge        decimal.Decimal
-	Currency          string
-	RequestStatus     string
-	CompletedAt       time.Time
+	// SiteStandardCost is the immutable, pre-multiplier cost calculated by
+	// Sub2API's model pricing table for this request. It is kept separately
+	// from UserCharge so historical group-rate changes cannot rewrite evidence.
+	SiteStandardCost decimal.Decimal
+	Currency         string
+	RequestStatus    string
+	CompletedAt      time.Time
 }
 
 type Attempt struct {
@@ -140,7 +144,7 @@ func ValidateAttempt(input AttemptInput) (AttemptInput, error) {
 	if input.GroupID != nil && *input.GroupID <= 0 {
 		return AttemptInput{}, fmt.Errorf("group_id must be positive")
 	}
-	if input.InputTokens < 0 || input.OutputTokens < 0 || input.UserCharge.IsNegative() {
+	if input.InputTokens < 0 || input.OutputTokens < 0 || input.UserCharge.IsNegative() || input.SiteStandardCost.IsNegative() {
 		return AttemptInput{}, fmt.Errorf("tokens and user_charge must be non-negative")
 	}
 	if len(input.Currency) != 3 {

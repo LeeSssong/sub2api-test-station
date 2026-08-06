@@ -296,7 +296,20 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Snapshots:  database,
 	}
 	reconciliationRuntime := reconciliation.RuntimeService{
-		Repository: database,
+		Repository:          database,
+		CostGuardRepository: database,
+		Accounts:            reader,
+		Monitors:            reader,
+		NativeResolve: func(resolveCtx context.Context, accountName string) (float64, string, bool) {
+			if pricingResolver == nil {
+				return 0, "unknown", false
+			}
+			resolution, ok := pricingResolver.Resolve(resolveCtx, accountName)
+			if !ok {
+				return 0, "unknown", false
+			}
+			return resolution.Multiplier, "upstream_pricing", true
+		},
 		Importer: reconciliation.UsageImporter{
 			Sources:  database,
 			Reader:   reader,
@@ -457,6 +470,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
 		DailyReport:    dailyReportService,
 		Reconciliation: reconciliationRuntime,
+		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
 	}, accountingService)
 	if err != nil {

@@ -126,6 +126,46 @@ func (s *server) reconciliationSummary(w http.ResponseWriter, request *http.Requ
 	writeJSON(w, http.StatusOK, summary)
 }
 
+func (s *server) reconciliationCostGuard(w http.ResponseWriter, request *http.Request) {
+	accountID, err := positiveQueryID(request, "account_id")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_ACCOUNT_ID")
+		return
+	}
+	groupID, err := positiveQueryID(request, "group_id")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_GROUP_ID")
+		return
+	}
+	rawMultiplier := strings.TrimSpace(request.URL.Query().Get("group_multiplier"))
+	if rawMultiplier == "" {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_GROUP_MULTIPLIER")
+		return
+	}
+	groupMultiplier, err := decimal.NewFromString(rawMultiplier)
+	if err != nil || groupMultiplier.IsNegative() {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_GROUP_MULTIPLIER")
+		return
+	}
+	costGuard, err := s.dependencies.CostGuard.ReadCostGuard(request.Context(), reconciliation.CostGuardQuery{
+		AccountID: accountID, GroupID: groupID, GroupMultiplier: groupMultiplier,
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "COST_GUARD_FAILED")
+		return
+	}
+	writeJSON(w, http.StatusOK, costGuard)
+}
+
+func positiveQueryID(request *http.Request, name string) (int64, error) {
+	raw := strings.TrimSpace(request.URL.Query().Get(name))
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, errors.New("invalid " + name)
+	}
+	return parsed, nil
+}
+
 func (s *server) reconciliationOperations(w http.ResponseWriter, request *http.Request) {
 	scope, err := operationsScope(request, false)
 	if err != nil {

@@ -8,6 +8,11 @@ require "tmpdir"
 
 PROJECT_ROOT = File.expand_path("../..", __dir__)
 MERGER = File.join(PROJECT_ROOT, "ops/merge-sub2api-release.sh")
+RESOLVER = File.join(PROJECT_ROOT, "ops/resolve-sub2api-release-conflicts.sh")
+
+BASE_169_COMMIT = "26d894ef4f50645a4bf1030e378ac892f17d0223"
+TARGET_171_TAG_OBJECT = "afd154b92aac36c6dafb1fa8e181ca827c78c465"
+TARGET_171_COMMIT = "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6"
 
 class MergeSub2APIReleaseTest < Minitest::Test
   def test_merges_official_delta_with_custom_snapshot_and_exports_bundle
@@ -48,6 +53,31 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_unknown_release_conflict_remains_fail_closed
+    with_repositories(conflict: true) do |fixture|
+      before_head = git(fixture[:root], "rev-parse", "HEAD")
+
+      status, output = run_merge(fixture)
+
+      refute status.success?
+      assert_includes output, "sub2api_merge status=failed"
+      assert_equal before_head, git(fixture[:root], "rev-parse", "HEAD")
+      refute File.exist?(fixture[:bundle])
+      refute File.exist?(fixture[:report])
+    end
+  end
+
+  def test_v0171_does_not_fallback_to_wire_only_when_resolver_fails
+    with_repositories(generated_conflict: true, release_version: "0.1.171", release_tag: "v0.1.171") do |fixture|
+      status, output = run_merge(fixture)
+
+      refute status.success?
+      assert_includes output, "sub2api_release_resolution status=failed reason=record_missing"
+      refute File.exist?(fixture[:bundle])
+      refute File.exist?(fixture[:report])
+    end
+  end
+
   def test_regenerates_wire_output_when_it_is_the_only_merge_conflict
     with_repositories(generated_conflict: true) do |fixture|
       status, output = run_merge(fixture)
@@ -65,9 +95,421 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_exact_v0171_resolution_applies_recorded_postimage_and_regenerates_generated_files
+    with_resolver_fixture do |fixture|
+      status, output = run_resolver(fixture)
+
+      assert status.success?, output
+      assert_equal "resolved\n", File.read(File.join(fixture[:repository], "semantic.txt"))
+      assert_equal "resolved clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
+      assert_equal "generated wire\n", File.read(File.join(fixture[:repository], "backend/cmd/server/wire_gen.go"))
+      assert_equal "generated sum\n", File.read(File.join(fixture[:repository], "backend/go.sum"))
+      assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+      assert_empty git(fixture[:repository], "diff", "--name-only")
+    end
+  end
+
+  def test_v0171_resolution_ignores_staged_auto_merged_paths_when_checking_generated_scope
+    with_resolver_fixture(auto_merged_path: true) do |fixture|
+      status, output = run_resolver(fixture)
+
+      assert status.success?, output
+      assert_equal "official auto\n", File.read(File.join(fixture[:repository], "auto.txt"))
+      assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+      assert_empty git(fixture[:repository], "diff", "--name-only")
+    end
+  end
+
+  def test_v0171_resolution_rejects_target_identity_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      semantic = File.join(fixture[:repository], "semantic.txt")
+      before = File.binread(semantic)
+
+      status, output = run_resolver(fixture, target_commit: "f" * 40)
+
+      refute status.success?
+      assert_includes output, "reason=target_identity_mismatch"
+      assert_equal before, File.binread(semantic)
+      assert_equal "base clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_conflict_set_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("conflicts").delete("semantic.txt")
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+      semantic = File.join(fixture[:repository], "semantic.txt")
+      before = File.binread(semantic)
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=conflict_set_mismatch"
+      assert_equal before, File.binread(semantic)
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_preimage_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("conflicts").fetch("semantic.txt").fetch("stages")["2"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+      semantic = File.join(fixture[:repository], "semantic.txt")
+      before = File.binread(semantic)
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      assert_equal before, File.binread(semantic)
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_stage1_preimage_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("conflicts").fetch("semantic.txt").fetch("stages")["1"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_stage3_preimage_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("conflicts").fetch("semantic.txt").fetch("stages")["3"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_tag_object_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      git(fixture[:repository], "tag", "-d", "v0.1.171")
+      git(fixture[:repository], "tag", "-a", "v0.1.171", "-m", "replacement", fixture[:target_commit])
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=target_identity_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_base_commit_not_present_in_repository
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest["base_commit"] = "f" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture, base_commit: "f" * 40)
+
+      refute status.success?
+      assert_includes output, "reason=base_identity_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_target_commit_not_referenced_by_tag
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest["target_commit"] = fixture[:base_commit]
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture, target_commit: fixture[:base_commit])
+
+      refute status.success?
+      assert_includes output, "reason=target_identity_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_patch_scope_outside_recorded_files
+    with_resolver_fixture do |fixture|
+      patch = File.join(fixture[:records_root], "0.1.169-to-0.1.171/postimages/semantic.patch")
+      File.open(patch, "ab") do |file|
+        file.write(<<~PATCH)
+
+          diff --git a/unexpected.txt b/unexpected.txt
+          --- a/unexpected.txt
+          +++ b/unexpected.txt
+          @@ -0,0 +1 @@
+          +unexpected
+        PATCH
+      end
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest["resolution_patch_blob"] = git(fixture[:records_root], "hash-object", patch).strip
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=patch_scope_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_rejects_clean_preimage_mismatch_without_writing
+    with_resolver_fixture do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("clean_preimages")["clean.txt"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+      semantic = File.join(fixture[:repository], "semantic.txt")
+      before = File.binread(semantic)
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      assert_equal before, File.binread(semantic)
+      assert_equal "base clean\n", File.read(File.join(fixture[:repository], "clean.txt"))
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0171_resolution_restores_original_merge_state_when_generation_fails
+    with_resolver_fixture do |fixture|
+      File.write(File.join(fixture[:repository], "backend/go.mod"), "module example.invalid/fixture\n\ngo 1.24\n// user change\n")
+      File.write(File.join(fixture[:repository], "scratch-generated.txt"), "keep me\n")
+      File.write(File.join(fixture.fetch(:fake_bin), "go"), <<~SH)
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$1" == "-C" ]]
+        backend=$2
+        shift 2
+        case "$*" in
+          "mod tidy") printf 'partial generated sum\n' > "$backend/go.sum" ;;
+          "generate ./cmd/server") exit 65 ;;
+          *) exit 64 ;;
+        esac
+      SH
+      FileUtils.chmod(0o755, File.join(fixture.fetch(:fake_bin), "go"))
+      index_path = File.expand_path(git(fixture[:repository], "rev-parse", "--git-path", "index").strip, fixture[:repository])
+      before_index = File.binread(index_path)
+      before_files = resolver_fixture_files(fixture[:repository]).to_h do |path|
+        [path, File.binread(File.join(fixture[:repository], path))]
+      end
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=generation_failed"
+      assert_equal before_index, File.binread(index_path)
+      before_files.each do |path, content|
+        assert_equal content, File.binread(File.join(fixture[:repository], path)), path
+      end
+      assert_equal "module example.invalid/fixture\n\ngo 1.24\n// user change\n", File.read(File.join(fixture[:repository], "backend/go.mod"))
+      assert_equal "keep me\n", File.read(File.join(fixture[:repository], "scratch-generated.txt"))
+    end
+  end
+
+  def test_v0171_resolution_rejects_extra_generated_file_and_restores_worktree
+    with_resolver_fixture do |fixture|
+      File.write(File.join(fixture.fetch(:fake_bin), "go"), <<~SH)
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$1" == "-C" ]]
+        backend=$2
+        shift 2
+        case "$*" in
+          "mod tidy") printf 'generated sum\n' > "$backend/go.sum" ;;
+          "generate ./cmd/server")
+            printf 'generated wire\n' > "$backend/cmd/server/wire_gen.go"
+            printf 'unexpected\n' > "$backend/generated-extra.txt"
+            ;;
+          *) exit 64 ;;
+        esac
+      SH
+      FileUtils.chmod(0o755, File.join(fixture.fetch(:fake_bin), "go"))
+
+      status, output = run_resolver(fixture)
+
+      refute status.success?
+      assert_includes output, "reason=generation_scope_mismatch"
+      refute File.exist?(File.join(fixture[:repository], "backend/generated-extra.txt"))
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_unknown_future_release_has_no_resolution_record
+    with_resolver_fixture do |fixture|
+      status, output = run_resolver(
+        fixture,
+        target_version: "0.1.172",
+        target_tag: "v0.1.172"
+      )
+
+      refute status.success?
+      assert_includes output, "reason=record_missing"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
   private
 
-  def with_repositories(conflict: false, generated_conflict: false)
+  def with_resolver_fixture(auto_merged_path: false)
+    Dir.mktmpdir("resolve-sub2api-release") do |dir|
+      repository = File.join(dir, "repository")
+      records_root = File.join(dir, "records")
+      record = File.join(records_root, "0.1.169-to-0.1.171")
+      FileUtils.mkdir_p([File.join(repository, "backend/cmd/server"), File.join(record, "postimages")])
+      git(repository, "init", "-q")
+      configure_git(repository)
+
+      File.write(File.join(repository, "semantic.txt"), "base\n")
+      File.write(File.join(repository, "clean.txt"), "base clean\n")
+      File.write(File.join(repository, "auto.txt"), "base auto\n") if auto_merged_path
+      File.write(File.join(repository, "backend/go.mod"), "module example.invalid/fixture\n\ngo 1.24\n")
+      File.write(File.join(repository, "backend/go.sum"), "base sum\n")
+      File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "base wire\n")
+      git(repository, "add", ".")
+      git(repository, "commit", "-q", "-m", "base")
+      base_commit = git(repository, "rev-parse", "HEAD").strip
+      base_branch = git(repository, "branch", "--show-current").strip
+      git(repository, "branch", "target")
+
+      File.write(File.join(repository, "semantic.txt"), "ours\n")
+      File.write(File.join(repository, "backend/go.sum"), "ours sum\n")
+      File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "ours wire\n")
+      git(repository, "add", ".")
+      git(repository, "commit", "-q", "-m", "ours")
+
+      git(repository, "checkout", "-q", "target")
+      File.write(File.join(repository, "semantic.txt"), "theirs\n")
+      File.write(File.join(repository, "backend/go.sum"), "theirs sum\n")
+      File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "theirs wire\n")
+      File.write(File.join(repository, "auto.txt"), "official auto\n") if auto_merged_path
+      git(repository, "add", ".")
+      git(repository, "commit", "-q", "-m", "theirs")
+      target_commit = git(repository, "rev-parse", "HEAD").strip
+      git(repository, "tag", "-a", "v0.1.171", "-m", "release", target_commit)
+      target_tag_object = git(repository, "rev-parse", "v0.1.171").strip
+      git(repository, "checkout", "-q", base_branch)
+      _stdout, _stderr, merge_status = Open3.capture3("git", "-C", repository, "merge", "--no-ff", "--no-edit", "target")
+      refute merge_status.success?, "fixture merge unexpectedly succeeded"
+
+      semantic_path = File.join(repository, "semantic.txt")
+      original_conflict = File.binread(semantic_path)
+      git(repository, "checkout", "--conflict=merge", "--", "semantic.txt")
+      conflict_lines = File.readlines(semantic_path)
+      postimage = File.join(record, "postimages/semantic.patch")
+      File.write(postimage, <<~PATCH)
+        diff --git a/semantic.txt b/semantic.txt
+        --- a/semantic.txt
+        +++ b/semantic.txt
+        @@ -1,#{conflict_lines.length} +1 @@
+        #{conflict_lines.map { |line| "-#{line}" }.join}+resolved
+        diff --git a/clean.txt b/clean.txt
+        --- a/clean.txt
+        +++ b/clean.txt
+        @@ -1 +1 @@
+        -base clean
+        +resolved clean
+      PATCH
+      File.binwrite(semantic_path, original_conflict)
+      conflicts = unmerged_stages(repository).transform_values do |stages|
+        { "stages" => stages }
+      end
+      manifest = File.join(record, "manifest.json")
+      File.write(manifest, JSON.pretty_generate(
+        "base_version" => "0.1.169",
+        "base_commit" => base_commit,
+        "target_version" => "0.1.171",
+        "target_tag" => "v0.1.171",
+        "target_tag_object" => target_tag_object,
+        "target_commit" => target_commit,
+        "resolution_patch" => "postimages/semantic.patch",
+        "resolution_patch_blob" => git(repository, "hash-object", postimage).strip,
+        "generated_paths" => [
+          "backend/cmd/server/wire_gen.go",
+          "backend/go.sum"
+        ],
+        "clean_preimages" => {
+          "clean.txt" => git(repository, "rev-parse", ":clean.txt").strip
+        },
+        "conflicts" => conflicts
+      ) + "\n")
+
+      fake_bin = File.join(dir, "bin")
+      FileUtils.mkdir_p(fake_bin)
+      File.write(File.join(fake_bin, "go"), <<~SH)
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$1" == "-C" ]]
+        backend=$2
+        shift 2
+        case "$*" in
+          "mod tidy") printf 'generated sum\n' > "$backend/go.sum" ;;
+          "generate ./cmd/server") printf 'generated wire\n' > "$backend/cmd/server/wire_gen.go" ;;
+          *) exit 64 ;;
+        esac
+      SH
+      FileUtils.chmod(0o755, File.join(fake_bin, "go"))
+
+      yield(
+        repository: repository,
+        records_root: records_root,
+        manifest: manifest,
+        fake_bin: fake_bin,
+        base_commit: base_commit,
+        target_commit: target_commit,
+        target_tag_object: target_tag_object,
+        path: "#{fake_bin}:#{ENV.fetch("PATH")}"
+      )
+    end
+  end
+
+  def resolver_fixture_files(repository)
+    [
+      "semantic.txt",
+      "clean.txt",
+      "backend/go.sum",
+      "backend/cmd/server/wire_gen.go"
+    ].select { |path| File.exist?(File.join(repository, path)) }
+  end
+
+  def unmerged_stages(repository)
+    git(repository, "ls-files", "-u").lines.each_with_object({}) do |line, result|
+      metadata, file = line.strip.split("\t", 2)
+      _mode, blob, stage = metadata.split(" ")
+      result[file] ||= {}
+      result.fetch(file)[stage] = blob
+    end
+  end
+
+  def run_resolver(fixture, target_version: "0.1.171", target_tag: "v0.1.171", target_commit: nil, target_tag_object: nil, base_commit: nil)
+    target_commit ||= fixture.fetch(:target_commit)
+    target_tag_object ||= fixture.fetch(:target_tag_object)
+    base_commit ||= fixture.fetch(:base_commit)
+    Open3.capture3(
+      { "PATH" => fixture.fetch(:path) },
+      "bash", RESOLVER,
+      "--repository", fixture.fetch(:repository),
+      "--records-root", fixture.fetch(:records_root),
+      "--base-version", "0.1.169",
+      "--base-commit", base_commit,
+      "--target-version", target_version,
+      "--target-tag", target_tag,
+      "--target-tag-object", target_tag_object,
+      "--target-commit", target_commit
+    ).then { |stdout, stderr, status| [status, stdout + stderr] }
+  end
+
+  def with_repositories(conflict: false, generated_conflict: false, release_version: "0.1.167", release_tag: "v0.1.167")
     Dir.mktmpdir("merge-sub2api-release") do |dir|
       official = File.join(dir, "official")
       root = File.join(dir, "root")
@@ -109,7 +551,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       git(official, "add", ".")
       git(official, "commit", "-q", "-m", "target")
       target_commit = git(official, "rev-parse", "HEAD").strip
-      git(official, "tag", "-a", "v0.1.167", "-m", "release", target_commit)
+      git(official, "tag", "-a", release_tag, "-m", "release", target_commit)
 
       git(root, "init", "-q")
       configure_git(root)
@@ -147,8 +589,8 @@ class MergeSub2APIReleaseTest < Minitest::Test
         "base_sha" => root_base,
         "base_version" => "0.1.166",
         "base_commit" => base_commit,
-        "version" => "0.1.167",
-        "tag" => "v0.1.167",
+        "version" => release_version,
+        "tag" => release_tag,
         "official_commit" => target_commit,
         "published_at" => "2026-07-28T01:02:03Z"
       ))

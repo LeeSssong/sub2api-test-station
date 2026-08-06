@@ -1,10 +1,10 @@
 # Xingqiao Upstream Source Record
 
 - Repository: `https://github.com/Wei-Shaw/sub2api.git`
-- Release tag: `v0.1.169`
-- Source commit: `26d894ef4f50645a4bf1030e378ac892f17d0223`
-- Annotated tag object: `830b5f507396b858874b171feae1cbcfce1caded`
-- Imported: `2026-07-31`
+- Release tag: `v0.1.171`
+- Source commit: `f0e7a9c7a23a7d02fb159b62fa809621eb0475a6`
+- Annotated tag object: `afd154b92aac36c6dafb1fa8e181ca827c78c465`
+- Imported: `2026-08-01`
 
 This directory is an exported source snapshot without nested Git metadata.
 Xingqiao-specific frontend and deployment customizations are maintained in

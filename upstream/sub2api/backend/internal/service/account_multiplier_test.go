@@ -255,6 +255,25 @@ func (r *accountMultiplierRepoStub) UpdateAccountMultiplierMeasurement(
 	return nil
 }
 
+func (r *accountMultiplierRepoStub) UpdateAccountMonitorBalance(
+	_ context.Context,
+	expected *Account,
+	snapshot *AccountMonitorBalance,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	account := r.accounts[expected.ID]
+	if account == nil || account.Platform != expected.Platform || account.Type != expected.Type ||
+		!reflect.DeepEqual(account.Credentials, expected.Credentials) || !reflect.DeepEqual(account.ProxyID, expected.ProxyID) {
+		return ErrUpstreamBillingProbeIdentityChanged
+	}
+	if account.Extra == nil {
+		account.Extra = make(map[string]any)
+	}
+	account.Extra[AccountMonitorBalanceExtraKey] = snapshot
+	return nil
+}
+
 type accountMultiplierHTTPStub struct {
 	mu               sync.Mutex
 	usageValues      []float64
@@ -409,7 +428,7 @@ func TestAccountMultiplierRefreshMeasuresNewAPIAggregateAndPersistsSanitizedSnap
 		t.Fatalf("header overrides = %#v", got)
 	}
 
-	if err := svc.Refresh(context.Background(), account, true); err != nil {
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true}); err != nil {
 		t.Fatalf("%v (paths=%v stub_error=%s)", err, upstream.paths, upstream.lastError)
 	}
 
@@ -499,9 +518,120 @@ func TestAccountMultiplierRefreshReusesFreshMeasurementUnlessForced(t *testing.T
 	svc := NewAccountMultiplierService(nil, nil, nil)
 	svc.now = func() time.Time { return now }
 
-	if err := svc.Refresh(context.Background(), account, false); err != nil {
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestAccountMultiplierRefreshUsesSixHourMeasurementCadence(t *testing.T) {
+	now := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
+	account := &Account{Extra: map[string]any{
+		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
+			Version: AccountMultiplierMeasurementVersion, Status: AccountMonitorMultiplierStatusOK,
+			Source: AccountMonitorMultiplierSourceMeasured, LastAttemptAt: now.Add(-6 * time.Hour),
+		},
+	}}
+	svc := NewAccountMultiplierService(nil, nil, nil)
+	svc.now = func() time.Time { return now.Add(-time.Second) }
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true}); err != nil {
+		t.Fatalf("measurement before six-hour boundary = %v", err)
+	}
+	svc.now = func() time.Time { return now }
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true}); !errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
+		t.Fatalf("measurement at six-hour boundary = %v, want due measurement", err)
+	}
+}
+
+func TestAccountMultiplierRefreshDoesNotHonorLegacyTwentyFourHourFreshUntil(t *testing.T) {
+	now := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
+	value := 0.25
+	observedAt := now.Add(-7 * time.Hour)
+	legacyFreshUntil := observedAt.Add(24 * time.Hour)
+	account := &Account{Extra: map[string]any{
+		UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
+			Version:       AccountMultiplierMeasurementVersion,
+			Status:        AccountMonitorMultiplierStatusOK,
+			Source:        AccountMonitorMultiplierSourceMeasured,
+			Value:         &value,
+			ObservedAt:    &observedAt,
+			FreshUntil:    &legacyFreshUntil,
+			LastAttemptAt: observedAt,
+		},
+	}}
+	svc := NewAccountMultiplierService(nil, nil, nil)
+	svc.now = func() time.Time { return now }
+
+	err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true})
+	if !errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
+		t.Fatalf("legacy 24-hour snapshot must be due after six hours, got %v", err)
+	}
+}
+
+func TestAccountMultiplierRefreshManualOverrideSkipsAutomaticMeasurementButForcedEvidenceKeepsManualValue(t *testing.T) {
+	account, upstream := newManualOverrideMeasurementFixture(t)
+	svc := newAccountMultiplierServiceForTest(t, account, upstream)
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true}); err != nil {
+		t.Fatal(err)
+	}
+	if upstream.completionCalls != 0 {
+		t.Fatalf("automatic manual-override measurement calls = %d, want 0", upstream.completionCalls)
+	}
+
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{
+		MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if upstream.completionCalls != accountMultiplierMeasurementSamples {
+		t.Fatalf("forced manual-override measurement calls = %d, want %d", upstream.completionCalls, accountMultiplierMeasurementSamples)
+	}
+	resolved := svc.Resolve(account, svc.currentTime())
+	if resolved.Source != AccountMonitorMultiplierSourceManual || resolved.Value == nil || math.Abs(*resolved.Value-0.08) > 1e-9 {
+		t.Fatalf("manual active multiplier after forced evidence = %#v", resolved)
+	}
+}
+
+func newManualOverrideMeasurementFixture(t *testing.T) (*Account, *accountMultiplierHTTPStub) {
+	t.Helper()
+	billing := NewBillingService(nil, nil)
+	cost, err := billing.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 1000, OutputTokens: 100}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualRate := 0.08
+	totalUsed := 10_000.0
+	account := &Account{
+		ID: 73, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
+		RateMultiplier: &manualRate,
+		Credentials: map[string]any{
+			"api_key": "sk-sensitive", "base_url": "http://new-api.example",
+			"model_mapping": map[string]any{"gpt-5.4": "upstream-mini"},
+		},
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey:                UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+			UpstreamBillingRateMultiplierPolicyExtraKey: UpstreamBillingRateMultiplierPolicyManualOverride,
+		},
+	}
+	return account, &accountMultiplierHTTPStub{
+		usageValues:    []float64{totalUsed, totalUsed + cost.TotalCost*accountMultiplierMeasurementSamples*500_000*0.25},
+		expectedAPIKey: "sk-sensitive", expectedModel: "upstream-mini",
+	}
+}
+
+func newAccountMultiplierServiceForTest(t *testing.T, account *Account, upstream *accountMultiplierHTTPStub) *AccountMultiplierService {
+	t.Helper()
+	baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	repo := &accountMultiplierRepoStub{upstreamBillingProbeAccountRepo: baseRepo}
+	svc := NewAccountMultiplierService(repo, &AccountTestService{
+		accountRepo: repo, httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+			Enabled: false, AllowInsecureHTTP: true,
+		}}},
+	}, NewBillingService(nil, nil))
+	svc.now = func() time.Time { return time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC) }
+	return svc
 }
 
 func TestAccountMultiplierRefreshDoesNotRetryVeryRecentFailureAutomatically(t *testing.T) {
@@ -518,8 +648,24 @@ func TestAccountMultiplierRefreshDoesNotRetryVeryRecentFailureAutomatically(t *t
 	svc := NewAccountMultiplierService(nil, nil, nil)
 	svc.now = func() time.Time { return now }
 
-	if err := svc.Refresh(context.Background(), account, false); err != nil {
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true}); err != nil {
 		t.Fatalf("recent automatic failure must be throttled: %v", err)
+	}
+}
+
+func TestFailedAccountMultiplierMeasurementRetainsLastGoodEvidence(t *testing.T) {
+	now := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
+	value := 0.25
+	observedAt := now.Add(-time.Hour)
+	previous := &AccountMultiplierMeasurementSnapshot{
+		Version: AccountMultiplierMeasurementVersion, Status: AccountMonitorMultiplierStatusOK,
+		Source: AccountMonitorMultiplierSourceMeasured, Value: &value, SampleCount: 3,
+		ObservedAt: &observedAt, FreshUntil: probeTimePtr(now.Add(5 * time.Hour)), LastAttemptAt: observedAt,
+	}
+	got := failedAccountMultiplierMeasurement(previous, "upstream_http_error", now)
+	if got.Status != AccountMonitorMultiplierStatusFailed || got.Value == nil || *got.Value != value ||
+		got.ObservedAt == nil || !got.ObservedAt.Equal(observedAt) || !got.LastAttemptAt.Equal(now) {
+		t.Fatalf("failed measurement snapshot = %#v", got)
 	}
 }
 
@@ -537,7 +683,7 @@ func TestAccountMultiplierRefreshRetriesFailedMeasurementAfterShortBackoff(t *te
 	svc := NewAccountMultiplierService(nil, nil, nil)
 	svc.now = func() time.Time { return now }
 
-	err := svc.Refresh(context.Background(), account, false)
+	err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{MeasureNewAPIMultiplier: true})
 	if !errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
 		t.Fatalf("Refresh() error = %v, want unavailable after retry becomes due", err)
 	}
@@ -565,7 +711,7 @@ func TestAccountMultiplierRefreshForceReprobesNativeDeclaration(t *testing.T) {
 	svc := NewAccountMultiplierService(nil, nil, nil)
 	svc.SetDeclarationProbe(probe)
 
-	if err := svc.Refresh(context.Background(), account, true); err != nil {
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{RefreshDeclaration: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(probe.calls) != 1 || probe.calls[0] != account.ID {

@@ -61,7 +61,7 @@ type accountMonitorRun struct {
 
 type accountMonitorMultiplierResolver interface {
 	Resolve(*Account, time.Time) AccountMonitorMultiplier
-	Refresh(context.Context, *Account, bool) error
+	Refresh(context.Context, *Account, AccountMonitorRefreshOptions) error
 }
 
 type AccountMonitorService struct {
@@ -171,6 +171,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			TTFTP95MS:                  aggregate.TTFTP95MS,
 			LatencyP95MS:               aggregate.LatencyP95MS,
 			Multiplier:                 s.resolveMultiplier(&account, observedAt),
+			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
 			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
@@ -289,6 +290,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
 			GroupNames: accountGroupNames(account), ModelID: monitorModelForAccount(&account),
 			LatestStatus: "unavailable", Multiplier: resolvedMultiplier,
+			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
 			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
@@ -1005,10 +1007,12 @@ func accountMonitorProjectedEffectiveCost(
 	baseCost float64,
 ) accountMonitorWindowCostResult {
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
-		if resolvedMultiplier.Status != AccountMonitorMultiplierStatusOK {
+		switch resolvedMultiplier.Status {
+		case AccountMonitorMultiplierStatusOK, AccountMonitorMultiplierStatusStale, AccountMonitorMultiplierStatusFailed:
+			return accountMonitorMultiplierCost(resolvedMultiplier.Value)
+		default:
 			return accountMonitorMultiplierCost(nil)
 		}
-		return accountMonitorMultiplierCost(resolvedMultiplier.Value)
 	}
 	return accountMonitorEffectiveCost(account, windowStart, windowEnd, baseCost)
 }
@@ -1172,6 +1176,20 @@ func (s *AccountMonitorService) resolveMultiplier(account *Account, now time.Tim
 	return s.multiplier.Resolve(account, now)
 }
 
+func (s *AccountMonitorService) resolveBalance(account *Account, now time.Time) *AccountMonitorBalance {
+	if s == nil || s.multiplier == nil || !isAccountMonitorBalanceEligible(account) {
+		return nil
+	}
+	balanceResolver, ok := s.multiplier.(interface {
+		ResolveBalance(*Account, time.Time) AccountMonitorBalance
+	})
+	if !ok {
+		return nil
+	}
+	balance := balanceResolver.ResolveBalance(account, now)
+	return &balance
+}
+
 func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int, error) {
 	run, leader, err := s.beginRun(ctx, accountMonitorFullRun)
 	if err != nil {
@@ -1203,7 +1221,9 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
-			s.refreshMultiplier(gctx, &account, false)
+			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
+				RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true,
+			})
 			mu.Lock()
 			completed++
 			mu.Unlock()
@@ -1257,7 +1277,9 @@ func (s *AccountMonitorService) RunOne(
 		return AccountMonitorProbeResult{}, err
 	}
 	completed = 1
-	s.refreshMultiplier(ctx, target, true)
+	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
+		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true,
+	})
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID
 	return result, nil
@@ -1309,14 +1331,14 @@ func (s *AccountMonitorService) finishRun(run *accountMonitorRun, completed int,
 	s.runStateMu.Unlock()
 }
 
-func (s *AccountMonitorService) refreshMultiplier(ctx context.Context, account *Account, force bool) {
+func (s *AccountMonitorService) refreshAuxiliary(ctx context.Context, account *Account, options AccountMonitorRefreshOptions) {
 	if s == nil || s.multiplier == nil || account == nil {
 		return
 	}
 	refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
 	defer cancel()
-	if err := s.multiplier.Refresh(refreshCtx, account, force); err != nil {
-		slog.Warn("account_monitor: multiplier refresh failed",
+	if err := s.multiplier.Refresh(refreshCtx, account, options); err != nil {
+		slog.Warn("account_monitor: auxiliary refresh failed",
 			"account_id", account.ID,
 			"error", err,
 		)

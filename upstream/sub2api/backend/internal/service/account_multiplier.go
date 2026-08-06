@@ -20,7 +20,7 @@ import (
 const (
 	AccountMultiplierMeasurementExtraKey = "account_monitor_multiplier_measurement"
 	AccountMultiplierMeasurementVersion  = 1
-	AccountMultiplierMeasurementTTL      = 24 * time.Hour
+	AccountMultiplierMeasurementTTL      = 6 * time.Hour
 	accountMultiplierFailureRetryTTL     = 15 * time.Minute
 	accountMultiplierMeasurementSamples  = 3
 	accountMultiplierMaxRelativeSpread   = 0.15
@@ -102,29 +102,45 @@ type newAPICompletionUsage struct {
 	CacheReadTokens int
 }
 
-func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account, force bool) error {
+func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account, options AccountMonitorRefreshOptions) error {
 	if account == nil {
 		return ErrAccountNilInput
 	}
 	declaration := decodeUpstreamBillingProbeSnapshot(account.Extra)
-	if force && s.declarationProbe != nil {
+	var refreshErrors []error
+	if options.RefreshDeclaration && s.declarationProbe != nil {
 		probed, err := s.declarationProbe.ProbeAccount(ctx, account.ID)
 		if err != nil {
-			return err
-		}
-		if probed != nil {
+			refreshErrors = append(refreshErrors, fmt.Errorf("refresh billing declaration: %w", err))
+		} else if probed != nil {
 			declaration = probed
+			if account.Extra == nil {
+				account.Extra = make(map[string]any)
+			}
+			account.Extra[UpstreamBillingProbeExtraKey] = probed
 		}
 	}
-	if declaration == nil || declaration.Status != UpstreamBillingProbeStatusUnsupported {
-		return nil
+	if options.RefreshBalance {
+		if err := s.refreshBalanceForDeclaration(ctx, account, declaration); err != nil {
+			refreshErrors = append(refreshErrors, err)
+		}
+	}
+	if !options.MeasureNewAPIMultiplier || declaration == nil || declaration.Status != UpstreamBillingProbeStatusUnsupported {
+		return errors.Join(refreshErrors...)
+	}
+	policy, policySet := UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra)
+	if policySet && policy == UpstreamBillingRateMultiplierPolicyManualOverride && !options.ForceNewAPIMeasurement {
+		return errors.Join(refreshErrors...)
 	}
 	now := s.currentTime().UTC()
 	measurement := decodeAccountMultiplierMeasurementSnapshot(account.Extra)
-	if !force && measurement != nil {
-		if measurement.Status == AccountMonitorMultiplierStatusOK &&
-			measurement.FreshUntil != nil && now.Before(*measurement.FreshUntil) {
-			return nil
+	if !options.ForceNewAPIMeasurement && measurement != nil {
+		if measurement.Status == AccountMonitorMultiplierStatusOK {
+			measuredAt := accountMultiplierMeasurementTimestamp(measurement)
+			if !measuredAt.IsZero() && !now.Before(measuredAt) &&
+				now.Before(measuredAt.Add(AccountMultiplierMeasurementTTL)) {
+				return errors.Join(refreshErrors...)
+			}
 		}
 		retryTTL := AccountMultiplierMeasurementTTL
 		if measurement.Status == AccountMonitorMultiplierStatusFailed {
@@ -133,28 +149,74 @@ func (s *AccountMultiplierService) Refresh(ctx context.Context, account *Account
 		if !measurement.LastAttemptAt.IsZero() &&
 			now.Sub(measurement.LastAttemptAt) >= 0 &&
 			now.Sub(measurement.LastAttemptAt) < retryTTL {
-			return nil
+			return errors.Join(refreshErrors...)
 		}
 	}
 	if s.accountRepo == nil || s.accountTestService == nil ||
 		s.accountTestService.httpUpstream == nil || s.billingService == nil {
-		return ErrUpstreamBillingProbeUnavailable
+		return errors.Join(append(refreshErrors, ErrUpstreamBillingProbeUnavailable)...)
 	}
 
 	snapshot, measureErr := s.measure(ctx, account, now)
 	if snapshot == nil {
-		snapshot = &AccountMultiplierMeasurementSnapshot{
-			Version:       AccountMultiplierMeasurementVersion,
-			Status:        AccountMonitorMultiplierStatusFailed,
-			Source:        AccountMonitorMultiplierSourceMeasured,
-			LastAttemptAt: now,
-			FailureCode:   accountMultiplierFailureCode(measureErr),
-		}
+		snapshot = failedAccountMultiplierMeasurement(measurement, accountMultiplierFailureCode(measureErr), now)
 	}
 	if persistErr := s.persistMeasurement(ctx, account, snapshot); persistErr != nil {
 		return persistErr
 	}
-	return measureErr
+	return errors.Join(append(refreshErrors, measureErr)...)
+}
+
+func accountMultiplierMeasurementTimestamp(snapshot *AccountMultiplierMeasurementSnapshot) time.Time {
+	if snapshot == nil {
+		return time.Time{}
+	}
+	if snapshot.ObservedAt != nil {
+		return snapshot.ObservedAt.UTC()
+	}
+	if !snapshot.LastAttemptAt.IsZero() {
+		return snapshot.LastAttemptAt.UTC()
+	}
+	if snapshot.FreshUntil != nil {
+		return snapshot.FreshUntil.UTC().Add(-AccountMultiplierMeasurementTTL)
+	}
+	return time.Time{}
+}
+
+func failedAccountMultiplierMeasurement(
+	previous *AccountMultiplierMeasurementSnapshot,
+	failureCode string,
+	now time.Time,
+) *AccountMultiplierMeasurementSnapshot {
+	result := &AccountMultiplierMeasurementSnapshot{
+		Version:       AccountMultiplierMeasurementVersion,
+		Status:        AccountMonitorMultiplierStatusFailed,
+		Source:        AccountMonitorMultiplierSourceMeasured,
+		LastAttemptAt: now.UTC(),
+		FailureCode:   failureCode,
+	}
+	if previous == nil {
+		return result
+	}
+	result.ModelID = previous.ModelID
+	result.SampleCount = previous.SampleCount
+	if previous.Value != nil {
+		value := *previous.Value
+		result.Value = &value
+	}
+	if previous.RelativeSpread != nil {
+		spread := *previous.RelativeSpread
+		result.RelativeSpread = &spread
+	}
+	if previous.ObservedAt != nil {
+		observedAt := previous.ObservedAt.UTC()
+		result.ObservedAt = &observedAt
+	}
+	if previous.FreshUntil != nil {
+		freshUntil := previous.FreshUntil.UTC()
+		result.FreshUntil = &freshUntil
+	}
+	return result
 }
 
 func (s *AccountMultiplierService) measure(
@@ -608,6 +670,7 @@ func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) Accou
 		return AccountMonitorMultiplier{Status: AccountMonitorMultiplierStatusUnsupported}
 	}
 	observedAt := accountMultiplierMeasurementObservedAt(snapshot)
+	value := accountMultiplierMeasurementValue(snapshot)
 	if snapshot.Status != AccountMonitorMultiplierStatusOK {
 		status := snapshot.Status
 		if status != AccountMonitorMultiplierStatusFailed &&
@@ -616,6 +679,7 @@ func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) Accou
 			status = AccountMonitorMultiplierStatusFailed
 		}
 		return AccountMonitorMultiplier{
+			Value:       value,
 			Source:      AccountMonitorMultiplierSourceMeasured,
 			Status:      status,
 			ObservedAt:  observedAt,
@@ -630,8 +694,7 @@ func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) Accou
 			SampleCount: snapshot.SampleCount,
 		}
 	}
-	if snapshot.Value == nil || *snapshot.Value <= 0 ||
-		math.IsNaN(*snapshot.Value) || math.IsInf(*snapshot.Value, 0) {
+	if value == nil {
 		return AccountMonitorMultiplier{
 			Source:      AccountMonitorMultiplierSourceMeasured,
 			Status:      AccountMonitorMultiplierStatusFailed,
@@ -640,12 +703,20 @@ func resolveMeasuredAccountMultiplier(extra map[string]any, now time.Time) Accou
 		}
 	}
 	return AccountMonitorMultiplier{
-		Value:       float64PointerCopy(*snapshot.Value),
+		Value:       value,
 		Source:      AccountMonitorMultiplierSourceMeasured,
 		Status:      AccountMonitorMultiplierStatusOK,
 		ObservedAt:  observedAt,
 		SampleCount: snapshot.SampleCount,
 	}
+}
+
+func accountMultiplierMeasurementValue(snapshot *AccountMultiplierMeasurementSnapshot) *float64 {
+	if snapshot == nil || snapshot.Value == nil || *snapshot.Value <= 0 ||
+		math.IsNaN(*snapshot.Value) || math.IsInf(*snapshot.Value, 0) {
+		return nil
+	}
+	return float64PointerCopy(*snapshot.Value)
 }
 
 func decodeAccountMultiplierMeasurementSnapshot(extra map[string]any) *AccountMultiplierMeasurementSnapshot {

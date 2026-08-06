@@ -145,7 +145,7 @@ type accountMonitorMultiplierStub struct {
 
 type accountMonitorMultiplierCall struct {
 	accountID int64
-	force     bool
+	options   AccountMonitorRefreshOptions
 }
 
 type accountMonitorRunResult struct {
@@ -162,10 +162,10 @@ func (s *accountMonitorMultiplierStub) Resolve(account *Account, _ time.Time) Ac
 	return s.result
 }
 
-func (s *accountMonitorMultiplierStub) Refresh(_ context.Context, account *Account, force bool) error {
+func (s *accountMonitorMultiplierStub) Refresh(_ context.Context, account *Account, options AccountMonitorRefreshOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.calls = append(s.calls, accountMonitorMultiplierCall{accountID: account.ID, force: force})
+	s.calls = append(s.calls, accountMonitorMultiplierCall{accountID: account.ID, options: options})
 	return s.err
 }
 
@@ -1420,6 +1420,53 @@ func TestAccountMonitorWindowCostReturnsZeroCostScoreForInvalidCostInputs(t *tes
 	}
 }
 
+func TestAccountMonitorWindowRetainsFailedMeasuredMultiplierForCostProjection(t *testing.T) {
+	now := time.Now().UTC()
+	value := 0.25
+	observedAt := now.Add(-time.Hour)
+	account := Account{
+		ID: 10, Name: "new-api", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, GroupIDs: []int64{7},
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+			AccountMultiplierMeasurementExtraKey: AccountMultiplierMeasurementSnapshot{
+				Version:       AccountMultiplierMeasurementVersion,
+				Status:        AccountMonitorMultiplierStatusFailed,
+				Source:        AccountMonitorMultiplierSourceMeasured,
+				Value:         &value,
+				ObservedAt:    &observedAt,
+				LastAttemptAt: now,
+				FailureCode:   "upstream_http_error",
+			},
+		},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			10: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{10: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(
+		repo,
+		&accountMonitorAccountRepoStub{accounts: []Account{account}},
+		nil,
+		nil,
+		NewAccountMultiplierService(nil, nil, nil),
+	).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Groups[0].Accounts[0]
+	if row.Multiplier.Status != AccountMonitorMultiplierStatusFailed || row.Multiplier.Value == nil || *row.Multiplier.Value != value {
+		t.Fatalf("failed measurement must retain resolver evidence: %#v", row.Multiplier)
+	}
+	if row.EffectiveMultiplier == nil || *row.EffectiveMultiplier != value || row.CostScore <= 0 {
+		t.Fatalf("failed retained multiplier must remain in cost scoring: %#v", row)
+	}
+}
+
 func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T) {
 	now := time.Now().UTC()
 	cheap := 0.5
@@ -1890,7 +1937,9 @@ func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnecti
 	if completed != 1 || len(monitorRepo.results) != 1 {
 		t.Fatalf("completed=%d results=%#v", completed, monitorRepo.results)
 	}
-	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 21, force: false}) {
+	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 21, options: AccountMonitorRefreshOptions{
+		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true,
+	}}) {
 		t.Fatalf("multiplier calls = %#v", multiplier.calls)
 	}
 }
@@ -1913,7 +1962,9 @@ func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t
 	if result.AccountID != 23 || len(monitorRepo.results) != 1 {
 		t.Fatalf("result=%#v persisted=%#v", result, monitorRepo.results)
 	}
-	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 23, force: true}) {
+	if len(multiplier.calls) != 1 || multiplier.calls[0] != (accountMonitorMultiplierCall{accountID: 23, options: AccountMonitorRefreshOptions{
+		RefreshDeclaration: true, RefreshBalance: true, MeasureNewAPIMultiplier: true, ForceNewAPIMeasurement: true,
+	}}) {
 		t.Fatalf("multiplier calls = %#v", multiplier.calls)
 	}
 }

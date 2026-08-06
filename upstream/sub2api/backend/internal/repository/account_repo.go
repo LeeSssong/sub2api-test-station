@@ -66,6 +66,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
+	"account_monitor_balance":    {},
 	"codex_usage_updated_at":     {},
 	"grok_billing_snapshot":      {},
 	"session_window_utilization": {},
@@ -2626,6 +2627,94 @@ func (r *accountRepository) UpdateAccountMultiplierMeasurement(
 		return err
 	}
 	r.syncSchedulerAccountSnapshot(ctx, account.ID)
+	return nil
+}
+
+// UpdateAccountMonitorBalance stores display-only balance evidence only while
+// the account identity, active state, and previous balance snapshot match the
+// values used by the refresh request.
+func (r *accountRepository) UpdateAccountMonitorBalance(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.AccountMonitorBalance,
+) error {
+	if account == nil || snapshot == nil {
+		return service.ErrAccountNilInput
+	}
+	if dbent.TxFromContext(ctx) != nil {
+		return r.updateAccountMonitorBalanceInTx(ctx, account, snapshot)
+	}
+	tx, err := r.client.Tx(ctx)
+	if errors.Is(err, dbent.ErrTxStarted) {
+		return r.updateAccountMonitorBalanceInTx(ctx, account, snapshot)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.updateAccountMonitorBalanceInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *accountRepository) updateAccountMonitorBalanceInTx(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.AccountMonitorBalance,
+) error {
+	payload, err := json.Marshal(map[string]any{service.AccountMonitorBalanceExtraKey: snapshot})
+	if err != nil {
+		return err
+	}
+	credentials, err := json.Marshal(account.Credentials)
+	if err != nil {
+		return err
+	}
+	var expectedBalance any
+	if account.Extra != nil {
+		expectedBalance = account.Extra[service.AccountMonitorBalanceExtraKey]
+	}
+	expectedBalanceJSON, err := json.Marshal(expectedBalance)
+	if err != nil {
+		return err
+	}
+	client := clientFromContext(ctx, r.client)
+	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
+	if err != nil {
+		return err
+	}
+	if !proxyMatches {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	var proxyID any
+	if account.ProxyID != nil {
+		proxyID = *account.ProxyID
+	}
+	result, err := client.ExecContext(ctx, `
+		UPDATE accounts
+		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+		WHERE id = $2
+			AND platform = $3
+			AND type = $4
+			AND credentials = $5::jsonb
+			AND proxy_id IS NOT DISTINCT FROM $6
+			AND status = $7
+			AND schedulable = $8
+			AND COALESCE(extra -> 'account_monitor_balance', 'null'::jsonb) = $9::jsonb
+			AND deleted_at IS NULL
+	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID,
+		account.Status, account.Schedulable, string(expectedBalanceJSON))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
 	return nil
 }
 

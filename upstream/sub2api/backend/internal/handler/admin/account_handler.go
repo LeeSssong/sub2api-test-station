@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -143,22 +144,44 @@ type CreateAccountRequest struct {
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string         `json:"name"`
-	Notes                   *string        `json:"notes"`
-	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any `json:"credentials"`
-	Extra                   map[string]any `json:"extra"`
-	ProxyID                 *int64         `json:"proxy_id"`
-	Concurrency             *int           `json:"concurrency"`
-	Priority                *int           `json:"priority"`
-	RateMultiplier          *float64       `json:"rate_multiplier"`
-	RateMultiplierPolicy    *string        `json:"rate_multiplier_policy"`
-	LoadFactor              *int           `json:"load_factor"`
-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64       `json:"group_ids"`
-	ExpiresAt               *int64         `json:"expires_at"`
-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
-	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	Name                    string                 `json:"name"`
+	Notes                   *string                `json:"notes"`
+	Type                    string                 `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any         `json:"credentials"`
+	Extra                   map[string]any         `json:"extra"`
+	ProxyID                 *int64                 `json:"proxy_id"`
+	Concurrency             *int                   `json:"concurrency"`
+	Priority                *int                   `json:"priority"`
+	RateMultiplier          *float64               `json:"rate_multiplier"`
+	ProcurementCostCNY      procurementCostRequest `json:"procurement_cost_cny"`
+	RateMultiplierPolicy    *string                `json:"rate_multiplier_policy"`
+	LoadFactor              *int                   `json:"load_factor"`
+	Status                  string                 `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs                *[]int64               `json:"group_ids"`
+	ExpiresAt               *int64                 `json:"expires_at"`
+	AutoPauseOnExpired      *bool                  `json:"auto_pause_on_expired"`
+	ConfirmMixedChannelRisk *bool                  `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+}
+
+// procurementCostRequest records whether the JSON key was present, including
+// when it was explicitly set to null.
+type procurementCostRequest struct {
+	Provided bool
+	Value    *float64
+}
+
+func (v *procurementCostRequest) UnmarshalJSON(data []byte) error {
+	v.Provided = true
+	if string(data) == "null" {
+		v.Value = nil
+		return nil
+	}
+	var amount float64
+	if err := json.Unmarshal(data, &amount); err != nil {
+		return err
+	}
+	v.Value = &amount
+	return nil
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -980,6 +1003,17 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
 	}
+	if req.Priority != nil && *req.Priority < 1 {
+		response.BadRequest(c, "priority must be >= 1")
+		return
+	}
+	if req.ProcurementCostCNY.Provided && req.ProcurementCostCNY.Value != nil {
+		amount := *req.ProcurementCostCNY.Value
+		if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
+			response.BadRequest(c, "procurement_cost_cny must be a finite value >= 0")
+			return
+		}
+	}
 	// base_rpm 输入校验：负值归零，超过 10000 截断
 	sanitizeExtraBaseRPM(req.Extra)
 
@@ -996,6 +1030,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
 		RateMultiplier:        req.RateMultiplier,
+		ProcurementCost:       toServiceProcurementCostUpdate(req.ProcurementCostCNY),
 		RateMultiplierPolicy:  req.RateMultiplierPolicy,
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
@@ -1028,6 +1063,13 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	h.scheduleUpstreamBillingLifecycleProbe(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func toServiceProcurementCostUpdate(request procurementCostRequest) *service.ProcurementCostUpdate {
+	if !request.Provided {
+		return nil
+	}
+	return &service.ProcurementCostUpdate{Value: request.Value}
 }
 
 // scheduleUpstreamBillingLifecycleProbe refreshes native billing evidence once
@@ -1962,6 +2004,10 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
+		return
+	}
+	if req.Priority != nil && *req.Priority < 1 {
+		response.BadRequest(c, "priority must be >= 1")
 		return
 	}
 	if len(req.AccountIDs) == 0 && req.Filters == nil {

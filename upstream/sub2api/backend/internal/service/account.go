@@ -34,6 +34,9 @@ type Account struct {
 	// RateMultiplier 账号计费倍率（>=0，允许 0 表示该账号计费为 0）。
 	// 使用指针用于兼容旧版本调度缓存（Redis）中缺字段的情况：nil 表示按 1.0 处理。
 	RateMultiplier *float64
+	// ProcurementCostCNY is the one-time procurement amount used by monitor cost scoring.
+	ProcurementCostCNY         *float64
+	ProcurementCostEffectiveAt *time.Time
 	// RateMultiplierPolicyIntent is transient caller intent. A nil value means
 	// the repository must preserve the policy from the locked database row.
 	RateMultiplierPolicyIntent *string `json:"-"`

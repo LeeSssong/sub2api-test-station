@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOpsRepositoryQueryUsageLatencyPublishesTTFTSampleCount(t *testing.T) {
+func TestOpsRepositoryQueryUsageLatencyPublishesMetricSampleCounts(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &opsRepository{db: db}
 	start := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
 
-	mock.ExpectQuery(`COUNT\(first_token_ms\) AS ttft_sample_count`).
+	mock.ExpectQuery(`COUNT\(duration_ms\) AS duration_sample_count`).
 		WithArgs(start, end).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"duration_p50",
@@ -31,6 +31,7 @@ func TestOpsRepositoryQueryUsageLatencyPublishesTTFTSampleCount(t *testing.T) {
 			"ttft_p99",
 			"ttft_avg",
 			"ttft_max",
+			"duration_sample_count",
 			"ttft_sample_count",
 		}).AddRow(
 			1000.0,
@@ -45,10 +46,11 @@ func TestOpsRepositoryQueryUsageLatencyPublishesTTFTSampleCount(t *testing.T) {
 			600.0,
 			350.0,
 			int64(700),
+			int64(4),
 			int64(3),
 		))
 
-	_, ttft, sampleCount, err := repo.queryUsageLatency(
+	duration, ttft, durationSampleCount, ttftSampleCount, err := repo.queryUsageLatency(
 		context.Background(),
 		&service.OpsDashboardFilter{},
 		start,
@@ -56,7 +58,9 @@ func TestOpsRepositoryQueryUsageLatencyPublishesTTFTSampleCount(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, int64(3), sampleCount)
+	require.Equal(t, int64(4), durationSampleCount)
+	require.Equal(t, int64(4), duration.SampleCount)
+	require.Equal(t, int64(3), ttftSampleCount)
 	require.Equal(t, int64(3), ttft.SampleCount)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

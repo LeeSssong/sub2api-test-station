@@ -1,5 +1,5 @@
 <template>
-  <div class="flex w-full flex-wrap items-center gap-2">
+  <div class="grid w-full grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_152px]">
     <div class="relative min-w-[220px] flex-1">
       <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
       <input
@@ -11,73 +11,35 @@
       />
     </div>
     <select
-      :value="platform"
-      class="input w-auto min-w-[140px]"
-      :aria-label="t('admin.accountMonitor.filters.platform')"
-      @change="emit('update:platform', ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="">{{ t('common.all') }}</option>
-      <option v-for="item in platforms" :key="item" :value="item">{{ item }}</option>
-    </select>
-    <select
-      data-test="group-filter"
-      :value="groupId"
-      class="input w-auto min-w-[140px]"
-      :aria-label="t('admin.accountMonitor.filters.group')"
-      @change="emit('update:groupId', ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="">{{ t('admin.accountMonitor.filters.allGroups') }}</option>
-      <option v-for="item in groups" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
-    </select>
-    <select
       :value="status"
-      class="input w-auto min-w-[140px]"
+      class="input w-full"
+      data-test="status-filter"
       :aria-label="t('admin.accountMonitor.filters.status')"
       @change="emit('update:status', ($event.target as HTMLSelectElement).value)"
     >
-      <option value="">{{ t('common.all') }}</option>
-      <option value="success">{{ t('admin.accountMonitor.status.success') }}</option>
-      <option value="failed">{{ t('admin.accountMonitor.status.failed') }}</option>
-      <option value="unavailable">{{ t('admin.accountMonitor.status.noHistory') }}</option>
+      <option value="">全部状态</option>
+      <option value="available">可用</option>
+      <option value="unavailable">不可用</option>
+      <option value="cost_ineligible">成本不合格</option>
+      <option value="pending">待确认</option>
+      <option value="paused">暂停</option>
     </select>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import type { AccountMonitorAccount } from '@/api/admin/accountMonitor'
 
-const props = defineProps<{
+defineProps<{
   search: string
-  platform: string
   status: string
-  groupId: string
-  accounts: AccountMonitorAccount[]
 }>()
 
 const emit = defineEmits<{
   (event: 'update:search', value: string): void
-  (event: 'update:platform', value: string): void
   (event: 'update:status', value: string): void
-  (event: 'update:groupId', value: string): void
 }>()
 
 const { t } = useI18n()
-
-const platforms = computed(() => [...new Set(props.accounts.map((account) => account.platform))].sort())
-const groups = computed(() => {
-  const byID = new Map<number, string>()
-  for (const account of props.accounts) {
-    account.group_ids.forEach((id, index) => {
-      const name = account.group_names[index]?.trim() || `#${id}`
-      const existing = byID.get(id)
-      if (!existing || existing.startsWith('#')) byID.set(id, name)
-    })
-  }
-  return [...byID.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id)
-})
 </script>

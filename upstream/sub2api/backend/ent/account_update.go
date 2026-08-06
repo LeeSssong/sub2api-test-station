@@ -268,6 +268,53 @@ func (_u *AccountUpdate) AddRateMultiplier(v float64) *AccountUpdate {
 	return _u
 }
 
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (_u *AccountUpdate) SetProcurementCostCny(v float64) *AccountUpdate {
+	_u.mutation.ResetProcurementCostCny()
+	_u.mutation.SetProcurementCostCny(v)
+	return _u
+}
+
+// SetNillableProcurementCostCny sets the "procurement_cost_cny" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableProcurementCostCny(v *float64) *AccountUpdate {
+	if v != nil {
+		_u.SetProcurementCostCny(*v)
+	}
+	return _u
+}
+
+// AddProcurementCostCny adds value to the "procurement_cost_cny" field.
+func (_u *AccountUpdate) AddProcurementCostCny(v float64) *AccountUpdate {
+	_u.mutation.AddProcurementCostCny(v)
+	return _u
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (_u *AccountUpdate) ClearProcurementCostCny() *AccountUpdate {
+	_u.mutation.ClearProcurementCostCny()
+	return _u
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (_u *AccountUpdate) SetProcurementCostEffectiveAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetProcurementCostEffectiveAt(v)
+	return _u
+}
+
+// SetNillableProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableProcurementCostEffectiveAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetProcurementCostEffectiveAt(*v)
+	}
+	return _u
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (_u *AccountUpdate) ClearProcurementCostEffectiveAt() *AccountUpdate {
+	_u.mutation.ClearProcurementCostEffectiveAt()
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *AccountUpdate) SetStatus(v string) *AccountUpdate {
 	_u.mutation.SetStatus(v)
@@ -868,6 +915,21 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(account.FieldRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.ProcurementCostCny(); ok {
+		_spec.SetField(account.FieldProcurementCostCny, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProcurementCostCny(); ok {
+		_spec.AddField(account.FieldProcurementCostCny, field.TypeFloat64, value)
+	}
+	if _u.mutation.ProcurementCostCnyCleared() {
+		_spec.ClearField(account.FieldProcurementCostCny, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.ProcurementCostEffectiveAt(); ok {
+		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)
+	}
+	if _u.mutation.ProcurementCostEffectiveAtCleared() {
+		_spec.ClearField(account.FieldProcurementCostEffectiveAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeString, value)
 	}
@@ -1405,6 +1467,53 @@ func (_u *AccountUpdateOne) SetNillableRateMultiplier(v *float64) *AccountUpdate
 // AddRateMultiplier adds value to the "rate_multiplier" field.
 func (_u *AccountUpdateOne) AddRateMultiplier(v float64) *AccountUpdateOne {
 	_u.mutation.AddRateMultiplier(v)
+	return _u
+}
+
+// SetProcurementCostCny sets the "procurement_cost_cny" field.
+func (_u *AccountUpdateOne) SetProcurementCostCny(v float64) *AccountUpdateOne {
+	_u.mutation.ResetProcurementCostCny()
+	_u.mutation.SetProcurementCostCny(v)
+	return _u
+}
+
+// SetNillableProcurementCostCny sets the "procurement_cost_cny" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableProcurementCostCny(v *float64) *AccountUpdateOne {
+	if v != nil {
+		_u.SetProcurementCostCny(*v)
+	}
+	return _u
+}
+
+// AddProcurementCostCny adds value to the "procurement_cost_cny" field.
+func (_u *AccountUpdateOne) AddProcurementCostCny(v float64) *AccountUpdateOne {
+	_u.mutation.AddProcurementCostCny(v)
+	return _u
+}
+
+// ClearProcurementCostCny clears the value of the "procurement_cost_cny" field.
+func (_u *AccountUpdateOne) ClearProcurementCostCny() *AccountUpdateOne {
+	_u.mutation.ClearProcurementCostCny()
+	return _u
+}
+
+// SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
+func (_u *AccountUpdateOne) SetProcurementCostEffectiveAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetProcurementCostEffectiveAt(v)
+	return _u
+}
+
+// SetNillableProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableProcurementCostEffectiveAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetProcurementCostEffectiveAt(*v)
+	}
+	return _u
+}
+
+// ClearProcurementCostEffectiveAt clears the value of the "procurement_cost_effective_at" field.
+func (_u *AccountUpdateOne) ClearProcurementCostEffectiveAt() *AccountUpdateOne {
+	_u.mutation.ClearProcurementCostEffectiveAt()
 	return _u
 }
 
@@ -2037,6 +2146,21 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(account.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ProcurementCostCny(); ok {
+		_spec.SetField(account.FieldProcurementCostCny, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProcurementCostCny(); ok {
+		_spec.AddField(account.FieldProcurementCostCny, field.TypeFloat64, value)
+	}
+	if _u.mutation.ProcurementCostCnyCleared() {
+		_spec.ClearField(account.FieldProcurementCostCny, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.ProcurementCostEffectiveAt(); ok {
+		_spec.SetField(account.FieldProcurementCostEffectiveAt, field.TypeTime, value)
+	}
+	if _u.mutation.ProcurementCostEffectiveAtCleared() {
+		_spec.ClearField(account.FieldProcurementCostEffectiveAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeString, value)

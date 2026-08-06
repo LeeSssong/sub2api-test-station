@@ -38,18 +38,24 @@ describe('admin account monitor API', () => {
       .mockResolvedValueOnce({ data: { completed: 2 } })
       .mockResolvedValueOnce({ data: { account_id: 7, status: 'success' } })
 
-    await expect(accountMonitorAPI.list()).resolves.toEqual(projection)
+    const controller = new AbortController()
+    await expect(accountMonitorAPI.list('24h', { signal: controller.signal })).resolves.toEqual(projection)
     await expect(accountMonitorAPI.updateSettings(60)).resolves.toEqual(settings)
     await expect(accountMonitorAPI.runAll()).resolves.toEqual({ completed: 2 })
     await expect(accountMonitorAPI.runOne(7)).resolves.toEqual({ account_id: 7, status: 'success' })
     await expect(accountMonitorAPI.history(7, 25)).resolves.toEqual(history)
 
-    expect(get).toHaveBeenNthCalledWith(1, '/admin/account-monitors')
+    expect(get).toHaveBeenNthCalledWith(1, '/admin/accounts/monitor', {
+      params: { range: '24h' },
+      signal: controller.signal,
+    })
     expect(put).toHaveBeenCalledWith('/admin/account-monitors/settings', {
       interval_seconds: 60,
     })
     expect(post).toHaveBeenNthCalledWith(1, '/admin/account-monitors/run')
-    expect(post).toHaveBeenNthCalledWith(2, '/admin/account-monitors/7/run')
+    expect(post).toHaveBeenNthCalledWith(2, '/admin/account-monitors/7/run', undefined, {
+      timeout: 240_000,
+    })
     expect(get).toHaveBeenNthCalledWith(2, '/admin/account-monitors/7/history', {
       params: { limit: 25 },
     })

@@ -185,6 +185,7 @@ function timelinePoint(value: unknown, path: string): MonitorV2TimelinePoint {
     value: timelineValue,
     success_count: successCount,
     eligible_count: eligibleCount,
+    latency_ms: source.latency_ms == null ? null : finiteNumber(source.latency_ms, `${path}.latency_ms`),
   }
 }
 

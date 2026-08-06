@@ -120,6 +120,16 @@ func RateMultiplier(v float64) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldRateMultiplier, v))
 }
 
+// ProcurementCostCny applies equality check predicate on the "procurement_cost_cny" field. It's identical to ProcurementCostCnyEQ.
+func ProcurementCostCny(v float64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostEffectiveAt applies equality check predicate on the "procurement_cost_effective_at" field. It's identical to ProcurementCostEffectiveAtEQ.
+func ProcurementCostEffectiveAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProcurementCostEffectiveAt, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldStatus, v))
@@ -843,6 +853,106 @@ func RateMultiplierLT(v float64) predicate.Account {
 // RateMultiplierLTE applies the LTE predicate on the "rate_multiplier" field.
 func RateMultiplierLTE(v float64) predicate.Account {
 	return predicate.Account(sql.FieldLTE(FieldRateMultiplier, v))
+}
+
+// ProcurementCostCnyEQ applies the EQ predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyEQ(v float64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyNEQ applies the NEQ predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyNEQ(v float64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyIn applies the In predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyIn(vs ...float64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldProcurementCostCny, vs...))
+}
+
+// ProcurementCostCnyNotIn applies the NotIn predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyNotIn(vs ...float64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldProcurementCostCny, vs...))
+}
+
+// ProcurementCostCnyGT applies the GT predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyGT(v float64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyGTE applies the GTE predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyGTE(v float64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyLT applies the LT predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyLT(v float64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyLTE applies the LTE predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyLTE(v float64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldProcurementCostCny, v))
+}
+
+// ProcurementCostCnyIsNil applies the IsNil predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldProcurementCostCny))
+}
+
+// ProcurementCostCnyNotNil applies the NotNil predicate on the "procurement_cost_cny" field.
+func ProcurementCostCnyNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldProcurementCostCny))
+}
+
+// ProcurementCostEffectiveAtEQ applies the EQ predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtNEQ applies the NEQ predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtIn applies the In predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldProcurementCostEffectiveAt, vs...))
+}
+
+// ProcurementCostEffectiveAtNotIn applies the NotIn predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldProcurementCostEffectiveAt, vs...))
+}
+
+// ProcurementCostEffectiveAtGT applies the GT predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtGTE applies the GTE predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtLT applies the LT predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtLTE applies the LTE predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldProcurementCostEffectiveAt, v))
+}
+
+// ProcurementCostEffectiveAtIsNil applies the IsNil predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldProcurementCostEffectiveAt))
+}
+
+// ProcurementCostEffectiveAtNotNil applies the NotNil predicate on the "procurement_cost_effective_at" field.
+func ProcurementCostEffectiveAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldProcurementCostEffectiveAt))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

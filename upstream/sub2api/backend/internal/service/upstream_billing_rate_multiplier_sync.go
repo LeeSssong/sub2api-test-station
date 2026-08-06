@@ -64,6 +64,12 @@ func UpstreamBillingRateMultiplierPolicyFromExtra(extra map[string]any) (string,
 }
 
 func validateUpstreamBillingRateMultiplierPolicyIntent(policy *string, rateMultiplier *float64) (string, error) {
+	if rateMultiplier != nil && (*rateMultiplier < 0 || math.IsNaN(*rateMultiplier) || math.IsInf(*rateMultiplier, 0)) {
+		return "", infraerrors.BadRequest(
+			"INVALID_UPSTREAM_BILLING_RATE_MULTIPLIER",
+			"rate_multiplier must be a finite value >= 0",
+		)
+	}
 	if policy == nil {
 		return "", nil
 	}

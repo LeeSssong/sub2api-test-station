@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -32,12 +33,21 @@ type accountMonitorRepoStub struct {
 	groups             []AccountMonitorGroup
 	weights            map[int64]AccountMonitorScoreWeights
 	aggregates         map[int64]AccountMonitorAggregate
+	windowAggregates   map[int64]AccountMonitorWindowAggregate
 	groupAggregates    map[int64]map[int64]AccountMonitorAggregate
 	aggregate          AccountMonitorAggregate
 	groupAggregate     map[int64]AccountMonitorAggregate
+	groupAggregateIDs  map[int64][]int64
 	groupAggregatesErr error
 	latest             map[int64]AccountMonitorLatest
+	timelines          map[int64][]AccountMonitorTimelinePoint
+	timelineIDs        []int64
+	timelineLimit      int
 	aggregateIDs       []int64
+	probeSince         time.Time
+	probeUntil         time.Time
+	windowSince        time.Time
+	windowUntil        time.Time
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -51,8 +61,16 @@ func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error 
 	return nil
 }
 
-func (s *accountMonitorRepoStub) ListAggregates(context.Context, []int64, time.Time) (map[int64]AccountMonitorAggregate, error) {
+func (s *accountMonitorRepoStub) ListAggregates(_ context.Context, _ []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error) {
+	s.probeSince = since
+	s.probeUntil = until
 	return s.aggregates, nil
+}
+
+func (s *accountMonitorRepoStub) ListWindowAggregates(_ context.Context, _ []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error) {
+	s.windowSince = since
+	s.windowUntil = until
+	return s.windowAggregates, nil
 }
 
 func (s *accountMonitorRepoStub) ListGroupAggregates(_ context.Context, groupID int64, _ []int64, _ time.Time) (map[int64]AccountMonitorAggregate, error) {
@@ -67,12 +85,22 @@ func (s *accountMonitorRepoStub) LoadAggregate(_ context.Context, accountIDs []i
 	return s.aggregate, nil
 }
 
-func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID int64, _ time.Time) (AccountMonitorAggregate, error) {
+func (s *accountMonitorRepoStub) LoadGroupAggregate(_ context.Context, groupID int64, accountIDs []int64, _ time.Time) (AccountMonitorAggregate, error) {
+	if s.groupAggregateIDs == nil {
+		s.groupAggregateIDs = make(map[int64][]int64)
+	}
+	s.groupAggregateIDs[groupID] = append([]int64(nil), accountIDs...)
 	return s.groupAggregate[groupID], nil
 }
 
 func (s *accountMonitorRepoStub) ListLatest(context.Context, []int64) (map[int64]AccountMonitorLatest, error) {
 	return s.latest, nil
+}
+
+func (s *accountMonitorRepoStub) ListTimelines(_ context.Context, ids []int64, limit int) (map[int64][]AccountMonitorTimelinePoint, error) {
+	s.timelineIDs = append([]int64(nil), ids...)
+	s.timelineLimit = limit
+	return s.timelines, nil
 }
 
 func (s *accountMonitorRepoStub) LoadSettings(context.Context) (AccountMonitorSettings, error) {
@@ -108,10 +136,11 @@ func (s *accountMonitorRepoStub) ResetGroupScoreWeights(_ context.Context, group
 }
 
 type accountMonitorMultiplierStub struct {
-	mu     sync.Mutex
-	calls  []accountMonitorMultiplierCall
-	err    error
-	result AccountMonitorMultiplier
+	mu      sync.Mutex
+	calls   []accountMonitorMultiplierCall
+	err     error
+	result  AccountMonitorMultiplier
+	results map[int64]AccountMonitorMultiplier
 }
 
 type accountMonitorMultiplierCall struct {
@@ -124,7 +153,12 @@ type accountMonitorRunResult struct {
 	err       error
 }
 
-func (s *accountMonitorMultiplierStub) Resolve(*Account, time.Time) AccountMonitorMultiplier {
+func (s *accountMonitorMultiplierStub) Resolve(account *Account, _ time.Time) AccountMonitorMultiplier {
+	if account != nil {
+		if result, ok := s.results[account.ID]; ok {
+			return result
+		}
+	}
 	return s.result
 }
 
@@ -133,6 +167,13 @@ func (s *accountMonitorMultiplierStub) Refresh(_ context.Context, account *Accou
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, accountMonitorMultiplierCall{accountID: account.ID, force: force})
 	return s.err
+}
+
+func accountMonitorConfirmedMultiplier(value float64) *accountMonitorMultiplierStub {
+	return &accountMonitorMultiplierStub{result: AccountMonitorMultiplier{
+		Value:  &value,
+		Status: AccountMonitorMultiplierStatusOK,
+	}}
 }
 
 func (s *accountMonitorAccountRepoStub) ListSchedulable(context.Context) ([]Account, error) {
@@ -249,6 +290,26 @@ func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) 
 	}
 }
 
+func TestAccountMonitorListDeduplicatesAccountsByIDWithStableOrder(t *testing.T) {
+	service := NewAccountMonitorService(nil, &accountMonitorAccountRepoStub{accounts: []Account{
+		{ID: 9, Name: "second source"},
+		{ID: 2, Name: "first source"},
+		{ID: 2, Name: "duplicate source"},
+		{ID: 9, Name: "duplicate second"},
+	}}, nil, nil, nil)
+
+	accounts, err := service.listMonitorAccounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
+		t.Fatalf("accounts = %#v, want one stable row per ID", accounts)
+	}
+	if accounts[0].Name != "first source" || accounts[1].Name != "second source" {
+		t.Fatalf("deduplication did not preserve first source row: %#v", accounts)
+	}
+}
+
 func TestAccountMonitorServiceRejectsScoreWeightsThatDoNotSumTo100(t *testing.T) {
 	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, &accountMonitorAccountRepoStub{}, nil, nil, nil)
 	_, err := svc.UpdateGroupScoreWeights(context.Background(), 7, 3, AccountMonitorScoreWeights{
@@ -305,6 +366,266 @@ func TestAccountMonitorServiceProjectsNativeGroupVisibilityAndWeights(t *testing
 	if page.Groups[0].RateMultiplier != 1.25 || page.Groups[0].NativeOrder != 4 || page.Groups[0].ScoreWeights.Success != 40 {
 		t.Fatalf("group projection = %#v", page.Groups[0])
 	}
+}
+
+func TestAccountMonitorProjectionIgnoresUnprobedPausedAccountsWhenDeterminingStaleness(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 1, Name: "paused-without-probe", Status: StatusDisabled, Schedulable: false, RateMultiplier: &rate},
+		{ID: 2, Name: "fresh-enabled", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings:   AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates: map[int64]AccountMonitorAggregate{2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:     map[int64]AccountMonitorLatest{2: {Status: "success", CheckedAt: now}},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Stale {
+		t.Fatalf("paused account without a probe must not make a fresh monitor projection stale: %#v", page)
+	}
+}
+
+func TestAccountMonitorProjectionSeparatesManagementServiceAndGroupEligibility(t *testing.T) {
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+	cheapRate := 0.5
+	expensiveRate := 2.0
+	confirmedCheap := AccountMonitorMultiplier{Value: &cheapRate, Status: AccountMonitorMultiplierStatusOK}
+	confirmedExpensive := AccountMonitorMultiplier{Value: &expensiveRate, Status: AccountMonitorMultiplierStatusOK}
+	accounts := []Account{
+		{ID: 1, Name: "disabled", Status: StatusDisabled, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 2, Name: "unschedulable", Status: StatusActive, Schedulable: false, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 3, Name: "available", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 4, Name: "unavailable", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 5, Name: "pending", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 6, Name: "cost-ineligible", Status: StatusActive, Schedulable: true, RateMultiplier: &expensiveRate, GroupIDs: []int64{7}},
+		{ID: 7, Name: "temporarily-paused", Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 8, Name: "multiplier-pending", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "closed", RateMultiplier: 1, CustomerVisible: false}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		}},
+		latest: map[int64]AccountMonitorLatest{
+			1: {Status: "success", CheckedAt: now},
+			2: {Status: "success", CheckedAt: now},
+			3: {Status: "success", CheckedAt: now},
+			4: {Status: "failed", CheckedAt: now},
+			6: {Status: "success", CheckedAt: now},
+			7: {Status: "success", CheckedAt: now},
+			8: {Status: "success", CheckedAt: now},
+		},
+	}
+	multiplier := &accountMonitorMultiplierStub{results: map[int64]AccountMonitorMultiplier{
+		1: confirmedCheap, 2: confirmedCheap, 3: confirmedCheap, 4: confirmedCheap,
+		5: confirmedCheap, 6: confirmedExpensive, 7: confirmedCheap,
+		8: {Status: AccountMonitorMultiplierStatusUnavailable},
+	}}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, multiplier).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	global := accountMonitorRowsByID(page.Accounts)
+	if global[1].ManagementState != "paused" || global[1].ServiceState != "not_monitored" || global[1].GroupEligibility != "not_applicable" || global[1].MonitorBucket != "paused" {
+		t.Fatalf("paused global state = %#v", global[1])
+	}
+	if global[3].ManagementState != "enabled" || global[3].ServiceState != "available" || global[3].GroupEligibility != "not_applicable" || global[3].MonitorBucket != "available" {
+		t.Fatalf("available global state = %#v", global[3])
+	}
+	if global[4].ServiceState != "unavailable" || global[4].MonitorBucket != "unavailable" {
+		t.Fatalf("unavailable global state = %#v", global[4])
+	}
+	if global[5].ServiceState != "pending" || global[5].MonitorBucket != "pending" {
+		t.Fatalf("pending global state = %#v", global[5])
+	}
+	encoded, err := json.Marshal(global[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["management_state"] != "enabled" || payload["service_state"] != "available" || payload["group_eligibility"] != "not_applicable" || payload["monitor_bucket"] != "available" {
+		t.Fatalf("independent state JSON contract = %#v", payload)
+	}
+	if page.Health.MonitoringAccounts != 5 || page.Health.AvailableAccounts != 3 || page.Health.UnavailableAccounts != 1 || page.Health.PendingAccounts != 1 || page.Health.PausedAccounts != 3 {
+		t.Fatalf("global health = %#v", page.Health)
+	}
+
+	group := page.Groups[0]
+	rows := accountMonitorGroupRowsByID(group.Accounts)
+	if rows[3].ManagementState != "enabled" || rows[3].ServiceState != "available" || rows[3].GroupEligibility != "eligible" || !rows[3].Eligible || rows[3].QualityScore == nil || rows[3].GroupRank == nil {
+		t.Fatalf("eligible available group state = %#v", rows[3])
+	}
+	if rows[4].ServiceState != "unavailable" || rows[4].GroupEligibility != "eligible" || rows[4].Eligible || rows[4].QualityScore != nil || rows[4].GroupRank != nil {
+		t.Fatalf("failed account must not rank: %#v", rows[4])
+	}
+	if rows[6].ServiceState != "available" || rows[6].GroupEligibility != "cost_ineligible" || rows[6].MonitorBucket != "cost_ineligible" || rows[6].Eligible || rows[6].QualityScore != nil || rows[6].GroupRank != nil {
+		t.Fatalf("cost-ineligible service state = %#v", rows[6])
+	}
+	if rows[8].ServiceState != "available" || rows[8].GroupEligibility != "multiplier_pending" || rows[8].MonitorBucket != "pending" || rows[8].Eligible || rows[8].QualityScore != nil || rows[8].GroupRank != nil {
+		t.Fatalf("multiplier-pending group state = %#v", rows[8])
+	}
+	if group.Health.MonitoringAccounts != 5 || group.Health.AvailableAccounts != 3 || group.Health.UnavailableAccounts != 1 || group.Health.PendingAccounts != 1 || group.Health.PausedAccounts != 3 {
+		t.Fatalf("group health must not convert cost ineligibility into service failure: %#v", group.Health)
+	}
+	if group.Health.AvailableAccounts+group.Health.UnavailableAccounts+group.Health.PendingAccounts+group.Health.PausedAccounts != group.Health.TotalAccounts {
+		t.Fatalf("group health is not a four-way partition: %#v", group.Health)
+	}
+}
+
+func accountMonitorRowsByID(rows []AccountMonitorAccount) map[int64]AccountMonitorAccount {
+	byID := make(map[int64]AccountMonitorAccount, len(rows))
+	for _, row := range rows {
+		byID[row.AccountID] = row
+	}
+	return byID
+}
+
+func accountMonitorGroupRowsByID(rows []AccountMonitorGroupAccount) map[int64]AccountMonitorGroupAccount {
+	byID := make(map[int64]AccountMonitorGroupAccount, len(rows))
+	for _, row := range rows {
+		byID[row.AccountID] = row
+	}
+	return byID
+}
+
+func TestAccountMonitorProjectionBucketsEveryAccountAndPreservesClosedGroupAccounts(t *testing.T) {
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+	expired := now.Add(-time.Hour)
+	cheapRate := 0.5
+	expensiveRate := 2.0
+	accounts := []Account{
+		{ID: 1, Name: "disabled", Status: StatusDisabled, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 2, Name: "unschedulable", Status: StatusActive, Schedulable: false, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 3, Name: "available", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 4, Name: "unavailable", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 5, Name: "pending", Status: StatusActive, Schedulable: true, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 6, Name: "cost-ineligible", Status: StatusActive, Schedulable: true, RateMultiplier: &expensiveRate, GroupIDs: []int64{7}},
+		{ID: 7, Name: "temporarily-paused", Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+		{ID: 8, Name: "expired-auto-pause", Status: StatusActive, Schedulable: true, AutoPauseOnExpired: true, ExpiresAt: &expired, RateMultiplier: &cheapRate, GroupIDs: []int64{7}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "closed", RateMultiplier: 1, CustomerVisible: false}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {
+			1: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			2: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			3: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			4: {SampleCount: 4, SuccessRate: 0, LastCheckedAt: &now},
+			6: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			7: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 4, SuccessRate: 1, LastCheckedAt: &now},
+		}},
+		latest: map[int64]AccountMonitorLatest{
+			1: {Status: "success", CheckedAt: now},
+			2: {Status: "success", CheckedAt: now},
+			3: {Status: "success", CheckedAt: now},
+			4: {Status: "failed", CheckedAt: now},
+			6: {Status: "success", CheckedAt: now},
+			7: {Status: "success", CheckedAt: now},
+			8: {Status: "success", CheckedAt: now},
+		},
+	}
+
+	confirmedCheap := AccountMonitorMultiplier{Value: &cheapRate, Status: AccountMonitorMultiplierStatusOK}
+	confirmedExpensive := AccountMonitorMultiplier{Value: &expensiveRate, Status: AccountMonitorMultiplierStatusOK}
+	multiplier := &accountMonitorMultiplierStub{results: map[int64]AccountMonitorMultiplier{
+		1: confirmedCheap, 2: confirmedCheap, 3: confirmedCheap, 4: confirmedCheap,
+		5: confirmedCheap, 6: confirmedExpensive, 7: confirmedCheap, 8: confirmedCheap,
+	}}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, multiplier).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Accounts) != 8 {
+		t.Fatalf("global accounts = %#v, want every account", page.Accounts)
+	}
+	globalBuckets := make(map[int64]string, len(page.Accounts))
+	for _, account := range page.Accounts {
+		globalBuckets[account.AccountID] = account.MonitorBucket
+	}
+	if want := map[int64]string{1: "paused", 2: "paused", 3: "available", 4: "unavailable", 5: "pending", 6: "available", 7: "paused", 8: "paused"}; !mapsEqual(globalBuckets, want) {
+		t.Fatalf("global monitor buckets = %#v, want %#v", globalBuckets, want)
+	}
+	encoded, err := json.Marshal(page.Accounts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["monitor_bucket"] != "paused" {
+		t.Fatalf("monitor bucket JSON contract = %#v", payload)
+	}
+	if page.Health.AvailableAccounts+page.Health.UnavailableAccounts+page.Health.PendingAccounts+page.Health.PausedAccounts != page.Health.TotalAccounts {
+		t.Fatalf("global health is not a four-way partition: %#v", page.Health)
+	}
+
+	group := page.Groups[0]
+	if group.OperationalState != "closed" || len(group.Accounts) != 8 {
+		t.Fatalf("closed group projection = %#v", group)
+	}
+	groupBuckets := make(map[int64]string, len(group.Accounts))
+	for _, account := range group.Accounts {
+		groupBuckets[account.AccountID] = account.MonitorBucket
+	}
+	if want := map[int64]string{1: "paused", 2: "paused", 3: "available", 4: "unavailable", 5: "pending", 6: "cost_ineligible", 7: "paused", 8: "paused"}; !mapsEqual(groupBuckets, want) {
+		t.Fatalf("group monitor buckets = %#v, want %#v", groupBuckets, want)
+	}
+	if group.Health.AvailableAccounts+group.Health.UnavailableAccounts+group.Health.PendingAccounts+group.Health.PausedAccounts != group.Health.TotalAccounts {
+		t.Fatalf("group health is not a four-way partition: %#v", group.Health)
+	}
+	if group.Health.UnavailableAccounts != 1 || group.Health.AvailableAccounts != 2 {
+		t.Fatalf("cost-ineligible group account must preserve service health: %#v", group.Health)
+	}
+}
+
+func mapsEqual(left, right map[int64]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		if rightValue, ok := right[key]; !ok || rightValue != leftValue {
+			return false
+		}
+	}
+	return true
 }
 
 func TestAccountMonitorProjectionIncludesGlobalAndGroupHealthSummaries(t *testing.T) {
@@ -371,7 +692,7 @@ func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *te
 		latest: map[int64]AccountMonitorLatest{41: {Status: "success", CheckedAt: now}},
 	}
 	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{account}}
-	page, err := NewAccountMonitorService(repo, accountRepo, nil, nil, nil).List(context.Background())
+	page, err := NewAccountMonitorService(repo, accountRepo, nil, nil, accountMonitorConfirmedMultiplier(rate)).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,6 +711,106 @@ func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *te
 	}
 }
 
+func TestCalculateAccountMonitorQualityScoreUsesConfiguredLinearThresholds(t *testing.T) {
+	ttft := 3000.0
+	latency := 35000.0
+	score := CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 40, TTFT: 30, Latency: 30,
+		TTFTTargetMS: 1000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.75, TTFTP50MS: &ttft, LatencyP95MS: &latency,
+	})
+	if score == nil || *score != 60 {
+		t.Fatalf("score = %v, want 60 (30 success + 15 TTFT + 15 latency)", score)
+	}
+
+	ttft = 5000
+	latency = 60000
+	score = CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 40, TTFT: 30, Latency: 30,
+		TTFTTargetMS: 1000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.75, TTFTP50MS: &ttft, LatencyP95MS: &latency,
+	})
+	if score == nil || *score != 30 {
+		t.Fatalf("score at upper limits = %v, want success component only", score)
+	}
+}
+
+func TestAccountMonitorProjectionRoundsScoreAndKeepsMetricSpecificEvidence(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	account := Account{ID: 71, Name: "precise", Status: StatusActive, Schedulable: true,
+		RateMultiplier: &rate, Platform: PlatformOpenAI, GroupIDs: []int64{7}}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true,
+			ScoreWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+				TTFTTargetMS: 1000, TTFTLimitMS: 5000, LatencyTargetMS: 10000, LatencyLimitMS: 60000}}},
+		aggregates: map[int64]AccountMonitorAggregate{71: {
+			SampleCount: 7, SuccessSampleCount: 7, TTFTSampleCount: 5, LatencySampleCount: 4,
+			SuccessRate: 6.0 / 7.0, TTFTP50MS: floatPtr(2000), LatencyP95MS: floatPtr(20000), LastCheckedAt: &now,
+		}},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {71: {
+			SampleCount: 7, SuccessSampleCount: 7, TTFTSampleCount: 5, LatencySampleCount: 4,
+			SuccessRate: 6.0 / 7.0, TTFTP50MS: floatPtr(2000), LatencyP95MS: floatPtr(20000), LastCheckedAt: &now,
+		}}},
+		latest: map[int64]AccountMonitorLatest{71: {Status: "success", CheckedAt: now}},
+		timelines: map[int64][]AccountMonitorTimelinePoint{71: {
+			{Status: "failed", CheckedAt: now.Add(-time.Minute)},
+			{Status: "success", TTFTMS: floatPtr(2000), LatencyMS: floatPtr(20000), CheckedAt: now},
+		}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Groups[0].Accounts[0]
+	if row.Evidence.SuccessSampleCount != 7 || row.Evidence.TTFTSampleCount != 5 || row.Evidence.LatencySampleCount != 4 {
+		t.Fatalf("metric-specific evidence = %#v", row.Evidence)
+	}
+	if len(row.Timeline) != 2 || row.Timeline[0].Status != "failed" || row.Timeline[1].Status != "success" {
+		t.Fatalf("timeline = %#v", row.Timeline)
+	}
+	if row.QualityScore == nil || *row.QualityScore != math.Round(*row.QualityScore) {
+		t.Fatalf("quality score must be an integer: %v", row.QualityScore)
+	}
+}
+
+func TestCalculateAccountMonitorQualityScoreRoundsToNearestInteger(t *testing.T) {
+	score := CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 33, TTFT: 0, Latency: 0,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.5,
+	})
+	if score == nil || *score != 17 {
+		t.Fatalf("score = %v, want 17 after rounding 16.5", score)
+	}
+
+	score = CalculateAccountMonitorQualityScore(1, 1, AccountMonitorScoreWeights{
+		Cost: 0, Success: 33, TTFT: 0, Latency: 0,
+	}, AccountMonitorQualityEvidence{
+		Source: "group", SuccessRate: 0.49,
+	})
+	if score == nil || *score != 16 {
+		t.Fatalf("score = %v, want 16 after rounding 16.17", score)
+	}
+}
+
+func TestAccountMonitorScoreThresholdsRejectInvalidRanges(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	_, err := NewAccountMonitorService(repo, nil, nil, nil, nil).UpdateGroupScoreWeights(context.Background(), 7, 3, AccountMonitorScoreWeights{
+		Cost: 15, Success: 45, TTFT: 20, Latency: 20,
+		TTFTTargetMS: 5000, TTFTLimitMS: 5000,
+		LatencyTargetMS: 10000, LatencyLimitMS: 60000,
+	})
+	if err == nil {
+		t.Fatal("expected equal TTFT target and limit to be rejected")
+	}
+}
+
 func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
@@ -403,7 +824,7 @@ func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) 
 		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{7: {52: {SampleCount: 1, SuccessRate: 1, LastCheckedAt: &now}}},
 		latest:          map[int64]AccountMonitorLatest{52: {Status: "success", CheckedAt: now}},
 	}
-	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +835,7 @@ func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) 
 
 	stale := now.Add(-20 * time.Minute)
 	repo.aggregates[52] = AccountMonitorAggregate{SampleCount: 4, SuccessRate: 0.75, LastCheckedAt: &stale, TTFTP50MS: floatPtr(80), LatencyP95MS: floatPtr(300)}
-	page, err = NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil).List(context.Background())
+	page, err = NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +989,33 @@ func TestAccountMonitorCombinedHealthExcludesPausedAccounts(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorClosedGroupWithRequestsSurfacesUnavailableState(t *testing.T) {
+func TestAccountMonitorGroupCombinedHealthExcludesPausedHistory(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.02
+	accounts := []Account{
+		{ID: 91, Name: "paused", Status: StatusActive, Schedulable: false, RateMultiplier: &rate, GroupIDs: []int64{9}},
+		{ID: 92, Name: "active", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{9}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings:       AccountMonitorSettings{IntervalSeconds: 300},
+		groups:         []AccountMonitorGroup{{ID: 9, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates:     map[int64]AccountMonitorAggregate{91: {SampleCount: 100, SuccessRate: 0.1, LastCheckedAt: &now}, 92: {SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now}},
+		groupAggregate: map[int64]AccountMonitorAggregate{9: {SampleCount: 10, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:         map[int64]AccountMonitorLatest{92: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.groupAggregateIDs[9]; len(got) != 1 || got[0] != 92 {
+		t.Fatalf("group combined health scope includes paused accounts: ids=%v", got)
+	}
+	if page.Groups[0].Health.SuccessRate != 1 {
+		t.Fatalf("group health includes paused history: %#v", page.Groups[0].Health)
+	}
+}
+
+func TestAccountMonitorClosedGroupWithRequestsKeepsClosedStateAndAccounts(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
 	account := Account{ID: 89, Name: "failed", Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{88}}
@@ -584,8 +1031,8 @@ func TestAccountMonitorClosedGroupWithRequestsSurfacesUnavailableState(t *testin
 		t.Fatal(err)
 	}
 	group := page.Groups[0]
-	if group.OperationalState != "unavailable" || len(group.Accounts) != 1 || group.Health.UnavailableAccounts != 1 {
-		t.Fatalf("closed group with requests must surface its genuine failure: %#v", group)
+	if group.OperationalState != "closed" || len(group.Accounts) != 1 || group.Health.UnavailableAccounts != 1 {
+		t.Fatalf("closed group with requests must remain inspectable: %#v", group)
 	}
 }
 
@@ -607,9 +1054,535 @@ func TestAccountMonitorClosedGroupWithSuccessfulTrafficRemainsClosed(t *testing.
 		t.Fatal(err)
 	}
 	group := page.Groups[0]
-	if group.OperationalState != "closed" || len(group.Accounts) != 0 {
-		t.Fatalf("closed group with successful traffic must remain suppressed: %#v", group)
+	if group.OperationalState != "closed" || len(group.Accounts) != 1 {
+		t.Fatalf("closed group with successful traffic must remain inspectable: %#v", group)
 	}
+}
+
+func TestAccountMonitorWindowCostUsesProcurementOverlapAndOneToOneMultiplier(t *testing.T) {
+	windowStart := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	windowEnd := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	effectiveAt := time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	purchaseCost := 24.0
+
+	got := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+		ExpiresAt:                  &expiresAt,
+	}, windowStart, windowEnd, 8)
+	if got.Mode != "procurement" || got.WindowCost != 8 || got.EffectiveMultiplier == nil || *got.EffectiveMultiplier != 1 {
+		t.Fatalf("procurement window cost = %#v, want CNY 8 and 1x", got)
+	}
+}
+
+func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.T) {
+	now := time.Now().UTC()
+	purchaseCost := 120.50
+	effectiveAt := now.Add(-24 * time.Hour)
+	expiresAt := now.Add(29 * 24 * time.Hour)
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			113: {RequestCount: 3, SuccessCount: 3, BaseCost: 10, SuccessRate: 1, LastObservedAt: &now},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 113, Name: "procurement", Status: StatusActive, Schedulable: true,
+		ProcurementCostCNY: &purchaseCost, ProcurementCostEffectiveAt: &effectiveAt, ExpiresAt: &expiresAt,
+	}}}, nil, nil, nil).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Accounts) != 1 {
+		t.Fatalf("accounts = %#v, want one account", page.Accounts)
+	}
+	row := page.Accounts[0]
+	if row.ProcurementCostCNY == nil || *row.ProcurementCostCNY != purchaseCost {
+		t.Fatalf("procurement_cost_cny = %#v, want %v", row.ProcurementCostCNY, purchaseCost)
+	}
+	if row.ProcurementCostEffectiveAt == nil || !row.ProcurementCostEffectiveAt.Equal(effectiveAt) {
+		t.Fatalf("procurement_cost_effective_at = %#v, want %s", row.ProcurementCostEffectiveAt, effectiveAt)
+	}
+	if row.ExpiresAt == nil || !row.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at = %#v, want %s", row.ExpiresAt, expiresAt)
+	}
+}
+
+func TestAccountMonitorListWindowProjectsRecentTimelineAndRanksGlobalScoreTiesByAccountID(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 10, Name: "global-tie-one", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 11, Name: "global-tie-two", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 20, Name: "global-tie-three", Status: StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 30, Name: "global-unranked", Status: StatusDisabled, Schedulable: false, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			10: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			11: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			10: {Status: "success", CheckedAt: now},
+			11: {Status: "success", CheckedAt: now},
+			20: {Status: "success", CheckedAt: now},
+		},
+		timelines: map[int64][]AccountMonitorTimelinePoint{
+			10: {{Status: "success", CheckedAt: now.Add(-time.Minute)}, {Status: "failed", CheckedAt: now}},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slicesEqual(repo.timelineIDs, []int64{10, 11, 20, 30}) || repo.timelineLimit != AccountMonitorTimelineLimit {
+		t.Fatalf("timeline query = ids %v limit %d, want ids [10 11 20 30] limit %d", repo.timelineIDs, repo.timelineLimit, AccountMonitorTimelineLimit)
+	}
+	if len(page.Accounts[0].Timeline) != 2 || page.Accounts[0].Timeline[1].Status != "failed" {
+		t.Fatalf("timeline projection = %#v, want latest native points", page.Accounts[0].Timeline)
+	}
+	if len(page.Accounts) != 4 {
+		t.Fatalf("top-level page accounts = %#v, want four accounts", page.Accounts)
+	}
+	if !slicesEqual([]int64{
+		page.Accounts[0].AccountID,
+		page.Accounts[1].AccountID,
+		page.Accounts[2].AccountID,
+		page.Accounts[3].AccountID,
+	}, []int64{10, 11, 20, 30}) {
+		t.Fatalf("top-level page accounts = %#v, want tied accounts ordered by account ID with unranked last", page.Accounts)
+	}
+	if page.Accounts[0].QualityScore == nil || page.Accounts[1].QualityScore == nil || page.Accounts[2].QualityScore == nil ||
+		*page.Accounts[0].QualityScore != *page.Accounts[1].QualityScore || *page.Accounts[1].QualityScore != *page.Accounts[2].QualityScore {
+		t.Fatalf("top-level quality scores = %#v, want equal scores for account IDs 10, 11, and 20", page.Accounts)
+	}
+	for index, wantRank := range []int{1, 2, 3} {
+		if page.Accounts[index].GroupRank == nil || *page.Accounts[index].GroupRank != wantRank {
+			t.Fatalf("top-level rank for account %d = %#v, want %d", page.Accounts[index].AccountID, page.Accounts[index].GroupRank, wantRank)
+		}
+	}
+	if page.Accounts[3].GroupRank != nil {
+		t.Fatalf("top-level unranked account = %#v, want nil rank", page.Accounts[3])
+	}
+
+	payload, err := json.Marshal(page.Accounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0]["quality_score"] == nil || rows[0]["group_rank"] != float64(1) || rows[1]["group_rank"] != float64(2) || rows[2]["group_rank"] != float64(3) || rows[3]["group_rank"] != nil {
+		t.Fatalf("global score/rank JSON projection = %#v, want stable rankings 1, 2, 3, nil", rows)
+	}
+}
+
+func TestAccountMonitorWindowCostReturnsZeroCostScoreForInvalidCostInputs(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	effectiveAt := start.Add(-24 * time.Hour)
+	purchaseCost := 24.0
+
+	procurement := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+	}, start, end, 8)
+	if procurement.CostScoreEligible || procurement.EffectiveMultiplier != nil {
+		t.Fatalf("missing expiry must have zero cost score: %#v", procurement)
+	}
+
+	multiplier := accountMonitorWindowCost(Account{}, start, end, 8)
+	if multiplier.Mode != "multiplier" || multiplier.CostScoreEligible || multiplier.EffectiveMultiplier != nil {
+		t.Fatalf("missing multiplier must have zero cost score: %#v", multiplier)
+	}
+}
+
+func TestAccountMonitorWindowRankingKeepsCostInvalidAccountEligible(t *testing.T) {
+	now := time.Now().UTC()
+	cheap := 0.5
+	accounts := []Account{
+		{ID: 9, Name: "cost-missing", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}},
+		{ID: 10, Name: "priced", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &cheap},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			9:  {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			10: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{9: {Status: "success", CheckedAt: now}, 10: {Status: "success", CheckedAt: now}},
+	}
+	multiplier := &accountMonitorMultiplierStub{results: map[int64]AccountMonitorMultiplier{
+		9:  {Status: AccountMonitorMultiplierStatusUnavailable},
+		10: {Value: &cheap, Status: AccountMonitorMultiplierStatusOK},
+	}}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, multiplier).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := page.Groups[0].Accounts
+	if len(rows) != 2 {
+		t.Fatalf("group rows = %#v, want both accounts", rows)
+	}
+	byID := map[int64]AccountMonitorGroupAccount{rows[0].AccountID: rows[0], rows[1].AccountID: rows[1]}
+	missing := byID[9]
+	priced := byID[10]
+	if !missing.Eligible || missing.CostScore != 0 || missing.EffectiveMultiplier != nil || missing.GroupRank == nil {
+		t.Fatalf("cost-invalid account must remain eligible and rankable without cost evidence: %#v", missing)
+	}
+	if !priced.Eligible || priced.CostScore <= 0 || priced.GroupRank == nil || *priced.GroupRank != 1 {
+		t.Fatalf("priced account should receive multiplier cost score and rank first: %#v", priced)
+	}
+}
+
+func TestAccountMonitorWindowRankingUsesScoreThenAccountIDAndPlacesUnrankedLast(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 30, Name: "tie-later", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 10, Name: "best", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 20, Name: "tie-earlier", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 40, Name: "unranked", Status: StatusDisabled, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			10: {RequestCount: 3, SuccessCount: 3, BaseCost: 1, SuccessRate: 1, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			20: {RequestCount: 3, SuccessCount: 1, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+			30: {RequestCount: 3, SuccessCount: 1, BaseCost: 1, SuccessRate: 0.5, TTFTP50MS: floatPtr(100), LatencyP95MS: floatPtr(200), LastObservedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{10: {Status: "success", CheckedAt: now}, 20: {Status: "success", CheckedAt: now}, 30: {Status: "success", CheckedAt: now}},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := page.Groups[0].Accounts
+	if got := []int64{rows[0].AccountID, rows[1].AccountID, rows[2].AccountID, rows[3].AccountID}; !slicesEqual(got, []int64{10, 20, 30, 40}) {
+		t.Fatalf("rank order = %v, want [10 20 30 40]", got)
+	}
+	if rows[0].GroupRank == nil || *rows[0].GroupRank != 1 || rows[1].GroupRank == nil || *rows[1].GroupRank != 2 || rows[2].GroupRank == nil || *rows[2].GroupRank != 3 || rows[3].GroupRank != nil {
+		t.Fatalf("ranks = %#v", rows)
+	}
+}
+
+func TestAccountMonitorWindowEvidenceUsesProbesOnlyBelowThreeRealRequests(t *testing.T) {
+	now := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	probe := AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 0.75, LastCheckedAt: &now}
+	latest := AccountMonitorLatest{Status: "success", CheckedAt: now}
+	settings := AccountMonitorSettings{IntervalSeconds: 300}
+
+	withTwoRequests := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 2, SuccessRate: 1, LastObservedAt: &now}, probe, latest, settings, now,
+	)
+	if withTwoRequests.Source != "monitor_probe" || withTwoRequests.SampleCount != 4 || withTwoRequests.SuccessRate != 0.75 {
+		t.Fatalf("two real requests should use probe evidence: %#v", withTwoRequests)
+	}
+
+	withThreeRequests := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, probe, latest, settings, now,
+	)
+	if withThreeRequests.Source != "real_requests" || withThreeRequests.SampleCount != 3 || withThreeRequests.SuccessSampleCount != 2 || withThreeRequests.SuccessRate != 2.0/3.0 {
+		t.Fatalf("three real requests must not use probe evidence: %#v", withThreeRequests)
+	}
+}
+
+func TestAccountMonitorWindowStateUsesRealRequestsAndKeepsLatestProbeTimeSeparate(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-5 * time.Minute)
+	latestCheckedAt := now.Add(-time.Minute)
+	rate := 0.5
+	accounts := []Account{
+		{ID: 118, Name: "real-success-78", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 119, Name: "real-success-742", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 120, Name: "real-all-failed", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 121, Name: "probe-fallback", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			118: {RequestCount: 78, SuccessCount: 78, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			119: {RequestCount: 742, SuccessCount: 742, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			120: {RequestCount: 3, SuccessCount: 0, ErrorCount: 3, SuccessRate: 0, LastObservedAt: &observedAt},
+			121: {RequestCount: 2, SuccessCount: 2, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+		},
+		aggregates: map[int64]AccountMonitorAggregate{
+			121: {SampleCount: 4, SuccessCount: 4, SuccessSampleCount: 4, SuccessRate: 1, LastCheckedAt: &latestCheckedAt},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			118: {Status: "failed", CheckedAt: latestCheckedAt},
+			119: {Status: "failed", CheckedAt: latestCheckedAt},
+			120: {Status: "success", CheckedAt: latestCheckedAt},
+			121: {Status: "success", CheckedAt: latestCheckedAt},
+		},
+		timelines: map[int64][]AccountMonitorTimelinePoint{
+			118: {{Status: "failed", CheckedAt: latestCheckedAt}},
+			119: {{Status: "failed", CheckedAt: latestCheckedAt}},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	globalByID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		globalByID[row.AccountID] = row
+	}
+	for _, accountID := range []int64{118, 119} {
+		row := globalByID[accountID]
+		if row.LatestStatus != "failed" || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("global real-success account %d = %#v, want failed probe fact but available and ranked", accountID, row)
+		}
+		if row.CheckedAt == nil || !row.CheckedAt.Equal(latestCheckedAt) {
+			t.Fatalf("global checked_at for account %d = %v, want latest probe time %s", accountID, row.CheckedAt, latestCheckedAt)
+		}
+	}
+	if row := globalByID[120]; row.LatestStatus != "success" || row.ServiceState != accountMonitorServiceUnavailable || row.MonitorBucket != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("global all-failed real-request account = %#v, want unavailable despite successful latest probe", row)
+	}
+	if row := globalByID[121]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("global probe fallback account = %#v, want existing latest-probe success behavior", row)
+	}
+
+	groupByID := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
+	for _, row := range page.Groups[0].Accounts {
+		groupByID[row.AccountID] = row
+	}
+	for _, accountID := range []int64{118, 119} {
+		row := groupByID[accountID]
+		if row.LatestStatus != "failed" || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("group real-success account %d = %#v, want failed probe fact but available and ranked", accountID, row)
+		}
+		if row.CheckedAt == nil || !row.CheckedAt.Equal(latestCheckedAt) || !row.Evidence.ObservedAt.Equal(observedAt) {
+			t.Fatalf("group timestamps for account %d = checked %v evidence %s, want latest %s and real-request %s", accountID, row.CheckedAt, row.Evidence.ObservedAt, latestCheckedAt, observedAt)
+		}
+		if len(row.Timeline) != 1 || row.Timeline[0].Status != "failed" {
+			t.Fatalf("group timeline for account %d = %#v, want failed probe fact preserved", accountID, row.Timeline)
+		}
+	}
+	if row := groupByID[120]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("group all-failed real-request account = %#v, want unavailable and unranked", row)
+	}
+	if row := groupByID[121]; row.Evidence.Source != "monitor_probe" || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("group probe fallback account = %#v, want monitor_probe and available", row)
+	}
+}
+
+func TestAccountMonitorWindowServiceStateKeepsProbeGateAndStalePending(t *testing.T) {
+	latestCheckedAt := time.Now().UTC()
+	base := AccountMonitorAccount{Latest: &AccountMonitorLatest{Status: "failed", CheckedAt: latestCheckedAt}, LatestStatus: "failed"}
+	probeSuccess := AccountMonitorQualityEvidence{Source: "monitor_probe", SuccessSampleCount: 4, SampleCount: 4}
+	if got := accountMonitorWindowServiceState(base, probeSuccess, accountMonitorManagementEnabled); got != accountMonitorServiceUnavailable {
+		t.Fatalf("failed latest probe with probe evidence = %q, want unavailable", got)
+	}
+	base.LatestStatus = "success"
+	if got := accountMonitorWindowServiceState(base, probeSuccess, accountMonitorManagementEnabled); got != accountMonitorServiceAvailable {
+		t.Fatalf("successful latest probe with probe evidence = %q, want available", got)
+	}
+	base.Stale = true
+	if got := accountMonitorWindowServiceState(base, AccountMonitorQualityEvidence{Source: "real_requests", SuccessSampleCount: 3}, accountMonitorManagementEnabled); got != accountMonitorServicePending {
+		t.Fatalf("stale real-request evidence = %q, want pending", got)
+	}
+}
+
+func TestAccountMonitorWindowEvidenceUsesRawSuccessCountAndRealObservedAt(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	latestCheckedAt := now.Add(-time.Minute)
+	evidence := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 0, SuccessRate: 0.5},
+		AccountMonitorAggregate{},
+		AccountMonitorLatest{Status: "success", CheckedAt: latestCheckedAt},
+		AccountMonitorSettings{IntervalSeconds: 300},
+		now,
+	)
+	if evidence.Source != "real_requests" || evidence.SuccessSampleCount != 0 {
+		t.Fatalf("inconsistent real-request aggregate evidence = %#v, want raw zero success samples", evidence)
+	}
+	if !evidence.ObservedAt.IsZero() {
+		t.Fatalf("real-request evidence observed_at = %s, want zero without LastObservedAt", evidence.ObservedAt)
+	}
+}
+
+func TestAccountMonitorWindowServiceStateUsesOnlyThresholdQualifiedRealRequestsBeforeProbeGate(t *testing.T) {
+	now := time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+	thresholdQualified := AccountMonitorQualityEvidence{Source: "real_requests", SampleCount: 3, SuccessSampleCount: 1}
+	if got := accountMonitorWindowServiceState(AccountMonitorAccount{Stale: true}, thresholdQualified, accountMonitorManagementEnabled); got != accountMonitorServiceAvailable {
+		t.Fatalf("threshold-qualified real requests with absent latest probe = %q, want available", got)
+	}
+
+	belowThreshold := AccountMonitorQualityEvidence{Source: "real_requests", SampleCount: 2, SuccessSampleCount: 2}
+	failedLatest := AccountMonitorAccount{
+		Latest:       &AccountMonitorLatest{Status: "failed", CheckedAt: now},
+		LatestStatus: "failed",
+	}
+	if got := accountMonitorWindowServiceState(failedLatest, belowThreshold, accountMonitorManagementEnabled); got != accountMonitorServiceUnavailable {
+		t.Fatalf("subthreshold real requests with failed latest probe = %q, want unavailable", got)
+	}
+}
+
+func TestAccountMonitorWindowThresholdQualifiedRealRequestsIgnoreAbsentLatestInGlobalAndGroupProjections(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-time.Hour)
+	rate := 0.5
+	accounts := []Account{
+		{ID: 201, Name: "threshold-success", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 202, Name: "threshold-failed", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			201: {RequestCount: 3, SuccessCount: 3, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+			202: {RequestCount: 3, SuccessCount: 0, ErrorCount: 3, SuccessRate: 0, LastObservedAt: &observedAt},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	globalByID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		globalByID[row.AccountID] = row
+	}
+	if row := globalByID[201]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil || row.Latest != nil {
+		t.Fatalf("global threshold success = %#v, want available and ranked without latest probe", row)
+	}
+	if row := globalByID[202]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.Latest != nil {
+		t.Fatalf("global threshold failure = %#v, want unavailable and unranked without latest probe", row)
+	}
+
+	groupByID := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
+	for _, row := range page.Groups[0].Accounts {
+		groupByID[row.AccountID] = row
+	}
+	if row := groupByID[201]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil || row.Latest != nil {
+		t.Fatalf("group threshold success = %#v, want available and ranked without latest probe", row)
+	}
+	if row := groupByID[202]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.Latest != nil {
+		t.Fatalf("group threshold failure = %#v, want unavailable and unranked without latest probe", row)
+	}
+}
+
+func TestAccountMonitorWindowSubthresholdRealRequestsKeepLatestProbeGateInGlobalAndGroupProjections(t *testing.T) {
+	now := time.Now().UTC()
+	observedAt := now.Add(-time.Hour)
+	rate := 0.5
+	account := Account{ID: 203, Name: "subthreshold-success", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			203: {RequestCount: 2, SuccessCount: 2, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &observedAt},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			203: {Status: "failed", CheckedAt: now},
+		},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := page.Accounts[0]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
+		t.Fatalf("global subthreshold success = %#v, want failed latest probe to make it unavailable and unranked", row)
+	}
+	if row := page.Groups[0].Accounts[0]; row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
+		t.Fatalf("group subthreshold success = %#v, want failed latest probe to make it unavailable and unranked", row)
+	}
+}
+
+func TestSummarizeHealthSamplesWeightsSuccessRateByRequestSamples(t *testing.T) {
+	summary := summarizeHealthSamples([]accountMonitorHealthSample{
+		{serviceState: accountMonitorServiceAvailable, sampleCount: 100, successSampleCount: 1, successRate: 0.01},
+		{serviceState: accountMonitorServiceAvailable, sampleCount: 1, successSampleCount: 1, successRate: 1},
+	})
+	if summary.SuccessSampleCount != 2 {
+		t.Fatalf("success sample count = %d, want 2", summary.SuccessSampleCount)
+	}
+	if summary.SuccessRate < 0.019 || summary.SuccessRate > 0.020 {
+		t.Fatalf("success rate = %v, want approximately 2/101", summary.SuccessRate)
+	}
+}
+
+func TestSummarizeHealthSamplesPreservesZeroSuccessForAllFailedWindow(t *testing.T) {
+	summary := summarizeHealthSamples([]accountMonitorHealthSample{
+		{serviceState: accountMonitorServiceUnavailable, sampleCount: 4, successSampleCount: 0, successRate: 0},
+	})
+	if summary.SuccessSampleCount != 0 || summary.SuccessRate != 0 {
+		t.Fatalf("all-failed summary = %#v, want zero successful samples and rate", summary)
+	}
+}
+
+func TestAccountMonitorWindowCostKeepsNativeMultiplierWithoutWindowBaseCost(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	rate := 0.75
+
+	got := accountMonitorWindowCost(Account{RateMultiplier: &rate}, start, end, 0)
+	if got.Mode != "multiplier" || !got.CostScoreEligible || got.EffectiveMultiplier == nil || *got.EffectiveMultiplier != rate {
+		t.Fatalf("native multiplier with no real request cost = %#v, want effective multiplier %.2f", got, rate)
+	}
+}
+
+func TestAccountMonitorWindowCostProcurementZeroBaseCostRemainsIneligible(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	effectiveAt := start.Add(-24 * time.Hour)
+	expiresAt := end.Add(24 * time.Hour)
+	purchaseCost := 24.0
+
+	got := accountMonitorWindowCost(Account{
+		ProcurementCostCNY:         &purchaseCost,
+		ProcurementCostEffectiveAt: &effectiveAt,
+		ExpiresAt:                  &expiresAt,
+	}, start, end, 0)
+	if got.Mode != "procurement" || got.CostScoreEligible || got.EffectiveMultiplier != nil {
+		t.Fatalf("procurement zero-base-cost result = %#v, want ineligible cost", got)
+	}
+}
+
+func TestAccountMonitorWindowProbeFallbackUsesSelectedUpperBound(t *testing.T) {
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repo.probeSince.Equal(repo.windowSince) || !repo.probeUntil.Equal(repo.windowUntil) {
+		t.Fatalf("probe window = [%s, %s), request window = [%s, %s)", repo.probeSince, repo.probeUntil, repo.windowSince, repo.windowUntil)
+	}
+	if !repo.probeUntil.Equal(page.ObservedAt) {
+		t.Fatalf("probe upper bound = %s, observed_at = %s", repo.probeUntil, page.ObservedAt)
+	}
+	if got := repo.probeUntil.Sub(repo.probeSince); got != 24*time.Hour {
+		t.Fatalf("probe window duration = %s, want 24h", got)
+	}
+}
+
+func slicesEqual(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func floatPtr(value float64) *float64 { return &value }
@@ -647,6 +1620,37 @@ func TestAccountMonitorProjectionIncludesReusableTodayStatsWithoutSecrets(t *tes
 	for _, forbidden := range []string{"credential", "token\"", "cookie", "authorization", "password", "secret"} {
 		if strings.Contains(strings.ToLower(text), forbidden) {
 			t.Fatalf("projection contains forbidden field %q: %s", forbidden, text)
+		}
+	}
+}
+
+func TestAccountMonitorProjectionSerializesUngroupedAccountListsAsEmptyArrays(t *testing.T) {
+	service := NewAccountMonitorService(
+		&accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}},
+		&accountMonitorAccountRepoStub{accounts: []Account{{
+			ID:          91,
+			Name:        "ungrouped",
+			Status:      StatusActive,
+			Schedulable: true,
+			Platform:    PlatformOpenAI,
+		}}},
+		nil,
+		nil,
+		nil,
+	)
+
+	page, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, expected := range []string{`"group_ids":[]`, `"group_names":[]`} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("projection %s missing %s", text, expected)
 		}
 	}
 }

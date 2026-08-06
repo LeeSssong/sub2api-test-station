@@ -18,7 +18,7 @@ export default {
   ...promptAudit,
   accountMonitor: {
     title: '账号监控',
-    description: '只监控当前启用且可调度的上游账号，集中查看探测质量、倍率和使用窗口。',
+    description: '按分组比较账号服务质量、评分与调度优先级。',
     monitoredCount: '监控中 {count} 个账号',
     interval: '全局间隔',
     intervalMinutes: '{count} 分钟',
@@ -37,6 +37,8 @@ export default {
       failed: '失败',
       balance_exhausted: '余额不足',
       stale: '数据过期',
+      pending: '待确认',
+      paused: '暂停',
       unavailable: '暂无结果',
       noHistory: '暂无历史',
     },

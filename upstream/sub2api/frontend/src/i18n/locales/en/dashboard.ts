@@ -93,6 +93,8 @@ export default {
       latency: 'Total latency P50',
       latencyP95: 'Total latency P95',
       cache: 'Cache hit rate',
+      samples: 'Based on {count} calls',
+      noSamples: 'No call samples',
       insufficient_data: 'Insufficient data',
       not_provided: 'Not provided'
     },
@@ -101,7 +103,10 @@ export default {
     availability: 'Eligible calls',
     callEvidence: '{success} / {eligible} eligible calls succeeded',
     timeline: {
-      noData: 'No eligible calls in this period'
+      noData: 'No probes in this period',
+      probeUnavailable: 'Probe completed (no model available)',
+      success: 'Probe succeeded',
+      failed: 'Probe failed'
     },
     empty: {
       title: 'No visible groups',

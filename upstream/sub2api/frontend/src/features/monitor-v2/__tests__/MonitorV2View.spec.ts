@@ -68,7 +68,7 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '4',
+  contract_version: '5',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',

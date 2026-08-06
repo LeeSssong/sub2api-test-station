@@ -2,6 +2,17 @@ import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
+export type AccountMonitorRange = '24h' | '7d' | '30d'
+
+export interface AccountMonitorConcurrencyItem {
+  account_id: number
+  current: number
+  limit: number
+}
+
+export interface AccountMonitorConcurrencyResponse {
+  items: AccountMonitorConcurrencyItem[]
+}
 
 export interface AccountMonitorSettings {
   interval_seconds: number
@@ -26,7 +37,7 @@ export interface AccountMonitorLatest {
   checked_at: string
 }
 
-export type AccountMonitorMultiplierSource = 'declared' | 'measured' | string
+export type AccountMonitorMultiplierSource = 'declared' | 'measured' | 'manual' | string
 export type AccountMonitorMultiplierStatus = 'ok' | 'stale' | 'unsupported' | 'failed' | 'unavailable' | string
 
 export interface AccountMonitorMultiplier {
@@ -34,6 +45,7 @@ export interface AccountMonitorMultiplier {
   source?: AccountMonitorMultiplierSource
   status: AccountMonitorMultiplierStatus
   observed_at?: string | null
+  sample_count: number
 }
 
 export type AccountMonitorCostGuardStatus =
@@ -82,28 +94,50 @@ export interface AccountMonitorScoreWeights {
   success: number
   ttft: number
   latency: number
+  ttft_target_ms?: number
+  ttft_limit_ms?: number
+  latency_target_ms?: number
+  latency_limit_ms?: number
   updated_by?: number
   updated_at?: string
 }
 
 export interface AccountMonitorHealthSummary {
   total_accounts: number
+  monitoring_accounts: number
   available_accounts: number
   unavailable_accounts: number
   pending_accounts: number
   paused_accounts: number
   success_rate: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
 }
 
+export type AccountMonitorBucket = 'available' | 'unavailable' | 'cost_ineligible' | 'pending' | 'paused'
+
 export interface AccountMonitorQualityEvidence {
   source: 'group' | 'global_fallback' | 'stale' | string
   sample_count: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   success_rate: number
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
   observed_at?: string | null
+}
+
+export interface AccountMonitorTimelinePoint {
+  status: AccountMonitorStatus
+  error_code?: string
+  http_status?: number | null
+  ttft_ms?: number | null
+  latency_ms?: number | null
+  checked_at: string
 }
 
 export interface AccountMonitorAccount {
@@ -113,6 +147,10 @@ export interface AccountMonitorAccount {
   account_type: string
   status: string
   schedulable: boolean
+  management_state: string
+  service_state: string
+  group_eligibility: string
+  monitor_bucket: AccountMonitorBucket
   priority: number
   homepage_url?: string
   group_ids: number[]
@@ -121,6 +159,9 @@ export interface AccountMonitorAccount {
   latest_status: AccountMonitorStatus
   error_code?: string
   sample_count: number
+  success_sample_count: number
+  ttft_sample_count: number
+  latency_sample_count: number
   success_rate: number
   ttft_p50_ms?: number | null
   ttft_p95_ms?: number | null
@@ -129,9 +170,18 @@ export interface AccountMonitorAccount {
   cost_guard?: AccountMonitorCostGuard | null
   request_count: number
   error_count: number
+  range?: AccountMonitorRange
+  base_cost?: number
+  effective_multiplier?: number | null
+  cost_mode?: 'multiplier' | 'procurement' | string
+  cost_score?: number
+  procurement_cost_cny?: number | null
+  procurement_cost_effective_at?: string | null
+  expires_at?: string | null
   today_stats?: WindowStats | null
   usage_windows?: AccountMonitorUsageWindow[]
   latest?: AccountMonitorLatest | null
+  timeline: AccountMonitorTimelinePoint[]
   checked_at?: string | null
   stale: boolean
   quality_score?: number | null
@@ -143,7 +193,13 @@ export interface AccountMonitorAccount {
 export interface AccountMonitorGroup {
   id: number
   name: string
+  status?: string
+  platform?: string
   rate_multiplier: number
+  rpm_limit?: number
+  account_count?: number
+  active_account_count?: number
+  rate_limited_account_count?: number
   customer_visible: boolean
   native_order: number
   score_weights: AccountMonitorScoreWeights
@@ -154,6 +210,7 @@ export interface AccountMonitorGroup {
 
 export interface AccountMonitorProjection {
   schema_version: number
+  range: AccountMonitorRange
   observed_at: string
   stale: boolean
   settings: AccountMonitorSettings
@@ -189,11 +246,27 @@ export interface AccountMonitorHistoryResponse {
   items: AccountMonitorHistoryItem[]
 }
 
-export async function list(options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection> {
-  const response = options?.signal
-    ? await apiClient.get<AccountMonitorProjection>('/admin/account-monitors', { signal: options.signal })
-    : await apiClient.get<AccountMonitorProjection>('/admin/account-monitors')
+export function list(range?: AccountMonitorRange, options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection>
+export function list(options?: { signal?: AbortSignal }): Promise<AccountMonitorProjection>
+export async function list(
+  rangeOrOptions: AccountMonitorRange | { signal?: AbortSignal } = '24h',
+  options?: { signal?: AbortSignal },
+): Promise<AccountMonitorProjection> {
+  const range = typeof rangeOrOptions === 'string' ? rangeOrOptions : '24h'
+  const requestOptions = typeof rangeOrOptions === 'string' ? options : rangeOrOptions
+  const response = await apiClient.get<AccountMonitorProjection>('/admin/accounts/monitor', {
+    params: { range },
+    signal: requestOptions?.signal,
+  })
   const { data } = response
+  return data
+}
+
+export async function getConcurrency(accountIDs: number[]): Promise<AccountMonitorConcurrencyResponse> {
+  const { data } = await apiClient.post<AccountMonitorConcurrencyResponse>(
+    '/admin/accounts/monitor/concurrency',
+    { account_ids: accountIDs },
+  )
   return data
 }
 
@@ -213,6 +286,8 @@ export async function runAll(): Promise<AccountMonitorRunResponse> {
 export async function runOne(accountID: number): Promise<AccountMonitorRunOneResponse> {
   const { data } = await apiClient.post<AccountMonitorRunOneResponse>(
     `/admin/account-monitors/${accountID}/run`,
+    undefined,
+    { timeout: 240_000 },
   )
   return data
 }
@@ -234,7 +309,7 @@ export async function getGroupScoreWeights(groupID: number): Promise<AccountMoni
 
 export async function updateGroupScoreWeights(
   groupID: number,
-  weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>,
+  weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>,
 ): Promise<AccountMonitorScoreWeights> {
   const { data } = await apiClient.put<AccountMonitorScoreWeights>(
     `/admin/account-monitors/groups/${groupID}/score-weights`,
@@ -252,6 +327,7 @@ export async function resetGroupScoreWeights(groupID: number): Promise<AccountMo
 
 const accountMonitorAPI = {
   list,
+  getConcurrency,
   updateSettings,
   runAll,
   runOne,

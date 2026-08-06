@@ -113,6 +113,17 @@ func (Account) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0),
 
+		// procurement_cost_cny: 一次性采购成本，仅供账号监控成本评分使用。
+		field.Float("procurement_cost_cny").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "numeric(14,2)"}),
+		// procurement_cost_effective_at records the server-side write time for the cost.
+		field.Time("procurement_cost_effective_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+
 		// status: 账户状态，如 "active", "error", "disabled"
 		field.String("status").
 			MaxLen(20).

@@ -127,6 +127,12 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
 	}
+	if account.ProcurementCostCNY != nil {
+		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
+	}
+	if account.ProcurementCostEffectiveAt != nil {
+		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
+	}
 	if account.LoadFactor != nil {
 		builder.SetLoadFactor(*account.LoadFactor)
 	}
@@ -489,6 +495,16 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
+	}
+	if account.ProcurementCostCNY != nil {
+		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
+	} else {
+		builder.ClearProcurementCostCny()
+	}
+	if account.ProcurementCostEffectiveAt != nil {
+		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
+	} else {
+		builder.ClearProcurementCostEffectiveAt()
 	}
 	if account.LoadFactor != nil {
 		builder.SetLoadFactor(*account.LoadFactor)
@@ -3403,39 +3419,42 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	}
 
 	rateMultiplier := m.RateMultiplier
+	procurementCostCNY := m.ProcurementCostCny
 
 	return &service.Account{
-		ID:                      m.ID,
-		Name:                    m.Name,
-		Notes:                   m.Notes,
-		Platform:                m.Platform,
-		Type:                    m.Type,
-		Credentials:             copyJSONMap(m.Credentials),
-		Extra:                   copyJSONMap(m.Extra),
-		ProxyID:                 m.ProxyID,
-		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
-		Concurrency:             m.Concurrency,
-		Priority:                m.Priority,
-		RateMultiplier:          &rateMultiplier,
-		LoadFactor:              m.LoadFactor,
-		Status:                  m.Status,
-		ErrorMessage:            derefString(m.ErrorMessage),
-		LastUsedAt:              m.LastUsedAt,
-		ExpiresAt:               m.ExpiresAt,
-		AutoPauseOnExpired:      m.AutoPauseOnExpired,
-		CreatedAt:               m.CreatedAt,
-		UpdatedAt:               m.UpdatedAt,
-		Schedulable:             m.Schedulable,
-		RateLimitedAt:           m.RateLimitedAt,
-		RateLimitResetAt:        m.RateLimitResetAt,
-		OverloadUntil:           m.OverloadUntil,
-		TempUnschedulableUntil:  m.TempUnschedulableUntil,
-		TempUnschedulableReason: derefString(m.TempUnschedulableReason),
-		SessionWindowStart:      m.SessionWindowStart,
-		SessionWindowEnd:        m.SessionWindowEnd,
-		SessionWindowStatus:     derefString(m.SessionWindowStatus),
-		ParentAccountID:         m.ParentAccountID,
-		QuotaDimension:          string(m.QuotaDimension),
+		ID:                         m.ID,
+		Name:                       m.Name,
+		Notes:                      m.Notes,
+		Platform:                   m.Platform,
+		Type:                       m.Type,
+		Credentials:                copyJSONMap(m.Credentials),
+		Extra:                      copyJSONMap(m.Extra),
+		ProxyID:                    m.ProxyID,
+		ProxyFallbackOriginID:      m.ProxyFallbackOriginID,
+		Concurrency:                m.Concurrency,
+		Priority:                   m.Priority,
+		RateMultiplier:             &rateMultiplier,
+		ProcurementCostCNY:         procurementCostCNY,
+		ProcurementCostEffectiveAt: m.ProcurementCostEffectiveAt,
+		LoadFactor:                 m.LoadFactor,
+		Status:                     m.Status,
+		ErrorMessage:               derefString(m.ErrorMessage),
+		LastUsedAt:                 m.LastUsedAt,
+		ExpiresAt:                  m.ExpiresAt,
+		AutoPauseOnExpired:         m.AutoPauseOnExpired,
+		CreatedAt:                  m.CreatedAt,
+		UpdatedAt:                  m.UpdatedAt,
+		Schedulable:                m.Schedulable,
+		RateLimitedAt:              m.RateLimitedAt,
+		RateLimitResetAt:           m.RateLimitResetAt,
+		OverloadUntil:              m.OverloadUntil,
+		TempUnschedulableUntil:     m.TempUnschedulableUntil,
+		TempUnschedulableReason:    derefString(m.TempUnschedulableReason),
+		SessionWindowStart:         m.SessionWindowStart,
+		SessionWindowEnd:           m.SessionWindowEnd,
+		SessionWindowStatus:        derefString(m.SessionWindowStatus),
+		ParentAccountID:            m.ParentAccountID,
+		QuotaDimension:             string(m.QuotaDimension),
 	}
 }
 

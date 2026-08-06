@@ -1,531 +1,406 @@
 <template>
   <AppLayout>
-    <div class="flex min-h-full flex-col gap-4 p-4 sm:p-6">
-      <section class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <div class="flex flex-wrap items-center gap-3">
-            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.accountMonitor.title') }}
-            </h1>
-            <span class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
-              {{ t('admin.accountMonitor.monitoredCount', { count: filteredAccounts.length }) }}
-            </span>
-          </div>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+    <div class="min-h-full bg-[#f4f7f9] px-5 py-8 dark:bg-slate-950 max-sm:px-3 max-sm:pt-[22px] sm:py-9">
+      <div class="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px]" data-test="account-monitor-page">
+      <header class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <h1 class="text-[27px] font-semibold leading-[1.25] text-gray-900 max-[430px]:text-[23px] dark:text-white">
+            {{ t('admin.accountMonitor.title') }}
+          </h1>
+          <p class="mt-[7px] text-sm text-gray-500 max-[760px]:max-w-[272px] dark:text-gray-400">
             {{ t('admin.accountMonitor.description') }}
           </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-dark-700 dark:bg-dark-800">
-            <Icon name="clock" size="sm" class="text-gray-400" />
-            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.accountMonitor.interval') }}</span>
-            <span class="font-mono font-semibold text-gray-900 dark:text-white">{{ intervalLabel }}</span>
-            <button
-              type="button"
-              class="icon-button -mr-2"
-              :title="t('admin.accountMonitor.actions.settings')"
-              :aria-label="t('admin.accountMonitor.actions.settings')"
-              data-test="open-settings"
-              @click="showSettings = true"
-            >
-              <Icon name="cog" size="sm" />
-            </button>
-          </div>
-          <button
-            type="button"
-            class="btn btn-primary"
-            data-test="run-all"
-            :disabled="runningAll || loading"
-            @click="handleRunAll"
-          >
-            <Icon name="refresh" size="sm" :class="{ 'animate-spin': runningAll }" />
+        <button
+          type="button"
+          class="btn btn-primary shrink-0"
+          data-test="run-all"
+          :disabled="runningAll || loading"
+          :title="t('admin.accountMonitor.actions.refreshAll')"
+          :aria-label="t('admin.accountMonitor.actions.refreshAll')"
+          @click="handleRunAll"
+        >
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': runningAll }" />
+          <span class="hidden sm:inline">
             {{ runningAll ? t('admin.accountMonitor.actions.running') : t('admin.accountMonitor.actions.refreshAll') }}
+          </span>
+        </button>
+      </header>
+
+      <nav class="flex gap-6 overflow-x-auto border-b border-gray-200 dark:border-dark-700" role="tablist" aria-label="账号分组">
+        <button
+          type="button"
+          role="tab"
+          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
+          :class="tabClass(activeGroupId === null)"
+          :aria-selected="activeGroupId === null"
+          data-test="all-site-tab-button"
+          @click="selectGroup(null, $event)"
+        >
+          全站
+          <span class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-300">
+            {{ allAccounts.length }}
+          </span>
+        </button>
+        <button
+          v-for="group in sortedGroups"
+          :key="group.id"
+          type="button"
+          role="tab"
+          class="relative shrink-0 px-0.5 pb-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
+          :class="tabClass(activeGroupId === group.id)"
+          :aria-selected="activeGroupId === group.id"
+          :data-test="`group-tab-${group.id}`"
+          @click="selectGroup(group.id, $event)"
+        >
+          {{ group.name }}
+          <span class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-300">
+            {{ groupAccountCount(group) }}
+          </span>
+        </button>
+      </nav>
+
+      <section class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center" aria-label="账号筛选">
+        <AccountMonitorFilters
+          :search="search"
+          :status="status"
+          @update:search="search = $event"
+          @update:status="status = $event"
+        />
+        <div class="grid grid-cols-3 rounded-lg border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-800" role="group" aria-label="统计时间范围">
+          <button
+            v-for="range in ranges"
+            :key="range.value"
+            type="button"
+            class="min-h-8 rounded-md px-3 text-sm font-semibold transition-colors disabled:cursor-wait"
+            :class="rangeClass(range.value === activeRange)"
+            :data-test="`range-${range.value}`"
+            :aria-pressed="range.value === activeRange"
+            :disabled="loading && pendingRange === range.value"
+            @click="selectRange(range.value)"
+          >
+            {{ range.label }}
           </button>
         </div>
       </section>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="operations-overview">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">全站经营总览</h2>
-            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">默认今日 · 成本仅采用已对账的真实上游账单</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-ledger-history" @click="openLedgerHistory()">历史按日</button>
-            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="open-exceptions" @click="openExceptions">异常明细</button>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <LedgerMetric label="用户实际计费" :value="formatMoney(globalLedger?.user_charge, globalLedger?.currency)" />
-          <LedgerMetric label="上游真实扣费" :value="formatMoney(globalLedger?.upstream_cost, globalLedger?.currency)" />
-          <LedgerMetric label="纸面利润" :value="formatMoney(globalLedger?.paper_profit, globalLedger?.currency)" />
-          <LedgerMetric label="利润率" :value="formatProfitMargin(globalLedger)" />
-          <LedgerMetric label="成本覆盖率" :value="formatCoverage(globalLedger)" :value-class="coverageClass(globalLedger)" />
-          <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="global-health-summary">
-            <p class="text-xs text-gray-500 dark:text-gray-400">服务健康</p>
-            <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ globalHealth.available_accounts }}</span><span class="mx-1 text-gray-400">/</span>{{ globalHealth.total_accounts }}</p>
-            <p class="mt-0.5 text-xs text-gray-500">{{ globalHealth.unavailable_accounts }} 不可用 · {{ globalHealth.pending_accounts }} 待确认 · {{ globalHealth.paused_accounts }} 暂停</p>
-            <p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(globalHealth.success_rate) }} · TTFT {{ formatMs(globalHealth.ttft_p50_ms) }} · P95 {{ formatMs(globalHealth.latency_p95_ms) }}</p>
-          </div>
-        </div>
-        <div v-if="globalLifetimeLedger" class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400" data-test="global-lifetime-ledger">
-            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
-            <span>营收 {{ formatMoney(globalLifetimeLedger.user_charge, globalLifetimeLedger.currency) }}</span>
-            <span>成本 {{ formatMoney(globalLifetimeLedger.upstream_cost, globalLifetimeLedger.currency) }}</span>
-            <span>利润 {{ formatMoney(globalLifetimeLedger.paper_profit, globalLifetimeLedger.currency) }}</span>
-            <span>利润率 {{ formatProfitMargin(globalLifetimeLedger) }}</span>
-          </div>
-          <p v-if="hasUnattributedLedger(globalLifetimeLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="global-lifetime-unattributed-group-ledger">
-            历史累计未归属分组：{{ globalLifetimeLedger.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLifetimeLedger.unattributed_user_charge, globalLifetimeLedger.currency) }} · 成本 {{ formatMoney(globalLifetimeLedger.unattributed_upstream_cost, globalLifetimeLedger.currency) }}（已计入全站，不计入任何分组）
-          </p>
-        </div>
-        <p v-if="hasUnattributedLedger(globalLedger)" class="mt-2 text-xs text-gray-400 dark:text-gray-500" data-test="unattributed-group-ledger">
-          今日未归属分组：{{ globalLedger?.unattributed_attempts }} 笔请求 · 营收 {{ formatMoney(globalLedger?.unattributed_user_charge, globalLedger?.currency) }} · 成本 {{ formatMoney(globalLedger?.unattributed_upstream_cost, globalLedger?.currency) }}（已计入全站，不计入任何分组）
-        </p>
-      </section>
-
-      <section v-if="sortedGroups.length" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
-        <div class="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="账号分组">
-          <div v-for="group in sortedGroups" :key="group.id" data-test="group-tab">
-            <button
-              type="button"
-              role="tab"
-              :aria-selected="activeGroupId === group.id"
-              class="shrink-0 rounded-lg border px-3 py-2 text-left text-sm transition-colors"
-              :class="activeGroupId === group.id ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300' : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-300'"
-              :data-test="`group-tab-${group.id}`"
-              @click="selectGroup(group.id)"
-            >
-              <span class="block font-medium">{{ group.name }}</span>
-              <span class="mt-0.5 block text-[11px] opacity-75">{{ formatMultiplier(group.rate_multiplier) }} · {{ groupOperationalLabel(group) }}</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800 sm:flex-row sm:items-center">
-        <AccountMonitorFilters
-          :search="search"
-          :platform="platform"
-          :status="status"
-          :group-id="groupId"
-          :accounts="accounts"
-          @update:search="search = $event"
-          @update:platform="platform = $event"
-          @update:status="status = $event"
-          @update:group-id="selectFilterGroup"
-        />
-        <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('admin.accountMonitor.lastObserved', { time: formatDate(projection?.observed_at) }) }}
-        </div>
-      </section>
-
-      <div v-if="loading && !accounts.length" class="grid gap-4 xl:grid-cols-2">
-        <div v-for="item in 4" :key="item" class="card h-[330px] animate-pulse bg-gray-100 dark:bg-dark-800" />
-      </div>
-
       <div
-        v-else-if="error"
-        class="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
+        v-if="rangeError"
+        class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
+        data-test="range-error"
+        role="alert"
       >
-        {{ error }}
-        <button type="button" class="btn btn-secondary ml-3 px-3 py-1.5 text-xs" @click="load">
+        <span>{{ rangeError }}</span>
+        <button type="button" class="btn btn-secondary shrink-0 px-3 py-1.5 text-xs" @click="load(activeRange)">
           {{ t('common.refresh') }}
         </button>
       </div>
 
-      <div
-        v-else-if="!filteredAccounts.length"
-        class="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+      <section
+        v-if="activeGroup"
+        class="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 xl:grid-cols-7 dark:border-dark-700 dark:bg-dark-800"
+        :aria-label="`${activeGroup.name} 原生分组汇总`"
+        data-test="group-summary"
       >
-        {{ accounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
+        <div
+          v-for="field in groupSummaryFields"
+          :key="field.key"
+          class="min-h-[82px] min-w-0 border-b border-r border-gray-100 px-3 py-3 last:border-r-0 xl:border-b-0 dark:border-dark-700"
+          data-test="group-summary-field"
+          :data-field="field.key"
+        >
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ field.label }}</div>
+          <div class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
+            {{ field.value }}
+          </div>
+        </div>
+      </section>
+
+      <div v-if="loading && !projection" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div v-for="item in 4" :key="item" class="card h-[310px] animate-pulse bg-gray-100 dark:bg-dark-800" />
       </div>
 
-      <div v-else class="space-y-4">
-        <section v-if="activeGroup" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800" data-test="group-operations-overview">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ activeGroup.name }}</h2>
-                <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="activeGroup.operational_state === 'closed' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : activeGroup.operational_state === 'operational' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'">{{ groupOperationalLabel(activeGroup) }}</span>
-              </div>
-              <p v-if="activeGroup.operational_state === 'closed'" class="mt-1 text-xs text-gray-500 dark:text-gray-400">当前分组未向用户开放，空账号不会作为服务故障持续告警。</p>
-              <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">按质量评分从高到低，仅影响监控展示；全局调度优先级仍由账号卡片直接修改。</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="openLedgerHistory({ group_id: activeGroup.id })">本组历史</button>
-              <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" data-test="edit-group-score-weights" @click="showScoreDialog = true">评分权重</button>
-            </div>
-          </div>
-          <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <LedgerMetric label="用户实际计费" :value="formatMoney(groupLedger?.user_charge, groupLedger?.currency)" />
-            <LedgerMetric label="上游真实扣费" :value="formatMoney(groupLedger?.upstream_cost, groupLedger?.currency)" />
-            <LedgerMetric label="纸面利润" :value="formatMoney(groupLedger?.paper_profit, groupLedger?.currency)" />
-            <LedgerMetric label="利润率" :value="formatProfitMargin(groupLedger)" />
-            <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70" data-test="group-health-summary"><p class="text-xs text-gray-500">服务健康</p><p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"><span class="text-green-600">{{ groupHealth.available_accounts }}</span> / {{ groupHealth.total_accounts }}</p><p class="mt-0.5 text-xs text-gray-500">{{ groupHealth.unavailable_accounts }} 不可用 · {{ groupHealth.pending_accounts }} 待确认 · {{ groupHealth.paused_accounts }} 暂停</p><p class="mt-1 text-xs text-gray-500">成功率 {{ formatHealthPercent(groupHealth.success_rate) }} · TTFT {{ formatMs(groupHealth.ttft_p50_ms) }} · P95 {{ formatMs(groupHealth.latency_p95_ms) }}</p></div>
-          </div>
-          <div v-if="groupLifetimeLedger" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400" data-test="group-lifetime-ledger">
-            <span class="font-medium text-gray-700 dark:text-gray-200">历史累计</span>
-            <span>营收 {{ formatMoney(groupLifetimeLedger.user_charge, groupLifetimeLedger.currency) }}</span>
-            <span>成本 {{ formatMoney(groupLifetimeLedger.upstream_cost, groupLifetimeLedger.currency) }}</span>
-            <span>利润 {{ formatMoney(groupLifetimeLedger.paper_profit, groupLifetimeLedger.currency) }}</span>
-            <span>利润率 {{ formatProfitMargin(groupLifetimeLedger) }}</span>
-          </div>
-          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">评分组成：成本优势 {{ activeGroup.score_weights.cost }}% · 成功率 {{ activeGroup.score_weights.success }}% · TTFT {{ activeGroup.score_weights.ttft }}% · 总耗时 {{ activeGroup.score_weights.latency }}%</p>
-        </section>
+      <div
+        v-else-if="projection && !filteredAccounts.length"
+        class="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+        data-test="account-empty"
+      >
+        {{ scopedAccounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
+      </div>
 
-        <section data-test="monitor-group">
-          <div class="grid gap-4 xl:grid-cols-2">
-            <div v-for="account in scopedAccounts" :key="account.account_id" class="relative">
-              <div v-if="account.quality_score != null" class="absolute right-4 top-3 z-10 rounded-full bg-primary-600 px-2 py-1 text-xs font-semibold text-white">{{ account.quality_score }} 分</div>
-              <AccountMonitorCard
-                :account="account"
-                :operations="accountLedgers[account.account_id] ?? null"
-                :group-operational-state="activeGroup?.operational_state"
-                :running="runningAccounts.has(account.account_id)"
-                :saving-weight="savingWeights.has(account.account_id)"
-                @refresh="handleRunOne"
-                @update-priority="updateWeight"
-                @settings="showSettings = true"
-                @history="openHistory"
-              />
-            </div>
-          </div>
-        </section>
+      <section v-else class="grid grid-cols-1 gap-4 lg:grid-cols-2" data-test="account-card-grid" aria-label="账号排名卡片">
+        <AccountMonitorCard
+          v-for="account in filteredAccounts"
+          :key="account.account_id"
+          :account="account"
+          :concurrency="concurrencyByID[account.account_id] ?? null"
+          :ranked-account-count="rankedAccountCount"
+          :ranking-scope="activeGroup ? 'group' : 'global'"
+          :running="runningAll || runningAccountIDs.includes(account.account_id)"
+          :statistics-cutoff="projection?.observed_at ?? null"
+          :selected-range="activeRange"
+          @refresh="handleRunOne"
+          @update-priority="updatePriority"
+          @update-procurement-cost="updateProcurementCost"
+          @update-multiplier="updateMultiplier"
+        />
+      </section>
       </div>
     </div>
-
-    <AccountMonitorSettingsDialog
-      :show="showSettings"
-      :interval-seconds="intervalSeconds"
-      :saving="savingSettings"
-      :error="settingsError"
-      @close="showSettings = false"
-      @save="saveSettings"
-    />
-
-    <AccountMonitorGroupScoreDialog
-      v-if="activeGroup"
-      :show="showScoreDialog"
-      :group-id="activeGroup.id"
-      :group-name="activeGroup.name"
-      :weights="activeGroup.score_weights"
-      :saving="savingScoreWeights"
-      :error="scoreWeightsError"
-      @close="showScoreDialog = false"
-      @save="saveGroupScoreWeights"
-      @reset="resetGroupScoreWeights"
-    />
-
-    <AccountMonitorLedgerHistoryDrawer
-      :show="ledgerHistoryScope !== null"
-      :scope="ledgerHistoryScope ?? undefined"
-      @close="ledgerHistoryScope = null"
-    />
-
-    <BaseDialog
-      :show="historyAccount !== null"
-      :title="t('admin.accountMonitor.history.title')"
-      width="wide"
-      @close="historyAccount = null"
-    >
-      <div v-if="historyLoading" class="py-8 text-center text-sm text-gray-500">
-        {{ t('common.loading') }}
-      </div>
-      <div v-else-if="historyItems.length" class="overflow-x-auto">
-        <table class="min-w-full text-left text-sm">
-          <thead class="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-gray-400">
-            <tr>
-              <th class="px-3 py-2">{{ t('admin.accountMonitor.history.checkedAt') }}</th>
-              <th class="px-3 py-2">{{ t('admin.accountMonitor.history.status') }}</th>
-              <th class="px-3 py-2">{{ t('admin.accountMonitor.history.ttft') }}</th>
-              <th class="px-3 py-2">{{ t('admin.accountMonitor.history.latency') }}</th>
-              <th class="px-3 py-2">{{ t('admin.accountMonitor.history.error') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in historyItems" :key="`${item.checked_at}-${item.model_id}`" class="border-b border-gray-100 dark:border-dark-800">
-              <td class="whitespace-nowrap px-3 py-2 text-gray-600 dark:text-gray-300">{{ formatDate(item.checked_at) }}</td>
-              <td class="px-3 py-2">{{ item.status }}</td>
-              <td class="px-3 py-2 font-mono">{{ formatMs(item.ttft_ms) }}</td>
-              <td class="px-3 py-2 font-mono">{{ formatMs(item.latency_ms) }}</td>
-              <td class="px-3 py-2 text-red-600 dark:text-red-400">{{ item.error_code || '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-else class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-        {{ t('admin.accountMonitor.history.empty') }}
-      </div>
-    </BaseDialog>
-
-    <BaseDialog :show="exceptionsOpen" title="对账异常明细" width="wide" @close="exceptionsOpen = false">
-      <div v-if="exceptionsLoading" class="py-8 text-center text-sm text-gray-500">加载中...</div>
-      <div v-else-if="exceptions.length" class="space-y-3">
-        <div v-for="item in exceptions" :key="item.id" class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50">
-          <div class="grid gap-1 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
-            <span>本地请求：<code>{{ item.attempt.local_request_id }}</code></span>
-            <span>上游请求：<code>{{ item.attempt.upstream_request_id || '-' }}</code></span>
-            <span>模型：{{ item.attempt.model }}</span>
-            <span>原因：{{ item.reason_code }}</span>
-          </div>
-          <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="submitAdjustment(item)">
-            <label class="text-xs text-gray-500">上游实际扣费
-              <input v-model="adjustmentAmounts[item.attempt.id]" class="input mt-1 w-32" inputmode="decimal" required placeholder="0.000000" />
-            </label>
-            <button type="submit" class="btn btn-primary" :disabled="adjustingID === item.attempt.id">补登记</button>
-          </form>
-        </div>
-      </div>
-      <div v-else class="py-8 text-center text-sm text-gray-500">当前没有未解决异常</div>
-    </BaseDialog>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
+  AccountMonitorConcurrencyItem,
+  AccountMonitorCostGuard,
   AccountMonitorGroup,
-  AccountMonitorHealthSummary,
-  AccountMonitorHistoryItem,
   AccountMonitorProjection,
-  AccountMonitorScoreWeights,
+  AccountMonitorRange,
 } from '@/api/admin/accountMonitor'
-import type { OperationsScopeParams, ReconciliationException, ReconciliationSummary } from '@/api/admin/reconciliation'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import Icon from '@/components/icons/Icon.vue'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
-import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
-import AccountMonitorLedgerHistoryDrawer from '@/components/admin/account-monitor/AccountMonitorLedgerHistoryDrawer.vue'
-import AccountMonitorSettingsDialog from '@/components/admin/account-monitor/AccountMonitorSettingsDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
+type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
+type SaveCompletion = {
+  resolve: () => void
+  reject: (reason?: unknown) => void
+}
+
+const ranges: { value: AccountMonitorRange; label: string }[] = [
+  { value: '24h', label: '24 小时' },
+  { value: '7d', label: '7 天' },
+  { value: '30d', label: '30 天' },
+]
+const groupSummaryLabels = {
+  status: '分组状态',
+  platform: '平台',
+  rate_multiplier: '分组倍率',
+  rpm_limit: 'RPM 上限',
+  account_count: '原生账号数',
+  active_account_count: '原生活跃账号数',
+  rate_limited_account_count: '原生限流账号数',
+} as const
+
 const { t } = useI18n()
 const appStore = useAppStore()
-
 const projection = ref<AccountMonitorProjection | null>(null)
-const accounts = ref<AccountMonitorAccount[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const search = ref('')
-const platform = ref('')
-const status = ref('')
-const groupId = ref('')
-const runningAll = ref(false)
-const runningAccounts = ref(new Set<number>())
-const savingWeights = ref(new Set<number>())
-const showSettings = ref(false)
-const savingSettings = ref(false)
-const settingsError = ref<string | null>(null)
-const historyAccount = ref<number | null>(null)
-const historyLoading = ref(false)
-const historyItems = ref<AccountMonitorHistoryItem[]>([])
-const globalLedger = ref<ReconciliationSummary | null>(null)
-const groupLedger = ref<ReconciliationSummary | null>(null)
-const globalLifetimeLedger = ref<ReconciliationSummary | null>(null)
-const groupLifetimeLedger = ref<ReconciliationSummary | null>(null)
-const accountLedgers = ref<Record<number, ReconciliationSummary | null>>({})
-const accountCostGuards = ref<Record<number, import('@/api/admin/reconciliation').AccountMonitorCostGuard | null>>({})
+const activeRange = ref<AccountMonitorRange>('24h')
+const pendingRange = ref<AccountMonitorRange | null>(null)
 const activeGroupId = ref<number | null>(null)
-const ledgerHistoryScope = ref<OperationsScopeParams | null>(null)
-const showScoreDialog = ref(false)
-const savingScoreWeights = ref(false)
-const scoreWeightsError = ref<string | null>(null)
-const exceptions = ref<ReconciliationException[]>([])
-const exceptionsOpen = ref(false)
-const exceptionsLoading = ref(false)
-const adjustmentAmounts = ref<Record<number, string>>({})
-const adjustingID = ref<number | null>(null)
+const search = ref('')
+const status = ref('')
+const loading = ref(false)
+const runningAll = ref(false)
+const runningAccountIDs = ref<number[]>([])
+const rangeError = ref<string | null>(null)
+const concurrencyByID = ref<Record<number, CardConcurrency>>({})
+const costGuardByID = ref<Record<number, AccountMonitorCostGuard | null>>({})
 
 let abortController: AbortController | null = null
-let operationsGeneration = 0
+let loadGeneration = 0
+let pollTimer: number | null = null
+let pollInFlight = false
+let pollQueued = false
 
-const intervalSeconds = computed(() => projection.value?.settings.interval_seconds ?? 300)
-const intervalLabel = computed(() => {
-  const seconds = intervalSeconds.value
-  if (seconds % 60 === 0) return t('admin.accountMonitor.intervalMinutes', { count: seconds / 60 })
-  return t('admin.accountMonitor.intervalSeconds', { count: seconds })
-})
+function uniqueAccounts(source: AccountMonitorAccount[]): AccountMonitorAccount[] {
+  const seen = new Set<number>()
+  return source.filter((account) => {
+    if (seen.has(account.account_id)) return false
+    seen.add(account.account_id)
+    return true
+  })
+}
 
+function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount): number {
+  const leftRanked = left.group_rank != null
+  const rightRanked = right.group_rank != null
+  if (leftRanked && rightRanked) {
+    const rankDifference = Number(left.group_rank) - Number(right.group_rank)
+    if (rankDifference !== 0) return rankDifference
+    return left.account_id - right.account_id
+  }
+  if (leftRanked) return -1
+  if (rightRanked) return 1
+  return left.account_id - right.account_id
+}
+
+const allAccounts = computed(() => uniqueAccounts(projection.value?.accounts ?? []))
 const sortedGroups = computed(() => [...(projection.value?.groups ?? [])].sort((left, right) => {
-  if (right.rate_multiplier !== left.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
+  if (left.rate_multiplier !== right.rate_multiplier) return right.rate_multiplier - left.rate_multiplier
   if (left.native_order !== right.native_order) return left.native_order - right.native_order
   return left.id - right.id
 }))
-const activeGroup = computed<AccountMonitorGroup | null>(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
-const activeGroupAccountSource = computed(() => {
+const activeGroup = computed(() => sortedGroups.value.find((group) => group.id === activeGroupId.value) ?? null)
+const scopedAccounts = computed(() => {
   const group = activeGroup.value
-  const source = group?.accounts?.length ? group.accounts : group ? accounts.value.filter((account) => account.group_ids.includes(group.id)) : accounts.value
-  return source.map((account) => ({ ...account, cost_guard: accountCostGuards.value[account.account_id] ?? account.cost_guard ?? null }))
+  const source = group?.accounts ?? (group
+    ? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
+    : allAccounts.value)
+  return uniqueAccounts(source).sort(compareAccounts).map((account) => ({
+    ...account,
+    cost_guard: costGuardByID.value[account.account_id] ?? account.cost_guard ?? null,
+  }))
 })
-
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
-  return activeGroupAccountSource.value.filter((account) => {
-    if (platform.value && account.platform !== platform.value) return false
-    if (status.value && displayStatus(account) !== status.value) return false
-    if (groupId.value && !account.group_ids.includes(Number(groupId.value))) return false
+  return scopedAccounts.value.filter((account) => {
+    if (status.value && account.monitor_bucket !== status.value) return false
     if (!query) return true
-    return [
-      account.name,
-      String(account.account_id),
-      account.platform,
-      account.model_id,
-      ...account.group_names,
-    ].some((value) => value.toLowerCase().includes(query))
+    return [account.name, String(account.account_id), account.platform, account.model_id, ...account.group_names]
+      .some((value) => value.toLowerCase().includes(query))
   })
 })
-const scopedAccounts = computed(() => [...filteredAccounts.value].sort((left, right) => {
-  const leftScore = left.quality_score ?? -1
-  const rightScore = right.quality_score ?? -1
-  if (rightScore !== leftScore) return rightScore - leftScore
-  const leftRank = left.group_rank ?? Number.MAX_SAFE_INTEGER
-  const rightRank = right.group_rank ?? Number.MAX_SAFE_INTEGER
-  if (leftRank !== rightRank) return leftRank - rightRank
-  return left.account_id - right.account_id
-}))
-const emptyHealth: AccountMonitorHealthSummary = {
-  total_accounts: 0,
-  available_accounts: 0,
-  unavailable_accounts: 0,
-  pending_accounts: 0,
-  paused_accounts: 0,
-  success_rate: 0,
+const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => account.group_rank != null).length)
+const visibleAccountIDs = computed(() => filteredAccounts.value.map((account) => account.account_id))
+const visibleAccountIDKey = computed(() => visibleAccountIDs.value.join(','))
+const groupSummaryFields = computed(() => {
+  const group = activeGroup.value
+  if (!group) return []
+  return [
+    { key: 'status', label: groupSummaryLabels.status, value: formatGroupStatus(group.status) },
+    { key: 'platform', label: groupSummaryLabels.platform, value: group.platform || '--' },
+    { key: 'rate_multiplier', label: groupSummaryLabels.rate_multiplier, value: formatMultiplier(group.rate_multiplier) },
+    { key: 'rpm_limit', label: groupSummaryLabels.rpm_limit, value: formatNativeNumber(group.rpm_limit) },
+    { key: 'account_count', label: groupSummaryLabels.account_count, value: formatNativeNumber(group.account_count) },
+    { key: 'active_account_count', label: groupSummaryLabels.active_account_count, value: formatNativeNumber(group.active_account_count) },
+    { key: 'rate_limited_account_count', label: groupSummaryLabels.rate_limited_account_count, value: formatNativeNumber(group.rate_limited_account_count) },
+  ]
+})
+
+function tabClass(selected: boolean): string {
+  return selected
+    ? 'text-primary-700 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary-600 dark:text-primary-300'
+    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
 }
-const globalHealth = computed(() => projection.value?.health ?? emptyHealth)
-const groupHealth = computed(() => activeGroup.value?.health ?? emptyHealth)
-function hasUnattributedLedger(summary?: ReconciliationSummary | null): boolean {
-  if (!summary) return false
-  const hasAmount = (value: string | number | null | undefined) => {
-    const amount = Number(value)
-    return Number.isFinite(amount) && amount !== 0
-  }
-  return Number(summary.unattributed_attempts) > 0
-    || hasAmount(summary.unattributed_user_charge)
-    || hasAmount(summary.unattributed_upstream_cost)
+function rangeClass(selected: boolean): string {
+  return selected
+    ? 'bg-primary-50 text-primary-700 dark:bg-primary-950/40 dark:text-primary-300'
+    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white'
+}
+function formatGroupStatus(value?: string): string {
+  if (value === 'active') return '启用'
+  if (value === 'inactive') return '停用'
+  return value || '--'
+}
+function formatMultiplier(value?: number): string {
+  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}×`
+}
+function formatNativeNumber(value?: number): string {
+  return value == null || !Number.isFinite(value) ? '--' : String(value)
+}
+function groupAccountCount(group: AccountMonitorGroup): number {
+  return group.account_count ?? uniqueAccounts(group.accounts ?? []).length
 }
 
-function displayStatus(account: AccountMonitorAccount): string {
-  if (account.stale) return 'stale'
-  return account.latest_status || 'unavailable'
+function selectGroup(groupID: number | null, event: MouseEvent): void {
+  activeGroupId.value = groupID
+  if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
+  void loadCostGuards()
 }
 
-async function load() {
+async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
   abortController?.abort()
   const controller = new AbortController()
+  const generation = ++loadGeneration
   abortController = controller
   loading.value = true
-  error.value = null
+  pendingRange.value = range
+  rangeError.value = null
   try {
-    const result = await adminAPI.accountMonitor.list({ signal: controller.signal })
-    if (controller.signal.aborted || abortController !== controller) return
+    const result = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
+    if (controller.signal.aborted || generation !== loadGeneration) return false
+    if (result.range !== range) {
+      throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
+    }
     projection.value = result
-    accounts.value = result.accounts.filter((account) => account.status === 'active' && account.schedulable)
-    ensureActiveGroup()
-    await loadOperations()
-  } catch (err: unknown) {
-    if (controller.signal.aborted) return
-    error.value = extractApiErrorMessage(err, t('admin.accountMonitor.loadError'))
-    appStore.showError(error.value)
+    activeRange.value = range
+    if (activeGroupId.value !== null && !(result.groups ?? []).some((group) => group.id === activeGroupId.value)) {
+      activeGroupId.value = null
+    }
+    await loadCostGuards()
+    return true
+  } catch (reason: unknown) {
+    if (controller.signal.aborted || generation !== loadGeneration) return false
+    rangeError.value = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError'))
+    if (options.notifyError !== false) appStore.showError(rangeError.value)
+    return false
   } finally {
-    if (abortController === controller) {
+    if (generation === loadGeneration) {
       abortController = null
       loading.value = false
+      pendingRange.value = null
     }
   }
 }
 
-function ensureActiveGroup() {
-  if (activeGroupId.value !== null && sortedGroups.value.some((group) => group.id === activeGroupId.value)) return
-  activeGroupId.value = sortedGroups.value[0]?.id ?? null
-  groupId.value = activeGroupId.value === null ? '' : String(activeGroupId.value)
-}
-
-async function loadOperations() {
-  const groupID = activeGroupId.value
-  const generation = ++operationsGeneration
-  const isCurrent = () => generation === operationsGeneration && activeGroupId.value === groupID
-  const lifetimeScope = { start: '1970-01-01T00:00:00.000Z', end: new Date().toISOString() }
-  const visibleAccounts = scopedAccounts.value
-  const calls: Promise<void>[] = [
-    adminAPI.reconciliation.operations({})
-      .then((summary) => {
-        if (isCurrent()) globalLedger.value = summary
-      })
-      .catch(() => {
-        if (isCurrent()) globalLedger.value = null
-      }),
-    adminAPI.reconciliation.operations(lifetimeScope)
-      .then((summary) => {
-        if (isCurrent()) globalLifetimeLedger.value = summary
-      })
-      .catch(() => {
-        if (isCurrent()) globalLifetimeLedger.value = null
-      }),
-  ]
-  if (groupID !== null) {
-    calls.push(adminAPI.reconciliation.operations({ group_id: groupID })
-      .then((summary) => {
-        if (isCurrent()) groupLedger.value = summary
-      })
-      .catch(() => {
-        if (isCurrent()) groupLedger.value = null
-      }))
-    calls.push(adminAPI.reconciliation.operations({ group_id: groupID, ...lifetimeScope })
-      .then((summary) => {
-        if (isCurrent()) groupLifetimeLedger.value = summary
-      })
-      .catch(() => {
-        if (isCurrent()) groupLifetimeLedger.value = null
-      }))
-  } else {
-    if (isCurrent()) {
-      groupLedger.value = null
-      groupLifetimeLedger.value = null
-    }
-  }
-  const nextLedgers: Record<number, ReconciliationSummary | null> = {}
-  const nextCostGuards: Record<number, import('@/api/admin/reconciliation').AccountMonitorCostGuard | null> = {}
-  for (const account of visibleAccounts) {
-    calls.push(adminAPI.reconciliation.operations({ group_id: groupID ?? undefined, account_id: account.account_id })
-      .then((summary) => { nextLedgers[account.account_id] = summary })
-      .catch(() => { nextLedgers[account.account_id] = null }))
-    if (groupID !== null) {
-      const group = activeGroup.value
-      calls.push(adminAPI.reconciliation.costGuard({ account_id: account.account_id, group_id: groupID, group_multiplier: group?.rate_multiplier ?? 0 })
-        .then((guard) => { nextCostGuards[account.account_id] = guard })
-        .catch(() => { nextCostGuards[account.account_id] = null }))
-    }
-  }
-  await Promise.all(calls)
-  if (isCurrent()) {
-    accountLedgers.value = nextLedgers
-    accountCostGuards.value = nextCostGuards
-  }
-}
-
-async function selectGroup(groupID: number) {
-  activeGroupId.value = groupID
-  groupId.value = String(groupID)
-  await loadOperations()
-}
-
-function selectFilterGroup(value: string) {
-  groupId.value = value
-  const parsed = Number(value)
-  if (Number.isInteger(parsed) && parsed > 0) {
-    void selectGroup(parsed)
+async function loadCostGuards(): Promise<void> {
+  const group = activeGroup.value
+  if (!group) {
+    costGuardByID.value = {}
     return
   }
-  activeGroupId.value = sortedGroups.value[0]?.id ?? null
-  void loadOperations()
+  const source = group.accounts ?? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
+  const entries = await Promise.all(uniqueAccounts(source).map(async (account) => {
+    try {
+      return [account.account_id, await adminAPI.reconciliation.costGuard({ account_id: account.account_id, group_id: group.id, group_multiplier: group.rate_multiplier })] as const
+    } catch {
+      return [account.account_id, null] as const
+    }
+  }))
+  costGuardByID.value = Object.fromEntries(entries)
+}
+
+function selectRange(range: AccountMonitorRange) {
+  if (range === activeRange.value && !rangeError.value) return
+  void load(range)
+}
+
+async function pollConcurrency(): Promise<void> {
+  if (document.hidden) return
+  if (pollInFlight) {
+    pollQueued = true
+    return
+  }
+  const accountIDs = [...new Set(visibleAccountIDs.value)]
+  if (!accountIDs.length) return
+  pollInFlight = true
+  try {
+    const response = await adminAPI.accountMonitor.getConcurrency(accountIDs)
+    const next = { ...concurrencyByID.value }
+    for (const item of response.items) {
+      if (accountIDs.includes(item.account_id)) next[item.account_id] = { ...item, delayed: false }
+    }
+    concurrencyByID.value = next
+  } catch {
+    const next = { ...concurrencyByID.value }
+    for (const accountID of accountIDs) {
+      const previous = next[accountID]
+      if (previous) next[accountID] = { ...previous, delayed: true }
+    }
+    concurrencyByID.value = next
+  } finally {
+    pollInFlight = false
+    if (pollQueued && !document.hidden) {
+      pollQueued = false
+      void pollConcurrency()
+    }
+  }
+}
+
+function handleVisibilityChange() {
+  if (!document.hidden) {
+    pollQueued = false
+    void pollConcurrency()
+  }
 }
 
 async function handleRunAll() {
@@ -533,213 +408,91 @@ async function handleRunAll() {
   runningAll.value = true
   try {
     await adminAPI.accountMonitor.runAll()
-    await adminAPI.reconciliation.refresh()
-    await load()
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      appStore.showError('全部探测已完成，但最新卡片加载失败，请重试')
+      return
+    }
     appStore.showSuccess(t('admin.accountMonitor.messages.refreshAllSuccess'))
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('admin.accountMonitor.messages.refreshFailed')))
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
   } finally {
     runningAll.value = false
   }
 }
 
-async function openExceptions() {
-  exceptionsOpen.value = true
-  exceptionsLoading.value = true
-  try {
-    exceptions.value = (await adminAPI.reconciliation.exceptions({ limit: 100 })).items
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, '对账异常加载失败'))
-  } finally {
-    exceptionsLoading.value = false
-  }
-}
-
-async function submitAdjustment(item: ReconciliationException) {
-  const amount = adjustmentAmounts.value[item.attempt.id]?.trim()
-  if (!amount) return
-  adjustingID.value = item.attempt.id
-  try {
-    await adminAPI.reconciliation.adjust(item.attempt.id, amount)
-    exceptions.value = exceptions.value.filter((current) => current.id !== item.id)
-    await loadOperations()
-    appStore.showSuccess('补登记成功')
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, '补登记失败'))
-  } finally {
-    adjustingID.value = null
-  }
-}
-
 async function handleRunOne(accountID: number) {
-  if (runningAccounts.value.has(accountID)) return
-  runningAccounts.value = new Set(runningAccounts.value).add(accountID)
+  if (runningAccountIDs.value.includes(accountID)) return
+  runningAccountIDs.value = [...runningAccountIDs.value, accountID]
   try {
     await adminAPI.accountMonitor.runOne(accountID)
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('admin.accountMonitor.messages.refreshFailed')))
-  } finally {
-    const next = new Set(runningAccounts.value)
-    next.delete(accountID)
-    runningAccounts.value = next
-  }
-}
-
-async function updateWeight(accountID: number, priority: number) {
-  if (savingWeights.value.has(accountID)) return
-  savingWeights.value = new Set(savingWeights.value).add(accountID)
-  try {
-    const updated = await adminAPI.accounts.update(accountID, { priority })
-    const account = accounts.value.find((item) => item.account_id === accountID)
-    if (account) account.priority = updated.priority
-    await load()
-    appStore.showSuccess('全局调度优先级已更新')
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, '账号权重更新失败'))
-  } finally {
-    const next = new Set(savingWeights.value)
-    next.delete(accountID)
-    savingWeights.value = next
-  }
-}
-
-async function saveGroupScoreWeights(weights: Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>) {
-  if (!activeGroup.value) return
-  savingScoreWeights.value = true
-  scoreWeightsError.value = null
-  try {
-    const updated = await adminAPI.accountMonitor.updateGroupScoreWeights(activeGroup.value.id, weights)
-    projection.value = projection.value
-      ? { ...projection.value, groups: (projection.value.groups ?? []).map((group) => group.id === activeGroup.value?.id ? { ...group, score_weights: updated } : group) }
-      : projection.value
-    showScoreDialog.value = false
-    await load()
-    appStore.showSuccess('分组评分权重已更新')
-  } catch (err: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(err, '分组评分权重更新失败')
-  } finally {
-    savingScoreWeights.value = false
-  }
-}
-
-async function resetGroupScoreWeights() {
-  if (!activeGroup.value) return
-  savingScoreWeights.value = true
-  scoreWeightsError.value = null
-  try {
-    const updated = await adminAPI.accountMonitor.resetGroupScoreWeights(activeGroup.value.id)
-    projection.value = projection.value
-      ? { ...projection.value, groups: (projection.value.groups ?? []).map((group) => group.id === activeGroup.value?.id ? { ...group, score_weights: updated } : group) }
-      : projection.value
-    await load()
-    appStore.showSuccess('已恢复默认评分权重')
-  } catch (err: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(err, '恢复默认评分权重失败')
-  } finally {
-    savingScoreWeights.value = false
-  }
-}
-
-async function saveSettings(interval: number) {
-  savingSettings.value = true
-  settingsError.value = null
-  try {
-    const settings = await adminAPI.accountMonitor.updateSettings(interval)
-    if (projection.value) projection.value = { ...projection.value, settings }
-    showSettings.value = false
-    appStore.showSuccess(t('admin.accountMonitor.messages.settingsSaved'))
-  } catch (err: unknown) {
-    settingsError.value = extractApiErrorMessage(err, t('admin.accountMonitor.messages.settingsFailed'))
-  } finally {
-    savingSettings.value = false
-  }
-}
-
-async function openHistory(accountID: number) {
-  historyAccount.value = accountID
-  historyLoading.value = true
-  historyItems.value = []
-  try {
-    const response = await adminAPI.accountMonitor.history(accountID, 25)
-    historyItems.value = response.items
-  } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('admin.accountMonitor.history.loadError')))
-    historyAccount.value = null
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-function formatMs(value?: number | null): string {
-  return value == null ? '-' : `${Math.round(value)} ms`
-}
-
-function formatHealthPercent(value?: number | null): string {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : '—'
-}
-
-function formatDate(value?: string | null): string {
-  return value ? new Date(value).toLocaleString() : t('common.time.never')
-}
-
-function openLedgerHistory(scope: OperationsScopeParams = {}) {
-  ledgerHistoryScope.value = scope
-}
-
-function coverageClass(summary?: { coverage_known: boolean; coverage_ratio: number } | null): string {
-  if (!summary?.coverage_known) return 'text-gray-500'
-  return Number(summary.coverage_ratio) >= 1 ? 'text-green-600' : 'text-amber-600'
-}
-
-function formatCoverage(summary?: { coverage_known: boolean; coverage_ratio: number } | null): string {
-  return !summary?.coverage_known ? '-' : `${(summary.coverage_ratio * 100).toFixed(2)}%`
-}
-
-function formatProfitMargin(summary?: ReconciliationSummary | null): string {
-  if (!summary?.coverage_known || Number(summary.pending_attempts) > 0) return '待对账'
-  const margin = Number(summary.profit_margin)
-  return Number.isFinite(margin) ? `${(margin * 100).toFixed(1)}%` : '—'
-}
-
-function formatMoney(value?: string | number | null, currency?: string | null): string {
-  const amount = Number(value)
-  if (!Number.isFinite(amount)) return '—'
-  try {
-    if (currency) {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      appStore.showError('探测已完成，但最新卡片加载失败，请重试')
+      return
     }
-    return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
-  } catch {
-    return amount.toFixed(2)
+    appStore.showSuccess('账号探测与监控卡片已刷新')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
+  } finally {
+    runningAccountIDs.value = runningAccountIDs.value.filter((id) => id !== accountID)
   }
 }
 
-function formatMultiplier(value: number): string {
-  return `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value)}x`
+async function updatePriority(accountID: number, priority: number, completion: SaveCompletion) {
+  try {
+    await adminAPI.accounts.update(accountID, { priority })
+    await load(activeRange.value)
+    completion.resolve()
+    appStore.showSuccess('账号调度优先级已更新')
+  } catch (reason: unknown) {
+    completion.reject(reason)
+    appStore.showError(extractApiErrorMessage(reason, '账号调度优先级更新失败'))
+  }
 }
 
-function groupOperationalLabel(group: AccountMonitorGroup): string {
-  if (group.operational_state === 'closed') return '已关闭'
-  if (group.operational_state === 'operational') return '运行中'
-  return '暂无可用账号'
+async function updateProcurementCost(accountID: number, cost: number | null, completion: SaveCompletion) {
+  try {
+    await adminAPI.accounts.updateProcurementCost(accountID, cost)
+    await load(activeRange.value)
+    completion.resolve()
+    appStore.showSuccess(cost == null ? '采购成本已清空' : '采购成本已更新')
+  } catch (reason: unknown) {
+    completion.reject(reason)
+    appStore.showError(extractApiErrorMessage(reason, cost == null ? '清空采购成本失败' : '保存采购成本失败'))
+  }
 }
 
-const LedgerMetric = defineComponent({
-  props: {
-    label: { type: String, required: true },
-    value: { type: String, required: true },
-    valueClass: { type: String, default: 'text-gray-900 dark:text-white' },
-  },
-  setup(metricProps) {
-    return () => h('div', { class: 'rounded-lg bg-gray-50 p-3 dark:bg-dark-900/70' }, [
-      h('p', { class: 'text-xs text-gray-500 dark:text-gray-400' }, metricProps.label),
-      h('p', { class: ['mt-1 font-mono text-lg font-semibold', metricProps.valueClass] }, metricProps.value),
-    ])
-  },
+async function updateMultiplier(accountID: number, multiplier: number, completion: SaveCompletion) {
+  try {
+    await adminAPI.accounts.update(accountID, {
+      rate_multiplier: multiplier,
+      rate_multiplier_policy: 'manual_override',
+    })
+    await load(activeRange.value)
+    completion.resolve()
+    appStore.showSuccess('账号倍率已更新')
+  } catch (reason: unknown) {
+    completion.reject(reason)
+    appStore.showError(extractApiErrorMessage(reason, '保存账号倍率失败'))
+  }
+}
+
+watch(visibleAccountIDKey, (next, previous) => {
+  if (next && next !== previous) void pollConcurrency()
 })
 
-onMounted(load)
-onUnmounted(() => abortController?.abort())
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  pollTimer = window.setInterval(() => {
+    if (!document.hidden) void pollConcurrency()
+  }, 5000)
+  void load('24h')
+})
+
+onBeforeUnmount(() => {
+  abortController?.abort()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  if (pollTimer !== null) window.clearInterval(pollTimer)
+})
 </script>

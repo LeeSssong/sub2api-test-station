@@ -27,6 +27,15 @@ import type {
   OllamaCloudUsageState
 } from '@/types'
 
+export interface AccountProcurementCostUpdate {
+  procurement_cost_cny: number | null
+}
+
+export interface AccountWithProcurementCost extends Account {
+  procurement_cost_cny?: number | null
+  procurement_cost_effective_at?: string | null
+}
+
 /**
  * List all accounts with pagination
  * @param page - Page number (default: 1)
@@ -194,6 +203,15 @@ export async function duplicate(id: number): Promise<Account> {
  */
 export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
   const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
+  return data
+}
+
+export async function updateProcurementCost(
+  id: number,
+  cost: number | null,
+): Promise<AccountWithProcurementCost> {
+  const payload: AccountProcurementCostUpdate = { procurement_cost_cny: cost }
+  const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload)
   return data
 }
 
@@ -935,6 +953,7 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  updateProcurementCost,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

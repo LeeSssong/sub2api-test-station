@@ -15,7 +15,7 @@ import {
 } from '../api'
 
 const validPayload = {
-	contract_version: '4',
+	contract_version: '5',
 	refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',

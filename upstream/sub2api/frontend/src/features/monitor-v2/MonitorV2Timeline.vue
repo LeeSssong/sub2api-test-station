@@ -47,15 +47,16 @@ const ariaLabel = computed(() => {
 
 function barHeight(point: MonitorV2TimelinePoint): string {
   if (point.state !== 'available' || point.value === null) return '20%'
-  return `${Math.max(24, Math.min(100, point.value))}%`
+  if (point.success_count === 0) return '32%'
+  if (point.latency_ms === null) return '40%'
+  return `${Math.max(28, Math.min(100, 100 - point.latency_ms / 200))}%`
 }
 
 function toneClass(point: MonitorV2TimelinePoint): string {
-  if (point.state !== 'available' || point.value === null) {
-    return 'bg-gray-200 dark:bg-dark-700'
-  }
-  if (point.value >= 99) return 'bg-emerald-500 dark:bg-emerald-400'
-  if (point.value >= 95) return 'bg-amber-400 dark:bg-amber-500'
+  // A completed unavailable probe is encoded by the backend as available with
+  // a successful zero-latency result. Empty buckets must remain neutral.
+  if (point.state !== 'available' || point.value === null) return 'bg-gray-300 dark:bg-dark-600'
+  if (point.success_count > 0) return 'bg-emerald-500 dark:bg-emerald-400'
   return 'bg-red-500 dark:bg-red-400'
 }
 
@@ -65,9 +66,9 @@ function pointTitle(point: MonitorV2TimelinePoint): string {
     day: 'numeric',
     hour: '2-digit',
   }).format(new Date(point.bucket_start))
-  if (point.state !== 'available' || point.value === null) {
-    return `${time} · ${t('monitorV2.timeline.noData')}`
-  }
-  return `${time} · ${point.value.toFixed(2)}% · ${point.success_count}/${point.eligible_count}`
+  if (point.state !== 'available' || point.value === null) return `${time} · ${t('monitorV2.timeline.noData')}`
+  const outcome = point.success_count > 0 ? t('monitorV2.timeline.success') : t('monitorV2.timeline.failed')
+  const latency = point.latency_ms === null ? '' : ` · ${point.latency_ms} ms`
+  return `${time} · ${outcome}${latency}`
 }
 </script>

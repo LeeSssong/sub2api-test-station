@@ -118,6 +118,20 @@ EOF
 #!/usr/bin/env bash
 printf 'sleep %s\n' "$*" >>"${FAKE_EVENT_LOG:?}"
 EOF
+  cat >"$CASE_DIR/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+target="${@: -1}"
+if [[ -n "${FAKE_ROOT_ONLY_STAGING:-}" && "$target" == "${FAKE_ROOT_ONLY_STAGING}"* ]]; then
+  case "$2" in
+    %u) printf '0\n' ;;
+    %a) printf '600\n' ;;
+    *) exit 1 ;;
+  esac
+else
+  exec /usr/bin/stat "$@"
+fi
+EOF
   cat >"$CASE_DIR/bin/mkdir" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -175,8 +189,21 @@ printf 'docker %s\n' "$*" >>"${FAKE_EVENT_LOG:?}"
 scenario=${FAKE_SCENARIO:-success}
 case "$*" in
   'context show') printf '%s\n' "${FAKE_DOCKER_CONTEXT:-default}" ;;
-  image\ inspect*)
-	[[ "$scenario" != image_unavailable ]] || exit 1
+  load\ --input\ *)
+    [[ "$scenario" != preload_load_failure ]] || exit 1
+    ;;
+	  image\ inspect\ --format\ \{\{.Id\}\}\ *)
+	    image_ref="${*: -1}"
+	    [[ "$scenario" != recovery_unused_image_missing || "$image_ref" != "${EXPECTED_IMAGE:?}" ]] || exit 1
+	    if [[ "$image_ref" == "${PREVIOUS_IMAGE_FOR_FAKE:-}" ]]; then
+	      printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"
+	    else
+	      printf '%s\n' "${EXPECTED_IMAGE_ID:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+	    fi
+	    ;;
+	  image\ inspect*)
+	    [[ "${FAKE_NETWORK_PROBE_IMAGE_MISSING:-false}" != true || "${*: -1}" != "${NETWORK_CURL_IMAGE:-}" ]] || exit 1
+		[[ "$scenario" != image_unavailable ]] || exit 1
     qualified=true
     source_commit=${EXPECTED_SOURCE_COMMIT:?}
     source_tree=${EXPECTED_SOURCE_TREE:?}
@@ -184,18 +211,20 @@ case "$*" in
     migrations=${EXPECTED_MIGRATIONS_HASH:?}
     [[ "$scenario" == label_mismatch ]] && source_tree=$(printf '9%.0s' {1..40})
     cat <<JSON
-[{"RepoDigests":["${EXPECTED_IMAGE:?}"],"Config":{"Labels":{"com.xingqiao.sub2api.qualified":"$qualified","com.xingqiao.sub2api.source.commit":"$source_commit","com.xingqiao.sub2api.source.tree":"$source_tree","com.xingqiao.sub2api.tested.tree":"$tested_tree","com.xingqiao.sub2api.migrations.sha256":"$migrations"}}}]
+[{"Id":"${EXPECTED_IMAGE_ID:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}","RepoDigests":["${EXPECTED_IMAGE:?}"],"Config":{"Labels":{"com.xingqiao.sub2api.qualified":"$qualified","com.xingqiao.sub2api.source.commit":"$source_commit","com.xingqiao.sub2api.source.tree":"$source_tree","com.xingqiao.sub2api.tested.tree":"$tested_tree","com.xingqiao.sub2api.migrations.sha256":"$migrations"}}}]
 JSON
     ;;
   *' config --format json')
     role=api
     [[ "$scenario" == candidate_role ]] && role=worker
-    if [[ "${FAKE_CANDIDATE_SLOT:-green}" == blue ]]; then
-      printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
-        "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}"
-    else
-      printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
-        "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${PREVIOUS_IMAGE_FOR_FAKE:?}"
+		if [[ "${FAKE_CANDIDATE_SLOT:-green}" == blue ]]; then
+		  worker_image=${EXPECTED_WORKER_IMAGE:-${PREVIOUS_IMAGE_FOR_FAKE:?}}
+		  printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
+		    "${PREVIOUS_IMAGE_FOR_FAKE:?}" "${EXPECTED_IMAGE:?}" "$role" "$worker_image"
+		else
+		  worker_image=${EXPECTED_WORKER_IMAGE:-${PREVIOUS_IMAGE_FOR_FAKE:?}}
+		  printf '{"services":{"sub2api-green":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"%s"}},"sub2api-blue":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"api"}},"sub2api-worker":{"image":"%s","environment":{"SERVER_PROCESS_ROLE":"worker"}}}}\n' \
+		    "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}" "$worker_image"
     fi
     ;;
   *' ps -q postgres') printf 'postgres-id\n' ;;
@@ -223,6 +252,16 @@ JSON
 			printf '%s\n' "${EXPECTED_IMAGE:?}"
 		fi
 		;;
+	'inspect blue-id --format {{.Image}}')
+		if [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then printf '%s\n' "${EXPECTED_IMAGE_ID:?}"; else printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; fi
+		;;
+	'inspect green-id --format {{.Image}}')
+		if [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; else printf '%s\n' "${EXPECTED_IMAGE_ID:?}"; fi
+		;;
+	'inspect worker-id --format {{.Image}}')
+			worker_image_id_file="${FAKE_EVENT_LOG}.worker-image-id"
+			if [[ -f "$worker_image_id_file" ]]; then cat "$worker_image_id_file"; else printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; fi
+			;;
 	'inspect worker-id --format {{.Config.Image}}') printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}" ;;
 	'inspect blue-id --format {{range .Config.Env}}{{println .}}{{end}}')
 		if [[ "$scenario" == active_role_all ]]; then printf 'SERVER_PROCESS_ROLE=all\n'; else printf 'SERVER_PROCESS_ROLE=api\n'; fi
@@ -237,13 +276,13 @@ JSON
   *'up --no-deps -d sub2api-green')
     [[ "$scenario" != candidate_up_failure ]] || exit 1
     ;;
-  *'run --rm --network '*'/health'*)
+  *'run --rm --network '*'/health'|*'run --pull never --rm --network '*'/health'*)
     [[ "$scenario" != candidate_health_failure ]] || exit 1
     printf '{"status":"ok"}\n'
     ;;
-  *'run --rm --network '*'/api/v1/admin/system/version'*) printf '{"data":{"version":"1.2.3"}}\n' ;;
-  *'run --rm --network '*'/api/v1/settings/public'*) printf '{"data":{}}\n' ;;
-  *'run --rm --network '*'/v1/models'*) printf '{"data":[]}\n' ;;
+  *'run --rm --network '*'/api/v1/admin/system/version'|*'run --pull never --rm --network '*'/api/v1/admin/system/version'*) printf '{"data":{"version":"1.2.3"}}\n' ;;
+  *'run --rm --network '*'/api/v1/settings/public'|*'run --pull never --rm --network '*'/api/v1/settings/public'*) printf '{"data":{}}\n' ;;
+  *'run --rm --network '*'/v1/models'|*'run --pull never --rm --network '*'/v1/models'*) printf '{"data":[]}\n' ;;
   *'exec -T -e SUB2API_ACTIVE_UPSTREAM='*' caddy caddy validate'*)
     [[ "$scenario" != caddy_validate_failure ]] || exit 1
     ;;
@@ -257,9 +296,20 @@ JSON
 			rm -f -- "${FAKE_EVENT_LOG}.live-route-green"
 		fi
     ;;
-  *'up --no-deps -d --force-recreate sub2api-worker')
-    if [[ "$scenario" == worker_update_failure && ! -e "${FAKE_EVENT_LOG}.worker-failed" ]]; then
-      : >"${FAKE_EVENT_LOG}.worker-failed"
+	*'up --no-deps -d --force-recreate sub2api-worker'|*'up --no-deps -d --pull never --force-recreate sub2api-worker')
+			: >"${FAKE_EVENT_LOG}.worker-recreated"
+			count_file="${FAKE_EVENT_LOG}.worker-up-count"
+			count=0
+			[[ -f "$count_file" ]] && count=$(cat "$count_file")
+			count=$((count + 1))
+			printf '%s\n' "$count" >"$count_file"
+			if [[ "$*" == *'.rollback.env'* ]]; then
+				printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}" >"${FAKE_EVENT_LOG}.worker-image-id"
+			else
+				printf '%s\n' "${EXPECTED_IMAGE_ID:?}" >"${FAKE_EVENT_LOG}.worker-image-id"
+			fi
+	    if [[ "$scenario" == worker_update_failure && ! -e "${FAKE_EVENT_LOG}.worker-failed" ]]; then
+	      : >"${FAKE_EVENT_LOG}.worker-failed"
       exit 1
     fi
     if [[ "$scenario" == worker_rollback_failure ]]; then
@@ -314,17 +364,45 @@ EOF
 
 run_executor() {
 	local executor_mode=${EXECUTOR_MODE:-production}
+  local expected_worker_image=$PREVIOUS_IMAGE
+  local requested_image=$IMAGE
+  if [[ "${PRELOADED_MODE:-false}" == true ]]; then
+    requested_image=${PRELOADED_REQUESTED_IMAGE:?}
+  fi
+  local executor_args=(
+    --mode "$executor_mode"
+    --image "$requested_image"
+    --source-commit "$SOURCE_COMMIT"
+    --source-tree "$SOURCE_TREE"
+    --tested-tree "$TESTED_TREE"
+    --migrations-hash "$MIGRATIONS_HASH"
+    --deadline-epoch "${RELEASE_DEADLINE_EPOCH:-1785515400}"
+  )
+  if [[ "${PRELOADED_MODE:-false}" == true ]]; then
+    executor_args+=(
+      --preloaded-archive "${PRELOADED_ARCHIVE:?}"
+      --preloaded-archive-sha256 "${PRELOADED_ARCHIVE_SHA256:?}"
+      --preloaded-image-id "${PRELOADED_IMAGE_ID:?}"
+    )
+  fi
+  if [[ "${MAINTENANCE_MODE:-false}" == true ]]; then
+    expected_worker_image=$IMAGE
+    executor_args+=(--maintenance-authorized --maintenance-from-hash "${MAINTENANCE_FROM_HASH:?}")
+  fi
   env \
     PATH="$CASE_DIR/bin:$PATH" \
     BASH_ENV="$CASE_DIR/kill-hook.bash" \
     FAKE_EVENT_LOG="$EVENT_LOG" \
     RELEASE_EVENT_LOG="$EVENT_LOG" \
-    EXPECTED_IMAGE="$IMAGE" \
+    EXPECTED_IMAGE="$requested_image" \
+    EXPECTED_IMAGE_ID="${PRELOADED_IMAGE_ID:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" \
     EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" \
     EXPECTED_SOURCE_TREE="$SOURCE_TREE" \
     EXPECTED_TESTED_TREE="$TESTED_TREE" \
     EXPECTED_MIGRATIONS_HASH="$MIGRATIONS_HASH" \
-    PREVIOUS_IMAGE_FOR_FAKE="$PREVIOUS_IMAGE" \
+    EXPECTED_WORKER_IMAGE="${EXPECTED_WORKER_IMAGE_OVERRIDE:-$expected_worker_image}" \
+    PREVIOUS_IMAGE_FOR_FAKE="${PREVIOUS_IMAGE_FOR_FAKE:-$PREVIOUS_IMAGE}" \
+    PREVIOUS_IMAGE_ID_FOR_FAKE="sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
     DEPLOY_ROOT="$CASE_DIR/deploy" \
     BASE_COMPOSE="$CASE_DIR/compose.yaml" \
     SECRET_ENV="$CASE_DIR/secret.env" \
@@ -337,19 +415,15 @@ run_executor() {
     NETWORK_CURL_IMAGE="$NETWORK_CURL_IMAGE" \
     NETWORK_CURL_IMAGE_ALLOWLIST="$NETWORK_CURL_IMAGE_ALLOWLIST" \
     MEMINFO_FILE="$CASE_DIR/meminfo" \
+    RELEASE_PRELOADED_IMAGE="${PRELOADED_MODE:-false}" \
     WORKER_HEALTH_TIMEOUT_SECONDS=2 \
     WORKER_HEALTH_POLL_SECONDS=1 \
-		CANDIDATE_HEALTH_TIMEOUT_SECONDS=2 \
-		CANDIDATE_HEALTH_POLL_SECONDS=1 \
+    CANDIDATE_HEALTH_TIMEOUT_SECONDS=2 \
+    CANDIDATE_HEALTH_POLL_SECONDS=1 \
     COMPOSE_PROJECT_NAME=sub2api \
+    RELEASE_STAGING_ROOT="${PRELOADED_STAGING_ROOT:-}" \
     "$@" bash "$EXECUTOR" \
-		--mode "$executor_mode" \
-      --image "$IMAGE" \
-      --source-commit "$SOURCE_COMMIT" \
-      --source-tree "$SOURCE_TREE" \
-		--tested-tree "$TESTED_TREE" \
-		--migrations-hash "$MIGRATIONS_HASH" \
-		--deadline-epoch "${RELEASE_DEADLINE_EPOCH:-1785515400}"
+    "${executor_args[@]}"
 }
 
 run_rehearsal_executor() {
@@ -405,12 +479,170 @@ test_final_review_runtime_singletons() {
 }
 
 test_final_review_recovery_precedes_new_image() {
-	setup_case recovery_before_image
-	write_meminfo
-	write_review_partial "$CASE_DIR/records/recovery-before-image.partial" recovery-before-image true true true green sub2api-green:8080 "$IMAGE"
-	expect_failure recovery_before_image run_executor FAKE_SCENARIO=image_unavailable
-	grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
-		|| fail 'partial recovery did not run before rejecting the unavailable next image'
+  setup_case recovery_before_image
+  write_meminfo
+  write_review_partial "$CASE_DIR/records/recovery-before-image.partial" recovery-before-image true true true green sub2api-green:8080 "$IMAGE"
+  expect_failure recovery_before_image run_executor FAKE_SCENARIO=image_unavailable
+  grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+    || fail 'partial recovery did not run before rejecting the unavailable next image'
+}
+
+test_preloaded_partial_recovery_precedes_probe_image_check() {
+  setup_case preloaded_partial_probe_missing
+  write_meminfo
+  local staging="$CASE_DIR/staging" archive="$CASE_DIR/staging/sub2api.tar" image_id=sha256:1111111111111111111111111111111111111111111111111111111111111111 archive_sha
+  mkdir -p "$staging"
+  printf 'preloaded image archive\n' >"$archive"
+  archive_sha=$(sha256sum "$archive" | awk '{print $1}')
+  write_review_partial "$CASE_DIR/records/preloaded-partial" preloaded-partial true true true green sub2api-green:8080 "example.invalid/sub2api:release-$SOURCE_COMMIT"
+  mv "$CASE_DIR/records/preloaded-partial" "$CASE_DIR/records/preloaded-partial.partial"
+  if PRELOADED_MODE=true \
+    PRELOADED_REQUESTED_IMAGE="example.invalid/sub2api:release-$SOURCE_COMMIT-${image_id#sha256:}" \
+    PRELOADED_ARCHIVE="$archive" PRELOADED_ARCHIVE_SHA256="$archive_sha" PRELOADED_IMAGE_ID="$image_id" \
+    PRELOADED_STAGING_ROOT="$staging" FAKE_ROOT_ONLY_STAGING="$staging" FAKE_NETWORK_PROBE_IMAGE_MISSING=true \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
+    fail 'preloaded partial recovery unexpectedly succeeded'
+  fi
+  grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+    || fail 'preloaded partial recovery did not restore the previous upstream before probe image validation'
+  ! grep -q "docker image inspect $NETWORK_CURL_IMAGE" "$EVENT_LOG" \
+    || fail 'preloaded partial recovery checked the next probe image before rollback'
+}
+
+test_release_tag_partial_recovery() {
+  setup_case release_tag_partial
+  write_meminfo
+  local image_id=1111111111111111111111111111111111111111111111111111111111111111
+  local release_tag="example.invalid/sub2api:release-$SOURCE_COMMIT-$image_id"
+  write_review_partial "$CASE_DIR/records/release-tag.partial" release-tag true true true green sub2api-green:8080 "$release_tag"
+  "$REAL_JQ" --arg image "$release_tag" '
+    .previous.blue_image=$image |
+    .previous.green_image=$image |
+    .previous.worker_image=$image
+  ' "$CASE_DIR/records/release-tag.partial" >"$CASE_DIR/records/release-tag.partial.tmp"
+  mv "$CASE_DIR/records/release-tag.partial.tmp" "$CASE_DIR/records/release-tag.partial"
+  chmod 0600 "$CASE_DIR/records/release-tag.partial"
+  expect_failure release_tag_partial run_executor FAKE_SCENARIO=image_unavailable
+  grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+    || fail 'ID-bound release-tag partial recovery did not restore the previous upstream'
+}
+
+test_schema_v1_interrupted_partial_recovers_with_full_image_ids() {
+  setup_case schema_v1_interrupted_partial
+  write_meminfo
+  expect_failure schema_v1_interrupted_partial run_executor FAKE_SCENARIO=worker_rollback_failure
+
+  partial=$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)
+  [[ -n "$partial" ]] || fail 'v1 interruption did not retain a recovery checkpoint'
+  "$REAL_JQ" -e \
+    '[.previous.blue_image_id, .previous.green_image_id, .previous.worker_image_id, .candidate.image_id] |
+     all(type == "string" and test("^sha256:[a-f0-9]{64}$"))' \
+    "$partial" >/dev/null || fail 'v1 interruption checkpoint omitted immutable rollback image IDs'
+
+  expect_failure schema_v1_interrupted_recovery run_executor
+  "$REAL_JQ" -e \
+    '.schema_version == 2 and
+     ([.blue_image_id, .green_image_id, .worker_image_id] |
+      all(type == "string" and test("^sha256:[a-f0-9]{64}$")))' \
+    "$CASE_DIR/state.json" >/dev/null || fail 'v1 interruption recovery did not persist complete schema v2 image IDs'
+}
+
+test_legacy_partial_recovery_writes_complete_schema_v2_image_ids() {
+  setup_case legacy_partial_recovery
+  write_meminfo
+  write_review_partial "$CASE_DIR/records/legacy.partial" legacy true true true green sub2api-green:8080 "$IMAGE"
+
+  expect_failure legacy_partial_recovery run_executor
+  "$REAL_JQ" -e \
+    '.schema_version == 2 and
+     ([.blue_image_id, .green_image_id, .worker_image_id] |
+      all(type == "string" and test("^sha256:[a-f0-9]{64}$")))' \
+    "$CASE_DIR/state.json" >/dev/null \
+    || fail 'legacy partial recovery did not persist complete schema v2 image IDs'
+}
+
+test_release_tag_image_ids_must_match_tags() {
+  local expected_id=1111111111111111111111111111111111111111111111111111111111111111
+  local mismatched_id=2222222222222222222222222222222222222222222222222222222222222222
+  local release_tag="example.invalid/sub2api:release-$SOURCE_COMMIT-$expected_id"
+
+  setup_case release_tag_state_id_mismatch
+  write_meminfo
+  "$REAL_JQ" --arg image "$release_tag" --arg id "sha256:$mismatched_id" '
+    .schema_version=2 |
+    .blue_image=$image | .green_image=$image | .worker_image=$image |
+    .blue_image_id=$id | .green_image_id=$id | .worker_image_id=$id
+  ' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  expect_failure release_tag_state_id_mismatch run_executor
+  assert_no_mutation release_tag_state_id_mismatch
+
+  setup_case release_tag_partial_id_mismatch
+  write_meminfo
+  write_review_partial "$CASE_DIR/records/release-tag.partial" release-tag true true true green sub2api-green:8080 "$release_tag"
+  "$REAL_JQ" --arg image "$release_tag" --arg id "sha256:$mismatched_id" '
+    .previous.blue_image=$image | .previous.green_image=$image | .previous.worker_image=$image |
+    .previous.blue_image_id=$id | .previous.green_image_id=$id | .previous.worker_image_id=$id |
+    .candidate.image=$image | .candidate.image_id=$id
+  ' "$CASE_DIR/records/release-tag.partial" >"$CASE_DIR/records/release-tag.partial.tmp"
+  mv "$CASE_DIR/records/release-tag.partial.tmp" "$CASE_DIR/records/release-tag.partial"
+  chmod 0600 "$CASE_DIR/records/release-tag.partial"
+  expect_failure release_tag_partial_id_mismatch run_executor
+  ! grep -q 'caddy caddy reload' "$EVENT_LOG" || fail 'mismatched release-tag partial reached rollback mutation'
+}
+
+test_digest_image_ids_must_match_local_images() {
+  local previous_id='sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+  local mismatched_id='sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+
+  setup_case digest_state_id_mismatch
+  write_meminfo
+  "$REAL_JQ" --arg previous_id "$previous_id" --arg mismatched_id "$mismatched_id" '
+    .schema_version=2 |
+    .blue_image_id=$previous_id | .green_image_id=$mismatched_id | .worker_image_id=$previous_id
+  ' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  expect_failure digest_state_id_mismatch run_executor
+  assert_no_mutation digest_state_id_mismatch
+
+  setup_case digest_partial_previous_id_mismatch
+  write_meminfo
+  write_review_partial "$CASE_DIR/records/digest.partial" digest true true true green sub2api-green:8080 "$IMAGE"
+  "$REAL_JQ" --arg previous_id "$previous_id" --arg mismatched_id "$mismatched_id" '
+    .previous.blue_image_id=$mismatched_id |
+    .previous.green_image_id=$previous_id |
+    .previous.worker_image_id=$previous_id
+  ' "$CASE_DIR/records/digest.partial" >"$CASE_DIR/records/digest.partial.tmp"
+  mv "$CASE_DIR/records/digest.partial.tmp" "$CASE_DIR/records/digest.partial"
+  chmod 0600 "$CASE_DIR/records/digest.partial"
+  expect_failure digest_partial_previous_id_mismatch run_executor
+  ! grep -q 'caddy caddy reload' "$EVENT_LOG" || fail 'mismatched digest partial previous image ID reached rollback mutation'
+
+  setup_case partial_recovery_ignores_unneeded_candidate_image
+  write_meminfo
+  "$REAL_JQ" --arg image "$IMAGE" --arg previous_id "$previous_id" --arg candidate_id 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' '
+    .schema_version=2 |
+    .green_image=$image |
+    .blue_image_id=$previous_id | .green_image_id=$candidate_id | .worker_image_id=$previous_id
+  ' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  sed -i.bak -e "s|^SUB2API_GREEN_IMAGE=.*|SUB2API_GREEN_IMAGE=$IMAGE|" "$CASE_DIR/release.env"
+  rm -f -- "$CASE_DIR/release.env.bak"
+  write_review_partial "$CASE_DIR/records/digest.partial" digest true true true green sub2api-green:8080 "$IMAGE"
+  "$REAL_JQ" --arg previous_id "$previous_id" --arg candidate_id 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' '
+    .previous.blue_image_id=$previous_id |
+    .previous.green_image_id=$previous_id |
+    .previous.worker_image_id=$previous_id |
+    .candidate.image_id=$candidate_id
+  ' "$CASE_DIR/records/digest.partial" >"$CASE_DIR/records/digest.partial.tmp"
+  mv "$CASE_DIR/records/digest.partial.tmp" "$CASE_DIR/records/digest.partial"
+  chmod 0600 "$CASE_DIR/records/digest.partial"
+  expect_failure partial_recovery_ignores_unneeded_candidate_image run_executor FAKE_SCENARIO=recovery_unused_image_missing
+  grep -q 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" \
+    || fail 'partial recovery did not restore the prior route when candidate and inactive images were unavailable'
 }
 
 test_final_review_rollback_proof() {
@@ -574,6 +806,53 @@ test_validation_failures() {
   assert_no_mutation live_lock
 }
 
+test_preloaded_transport_loads_archive_without_pull() {
+  setup_case preloaded
+  write_meminfo
+  local staging="$CASE_DIR/staging" archive="$CASE_DIR/staging/sub2api.tar" image_id=sha256:1111111111111111111111111111111111111111111111111111111111111111 archive_sha
+  mkdir -p "$staging"
+  printf 'preloaded image archive\n' >"$archive"
+  archive_sha=$(sha256sum "$archive" | awk '{print $1}')
+  PRELOADED_MODE=true \
+  PRELOADED_REQUESTED_IMAGE="example.invalid/sub2api:release-$SOURCE_COMMIT-${image_id#sha256:}" \
+  PRELOADED_ARCHIVE="$archive" \
+  PRELOADED_ARCHIVE_SHA256="$archive_sha" \
+  PRELOADED_IMAGE_ID="$image_id" \
+  PRELOADED_STAGING_ROOT="$staging" \
+  FAKE_ROOT_ONLY_STAGING="$staging" \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "preloaded release failed: $(cat "$CASE_DIR/stderr")"
+  grep -q '^docker load --input ' "$EVENT_LOG" || fail 'preloaded release did not load the staged archive'
+  ! grep -q 'pull sub2api-green' "$EVENT_LOG" || fail 'preloaded release attempted to pull the candidate image'
+  [[ "$(grep -c '^docker run --pull never --rm ' "$EVENT_LOG" || true)" == 4 ]] \
+    || fail 'preloaded network probes did not disable image pulls'
+  probe_image_line=$(grep -n "^docker image inspect $NETWORK_CURL_IMAGE$" "$EVENT_LOG" | cut -d: -f1 | head -n1)
+  first_probe_line=$(grep -n '^docker run --pull never --rm ' "$EVENT_LOG" | cut -d: -f1 | head -n1)
+  [[ -n "$probe_image_line" && -n "$first_probe_line" && "$probe_image_line" -lt "$first_probe_line" ]] \
+    || fail 'preloaded release did not verify the local network probe image before use'
+  grep -q 'release-' "$CASE_DIR/release.env" || fail 'preloaded release did not persist the release tag'
+
+  setup_case preloaded-mismatched-reference
+  write_meminfo
+  staging="$CASE_DIR/staging"
+  archive="$CASE_DIR/staging/sub2api.tar"
+  mkdir -p "$staging"
+  printf 'preloaded image archive\n' >"$archive"
+  archive_sha=$(sha256sum "$archive" | awk '{print $1}')
+  if PRELOADED_MODE=true \
+    PRELOADED_REQUESTED_IMAGE="example.invalid/sub2api:release-$SOURCE_COMMIT-$(printf '2%.0s' {1..64})" \
+    PRELOADED_ARCHIVE="$archive" \
+    PRELOADED_ARCHIVE_SHA256="$archive_sha" \
+    PRELOADED_IMAGE_ID="$image_id" \
+    PRELOADED_STAGING_ROOT="$staging" \
+    FAKE_ROOT_ONLY_STAGING="$staging" \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
+    fail 'preloaded host accepted a tag bound to a different image ID'
+  fi
+  ! grep -q '^docker load --input ' "$EVENT_LOG" \
+    || fail 'preloaded host loaded an archive before rejecting a mismatched image-ID-bound tag'
+}
+
 test_downtime_gates() {
   local scenario reason
   for scenario in migration legacy disk memory db active_pair identity candidate_role; do
@@ -610,6 +889,79 @@ test_downtime_gates() {
   done
 }
 
+test_authorized_maintenance_transition() {
+  local old_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+  local new_hash=337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+  local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+  local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+
+  setup_case maintenance_unauthorized
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  expect_failure maintenance_unauthorized run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'unauthorized migration transition was not gated'
+  assert_no_mutation maintenance_unauthorized
+
+  setup_case maintenance_illegal_set
+  write_meminfo
+  MIGRATIONS_HASH=$(printf '8%.0s' {1..64})
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_illegal_set run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'illegal migration set was not gated'
+  assert_no_mutation maintenance_illegal_set
+
+  setup_case maintenance_legacy_transition
+  write_meminfo
+  MIGRATIONS_HASH=$legacy_new_hash
+  "$REAL_JQ" --arg hash "$legacy_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$legacy_old_hash expect_failure maintenance_legacy_transition run_executor
+  grep -q 'approved active migration hash' "$CASE_DIR/stderr" || fail 'retired migration transition was not rejected'
+  assert_no_mutation maintenance_legacy_transition
+
+  setup_case maintenance_success
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "authorized maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance path did not stop API and worker'
+  ! grep -Eq 'compose .* stop .*postgres|compose .* stop .*redis|compose .* stop .*caddy' "$EVENT_LOG" \
+    || fail 'maintenance path stopped a shared service'
+  ! grep -Eq 'compose .* (up|pull|rm|restart|recreate).*postgres|compose .* (up|pull|rm|restart|recreate).*redis|compose .* (up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'maintenance path rebuilt a shared service'
+
+  setup_case maintenance_rollback
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_rollback run_executor \
+    FAKE_SCENARIO=candidate_health_failure
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'maintenance rollback did not enter maintenance path'
+  grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" || fail 'maintenance rollback did not restore active API'
+  grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" || fail 'maintenance rollback did not restore worker'
+  ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'maintenance rollback touched a shared service'
+}
+
+test_caddy_reconciliation_route() {
+  sed -n '/handle @relay_ops_reconciliation {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'reverse_proxy relay-ops:8100' \
+    || fail 'Caddy does not preserve reconciliation proxy ordering ahead of the retired page response'
+  grep -q '/relay-ops/api/reconciliation/\*' "$ROOT/infra/Caddyfile" \
+    || fail 'Caddy does not route reconciliation API to relay-ops'
+  ! sed -n '/@relay_ops_public {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q '/relay-ops/\*' \
+    || fail 'Caddy exposes retired relay-ops pages through the public matcher'
+  grep -q '@retired_relay_ops_pages {' "$ROOT/infra/Caddyfile" \
+    || fail 'Caddy does not explicitly retire relay-ops pages'
+  sed -n '/@retired_relay_ops_pages {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'not path /relay-ops/api/reconciliation/\*' \
+    || fail 'retired relay-ops matcher intercepts the reconciliation API before reverse_proxy'
+}
+
 test_success_order_and_atomic_records() {
   setup_case success
   write_meminfo
@@ -640,6 +992,10 @@ test_success_order_and_atomic_records() {
   grep -q '^SUB2API_ACTIVE_SLOT=green$' "$CASE_DIR/release.env" || fail 'release env did not persist green'
   "$REAL_JQ" -e '.active_slot == "green" and .active_upstream == "sub2api-green:8080" and .worker_image == $image' \
     --arg image "$IMAGE" "$CASE_DIR/state.json" >/dev/null || fail 'state was not promoted atomically'
+  "$REAL_JQ" -e '.schema_version == 2 and .blue_image_id == $previous_id and .green_image_id == $requested_id and .worker_image_id == $requested_id' \
+    --arg previous_id "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+    --arg requested_id "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "$CASE_DIR/state.json" >/dev/null || fail 'state did not persist immutable runtime image IDs'
   [[ "$(stat -f '%Lp' "$CASE_DIR/state.json" 2>/dev/null || stat -c '%a' "$CASE_DIR/state.json")" == 600 ]] || fail 'state mode is not 0600'
   record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
   [[ -n "$record" ]] || fail 'success record missing'
@@ -667,9 +1023,13 @@ test_two_slot_rehearsal_cycles() {
   write_meminfo
   set_active_green
   [[ -e "${EVENT_LOG}.live-route-green" ]] || fail 'green-to-blue fixture did not mark the active green Caddy route'
-  run_executor FAKE_CANDIDATE_SLOT=blue >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "green-to-blue rehearsal failed: $(cat "$CASE_DIR/stderr")"
-  grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail 'green-to-blue did not promote blue'
-  ! grep -Eq 'compose .* (stop|rm).*sub2api-green|compose .* down' "$EVENT_LOG" || fail 'green-to-blue did not retain the prior green slot'
+	run_executor FAKE_CANDIDATE_SLOT=blue >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "green-to-blue rehearsal failed: $(cat "$CASE_DIR/stderr")"
+	grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail 'green-to-blue did not promote blue'
+	"$REAL_JQ" -e '.schema_version == 2 and .blue_image_id == $requested_id and .green_image_id == $previous_id and .worker_image_id == $requested_id' \
+		--arg previous_id "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		--arg requested_id "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+		"$CASE_DIR/state.json" >/dev/null || fail 'green-to-blue did not persist the expected schema v2 runtime image IDs'
+	! grep -Eq 'compose .* (stop|rm).*sub2api-green|compose .* down' "$EVENT_LOG" || fail 'green-to-blue did not retain the prior green slot'
   [[ "$(grep -c 'up --no-deps -d --force-recreate sub2api-worker' "$EVENT_LOG")" == 1 ]] || fail 'green-to-blue did not update exactly one worker'
 
   for scenario in candidate_health_failure reload_failure public_failure; do
@@ -702,7 +1062,14 @@ test_failures_and_recovery() {
         count=$(grep -c 'up --no-deps -d --force-recreate sub2api-worker' "$EVENT_LOG")
         [[ "$count" -ge 2 ]] || fail 'worker failure did not restore the prior worker digest'
       fi
-      grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail "$scenario did not restore release env"
+  grep -q '^SUB2API_ACTIVE_SLOT=blue$' "$CASE_DIR/release.env" || fail "$scenario did not restore release env"
+		if [[ "$scenario" == worker_update_failure ]]; then
+			record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+			"$REAL_JQ" -e '.state == "rolled_back" and .rolled_back == true' "$record" >/dev/null \
+				|| fail 'worker rollback did not prove restoration of the old worker image ID'
+			grep -q 'inspect worker-id --format {{.Image}}' "$EVENT_LOG" \
+				|| fail 'worker rollback did not inspect the restored worker image ID'
+		fi
     fi
     record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
     [[ -n "$record" ]] || fail "$scenario failure record missing"
@@ -826,7 +1193,7 @@ test_review_recovery_and_cleanup() {
      requested:{image:$image}, result:"succeeded", state:"promoted", reason:"", rolled_back:false}
   ' >"$CASE_DIR/records/committed.json"
   chmod 0600 "$CASE_DIR/records/committed.json"
-  run_executor FAKE_CANDIDATE_SLOT=blue PREVIOUS_IMAGE_FOR_FAKE="$IMAGE" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "committed success cleanup should continue with the requested release: $(cat "$CASE_DIR/stderr")"
+  EXPECTED_WORKER_IMAGE_OVERRIDE="$IMAGE" run_executor FAKE_CANDIDATE_SLOT=blue PREVIOUS_IMAGE_FOR_FAKE="$IMAGE" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "committed success cleanup should continue with the requested release: $(cat "$CASE_DIR/stderr")"
   [[ -z "$(find "$CASE_DIR/records" -maxdepth 1 -name 'committed.partial' -print -quit)" ]] \
     || fail 'committed success partial was not cleaned up'
   first_blue_reload=$(grep -n 'SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080 caddy caddy reload' "$EVENT_LOG" | head -n 1 | cut -d: -f1)
@@ -963,8 +1330,13 @@ case "${ONLY_TEST:-all}" in
     assert_rehearsal_topology_ready
     test_validation_failures
     printf 'PASS: fail-closed validation harness\n'
+    test_preloaded_transport_loads_archive_without_pull
+    printf 'PASS: preloaded archive transport\n'
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
+    test_authorized_maintenance_transition
+    test_caddy_reconciliation_route
+    printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
     printf 'PASS: successful blue-green command order\n'
     test_two_slot_rehearsal_cycles
@@ -984,11 +1356,17 @@ case "${ONLY_TEST:-all}" in
 		test_final_review_candidate_readiness
 		test_final_review_runtime_singletons
 		test_final_review_recovery_precedes_new_image
+		test_preloaded_partial_recovery_precedes_probe_image_check
 		test_final_review_rollback_proof
 		test_final_review_live_route_mismatch
 		test_final_review_restart_stable_route
-		test_final_review_host_deadline
-		printf 'PASS: final-review host safety regressions\n'
+			test_final_review_host_deadline
+			printf 'PASS: final-review host safety regressions\n'
+			test_schema_v1_interrupted_partial_recovers_with_full_image_ids
+			test_legacy_partial_recovery_writes_complete_schema_v2_image_ids
+			test_release_tag_image_ids_must_match_tags
+			test_digest_image_ids_must_match_local_images
+			printf 'PASS: immutable release-tag state and recovery IDs\n'
     ;;
   network) test_review_network_probe_image_policy ;;
   worker) test_review_worker_health_wait ;;
@@ -1002,10 +1380,30 @@ case "${ONLY_TEST:-all}" in
 		test_final_review_candidate_readiness
 		test_final_review_runtime_singletons
 		test_final_review_recovery_precedes_new_image
+		test_preloaded_partial_recovery_precedes_probe_image_check
 		test_final_review_rollback_proof
 		test_final_review_live_route_mismatch
 		test_final_review_restart_stable_route
-		test_final_review_host_deadline
+			test_final_review_host_deadline
+			test_release_tag_partial_recovery
+			test_schema_v1_interrupted_partial_recovers_with_full_image_ids
+			test_legacy_partial_recovery_writes_complete_schema_v2_image_ids
+			test_release_tag_image_ids_must_match_tags
+			test_digest_image_ids_must_match_local_images
+			;;
+	  partial)
+			test_release_tag_partial_recovery
+			test_schema_v1_interrupted_partial_recovers_with_full_image_ids
+			test_legacy_partial_recovery_writes_complete_schema_v2_image_ids
+			test_release_tag_image_ids_must_match_tags
+			test_digest_image_ids_must_match_local_images
+			;;
+  preloaded-partial) test_preloaded_partial_recovery_precedes_probe_image_check ;;
+  success) test_success_order_and_atomic_records ;;
+  maintenance)
+		test_authorized_maintenance_transition
+		test_caddy_reconciliation_route
 		;;
+	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

@@ -15,7 +15,7 @@ Before accepting `部署生产`, prove all of the following without mutating pro
 1. The implementation branch is reviewed, merged into the intended release branch, pushed to the server, and the release worktree is clean and canonical.
 2. The complete final-tree verification matrix passed, and a canonical non-symlink `0600` evidence JSON was created with `ops/write-sub2api-test-evidence.sh` after the worktree became clean.
 3. Docker Buildx can push Linux AMD64 images to `SUB2API_IMAGE_REPOSITORY`; the registry destination is the approved production repository.
-4. `RELEASE_SSH_TARGET`, `RELEASE_SSH_PORT`, and the canonical `0600` non-symlink key and known-hosts files select the production forced-command account. `RELEASE_HOST_EXECUTOR_PATH` is `/usr/local/libexec/deploy-sub2api-blue-green-host.sh` unless its reviewed installation uses another absolute allowlisted path.
+4. `RELEASE_SSH_TARGET`, `RELEASE_SSH_PORT`, and the canonical `0600` non-symlink key and known-hosts files select the production forced-command account. The controller always installs the reviewed executor at `/usr/local/libexec/deploy-sub2api-blue-green-host.sh` from `RELEASE_WORKTREE/ops/deploy-sub2api-blue-green-host.sh`.
 5. The production host executor has canonical paths for `DEPLOY_ROOT`, `BASE_COMPOSE`, `SECRET_ENV`, `RELEASE_ENV`, `RELEASE_STATE`, `RELEASE_RECORD_ROOT`, `ADMIN_API_KEY_FILE`, and `GATEWAY_API_KEY_FILE`; the env/key/state files are root-owned `0600` non-symlinks.
 6. Production uses Docker context `default`, Compose project `sub2api`, HTTPS `BASE_URL`, and an immutable `NETWORK_CURL_IMAGE` present in `NETWORK_CURL_IMAGE_ALLOWLIST`.
 7. The existing release state matches the release env, the active slot/upstream pair, migration hash, and current PostgreSQL/Redis/Caddy container identities. At least 2 GiB disk, 1 GiB available memory, and 10 PostgreSQL connections remain for the parallel slot.
@@ -33,13 +33,121 @@ export RELEASE_SSH_TARGET='<forced-command-user>@<production-host>'
 export RELEASE_SSH_PORT='<production-ssh-port>'
 export RELEASE_SSH_KEY='<absolute-0600-production-key-path>'
 export RELEASE_SSH_KNOWN_HOSTS='<absolute-0600-known-hosts-path>'
-export RELEASE_HOST_EXECUTOR_PATH='/usr/local/libexec/deploy-sub2api-blue-green-host.sh'
 export SUB2API_TEST_EVIDENCE='<absolute-0600-final-tree-evidence.json>'
 
 bash ops/release-sub2api-blue-green.sh \
   --mode production \
   --evidence "$SUB2API_TEST_EVIDENCE"
 ```
+
+## Preloaded image transport (no registry pull)
+
+Use `RELEASE_TRANSPORT=preloaded` when the production host cannot reach the
+registry. The controller builds under a unique temporary tag, saves the image
+as an archive, transfers the archive and the host executor over SSH/SCP, and
+checks the archive SHA256 plus the Docker image ID after `docker load`. After
+the build, it creates a unique release tag containing both the source commit
+and the full image-ID digest; that exact tag is the only preloaded reference
+accepted by the host. The host runs Compose with `--pull never`; it will fail
+closed if the requested image-ID-bound tag or image ID is not present. The staging directory and archive must be
+root-owned and non-group-writable on the host.
+
+```bash
+export RELEASE_TRANSPORT=preloaded
+bash ops/release-sub2api-blue-green.sh \
+  --mode production \
+  --evidence "$SUB2API_TEST_EVIDENCE"
+```
+
+The remote executor is staged under `/usr/local/libexec`, checked
+(`root:root`, mode `0755` or `0700`, `bash -n`, and SHA256), and then promoted
+with an atomic `mv` to the fixed executor path before the image build starts.
+A failed executor transfer or attestation therefore leaves production
+unchanged and does not spend time building an image. Preloaded acceptance
+probes also require the allowlisted curl image to already exist locally and
+run with Docker `--pull never`.
+
+## Authorized additive-migration maintenance release
+
+Use this path only after the host preflight has emitted `downtime_required=true`
+for `migration_set_changed` and the user has explicitly authorized
+`允许停机部署`. The controller requires `--maintenance-authorized`; the host
+executor additionally requires `--maintenance-from-hash` to equal the active
+hash below. No other migration transition is accepted:
+
+```text
+from e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+to   337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+files 196_account_procurement_cost.sql — adds nullable procurement cost, nullable effective time, and a non-negative procurement-cost constraint.
+```
+
+Invoke the same controller with the explicit maintenance flag:
+
+```bash
+bash ops/release-sub2api-blue-green.sh \
+  --mode production \
+  --evidence "$SUB2API_TEST_EVIDENCE" \
+  --maintenance-authorized
+```
+
+The host executor enforces a bounded (default 300-second, maximum 600-second)
+unavailable window, stops only the API and worker services, starts the candidate
+worker to apply the additive migration, then restores the API route through the
+existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
+recreated. `196_account_procurement_cost.sql` is forward-compatible: it only
+adds nullable columns and a non-negative constraint. An application rollback
+restores the previous API/worker images and Caddy upstream; it does not
+automatically remove those database fields or the constraint. Preserve the
+`.partial` and failure record if rollback itself fails.
+
+Exact manual recovery command (only after reviewing the preserved partial record):
+
+For a preloaded recovery, `--image` must be the exact
+`<repository>:release-<source-commit>-<image-id-without-sha256-prefix>` tag;
+do not substitute the older commit-only release tag.
+
+```bash
+sudo -n env RELEASE_PRELOADED_IMAGE=true \
+  bash /usr/local/libexec/deploy-sub2api-blue-green-host.sh \
+  --mode production --image '<previous-release-tag>' \
+  --preloaded-archive '/var/lib/sub2api/release-staging/<archive>.tar' \
+  --preloaded-archive-sha256 '<archive-sha256>' \
+  --preloaded-image-id '<image-id-sha256>' \
+  --source-commit '<previous-40-hex-commit>' --source-tree '<previous-40-hex-tree>' \
+  --tested-tree '<previous-40-hex-tree>' \
+   --migrations-hash '<previous-migrations-hash-from-preserved-partial-state>' \
+   --deadline-epoch "$(date -u +%s -d '+600 seconds')"
+```
+
+Replace the migrations placeholder only with the exact previous migration hash
+recorded in the preserved partial/state checkpoint (for this release it is
+`e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc`). Do not
+guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
+shared services during recovery.
+
+When the Caddy route file itself changes, stage it in the reviewed deploy root,
+then validate and reload the existing container atomically (never recreate it):
+
+```bash
+cd "$DEPLOY_ROOT"
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+sudo -n cp -a Caddyfile "Caddyfile.$stamp.bak"
+caddy_id=$(docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" ps -q caddy)
+docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" exec -T \
+  -e SUB2API_ACTIVE_UPSTREAM="$(jq -r .active_upstream "$RELEASE_STATE")" \
+  caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" exec -T \
+  -e SUB2API_ACTIVE_UPSTREAM="$(jq -r .active_upstream "$RELEASE_STATE")" \
+  caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+test "$(docker compose --project-name sub2api --env-file "$SECRET_ENV" \
+  --env-file "$RELEASE_ENV" -f "$BASE_COMPOSE" ps -q caddy)" = "$caddy_id"
+```
+
+If validation or reload fails, restore `Caddyfile.$stamp.bak`, validate/reload
+again, and retain the backup and command output as recovery evidence.
 
 Do not run this command from this document, substitute guessed values, paste secrets, or run it before authorization. The controller rejects a dirty or mismatched tree. Its 1800-second monotonic budget includes build, push, digest resolution, SSH execution, cutover, and acceptance; each stage is also capped at 600 seconds.
 

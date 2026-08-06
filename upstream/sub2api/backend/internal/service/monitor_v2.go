@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MonitorV2ContractVersion = "4"
+	MonitorV2ContractVersion = "5"
 
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
@@ -94,6 +94,7 @@ type MonitorV2TimelinePoint struct {
 	Value         *float64
 	SuccessCount  int64
 	EligibleCount int64
+	LatencyMS     *int
 }
 
 type MonitorV2Group struct {
@@ -307,7 +308,7 @@ func (s *MonitorV2Service) buildGroup(
 		Latency:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		LatencyP95:         monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
 		CacheHit:           monitorV2CacheMetric(cache),
-		Timeline:           []MonitorV2TimelinePoint{},
+		Timeline:           monitorV2ProbeTimeline(probes, start, end),
 	}
 	if s.ops == nil {
 		return card
@@ -325,19 +326,8 @@ func (s *MonitorV2Service) buildGroup(
 		card.Availability = monitorV2AvailabilityFromOverview(overview)
 		card.TTFT = monitorV2PercentileMetric(overview.TTFT.P50, overview.TTFT.SampleCount)
 		card.TTFTP95 = monitorV2PercentileMetric(overview.TTFT.P95, overview.TTFT.SampleCount)
-		card.Latency = monitorV2PercentileMetric(overview.Duration.P50, overview.SuccessCount)
-		card.LatencyP95 = monitorV2PercentileMetric(overview.Duration.P95, overview.SuccessCount)
-	}
-
-	throughput, throughputErr := s.ops.GetThroughputTrend(ctx, filter, bucketSeconds)
-	errorsTrend, errorsErr := s.ops.GetErrorTrend(ctx, filter, bucketSeconds)
-	if throughputErr == nil && errorsErr == nil {
-		card.Timeline = monitorV2TrimBoundaryBucket(
-			monitorV2Timeline(throughput, errorsTrend),
-			start,
-			end,
-			bucketSeconds,
-		)
+		card.Latency = monitorV2PercentileMetric(overview.Duration.P50, overview.Duration.SampleCount)
+		card.LatencyP95 = monitorV2PercentileMetric(overview.Duration.P95, overview.Duration.SampleCount)
 	}
 
 	if strings.EqualFold(group.Platform, PlatformOpenAI) {
@@ -354,6 +344,55 @@ func (s *MonitorV2Service) buildGroup(
 		}
 	}
 	return card
+}
+
+func monitorV2ProbeTimeline(probes []*UserMonitorView, start, end time.Time) []MonitorV2TimelinePoint {
+	points := make([]MonitorV2TimelinePoint, 0, monitorV2MaxTimeline)
+	for _, probe := range probes {
+		if probe == nil {
+			continue
+		}
+		for _, item := range probe.Timeline {
+			checkedAt := item.CheckedAt.UTC()
+			if checkedAt.Before(start.UTC()) || checkedAt.After(end.UTC()) {
+				continue
+			}
+			latency := item.LatencyMs
+			if latency == nil {
+				latency = item.PingLatencyMs
+			}
+			point := MonitorV2TimelinePoint{
+				BucketStart: checkedAt, State: MonitorV2MetricAvailable,
+				EligibleCount: 1, LatencyMS: latency,
+			}
+			switch strings.ToLower(strings.TrimSpace(item.Status)) {
+			case "operational", "degraded", "success", "ok":
+				value := float64(100)
+				point.Value = &value
+				point.SuccessCount = 1
+			case "unavailable":
+				// A probe that cannot reach the channel is still a completed
+				// probe for the channel monitor. Keep it green/successful, but
+				// leave latency empty so the UI can render a shorter bar.
+				value := float64(100)
+				point.Value = &value
+				point.SuccessCount = 1
+			case "failed", "error":
+				value := float64(0)
+				point.Value = &value
+			default:
+				point.State = MonitorV2MetricInsufficientData
+				point.EligibleCount = 0
+				point.LatencyMS = nil
+			}
+			points = append(points, point)
+		}
+	}
+	sort.SliceStable(points, func(i, j int) bool { return points[i].BucketStart.Before(points[j].BucketStart) })
+	if len(points) > monitorV2MaxTimeline {
+		points = points[len(points)-monitorV2MaxTimeline:]
+	}
+	return points
 }
 
 func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, int, error) {

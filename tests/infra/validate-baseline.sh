@@ -158,6 +158,10 @@ done
 require_fixed 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile
 require_fixed 'flush_interval -1' infra/Caddyfile
 require_fixed 'reverse_proxy @relay_ops_public relay-ops:8100' infra/Caddyfile
+require_fixed '@relay_ops_reconciliation path /relay-ops/api/reconciliation/*' infra/Caddyfile
+require_fixed 'handle @relay_ops_reconciliation {' infra/Caddyfile
+require_fixed 'reverse_proxy relay-ops:8100' infra/Caddyfile
+require_fixed 'not path /relay-ops/api/reconciliation/*' infra/Caddyfile
 require_fixed '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile
 require_fixed 'respond @retired_relay_ops_api 404' infra/Caddyfile
 if rg -n -F 'reverse_proxy @relay_ops_admin relay-ops:8100' infra/Caddyfile; then

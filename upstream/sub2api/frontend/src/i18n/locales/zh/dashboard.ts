@@ -93,6 +93,8 @@ export default {
       latency: '总延迟 P50',
       latencyP95: '总延迟 P95',
       cache: '缓存命中率',
+      samples: '基于 {count} 次调用',
+      noSamples: '暂无调用样本',
       insufficient_data: '样本不足',
       not_provided: '未提供'
     },
@@ -101,7 +103,10 @@ export default {
     availability: '有效调用',
     callEvidence: '{success} / {eligible} 次有效调用成功',
     timeline: {
-      noData: '该时段暂无有效调用'
+      noData: '该时段暂无探测记录',
+      probeUnavailable: '探测完成（当前无可用模型）',
+      success: '探测成功',
+      failed: '探测失败'
     },
     empty: {
       title: '暂无可见分组',

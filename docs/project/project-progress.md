@@ -1,6 +1,35 @@
 # 项目全局进度总账
 
-**更新时间：** 2026-08-06
+**更新时间：** 2026-08-05
+
+**本轮登记（2026-08-05）：** 六阶段生产收口独立部署执行，状态：待办（用户暂停）。Task 1 基线收口已完成；Task 2 已部署但尚待用户验收；Task 3 至 Task 9 均未启动。恢复前不得派发实施代理、生成下一任务 brief、修改生产配置或执行部署。执行入口为 [独立部署单元实施计划](../superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md)，恢复时所有代理仍须先读取 [代理上下文合同](six-stage-production-closure-agent-context.md) 并报告固定 `CONTEXT_ACK`。
+
+**Task 2 部署登记（2026-08-05）：** 状态：待办（已部署、待用户验收、当前暂停）。提交 `8fef0e03c80a55ec1a1cceedabd1949bf12bfe8b` 已推送到 canonical 分支和 `origin/main`，relay-ops 不可变镜像已部署，生产 accounting 唯一显式保持 `false`；镜像/源码/迁移身份、`/healthz`、`/readyz`、disabled accounting 404、未认证 reconciliation 401 及 PostgreSQL/Redis/Caddy/Sub2API 容器身份不变均已验证。恢复时第一步只能验收 Task 2；验收前不得标记完成，不得启动 Task 3。
+
+**六阶段剩余任务待办登记（2026-08-05）：**
+
+| 任务 | 待办状态 |
+|---|---|
+| Task 2 relay-ops 账务代码部署（accounting disabled） | 待办：已部署，待用户验收，暂停 |
+| Task 3 激活 accounting、账本基线与日调度 | 待办：未启动 |
+| Task 4 全站账单能力只读盘点 | 待办：未启动 |
+| Task 5 必要平台账单适配器子计划 | 待办：条件任务，未启动 |
+| Task 6 真实账单授权、映射与首个非零闭环 | 待办：未启动 |
+| Task 7 独立营收页面 | 待办：未启动 |
+| Task 8 Monitor 与飞书告警/恢复 | 待办：未启动 |
+| Task 9 OpenAI 实际响应模型审计 | 待办：未启动 |
+
+**当前生产交付序列：** 用户已暂停六阶段剩余任务，当前没有活动实施或部署单元。账号监控 V3 已完成；Task 2 保留已部署、accounting disabled、待验收事实并归入待办；Task 3 至 Task 9 全部归入待办。只有用户明确恢复后，协调任务才能从 Task 2 验收门继续。
+
+**本轮登记（2026-08-02）：** 账号监控真实上游成本与对账闭环恢复核验，状态：进行中（仅在 `codex/relay-ops-public-route` 分支执行；先核对生产 Caddy 热配置、健康/认证路由、发布锁和真实只读账单输入；未满足“已推送 + 已部署 + 真实数据验证”前不得标记完成）。
+
+**本轮登记（2026-08-03）：** 账号监控产品验收收口，状态：进行中（账号范围、聚合与首轮卡片修复已推送并部署；生产复验新增确认：监控分组查询遗漏软删除过滤，错误展示 10 个已删除历史/测试分组；账号卡片须限制桌面每行最多 2 个、收起今日调用、评分显示整数并改用通俗证据文案、弱化评分与全局优先级、补齐渠道监控式柱状图和各指标样本数；“纸面利润”统一改为“账号利润”；渠道监控成功探测统一按绿色成功展示并恢复指标样本数；“历史按日”“异常明细”及账号监控其他交互须逐项验证修复。全部重新推送、部署并在线验证前不得标记完成）。
+
+**本轮登记（2026-08-04）：** 账号监控卡片收敛与营收页面职责拆分，状态：已完成（最终提交 `05985e62ec88b04d1e647a815eecdb1cf1155776` 已推送并部署至生产 green；账号监控继续只承接服务质量、评分、排名、成本录入、倍率与并发，营收、利润、账务和对账保持独立页面/后续事项。#118/#119 均已在线确认 `service_state=available`、可评分排名、24 小时失败数为 0，单卡刷新后检查时间同步推进）。
+
+**本轮生产实施登记（2026-08-04）：** 账号监控卡片数据完善 V3，状态：已完成（生产 `release-state` 已更新为 `source_commit=05985e62ec88b04d1e647a815eecdb1cf1155776`、`source_tree=c37b383bf54e485d7393ff0793e30dd03f5e2328`、`migrations_hash=337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76`、`active_slot=green`，运行镜像 ID 为 `sha256:0d10260b745e2086326977303b15f6eb78e8e03de7858fe356dec046bf0e10e8`。PostgreSQL `2db52788…`、Redis `c45202c0…`、Caddy `ace4a23b…` 身份未变化；历史三个时间窗、7 个分组、66 个账号、迁移与并发验证事实继续有效，最终状态与刷新缺陷已完成线上复验）。
+
+**本轮视觉纠偏登记（2026-08-04）：** 账号监控 V3 设计稿 1:1 还原，状态：已完成（不可漂移合同、独立审查、桌面/移动同视口对比和既有生产卡片验证结论全部保留；本轮状态与单卡刷新缺陷已随最终提交完成生产收口，账号监控 V3 整体交付恢复为已完成）。
 
 **唯一总账：** 本文件是项目事项、部署状态和验证证据的唯一全局入口。
 
@@ -12,40 +41,37 @@
 
 | 分区 | 独立事项 | 判定 |
 |---|---:|---|
-| 生产工程代码/配置已部署并验证 | 20 | 已推送、已部署、已验证生效 |
+| 生产工程代码/配置已部署并验证 | 19 | 已推送、已部署、已验证生效 |
 | 工程代码/配置差异待部署 | 10 | 仍存在运行时代码或生产配置差异 |
-| 持续实施 | 3 | 工程实现尚未完成，或仍在推进中 |
+| 持续实施 | 2 | 工程实现尚未完成，或仍在推进中 |
 | 运维/研究跟进（非工程部署差异） | 23 | 文档、研究、历史证据或外部验收跟进 |
 | **合并后的独立事项合计** | **54** | **当前总账快照** |
 
-## 当前最重要进行中事项
+## 当前最重要进行中事项与本轮已完成交付
 
-0.4. **账号卡片成本倒挂预警**：在管理员账号监控卡片接入 Sub2API/New API 通用上游原生倍率、本站标准费用折合成本倍率、逐笔账单证据和当前分组倒挂判定；至少 6 笔有效逐笔实际扣费样本才标记“确认亏损”，仅定价推算/额度测得标记“可能亏损”。本次不创建站点经营看板，不新增或迁移现有金额型投入产出区。**状态：进行中（独立 worktree 实施中）**。
+0. **OpenAI 模型映射审计**：仅覆盖 OpenAI-compatible HTTP JSON、SSE 与 Responses WebSocket；新增 `usage_logs.actual_response_model`，记录上游原始响应模型并在管理员 usage log 展示。**状态：进行中（本地实现与验证阶段，尚未推送、部署或线上验证）**。
+0.1. **账号监控 V3：账号质量、评分、排名与调度信息**：2026-08-04 最终确认已覆盖旧的“账号监控同时承接经营/账务”方案；账号监控生产页只承接原生分组 Tab、七项分组汇总、真实请求时间窗、完整六段式账号卡片、卡内全局优先级、一次性采购成本、倍率与原生并发，营收、利润、账务和对账仍是独立后续事项。最终提交 `05985e62ec88b04d1e647a815eecdb1cf1155776` 已推送并部署至绿色槽位；#118/#119 均以真实请求窗口投影为可用、保留评分排名，单卡刷新请求成功且检查时间推进。**状态：已完成（已推送、已部署、已验证生效）**。
 
-0.3. **管理员监控页会话失效修复**：`/admin/accounts/monitor` 首屏调用 `/relay-ops/api/reconciliation/*` 返回 `401` 时，原共享 API 客户端错误地清除主站 JWT 并跳转登录；已为对账请求隔离会话恢复逻辑，普通主站 API 的 `401` 行为保持不变。**状态：进行中（提交 `d4fb5e4a4b058f292a9df9f2c44d8bf01abfbe5f` 已推送并部署到蓝槽；本地 217/217 文件、1516/1516 用例、定向回归、类型检查和构建通过；生产 `/api/v1/auth/me`、账号监控和运维快照请求持续返回 200，核心容器健康；浏览器扩展接管并导航的最终视觉验收仍待完成）**。**生产证据：** `20260803T152958Z-production-326982.json`、[会话失效修复生产报告](../superpowers/reports/2026-08-03-account-monitor-session-recovery-production.md)。
+0.4. **账号卡片成本倒挂预警**：在管理员账号监控卡片接入 Sub2API/New API 通用上游原生倍率、本站标准费用折合成本倍率、逐笔账单证据和当前分组倒挂判定；至少 6 笔有效逐笔实际扣费样本才标记“确认亏损”，仅定价推算/额度测得标记“可能亏损”。本次不创建站点经营看板，不新增或迁移现有金额型投入产出区。**状态：进行中（已完成本地实现并合并远端最新代码，待推送、生产部署和线上验证）**。
 
-0. **OpenAI 模型映射审计**：仅覆盖 OpenAI-compatible HTTP JSON、SSE 与 Responses WebSocket；新增 `usage_logs.actual_response_model`，记录上游原始响应模型并在管理员 usage log 展示。**状态：工程代码/配置差异待部署（本地实现与验证已完成，尚未推送、部署或线上验证）**。
-0.1. **账号监控全站经营、分组运营与账号质量**：已确认产品规格；本轮接通真实账单分组归属、唯一 Attempt 运营聚合、每组评分规则和管理员监控工作台。**状态：进行中（已推送；待生产部署与线上验证）**。
-0.2. **本地提链支付工作台**：按 miaodongAI 公共 API 搭建独立本地单用户工具，支持三列 1:1:1 批量录入、异步提链与支付、SQLite 持久化、重启恢复及批次任务明细。**状态：进行中（全部实现已完成本地 TDD、独立复审和浏览器验收；`npm test` 为 57/57；已补充 macOS 一键启动脚本。该工具仅本地运行，尚未按工作区生命周期推送、合并和清理）**。
+1. **账号监控真实上游成本与对账闭环**：统一真实账单适配器、对账请求/异常/补登记流水、管理员刷新、日切调度、飞书日报及现有 `AccountMonitorView.vue` 可见页面已推送、部署并通过公网接口验收；本轮继续接通按显式账单账号映射和专用凭证主动采集最新逐笔账单与累计快照，日结在采集或对账未闭合时必须阻断。手工补登记重试幂等性、逐笔请求 ID 回退、迁移重复映射预检、root-only 账单 provisioning、relay-ops 不可变发布路径及蓝绿演练夹具已完成本地实现与回归。**状态：进行中（relay-ops `d3860531d`、生产 host executor、root-only provisioning wrapper 和 Caddy 公网 JSON/认证路由均已部署并验收；生产仍无全站账号的真实只读账单授权和映射，五类核心账务数据均为 0）**。
 
-1. **账号监控真实上游成本与对账闭环**：统一真实账单适配器、Attempt/异常/补登记流水、管理员刷新、日切调度、飞书日报及现有 `AccountMonitorView.vue` 可见页面已推送、部署并通过公网接口验收；本轮继续接通按显式账单账号映射和专用凭证主动采集最新逐笔账单与累计快照，日结在采集或对账未闭合时必须阻断。手工补登记重试幂等性、逐笔请求 ID 回退、迁移重复映射预检、root-only 账单 provisioning、relay-ops 不可变发布路径及蓝绿演练夹具已完成本地实现与回归。**状态：进行中（relay-ops `d3860531d` 已通过预加载 immutable 镜像部署，生产 host executor 与 root-only provisioning wrapper 已安装并验收；生产仍无真实只读账单 bearer/session，`auth_sessions`、账单快照/Attempt/对账运行及日切快照均为 0，待凭据和显式 billing account mapping 后才能验证实时采集闭环）**。
+**本轮新增登记：** `relay-ops` 不可变镜像发布路径及 root-only 账单 provisioning wrapper（提交 `df4870470`）；**状态：进行中（immutable relay-ops、host executor/wrapper 与 Caddy 公网 JSON/受保护 API 路由均已部署并验证；生产的账单授权会话、上游成本快照、对账请求明细、对账执行记录和每日账务快照仍为 0，待全站所有可计费账号的合法只读账单授权和明确映射）**。
 
-**本轮新增登记：** `relay-ops` 不可变镜像发布路径（独立 controller/host executor、仅重建 `relay-ops`、失败后按上一 digest 回滚）及 root-only 账单 provisioning wrapper（提交 `df4870470`）；**状态：进行中（预加载 immutable 镜像已部署并通过生产内部 `/healthz`、`/readyz`、迁移启动和共享容器不变性验收；公网 `healthz`/`readyz`/relay-ops API 当前仍回落到前端 HTML，且无真实账单凭据，不能标记实时账单采集闭环完成）**。
+**本轮新增登记（2026-08-03）：** 账号监控入口会话隔离修复，状态：进行中（已定位为 `/relay-ops/api/reconciliation/*` 的 401 被共享 API 客户端误判为主站会话失效；正在补充请求级会话恢复隔离、回归测试、生产部署和公网登录复验，未完成部署验证前不得标记完成）。
 
 2. **2026-08-01 main 全局低延迟配置蓝绿发布与待部署事项联合评估**：双槽 API、唯一 worker、host executor、Caddy 路由和停机 bootstrap 已完成生产部署；本轮对账应用已追加发布并验证。**状态：已完成**。
 3. **2026-07-31 生产站点中断恢复**：11:56 首次故障后于 13:28 回滚恢复；14:10–14:11，“调度优化”任务误将事故回滚判断为外部覆盖，再次覆盖 Compose 并强制重建 Sub2API/relay-ops/Caddy，造成第二次中断。14:15 已再次恢复至 11:53 发布前快照；公网健康连续 5 次返回 200，首页、价格和文档入口正常，五个容器运行正常且重启计数为 0。**状态：恢复已验证；永久兼容性修复仍未推送、部署和验证**。
 4. **Sub2API 低延迟/会话隔离/Monitor 自动刷新工程差异**：生产仍缺全局 OpenAI 低延迟配置、WebSocket `store=false` 会话隔离修复和 Monitor 自动刷新后端/前端/设置实现。**状态：工程代码/配置差异待部署**。
-5. **relay-ops 原生 P0/P1 Bridge 与蓝绿发布机制**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；可复用蓝绿机制尚不存在。**状态：持续实施**。
-6. **Caddy/homepage 运行时差异与全站账务总账**：Caddy/homepage 运行时改动须独立发布；全站账务总账已合并到 `main`，但尚未推送、部署、激活或生产验证。**状态：工程差异待部署**。
+5. **relay-ops 原生 P0/P1 Bridge**：Bridge 实现仍缺通知策略兼容性和必需的只读数据库接线；relay-ops 与 Sub2API 的受控发布机制已经存在，不再作为本项缺口。**状态：持续实施**。
+6. **Caddy/homepage 运行时差异与全站账务总账**：Caddy/homepage 运行时改动须独立发布；全站账务总账已进入 `origin/main`，但尚未部署、激活或生产验证。**状态：工程差异待部署**。
 7. **Neko/Wawazz 门禁、D04 readiness、备份留存和后续运营**：均保留最新证据和外部验收跟进，不因文档或历史报告单独记为工程未部署。
 8. **账号上游倍率自动同步**：托管/手工覆盖策略、审计、缓存同步和账号生命周期/定时触发已合并到 `main`；最终修复完成显式策略意图、提交顺序安全的 Redis 版本 fencing、按模式隔离 singleflight 和 `UpdateLastUsed` 持久化版本单调性。后端、前端及真实 PostgreSQL/Redis 集成回归通过，最终独立复审批准合并；尚未推送、部署或线上验证。**状态：工程差异待部署**。
 9. **Monitor V2 卡片信息精简**：已合并移除各指标样本数量、模型折叠区及接口 `models` 字段，保留性能指标、有效调用、P95 与趋势；前后端测试已通过，但尚未推送、部署或生产验证。**状态：工程差异待部署**。
-10. **Monitor 当前状态与飞书历史错误码修复**：已按“最新一次渠道探测”口径完成本地实现与回归，修正最新成功被历史失败压过，以及 `balance_exhausted` 残留导致账号正在运行却被告警为无可用账号。**状态：工程差异待部署（本地验证通过，待推送、部署和线上验证）**。
+10. **Monitor 当前状态与飞书历史错误码修复**：已按“最新一次渠道探测”口径完成实现、回归并进入 `origin/main`，修正最新成功被历史失败压过，以及历史余额耗尽错误码残留导致账号正在运行却被告警为无可用账号。**状态：工程差异待部署（已推送，待生产部署和告警/恢复线上验证）**。
 11. **`api.xingqiaolab.top` TLS 兼容性修复**：Caddy RSA-2048/TLS 1.2/1.3 策略已部署，但 CC Switch 刷新仍失败。2026-08-01 完成 nginx TLS 前置层受控生产切换，Compose、Caddy、nginx 及未受影响服务门禁通过；但受影响 Mac 上 TLS 1.2 仍在 ClientHello 阶段被重置，CC Switch 3.18.0 实际刷新仍显示“查询失败”，因而已回滚到 Caddy 直接接管 80/443。同一公网 IP 上仅 SNI `api.xingqiaolab.top` 的 TLS 1.2 被重置，替换 SNI、无 SNI 及服务器本机访问均成功，根因已收敛为客户端到源站之间的域名特异网络干预。**状态：进行中（nginx 代码已推送、生产试部署已回滚；待使用兼容域名或新公网/CDN 入口完成客户端验收）**。
-12. **账号监控分组经营与评分规则**：已接通真实账单分组归属、全站/分组/账号聚合与按日历史、跨分组唯一 Attempt 去重、分组关闭语义、可配置评分权重、账号卡片经营数据、分组 Tab 与历史入口，并修复 RuntimeService 对经营汇总/历史 API 的转发回归；本轮补齐首页“今日 + 历史累计”账务展示、全站/分组服务健康（可用/不可用/待确认/暂停、成功率、TTFT P50、总耗时 P95）及卡片优先级的单事件保存。账号监控目标套件、后端 `vet/build`、前端类型检查/构建、relay-ops 全量 Go 测试、生产同构 pnpm 9 frozen install 和 Linux/amd64 镜像构建通过；后端全量测试仍有既有 `usage_log_repo` 测试夹具字段数回归，非本事项代码。发布修复提交 `a0f343588` 已推送到 `origin/main`，合格候选为 `xingqiao-sub2api@sha256:dc5344a63881fbff40a360f613165f694b2f2c652d3c4ac0ef7ad015455699fa`。2026-08-02 正式 host executor 预检返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒，并在启动候选、切流量和执行迁移前停止；生产仍运行提交 `638ce8f01a9c1879f76c0415fe90ef78c782d089`，评分权重接口仍为 `404`。**状态：进行中（已推送、候选已构建并通过预检；待用户明确授权“允许停机部署”后执行维护发布与线上验证）**。
-13. **Cloudflare Free 公网入口迁移**：保持 `api.xingqiaolab.top` 和首尔源站不变，将权威 DNS 从 DNSPod 迁移到 Cloudflare Free；区域与边缘证书激活后才开启 `api` 橙色云，并以受影响 Mac 的 TLS 1.2/1.3、健康请求、真实 Codex 流式请求和站内日志作为保留门禁。**状态：进行中（Task 2 等待独立复审；Cloudflare Free 区域仍为 Pending，当前权威 NS 仍为 DNSPod）**。DNSPod 共 14 条记录，其中 12 条启用、2 条暂停；暂停的 `inbox` MX 分别指向 `mx1.forwardemail.net`、`mx2.forwardemail.net`，优先级均为 10，因 Cloudflare 无暂停状态而未导入。Cloudflare 已校正为 12 条启用记录，保留 `qcloudhk2048._domainkey`，恢复 `resend._domainkey`，新增 `inbox` TXT、`mail.inbox` A `43.133.75.82` DNS only 和 `inbox` MX → `mail.inbox.xingqiaolab.top` 优先级 5；未记录 TXT 内容。DNSSEC 为 Disabled；未修改权威 NS、代理或生产服务。
-
-## 生产工程代码/配置已部署并验证（18 项）
+12. **历史账号监控分组经营与评分方案（已被 V3 边界覆盖）**：该旧方案曾把账号经营数据、账务历史和对账入口放入账号监控页，并形成候选提交与发布预检证据。2026-08-04 最新确认已废止其页面职责：旧后端账务能力保留为未来“营收”页面输入，但不得恢复到 `/admin/accounts/monitor`；当前账号监控只实施账号质量、评分、排名和调度信息。**状态：历史方案停止继续实施；当前交付状态统一以上方 0.1 与 V3 不可漂移合同为准，不得把旧候选当作当前可部署结果**。
+## 生产工程代码/配置已部署并验证（19 项）
 
 1. **首版生产 Compose/Caddy/Sub2API/PostgreSQL/Redis**
    - **解决的问题：** 建立可运行的首条生产链路和基础服务边界。
@@ -173,6 +199,13 @@
     - **状态：** 已完成；部署、公网审计和生产健康均已通过。
     - **证据：** [原生运维重定向与纯提醒生产验证](../superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md)
 
+19. **账号监控 V3 生产闭环**
+    - **解决的问题：** 账号监控页未按最终职责边界完整呈现真实分组、评分、排名、成本与并发，且采购成本迁移需要受控维护发布。
+    - **做了什么优化：** 部署最终 V3 卡片、三个真实请求窗口、原生分组汇总、采购成本/倍率模式、稳定排名和实时并发；以绿色槽位完成采购成本附加迁移。
+    - **影响范围：** `/admin/accounts/monitor`、账号监控 API、账户采购成本迁移与蓝绿 API/Worker 切换。
+    - **状态：** 已完成；最终提交 `05985e62ec88b04d1e647a815eecdb1cf1155776` 已推送、生产部署且状态/单卡刷新缺陷线上验证生效。
+    - **证据：** [V3 生产闭环证据](../../.superpowers/sdd/2026-08-04-account-monitor-card-production-implementation-plan/production-verification.md)。
+
 ## 运维/研究跟进（23 项）
 
 以下事项是文档、研究、离线证据、历史验证或外部验收跟进，不因缺少一次工程部署而分类为“工程代码/配置差异待部署”。
@@ -208,19 +241,20 @@
 2. **Sub2API WebSocket `store=false` 会话隔离修复**：生产尚未应用 `c49c0a6ec`；**状态：工程代码/配置差异待部署**。
 3. **Monitor 页面自动刷新后端/前端/设置**：生产尚未应用自动刷新实现及其设置暴露；既有 Monitor 可靠性和长窗口能力不等于该实现已部署；**状态：工程代码/配置差异待部署**；[证据](../superpowers/reports/2026-07-30-monitor-reliability-admin-visibility-production-verification.md)、[长窗口](../superpowers/reports/2026-07-30-monitor-v2-long-window-buckets-production-verification.md)。
 4. **Caddy/homepage 运行时改动**：生产 Caddy 镜像仍为 `79b0f0a724bb412cfe94d0e2ffb35a4796e4ba7e`，首页运行时改动须独立于 Sub2API 发布；**状态：工程代码/配置差异待部署**；[当前状态](current-state.md)、[0.1.166 合格镜像证据](../superpowers/reports/2026-07-27-sub2api-0.1.166-qualified-image-verification.md)。
-5. **全站账务总账**：代码、迁移、受保护账务页面/API、00:10 日调度、清账脚本、本地端到端和隔离 PostgreSQL 验证已合并到 `main`；尚未推送、部署、清账激活或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[本地验证](../superpowers/reports/2026-07-31-whole-site-accounting-ledger-task7-local-verification.md)。
+5. **全站账务总账**：代码、迁移、受保护账务页面/API、00:10 日调度、清账脚本、本地端到端和隔离 PostgreSQL 验证已进入 `origin/main`；尚未部署、清账激活或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-whole-site-accounting-design.md)、[计划](../superpowers/plans/2026-07-31-whole-site-accounting-ledger-implementation-plan.md)、[本地验证](../superpowers/reports/2026-07-31-whole-site-accounting-ledger-task7-local-verification.md)。
 6. **账号上游倍率自动同步**：上游倍率解析后的托管账号回写、审计和缓存同步已合并到 `main`，本地测试已通过；尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-account-rate-multiplier-sync-design.md)、[计划](../superpowers/plans/2026-07-31-account-rate-multiplier-sync-implementation-plan.md)。
 7. **Monitor V2 卡片信息精简**：已合并删除样本数量、模型列表和接口 `models` 字段，保留核心性能指标；本地前后端测试已通过，尚未推送、部署或生产验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-v2-card-simplification-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-v2-card-simplification-implementation-plan.md)。
-8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。本地后端、relay-ops 与前端回归通过，尚未推送、部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
+8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。实现与回归已进入 `origin/main`，尚未部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
 9. **30 分钟指令驱动 Sub2API 蓝绿发布**：API/worker 角色、双槽 Compose、restart-stable Caddy 路由、停机门禁、恢复/回滚、候选等待、运行态证明和 host deadline 已完成本地实现与 focused 验证；2026-08-01 已补足 controller 向 host executor 传递绝对 deadline 的契约。生产预检确认无 host executor / `release-state`、Caddy 仍是遗留单实例上游，首次切换双槽需停机 bootstrap。**状态：工程差异待部署**；[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)。
 10. **`api.xingqiaolab.top` TLS 兼容性修复**：nginx TLS 前置实现已以 `95a81dc37` 推送到 `main`；2026-08-01 生产切换后服务端 TLS 1.2/1.3 均正常，但受影响客户端和 CC Switch 验收仍失败，已完成受控回滚。后续需改用不被干预的兼容域名或更换公网/CDN 入口，nginx 配置当前不在生产生效。**状态：工程差异待部署（前置层方案未通过客户端门禁）**。
 
-## 持续实施（3 项）
+## 持续实施（2 项）
 
 1. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)。
 2. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计与实现；**状态：持续实施**；[证据](current-state.md)。
-3. **本地提链支付工作台**：实现三列严格绑定录入、目标 API Cookie 会话、提链/支付异步状态机、SQLite 批次历史和重启恢复；**状态：进行中（本地实现、测试、启动及浏览器验收均已完成；尚未推送、合并及清理 worktree）**。
 
 ## 总账维护规则
 
 以后每次任务都必须在实施前先登记到本文件，并将初始状态写为“进行中”。任务收尾时，只有完成服务端推送、生产部署和生效验证，才可转入“生产工程代码/配置已部署并验证”；仍存在运行时代码或生产配置差异的事项进入“工程代码/配置差异待部署”，尚未完成实现的进入“持续实施”，文档、研究、离线证据和外部验收进入“运维/研究跟进”，不得仅因这些材料缺失而声称工程未部署。每次收尾同时更新统计摘要和 current-state 入口。
+
+**本轮维护门禁登记（2026-08-04）：** 采购成本附加迁移维护门禁，状态：已完成（最终提交 `82095b80770236eac24adb0bdb1b80cd639675cb` 已推送并完成维护发布；生产迁移哈希已为 `337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76`。PostgreSQL `2db52788…`、Redis `c45202c0…`、Caddy `ace4a23b…` 与 `release-state` 一致且未重建；维护路径仅切换 API/Worker，生产验证通过）。

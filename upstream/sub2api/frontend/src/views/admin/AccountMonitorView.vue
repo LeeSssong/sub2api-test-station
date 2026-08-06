@@ -98,7 +98,7 @@
 
       <section
         v-if="activeGroup"
-        class="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 xl:grid-cols-7 dark:border-dark-700 dark:bg-dark-800"
+        class="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 xl:grid-cols-8 dark:border-dark-700 dark:bg-dark-800"
         :aria-label="`${activeGroup.name} 原生分组汇总`"
         data-test="group-summary"
       >
@@ -110,7 +110,22 @@
           :data-field="field.key"
         >
           <div class="text-xs text-gray-500 dark:text-gray-400">{{ field.label }}</div>
-          <div class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
+          <div v-if="field.key === 'score_weights'" class="mt-1.5 flex items-start justify-between gap-2">
+            <span class="min-w-0 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white">
+              {{ field.value }}
+            </span>
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
+              data-test="edit-group-score-weights"
+              title="编辑评分权重"
+              aria-label="编辑评分权重"
+              @click="openScoreDialog"
+            >
+              <Icon name="settings" size="sm" />
+            </button>
+          </div>
+          <div v-else class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
             {{ field.value }}
           </div>
         </div>
@@ -146,6 +161,18 @@
         />
       </section>
       </div>
+      <AccountMonitorGroupScoreDialog
+        v-if="activeGroup"
+        :show="showScoreDialog"
+        :group-id="activeGroup.id"
+        :group-name="activeGroup.name"
+        :weights="activeGroup.score_weights"
+        :saving="savingScoreWeights"
+        :error="scoreWeightsError"
+        @close="showScoreDialog = false"
+        @save="saveScoreWeights"
+        @reset="resetScoreWeights"
+      />
     </div>
   </AppLayout>
 </template>
@@ -160,15 +187,18 @@ import type {
   AccountMonitorGroup,
   AccountMonitorProjection,
   AccountMonitorRange,
+  AccountMonitorScoreWeights,
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
+import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
+type EditableWeights = Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>
 type SaveCompletion = {
   resolve: () => void
   reject: (reason?: unknown) => void
@@ -187,6 +217,7 @@ const groupSummaryLabels = {
   account_count: '原生账号数',
   active_account_count: '原生活跃账号数',
   rate_limited_account_count: '原生限流账号数',
+  score_weights: '评分权重',
 } as const
 
 const { t } = useI18n()
@@ -202,6 +233,9 @@ const runningAll = ref(false)
 const runningAccountIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
+const showScoreDialog = ref(false)
+const savingScoreWeights = ref(false)
+const scoreWeightsError = ref<string | null>(null)
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
@@ -268,6 +302,7 @@ const groupSummaryFields = computed(() => {
     { key: 'account_count', label: groupSummaryLabels.account_count, value: formatNativeNumber(group.account_count) },
     { key: 'active_account_count', label: groupSummaryLabels.active_account_count, value: formatNativeNumber(group.active_account_count) },
     { key: 'rate_limited_account_count', label: groupSummaryLabels.rate_limited_account_count, value: formatNativeNumber(group.rate_limited_account_count) },
+    { key: 'score_weights', label: groupSummaryLabels.score_weights, value: formatScoreWeights(group.score_weights) },
   ]
 })
 
@@ -292,8 +327,18 @@ function formatMultiplier(value?: number): string {
 function formatNativeNumber(value?: number): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)
 }
+function formatScoreWeights(weights?: AccountMonitorScoreWeights): string {
+  if (!weights) return '--'
+  return `成本 ${weights.cost} / 成功 ${weights.success} / TTFT ${weights.ttft} / 耗时 ${weights.latency}`
+}
 function groupAccountCount(group: AccountMonitorGroup): number {
   return group.account_count ?? uniqueAccounts(group.accounts ?? []).length
+}
+
+function openScoreDialog(): void {
+  if (!activeGroup.value) return
+  scoreWeightsError.value = null
+  showScoreDialog.value = true
 }
 
 function selectGroup(groupID: number | null, event: MouseEvent): void {
@@ -451,6 +496,44 @@ async function updateMultiplier(accountID: number, multiplier: number, completio
   } catch (reason: unknown) {
     completion.reject(reason)
     appStore.showError(extractApiErrorMessage(reason, '保存账号倍率失败'))
+  }
+}
+
+async function saveScoreWeights(weights: EditableWeights) {
+  const group = activeGroup.value
+  if (!group) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
+    const reloaded = await load(activeRange.value)
+    if (!reloaded) return
+    showScoreDialog.value = false
+    appStore.showSuccess('分组评分权重已更新')
+  } catch (reason: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(reason, '保存分组评分权重失败')
+    appStore.showError(scoreWeightsError.value)
+  } finally {
+    savingScoreWeights.value = false
+  }
+}
+
+async function resetScoreWeights() {
+  const group = activeGroup.value
+  if (!group) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
+    const reloaded = await load(activeRange.value)
+    if (!reloaded) return
+    showScoreDialog.value = false
+    appStore.showSuccess('分组评分权重已恢复默认')
+  } catch (reason: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(reason, '恢复默认评分权重失败')
+    appStore.showError(scoreWeightsError.value)
+  } finally {
+    savingScoreWeights.value = false
   }
 }
 

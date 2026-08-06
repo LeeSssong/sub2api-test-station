@@ -12,6 +12,8 @@ const {
   runOne,
   updateAccount,
   updateProcurementCost,
+  updateGroupScoreWeights,
+  resetGroupScoreWeights,
   operations,
   refreshReconciliation,
   reconciliationHistory,
@@ -29,6 +31,8 @@ const {
   runOne: vi.fn(),
   updateAccount: vi.fn(),
   updateProcurementCost: vi.fn(),
+  updateGroupScoreWeights: vi.fn(),
+  resetGroupScoreWeights: vi.fn(),
   operations: vi.fn(),
   refreshReconciliation: vi.fn(),
   reconciliationHistory: vi.fn(),
@@ -42,7 +46,7 @@ const {
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    accountMonitor: { list, getConcurrency, runAll, runOne },
+    accountMonitor: { list, getConcurrency, runAll, runOne, updateGroupScoreWeights, resetGroupScoreWeights },
     accounts: { update: updateAccount, updateProcurementCost },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
@@ -272,6 +276,8 @@ describe('admin account monitor view V3', () => {
       procurement_cost_cny: 125.5,
       procurement_cost_effective_at: '2026-08-04T04:30:00Z',
     })
+    updateGroupScoreWeights.mockReset().mockResolvedValue({ cost: 25, success: 35, ttft: 20, latency: 20 })
+    resetGroupScoreWeights.mockReset().mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20 })
     for (const forbidden of [operations, refreshReconciliation, reconciliationHistory, reconciliationExceptions, reconciliationAdjust, revenue, accounting]) {
       forbidden.mockReset().mockResolvedValue({})
     }
@@ -390,7 +396,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('24h')
   })
 
-  it('renders the constrained V3 shell, one status selector, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
+  it('renders the constrained V3 shell, one status selector, eight selected-group summary fields, deterministic card order, and responsive columns', async () => {
     const wrapper = mountView()
     await flushPromises()
 
@@ -402,7 +408,7 @@ describe('admin account monitor view V3', () => {
 
     expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
     const summaryFields = wrapper.findAll('[data-test="group-summary-field"]')
-    expect(summaryFields).toHaveLength(7)
+    expect(summaryFields).toHaveLength(8)
     expect(summaryFields.every((field) => field.classes().includes('min-h-[82px]'))).toBe(true)
     expect(summaryFields.map((field) => field.attributes('data-field'))).toEqual([
       'status',
@@ -412,14 +418,111 @@ describe('admin account monitor view V3', () => {
       'account_count',
       'active_account_count',
       'rate_limited_account_count',
+      'score_weights',
     ])
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20×')
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
+    expect(wrapper.get('[data-test="edit-group-score-weights"]').exists()).toBe(true)
 
     const cards = wrapper.findAll('[data-test="monitor-card"]')
     expect(cards).toHaveLength(4)
     expect(cards.map((card) => Number(card.attributes('data-account-id')))).toEqual([10, 11, 20, 30])
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
+  })
+
+  it('restores selected-group score weight editing and reloads the active range after save and reset', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="group-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
+
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="group-summary-field"]')).toHaveLength(8)
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('groupId')).toBe(3)
+
+    list.mockClear()
+    dialog.vm.$emit('save', {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    await flushPromises()
+
+    expect(updateGroupScoreWeights).toHaveBeenCalledWith(3, {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const reopenedDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    list.mockClear()
+    reopenedDialog.vm.$emit('reset')
+    await flushPromises()
+
+    expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+  })
+
+  it('keeps the score weight dialog open and skips success when save reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    showSuccess.mockReset()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('keeps the score weight dialog open and skips success when reset reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    showSuccess.mockReset()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('preserves the accepted shell spacing and exact responsive page-header typography', async () => {

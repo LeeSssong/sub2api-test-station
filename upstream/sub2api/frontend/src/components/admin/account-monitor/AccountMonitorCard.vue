@@ -47,6 +47,47 @@
       </div>
     </section>
 
+    <section v-if="costGuard" class="mt-3 space-y-2" data-test="cost-guard-summary">
+      <div
+        v-if="showCostAlert"
+        class="rounded-lg border p-3"
+        :class="costAlertClass"
+        data-test="cost-inversion-alert"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold">{{ costAlertTitle }}</p>
+            <p v-if="costAlertDescription" class="mt-1 text-xs leading-5">{{ costAlertDescription }}</p>
+          </div>
+          <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="costStatusBadgeClass">
+            {{ costStatusLabel }}
+          </span>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-slate-800">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">{{ t('admin.accountMonitor.costGuard.title') }}</span>
+          <span v-if="!showCostAlert" class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="costStatusBadgeClass" data-test="cost-status-badge">
+            {{ costStatusLabel }}
+          </span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+          <CostMetric :label="t('admin.accountMonitor.costGuard.upstreamMultiplier')" :value="formatMultiplier(costGuard.upstream_multiplier)" />
+          <CostMetric :label="t('admin.accountMonitor.costGuard.multiplierSource')" :value="upstreamMultiplierSourceLabel" />
+          <CostMetric :label="t('admin.accountMonitor.costGuard.equivalentSiteMultiplier')" :value="formatMultiplier(costGuard.equivalent_site_multiplier)" />
+          <CostMetric :label="t('admin.accountMonitor.costGuard.costSource')" :value="costSourceLabel" />
+          <CostMetric :label="t('admin.accountMonitor.costGuard.groupMultiplier')" :value="formatMultiplier(costGuard.group_multiplier)" />
+          <CostMetric :label="t('admin.accountMonitor.costGuard.status')" :value="costStatusLabel" />
+        </div>
+        <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-slate-400" data-test="cost-evidence-meta">
+          <span v-if="costGuard.model">{{ t('admin.accountMonitor.costGuard.model') }}：<span class="font-mono">{{ costGuard.model }}</span></span>
+          <span v-if="costGuard.sample_count != null">{{ t('admin.accountMonitor.costGuard.samples') }}：{{ costGuard.sample_count }}/{{ requiredSampleCount }}</span>
+          <span v-if="costGuard.observed_at">{{ t('admin.accountMonitor.costGuard.observedAt') }}：{{ formatDate(costGuard.observed_at) }}</span>
+        </div>
+      </div>
+    </section>
+
     <section v-if="operations" class="mt-3 rounded-lg border border-gray-200 p-3 dark:border-slate-800" data-test="economics-summary">
       <div class="mb-2 flex items-center justify-between">
         <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">投入产出</span>
@@ -98,7 +139,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
-import type { AccountMonitorAccount } from '@/api/admin/accountMonitor'
+import type { AccountMonitorAccount, AccountMonitorCostGuard } from '@/api/admin/accountMonitor'
 import type { ReconciliationSummary } from '@/api/admin/reconciliation'
 import type { Account } from '@/types'
 
@@ -158,6 +199,63 @@ const multiplierValue = computed(() => {
   return t(`admin.accountMonitor.multiplier.${knownStatus}`)
 })
 const multiplierHint = computed(() => multiplierStatusHint(props.account.multiplier.source, props.account.multiplier.status, t))
+const costGuard = computed<AccountMonitorCostGuard | null>(() => props.account.cost_guard ?? null)
+const requiredSampleCount = computed(() => {
+  const value = Number(costGuard.value?.required_sample_count)
+  return Number.isInteger(value) && value > 0 ? value : 6
+})
+const costStatusLabel = computed(() => {
+  const statusValue = costGuard.value?.status ?? 'unknown'
+  if (statusValue === 'loss_observing') {
+    return t('admin.accountMonitor.costGuard.statuses.lossObserving', {
+      count: costGuard.value?.sample_count ?? 0,
+      required: requiredSampleCount.value,
+    })
+  }
+  return t(`admin.accountMonitor.costGuard.statuses.${costStatusKey(statusValue)}`)
+})
+const upstreamMultiplierSourceLabel = computed(() => t(`admin.accountMonitor.costGuard.multiplierSources.${multiplierSourceKey(costGuard.value?.upstream_multiplier_source)}`))
+const costSourceLabel = computed(() => t(`admin.accountMonitor.costGuard.costSources.${costSourceKey(costGuard.value?.cost_source)}`))
+const showCostAlert = computed(() => ['loss_confirmed', 'loss_observing', 'pricing_risk', 'loss_risk', 'zero_margin'].includes(costGuard.value?.status ?? ''))
+const costAlertTitle = computed(() => {
+  const modelSuffix = costGuard.value?.model ? ` · ${costGuard.value.model}` : ''
+  const statusValue = costGuard.value?.status
+  if (statusValue === 'loss_confirmed') return `${t('admin.accountMonitor.costGuard.alerts.inversion')}${modelSuffix}`
+  if (statusValue === 'loss_observing') return `${costStatusLabel.value}${modelSuffix}`
+  if (statusValue === 'pricing_risk' || statusValue === 'loss_risk') return `${t('admin.accountMonitor.costGuard.statuses.pricingRisk')}${modelSuffix}`
+  return `${t('admin.accountMonitor.costGuard.statuses.zeroMargin')}${modelSuffix}`
+})
+const costAlertDescription = computed(() => {
+  const equivalent = finiteNumber(costGuard.value?.equivalent_site_multiplier)
+  const group = finiteNumber(costGuard.value?.group_multiplier)
+  if (equivalent == null || group == null) return ''
+  const comparison = equivalent > group ? '>' : Math.abs(equivalent - group) <= 1e-9 ? '=' : '<'
+  const gap = finiteNumber(costGuard.value?.gap) ?? equivalent - group
+  const base = `${t('admin.accountMonitor.costGuard.equivalentSiteMultiplier')} ${formatMultiplier(equivalent)} ${comparison} ${t('admin.accountMonitor.costGuard.groupMultiplier')} ${formatMultiplier(group)}`
+  if (costGuard.value?.status === 'loss_confirmed') {
+    return `${base}，${t('admin.accountMonitor.costGuard.alerts.aboveBy', { gap: formatMultiplier(Math.max(gap, 0)) })}`
+  }
+  if (costGuard.value?.status === 'loss_observing') {
+    return `${base}；${t('admin.accountMonitor.costGuard.alerts.observingEvidence', { count: costGuard.value.sample_count ?? 0, required: requiredSampleCount.value })}`
+  }
+  if (costGuard.value?.status === 'pricing_risk' || costGuard.value?.status === 'loss_risk') {
+    return `${base}；${t('admin.accountMonitor.costGuard.alerts.pricingEvidence')}`
+  }
+  return `${base}；${t('admin.accountMonitor.costGuard.alerts.zeroMargin')}`
+})
+const costAlertClass = computed(() => {
+  if (costGuard.value?.status === 'loss_confirmed') return 'border-red-300 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200'
+  if (costGuard.value?.status === 'loss_observing') return 'border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200'
+  return 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200'
+})
+const costStatusBadgeClass = computed(() => {
+  const statusValue = costGuard.value?.status
+  if (statusValue === 'loss_confirmed') return 'bg-red-600 text-white dark:bg-red-500 dark:text-white'
+  if (statusValue === 'loss_observing' || statusValue === 'pricing_risk' || statusValue === 'loss_risk') return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+  if (statusValue === 'zero_margin') return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+  if (statusValue === 'cost_covered') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+})
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300': status.value === 'success',
   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': status.value === 'failed',
@@ -183,6 +281,35 @@ function multiplierStatusHint(source: string | undefined, statusValue: string, t
   if (source === 'declared') return translate('admin.accountMonitor.multiplier.declared')
   if (source === 'measured') return translate('admin.accountMonitor.multiplier.measured')
   return ''
+}
+function multiplierSourceKey(source?: string | null): string {
+  if (source === 'upstream_declared' || source === 'declared') return 'upstreamDeclared'
+  if (source === 'upstream_pricing') return 'upstreamPricing'
+  if (source === 'manual' || source === 'manual_config') return 'manual'
+  return 'unknown'
+}
+function costSourceKey(source?: string | null): string {
+  if (source === 'reconciled_bill') return 'reconciledBill'
+  if (source === 'upstream_pricing' || source === 'pricing_estimate') return 'upstreamPricing'
+  if (source === 'quota_measurement' || source === 'measured') return 'quotaMeasurement'
+  return 'unknown'
+}
+function costStatusKey(statusValue: string): string {
+  if (statusValue === 'loss_confirmed') return 'lossConfirmed'
+  if (statusValue === 'pricing_risk' || statusValue === 'loss_risk') return 'pricingRisk'
+  if (statusValue === 'zero_margin') return 'zeroMargin'
+  if (statusValue === 'cost_covered') return 'costCovered'
+  if (statusValue === 'insufficient_samples') return 'insufficientSamples'
+  return 'unknown'
+}
+function finiteNumber(value?: number | null): number | null {
+  const numeric = Number(value)
+  return value != null && Number.isFinite(numeric) ? numeric : null
+}
+function formatMultiplier(value?: number | null): string {
+  const numeric = finiteNumber(value)
+  if (numeric == null) return '—'
+  return `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(numeric)}x`
 }
 function formatPercent(value: number): string { return `${Math.round(value * 100)}%` }
 function formatScore(value: number): string { return value.toFixed(1).replace(/\.0$/, '') }
@@ -218,6 +345,16 @@ const LedgerMetric = defineComponent({
     return () => h('div', { class: 'rounded bg-gray-50 p-2 dark:bg-slate-900/70' }, [
       h('div', { class: 'text-[11px] text-gray-500 dark:text-slate-400' }, metricProps.label),
       h('div', { class: 'mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white' }, metricProps.value),
+    ])
+  },
+})
+
+const CostMetric = defineComponent({
+  props: { label: { type: String, required: true }, value: { type: String, required: true } },
+  setup(metricProps) {
+    return () => h('div', { class: 'rounded bg-gray-50 p-2 dark:bg-slate-900/70' }, [
+      h('div', { class: 'text-[11px] text-gray-500 dark:text-slate-400' }, metricProps.label),
+      h('div', { class: 'mt-1 break-words font-mono text-xs font-semibold text-gray-900 dark:text-white' }, metricProps.value),
     ])
   },
 })

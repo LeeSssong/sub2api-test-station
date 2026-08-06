@@ -7,7 +7,10 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key }),
+    useI18n: () => ({
+      t: (key: string, params?: Record<string, unknown>) =>
+        params ? `${key}:${JSON.stringify(params)}` : key,
+    }),
   }
 })
 
@@ -31,6 +34,19 @@ const account = {
     value: 0.1,
     source: 'declared',
     status: 'ok',
+    observed_at: '2026-07-25T08:00:00Z',
+  },
+  cost_guard: {
+    upstream_multiplier: 0.2,
+    upstream_multiplier_source: 'upstream_pricing',
+    equivalent_site_multiplier: 0.204,
+    cost_source: 'reconciled_bill',
+    model: 'gpt-5.4',
+    sample_count: 6,
+    required_sample_count: 6,
+    group_multiplier: 0.18,
+    gap: 0.024,
+    status: 'loss_confirmed',
     observed_at: '2026-07-25T08:00:00Z',
   },
   request_count: 12,
@@ -116,6 +132,120 @@ describe('AccountMonitorCard', () => {
 
     expect(wrapper.text()).toContain('待对账')
     expect(wrapper.text()).not.toContain('98.0%')
+  })
+
+  it('renders the lightweight cost fields and a strong confirmed-loss alert without changing economics', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: { account, operations, groupOperationalState: 'operational' },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    const summary = wrapper.get('[data-test="cost-guard-summary"]')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.upstreamMultiplier')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.multiplierSource')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.equivalentSiteMultiplier')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.costSource')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.groupMultiplier')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.status')
+    expect(summary.text()).toContain('0.20x')
+    expect(summary.text()).toContain('0.204x')
+    expect(summary.text()).toContain('0.18x')
+    expect(summary.text()).toContain('gpt-5.4')
+    expect(summary.text()).toContain('6/6')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.multiplierSources.upstreamPricing')
+    expect(summary.text()).toContain('admin.accountMonitor.costGuard.costSources.reconciledBill')
+
+    const alert = wrapper.get('[data-test="cost-inversion-alert"]')
+    expect(alert.classes()).toContain('border-red-300')
+    expect(alert.text()).toContain('admin.accountMonitor.costGuard.alerts.inversion')
+    expect(alert.text()).toContain('admin.accountMonitor.costGuard.statuses.lossConfirmed')
+    expect(alert.text()).toContain('0.204x')
+    expect(alert.text()).toContain('0.18x')
+
+    expect(wrapper.get('[data-test="economics-summary"]').text()).toContain('$0.02')
+  })
+
+  it('keeps one to five real billed samples in loss observation instead of confirming loss', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          cost_guard: { ...account.cost_guard, sample_count: 5, status: 'loss_observing' },
+        },
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    const alert = wrapper.get('[data-test="cost-inversion-alert"]')
+    expect(alert.classes()).toContain('border-orange-300')
+    expect(alert.text()).toContain('admin.accountMonitor.costGuard.statuses.lossObserving:{"count":5,"required":6}')
+    expect(alert.text()).not.toContain('admin.accountMonitor.costGuard.alerts.inversion')
+  })
+
+  it('labels pricing-only evidence as possible loss and never as confirmed loss', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          cost_guard: {
+            ...account.cost_guard,
+            cost_source: 'upstream_pricing',
+            sample_count: 0,
+            status: 'pricing_risk',
+          },
+        },
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    const alert = wrapper.get('[data-test="cost-inversion-alert"]')
+    expect(alert.text()).toContain('admin.accountMonitor.costGuard.statuses.pricingRisk')
+    expect(alert.text()).not.toContain('admin.accountMonitor.costGuard.statuses.lossConfirmed')
+    expect(wrapper.get('[data-test="cost-guard-summary"]').text()).toContain('admin.accountMonitor.costGuard.costSources.upstreamPricing')
+  })
+
+  it('renders a quiet covered state without a cost inversion alert', () => {
+    const wrapper = mount(AccountMonitorCard, {
+      props: {
+        account: {
+          ...account,
+          cost_guard: {
+            ...account.cost_guard,
+            equivalent_site_multiplier: 0.12,
+            gap: -0.06,
+            status: 'cost_covered',
+          },
+        },
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          AccountTodayStatsCell: true,
+          AccountUsageCell: true,
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-test="cost-inversion-alert"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="cost-status-badge"]').text()).toContain('admin.accountMonitor.costGuard.statuses.costCovered')
   })
 
   it('keeps a closed group informational instead of using a failure red border', () => {

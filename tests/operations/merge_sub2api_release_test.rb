@@ -109,6 +109,17 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_v0171_resolution_ignores_staged_auto_merged_paths_when_checking_generated_scope
+    with_resolver_fixture(auto_merged_path: true) do |fixture|
+      status, output = run_resolver(fixture)
+
+      assert status.success?, output
+      assert_equal "official auto\n", File.read(File.join(fixture[:repository], "auto.txt"))
+      assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+      assert_empty git(fixture[:repository], "diff", "--name-only")
+    end
+  end
+
   def test_v0171_resolution_rejects_target_identity_mismatch_without_writing
     with_resolver_fixture do |fixture|
       semantic = File.join(fixture[:repository], "semantic.txt")
@@ -350,7 +361,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
 
   private
 
-  def with_resolver_fixture
+  def with_resolver_fixture(auto_merged_path: false)
     Dir.mktmpdir("resolve-sub2api-release") do |dir|
       repository = File.join(dir, "repository")
       records_root = File.join(dir, "records")
@@ -361,6 +372,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
 
       File.write(File.join(repository, "semantic.txt"), "base\n")
       File.write(File.join(repository, "clean.txt"), "base clean\n")
+      File.write(File.join(repository, "auto.txt"), "base auto\n") if auto_merged_path
       File.write(File.join(repository, "backend/go.mod"), "module example.invalid/fixture\n\ngo 1.24\n")
       File.write(File.join(repository, "backend/go.sum"), "base sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "base wire\n")
@@ -380,6 +392,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       File.write(File.join(repository, "semantic.txt"), "theirs\n")
       File.write(File.join(repository, "backend/go.sum"), "theirs sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "theirs wire\n")
+      File.write(File.join(repository, "auto.txt"), "official auto\n") if auto_merged_path
       git(repository, "add", ".")
       git(repository, "commit", "-q", "-m", "theirs")
       target_commit = git(repository, "rev-parse", "HEAD").strip

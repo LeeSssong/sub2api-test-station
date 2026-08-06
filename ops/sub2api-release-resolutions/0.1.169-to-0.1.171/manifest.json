@@ -6,7 +6,7 @@
   "target_tag_object": "afd154b92aac36c6dafb1fa8e181ca827c78c465",
   "target_commit": "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6",
   "resolution_patch": "resolution.patch",
-  "resolution_patch_blob": "0761d9a40f5a7d7279e16155cc16656612546bd1",
+  "resolution_patch_blob": "5ba2d49d350a2af3c305816f15330b6eda8f37e8",
   "generated_paths": [
     "backend/cmd/server/wire_gen.go",
     "backend/go.sum"

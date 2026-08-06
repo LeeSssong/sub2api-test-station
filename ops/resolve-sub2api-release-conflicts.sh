@@ -196,9 +196,13 @@ GOFLAGS=-mod=mod go -C "$repository/backend" mod tidy || fail generation_failed
 GOFLAGS=-mod=mod go -C "$repository/backend" generate ./cmd/server || fail generation_failed
 [[ -f "$repository/backend/go.sum" && -f "$repository/backend/cmd/server/wire_gen.go" ]] || fail generation_failed
 
-expected_generated=$(awk -F '\t' '$1 == "conflict" { print $2 } $1 == "clean" { print $2 } $1 == "generated" { print $2 }' "$normalized" | LC_ALL=C sort -u)
-actual_generated=$(git -C "$repository" status --porcelain=v1 --untracked-files=all |
-  sed -E 's/^.. //' | LC_ALL=C sort -u)
+expected_generated=$(awk -F '\t' '$1 == "conflict" && $6 == "generated" { print $2 }' "$normalized" | LC_ALL=C sort -u)
+actual_generated=$(
+  {
+    git -C "$repository" diff --name-only
+    git -C "$repository" ls-files --others --exclude-standard
+  } | LC_ALL=C sort -u
+)
 [[ "$actual_generated" == "$expected_generated" ]] || fail generation_scope_mismatch
 git -C "$repository" add -- backend/cmd/server/wire_gen.go backend/go.sum
 

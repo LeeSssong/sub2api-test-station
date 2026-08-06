@@ -443,7 +443,7 @@ index 15d90ee9b..0ab240ee6 100644
              class="input disabled:cursor-not-allowed disabled:opacity-60"
              data-testid="account-rate-multiplier"
 -            :disabled="upstreamBillingRateSyncEnabled"
-+            :disabled="upstreamBillingRateSyncEnabled || (account?.platform === 'openai' && account?.type === 'apikey' && form.rate_multiplier_policy === 'upstream_managed')"
++            :disabled="upstreamBillingRateSyncEnabled"
            />
            <p class="input-hint">
              {{

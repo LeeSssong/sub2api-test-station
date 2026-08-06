@@ -74,24 +74,28 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 
 - **Cloudflare 区域状态：** Free `$0` 方案已选中，`Continue to activation` 已成功提交；`xingqiaolab.top` 区域已创建，当前页面显示等待注册商 nameserver 传播（Pending）。
 - **Cloudflare 分配 NS：** `brian.ns.cloudflare.com.`、`gabriella.ns.cloudflare.com.`。本任务仅记录 Cloudflare 分配结果，没有在腾讯云/DNSPod 修改权威 NS。
-- **Cloudflare DNS 记录：** 2026-08-06 的登录态 DNS Records 页面已复核并纠正 DKIM 名称：`qcloudhk2048._domainkey` TXT 已存在，错误的 `resend._domainkey` 已不存在。`api.xingqiaolab.top` 仍为 A `43.133.75.82` 且保持 `DNS only`。本报告仅记录 TXT 名称，未记录任何 TXT 内容。早期导入证据中的其他记录数量与目标尚需结合完整表格做最终字段级对账。
+- **DNSPod 与 Cloudflare 记录状态：** DNSPod 登录态记录表显示共 14 条记录，其中 12 条启用、2 条暂停。暂停的两条 `inbox` MX 分别指向 `mx1.forwardemail.net`、`mx2.forwardemail.net`，优先级均为 10；Cloudflare 没有等价的暂停状态，因此未导入这两条。Cloudflare 已校正为 12 条启用记录：保留 `qcloudhk2048._domainkey` TXT、恢复 `resend._domainkey` TXT，新增 `inbox` TXT、`mail.inbox` A `43.133.75.82`（DNS only）及 `inbox` MX → `mail.inbox.xingqiaolab.top`（优先级 5）。`api.xingqiaolab.top`、`shop.xingqiaolab.top` 仍指向 `43.133.75.82` 且保持 `DNS only`。未记录任何 TXT 内容。
 - **代理状态：** 主线程已在确认页将 `api` 与 `shop` 两条 A 记录改为 `DNS only`；本子任务未再次修改，也未开启橙云。
-- **DNSPod 逐条元数据核验：** 公共 DNS 只能交叉确认名称、类型、目标和 MX 优先级；以下 DNSPod 管理台字段仍未能读取，不能据此证明“每条已启用记录”的完整对账：
+- **DNSPod 逐条元数据核验：** 登录态 DNSPod 记录管理页已核验总数与启用/暂停状态。12 条启用记录均为默认线路、TTL 600；Cloudflare 已逐条对应这 12 条启用记录并保留 MX 优先级。2 条暂停 MX 已明确排除，因为 Cloudflare 无法表达暂停状态。未记录任何 TXT 内容。
 
   | 主机记录 | 类型 | 目标/值记录口径 | 线路/线路类型 | TTL | 启用状态 |
   |---|---|---|---|---|---|
   | `api` | A | `43.133.75.82` | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
   | `shop` | A | `43.133.75.82` | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
-  | `send` | MX | `feedback-smtp.ap-northeast-1.amazonses.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
-  | `@` | MX | `mxbiz1.qq.com`，优先级 10 | 未核验 | 未核验 | 未核验 |
-  | `_dmarc` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `send` | MX | `feedback-smtp.ap-northeast-1.amazonses.com`，优先级 10 | 默认 | 600 | 已启用 |
+  | `@` | MX | `mxbiz1.qq.com`，优先级 10 | 默认 | 600 | 已启用 |
+  | `_dmarc` | TXT | 仅记录名称，不记录值 | 默认 | 600 | 已启用 |
   | `qcloudhk2048._domainkey` | TXT | 仅记录名称，不记录值 | 默认（DNSPod 截图可见） | 600（截图可见） | 已启用（绿色指示） |
-  | `send` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
-  | `@` | TXT | 仅记录名称，不记录值 | 未核验 | 未核验 | 未核验 |
+  | `send` | TXT | 仅记录名称，不记录值 | 默认 | 600 | 已启用 |
+  | `@` | TXT | 仅记录名称，不记录值 | 默认 | 600 | 已启用 |
+  | `resend._domainkey` | TXT | 仅记录名称，不记录值 | 默认 | 600 | 已启用 |
+  | `inbox` | TXT | 仅记录名称，不记录值 | 默认 | 600 | 已启用 |
+  | `mail.inbox` | A | `43.133.75.82` | 默认 | 600 | 已启用 |
+  | `inbox` | MX | `mail.inbox.xingqiaolab.top`，优先级 5 | 默认 | 600 | 已启用 |
 
-  因此目前只能确认部分 DNSPod 行的线路/TTL/enabled state，不能宣称所有 8 条记录均已完成字段级对账；未记录任何 TXT 值。DNSPod 启用的 DKIM 名称为 `qcloudhk2048._domainkey`；2026-08-06 的 Cloudflare 记录表复核已确认该名称存在且 `resend._domainkey` 不存在，因此该特定名称差异已解决。
+  因此 12 条启用 DNSPod 记录与 Cloudflare 记录已完成字段级对账；两条暂停 MX 明确未导入。未记录任何 TXT 值。该结论仍需独立复审后才能放行 Task 3。
 - **DNSSEC：** 公共 DNS `DS xingqiaolab.top` 查询无结果，且 2026-08-06 登录态 Cloudflare DNS Settings 页面显示操作按钮 `Enable DNSSEC`，证明 Cloudflare DNSSEC 当前为 Disabled/未启用。
-- **Task 2 判定：** **阻塞，保持进行中。** Free/Pending、两台 Cloudflare nameserver、`api` DNS-only 状态、DKIM 名称纠正和 Cloudflare DNSSEC Disabled 已记录；其余 DNSPod 行的线路/TTL/enabled state 与 Cloudflare 完整记录的字段级对账仍未验证。Task 3 不得替换权威 NS；本任务未修改腾讯云/DNSPod NS、未开启橙云、未重启或变更生产服务。
+- **Task 2 判定：** **进行中，等待独立复审。** 12 条启用记录的对账、2 条暂停 MX 的排除理由、`api`/`shop` DNS-only 和 Cloudflare DNSSEC Disabled 均已记录，但尚未完成独立复审。权威 NS 仍未修改；Task 3 在复审通过且紧邻操作前再次取得用户确认前不得执行。
 
 ### Fix round 1 review evidence (2026-08-06)
 
@@ -122,3 +126,9 @@ TLS 1.2 的 20 次失败与既有受影响客户端直连故障基线一致；TL
 - `api.xingqiaolab.top` remains A `43.133.75.82` with proxy status `DNS only`; the Cloudflare zone remains Pending.
 - No Tencent Cloud/DNSPod authoritative NS change, orange-cloud proxy enablement, container restart, or other production-service change was performed.
 - The Cloudflare DNS Settings page shows `Enable DNSSEC`, explicitly proving DNSSEC is currently Disabled. The remaining full DNS parity gates must still be verified before Task 3 can proceed.
+
+### Fix round 4 full-parity evidence (2026-08-06)
+
+- Authenticated DNSPod table extraction showed 14 rows: 12 enabled rows (default line, TTL 600) and 2 paused `inbox` forwarding MX rows. Cloudflare was corrected to contain the 12 enabled rows; paused rows were intentionally excluded.
+- Cloudflare post-correction verification showed 12 of 200 records and confirmed the added `resend._domainkey`, `inbox` TXT, `mail.inbox` A (DNS only), and `inbox` MX (priority 5), while retaining the previously imported records.
+- No authoritative NS, proxy status for `api`/`shop`, DNSSEC control, or production service was changed during the correction.

@@ -245,6 +245,32 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
   })
 
+  it('renders a saved manual multiplier when the API Key type uses the underscored wire spelling', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'api_key',
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
+  it('updates the visible cost when a post-save range reload replaces the account snapshot', async () => {
+    const wrapper = mountCard({
+      account: { ...account, account_type: 'apikey', multiplier: { value: 0.58, source: 'declared', status: 'ok', sample_count: 72 } },
+    })
+
+    await wrapper.setProps({
+      account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
   it('uses the OpenAI API Key multiplier even when stale procurement fields exist', () => {
     const wrapper = mountCard({
       account: {
@@ -258,6 +284,22 @@ describe('AccountMonitorCard', () => {
 
     const cost = wrapper.get('[data-test="cost-metric"]').text()
     expect(cost).toContain('0.08×')
+    expect(cost).not.toContain('¥120.00')
+  })
+
+  it('does not fall back to stale procurement fields when an OpenAI API Key multiplier is unavailable', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'api_key',
+        procurement_cost_cny: 120,
+        estimated_usable_quota_usd: 120,
+        multiplier: { value: null, source: 'manual', status: 'failed', sample_count: 0 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('--')
     expect(cost).not.toContain('¥120.00')
   })
 

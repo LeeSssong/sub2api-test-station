@@ -55,6 +55,15 @@ describe('AccountMonitorCostDialog', () => {
     expect(wrapper.emitted('saveMultiplier')).toEqual([[0.2]])
   })
 
+  it('treats the underscored API Key wire spelling as a multiplier account', async () => {
+    const wrapper = mountDialog(openAIAccount({ account_type: 'api_key', multiplier: { value: 0.11, source: 'manual', status: 'ok', sample_count: 1 } }))
+
+    expect(wrapper.get('[data-test="multiplier-input"]').element.value).toBe('0.11')
+    expect(wrapper.find('[data-test="procurement-cost-input"]').exists()).toBe(false)
+    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
+    expect(wrapper.emitted('saveMultiplier')).toEqual([[0.11]])
+  })
+
   it('keeps non-OpenAI accounts in their compatible existing multiplier mode', () => {
     const wrapper = mountDialog(openAIAccount({ platform: 'anthropic', account_type: 'oauth', procurement_cost_cny: null }))
     expect(wrapper.find('[data-test="multiplier-input"]').exists()).toBe(true)

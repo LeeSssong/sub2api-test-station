@@ -814,11 +814,11 @@ describe('admin account monitor view V3', () => {
   })
 
   it.each([
-    'dialog-save-procurement',
-    'dialog-save-multiplier',
-    'dialog-restore-auto',
-    'dialog-clear',
-  ])('surfaces a current-range reload failure inside the dialog for %s', async (button) => {
+    ['dialog-save-procurement', '保存采购成本'],
+    ['dialog-save-multiplier', '保存账号倍率'],
+    ['dialog-restore-auto', '恢复自动倍率'],
+    ['dialog-clear', '清空采购成本'],
+  ])('surfaces a current-range reload failure inside the dialog for %s', async (button, operation) => {
     const wrapper = mountView()
     await flushPromises()
     await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
@@ -828,7 +828,10 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('最新监控卡片加载失败')
+    const expectedError = `${operation}成功，但最新监控卡片加载失败，请重试`
+    expect(wrapper.get('[data-test="dialog-error"]').text()).toBe(expectedError)
+    expect(wrapper.get('[data-test="range-error"]').text()).toContain('监控数据刷新失败')
+    expect(showError).toHaveBeenCalledWith(expectedError)
     expect(showSuccess).not.toHaveBeenCalled()
   })
 

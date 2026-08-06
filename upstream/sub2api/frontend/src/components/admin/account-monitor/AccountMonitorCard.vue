@@ -227,7 +227,7 @@ const multiplierAvailable = computed(() => {
     && Number.isFinite(multiplier.value)
     && (multiplier.source === 'manual' || multiplier.status === 'ok')
 })
-const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && props.account.account_type === 'apikey')
+const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type))
 const isOpenAINonAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && !isOpenAIAPIKey.value)
 const costValue = computed(() => {
   if (isOpenAIAPIKey.value) return multiplierAvailable.value ? formatMultiplier(props.account.multiplier.value) : '--'
@@ -276,6 +276,9 @@ function formatMs(value?: number | null): string {
 function formatMultiplier(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '--'
   return `${value.toFixed(2)}×`
+}
+function isAPIKeyAccountType(value?: string | null): boolean {
+  return value?.toLowerCase().replace(/[-_]/g, '') === 'apikey'
 }
 function formatDateTime(value?: string | null): string {
   if (!value) return '--'

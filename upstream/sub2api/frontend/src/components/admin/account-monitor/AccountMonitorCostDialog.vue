@@ -68,7 +68,7 @@ const emit = defineEmits<{
   (event: 'clear'): void
 }>()
 
-const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && props.account.account_type === 'apikey')
+const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type))
 const usesProcurement = computed(() => props.account.platform.toLowerCase() === 'openai'
   ? !isOpenAIAPIKey.value
   : props.account.procurement_cost_cny != null)
@@ -79,6 +79,10 @@ const draftQuota = ref('60')
 const draftMultiplier = ref('')
 const costError = ref('')
 const multiplierError = ref('')
+
+function isAPIKeyAccountType(value?: string | null): boolean {
+  return value?.toLowerCase().replace(/[-_]/g, '') === 'apikey'
+}
 
 watch(() => [props.show, props.account] as const, ([show, account]) => {
   if (!show) return

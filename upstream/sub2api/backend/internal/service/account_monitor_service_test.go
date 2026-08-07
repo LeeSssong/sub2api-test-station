@@ -806,6 +806,10 @@ func TestAccountMonitorClassifierFatalErrorsAreUnavailableImmediately(t *testing
 	}{
 		{name: "balance exhausted", message: "insufficient quota remaining", availability: accountMonitorAvailabilityUnavailable},
 		{name: "http unauthorized", message: "API returned 401: invalid credentials", availability: accountMonitorAvailabilityUnavailable},
+		{name: "antigravity chinese unauthorized", message: "API 返回 401: request rejected", availability: accountMonitorAvailabilityUnavailable},
+		{name: "antigravity chinese payment required", message: "API 返回 402: request rejected", availability: accountMonitorAvailabilityUnavailable},
+		{name: "antigravity chinese forbidden", message: "API 返回 403: request rejected", availability: accountMonitorAvailabilityUnavailable},
+		{name: "antigravity chinese server error", message: "API 返回 500: upstream unavailable", availability: accountMonitorAvailabilityAbnormal},
 		{name: "missing api key", message: "No API key available", availability: accountMonitorAvailabilityUnavailable},
 		{name: "authentication failed", message: "Chat Completions authentication failed", availability: accountMonitorAvailabilityUnavailable},
 		{name: "http server error", message: "API returned 500: upstream unavailable", availability: accountMonitorAvailabilityAbnormal},

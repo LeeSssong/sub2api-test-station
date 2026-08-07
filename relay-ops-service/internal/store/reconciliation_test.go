@@ -193,6 +193,105 @@ func TestRequestCostDetailPersistsProviderIDAcrossImportReconcileAndRead(t *test
 	}
 }
 
+func TestUsageImporterBackfillsMissingUpstreamRequestIDAndContinuesSource(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	windowStart, windowEnd := now.Add(-time.Hour), now.Add(time.Hour)
+	importLogs := func(logs ...sub2api.UsageLog) (reconciliation.ImportResult, error) {
+		return (reconciliation.UsageImporter{
+			Sources:  testBillingSources{items: []billing.BillingSource{{AccountID: 8123, AdapterType: "newapi"}}},
+			Reader:   testUsageLogReader{logs: logs},
+			Attempts: st,
+		}).Import(ctx, 8123, windowStart, windowEnd)
+	}
+	first := sub2api.UsageLog{
+		ID: 81, AccountID: 8123, RequestID: "local-request-81", Model: "gpt-test",
+		InputTokens: 10, OutputTokens: 4, TotalCost: 0.12, CreatedAt: now,
+	}
+	if result, err := importLogs(first); err != nil || result.Inserted != 1 || result.SourcesFailed != 0 {
+		t.Fatalf("first import result=%#v err=%v", result, err)
+	}
+	assertStoredIdentity := func(t *testing.T, expectedUpstreamRequestID string) {
+		t.Helper()
+		var localRequestID, upstreamRequestID, model string
+		if err := st.pool.QueryRow(ctx, `
+			SELECT local_request_id, COALESCE(upstream_request_id,''), model
+			FROM relay_ops.upstream_cost_attempts WHERE attempt_id=$1`, "sub2api-usage:8123:81").Scan(
+			&localRequestID, &upstreamRequestID, &model,
+		); err != nil {
+			t.Fatalf("read stored attempt identity: %v", err)
+		}
+		if localRequestID != "local-request-81" || upstreamRequestID != expectedUpstreamRequestID || model != "gpt-test" {
+			t.Fatalf("stored identity = local %q upstream %q model %q", localRequestID, upstreamRequestID, model)
+		}
+	}
+
+	for _, tt := range []struct {
+		name string
+		log  sub2api.UsageLog
+	}{
+		{name: "different local request ID before backfill", log: func() sub2api.UsageLog {
+			changed := first
+			changed.RequestID = "other-local-request"
+			changed.UpstreamRequestID = "provider-request-81"
+			return changed
+		}()},
+		{name: "different immutable model before backfill", log: func() sub2api.UsageLog {
+			changed := first
+			changed.Model = "other-model"
+			changed.UpstreamRequestID = "provider-request-81"
+			return changed
+		}()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := importLogs(tt.log)
+			if !errors.Is(err, ErrConflict) || result.SourcesFailed != 1 {
+				t.Fatalf("conflicting pre-backfill import result=%#v err=%v, want ErrConflict", result, err)
+			}
+			assertStoredIdentity(t, "")
+		})
+	}
+
+	enriched := first
+	enriched.UpstreamRequestID = "provider-request-81"
+	next := sub2api.UsageLog{
+		ID: 82, AccountID: 8123, RequestID: "local-request-82", UpstreamRequestID: "provider-request-82", Model: "gpt-test",
+		InputTokens: 11, OutputTokens: 5, TotalCost: 0.13, CreatedAt: now.Add(time.Second),
+	}
+	if result, err := importLogs(enriched, next); err != nil || result.Observed != 2 || result.Inserted != 1 || result.SourcesFailed != 0 {
+		t.Fatalf("enrichment import result=%#v err=%v", result, err)
+	}
+	if result, err := importLogs(enriched, next); err != nil || result.Observed != 2 || result.Inserted != 0 || result.SourcesFailed != 0 {
+		t.Fatalf("idempotent enrichment import result=%#v err=%v", result, err)
+	}
+
+	assertStoredIdentity(t, "provider-request-81")
+
+	conflicts := []struct {
+		name string
+		log  sub2api.UsageLog
+	}{
+		{name: "different non-empty upstream request ID", log: func() sub2api.UsageLog {
+			changed := enriched
+			changed.UpstreamRequestID = "other-provider-request"
+			return changed
+		}()},
+	}
+	for _, tt := range conflicts {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := importLogs(tt.log)
+			if !errors.Is(err, ErrConflict) || result.SourcesFailed != 1 {
+				t.Fatalf("conflicting import result=%#v err=%v, want ErrConflict", result, err)
+			}
+			assertStoredIdentity(t, "provider-request-81")
+		})
+	}
+}
+
 func TestReadRequestCostDetailNetsNativeChargeAndRefundRows(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

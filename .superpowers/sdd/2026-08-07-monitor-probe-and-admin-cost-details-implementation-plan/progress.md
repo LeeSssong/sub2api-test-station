@@ -35,3 +35,7 @@ Whole-branch review fix round 1 implementation commit: 07f47bd61 fix: address mo
 Whole-branch review fix round 1 findings closed locally: successful-only probe latency aggregation; classifier-derived fatal probe availability; relay-ops upstream_request_id import; owned-account manual allocation field contract.
 Whole-branch review fix round 1 verification: Sub2API backend `go test ./... -count=1`; relay-ops `go test ./... -count=1`; both modules `go vet ./...`; frontend 229 files / 1635 tests, lint check, typecheck, build; `git diff --check`.
 Whole-branch review fix round 1 caveat: PostgreSQL-backed relay-ops store tests skipped because `RELAY_OPS_TEST_DATABASE_URL` is unset; production push, deployment, and online verification remain pending, so the project ledger stays in progress.
+
+Whole-branch review fix round 2 base: 4223fc86d
+Whole-branch review fix round 2: in progress
+Whole-branch review fix round 2 scope: recognize real Antigravity Chinese `API 返回 401/402/403` probe errors while keeping Chinese 500 non-fatal; allow relay-ops production UPSERT to backfill only an empty `upstream_request_id` during idempotent re-import without weakening immutable-field conflicts.

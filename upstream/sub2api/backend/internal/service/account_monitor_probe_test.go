@@ -43,6 +43,10 @@ func TestAccountMonitorProbeResultClassifiesFatalErrorsWithHTTPStatus(t *testing
 	}{
 		{name: "balance exhausted", message: "insufficient quota remaining", errorCode: "balance_exhausted"},
 		{name: "http unauthorized", message: "API returned 401: invalid credentials", errorCode: "http_error", httpStatus: 401},
+		{name: "antigravity chinese unauthorized", message: "API 返回 401: request rejected", errorCode: "http_error", httpStatus: 401},
+		{name: "antigravity chinese payment required", message: "API 返回 402: request rejected", errorCode: "http_error", httpStatus: 402},
+		{name: "antigravity chinese forbidden", message: "API 返回 403: request rejected", errorCode: "http_error", httpStatus: 403},
+		{name: "antigravity chinese server error", message: "API 返回 500: upstream unavailable", errorCode: "http_error", httpStatus: 500},
 		{name: "missing api key", message: "No API key available", errorCode: "invalid_auth"},
 		{name: "authentication failed", message: "Chat Completions authentication failed", errorCode: "invalid_auth"},
 		{name: "http server error", message: "Grok Responses API returned 500: upstream unavailable", errorCode: "http_error", httpStatus: 500},

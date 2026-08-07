@@ -105,6 +105,17 @@ func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliatio
 		attempt.UpstreamRequestID = *upstreamRequestID
 	}
 	attempt.GroupID = groupID
+	if !inserted && attempt.UpstreamRequestID == "" && input.UpstreamRequestID != "" {
+		identityWithoutUpstreamID := input
+		identityWithoutUpstreamID.UpstreamRequestID = ""
+		if !sameAttempt(attempt, identityWithoutUpstreamID) {
+			return reconciliation.Attempt{}, false, ErrConflict
+		}
+		if err := s.BindUpstreamRequestID(ctx, attempt.ID, input.UpstreamRequestID); err != nil {
+			return reconciliation.Attempt{}, false, err
+		}
+		attempt.UpstreamRequestID = input.UpstreamRequestID
+	}
 	if !inserted && !sameAttempt(attempt, input) {
 		return reconciliation.Attempt{}, false, ErrConflict
 	}

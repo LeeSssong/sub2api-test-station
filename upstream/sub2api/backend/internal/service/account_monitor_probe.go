@@ -15,7 +15,7 @@ import (
 
 type accountMonitorProbeObserverKey struct{}
 
-var accountMonitorHTTPStatusPattern = regexp.MustCompile(`(?i)(?:returned|status(?:\s+code)?|http|failed)\s*(?:\(|:)?\s*([1-5][0-9]{2})(?:[^0-9]|$)`)
+var accountMonitorHTTPStatusPattern = regexp.MustCompile(`(?i)(?:returned|返回|status(?:\s+code)?|http|failed)\s*(?:\(|:)?\s*([1-5][0-9]{2})(?:[^0-9]|$)`)
 
 type accountMonitorProbeObserver struct {
 	firstContentAt time.Time
@@ -107,7 +107,8 @@ func classifyAccountMonitorProbeError(err error) string {
 		return "balance_exhausted"
 	case strings.Contains(message, "returned "),
 		strings.Contains(message, "status"),
-		strings.Contains(message, "api returned"):
+		strings.Contains(message, "api returned"),
+		strings.Contains(message, "api 返回"):
 		return "http_error"
 	case strings.Contains(message, "api key"),
 		strings.Contains(message, "access token"),

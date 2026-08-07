@@ -94,7 +94,7 @@ module Sub2APIReleaseMetadata
 
     result = provenance.merge(release).merge(
       "base_sha" => base_sha,
-      "has_update" => latest > current ||
+      "has_update" => options.fetch(:force_rebuild, false) || latest > current ||
         release.fetch("official_commit") != provenance.fetch("base_commit")
     )
     atomic_write(options.fetch(:output), JSON.pretty_generate(result) + "\n")
@@ -130,12 +130,16 @@ module Sub2APIReleaseMetadata
   end
 end
 
-def parse_options(arguments, keys)
+def parse_options(arguments, keys, switches = [])
   options = {}
   parser = OptionParser.new
   keys.each do |key|
     flag = "--#{key.to_s.tr("_", "-")} VALUE"
     parser.on(flag) { |value| options[key] = value }
+  end
+  switches.each do |key|
+    flag = "--#{key.to_s.tr("_", "-")}"
+    parser.on(flag) { options[key] = true }
   end
   parser.parse!(arguments)
   raise ArgumentError, "unexpected arguments" unless arguments.empty?
@@ -149,7 +153,7 @@ begin
   command = ARGV.shift
   case command
   when "discover"
-    options = parse_options(ARGV, %i[release provenance base_sha official_commit output])
+    options = parse_options(ARGV, %i[release provenance base_sha official_commit output], %i[force_rebuild])
     Sub2APIReleaseMetadata.discover(options)
   when "advance-provenance"
     options = parse_options(ARGV, %i[metadata provenance imported annotated_tag])

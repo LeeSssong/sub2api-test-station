@@ -42,6 +42,25 @@ class Sub2APIReleaseMetadataTest < Minitest::Test
     end
   end
 
+  def test_force_rebuild_marks_the_same_qualified_release_as_an_update
+    with_fixture(base_version: "0.1.167", base_commit: COMMIT_167) do |fixture|
+      File.write(fixture[:release], JSON.generate(stable_release))
+
+      stdout, stderr, status = Open3.capture3(
+        "ruby", CLI, "discover",
+        "--release", fixture[:release],
+        "--provenance", fixture[:provenance],
+        "--base-sha", BASE_SHA,
+        "--official-commit", COMMIT_167,
+        "--output", fixture[:output],
+        "--force-rebuild"
+      )
+
+      assert status.success?, stdout + stderr
+      assert_equal true, JSON.parse(File.read(fixture[:output])).fetch("has_update")
+    end
+  end
+
   def test_rejects_unstable_malformed_and_untrusted_release_metadata
     cases = [
       stable_release.merge("draft" => true),

@@ -336,7 +336,7 @@ test_build_publish_and_host_invocation() {
 }
 
 test_maintenance_controller_forwards_exact_current_migration_hash() {
-  local current_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
+  local current_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local legacy_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
 
   setup_case maintenance-current-hash

@@ -453,7 +453,7 @@ if [[ "$transport" == preloaded ]]; then
 fi
 if [[ "$maintenance_authorized" == true ]]; then
   host_args+=(--maintenance-authorized --maintenance-from-hash \
-    e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc)
+    ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39)
 fi
 host_output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$host_timeout" "$ssh_bin" \
   -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \

@@ -29,8 +29,8 @@ preloaded_image_id=''
 # The only migration transition permitted by the maintenance path. These
 # hashes cover the complete normalized migration set, so a modified file or
 # any additional migration fails closed before production is stopped.
-readonly MAINTENANCE_OLD_MIGRATIONS_HASH=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
-readonly MAINTENANCE_NEW_MIGRATIONS_HASH=337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+readonly MAINTENANCE_OLD_MIGRATIONS_HASH=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+readonly MAINTENANCE_NEW_MIGRATIONS_HASH=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
 
 while (($#)); do
   case "$1" in

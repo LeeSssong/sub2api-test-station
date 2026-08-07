@@ -76,9 +76,9 @@ executor additionally requires `--maintenance-from-hash` to equal the active
 hash below. No other migration transition is accepted:
 
 ```text
-from e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
-to   337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
-files 196_account_procurement_cost.sql — adds nullable procurement cost, nullable effective time, and a non-negative procurement-cost constraint.
+from ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+to   0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+files 197_account_estimated_usable_quota.sql and 198_account_rate_multiplier_native_convergence.sql — add estimated quota, migrate official native multiplier controls, and remove the obsolete policy/measurement JSON keys.
 ```
 
 Invoke the same controller with the explicit maintenance flag:
@@ -121,7 +121,7 @@ sudo -n env RELEASE_PRELOADED_IMAGE=true \
 
 Replace the migrations placeholder only with the exact previous migration hash
 recorded in the preserved partial/state checkpoint (for this release it is
-`e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc`). Do not
+`ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39`). Do not
 guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
 shared services during recovery.
 

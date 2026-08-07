@@ -99,6 +99,10 @@
     }
   }
 
+  function isAlreadyCurrent(info) {
+    return Boolean(info && info.current && info.target && info.current === info.target)
+  }
+
   async function getStatus() {
     try {
       var payload = await apiRequest(STATUS_PATH)
@@ -476,6 +480,15 @@
       renderDialog(state.info, operation)
       renderExistingSchedule(operation)
       if (resumeRunningOperation(operation)) return state.dialog
+      if (isAlreadyCurrent(state.info)) {
+        state.candidateReady = false
+        state.readinessTarget = ''
+        stopReadinessPolling()
+        setReadinessState('当前版本已是目标版本', 'success')
+        setMessage('当前版本已是目标版本，无需重复升级。', 'success')
+        updateSubmitState()
+        return state.dialog
+      }
       if (infoResult.error || !state.info.target) {
         setReadinessState('候选版本准备失败', 'error')
       } else {

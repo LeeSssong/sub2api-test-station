@@ -174,6 +174,34 @@ test('captures the localized official update button before its Vue handler', asy
   assert.equal(browser.window.document.querySelector('[name="mode"][value="now"]').checked, true)
 })
 
+test('ignores a stale failed operation when the current version already equals the target', async () => {
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/api/v1/admin/system/check-updates')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        return response({ code: 0, data: { current_version: '1.2.3', latest_version: '1.2.3' } })
+      }
+      if (url.endsWith('/api/v1/admin/system/host-update/status')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        return response({
+          code: 0,
+          data: { operation_id: 'stale-failed-op', stage: 'failed', target_version: '1.2.3' },
+        })
+      }
+      return fallback(input, init)
+    },
+  })
+
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  assert.match(dialog.querySelector('[data-role="readiness-status"]').textContent, /当前版本已是目标版本/)
+  assert.match(dialog.querySelector('[data-role="message"]').textContent, /无需重复升级/)
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+  assert.equal(browser.requests.some((request) => request.url.includes('/host-update/readiness')), false)
+})
+
 test('requires explicit confirmation and converts Beijing time to UTC RFC3339', async () => {
   const browser = await createBrowser()
   await browser.ui.openConfirmation()
@@ -756,7 +784,7 @@ test('resets the status while reloading a changed target', async () => {
 test('serves a template shell with external UI assets only', async () => {
   const html = await readFile(UI_HTML, 'utf8')
   assert.match(html, /\{\{\s*httpInclude\s+"\/__sub2api-official-index"\s*\}\}/)
-  assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260807-1"/)
-  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260807-1"/)
+  assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260807-2"/)
+  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260807-2"/)
   assert.doesNotMatch(html, /<script[^>]*>[^<]+<\/script>/)
 })

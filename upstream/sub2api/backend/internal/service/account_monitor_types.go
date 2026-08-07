@@ -202,6 +202,13 @@ type AccountMonitorAccount struct {
 	ModelID                    string                        `json:"model_id"`
 	LatestStatus               string                        `json:"latest_status"`
 	ErrorCode                  string                        `json:"error_code,omitempty"`
+	ProbeSampleCount           int                           `json:"probe_sample_count"`
+	ProbeSuccessCount          int                           `json:"probe_success_count"`
+	ProbeSuccessRate           float64                       `json:"probe_success_rate"`
+	ProbeTTFTP50MS             *float64                      `json:"probe_ttft_p50_ms,omitempty"`
+	ProbeLatencyP95MS          *float64                      `json:"probe_latency_p95_ms,omitempty"`
+	AvailabilityStatus         string                        `json:"availability_status"`
+	ScoreStatus                string                        `json:"score_status"`
 	SampleCount                int                           `json:"sample_count"`
 	SuccessSampleCount         int                           `json:"success_sample_count"`
 	TTFTSampleCount            int                           `json:"ttft_sample_count"`

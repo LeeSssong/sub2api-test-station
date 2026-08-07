@@ -16,11 +16,11 @@
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="score-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
           <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
-          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">基于 {{ account.request_count }} 次真实请求</p>
+          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">基于 {{ formatNumber(probeSampleCount) }} 次探测样本</p>
         </div>
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
-          <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="account.group_rank != null" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
+          <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="ranked" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
           <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号继续参与排名</p>
         </div>
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="priority-control">
@@ -58,9 +58,9 @@
       </section>
 
       <section class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6" aria-label="账号服务指标">
-        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="formatPercent(account.success_rate)" :detail="`${formatNumber(account.request_count)} 次真实请求，${formatNumber(account.error_count)} 次失败`" />
-        <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P50" :value="formatMs(account.ttft_p50_ms)" :detail="sampleDetail(account.ttft_sample_count)" />
-        <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
+        <MetricCell data-test="success-rate-metric" tone="success" label="探测成功率" :value="formatPercent(probeSuccessRate)" :detail="`${formatNumber(probeSampleCount)} 次探测样本，${formatNumber(probeFailureCount)} 次失败`" />
+        <MetricCell data-test="ttft-metric" tone="ttft" label="首 Token 延迟 P50" :value="formatMs(probeTTFTP50MS)" :detail="sampleDetail(probeSuccessCount)" />
+        <MetricCell data-test="latency-metric" tone="latency" label="完整响应耗时 P95" :value="formatMs(probeLatencyP95MS)" :detail="sampleDetail(probeSuccessCount)" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>
@@ -196,31 +196,43 @@ watch(() => props.account.priority, (value) => {
 })
 
 const statusLabel = computed(() => {
-  if (props.account.management_state === 'paused') return '暂停'
+  if (props.account.availability_status === 'disabled' || props.account.management_state === 'paused') return '暂停'
+  if (props.account.availability_status === 'normal') return '正常'
+  if (props.account.availability_status === 'abnormal') return '异常'
+  if (props.account.availability_status === 'stale') return '待确认'
+  if (props.account.availability_status === 'unavailable') return '不可用'
   if (props.account.service_state === 'available') return '正常'
   if (props.account.service_state === 'pending') return '待确认'
   return '不可用'
 })
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': statusLabel.value === '正常',
-  'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': statusLabel.value === '待确认',
+  'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': statusLabel.value === '待确认' || statusLabel.value === '异常',
   'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': statusLabel.value === '暂停',
   'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': statusLabel.value === '不可用',
 }))
 const statusBorderClass = computed(() => ({
   'border-emerald-500': statusLabel.value === '正常',
-  'border-amber-500': statusLabel.value === '待确认',
+  'border-amber-500': statusLabel.value === '待确认' || statusLabel.value === '异常',
   'border-gray-300 dark:border-slate-700': statusLabel.value === '暂停',
   'border-red-500': statusLabel.value === '不可用',
 }))
 const statusHeaderClass = computed(() => ({
   'border-emerald-100 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20': statusLabel.value === '正常',
-  'border-amber-100 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20': statusLabel.value === '待确认',
+  'border-amber-100 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20': statusLabel.value === '待确认' || statusLabel.value === '异常',
   'bg-gray-50 dark:bg-slate-900/50': statusLabel.value === '暂停',
   'border-red-100 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20': statusLabel.value === '不可用',
 }))
-const scoreLabel = computed(() => props.account.quality_score == null ? '--' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(props.account.quality_score))
-const rankLabel = computed(() => props.account.group_rank == null ? '未排名' : `第 ${props.account.group_rank}`)
+const scoreEligible = computed(() => props.account.score_status
+  ? ['eligible', 'capped'].includes(props.account.score_status)
+  : props.account.eligible === true)
+const ranked = computed(() => scoreEligible.value && props.account.group_rank != null)
+const scoreLabel = computed(() => {
+  if (!scoreEligible.value || props.account.quality_score == null || !Number.isFinite(props.account.quality_score)) return '--'
+  const value = props.account.score_status === 'capped' ? Math.min(props.account.quality_score, 70) : props.account.quality_score
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value)
+})
+const rankLabel = computed(() => ranked.value ? `第 ${props.account.group_rank}` : '未排名')
 const scoreTitle = computed(() => props.rankingScope === 'global' ? '账号服务评分' : '账号分组评分')
 const rankTitle = computed(() => props.rankingScope === 'global' ? '全站排名' : '组内排名')
 const concurrencyValue = computed(() => props.concurrency ? `${props.concurrency.current} / ${props.concurrency.limit}` : '-- / --')
@@ -228,6 +240,12 @@ const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
 const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
+const probeSampleCount = computed(() => props.account.probe_sample_count ?? props.account.sample_count ?? 0)
+const probeSuccessCount = computed(() => props.account.probe_success_count ?? props.account.success_sample_count ?? 0)
+const probeSuccessRate = computed(() => props.account.probe_success_rate ?? props.account.success_rate ?? 0)
+const probeTTFTP50MS = computed(() => props.account.probe_ttft_p50_ms ?? props.account.ttft_p50_ms ?? null)
+const probeLatencyP95MS = computed(() => props.account.probe_latency_p95_ms ?? props.account.latency_p95_ms ?? null)
+const probeFailureCount = computed(() => Math.max(0, probeSampleCount.value - probeSuccessCount.value))
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const statisticsCutoffLabel = computed(() => formatShortTime(props.statisticsCutoff))
 const timelinePoints = computed(() => (props.account.timeline ?? []).slice(-24))
@@ -247,9 +265,7 @@ const probeBars = computed<ProbeBar[]>(() => {
   return bars
 })
 const probeSummary = computed(() => {
-  const successes = timelinePoints.value.filter((point) => isCompletedProbe(point.status)).length
-  const failures = timelinePoints.value.filter((point) => isFailedProbe(point.status)).length
-  return `${timelinePoints.value.length} 次结果 · ${successes} 成功 · ${failures} 失败`
+  return `${formatNumber(probeSampleCount.value)} 次结果 · ${formatNumber(probeSuccessCount.value)} 成功 · ${formatNumber(probeFailureCount.value)} 失败`
 })
 const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
 const multiplierAvailable = computed(() => {

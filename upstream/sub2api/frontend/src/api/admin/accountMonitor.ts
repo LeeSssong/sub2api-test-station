@@ -4,6 +4,8 @@ import type { ReconciliationDecimal } from './reconciliation'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
+export type AccountMonitorAvailabilityStatus = 'normal' | 'abnormal' | 'unavailable' | 'disabled' | 'stale' | string
+export type AccountMonitorScoreStatus = 'eligible' | 'capped' | 'ineligible' | string
 
 export interface AccountMonitorConcurrencyItem {
   account_id: number
@@ -168,6 +170,13 @@ export interface AccountMonitorAccount {
   model_id: string
   latest_status: AccountMonitorStatus
   error_code?: string
+  probe_sample_count: number
+  probe_success_count: number
+  probe_success_rate: number
+  probe_ttft_p50_ms?: number | null
+  probe_latency_p95_ms?: number | null
+  availability_status: AccountMonitorAvailabilityStatus
+  score_status: AccountMonitorScoreStatus
   sample_count: number
   success_sample_count: number
   ttft_sample_count: number

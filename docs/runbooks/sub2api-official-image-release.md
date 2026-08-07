@@ -58,11 +58,11 @@ new image labels, then recreate only Caddy with `--no-deps`.
 
 ### Fast-Lane Rules
 
-1. A qualified candidate may be built locally when GitHub Actions is
-   unavailable. Local qualification must use the same pinned source,
+1. A qualified candidate is built from a reviewed local worktree. Local
+   qualification must use the pinned source,
    full subsystem gates, immutable labels, architecture check, archive
-   SHA-256, and isolated `--version` execution. GitHub remains the remote
-   source of record; a workflow run is not a production prerequisite.
+   SHA-256, and isolated `--version` execution. Git remains the remote source
+   of record; GitHub Actions is not part of this process.
 2. Candidate preparation and application promotion are separate operations.
    Loading `xingqiao-sub2api:upstream-<version>` must not recreate the running
    Sub2API container. Only an explicit administrator confirmation may promote
@@ -352,29 +352,31 @@ ID. If the qualified image is absent or mismatched, the request fails before
 backup or Compose mutation. This preserves Xingqiao Base URL, frontend,
 backend, and navigation behavior across official updates.
 
-### Automated Candidate Preparation
+### Controlled Local Candidate Preparation
 
-The normal preparation path is
-`.github/workflows/sub2api-release-preparation.yml`. GitHub Actions runs it at
-minute `17` every six hours and also permits `workflow_dispatch` for a retry.
-It reads the latest stable `Wei-Shaw/sub2api` GitHub Release directly; the
-official admin page and its request cache are not scheduling inputs.
+GitHub Actions is intentionally not part of the release process. There is no
+scheduled or manually dispatched release workflow. An administrator runs the
+existing local steps from a reviewed worktree, with production credentials
+available only to the step that needs them:
 
-The job boundary is:
+1. `ops/sub2api-release-metadata.rb discover` records the official stable
+   release and its source commit.
+2. `ops/merge-sub2api-release.sh` overlays Xingqiao customizations, resolves
+   the known release conflicts, runs the repository qualification gates, and
+   creates the candidate commit and bundle.
+3. Build and inspect the pinned `linux/amd64` image, then run
+   `ops/publish-sub2api-candidate.sh` to validate labels, publish the immutable
+   GHCR digest, and create the audit branch.
+4. Stage and verify the digest through `ops/sub2api-candidate-ssh.sh` and the
+   root-owned candidate loader without changing the running containers.
+5. Run `ops/advance-sub2api-source.sh` only after candidate qualification and
+   production staging pass. The admin update dialog then remains the only
+   operation that calls the blue-green host executor and promotes the running
+   version.
 
-| Job | Permissions | Credential boundary |
-|---|---|---|
-| `discover` | `contents: read` | repository-scoped read token only |
-| `prepare` | `contents: read` | no package, production, Feishu, or write credential |
-| `publish` | `contents: write`, `packages: write` | short-lived job token for GHCR and the audit branch |
-| `stage-production` | `contents: read`, `packages: read` | short-lived GHCR token plus the forced-command SSH key |
-| `advance-source` | `contents: write` | compare-and-swap fast-forward only |
-| `notify` | `contents: read` | Feishu webhook file only |
-
-All external Actions are pinned to full commit SHAs. The untrusted official
-source is merged, tested, and built only in `prepare`, which has no external
-secret or write permission. Credentialed jobs check out `${{ github.sha }}`;
-they never execute the candidate Git tree or candidate image.
+Each step fails closed, writes its own result record, and must be reviewed
+before the next step. No step invokes GitHub Actions, restarts shared services,
+or calls the administrator update API implicitly.
 
 Qualified images are private:
 
@@ -412,32 +414,19 @@ local tag, and writes mode `0600` evidence to:
 ```
 
 The running image changes only after an administrator confirms the existing
-web update dialog. No scheduled workflow invokes that action.
+web update dialog. No scheduler invokes that action.
 
-Repeated runs are idempotent: the same GHCR content and audit branch are
+Repeated local runs are idempotent: the same GHCR content and audit branch are
 reused, the same candidate source is accepted as already advanced, and a
-concurrent third-party `main` commit fails closed. The next six-hour run retries
-transient failures. Failure cards use stable categories:
+concurrent third-party `main` commit fails closed. The administrator decides
+when to retry a transient failure. Result records use stable categories:
 `QUALIFICATION_FAILED`, `PUBLISH_FAILED`, `PRODUCTION_STAGING_FAILED`, and
-`SOURCE_ADVANCE_FAILED`; raw stderr is never sent. Consecutive failures for the
-same version and stage use the Actions cache key to suppress duplicate cards.
+`SOURCE_ADVANCE_FAILED`; raw stderr is never copied into notifications.
 
-Configure the GitHub Environment `production-candidate` without an approval
-gate:
-
-```text
-SUB2API_PREP_SSH_KEY
-SUB2API_PREP_SSH_HOST
-SUB2API_PREP_SSH_PORT
-SUB2API_PREP_SSH_USER
-SUB2API_PREP_KNOWN_HOSTS
-SUB2API_RELEASE_FEISHU_WEBHOOK
-```
-
-The GHCR password is not one of these secrets. Each staging job pipes its
-short-lived `GITHUB_TOKEN` through SSH stdin. The production loader creates a
-temporary mode `0700` Docker config and removes it on every exit path; no
-long-lived GHCR credential belongs on the host.
+The local operator pipes a short-lived, package-read-only GHCR token through
+SSH stdin for production staging. The production loader creates a temporary
+mode `0700` Docker config and removes it on every exit path; no long-lived GHCR
+credential belongs on the host or in the repository.
 
 Install or rotate the dedicated key by building the Linux AMD64 candidate
 loader, generating an Ed25519 key in a temporary mode `0700` directory, and
@@ -449,9 +438,10 @@ The installer adds only:
 restrict,command="/usr/local/libexec/sub2api-candidate-ssh" <ed25519-public-key>
 ```
 
-Update the GitHub secret with the matching private key, run one end-to-end
-dispatch, then remove the prior forced-key line by exact public-key match.
-Never replace the whole `authorized_keys` file or print either key.
+Install the matching private key only in the administrator's protected SSH
+configuration, run one end-to-end local preparation, then remove the prior
+forced-key line by exact public-key match. Never replace the whole
+`authorized_keys` file or print either key.
 
 The service exposes these same-origin administrative operations:
 
@@ -571,13 +561,11 @@ live production database as an image-release response.
 
 ## Future Releases
 
-For normal releases, let the scheduled workflow prepare and stage the qualified
-candidate, review its fact-only Feishu card, and use the existing admin update
-dialog for the runtime change. The host updater then owns backup, the durable
-Compose image declaration, recreate-only mutation, smoke checks, and rollback.
+For normal releases, run the controlled local preparation steps above, review
+the fact-only result records, and use the existing admin update dialog for the
+runtime change. The host updater then owns backup, the durable Compose image
+declaration, recreate-only mutation, smoke checks, and rollback.
 
-Use the manual CLI path only when the automated preparation or web control
-plane is unavailable and a separately reviewed change is required. Even then,
-pin the exact qualified image ID, preserve the previous image tag and verified
+Pin the exact qualified image ID, preserve the previous image tag and verified
 backup, recreate only `sub2api`, and retain the host updater record until
 post-release checks pass.

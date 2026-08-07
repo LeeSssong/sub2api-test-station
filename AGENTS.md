@@ -3,6 +3,11 @@
 - Once an implementation plan has been approved, execute it with subagents by default: assign each plan task to a fresh implementer subagent, require an independent task review after each task, and run a final whole-branch review before completion.
 - Continue through approved plan tasks without repeated approval prompts unless execution is genuinely blocked, the plan conflicts with itself, or a new decision would materially change the approved scope.
 - Explicit instructions in the current user request override these defaults.
+- Sub2API release preparation and production deployment must not use GitHub
+  Actions. Keep release discovery, qualification, publishing, staging, source
+  advancement, and blue-green promotion in the reviewed local/host script
+  chain; do not add scheduled or manually dispatched release workflows under
+  `.github/workflows/`.
 
 ## 项目进度总账（强制）
 

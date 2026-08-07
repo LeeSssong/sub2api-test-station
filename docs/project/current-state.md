@@ -45,7 +45,7 @@ L1-9 详细计划：`docs/superpowers/plans/2026-07-15-operations-and-stop-loss-
 
 - 计划技术栈：Ubuntu 24.04 LTS、Docker Compose、Sub2API、PostgreSQL、Redis、Caddy。
 - 代码和基础设施配置：完整 Compose 基线、临时 Caddy-only bootstrap、环境变量生成器、契约测试和运行手册均已建立；生产主机已从 bootstrap 切换到完整四服务栈。
-- Sub2API 候选准备：GitHub Actions 每 6 小时发现最新稳定官方 Release，在无秘密 Job 中三方合并、全量测试并构建 `linux/amd64` 合格镜像；受信任 Job 将不可变镜像发布到私有 GHCR、通过 forced SSH 在生产拉取和验证候选、以 compare-and-swap fast-forward 推进合格源码，并发送无固定下一步的飞书事实卡片。生产 staging 不调用更新 API、不修改 Compose、不操作数据库、不切换或重启运行容器；运行时升级仍只由管理员在现有后台确认。实现已完成本地契约验证，GitHub Environment 和生产 forced-command 安装将在首次真实 workflow 验收中激活。
+- Sub2API 候选准备：GitHub Actions 发布 workflow 已退役，后续由管理员在受控 worktree 中按 `discover -> merge -> qualify -> publish -> stage -> advance` 顺序运行现有本地脚本。每一步均校验官方 Release、定制源码、完整资格标签、`linux/amd64` 镜像和不可变 GHCR digest；生产 staging 不调用更新 API、不修改 Compose、不操作数据库、不切换或重启运行容器；运行时升级仍只由管理员在现有后台确认。
 - Sub2API 更新：官方 `v0.1.166`（commit `dc893dd0b8eab41df5be595ae9fcd1aa74a062b8`）已无文本冲突合入 Xingqiao 定制快照并通过后端、前端和部署契约验证；合格 `linux/amd64` 镜像 `xingqiao-sub2api:upstream-0.1.166` 已加载到生产，平台 manifest 为 `sha256:e146027d59ab96c40d9ef12eea3943446a22b32e7aba918b85313909efce4ccf`。生产仍运行合格 `0.1.165`，等待管理员手动点击更新；交付过程未调用更新 API、未修改生产 Compose、未重建容器。
 - 数据存储：生产 PostgreSQL、Redis 和 Sub2API 命名卷已创建；管理员记录在受控应用重启后保持存在。2026-07-22 已对 `sub2api` 和 `relay_ops` 做服务器本地 `pg_dump -Fc` 并在隔离 PostgreSQL 18 中恢复，逐表行数哈希一致，临时资源已清理。D04 SQLite 备份仅保留为历史证据，不再属于当前备份或恢复范围。
 - 生产主机：腾讯云首尔二区实例运行 Sub2API、PostgreSQL、Redis、Caddy 和 relay-ops；正式入口为 `https://api.xingqiaolab.top`。

@@ -28,3 +28,10 @@ Task 4: complete
 Task 4 implementation commit: 4b145ba6e feat: clarify administrator usage cost details
 Task 4 verification: focused Vitest 33/33; frontend lint/typecheck/build; git diff --check
 Task 4 review: independent dispatch attempted twice but both failed with upstream 503; final whole-branch review must explicitly re-check Task 4.
+
+Whole-branch review fix round 1 base: a93ecedbd
+Whole-branch review fix round 1: complete locally
+Whole-branch review fix round 1 implementation commit: 07f47bd61 fix: address monitor and cost evidence review
+Whole-branch review fix round 1 findings closed locally: successful-only probe latency aggregation; classifier-derived fatal probe availability; relay-ops upstream_request_id import; owned-account manual allocation field contract.
+Whole-branch review fix round 1 verification: Sub2API backend `go test ./... -count=1`; relay-ops `go test ./... -count=1`; both modules `go vet ./...`; frontend 229 files / 1635 tests, lint check, typecheck, build; `git diff --check`.
+Whole-branch review fix round 1 caveat: PostgreSQL-backed relay-ops store tests skipped because `RELAY_OPS_TEST_DATABASE_URL` is unset; production push, deployment, and online verification remain pending, so the project ledger stays in progress.

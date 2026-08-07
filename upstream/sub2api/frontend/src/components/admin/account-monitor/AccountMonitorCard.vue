@@ -362,9 +362,10 @@ function formatMs(value?: number | null): string {
 	if (value == null || !Number.isFinite(value)) return '--'
 	return `${Math.round(value)} ms`
 }
-function parseFiniteNumber(value?: string | number | null, allowNegative = false): number | null {
-  if (value == null || (typeof value === 'string' && value.trim() === '')) return null
-  const parsed = typeof value === 'number' ? value : Number(value)
+function parseFiniteNumber(value: unknown, allowNegative = false): number | null {
+	if (typeof value !== 'number' && typeof value !== 'string') return null
+	if (typeof value === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim())) return null
+	const parsed = typeof value === 'number' ? value : Number(value.trim())
   if (!Number.isFinite(parsed) || (!allowNegative && parsed < 0)) return null
   return parsed
 }

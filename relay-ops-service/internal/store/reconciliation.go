@@ -448,6 +448,70 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 	return attempts, nil
 }
 
+func (s *Store) ReadRequestCostDetail(ctx context.Context, raw reconciliation.RequestCostQuery) (reconciliation.RequestCostDetail, error) {
+	query, err := reconciliation.ValidateRequestCostQuery(raw)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.local_request_id, COALESCE(a.upstream_request_id,''), a.adapter_type, a.model,
+			a.input_tokens, a.output_tokens, a.reconcile_status, a.matched_at,
+			COALESCE(t.source_record_id,''), COALESCE(t.source_type,''), COALESCE(t.amount::text,'0')
+		FROM relay_ops.upstream_cost_attempts a
+		LEFT JOIN LATERAL (
+			SELECT source_record_id, source_type, amount
+			FROM relay_ops.upstream_cost_transactions
+			WHERE attempt_id=a.id AND effective
+			ORDER BY occurred_at DESC, id DESC LIMIT 1
+		) t ON TRUE
+		WHERE ($1 <> '' AND a.local_request_id=$1) OR ($2 <> '' AND a.upstream_request_id=$2)
+		ORDER BY a.completed_at DESC, a.id DESC LIMIT 2`, query.LocalRequestID, query.UpstreamRequestID)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, fmt.Errorf("read request cost detail: %w", err)
+	}
+	defer rows.Close()
+	details := make([]reconciliation.RequestCostDetail, 0, 2)
+	for rows.Next() {
+		var detail reconciliation.RequestCostDetail
+		var sourceType reconciliation.TransactionSource
+		var actualCost string
+		if err := rows.Scan(&detail.LocalRequestID, &detail.UpstreamRequestID, &detail.AdapterType, &detail.Model,
+			&detail.PromptTokens, &detail.CompletionTokens, &detail.Status, &detail.MatchedAt,
+			&detail.SourceID, &sourceType, &actualCost); err != nil {
+			return reconciliation.RequestCostDetail{}, fmt.Errorf("scan request cost detail: %w", err)
+		}
+		detail.UpstreamActualCost, err = decimalFromText(actualCost)
+		if err != nil {
+			return reconciliation.RequestCostDetail{}, err
+		}
+		detail.UpstreamStandardCost = decimal.Zero
+		detail.CostSource = reconciliation.RequestCostSourceLabel(sourceType)
+		switch sourceType {
+		case reconciliation.SourceAutomaticCharge, reconciliation.SourceAutomaticRefund:
+			detail.Confidence = "confirmed"
+		case reconciliation.SourceManualAdjustment, reconciliation.SourceManualReversal:
+			detail.Confidence = "estimated"
+		default:
+			detail.Confidence = "pending"
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		return reconciliation.RequestCostDetail{}, fmt.Errorf("iterate request cost detail: %w", err)
+	}
+	if len(details) == 0 {
+		return reconciliation.RequestCostDetail{}, pgx.ErrNoRows
+	}
+	if len(details) > 1 {
+		return reconciliation.RequestCostDetail{
+			LocalRequestID: query.LocalRequestID, UpstreamRequestID: query.UpstreamRequestID,
+			CostSource: "待对账", Confidence: "pending", Status: reconciliation.StatusPending,
+			UpstreamActualCost: decimal.Zero, UpstreamStandardCost: decimal.Zero,
+		}, nil
+	}
+	return details[0], nil
+}
+
 func (s *Store) ReadReconciliationSummary(ctx context.Context, accountID int64, start, end time.Time, currency string) (reconciliation.Summary, error) {
 	if !start.Before(end) {
 		return reconciliation.Summary{}, fmt.Errorf("summary time window is invalid")

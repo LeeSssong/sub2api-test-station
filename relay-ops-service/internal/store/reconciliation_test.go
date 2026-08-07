@@ -57,6 +57,67 @@ func TestCreateAutomaticUpstreamCostMatchesAndResolvesException(t *testing.T) {
 	}
 }
 
+func TestReadRequestCostDetailMatchesExactLocalAndUpstreamIDs(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+		AttemptID: "request-cost-exact", LocalRequestID: "local-cost-exact", UpstreamRequestID: "upstream-cost-exact",
+		AccountID: 8123, AdapterType: reconciliation.AdapterSub2API, Model: "gpt-test", InputTokens: 11, OutputTokens: 7,
+		UserCharge: decimal.RequireFromString("0.12"), SiteStandardCost: decimal.RequireFromString("0.15"), Currency: "USD",
+		RequestStatus: "success", CompletedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateAutomaticUpstreamCost(ctx, reconciliation.AutomaticTransactionInput{
+		AttemptID: attempt.ID, AccountID: attempt.AccountID, SourceType: reconciliation.SourceAutomaticCharge,
+		SourceRecordID: "native-log-1", Amount: decimal.RequireFromString("0.0821"), Currency: "USD",
+		OccurredAt: now, IdempotencyKey: "request-cost:native-log-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []reconciliation.RequestCostQuery{{LocalRequestID: "local-cost-exact"}, {UpstreamRequestID: "upstream-cost-exact"}} {
+		detail, err := st.ReadRequestCostDetail(ctx, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if detail.SourceID != "native-log-1" || detail.CostSource != "上游逐笔账单" || detail.Confidence != "confirmed" ||
+			!detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.0821")) || detail.LocalRequestID != "local-cost-exact" {
+			t.Fatalf("detail=%#v", detail)
+		}
+	}
+}
+
+func TestReadRequestCostDetailKeepsAmbiguousUpstreamIDPending(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	for _, suffix := range []string{"a", "b"} {
+		_, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+			AttemptID: "ambiguous-" + suffix, LocalRequestID: "ambiguous-local-" + suffix, UpstreamRequestID: "ambiguous-upstream",
+			AccountID: 8123, AdapterType: reconciliation.AdapterNewAPI, UserCharge: decimal.RequireFromString("0.10"),
+			Currency: "USD", RequestStatus: "success", CompletedAt: now.Add(time.Duration(len(suffix)) * time.Microsecond),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err := st.ReadRequestCostDetail(ctx, reconciliation.RequestCostQuery{UpstreamRequestID: "ambiguous-upstream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Status != reconciliation.StatusPending || detail.Confidence != "pending" || detail.CostSource != "待对账" || !detail.UpstreamActualCost.IsZero() {
+		t.Fatalf("ambiguous detail=%#v", detail)
+	}
+}
+
 func TestRecordUpstreamCostAttemptPreservesGroupScopeAndRejectsConflict(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

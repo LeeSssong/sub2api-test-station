@@ -23,6 +23,7 @@ type UsageImportRunner interface {
 
 type RuntimeRepository interface {
 	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (Summary, error)
+	ReadRequestCostDetail(context.Context, RequestCostQuery) (RequestCostDetail, error)
 	ReadOperationsSummary(context.Context, OperationsScope) (OperationsSummary, error)
 	ListOperationsDaily(context.Context, OperationsScope) ([]OperationsDailyRow, error)
 	ListUpstreamCostExceptions(context.Context, int64, int) ([]Exception, error)
@@ -53,6 +54,17 @@ func (s RuntimeService) ReadReconciliationSummary(ctx context.Context, accountID
 		return Summary{}, fmt.Errorf("reconciliation repository is required")
 	}
 	return s.Repository.ReadReconciliationSummary(ctx, accountID, start, end, currency)
+}
+
+func (s RuntimeService) ReadRequestCostDetail(ctx context.Context, raw RequestCostQuery) (RequestCostDetail, error) {
+	if s.Repository == nil {
+		return RequestCostDetail{}, fmt.Errorf("reconciliation repository is required")
+	}
+	query, err := ValidateRequestCostQuery(raw)
+	if err != nil {
+		return RequestCostDetail{}, err
+	}
+	return s.Repository.ReadRequestCostDetail(ctx, query)
 }
 
 func (s RuntimeService) ReadOperationsSummary(ctx context.Context, scope OperationsScope) (OperationsSummary, error) {

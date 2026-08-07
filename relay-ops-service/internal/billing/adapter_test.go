@@ -44,6 +44,10 @@ func TestNewAPIAdapterReadsTokenLogs(t *testing.T) {
 	if rows[0].Cost != domain.MicroUSD(250000) || rows[0].RequestID != "newapi-req" || rows[0].UpstreamRequestID != "provider-req" {
 		t.Fatalf("charge=%#v", rows[0])
 	}
+	refunds, _, err := adapter.ListTransactions(context.Background(), CostQuery{Cursor: "next", Limit: 100})
+	if err != nil || len(refunds) != 1 || refunds[0].Type != "refund" || refunds[0].Cost != domain.MicroUSD(-50000) {
+		t.Fatalf("refunds=%#v err=%v", refunds, err)
+	}
 	snapshot, err := adapter.ReadSnapshot(context.Background())
 	if err != nil || snapshot.ActualCost != 200000 {
 		t.Fatalf("snapshot=%#v err=%v", snapshot, err)
@@ -85,6 +89,52 @@ func TestSub2APIAdapterReadsTransactionsAndSnapshot(t *testing.T) {
 	}
 	if snapshot.ActualCost != 18250001 || time.Since(snapshot.ObservedAt) > time.Minute {
 		t.Fatalf("snapshot=%#v", snapshot)
+	}
+}
+
+func TestNewAPIAdapterPreservesMissingUpstreamRequestID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/log/token":
+			fmt.Fprint(w, `{"data":[{"id":91,"type":2,"quota":125000,"request_id":"newapi-req","model_name":"gpt-test","created_at":"2026-08-01T10:00:00Z"}]}`)
+		case "/api/status":
+			fmt.Fprint(w, `{"data":{"quota_per_unit":500000}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	adapter, err := NewNewAPIAdapter(server.URL, "token-value", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := adapter.ListTransactions(context.Background(), CostQuery{Limit: 1})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows=%#v err=%v", rows, err)
+	}
+	if rows[0].RequestID != "newapi-req" || rows[0].UpstreamRequestID != "" {
+		t.Fatalf("transaction=%#v", rows[0])
+	}
+}
+
+func TestNewAPIAdapterRejectsInvalidQuotaPerUnit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/log/token":
+			fmt.Fprint(w, `{"data":[{"id":91,"type":2,"quota":125000,"request_id":"newapi-req","created_at":"2026-08-01T10:00:00Z"}]}`)
+		case "/api/status":
+			fmt.Fprint(w, `{"data":{"quota_per_unit":0}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	adapter, err := NewNewAPIAdapter(server.URL, "token-value", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := adapter.ListTransactions(context.Background(), CostQuery{Limit: 1}); err == nil {
+		t.Fatal("invalid quota_per_unit accepted")
 	}
 }
 

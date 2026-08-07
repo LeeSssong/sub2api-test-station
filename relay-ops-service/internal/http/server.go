@@ -123,6 +123,7 @@ type AccountingService interface {
 
 type ReconciliationService interface {
 	ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error)
+	ReadRequestCostDetail(context.Context, reconciliation.RequestCostQuery) (reconciliation.RequestCostDetail, error)
 	ReadOperationsSummary(context.Context, reconciliation.OperationsScope) (reconciliation.OperationsSummary, error)
 	ListOperationsDaily(context.Context, reconciliation.OperationsScope) ([]reconciliation.OperationsDailyRow, error)
 	ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error)
@@ -187,6 +188,7 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	if dependencies.Reconciliation != nil {
 		reconciliationMux := http.NewServeMux()
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/summary", s.reconciliationSummary)
+		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/request-cost", s.reconciliationRequestCost)
 		if dependencies.CostGuard != nil {
 			reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/cost-guard", s.reconciliationCostGuard)
 		}

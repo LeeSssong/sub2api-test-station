@@ -98,6 +98,53 @@ type Transaction struct {
 	CreatedAt       time.Time
 }
 
+// RequestCostQuery identifies one local usage request or its upstream log.
+// At least one identifier must be exact; no fuzzy token/model/time matching is
+// promoted to confirmed cost evidence.
+type RequestCostQuery struct {
+	LocalRequestID    string
+	UpstreamRequestID string
+}
+
+type RequestCostDetail struct {
+	LocalRequestID       string          `json:"local_request_id"`
+	UpstreamRequestID    string          `json:"upstream_request_id,omitempty"`
+	SourceID             string          `json:"source_id,omitempty"`
+	AdapterType          AdapterType     `json:"adapter_type"`
+	Model                string          `json:"model"`
+	PromptTokens         int64           `json:"prompt_tokens"`
+	CompletionTokens     int64           `json:"completion_tokens"`
+	UpstreamActualCost   decimal.Decimal `json:"upstream_actual_cost"`
+	UpstreamStandardCost decimal.Decimal `json:"upstream_standard_cost"`
+	CostSource           string          `json:"cost_source"`
+	Confidence           string          `json:"confidence"`
+	MatchedAt            *time.Time      `json:"matched_at,omitempty"`
+	Status               ReconcileStatus `json:"status"`
+}
+
+func ValidateRequestCostQuery(query RequestCostQuery) (RequestCostQuery, error) {
+	query.LocalRequestID = strings.TrimSpace(query.LocalRequestID)
+	query.UpstreamRequestID = strings.TrimSpace(query.UpstreamRequestID)
+	if query.LocalRequestID == "" && query.UpstreamRequestID == "" {
+		return RequestCostQuery{}, fmt.Errorf("local_request_id or upstream_request_id is required")
+	}
+	if len(query.LocalRequestID) > 200 || len(query.UpstreamRequestID) > 200 {
+		return RequestCostQuery{}, fmt.Errorf("request id is too long")
+	}
+	return query, nil
+}
+
+func RequestCostSourceLabel(source TransactionSource) string {
+	switch source {
+	case SourceAutomaticCharge, SourceAutomaticRefund:
+		return "上游逐笔账单"
+	case SourceManualAdjustment, SourceManualReversal:
+		return "自购账号成本分摊"
+	default:
+		return "待对账"
+	}
+}
+
 type Exception struct {
 	ID              int64
 	Attempt         Attempt

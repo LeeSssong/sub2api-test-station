@@ -88,7 +88,12 @@ export async function operations(params: OperationsScopeParams = {}): Promise<Re
   return summaryResponse(data, '经营数据')
 }
 export async function costGuard(params: { account_id: number; group_id: number; group_multiplier: number }): Promise<AccountMonitorCostGuard> {
-  const { data } = await apiClient.get<AccountMonitorCostGuard>(`${base()}/cost-guard`, { params })
+  const { data } = await apiClient.get<AccountMonitorCostGuard>(`${base()}/cost-guard`, {
+    params,
+    // relay-ops has its own admin auth boundary. A 401 there must not clear
+    // the main Sub2API session while the monitor page is switching groups.
+    skipSessionRecovery: true,
+  })
   return data
 }
 export async function history(params: OperationsScopeParams = {}): Promise<{ items: OperationsDailyRow[] }> {

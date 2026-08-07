@@ -366,6 +366,29 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('7 天调用')
   })
 
+  it('renders decimal-string cost guard multipliers returned by relay-ops', async () => {
+    costGuard.mockResolvedValue({
+      status: 'pricing_risk',
+      upstream_multiplier: '0.03',
+      upstream_multiplier_source: 'upstream_pricing',
+      equivalent_site_multiplier: '0.04',
+      cost_source: 'upstream_pricing',
+      group_multiplier: '1',
+      gap: '-0.96',
+      required_sample_count: 6,
+    })
+    const wrapper = mountView({ useRealCard: true })
+    await flushPromises()
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    const costSummary = wrapper.get('[data-test="cost-guard-summary"]')
+    expect(costSummary.text()).toContain('上游原生倍率0.03×')
+    expect(costSummary.text()).toContain('成本折合本站倍率0.04×')
+    expect(costSummary.text()).toContain('当前分组倍率1.00×')
+  })
+
   it('uses API-provided global service scores and stable global rankings on the all-site tab', async () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()

@@ -330,10 +330,11 @@ const costAlertTitle = computed(() => {
 })
 const costAlertDescription = computed(() => {
   const guard = costGuard.value
-  if (!guard || guard.equivalent_site_multiplier == null || guard.group_multiplier == null) return ''
-  const equivalent = Number(guard.equivalent_site_multiplier)
-  const group = Number(guard.group_multiplier)
-  const gap = Number(guard.gap ?? equivalent - group)
+  if (!guard) return ''
+  const equivalent = parseFiniteNumber(guard.equivalent_site_multiplier)
+  const group = parseFiniteNumber(guard.group_multiplier)
+  if (equivalent == null || group == null) return ''
+  const gap = parseFiniteNumber(guard.gap, true) ?? equivalent - group
   const comparison = equivalent > group ? '>' : Math.abs(equivalent - group) <= 1e-9 ? '=' : '<'
   if (guard.status === 'loss_confirmed') return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}，高出 ${formatMultiplier(Math.max(gap, 0))}。`
   if (guard.status === 'loss_observing') return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}；当前为 ${guard.sample_count ?? 0}/${guard.required_sample_count ?? 6} 笔有效账单样本。`
@@ -361,9 +362,16 @@ function formatMs(value?: number | null): string {
 	if (value == null || !Number.isFinite(value)) return '--'
 	return `${Math.round(value)} ms`
 }
-function formatMultiplier(value?: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '--'
-  return `${value.toFixed(2)}×`
+function parseFiniteNumber(value?: string | number | null, allowNegative = false): number | null {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || (!allowNegative && parsed < 0)) return null
+  return parsed
+}
+function formatMultiplier(value?: string | number | null): string {
+  const parsed = parseFiniteNumber(value)
+  if (parsed == null) return '--'
+  return `${parsed.toFixed(2)}×`
 }
 function isAPIKeyAccountType(value?: string | null): boolean {
   return value?.toLowerCase().replace(/[-_]/g, '') === 'apikey'

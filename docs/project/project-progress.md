@@ -8,7 +8,7 @@
 
 **本轮审查修复（2026-08-07）：** 账号卡片纯探测口径与管理员流水成本详情首轮整分支审查的 4 项 Important 已完成本地修复，状态：进行中（提交 `07f47bd61`：失败探测不再污染成功延迟聚合；余额/认证及 401/402/403 致命探测可立即判不可用；relay-ops 保留独立的上游请求 ID；自购账号手工分摊改用 estimated 标准成本字段且不再被价格表覆盖。Sub2API 后端、relay-ops、前端全量测试与 lint/typecheck/build、Go vet、diff check 均通过；PostgreSQL 集成用例因未提供 `RELAY_OPS_TEST_DATABASE_URL` 跳过。尚未推送、部署和线上验证，不得标记完成）。
 
-**本轮审查修复 Round 2（2026-08-07）：** 状态：进行中。提交 `a1d527d67` 已按 RED→GREEN 修复真实 Antigravity 中文 `API 返回 401/402/403` 状态提取（中文 500 仍保持 abnormal），以及 relay-ops 同 attempt 周期重导入时仅从空值安全补写 `upstream_request_id` 并继续导入后续流水；local request ID、model 等不可变字段与不同非空上游 ID 仍 fail closed。Sub2API 后端与 relay-ops 全量 `go test`/`go vet` 均通过，relay-ops 本轮使用独立临时 PostgreSQL 实际执行 store 集成测试；尚未完成独立复审、推送、部署和线上验证，不得标记完成。
+**本轮审查修复 Round 2（2026-08-07）：** 状态：进行中。提交 `a1d527d67` 已按 RED→GREEN 修复真实 Antigravity 中文 `API 返回 401/402/403` 状态提取（中文 500 仍保持 abnormal），以及 relay-ops 同 attempt 周期重导入时仅从空值安全补写 `upstream_request_id` 并继续导入后续流水；local request ID、model 等不可变字段与不同非空上游 ID 仍 fail closed。独立 scoped re-review 判定两项均已关闭且无新增 Critical/Important；Sub2API 后端与 relay-ops 全量 `go test`/`go vet` 均通过，relay-ops 本轮使用独立临时 PostgreSQL 实际执行 store 集成测试。尚未推送、部署和线上验证，不得标记完成。
 
 **本轮推进（2026-08-07）：** 管理页官方升级适配蓝绿生产拓扑已完成。修复提交 `ef6e12560`、`57793c0fd` 已推送；候选 `0.1.171`（提交 `20482a733af8caa40fde277c28c5df35c1ff08b4`，镜像 `sha256:bcb9a659…`）已通过完整资格矩阵、生产暂存和蓝绿切换；更新器已安装并校验，线上版本、健康接口、模型列表和共享容器身份均已复验。
 

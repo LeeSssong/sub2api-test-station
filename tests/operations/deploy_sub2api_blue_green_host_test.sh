@@ -353,6 +353,7 @@ JSON
 		printf '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"upstreams":[{"dial":"%s"}]}]}]}}}}}\n' "$upstream"
 		;;
   *'logs --no-color --tail 200 sub2api-worker')
+    [[ "$scenario" != worker_request_failure_log ]] || { printf 'sub2api-worker-1  | Request failed: upstream timeout\n'; exit 0; }
     [[ "$scenario" != worker_log_failure ]] || { printf 'panic: worker failed\n'; exit 0; }
     printf 'worker ready\n'
     ;;
@@ -1004,6 +1005,16 @@ test_success_order_and_atomic_records() {
   [[ -z "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] || fail 'partial record remained after success'
 }
 
+test_worker_request_failure_log_does_not_trigger_startup_failure() {
+  setup_case worker_request_failure_log
+  write_meminfo
+  run_executor FAKE_SCENARIO=worker_request_failure_log >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "business request failure in worker logs was misclassified as startup failure: $(cat "$CASE_DIR/stderr")"
+  "$REAL_JQ" -e '.result == "succeeded" and .state == "promoted"' \
+    "$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)" >/dev/null \
+    || fail 'business request failure log prevented a successful release record'
+}
+
 test_two_slot_rehearsal_cycles() {
   local started elapsed shared count scenario
   started=$SECONDS
@@ -1338,6 +1349,7 @@ case "${ONLY_TEST:-all}" in
     test_caddy_reconciliation_route
     printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
+    test_worker_request_failure_log_does_not_trigger_startup_failure
     printf 'PASS: successful blue-green command order\n'
     test_two_slot_rehearsal_cycles
     test_failures_and_recovery
@@ -1400,6 +1412,7 @@ case "${ONLY_TEST:-all}" in
 			;;
   preloaded-partial) test_preloaded_partial_recovery_precedes_probe_image_check ;;
   success) test_success_order_and_atomic_records ;;
+  worker-request-log) test_worker_request_failure_log_does_not_trigger_startup_failure ;;
   maintenance)
 		test_authorized_maintenance_transition
 		test_caddy_reconciliation_route

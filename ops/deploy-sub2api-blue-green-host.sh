@@ -602,7 +602,9 @@ public_acceptance() {
 worker_logs_are_acceptable() {
   local worker_logs
   worker_logs=$("${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
-  printf '%s\n' "$worker_logs" | grep -Eiq 'panic:|fatal:|migration.*failed|worker.*failed' && return 1
+  # Compose prefixes each line with the container name; avoid treating an
+  # unrelated "Request failed" message as a worker startup failure.
+  printf '%s\n' "$worker_logs" | grep -Eiq '(^|[[:space:]])(panic:|fatal:|migration[^[:space:]]*[[:space:]]+failed|worker[[:space:]]+(startup|process|runtime)[^[:space:]]*[[:space:]]+failed)' && return 1
   return 0
 }
 

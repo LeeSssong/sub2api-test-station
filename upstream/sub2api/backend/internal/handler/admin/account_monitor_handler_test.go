@@ -167,13 +167,14 @@ func TestAccountMonitorHandlerReturnsCompleteWindowTimelineAndGlobalRanking(t *t
 				Timeline     []service.AccountMonitorTimelinePoint `json:"timeline"`
 				QualityScore *float64                              `json:"quality_score"`
 				GroupRank    *int                                  `json:"group_rank"`
+				ScoreStatus  string                                `json:"score_status"`
 			} `json:"accounts"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Data.Accounts) != 1 || len(payload.Data.Accounts[0].Timeline) != 2 || payload.Data.Accounts[0].Timeline[1].Status != "failed" || payload.Data.Accounts[0].QualityScore == nil || payload.Data.Accounts[0].GroupRank == nil || *payload.Data.Accounts[0].GroupRank != 1 {
+	if len(payload.Data.Accounts) != 1 || len(payload.Data.Accounts[0].Timeline) != 2 || payload.Data.Accounts[0].Timeline[1].Status != "failed" || payload.Data.Accounts[0].QualityScore != nil || payload.Data.Accounts[0].GroupRank != nil || payload.Data.Accounts[0].ScoreStatus != "ineligible" {
 		t.Fatalf("window payload missing full account monitor fields: %s", res.Body.String())
 	}
 }

@@ -19,6 +19,18 @@ class MergeSub2APIReleaseTest < Minitest::Test
     assert_includes File.read(MERGER), 'commit -q --allow-empty -m'
   end
 
+  def test_accepts_a_clean_git_worktree_as_the_release_root
+    with_repositories do |fixture|
+      worktree = File.join(fixture.fetch(:dir), "release-worktree")
+      git(fixture.fetch(:root), "worktree", "add", "-q", "-b", "release-worktree", worktree, fixture.fetch(:root_base))
+      fixture = fixture.merge(root: worktree)
+
+      status, output = run_merge(fixture)
+
+      assert status.success?, output
+    end
+  end
+
   def test_merges_official_delta_with_custom_snapshot_and_exports_bundle
     with_repositories do |fixture|
       status, output = run_merge(fixture)

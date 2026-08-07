@@ -25,7 +25,7 @@ done
 for path in "$root" "$metadata" "$bundle" "$report"; do
   [[ "$path" = /* ]] || fail
 done
-[[ -d "$root/.git" && -f "$metadata" && -n "$official_repository" ]] || fail
+[[ ( -d "$root/.git" || -f "$root/.git" ) && -f "$metadata" && -n "$official_repository" ]] || fail
 
 metadata_field() {
   local field=$1

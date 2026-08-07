@@ -359,6 +359,29 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).toContain('admin.usageCostDetail.estimated')
   })
 
+  it('renders owned-account allocation from estimated standard cost', async () => {
+    adminGetById.mockResolvedValue(adminRecord)
+    adminGetRequestCost.mockResolvedValue({
+      ...confirmedCost,
+      upstream_request_id: null,
+      upstream_actual_cost: '0',
+      upstream_standard_cost: '0.003200',
+      cost_source: '自购账号成本分摊',
+      confidence: 'estimated',
+      status: 'manual',
+    })
+
+    const wrapper = mountDialog({ scope: 'admin' })
+    await flushPromises()
+
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost')).toBe('$0.003200')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.estimatedGrossMargin')).toBe('$0.003680')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource'))
+      .toContain('admin.usageCostDetail.costSources.ownedAllocation')
+    expect(wrapper.text()).toContain('admin.usageCostDetail.estimated')
+  })
+
   it('keeps cost and margin pending when native evidence is unavailable', async () => {
     adminGetById.mockResolvedValue(adminRecord)
     adminGetRequestCost.mockResolvedValue({

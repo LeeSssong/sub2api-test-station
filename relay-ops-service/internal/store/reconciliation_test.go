@@ -39,6 +39,44 @@ func (testCostAdapter) ReadSnapshot(context.Context) (billing.CostSnapshot, erro
 	return billing.CostSnapshot{}, nil
 }
 
+func TestApplyRequestCostLedgerEvidenceUsesEstimatedFieldForOwnedAllocation(t *testing.T) {
+	detail := reconciliation.RequestCostDetail{}
+	if !applyRequestCostLedgerEvidence(
+		&detail,
+		0,
+		"",
+		decimal.Zero,
+		1,
+		"manual-allocation-1",
+		decimal.RequireFromString("0.0032"),
+	) {
+		t.Fatal("manual allocation was not recognized as ledger evidence")
+	}
+	if !detail.UpstreamActualCost.IsZero() || !detail.UpstreamStandardCost.Equal(decimal.RequireFromString("0.0032")) ||
+		detail.SourceID != "manual-allocation-1" || detail.CostSource != reconciliation.RequestCostSourceOwnedAllocation || detail.Confidence != "estimated" {
+		t.Fatalf("manual allocation detail=%#v", detail)
+	}
+}
+
+func TestApplyRequestCostLedgerEvidenceKeepsNativeCostConfirmed(t *testing.T) {
+	detail := reconciliation.RequestCostDetail{}
+	if !applyRequestCostLedgerEvidence(
+		&detail,
+		1,
+		"native-ledger-1",
+		decimal.RequireFromString("0.0041"),
+		1,
+		"manual-allocation-1",
+		decimal.RequireFromString("0.0032"),
+	) {
+		t.Fatal("native ledger row was not recognized")
+	}
+	if !detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.0041")) || !detail.UpstreamStandardCost.IsZero() ||
+		detail.SourceID != "native-ledger-1" || detail.CostSource != reconciliation.RequestCostSourceNativeLedger || detail.Confidence != "confirmed" {
+		t.Fatalf("native detail=%#v", detail)
+	}
+}
+
 func TestCreateAutomaticUpstreamCostMatchesAndResolvesException(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

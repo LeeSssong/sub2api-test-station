@@ -533,43 +533,72 @@ func (s *Store) ReadRequestCostDetail(ctx context.Context, raw reconciliation.Re
 	); err != nil {
 		return reconciliation.RequestCostDetail{}, fmt.Errorf("read request cost ledger evidence: %w", err)
 	}
-	if attempt.detail.UpstreamActualCost, err = decimalFromText(nativeAmountText); err != nil {
+	nativeAmount, err := decimalFromText(nativeAmountText)
+	if err != nil {
 		return reconciliation.RequestCostDetail{}, err
 	}
-	if nativeCount == 0 {
-		attempt.detail.UpstreamActualCost, err = decimalFromText(manualAmountText)
-		if err != nil {
-			return reconciliation.RequestCostDetail{}, err
-		}
+	manualAmount, err := decimalFromText(manualAmountText)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	}
+	if applyRequestCostLedgerEvidence(
+		&attempt.detail,
+		nativeCount,
+		nativeSourceIDs,
+		nativeAmount,
+		manualCount,
+		manualSourceIDs,
+		manualAmount,
+	) {
+		return attempt.detail, nil
 	}
 	if snapshotID, normalizedPricing, found, err := s.requestCostPricingEvidence(ctx, attempt.accountID, attempt.completedAt); err != nil {
 		return reconciliation.RequestCostDetail{}, err
 	} else if found {
 		if standardCost, ok := reconciliation.EstimateUpstreamStandardCost(normalizedPricing, attempt.detail.Model, attempt.detail.PromptTokens, attempt.detail.CompletionTokens); ok {
 			attempt.detail.UpstreamStandardCost = standardCost
-			if nativeCount == 0 && manualCount == 0 {
-				attempt.detail.SourceID = "pricing-snapshot:" + strconv.FormatInt(snapshotID, 10)
-				attempt.detail.CostSource = reconciliation.RequestCostSourceUpstreamPriceTable
-				attempt.detail.Confidence = "estimated"
-				return attempt.detail, nil
-			}
+			attempt.detail.SourceID = "pricing-snapshot:" + strconv.FormatInt(snapshotID, 10)
+			attempt.detail.CostSource = reconciliation.RequestCostSourceUpstreamPriceTable
+			attempt.detail.Confidence = "estimated"
+			return attempt.detail, nil
 		}
 	}
-	switch {
-	case nativeCount > 0:
-		attempt.detail.SourceID = nativeSourceIDs
-		attempt.detail.CostSource = reconciliation.RequestCostSourceNativeLedger
-		attempt.detail.Confidence = "confirmed"
-	case manualCount > 0:
-		attempt.detail.SourceID = manualSourceIDs
-		attempt.detail.CostSource = reconciliation.RequestCostSourceOwnedAllocation
-		attempt.detail.Confidence = "estimated"
-	default:
-		attempt.detail.UpstreamActualCost = decimal.Zero
-		attempt.detail.CostSource = reconciliation.RequestCostSourcePending
-		attempt.detail.Confidence = "pending"
-	}
+	attempt.detail.UpstreamActualCost = decimal.Zero
+	attempt.detail.UpstreamStandardCost = decimal.Zero
+	attempt.detail.CostSource = reconciliation.RequestCostSourcePending
+	attempt.detail.Confidence = "pending"
 	return attempt.detail, nil
+}
+
+func applyRequestCostLedgerEvidence(
+	detail *reconciliation.RequestCostDetail,
+	nativeCount int64,
+	nativeSourceIDs string,
+	nativeAmount decimal.Decimal,
+	manualCount int64,
+	manualSourceIDs string,
+	manualAmount decimal.Decimal,
+) bool {
+	if detail == nil {
+		return false
+	}
+	if nativeCount > 0 {
+		detail.UpstreamActualCost = nativeAmount
+		detail.UpstreamStandardCost = decimal.Zero
+		detail.SourceID = nativeSourceIDs
+		detail.CostSource = reconciliation.RequestCostSourceNativeLedger
+		detail.Confidence = "confirmed"
+		return true
+	}
+	if manualCount > 0 {
+		detail.UpstreamActualCost = decimal.Zero
+		detail.UpstreamStandardCost = manualAmount
+		detail.SourceID = manualSourceIDs
+		detail.CostSource = reconciliation.RequestCostSourceOwnedAllocation
+		detail.Confidence = "estimated"
+		return true
+	}
+	return false
 }
 
 func (s *Store) requestCostPricingEvidence(ctx context.Context, accountID int64, completedAt time.Time) (int64, []byte, bool, error) {

@@ -797,6 +797,41 @@ func TestAccountMonitorGroupQualityEvidenceUsesGroupCostAndIgnoresPriority(t *te
 	}
 }
 
+func TestAccountMonitorClassifierFatalErrorsAreUnavailableImmediately(t *testing.T) {
+	now := time.Date(2026, time.August, 7, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		message      string
+		availability string
+	}{
+		{name: "balance exhausted", message: "insufficient quota remaining", availability: accountMonitorAvailabilityUnavailable},
+		{name: "http unauthorized", message: "API returned 401: invalid credentials", availability: accountMonitorAvailabilityUnavailable},
+		{name: "missing api key", message: "No API key available", availability: accountMonitorAvailabilityUnavailable},
+		{name: "authentication failed", message: "Chat Completions authentication failed", availability: accountMonitorAvailabilityUnavailable},
+		{name: "http server error", message: "API returned 500: upstream unavailable", availability: accountMonitorAvailabilityAbnormal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildAccountMonitorProbeResult(
+				7,
+				"gpt-4o-mini",
+				now.Add(-time.Second),
+				now,
+				&accountMonitorProbeObserver{},
+				errors.New(tt.message),
+			)
+			latest := AccountMonitorLatest{
+				Status: result.Status, ErrorCode: result.ErrorCode, HTTPStatus: result.HTTPStatus, CheckedAt: result.CheckedAt,
+			}
+			got := accountMonitorAvailabilityStatus(accountMonitorManagementEnabled, false, 1, 1, latest)
+			if got != tt.availability {
+				t.Fatalf("classified result = %#v, availability = %q, want %q", result, got, tt.availability)
+			}
+		})
+	}
+}
+
 func TestCalculateAccountMonitorQualityScoreUsesConfiguredLinearThresholds(t *testing.T) {
 	ttft := 3000.0
 	latency := 35000.0

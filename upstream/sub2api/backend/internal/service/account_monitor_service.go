@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -874,7 +875,7 @@ func accountMonitorAvailabilityStatus(managementState string, stale bool, sample
 	if sampleCount == 0 || stale {
 		return accountMonitorAvailabilityStale
 	}
-	if consecutiveFailed >= 3 || accountMonitorFatalProbeError(latest.ErrorCode) {
+	if consecutiveFailed >= 3 || accountMonitorFatalProbeError(latest) {
 		return accountMonitorAvailabilityUnavailable
 	}
 	if latest.Status == "success" {
@@ -915,12 +916,18 @@ func capAccountMonitorAbnormalScore(row *AccountMonitorAccount) {
 	row.QualityScore = &capped
 }
 
-func accountMonitorFatalProbeError(errorCode string) bool {
-	code := strings.ToLower(strings.TrimSpace(errorCode))
+func accountMonitorFatalProbeError(latest AccountMonitorLatest) bool {
+	if latest.HTTPStatus != nil {
+		switch *latest.HTTPStatus {
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+			return true
+		}
+	}
+	code := strings.ToLower(strings.TrimSpace(latest.ErrorCode))
 	if code == "" {
 		return false
 	}
-	for _, fatal := range []string{"auth", "unauthorized", "forbidden", "invalid_api_key", "invalid api key", "quota", "insufficient_quota", "billing"} {
+	for _, fatal := range []string{"auth", "unauthorized", "forbidden", "invalid_api_key", "invalid api key", "balance_exhausted", "quota", "insufficient_quota", "billing"} {
 		if strings.Contains(code, fatal) {
 			return true
 		}

@@ -51,7 +51,7 @@ func TestUsageImporterCreatesIdempotentAttemptsAndContinuesAfterSourceFailure(t 
 		Reader: importerReader{
 			errs: map[int64]error{7: errors.New("billing unavailable")},
 			logs: map[int64][]sub2api.UsageLog{8: {{
-				ID: 81, AccountID: 8, RequestID: "request-81", Model: "gpt-5.6-sol",
+				ID: 81, AccountID: 8, RequestID: "local-request-81", UpstreamRequestID: " provider-request-81 ", Model: "gpt-5.6-sol",
 				InputTokens: 120, OutputTokens: 60, TotalCost: 0.1234, CreatedAt: start.Add(time.Minute),
 				GroupID: ptrInt64(3),
 			}}},
@@ -64,7 +64,7 @@ func TestUsageImporterCreatesIdempotentAttemptsAndContinuesAfterSourceFailure(t 
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	created, ok := attempts.items["sub2api-usage:8:81"]
-	if !ok || created.LocalRequestID != "request-81" || created.AdapterType != AdapterSub2API || created.UserCharge.String() != "0.1234" || created.SiteStandardCost.String() != "0.1234" {
+	if !ok || created.LocalRequestID != "local-request-81" || created.UpstreamRequestID != "provider-request-81" || created.AdapterType != AdapterSub2API || created.UserCharge.String() != "0.1234" || created.SiteStandardCost.String() != "0.1234" {
 		t.Fatalf("attempt=%#v", created)
 	}
 	if created.GroupID == nil || *created.GroupID != 3 {

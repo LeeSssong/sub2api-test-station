@@ -218,6 +218,13 @@ func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string)
 	return "generated:" + generateRequestID()
 }
 
+// resolveLocalUsageBillingRequestID intentionally ignores the provider's
+// request ID. usage_logs.request_id is a local idempotency/correlation key;
+// the provider value is stored separately in UsageLog.UpstreamRequestID.
+func resolveLocalUsageBillingRequestID(ctx context.Context) string {
+	return resolveUsageBillingRequestID(ctx, "")
+}
+
 func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHash string) string {
 	if payloadHash := strings.TrimSpace(requestPayloadHash); payloadHash != "" {
 		return payloadHash
@@ -989,12 +996,13 @@ func (s *GatewayService) buildRecordUsageLog(
 	opts *recordUsageOpts,
 ) *UsageLog {
 	durationMs := int(result.Duration.Milliseconds())
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	requestID := resolveLocalUsageBillingRequestID(ctx)
 	usageLog := &UsageLog{
 		UserID:                user.ID,
 		APIKeyID:              apiKey.ID,
 		AccountID:             account.ID,
 		RequestID:             requestID,
+		UpstreamRequestID:     optionalTrimmedStringPtr(result.RequestID),
 		Model:                 result.Model,
 		RequestedModel:        requestedModel,
 		UpstreamModel:         optionalTrimmedStringPtr(result.UpstreamModel),

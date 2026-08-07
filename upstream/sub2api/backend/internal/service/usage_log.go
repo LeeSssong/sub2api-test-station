@@ -107,7 +107,11 @@ type UsageLog struct {
 	APIKeyID  int64
 	AccountID int64
 	RequestID string
-	Model     string
+	// UpstreamRequestID is the request identifier reported by the upstream
+	// provider. It remains separate from RequestID, which is local and used for
+	// idempotency and correlation within Sub2API.
+	UpstreamRequestID *string
+	Model             string
 	// ActualResponseModel is the model returned by the OpenAI upstream response.
 	ActualResponseModel *string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.

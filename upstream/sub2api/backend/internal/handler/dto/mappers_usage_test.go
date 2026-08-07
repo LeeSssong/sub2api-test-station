@@ -132,6 +132,27 @@ func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *test
 	require.Contains(t, string(adminJSON), `"upstream_model":"claude-sonnet-4-20250514"`)
 }
 
+func TestUsageLogFromService_KeepsUpstreamRequestIDAdminOnly(t *testing.T) {
+	t.Parallel()
+
+	upstreamRequestID := "upstream-request-456"
+	log := &service.UsageLog{
+		RequestID:         "local:req-456",
+		UpstreamRequestID: &upstreamRequestID,
+		Model:             "claude-sonnet-4",
+	}
+
+	userJSON, err := json.Marshal(UsageLogFromService(log))
+	require.NoError(t, err)
+	require.Contains(t, string(userJSON), `"request_id":"local:req-456"`)
+	require.NotContains(t, string(userJSON), "upstream_request_id")
+
+	adminJSON, err := json.Marshal(UsageLogFromServiceAdmin(log))
+	require.NoError(t, err)
+	require.Contains(t, string(adminJSON), `"request_id":"local:req-456"`)
+	require.Contains(t, string(adminJSON), `"upstream_request_id":"upstream-request-456"`)
+}
+
 func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) {
 	t.Parallel()
 

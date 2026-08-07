@@ -101,6 +101,18 @@ func TestRateMultiplierAutomaticPreservesNativeValueOnProbeFailure(t *testing.T)
 	}
 }
 
+func TestRateMultiplierAutomaticWithoutProbeSnapshotIsUnavailable(t *testing.T) {
+	nativeRate := 0.4
+	account := &Account{RateMultiplier: &nativeRate, Extra: map[string]any{
+		UpstreamBillingRateSyncEnabledExtraKey: true,
+	}}
+
+	got := NewAccountMultiplierService(nil, nil, nil).Resolve(account, time.Now())
+	if got.Status != AccountMonitorMultiplierStatusUnavailable || got.Value == nil || *got.Value != nativeRate {
+		t.Fatalf("Resolve() = %#v, want unavailable status with native multiplier", got)
+	}
+}
+
 func TestRateMultiplierSingleSourceUsesBillingDefaultForLegacyNilColumn(t *testing.T) {
 	got := NewAccountMultiplierService(nil, nil, nil).Resolve(&Account{}, time.Now())
 	if got.Value == nil || *got.Value != 1 || got.Source != AccountMonitorMultiplierSourceManual || got.Status != AccountMonitorMultiplierStatusOK {

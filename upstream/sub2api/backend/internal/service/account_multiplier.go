@@ -241,8 +241,9 @@ func (s *AccountMultiplierService) Resolve(account *Account, now time.Time) Acco
 		}
 		snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
 		status := AccountMonitorMultiplierStatusUnavailable
-		observedAt := snapshot.ReceivedAt
+		var observedAt *time.Time
 		if snapshot != nil {
+			observedAt = snapshot.ReceivedAt
 			switch snapshot.Status {
 			case UpstreamBillingProbeStatusOK:
 				status = AccountMonitorMultiplierStatusOK

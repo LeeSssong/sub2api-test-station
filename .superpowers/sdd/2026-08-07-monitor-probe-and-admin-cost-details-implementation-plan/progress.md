@@ -37,5 +37,8 @@ Whole-branch review fix round 1 verification: Sub2API backend `go test ./... -co
 Whole-branch review fix round 1 caveat: PostgreSQL-backed relay-ops store tests skipped because `RELAY_OPS_TEST_DATABASE_URL` is unset; production push, deployment, and online verification remain pending, so the project ledger stays in progress.
 
 Whole-branch review fix round 2 base: 4223fc86d
-Whole-branch review fix round 2: in progress
+Whole-branch review fix round 2: complete locally; independent scoped re-review, push, deployment, and online verification remain pending
 Whole-branch review fix round 2 scope: recognize real Antigravity Chinese `API 返回 401/402/403` probe errors while keeping Chinese 500 non-fatal; allow relay-ops production UPSERT to backfill only an empty `upstream_request_id` during idempotent re-import without weakening immutable-field conflicts.
+Whole-branch review fix round 2 implementation commit: a1d527d67 fix: close monitor and import review gaps
+Whole-branch review fix round 2 TDD: Chinese 401/402/403/500 probe and availability tests failed with missing status/wrong classifications before the fix and passed after it; PostgreSQL-backed importer/store test failed with `ErrConflict` and stopped at `Observed=1` before the fix, then passed with continued import and idempotent enrichment. A deliberate broken-order mutation proved local/model conflicts would otherwise partially bind the provider ID; the restored guard passed.
+Whole-branch review fix round 2 verification: focused Sub2API service tests; focused relay-ops store/reconciliation tests; Sub2API backend `go test ./... -count=1` and `go vet ./...`; relay-ops `go test ./... -count=1` and `go vet ./...` with an isolated PostgreSQL 18 test database; `git diff --check`.

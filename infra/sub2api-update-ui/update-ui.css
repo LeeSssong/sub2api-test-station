@@ -207,6 +207,28 @@
   color: var(--xq-ink);
 }
 
+.xq-update-ui-readiness {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--xq-line);
+  border-left: 3px solid var(--xq-warning);
+  border-radius: 6px;
+  background: #fffaf0;
+}
+
+.xq-update-ui-readiness strong {
+  color: var(--xq-warning);
+  font-size: 14px;
+}
+
+.xq-update-ui-readiness strong[data-tone="error"] {
+  color: var(--xq-danger);
+}
+
+.xq-update-ui-readiness strong[data-tone="success"] {
+  color: var(--xq-accent-dark);
+}
+
 .xq-update-ui-toast {
   position: fixed;
   top: 24px;

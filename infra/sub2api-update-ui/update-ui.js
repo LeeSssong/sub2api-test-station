@@ -232,6 +232,30 @@
     else message.removeAttribute('data-tone')
   }
 
+  function setReadinessState(status, tone) {
+    if (!state.dialog) return
+    var label = state.dialog.querySelector('[data-role="readiness-status"]')
+    setText(label, status)
+    if (tone) label.dataset.tone = tone
+    else label.removeAttribute('data-tone')
+    setMessage('')
+  }
+
+  function operationStatus(operation) {
+    if (!operation) return ''
+    if (operation.stage === 'running') {
+      var events = Array.isArray(operation.events) ? operation.events : []
+      var step = events.length ? (STEP_LABELS[events[events.length - 1]] || text(events[events.length - 1])) : ''
+      return step ? step + '中' : '升级中'
+    }
+    return {
+      promoted: '升级完成',
+      rolled_back: '已回滚到上一版本',
+      failed: '升级失败',
+      rollback_failed: '回滚失败',
+    }[operation.stage] || ''
+  }
+
   function updateSubmitState() {
     if (!state.dialog) return
     var mode = state.dialog.querySelector('[name="mode"]:checked').value
@@ -273,6 +297,7 @@
   function resumeRunningOperation(operation) {
     if (!operation || operation.stage !== 'running' || !state.dialog) return false
     state.upgrading = true
+    setReadinessState(operationStatus(operation), null)
     updateSubmitState()
     renderProgressLog(operation.events)
     setMessage('升级正在执行，应用容器重启期间请求可能短暂断开。')
@@ -381,6 +406,14 @@
     progressLog.setAttribute('aria-live', 'polite')
     progressLog.hidden = true
     body.appendChild(progressLog)
+    var readiness = document.createElement('section')
+    readiness.className = 'xq-update-ui-readiness'
+    readiness.setAttribute('aria-live', 'polite')
+    var readinessStatus = document.createElement('strong')
+    readinessStatus.dataset.role = 'readiness-status'
+    setText(readinessStatus, '候选版本检查中')
+    readiness.appendChild(readinessStatus)
+    body.appendChild(readiness)
     var message = document.createElement('p')
     message.className = 'xq-update-ui-message'
     message.dataset.role = 'message'
@@ -442,11 +475,8 @@
       renderDialog(state.info, operation)
       renderExistingSchedule(operation)
       if (resumeRunningOperation(operation)) return state.dialog
-      var error = statusResult.error || infoResult.error
-      if (error) {
-        setMessage(error.message, 'error')
-      } else if (!state.info.target) {
-        setMessage('更新服务未返回可用目标版本。', 'error')
+      if (infoResult.error || !state.info.target) {
+        setReadinessState('候选版本准备失败', 'error')
       } else {
         state.readinessTarget = state.info.target
         await pollReadiness()
@@ -514,7 +544,7 @@
         renderExistingSchedule(await getStatus().catch(function () { return null }))
       } else if (error.code === 'UPDATE_CANDIDATE_NOT_READY') {
         state.candidateReady = false
-        setMessage('候选版本正在准备，暂不可升级', 'warning')
+        setReadinessState('候选版本准备中', 'warning')
         startReadinessPolling()
       } else if (error.code === 'UPDATE_TARGET_CHANGED') {
         await reloadTargetAfterChange(payload.target_version)
@@ -543,6 +573,8 @@
       if (state.dialog) {
         if (operation.stage === 'scheduled') renderExistingSchedule(operation)
         renderProgressLog(operation.events)
+        var operationLabel = operationStatus(operation)
+        if (operationLabel) setReadinessState(operationLabel, TERMINAL_STAGES.indexOf(operation.stage) === -1 ? null : (operation.stage === 'promoted' ? 'success' : 'error'))
         var phrase = {
           running: '升级正在执行，当前请求可能短暂断开。',
           promoted: '升级成功完成。',
@@ -595,10 +627,9 @@
       }
       state.candidateReady = readiness.ready === true
       if (!state.candidateReady) {
-        setMessage('候选版本正在准备，暂不可升级', 'warning')
+        setReadinessState('候选版本准备中', 'warning')
       } else {
-        var message = state.dialog.querySelector('[data-role="message"]')
-        if (message && message.textContent === '候选版本正在准备，暂不可升级') setMessage('')
+        setReadinessState('候选版本已准备完成', 'success')
       }
     } catch (error) {
       if (!isCurrentReadinessRequest(dialog, target, generation)) return null
@@ -607,7 +638,7 @@
         return null
       }
       state.candidateReady = false
-      setMessage(error.message || '更新服务不可用', 'error')
+      setReadinessState('候选版本准备失败', 'error')
     }
     updateSubmitState()
     return state.candidateReady
@@ -623,6 +654,7 @@
     state.candidateReady = false
     state.readinessTarget = ''
     state.readinessGeneration += 1
+    setReadinessState('候选版本检查中', null)
     var reloadGeneration = state.readinessGeneration
     stopReadinessPolling()
     updateSubmitState()
@@ -633,7 +665,7 @@
       var targetVersion = state.dialog.querySelector('[data-role="target-version"]')
       if (targetVersion) setText(targetVersion, info.target || '未知')
       if (!info.target || info.target === previousTarget) {
-        setMessage('更新目标已变更，等待最新版本信息。', 'error')
+        setReadinessState('候选版本准备失败', 'error')
         updateSubmitState()
         return
       }
@@ -643,7 +675,7 @@
     } catch (error) {
       if (state.dialog !== dialog) return
       state.candidateReady = false
-      setMessage(error.message || '更新服务不可用', 'error')
+      setReadinessState('候选版本准备失败', 'error')
       updateSubmitState()
     }
   }

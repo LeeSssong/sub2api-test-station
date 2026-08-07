@@ -256,6 +256,7 @@ test('resumes a running upgrade after the admin page reloads', async () => {
 
   assert.equal(dialog.querySelector('[name="mode"][value="now"]').disabled, true)
   assert.equal(dialog.querySelector('[data-role="submit-label"]').textContent, '升级中…')
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '切换应用容器中')
   assert.match(dialog.querySelector('[data-role="message"]').textContent, /升级正在执行/)
   assert.match(dialog.querySelector('[data-role="progress-log"]').textContent, /检查运行环境/)
   dialog.querySelector('[data-action="submit"]').click()
@@ -308,13 +309,13 @@ test('keeps waiting through a network disconnect after update acceptance', async
   browser.ui.stopPolling()
 })
 
-test('shows authentication failure before an upgrade has started', async () => {
+test('continues readiness checking when only operation status lookup fails', async () => {
   const browser = await createBrowser({ fetchImpl: preSubmitAuthFailureFetch })
   await browser.ui.openConfirmation()
-  const message = browser.window.document.querySelector('[data-role="message"]')
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
 
-  assert.equal(message.dataset.tone, 'error')
-  assert.doesNotMatch(message.textContent, /应用容器正在重启/)
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本已准备完成')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
   assert.equal(browser.ui.isPolling(), false)
 })
 
@@ -358,8 +359,9 @@ test('keeps submit disabled until the qualified candidate becomes ready and stop
   const submit = dialog.querySelector('[data-action="submit"]')
   dialog.querySelector('[name="confirm"]').click()
 
-  assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
-  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'warning')
+  assert.equal(dialog.querySelectorAll('[data-role="readiness-status"]').length, 1)
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备中')
   assert.equal(submit.disabled, true)
   assert.equal(browser.ui.isReadinessPolling(), true)
   submit.click()
@@ -404,6 +406,8 @@ test('reloads the official target after readiness reports UPDATE_TARGET_CHANGED'
     .map((request) => new URL(request.url, browser.window.location.href).searchParams.get('target_version'))
   assert.deepEqual(readinessTargets, ['1.2.3', '1.2.4'])
   assert.match(dialog.textContent, /1\.2\.4/)
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备中')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
   assert.equal(browser.requests.some((request) => request.method === 'POST' && request.url.endsWith('/system/update')), false)
 })
@@ -433,8 +437,8 @@ test('fails closed when refreshed update info still returns the changed target',
 
   assert.equal(readinessCalls, 1)
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
-  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
-  assert.match(dialog.querySelector('[data-role="message"]').textContent, /更新目标已变更/)
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备失败')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
   assert.equal(browser.ui.isReadinessPolling(), false)
 })
 
@@ -468,7 +472,8 @@ test('fails closed when refreshed update info omits the target', async () => {
 
   assert.equal(readinessCalls, 1)
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
-  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备失败')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
   assert.equal(browser.ui.isReadinessPolling(), false)
 })
 
@@ -530,7 +535,8 @@ test('ignores out-of-order target reloads and keeps the changed target disabled'
 
   assert.equal(readinessCalls, 2)
   assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
-  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'error')
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备失败')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
   assert.equal(browser.ui.isReadinessPolling(), false)
 })
 
@@ -635,15 +641,99 @@ test('renders candidate-not-ready POST errors as preparation state', async () =>
   dialog.querySelector('[data-action="submit"]').click()
   await flush()
 
-  assert.match(dialog.querySelector('[data-role="message"]').textContent, /候选版本正在准备，暂不可升级/)
-  assert.doesNotMatch(dialog.querySelector('[data-role="message"]').textContent, /更新服务不可用/)
-  assert.equal(dialog.querySelector('[data-role="message"]').dataset.tone, 'warning')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备中')
+})
+
+test('shows readiness endpoint failures only in the concise status line', async () => {
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.includes('/host-update/readiness')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        return response({ code: 'UPDATE_AUTH_REQUIRED' }, 401)
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本准备失败')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
+  assert.equal(dialog.querySelector('[data-action="submit"]').disabled, true)
+})
+
+test('shows the real running step and concise terminal operation status', async () => {
+  let statusCalls = 0
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/host-update/status')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        statusCalls += 1
+        if (statusCalls === 1) return response({ code: 0, data: null })
+        if (statusCalls === 2) {
+          return response({ code: 0, data: { operation_id: 'op-now', stage: 'running', events: [] } })
+        }
+        if (statusCalls === 3) {
+          return response({ code: 0, data: { operation_id: 'op-now', stage: 'running', events: ['inspect', 'health'] } })
+        }
+        return response({ code: 0, data: { operation_id: 'op-now', stage: 'failed', events: ['inspect', 'health'] } })
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  await browser.ui.pollStatus()
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '升级中')
+
+  await browser.ui.pollStatus()
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '等待健康检查中')
+
+  await browser.ui.pollStatus()
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '升级失败')
+})
+
+test('resets the status while reloading a changed target', async () => {
+  let readinessCalls = 0
+  let resolveReload
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/check-updates') && readinessCalls > 0) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        return new Promise((resolve) => { resolveReload = resolve })
+      }
+      if (url.includes('/host-update/readiness')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        readinessCalls += 1
+        if (readinessCalls === 1) return response({ code: 0, data: { target_version: '1.2.3', ready: true } })
+        if (readinessCalls === 2) return response({ code: 'UPDATE_TARGET_CHANGED' }, 409)
+        return response({ code: 0, data: { target_version: '1.2.4', ready: true } })
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+  const reload = browser.ui.pollReadiness()
+  await flush()
+
+  assert.ok(resolveReload)
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '候选版本检查中')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
+
+  resolveReload(response({ code: 0, data: { current_version: '1.2.2', latest_version: '1.2.4' } }))
+  await reload
 })
 
 test('serves a template shell with external UI assets only', async () => {
   const html = await readFile(UI_HTML, 'utf8')
   assert.match(html, /\{\{\s*httpInclude\s+"\/__sub2api-official-index"\s*\}\}/)
-  assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260726-1"/)
-  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260729-1"/)
+  assert.match(html, /href="\/xingqiao-update-ui\.css\?v=20260807-1"/)
+  assert.match(html, /src="\/xingqiao-update-ui\.js\?v=20260807-1"/)
   assert.doesNotMatch(html, /<script[^>]*>[^<]+<\/script>/)
 })

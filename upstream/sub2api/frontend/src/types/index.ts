@@ -1660,6 +1660,8 @@ export type UserUsageDetail = Omit<
 }
 
 export interface AdminUsageLog extends UsageLog {
+  /** Provider-issued request ID, available only from administrator endpoints. */
+  upstream_request_id?: string | null
   upstream_model?: string | null
   model_mapping_chain?: string | null
 
@@ -1674,6 +1676,25 @@ export interface AdminUsageLog extends UsageLog {
 
   // 最小账号信息（仅管理员接口返回）
   account?: UsageLogAccountSummary
+}
+
+export type AdminUsageCostDecimal = string | number | null
+
+/** Native upstream request-cost evidence returned by the administrator-only relay-ops endpoint. */
+export interface AdminUsageCostDetail {
+  local_request_id: string
+  upstream_request_id?: string | null
+  source_id?: string | null
+  adapter_type?: string | null
+  model?: string | null
+  prompt_tokens?: number | null
+  completion_tokens?: number | null
+  upstream_actual_cost: AdminUsageCostDecimal
+  upstream_standard_cost: AdminUsageCostDecimal
+  cost_source?: string | null
+  confidence?: string | null
+  matched_at?: string | null
+  status?: string | null
 }
 
 export interface UsageCleanupFilters {

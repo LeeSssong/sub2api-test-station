@@ -1,5 +1,6 @@
 import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
+import type { ReconciliationDecimal } from './reconciliation'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
@@ -76,15 +77,15 @@ export type AccountMonitorUpstreamMultiplierSource =
 
 /** Lightweight, admin-only cost evidence projected for the active account group. */
 export interface AccountMonitorCostGuard {
-  upstream_multiplier?: number | null
+  upstream_multiplier?: ReconciliationDecimal
   upstream_multiplier_source?: AccountMonitorUpstreamMultiplierSource | null
-  equivalent_site_multiplier?: number | null
+  equivalent_site_multiplier?: ReconciliationDecimal
   cost_source?: AccountMonitorCostSource | null
   model?: string | null
   sample_count?: number | null
   required_sample_count?: number | null
-  group_multiplier?: number | null
-  gap?: number | null
+  group_multiplier?: ReconciliationDecimal
+  gap?: ReconciliationDecimal
   status: AccountMonitorCostGuardStatus
   observed_at?: string | null
 }

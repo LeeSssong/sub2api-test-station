@@ -6,7 +6,12 @@
 }
 
 :8081 {
-	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}
+	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {
+		# relay-ops already receives these values from the public Caddy hop.
+		# Preserve them so Sub2API validates the browser-bound admin session.
+		header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+		header_up X-Real-IP {http.request.header.X-Real-IP}
+	}
 }
 
 {$SITE_ADDRESS} {

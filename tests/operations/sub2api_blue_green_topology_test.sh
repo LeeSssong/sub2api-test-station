@@ -170,9 +170,10 @@ EOF
 invalid_compose=(env SUB2API_RELEASE_ENV_FILE="$FIXTURE/invalid-release.env" docker compose --env-file "$FIXTURE/secret.env" --env-file "$FIXTURE/invalid-release.env" -f "$ROOT/infra/compose.yaml")
 "${invalid_compose[@]}" config --format json >"$FIXTURE/invalid-compose.json"
 
-ruby -rjson - "$FIXTURE/compose.json" "$FIXTURE" <<'RUBY'
+ruby -rjson - "$FIXTURE/compose.json" "$FIXTURE" "$ROOT" <<'RUBY'
 config = JSON.parse(File.read(ARGV.fetch(0)))
 fixture = ARGV.fetch(1)
+root = ARGV.fetch(2)
 services = config.fetch("services")
 
 def fail!(message)
@@ -242,6 +243,13 @@ caddy_dependencies = caddy.fetch("depends_on", {})
 end
 assert!(caddy.fetch("expose", []).include?("8081"), "Caddy must expose internal port 8081")
 assert!(caddy.fetch("ports", []).none? { |port| port["target"] == 8081 }, "Caddy must not publish internal port 8081")
+
+internal_caddy = File.read(File.join(root, "infra", "Caddyfile"))[/^:8081 \{\n(.*?)^\}/m, 1]
+assert!(!internal_caddy.nil?, "Caddy must define the relay-ops internal listener")
+assert!(internal_caddy.include?("header_up X-Forwarded-For {http.request.header.X-Forwarded-For}"),
+        "internal Caddy must preserve relay-ops client IP for Sub2API session binding")
+assert!(internal_caddy.include?("header_up X-Real-IP {http.request.header.X-Real-IP}"),
+        "internal Caddy must preserve relay-ops real IP for Sub2API session binding")
 
 caddy_environment = environment(caddy)
 upstream_keys = caddy_environment.keys.grep(/SUB2API.*UPSTREAM/)

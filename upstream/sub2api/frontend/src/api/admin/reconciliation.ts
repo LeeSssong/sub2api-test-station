@@ -52,16 +52,18 @@ export interface ReconciliationException {
   attempt: { id: number; attempt_id: string; local_request_id: string; upstream_request_id?: string; account_id: number; model: string; user_charge: string | number; currency: string; completed_at: string; reconcile_status: string }
 }
 
+export type ReconciliationDecimal = string | number | null
+
 export interface AccountMonitorCostGuard {
-  upstream_multiplier?: number | null
+  upstream_multiplier?: ReconciliationDecimal
   upstream_multiplier_source?: string | null
-  equivalent_site_multiplier?: number | null
+  equivalent_site_multiplier?: ReconciliationDecimal
   cost_source?: string | null
   model?: string | null
   sample_count?: number | null
   required_sample_count?: number | null
-  group_multiplier?: number | null
-  gap?: number | null
+  group_multiplier?: ReconciliationDecimal
+  gap?: ReconciliationDecimal
   status: string
   observed_at?: string | null
 }

@@ -12,6 +12,8 @@ const {
   runOne,
   updateAccount,
   updateProcurementCost,
+  updateGroupScoreWeights,
+  resetGroupScoreWeights,
   operations,
   costGuard,
   refreshReconciliation,
@@ -30,6 +32,8 @@ const {
   runOne: vi.fn(),
   updateAccount: vi.fn(),
   updateProcurementCost: vi.fn(),
+  updateGroupScoreWeights: vi.fn(),
+  resetGroupScoreWeights: vi.fn(),
   operations: vi.fn(),
   costGuard: vi.fn(),
   refreshReconciliation: vi.fn(),
@@ -44,7 +48,7 @@ const {
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    accountMonitor: { list, getConcurrency, runAll, runOne },
+    accountMonitor: { list, getConcurrency, runAll, runOne, updateGroupScoreWeights, resetGroupScoreWeights },
     accounts: { update: updateAccount, updateProcurementCost },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
@@ -91,13 +95,35 @@ const AccountMonitorCardStub = defineComponent({
     account: { type: Object, required: true },
     concurrency: { type: Object, default: null },
   },
-  emits: ['updatePriority', 'updateProcurementCost', 'updateMultiplier', 'refresh'],
+  emits: ['updatePriority', 'editCost', 'refresh'],
   template: `
     <article data-test="monitor-card" :data-account-id="account.account_id">
       <span data-test="card-name">{{ account.name }}</span>
       <span data-test="card-concurrency">{{ concurrency ? concurrency.current + ' / ' + concurrency.limit : '-- / --' }}</span>
       <span v-if="concurrency?.delayed" data-test="card-delayed">数据延迟</span>
+      <button data-test="edit-cost" type="button" @click="$emit('editCost', account)">edit</button>
     </article>
+  `,
+})
+
+const AccountMonitorCostDialogStub = defineComponent({
+  name: 'AccountMonitorCostDialogStub',
+  props: {
+    show: { type: Boolean, required: true },
+    account: { type: Object, required: true },
+    saving: { type: Boolean, default: false },
+    error: { type: String, default: null },
+  },
+  emits: ['close', 'saveProcurement', 'saveMultiplier', 'restoreAuto', 'clear'],
+  template: `
+    <div v-if="show" data-test="cost-dialog">
+      <span data-test="dialog-account">{{ account.account_id }}</span>
+      <span v-if="error" data-test="dialog-error">{{ error }}</span>
+      <button data-test="dialog-save-procurement" @click="$emit('saveProcurement', 4, 60)">save procurement</button>
+      <button data-test="dialog-save-multiplier" @click="$emit('saveMultiplier', 0.08)">save multiplier</button>
+      <button data-test="dialog-restore-auto" @click="$emit('restoreAuto')">restore</button>
+      <button data-test="dialog-clear" @click="$emit('clear')">clear</button>
+    </div>
   `,
 })
 
@@ -228,6 +254,7 @@ function mountView(options: { useRealCard?: boolean } = {}) {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         ...(options.useRealCard ? {} : { AccountMonitorCard: AccountMonitorCardStub }),
+        AccountMonitorCostDialog: AccountMonitorCostDialogStub,
         Icon: true,
       },
     },
@@ -275,6 +302,8 @@ describe('admin account monitor view V3', () => {
       procurement_cost_cny: 125.5,
       procurement_cost_effective_at: '2026-08-04T04:30:00Z',
     })
+    updateGroupScoreWeights.mockReset().mockResolvedValue({ cost: 25, success: 35, ttft: 20, latency: 20 })
+    resetGroupScoreWeights.mockReset().mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20 })
     for (const forbidden of [operations, costGuard, refreshReconciliation, reconciliationHistory, reconciliationExceptions, reconciliationAdjust, revenue, accounting]) {
       forbidden.mockReset().mockResolvedValue({})
     }
@@ -394,7 +423,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('24h')
   })
 
-  it('renders the constrained V3 shell, one status selector, exactly seven native summary fields, deterministic card order, and responsive columns', async () => {
+  it('renders the constrained V3 shell, one status selector, eight selected-group summary fields, deterministic card order, and responsive columns', async () => {
     const wrapper = mountView()
     await flushPromises()
 
@@ -406,7 +435,7 @@ describe('admin account monitor view V3', () => {
 
     expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
     const summaryFields = wrapper.findAll('[data-test="group-summary-field"]')
-    expect(summaryFields).toHaveLength(7)
+    expect(summaryFields).toHaveLength(8)
     expect(summaryFields.every((field) => field.classes().includes('min-h-[82px]'))).toBe(true)
     expect(summaryFields.map((field) => field.attributes('data-field'))).toEqual([
       'status',
@@ -416,14 +445,113 @@ describe('admin account monitor view V3', () => {
       'account_count',
       'active_account_count',
       'rate_limited_account_count',
+      'score_weights',
     ])
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20×')
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
+    expect(wrapper.get('[data-test="edit-group-score-weights"]').exists()).toBe(true)
 
     const cards = wrapper.findAll('[data-test="monitor-card"]')
     expect(cards).toHaveLength(4)
     expect(cards.map((card) => Number(card.attributes('data-account-id')))).toEqual([10, 11, 20, 30])
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
+  })
+
+  it('restores selected-group score weight editing and reloads the active range after save and reset', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="group-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
+
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="group-summary-field"]')).toHaveLength(8)
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('groupId')).toBe(3)
+
+    list.mockClear()
+    dialog.vm.$emit('save', {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    await flushPromises()
+
+    expect(updateGroupScoreWeights).toHaveBeenCalledWith(3, {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const reopenedDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    list.mockClear()
+    reopenedDialog.vm.$emit('reset')
+    await flushPromises()
+
+    expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+  })
+
+  it('keeps the score weight dialog open and skips success when save reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    showSuccess.mockReset()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 900,
+      ttft_limit_ms: 4500,
+      latency_target_ms: 9000,
+      latency_limit_ms: 55000,
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('keeps the score weight dialog open and skips success when reset reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    showSuccess.mockReset()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('preserves the accepted shell spacing and exact responsive page-header typography', async () => {
@@ -636,51 +764,79 @@ describe('admin account monitor view V3', () => {
     expect(showSuccess).toHaveBeenCalledWith('账号探测与监控卡片已刷新')
   })
 
-  it('settles card save completions and reloads the current successful range after each save', async () => {
+  it('opens the page-level cost dialog and persists procurement, multiplier, restore, and clear actions', async () => {
     const wrapper = mountView()
     await flushPromises()
     await selectRange(wrapper, '7d')
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    expect(wrapper.get('[data-test="cost-dialog"]').get('[data-test="dialog-account"]').text()).toBe('10')
+
     list.mockClear()
-
-    const priorityCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 4, priorityCompletion)
+    await wrapper.get('[data-test="dialog-save-procurement"]').trigger('click')
     await flushPromises()
-
-    expect(updateAccount).toHaveBeenCalledWith(10, { priority: 4 })
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, 4, 60)
     expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(priorityCompletion.resolve).toHaveBeenCalledOnce()
-    expect(priorityCompletion.reject).not.toHaveBeenCalled()
 
+    await card.get('[data-test="edit-cost"]').trigger('click')
     list.mockClear()
-    const costCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateProcurementCost', 10, 125.5, costCompletion)
+    await wrapper.get('[data-test="dialog-save-multiplier"]').trigger('click')
     await flushPromises()
-
-    expect(updateProcurementCost).toHaveBeenCalledWith(10, 125.5)
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(costCompletion.resolve).toHaveBeenCalledOnce()
-    expect(costCompletion.reject).not.toHaveBeenCalled()
-
-    list.mockClear()
-    const multiplierCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updateMultiplier', 10, 0.08, multiplierCompletion)
-    await flushPromises()
-
     expect(updateAccount).toHaveBeenCalledWith(10, {
       rate_multiplier: 0.08,
-      rate_multiplier_policy: 'manual_override',
+      upstream_billing_rate_sync_enabled: false,
     })
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(multiplierCompletion.resolve).toHaveBeenCalledOnce()
-    expect(multiplierCompletion.reject).not.toHaveBeenCalled()
 
-    updateAccount.mockRejectedValueOnce(new Error('priority rejected'))
-    const rejectedCompletion = { resolve: vi.fn(), reject: vi.fn() }
-    wrapper.findAllComponents(AccountMonitorCardStub)[0].vm.$emit('updatePriority', 10, 6, rejectedCompletion)
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    list.mockClear()
+    await wrapper.get('[data-test="dialog-restore-auto"]').trigger('click')
+    await flushPromises()
+    expect(updateAccount).toHaveBeenCalledWith(10, {
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    })
+    expect(runOne).toHaveBeenCalledWith(10)
+
+    await card.get('[data-test="edit-cost"]').trigger('click')
+    list.mockClear()
+    await wrapper.get('[data-test="dialog-clear"]').trigger('click')
+    await flushPromises()
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, null, null)
+  })
+
+  it('keeps the cost dialog open and exposes the API error when a save fails', async () => {
+    updateProcurementCost.mockRejectedValueOnce(new Error('采购成本保存失败'))
+    const wrapper = mountView()
     await flushPromises()
 
-    expect(rejectedCompletion.resolve).not.toHaveBeenCalled()
-    expect(rejectedCompletion.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'priority rejected' }))
+    await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+    await wrapper.get('[data-test="dialog-save-procurement"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('采购成本保存失败')
+  })
+
+  it.each([
+    ['dialog-save-procurement', '保存采购成本'],
+    ['dialog-save-multiplier', '保存账号倍率'],
+    ['dialog-restore-auto', '恢复自动倍率'],
+    ['dialog-clear', '清空采购成本'],
+  ])('surfaces a current-range reload failure inside the dialog for %s', async (button, operation) => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('监控数据刷新失败'))
+    await wrapper.get(`[data-test="${button}"]`).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
+    const expectedError = `${operation}成功，但最新监控卡片加载失败，请重试`
+    expect(wrapper.get('[data-test="dialog-error"]').text()).toBe(expectedError)
+    expect(wrapper.get('[data-test="range-error"]').text()).toContain('监控数据刷新失败')
+    expect(showError).toHaveBeenCalledWith(expectedError)
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('invokes and renders no revenue, operations, profit, accounting, ledger, history, reconciliation, adjustment, or exception surface', async () => {

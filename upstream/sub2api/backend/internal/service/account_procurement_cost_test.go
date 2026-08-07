@@ -47,13 +47,15 @@ func TestUpdateAccountProcurementCostTransitions(t *testing.T) {
 
 	t.Run("positive amount records server effective time", func(t *testing.T) {
 		amount := 12.50
+		quota := 60.0
 		before := time.Now().UTC()
 		updated, err := svc.UpdateAccount(context.Background(), 91, &UpdateAccountInput{
-			ProcurementCost: &ProcurementCostUpdate{Value: &amount},
+			ProcurementCost: &ProcurementCostUpdate{Value: &amount, EstimatedUsableQuotaUSD: &quota},
 		})
 		after := time.Now().UTC()
 		require.NoError(t, err)
 		require.Equal(t, 12.50, *updated.ProcurementCostCNY)
+		require.Equal(t, 60.0, *updated.EstimatedUsableQuotaUSD)
 		require.NotNil(t, updated.ProcurementCostEffectiveAt)
 		require.False(t, updated.ProcurementCostEffectiveAt.Before(before))
 		require.False(t, updated.ProcurementCostEffectiveAt.After(after))
@@ -61,12 +63,14 @@ func TestUpdateAccountProcurementCostTransitions(t *testing.T) {
 
 	t.Run("zero amount is retained", func(t *testing.T) {
 		amount := 0.0
+		quota := 60.0
 		updated, err := svc.UpdateAccount(context.Background(), 91, &UpdateAccountInput{
-			ProcurementCost: &ProcurementCostUpdate{Value: &amount},
+			ProcurementCost: &ProcurementCostUpdate{Value: &amount, EstimatedUsableQuotaUSD: &quota},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updated.ProcurementCostCNY)
 		require.Equal(t, 0.0, *updated.ProcurementCostCNY)
+		require.Equal(t, 60.0, *updated.EstimatedUsableQuotaUSD)
 		require.NotNil(t, updated.ProcurementCostEffectiveAt)
 	})
 
@@ -76,7 +80,17 @@ func TestUpdateAccountProcurementCostTransitions(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Nil(t, updated.ProcurementCostCNY)
+		require.Nil(t, updated.EstimatedUsableQuotaUSD)
 		require.Nil(t, updated.ProcurementCostEffectiveAt)
+	})
+
+	t.Run("incomplete pair is rejected", func(t *testing.T) {
+		amount := 12.50
+		updated, err := svc.UpdateAccount(context.Background(), 91, &UpdateAccountInput{
+			ProcurementCost: &ProcurementCostUpdate{Value: &amount},
+		})
+		require.Error(t, err)
+		require.Nil(t, updated)
 	})
 }
 

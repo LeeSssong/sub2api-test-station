@@ -60,12 +60,15 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"codex_secondary_",
 	"codex_5h_",
 	"codex_7d_",
+	"codex_reset_credit_",
 	"passive_usage_",
 	"upstream_billing_probe",
+	"upstream_billing_rate_sync",
 	"ollama_cloud_usage",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
+	"account_monitor_balance":    {},
 	"codex_usage_updated_at":     {},
 	"grok_billing_snapshot":      {},
 	"session_window_utilization": {},
@@ -129,6 +132,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	}
 	if account.ProcurementCostCNY != nil {
 		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
+	}
+	if account.EstimatedUsableQuotaUSD != nil {
+		builder.SetEstimatedUsableQuotaUsd(*account.EstimatedUsableQuotaUSD)
 	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
@@ -411,16 +417,29 @@ func (r *accountRepository) ListCRSAccountIDs(ctx context.Context) (map[string]i
 }
 
 func (r *accountRepository) Update(ctx context.Context, account *service.Account) error {
-	return r.updateAccount(ctx, account, nil)
+	return r.updateAccount(ctx, account, nil, nil, account.RateMultiplier)
 }
 
-// UpdateWithUpstreamBillingProbeEnabled applies an explicit probe switch in the
-// same row-lock transaction as the rest of an admin account edit.
-func (r *accountRepository) UpdateWithUpstreamBillingProbeEnabled(ctx context.Context, account *service.Account, enabled bool) error {
-	return r.updateAccount(ctx, account, &enabled)
+// UpdateWithAccountBillingSettings applies an admin account edit while
+// preserving a concurrently probe-synchronized rate unless the request
+// explicitly includes a manual rate.
+func (r *accountRepository) UpdateWithAccountBillingSettings(
+	ctx context.Context,
+	account *service.Account,
+	probeEnabled *bool,
+	rateSyncEnabled *bool,
+	rateMultiplier *float64,
+) error {
+	return r.updateAccount(ctx, account, probeEnabled, rateSyncEnabled, rateMultiplier)
 }
 
-func (r *accountRepository) updateAccount(ctx context.Context, account *service.Account, explicitProbeEnabled *bool) error {
+func (r *accountRepository) updateAccount(
+	ctx context.Context,
+	account *service.Account,
+	explicitProbeEnabled *bool,
+	explicitRateSyncEnabled *bool,
+	explicitRateMultiplier *float64,
+) error {
 	if account == nil {
 		return nil
 	}
@@ -444,7 +463,14 @@ func (r *accountRepository) updateAccount(ctx context.Context, account *service.
 		}
 	}
 
-	updated, err := r.updateLockedAccount(ctx, client, account, explicitProbeEnabled)
+	updated, err := r.updateLockedAccount(
+		ctx,
+		client,
+		account,
+		explicitProbeEnabled,
+		explicitRateSyncEnabled,
+		explicitRateMultiplier,
+	)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
@@ -466,8 +492,15 @@ func (r *accountRepository) updateAccount(ctx context.Context, account *service.
 	return nil
 }
 
-func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled *bool) (*dbent.Account, error) {
-	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled)
+func (r *accountRepository) updateLockedAccount(
+	ctx context.Context,
+	client *dbent.Client,
+	account *service.Account,
+	explicitProbeEnabled *bool,
+	explicitRateSyncEnabled *bool,
+	explicitRateMultiplier *float64,
+) (*dbent.Account, error) {
+	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -493,13 +526,18 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired).
 		SetUpdatedAt(account.UpdatedAt)
 
-	if account.RateMultiplier != nil {
-		builder.SetRateMultiplier(*account.RateMultiplier)
+	if explicitRateMultiplier != nil {
+		builder.SetRateMultiplier(*explicitRateMultiplier)
 	}
 	if account.ProcurementCostCNY != nil {
 		builder.SetProcurementCostCny(*account.ProcurementCostCNY)
 	} else {
 		builder.ClearProcurementCostCny()
+	}
+	if account.EstimatedUsableQuotaUSD != nil {
+		builder.SetEstimatedUsableQuotaUsd(*account.EstimatedUsableQuotaUSD)
+	} else {
+		builder.ClearEstimatedUsableQuotaUsd()
 	}
 	if account.ProcurementCostEffectiveAt != nil {
 		builder.SetProcurementCostEffectiveAt(*account.ProcurementCostEffectiveAt)
@@ -567,7 +605,13 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 	return builder.Save(ctx)
 }
 
-func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled *bool) (map[string]any, error) {
+func lockAndMergeAccountProbeExtra(
+	ctx context.Context,
+	client *dbent.Client,
+	account *service.Account,
+	explicitProbeEnabled *bool,
+	explicitRateSyncEnabled *bool,
+) (map[string]any, error) {
 	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
 	if err != nil {
 		return nil, err
@@ -594,11 +638,11 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 			),
 			proxy_id IS NOT DISTINCT FROM $5,
 			extra -> 'upstream_billing_probe_enabled',
+			extra -> 'upstream_billing_rate_sync_enabled',
 			extra -> 'upstream_billing_probe',
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
 			extra -> 'ollama_cloud_usage_snapshot',
-			extra -> 'upstream_billing_rate_multiplier_policy',
 			GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
@@ -620,11 +664,11 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		ollamaGroupIdentityUnchanged bool
 		ollamaProxyIdentityUnchanged bool
 		currentEnabled               []byte
+		currentRateSyncEnabled       []byte
 		currentSnapshot              []byte
 		currentOllamaSession         []byte
 		currentOllamaAutoRefresh     []byte
 		currentOllamaSnapshot        []byte
-		currentRateMultiplierPolicy  []byte
 		nextUpdatedAt                time.Time
 	)
 	if err := rows.Scan(
@@ -632,11 +676,11 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		&ollamaGroupIdentityUnchanged,
 		&ollamaProxyIdentityUnchanged,
 		&currentEnabled,
+		&currentRateSyncEnabled,
 		&currentSnapshot,
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
-		&currentRateMultiplierPolicy,
 		&nextUpdatedAt,
 	); err != nil {
 		return nil, err
@@ -649,40 +693,61 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 	extra := copyJSONMap(normalizeJSONMap(account.Extra))
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
+		service.UpstreamBillingRateSyncEnabledExtraKey,
 		service.UpstreamBillingProbeExtraKey,
 		service.OllamaCloudUsageSessionExtraKey,
 		service.OllamaCloudUsageAutoRefreshExtraKey,
 		service.OllamaCloudUsageSnapshotExtraKey,
-		service.UpstreamBillingRateMultiplierPolicyExtraKey,
 	} {
 		delete(extra, key)
 	}
-	if account.RateMultiplierPolicyIntent != nil {
-		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = *account.RateMultiplierPolicyIntent
-	} else {
-		policy := service.UpstreamBillingRateMultiplierPolicyManaged
-		if value, ok, err := decodeAccountExtraJSON(currentRateMultiplierPolicy); err != nil {
-			return nil, err
-		} else if raw, isString := value.(string); ok && isString && raw == service.UpstreamBillingRateMultiplierPolicyManualOverride {
-			policy = raw
-		}
-		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = policy
-	}
-	probeExplicitlyDisabled := false
-	probeAccount := account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeAPIKey
-	if probeAccount && explicitProbeEnabled != nil {
-		extra[service.UpstreamBillingProbeEnabledExtraKey] = *explicitProbeEnabled
-		probeExplicitlyDisabled = !*explicitProbeEnabled
-	} else if probeAccount {
+	probeAccount := service.IsUpstreamBillingProbeIdentity(account.Platform, account.Type)
+	probeEnabled := false
+	probeEnabledPresent := false
+	if probeAccount {
 		if enabled, ok, err := decodeAccountExtraJSON(currentEnabled); err != nil {
 			return nil, err
-		} else if ok {
-			extra[service.UpstreamBillingProbeEnabledExtraKey] = enabled
-			if value, isBool := enabled.(bool); isBool && !value {
-				probeExplicitlyDisabled = true
-			}
+		} else if value, isBool := enabled.(bool); ok && isBool {
+			probeEnabled = value
+			probeEnabledPresent = true
+		}
+		if explicitProbeEnabled != nil {
+			probeEnabled = *explicitProbeEnabled
+			probeEnabledPresent = true
 		}
 	}
+	rateSyncEnabled := false
+	rateSyncEnabledPresent := false
+	if probeAccount {
+		if enabled, ok, err := decodeAccountExtraJSON(currentRateSyncEnabled); err != nil {
+			return nil, err
+		} else if value, isBool := enabled.(bool); ok && isBool {
+			rateSyncEnabled = value
+			rateSyncEnabledPresent = true
+		}
+		if explicitRateSyncEnabled != nil {
+			rateSyncEnabled = *explicitRateSyncEnabled
+			rateSyncEnabledPresent = true
+		}
+		if explicitProbeEnabled != nil && !*explicitProbeEnabled {
+			rateSyncEnabled = false
+			rateSyncEnabledPresent = true
+		}
+		// 同步依赖探测，方向是单向的：探测关闭（或探测键缺失）一律把同步归零。
+		// 不做反向推导——由 rate_sync=true 推出 probe=true 会让一条"同步开、探测键
+		// 缺失"的僵尸记录在任意一次无关编辑时静默打开周期性外呼。需要同时打开两个
+		// 开关的调用方（管理端编辑）自己显式传 explicitProbeEnabled=true。
+		if !probeEnabled {
+			rateSyncEnabled = false
+		}
+		if probeEnabledPresent {
+			extra[service.UpstreamBillingProbeEnabledExtraKey] = probeEnabled
+		}
+		if rateSyncEnabledPresent {
+			extra[service.UpstreamBillingRateSyncEnabledExtraKey] = rateSyncEnabled
+		}
+	}
+	probeExplicitlyDisabled := probeEnabledPresent && !probeEnabled
 	if identityUnchanged && !probeExplicitlyDisabled {
 		if snapshot, ok, err := decodeAccountExtraJSON(currentSnapshot); err != nil {
 			return nil, err
@@ -753,7 +818,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 			credentials = $1::jsonb,
 			extra = CASE
 				-- 凭证整体未变化 ⇒ Ollama 组身份必然未变化；顶层 DISTINCT 守卫防止
-				-- 非 Ollama 账号的无变化持久化误清 openai 探测快照或重写 NULL extra。
+				-- 非 Ollama 账号的无变化持久化误清探测快照或重写 NULL extra。
 				WHEN platform IN ('openai', 'anthropic')
 					AND type = 'apikey'
 					AND credentials IS DISTINCT FROM $1::jsonb
@@ -764,15 +829,14 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 							AND `+ollamaCloudBaseURLMatchesSQL("$1::jsonb ->> 'base_url'")+`
 						)
 					)
-				THEN (CASE
-						WHEN platform = 'openai' THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
-						ELSE COALESCE(extra, '{}'::jsonb)
-					END)
+				THEN COALESCE(extra, '{}'::jsonb)
+					- 'upstream_billing_probe'
 					- 'ollama_cloud_usage_session'
 					- 'ollama_cloud_usage_auto_refresh'
 					- 'ollama_cloud_usage_snapshot'
-				WHEN platform = 'openai'
-					AND type = 'apikey'
+				-- 上游倍率探测已放宽到全部 API-key 平台：凭证变化即视为探测
+				-- 身份变化，丢弃 stale 快照。
+				WHEN type = 'apikey'
 					AND credentials IS DISTINCT FROM $1::jsonb
 				THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
 				ELSE extra
@@ -2555,14 +2619,18 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 	ctx context.Context,
 	account *service.Account,
 	snapshot *service.UpstreamBillingProbeSnapshot,
+	rateMultiplier *float64,
 ) error {
 	if account == nil || snapshot == nil {
 		return service.ErrAccountNilInput
 	}
+	if snapshot.Status != service.UpstreamBillingProbeStatusOK {
+		rateMultiplier = nil
+	}
 	if dbent.TxFromContext(ctx) == nil {
 		tx, err := r.client.Tx(ctx)
 		if errors.Is(err, dbent.ErrTxStarted) {
-			_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+			_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
 			return err
 		}
 		if err != nil {
@@ -2570,7 +2638,7 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 		}
 		defer func() { _ = tx.Rollback() }()
 
-		auditEntry, err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot)
+		auditEntry, err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot, rateMultiplier)
 		if err != nil {
 			return err
 		}
@@ -2585,48 +2653,44 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 		r.syncSchedulerAccountSnapshot(ctx, account.ID)
 		return nil
 	}
-	_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+	_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
 	return err
 }
 
-// UpdateAccountMultiplierMeasurement stores sanitized monitor evidence only
-// while the account identity, persisted state, and previous measurement still
-// match the snapshot used by the probe.
-func (r *accountRepository) UpdateAccountMultiplierMeasurement(
+// UpdateAccountMonitorBalance stores display-only balance evidence only while
+// the account identity, active state, and previous balance snapshot match the
+// values used by the refresh request.
+func (r *accountRepository) UpdateAccountMonitorBalance(
 	ctx context.Context,
 	account *service.Account,
-	snapshot *service.AccountMultiplierMeasurementSnapshot,
+	snapshot *service.AccountMonitorBalance,
 ) error {
 	if account == nil || snapshot == nil {
 		return service.ErrAccountNilInput
 	}
 	if dbent.TxFromContext(ctx) != nil {
-		return r.updateAccountMultiplierMeasurementInTx(ctx, account, snapshot)
+		return r.updateAccountMonitorBalanceInTx(ctx, account, snapshot)
 	}
 	tx, err := r.client.Tx(ctx)
 	if errors.Is(err, dbent.ErrTxStarted) {
-		return r.updateAccountMultiplierMeasurementInTx(ctx, account, snapshot)
+		return r.updateAccountMonitorBalanceInTx(ctx, account, snapshot)
 	}
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := r.updateAccountMultiplierMeasurementInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+	if err := r.updateAccountMonitorBalanceInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	r.syncSchedulerAccountSnapshot(ctx, account.ID)
-	return nil
+	return tx.Commit()
 }
 
-func (r *accountRepository) updateAccountMultiplierMeasurementInTx(
+func (r *accountRepository) updateAccountMonitorBalanceInTx(
 	ctx context.Context,
 	account *service.Account,
-	snapshot *service.AccountMultiplierMeasurementSnapshot,
+	snapshot *service.AccountMonitorBalance,
 ) error {
-	payload, err := json.Marshal(map[string]any{service.AccountMultiplierMeasurementExtraKey: snapshot})
+	payload, err := json.Marshal(map[string]any{service.AccountMonitorBalanceExtraKey: snapshot})
 	if err != nil {
 		return err
 	}
@@ -2634,11 +2698,11 @@ func (r *accountRepository) updateAccountMultiplierMeasurementInTx(
 	if err != nil {
 		return err
 	}
-	var expectedMeasurement any
+	var expectedBalance any
 	if account.Extra != nil {
-		expectedMeasurement = account.Extra[service.AccountMultiplierMeasurementExtraKey]
+		expectedBalance = account.Extra[service.AccountMonitorBalanceExtraKey]
 	}
-	expectedMeasurementJSON, err := json.Marshal(expectedMeasurement)
+	expectedBalanceJSON, err := json.Marshal(expectedBalance)
 	if err != nil {
 		return err
 	}
@@ -2664,10 +2728,10 @@ func (r *accountRepository) updateAccountMultiplierMeasurementInTx(
 			AND proxy_id IS NOT DISTINCT FROM $6
 			AND status = $7
 			AND schedulable = $8
-			AND COALESCE(extra -> 'account_monitor_multiplier_measurement', 'null'::jsonb) = $9::jsonb
+			AND COALESCE(extra -> 'account_monitor_balance', 'null'::jsonb) = $9::jsonb
 			AND deleted_at IS NULL
 	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID,
-		account.Status, account.Schedulable, string(expectedMeasurementJSON))
+		account.Status, account.Schedulable, string(expectedBalanceJSON))
 	if err != nil {
 		return err
 	}
@@ -2685,6 +2749,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	ctx context.Context,
 	account *service.Account,
 	snapshot *service.UpstreamBillingProbeSnapshot,
+	rateMultiplier *float64,
 ) (*service.AuditLog, error) {
 	payload, err := json.Marshal(map[string]any{service.UpstreamBillingProbeExtraKey: snapshot})
 	if err != nil {
@@ -2710,12 +2775,18 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	if err != nil {
 		return nil, err
 	}
-	policy, policyValid := service.UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra)
-	decisionPolicy := policy
-	if !policyValid {
-		decisionPolicy = "invalid"
+	var expectedRateSyncEnabled any
+	if account.Extra != nil {
+		expectedRateSyncEnabled = account.Extra[service.UpstreamBillingRateSyncEnabledExtraKey]
 	}
-	decision := service.DecideUpstreamBillingRateMultiplierSync(snapshot, account, decisionPolicy)
+	expectedRateSyncEnabledJSON, err := json.Marshal(expectedRateSyncEnabled)
+	if err != nil {
+		return nil, err
+	}
+	rateSyncEnabled, _ := account.Extra[service.UpstreamBillingRateSyncEnabledExtraKey].(bool)
+	if rateMultiplier == nil || !rateSyncEnabled {
+		rateMultiplier = nil
+	}
 	client := clientFromContext(ctx, r.client)
 	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
 	if err != nil {
@@ -2738,8 +2809,9 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			AND proxy_id IS NOT DISTINCT FROM $6
 			AND COALESCE(extra -> 'upstream_billing_probe', 'null'::jsonb) = $7::jsonb
 			AND COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb
+			AND COALESCE(extra -> 'upstream_billing_rate_sync_enabled', 'null'::jsonb) = $9::jsonb
 			AND deleted_at IS NULL
-	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON))
+	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON), string(expectedRateSyncEnabledJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -2752,7 +2824,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	}
 
 	var auditEntry *service.AuditLog
-	if decision.RateMultiplier != nil {
+	if rateMultiplier != nil {
 		var expectedRate any
 		if account.RateMultiplier != nil {
 			expectedRate = *account.RateMultiplier
@@ -2762,9 +2834,9 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			SET rate_multiplier = $1, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 			WHERE id = $2
 				AND rate_multiplier IS NOT DISTINCT FROM $3
-			AND COALESCE(extra ->> 'upstream_billing_rate_multiplier_policy', 'upstream_managed') = 'upstream_managed'
+				AND COALESCE((extra ->> 'upstream_billing_rate_sync_enabled')::boolean, false) = true
 				AND deleted_at IS NULL
-		`, *decision.RateMultiplier, account.ID, expectedRate)
+		`, *rateMultiplier, account.ID, expectedRate)
 		if err != nil {
 			return nil, err
 		}
@@ -2773,7 +2845,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			return nil, err
 		}
 		if affected > 0 {
-			auditEntry = newUpstreamBillingRateMultiplierAuditLog(ctx, account, snapshot, policy, account.BillingRateMultiplier(), *decision.RateMultiplier)
+			auditEntry = newUpstreamBillingRateMultiplierAuditLog(ctx, account, snapshot, account.BillingRateMultiplier(), *rateMultiplier)
 		}
 	}
 	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil); err != nil {
@@ -2782,7 +2854,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	return auditEntry, nil
 }
 
-func newUpstreamBillingRateMultiplierAuditLog(ctx context.Context, account *service.Account, snapshot *service.UpstreamBillingProbeSnapshot, policy string, oldMultiplier, newMultiplier float64) *service.AuditLog {
+func newUpstreamBillingRateMultiplierAuditLog(ctx context.Context, account *service.Account, snapshot *service.UpstreamBillingProbeSnapshot, oldMultiplier, newMultiplier float64) *service.AuditLog {
 	probeAt := snapshot.LastAttemptAt
 	if snapshot.ReceivedAt != nil {
 		probeAt = *snapshot.ReceivedAt
@@ -2802,7 +2874,6 @@ func newUpstreamBillingRateMultiplierAuditLog(ctx context.Context, account *serv
 			"source":              "native_billing",
 			"probe_timestamp":     probeAt.UTC().Format(time.RFC3339Nano),
 			"trigger":             service.UpstreamBillingRateMultiplierSyncTriggerFromContext(ctx),
-			"policy":              policy,
 			"actor":               "system",
 		},
 	}
@@ -3025,8 +3096,8 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 	args = append(args, pq.Array(ids))
 	idx++
 	if updates.ProbeEnabled != nil {
-		whereClause += " AND platform = $" + itoa(idx) + " AND type = $" + itoa(idx+1)
-		args = append(args, service.PlatformOpenAI, service.AccountTypeAPIKey)
+		whereClause += " AND type = $" + itoa(idx)
+		args = append(args, service.AccountTypeAPIKey)
 	}
 	query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + whereClause
 
@@ -3420,6 +3491,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 
 	rateMultiplier := m.RateMultiplier
 	procurementCostCNY := m.ProcurementCostCny
+	estimatedUsableQuotaUSD := m.EstimatedUsableQuotaUsd
 
 	return &service.Account{
 		ID:                         m.ID,
@@ -3435,6 +3507,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Priority:                   m.Priority,
 		RateMultiplier:             &rateMultiplier,
 		ProcurementCostCNY:         procurementCostCNY,
+		EstimatedUsableQuotaUSD:    estimatedUsableQuotaUSD,
 		ProcurementCostEffectiveAt: m.ProcurementCostEffectiveAt,
 		LoadFactor:                 m.LoadFactor,
 		Status:                     m.Status,
@@ -3571,7 +3644,6 @@ func (r *accountRepository) ListDueUpstreamBillingProbeAccounts(ctx context.Cont
 			FROM accounts
 			WHERE deleted_at IS NULL
 				AND status = 'active'
-				AND platform = 'openai'
 				AND type = 'apikey'
 				AND extra @> '{"upstream_billing_probe_enabled": true}'::jsonb
 		), parsed AS MATERIALIZED (

@@ -2306,6 +2306,8 @@ type AccountMutation struct {
 	addrate_multiplier            *float64
 	procurement_cost_cny          *float64
 	addprocurement_cost_cny       *float64
+	estimated_usable_quota_usd    *float64
+	addestimated_usable_quota_usd *float64
 	procurement_cost_effective_at *time.Time
 	status                        *string
 	error_message                 *string
@@ -3214,6 +3216,76 @@ func (m *AccountMutation) ResetProcurementCostCny() {
 	m.procurement_cost_cny = nil
 	m.addprocurement_cost_cny = nil
 	delete(m.clearedFields, account.FieldProcurementCostCny)
+}
+
+// SetEstimatedUsableQuotaUsd sets the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) SetEstimatedUsableQuotaUsd(f float64) {
+	m.estimated_usable_quota_usd = &f
+	m.addestimated_usable_quota_usd = nil
+}
+
+// EstimatedUsableQuotaUsd returns the value of the "estimated_usable_quota_usd" field in the mutation.
+func (m *AccountMutation) EstimatedUsableQuotaUsd() (r float64, exists bool) {
+	v := m.estimated_usable_quota_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedUsableQuotaUsd returns the old "estimated_usable_quota_usd" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldEstimatedUsableQuotaUsd(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedUsableQuotaUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedUsableQuotaUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedUsableQuotaUsd: %w", err)
+	}
+	return oldValue.EstimatedUsableQuotaUsd, nil
+}
+
+// AddEstimatedUsableQuotaUsd adds f to the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) AddEstimatedUsableQuotaUsd(f float64) {
+	if m.addestimated_usable_quota_usd != nil {
+		*m.addestimated_usable_quota_usd += f
+	} else {
+		m.addestimated_usable_quota_usd = &f
+	}
+}
+
+// AddedEstimatedUsableQuotaUsd returns the value that was added to the "estimated_usable_quota_usd" field in this mutation.
+func (m *AccountMutation) AddedEstimatedUsableQuotaUsd() (r float64, exists bool) {
+	v := m.addestimated_usable_quota_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearEstimatedUsableQuotaUsd clears the value of the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) ClearEstimatedUsableQuotaUsd() {
+	m.estimated_usable_quota_usd = nil
+	m.addestimated_usable_quota_usd = nil
+	m.clearedFields[account.FieldEstimatedUsableQuotaUsd] = struct{}{}
+}
+
+// EstimatedUsableQuotaUsdCleared returns if the "estimated_usable_quota_usd" field was cleared in this mutation.
+func (m *AccountMutation) EstimatedUsableQuotaUsdCleared() bool {
+	_, ok := m.clearedFields[account.FieldEstimatedUsableQuotaUsd]
+	return ok
+}
+
+// ResetEstimatedUsableQuotaUsd resets all changes to the "estimated_usable_quota_usd" field.
+func (m *AccountMutation) ResetEstimatedUsableQuotaUsd() {
+	m.estimated_usable_quota_usd = nil
+	m.addestimated_usable_quota_usd = nil
+	delete(m.clearedFields, account.FieldEstimatedUsableQuotaUsd)
 }
 
 // SetProcurementCostEffectiveAt sets the "procurement_cost_effective_at" field.
@@ -4260,7 +4332,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 33)
+	fields := make([]string, 0, 34)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4308,6 +4380,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.procurement_cost_cny != nil {
 		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.estimated_usable_quota_usd != nil {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
 	}
 	if m.procurement_cost_effective_at != nil {
 		fields = append(fields, account.FieldProcurementCostEffectiveAt)
@@ -4400,6 +4475,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.RateMultiplier()
 	case account.FieldProcurementCostCny:
 		return m.ProcurementCostCny()
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.EstimatedUsableQuotaUsd()
 	case account.FieldProcurementCostEffectiveAt:
 		return m.ProcurementCostEffectiveAt()
 	case account.FieldStatus:
@@ -4475,6 +4552,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldRateMultiplier(ctx)
 	case account.FieldProcurementCostCny:
 		return m.OldProcurementCostCny(ctx)
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.OldEstimatedUsableQuotaUsd(ctx)
 	case account.FieldProcurementCostEffectiveAt:
 		return m.OldProcurementCostEffectiveAt(ctx)
 	case account.FieldStatus:
@@ -4630,6 +4709,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetProcurementCostCny(v)
 		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedUsableQuotaUsd(v)
+		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -4775,6 +4861,9 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addprocurement_cost_cny != nil {
 		fields = append(fields, account.FieldProcurementCostCny)
 	}
+	if m.addestimated_usable_quota_usd != nil {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
+	}
 	return fields
 }
 
@@ -4795,6 +4884,8 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRateMultiplier()
 	case account.FieldProcurementCostCny:
 		return m.AddedProcurementCostCny()
+	case account.FieldEstimatedUsableQuotaUsd:
+		return m.AddedEstimatedUsableQuotaUsd()
 	}
 	return nil, false
 }
@@ -4846,6 +4937,13 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddProcurementCostCny(v)
 		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedUsableQuotaUsd(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Account numeric field %s", name)
 }
@@ -4871,6 +4969,9 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldProcurementCostCny) {
 		fields = append(fields, account.FieldProcurementCostCny)
+	}
+	if m.FieldCleared(account.FieldEstimatedUsableQuotaUsd) {
+		fields = append(fields, account.FieldEstimatedUsableQuotaUsd)
 	}
 	if m.FieldCleared(account.FieldProcurementCostEffectiveAt) {
 		fields = append(fields, account.FieldProcurementCostEffectiveAt)
@@ -4942,6 +5043,9 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldProcurementCostCny:
 		m.ClearProcurementCostCny()
+		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		m.ClearEstimatedUsableQuotaUsd()
 		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		m.ClearProcurementCostEffectiveAt()
@@ -5037,6 +5141,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldProcurementCostCny:
 		m.ResetProcurementCostCny()
+		return nil
+	case account.FieldEstimatedUsableQuotaUsd:
+		m.ResetEstimatedUsableQuotaUsd()
 		return nil
 	case account.FieldProcurementCostEffectiveAt:
 		m.ResetProcurementCostEffectiveAt()
@@ -22209,6 +22316,11 @@ type GroupMutation struct {
 	max_reasoning_effort                    *string
 	reasoning_effort_mappings               *[]domain.ReasoningEffortMapping
 	appendreasoning_effort_mappings         []domain.ReasoningEffortMapping
+	profit_control_enabled                  *bool
+	profit_min_margin                       *float64
+	addprofit_min_margin                    *float64
+	profit_safety_buffer                    *float64
+	addprofit_safety_buffer                 *float64
 	clearedFields                           map[string]struct{}
 	api_keys                                map[int64]struct{}
 	removedapi_keys                         map[int64]struct{}
@@ -24873,6 +24985,154 @@ func (m *GroupMutation) ResetReasoningEffortMappings() {
 	m.appendreasoning_effort_mappings = nil
 }
 
+// SetProfitControlEnabled sets the "profit_control_enabled" field.
+func (m *GroupMutation) SetProfitControlEnabled(b bool) {
+	m.profit_control_enabled = &b
+}
+
+// ProfitControlEnabled returns the value of the "profit_control_enabled" field in the mutation.
+func (m *GroupMutation) ProfitControlEnabled() (r bool, exists bool) {
+	v := m.profit_control_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfitControlEnabled returns the old "profit_control_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProfitControlEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfitControlEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfitControlEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfitControlEnabled: %w", err)
+	}
+	return oldValue.ProfitControlEnabled, nil
+}
+
+// ResetProfitControlEnabled resets all changes to the "profit_control_enabled" field.
+func (m *GroupMutation) ResetProfitControlEnabled() {
+	m.profit_control_enabled = nil
+}
+
+// SetProfitMinMargin sets the "profit_min_margin" field.
+func (m *GroupMutation) SetProfitMinMargin(f float64) {
+	m.profit_min_margin = &f
+	m.addprofit_min_margin = nil
+}
+
+// ProfitMinMargin returns the value of the "profit_min_margin" field in the mutation.
+func (m *GroupMutation) ProfitMinMargin() (r float64, exists bool) {
+	v := m.profit_min_margin
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfitMinMargin returns the old "profit_min_margin" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProfitMinMargin(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfitMinMargin is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfitMinMargin requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfitMinMargin: %w", err)
+	}
+	return oldValue.ProfitMinMargin, nil
+}
+
+// AddProfitMinMargin adds f to the "profit_min_margin" field.
+func (m *GroupMutation) AddProfitMinMargin(f float64) {
+	if m.addprofit_min_margin != nil {
+		*m.addprofit_min_margin += f
+	} else {
+		m.addprofit_min_margin = &f
+	}
+}
+
+// AddedProfitMinMargin returns the value that was added to the "profit_min_margin" field in this mutation.
+func (m *GroupMutation) AddedProfitMinMargin() (r float64, exists bool) {
+	v := m.addprofit_min_margin
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProfitMinMargin resets all changes to the "profit_min_margin" field.
+func (m *GroupMutation) ResetProfitMinMargin() {
+	m.profit_min_margin = nil
+	m.addprofit_min_margin = nil
+}
+
+// SetProfitSafetyBuffer sets the "profit_safety_buffer" field.
+func (m *GroupMutation) SetProfitSafetyBuffer(f float64) {
+	m.profit_safety_buffer = &f
+	m.addprofit_safety_buffer = nil
+}
+
+// ProfitSafetyBuffer returns the value of the "profit_safety_buffer" field in the mutation.
+func (m *GroupMutation) ProfitSafetyBuffer() (r float64, exists bool) {
+	v := m.profit_safety_buffer
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfitSafetyBuffer returns the old "profit_safety_buffer" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProfitSafetyBuffer(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfitSafetyBuffer is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfitSafetyBuffer requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfitSafetyBuffer: %w", err)
+	}
+	return oldValue.ProfitSafetyBuffer, nil
+}
+
+// AddProfitSafetyBuffer adds f to the "profit_safety_buffer" field.
+func (m *GroupMutation) AddProfitSafetyBuffer(f float64) {
+	if m.addprofit_safety_buffer != nil {
+		*m.addprofit_safety_buffer += f
+	} else {
+		m.addprofit_safety_buffer = &f
+	}
+}
+
+// AddedProfitSafetyBuffer returns the value that was added to the "profit_safety_buffer" field in this mutation.
+func (m *GroupMutation) AddedProfitSafetyBuffer() (r float64, exists bool) {
+	v := m.addprofit_safety_buffer
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProfitSafetyBuffer resets all changes to the "profit_safety_buffer" field.
+func (m *GroupMutation) ResetProfitSafetyBuffer() {
+	m.profit_safety_buffer = nil
+	m.addprofit_safety_buffer = nil
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
 func (m *GroupMutation) AddAPIKeyIDs(ids ...int64) {
 	if m.api_keys == nil {
@@ -25231,7 +25491,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 52)
+	fields := make([]string, 0, 55)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -25388,6 +25648,15 @@ func (m *GroupMutation) Fields() []string {
 	if m.reasoning_effort_mappings != nil {
 		fields = append(fields, group.FieldReasoningEffortMappings)
 	}
+	if m.profit_control_enabled != nil {
+		fields = append(fields, group.FieldProfitControlEnabled)
+	}
+	if m.profit_min_margin != nil {
+		fields = append(fields, group.FieldProfitMinMargin)
+	}
+	if m.profit_safety_buffer != nil {
+		fields = append(fields, group.FieldProfitSafetyBuffer)
+	}
 	return fields
 }
 
@@ -25500,6 +25769,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.MaxReasoningEffort()
 	case group.FieldReasoningEffortMappings:
 		return m.ReasoningEffortMappings()
+	case group.FieldProfitControlEnabled:
+		return m.ProfitControlEnabled()
+	case group.FieldProfitMinMargin:
+		return m.ProfitMinMargin()
+	case group.FieldProfitSafetyBuffer:
+		return m.ProfitSafetyBuffer()
 	}
 	return nil, false
 }
@@ -25613,6 +25888,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldMaxReasoningEffort(ctx)
 	case group.FieldReasoningEffortMappings:
 		return m.OldReasoningEffortMappings(ctx)
+	case group.FieldProfitControlEnabled:
+		return m.OldProfitControlEnabled(ctx)
+	case group.FieldProfitMinMargin:
+		return m.OldProfitMinMargin(ctx)
+	case group.FieldProfitSafetyBuffer:
+		return m.OldProfitSafetyBuffer(ctx)
 	}
 	return nil, fmt.Errorf("unknown Group field %s", name)
 }
@@ -25986,6 +26267,27 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetReasoningEffortMappings(v)
 		return nil
+	case group.FieldProfitControlEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfitControlEnabled(v)
+		return nil
+	case group.FieldProfitMinMargin:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfitMinMargin(v)
+		return nil
+	case group.FieldProfitSafetyBuffer:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfitSafetyBuffer(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Group field %s", name)
 }
@@ -26057,6 +26359,12 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.addrpm_limit != nil {
 		fields = append(fields, group.FieldRpmLimit)
 	}
+	if m.addprofit_min_margin != nil {
+		fields = append(fields, group.FieldProfitMinMargin)
+	}
+	if m.addprofit_safety_buffer != nil {
+		fields = append(fields, group.FieldProfitSafetyBuffer)
+	}
 	return fields
 }
 
@@ -26107,6 +26415,10 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedSortOrder()
 	case group.FieldRpmLimit:
 		return m.AddedRpmLimit()
+	case group.FieldProfitMinMargin:
+		return m.AddedProfitMinMargin()
+	case group.FieldProfitSafetyBuffer:
+		return m.AddedProfitSafetyBuffer()
 	}
 	return nil, false
 }
@@ -26262,6 +26574,20 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRpmLimit(v)
+		return nil
+	case group.FieldProfitMinMargin:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProfitMinMargin(v)
+		return nil
+	case group.FieldProfitSafetyBuffer:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProfitSafetyBuffer(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Group numeric field %s", name)
@@ -26544,6 +26870,15 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldReasoningEffortMappings:
 		m.ResetReasoningEffortMappings()
+		return nil
+	case group.FieldProfitControlEnabled:
+		m.ResetProfitControlEnabled()
+		return nil
+	case group.FieldProfitMinMargin:
+		m.ResetProfitMinMargin()
+		return nil
+	case group.FieldProfitSafetyBuffer:
+		m.ResetProfitSafetyBuffer()
 		return nil
 	}
 	return fmt.Errorf("unknown Group field %s", name)

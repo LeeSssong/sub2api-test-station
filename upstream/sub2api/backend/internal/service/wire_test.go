@@ -177,7 +177,7 @@ func TestProvideContentModerationService_RolesSplitRequestWorkersFromCleanup(t *
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{Server: config.ServerConfig{ProcessRole: tt.role}}
 			repo := &lifecycleContentModerationRepo{}
-			svc := ProvideContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, repo, nil, nil, nil, nil, nil, cfg)
+			svc := ProvideContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, repo, nil, nil, nil, nil, nil, nil, cfg)
 			t.Cleanup(svc.Stop)
 			svc.enqueueRecord(ContentModerationCheckInput{}, nil, &ContentModerationLog{Action: ContentModerationActionAllow}, "", false, false)
 

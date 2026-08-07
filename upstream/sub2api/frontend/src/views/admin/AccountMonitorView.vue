@@ -98,7 +98,7 @@
 
       <section
         v-if="activeGroup"
-        class="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 xl:grid-cols-7 dark:border-dark-700 dark:bg-dark-800"
+        class="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 xl:grid-cols-8 dark:border-dark-700 dark:bg-dark-800"
         :aria-label="`${activeGroup.name} 原生分组汇总`"
         data-test="group-summary"
       >
@@ -110,7 +110,22 @@
           :data-field="field.key"
         >
           <div class="text-xs text-gray-500 dark:text-gray-400">{{ field.label }}</div>
-          <div class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
+          <div v-if="field.key === 'score_weights'" class="mt-1.5 flex items-start justify-between gap-2">
+            <span class="min-w-0 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white">
+              {{ field.value }}
+            </span>
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
+              data-test="edit-group-score-weights"
+              title="编辑评分权重"
+              aria-label="编辑评分权重"
+              @click="openScoreDialog"
+            >
+              <Icon name="edit" size="sm" />
+            </button>
+          </div>
+          <div v-else class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
             {{ field.value }}
           </div>
         </div>
@@ -141,11 +156,34 @@
           :selected-range="activeRange"
           @refresh="handleRunOne"
           @update-priority="updatePriority"
-          @update-procurement-cost="updateProcurementCost"
-          @update-multiplier="updateMultiplier"
+          @edit-cost="openCostDialog"
         />
       </section>
       </div>
+      <AccountMonitorGroupScoreDialog
+        v-if="activeGroup"
+        :show="showScoreDialog"
+        :group-id="activeGroup.id"
+        :group-name="activeGroup.name"
+        :weights="activeGroup.score_weights"
+        :saving="savingScoreWeights"
+        :error="scoreWeightsError"
+        @close="showScoreDialog = false"
+        @save="saveScoreWeights"
+        @reset="resetScoreWeights"
+      />
+      <AccountMonitorCostDialog
+        v-if="showCostDialog && selectedCostAccount"
+        :show="showCostDialog"
+        :account="selectedCostAccount"
+        :saving="savingCost"
+        :error="costDialogError"
+        @close="closeCostDialog"
+        @save-procurement="saveProcurementCost"
+        @save-multiplier="saveAccountMultiplier"
+        @restore-auto="restoreAccountMultiplier"
+        @clear="clearProcurementCost"
+      />
     </div>
   </AppLayout>
 </template>
@@ -161,15 +199,19 @@ import type {
   AccountMonitorGroup,
   AccountMonitorProjection,
   AccountMonitorRange,
+  AccountMonitorScoreWeights,
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
+import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
+import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
+type EditableWeights = Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>
 type SaveCompletion = {
   resolve: () => void
   reject: (reason?: unknown) => void
@@ -188,6 +230,7 @@ const groupSummaryLabels = {
   account_count: '原生账号数',
   active_account_count: '原生活跃账号数',
   rate_limited_account_count: '原生限流账号数',
+  score_weights: '评分权重',
 } as const
 
 const { t } = useI18n()
@@ -204,6 +247,13 @@ const runningAccountIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
 const costGuardByID = ref<Record<number, AccountMonitorCostGuard | null>>({})
+const showScoreDialog = ref(false)
+const savingScoreWeights = ref(false)
+const scoreWeightsError = ref<string | null>(null)
+const showCostDialog = ref(false)
+const savingCost = ref(false)
+const costDialogError = ref<string | null>(null)
+const selectedCostAccount = ref<AccountMonitorAccount | null>(null)
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
@@ -273,6 +323,7 @@ const groupSummaryFields = computed(() => {
     { key: 'account_count', label: groupSummaryLabels.account_count, value: formatNativeNumber(group.account_count) },
     { key: 'active_account_count', label: groupSummaryLabels.active_account_count, value: formatNativeNumber(group.active_account_count) },
     { key: 'rate_limited_account_count', label: groupSummaryLabels.rate_limited_account_count, value: formatNativeNumber(group.rate_limited_account_count) },
+    { key: 'score_weights', label: groupSummaryLabels.score_weights, value: formatScoreWeights(group.score_weights) },
   ]
 })
 
@@ -297,8 +348,18 @@ function formatMultiplier(value?: number): string {
 function formatNativeNumber(value?: number): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)
 }
+function formatScoreWeights(weights?: AccountMonitorScoreWeights): string {
+  if (!weights) return '--'
+  return `成本 ${weights.cost} / 成功 ${weights.success} / TTFT ${weights.ttft} / 耗时 ${weights.latency}`
+}
 function groupAccountCount(group: AccountMonitorGroup): number {
   return group.account_count ?? uniqueAccounts(group.accounts ?? []).length
+}
+
+function openScoreDialog(): void {
+  if (!activeGroup.value) return
+  scoreWeightsError.value = null
+  showScoreDialog.value = true
 }
 
 function selectGroup(groupID: number | null, event: MouseEvent): void {
@@ -451,30 +512,166 @@ async function updatePriority(accountID: number, priority: number, completion: S
   }
 }
 
-async function updateProcurementCost(accountID: number, cost: number | null, completion: SaveCompletion) {
+function openCostDialog(account: AccountMonitorAccount): void {
+  selectedCostAccount.value = account
+  costDialogError.value = null
+  showCostDialog.value = true
+}
+
+function closeCostDialog(): void {
+  if (savingCost.value) return
+  showCostDialog.value = false
+  costDialogError.value = null
+}
+
+function reportCostReloadFailure(operation: string): void {
+  const message = `${operation}成功，但最新监控卡片加载失败，请重试`
+  costDialogError.value = message
+  appStore.showError(message)
+}
+
+async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
   try {
-    await adminAPI.accounts.updateProcurementCost(accountID, cost)
-    await load(activeRange.value)
-    completion.resolve()
-    appStore.showSuccess(cost == null ? '采购成本已清空' : '采购成本已更新')
+    await adminAPI.accounts.updateProcurementCost(account.account_id, cost, estimatedQuotaUSD)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportCostReloadFailure('保存采购成本')
+      return
+    }
+    showCostDialog.value = false
+    appStore.showSuccess('采购成本与预计额度已更新')
   } catch (reason: unknown) {
-    completion.reject(reason)
-    appStore.showError(extractApiErrorMessage(reason, cost == null ? '清空采购成本失败' : '保存采购成本失败'))
+    costDialogError.value = extractApiErrorMessage(reason, '保存采购成本失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
   }
 }
 
-async function updateMultiplier(accountID: number, multiplier: number, completion: SaveCompletion) {
+async function saveAccountMultiplier(multiplier: number) {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
   try {
-    await adminAPI.accounts.update(accountID, {
+    await adminAPI.accounts.update(account.account_id, {
       rate_multiplier: multiplier,
-      rate_multiplier_policy: 'manual_override',
+      upstream_billing_rate_sync_enabled: false,
     })
-    await load(activeRange.value)
-    completion.resolve()
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportCostReloadFailure('保存账号倍率')
+      return
+    }
+    showCostDialog.value = false
     appStore.showSuccess('账号倍率已更新')
   } catch (reason: unknown) {
-    completion.reject(reason)
-    appStore.showError(extractApiErrorMessage(reason, '保存账号倍率失败'))
+    costDialogError.value = extractApiErrorMessage(reason, '保存账号倍率失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
+  }
+}
+
+async function restoreAccountMultiplier() {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
+  try {
+    await adminAPI.accounts.update(account.account_id, {
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    })
+    await adminAPI.accountMonitor.runOne(account.account_id)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportCostReloadFailure('恢复自动倍率')
+      return
+    }
+    showCostDialog.value = false
+    appStore.showSuccess('已恢复自动获取倍率')
+  } catch (reason: unknown) {
+    costDialogError.value = extractApiErrorMessage(reason, '恢复自动倍率失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
+  }
+}
+
+async function clearProcurementCost() {
+  const account = selectedCostAccount.value
+  if (!account || savingCost.value) return
+  savingCost.value = true
+  costDialogError.value = null
+  try {
+    await adminAPI.accounts.updateProcurementCost(account.account_id, null, null)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportCostReloadFailure('清空采购成本')
+      return
+    }
+    showCostDialog.value = false
+    appStore.showSuccess('采购成本已清空')
+  } catch (reason: unknown) {
+    costDialogError.value = extractApiErrorMessage(reason, '清空采购成本失败')
+    appStore.showError(costDialogError.value)
+  } finally {
+    savingCost.value = false
+  }
+}
+
+function reportScoreWeightsReloadFailure(operation: string): void {
+  const message = `${operation}成功，但最新监控卡片加载失败，请重试`
+  scoreWeightsError.value = message
+  appStore.showError(message)
+}
+
+async function saveScoreWeights(weights: EditableWeights) {
+  const group = activeGroup.value
+  if (!group) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportScoreWeightsReloadFailure('保存分组评分权重')
+      return
+    }
+    showScoreDialog.value = false
+    appStore.showSuccess('分组评分权重已更新')
+  } catch (reason: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(reason, '保存分组评分权重失败')
+    appStore.showError(scoreWeightsError.value)
+  } finally {
+    savingScoreWeights.value = false
+  }
+}
+
+async function resetScoreWeights() {
+  const group = activeGroup.value
+  if (!group) return
+  savingScoreWeights.value = true
+  scoreWeightsError.value = null
+  try {
+    await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
+    const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!reloaded) {
+      reportScoreWeightsReloadFailure('恢复默认评分权重')
+      return
+    }
+    showScoreDialog.value = false
+    appStore.showSuccess('分组评分权重已恢复默认')
+  } catch (reason: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(reason, '恢复默认评分权重失败')
+    appStore.showError(scoreWeightsError.value)
+  } finally {
+    savingScoreWeights.value = false
   }
 }
 

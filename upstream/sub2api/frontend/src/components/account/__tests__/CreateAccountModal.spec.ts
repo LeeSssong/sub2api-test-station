@@ -59,6 +59,8 @@ vi.mock('vue-i18n', async () => {
 
 import CreateAccountModal from '../CreateAccountModal.vue'
 
+const legacyPolicyKey = ['rate', 'multiplier', 'policy'].join('_')
+
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
   props: { show: { type: Boolean, default: false } },
@@ -167,31 +169,56 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 
+  // namespace 摊平是仅 OAuth 的兼容开关：API Key 走 chat completions 回退桥时由桥自行摊平
+  it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      true
+    )
+
+    await selectButtonByText(wrapper, 'API Key')
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      false
+    )
+  })
+
   it('enables upstream billing probes by default for new OpenAI API key accounts', async () => {
     await submitApiKeyAccount('openai')
 
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
-  it('creates OpenAI API key accounts in upstream-managed multiplier mode by default', async () => {
+  it('creates OpenAI API key accounts with official rate sync enabled by default', async () => {
     const wrapper = await submitApiKeyAccount('openai')
 
-    expect(wrapper.get('[data-testid="create-rate-multiplier-policy"]').element).toBeTruthy()
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('upstream_managed')
+    expect(wrapper.find('[data-testid="create-rate-multiplier-policy"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="create-upstream-billing-rate-sync"]').attributes('aria-checked')).toBe('true')
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true,
+    }))
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty('rate_multiplier')
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty(legacyPolicyKey)
   })
 
-  it('submits an explicit manual multiplier override selected by the administrator', async () => {
+  it('submits the native multiplier when official rate sync is disabled', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('manual account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
-    await wrapper.get('[data-testid="create-rate-multiplier-policy"]').setValue('manual_override')
+    await wrapper.get('[data-testid="create-upstream-billing-rate-sync"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier_policy).toBe('manual_override')
-    expect(createAccountMock.mock.calls[0]?.[0]?.rate_multiplier).toBe(1)
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      rate_multiplier: 1,
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: false,
+    }))
+    expect(createAccountMock.mock.calls[0]?.[0]).not.toHaveProperty(legacyPolicyKey)
   })
 
   it('waits for the initial upstream billing probe before refreshing the account list', async () => {
@@ -260,7 +287,39 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
-    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBeUndefined()
+    // 上游倍率探测已放宽到全部 API-key 平台：非 OpenAI 平台与 OpenAI 一致，默认开启。
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
+  })
+
+  it('sends an explicit disabled state when the non-OpenAI create toggle is turned off', async () => {
+    await submitApiKeyAccount('anthropic', false, true)
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(false)
+  })
+
+  it('antigravity upstream 创建默认携带上游倍率探测开关', async () => {
+    // antigravity upstream 走独立创建 helper，
+    // 也必须与其余 API-key 平台一样默认开启探测并传递开关。
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Antigravity')
+    await selectButtonByText(wrapper, 'admin.accounts.types.antigravityApikey')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('antigravity relay')
+    const baseInput = wrapper
+      .findAll('input')
+      .find((candidate) => candidate.attributes('placeholder') === 'https://cloudcode-pa.googleapis.com')
+    expect(baseInput).toBeDefined()
+    await baseInput?.setValue('https://relay.example')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-upstream')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload?.platform).toBe('antigravity')
+    expect(payload?.type).toBe('apikey')
+    expect(payload?.upstream_billing_probe_enabled).toBe(true)
+    // 创建成功后前端立即发起一次首探（与其他 apikey 平台一致）。
+    expect(probeUpstreamBillingMock).toHaveBeenCalledWith(42)
   })
 
   it('leaves Codex session import billing ownership to the backend', async () => {

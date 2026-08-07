@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	AccountMonitorSchemaVersion           = 3
+	AccountMonitorSchemaVersion           = 4
 	AccountMonitorDefaultIntervalSeconds  = 300
 	AccountMonitorMinIntervalSeconds      = 15
 	AccountMonitorMaxIntervalSeconds      = 3600
@@ -182,6 +182,12 @@ type AccountMonitorMultiplier struct {
 	SampleCount int        `json:"sample_count"`
 }
 
+// AccountMonitorRefreshOptions keeps declaration and balance refreshes explicit.
+type AccountMonitorRefreshOptions struct {
+	RefreshDeclaration bool
+	RefreshBalance     bool
+}
+
 type AccountMonitorAccount struct {
 	AccountID                  int64                         `json:"account_id"`
 	Name                       string                        `json:"name"`
@@ -205,7 +211,9 @@ type AccountMonitorAccount struct {
 	TTFTP95MS                  *float64                      `json:"ttft_p95_ms,omitempty"`
 	LatencyP95MS               *float64                      `json:"latency_p95_ms,omitempty"`
 	Multiplier                 AccountMonitorMultiplier      `json:"multiplier"`
+	Balance                    *AccountMonitorBalance        `json:"balance,omitempty"`
 	ProcurementCostCNY         *float64                      `json:"procurement_cost_cny"`
+	EstimatedUsableQuotaUSD    *float64                      `json:"estimated_usable_quota_usd"`
 	ProcurementCostEffectiveAt *time.Time                    `json:"procurement_cost_effective_at"`
 	ExpiresAt                  *time.Time                    `json:"expires_at"`
 	RequestCount               int64                         `json:"request_count"`

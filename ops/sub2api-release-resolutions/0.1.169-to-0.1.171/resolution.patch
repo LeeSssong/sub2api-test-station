@@ -1,0 +1,576 @@
+diff --git a/backend/internal/handler/admin/account_handler.go b/backend/internal/handler/admin/account_handler.go
+index 4f32034bf..6e56172d6 100644
+--- a/backend/internal/handler/admin/account_handler.go
++++ b/backend/internal/handler/admin/account_handler.go
+@@ -144,7 +144,6 @@ type CreateAccountRequest struct {
+ // UpdateAccountRequest represents update account request
+ // 使用指针类型来区分"未提供"和"设置为0"
+ type UpdateAccountRequest struct {
+-<<<<<<< ours
+ 	Name                    string                 `json:"name"`
+ 	Notes                   *string                `json:"notes"`
+ 	Type                    string                 `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+@@ -161,6 +160,8 @@ type UpdateAccountRequest struct {
+ 	GroupIDs                *[]int64               `json:"group_ids"`
+ 	ExpiresAt               *int64                 `json:"expires_at"`
+ 	AutoPauseOnExpired      *bool                  `json:"auto_pause_on_expired"`
++	ProbeEnabled            *bool                  `json:"upstream_billing_probe_enabled"`
++	RateSyncEnabled         *bool                  `json:"upstream_billing_rate_sync_enabled"`
+ 	ConfirmMixedChannelRisk *bool                  `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+ }
+ 
+@@ -183,25 +184,6 @@ func (v *procurementCostRequest) UnmarshalJSON(data []byte) error {
+ 	}
+ 	v.Value = &amount
+ 	return nil
+-=======
+-	Name                    string         `json:"name"`
+-	Notes                   *string        `json:"notes"`
+-	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+-	Credentials             map[string]any `json:"credentials"`
+-	Extra                   map[string]any `json:"extra"`
+-	ProxyID                 *int64         `json:"proxy_id"`
+-	Concurrency             *int           `json:"concurrency"`
+-	Priority                *int           `json:"priority"`
+-	RateMultiplier          *float64       `json:"rate_multiplier"`
+-	LoadFactor              *int           `json:"load_factor"`
+-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
+-	GroupIDs                *[]int64       `json:"group_ids"`
+-	ExpiresAt               *int64         `json:"expires_at"`
+-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
+-	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
+-	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
+-	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+->>>>>>> theirs
+ }
+ 
+ // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
+diff --git a/backend/internal/handler/admin/admin_service_stub_test.go b/backend/internal/handler/admin/admin_service_stub_test.go
+index 742aba66f..c86c1a376 100644
+--- a/backend/internal/handler/admin/admin_service_stub_test.go
++++ b/backend/internal/handler/admin/admin_service_stub_test.go
+@@ -33,10 +33,7 @@ type stubAdminService struct {
+ 	createAccountResult                 *service.Account
+ 	createSparkShadowErr                error
+ 	updateAccountErr                    error
+-<<<<<<< ours
+ 	updateAccountResult                 *service.Account
+-=======
+->>>>>>> theirs
+ 	lastUpdateAccountInput              *service.UpdateAccountInput
+ 	bulkUpdateAccountErr                error
+ 	lastBulkUpdateAccountInput          *service.BulkUpdateAccountsInput
+diff --git a/backend/internal/repository/account_repo.go b/backend/internal/repository/account_repo.go
+index 197ac58ad..1818e8876 100644
+--- a/backend/internal/repository/account_repo.go
++++ b/backend/internal/repository/account_repo.go
+@@ -696,7 +696,6 @@ func lockAndMergeAccountProbeExtra(
+ 	} {
+ 		delete(extra, key)
+ 	}
+-<<<<<<< ours
+ 	if account.RateMultiplierPolicyIntent != nil {
+ 		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = *account.RateMultiplierPolicyIntent
+ 	} else {
+@@ -708,18 +707,10 @@ func lockAndMergeAccountProbeExtra(
+ 		}
+ 		extra[service.UpstreamBillingRateMultiplierPolicyExtraKey] = policy
+ 	}
+-	probeExplicitlyDisabled := false
+-	probeAccount := account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeAPIKey
+-	if probeAccount && explicitProbeEnabled != nil {
+-		extra[service.UpstreamBillingProbeEnabledExtraKey] = *explicitProbeEnabled
+-		probeExplicitlyDisabled = !*explicitProbeEnabled
+-	} else if probeAccount {
+-=======
+ 	probeAccount := service.IsUpstreamBillingProbeIdentity(account.Platform, account.Type)
+ 	probeEnabled := false
+ 	probeEnabledPresent := false
+ 	if probeAccount {
+->>>>>>> theirs
+ 		if enabled, ok, err := decodeAccountExtraJSON(currentEnabled); err != nil {
+ 			return nil, err
+ 		} else if value, isBool := enabled.(bool); ok && isBool {
+@@ -2645,24 +2636,16 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
+ 	if dbent.TxFromContext(ctx) == nil {
+ 		tx, err := r.client.Tx(ctx)
+ 		if errors.Is(err, dbent.ErrTxStarted) {
+-<<<<<<< ours
+-			_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
++			_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
+ 			return err
+-=======
+-			return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
+->>>>>>> theirs
+ 		}
+ 		if err != nil {
+ 			return err
+ 		}
+ 		defer func() { _ = tx.Rollback() }()
+ 
+-<<<<<<< ours
+-		auditEntry, err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot)
++		auditEntry, err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot, rateMultiplier)
+ 		if err != nil {
+-=======
+-		if err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot, rateMultiplier); err != nil {
+->>>>>>> theirs
+ 			return err
+ 		}
+ 		if err := tx.Commit(); err != nil {
+@@ -2676,12 +2659,8 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
+ 		r.syncSchedulerAccountSnapshot(ctx, account.ID)
+ 		return nil
+ 	}
+-<<<<<<< ours
+-	_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
++	_, err := r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
+ 	return err
+-=======
+-	return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot, rateMultiplier)
+->>>>>>> theirs
+ }
+ 
+ // UpdateAccountMultiplierMeasurement stores sanitized monitor evidence only
+@@ -2690,12 +2669,7 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
+ func (r *accountRepository) UpdateAccountMultiplierMeasurement(
+ 	ctx context.Context,
+ 	account *service.Account,
+-<<<<<<< ours
+ 	snapshot *service.AccountMultiplierMeasurementSnapshot,
+-=======
+-	snapshot *service.UpstreamBillingProbeSnapshot,
+-	rateMultiplier *float64,
+->>>>>>> theirs
+ ) error {
+ 	if account == nil || snapshot == nil {
+ 		return service.ErrAccountNilInput
+@@ -2785,6 +2759,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
+ 	ctx context.Context,
+ 	account *service.Account,
+ 	snapshot *service.UpstreamBillingProbeSnapshot,
++	rateMultiplier *float64,
+ ) (*service.AuditLog, error) {
+ 	payload, err := json.Marshal(map[string]any{service.UpstreamBillingProbeExtraKey: snapshot})
+ 	if err != nil {
+@@ -2810,23 +2785,26 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-<<<<<<< ours
+-	policy, policyValid := service.UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra)
+-	decisionPolicy := policy
+-	if !policyValid {
+-		decisionPolicy = "invalid"
+-	}
+-	decision := service.DecideUpstreamBillingRateMultiplierSync(snapshot, account, decisionPolicy)
+-=======
+ 	var expectedRateSyncEnabled any
+ 	if account.Extra != nil {
+ 		expectedRateSyncEnabled = account.Extra[service.UpstreamBillingRateSyncEnabledExtraKey]
+ 	}
+ 	expectedRateSyncEnabledJSON, err := json.Marshal(expectedRateSyncEnabled)
+ 	if err != nil {
+-		return err
++		return nil, err
++	}
++	policy, policyValid := service.UpstreamBillingRateMultiplierPolicyFromExtra(account.Extra)
++	decisionPolicy := policy
++	if !policyValid {
++		decisionPolicy = "invalid"
++	}
++	decision := service.DecideUpstreamBillingRateMultiplierSync(snapshot, account, decisionPolicy)
++	rateSyncEnabled, _ := account.Extra[service.UpstreamBillingRateSyncEnabledExtraKey].(bool)
++	if rateMultiplier == nil || !rateSyncEnabled {
++		decision.RateMultiplier = nil
++	} else if decision.RateMultiplier != nil {
++		decision.RateMultiplier = rateMultiplier
+ 	}
+->>>>>>> theirs
+ 	client := clientFromContext(ctx, r.client)
+ 	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
+ 	if err != nil {
+@@ -2841,20 +2819,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
+ 	}
+ 	result, err := client.ExecContext(ctx, `
+ 		UPDATE accounts
+-<<<<<<< ours
+ 		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+-=======
+-		SET
+-			extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb,
+-			rate_multiplier = CASE
+-				WHEN $10::numeric IS NOT NULL
+-					AND extra @> '{"upstream_billing_probe_enabled": true}'::jsonb
+-					AND extra @> '{"upstream_billing_rate_sync_enabled": true}'::jsonb
+-				THEN $10::numeric
+-				ELSE rate_multiplier
+-			END,
+-			updated_at = NOW()
+->>>>>>> theirs
+ 		WHERE id = $2
+ 			AND platform = $3
+ 			AND type = $4
+@@ -2864,7 +2829,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
+ 			AND COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb
+ 			AND COALESCE(extra -> 'upstream_billing_rate_sync_enabled', 'null'::jsonb) = $9::jsonb
+ 			AND deleted_at IS NULL
+-	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON), string(expectedRateSyncEnabledJSON), rateMultiplier)
++	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON), string(expectedRateSyncEnabledJSON))
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
+index e1e2b24d4..1a86ba698 100644
+--- a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
++++ b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
+@@ -82,13 +82,8 @@ func TestLockAndMergeAccountProbeExtraUsesCurrentDatabaseSnapshot(t *testing.T)
+ 			nextUpdatedAt := time.Date(2026, time.July, 31, 12, 0, 0, 1_000, time.UTC)
+ 			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
+ 				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
+-<<<<<<< ours
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+-					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, tt.databaseSnapshot, nil, nil, nil, []byte(`"upstream_managed"`), nextUpdatedAt))
+-=======
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
+-					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil))
+->>>>>>> theirs
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
++					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil, []byte(`"upstream_managed"`), nextUpdatedAt))
+ 
+ 			account := &service.Account{
+ 				ID:          27,
+@@ -218,13 +213,8 @@ func TestLockAndMergeAccountProbeExtraProtectsOllamaManagedFields(t *testing.T)
+ 
+ 			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
+ 				WithArgs(int64(29), service.PlatformAnthropic, service.AccountTypeAPIKey, `{"api_key":"key","base_url":"https://ollama.com"}`, nil).
+-<<<<<<< ours
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+-					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), []byte(`"upstream_managed"`), time.Now()))
+-=======
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
+-					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`)))
+->>>>>>> theirs
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
++					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), []byte(`"upstream_managed"`), time.Now()))
+ 
+ 			account := &service.Account{
+ 				ID: 29, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+@@ -420,13 +410,8 @@ func TestUpdateWithAccountBillingSettingsRollsBackWhenOutboxFails(t *testing.T)
+ 	mock.ExpectBegin()
+ 	mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
+ 		WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
+-<<<<<<< ours
+-		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+-			AddRow(true, false, true, []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, []byte(`"upstream_managed"`), time.Now()))
+-=======
+-		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
+-			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil))
+->>>>>>> theirs
++		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
++			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, []byte(`"upstream_managed"`), time.Now()))
+ 	mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).
+ 		WillReturnResult(sqlmock.NewResult(0, 1))
+ 	mock.ExpectQuery(`(?s)SELECT .* FROM "accounts" WHERE "id" = \$1`).
+diff --git a/backend/internal/service/admin_account_upstream_billing_probe_test.go b/backend/internal/service/admin_account_upstream_billing_probe_test.go
+index d696e57f0..3bf425300 100644
+--- a/backend/internal/service/admin_account_upstream_billing_probe_test.go
++++ b/backend/internal/service/admin_account_upstream_billing_probe_test.go
+@@ -803,21 +803,13 @@ func TestBulkUpdateAccountsDropsManagedUpstreamBillingProbeState(t *testing.T) {
+ 	originalExtra := map[string]any{
+ 		"custom":                                    "value",
+ 		UpstreamBillingProbeEnabledExtraKey:         true,
++		UpstreamBillingRateSyncEnabledExtraKey:      true,
+ 		UpstreamBillingProbeExtraKey:                map[string]any{"status": "ok"},
+ 		UpstreamBillingRateMultiplierPolicyExtraKey: UpstreamBillingRateMultiplierPolicyManualOverride,
+ 	}
+ 	input := &BulkUpdateAccountsInput{
+ 		AccountIDs: []int64{1},
+-<<<<<<< ours
+ 		Extra:      originalExtra,
+-=======
+-		Extra: map[string]any{
+-			"custom":                               "value",
+-			UpstreamBillingProbeEnabledExtraKey:    true,
+-			UpstreamBillingRateSyncEnabledExtraKey: true,
+-			UpstreamBillingProbeExtraKey:           map[string]any{"status": "ok"},
+-		},
+->>>>>>> theirs
+ 	}
+ 
+ 	result, err := svc.BulkUpdateAccounts(context.Background(), input)
+diff --git a/backend/internal/service/setting_parse.go b/backend/internal/service/setting_parse.go
+index 4286b8155..84a11f7bc 100644
+--- a/backend/internal/service/setting_parse.go
++++ b/backend/internal/service/setting_parse.go
+@@ -300,49 +300,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
+ 		}
+ 	}
+ 	result := &SystemSettings{
+-<<<<<<< ours
+-		RegistrationEnabled:               settings[SettingKeyRegistrationEnabled] == "true",
+-		EmailVerifyEnabled:                emailVerifyEnabled,
+-		RegistrationEmailSuffixWhitelist:  ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
+-		PromoCodeEnabled:                  settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
+-		PasswordResetEnabled:              emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
+-		FrontendURL:                       settings[SettingKeyFrontendURL],
+-		InvitationCodeEnabled:             settings[SettingKeyInvitationCodeEnabled] == "true",
+-		TotpEnabled:                       settings[SettingKeyTotpEnabled] == "true",
+-		PasskeyEnabled:                    s.passkeySettingEnabled(settings),
+-		SessionBindingEnabled:             settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
+-		StepUpEnabled:                     settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
+-		AuditLogRetentionDays:             parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
+-		MonitorPageRefreshIntervalSeconds: NormalizeMonitorPageRefreshIntervalSeconds(settings[SettingKeyMonitorPageRefreshIntervalSeconds]),
+-		LoginAgreementEnabled:             settings[SettingKeyLoginAgreementEnabled] == "true",
+-		LoginAgreementMode:                normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
+-		LoginAgreementUpdatedAt:           loginAgreementUpdatedAt,
+-		LoginAgreementDocuments:           loginAgreementDocuments,
+-		SMTPHost:                          settings[SettingKeySMTPHost],
+-		SMTPUsername:                      settings[SettingKeySMTPUsername],
+-		SMTPFrom:                          settings[SettingKeySMTPFrom],
+-		SMTPFromName:                      settings[SettingKeySMTPFromName],
+-		SMTPUseTLS:                        settings[SettingKeySMTPUseTLS] == "true",
+-		SMTPPasswordConfigured:            settings[SettingKeySMTPPassword] != "",
+-		TurnstileEnabled:                  settings[SettingKeyTurnstileEnabled] == "true",
+-		TurnstileSiteKey:                  settings[SettingKeyTurnstileSiteKey],
+-		TurnstileSecretKeyConfigured:      settings[SettingKeyTurnstileSecretKey] != "",
+-		APIKeyACLTrustForwardedIP:         apiKeyACLTrustForwardedIP,
+-		ForwardedClientIPHeaders:          forwardedClientIPHeaders,
+-		SiteName:                          s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
+-		SiteLogo:                          settings[SettingKeySiteLogo],
+-		SiteSubtitle:                      s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+-		APIBaseURL:                        settings[SettingKeyAPIBaseURL],
+-		ContactInfo:                       settings[SettingKeyContactInfo],
+-		DocURL:                            settings[SettingKeyDocURL],
+-		HomeContent:                       settings[SettingKeyHomeContent],
+-		HideCcsImportButton:               settings[SettingKeyHideCcsImportButton] == "true",
+-		PurchaseSubscriptionEnabled:       settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
+-		PurchaseSubscriptionURL:           strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+-		CustomMenuItems:                   settings[SettingKeyCustomMenuItems],
+-		CustomEndpoints:                   settings[SettingKeyCustomEndpoints],
+-		BackendModeEnabled:                settings[SettingKeyBackendModeEnabled] == "true",
+-=======
+ 		RegistrationEnabled:                    settings[SettingKeyRegistrationEnabled] == "true",
+ 		EmailVerifyEnabled:                     emailVerifyEnabled,
+ 		RegistrationEmailSuffixWhitelist:       ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
+@@ -355,6 +312,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
+ 		SessionBindingEnabled:                  settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
+ 		StepUpEnabled:                          settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
+ 		AuditLogRetentionDays:                  parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
++		MonitorPageRefreshIntervalSeconds:      NormalizeMonitorPageRefreshIntervalSeconds(settings[SettingKeyMonitorPageRefreshIntervalSeconds]),
+ 		LoginAgreementEnabled:                  settings[SettingKeyLoginAgreementEnabled] == "true",
+ 		LoginAgreementMode:                     normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
+ 		LoginAgreementUpdatedAt:                loginAgreementUpdatedAt,
+@@ -395,7 +353,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
+ 		CustomMenuItems:                        settings[SettingKeyCustomMenuItems],
+ 		CustomEndpoints:                        settings[SettingKeyCustomEndpoints],
+ 		BackendModeEnabled:                     settings[SettingKeyBackendModeEnabled] == "true",
+->>>>>>> theirs
+ 	}
+ 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(
+ 		settings[SettingKeyTableDefaultPageSize],
+diff --git a/backend/internal/service/upstream_billing_probe_test.go b/backend/internal/service/upstream_billing_probe_test.go
+index 9acf54fe6..0cbfcf9c1 100644
+--- a/backend/internal/service/upstream_billing_probe_test.go
++++ b/backend/internal/service/upstream_billing_probe_test.go
+@@ -129,16 +129,12 @@ func (r *upstreamBillingProbeAccountRepo) UpdateExtra(_ context.Context, id int6
+ 	return nil
+ }
+ 
+-<<<<<<< ours
+-func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(ctx context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot) error {
+-=======
+ func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(
+-	_ context.Context,
++	ctx context.Context,
+ 	expected *Account,
+ 	snapshot *UpstreamBillingProbeSnapshot,
+ 	rateMultiplier *float64,
+ ) error {
+->>>>>>> theirs
+ 	r.mu.Lock()
+ 	defer r.mu.Unlock()
+ 	account := r.accounts[expected.ID]
+@@ -149,16 +145,13 @@ func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(
+ 		account.Extra = make(map[string]any)
+ 	}
+ 	account.Extra[UpstreamBillingProbeExtraKey] = snapshot
+-<<<<<<< ours
+-	r.syncTriggers = append(r.syncTriggers, UpstreamBillingRateMultiplierSyncTriggerFromContext(ctx))
+-=======
+ 	if snapshot.Status == UpstreamBillingProbeStatusOK &&
+ 		rateMultiplier != nil &&
+ 		upstreamBillingRateSyncEnabled(account) {
+ 		value := *rateMultiplier
+ 		account.RateMultiplier = &value
+ 	}
+->>>>>>> theirs
++	r.syncTriggers = append(r.syncTriggers, UpstreamBillingRateMultiplierSyncTriggerFromContext(ctx))
+ 	return nil
+ }
+ 
+@@ -934,12 +927,9 @@ func TestUpstreamBillingProbeRunnerIsBoundedAndManualProbeIgnoresSwitches(t *tes
+ 	require.Equal(t, int64(20), upstream.calls.Load())
+ 
+ 	accounts[25].Extra[UpstreamBillingProbeEnabledExtraKey] = false
+-<<<<<<< ours
+ 	accounts[25].Status = StatusDisabled
+-=======
+ 	manualRate := 0.25
+ 	accounts[25].RateMultiplier = &manualRate
+->>>>>>> theirs
+ 	snapshot, err := svc.ProbeAccount(context.Background(), 25)
+ 	require.NoError(t, err)
+ 	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+diff --git a/frontend/src/components/account/EditAccountModal.vue b/frontend/src/components/account/EditAccountModal.vue
+index 15d90ee9b..0ab240ee6 100644
+--- a/frontend/src/components/account/EditAccountModal.vue
++++ b/frontend/src/components/account/EditAccountModal.vue
+@@ -1441,11 +1441,6 @@
+         </div>
+         <div>
+           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
+-<<<<<<< ours
+-          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input"
+-            :disabled="account?.platform === 'openai' && account?.type === 'apikey' && form.rate_multiplier_policy === 'upstream_managed'" />
+-          <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
+-=======
+           <input
+             v-model.number="form.rate_multiplier"
+             type="number"
+@@ -1453,7 +1448,7 @@
+             step="0.001"
+             class="input disabled:cursor-not-allowed disabled:opacity-60"
+             data-testid="account-rate-multiplier"
+-            :disabled="upstreamBillingRateSyncEnabled"
++            :disabled="upstreamBillingRateSyncEnabled"
+           />
+           <p class="input-hint">
+             {{
+@@ -1483,7 +1478,6 @@
+               @update:model-value="handleUpstreamBillingRateSyncChange"
+             />
+           </div>
+->>>>>>> theirs
+         </div>
+       </div>
+       <div v-if="account?.platform === 'openai' && account?.type === 'apikey'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+diff --git a/frontend/src/views/admin/SettingsView.vue b/frontend/src/views/admin/SettingsView.vue
+index 755da64cf..9c87b6b80 100644
+--- a/frontend/src/views/admin/SettingsView.vue
++++ b/frontend/src/views/admin/SettingsView.vue
+@@ -10414,14 +10414,11 @@ async function loadSettings() {
+         (form as Record<string, unknown>)[key] = value;
+       }
+     }
+-<<<<<<< ours
+     form.monitor_page_refresh_interval_seconds =
+       normalizeMonitorPageRefreshInterval(
+         settings.monitor_page_refresh_interval_seconds,
+       );
+-=======
+     syncCaptchaProviderSelection();
+->>>>>>> theirs
+     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
+       form.claude_oauth_system_prompt_blocks =
+         defaultClaudeOAuthSystemPromptBlocks;
+diff --git a/backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go b/backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go
+index f9fe019..723099f 100644
+--- a/backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go
++++ b/backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go
+@@ -45 +45 @@ func TestUpdateUpstreamBillingProbeSnapshotRequiresSameIdentityAndSnapshot(t *te
+-				WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test","base_url":"http://127.0.0.1:8080"}`, int64(9), `{"status":"stale"}`, "null", "null", nil).
++				WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test","base_url":"http://127.0.0.1:8080"}`, int64(9), `{"status":"stale"}`, "null", "null").
+@@ -101,2 +101,5 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitsSnapshotAndOutboxAtomically(t
+-	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts")+`.*`+regexp.QuoteMeta("rate_multiplier = CASE")+`.*`+regexp.QuoteMeta("THEN $10::numeric")+`.*`+regexp.QuoteMeta("AND credentials = $5::jsonb")+`.*`+regexp.QuoteMeta("AND proxy_id IS NOT DISTINCT FROM $6")+`.*`+regexp.QuoteMeta("COALESCE(extra -> 'upstream_billing_probe', 'null'::jsonb) = $7::jsonb")).
+-		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true", 0.065).
++	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("UPDATE accounts")+`.*`+regexp.QuoteMeta("AND credentials = $5::jsonb")+`.*`+regexp.QuoteMeta("AND proxy_id IS NOT DISTINCT FROM $6")+`.*`+regexp.QuoteMeta("COALESCE(extra -> 'upstream_billing_probe', 'null'::jsonb) = $7::jsonb")).
++		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true").
++		WillReturnResult(sqlmock.NewResult(0, 1))
++	mock.ExpectExec(regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")).
++		WithArgs(0.065, int64(17), nil).
+@@ -125 +128 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitsSnapshotAndOutboxAtomically(t
+-		&service.UpstreamBillingProbeSnapshot{Status: service.UpstreamBillingProbeStatusOK},
++		&service.UpstreamBillingProbeSnapshot{Status: service.UpstreamBillingProbeStatusOK, Data: map[string]any{"effective_rate_multiplier": 0.065}},
+@@ -179 +182,4 @@ func TestUpdateUpstreamBillingProbeSnapshotRollsBackWhenOutboxFails(t *testing.T
+-		WithArgs(sqlmock.AnyArg(), int64(18), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true", 0.7).
++		WithArgs(sqlmock.AnyArg(), int64(18), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true").
++		WillReturnResult(sqlmock.NewResult(0, 1))
++	mock.ExpectExec(regexp.QuoteMeta("UPDATE accounts SET rate_multiplier = $1")).
++		WithArgs(0.7, int64(18), nil).
+@@ -200 +206 @@ func TestUpdateUpstreamBillingProbeSnapshotRollsBackWhenOutboxFails(t *testing.T
+-		&service.UpstreamBillingProbeSnapshot{Status: service.UpstreamBillingProbeStatusOK},
++		&service.UpstreamBillingProbeSnapshot{Status: service.UpstreamBillingProbeStatusOK, Data: map[string]any{"effective_rate_multiplier": 0.7}},
+diff --git a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
+index 1a86ba6..5daf1f7 100644
+--- a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
++++ b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
+@@ -177,2 +177,2 @@ func TestLockAndMergeAccountProbeExtraNeverInfersProbeFromRateSync(t *testing.T)
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot"}).
+-					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil))
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
++					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil, nil, time.Now()))
+@@ -263,2 +263,2 @@ func TestLockAndMergeAccountProbeExtraPreservesLockedRatePolicyUnlessExplicit(t
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
+-					AddRow(true, false, true, nil, nil, nil, nil, nil, []byte(`"`+tt.lockedPolicy+`"`), time.Now()))
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "rate_policy", "next_updated_at"}).
++					AddRow(true, false, true, nil, nil, nil, nil, nil, nil, []byte(`"`+tt.lockedPolicy+`"`), time.Now()))
+@@ -272 +272 @@ func TestLockAndMergeAccountProbeExtraPreservesLockedRatePolicyUnlessExplicit(t
+-			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil)
++			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+diff --git a/backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go b/backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go
+index 74ec06b..846bbb3 100644
+--- a/backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go
++++ b/backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go
+@@ -53 +53 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
+-		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "null").
++		WithArgs(sqlmock.AnyArg(), int64(17), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil, "null", "true", "true").
+@@ -82,0 +83,2 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
++			service.UpstreamBillingProbeEnabledExtraKey:         true,
++			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
+@@ -90 +92 @@ func TestUpdateUpstreamBillingProbeSnapshotSynchronizesManagedMultiplierAuditsAn
+-	})
++	}, &newMultiplier)
+@@ -146,0 +149,2 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitFailureDoesNotRefreshSchedulerO
++			service.UpstreamBillingProbeEnabledExtraKey:         true,
++			service.UpstreamBillingRateSyncEnabledExtraKey:      true,
+@@ -151 +155 @@ func TestUpdateUpstreamBillingProbeSnapshotCommitFailureDoesNotRefreshSchedulerO
+-	})
++	}, &newMultiplier)
+@@ -226,0 +231,8 @@ func TestUpdateUpstreamBillingProbeSnapshotPreservesSnapshotWithoutMultiplierCha
++			var rateMultiplier *float64
++			if tt.snapshot.Status == service.UpstreamBillingProbeStatusOK && tt.snapshot.Data["effective_rate_multiplier"] != float64(0) {
++				value := tt.multiplier
++				if observed, ok := tt.snapshot.Data["effective_rate_multiplier"].(float64); ok {
++					value = observed
++				}
++				rateMultiplier = &value
++			}
+@@ -234 +246 @@ func TestUpdateUpstreamBillingProbeSnapshotPreservesSnapshotWithoutMultiplierCha
+-			}, tt.snapshot)
++			}, tt.snapshot, rateMultiplier)
+diff --git a/backend/internal/service/content_moderation.go b/backend/internal/service/content_moderation.go
+index af4b191..121d231 100644
+--- a/backend/internal/service/content_moderation.go
++++ b/backend/internal/service/content_moderation.go
+@@ -594 +594 @@ func NewContentModerationService(
+-	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, true, true)
++	return newContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, proxyRepo, authCacheInvalidator, emailService, true, true)
+@@ -602,0 +603 @@ func newContentModerationService(
++	proxyRepo ProxyRepository,
+diff --git a/backend/internal/service/wire.go b/backend/internal/service/wire.go
+index fa447e4..f61afb4 100644
+--- a/backend/internal/service/wire.go
++++ b/backend/internal/service/wire.go
+@@ -824,0 +825 @@ func ProvideContentModerationService(
++	proxyRepo ProxyRepository,
+@@ -830 +831 @@ func ProvideContentModerationService(
+-		settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService,
++		settingRepo, repo, hashCache, groupRepo, userRepo, proxyRepo, authCacheInvalidator, emailService,
+diff --git a/backend/internal/service/wire_test.go b/backend/internal/service/wire_test.go
+index 0e9399d..2753b53 100644
+--- a/backend/internal/service/wire_test.go
++++ b/backend/internal/service/wire_test.go
+@@ -180 +180 @@ func TestProvideContentModerationService_RolesSplitRequestWorkersFromCleanup(t *
+-			svc := ProvideContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, repo, nil, nil, nil, nil, nil, cfg)
++			svc := ProvideContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{}}, repo, nil, nil, nil, nil, nil, nil, cfg)

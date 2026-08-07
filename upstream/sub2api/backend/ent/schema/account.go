@@ -118,6 +118,10 @@ func (Account) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "numeric(14,2)"}),
+		field.Float("estimated_usable_quota_usd").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "numeric(14,2)"}),
 		// procurement_cost_effective_at records the server-side write time for the cost.
 		field.Time("procurement_cost_effective_at").
 			Optional().

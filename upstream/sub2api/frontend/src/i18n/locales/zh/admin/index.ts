@@ -50,10 +50,9 @@ export default {
     },
     multiplier: {
       declared: '上游声明',
-      measured: '额度测算',
       stale: '倍率已过期',
       unsupported: '上游未声明',
-      failed: '测算失败',
+      failed: '自动探测失败',
       unavailable: '暂无倍率探测',
     },
     costGuard: {

@@ -36,11 +36,9 @@ type Account struct {
 	RateMultiplier *float64
 	// ProcurementCostCNY is the one-time procurement amount used by monitor cost scoring.
 	ProcurementCostCNY         *float64
+	EstimatedUsableQuotaUSD    *float64
 	ProcurementCostEffectiveAt *time.Time
-	// RateMultiplierPolicyIntent is transient caller intent. A nil value means
-	// the repository must preserve the policy from the locked database row.
-	RateMultiplierPolicyIntent *string `json:"-"`
-	LoadFactor                 *int    // 调度负载因子；nil 表示使用 Concurrency
+	LoadFactor                 *int // 调度负载因子；nil 表示使用 Concurrency
 	Status                     string
 	ErrorMessage               string
 	LastUsedAt                 *time.Time
@@ -1847,6 +1845,22 @@ func (a *Account) IsOpenAIWSForceHTTPEnabled() bool {
 		return false
 	}
 	enabled, ok := a.Extra["openai_ws_force_http"].(bool)
+	return ok && enabled
+}
+
+// IsOpenAIResponsesFlattenNamespacesEnabled 返回账号级"摊平 Codex namespace 工具"开关。
+// 字段：accounts.extra.openai_responses_flatten_namespaces，缺省 false（原样保留）。
+//
+// namespace 是 Codex 后端定义的私有扩展，OAuth 出口恒为 chatgpt.com/backend-api/codex
+// （buildUpstreamRequest 只对 API Key 账号取 base_url），即定义方本身，因此默认保留。
+// 该开关只为把流量转发到不认识 namespace 的兼容上游的部署保留退路：打开后恢复
+// 0.1.166 及更早版本的摊平行为。仅对 OpenAI OAuth 账号有效——API Key 走 chat
+// completions 回退桥时由桥自行摊平，Grok/Anthropic 出口有各自的适配链路。
+func (a *Account) IsOpenAIResponsesFlattenNamespacesEnabled() bool {
+	if a == nil || !a.IsOpenAI() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_responses_flatten_namespaces"].(bool)
 	return ok && enabled
 }
 

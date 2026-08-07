@@ -37,6 +37,7 @@ metadata_field() {
 }
 
 base_sha=$(metadata_field base_sha)
+base_version=$(metadata_field base_version)
 base_commit=$(metadata_field base_commit)
 target_commit=$(metadata_field official_commit)
 target_version=$(metadata_field version)
@@ -47,7 +48,7 @@ has_update=$(metadata_field has_update)
 sha_pattern='^[0-9a-f]{40}$'
 version_pattern='^[0-9]+([.][0-9]+){1,2}$'
 [[ "$base_sha" =~ $sha_pattern && "$base_commit" =~ $sha_pattern ]] || fail
-[[ "$target_commit" =~ $sha_pattern && "$target_version" =~ $version_pattern ]] || fail
+[[ "$base_version" =~ $version_pattern && "$target_commit" =~ $sha_pattern && "$target_version" =~ $version_pattern ]] || fail
 [[ "$target_tag" == "v$target_version" || "$target_tag" == "$target_version" ]] || fail
 [[ "$published_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || fail
 [[ "$has_update" == true ]] || fail
@@ -75,6 +76,9 @@ official="$temporary/official"
 git clone -q --no-checkout "$official_repository" "$official"
 git -C "$official" checkout -q "$base_commit"
 [[ "$(git -C "$official" rev-parse HEAD)" == "$base_commit" ]] || fail
+[[ "$(git -C "$official" rev-parse "${target_tag}^{commit}")" == "$target_commit" ]] || fail
+tag_object=$(git -C "$official" rev-parse "$target_tag")
+[[ "$tag_object" =~ $sha_pattern ]] || fail
 
 rsync -a --delete --exclude=.git/ "$root/upstream/sub2api/" "$official/"
 git -C "$official" add -A
@@ -92,19 +96,35 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
   GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
     git -C "$official" merge -q --no-ff --no-edit "$target_commit"; then
   conflicts=$(git -C "$official" diff --name-only --diff-filter=U)
-  [[ "$conflicts" == 'backend/cmd/server/wire_gen.go' ]] || fail
+  if [[ "$target_version" == "0.1.171" ]]; then
+    "$(dirname "$0")/resolve-sub2api-release-conflicts.sh" \
+      --repository "$official" \
+      --base-version "$base_version" \
+      --base-commit "$base_commit" \
+      --target-version "$target_version" \
+      --target-tag "$target_tag" \
+      --target-tag-object "$tag_object" \
+      --target-commit "$target_commit"
+  else
+    [[ "$conflicts" == 'backend/cmd/server/wire_gen.go' ]] || fail
 
-  git -C "$official" checkout --theirs -- backend/cmd/server/wire_gen.go
-  GOFLAGS=-mod=mod go -C "$official/backend" generate ./cmd/server
-  generated_paths=$(git -C "$official" diff --name-only | sort -u)
-  printf 'sub2api_merge generated_paths=%q\n' "$generated_paths" >&2
-  [[ "$generated_paths" == 'backend/cmd/server/wire_gen.go' ||
-    "$generated_paths" == $'backend/cmd/server/wire_gen.go\nbackend/go.sum' ]] || fail
-  git -C "$official" add -- backend/cmd/server/wire_gen.go
-  if [[ -f "$official/backend/go.sum" ]]; then
-    git -C "$official" add -- backend/go.sum
+    git -C "$official" checkout --theirs -- backend/cmd/server/wire_gen.go
+    GOFLAGS=-mod=mod go -C "$official/backend" generate ./cmd/server
+    generated_paths=$(
+      {
+        git -C "$official" diff --name-only
+        git -C "$official" ls-files --others --exclude-standard
+      } | sort -u
+    )
+    printf 'sub2api_merge generated_paths=%q\n' "$generated_paths" >&2
+    [[ "$generated_paths" == 'backend/cmd/server/wire_gen.go' ||
+      "$generated_paths" == $'backend/cmd/server/wire_gen.go\nbackend/go.sum' ]] || fail
+    git -C "$official" add -- backend/cmd/server/wire_gen.go
+    if [[ -f "$official/backend/go.sum" ]]; then
+      git -C "$official" add -- backend/go.sum
+    fi
+    [[ -z "$(git -C "$official" diff --name-only --diff-filter=U)" ]] || fail
   fi
-  [[ -z "$(git -C "$official" diff --name-only --diff-filter=U)" ]] || fail
 
   GIT_AUTHOR_NAME='Xingqiao Release Automation' \
   GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
@@ -115,9 +135,6 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
 fi
 
 [[ -z "$(git -C "$official" status --porcelain=v1)" ]] || fail
-[[ "$(git -C "$official" rev-parse "${target_tag}^{commit}")" == "$target_commit" ]] || fail
-tag_object=$(git -C "$official" rev-parse "$target_tag")
-[[ "$tag_object" =~ $sha_pattern ]] || fail
 
 root_modified=1
 rsync -a --delete --exclude=.git/ "$official/" "$root/upstream/sub2api/"

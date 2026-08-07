@@ -61,7 +61,7 @@ type accountMonitorRun struct {
 
 type accountMonitorMultiplierResolver interface {
 	Resolve(*Account, time.Time) AccountMonitorMultiplier
-	Refresh(context.Context, *Account, bool) error
+	Refresh(context.Context, *Account, AccountMonitorRefreshOptions) error
 }
 
 type AccountMonitorService struct {
@@ -171,7 +171,9 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			TTFTP95MS:                  aggregate.TTFTP95MS,
 			LatencyP95MS:               aggregate.LatencyP95MS,
 			Multiplier:                 s.resolveMultiplier(&account, observedAt),
+			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
+			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			ErrorCount:                 int64(aggregate.ErrorCount),
@@ -281,19 +283,22 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		window := windowAggregates[account.ID]
+		resolvedMultiplier := s.resolveMultiplier(&account, observedAt)
 		row := AccountMonitorAccount{
 			AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type,
 			Status: account.Status, Schedulable: account.Schedulable, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
 			GroupNames: accountGroupNames(account), ModelID: monitorModelForAccount(&account),
-			LatestStatus: "unavailable", Multiplier: s.resolveMultiplier(&account, observedAt),
+			LatestStatus: "unavailable", Multiplier: resolvedMultiplier,
+			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
+			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
-		cost := accountMonitorWindowCost(account, since, observedAt, window.BaseCost)
+		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)
 		row.CostMode = cost.Mode
 		row.EffectiveMultiplier = cost.EffectiveMultiplier
 		if current, ok := latest[account.ID]; ok {
@@ -428,7 +433,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.ServiceState = accountMonitorWindowServiceState(row.AccountMonitorAccount, evidence, row.ManagementState)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
-			cost := accountMonitorWindowCost(account, windowStart, now, window.BaseCost)
+			cost := accountMonitorProjectedEffectiveCost(account, base.Multiplier, windowStart, now, window.BaseCost)
 			row.CostMode = cost.Mode
 			row.EffectiveMultiplier = cost.EffectiveMultiplier
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
@@ -984,7 +989,54 @@ type accountMonitorWindowCostResult struct {
 	CostScoreEligible   bool
 }
 
-func accountMonitorWindowCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
+func accountMonitorEffectiveCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
+	switch {
+	case account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey:
+		return accountMonitorMultiplierValueCost(account.BillingRateMultiplier())
+	case account.Platform == PlatformOpenAI:
+		return accountMonitorProcurementQuotaCost(account.ProcurementCostCNY, account.EstimatedUsableQuotaUSD)
+	default:
+		return accountMonitorLegacyWindowCost(account, windowStart, windowEnd, baseCost)
+	}
+}
+
+func accountMonitorProjectedEffectiveCost(
+	account Account,
+	_ AccountMonitorMultiplier,
+	windowStart, windowEnd time.Time,
+	baseCost float64,
+) accountMonitorWindowCostResult {
+	return accountMonitorEffectiveCost(account, windowStart, windowEnd, baseCost)
+}
+
+func accountMonitorProcurementQuotaCost(cost, quota *float64) accountMonitorWindowCostResult {
+	result := accountMonitorWindowCostResult{Mode: "procurement"}
+	if cost == nil || quota == nil || math.IsNaN(*cost) || math.IsInf(*cost, 0) || *cost < 0 ||
+		math.IsNaN(*quota) || math.IsInf(*quota, 0) || *quota <= 0 {
+		return result
+	}
+	effectiveMultiplier := *cost / *quota
+	result.EffectiveMultiplier = &effectiveMultiplier
+	result.CostScoreEligible = true
+	return result
+}
+
+func accountMonitorMultiplierCost(multiplier *float64) accountMonitorWindowCostResult {
+	result := accountMonitorWindowCostResult{Mode: "multiplier"}
+	if multiplier == nil || math.IsNaN(*multiplier) || math.IsInf(*multiplier, 0) || *multiplier < 0 {
+		return result
+	}
+	effectiveMultiplier := *multiplier
+	result.EffectiveMultiplier = &effectiveMultiplier
+	result.CostScoreEligible = true
+	return result
+}
+
+func accountMonitorMultiplierValueCost(multiplier float64) accountMonitorWindowCostResult {
+	return accountMonitorMultiplierCost(&multiplier)
+}
+
+func accountMonitorLegacyWindowCost(account Account, windowStart, windowEnd time.Time, baseCost float64) accountMonitorWindowCostResult {
 	if account.ProcurementCostCNY != nil {
 		result := accountMonitorWindowCostResult{Mode: "procurement"}
 		if account.ProcurementCostEffectiveAt == nil || account.ExpiresAt == nil || baseCost <= 0 ||
@@ -1010,14 +1062,7 @@ func accountMonitorWindowCost(account Account, windowStart, windowEnd time.Time,
 		return result
 	}
 
-	result := accountMonitorWindowCostResult{Mode: "multiplier"}
-	if account.RateMultiplier == nil || *account.RateMultiplier < 0 {
-		return result
-	}
-	effectiveMultiplier := *account.RateMultiplier
-	result.EffectiveMultiplier = &effectiveMultiplier
-	result.CostScoreEligible = true
-	return result
+	return accountMonitorMultiplierValueCost(account.BillingRateMultiplier())
 }
 
 func accountMonitorCostScore(groupMultiplier float64, effectiveMultiplier *float64, weights AccountMonitorScoreWeights) float64 {
@@ -1127,6 +1172,20 @@ func (s *AccountMonitorService) resolveMultiplier(account *Account, now time.Tim
 	return s.multiplier.Resolve(account, now)
 }
 
+func (s *AccountMonitorService) resolveBalance(account *Account, now time.Time) *AccountMonitorBalance {
+	if s == nil || s.multiplier == nil || !isAccountMonitorBalanceEligible(account) {
+		return nil
+	}
+	balanceResolver, ok := s.multiplier.(interface {
+		ResolveBalance(*Account, time.Time) AccountMonitorBalance
+	})
+	if !ok {
+		return nil
+	}
+	balance := balanceResolver.ResolveBalance(account, now)
+	return &balance
+}
+
 func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int, error) {
 	run, leader, err := s.beginRun(ctx, accountMonitorFullRun)
 	if err != nil {
@@ -1158,7 +1217,9 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
-			s.refreshMultiplier(gctx, &account, false)
+			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
+				RefreshDeclaration: true, RefreshBalance: true,
+			})
 			mu.Lock()
 			completed++
 			mu.Unlock()
@@ -1212,7 +1273,9 @@ func (s *AccountMonitorService) RunOne(
 		return AccountMonitorProbeResult{}, err
 	}
 	completed = 1
-	s.refreshMultiplier(ctx, target, true)
+	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
+		RefreshDeclaration: true, RefreshBalance: true,
+	})
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
 	_ = actorID
 	return result, nil
@@ -1264,14 +1327,14 @@ func (s *AccountMonitorService) finishRun(run *accountMonitorRun, completed int,
 	s.runStateMu.Unlock()
 }
 
-func (s *AccountMonitorService) refreshMultiplier(ctx context.Context, account *Account, force bool) {
+func (s *AccountMonitorService) refreshAuxiliary(ctx context.Context, account *Account, options AccountMonitorRefreshOptions) {
 	if s == nil || s.multiplier == nil || account == nil {
 		return
 	}
 	refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
 	defer cancel()
-	if err := s.multiplier.Refresh(refreshCtx, account, force); err != nil {
-		slog.Warn("account_monitor: multiplier refresh failed",
+	if err := s.multiplier.Refresh(refreshCtx, account, options); err != nil {
+		slog.Warn("account_monitor: auxiliary refresh failed",
 			"account_id", account.ID,
 			"error", err,
 		)

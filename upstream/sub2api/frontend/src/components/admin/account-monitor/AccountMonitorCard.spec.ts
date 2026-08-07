@@ -102,6 +102,34 @@ afterEach(() => {
 })
 
 describe('AccountMonitorCard', () => {
+  it('emits editCost and removes inline cost editors', async () => {
+    const editCost = vi.fn()
+    const wrapper = mountCard({ onEditCost: editCost })
+
+    await wrapper.get('[data-test="edit-cost"]').trigger('click')
+    expect(editCost).toHaveBeenCalledWith(account)
+    expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="multiplier-input"]').exists()).toBe(false)
+  })
+
+  it('shows a valid API Key balance and marks a failed refresh as delayed', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'apikey',
+        balance: { value_usd: 12.5, status: 'failed', source: 'newapi' },
+      },
+    })
+
+    expect(wrapper.get('[data-test="balance-metric"]').text()).toContain('$12.50')
+    expect(wrapper.get('[data-test="balance-metric"]').text()).toContain('数据延迟')
+  })
+
+  it('does not render a balance placeholder for non-API-Key accounts', () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'oauth', balance: undefined } })
+    expect(wrapper.find('[data-test="balance-metric"]').exists()).toBe(false)
+  })
+
   it('renders the V3 service, rank, cost, and concurrency information without operations labels', () => {
     const wrapper = mountCard()
 
@@ -114,7 +142,7 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
     expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1962 ms')
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('成本待确认')
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
 
     for (const label of ['分组倍率', '营收', '利润', '对账', '账务', '上游真实扣费', '用户实际计费']) {
@@ -186,13 +214,12 @@ describe('AccountMonitorCard', () => {
     expect(disclosure).not.toContain('24 次请求')
   })
 
-  it('renders procurement cost with its native expiry and window effective multiplier', () => {
+  it('renders procurement cost with its expected usable quota and derived multiplier', () => {
     const wrapper = mountCard({
       account: {
         ...account,
         procurement_cost_cny: 120,
-        procurement_cost_effective_at: '2026-08-04T00:00:00Z',
-        expires_at: '2026-09-01T00:00:00Z',
+        estimated_usable_quota_usd: 120,
         cost_mode: 'procurement',
         effective_multiplier: 0.48,
       },
@@ -200,9 +227,97 @@ describe('AccountMonitorCard', () => {
 
     const cost = wrapper.get('[data-test="cost-metric"]').text()
     expect(cost).toContain('¥120.00')
-    expect(cost).toContain('有效至 2026-09-01')
-    expect(cost).toContain('当前窗口等效倍率 0.48×')
+    expect(cost).toContain('预计可用额度 120 USD')
+    expect(cost).toContain('预计成本倍率 1.00×')
     expect(cost).not.toContain('0.58×')
+  })
+
+  it('shows a saved manual multiplier for an OpenAI API Key account', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'apikey',
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
+  it('renders a saved manual multiplier when the API Key type uses the underscored wire spelling', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'api_key',
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
+  it('updates the visible cost when a post-save range reload replaces the account snapshot', async () => {
+    const wrapper = mountCard({
+      account: { ...account, account_type: 'apikey', multiplier: { value: 0.58, source: 'declared', status: 'ok', sample_count: 72 } },
+    })
+
+    await wrapper.setProps({
+      account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } },
+    })
+
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
+    expect(wrapper.get('[data-test="cost-detail"]').text()).toContain('手工录入倍率')
+  })
+
+  it('uses the OpenAI API Key multiplier even when stale procurement fields exist', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'apikey',
+        procurement_cost_cny: 120,
+        estimated_usable_quota_usd: 120,
+        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('0.08×')
+    expect(cost).not.toContain('¥120.00')
+  })
+
+  it('does not fall back to stale procurement fields when an OpenAI API Key multiplier is unavailable', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'api_key',
+        procurement_cost_cny: 120,
+        estimated_usable_quota_usd: 120,
+        multiplier: { value: null, source: 'manual', status: 'failed', sample_count: 0 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('--')
+    expect(cost).not.toContain('¥120.00')
+  })
+
+  it('uses procurement as the sole source for OpenAI non-API-Key accounts', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        account_type: 'oauth',
+        procurement_cost_cny: null,
+        estimated_usable_quota_usd: null,
+        multiplier: { value: 0.08, source: 'declared', status: 'ok', sample_count: 72 },
+      },
+    })
+
+    const cost = wrapper.get('[data-test="cost-metric"]').text()
+    expect(cost).toContain('--')
+    expect(cost).toContain('成本待确认')
+    expect(cost).not.toContain('0.08×')
   })
 
   it('keeps procurement cost actions below the metric detail so the V3 five-tile label does not collapse', () => {
@@ -221,69 +336,18 @@ describe('AccountMonitorCard', () => {
     expect(detail.element.compareDocumentPosition(actions.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('explains why a procurement amount cannot yield an effective multiplier', () => {
+  it('marks procurement cost as pending when expected usable quota is missing', () => {
     const wrapper = mountCard({
       account: {
         ...account,
         procurement_cost_cny: 120,
-        procurement_cost_effective_at: '2026-08-04T00:00:00Z',
-        expires_at: null,
+        estimated_usable_quota_usd: null,
         cost_mode: 'procurement',
         effective_multiplier: null,
       },
     })
 
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('有效期缺失，无法计算等效倍率')
-  })
-
-  it('lets an account without procurement cost or native multiplier enter and edit a manual multiplier', async () => {
-    const updateMultiplier = vi.fn()
-    const wrapper = mountCard({
-      account: {
-        ...account,
-        multiplier: { status: 'unavailable', sample_count: 0 },
-        procurement_cost_cny: null,
-        cost_mode: 'multiplier',
-      },
-      onUpdateMultiplier: updateMultiplier,
-    })
-
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('未录入账号倍率')
-    await wrapper.get('[data-test="edit-multiplier"]').trigger('click')
-    const input = wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]')
-    await input.setValue('-0.1')
-    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
-    expect(updateMultiplier).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-test="multiplier-error"]').text()).toContain('请输入大于或等于 0 的账号倍率')
-
-    await input.setValue('0.08')
-    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
-    expect(updateMultiplier).toHaveBeenCalledWith(113, 0.08, expect.objectContaining({ resolve: expect.any(Function), reject: expect.any(Function) }))
-  })
-
-  it('keeps manual multiplier draft, focus, and error after a rejected save, and renders a saved manual rate as editable', async () => {
-    const wrapper = mountCard({
-      account: {
-        ...account,
-        multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 0 },
-        procurement_cost_cny: null,
-      },
-      onUpdateMultiplier: (_id: number, _value: number, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('保存账号倍率失败')),
-    })
-
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.08×')
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('手工录入倍率')
-    expect(wrapper.find('[data-test="edit-multiplier"]').exists()).toBe(true)
-    await wrapper.get('[data-test="edit-multiplier"]').trigger('click')
-    await wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]').setValue('0.12')
-    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
-    await flushAsyncWork()
-
-    const input = wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]')
-    expect(input.element.value).toBe('0.12')
-    expect(wrapper.get('[data-test="multiplier-error"]').text()).toContain('保存账号倍率失败')
-    expect(document.activeElement).toBe(input.element)
-    expect(wrapper.text()).not.toContain('分组倍率')
+    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('成本待确认')
   })
 
   it('rejects priority values below one or with a fraction before asking the parent to save', async () => {
@@ -338,76 +402,6 @@ describe('AccountMonitorCard', () => {
     expect(input.element.value).toBe('2')
     expect(wrapper.get('[data-test="priority-error"]').text()).toContain('保存失败')
     expect(document.activeElement).toBe(input.element)
-  })
-
-  it('saves procurement cost after parent confirmation and clears it only after confirmation', async () => {
-    const savePending = deferred()
-    const clearPending = deferred()
-    const wrapper = mountCard({
-      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
-      onUpdateProcurementCost: (_id: number, value: number | null, completion: { resolve: () => void, reject: (reason?: unknown) => void }) => {
-        if (value === null) clearPending.promise.then(completion.resolve, completion.reject)
-        else savePending.promise.then(completion.resolve, completion.reject)
-      },
-    })
-
-    await wrapper.get('[data-test="edit-cost"]').trigger('click')
-    await wrapper.get<HTMLInputElement>('[data-test="cost-input"]').setValue('150.5')
-    const saveButton = wrapper.get<HTMLButtonElement>('[data-test="save-cost"]')
-    saveButton.element.focus()
-    await saveButton.trigger('click')
-    expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(true)
-
-    savePending.resolve()
-    await flushAsyncWork()
-    expect(wrapper.find('[data-test="cost-input"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
-
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const clearButton = wrapper.get<HTMLButtonElement>('[data-test="clear-cost"]')
-    clearButton.element.focus()
-    await clearButton.trigger('click')
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('¥150.50')
-
-    clearPending.resolve()
-    await flushAsyncWork()
-    expect(confirmSpy).toHaveBeenCalledOnce()
-    expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('0.58×')
-    confirmSpy.mockRestore()
-  })
-
-  it('preserves procurement cost draft, focus, and local error when the parent rejects a save', async () => {
-    const wrapper = mountCard({
-      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
-      onUpdateProcurementCost: (_id: number, _cost: number | null, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('保存采购成本失败')),
-    })
-
-    await wrapper.get('[data-test="edit-cost"]').trigger('click')
-    await wrapper.get<HTMLInputElement>('[data-test="cost-input"]').setValue('150.5')
-    await wrapper.get('[data-test="save-cost"]').trigger('click')
-    await flushAsyncWork()
-
-    const input = wrapper.get<HTMLInputElement>('[data-test="cost-input"]')
-    expect(input.element.value).toBe('150.5')
-    expect(wrapper.get('[data-test="cost-error"]').text()).toContain('保存采购成本失败')
-    expect(document.activeElement).toBe(input.element)
-  })
-
-  it('preserves procurement cost value, draft, focus, and local error when the parent rejects clearing it', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const wrapper = mountCard({
-      account: { ...account, procurement_cost_cny: 120, cost_mode: 'procurement' },
-      onUpdateProcurementCost: (_id: number, _cost: number | null, completion: { reject: (reason?: unknown) => void }) => completion.reject(new Error('清空采购成本失败')),
-    })
-
-    await wrapper.get('[data-test="clear-cost"]').trigger('click')
-    await flushAsyncWork()
-
-    const input = wrapper.get<HTMLInputElement>('[data-test="cost-input"]')
-    expect(input.element.value).toBe('120')
-    expect(wrapper.get('[data-test="cost-error"]').text()).toContain('清空采购成本失败')
-    expect(document.activeElement).toBe(input.element)
-    confirmSpy.mockRestore()
   })
 
   it('retains the last concurrency snapshot and marks it delayed', () => {

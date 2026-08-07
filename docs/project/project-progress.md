@@ -1,6 +1,18 @@
 # 项目全局进度总账
 
-**更新时间：** 2026-08-05
+**更新时间：** 2026-08-06
+
+**本轮登记（2026-08-06）：** 账号监控评分权重入口、账号成本/预计额度与上游余额刷新修复，状态：进行中（原 Tasks 1-4 已完成本地实现和逐任务独立审查；原整体验证与审查曾通过并推送。生产完整发布链随后已同步进候选；最新官方倍率能力复核发现自定义策略和 measurement value 会造成监控与真实计费分叉，现新增 Task 5 原生倍率收敛与数据迁移，Task 6 负责重新整体验证、推送和生产门禁。部署和线上验证前不得标记完成）。
+
+**本轮继续（2026-08-06）：** 已确认根因是候选基于 `origin/main@69caeaf8`，而生产运行独立合格发布链 `9aab62c2`，该生产链有 8 个提交未进入候选。现按用户授权进入“完整同步生产发布链、解决真实冲突、重新审查迁移集合与整分支”的阶段；禁止仅手工补 SQL、跳过生产代码或在复审前部署。
+
+**生产同步结果（2026-08-06）：** 完整生产发布链已通过合并提交 `f64f93e4c` 纳入候选，integration 接口兼容修复 `3016c6951` 已完成独立复审。合并后的迁移集合当时为“生产完整集合 + 197”，规范哈希 `9f341792…`；该哈希已因新增 Task 5 清理迁移而失效，必须在 Task 5 完成后重新计算，当前不得执行生产门禁。
+
+**原生倍率收敛（2026-08-06）：** 用户确认采用官方 `accounts.rate_multiplier + upstream_billing_rate_sync_enabled` 单一语义，不兼容运行时旧策略；新增一次性数据迁移把旧 `manual_override/upstream_managed` 转成官方同步布尔值并删除 `upstream_billing_rate_multiplier_policy` 与 `account_monitor_multiplier_measurement`。独立审查已确认当前候选存在策略冲突和监控/真实计费倍率分叉，现登记为 Task 5 进行中；完成实施、独立复审、整分支复审和推送前不重新执行生产门禁。
+
+**Task 5 实施结果（2026-08-06）：** 原生倍率收敛提交 `ded650e06` 已完成；迁移 198 保留 `accounts.rate_multiplier`、转换官方 sync 开关并直接删除两个旧 JSON 键。生产只读盘点为 74 个有效账号、38 个旧策略（全部 `upstream_managed`）、16 个 measurement、29 个 OpenAI API Key 自动探测账号。后端测试/vet、前端聚焦测试/lint/typecheck/build、diff 与旧符号搜索均通过；当前保持进行中，待推送和生产门禁。
+
+**本轮推进（2026-08-06）：** Task 3 已完成本地实现与独立复审，Task 4 成本弹窗与余额卡片进入实施；本轮仍保持进行中，尚未推送、部署或线上验证。
 
 **本轮登记（2026-08-05）：** 六阶段生产收口独立部署执行，状态：待办（用户暂停）。Task 1 基线收口已完成；Task 2 已部署但尚待用户验收；Task 3 至 Task 9 均未启动。恢复前不得派发实施代理、生成下一任务 brief、修改生产配置或执行部署。执行入口为 [独立部署单元实施计划](../superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md)，恢复时所有代理仍须先读取 [代理上下文合同](six-stage-production-closure-agent-context.md) 并报告固定 `CONTEXT_ACK`。
 
@@ -49,6 +61,7 @@
 
 ## 当前最重要进行中事项与本轮已完成交付
 
+0.0. **账号监控成本、余额与评分权重修复**：恢复分组评分权重编辑入口；OpenAI API Key 账号统一使用官方 `accounts.rate_multiplier`，OpenAI 非 API Key 账号使用采购成本和预计可用额度计算等效倍率；余额跟随账号健康探测，单卡刷新同时执行官方 billing probe。**状态：已完成（最终提交 `c12f930b1` 已推送、维护迁移已部署、健康/监控 API/权重/倍率/余额已线上验证）**。
 0. **OpenAI 模型映射审计**：仅覆盖 OpenAI-compatible HTTP JSON、SSE 与 Responses WebSocket；新增 `usage_logs.actual_response_model`，记录上游原始响应模型并在管理员 usage log 展示。**状态：进行中（本地实现与验证阶段，尚未推送、部署或线上验证）**。
 0.1. **账号监控 V3：账号质量、评分、排名与调度信息**：2026-08-04 最终确认已覆盖旧的“账号监控同时承接经营/账务”方案；账号监控生产页只承接原生分组 Tab、七项分组汇总、真实请求时间窗、完整六段式账号卡片、卡内全局优先级、一次性采购成本、倍率与原生并发，营收、利润、账务和对账仍是独立后续事项。最终提交 `05985e62ec88b04d1e647a815eecdb1cf1155776` 已推送并部署至绿色槽位；#118/#119 均以真实请求窗口投影为可用、保留评分排名，单卡刷新请求成功且检查时间推进。**状态：已完成（已推送、已部署、已验证生效）**。
 
@@ -235,7 +248,7 @@
 22. **无人值守 Sub2API 发布生产激活**：解决自动发现、构建和候选交付尚未进入真实生产激活；优化无秘密构建、强制 SSH 和 compare-and-swap 发布准备；影响发布运维；**状态：运维跟进，待真实 workflow 和生产 forced-command 验收；不单独计为工程部署差异**；[证据](../superpowers/reports/2026-07-28-unattended-sub2api-release-preparation-verification.md)。
 23. **Feishu 通知合并生产部署**：解决多通知路径重复和边界不统一；优化通知合并、纯出站契约和本地回归；**状态：运维跟进，待 48 小时生产观察和公网验证；运行时实现已在生产基础上，不能仅因观察未完成称为工程未部署**；[证据](../superpowers/reports/2026-07-29-feishu-notification-consolidation-local-verification.md)。
 
-## 工程代码/配置差异待部署（10 项）
+## 工程代码/配置差异待部署（11 项）
 
 1. **Sub2API 全局 OpenAI 低延迟配置**：生产尚未应用 `cded84a7e` 对应的全局 relay latency 配置；**状态：工程代码/配置差异待部署**。
 2. **Sub2API WebSocket `store=false` 会话隔离修复**：生产尚未应用 `c49c0a6ec`；**状态：工程代码/配置差异待部署**。
@@ -247,6 +260,7 @@
 8. **Monitor 当前状态与飞书历史错误码修复**：最新有效渠道探测成功时 Monitor 显示正常，最新失败但近期有成功时显示降级；飞书容量改用账号最新探测状态，最新成功不再继承历史 `balance_exhausted`。实现与回归已进入 `origin/main`，尚未部署或线上验证。**状态：工程差异待部署**；[设计](../superpowers/specs/2026-07-31-monitor-current-status-and-feishu-stale-error-design.md)、[计划](../superpowers/plans/2026-07-31-monitor-status-feishu-alert-fix-implementation-plan.md)。
 9. **30 分钟指令驱动 Sub2API 蓝绿发布**：API/worker 角色、双槽 Compose、restart-stable Caddy 路由、停机门禁、恢复/回滚、候选等待、运行态证明和 host deadline 已完成本地实现与 focused 验证；2026-08-01 已补足 controller 向 host executor 传递绝对 deadline 的契约。生产预检确认无 host executor / `release-state`、Caddy 仍是遗留单实例上游，首次切换双槽需停机 bootstrap。**状态：工程差异待部署**；[运行手册](../runbooks/sub2api-blue-green-production-deployment.md)。
 10. **`api.xingqiaolab.top` TLS 兼容性修复**：nginx TLS 前置实现已以 `95a81dc37` 推送到 `main`；2026-08-01 生产切换后服务端 TLS 1.2/1.3 均正常，但受影响客户端和 CC Switch 验收仍失败，已完成受控回滚。后续需改用不被干预的兼容域名或更换公网/CDN 入口，nginx 配置当前不在生产生效。**状态：工程差异待部署（前置层方案未通过客户端门禁）**。
+11. **账号监控成本、余额、评分权重与官方倍率收敛**：已恢复分组评分权重入口，OpenAI API Key 统一使用官方 `accounts.rate_multiplier` 与 `extra.upstream_billing_rate_sync_enabled`，非 API Key 使用人民币采购成本和预计可用 USD 额度；支持上游余额、单卡强制刷新，并通过迁移 198 删除旧策略/measurement 数据。自动倍率展示现已读取官方 probe snapshot 的 `status`、`received_at`、`fresh_until`，过期/失败会明确标记。最终提交 `c12f930b1` 已推送并部署；生产迁移哈希已为 `0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d`，健康接口、监控 API、分组权重、native 倍率和余额快照均已线上验证。**状态：已完成；已推送、已部署、已验证生效**；[设计](../superpowers/specs/2026-08-06-account-monitor-cost-balance-and-score-weights-design.md)、[计划](../superpowers/plans/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan.md)。
 
 ## 持续实施（2 项）
 

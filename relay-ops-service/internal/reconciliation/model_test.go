@@ -69,6 +69,9 @@ func TestValidateRequestCostQueryRequiresAnExactRequestID(t *testing.T) {
 	if err != nil || query.LocalRequestID != "local-1" {
 		t.Fatalf("query=%#v err=%v", query, err)
 	}
+	if _, err := ValidateRequestCostQuery(RequestCostQuery{LocalRequestID: "local-1", UpstreamRequestID: "upstream-1"}); err == nil {
+		t.Fatal("query with conflicting exact identifiers accepted")
+	}
 }
 
 func TestRequestCostEvidenceLabels(t *testing.T) {

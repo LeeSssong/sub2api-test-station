@@ -23,7 +23,13 @@ func (f fakeAdapter) ReadSnapshot(context.Context) (billing.CostSnapshot, error)
 type fakeRepository struct {
 	attempts    []Attempt
 	matched     []AutomaticTransactionInput
+	bound       []upstreamRequestBinding
 	cursorCalls []AttemptCursor
+}
+
+type upstreamRequestBinding struct {
+	attemptID         int64
+	upstreamRequestID string
 }
 
 func (f *fakeRepository) ListPendingUpstreamCostAttempts(_ context.Context, _ int64, _ time.Time, _ time.Time, after AttemptCursor, limit int) ([]Attempt, error) {
@@ -71,6 +77,11 @@ func (f *fakeRepository) CreateAutomaticUpstreamCost(_ context.Context, input Au
 	f.matched = append(f.matched, input)
 	return Transaction{}, true, nil
 }
+
+func (f *fakeRepository) BindUpstreamRequestID(_ context.Context, attemptID int64, upstreamRequestID string) error {
+	f.bound = append(f.bound, upstreamRequestBinding{attemptID: attemptID, upstreamRequestID: upstreamRequestID})
+	return nil
+}
 func (f *fakeRepository) MarkOverdueUpstreamCostExceptions(context.Context, time.Time, time.Duration) (int64, error) {
 	return 0, nil
 }
@@ -109,5 +120,44 @@ func TestServiceReconcileAccountFallsBackToRequestIDWhenUpstreamRequestIDDoesNot
 	}
 	if result.Matched != 1 || len(repo.matched) != 1 || repo.matched[0].AttemptID != 11 {
 		t.Fatalf("result=%#v matched=%#v", result, repo.matched)
+	}
+}
+
+func TestServiceReconcileAccountPersistsProviderUpstreamRequestIDAfterLocalMatch(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepository{attempts: []Attempt{{ID: 11, AttemptInput: AttemptInput{
+		AttemptID: "a", LocalRequestID: "local-request-id", AccountID: 7,
+	}}}}
+	service := Service{Repository: repo}
+
+	_, err := service.ReconcileAccount(context.Background(), 7, AdapterNewAPI, fakeAdapter{transactions: []billing.CostTransaction{{
+		SourceID: "log-1", RequestID: "local-request-id", UpstreamRequestID: "provider-request-id",
+		Type: "charge", Cost: domain.MicroUSD(82000), OccurredAt: now,
+	}}}, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ReconcileAccount: %v", err)
+	}
+	if len(repo.bound) != 1 || repo.bound[0] != (upstreamRequestBinding{attemptID: 11, upstreamRequestID: "provider-request-id"}) {
+		t.Fatalf("provider request ID binding=%#v", repo.bound)
+	}
+}
+
+func TestServiceReconcileAccountDoesNotConfirmAmbiguousTokenModelTimeCandidates(t *testing.T) {
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	repo := &fakeRepository{attempts: []Attempt{
+		{ID: 11, AttemptInput: AttemptInput{AttemptID: "a", LocalRequestID: "local-a", AccountID: 7, Model: "gpt-test", InputTokens: 10, OutputTokens: 4, CompletedAt: now}},
+		{ID: 12, AttemptInput: AttemptInput{AttemptID: "b", LocalRequestID: "local-b", AccountID: 7, Model: "gpt-test", InputTokens: 10, OutputTokens: 4, CompletedAt: now}},
+	}}
+	service := Service{Repository: repo}
+
+	result, err := service.ReconcileAccount(context.Background(), 7, AdapterNewAPI, fakeAdapter{transactions: []billing.CostTransaction{{
+		SourceID: "provider-log", RequestID: "unknown-local", UpstreamRequestID: "unknown-upstream", Type: "charge",
+		Model: "gpt-test", PromptTokens: 10, CompletionTokens: 4, Cost: domain.MicroUSD(82_000), OccurredAt: now,
+	}}}, now.Add(-time.Minute), now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ReconcileAccount: %v", err)
+	}
+	if result.Matched != 0 || len(repo.matched) != 0 {
+		t.Fatalf("ambiguous token/model/time candidate confirmed: result=%#v matched=%#v", result, repo.matched)
 	}
 }

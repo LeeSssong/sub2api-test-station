@@ -71,6 +71,13 @@ const (
 	SourceManualReversal   TransactionSource = "manual_reversal"
 )
 
+const (
+	RequestCostSourceNativeLedger       = "上游逐笔账单"
+	RequestCostSourceUpstreamPriceTable = "上游价格表推算"
+	RequestCostSourceOwnedAllocation    = "自购账号成本分摊"
+	RequestCostSourcePending            = "待对账"
+)
+
 type AutomaticTransactionInput struct {
 	AttemptID      int64
 	AccountID      int64
@@ -128,6 +135,9 @@ func ValidateRequestCostQuery(query RequestCostQuery) (RequestCostQuery, error) 
 	if query.LocalRequestID == "" && query.UpstreamRequestID == "" {
 		return RequestCostQuery{}, fmt.Errorf("local_request_id or upstream_request_id is required")
 	}
+	if query.LocalRequestID != "" && query.UpstreamRequestID != "" {
+		return RequestCostQuery{}, fmt.Errorf("exactly one request id is required")
+	}
 	if len(query.LocalRequestID) > 200 || len(query.UpstreamRequestID) > 200 {
 		return RequestCostQuery{}, fmt.Errorf("request id is too long")
 	}
@@ -137,11 +147,11 @@ func ValidateRequestCostQuery(query RequestCostQuery) (RequestCostQuery, error) 
 func RequestCostSourceLabel(source TransactionSource) string {
 	switch source {
 	case SourceAutomaticCharge, SourceAutomaticRefund:
-		return "上游逐笔账单"
+		return RequestCostSourceNativeLedger
 	case SourceManualAdjustment, SourceManualReversal:
-		return "自购账号成本分摊"
+		return RequestCostSourceOwnedAllocation
 	default:
-		return "待对账"
+		return RequestCostSourcePending
 	}
 }
 

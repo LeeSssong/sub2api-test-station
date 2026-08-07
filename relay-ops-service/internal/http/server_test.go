@@ -660,6 +660,35 @@ func TestRequestCostRouteMapsNoMatchedNativeTransactionToNotFound(t *testing.T) 
 	}
 }
 
+func TestRequestCostRouteReturnsNetNativeChargeAndRefundCost(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{requestCostDetail: reconciliation.RequestCostDetail{
+		LocalRequestID: "local-net", SourceID: "native-charge,native-refund", AdapterType: reconciliation.AdapterNewAPI,
+		UpstreamActualCost: decimal.RequireFromString("0.06"), CostSource: reconciliation.RequestCostSourceNativeLedger,
+		Confidence: "confirmed", Status: reconciliation.StatusMatched,
+	}}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=local-net", ""))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"source_id":"native-charge,native-refund"`) ||
+		!strings.Contains(recorder.Body.String(), `"upstream_actual_cost":"0.06"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRequestCostRouteRejectsConflictingExactIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=local-1&upstream_request_id=upstream-1", ""))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "INVALID_REQUEST_COST_QUERY") || service.requestCostCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", recorder.Code, service.requestCostCalls, recorder.Body.String())
+	}
+}
+
 func TestOperationsHistoryDefaultsToThirtyNaturalDays(t *testing.T) {
 	t.Parallel()
 

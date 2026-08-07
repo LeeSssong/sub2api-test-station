@@ -12,6 +12,7 @@ import (
 
 type Repository interface {
 	ListPendingUpstreamCostAttempts(context.Context, int64, time.Time, time.Time, AttemptCursor, int) ([]Attempt, error)
+	BindUpstreamRequestID(context.Context, int64, string) error
 	CreateAutomaticUpstreamCost(context.Context, AutomaticTransactionInput) (Transaction, bool, error)
 	MarkOverdueUpstreamCostExceptions(context.Context, time.Time, time.Duration) (int64, error)
 }
@@ -78,12 +79,20 @@ func (s Service) ReconcileAccount(ctx context.Context, accountID int64, adapterT
 		}
 		for _, transaction := range transactions {
 			result.TransactionsObserved++
-			attempt, ok := byUpstreamRequestID[strings.TrimSpace(transaction.UpstreamRequestID)]
+			providerRequestID := strings.TrimSpace(transaction.UpstreamRequestID)
+			attempt, ok := byUpstreamRequestID[providerRequestID]
 			if !ok {
 				attempt, ok = byLocalRequestID[strings.TrimSpace(transaction.RequestID)]
 			}
 			if !ok {
 				continue
+			}
+			if providerRequestID != "" && attempt.UpstreamRequestID == "" {
+				if err := s.Repository.BindUpstreamRequestID(ctx, attempt.ID, providerRequestID); err != nil {
+					return result, err
+				}
+				attempt.UpstreamRequestID = providerRequestID
+				byUpstreamRequestID[providerRequestID] = attempt
 			}
 			transactionKey := transaction.SourceID + ":" + transaction.Type
 			if _, duplicate := seen[transactionKey]; duplicate {

@@ -82,3 +82,20 @@ func TestHostExecutorReportsErrorWhenNonZeroExitHasNoTerminalResult(t *testing.T
 		t.Fatalf("err = %v, want the host stderr preserved", err)
 	}
 }
+
+func TestHostExecutorMapsMaintenanceGateToAdministratorIntervention(t *testing.T) {
+	runner := &recordedCommandRunner{results: []commandResult{{
+		stdout: `{"schema_version":1,"downtime_required":true,"reason_code":"migration_set_changed","reason":"candidate migration set differs from the active release","estimated_unavailable_seconds":300,"rollback":["keep current active slot"]}` + "\n",
+		err:    errors.New("exit status 2"),
+	}}}
+	result, err := NewHostExecutor("/host-executor", "", runner).Run(context.Background(), sampleOperation())
+	if err != nil {
+		t.Fatalf("err = %v, want a terminal administrator-intervention result", err)
+	}
+	if !result.InterventionRequired || result.Stage != "intervention_required" || result.Result != "migration_set_changed" {
+		t.Fatalf("result = %#v", result)
+	}
+	if !strings.Contains(result.Error, "candidate migration set differs") {
+		t.Fatalf("error = %q", result.Error)
+	}
+}

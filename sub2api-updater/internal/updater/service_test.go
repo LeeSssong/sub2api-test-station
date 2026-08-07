@@ -263,6 +263,19 @@ func TestServiceRecoversInterruptedRunningOperationAsTerminalFailure(t *testing.
 	}
 }
 
+func TestExecutionOutcomePreservesAdministratorIntervention(t *testing.T) {
+	result := ExecutionResult{
+		Stage:                "intervention_required",
+		Result:               "migration_set_changed",
+		Error:                "candidate migration set differs from the active release",
+		InterventionRequired: true,
+	}
+	stage, message, failure := executionOutcome(result, nil)
+	if stage != "intervention_required" || message != result.Result || failure != result.Error {
+		t.Fatalf("outcome = (%q, %q, %q)", stage, message, failure)
+	}
+}
+
 func TestServiceCloseCancelsRunningExecutor(t *testing.T) {
 	executor := &cancellationExecutor{
 		entered:   make(chan struct{}),

@@ -44,7 +44,7 @@ for setting in \
   'ProtectControlGroups=true' \
   'RestrictSUIDSGID=true' \
   'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
-  'ReadWritePaths=/opt/sub2api/production /var/lib/sub2api-updater'; do
+  'ReadWritePaths=/opt/sub2api/production /var/lib/sub2api-updater /var/lib/sub2api/release-staging /var/lib/sub2api/release-records /var/lib/sub2api/release-state'; do
   rg -Fq "$setting" <<<"$service" || fail "service is missing: $setting"
 done
 
@@ -67,6 +67,11 @@ for setting in \
   'SUB2API_BASE_URL=https://api.xingqiaolab.top' \
   'SUB2API_ADMIN_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key' \
   'SUB2API_GATEWAY_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-gateway-api-key' \
+  'SUB2API_RELEASE_STATE=/var/lib/sub2api/release-state' \
+  'SUB2API_RELEASE_RECORD_ROOT=/var/lib/sub2api/release-records' \
+  'SUB2API_RELEASE_STAGING_ROOT=/var/lib/sub2api/release-staging' \
+  'SUB2API_NETWORK_CURL_IMAGE=curlimages/curl@sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6' \
+  'SUB2API_NETWORK_CURL_IMAGE_ALLOWLIST=curlimages/curl@sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6' \
   'SUB2API_UPDATER_GITHUB_LATEST_RELEASE='; do
   rg -Fq "$setting" <<<"$environment" || fail "env example is missing: $setting"
 done

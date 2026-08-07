@@ -36,12 +36,13 @@ type Operation struct {
 }
 
 type ExecutionResult struct {
-	Stage          string
-	Result         string
-	Error          string
-	Promoted       bool
-	RolledBack     bool
-	RollbackFailed bool
+	Stage                string
+	Result               string
+	Error                string
+	Promoted             bool
+	RolledBack           bool
+	RollbackFailed       bool
+	InterventionRequired bool
 }
 
 type Identity struct {
@@ -278,6 +279,9 @@ func executionOutcome(result ExecutionResult, err error) (stage, message, failur
 	if result.RollbackFailed {
 		return "rollback_failed", message, failure
 	}
+	if result.InterventionRequired {
+		return "intervention_required", message, failure
+	}
 	if result.RolledBack {
 		return "rolled_back", message, failure
 	}
@@ -285,7 +289,7 @@ func executionOutcome(result ExecutionResult, err error) (stage, message, failur
 		return "promoted", message, failure
 	}
 	switch stage {
-	case "promoted", "rolled_back", "failed", "rollback_failed":
+	case "promoted", "rolled_back", "failed", "rollback_failed", "intervention_required":
 		return stage, message, failure
 	}
 	return "promoted", message, failure

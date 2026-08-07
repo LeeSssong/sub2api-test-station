@@ -891,8 +891,8 @@ test_downtime_gates() {
 }
 
 test_authorized_maintenance_transition() {
-  local old_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
-  local new_hash=337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
   local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
   local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 

@@ -695,6 +695,29 @@ test('shows the real running step and concise terminal operation status', async 
 
   await browser.ui.pollStatus()
   assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '升级失败')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
+})
+
+test('shows administrator intervention as a concise terminal status', async () => {
+  let statusCalls = 0
+  const browser = await createBrowser({
+    fetchImpl: (requests, fallback) => async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/host-update/status')) {
+        requests.push({ url, method: 'GET', body: init.body, headers: init.headers })
+        statusCalls += 1
+        if (statusCalls === 1) return response({ code: 0, data: null })
+        return response({ code: 0, data: { operation_id: 'op-gate', stage: 'intervention_required', result: 'migration_set_changed' } })
+      }
+      return fallback(input, init)
+    },
+  })
+  await browser.ui.openConfirmation()
+  const dialog = browser.window.document.querySelector('[role="dialog"]')
+
+  await browser.ui.pollStatus()
+  assert.equal(dialog.querySelector('[data-role="readiness-status"]').textContent, '需要管理员介入')
+  assert.equal(dialog.querySelector('[data-role="message"]').textContent, '')
 })
 
 test('resets the status while reloading a changed target', async () => {

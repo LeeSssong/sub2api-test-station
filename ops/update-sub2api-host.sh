@@ -3,11 +3,8 @@ set -euo pipefail
 
 umask 077
 
-# Bumped whenever the updater/executor argument contract changes so a stale
-# binary reports the drift instead of failing on an unrecognized argument.
-HOST_CONTRACT_VERSION='1'
-PINNED_POSTGRES_IMAGE='postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
-EXPECTED_QR_SHA256='35b84b14ab472e117fa413ed5f91357becd01199eeaf3fed469a2d9d3d987c16'
+readonly HOST_CONTRACT_VERSION=1
+readonly APPROVED_IMAGE_REPOSITORY=ghcr.io/leesssong/xingqiao-sub2api
 
 fail() {
   printf 'host update failed: %s\n' "$1" >&2
@@ -20,562 +17,204 @@ trace() {
 }
 
 canonical_directory() {
-  local path=$1 label=$2 physical
-  [[ "$path" == /* && -d "$path" && ! -L "$path" ]] || fail "$label must be an absolute non-symlink directory"
-  physical=$(cd "$path" && pwd -P)
-  [[ "$physical" == "$path" ]] || fail "$label must be canonical"
-  printf '%s\n' "$physical"
+  local value=$1 label=$2 physical
+  [[ "$value" == /* && -d "$value" && ! -L "$value" ]] || fail "$label must be an absolute non-symlink directory"
+  physical=$(cd "$value" && pwd -P)
+  [[ "$physical" == "$value" ]] || fail "$label must be canonical"
+  printf '%s\n' "$value"
 }
 
 canonical_file() {
-  local path=$1 label=$2 parent physical_parent canonical
-  [[ "$path" == /* && -f "$path" && -r "$path" && ! -L "$path" ]] || fail "$label must be an absolute readable non-symlink file"
-  parent=$(dirname "$path")
-  physical_parent=$(cd "$parent" && pwd -P)
-  canonical="$physical_parent/$(basename "$path")"
-  [[ "$canonical" == "$path" ]] || fail "$label must be canonical"
-  printf '%s\n' "$path"
+  local value=$1 label=$2 parent physical canonical
+  [[ "$value" == /* && -f "$value" && -r "$value" && ! -L "$value" ]] || fail "$label must be an absolute readable non-symlink file"
+  parent=$(dirname "$value")
+  physical=$(cd "$parent" && pwd -P)
+  canonical="$physical/$(basename "$value")"
+  [[ "$canonical" == "$value" ]] || fail "$label must be canonical"
+  printf '%s\n' "$value"
 }
 
 mode_of() {
   stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
 }
 
-parse_args() {
-  requested_image=''
-  requested_version=''
-  operation_id=''
-  contract_version=''
-  while (($#)); do
-    case "$1" in
-      --contract-version)
-        (($# >= 2)) || fail '--contract-version requires the updater contract version'
-        [[ -z "$contract_version" ]] || fail '--contract-version may be supplied once'
-        contract_version=$2
-        shift 2
-        ;;
-      --image)
-        (($# >= 2)) || fail '--image requires an immutable image reference'
-        [[ -z "$requested_image" ]] || fail '--image may be supplied once'
-        requested_image=$2
-        shift 2
-        ;;
-      --operation-id)
-        (($# >= 2)) || fail '--operation-id requires an identifier'
-        [[ -z "$operation_id" ]] || fail '--operation-id may be supplied once'
-        operation_id=$2
-        shift 2
-        ;;
-      --version)
-        (($# >= 2)) || fail '--version requires the qualified upstream version'
-        [[ -z "$requested_version" ]] || fail '--version may be supplied once'
-        requested_version=$2
-        shift 2
-        ;;
-      *) fail "unknown argument: $1" ;;
-    esac
-  done
-  [[ "$contract_version" == "$HOST_CONTRACT_VERSION" ]] \
-    || fail "updater contract ${contract_version:-none} does not match executor contract $HOST_CONTRACT_VERSION; reinstall the updater with ops/install-sub2api-updater.sh"
-  [[ -n "$requested_image" ]] || fail '--image is required'
-  [[ "$requested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z._-]*$ ]] \
-    || fail '--version must be an application version such as 0.1.165'
-  [[ -n "$operation_id" && "$operation_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] \
-    || fail '--operation-id is invalid'
-  [[ "$requested_image" =~ ^sha256:[a-f0-9]{64}$ ]] \
-    || fail '--image must be a qualified immutable sha256 image ID'
-  requested_digest=$requested_image
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
 }
 
-require_commands() {
-  local command
-  for command in docker jq curl sha256sum tar df awk date mktemp stat; do
-    command -v "$command" >/dev/null 2>&1 || fail "$command is required"
-  done
+managed_env_value() {
+  local key=$1 count
+  count=$(awk -F= -v key="$key" '$1 == key { count++ } END { print count + 0 }' "$release_env")
+  [[ "$count" == 1 ]] || fail "release.env must contain exactly one $key assignment"
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$release_env"
 }
 
-parse_args "$@"
-require_commands
+requested_image=''
+requested_version=''
+operation_id=''
+contract_version=''
+while (($#)); do
+  case "$1" in
+    --image) (($# >= 2)) || fail '--image requires a value'; [[ -z "$requested_image" ]] || fail '--image may be supplied once'; requested_image=$2; shift 2 ;;
+    --version) (($# >= 2)) || fail '--version requires a value'; [[ -z "$requested_version" ]] || fail '--version may be supplied once'; requested_version=$2; shift 2 ;;
+    --operation-id) (($# >= 2)) || fail '--operation-id requires a value'; [[ -z "$operation_id" ]] || fail '--operation-id may be supplied once'; operation_id=$2; shift 2 ;;
+    --contract-version) (($# >= 2)) || fail '--contract-version requires a value'; [[ -z "$contract_version" ]] || fail '--contract-version may be supplied once'; contract_version=$2; shift 2 ;;
+    *) fail "unknown argument: $1" ;;
+  esac
+done
 
+[[ "$contract_version" == "$HOST_CONTRACT_VERSION" ]] \
+  || fail "updater contract ${contract_version:-none} does not match executor contract $HOST_CONTRACT_VERSION; reinstall the updater with ops/install-sub2api-updater.sh"
+[[ "$requested_image" =~ ^sha256:[a-f0-9]{64}$ ]] || fail '--image must be one local sha256 image ID'
+[[ "$requested_version" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || fail '--version is invalid'
+[[ "$operation_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || fail '--operation-id is invalid'
+
+for command in docker jq awk date stat mktemp chmod mv dirname basename; do
+  command -v "$command" >/dev/null 2>&1 || fail "$command is required"
+done
+command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || fail 'sha256sum or shasum is required'
+
+executor=$(canonical_file "${SUB2API_BLUE_GREEN_EXECUTOR:-/usr/local/libexec/deploy-sub2api-blue-green-host.sh}" 'blue-green executor')
+[[ -x "$executor" ]] || fail 'blue-green executor must be executable'
 deploy_root=$(canonical_directory "${SUB2API_PRODUCTION_ROOT:-/opt/sub2api/production}" 'production root')
-[[ "$(pwd -P)" == "$deploy_root" ]] || fail 'the current directory must be the production root'
-[[ "$(uname -s)" == Linux ]] || fail 'the host must be Linux'
-[[ -z "${DOCKER_HOST:-}" ]] || fail 'DOCKER_HOST must be unset'
-[[ "${DOCKER_CONTEXT:-default}" == default ]] || fail 'DOCKER_CONTEXT must be default'
-[[ "$(docker context show)" == default ]] || fail 'Docker context must be default'
+base_compose=$(canonical_file "${SUB2API_COMPOSE_FILE:-$deploy_root/compose.yaml}" 'production Compose file')
+secret_env=$(canonical_file "${SUB2API_ENV_FILE:-$deploy_root/.env}" 'production secret environment')
+release_env=$(canonical_file "${SUB2API_RELEASE_ENV_FILE:-$deploy_root/release.env}" 'blue-green release environment')
+release_state=$(canonical_file "${SUB2API_RELEASE_STATE:-/var/lib/sub2api/release-state}" 'blue-green release state')
+record_root=$(canonical_directory "${SUB2API_RELEASE_RECORD_ROOT:-/var/lib/sub2api/release-records}" 'release record root')
+admin_key_file=$(canonical_file "${SUB2API_ADMIN_API_KEY_FILE:-$deploy_root/secrets/sub2api-admin-api-key}" 'admin API key file')
+gateway_key_file=$(canonical_file "${SUB2API_GATEWAY_API_KEY_FILE:-$deploy_root/secrets/sub2api-gateway-api-key}" 'gateway API key file')
+staging_root=$(canonical_directory "${SUB2API_RELEASE_STAGING_ROOT:-/var/lib/sub2api/release-staging}" 'release staging root')
+base_url=${SUB2API_BASE_URL:-https://api.xingqiaolab.top}
+network_curl_image=${SUB2API_NETWORK_CURL_IMAGE:-}
+network_curl_allowlist=${SUB2API_NETWORK_CURL_IMAGE_ALLOWLIST:-}
+deadline_seconds=${SUB2API_RELEASE_DEADLINE_SECONDS:-1800}
 
-compose_project=${SUB2API_COMPOSE_PROJECT:-sub2api}
-[[ "$compose_project" == sub2api ]] || fail 'Compose project must be sub2api'
-env_file=$(canonical_file "${SUB2API_ENV_FILE:-$deploy_root/.env}" 'Compose environment file')
-compose_file=$(canonical_file "${SUB2API_COMPOSE_FILE:-$deploy_root/compose.yaml}" 'Compose file')
+[[ "$base_url" == https://* ]] || fail 'SUB2API_BASE_URL must use HTTPS'
+[[ "$network_curl_image" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]] || fail 'SUB2API_NETWORK_CURL_IMAGE must be immutable'
+network_curl_approved=false
+for approved in $network_curl_allowlist; do
+  [[ "$approved" == "$network_curl_image" ]] && network_curl_approved=true
+done
+[[ "$network_curl_approved" == true ]] || fail 'SUB2API_NETWORK_CURL_IMAGE is not allowlisted'
+[[ "$deadline_seconds" =~ ^[0-9]+$ && "$deadline_seconds" -ge 60 && "$deadline_seconds" -le 1800 ]] \
+  || fail 'SUB2API_RELEASE_DEADLINE_SECONDS must be between 60 and 1800'
+[[ "$(mode_of "$release_env")" == 600 ]] || fail 'blue-green release environment mode must be 0600'
+[[ "$(mode_of "$release_state")" == 600 ]] || fail 'blue-green release state mode must be 0600'
 
-base_url=${SUB2API_BASE_URL:-}
-[[ -n "$base_url" ]] || fail 'SUB2API_BASE_URL is required and must point to the Caddy entrypoint'
-[[ "$base_url" == https://* ]] || fail 'SUB2API_BASE_URL must be an HTTPS Caddy entrypoint'
-case "$base_url" in
-  *://127.0.0.1:8080*|*://localhost:8080*|*://sub2api:8080*)
-    fail 'SUB2API_BASE_URL must not bypass Caddy'
-    ;;
-esac
+jq -e '
+  type == "object" and
+  (.schema_version == 1 or .schema_version == 2) and
+  ((.active_slot == "blue" and .active_upstream == "sub2api-blue:8080") or
+   (.active_slot == "green" and .active_upstream == "sub2api-green:8080")) and
+  ([.blue_image,.green_image,.worker_image] | all(type == "string" and length > 0)) and
+  (.source_commit | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.source_tree | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.migrations_hash | type == "string" and test("^[a-f0-9]{64}$")) and
+  ([.postgres_id,.redis_id,.caddy_id] | all(type == "string" and length > 0))
+' "$release_state" >/dev/null || fail 'blue-green release state is invalid or inconsistent'
 
-admin_key_file=$(canonical_file "${SUB2API_ADMIN_API_KEY_FILE:-${ADMIN_API_KEY_FILE:-}}" 'admin API key file')
-gateway_key_file=$(canonical_file "${SUB2API_GATEWAY_API_KEY_FILE:-${GATEWAY_API_KEY_FILE:-}}" 'gateway API key file')
-[[ $(wc -c <"$admin_key_file" | tr -d ' ') -le 1024 ]] || fail 'admin API key file is too large'
-[[ $(wc -c <"$gateway_key_file" | tr -d ' ') -le 1024 ]] || fail 'gateway API key file is too large'
-admin_key=$(tr -d '\r\n' <"$admin_key_file")
-gateway_key=$(tr -d '\r\n' <"$gateway_key_file")
-[[ -n "$admin_key" && -n "$gateway_key" ]] || fail 'API key files must not be empty'
+state_blue=$(jq -r '.blue_image' "$release_state")
+state_green=$(jq -r '.green_image' "$release_state")
+state_worker=$(jq -r '.worker_image' "$release_state")
+state_upstream=$(jq -r '.active_upstream' "$release_state")
+state_slot=$(jq -r '.active_slot' "$release_state")
+state_previous=green
+[[ "$state_slot" == green ]] && state_previous=blue
+[[ "$(managed_env_value SUB2API_BLUE_IMAGE)" == "$state_blue" ]] || fail 'release.env blue image does not match release state'
+[[ "$(managed_env_value SUB2API_GREEN_IMAGE)" == "$state_green" ]] || fail 'release.env green image does not match release state'
+[[ "$(managed_env_value SUB2API_WORKER_IMAGE)" == "$state_worker" ]] || fail 'release.env worker image does not match release state'
+[[ "$(managed_env_value SUB2API_ACTIVE_UPSTREAM)" == "$state_upstream" ]] || fail 'release.env active upstream does not match release state'
+[[ "$(managed_env_value SUB2API_ACTIVE_SLOT)" == "$state_slot" ]] || fail 'release.env active slot does not match release state'
+[[ "$(managed_env_value SUB2API_PREVIOUS_SLOT)" == "$state_previous" ]] || fail 'release.env previous slot does not match release state'
 
-record_root_input=${SUB2API_RELEASE_RECORD_ROOT:-$deploy_root/release-records/host-updater}
-[[ "$record_root_input" == /* && ! -L "$record_root_input" ]] || fail 'release record root must be absolute and non-symlinked'
-mkdir -p "$record_root_input"
-record_root=$(canonical_directory "$record_root_input" 'release record root')
-chmod 0700 "$record_root"
+trace 'adapter inspect qualified image'
+image_json=$(docker image inspect "$requested_image") || fail 'requested local image could not be inspected'
+jq -e --arg id "$requested_image" --arg version "$requested_version" '
+  length == 1 and .[0].Id == $id and .[0].Os == "linux" and .[0].Architecture == "amd64" and
+  .[0].Config.Labels["com.xingqiao.sub2api.qualified"] == "true" and
+  .[0].Config.Labels["com.xingqiao.sub2api.upstream.version"] == $version and
+  (.[0].Config.Labels["com.xingqiao.sub2api.upstream.commit"] | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.[0].Config.Labels["com.xingqiao.sub2api.source.commit"] | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.[0].Config.Labels["com.xingqiao.sub2api.source.tree"] | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.[0].Config.Labels["com.xingqiao.sub2api.tested.tree"] | type == "string" and test("^[a-f0-9]{40}$")) and
+  (.[0].Config.Labels["com.xingqiao.sub2api.migrations.sha256"] | type == "string" and test("^[a-f0-9]{64}$")) and
+  .[0].Config.Labels["com.xingqiao.sub2api.source.tree"] == .[0].Config.Labels["com.xingqiao.sub2api.tested.tree"]
+' <<<"$image_json" >/dev/null || fail 'requested image qualification labels are invalid'
 
-backup_root_input=${SUB2API_BACKUP_ROOT:-$deploy_root/backups/release}
-[[ "$backup_root_input" == /* && ! -L "$backup_root_input" ]] || fail 'backup root must be absolute and non-symlinked'
-mkdir -p "$backup_root_input"
-backup_root=$(canonical_directory "$backup_root_input" 'backup root')
-chmod 0700 "$backup_root"
+repo_digest=$(jq -er --arg repository "$APPROVED_IMAGE_REPOSITORY" '
+  .[0].RepoDigests as $digests |
+  select(($digests | type) == "array" and ($digests | length) == 1) |
+  $digests[0] |
+  select(startswith($repository + "@sha256:") and test("@sha256:[a-f0-9]{64}$"))
+' <<<"$image_json") || fail 'requested image must have exactly one approved GHCR RepoDigest'
 
-app_volume=${SUB2API_DATA_VOLUME:-sub2api_sub2api_data}
-postgres_volume=${SUB2API_POSTGRES_VOLUME:-sub2api_postgres_data}
-redis_volume=${SUB2API_REDIS_VOLUME:-sub2api_redis_data}
-[[ "$app_volume" == sub2api_sub2api_data && "$postgres_volume" == sub2api_postgres_data && "$redis_volume" == sub2api_redis_data ]] \
-  || fail 'unexpected production volume names'
-
-compose=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
-  --env-file "$env_file" -f "$compose_file")
-
-lock_dir="$record_root/.update.lock"
-partial_record=$(find "$record_root" -maxdepth 1 -type f -name '*.partial' -print -quit)
-[[ -z "$partial_record" && ! -e "$lock_dir" ]] || fail 'an update lock or partial record already exists'
-mkdir "$lock_dir" || fail 'another host update is in progress'
-lock_owned=true
-
-record_path="$record_root/$(date -u +%Y%m%dT%H%M%SZ)-$operation_id.json"
-[[ ! -e "$record_path" ]] || fail 'a release record already exists for this operation'
-record_written=false
-mutation_started=false
-compose_changed=false
-compose_backup=''
-backup_path=''
-backup_partial=''
-previous_image=''
-previous_image_id=''
-requested_image_id=''
-rollback_tag="sub2api-host-updater:rollback-$operation_id"
-storage_identity=false
-backup_verified=false
-health=false
-smoke=false
-
-write_record() {
-  local state=$1 temporary
-  [[ "$record_written" == false ]] || return 0
-  temporary="$record_root/.${operation_id}.$$.partial"
-  jq -n \
-    --arg operation_id "$operation_id" \
-    --arg previous_image "$previous_image" \
-    --arg previous_image_id "$previous_image_id" \
-    --arg requested_image "$requested_image" \
-    --arg requested_digest "$requested_digest" \
-    --arg requested_version "$requested_version" \
-    --arg rollback_tag "$rollback_tag" \
-    --arg backup_path "$backup_path" \
-    --arg state "$state" \
-    --argjson storage_identity "$storage_identity" \
-    --argjson backup_verified "$backup_verified" \
-    --argjson health "$health" \
-    --argjson smoke "$smoke" \
-    '{
-      schema_version: 1,
-      operation_id: $operation_id,
-      previous: {image: $previous_image, image_id: $previous_image_id, rollback_tag: $rollback_tag},
-      requested: {image: $requested_image, digest: $requested_digest, version: $requested_version},
-      backup: {path: $backup_path, sha256_verified: $backup_verified},
-      checks: {storage_identity: $storage_identity, backup: $backup_verified, health: $health, smoke: $smoke},
-      state: $state
-    }' >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$record_path"
-  record_written=true
-}
-
-restore_compose_file() {
-  [[ "$compose_changed" == true ]] || return 0
-  [[ -n "$compose_backup" && -f "$compose_backup" ]] || return 1
-  local temporary
-  temporary=$(mktemp "$compose_file.restore.XXXXXX")
-  chmod 0600 "$temporary"
-  cp "$compose_backup" "$temporary"
-  mv "$temporary" "$compose_file"
-  compose_changed=false
-}
-
-resolve_container_id() {
-  local service=$1 ids count
-  ids=$("${compose[@]}" ps -q "$service") || return 1
-  count=$(awk 'NF {n++} END {print n + 0}' <<<"$ids")
-  [[ "$count" == 1 ]] || return 1
-  awk 'NF {print; exit}' <<<"$ids"
-}
-
-inspect_runtime() {
-  docker inspect "$@"
-}
-
-validate_runtime() {
-  local inspected=$1
-  jq -e --arg project "$compose_project" --arg root "$deploy_root" --arg config "$compose_file" \
-    --arg app "$app_volume" --arg postgres "$postgres_volume" --arg redis "$redis_volume" \
-    --arg previous "$previous_image" --arg previous_id "$previous_image_id" '
-    length == 5 and
-    all(.[]; .Config.Labels["com.docker.compose.project"] == $project) and
-    .[0].Config.Labels["com.docker.compose.project.working_dir"] == $root and
-    .[0].Config.Labels["com.docker.compose.project.config_files"] == $config and
-    .[0].Config.Image == $previous and .[0].Image == $previous_id and
-    .[1].State.Health.Status == "healthy" and
-    .[2].State.Health.Status == "healthy" and
-    (
-      .[3].State.Health.Status == "healthy" or
-      (.[3].State.Health == null and .[3].State.Running == true)
-    ) and
-    .[4].State.Health.Status == "healthy" and
-    ([.[0].Mounts[] | select(.Destination == "/app/data")] | length == 1 and
-      .[0].Type == "volume" and (.[0].Name // .[0].Source) == $app and .[0].RW == true) and
-    ([.[1].Mounts[] | select(.Destination == "/var/lib/postgresql/data")] | length == 1 and
-      .[0].Type == "volume" and (.[0].Name // .[0].Source) == $postgres and .[0].RW == true) and
-    ([.[2].Mounts[] | select(.Destination == "/data")] | length == 1 and
-      .[0].Type == "volume" and (.[0].Name // .[0].Source) == $redis and .[0].RW == true)
-  ' <<<"$inspected" >/dev/null
-}
-
-validate_compose_storage() {
-  local config=$1
-  # A service mount names the volume key declared in the Compose file, while the
-  # runtime volume carries the project prefix. Resolve the key through the
-  # top-level volumes map before comparing against the runtime volume names.
-  jq -e --arg image "$requested_image" --arg app "$app_volume" \
-    --arg postgres "$postgres_volume" --arg redis "$redis_volume" '
-    def mounted($service; $target; $volume):
-      [.services[$service].volumes[] | select(.target == $target)] as $mounts
-      | ($mounts | length) == 1
-        and $mounts[0].type == "volume"
-        and ((.volumes[$mounts[0].source].name // $mounts[0].source) == $volume);
-    .services.sub2api.image == $image and
-    mounted("sub2api"; "/app/data"; $app) and
-    mounted("postgres"; "/var/lib/postgresql/data"; $postgres) and
-    mounted("redis"; "/data"; $redis)
-  ' <<<"$config" >/dev/null
-}
-
-require_free_space() {
-  local path=$1 available
-  available=$(df -Pk "$path" | awk 'NR == 2 {print $4}')
-  [[ "$available" =~ ^[0-9]+$ && "$available" -ge 2097152 ]] || fail "less than 2 GiB free at $path"
-}
-
-validate_counts() {
-  jq -e '
-    type == "object" and
-    (keys | sort == ["accounts", "api_keys", "groups", "settings", "usage_logs", "users"]) and
-    ([.users, .accounts, .groups, .api_keys, .settings, .usage_logs] |
-      all(type == "number" and . >= 0 and floor == .))
-  ' "$1" >/dev/null
-}
-
-validate_counts_monotonic() {
-  jq -e --slurpfile baseline "$1" '
-    . as $actual | $baseline[0] as $before |
-    ($actual.users >= $before.users and
-      $actual.accounts >= $before.accounts and
-      $actual.groups >= $before.groups and
-      $actual.api_keys >= $before.api_keys and
-      $actual.settings >= $before.settings and
-      $actual.usage_logs >= $before.usage_logs) and
-    ([ $actual.users, $actual.accounts, $actual.groups, $actual.api_keys,
-       $actual.settings, $actual.usage_logs ] | all(type == "number" and floor == .))
-  ' "$2" >/dev/null
-}
-
-replace_sub2api_image() {
-  local temporary=$1 replaced
-  temporary=$(mktemp "$compose_file.update.XXXXXX")
-  if ! awk -v image="$requested_image" '
-    BEGIN {services = 0; sub2api = 0; replaced = 0}
-    /^services:[[:space:]]*$/ {services = 1; print; next}
-    services && /^[^[:space:]]/ {services = 0; sub2api = 0}
-    services && /^  sub2api:[[:space:]]*$/ {sub2api = 1; print; next}
-    sub2api && /^  [^[:space:]]/ {sub2api = 0}
-    sub2api && /^    image:[[:space:]]*/ && replaced == 0 {print "    image: " image; replaced = 1; next}
-    {print}
-    END {exit(replaced == 1 ? 0 : 1)}
-  ' "$compose_file" >"$temporary"; then
-    rm -f -- "$temporary"
-    fail 'Compose file has no services.sub2api.image declaration'
-  fi
-  chmod 0600 "$temporary"
-  mv "$temporary" "$compose_file"
-  compose_changed=true
-}
-
-backup_release() {
-  local timestamp partial
-  timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-  partial="$backup_root/.partial-$timestamp-$operation_id-$$"
-  mkdir "$partial"
-  chmod 0700 "$partial"
-  backup_partial="$partial"
-  backup_path="$backup_root/$timestamp-$operation_id"
-  [[ ! -e "$backup_path" ]] || fail 'backup destination already exists'
-
-  trace backup-db
-  "${compose[@]}" exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
-    >"$partial/sub2api.dump"
-  [[ -s "$partial/sub2api.dump" ]] || fail 'PostgreSQL dump is empty'
-  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-    --mount "type=bind,src=$partial,dst=/backup,readonly" "$PINNED_POSTGRES_IMAGE" \
-    pg_restore --list /backup/sub2api.dump >/dev/null
-
-  trace backup-counts
-  "${compose[@]}" exec -T postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL' >"$partial/record-counts.json"
-select json_build_object(
-  'users', (select count(*) from users),
-  'accounts', (select count(*) from accounts),
-  'groups', (select count(*) from groups),
-  'api_keys', (select count(*) from api_keys),
-  'settings', (select count(*) from settings),
-  'usage_logs', (select count(*) from usage_logs)
-)::text;
-SQL
-  validate_counts "$partial/record-counts.json"
-
-  trace backup-app-data
-  "${compose[@]}" exec -T sub2api sh -c 'exec tar -C /app/data -czf - .' >"$partial/app-data.tar.gz"
-  [[ -s "$partial/app-data.tar.gz" ]] || fail 'app-data archive is empty'
-  tar -tzf "$partial/app-data.tar.gz" >/dev/null
-
-  chmod 0600 "$partial/sub2api.dump" "$partial/record-counts.json" "$partial/app-data.tar.gz"
-  trace checksum
-  (cd "$partial" && sha256sum sub2api.dump record-counts.json app-data.tar.gz >SHA256SUMS && sha256sum -c SHA256SUMS >/dev/null)
-  chmod 0600 "$partial/SHA256SUMS"
-  mv "$partial" "$backup_path"
-  backup_partial=''
-  chmod 0700 "$backup_path"
-  backup_verified=true
-}
-
-wait_for_requested_health() {
-  local deadline=$((SECONDS + health_timeout)) inspected actual_id status image
-  while ((SECONDS <= deadline)); do
-    # force-recreate issues a fresh container identity, so resolve on every
-    # probe instead of trusting the pre-update container ID.
-    if sub2api_container=$(resolve_container_id sub2api); then
-      inspected=$(inspect_runtime "$sub2api_container" 2>/dev/null || true)
-    else
-      inspected=''
-    fi
-    actual_id=$(jq -er '.[0].Image // empty' <<<"$inspected" 2>/dev/null || true)
-    status=$(jq -er '.[0].State.Health.Status // empty' <<<"$inspected" 2>/dev/null || true)
-    image=$(jq -er '.[0].Config.Image // empty' <<<"$inspected" 2>/dev/null || true)
-    if [[ "$actual_id" == "$requested_image_id" && "$status" == healthy && "$image" == "$requested_image" ]] && \
-      jq -e --arg volume "$app_volume" '
-        ([.[0].Mounts[] | select(.Destination == "/app/data")] | length == 1 and
-          .[0].Type == "volume" and (.[0].Name // .[0].Source) == $volume and .[0].RW == true)
-      ' <<<"$inspected" >/dev/null; then
-      return 0
-    fi
-    ((SECONDS < deadline)) || break
-    sleep 2
-  done
-  return 1
-}
-
-wait_for_rollback_health() {
-  # The rollback recreation also mints a new container that starts out in the
-  # "starting" health state, so poll it just like the requested container.
-  local deadline=$((SECONDS + health_timeout)) inspected
-  while ((SECONDS <= deadline)); do
-    if sub2api_container=$(resolve_container_id sub2api) &&
-      inspected=$(inspect_runtime "$sub2api_container" 2>/dev/null) &&
-      jq -e --arg image "$previous_image" --arg id "$previous_image_id" '
-        .[0].Config.Image == $image and .[0].Image == $id and .[0].State.Health.Status == "healthy"
-      ' <<<"$inspected" >/dev/null; then
-      return 0
-    fi
-    ((SECONDS < deadline)) || break
-    sleep 2
-  done
-  return 1
-}
-
-run_smoke() {
-  local guard_body status post_counts admin_header gateway_header qr_hash logs
-  guard_body=$(mktemp)
-  post_counts=$(mktemp)
-  admin_header=$(mktemp)
-  gateway_header=$(mktemp)
-  printf 'X-API-Key: %s\n' "$admin_key" >"$admin_header"
-  printf 'Authorization: Bearer %s\n' "$gateway_key" >"$gateway_header"
-  chmod 0600 "$guard_body" "$post_counts" "$admin_header" "$gateway_header"
-  trap 'rm -f -- "$guard_body" "$post_counts" "$admin_header" "$gateway_header"' RETURN
-  curl --connect-timeout 5 --max-time 15 -fsS "$base_url/health" | jq -e '.status == "ok"' >/dev/null
-  curl --connect-timeout 5 --max-time 15 -fsS -H "@$admin_header" \
-    "$base_url/api/v1/admin/system/version" |
-    jq -e --arg version "$requested_version" '(.data // .).version == $version' >/dev/null
-  curl --connect-timeout 5 --max-time 15 -fsS "$base_url/api/v1/settings/public" |
-    jq -e '(.data // .).custom_menu_items | [ .[] | select(.id == "xingqiao-support" and .url == "md:support") ] | length == 1' >/dev/null
-  qr_hash=$("${compose[@]}" exec -T sub2api sha256sum /app/data/pages/support/qq-group-1080152144.png | awk '{print $1}')
-  [[ "$qr_hash" == "$EXPECTED_QR_SHA256" ]] || fail 'support QR checksum mismatch'
-  "${compose[@]}" exec -T postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL' >"$post_counts"
-select json_build_object(
-  'users', (select count(*) from users),
-  'accounts', (select count(*) from accounts),
-  'groups', (select count(*) from groups),
-  'api_keys', (select count(*) from api_keys),
-  'settings', (select count(*) from settings),
-  'usage_logs', (select count(*) from usage_logs)
-)::text;
-SQL
-  validate_counts_monotonic "$backup_path/record-counts.json" "$post_counts"
-  status=$(curl --connect-timeout 5 --max-time 15 -sS -o "$guard_body" -w '%{http_code}' \
-    -X POST -H "@$admin_header" "$base_url/api/v1/admin/system/update")
-  [[ "$status" == 401 || "$status" == 409 ]] || fail 'update endpoint was not protected by the updater or deployment guard'
-  status=$(curl --connect-timeout 5 --max-time 15 -sS -o "$guard_body" -w '%{http_code}' \
-    -X POST -H "@$admin_header" "$base_url/api/v1/admin/system/rollback")
-  [[ "$status" == 409 ]] || fail 'rollback guard did not return HTTP 409'
-  curl --connect-timeout 5 --max-time 15 -fsS -H "@$gateway_header" \
-    "$base_url/v1/models" | jq -e '.data | type == "array"' >/dev/null
-  logs=$("${compose[@]}" logs --since 10m --no-color sub2api)
-  ! grep -Eiq 'fatal|migration' <<<"$logs" || fail 'recent fatal or migration error found'
-}
-
-attempt_rollback() {
-  restore_compose_file || return 1
-  if ! SUB2API_IMAGE="$previous_image" "${compose[@]}" up -d --no-deps --force-recreate sub2api >/dev/null; then
-    return 1
-  fi
-  wait_for_rollback_health || return 1
-  local service current expected
-  for service in postgres redis caddy relay-ops; do
-    current=$(resolve_container_id "$service") || return 1
-    case "$service" in
-      postgres) expected=$postgres_container ;;
-      redis) expected=$redis_container ;;
-      caddy) expected=$caddy_container ;;
-      relay-ops) expected=$relay_ops_container ;;
-    esac
-    [[ "$current" == "$expected" ]] || return 1
-  done
+source_commit=$(jq -r '.[0].Config.Labels["com.xingqiao.sub2api.source.commit"]' <<<"$image_json")
+source_tree=$(jq -r '.[0].Config.Labels["com.xingqiao.sub2api.source.tree"]' <<<"$image_json")
+tested_tree=$(jq -r '.[0].Config.Labels["com.xingqiao.sub2api.tested.tree"]' <<<"$image_json")
+migrations_hash=$(jq -r '.[0].Config.Labels["com.xingqiao.sub2api.migrations.sha256"]' <<<"$image_json")
+release_image="${repo_digest%@sha256:*}:release-$source_commit-${requested_image#sha256:}"
+archive="$staging_root/sub2api-$operation_id-$source_commit.tar"
+[[ ! -e "$archive" ]] || fail 'preloaded archive already exists for this operation'
+archive_partial=$(mktemp "$staging_root/.sub2api-$operation_id.XXXXXX")
+cleanup_staged_archive() {
+  [[ -z "${archive_partial:-}" ]] || rm -f -- "$archive_partial"
+  [[ -z "${archive:-}" ]] || rm -f -- "$archive"
   return 0
 }
+trap cleanup_staged_archive EXIT HUP INT TERM
 
-on_exit() {
-  local exit_status=$? rollback_state
-  trap - EXIT HUP INT TERM
-  set +e
-  if [[ "$record_written" == false ]]; then
-    if [[ "$mutation_started" == true ]]; then
-      if attempt_rollback; then
-        rollback_state=rolled_back
-        write_record "$rollback_state"
-        trace rolled_back
-        printf 'result=rolled_back\n'
-        exit_status=0
-      else
-        rollback_state=rollback_failed
-        write_record "$rollback_state"
-        trace rollback_failed
-        printf 'result=rollback_failed\n'
-        exit_status=1
-      fi
-    else
-      restore_compose_file >/dev/null 2>&1 || true
-      write_record preflight_failed
-    fi
-  fi
-  [[ -n "${compose_backup:-}" ]] && rm -f -- "$compose_backup"
-  if [[ -n "${backup_partial:-}" && "$backup_partial" == "$backup_root"/.partial-* && -d "$backup_partial" ]]; then
-    rm -rf -- "$backup_partial"
-  fi
-  [[ "${lock_owned:-false}" == true ]] && rmdir "$lock_dir" 2>/dev/null || true
-  exit "$exit_status"
-}
-trap on_exit EXIT
-trap 'exit 130' HUP INT TERM
+trace 'adapter stage preloaded image'
+docker image tag "$requested_image" "$release_image" >/dev/null || fail 'could not create image-ID-bound release tag'
+docker image save --output "$archive_partial" "$release_image" || fail 'could not stage the preloaded image archive'
+[[ -s "$archive_partial" ]] || fail 'preloaded image archive is empty'
+chmod 0600 "$archive_partial"
+archive_sha256=$(sha256_file "$archive_partial")
+[[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'preloaded image archive checksum failed'
+mv "$archive_partial" "$archive"
+archive_partial=''
 
-trace inspect
-sub2api_container=$(resolve_container_id sub2api) || fail 'sub2api container was not resolved uniquely'
-for service in postgres redis caddy relay-ops; do
-  case "$service" in
-    postgres) postgres_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
-    redis) redis_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
-    caddy) caddy_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
-    relay-ops) relay_ops_container=$(resolve_container_id "$service") || fail "$service container was not resolved uniquely" ;;
-  esac
-done
-inspected=$(inspect_runtime "$sub2api_container" "$postgres_container" "$redis_container" \
-  "$caddy_container" "$relay_ops_container") \
-  || fail 'running containers could not be inspected'
-previous_image=$(jq -er '.[0].Config.Image' <<<"$inspected") || fail 'previous image was not identified'
-previous_image_id=$(jq -er '.[0].Image' <<<"$inspected") || fail 'previous image ID was not identified'
-validate_runtime "$inspected" || fail 'runtime project, health, or named-volume identity is invalid'
-storage_identity=true
+now=$(date -u +%s) || fail 'release deadline clock failed'
+[[ "$now" =~ ^[0-9]+$ ]] || fail 'release deadline clock is invalid'
+deadline_epoch=$((now + deadline_seconds))
 
-config_before=$("${compose[@]}" config --format json) || fail 'Compose configuration could not be resolved'
-jq -e --arg image "$previous_image" '.services.sub2api.image == $image' <<<"$config_before" >/dev/null \
-  || fail 'Compose image does not match the running previous image'
-health_timeout=${HEALTH_TIMEOUT_SECONDS:-180}
-[[ "$health_timeout" =~ ^[0-9]+$ && "$health_timeout" -le 180 ]] || fail 'HEALTH_TIMEOUT_SECONDS must be an integer no greater than 180'
-require_free_space "$deploy_root"
-require_free_space "$backup_root"
+executor_environment=(
+  "DEPLOY_ROOT=$deploy_root"
+  "BASE_COMPOSE=$base_compose"
+  "SECRET_ENV=$secret_env"
+  "RELEASE_ENV=$release_env"
+  "RELEASE_STATE=$release_state"
+  "RELEASE_RECORD_ROOT=$record_root"
+  "ADMIN_API_KEY_FILE=$admin_key_file"
+  "GATEWAY_API_KEY_FILE=$gateway_key_file"
+  "BASE_URL=$base_url"
+  "NETWORK_CURL_IMAGE=$network_curl_image"
+  "NETWORK_CURL_IMAGE_ALLOWLIST=$network_curl_allowlist"
+  "RELEASE_STAGING_ROOT=$staging_root"
+  'RELEASE_PRELOADED_IMAGE=true'
+)
+[[ -z "${RELEASE_EVENT_LOG:-}" ]] || executor_environment+=("RELEASE_EVENT_LOG=$RELEASE_EVENT_LOG")
 
-compose_backup=$(mktemp "$record_root/.compose-backup.XXXXXX")
-chmod 0600 "$compose_backup"
-cp "$compose_file" "$compose_backup"
-docker tag "$previous_image_id" "$rollback_tag" >/dev/null
-
-trace verify-image
-requested_image_id=$(docker image inspect "$requested_image" | jq -er \
-  --arg image "$requested_image" --arg version "$requested_version" '
-    .[0] |
-    select(
-      .Id == $image and
-      .Config.Labels["com.xingqiao.sub2api.qualified"] == "true" and
-      .Config.Labels["com.xingqiao.sub2api.upstream.version"] == $version and
-      (.Config.Labels["com.xingqiao.sub2api.upstream.commit"] |
-        type == "string" and test("^[a-f0-9]{40}$"))
-    ) |
-    .Id
-  ') || fail 'requested Xingqiao image qualification could not be verified'
-
-backup_release
-replace_sub2api_image "$compose_backup"
-trace compose-validate
-config_after=$("${compose[@]}" config --format json) || fail 'updated Compose configuration could not be resolved'
-validate_compose_storage "$config_after" || fail 'updated Compose storage or image identity is invalid'
-
-mutation_started=true
-trace recreate-sub2api
-"${compose[@]}" up -d --no-deps --force-recreate sub2api >/dev/null
-trace health
-wait_for_requested_health || fail 'requested image did not become healthy with the expected volume'
-health=true
-
-for service in postgres redis caddy relay-ops; do
-  current=$(resolve_container_id "$service") || fail "$service container disappeared after update"
-  case "$service" in
-    postgres) expected=$postgres_container ;;
-    redis) expected=$redis_container ;;
-    caddy) expected=$caddy_container ;;
-    relay-ops) expected=$relay_ops_container ;;
-  esac
-  [[ "$current" == "$expected" ]] || fail "$service container identity changed"
-done
-trace smoke
-run_smoke
-smoke=true
-write_record promoted
-trace promoted
+set +e
+executor_output=$(env "${executor_environment[@]}" "$executor" \
+  --mode production --image "$release_image" \
+  --preloaded-archive "$archive" --preloaded-archive-sha256 "$archive_sha256" --preloaded-image-id "$requested_image" \
+  --source-commit "$source_commit" --source-tree "$source_tree" --tested-tree "$tested_tree" \
+  --migrations-hash "$migrations_hash" --deadline-epoch "$deadline_epoch")
+executor_status=$?
+set -e
+if ((executor_status != 0)); then
+  [[ -z "$executor_output" ]] || printf '%s\n' "$executor_output"
+  exit "$executor_status"
+fi
+jq -e --arg image "$release_image" '
+  type == "object" and .schema_version == 1 and .downtime_required == false and
+  .result == "succeeded" and .image == $image and
+  ((.active_slot == "blue" and .active_upstream == "sub2api-blue:8080") or
+   (.active_slot == "green" and .active_upstream == "sub2api-green:8080"))
+' <<<"$executor_output" >/dev/null || fail 'blue-green executor did not emit an explicit successful terminal result'
 printf 'result=promoted\n'

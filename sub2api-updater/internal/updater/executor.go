@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -62,6 +63,9 @@ func (e *HostExecutor) Run(ctx context.Context, op Operation) (ExecutionResult, 
 		if result, parseErr := parseTerminalResult(stdout); parseErr == nil && result.RollbackFailed {
 			return result, nil
 		}
+		if result, parseErr := parseInterventionResult(stdout); parseErr == nil {
+			return result, nil
+		}
 		return ExecutionResult{}, commandFailure(stderr, err)
 	}
 	result, err := parseTerminalResult(stdout)
@@ -69,6 +73,37 @@ func (e *HostExecutor) Run(ctx context.Context, op Operation) (ExecutionResult, 
 		return ExecutionResult{}, err
 	}
 	return result, nil
+}
+
+func parseInterventionResult(stdout string) (ExecutionResult, error) {
+	var gate struct {
+		SchemaVersion int    `json:"schema_version"`
+		Downtime      bool   `json:"downtime_required"`
+		ReasonCode    string `json:"reason_code"`
+		Reason        string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &gate); err != nil {
+		return ExecutionResult{}, err
+	}
+	if gate.SchemaVersion != 1 || !gate.Downtime || !validReasonCode(gate.ReasonCode) || len(gate.Reason) > 512 {
+		return ExecutionResult{}, errors.New("invalid administrator-intervention result")
+	}
+	return ExecutionResult{
+		Stage: "intervention_required", Result: gate.ReasonCode, Error: gate.Reason,
+		InterventionRequired: true,
+	}, nil
+}
+
+func validReasonCode(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseTerminalResult(stdout string) (ExecutionResult, error) {

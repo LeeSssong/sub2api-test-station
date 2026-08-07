@@ -8,7 +8,7 @@
   var READINESS_PATH = '/api/v1/admin/system/host-update/readiness'
   var READINESS_POLL_INTERVAL_MS = 30000
   var POLL_INTERVAL_MS = 3000
-  var TERMINAL_STAGES = ['promoted', 'rolled_back', 'failed', 'rollback_failed']
+  var TERMINAL_STAGES = ['promoted', 'rolled_back', 'failed', 'rollback_failed', 'intervention_required']
   var TOAST_DURATION_MS = 5000
   var STEP_LABELS = {
     inspect: '检查运行环境',
@@ -253,6 +253,7 @@
       rolled_back: '已回滚到上一版本',
       failed: '升级失败',
       rollback_failed: '回滚失败',
+      intervention_required: '需要管理员介入',
     }[operation.stage] || ''
   }
 
@@ -575,14 +576,6 @@
         renderProgressLog(operation.events)
         var operationLabel = operationStatus(operation)
         if (operationLabel) setReadinessState(operationLabel, TERMINAL_STAGES.indexOf(operation.stage) === -1 ? null : (operation.stage === 'promoted' ? 'success' : 'error'))
-        var phrase = {
-          running: '升级正在执行，当前请求可能短暂断开。',
-          promoted: '升级成功完成。',
-          rolled_back: '升级失败，已回滚到上一版本。',
-          failed: '升级失败，请查看运维状态。',
-          rollback_failed: '升级和回滚均未完成，请立即查看运维状态。',
-        }[operation.stage]
-        if (phrase) setMessage(phrase, TERMINAL_STAGES.indexOf(operation.stage) === -1 ? null : (operation.stage === 'promoted' ? 'success' : 'error'))
       }
       if (TERMINAL_STAGES.indexOf(operation.stage) !== -1) {
         stopPolling()

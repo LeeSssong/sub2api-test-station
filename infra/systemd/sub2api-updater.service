@@ -34,7 +34,7 @@ RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/opt/sub2api/production /var/lib/sub2api-updater
+ReadWritePaths=/opt/sub2api/production /var/lib/sub2api-updater /var/lib/sub2api/release-staging /var/lib/sub2api/release-records /var/lib/sub2api/release-state
 
 [Install]
 WantedBy=multi-user.target

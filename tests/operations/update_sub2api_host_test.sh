@@ -3,521 +3,252 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT="$ROOT/ops/update-sub2api-host.sh"
-IMAGE='sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
-VERSION='0.1.165'
-OLD_IMAGE='xingqiao-sub2api:rollback-20260724-contact-v1'
-OLD_ID='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-NEW_ID="$IMAGE"
+IMAGE="sha256:$(printf 'a%.0s' {1..64})"
+VERSION=0.1.171
+OPERATION_ID=op-test-001
+REPOSITORY=ghcr.io/leesssong/xingqiao-sub2api
+DIGEST="$REPOSITORY@sha256:$(printf 'b%.0s' {1..64})"
+UPSTREAM_COMMIT=$(printf 'c%.0s' {1..40})
+SOURCE_COMMIT=$(printf 'd%.0s' {1..40})
+SOURCE_TREE=$(printf 'e%.0s' {1..40})
+MIGRATIONS_HASH=$(printf 'f%.0s' {1..64})
+CURL_IMAGE="curlimages/curl@sha256:$(printf '1%.0s' {1..64})"
 
-fail() {
-  printf 'FAIL: %s\n' "$1" >&2
-  exit 1
-}
+fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 new_fixture() {
   local temporary
   temporary=$(mktemp -d)
   FIXTURE_ROOT=$(cd "$temporary" && pwd -P)
   FIXTURE_BIN="$FIXTURE_ROOT/bin"
-  FIXTURE_DEPLOY="$FIXTURE_ROOT/deploy"
-  FIXTURE_RECORDS="$FIXTURE_ROOT/release-records/host-updater"
-  FIXTURE_LOG="$FIXTURE_ROOT/operations.log"
-  FIXTURE_TRACE="$FIXTURE_ROOT/trace.log"
-  FIXTURE_STATE="$FIXTURE_ROOT/state"
-  REAL_JQ_PATH=$(command -v jq)
-  mkdir -p "$FIXTURE_BIN" "$FIXTURE_DEPLOY" "$FIXTURE_RECORDS" "$FIXTURE_DEPLOY/app-data"
-  printf 'initial\n' >"$FIXTURE_STATE"
-  : >"$FIXTURE_LOG"
+  FIXTURE_DEPLOY="$FIXTURE_ROOT/production"
+  FIXTURE_RECORDS="$FIXTURE_ROOT/release-records"
+  FIXTURE_STAGING="$FIXTURE_ROOT/release-staging"
+  FIXTURE_STATE="$FIXTURE_ROOT/release-state"
+  FIXTURE_TRACE="$FIXTURE_ROOT/events.log"
+  FIXTURE_CALL="$FIXTURE_ROOT/executor-call"
+  FIXTURE_DOCKER="$FIXTURE_ROOT/docker.log"
+  REAL_JQ=$(command -v jq)
+  mkdir -p "$FIXTURE_BIN" "$FIXTURE_DEPLOY/secrets" "$FIXTURE_RECORDS" "$FIXTURE_STAGING"
   : >"$FIXTURE_TRACE"
-  : >"$FIXTURE_DEPLOY/.env"
+  : >"$FIXTURE_DOCKER"
   : >"$FIXTURE_DEPLOY/compose.yaml"
-  printf 'admin-secret\n' >"$FIXTURE_DEPLOY/admin.key"
-  printf 'gateway-secret\n' >"$FIXTURE_DEPLOY/gateway.key"
-  printf 'services:\n  sub2api:\n    image: %s\n' "$OLD_IMAGE" >"$FIXTURE_DEPLOY/compose.yaml"
-  printf 'fixture-data\n' >"$FIXTURE_DEPLOY/app-data/example.txt"
+  : >"$FIXTURE_DEPLOY/.env"
+  printf 'admin-secret\n' >"$FIXTURE_DEPLOY/secrets/admin-key"
+  printf 'gateway-secret\n' >"$FIXTURE_DEPLOY/secrets/gateway-key"
+  chmod 0600 "$FIXTURE_DEPLOY/.env" "$FIXTURE_DEPLOY/secrets/admin-key" "$FIXTURE_DEPLOY/secrets/gateway-key"
+  write_valid_state
 
-  cat >"$FIXTURE_BIN/uname" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "${FAKE_UNAME:-Linux}"
-SH
   cat >"$FIXTURE_BIN/date" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "${FAKE_DATE:-20260725T000000Z}"
-SH
-  cat >"$FIXTURE_BIN/sleep" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-cat >"$FIXTURE_BIN/df" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted on'
-printf '%s\n' "fixture 8388608 1024 ${FAKE_AVAILABLE_KB:-8387584} 1% /fixture"
-SH
-  cat >"$FIXTURE_BIN/sha256sum" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'checksum\n' >>"${FAKE_LOG:?}"
-exec /usr/bin/shasum -a 256 "$@"
-SH
-  cat >"$FIXTURE_BIN/tar" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'tar\n' >>"${FAKE_LOG:?}"
-exec /usr/bin/tar "$@"
-SH
-  cat >"$FIXTURE_BIN/jq" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'jq\n' >>"${FAKE_LOG:?}"
-  exec "${REAL_JQ_PATH:?}" "$@"
-SH
-  cat >"$FIXTURE_BIN/curl" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'curl %s\n' "$*" >>"${FAKE_LOG:?}"
-[[ "$*" != *'127.0.0.1:8080'* ]] || exit 22
-case "$*" in
-  */api/v1/admin/system/version*|*/api/v1/admin/system/update*|*/api/v1/admin/system/rollback*)
-    found_header=false
-    for argument in "$@"; do
-      if [[ "$argument" == @* ]] && grep -Fqx 'X-API-Key: admin-secret' "${argument#@}"; then
-        found_header=true
-      fi
-    done
-    [[ "$found_header" == true ]] || exit 22
-    [[ "$*" != *'admin-secret'* ]] || exit 22
-    ;;
-  */v1/models*)
-    found_header=false
-    for argument in "$@"; do
-      if [[ "$argument" == @* ]] && grep -Fqx 'Authorization: Bearer gateway-secret' "${argument#@}"; then
-        found_header=true
-      fi
-    done
-    [[ "$found_header" == true ]] || exit 22
-    [[ "$*" != *'gateway-secret'* ]] || exit 22
-    ;;
-esac
-if [[ "$*" == *'-w %{http_code}'* || "$*" == *"-w '%{http_code}'"* ]]; then
-  printf '409\n'
-  exit 0
-fi
-case "$*" in
-  */health*) printf '{"status":"ok"}\n' ;;
-  */api/v1/admin/system/version*) printf '{"data":{"version":"0.1.165"}}\n' ;;
-  */api/v1/settings/public*) printf '{"data":{"custom_menu_items":[{"id":"xingqiao-support","url":"md:support"}]}}\n' ;;
-  */api/v1/admin/system/update*) printf 'guard\n' ;;
-  */v1/models*) printf '{"data":[]}\n' ;;
-  *) printf '{}\n' ;;
-esac
+if [[ "$*" == '-u +%s' ]]; then printf '1786000000\n'; else exec /bin/date "$@"; fi
 SH
   cat >"$FIXTURE_BIN/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-
-log=${FAKE_LOG:?}
-state=${FAKE_STATE:?}
-deploy=${FAKE_DEPLOY:?}
-project=${FAKE_PROJECT:?}
-old_image=${FAKE_OLD_IMAGE:?}
-requested=${FAKE_REQUESTED_IMAGE:?}
-old_id=${FAKE_OLD_ID:?}
-new_id=${FAKE_NEW_ID:?}
-
-die() {
-  printf 'forbidden docker command: %s\n' "$*" >>"$log"
-  exit 64
-}
-
-if [[ "${1:-}" == context && "${2:-}" == show ]]; then
-  printf '%s\n' "${FAKE_DOCKER_CONTEXT:-default}"
-  exit 0
-fi
-
-if [[ "${1:-}" == image && "${2:-}" == inspect ]]; then
-  [[ "${3:-}" == "$requested" ]] || die "$@"
-  printf '[{"Id":"%s","Config":{"Labels":{"com.xingqiao.sub2api.qualified":"true","com.xingqiao.sub2api.upstream.version":"%s","com.xingqiao.sub2api.upstream.commit":"dddddddddddddddddddddddddddddddddddddddd"}}}]\n' "$new_id" "${FAKE_REQUESTED_VERSION:?}"
-  exit 0
-fi
-
-if [[ "${1:-}" == pull ]]; then
-  printf 'pull\n' >>"$log"
-  exit 0
-fi
-
-if [[ "${1:-}" == tag ]]; then
-  printf 'tag\n' >>"$log"
-  exit 0
-fi
-
-if [[ "${1:-}" == run ]]; then
-  printf 'postgres-validator\n' >>"$log"
-  exit 0
-fi
-
-if [[ "${1:-}" == inspect ]]; then
-  # Containers get a fresh identity on every force-recreate, exactly like the
-  # real daemon: the pre-update ID dies with the old container, the requested
-  # container is sub2api-id-2, and the rollback container is sub2api-id-3.
-  case "$(cat "$state")" in
-    initial) live_sub2api=sub2api-id ;;
-    requested) live_sub2api=sub2api-id-2 ;;
-    previous) live_sub2api=sub2api-id-3 ;;
+printf '%s\n' "$*" >>"${FAKE_DOCKER_LOG:?}"
+if [[ "$1 $2" == 'image inspect' ]]; then
+  case "${FAKE_IMAGE_SCENARIO:-valid}" in
+    missing_digest) repo_digests='[]' ;;
+    ambiguous_digest) repo_digests='["'"${EXPECTED_DIGEST:?}"'","'"${EXPECTED_REPOSITORY:?}"'@sha256:'"$(printf '9%.0s' {1..64})"'"]' ;;
+    unapproved_digest) repo_digests='["ghcr.io/other/sub2api@sha256:'"$(printf '8%.0s' {1..64})"'"]' ;;
+    *) repo_digests='["'"${EXPECTED_DIGEST:?}"'"]' ;;
   esac
-  for argument in "${@:2}"; do
-    if [[ "$argument" == sub2api-id* && "$argument" != "$live_sub2api" ]]; then
-      printf 'Error response from daemon: No such object: %s\n' "$argument" >&2
-      exit 1
-    fi
-  done
-  if [[ "$(cat "$state")" == initial ]]; then
-    expected='sub2api-id postgres-id redis-id caddy-id relay-ops-id'
-    [[ "$*" == *"sub2api-id"*"postgres-id"*"redis-id"*"caddy-id"*"relay-ops-id"* ]] || die "$@"
-    app_name=sub2api_sub2api_data
-    postgres_name=sub2api_postgres_data
-    redis_name=sub2api_redis_data
-    health=healthy
-    caddy_state='"Health":{"Status":"healthy"}'
-    [[ "${FAKE_BAD_VOLUME:-false}" == true ]] && app_name=unexpected-volume
-    [[ "${FAKE_UNHEALTHY_DEPENDENCY:-false}" == true ]] && health=unhealthy
-    [[ "${FAKE_CADDY_NO_HEALTHCHECK:-false}" == true ]] && caddy_state='"Status":"running","Running":true'
-    cat <<JSON
-[
-  {"Id":"sub2api-id","Config":{"Image":"$old_image","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$old_id","State":{"Health":{"Status":"$health"}},"Mounts":[{"Type":"volume","Name":"$app_name","Source":"$app_name","Destination":"/app/data","RW":true}]},
-  {"Id":"postgres-id","Config":{"Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"sha256:postgres","State":{"Health":{"Status":"$health"}},"Mounts":[{"Type":"volume","Name":"$postgres_name","Source":"$postgres_name","Destination":"/var/lib/postgresql/data","RW":true}]},
-  {"Id":"redis-id","Config":{"Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"sha256:redis","State":{"Health":{"Status":"$health"}},"Mounts":[{"Type":"volume","Name":"$redis_name","Source":"$redis_name","Destination":"/data","RW":true}]},
-  {"Id":"caddy-id","Config":{"Labels":{"com.docker.compose.project":"$project"}},"Image":"sha256:caddy","State":{$caddy_state}},
-  {"Id":"relay-ops-id","Config":{"Labels":{"com.docker.compose.project":"$project"}},"Image":"sha256:relay","State":{"Health":{"Status":"$health"}}}
-]
-JSON
-  elif [[ "$(cat "$state")" == previous ]]; then
-    rollback_health=healthy
-    if [[ "${FAKE_ROLLBACK_STARTING_CHECKS:-0}" -gt 0 ]]; then
-      checks=$(cat "$state.rollback-checks" 2>/dev/null || printf 0)
-      printf '%s\n' "$((checks + 1))" >"$state.rollback-checks"
-      [[ "$checks" -ge "$FAKE_ROLLBACK_STARTING_CHECKS" ]] || rollback_health=starting
-    fi
-    cat <<JSON
-[{"Id":"sub2api-id-3","Config":{"Image":"$old_image","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$old_id","State":{"Health":{"Status":"$rollback_health"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
-JSON
-  else
-    cat <<JSON
-[{"Id":"sub2api-id-2","Config":{"Image":"$requested","Labels":{"com.docker.compose.project":"$project","com.docker.compose.project.working_dir":"$deploy","com.docker.compose.project.config_files":"$deploy/compose.yaml"}},"Image":"$new_id","State":{"Health":{"Status":"healthy"}},"Mounts":[{"Type":"volume","Name":"sub2api_sub2api_data","Source":"sub2api_sub2api_data","Destination":"/app/data","RW":true}]}]
-JSON
-  fi
-  printf 'inspect\n' >>"$log"
+  qualified=true
+  version=${EXPECTED_VERSION:?}
+  tested=${EXPECTED_SOURCE_TREE:?}
+  [[ "${FAKE_IMAGE_SCENARIO:-valid}" != invalid_labels ]] || qualified=false
+  [[ "${FAKE_IMAGE_SCENARIO:-valid}" != tree_mismatch ]] || tested=$(printf '7%.0s' {1..40})
+  printf '[{"Id":"%s","Os":"linux","Architecture":"amd64","RepoDigests":%s,"Config":{"Labels":{"com.xingqiao.sub2api.qualified":"%s","com.xingqiao.sub2api.upstream.version":"%s","com.xingqiao.sub2api.upstream.commit":"%s","com.xingqiao.sub2api.source.commit":"%s","com.xingqiao.sub2api.source.tree":"%s","com.xingqiao.sub2api.tested.tree":"%s","com.xingqiao.sub2api.migrations.sha256":"%s"}}}]\n' \
+    "${EXPECTED_IMAGE:?}" "$repo_digests" "$qualified" "$version" "${EXPECTED_UPSTREAM_COMMIT:?}" \
+    "${EXPECTED_SOURCE_COMMIT:?}" "${EXPECTED_SOURCE_TREE:?}" "$tested" "${EXPECTED_MIGRATIONS_HASH:?}"
+elif [[ "$1 $2" == 'image tag' ]]; then
   exit 0
+elif [[ "$1 $2" == 'image save' ]]; then
+  [[ "$3" == --output && -n "${4:-}" ]] || exit 64
+  printf 'preloaded image archive\n' >"$4"
+else
+  exit 64
 fi
-
-[[ "${1:-}" == compose ]] || die "$@"
-shift
-[[ "${1:-}" == --project-name && "${2:-}" == "$project" ]] || die "$@"
-shift 2
-[[ "${1:-}" == --project-directory && "${2:-}" == "$deploy" ]] || die "$@"
-shift 2
-[[ "${1:-}" == --env-file && "${2:-}" == "$deploy/.env" ]] || die "$@"
-shift 2
-[[ "${1:-}" == -f && "${2:-}" == "$deploy/compose.yaml" ]] || die "$@"
-shift 2
-
-case "${1:-}" in
-  ps)
-    [[ "${2:-}" == -q ]] || die "$@"
-    case "${3:-}" in
-      sub2api)
-        case "$(cat "$state")" in
-          initial) live_sub2api=sub2api-id ;;
-          requested) live_sub2api=sub2api-id-2 ;;
-          previous) live_sub2api=sub2api-id-3 ;;
-        esac
-        printf 'ps sub2api=%s\n' "$live_sub2api" >>"$log"
-        printf '%s\n' "$live_sub2api"
-        ;;
-      postgres) printf 'ps postgres=postgres-id\n' >>"$log"; printf 'postgres-id\n' ;;
-      redis) printf 'ps redis=redis-id\n' >>"$log"; printf 'redis-id\n' ;;
-      caddy) printf 'ps caddy=caddy-id\n' >>"$log"; printf 'caddy-id\n' ;;
-      relay-ops) printf 'ps relay-ops=relay-ops-id\n' >>"$log"; printf 'relay-ops-id\n' ;;
-      *) die "$@" ;;
-    esac
-    ;;
-  config)
-    printf 'compose-validate\n' >>"$log"
-    image=$(awk '/^[[:space:]]+image:/ {print $2; exit}' "$deploy/compose.yaml")
-    # Compose reports the declared volume key as the service mount source and
-    # resolves the project-prefixed runtime name under the top-level volumes.
-    app_name=sub2api_sub2api_data
-    [[ "${FAKE_BAD_VOLUME:-false}" == true ]] && app_name=unexpected-volume
-    printf '{"services":{"sub2api":{"image":"%s","volumes":[{"type":"volume","source":"sub2api_data","target":"/app/data"}]},"postgres":{"volumes":[{"type":"volume","source":"postgres_data","target":"/var/lib/postgresql/data"}]},"redis":{"volumes":[{"type":"volume","source":"redis_data","target":"/data"}]}},"volumes":{"sub2api_data":{"name":"%s"},"postgres_data":{"name":"sub2api_postgres_data"},"redis_data":{"name":"sub2api_redis_data"}}}\n' "$image" "$app_name"
-    ;;
-  pull)
-    printf 'pull\n' >>"$log"
-    ;;
-  exec)
-    if [[ "$*" == *pg_dump* ]]; then
-      printf 'backup-db\n' >>"$log"
-      printf 'PGDUMP\n'
-    elif [[ "$*" == *'postgres'* ]]; then
-      printf 'backup-counts\n' >>"$log"
-      printf '{"users":1,"accounts":1,"groups":1,"api_keys":1,"settings":1,"usage_logs":1}\n'
-    elif [[ "$*" == *'/app/data/pages/support/qq-group-1080152144.png'* ]]; then
-      printf '35b84b14ab472e117fa413ed5f91357becd01199eeaf3fed469a2d9d3d987c16  /app/data/pages/support/qq-group-1080152144.png\n'
-    elif [[ "$*" == *'tar -C /app/data'* ]]; then
-      tar -C "$deploy/app-data" -czf - .
-    else
-      die "$@"
-    fi
-    ;;
-  up)
-    [[ "${2:-}" == -d && "${3:-}" == --no-deps && "${4:-}" == --force-recreate && "${5:-}" == sub2api ]] || die "$@"
-    printf 'recreate-sub2api\n' >>"$log"
-    if [[ "${SUB2API_IMAGE:-}" == "$old_image" ]]; then
-      printf 'previous\n' >"$state"
-    else
-      printf 'requested\n' >"$state"
-    fi
-    ;;
-  logs)
-    printf '%s\n' 'application started'
-    ;;
-  down|restart|stop|start|rm|volume)
-    die "$@"
-    ;;
-  *) die "$@" ;;
-esac
+SH
+  cat >"$FIXTURE_BIN/sha256sum" <<'SH'
+#!/usr/bin/env bash
+exec /usr/bin/shasum -a 256 "$@"
+SH
+  cat >"$FIXTURE_BIN/blue-green-executor" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+executor_args=("$@")
+preloaded_archive=''
+preloaded_archive_sha256=''
+preloaded_image_id=''
+while (($#)); do
+  case "$1" in
+    --preloaded-archive) preloaded_archive=${2:?}; shift 2 ;;
+    --preloaded-archive-sha256) preloaded_archive_sha256=${2:?}; shift 2 ;;
+    --preloaded-image-id) preloaded_image_id=${2:?}; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -f "$preloaded_archive" ]] || { printf 'preloaded archive missing during executor\n' >&2; exit 65; }
+actual_archive_sha256=$(/usr/bin/shasum -a 256 "$preloaded_archive" | awk '{print $1}')
+[[ "$actual_archive_sha256" == "$preloaded_archive_sha256" ]] || { printf 'preloaded archive checksum mismatch\n' >&2; exit 66; }
+[[ "$preloaded_image_id" == "${EXPECTED_IMAGE:?}" ]] || { printf 'preloaded image ID mismatch\n' >&2; exit 67; }
+archive_mode=$(stat -f '%Lp' "$preloaded_archive" 2>/dev/null || stat -c '%a' "$preloaded_archive")
+{
+  printf 'args:'; printf ' <%s>' "${executor_args[@]}"; printf '\n'
+  printf 'preloaded-archive=%s\n' "$preloaded_archive"
+  printf 'preloaded-archive-sha256=%s\n' "$preloaded_archive_sha256"
+  printf 'archive-sha256=%s\n' "$actual_archive_sha256"
+  printf 'preloaded-image-id=%s\n' "$preloaded_image_id"
+  printf 'archive-mode=%s\n' "$archive_mode"
+  for key in DEPLOY_ROOT BASE_COMPOSE SECRET_ENV RELEASE_ENV RELEASE_STATE RELEASE_RECORD_ROOT ADMIN_API_KEY_FILE GATEWAY_API_KEY_FILE BASE_URL NETWORK_CURL_IMAGE NETWORK_CURL_IMAGE_ALLOWLIST RELEASE_STAGING_ROOT RELEASE_PRELOADED_IMAGE RELEASE_EVENT_LOG; do
+    printf '%s=%s\n' "$key" "${!key-}"
+  done
+} >"${FAKE_EXECUTOR_CALL:?}"
+printf 'executor event\n' >>"${RELEASE_EVENT_LOG:?}"
+if [[ "${FAKE_EXECUTOR_RESULT:-success}" == failure ]]; then
+  printf 'executor failed\n' >&2
+  exit 23
+fi
+printf '{"schema_version":1,"downtime_required":false,"result":"succeeded","active_slot":"green","active_upstream":"sub2api-green:8080","image":"%s"}\n' "${EXPECTED_RELEASE_IMAGE:?}"
 SH
   chmod 0755 "$FIXTURE_BIN"/*
 }
 
-cleanup_fixture() {
-  rm -rf -- "$FIXTURE_ROOT"
+write_valid_state() {
+  local current_image="$REPOSITORY@sha256:$(printf '2%.0s' {1..64})"
+  "$REAL_JQ" -n --arg image "$current_image" --arg commit "$(printf '3%.0s' {1..40})" \
+    --arg tree "$(printf '4%.0s' {1..40})" --arg migrations "$MIGRATIONS_HASH" \
+    '{schema_version:1,active_slot:"blue",active_upstream:"sub2api-blue:8080",blue_image:$image,green_image:$image,worker_image:$image,source_commit:$commit,source_tree:$tree,migrations_hash:$migrations,postgres_id:"postgres-id",redis_id:"redis-id",caddy_id:"caddy-id"}' >"$FIXTURE_STATE"
+  chmod 0600 "$FIXTURE_STATE"
+  cat >"$FIXTURE_DEPLOY/release.env" <<EOF
+SUB2API_BLUE_IMAGE=$current_image
+SUB2API_GREEN_IMAGE=$current_image
+SUB2API_WORKER_IMAGE=$current_image
+SUB2API_ACTIVE_UPSTREAM=sub2api-blue:8080
+SUB2API_ACTIVE_SLOT=blue
+SUB2API_PREVIOUS_SLOT=green
+EOF
+  chmod 0600 "$FIXTURE_DEPLOY/release.env"
 }
+
+cleanup_fixture() { rm -rf -- "$FIXTURE_ROOT"; }
 
 run_update() {
-  (cd "${RUN_UPDATE_CWD:-$FIXTURE_DEPLOY}" && env PATH="$FIXTURE_BIN:$PATH" \
-    FAKE_DEPLOY="$FIXTURE_DEPLOY" FAKE_PROJECT=sub2api \
-    FAKE_STATE="$FIXTURE_STATE" FAKE_LOG="$FIXTURE_LOG" \
-    FAKE_REQUESTED_IMAGE="$IMAGE" FAKE_OLD_IMAGE="$OLD_IMAGE" \
-    FAKE_REQUESTED_VERSION="$VERSION" \
-    FAKE_OLD_ID="$OLD_ID" FAKE_NEW_ID="$NEW_ID" \
-    REAL_JQ_PATH="$REAL_JQ_PATH" \
-    SUB2API_PRODUCTION_ROOT="$FIXTURE_DEPLOY" \
-    SUB2API_RELEASE_RECORD_ROOT="$FIXTURE_RECORDS" \
-    SUB2API_ENV_FILE="$FIXTURE_DEPLOY/.env" \
-    SUB2API_COMPOSE_FILE="$FIXTURE_DEPLOY/compose.yaml" \
-    SUB2API_DATA_VOLUME=sub2api_sub2api_data \
-    SUB2API_POSTGRES_VOLUME=sub2api_postgres_data \
-    SUB2API_REDIS_VOLUME=sub2api_redis_data \
-    SUB2API_BASE_URL="${SUB2API_BASE_URL_OVERRIDE-https://sub2api.example.test}" \
-    ADMIN_API_KEY_FILE="$FIXTURE_DEPLOY/admin.key" \
-    GATEWAY_API_KEY_FILE="$FIXTURE_DEPLOY/gateway.key" \
-    RELEASE_EVENT_LOG="$FIXTURE_TRACE" \
-    HEALTH_TIMEOUT_SECONDS="${FAKE_HEALTH_TIMEOUT-5}" \
-    bash "$SCRIPT" --image "$IMAGE" --version "$VERSION" --operation-id op-test-001 \
-      ${CONTRACT_ARGS---contract-version 1} "$@")
+  local release_image="$REPOSITORY:release-$SOURCE_COMMIT-${IMAGE#sha256:}"
+  env PATH="$FIXTURE_BIN:$PATH" \
+    EXPECTED_IMAGE="$IMAGE" EXPECTED_DIGEST="$DIGEST" EXPECTED_REPOSITORY="$REPOSITORY" \
+    EXPECTED_VERSION="$VERSION" EXPECTED_UPSTREAM_COMMIT="$UPSTREAM_COMMIT" \
+    EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" EXPECTED_SOURCE_TREE="$SOURCE_TREE" \
+    EXPECTED_MIGRATIONS_HASH="$MIGRATIONS_HASH" EXPECTED_RELEASE_IMAGE="$release_image" \
+    FAKE_DOCKER_LOG="$FIXTURE_DOCKER" FAKE_EXECUTOR_CALL="$FIXTURE_CALL" \
+    SUB2API_BLUE_GREEN_EXECUTOR="$FIXTURE_BIN/blue-green-executor" \
+    SUB2API_PRODUCTION_ROOT="$FIXTURE_DEPLOY" SUB2API_COMPOSE_FILE="$FIXTURE_DEPLOY/compose.yaml" \
+    SUB2API_ENV_FILE="$FIXTURE_DEPLOY/.env" SUB2API_RELEASE_ENV_FILE="$FIXTURE_DEPLOY/release.env" \
+    SUB2API_RELEASE_STATE="$FIXTURE_STATE" SUB2API_RELEASE_RECORD_ROOT="$FIXTURE_RECORDS" \
+    SUB2API_ADMIN_API_KEY_FILE="$FIXTURE_DEPLOY/secrets/admin-key" \
+    SUB2API_GATEWAY_API_KEY_FILE="$FIXTURE_DEPLOY/secrets/gateway-key" \
+    SUB2API_BASE_URL=https://sub2api.example.test SUB2API_NETWORK_CURL_IMAGE="$CURL_IMAGE" \
+    SUB2API_NETWORK_CURL_IMAGE_ALLOWLIST="$CURL_IMAGE" SUB2API_RELEASE_STAGING_ROOT="$FIXTURE_STAGING" \
+    SUB2API_RELEASE_DEADLINE_SECONDS=900 RELEASE_EVENT_LOG="$FIXTURE_TRACE" \
+    bash "$SCRIPT" --contract-version 1 --image "$IMAGE" --version "$VERSION" --operation-id "$OPERATION_ID"
 }
 
-assert_trace() {
-  local expected=$1 actual
-  actual=$(awk 'NR == 1 {value = $0; next} {value = value " -> " $0} END {print value}' "$FIXTURE_TRACE")
-  [[ "$actual" == "$expected" ]] || fail "unexpected trace: $actual"
-}
+assert_executor_not_called() { [[ ! -e "$FIXTURE_CALL" ]] || fail 'blue-green executor was called after rejection'; }
 
-assert_no_docker_mutation() {
-  ! grep -En 'pull|recreate-sub2api|backup-db|backup-counts|backup-app-data|postgres-validator' "$FIXTURE_LOG" \
-    || fail 'Docker mutation or backup occurred before preflight rejection'
-}
-
-test_success_trace_and_identity() {
+test_successful_delegation() {
   new_fixture
-  local output record
+  local output archive expected_image
   output=$(run_update)
-  [[ "$output" == 'result=promoted' ]] || fail "unexpected success output: $output"
-  assert_trace 'inspect -> verify-image -> backup-db -> backup-counts -> backup-app-data -> checksum -> compose-validate -> recreate-sub2api -> health -> smoke -> promoted'
-  grep -En 'sub2api-id|postgres-id|redis-id|caddy-id|relay-ops-id' "$FIXTURE_LOG" >/dev/null \
-    || fail 'container identity checks were not recorded'
-  ! grep -En 'down|--force-recreate postgres|--force-recreate redis|pg_restore' "$FIXTURE_LOG" \
-    || fail 'forbidden dependency or database restore command was used'
-  record=$(find "$FIXTURE_RECORDS" -type f -name '*.json' -print -quit)
-  [[ -n "$record" ]] || fail 'release record missing'
-  [[ $(stat -c '%a' "$record" 2>/dev/null || stat -f '%Lp' "$record") == 600 ]] \
-    || fail 'release record is not 0600'
-  "$REAL_JQ_PATH" -e --arg image "$IMAGE" --arg operation op-test-001 \
-    '.state == "promoted" and .operation_id == $operation and .requested.image == $image and .checks.storage_identity == true' \
-    "$record" >/dev/null || fail 'release record is incomplete'
-  cleanup_fixture
-}
-
-test_running_caddy_without_healthcheck_is_accepted() {
-  new_fixture
-  local output
-  output=$(FAKE_CADDY_NO_HEALTHCHECK=true run_update)
-  [[ "$output" == 'result=promoted' ]] || fail "running Caddy without healthcheck blocked update: $output"
-  cleanup_fixture
-}
-
-test_preflight_rejects_host_and_context() {
-  local variable value
-  for variable in FAKE_UNAME FAKE_DOCKER_CONTEXT; do
-    new_fixture
-    if [[ "$variable" == FAKE_UNAME ]]; then value=Darwin; else value=colima; fi
-    if [[ "$variable" == FAKE_UNAME ]] && FAKE_UNAME=Darwin run_update >/dev/null 2>&1; then
-      fail "$variable preflight rejection was not enforced"
-    elif [[ "$variable" == FAKE_DOCKER_CONTEXT ]] && FAKE_DOCKER_CONTEXT=colima run_update >/dev/null 2>&1; then
-      fail "$variable preflight rejection was not enforced"
-    fi
-    assert_no_docker_mutation
-    cleanup_fixture
+  [[ "$output" == result=promoted ]] || fail "unexpected terminal output: $output"
+  expected_image="$REPOSITORY:release-$SOURCE_COMMIT-${IMAGE#sha256:}"
+  grep -F -- "args: <--mode> <production> <--image> <$expected_image>" "$FIXTURE_CALL" >/dev/null || fail 'production image delegation is wrong'
+  for expected in \
+    "<--source-commit> <$SOURCE_COMMIT>" "<--source-tree> <$SOURCE_TREE>" \
+    "<--tested-tree> <$SOURCE_TREE>" "<--migrations-hash> <$MIGRATIONS_HASH>" \
+    '<--deadline-epoch> <1786000900>' "DEPLOY_ROOT=$FIXTURE_DEPLOY" \
+    "BASE_COMPOSE=$FIXTURE_DEPLOY/compose.yaml" "SECRET_ENV=$FIXTURE_DEPLOY/.env" \
+    "RELEASE_ENV=$FIXTURE_DEPLOY/release.env" "RELEASE_STATE=$FIXTURE_STATE" \
+    "RELEASE_RECORD_ROOT=$FIXTURE_RECORDS" "BASE_URL=https://sub2api.example.test" \
+    "NETWORK_CURL_IMAGE=$CURL_IMAGE" "NETWORK_CURL_IMAGE_ALLOWLIST=$CURL_IMAGE" \
+    "RELEASE_STAGING_ROOT=$FIXTURE_STAGING" 'RELEASE_PRELOADED_IMAGE=true' \
+    "RELEASE_EVENT_LOG=$FIXTURE_TRACE"; do
+    grep -F -- "$expected" "$FIXTURE_CALL" >/dev/null || fail "missing executor contract: $expected"
   done
+  archive=$(sed -n 's/.*<--preloaded-archive> <\([^>]*\)>.*/\1/p' "$FIXTURE_CALL")
+  [[ "$archive" == "$FIXTURE_STAGING"/* ]] || fail 'preloaded archive path is not canonical'
+  grep -F -- "preloaded-archive-sha256=" "$FIXTURE_CALL" >/dev/null || fail 'preloaded archive checksum was not passed'
+  archive_sha256=$(sed -n 's/^preloaded-archive-sha256=//p' "$FIXTURE_CALL")
+  archive_actual_sha256=$(sed -n 's/^archive-sha256=//p' "$FIXTURE_CALL")
+  [[ -n "$archive_sha256" && "$archive_sha256" == "$archive_actual_sha256" ]] || fail 'preloaded archive checksum was not validated'
+  grep -F -- "preloaded-image-id=$IMAGE" "$FIXTURE_CALL" >/dev/null || fail 'preloaded image ID was not passed'
+  grep -F -- 'archive-mode=600' "$FIXTURE_CALL" >/dev/null || fail 'preloaded archive mode is not 0600'
+  [[ ! -e "$archive" ]] || fail 'preloaded archive was not cleaned after success'
+  grep -F 'executor event' "$FIXTURE_TRACE" >/dev/null || fail 'executor event trace was not preserved'
+  ! grep -F 'admin-secret' "$FIXTURE_CALL" "$FIXTURE_TRACE" >/dev/null || fail 'admin API key leaked'
+  ! grep -F 'gateway-secret' "$FIXTURE_CALL" "$FIXTURE_TRACE" >/dev/null || fail 'gateway API key leaked'
+  cleanup_fixture
 }
 
-test_preflight_rejects_runtime_identity_and_space() {
+test_rejects_repo_digest_failures() {
   local scenario
-  for scenario in SUB2API_COMPOSE_PROJECT FAKE_BAD_VOLUME FAKE_UNHEALTHY_DEPENDENCY FAKE_AVAILABLE_KB; do
+  for scenario in missing_digest ambiguous_digest unapproved_digest; do
     new_fixture
-    case "$scenario" in
-      SUB2API_COMPOSE_PROJECT)
-        if SUB2API_COMPOSE_PROJECT=wrong-project run_update >/dev/null 2>&1; then
-          fail 'wrong Compose project was accepted'
-        fi
-        ;;
-      FAKE_BAD_VOLUME)
-        if FAKE_BAD_VOLUME=true run_update >/dev/null 2>&1; then
-          fail 'unexpected named volume was accepted'
-        fi
-        ;;
-      FAKE_UNHEALTHY_DEPENDENCY)
-        if FAKE_UNHEALTHY_DEPENDENCY=true run_update >/dev/null 2>&1; then
-          fail 'unhealthy dependency was accepted'
-        fi
-        ;;
-      FAKE_AVAILABLE_KB)
-        if FAKE_AVAILABLE_KB=1024 run_update >/dev/null 2>&1; then
-          fail 'insufficient disk space was accepted'
-        fi
-        ;;
-    esac
-    assert_no_docker_mutation
+    if FAKE_IMAGE_SCENARIO=$scenario run_update >/dev/null 2>&1; then fail "$scenario was accepted"; fi
+    assert_executor_not_called
     cleanup_fixture
   done
 }
 
-test_preflight_rejects_wrong_directory() {
-  new_fixture
-  if RUN_UPDATE_CWD="$FIXTURE_ROOT" run_update >/dev/null 2>&1; then
-    fail 'wrong production directory was accepted'
-  fi
-  assert_no_docker_mutation
-  cleanup_fixture
-}
-
-test_smoke_url_cannot_bypass_caddy() {
-  local base
-  for base in '' http://127.0.0.1:8080 http://sub2api:8080; do
+test_rejects_invalid_provenance() {
+  local scenario
+  for scenario in invalid_labels tree_mismatch; do
     new_fixture
-    if SUB2API_BASE_URL_OVERRIDE="$base" run_update >/dev/null 2>&1; then
-      fail "non-Caddy smoke URL was accepted: $base"
-    fi
-    assert_no_docker_mutation
+    if FAKE_IMAGE_SCENARIO=$scenario run_update >/dev/null 2>&1; then fail "$scenario was accepted"; fi
+    assert_executor_not_called
     cleanup_fixture
   done
 }
 
-test_preflight_rejects_image_and_lock() {
+test_rejects_missing_or_inconsistent_blue_green_state() {
   new_fixture
-  if run_update --image wrong/repository:latest >/dev/null 2>&1; then
-    fail 'wrong image reference was accepted'
-  fi
-  assert_no_docker_mutation
+  rm "$FIXTURE_STATE"
+  if run_update >/dev/null 2>&1; then fail 'missing release state was accepted'; fi
+  assert_executor_not_called
   cleanup_fixture
 
   new_fixture
-  if run_update --image weishaw/sub2api:0.1.165@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null 2>&1; then
-    fail 'mutable image reference was accepted'
-  fi
-  assert_no_docker_mutation
+  "$REAL_JQ" '.active_upstream="sub2api-green:8080"' "$FIXTURE_STATE" >"$FIXTURE_STATE.tmp"
+  mv "$FIXTURE_STATE.tmp" "$FIXTURE_STATE"; chmod 0600 "$FIXTURE_STATE"
+  if run_update >/dev/null 2>&1; then fail 'inconsistent active slot/upstream was accepted'; fi
+  assert_executor_not_called
   cleanup_fixture
 
   new_fixture
-  mkdir "$FIXTURE_RECORDS/.update.lock"
-  if run_update >/dev/null 2>&1; then
-    fail 'existing lock was accepted'
-  fi
-  assert_no_docker_mutation
+  sed -i.bak 's/SUB2API_ACTIVE_SLOT=blue/SUB2API_ACTIVE_SLOT=green/' "$FIXTURE_DEPLOY/release.env"
+  rm "$FIXTURE_DEPLOY/release.env.bak"
+  if run_update >/dev/null 2>&1; then fail 'release.env inconsistent with state was accepted'; fi
+  assert_executor_not_called
   cleanup_fixture
 }
 
-test_rollback_waits_for_recreated_container_health() {
+test_executor_failure_is_fail_closed() {
   new_fixture
-  cat >"$FIXTURE_BIN/curl" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'curl %s\n' "$*" >>"${FAKE_LOG:?}"
-exit 22
-SH
-  chmod 0755 "$FIXTURE_BIN/curl"
-  local output
-  # The rollback container reports "starting" for the first checks, exactly
-  # like a freshly recreated container before its first successful probe.
-  output=$(FAKE_ROLLBACK_STARTING_CHECKS=2 run_update)
-  [[ "$output" == 'result=rolled_back' ]] \
-    || fail "a briefly starting rollback container was reported as: $output"
+  local output status=0 archive
+  output=$(FAKE_EXECUTOR_RESULT=failure run_update 2>&1) || status=$?
+  [[ "$status" -eq 23 ]] || fail "executor failure status was not preserved: $status"
+  [[ "$output" != *'result=promoted'* ]] || fail 'executor failure was reported as promoted'
+  grep -F 'executor event' "$FIXTURE_TRACE" >/dev/null || fail 'failure event trace was not preserved'
+  archive=$(sed -n 's/^preloaded-archive=//p' "$FIXTURE_CALL")
+  [[ -n "$archive" && ! -e "$archive" ]] || fail 'preloaded archive was not cleaned after executor failure'
   cleanup_fixture
 }
 
-test_preflight_requires_matching_contract_version() {
-  local output
-  new_fixture
-  if output=$(CONTRACT_ARGS='' run_update 2>&1); then
-    fail 'an updater that declares no contract version was accepted'
-  fi
-  grep -q 'install-sub2api-updater.sh' <<<"$output" \
-    || fail "missing contract version did not name the reinstall command: $output"
-  assert_no_docker_mutation
-  cleanup_fixture
-
-  new_fixture
-  if output=$(CONTRACT_ARGS='--contract-version 99' run_update 2>&1); then
-    fail 'a mismatched contract version was accepted'
-  fi
-  grep -q 'install-sub2api-updater.sh' <<<"$output" \
-    || fail "mismatched contract version did not name the reinstall command: $output"
-  assert_no_docker_mutation
-  cleanup_fixture
-}
-
-test_rollback_result_and_no_database_restore() {
-  new_fixture
-  cat >"$FIXTURE_BIN/curl" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'curl failed\n' >>"${FAKE_LOG:?}"
-if [[ "$(cat "${FAKE_STATE:?}")" == requested ]]; then
-  exit 22
-fi
-printf '{"status":"ok"}\n'
-SH
-  chmod 0755 "$FIXTURE_BIN/curl"
-  local output
-  output=$(ROLLBACK_COMPATIBLE=true run_update)
-  [[ "$output" == 'result=rolled_back' ]] || fail "unexpected rollback output: $output"
-  grep -En 'recreate-sub2api' "$FIXTURE_LOG" >/dev/null || fail 'rollback recreation missing'
-  ! grep -En 'down|pg_restore' "$FIXTURE_LOG" >/dev/null || fail 'rollback restored database or tore down project'
-  cleanup_fixture
-}
-
-if [[ ! -x "$SCRIPT" ]]; then
-  fail 'executor is absent; RED is expected before implementation'
-fi
-
-test_success_trace_and_identity
-test_running_caddy_without_healthcheck_is_accepted
-test_preflight_rejects_host_and_context
-test_preflight_rejects_wrong_directory
-test_smoke_url_cannot_bypass_caddy
-test_preflight_rejects_runtime_identity_and_space
-test_preflight_rejects_image_and_lock
-test_preflight_requires_matching_contract_version
-test_rollback_result_and_no_database_restore
-test_rollback_waits_for_recreated_container_health
-printf 'PASS: host-controlled Sub2API update executor\n'
+[[ -x "$SCRIPT" ]] || fail 'host updater is absent'
+test_successful_delegation
+test_rejects_repo_digest_failures
+test_rejects_invalid_provenance
+test_rejects_missing_or_inconsistent_blue_green_state
+test_executor_failure_is_fail_closed
+printf 'PASS: Sub2API updater delegates strictly to blue-green production\n'

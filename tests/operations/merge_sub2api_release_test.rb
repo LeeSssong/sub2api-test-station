@@ -15,6 +15,10 @@ TARGET_171_TAG_OBJECT = "afd154b92aac36c6dafb1fa8e181ca827c78c465"
 TARGET_171_COMMIT = "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6"
 
 class MergeSub2APIReleaseTest < Minitest::Test
+  def test_allows_a_same_tree_forced_rebuild_audit_commit
+    assert_includes File.read(MERGER), 'commit -q --allow-empty -m'
+  end
+
   def test_merges_official_delta_with_custom_snapshot_and_exports_bundle
     with_repositories do |fixture|
       status, output = run_merge(fixture)

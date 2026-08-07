@@ -28,6 +28,9 @@ class Sub2APIReleaseWorkflowTest < Minitest::Test
     triggers = @workflow["on"] || @workflow[true]
     assert_equal [{ "cron" => "17 */6 * * *" }], triggers.fetch("schedule")
     assert triggers.key?("workflow_dispatch")
+    force = triggers.dig("workflow_dispatch", "inputs", "force_rebuild")
+    assert_equal "boolean", force.fetch("type")
+    assert_equal false, force.fetch("default")
     assert_equal false, @workflow.dig("concurrency", "cancel-in-progress")
     assert_equal %w[discover prepare publish stage-production advance-source notify], @jobs.keys
     assert_equal "discover", @jobs.dig("prepare", "needs")
@@ -43,6 +46,7 @@ class Sub2APIReleaseWorkflowTest < Minitest::Test
     assert_includes discover_runs, 'https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main'
     assert_includes discover_runs, '"stale_run"'
     assert_includes discover_runs, 'metadata["has_update"] = false'
+    assert_includes discover_runs, 'metadata["has_update"] = true if force_rebuild && !stale'
   end
 
   def test_permissions_and_secret_boundaries_are_least_privilege

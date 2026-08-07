@@ -3,7 +3,13 @@ name: Sub2API release preparation
 on:
   schedule:
     - cron: "17 */6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Rebuild and restage the current official version from main
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -30,6 +36,7 @@ jobs:
       - name: Resolve latest stable official release
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_rebuild }}
         run: |
           set -euo pipefail
           umask 077
@@ -96,9 +103,11 @@ jobs:
             current_main = JSON.parse(File.binread(ARGV.fetch(1))).fetch("sha")
             base_sha = ARGV.fetch(2)
             abort unless [current_main, base_sha].all? { |sha| sha.match?(/\A[0-9a-f]{40}\z/) }
-            stale = current_main != base_sha
-            metadata["stale_run"] = stale
-            metadata["has_update"] = false if stale
+          stale = current_main != base_sha
+          force_rebuild = ENV.fetch("FORCE_REBUILD", "false") == "true"
+          metadata["stale_run"] = stale
+          metadata["has_update"] = false if stale
+          metadata["has_update"] = true if force_rebuild && !stale
             Tempfile.create([".sub2api-discovery-", ".json"], File.dirname(metadata_path)) do |file|
               file.chmod(0o600)
               file.write(JSON.pretty_generate(metadata) + "\n")

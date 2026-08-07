@@ -150,7 +150,7 @@ GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
 GIT_COMMITTER_NAME='Xingqiao Release Automation' \
 GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
 GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
-  git -C "$root" commit -q -m "feat: qualify Xingqiao upstream $target_version"
+  git -C "$root" commit -q --allow-empty -m "feat: qualify Xingqiao upstream $target_version"
 
 candidate_commit=$(git -C "$root" rev-parse HEAD)
 [[ "$(git -C "$root" rev-parse HEAD^)" == "$base_sha" ]] || fail

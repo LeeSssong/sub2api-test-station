@@ -7,5 +7,5 @@ Task 2 verification: frontend 62 tests + typecheck, backend account-monitor/admi
 Task 3: complete — added permanent workspace lifecycle constraints to AGENTS.md and recorded the still-in-progress ledger state (2026-08-08)
 Task 3 commit: `eff539f95` docs: enforce main-first worktree lifecycle
 Task 3 review: controller diff review passed; no runtime behavior changed, `git diff --check` passed
-Task 4: pending (blocked until protected threads finish)
+Task 4: in progress — candidate is synchronized and verified locally; production push/deploy/online verification remain blocked by the explicit no-blue-green window and the protected account-card online tooltip acceptance
 Task 5: pending

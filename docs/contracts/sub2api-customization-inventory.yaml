@@ -1,0 +1,234 @@
+schema_version: 1
+document: customization-inventory
+generated_at: "2026-08-09"
+baseline_commit: "ca7ed5b480c5ba89221327cb5260ae7ce2125ae8"
+production_manifest:
+  captured_at: "2026-08-08"
+  source_commit: "c69d31da51de00347f77305208bebd630fd6daf0"
+  source_tree: "11eeb8b2cf5eec54f0d39397e349dd0566280ca7"
+  migrations_hash: "aee795202a3dd14c191c5e395add6beb58942950bf530d9961ae80a359998429"
+  active_slot: green
+  release_state: "/var/lib/sub2api/release-state"
+  sub2api:
+    image: "ghcr.io/leesssong/xingqiao-sub2api:release-c69d31da51de00347f77305208bebd630fd6daf0-cda98e2f51b06beff850f982d00ab0050420e5a51fbed01bde7269f25c77ce2c"
+    image_id: "sha256:cda98e2f51b06beff850f982d00ab0050420e5a51fbed01bde7269f25c77ce2c"
+  worker:
+    image: "ghcr.io/leesssong/xingqiao-sub2api:release-c69d31da51de00347f77305208bebd630fd6daf0-cda98e2f51b06beff850f982d00ab0050420e5a51fbed01bde7269f25c77ce2c"
+    image_id: "sha256:cda98e2f51b06beff850f982d00ab0050420e5a51fbed01bde7269f25c77ce2c"
+  caddy:
+    image: "xingqiao-caddy@sha256:1508c9687082148932ad79cda479d1bc29e9bc27d5f94b61269b406613d72603"
+    image_id: "sha256:1508c9687082148932ad79cda479d1bc29e9bc27d5f94b61269b406613d72603"
+  postgresql:
+    image: "postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+    image_id: "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+  redis:
+    image: "redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005"
+    image_id: "sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005"
+  acceptance_evidence:
+    - docs/superpowers/reports/2026-08-08-account-monitor-probe-source-and-card-affordances-production-verification.md
+    - docs/superpowers/reports/2026-08-08-monitor-probe-admin-cost-production-verification.md
+
+capabilities:
+  - capability: homepage-and-documentation
+    owner: host
+    source_paths:
+      - homepage/src/components/Header.tsx
+      - homepage/src/sections/HeroSection.tsx
+      - infra/Caddyfile
+    api_paths:
+      - GET /health
+      - GET /pricing
+      - GET /docs/*
+    tables: []
+    ui_routes:
+      - /
+      - /pricing
+      - /docs/
+    source_of_truth:
+      - homepage source and generated static assets
+      - Caddy route configuration
+    acceptance_evidence:
+      - docs/project/current-state.md
+      - docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md
+    legacy_implementation: Homepage and documentation were bundled or routed alongside the custom Sub2API image.
+    target_implementation: Host-owned homepage and documentation assets served by Caddy, independently releasable from the official core.
+
+  - capability: monitoring-and-ranking
+    owner: control_plane
+    source_paths:
+      - upstream/sub2api/backend/internal/server/routes/admin.go
+      - upstream/sub2api/backend/internal/service/account_monitor.go
+      - upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue
+      - upstream/sub2api/frontend/src/components/admin/AccountMonitorCard.vue
+    api_paths:
+      - GET /api/v1/admin/accounts/monitor
+      - GET /api/v1/admin/accounts/monitor/groups
+      - POST /api/v1/admin/accounts/monitor/accounts/:id/refresh
+    tables:
+      - accounts
+      - groups
+      - account_groups
+      - account_monitor_results
+      - usage_logs
+    ui_routes:
+      - /admin/accounts/monitor
+      - /admin/channels/monitor
+    source_of_truth:
+      - Sub2API accounts/groups and monitor probe results
+      - control-plane monitor read model
+    acceptance_evidence:
+      - docs/superpowers/reports/2026-08-08-account-monitor-probe-source-and-card-affordances-production-verification.md
+      - docs/project/account-monitor-v3-acceptance-contract.md
+    legacy_implementation: Account quality, score, rank, cost and multiplier projection lived in the official backend and frontend bundle.
+    target_implementation: Control-plane read model consumes health and request-completion events while official APIs remain the account/group write boundary.
+
+  - capability: profitability-analysis
+    owner: control_plane
+    source_paths:
+      - upstream/sub2api/backend/internal/handler/admin/account_profitability.go
+      - upstream/sub2api/frontend/src/views/admin/AccountProfitabilityView.vue
+    api_paths:
+      - GET /api/v1/admin/operations/account-profitability
+      - GET /api/v1/admin/operations/account-profitability.csv
+    tables:
+      - usage_logs
+      - accounts
+      - groups
+    ui_routes:
+      - /admin/operations/account-profitability
+    source_of_truth:
+      - usage_logs actual_cost and account cost metadata
+      - versioned profitability projection
+    acceptance_evidence:
+      - docs/project/project-progress.md
+      - docs/superpowers/reports/2026-08-08-monitor-probe-admin-cost-production-verification.md
+    legacy_implementation: Profit formulas and CSV export were compiled into the Sub2API admin application.
+    target_implementation: External read model computes versioned revenue, cost, profit and margin from immutable request events and exposes a compatible admin route.
+
+  - capability: accounting-and-reconciliation
+    owner: control_plane
+    source_paths:
+      - docs/superpowers/reports/2026-08-05-relay-ops-accounting-code-deployment.md
+      - upstream/sub2api/backend/internal/handler/admin/usage.go
+      - infra/compose.yaml
+    api_paths:
+      - GET /api/v1/admin/usage
+      - GET /api/v1/admin/usage/:id
+      - GET /relay-ops/api/reconciliation/requests
+      - GET /relay-ops/api/reconciliation/exceptions
+    tables:
+      - usage_logs
+      - upstream_cost_attempts
+      - upstream_reconciliation_exceptions
+      - accounting_daily_snapshots
+    ui_routes:
+      - /admin/usage
+      - /admin/reconciliation
+    source_of_truth:
+      - Sub2API usage logs for customer charge facts
+      - relay-ops ledger and reconciliation records for upstream cost facts
+    acceptance_evidence:
+      - docs/superpowers/reports/2026-08-01-main-blue-green-production-verification.md
+      - docs/superpowers/reports/2026-08-05-relay-ops-accounting-code-deployment.md
+    legacy_implementation: Usage and billing history were native admin queries, with reconciliation data introduced in the custom relay-ops runtime.
+    target_implementation: External ledger owns reconciliation and daily close; Sub2API remains the sole customer billing writer and both systems are joined by request IDs.
+
+  - capability: balance-and-multiplier-collection
+    owner: adapter
+    source_paths:
+      - upstream/sub2api/backend/internal/service/account_monitor.go
+      - ops/collect-account-quality-pulse.rb
+      - docs/project/account-monitor-cost-balance-context.md
+    api_paths:
+      - GET /api/v1/admin/accounts
+      - GET /api/v1/admin/accounts/monitor
+      - PATCH /api/v1/admin/accounts/:id
+    tables:
+      - accounts
+      - account_monitor_results
+    ui_routes:
+      - /admin/accounts
+      - /admin/accounts/monitor
+    source_of_truth:
+      - upstream balance/billing probe response with capture timestamp
+      - accounts.rate_multiplier and billing sync flag
+    acceptance_evidence:
+      - docs/superpowers/reports/2026-08-08-account-monitor-probe-source-and-card-affordances-production-verification.md
+      - docs/project/project-progress.md
+    legacy_implementation: Provider-specific balance and multiplier probes were embedded in monitor and account services.
+    target_implementation: Narrow adapters collect provider facts; control plane stores timestamped projections and uses official account APIs for writes.
+
+  - capability: request-completion-events
+    owner: adapter
+    source_paths:
+      - upstream/sub2api/backend/internal/service/usage_log.go
+      - upstream/sub2api/backend/internal/pkg/usagestats/usage_log_types.go
+      - upstream/sub2api/backend/migrations/199_add_usage_log_upstream_request_id.sql
+    api_paths:
+      - POST /v1/chat/completions
+      - POST /v1/responses
+      - GET /api/v1/admin/usage/:id
+    tables:
+      - usage_logs
+    ui_routes:
+      - /admin/usage
+      - /admin/operations/account-profitability
+    source_of_truth:
+      - completed request event containing request/account/model/token/cost/latency and actual response model
+    acceptance_evidence:
+      - docs/superpowers/reports/2026-08-08-monitor-probe-admin-cost-production-verification.md
+      - release-evidence/sub2api-819c211e7.json
+    legacy_implementation: Request completion and usage persistence were coupled to the Sub2API request handlers and usage-log schema.
+    target_implementation: Thin event adapter emits an immutable completion envelope consumed by external monitor, profitability and ledger projections.
+
+  - capability: official-upgrade-discovery-and-release
+    owner: host
+    source_paths:
+      - ops/release-sub2api-blue-green.sh
+      - ops/deploy-sub2api-blue-green-host.sh
+      - docs/runbooks/sub2api-official-image-release.md
+    api_paths:
+      - GET /api/v1/admin/system/version
+      - POST /api/v1/admin/system/update/prepare
+      - POST /api/v1/admin/system/update/promote
+    tables:
+      - release-state (host file)
+      - schema_migrations
+    ui_routes:
+      - /admin/settings
+    source_of_truth:
+      - qualified immutable image, migration hash and host release-state
+      - administrator-visible update state machine
+    acceptance_evidence:
+      - docs/superpowers/reports/2026-08-01-main-blue-green-production-verification.md
+      - docs/runbooks/sub2api-blue-green-production-deployment.md
+    legacy_implementation: Official update was intercepted by a custom image merge/build path and required the bundled customization to be rebuilt.
+    target_implementation: Host controller discovers and qualifies official releases, prepares a candidate, then promotes by blue-green cutover only after contract and readiness checks.
+
+  - capability: administrator-authentication-and-navigation
+    owner: core
+    source_paths:
+      - upstream/sub2api/backend/internal/server/routes/auth.go
+      - upstream/sub2api/frontend/src/router/index.ts
+      - upstream/sub2api/frontend/src/stores/auth.ts
+    api_paths:
+      - POST /api/v1/auth/login
+      - POST /api/v1/auth/login/2fa
+      - GET /api/v1/auth/me
+      - GET /api/v1/admin/settings
+    tables:
+      - users
+      - sessions
+      - audit_logs
+    ui_routes:
+      - /login
+      - /admin
+      - /admin/settings
+    source_of_truth:
+      - Sub2API same-domain session and 2FA middleware
+      - native admin router and audit log
+    acceptance_evidence:
+      - docs/project/current-state.md
+      - docs/superpowers/reports/2026-07-30-native-ops-reminder-only-production-verification.md
+    legacy_implementation: Authentication, admin navigation and update controls were shipped in the custom frontend bundle.
+    target_implementation: Preserve the native same-domain session/2FA contract while allowing external control-plane pages to mount under compatible admin URLs.

@@ -142,22 +142,30 @@ func ValidateDecimalString(field, value string) error {
 }
 
 type RequestCompleted struct {
-	RequestID        string `json:"request_id"`
-	AccountID        int64  `json:"account_id"`
-	GroupID          *int64 `json:"group_id,omitempty"`
-	Model            string `json:"model"`
-	PromptTokens     int64  `json:"prompt_tokens"`
-	CompletionTokens int64  `json:"completion_tokens"`
-	UserCharge       string `json:"user_charge"`
-	ActualCost       string `json:"actual_cost"`
-	Currency         string `json:"currency"`
+	RequestID           string    `json:"request_id"`
+	AccountID           int64     `json:"account_id"`
+	GroupID             *int64    `json:"group_id,omitempty"`
+	Model               string    `json:"model"`
+	RequestedModel      string    `json:"requested_model,omitempty"`
+	UpstreamModel       string    `json:"upstream_model,omitempty"`
+	ActualResponseModel string    `json:"actual_response_model,omitempty"`
+	PromptTokens        int64     `json:"prompt_tokens"`
+	CompletionTokens    int64     `json:"completion_tokens"`
+	InputTokens         int64     `json:"input_tokens,omitempty"`
+	OutputTokens        int64     `json:"output_tokens,omitempty"`
+	UserCharge          string    `json:"user_charge"`
+	ActualCost          string    `json:"actual_cost"`
+	CostUSD             string    `json:"cost_usd,omitempty"`
+	LatencyMS           int64     `json:"latency_ms,omitempty"`
+	Currency            string    `json:"currency"`
+	OccurredAt          time.Time `json:"occurred_at,omitempty"`
 }
 
 func (p RequestCompleted) Validate() error {
 	if strings.TrimSpace(p.RequestID) == "" || p.AccountID <= 0 || strings.TrimSpace(p.Model) == "" {
 		return errors.New("request.completed requires request_id, account_id and model")
 	}
-	if p.PromptTokens < 0 || p.CompletionTokens < 0 {
+	if p.PromptTokens < 0 || p.CompletionTokens < 0 || p.InputTokens < 0 || p.OutputTokens < 0 || p.LatencyMS < 0 {
 		return errors.New("token counts cannot be negative")
 	}
 	if err := ValidateDecimalString("user_charge", p.UserCharge); err != nil {
@@ -172,11 +180,38 @@ func (p RequestCompleted) Validate() error {
 	return nil
 }
 
+func NewRequestCompletedEvent(sourceVersion string, occurredAt time.Time, payload RequestCompleted) (Event, error) {
+	if payload.RequestedModel == "" {
+		payload.RequestedModel = payload.Model
+	}
+	if payload.InputTokens == 0 {
+		payload.InputTokens = payload.PromptTokens
+	}
+	if payload.OutputTokens == 0 {
+		payload.OutputTokens = payload.CompletionTokens
+	}
+	if payload.CostUSD == "" {
+		payload.CostUSD = payload.ActualCost
+	}
+	payload.OccurredAt = occurredAt.UTC()
+	if err := payload.Validate(); err != nil {
+		return Event{}, err
+	}
+	return NewEvent(EventTypeRequestCompleted, sourceVersion, occurredAt, payload)
+}
+
 type AccountHealthChanged struct {
 	AccountID int64     `json:"account_id"`
 	Status    string    `json:"status"`
 	CheckedAt time.Time `json:"checked_at"`
 	ErrorCode string    `json:"error_code,omitempty"`
+}
+
+func NewHealthChangedEvent(sourceVersion string, occurredAt time.Time, payload AccountHealthChanged) (Event, error) {
+	if err := payload.Validate(); err != nil {
+		return Event{}, err
+	}
+	return NewEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt, payload)
 }
 
 func (p AccountHealthChanged) Validate() error {

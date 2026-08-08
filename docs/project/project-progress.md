@@ -2,6 +2,8 @@
 
 **本轮生产发布（2026-08-09）：** 状态：进行中。范围为当前 `main@e639cd494` 的 Sub2API 官方核心与星桥定制外置实现，以及“优化账号卡片”最终悬浮修复提交 `8562ca848774a28969793a9135fc9155aad3c94f`；明确排除“优化调度” worktree `/Users/gongtengxinwen/Documents/sub2api-upstream-resilience-spec` 的 8 个领先提交和当前未提交改动。发布必须先将账号卡片提交移植到 `main`，在合并后的 `main` 完成专项回归、构建、迁移/发布预检后推送并走本地/宿主蓝绿链；如发生不可用，必须在 5 分钟内完成切换或回退。只有推送、部署和线上验收全部通过后才能标记完成。
 
+**本轮账号卡片整合（2026-08-09）：** 已在 `main` 记录候选提交 `8562ca848774a28969793a9135fc9155aad3c94f` 的空 cherry-pick；原因是等价应用内 `HelpTooltip` 补丁已由祖先提交 `a0aae015a543f390d5e7bd0dd48ccb6a14421454` 整合，当前树保留其后续探测口径更新。`AccountMonitorCard` 定向测试（27 项）和前端类型检查已通过；尚未推送、部署或线上验证，发布状态保持进行中。独立审查另记录键盘无法触发该悬浮层的 P2 可访问性风险，待单独批准处理。
+
 **本轮收口（2026-08-09）：** Sub2API 官方核心与星桥定制外置迁移已完成本地实现、合同测试、资格门禁和只读生产预检脚本；管理员使用路径保持同域、同账号、同 2FA、同 URL 和同数据查看语义。当前停在生产部署更新动作之前，尚未推送、部署、迁移、重启、蓝绿提升或线上验收，状态保持进行中。详见 [外置迁移手册](../runbooks/sub2api-externalization-migration.md)、[官方升级手册](../runbooks/sub2api-official-upgrade.md) 和 [生产前验证报告](../superpowers/reports/2026-08-08-externalization-production-verification.md)。
 
 **本轮任务登记（2026-08-09）：** Sub2API 外置定制 Task 1 基线清单、管理员体验合同和运行时清单，状态：进行中（已完成本地文档与契约测试；尚未推送、部署或线上复验，不能标记完成）。实施报告：`.superpowers/sdd/2026-08-08-sub2api-externalized-customization-implementation-plan/task-1-report.md`。

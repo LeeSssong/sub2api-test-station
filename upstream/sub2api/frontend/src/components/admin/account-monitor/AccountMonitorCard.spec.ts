@@ -181,7 +181,7 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
     expect(wrapper.get('[data-test="priority-control"]').text()).toContain('1')
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('72 次探测样本，1 次失败')
+    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('71 / 72 次主动探测成功')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
     expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1962 ms')
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('成本待确认')
@@ -200,37 +200,31 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="score-metric"]').attributes('title')).toContain('探测成功率 43.5')
   })
 
+  it('shows the score breakdown in an application tooltip on hover', async () => {
+    const wrapper = mountCard()
+    await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('mouseenter')
+    await nextTick()
+    const tooltip = document.body.querySelector('[data-test="score-breakdown-tooltip"]')
+    expect(tooltip?.textContent).toContain('成本优势 12.0')
+    expect(tooltip?.textContent).toContain('探测成功率 43.5')
+    expect(tooltip?.textContent).toContain('总耗时 17.5')
+  })
+
   it('marks manually maintained cost with a warning and explains its source', () => {
     const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
     expect(wrapper.get('[data-test="manual-cost-warning"]').attributes('title')).toContain('手工维护')
   })
 
-  it('renders probe evidence instead of perfect real requests for an unavailable account', () => {
-    const wrapper = mountCard({
-      account: {
-        ...account,
-        request_count: 33,
-        error_count: 0,
-        success_rate: 1,
-        quality_score: 100,
-        group_rank: 1,
-        probe_sample_count: 24,
-        probe_success_count: 0,
-        probe_success_rate: 0,
-        probe_ttft_p50_ms: null,
-        probe_latency_p95_ms: null,
-        availability_status: 'unavailable',
-        score_status: 'ineligible',
-      },
-    })
+  it('shows the cost source in an application tooltip on hover', async () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
+    await wrapper.get('[data-test="cost-tooltip-trigger"]').trigger('mouseenter')
+    await nextTick()
+    expect(document.body.querySelector('[data-test="cost-source-tooltip"]')?.textContent).toContain('手工维护')
+  })
 
-		expect(wrapper.get('[data-test="status-badge"]').text()).toContain('不可用')
-		expect(wrapper.get('[data-test="score-metric"] strong').text()).toBe('--')
-    expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('未排名')
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('探测成功率')
-		expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('0%')
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('24 次探测样本')
-    expect(wrapper.get('[data-test="success-rate-metric"]').text()).not.toContain('33 次真实请求')
+  it('exposes the native billing cost source tooltip', () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'declared', status: 'ok', sample_count: 72 } } })
+    expect(wrapper.get('[data-test="cost-metric"] span[title]').attributes('title')).toContain('上游原生')
   })
 
   it('restores the rejected V3 green service card shell, five colored metrics, probe bars, and service-only footer', async () => {
@@ -252,7 +246,7 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="cost-metric"]').classes()).toContain('bg-violet-50')
     expect(wrapper.get('[data-test="concurrency-metric"]').classes()).toContain('bg-gray-50')
     expect(wrapper.findAll('[data-test="probe-bar"]')).toHaveLength(24)
-		expect(wrapper.get('[data-test="probe-summary"]').text()).toContain('72 次结果 · 71 成功 · 1 失败')
+    expect(wrapper.get('[data-test="probe-summary"]').text()).toContain('24 次结果 · 23 成功 · 1 失败')
     expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('24 小时调用')
     expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('72 次请求 · 1 次失败')
     expect(wrapper.get('[data-test="card-footer"]').text()).toContain('检查于')

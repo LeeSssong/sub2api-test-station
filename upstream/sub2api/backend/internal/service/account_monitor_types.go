@@ -95,6 +95,13 @@ type AccountMonitorQualityEvidence struct {
 	ObservedAt         time.Time `json:"observed_at"`
 }
 
+type AccountMonitorScoreBreakdown struct {
+	Cost    float64 `json:"cost"`
+	Success float64 `json:"success"`
+	TTFT    float64 `json:"ttft"`
+	Latency float64 `json:"latency"`
+}
+
 type AccountMonitorGroupAccount struct {
 	AccountMonitorAccount
 	Evidence AccountMonitorQualityEvidence `json:"evidence"`
@@ -226,6 +233,8 @@ type AccountMonitorAccount struct {
 	CostMode                   string                        `json:"cost_mode,omitempty"`
 	CostScore                  float64                       `json:"cost_score"`
 	QualityScore               *float64                      `json:"quality_score,omitempty"`
+	ScoreBreakdown             *AccountMonitorScoreBreakdown `json:"score_breakdown,omitempty"`
+	EvidenceSource             string                        `json:"evidence_source,omitempty"`
 	GroupRank                  *int                          `json:"group_rank,omitempty"`
 	Eligible                   bool                          `json:"eligible"`
 	TodayStats                 *WindowStats                  `json:"today_stats,omitempty"`

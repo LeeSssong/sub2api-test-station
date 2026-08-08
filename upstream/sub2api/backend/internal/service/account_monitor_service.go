@@ -362,6 +362,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 			continue
 		}
 		evidence := accountMonitorWindowEvidence(windows[row.AccountID], probes[row.AccountID], latest[row.AccountID], settings, now)
+		row.EvidenceSource = evidence.Source
 		row.SampleCount = evidence.SampleCount
 		row.SuccessSampleCount = evidence.SuccessSampleCount
 		row.TTFTSampleCount = evidence.TTFTSampleCount
@@ -376,7 +377,9 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 		row.Eligible = row.ManagementState == accountMonitorManagementEnabled && row.ServiceState == accountMonitorServiceAvailable && evidence.Source != "stale"
 		if row.Eligible {
-			row.QualityScore = CalculateAccountMonitorWindowQualityScore(1, row.EffectiveMultiplier, DefaultAccountMonitorScoreWeights, evidence)
+			breakdown, score := accountMonitorWindowScoreBreakdown(1, row.EffectiveMultiplier, DefaultAccountMonitorScoreWeights, evidence)
+			row.ScoreBreakdown = &breakdown
+			row.QualityScore = score
 		}
 	}
 	sort.SliceStable(rows, func(left, right int) bool {
@@ -436,6 +439,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			window := windows[account.ID]
 			evidence := accountMonitorWindowEvidence(window, probes[account.ID], latest[account.ID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
+			row.EvidenceSource = evidence.Source
 			row.SampleCount = evidence.SampleCount
 			row.SuccessSampleCount = evidence.SuccessSampleCount
 			row.TTFTSampleCount = evidence.TTFTSampleCount
@@ -454,7 +458,9 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
 			row.Eligible = row.ManagementState == accountMonitorManagementEnabled && row.ServiceState == accountMonitorServiceAvailable && evidence.Source != "stale"
 			if row.Eligible {
-				row.QualityScore = CalculateAccountMonitorWindowQualityScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights, evidence)
+				breakdown, score := accountMonitorWindowScoreBreakdown(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights, evidence)
+				row.ScoreBreakdown = &breakdown
+				row.QualityScore = score
 			}
 			projected = append(projected, row)
 		}
@@ -956,8 +962,18 @@ func CalculateAccountMonitorQualityScore(
 	weights AccountMonitorScoreWeights,
 	evidence AccountMonitorQualityEvidence,
 ) *float64 {
+	_, score := accountMonitorScoreBreakdown(groupMultiplier, &accountMultiplier, weights, evidence)
+	return score
+}
+
+func accountMonitorScoreBreakdown(
+	groupMultiplier float64,
+	accountMultiplier *float64,
+	weights AccountMonitorScoreWeights,
+	evidence AccountMonitorQualityEvidence,
+) (AccountMonitorScoreBreakdown, *float64) {
 	if groupMultiplier <= 0 || evidence.Source == "stale" {
-		return nil
+		return AccountMonitorScoreBreakdown{}, nil
 	}
 	clamp01 := func(value float64) float64 {
 		if value < 0 {
@@ -983,18 +999,14 @@ func CalculateAccountMonitorQualityScore(
 		}
 		return (float64(limitMS) - *value) / float64(limitMS-targetMS)
 	}
-	costAdvantage := float64(weights.Cost) * (groupMultiplier - accountMultiplier) / groupMultiplier
-	if costAdvantage < 0 {
-		costAdvantage = 0
+	breakdown := AccountMonitorScoreBreakdown{
+		Cost:    accountMonitorCostScore(groupMultiplier, accountMultiplier, weights),
+		Success: float64(weights.Success) * clamp01(evidence.SuccessRate),
+		TTFT:    float64(weights.TTFT) * latencyScore(evidence.TTFTP50MS, weights.TTFTTargetMS, weights.TTFTLimitMS),
+		Latency: float64(weights.Latency) * latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS),
 	}
-	if costAdvantage > float64(weights.Cost) {
-		costAdvantage = float64(weights.Cost)
-	}
-	score := costAdvantage + float64(weights.Success)*clamp01(evidence.SuccessRate) +
-		float64(weights.TTFT)*latencyScore(evidence.TTFTP50MS, weights.TTFTTargetMS, weights.TTFTLimitMS) +
-		float64(weights.Latency)*latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS)
-	score = math.Round(score)
-	return &score
+	total := math.Round(breakdown.Cost + breakdown.Success + breakdown.TTFT + breakdown.Latency)
+	return breakdown, &total
 }
 
 type accountMonitorWindowCostResult struct {
@@ -1135,17 +1147,17 @@ func CalculateAccountMonitorWindowQualityScore(
 	weights AccountMonitorScoreWeights,
 	evidence AccountMonitorQualityEvidence,
 ) *float64 {
-	if groupMultiplier <= 0 || evidence.Source == "stale" {
-		return nil
-	}
-	withoutCost := weights
-	withoutCost.Cost = 0
-	quality := CalculateAccountMonitorQualityScore(groupMultiplier, groupMultiplier, withoutCost, evidence)
-	if quality == nil {
-		return nil
-	}
-	score := math.Round(*quality + accountMonitorCostScore(groupMultiplier, effectiveMultiplier, weights))
-	return &score
+	_, score := accountMonitorWindowScoreBreakdown(groupMultiplier, effectiveMultiplier, weights, evidence)
+	return score
+}
+
+func accountMonitorWindowScoreBreakdown(
+	groupMultiplier float64,
+	effectiveMultiplier *float64,
+	weights AccountMonitorScoreWeights,
+	evidence AccountMonitorQualityEvidence,
+) (AccountMonitorScoreBreakdown, *float64) {
+	return accountMonitorScoreBreakdown(groupMultiplier, effectiveMultiplier, weights, evidence)
 }
 
 func accountMonitorWindowEvidence(
@@ -1155,33 +1167,18 @@ func accountMonitorWindowEvidence(
 	settings AccountMonitorSettings,
 	now time.Time,
 ) AccountMonitorQualityEvidence {
-	if window.RequestCount >= AccountMonitorGroupEvidenceMinSamples {
-		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
-			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
-			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
-			ObservedAt: accountMonitorWindowObservedAt(window),
-		}
-	}
 	if probe.SampleCount > 0 {
 		observedAt := accountMonitorProbeObservedAt(probe, latest)
-		if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
-			return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: observedAt}
-		}
-		return AccountMonitorQualityEvidence{
+		evidence := AccountMonitorQualityEvidence{
 			Source: "monitor_probe", SampleCount: probe.SampleCount, SuccessSampleCount: probe.SuccessSampleCount,
 			TTFTSampleCount: probe.TTFTSampleCount, LatencySampleCount: probe.LatencySampleCount,
 			SuccessRate: probe.SuccessRate, TTFTP50MS: probe.TTFTP50MS, LatencyP95MS: probe.LatencyP95MS,
 			ObservedAt: observedAt,
 		}
-	}
-	if window.RequestCount > 0 {
-		return AccountMonitorQualityEvidence{
-			Source: "real_requests", SampleCount: int(window.RequestCount), SuccessSampleCount: int(window.SuccessCount),
-			TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
-			SuccessRate: window.SuccessRate, TTFTP50MS: window.TTFTP50MS, LatencyP95MS: window.LatencyP95MS,
-			ObservedAt: accountMonitorWindowObservedAt(window),
+		if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
+			evidence.Source = "stale"
 		}
+		return evidence
 	}
 	return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: accountMonitorProbeObservedAt(probe, latest)}
 }

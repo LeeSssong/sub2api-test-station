@@ -50,8 +50,12 @@ func NewCommand(name, actorID string, payload any) (Command, error) {
 }
 
 func (c Command) Validate() error {
-	if _, err := uuid.Parse(c.CommandID); err != nil {
+	parsedID, err := uuid.Parse(c.CommandID)
+	if err != nil {
 		return fmt.Errorf("command_id must be a UUID: %w", err)
+	}
+	if parsedID.Version() != uuid.Version(4) {
+		return fmt.Errorf("command_id must be a UUIDv4")
 	}
 	if strings.TrimSpace(c.ActorID) == "" {
 		return errors.New("actor_id is required")

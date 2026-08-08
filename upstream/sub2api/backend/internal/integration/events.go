@@ -64,8 +64,12 @@ func NewEvent(eventType, sourceVersion string, occurredAt time.Time, payload any
 }
 
 func (e Event) Validate() error {
-	if _, err := uuid.Parse(e.EventID); err != nil {
+	parsedID, err := uuid.Parse(e.EventID)
+	if err != nil {
 		return fmt.Errorf("event_id must be a UUID: %w", err)
+	}
+	if parsedID.Version() != uuid.Version(4) {
+		return fmt.Errorf("event_id must be a UUIDv4")
 	}
 	if _, ok := supportedEventTypes[e.Type]; !ok {
 		return fmt.Errorf("unsupported event type %q", e.Type)

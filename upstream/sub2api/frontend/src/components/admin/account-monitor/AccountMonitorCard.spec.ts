@@ -205,6 +205,11 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="manual-cost-warning"]').attributes('title')).toContain('手工维护')
   })
 
+  it('exposes the native billing cost source tooltip', () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'declared', status: 'ok', sample_count: 72 } } })
+    expect(wrapper.get('[data-test="cost-metric"] span[title]').attributes('title')).toContain('上游原生')
+  })
+
   it('restores the rejected V3 green service card shell, five colored metrics, probe bars, and service-only footer', async () => {
     const refresh = vi.fn()
     const wrapper = mountCard({

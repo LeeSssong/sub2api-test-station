@@ -73,7 +73,7 @@
         <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-slate-400">
-            <span>账号成本</span>
+            <span :title="costSourceTooltip" :aria-label="costSourceTooltip">账号成本</span>
             <span v-if="manualCost" class="cursor-help font-bold text-amber-500 dark:text-amber-300" data-test="manual-cost-warning" :title="costSourceTooltip" :aria-label="costSourceTooltip">!</span>
           </div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>

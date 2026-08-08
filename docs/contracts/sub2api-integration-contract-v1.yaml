@@ -1,0 +1,57 @@
+integration_contract_version: 1
+document: sub2api-integration-contract
+status: draft-for-implementation
+transport:
+  encoding: application/json
+  timestamps: RFC3339Nano
+  timestamp_timezone: UTC
+  monetary_values: decimal strings (never JSON numbers)
+  event_id: UUIDv4
+  command_id: UUIDv4
+security:
+  forbidden_payload_fields:
+    - token
+    - access_token
+    - refresh_token
+    - cookie
+    - authorization
+    - api_key
+    - key
+    - password
+    - secret
+  rule: Events and commands contain identifiers and immutable facts only; credentials remain in the official core.
+events:
+  envelope:
+    required:
+      - event_id
+      - type
+      - occurred_at
+      - source_version
+      - contract_version
+      - payload
+  types:
+    - name: request.completed
+      payload:
+        required: [request_id, account_id, model, prompt_tokens, completion_tokens, user_charge, actual_cost, currency]
+        decimals: [user_charge, actual_cost]
+    - name: account.health_changed
+      payload:
+        required: [account_id, status, checked_at]
+    - name: account.balance_snapshot
+      payload:
+        required: [account_id, balance, currency, captured_at]
+        decimals: [balance]
+commands:
+  envelope:
+    required: [command_id, actor_id, name, payload, contract_version]
+  allowed:
+    - name: account.update
+      payload:
+        required: [account_id]
+        note: Core validates and applies the update through its official service boundary.
+compatibility:
+  rules:
+    - Consumers must reject unsupported contract_version values without applying side effects.
+    - New fields are additive and unknown fields must be ignored by readers.
+    - Event IDs are globally unique and consumers must process an event_id at most once.
+    - External services never write core business tables directly.

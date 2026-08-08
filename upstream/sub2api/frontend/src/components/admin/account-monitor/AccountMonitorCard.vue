@@ -214,7 +214,6 @@ const evidenceDetail = computed(() => {
   if (props.account.evidence_source === 'stale') return '暂无有效主动探测证据'
   return '等待主动探测证据'
 })
-const probeMetricDetail = computed(() => `${formatNumber(props.account.success_sample_count)} / ${formatNumber(props.account.sample_count)} 次主动探测成功`)
 const manualCost = computed(() => {
   if (props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type)) return props.account.multiplier.source === 'manual'
   return props.account.cost_mode === 'procurement' || (props.account.procurement_cost_cny != null && props.account.multiplier.source !== 'declared')

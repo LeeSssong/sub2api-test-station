@@ -148,6 +148,7 @@ type Dependencies struct {
 	Accounting     AccountingService
 	Reconciliation ReconciliationService
 	CostGuard      CostGuardService
+	ControlPlane   http.Handler
 }
 
 type server struct {
@@ -175,6 +176,9 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	}
 	s := &server{dependencies: dependencies, templates: templates, css: css, accountingJS: accountingJS}
 	mux := http.NewServeMux()
+	if dependencies.ControlPlane != nil && dependencies.Auth != nil {
+		mux.Handle("/api/v1/xingqiao/", adminauth.RequireAdmin(dependencies.Auth, http.StripPrefix("/api/v1/xingqiao", dependencies.ControlPlane)))
+	}
 	mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)
 	mux.HandleFunc("GET /pricing", s.pricing)
 	if dependencies.Accounting != nil {

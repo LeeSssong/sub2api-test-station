@@ -13,13 +13,13 @@ DONE. Task 1 registered the operation as `进行中`, protected the main checkou
   - 24 rows, matching all 24 entries returned by `git worktree list --porcelain`.
   - Main is classified `protected-main` and is explicitly excluded from recovery capture.
   - The missing/prunable monitor release worktree is recorded as `unavailable-prunable` with its recorded HEAD and Git reason.
-  - The current consolidation worktree is recorded as `consolidation-target`, not as a merge source.
+  - The current consolidation worktree is recorded as `consolidation-target`, not as a merge source. Although it was dirty while Task 1 was being assembled, its operation artifacts are the outputs committed on this branch; it is therefore intentionally exempt from recursive recovery capture and is not treated as a dirty source.
 - `.superpowers/sdd/2026-08-08-worktree-consolidation/recovery/`
   - `private-tmp-sub2api-release-njYlCa`
   - `codex-worktrees-sub2api-monitor-reliability`
   - `project-worktrees-account`
 
-Each dirty source snapshot contains `status.porcelain`, unstaged `working-tree.diff`, staged `staged.diff`, `untracked-files.txt`, `untracked-files.tar`, and `metadata.tsv` with source HEAD/branch, capture time, and checksums. Source worktrees were read only.
+Each dirty source snapshot contains `status.porcelain`, unstaged `working-tree.diff`, staged `staged.diff`, `untracked-files.txt`, `untracked-files.tar`, and `metadata.tsv` with source HEAD/branch, capture time, and checksums. The consolidation target is the documented scope exception: its own committed operation artifacts are not recursively snapshotted. Source worktrees were read only.
 
 ## Verification
 
@@ -32,4 +32,3 @@ Each dirty source snapshot contains `status.porcelain`, unstaged `working-tree.d
 
 - `/private/tmp/sub2api-monitor-release.DzXKrU` is prunable because its gitdir target no longer exists; its working-tree contents cannot be recovered from the filesystem. Its recorded HEAD remains available for later Git-object inspection.
 - The protected main checkout may contain uncommitted edits from the two active threads; it was intentionally not snapshotted or used as a recovery source.
-

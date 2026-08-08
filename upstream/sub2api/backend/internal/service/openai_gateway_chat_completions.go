@@ -511,6 +511,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	state.IncludeUsage = true
 
 	var usage OpenAIUsage
+	responseID := ""
 	var firstTokenMs *int
 	actualResponseModel := ""
 	firstChunk := true
@@ -540,6 +541,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
 			RequestID:           requestID,
+			ResponseID:          responseID,
 			Usage:               usage,
 			Model:               originalModel,
 			BillingModel:        billingModel,
@@ -548,6 +550,8 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			Stream:              true,
 			Duration:            time.Since(startTime),
 			FirstTokenMs:        firstTokenMs,
+			OutputStarted:       clientOutputStarted,
+			UsageKnown:          usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheReadInputTokens > 0 || usage.CacheCreationInputTokens > 0,
 		}
 	}
 
@@ -568,6 +572,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if actualResponseModel == "" {
 			actualResponseModel = ExtractOpenAIResponseModelSSEEvent(event.Type, []byte(payload))
+		}
+		if event.Response != nil && strings.TrimSpace(event.Response.ID) != "" {
+			responseID = strings.TrimSpace(event.Response.ID)
 		}
 		refusalDetector.ObservePayload([]byte(payload))
 
@@ -795,7 +802,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 	}
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
-		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+		result := resultWithUsage()
+		if clientOutputStarted {
+			return result, newOpenAIStreamReadRecoveryFailoverError(nil, responseID, result.UsageKnown)
+		}
+		return result, fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
 		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
@@ -831,6 +842,10 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			handleScanErr(err)
 			if clientDisconnected || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+			}
+			if clientOutputStarted {
+				result := resultWithUsage()
+				return result, newOpenAIStreamReadRecoveryFailoverError(err, responseID, result.UsageKnown)
 			}
 			return resultWithUsage(), newOpenAIUpstreamStreamReadError(err)
 		}
@@ -906,6 +921,10 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				handleScanErr(ev.err)
 				if clientDisconnected || errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
 					return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
+				}
+				if clientOutputStarted {
+					result := resultWithUsage()
+					return result, newOpenAIStreamReadRecoveryFailoverError(ev.err, responseID, result.UsageKnown)
 				}
 				return resultWithUsage(), newOpenAIUpstreamStreamReadError(ev.err)
 			}

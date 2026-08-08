@@ -7,9 +7,130 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+const (
+	streamRecoveryType    = "upstream_temporarily_unavailable"
+	streamRecoveryMessage = "当前上游暂时不可用，请稍后继续"
+)
+
+// resolveStreamRecoveryPayload extracts and normalizes recovery metadata from
+// either failover errors or legacy stream-read errors. The wire contract owns
+// the response ID and resume flag, so stale payload values cannot advertise an
+// unsafe continuation.
+func resolveStreamRecoveryPayload(source any) (*service.OpenAIStreamRecoveryPayload, bool) {
+	if source == nil {
+		return nil, false
+	}
+	var payload service.OpenAIStreamRecoveryPayload
+	var responseID string
+	switch value := source.(type) {
+	case *service.UpstreamFailoverError:
+		if value == nil || !value.OutputStarted {
+			return nil, false
+		}
+		if value.Recovery != nil {
+			payload = *value.Recovery
+		}
+		responseID = strings.TrimSpace(value.ResponseID)
+	case error:
+		info, found := service.OpenAIStreamRecoveryDetails(value)
+		if !found || !info.OutputStarted {
+			return nil, false
+		}
+		payload = info.Payload
+		responseID = strings.TrimSpace(info.ResponseID)
+	default:
+		return nil, false
+	}
+	if responseID == "" {
+		responseID = strings.TrimSpace(payload.ResponseID)
+	}
+	payload.Type = streamRecoveryType
+	payload.Message = streamRecoveryMessage
+	payload.Retryable = true
+	payload.RetryAfterSeconds = 10
+	payload.ResponseID = responseID
+	payload.ResumeSupported = responseID != ""
+	if !payload.ResumeSupported {
+		payload.ResponseID = ""
+	}
+	return &payload, true
+}
+
+// writeOpenAIStreamRecoverySSE appends exactly one structured recovery event
+// after semantic stream output has already been committed.  It intentionally
+// does not attempt a second JSON/Responses fallback: the HTTP status is already
+// fixed and appending two terminal events confuses strict SDKs.  A canceled
+// request means the client is gone, so the helper is a no-op.
+func writeOpenAIStreamRecoverySSE(c *gin.Context, source any) bool {
+	if c == nil || c.Writer == nil || source == nil {
+		return false
+	}
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return false
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return false
+	}
+	payload, ok := resolveStreamRecoveryPayload(source)
+	if !ok {
+		return false
+	}
+	data, err := json.Marshal(gin.H{"error": payload})
+	if err != nil {
+		return false
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
+}
+
+// writeAnthropicStreamRecoverySSE emits the same recovery decision using the
+// Anthropic Messages SSE envelope. OpenAI's top-level {"error": ...} shape is
+// intentionally not reused because Messages clients expect type:error plus a
+// nested error object.
+func writeAnthropicStreamRecoverySSE(c *gin.Context, source any) bool {
+	if c == nil || c.Writer == nil || source == nil {
+		return false
+	}
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return false
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return false
+	}
+	payload, ok := resolveStreamRecoveryPayload(source)
+	if !ok {
+		return false
+	}
+	errorObject := gin.H{
+		"type":                "api_error",
+		"message":             payload.Message,
+		"retryable":           payload.Retryable,
+		"resume_supported":    payload.ResumeSupported,
+		"retry_after_seconds": payload.RetryAfterSeconds,
+	}
+	if payload.ResponseID != "" {
+		errorObject["response_id"] = payload.ResponseID
+	}
+	data, err := json.Marshal(gin.H{"type": "error", "error": errorObject})
+	if err != nil {
+		return false
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
+}
 
 // responsesFailedError 对齐 OpenAI Responses 协议 error 子对象。
 type responsesFailedError struct {

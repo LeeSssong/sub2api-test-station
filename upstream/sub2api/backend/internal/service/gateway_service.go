@@ -641,6 +641,18 @@ type UpstreamFailoverError struct {
 	NextAccountAction        NextAccountAction
 	ClientStatusCode         int
 	ClientMessage            string
+	// OutputStarted is true when semantic upstream output has already been
+	// forwarded to the client. Such failures must never silently replay the
+	// request because doing so would splice two model streams together.
+	OutputStarted bool
+	// SafeToFailoverAfterWrite is retained for non-semantic bytes (for example
+	// a keepalive comment). It is deliberately independent from OutputStarted.
+	// The resilience policy defaults this to false for semantic output.
+	ResponseID       string
+	UsageKnown       bool
+	LogicalRequestID string
+	AttemptID        string
+	Recovery         *OpenAIStreamRecoveryPayload
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -651,7 +663,13 @@ func (e *UpstreamFailoverError) Error() string {
 }
 
 func (e *UpstreamFailoverError) ShouldRetryNextAccount() bool {
-	return e != nil && e.NextAccountAction != NextAccountStop
+	if e == nil {
+		return false
+	}
+	if e.OutputStarted && !e.SafeToFailoverAfterWrite {
+		return false
+	}
+	return e.NextAccountAction != NextAccountStop
 }
 
 func (e *UpstreamFailoverError) IsCredentialFailure() bool {

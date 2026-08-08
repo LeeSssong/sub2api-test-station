@@ -1200,7 +1200,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					return
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
-				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
+				wroteFallback := false
+				if info, ok := service.OpenAIStreamRecoveryDetails(err); ok && info.OutputStarted {
+					wroteFallback = writeAnthropicStreamRecoverySSE(c, err)
+				}
+				if !wroteFallback {
+					wroteFallback = h.ensureAnthropicErrorResponse(c, streamStarted)
+				}
 				reqLog.Warn("openai_messages.forward_failed",
 					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
@@ -1309,6 +1315,11 @@ func (h *OpenAIGatewayHandler) anthropicStreamingAwareError(c *gin.Context, stat
 
 // handleAnthropicFailoverExhausted maps upstream failover errors to Anthropic format.
 func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
+	if failoverErr != nil && failoverErr.OutputStarted && streamStarted {
+		if writeAnthropicStreamRecoverySSE(c, failoverErr) {
+			return
+		}
+	}
 	if failoverErr != nil {
 		copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	}
@@ -2491,6 +2502,11 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		)
 		return
 	}
+	if failoverErr.OutputStarted && streamStarted {
+		if writeOpenAIStreamRecoverySSE(c, failoverErr) {
+			return
+		}
+	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsCredentialFailure() {
 		status, message := credentialFailoverClientResponse(failoverErr)
@@ -2664,6 +2680,11 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 }
 
 func (h *OpenAIGatewayHandler) ensureOpenAIStreamReadErrorResponse(c *gin.Context, err error, streamStarted bool) bool {
+	if info, ok := service.OpenAIStreamRecoveryDetails(err); ok && info.OutputStarted {
+		if streamStarted || (c != nil && c.Writer != nil && c.Writer.Written()) {
+			return writeOpenAIStreamRecoverySSE(c, err)
+		}
+	}
 	code, message, ok := service.OpenAIUpstreamStreamReadErrorDetails(err)
 	if !ok || c == nil || c.Writer == nil || service.IsResponseCommitted(c) {
 		return false

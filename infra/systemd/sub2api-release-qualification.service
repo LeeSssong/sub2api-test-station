@@ -1,0 +1,12 @@
+[Unit]
+Description=Qualify official Sub2API release in inactive slot
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/sub2api/production
+EnvironmentFile=-/etc/sub2api/release-qualification.env
+ExecStart=/opt/sub2api/production/ops/qualify-sub2api-official-release.sh $SUB2API_TARGET_VERSION
+NoNewPrivileges=true
+PrivateTmp=true

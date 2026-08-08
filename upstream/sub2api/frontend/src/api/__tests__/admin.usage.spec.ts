@@ -6,6 +6,7 @@ const { get } = vi.hoisted(() => ({
 
 vi.mock('@/api/client', () => ({
   apiClient: { get },
+  buildGatewayUrl: (path: string) => path,
 }))
 
 import { adminUsageAPI } from '@/api/admin/usage'
@@ -76,5 +77,29 @@ describe('admin usage API', () => {
 
     expect(get).toHaveBeenCalledWith('/admin/usage/42')
     await expect(result).resolves.toEqual(record)
+  })
+
+  it('queries native request-cost evidence through the isolated relay-ops boundary', async () => {
+    const cost = {
+      local_request_id: 'req-admin-42',
+      upstream_request_id: 'upstream-42',
+      upstream_actual_cost: '0.004',
+      upstream_standard_cost: '0',
+      cost_source: '上游逐笔账单',
+      confidence: 'confirmed',
+      status: 'matched',
+    }
+    get.mockResolvedValue({ data: cost })
+
+    const result = adminUsageAPI.getRequestCost({ local_request_id: 'req-admin-42' })
+
+    expect(get).toHaveBeenCalledWith(
+      '/relay-ops/api/reconciliation/request-cost',
+      {
+        params: { local_request_id: 'req-admin-42' },
+        skipSessionRecovery: true,
+      },
+    )
+    await expect(result).resolves.toEqual(cost)
   })
 })

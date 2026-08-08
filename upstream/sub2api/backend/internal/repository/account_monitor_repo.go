@@ -87,17 +87,17 @@ func (r *accountMonitorRepository) ListAggregates(
 					NULLIF(COUNT(*), 0),
 				0
 			),
-			COUNT(*)::int,
-			COUNT(ttft_ms)::int,
-			COUNT(latency_ms)::int,
+			COUNT(*) FILTER (WHERE status = 'success')::int,
+			COUNT(ttft_ms) FILTER (WHERE status = 'success')::int,
+			COUNT(latency_ms) FILTER (WHERE status = 'success')::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ttft_ms)
-				FILTER (WHERE ttft_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_ms)
-				FILTER (WHERE ttft_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY latency_ms)
-				FILTER (WHERE latency_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND latency_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms)
-				FILTER (WHERE latency_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND latency_ms IS NOT NULL),
 			MAX(checked_at)
 		FROM account_monitor_results
 		WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3
@@ -240,17 +240,17 @@ func (r *accountMonitorRepository) LoadAggregate(
 				NULLIF(COUNT(*), 0),
 				0
 			),
-			COUNT(*)::int,
-			COUNT(ttft_ms)::int,
-			COUNT(latency_ms)::int,
+			COUNT(*) FILTER (WHERE status = 'success')::int,
+			COUNT(ttft_ms) FILTER (WHERE status = 'success')::int,
+			COUNT(latency_ms) FILTER (WHERE status = 'success')::int,
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ttft_ms)
-				FILTER (WHERE ttft_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_ms)
-				FILTER (WHERE ttft_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND ttft_ms IS NOT NULL),
 			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY latency_ms)
-				FILTER (WHERE latency_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND latency_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms)
-				FILTER (WHERE latency_ms IS NOT NULL),
+				FILTER (WHERE status = 'success' AND latency_ms IS NOT NULL),
 			MAX(checked_at)
 		FROM account_monitor_results
 		WHERE account_id = ANY($1) AND checked_at >= $2

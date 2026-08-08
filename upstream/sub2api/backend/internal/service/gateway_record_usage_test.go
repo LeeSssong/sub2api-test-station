@@ -519,14 +519,42 @@ func TestGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t
 	require.Equal(t, "client:client-stable-123", usageRepo.lastLog.RequestID)
 }
 
-func TestGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *testing.T) {
+func TestGatewayServiceRecordUsage_PersistsUpstreamRequestIDSeparately(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	ctx := context.WithValue(context.Background(), ctxkey.RequestID, "local-request-789")
+	err := svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "upstream-request-789",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 508},
+		User:    &User{ID: 608},
+		Account: &Account{ID: 708},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "local:local-request-789", usageRepo.lastLog.RequestID)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, "local:local-request-789", billingRepo.lastCmd.RequestID)
+
+	require.NotNil(t, usageRepo.lastLog.UpstreamRequestID)
+	require.Equal(t, "upstream-request-789", *usageRepo.lastLog.UpstreamRequestID)
+}
+
+func TestGatewayServiceRecordUsage_GeneratesLocalRequestIDWhenContextMissing(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
 
 	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
-			RequestID: "",
+			RequestID: "upstream-request-507",
 			Usage: ClaudeUsage{
 				InputTokens:  10,
 				OutputTokens: 6,
@@ -544,6 +572,8 @@ func TestGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *te
 	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "generated:"))
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
+	require.NotNil(t, usageRepo.lastLog.UpstreamRequestID)
+	require.Equal(t, "upstream-request-507", *usageRepo.lastLog.UpstreamRequestID)
 }
 
 func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testing.T) {

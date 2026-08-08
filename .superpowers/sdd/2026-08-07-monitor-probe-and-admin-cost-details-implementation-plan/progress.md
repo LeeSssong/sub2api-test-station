@@ -1,0 +1,45 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-08-07-monitor-probe-and-admin-cost-details-implementation-plan.md
+
+Task 1 base: 82cd7cb13
+Task 1: complete
+Task 1 commit: b32c1fa0d feat: make account monitor probe-only
+Task 1 verification: go test ./internal/service -count=1; 55/55 targeted frontend tests; npm run typecheck; git diff --check
+Task 1 review: independent reviewer dispatches failed because the selected model was at capacity; final whole-branch review must explicitly cover Task 1.
+
+Task 2 base: b32c1fa0d
+Task 2: in progress (partial TDD implementation present and uncommitted; resuming at HTTP contract tests and compile fixes)
+Task 2 implementation commit: 7098cb918 feat: expose native upstream request cost details
+Task 2 review round 0: spec ❌ / quality needs fixes
+Task 2 fix round 1: in progress — persist upstream request ID through the import path; add authoritative price-table estimated evidence or preserve pending when unavailable; net charge/refund rows; add ambiguous fallback regression; enforce consistent query identifiers.
+Task 2 fix round 1 commit: 7b627e5ad fix: complete native request cost evidence
+Task 2 fix round 1 verification: go test ./... -count=1; go vet ./...; git diff --check (PostgreSQL-backed store regressions skipped because RELAY_OPS_TEST_DATABASE_URL is unset)
+Task 2 fix round 1 controller verification: all prior findings have direct code/test coverage in 7b627e5ad; scoped independent re-review dispatch was unavailable, so final whole-branch review must re-check Task 2.
+Task 2: complete locally (database-backed integration cases still require RELAY_OPS_TEST_DATABASE_URL during final verification)
+
+Task 3 base: 7b627e5ad
+Task 3 implementation commit: cd13ba553 feat: persist upstream request ids separately
+Task 3 verification: repository/DTO unit tests passed; migrations and Ent schema tests passed; git diff --check passed.
+Task 3 test infrastructure caveat: `go test -tags=unit ./internal/service` is blocked by a pre-existing duplicate `timePtr` helper in ops_health_score_test.go and account_monitor_service_test.go; final verification must resolve or explicitly adjudicate it.
+Task 3 review: controller verification complete; independent task review dispatch was unavailable, so final whole-branch review must explicitly cover Task 3.
+Task 3: complete locally
+
+Task 4 base: cd13ba553
+Task 4: complete
+Task 4 implementation commit: 4b145ba6e feat: clarify administrator usage cost details
+Task 4 verification: focused Vitest 33/33; frontend lint/typecheck/build; git diff --check
+Task 4 review: independent dispatch attempted twice but both failed with upstream 503; final whole-branch review must explicitly re-check Task 4.
+
+Whole-branch review fix round 1 base: a93ecedbd
+Whole-branch review fix round 1: complete locally
+Whole-branch review fix round 1 implementation commit: 07f47bd61 fix: address monitor and cost evidence review
+Whole-branch review fix round 1 findings closed locally: successful-only probe latency aggregation; classifier-derived fatal probe availability; relay-ops upstream_request_id import; owned-account manual allocation field contract.
+Whole-branch review fix round 1 verification: Sub2API backend `go test ./... -count=1`; relay-ops `go test ./... -count=1`; both modules `go vet ./...`; frontend 229 files / 1635 tests, lint check, typecheck, build; `git diff --check`.
+Whole-branch review fix round 1 caveat: PostgreSQL-backed relay-ops store tests skipped because `RELAY_OPS_TEST_DATABASE_URL` is unset; production push, deployment, and online verification remain pending, so the project ledger stays in progress.
+
+Whole-branch review fix round 2 base: 4223fc86d
+Whole-branch review fix round 2: complete locally; independent scoped re-review, push, deployment, and online verification remain pending
+Whole-branch review fix round 2 scope: recognize real Antigravity Chinese `API 返回 401/402/403` probe errors while keeping Chinese 500 non-fatal; allow relay-ops production UPSERT to backfill only an empty `upstream_request_id` during idempotent re-import without weakening immutable-field conflicts.
+Whole-branch review fix round 2 implementation commit: a1d527d67 fix: close monitor and import review gaps
+Whole-branch review fix round 2 TDD: Chinese 401/402/403/500 probe and availability tests failed with missing status/wrong classifications before the fix and passed after it; PostgreSQL-backed importer/store test failed with `ErrConflict` and stopped at `Observed=1` before the fix, then passed with continued import and idempotent enrichment. A deliberate broken-order mutation proved local/model conflicts would otherwise partially bind the provider ID; the restored guard passed.
+Whole-branch review fix round 2 verification: focused Sub2API service tests; focused relay-ops store/reconciliation tests; Sub2API backend `go test ./... -count=1` and `go vet ./...`; relay-ops `go test ./... -count=1` and `go vet ./...` with an isolated PostgreSQL 18 test database; `git diff --check`.
+Whole-branch review fix round 2 scoped re-review: PASS — both remaining Important findings addressed; no new Critical or Important findings. Reviewer independently passed focused Sub2API service tests, PostgreSQL-backed relay-ops store/reconciliation tests, and `git diff --check`; the temporary database container was removed and the worktree was clean.

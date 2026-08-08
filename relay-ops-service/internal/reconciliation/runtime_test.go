@@ -40,9 +40,14 @@ func (i *runtimeImporter) Import(_ context.Context, accountID int64, start, end 
 }
 
 type runtimeRepository struct {
-	summary Summary
+	summary           Summary
+	requestCostDetail RequestCostDetail
 	operationsSummary OperationsSummary
 	dailyRows         []OperationsDailyRow
+}
+
+func (r runtimeRepository) ReadRequestCostDetail(context.Context, RequestCostQuery) (RequestCostDetail, error) {
+	return r.requestCostDetail, nil
 }
 
 func (r runtimeRepository) ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (Summary, error) {
@@ -92,6 +97,15 @@ func TestRuntimeServiceRefreshCollectsBeforeReadingSummary(t *testing.T) {
 	}
 	if got := strings.Join(order, ","); got != "import,collect" {
 		t.Fatalf("order=%s", got)
+	}
+}
+
+func TestRuntimeServiceReadsRequestCostDetail(t *testing.T) {
+	want := RequestCostDetail{LocalRequestID: "local-1", CostSource: "上游逐笔账单", Confidence: "confirmed"}
+	service := RuntimeService{Repository: runtimeRepository{requestCostDetail: want}}
+	got, err := service.ReadRequestCostDetail(context.Background(), RequestCostQuery{LocalRequestID: "local-1"})
+	if err != nil || got.LocalRequestID != want.LocalRequestID || got.Confidence != "confirmed" {
+		t.Fatalf("detail=%#v err=%v", got, err)
 	}
 }
 

@@ -316,13 +316,14 @@ type UsageLogQuery struct {
 }
 
 type UsageLog struct {
-	ID           int64  `json:"id"`
-	AccountID    int64  `json:"account_id"`
-	GroupID      *int64 `json:"group_id"`
-	RequestID    string `json:"request_id"`
-	Model        string `json:"model"`
-	InputTokens  int64  `json:"input_tokens"`
-	OutputTokens int64  `json:"output_tokens"`
+	ID                int64  `json:"id"`
+	AccountID         int64  `json:"account_id"`
+	GroupID           *int64 `json:"group_id"`
+	RequestID         string `json:"request_id"`
+	UpstreamRequestID string `json:"upstream_request_id"`
+	Model             string `json:"model"`
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
 	// TotalCost is the amount calculated under this site's user pricing rule.
 	// It is intentionally distinct from account-rate and upstream billing data.
 	TotalCost float64   `json:"total_cost"`

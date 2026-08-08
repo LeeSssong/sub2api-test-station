@@ -32,7 +32,7 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // is the penultimate arg (created_at is always last).
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 57, "arg-type table must include session_id")
+	require.Len(t, usageLogInsertArgTypes, 58, "arg-type table must include upstream_request_id and session_id")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
@@ -88,4 +88,35 @@ func TestUsageLogInsertQueries_IncludeSessionID(t *testing.T) {
 	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
 	require.Contains(t, bestEffortQuery, "session_id")
 	require.Len(t, bestEffortArgs, len(prepared.args))
+}
+
+// TestPrepareUsageLogInsert_UpstreamRequestIDWiring keeps the locally-generated
+// usage request_id separate from the nullable upstream request id across every
+// raw SQL insert/select path.
+func TestPrepareUsageLogInsert_UpstreamRequestIDWiring(t *testing.T) {
+	upstreamRequestID := "upstream-req-123"
+	log := newSessionIDUsageLog(nil)
+	log.RequestID = "local:req-123"
+	log.UpstreamRequestID = &upstreamRequestID
+
+	prepared := prepareUsageLogInsert(log)
+	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	require.GreaterOrEqual(t, len(prepared.args), 2)
+
+	upstreamArg := prepared.args[4]
+	ns, ok := upstreamArg.(sql.NullString)
+	require.True(t, ok, "upstream_request_id arg should be a sql.NullString, got %T", upstreamArg)
+	require.True(t, ns.Valid)
+	require.Equal(t, upstreamRequestID, ns.String)
+	require.Equal(t, "local:req-123", prepared.args[3])
+
+	require.Contains(t, usageLogSelectColumns, "upstream_request_id")
+	require.Equal(t, "text", usageLogInsertArgTypes[4])
+
+	key := usageLogBatchKey(log.RequestID, log.APIKeyID)
+	batchQuery, _ := buildUsageLogBatchInsertQuery([]string{key}, map[string]usageLogInsertPrepared{key: prepared})
+	require.Contains(t, batchQuery, "upstream_request_id")
+
+	bestEffortQuery, _ := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
+	require.Contains(t, bestEffortQuery, "upstream_request_id")
 }

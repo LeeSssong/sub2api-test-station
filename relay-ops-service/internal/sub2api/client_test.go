@@ -192,7 +192,7 @@ func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Query().Get("page") {
 		case "1":
-			fmt.Fprint(w, `{"data":{"items":[{"id":101,"account_id":8,"group_id":3,"request_id":"request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":2,"page":1,"page_size":1000}}`)
+			fmt.Fprint(w, `{"data":{"items":[{"id":101,"account_id":8,"group_id":3,"request_id":"local-request-101","upstream_request_id":"provider-request-101","model":"gpt-5.6-sol","input_tokens":10,"output_tokens":5,"total_cost":0.12,"created_at":"2026-08-01T00:01:00Z"}],"total":2,"page":1,"page_size":1000}}`)
 		case "2":
 			fmt.Fprint(w, `{"data":{"items":[{"id":102,"account_id":8,"group_id":null,"request_id":"request-102","model":"gpt-5.6-sol","input_tokens":11,"output_tokens":6,"total_cost":0.13,"created_at":"2026-08-01T00:02:00Z"}],"total":2,"page":2,"page_size":1000}}`)
 		default:
@@ -207,6 +207,9 @@ func TestReaderListsUsageLogsAcrossExactWindowPages(t *testing.T) {
 	}
 	if logs[0].GroupID == nil || *logs[0].GroupID != 3 {
 		t.Fatalf("first group_id = %v, want 3", logs[0].GroupID)
+	}
+	if logs[0].RequestID != "local-request-101" || logs[0].UpstreamRequestID != "provider-request-101" {
+		t.Fatalf("request IDs = local %q upstream %q", logs[0].RequestID, logs[0].UpstreamRequestID)
 	}
 	if logs[1].GroupID != nil {
 		t.Fatalf("second group_id = %v, want nil", *logs[1].GroupID)

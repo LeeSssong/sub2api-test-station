@@ -2,14 +2,80 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
+	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/reconciliation"
+	"example.invalid/relay-ops-service/internal/sub2api"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 )
+
+type testBillingSources struct{ items []billing.BillingSource }
+
+func (s testBillingSources) ListBillingSources(context.Context) ([]billing.BillingSource, error) {
+	return s.items, nil
+}
+
+type testUsageLogReader struct{ logs []sub2api.UsageLog }
+
+func (r testUsageLogReader) ListUsageLogs(context.Context, sub2api.UsageLogQuery) ([]sub2api.UsageLog, error) {
+	return r.logs, nil
+}
+
+type testCostAdapter struct{ transactions []billing.CostTransaction }
+
+func (a testCostAdapter) ListTransactions(context.Context, billing.CostQuery) ([]billing.CostTransaction, string, error) {
+	return a.transactions, "", nil
+}
+
+func (testCostAdapter) ReadSnapshot(context.Context) (billing.CostSnapshot, error) {
+	return billing.CostSnapshot{}, nil
+}
+
+func TestApplyRequestCostLedgerEvidenceUsesEstimatedFieldForOwnedAllocation(t *testing.T) {
+	detail := reconciliation.RequestCostDetail{}
+	if !applyRequestCostLedgerEvidence(
+		&detail,
+		0,
+		"",
+		decimal.Zero,
+		1,
+		"manual-allocation-1",
+		decimal.RequireFromString("0.0032"),
+	) {
+		t.Fatal("manual allocation was not recognized as ledger evidence")
+	}
+	if !detail.UpstreamActualCost.IsZero() || !detail.UpstreamStandardCost.Equal(decimal.RequireFromString("0.0032")) ||
+		detail.SourceID != "manual-allocation-1" || detail.CostSource != reconciliation.RequestCostSourceOwnedAllocation || detail.Confidence != "estimated" {
+		t.Fatalf("manual allocation detail=%#v", detail)
+	}
+}
+
+func TestApplyRequestCostLedgerEvidenceKeepsNativeCostConfirmed(t *testing.T) {
+	detail := reconciliation.RequestCostDetail{}
+	if !applyRequestCostLedgerEvidence(
+		&detail,
+		1,
+		"native-ledger-1",
+		decimal.RequireFromString("0.0041"),
+		1,
+		"manual-allocation-1",
+		decimal.RequireFromString("0.0032"),
+	) {
+		t.Fatal("native ledger row was not recognized")
+	}
+	if !detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.0041")) || !detail.UpstreamStandardCost.IsZero() ||
+		detail.SourceID != "native-ledger-1" || detail.CostSource != reconciliation.RequestCostSourceNativeLedger || detail.Confidence != "confirmed" {
+		t.Fatalf("native detail=%#v", detail)
+	}
+}
 
 func TestCreateAutomaticUpstreamCostMatchesAndResolvesException(t *testing.T) {
 	st := openTestStore(t)
@@ -54,6 +120,285 @@ func TestCreateAutomaticUpstreamCostMatchesAndResolvesException(t *testing.T) {
 	}
 	if reconcileStatus != string(reconciliation.StatusMatched) || resolvedAt == nil || resolutionType == nil || *resolutionType != "automatic" {
 		t.Fatalf("effective reconciliation state = status %q resolved %v type %v, want matched/resolved/automatic", reconcileStatus, resolvedAt, resolutionType)
+	}
+}
+
+func TestReadRequestCostDetailMatchesExactLocalAndUpstreamIDs(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+		AttemptID: "request-cost-exact", LocalRequestID: "local-cost-exact", UpstreamRequestID: "upstream-cost-exact",
+		AccountID: 8123, AdapterType: reconciliation.AdapterSub2API, Model: "gpt-test", InputTokens: 11, OutputTokens: 7,
+		UserCharge: decimal.RequireFromString("0.12"), SiteStandardCost: decimal.RequireFromString("0.15"), Currency: "USD",
+		RequestStatus: "success", CompletedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateAutomaticUpstreamCost(ctx, reconciliation.AutomaticTransactionInput{
+		AttemptID: attempt.ID, AccountID: attempt.AccountID, SourceType: reconciliation.SourceAutomaticCharge,
+		SourceRecordID: "native-log-1", Amount: decimal.RequireFromString("0.0821"), Currency: "USD",
+		OccurredAt: now, IdempotencyKey: "request-cost:native-log-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []reconciliation.RequestCostQuery{{LocalRequestID: "local-cost-exact"}, {UpstreamRequestID: "upstream-cost-exact"}} {
+		detail, err := st.ReadRequestCostDetail(ctx, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if detail.SourceID != "native-log-1" || detail.CostSource != "上游逐笔账单" || detail.Confidence != "confirmed" ||
+			!detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.0821")) || detail.LocalRequestID != "local-cost-exact" {
+			t.Fatalf("detail=%#v", detail)
+		}
+	}
+}
+
+func TestRequestCostDetailPersistsProviderIDAcrossImportReconcileAndRead(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	importer := reconciliation.UsageImporter{
+		Sources: testBillingSources{items: []billing.BillingSource{{AccountID: 8123, AdapterType: "newapi"}}},
+		Reader: testUsageLogReader{logs: []sub2api.UsageLog{{
+			ID: 17, AccountID: 8123, RequestID: "local-imported", Model: "gpt-test",
+			InputTokens: 10, OutputTokens: 4, TotalCost: 0.12, CreatedAt: now,
+		}}},
+		Attempts: st,
+	}
+	if result, err := importer.Import(ctx, 8123, now.Add(-time.Hour), now.Add(time.Hour)); err != nil || result.Inserted != 1 {
+		t.Fatalf("import result=%#v err=%v", result, err)
+	}
+	service := reconciliation.Service{Repository: st}
+	if result, err := service.ReconcileAccount(ctx, 8123, reconciliation.AdapterNewAPI, testCostAdapter{transactions: []billing.CostTransaction{{
+		SourceID: "native-log-17", RequestID: "local-imported", UpstreamRequestID: "provider-17", Type: "charge",
+		Cost: domain.MicroUSD(82_100), OccurredAt: now,
+	}}}, now.Add(-time.Hour), now.Add(time.Hour)); err != nil || result.Matched != 1 {
+		t.Fatalf("reconcile result=%#v err=%v", result, err)
+	}
+	detail, err := st.ReadRequestCostDetail(ctx, reconciliation.RequestCostQuery{UpstreamRequestID: "provider-17"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.LocalRequestID != "local-imported" || detail.UpstreamRequestID != "provider-17" || detail.SourceID != "native-log-17" ||
+		!detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.0821")) || detail.Confidence != "confirmed" {
+		t.Fatalf("detail=%#v", detail)
+	}
+}
+
+func TestUsageImporterBackfillsMissingUpstreamRequestIDAndContinuesSource(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	windowStart, windowEnd := now.Add(-time.Hour), now.Add(time.Hour)
+	importLogs := func(logs ...sub2api.UsageLog) (reconciliation.ImportResult, error) {
+		return (reconciliation.UsageImporter{
+			Sources:  testBillingSources{items: []billing.BillingSource{{AccountID: 8123, AdapterType: "newapi"}}},
+			Reader:   testUsageLogReader{logs: logs},
+			Attempts: st,
+		}).Import(ctx, 8123, windowStart, windowEnd)
+	}
+	first := sub2api.UsageLog{
+		ID: 81, AccountID: 8123, RequestID: "local-request-81", Model: "gpt-test",
+		InputTokens: 10, OutputTokens: 4, TotalCost: 0.12, CreatedAt: now,
+	}
+	if result, err := importLogs(first); err != nil || result.Inserted != 1 || result.SourcesFailed != 0 {
+		t.Fatalf("first import result=%#v err=%v", result, err)
+	}
+	assertStoredIdentity := func(t *testing.T, expectedUpstreamRequestID string) {
+		t.Helper()
+		var localRequestID, upstreamRequestID, model string
+		if err := st.pool.QueryRow(ctx, `
+			SELECT local_request_id, COALESCE(upstream_request_id,''), model
+			FROM relay_ops.upstream_cost_attempts WHERE attempt_id=$1`, "sub2api-usage:8123:81").Scan(
+			&localRequestID, &upstreamRequestID, &model,
+		); err != nil {
+			t.Fatalf("read stored attempt identity: %v", err)
+		}
+		if localRequestID != "local-request-81" || upstreamRequestID != expectedUpstreamRequestID || model != "gpt-test" {
+			t.Fatalf("stored identity = local %q upstream %q model %q", localRequestID, upstreamRequestID, model)
+		}
+	}
+
+	for _, tt := range []struct {
+		name string
+		log  sub2api.UsageLog
+	}{
+		{name: "different local request ID before backfill", log: func() sub2api.UsageLog {
+			changed := first
+			changed.RequestID = "other-local-request"
+			changed.UpstreamRequestID = "provider-request-81"
+			return changed
+		}()},
+		{name: "different immutable model before backfill", log: func() sub2api.UsageLog {
+			changed := first
+			changed.Model = "other-model"
+			changed.UpstreamRequestID = "provider-request-81"
+			return changed
+		}()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := importLogs(tt.log)
+			if !errors.Is(err, ErrConflict) || result.SourcesFailed != 1 {
+				t.Fatalf("conflicting pre-backfill import result=%#v err=%v, want ErrConflict", result, err)
+			}
+			assertStoredIdentity(t, "")
+		})
+	}
+
+	enriched := first
+	enriched.UpstreamRequestID = "provider-request-81"
+	next := sub2api.UsageLog{
+		ID: 82, AccountID: 8123, RequestID: "local-request-82", UpstreamRequestID: "provider-request-82", Model: "gpt-test",
+		InputTokens: 11, OutputTokens: 5, TotalCost: 0.13, CreatedAt: now.Add(time.Second),
+	}
+	if result, err := importLogs(enriched, next); err != nil || result.Observed != 2 || result.Inserted != 1 || result.SourcesFailed != 0 {
+		t.Fatalf("enrichment import result=%#v err=%v", result, err)
+	}
+	if result, err := importLogs(enriched, next); err != nil || result.Observed != 2 || result.Inserted != 0 || result.SourcesFailed != 0 {
+		t.Fatalf("idempotent enrichment import result=%#v err=%v", result, err)
+	}
+
+	assertStoredIdentity(t, "provider-request-81")
+
+	conflicts := []struct {
+		name string
+		log  sub2api.UsageLog
+	}{
+		{name: "different non-empty upstream request ID", log: func() sub2api.UsageLog {
+			changed := enriched
+			changed.UpstreamRequestID = "other-provider-request"
+			return changed
+		}()},
+	}
+	for _, tt := range conflicts {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := importLogs(tt.log)
+			if !errors.Is(err, ErrConflict) || result.SourcesFailed != 1 {
+				t.Fatalf("conflicting import result=%#v err=%v, want ErrConflict", result, err)
+			}
+			assertStoredIdentity(t, "provider-request-81")
+		})
+	}
+}
+
+func TestReadRequestCostDetailNetsNativeChargeAndRefundRows(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+		AttemptID: "request-cost-net", LocalRequestID: "local-cost-net", AccountID: 8123,
+		AdapterType: reconciliation.AdapterNewAPI, Model: "gpt-test", Currency: "USD", RequestStatus: "success", CompletedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []reconciliation.AutomaticTransactionInput{
+		{AttemptID: attempt.ID, AccountID: 8123, SourceType: reconciliation.SourceAutomaticCharge, SourceRecordID: "native-charge", Amount: decimal.RequireFromString("0.08"), Currency: "USD", OccurredAt: now, IdempotencyKey: "native-charge"},
+		{AttemptID: attempt.ID, AccountID: 8123, SourceType: reconciliation.SourceAutomaticRefund, SourceRecordID: "native-refund", Amount: decimal.RequireFromString("-0.02"), Currency: "USD", OccurredAt: now.Add(time.Second), IdempotencyKey: "native-refund"},
+	} {
+		if _, _, err := st.CreateAutomaticUpstreamCost(ctx, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err := st.ReadRequestCostDetail(ctx, reconciliation.RequestCostQuery{LocalRequestID: "local-cost-net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detail.UpstreamActualCost.Equal(decimal.RequireFromString("0.06")) || detail.SourceID != "native-charge,native-refund" ||
+		detail.CostSource != "上游逐笔账单" || detail.Confidence != "confirmed" {
+		t.Fatalf("net native detail=%#v", detail)
+	}
+}
+
+func TestReadRequestCostDetailUsesStoredUpstreamPriceTableEvidence(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	var upstreamID int64
+	if err := st.pool.QueryRow(ctx, `
+		INSERT INTO relay_ops.upstreams (display_name, role, base_url, adapter_type)
+		VALUES ('price-evidence-upstream', 'production', 'https://price-evidence.example/v1', 'newapi')
+		RETURNING id`).Scan(&upstreamID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		INSERT INTO relay_ops.auth_sessions (upstream_id, secret_ref, auth_mode, status, login_url, scope, billing_account_id)
+		VALUES ($1, 'file:/price-evidence-secret', 'bearer', 'active', 'https://price-evidence.example/login', 'billing_read', 8123)`, upstreamID); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(pricing.Evidence{
+		SchemaVersion: pricing.EvidenceSchemaVersion, Confidence: "structured_json", SourceURL: "https://price-evidence.example/pricing",
+		Models: []pricing.ModelPrice{{ModelID: "gpt-test", Input: "1.25", Output: "10"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotID, err := st.AppendPricingSnapshot(ctx, PricingSnapshot{
+		UpstreamID: domain.UpstreamID(upstreamID), SourceURL: "https://price-evidence.example/pricing", SourceType: "public_page",
+		FetchedAt: now.Add(-time.Minute), ContentHash: "price-evidence-hash", NormalizedJSON: payload, EvidenceLevel: "structured_json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+		AttemptID: "request-cost-price", LocalRequestID: "local-cost-price", AccountID: 8123,
+		AdapterType: reconciliation.AdapterNewAPI, Model: "gpt-test", InputTokens: 1_000_000, OutputTokens: 500_000,
+		UserCharge: decimal.RequireFromString("99"), SiteStandardCost: decimal.RequireFromString("99"),
+		Currency: "USD", RequestStatus: "success", CompletedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := st.ReadRequestCostDetail(ctx, reconciliation.RequestCostQuery{LocalRequestID: "local-cost-price"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.SourceID != "pricing-snapshot:"+strconv.FormatInt(snapshotID, 10) || detail.CostSource != reconciliation.RequestCostSourceUpstreamPriceTable ||
+		detail.Confidence != "estimated" || detail.Status != reconciliation.StatusPending || !detail.UpstreamActualCost.IsZero() ||
+		!detail.UpstreamStandardCost.Equal(decimal.RequireFromString("6.25")) {
+		t.Fatalf("price table detail=%#v", detail)
+	}
+}
+
+func TestReadRequestCostDetailKeepsAmbiguousUpstreamIDPending(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	now := time.Now().UTC()
+	for _, suffix := range []string{"a", "b"} {
+		_, _, err := st.RecordUpstreamCostAttempt(ctx, reconciliation.AttemptInput{
+			AttemptID: "ambiguous-" + suffix, LocalRequestID: "ambiguous-local-" + suffix, UpstreamRequestID: "ambiguous-upstream",
+			AccountID: 8123, AdapterType: reconciliation.AdapterNewAPI, UserCharge: decimal.RequireFromString("0.10"),
+			Currency: "USD", RequestStatus: "success", CompletedAt: now.Add(time.Duration(len(suffix)) * time.Microsecond),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err := st.ReadRequestCostDetail(ctx, reconciliation.RequestCostQuery{UpstreamRequestID: "ambiguous-upstream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Status != reconciliation.StatusPending || detail.Confidence != "pending" || detail.CostSource != "待对账" || !detail.UpstreamActualCost.IsZero() {
+		t.Fatalf("ambiguous detail=%#v", detail)
 	}
 }
 

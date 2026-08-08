@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,6 +105,17 @@ func (s *Store) RecordUpstreamCostAttempt(ctx context.Context, raw reconciliatio
 		attempt.UpstreamRequestID = *upstreamRequestID
 	}
 	attempt.GroupID = groupID
+	if !inserted && attempt.UpstreamRequestID == "" && input.UpstreamRequestID != "" {
+		identityWithoutUpstreamID := input
+		identityWithoutUpstreamID.UpstreamRequestID = ""
+		if !sameAttempt(attempt, identityWithoutUpstreamID) {
+			return reconciliation.Attempt{}, false, ErrConflict
+		}
+		if err := s.BindUpstreamRequestID(ctx, attempt.ID, input.UpstreamRequestID); err != nil {
+			return reconciliation.Attempt{}, false, err
+		}
+		attempt.UpstreamRequestID = input.UpstreamRequestID
+	}
 	if !inserted && !sameAttempt(attempt, input) {
 		return reconciliation.Attempt{}, false, ErrConflict
 	}
@@ -119,6 +131,27 @@ func sameAttempt(stored reconciliation.Attempt, input reconciliation.AttemptInpu
 		stored.SiteStandardCost.Equal(input.SiteStandardCost.Round(upstreamCostAmountScale)) &&
 		stored.Currency == input.Currency && stored.RequestStatus == input.RequestStatus &&
 		stored.CompletedAt.Equal(input.CompletedAt)
+}
+
+// BindUpstreamRequestID records the provider-issued ID after a local request
+// match. A pre-existing different provider ID is a reconciliation conflict;
+// local_request_id is never modified.
+func (s *Store) BindUpstreamRequestID(ctx context.Context, attemptID int64, upstreamRequestID string) error {
+	upstreamRequestID = strings.TrimSpace(upstreamRequestID)
+	if attemptID <= 0 || upstreamRequestID == "" || len(upstreamRequestID) > 200 {
+		return fmt.Errorf("upstream request ID binding is invalid")
+	}
+	result, err := s.pool.Exec(ctx, `
+		UPDATE relay_ops.upstream_cost_attempts
+		SET upstream_request_id=$2, updated_at=NOW()
+		WHERE id=$1 AND (upstream_request_id IS NULL OR upstream_request_id=$2)`, attemptID, upstreamRequestID)
+	if err != nil {
+		return fmt.Errorf("bind upstream request ID: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (s *Store) CreateAutomaticUpstreamCost(ctx context.Context, raw reconciliation.AutomaticTransactionInput) (reconciliation.Transaction, bool, error) {
@@ -446,6 +479,160 @@ func (s *Store) ListPendingUpstreamCostAttempts(ctx context.Context, accountID i
 		return nil, fmt.Errorf("iterate pending upstream cost attempts: %w", err)
 	}
 	return attempts, nil
+}
+
+func (s *Store) ReadRequestCostDetail(ctx context.Context, raw reconciliation.RequestCostQuery) (reconciliation.RequestCostDetail, error) {
+	query, err := reconciliation.ValidateRequestCostQuery(raw)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.id, a.local_request_id, COALESCE(a.upstream_request_id,''), a.account_id, a.adapter_type, a.model,
+			a.input_tokens, a.output_tokens, a.reconcile_status, a.matched_at, a.completed_at
+		FROM relay_ops.upstream_cost_attempts a
+		WHERE ($1 <> '' AND a.local_request_id=$1) OR ($2 <> '' AND a.upstream_request_id=$2)
+		ORDER BY a.completed_at DESC, a.id DESC LIMIT 2`, query.LocalRequestID, query.UpstreamRequestID)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, fmt.Errorf("read request cost detail: %w", err)
+	}
+	defer rows.Close()
+	type requestCostAttempt struct {
+		id          int64
+		detail      reconciliation.RequestCostDetail
+		accountID   int64
+		completedAt time.Time
+	}
+	attempts := make([]requestCostAttempt, 0, 2)
+	for rows.Next() {
+		var attempt requestCostAttempt
+		if err := rows.Scan(&attempt.id, &attempt.detail.LocalRequestID, &attempt.detail.UpstreamRequestID, &attempt.accountID,
+			&attempt.detail.AdapterType, &attempt.detail.Model, &attempt.detail.PromptTokens, &attempt.detail.CompletionTokens,
+			&attempt.detail.Status, &attempt.detail.MatchedAt, &attempt.completedAt); err != nil {
+			return reconciliation.RequestCostDetail{}, fmt.Errorf("scan request cost detail: %w", err)
+		}
+		attempts = append(attempts, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		return reconciliation.RequestCostDetail{}, fmt.Errorf("iterate request cost detail: %w", err)
+	}
+	if len(attempts) == 0 {
+		return reconciliation.RequestCostDetail{}, pgx.ErrNoRows
+	}
+	if len(attempts) > 1 {
+		return reconciliation.RequestCostDetail{
+			LocalRequestID: query.LocalRequestID, UpstreamRequestID: query.UpstreamRequestID,
+			CostSource: reconciliation.RequestCostSourcePending, Confidence: "pending", Status: reconciliation.StatusPending,
+			UpstreamActualCost: decimal.Zero, UpstreamStandardCost: decimal.Zero,
+		}, nil
+	}
+	attempt := attempts[0]
+	var nativeSourceIDs, nativeAmountText, manualSourceIDs, manualAmountText string
+	var nativeCount, manualCount int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(string_agg(COALESCE(source_record_id, ''), ',' ORDER BY occurred_at, id)
+				FILTER (WHERE source_type IN ('automatic_charge', 'automatic_refund')), ''),
+			COALESCE(SUM(amount) FILTER (WHERE source_type IN ('automatic_charge', 'automatic_refund')), 0)::text,
+			COUNT(*) FILTER (WHERE source_type IN ('automatic_charge', 'automatic_refund')),
+			COALESCE(string_agg(COALESCE(source_record_id, ''), ',' ORDER BY occurred_at, id)
+				FILTER (WHERE source_type IN ('manual_adjustment', 'manual_reversal')), ''),
+			COALESCE(SUM(amount) FILTER (WHERE source_type IN ('manual_adjustment', 'manual_reversal')), 0)::text,
+			COUNT(*) FILTER (WHERE source_type IN ('manual_adjustment', 'manual_reversal'))
+		FROM relay_ops.upstream_cost_transactions
+		WHERE attempt_id=$1 AND effective`, attempt.id).Scan(
+		&nativeSourceIDs, &nativeAmountText, &nativeCount, &manualSourceIDs, &manualAmountText, &manualCount,
+	); err != nil {
+		return reconciliation.RequestCostDetail{}, fmt.Errorf("read request cost ledger evidence: %w", err)
+	}
+	nativeAmount, err := decimalFromText(nativeAmountText)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	}
+	manualAmount, err := decimalFromText(manualAmountText)
+	if err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	}
+	if applyRequestCostLedgerEvidence(
+		&attempt.detail,
+		nativeCount,
+		nativeSourceIDs,
+		nativeAmount,
+		manualCount,
+		manualSourceIDs,
+		manualAmount,
+	) {
+		return attempt.detail, nil
+	}
+	if snapshotID, normalizedPricing, found, err := s.requestCostPricingEvidence(ctx, attempt.accountID, attempt.completedAt); err != nil {
+		return reconciliation.RequestCostDetail{}, err
+	} else if found {
+		if standardCost, ok := reconciliation.EstimateUpstreamStandardCost(normalizedPricing, attempt.detail.Model, attempt.detail.PromptTokens, attempt.detail.CompletionTokens); ok {
+			attempt.detail.UpstreamStandardCost = standardCost
+			attempt.detail.SourceID = "pricing-snapshot:" + strconv.FormatInt(snapshotID, 10)
+			attempt.detail.CostSource = reconciliation.RequestCostSourceUpstreamPriceTable
+			attempt.detail.Confidence = "estimated"
+			return attempt.detail, nil
+		}
+	}
+	attempt.detail.UpstreamActualCost = decimal.Zero
+	attempt.detail.UpstreamStandardCost = decimal.Zero
+	attempt.detail.CostSource = reconciliation.RequestCostSourcePending
+	attempt.detail.Confidence = "pending"
+	return attempt.detail, nil
+}
+
+func applyRequestCostLedgerEvidence(
+	detail *reconciliation.RequestCostDetail,
+	nativeCount int64,
+	nativeSourceIDs string,
+	nativeAmount decimal.Decimal,
+	manualCount int64,
+	manualSourceIDs string,
+	manualAmount decimal.Decimal,
+) bool {
+	if detail == nil {
+		return false
+	}
+	if nativeCount > 0 {
+		detail.UpstreamActualCost = nativeAmount
+		detail.UpstreamStandardCost = decimal.Zero
+		detail.SourceID = nativeSourceIDs
+		detail.CostSource = reconciliation.RequestCostSourceNativeLedger
+		detail.Confidence = "confirmed"
+		return true
+	}
+	if manualCount > 0 {
+		detail.UpstreamActualCost = decimal.Zero
+		detail.UpstreamStandardCost = manualAmount
+		detail.SourceID = manualSourceIDs
+		detail.CostSource = reconciliation.RequestCostSourceOwnedAllocation
+		detail.Confidence = "estimated"
+		return true
+	}
+	return false
+}
+
+func (s *Store) requestCostPricingEvidence(ctx context.Context, accountID int64, completedAt time.Time) (int64, []byte, bool, error) {
+	if accountID <= 0 || completedAt.IsZero() {
+		return 0, nil, false, nil
+	}
+	var snapshotID int64
+	var normalizedPricing []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT p.id, p.normalized_payload
+		FROM relay_ops.auth_sessions session
+		JOIN relay_ops.pricing_snapshots p ON p.upstream_id=session.upstream_id
+		WHERE session.billing_account_id=$1 AND session.status='active' AND session.scope='billing_read'
+			AND p.source_type='public_page' AND p.evidence_level='structured_json'
+			AND p.fetched_at <= $2
+		ORDER BY p.fetched_at DESC, p.id DESC LIMIT 1`, accountID, completedAt.UTC()).Scan(&snapshotID, &normalizedPricing)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil, false, nil
+	}
+	if err != nil {
+		return 0, nil, false, fmt.Errorf("read request cost pricing evidence: %w", err)
+	}
+	return snapshotID, normalizedPricing, true, nil
 }
 
 func (s *Store) ReadReconciliationSummary(ctx context.Context, accountID int64, start, end time.Time, currency string) (reconciliation.Summary, error) {

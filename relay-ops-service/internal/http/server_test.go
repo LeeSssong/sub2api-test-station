@@ -15,6 +15,7 @@ import (
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/upstreams"
+	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
@@ -584,6 +585,110 @@ func TestOperationsRoutesRejectInvalidScopeAndRequireAdmin(t *testing.T) {
 	}
 }
 
+func TestRequestCostRouteRejectsMissingExactRequestIDBeforeCallingService(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost", ""))
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "INVALID_REQUEST_COST_QUERY") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.requestCostCalls != 0 {
+		t.Fatalf("request cost service called %d times for invalid query", service.requestCostCalls)
+	}
+}
+
+func TestRequestCostRouteReturnsOnlyNativeEvidenceForAdmin(t *testing.T) {
+	t.Parallel()
+
+	matchedAt := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	service := &fakeReconciliation{requestCostDetail: reconciliation.RequestCostDetail{
+		LocalRequestID: "local-1", UpstreamRequestID: "upstream-1", SourceID: "native-log-7",
+		AdapterType: reconciliation.AdapterSub2API, Model: "gpt-test", PromptTokens: 17, CompletionTokens: 9,
+		UpstreamActualCost: decimal.RequireFromString("0.0821"), UpstreamStandardCost: decimal.Zero,
+		CostSource: "上游逐笔账单", Confidence: "confirmed", MatchedAt: &matchedAt, Status: reconciliation.StatusMatched,
+	}}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+
+	unauthenticated := httptest.NewRecorder()
+	server.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=local-1", nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=+local-1+", ""))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.requestCostQuery.LocalRequestID != "local-1" || service.requestCostQuery.UpstreamRequestID != "" {
+		t.Fatalf("request cost query=%#v", service.requestCostQuery)
+	}
+	var response map[string]json.RawMessage
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"local_request_id": `"local-1"`, "upstream_request_id": `"upstream-1"`, "source_id": `"native-log-7"`,
+		"adapter_type": `"sub2api"`, "model": `"gpt-test"`, "prompt_tokens": "17", "completion_tokens": "9",
+		"upstream_actual_cost": `"0.0821"`, "upstream_standard_cost": `"0"`, "cost_source": `"上游逐笔账单"`,
+		"confidence": `"confirmed"`, "status": `"matched"`,
+	} {
+		if got := string(response[name]); got != want {
+			t.Fatalf("response[%q]=%s want=%s body=%s", name, got, want, recorder.Body.String())
+		}
+	}
+	if _, ok := response["matched_at"]; !ok {
+		t.Fatalf("matched_at missing from response: %s", recorder.Body.String())
+	}
+	if len(response) != 13 {
+		t.Fatalf("response contains non-contract fields: %s", recorder.Body.String())
+	}
+}
+
+func TestRequestCostRouteMapsNoMatchedNativeTransactionToNotFound(t *testing.T) {
+	t.Parallel()
+
+	server := newReconciliationTestServer(t, &fakeReconciliation{requestCostErr: pgx.ErrNoRows}, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?upstream_request_id=missing", ""))
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "REQUEST_COST_NOT_FOUND") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRequestCostRouteReturnsNetNativeChargeAndRefundCost(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{requestCostDetail: reconciliation.RequestCostDetail{
+		LocalRequestID: "local-net", SourceID: "native-charge,native-refund", AdapterType: reconciliation.AdapterNewAPI,
+		UpstreamActualCost: decimal.RequireFromString("0.06"), CostSource: reconciliation.RequestCostSourceNativeLedger,
+		Confidence: "confirmed", Status: reconciliation.StatusMatched,
+	}}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=local-net", ""))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"source_id":"native-charge,native-refund"`) ||
+		!strings.Contains(recorder.Body.String(), `"upstream_actual_cost":"0.06"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRequestCostRouteRejectsConflictingExactIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeReconciliation{}
+	server := newReconciliationTestServer(t, service, adminauth.Identity{UserID: 9, Role: "admin", Status: "active"})
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/relay-ops/api/reconciliation/request-cost?local_request_id=local-1&upstream_request_id=upstream-1", ""))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "INVALID_REQUEST_COST_QUERY") || service.requestCostCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", recorder.Code, service.requestCostCalls, recorder.Body.String())
+	}
+}
+
 func TestOperationsHistoryDefaultsToThirtyNaturalDays(t *testing.T) {
 	t.Parallel()
 
@@ -617,17 +722,27 @@ func newReconciliationTestServer(t *testing.T, service ReconciliationService, id
 }
 
 type fakeReconciliation struct {
-	exceptionID     int64
-	input           reconciliation.ManualAdjustmentInput
-	created         bool
-	operations      reconciliation.OperationsSummary
-	daily           []reconciliation.OperationsDailyRow
-	operationsScope reconciliation.OperationsScope
-	historyScope    reconciliation.OperationsScope
+	exceptionID       int64
+	input             reconciliation.ManualAdjustmentInput
+	created           bool
+	requestCostDetail reconciliation.RequestCostDetail
+	requestCostErr    error
+	requestCostQuery  reconciliation.RequestCostQuery
+	requestCostCalls  int
+	operations        reconciliation.OperationsSummary
+	daily             []reconciliation.OperationsDailyRow
+	operationsScope   reconciliation.OperationsScope
+	historyScope      reconciliation.OperationsScope
 }
 
 func (s *fakeReconciliation) ReadReconciliationSummary(context.Context, int64, time.Time, time.Time, string) (reconciliation.Summary, error) {
 	return reconciliation.Summary{}, nil
+}
+
+func (s *fakeReconciliation) ReadRequestCostDetail(_ context.Context, query reconciliation.RequestCostQuery) (reconciliation.RequestCostDetail, error) {
+	s.requestCostCalls++
+	s.requestCostQuery = query
+	return s.requestCostDetail, s.requestCostErr
 }
 
 func (s *fakeReconciliation) ListUpstreamCostExceptions(context.Context, int64, int) ([]reconciliation.Exception, error) {

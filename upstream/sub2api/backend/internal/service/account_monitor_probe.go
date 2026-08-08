@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +14,8 @@ import (
 )
 
 type accountMonitorProbeObserverKey struct{}
+
+var accountMonitorHTTPStatusPattern = regexp.MustCompile(`(?i)(?:returned|返回|status(?:\s+code)?|http|failed)\s*(?:\(|:)?\s*([1-5][0-9]{2})(?:[^0-9]|$)`)
 
 type accountMonitorProbeObserver struct {
 	firstContentAt time.Time
@@ -85,6 +89,7 @@ func buildAccountMonitorProbeResult(
 
 	result.Status = "failed"
 	result.ErrorCode = classifyAccountMonitorProbeError(testErr)
+	result.HTTPStatus = extractAccountMonitorProbeHTTPStatus(testErr)
 	return result
 }
 
@@ -100,6 +105,18 @@ func classifyAccountMonitorProbeError(err error) string {
 		strings.Contains(message, "quota"),
 		strings.Contains(message, "insufficient"):
 		return "balance_exhausted"
+	case strings.Contains(message, "returned "),
+		strings.Contains(message, "status"),
+		strings.Contains(message, "api returned"),
+		strings.Contains(message, "api 返回"):
+		return "http_error"
+	case strings.Contains(message, "api key"),
+		strings.Contains(message, "access token"),
+		strings.Contains(message, "authentication"),
+		strings.Contains(message, "unauthorized"),
+		strings.Contains(message, "forbidden"),
+		strings.Contains(message, "credential"):
+		return "invalid_auth"
 	case strings.Contains(message, "model"),
 		strings.Contains(message, "unsupported"):
 		return "model_unavailable"
@@ -107,11 +124,22 @@ func classifyAccountMonitorProbeError(err error) string {
 		strings.Contains(message, "sse"),
 		strings.Contains(message, "invalid"):
 		return "malformed_stream"
-	case strings.Contains(message, "returned "),
-		strings.Contains(message, "status"),
-		strings.Contains(message, "api returned"):
-		return "http_error"
 	default:
 		return "account_test_error"
 	}
+}
+
+func extractAccountMonitorProbeHTTPStatus(err error) *int {
+	if err == nil {
+		return nil
+	}
+	match := accountMonitorHTTPStatusPattern.FindStringSubmatch(err.Error())
+	if len(match) != 2 {
+		return nil
+	}
+	status, parseErr := strconv.Atoi(match[1])
+	if parseErr != nil {
+		return nil
+	}
+	return &status
 }

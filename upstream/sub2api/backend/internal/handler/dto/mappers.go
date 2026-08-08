@@ -776,6 +776,7 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
 	return &AdminUsageLog{
 		UsageLog:              usageLog,
+		UpstreamRequestID:     l.UpstreamRequestID,
 		ActualResponseModel:   l.ActualResponseModel,
 		UpstreamModel:         l.UpstreamModel,
 		ChannelID:             l.ChannelID,

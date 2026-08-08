@@ -3,8 +3,8 @@
  * Handles admin-level usage logs and statistics retrieval
  */
 
-import { apiClient } from '../client'
-import type { AdminUsageLog, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
+import { apiClient, buildGatewayUrl } from '../client'
+import type { AdminUsageCostDetail, AdminUsageLog, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
 import type { EndpointStat } from '@/types'
 
 // ==================== Types ====================
@@ -120,6 +120,24 @@ export async function getById(id: number): Promise<AdminUsageLog> {
   return data
 }
 
+export type AdminUsageCostQuery =
+  | { local_request_id: string; upstream_request_id?: never }
+  | { local_request_id?: never; upstream_request_id: string }
+
+/** Read native upstream billing evidence without crossing the user API boundary. */
+export async function getRequestCost(params: AdminUsageCostQuery): Promise<AdminUsageCostDetail> {
+  const { data } = await apiClient.get<AdminUsageCostDetail>(
+    buildGatewayUrl('/relay-ops/api/reconciliation/request-cost'),
+    {
+      params,
+      // relay-ops uses a separate administrator auth boundary; its 401 must
+      // never clear the active Sub2API session.
+      skipSessionRecovery: true,
+    },
+  )
+  return data
+}
+
 /**
  * Get usage statistics with optional filters (admin only)
  * @param params - Query parameters for filtering
@@ -217,6 +235,7 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
 export const adminUsageAPI = {
   list,
   getById,
+  getRequestCost,
   getStats,
   searchUsers,
   searchApiKeys,

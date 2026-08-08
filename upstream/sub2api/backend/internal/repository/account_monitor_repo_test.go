@@ -128,6 +128,52 @@ func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *test
 	}
 }
 
+func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	since := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 8, 7, 8, 0, 0, 0, time.UTC)
+
+	successOnlyMetrics := `(?s)` +
+		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+		`COUNT\(ttft_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+		`COUNT\(latency_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+		`PERCENTILE_CONT\(0\.50\).*FILTER \(WHERE status = 'success' AND ttft_ms IS NOT NULL\),\s*` +
+		`PERCENTILE_CONT\(0\.95\).*FILTER \(WHERE status = 'success' AND ttft_ms IS NOT NULL\),\s*` +
+		`PERCENTILE_CONT\(0\.50\).*FILTER \(WHERE status = 'success' AND latency_ms IS NOT NULL\),\s*` +
+		`PERCENTILE_CONT\(0\.95\).*FILTER \(WHERE status = 'success' AND latency_ms IS NOT NULL\)`
+
+	mock.ExpectQuery(successOnlyMetrics).
+		WithArgs(sqlmock.AnyArg(), since, until).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"account_id", "sample_count", "success_count", "error_count", "success_rate",
+			"success_sample_count", "ttft_sample_count", "latency_sample_count",
+			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
+		}).AddRow(7, 2, 1, 1, 0.5, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
+	if _, err := repo.ListAggregates(context.Background(), []int64{7}, since, until); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectQuery(successOnlyMetrics).
+		WithArgs(sqlmock.AnyArg(), since).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"sample_count", "success_count", "error_count", "success_rate",
+			"success_sample_count", "ttft_sample_count", "latency_sample_count",
+			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
+		}).AddRow(2, 1, 1, 0.5, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
+	if _, err := repo.(*accountMonitorRepository).LoadAggregate(context.Background(), []int64{7}, since); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryListsRealRequestWindowMetrics(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

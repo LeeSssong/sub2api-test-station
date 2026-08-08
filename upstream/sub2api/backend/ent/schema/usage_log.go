@@ -38,6 +38,12 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("request_id").
 			MaxLen(64).
 			NotEmpty(),
+		// UpstreamRequestID stores the provider-issued request ID separately from
+		// the local idempotency/correlation request_id.
+		field.String("upstream_request_id").
+			MaxLen(255).
+			Optional().
+			Nillable(),
 		field.String("model").
 			MaxLen(100).
 			NotEmpty(),

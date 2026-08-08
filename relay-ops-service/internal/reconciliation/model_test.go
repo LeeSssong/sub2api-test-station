@@ -60,3 +60,34 @@ func TestValidateAutomaticTransaction(t *testing.T) {
 		t.Fatal("positive automatic refund accepted")
 	}
 }
+
+func TestValidateRequestCostQueryRequiresAnExactRequestID(t *testing.T) {
+	if _, err := ValidateRequestCostQuery(RequestCostQuery{}); err == nil {
+		t.Fatal("empty request cost query accepted")
+	}
+	query, err := ValidateRequestCostQuery(RequestCostQuery{LocalRequestID: " local-1 "})
+	if err != nil || query.LocalRequestID != "local-1" {
+		t.Fatalf("query=%#v err=%v", query, err)
+	}
+	if _, err := ValidateRequestCostQuery(RequestCostQuery{LocalRequestID: "local-1", UpstreamRequestID: "upstream-1"}); err == nil {
+		t.Fatal("query with conflicting exact identifiers accepted")
+	}
+}
+
+func TestRequestCostEvidenceLabels(t *testing.T) {
+	cases := []struct {
+		source TransactionSource
+		want   string
+	}{
+		{SourceAutomaticCharge, "上游逐笔账单"},
+		{SourceManualAdjustment, "自购账号成本分摊"},
+	}
+	for _, tc := range cases {
+		if got := RequestCostSourceLabel(tc.source); got != tc.want {
+			t.Fatalf("source %q label=%q want=%q", tc.source, got, tc.want)
+		}
+	}
+	if RequestCostSourceLabel("") != "待对账" {
+		t.Fatal("unknown source must remain pending")
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/reconciliation"
+	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
@@ -124,6 +125,26 @@ func (s *server) reconciliationSummary(w http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *server) reconciliationRequestCost(w http.ResponseWriter, request *http.Request) {
+	query, err := reconciliation.ValidateRequestCostQuery(reconciliation.RequestCostQuery{
+		LocalRequestID: request.URL.Query().Get("local_request_id"), UpstreamRequestID: request.URL.Query().Get("upstream_request_id"),
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST_COST_QUERY")
+		return
+	}
+	detail, err := s.dependencies.Reconciliation.ReadRequestCostDetail(request.Context(), query)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeAPIError(w, http.StatusNotFound, "REQUEST_COST_NOT_FOUND")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "REQUEST_COST_DETAIL_FAILED")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (s *server) reconciliationCostGuard(w http.ResponseWriter, request *http.Request) {

@@ -620,6 +620,9 @@ type UserUsageDetail struct {
 // AdminUsageLog 是管理员接口使用的 usage log DTO（包含管理员字段）。
 type AdminUsageLog struct {
 	UsageLog
+	// UpstreamRequestID is the provider-issued request ID. It is kept out of
+	// ordinary user DTOs because it is upstream operational metadata.
+	UpstreamRequestID *string `json:"upstream_request_id,omitempty"`
 
 	// ActualResponseModel is the model reported by the raw upstream response.
 	// It is audit-only and omitted when the upstream did not provide one.

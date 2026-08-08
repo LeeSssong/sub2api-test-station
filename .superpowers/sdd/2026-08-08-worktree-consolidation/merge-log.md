@@ -9,7 +9,7 @@ Base before Task 2: `2fc6dc1bd9f029d1fb63da7008eaca906211b5ae` (with Task 1 scop
 - `codex/fix-relay-admin-auth` (`fca5d454a`): **runtime-compatible, merge**. This is the latest production-relevant implementation for probe-only account monitoring, administrator usage cost details, upstream request IDs, and relay-ops reconciliation evidence.
 - `codex/account` (`500320a2e` plus committed ancestors): **runtime candidate, selective recovery**. Group-aware score-weight persistence and group ranking are retained only where not superseded by the probe-only implementation. Its dirty working-tree patch is preserved in Task 1 recovery snapshots and will be reviewed separately; no source worktree is modified.
 - `fix/sub2api-0171-release` (`b4da0abc5`): **release-chain candidate, selective merge**. Only local/host blue-green executor fixes absent from the candidate will be carried forward; GitHub Actions remains excluded.
-- Other registered non-main worktrees: **documentation/generated/already-merged/stale evidence** unless a later review identifies a unique runtime delta. Their manifests and recovery archives remain authoritative; obsolete runtime code is not deployed.
+- Other registered non-main worktrees: **documentation/generated/already-merged/stale evidence** unless a later review identifies a unique runtime delta. Their manifests and recovery archives remain authoritative; obsolete runtime code is not deployed. In particular, `codex/fix-monitor-reliability` contains a stale generated `Dockerfile.release-layer` for the old 0.1.168/source state; it remains archived evidence only and is not a release input.
 
 ## `codex/fix-relay-admin-auth` merge
 
@@ -66,3 +66,16 @@ Commands and exact results will be appended below as each selective source is in
 - Result: PASS — 4 files, 60 tests. The account card assertion was aligned with the current probe-only contract (`72 次探测样本，1 次失败`) after the pre-fix run exposed the stale `71 / 72 次主动探测成功` expectation.
 - Command: `cd upstream/sub2api/frontend && pnpm typecheck`
 - Result: PASS — `vue-tsc --noEmit`. The unused legacy `probeMetricDetail` computed property left by the conflict fusion was removed.
+
+## Post-main-sync verification
+
+After merging `main@a0aae015a` via `5fc9aeaba`, the first frontend run exposed two stale expectations for the current 72-sample probe contract. The assertions were corrected to `72 次探测样本，1 次失败` and `72 次结果 · 71 成功 · 1 失败`.
+
+- Command: `cd upstream/sub2api/frontend && pnpm exec vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/components/usage/__tests__/UsageDetailDialog.spec.ts src/components/usage/__tests__/usageDetail.spec.ts src/api/__tests__/admin.usage.spec.ts && pnpm typecheck`
+- Result: PASS — 4 files, 62 tests; `vue-tsc --noEmit` passed.
+- Command: `cd upstream/sub2api/backend && go test ./internal/service ./internal/handler/admin ./internal/repository ./internal/handler/dto -count=1`
+- Result: PASS — service 105.591s; admin 5.783s; repository 8.568s; DTO 5.089s.
+- Command: `cd relay-ops-service && go test ./... -count=1`
+- Result: PASS — all relay-ops packages.
+- Command: `bash tests/operations/update_sub2api_host_test.sh && bash tests/operations/deploy_sub2api_blue_green_host_test.sh`
+- Result: PASS — updater delegation and all blue-green host safety/recovery/immutable release suites.

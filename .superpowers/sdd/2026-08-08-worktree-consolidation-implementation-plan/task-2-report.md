@@ -2,17 +2,19 @@
 
 ## Status
 
-Ready for review on the isolated candidate branch. No main-worktree mutation, push, deployment, or blue-green cutover was performed.
+Selective implementation was reviewed and synchronized with latest `main` in merge commit `5fc9aeaba`. No root `main` mutation, push, or deployment was performed by this consolidation task.
 
 ## Commits
 
 - `8f35c6ccb` — consolidation target scope clarification (inherited before Task 2)
 - `3c84526ae` — merge `codex/fix-relay-admin-auth` with manual conflict resolution (inherited before this report)
-- pending — record Task 2 selective recovery review, focused verification, and the stale account-card assertion/dead computed-property correction
+- `c5bda6f8b` — record Task 2 selective recovery review, focused verification, and the dead computed-property correction
+- `5fc9aeaba` — synchronize latest protected `main` and resolve account-card test conflict
+- working-tree test fix — align two probe-summary assertions with the current 72-sample contract; pending commit in the finalization loop
 
 ## Verification summary
 
-Focused backend account-monitor, relay-ops, updater, blue-green host, and frontend account/usage tests pass; exact commands and results are recorded in `merge-log.md`.
+Focused backend account-monitor, relay-ops, updater, blue-green host, and frontend account/usage tests pass after main synchronization; exact fresh commands and results are recorded in `merge-log.md`.
 
 ## Concerns
 

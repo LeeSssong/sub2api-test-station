@@ -180,7 +180,10 @@ func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model stri
 	}
 	entry.lastTouched = now
 	s.entries[key] = entry
-	return !entry.blockUntil.IsZero() && now.Before(entry.blockUntil)
+	// An expired cooldown remains scheduler-blocked until exactly one half-open
+	// lease acquires it. Letting it fall through here would bypass the lease and
+	// admit every concurrent request as an unrestricted normal candidate.
+	return !entry.blockUntil.IsZero()
 }
 
 func (s *openAIAccountModelTransientState) size() int {

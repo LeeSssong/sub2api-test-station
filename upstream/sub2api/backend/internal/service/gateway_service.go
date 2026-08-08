@@ -543,14 +543,25 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account     *Account
-	Acquired    bool
-	ReleaseFunc func()
-	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	Account       *Account
+	Acquired      bool
+	ReleaseFunc   func()
+	HalfOpenProbe bool
+	WaitPlan      *AccountWaitPlan // nil means no wait allowed
+	halfOpenLease *openAIAccountModelHalfOpenLease
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
 	profitGate *openAIProfitControlGate
+}
+
+// CompleteHalfOpenProbe records the outcome of the one upstream call admitted
+// by this selection. ReleaseFunc remains the safety net for every path that
+// abandons the selection before Forward.
+func (r *AccountSelectionResult) CompleteHalfOpenProbe(success bool) {
+	if r != nil && r.halfOpenLease != nil {
+		r.halfOpenLease.complete(success)
+	}
 }
 
 // ProfitGateActive 报告本次选号是否处于利润门之下。
@@ -652,6 +663,7 @@ type UpstreamFailoverError struct {
 	UsageKnown       bool
 	LogicalRequestID string
 	AttemptID        string
+	AttemptMetadata  OpenAIRequestAttemptMetadata
 	Recovery         *OpenAIStreamRecoveryPayload
 }
 

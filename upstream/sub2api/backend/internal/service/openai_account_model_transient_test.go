@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func TestOpenAIModelTransient_SecondFailureCreatesShortModelBlock(t *testing.T) 
 	assert.Equal(t, 2, decision.FailureStreak)
 	assert.Equal(t, openAIModelTransientShortCooldown, decision.Cooldown)
 	assert.True(t, state.isBlocked(35, "gpt-5.5", now.Add(2*time.Second)))
-	assert.False(t, state.isBlocked(35, "gpt-5.5", now.Add(openAIModelTransientShortCooldown+2*time.Second)))
+	assert.True(t, state.isBlocked(35, "gpt-5.5", now.Add(openAIModelTransientShortCooldown+2*time.Second)), "expired cooldown remains blocked until a half-open lease is acquired")
 }
 
 func TestOpenAIModelTransient_ThirdFailureCreatesFortyFiveSecondModelBlock(t *testing.T) {
@@ -46,7 +47,7 @@ func TestOpenAIModelTransient_ThirdFailureCreatesFortyFiveSecondModelBlock(t *te
 	assert.Equal(t, 3, decision.FailureStreak)
 	assert.Equal(t, 45*time.Second, decision.Cooldown)
 	assert.True(t, state.isBlocked(35, "gpt-5.5", now.Add(40*time.Second)))
-	assert.False(t, state.isBlocked(35, "gpt-5.5", now.Add(48*time.Second)))
+	assert.True(t, state.isBlocked(35, "gpt-5.5", now.Add(48*time.Second)), "expired cooldown remains blocked until a half-open lease is acquired")
 }
 
 func TestOpenAIModelTransient_BlockIsIsolatedByModel(t *testing.T) {
@@ -171,4 +172,31 @@ func TestOpenAIModelTransient_HalfOpenFailureExtendsCooldown(t *testing.T) {
 	snap := svc.SnapshotOpenAIAccountModelRuntime(expired)
 	require.Len(t, snap, 1)
 	assert.Equal(t, expired.Add(openAIModelTransientShortCooldown), snap[0].BlockUntil)
+}
+
+func TestOpenAIModelTransient_HalfOpenLeaseIsSingleAfterCooldownExpiry(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	now := time.Date(2026, 8, 8, 6, 0, 0, 0, time.UTC)
+	for _, at := range []time.Time{now, now.Add(time.Second)} {
+		svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 88, CanonicalModel: "gpt-5.5", StatusCode: 502, Now: at})
+	}
+	expired := now.Add(11 * time.Second)
+	require.True(t, svc.openaiModelTransient.isBlocked(88, "gpt-5.5", expired), "expired cooldown must stay gated until a half-open lease")
+
+	var granted atomic.Int32
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if svc.AcquireOpenAIAccountModelHalfOpenProbe(88, "gpt-5.5", expired) {
+				granted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int32(1), granted.Load())
+
+	svc.ReleaseOpenAIAccountModelHalfOpenProbe(88, "gpt-5.5", false, expired)
+	require.False(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(88, "gpt-5.5", expired), "failed probe renews cooldown")
 }

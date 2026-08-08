@@ -18,6 +18,41 @@ import (
 	"go.uber.org/zap"
 )
 
+type openAIRequestAttemptMetadataContextKey struct{}
+
+// OpenAIRequestAttemptMetadata identifies one upstream call while preserving
+// the client-visible logical request across retries and account failover.
+type OpenAIRequestAttemptMetadata struct {
+	LogicalRequestID      string
+	AttemptID             string
+	AttemptNumber         int
+	AccountID             int64
+	CanonicalModel        string
+	CachePreservationMode string
+	OutputStarted         bool
+	UsageProduced         bool
+}
+
+// WithOpenAIRequestAttemptMetadata attaches immutable attempt identity to an
+// upstream context. Result-only state is copied into the result/error after
+// the call finishes.
+func WithOpenAIRequestAttemptMetadata(ctx context.Context, metadata OpenAIRequestAttemptMetadata) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIRequestAttemptMetadataContextKey{}, metadata)
+}
+
+// OpenAIRequestAttemptMetadataFromContext returns the request attempt identity
+// attached by the handler before an upstream call.
+func OpenAIRequestAttemptMetadataFromContext(ctx context.Context) (OpenAIRequestAttemptMetadata, bool) {
+	if ctx == nil {
+		return OpenAIRequestAttemptMetadata{}, false
+	}
+	metadata, ok := ctx.Value(openAIRequestAttemptMetadataContextKey{}).(OpenAIRequestAttemptMetadata)
+	return metadata, ok
+}
+
 // OpenAIUpstreamFailureClass is the protocol-independent classification used
 // by the gateway retry/failover policy.  The fields intentionally describe
 // observable request safety rather than a particular handler implementation.

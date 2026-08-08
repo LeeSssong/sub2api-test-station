@@ -89,6 +89,21 @@ func TestHandleOpenAITransientError_CanonicalModelIsNotMappedTwice(t *testing.T)
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"))
 }
 
+func TestHandleOpenAITransientError_AttemptMetadataDefersFailureToHandler(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 5108, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx := WithOpenAIRequestAttemptMetadata(context.Background(), OpenAIRequestAttemptMetadata{
+		LogicalRequestID: "request-5108", AttemptID: "request-5108:1", AttemptNumber: 1,
+		AccountID: account.ID, CanonicalModel: "gpt-5.5",
+	})
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadGateway, http.Header{}, []byte(`{"error":{"message":"temporary upstream failure"}}`), "gpt-5.5")
+
+	require.False(t, shouldDisable)
+	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(time.Now()), "the handler records this attempt once with replay safety")
+}
+
 func TestHandleOpenAITransientError_DoesNotBlockParameter400(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)

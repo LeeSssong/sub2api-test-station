@@ -4,6 +4,8 @@
 
 **本轮登记（2026-08-08）：** 上游故障的缓存感知调度与流式恢复，状态：进行中（用户已确认设计规格与实施计划；当前进入逐任务实现、独立审查、受控蓝绿部署和线上验证。在完成“已推送到服务端 + 已部署 + 已验证生效”前不得标记完成）。
 
+**本轮推进（2026-08-08）：** Task 3 review fix round 4 已完成本地实现与专项验证：half-open 选号复用完整常规资格、freshness、DB recheck、并发槽和利润终检链，只对匹配账号与 canonical model 的已过期 runtime cooldown 授予单个探测租约，未进入 Forward 的拒绝/取消由幂等 ReleaseFunc 回收，Responses 与 Messages 在实际 Forward 返回后完成租约；当前候选待独立复审，状态保持进行中，尚未合并、推送、部署或线上验证。
+
 **本轮登记（2026-08-08）：** 账号监控卡片统一探测口径及四项交互增强，状态：进行中（用户已确认账号卡片主指标、成功率、TTFT、总耗时、评分和证据全部以主动探测为唯一来源；同时加入成本来源警示、账号名称上游外链、评分构成悬浮展示。仅允许相关专项测试、构建、蓝绿无停机部署和线上页面/API 验证；尚未推送、部署或线上验证，不得标记完成）。
 
 **本轮登记（2026-08-08）：** 账号运营损益页已完成本地实现并整理到提交，状态：已完成（提交 `d75eaf1de5911887bb2738c8527cb1cb28b58361` 已通过预加载镜像蓝绿部署；发布结果 `downtime_required=false`；生产 `/healthz`、`/readyz`、页面入口返回 200，运营损益 API 未认证返回 401，worker healthy，PostgreSQL/Redis/Caddy 身份与重启次数未变化）。后端接口 `/api/v1/admin/operations/account-profitability` 与前端 `/admin/operations/account-profitability` 兼容 sub2api、newapi、自购账号。收入按 `actual_cost`，中继支出按账号真实成本，采购成本按 CNY 单独展示；未配置汇率时自购账号利润/利润率保持待换算，避免混币误算。

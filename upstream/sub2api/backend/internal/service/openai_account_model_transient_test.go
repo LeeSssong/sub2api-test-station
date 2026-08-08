@@ -128,3 +128,32 @@ func TestOpenAIModelTransient_StateIsBoundedAndConcurrencySafe(t *testing.T) {
 
 	assert.LessOrEqual(t, state.size(), maxEntries)
 }
+
+func TestOpenAIModelTransient_RuntimeDecisionAndHalfOpen(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
+	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	base := OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 502, Now: now}
+	d := svc.RecordOpenAIAccountModelFailure(nil, base)
+	assert.Equal(t, 1, d.FailureStreak)
+	assert.True(t, d.ExcludeFromRequest)
+	assert.False(t, d.CurrentRequestRetry)
+	d = svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 502, SafeToReplay: true, Now: now.Add(time.Second)})
+	assert.Equal(t, 2, d.FailureStreak)
+	assert.Equal(t, openAIModelTransientShortCooldown, d.Cooldown)
+	assert.True(t, d.ExcludeFromRequest)
+	assert.False(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", now.Add(2*time.Second)))
+	expired := now.Add(openAIModelTransientShortCooldown + time.Second)
+	assert.True(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", expired))
+	assert.False(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", expired))
+	svc.ReleaseOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", true, expired)
+	assert.False(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", expired))
+}
+
+func TestOpenAIModelTransient_HardFailureDoesNotMutate(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
+	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	d := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 401, Now: now})
+	assert.True(t, d.ExcludeFromRequest)
+	assert.Zero(t, d.FailureStreak)
+	assert.False(t, svc.isOpenAIAccountModelRuntimeBlocked(&Account{ID: 35}, "gpt-5.5"))
+}

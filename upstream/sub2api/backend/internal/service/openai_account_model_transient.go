@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,16 +22,49 @@ type openAIAccountModelKey struct {
 }
 
 type openAIAccountModelTransientEntry struct {
-	failureStreak int
-	lastFailure   time.Time
-	blockUntil    time.Time
-	lastTouched   time.Time
+	failureStreak    int
+	lastFailure      time.Time
+	blockUntil       time.Time
+	lastTouched      time.Time
+	halfOpenInFlight bool
 }
 
 type openAIAccountModelTransientDecision struct {
 	FailureStreak int
 	Cooldown      time.Duration
 	BlockUntil    time.Time
+}
+
+// OpenAIAccountModelFailureEvent describes a failed account/model attempt.
+type OpenAIAccountModelFailureEvent struct {
+	AccountID      int64
+	CanonicalModel string
+	StatusCode     int
+	ErrorType      string
+	OutputStarted  bool
+	SafeToReplay   bool
+	HasSideEffect  bool
+	UsageKnown     bool
+	Now            time.Time
+}
+
+// OpenAIAccountModelRuntimeDecision is the scheduling decision after a failure.
+type OpenAIAccountModelRuntimeDecision struct {
+	FailureStreak       int
+	Cooldown            time.Duration
+	BlockUntil          time.Time
+	CurrentRequestRetry bool
+	ExcludeFromRequest  bool
+	HalfOpenProbe       bool
+	RetryAfterSeconds   int
+}
+
+type OpenAIAccountModelRuntimeSnapshot struct {
+	AccountID        int64
+	CanonicalModel   string
+	FailureStreak    int
+	BlockUntil       time.Time
+	HalfOpenInFlight bool
 }
 
 type openAIAccountModelTransientState struct {
@@ -174,4 +209,114 @@ func (s *openAIAccountModelTransientState) evictOldestLocked() {
 	if found {
 		delete(s.entries, oldestKey)
 	}
+}
+
+func transientFailureStatus(status int) bool {
+	switch status {
+	case 500, 502, 503, 504, 520, 521, 522, 523, 524:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context, event OpenAIAccountModelFailureEvent) OpenAIAccountModelRuntimeDecision {
+	decision := OpenAIAccountModelRuntimeDecision{ExcludeFromRequest: true}
+	if s == nil || event.AccountID <= 0 || normalizeOpenAIAccountModelTransientModel(event.CanonicalModel) == "" {
+		return decision
+	}
+	if !transientFailureStatus(event.StatusCode) && !strings.Contains(strings.ToLower(event.ErrorType), "transient") {
+		return decision
+	}
+	now := event.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state := s.getOpenAIAccountModelTransientState()
+	if state == nil {
+		return decision
+	}
+	raw := state.recordFailure(event.AccountID, event.CanonicalModel, now)
+	decision.FailureStreak, decision.Cooldown, decision.BlockUntil = raw.FailureStreak, raw.Cooldown, raw.BlockUntil
+	decision.CurrentRequestRetry = !event.OutputStarted && event.SafeToReplay && !event.HasSideEffect && raw.FailureStreak == 1
+	if !decision.BlockUntil.IsZero() && decision.BlockUntil.After(now) {
+		decision.RetryAfterSeconds = int((decision.BlockUntil.Sub(now) + time.Second - 1) / time.Second)
+	}
+	return decision
+}
+
+func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID int64, canonicalModel string, now time.Time) bool {
+	state := s.getOpenAIAccountModelTransientState()
+	key, ok := openAIAccountModelTransientKey(accountID, canonicalModel)
+	if state == nil || !ok {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	entry, exists := state.entries[key]
+	if !exists || (!entry.blockUntil.IsZero() && now.Before(entry.blockUntil)) || entry.halfOpenInFlight {
+		return false
+	}
+	entry.halfOpenInFlight = true
+	entry.lastTouched = now
+	state.entries[key] = entry
+	return true
+}
+
+func (s *OpenAIGatewayService) ReleaseOpenAIAccountModelHalfOpenProbe(accountID int64, canonicalModel string, success bool, now time.Time) {
+	state := s.getOpenAIAccountModelTransientState()
+	key, ok := openAIAccountModelTransientKey(accountID, canonicalModel)
+	if state == nil || !ok {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	entry, exists := state.entries[key]
+	if !exists {
+		return
+	}
+	if success {
+		delete(state.entries, key)
+		return
+	}
+	entry.halfOpenInFlight = false
+	entry.lastTouched = now
+	cooldown := openAIModelTransientShortCooldown
+	if entry.failureStreak >= 3 {
+		cooldown = openAIModelTransientLongCooldown
+	}
+	entry.blockUntil = now.Add(cooldown)
+	state.entries[key] = entry
+}
+
+func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) []OpenAIAccountModelRuntimeSnapshot {
+	state := s.getOpenAIAccountModelTransientState()
+	if state == nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	result := make([]OpenAIAccountModelRuntimeSnapshot, 0, len(state.entries))
+	for key, entry := range state.entries {
+		if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow {
+			continue
+		}
+		result = append(result, OpenAIAccountModelRuntimeSnapshot{AccountID: key.AccountID, CanonicalModel: key.Model, FailureStreak: entry.failureStreak, BlockUntil: entry.blockUntil, HalfOpenInFlight: entry.halfOpenInFlight})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].AccountID != result[j].AccountID {
+			return result[i].AccountID < result[j].AccountID
+		}
+		return result[i].CanonicalModel < result[j].CanonicalModel
+	})
+	return result
 }

@@ -105,7 +105,10 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		if len(canonicalModel) > 0 {
 			model = canonicalModel[0]
 		}
-		decision := s.recordOpenAIAccountModelTransientFailure(account, model, time.Now())
+		decision := s.RecordOpenAIAccountModelFailure(stateCtx, OpenAIAccountModelFailureEvent{
+			AccountID: account.ID, CanonicalModel: model, StatusCode: statusCode,
+			ErrorType: "transient_upstream", Now: time.Now(),
+		})
 		if decision.FailureStreak > 0 {
 			slog.Warn("openai_model_transient_state",
 				"account_id", account.ID,

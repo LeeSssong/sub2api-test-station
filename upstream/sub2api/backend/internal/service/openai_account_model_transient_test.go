@@ -152,7 +152,7 @@ func TestOpenAIModelTransient_RuntimeDecisionAndHalfOpen(t *testing.T) {
 func TestOpenAIModelTransient_HardFailureDoesNotMutate(t *testing.T) {
 	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
 	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
-	for _, status := range []int{400, 401, 402, 403, 404} {
+	for _, status := range []int{401, 402, 403, 404} {
 		d := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: status, ErrorType: "transient", Now: now})
 		assert.True(t, d.ExcludeFromRequest)
 		assert.Zero(t, d.FailureStreak)

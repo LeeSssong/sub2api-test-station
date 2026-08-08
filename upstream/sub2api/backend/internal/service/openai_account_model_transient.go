@@ -220,15 +220,33 @@ func transientFailureStatus(status int) bool {
 	}
 }
 
+func hardOpenAIAccountModelFailureType(errorType string) bool {
+	errorType = strings.ToLower(strings.TrimSpace(errorType))
+	for _, token := range []string{
+		"model_not_found", "model not found", "insufficient_balance", "insufficient balance",
+		"balance", "permission", "forbidden", "unauthorized",
+	} {
+		if strings.Contains(errorType, token) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context, event OpenAIAccountModelFailureEvent) OpenAIAccountModelRuntimeDecision {
 	decision := OpenAIAccountModelRuntimeDecision{ExcludeFromRequest: true}
 	if s == nil || event.AccountID <= 0 || normalizeOpenAIAccountModelTransientModel(event.CanonicalModel) == "" {
 		return decision
 	}
-	if event.StatusCode != 0 && !transientFailureStatus(event.StatusCode) {
+	errorType := strings.ToLower(event.ErrorType)
+	if hardOpenAIAccountModelFailureType(errorType) {
 		return decision
 	}
-	if event.StatusCode == 0 && !strings.Contains(strings.ToLower(event.ErrorType), "transient") {
+	if event.StatusCode == 0 || event.StatusCode == 400 {
+		if !strings.Contains(errorType, "transient") {
+			return decision
+		}
+	} else if !transientFailureStatus(event.StatusCode) {
 		return decision
 	}
 	now := event.Now

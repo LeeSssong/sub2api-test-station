@@ -102,6 +102,44 @@ afterEach(() => {
 })
 
 describe('AccountMonitorCard', () => {
+  it('shows only the projected equivalent site multiplier in the cost evidence area', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        equivalent_site_multiplier: 0.05,
+        cost_guard: {
+          upstream_multiplier: 0.2,
+          equivalent_site_multiplier: 0.3,
+          group_multiplier: 0.1,
+          model: 'legacy-model',
+          sample_count: 6,
+          required_sample_count: 6,
+          status: 'loss_confirmed',
+        },
+      },
+    })
+
+    const evidence = wrapper.get('[data-test="equivalent-cost-multiplier"]')
+    expect(evidence.text()).toContain('成本折合本站倍率')
+    expect(evidence.text()).toContain('0.05×')
+    expect(evidence.text()).not.toContain('上游原生倍率')
+    expect(evidence.text()).not.toContain('当前分组倍率')
+    expect(evidence.text()).not.toContain('有效样本')
+    expect(evidence.text()).not.toContain('成本状态')
+    expect(wrapper.find('[data-test="cost-inversion-alert"]').exists()).toBe(false)
+  })
+
+  it('shows unavailable when the equivalent site multiplier cannot be priced', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        equivalent_site_multiplier: null,
+      },
+    })
+
+    expect(wrapper.get('[data-test="equivalent-cost-multiplier"]').text()).toContain('--')
+  })
+
   it('emits editCost and removes inline cost editors', async () => {
     const editCost = vi.fn()
     const wrapper = mountCard({ onEditCost: editCost })

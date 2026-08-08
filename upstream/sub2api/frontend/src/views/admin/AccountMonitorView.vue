@@ -195,7 +195,6 @@ import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
   AccountMonitorConcurrencyItem,
-  AccountMonitorCostGuard,
   AccountMonitorGroup,
   AccountMonitorProjection,
   AccountMonitorRange,
@@ -246,7 +245,6 @@ const runningAll = ref(false)
 const runningAccountIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
-const costGuardByID = ref<Record<number, AccountMonitorCostGuard | null>>({})
 const showScoreDialog = ref(false)
 const savingScoreWeights = ref(false)
 const scoreWeightsError = ref<string | null>(null)
@@ -295,10 +293,7 @@ const scopedAccounts = computed(() => {
   const source = group?.accounts ?? (group
     ? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
     : allAccounts.value)
-  return uniqueAccounts(source).sort(compareAccounts).map((account) => ({
-    ...account,
-    cost_guard: costGuardByID.value[account.account_id] ?? account.cost_guard ?? null,
-  }))
+  return uniqueAccounts(source).sort(compareAccounts)
 })
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -365,7 +360,6 @@ function openScoreDialog(): void {
 function selectGroup(groupID: number | null, event: MouseEvent): void {
   activeGroupId.value = groupID
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
-  void loadCostGuards()
 }
 
 async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
@@ -387,7 +381,6 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
     if (activeGroupId.value !== null && !(result.groups ?? []).some((group) => group.id === activeGroupId.value)) {
       activeGroupId.value = null
     }
-    await loadCostGuards()
     return true
   } catch (reason: unknown) {
     if (controller.signal.aborted || generation !== loadGeneration) return false
@@ -401,23 +394,6 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
       pendingRange.value = null
     }
   }
-}
-
-async function loadCostGuards(): Promise<void> {
-  const group = activeGroup.value
-  if (!group) {
-    costGuardByID.value = {}
-    return
-  }
-  const source = group.accounts ?? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
-  const entries = await Promise.all(uniqueAccounts(source).map(async (account) => {
-    try {
-      return [account.account_id, await adminAPI.reconciliation.costGuard({ account_id: account.account_id, group_id: group.id, group_multiplier: group.rate_multiplier })] as const
-    } catch {
-      return [account.account_id, null] as const
-    }
-  }))
-  costGuardByID.value = Object.fromEntries(entries)
 }
 
 function selectRange(range: AccountMonitorRange) {

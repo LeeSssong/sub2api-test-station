@@ -1067,7 +1067,9 @@ func ProvideAccountMonitorService(
 ) *AccountMonitorService {
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
 	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
-	return NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
+	service := NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
+	service.costPricing = billingService
+	return service
 }
 
 func ProvideAccountMonitorAccountRepository(repo AccountRepository) AccountMonitorAccountRepository {

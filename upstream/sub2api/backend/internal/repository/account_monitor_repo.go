@@ -486,7 +486,7 @@ func (r *accountMonitorRepository) ListLatest(
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT ON (account_id)
-			account_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at
+			account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at
 		FROM account_monitor_results
 		WHERE account_id = ANY($1)
 		ORDER BY account_id, checked_at DESC, id DESC
@@ -501,6 +501,7 @@ func (r *accountMonitorRepository) ListLatest(
 		var latest service.AccountMonitorLatest
 		if err := rows.Scan(
 			&accountID,
+			&latest.ModelID,
 			&latest.Status,
 			&latest.ErrorCode,
 			&latest.HTTPStatus,

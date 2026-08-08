@@ -336,6 +336,13 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 30d')
   })
 
+  it('does not load reconciled cost guards for account cards', async () => {
+    mountView()
+    await flushPromises()
+
+    expect(costGuard).not.toHaveBeenCalled()
+  })
+
   it('orders native group tabs by multiplier descending, then native order and id', async () => {
     list.mockResolvedValueOnce({
       ...projection('24h'),
@@ -364,55 +371,6 @@ describe('admin account monitor view V3', () => {
     await selectRange(wrapper, '7d')
 
     expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('7 天调用')
-  })
-
-  it('renders decimal-string cost guard multipliers returned by relay-ops', async () => {
-    costGuard.mockResolvedValue({
-      status: 'pricing_risk',
-      upstream_multiplier: '0.03',
-      upstream_multiplier_source: 'upstream_pricing',
-      equivalent_site_multiplier: '0.04',
-      cost_source: 'upstream_pricing',
-      group_multiplier: '1',
-      gap: '-0.96',
-      required_sample_count: 6,
-    })
-    const wrapper = mountView({ useRealCard: true })
-    await flushPromises()
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    const costSummary = wrapper.get('[data-test="cost-guard-summary"]')
-    expect(costSummary.text()).toContain('上游原生倍率0.03×')
-    expect(costSummary.text()).toContain('成本折合本站倍率0.04×')
-    expect(costSummary.text()).toContain('当前分组倍率1.00×')
-  })
-
-  it.each([
-    false,
-    [],
-    {},
-    '0x10',
-    '   ',
-    'NaN',
-    'Infinity',
-    '-0.1',
-  ])('rejects malformed cost guard multiplier %j', async (malformedValue) => {
-    costGuard.mockResolvedValue({
-      status: 'unknown',
-      upstream_multiplier: malformedValue,
-      equivalent_site_multiplier: null,
-      group_multiplier: null,
-    } as never)
-    const wrapper = mountView({ useRealCard: true })
-    await flushPromises()
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    const costSummary = wrapper.get('[data-test="cost-guard-summary"]')
-    expect(costSummary.text()).toContain('上游原生倍率--')
   })
 
   it('uses API-provided global service scores and stable global rankings on the all-site tab', async () => {

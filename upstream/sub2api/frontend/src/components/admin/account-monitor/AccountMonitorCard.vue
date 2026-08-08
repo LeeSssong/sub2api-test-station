@@ -81,35 +81,8 @@
         </div>
       </section>
 
-      <section v-if="costGuard" class="mt-4 space-y-2" data-test="cost-guard-summary">
-        <div v-if="costAlertVisible" class="rounded-lg border p-3" :class="costAlertClass" data-test="cost-inversion-alert">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-sm font-semibold">{{ costAlertTitle }}</p>
-              <p v-if="costAlertDescription" class="mt-1 text-xs leading-5">{{ costAlertDescription }}</p>
-            </div>
-            <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="costStatusBadgeClass">{{ costStatusLabel }}</span>
-          </div>
-        </div>
-        <div class="rounded-lg border border-gray-200 p-3 dark:border-slate-800">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">成本证据</span>
-            <span v-if="!costAlertVisible" class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="costStatusBadgeClass">{{ costStatusLabel }}</span>
-          </div>
-          <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-            <CostMetric label="上游原生倍率" :value="formatMultiplier(costGuard.upstream_multiplier)" />
-            <CostMetric label="倍率来源" :value="multiplierSourceLabel" />
-            <CostMetric label="成本折合本站倍率" :value="formatMultiplier(costGuard.equivalent_site_multiplier)" />
-            <CostMetric label="成本来源" :value="costSourceLabel" />
-            <CostMetric label="当前分组倍率" :value="formatMultiplier(costGuard.group_multiplier)" />
-            <CostMetric label="成本状态" :value="costStatusLabel" />
-          </div>
-          <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-slate-400">
-            <span v-if="costGuard.model">触发模型：<span class="font-mono">{{ costGuard.model }}</span></span>
-            <span v-if="costGuard.sample_count != null">有效样本：{{ costGuard.sample_count }}/{{ costGuard.required_sample_count ?? 6 }}</span>
-            <span v-if="costGuard.observed_at">证据更新：{{ formatDateTime(costGuard.observed_at) }}</span>
-          </div>
-        </div>
+      <section class="mt-4" data-test="equivalent-cost-multiplier">
+        <CostMetric label="成本折合本站倍率" :value="formatMultiplier(account.equivalent_site_multiplier)" />
       </section>
 
       <section class="mt-4 border-t border-gray-100 py-4 dark:border-slate-800" aria-label="近期探测" data-test="probe-section">
@@ -295,65 +268,6 @@ const balanceDetail = computed(() => {
   if (balance.source) return `来源：${balance.source}`
   return '余额快照'
 })
-const costGuard = computed(() => props.account.cost_guard ?? null)
-const costStatusLabel = computed(() => {
-  const guard = costGuard.value
-  if (!guard) return '成本待确认'
-  if (guard.status === 'loss_confirmed') return '确认亏损'
-  if (guard.status === 'loss_observing') return `亏损观察中 ${guard.sample_count ?? 0}/${guard.required_sample_count ?? 6}`
-  if (guard.status === 'pricing_risk' || guard.status === 'loss_risk') return '可能亏损'
-  if (guard.status === 'zero_margin') return '无利润空间'
-  if (guard.status === 'cost_covered') return '成本覆盖'
-  if (guard.status === 'insufficient_samples') return '样本不足'
-  return '成本待确认'
-})
-const multiplierSourceLabel = computed(() => {
-  const source = costGuard.value?.upstream_multiplier_source
-  if (source === 'upstream_declared') return '上游声明'
-  if (source === 'upstream_pricing') return '上游定价'
-  if (source === 'quota_measurement') return '额度测得'
-  if (source === 'manual') return '人工配置'
-  return '待确认'
-})
-const costSourceLabel = computed(() => {
-  const source = costGuard.value?.cost_source
-  if (source === 'reconciled_bill') return '账单实测'
-  if (source === 'upstream_pricing') return '上游定价推算'
-  if (source === 'quota_measurement') return '额度测得'
-  return '待确认'
-})
-const costAlertVisible = computed(() => ['loss_confirmed', 'loss_observing', 'pricing_risk', 'loss_risk', 'zero_margin'].includes(costGuard.value?.status ?? ''))
-const costAlertTitle = computed(() => {
-  const model = costGuard.value?.model ? ` · ${costGuard.value.model}` : ''
-  if (costGuard.value?.status === 'loss_confirmed') return `成本倒挂${model}`
-  return `${costStatusLabel.value}${model}`
-})
-const costAlertDescription = computed(() => {
-  const guard = costGuard.value
-  if (!guard) return ''
-  const equivalent = parseFiniteNumber(guard.equivalent_site_multiplier)
-  const group = parseFiniteNumber(guard.group_multiplier)
-  if (equivalent == null || group == null) return ''
-  const gap = parseFiniteNumber(guard.gap, true) ?? equivalent - group
-  const comparison = equivalent > group ? '>' : Math.abs(equivalent - group) <= 1e-9 ? '=' : '<'
-  if (guard.status === 'loss_confirmed') return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}，高出 ${formatMultiplier(Math.max(gap, 0))}。`
-  if (guard.status === 'loss_observing') return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}；当前为 ${guard.sample_count ?? 0}/${guard.required_sample_count ?? 6} 笔有效账单样本。`
-  if (guard.status === 'pricing_risk' || guard.status === 'loss_risk') return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}；当前仅有定价推算证据。`
-  return `成本折合本站倍率 ${formatMultiplier(equivalent)} ${comparison} 当前分组倍率 ${formatMultiplier(group)}。`
-})
-const costAlertClass = computed(() => costGuard.value?.status === 'loss_confirmed'
-  ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200'
-  : costGuard.value?.status === 'loss_observing' ? 'border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200'
-    : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200')
-const costStatusBadgeClass = computed(() => {
-  const status = costGuard.value?.status
-  if (status === 'loss_confirmed') return 'bg-red-600 text-white'
-  if (status === 'loss_observing' || status === 'pricing_risk' || status === 'loss_risk') return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
-  if (status === 'zero_margin') return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
-  if (status === 'cost_covered') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-})
-
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value)

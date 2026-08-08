@@ -1140,6 +1140,166 @@ func TestRateMultiplierSingleSourceIgnoresLegacyProjectionEvidenceForCost(t *tes
 	}
 }
 
+type accountMonitorPricingStub map[string]*ModelPricing
+
+func (s accountMonitorPricingStub) GetModelPricing(model string) (*ModelPricing, error) {
+	pricing, ok := s[model]
+	if !ok {
+		return nil, errors.New("pricing unavailable")
+	}
+	return pricing, nil
+}
+
+func TestAccountMonitorEquivalentSiteMultiplierUsesMappedModelPriceRatio(t *testing.T) {
+	rate := 0.2
+	account := Account{
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		RateMultiplier: &rate,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gpt-site": "gpt-upstream",
+		}},
+	}
+	pricing := accountMonitorPricingStub{
+		"gpt-site":     {InputPricePerToken: 2, OutputPricePerToken: 6},
+		"gpt-upstream": {InputPricePerToken: 1, OutputPricePerToken: 3},
+	}
+
+	got := accountMonitorEquivalentSiteMultiplier(account, "gpt-site", pricing)
+	if got == nil || math.Abs(*got-0.1) > 1e-9 {
+		t.Fatalf("equivalent multiplier = %#v, want 0.1", got)
+	}
+}
+
+func TestAccountMonitorEquivalentSiteMultiplierKeepsRateForUnmappedModel(t *testing.T) {
+	rate := 0.15
+	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate}
+	pricing := accountMonitorPricingStub{
+		"gpt-same": {InputPricePerToken: 2, OutputPricePerToken: 6},
+	}
+
+	got := accountMonitorEquivalentSiteMultiplier(account, "gpt-same", pricing)
+	if got == nil || math.Abs(*got-rate) > 1e-9 {
+		t.Fatalf("equivalent multiplier = %#v, want %.2f", got, rate)
+	}
+}
+
+func TestAccountMonitorEquivalentSiteMultiplierUsesZeroWhenAccountCostIsMissing(t *testing.T) {
+	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	pricing := accountMonitorPricingStub{
+		"gpt-same": {InputPricePerToken: 2, OutputPricePerToken: 6},
+	}
+
+	got := accountMonitorEquivalentSiteMultiplier(account, "gpt-same", pricing)
+	if got == nil || *got != 0 {
+		t.Fatalf("equivalent multiplier = %#v, want 0", got)
+	}
+}
+
+func TestAccountMonitorEquivalentSiteMultiplierIsUnavailableWithoutModelPricing(t *testing.T) {
+	rate := 0.2
+	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate}
+
+	if got := accountMonitorEquivalentSiteMultiplier(account, "unknown-model", accountMonitorPricingStub{}); got != nil {
+		t.Fatalf("equivalent multiplier = %#v, want nil", got)
+	}
+}
+
+func TestAccountMonitorEquivalentSiteMultiplierUsesUnifiedAccountCostPrecedence(t *testing.T) {
+	pricing := accountMonitorPricingStub{
+		"gpt-same": {InputPricePerToken: 2, OutputPricePerToken: 6},
+	}
+	invalidRate := -1.0
+	for _, tt := range []struct {
+		name    string
+		account Account
+		want    float64
+	}{
+		{
+			name: "valid rate wins regardless of platform",
+			account: Account{Platform: PlatformAnthropic, RateMultiplier: floatPtr(0.2),
+				ProcurementCostCNY: floatPtr(4), EstimatedUsableQuotaUSD: floatPtr(10)},
+			want: 0.2,
+		},
+		{
+			name: "procurement fallback applies to API key account",
+			account: Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				ProcurementCostCNY: floatPtr(4), EstimatedUsableQuotaUSD: floatPtr(20)},
+			want: 0.2,
+		},
+		{
+			name: "invalid rate falls back to procurement",
+			account: Account{Platform: PlatformAnthropic, RateMultiplier: &invalidRate,
+				ProcurementCostCNY: floatPtr(3), EstimatedUsableQuotaUSD: floatPtr(20)},
+			want: 0.15,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := accountMonitorEquivalentSiteMultiplier(tt.account, "gpt-same", pricing)
+			if got == nil || math.Abs(*got-tt.want) > 1e-9 {
+				t.Fatalf("equivalent multiplier = %#v, want %.2f", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorListUsesLatestProbeModelForEquivalentMultiplier(t *testing.T) {
+	now := time.Now().UTC()
+	account := Account{ID: 101, Name: "latest-model", Status: StatusActive, Schedulable: true,
+		Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: floatPtr(0.2),
+		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-latest": "gpt-upstream"}}}
+	repo := &accountMonitorRepoStub{
+		settings:   AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates: map[int64]AccountMonitorAggregate{},
+		latest: map[int64]AccountMonitorLatest{101: {
+			ModelID: "gpt-latest", Status: "success", CheckedAt: now,
+		}},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil)
+	svc.costPricing = accountMonitorPricingStub{
+		"gpt-latest":   {InputPricePerToken: 2, OutputPricePerToken: 6},
+		"gpt-upstream": {InputPricePerToken: 1, OutputPricePerToken: 3},
+	}
+
+	page, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Accounts[0]
+	if row.ModelID != "gpt-latest" || row.EquivalentSiteMultiplier == nil || math.Abs(*row.EquivalentSiteMultiplier-0.1) > 1e-9 {
+		t.Fatalf("latest-model projection = %#v, want model gpt-latest and equivalent multiplier 0.1", row)
+	}
+}
+
+func TestAccountMonitorListWindowUsesLatestProbeModelForEquivalentMultiplier(t *testing.T) {
+	now := time.Now().UTC()
+	account := Account{ID: 102, Name: "latest-window-model", Status: StatusActive, Schedulable: true,
+		Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: floatPtr(0.2),
+		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-latest": "gpt-upstream"}}}
+	repo := &accountMonitorRepoStub{
+		settings:         AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates:       map[int64]AccountMonitorAggregate{},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{},
+		latest: map[int64]AccountMonitorLatest{102: {
+			ModelID: "gpt-latest", Status: "success", CheckedAt: now,
+		}},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil)
+	svc.costPricing = accountMonitorPricingStub{
+		"gpt-latest":   {InputPricePerToken: 2, OutputPricePerToken: 6},
+		"gpt-upstream": {InputPricePerToken: 1, OutputPricePerToken: 3},
+	}
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := page.Accounts[0]
+	if row.ModelID != "gpt-latest" || row.EquivalentSiteMultiplier == nil || math.Abs(*row.EquivalentSiteMultiplier-0.1) > 1e-9 {
+		t.Fatalf("latest-model window projection = %#v, want model gpt-latest and equivalent multiplier 0.1", row)
+	}
+}
+
 func TestAccountMonitorMissingOpenAIProcurementQuotaRetainsQualityRanking(t *testing.T) {
 	now := time.Now().UTC()
 	accounts := []Account{

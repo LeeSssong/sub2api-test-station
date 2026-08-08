@@ -64,12 +64,17 @@ type accountMonitorMultiplierResolver interface {
 	Refresh(context.Context, *Account, AccountMonitorRefreshOptions) error
 }
 
+type accountMonitorModelPricingReader interface {
+	GetModelPricing(string) (*ModelPricing, error)
+}
+
 type AccountMonitorService struct {
 	repo        AccountMonitorRepository
 	accountRepo AccountMonitorAccountRepository
 	testService *AccountTestService
 	usage       *AccountUsageService
 	multiplier  accountMonitorMultiplierResolver
+	costPricing accountMonitorModelPricingReader
 
 	probeConnection accountMonitorProbeConnection
 	probeTimeout    time.Duration
@@ -149,6 +154,10 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	schedulableIDs := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
 		aggregate := aggregates[account.ID]
+		modelID := monitorModelForAccount(&account)
+		if current, ok := latest[account.ID]; ok {
+			modelID = current.ModelID
+		}
 		row := AccountMonitorAccount{
 			AccountID:                  account.ID,
 			Name:                       account.Name,
@@ -160,7 +169,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			HomepageURL:                accountMonitorHomepageURL(account),
 			GroupIDs:                   append([]int64{}, account.GroupIDs...),
 			GroupNames:                 accountGroupNames(account),
-			ModelID:                    monitorModelForAccount(&account),
+			ModelID:                    modelID,
 			LatestStatus:               "unavailable",
 			SuccessRate:                aggregate.SuccessRate,
 			SampleCount:                aggregate.SampleCount,
@@ -179,6 +188,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			ErrorCount:                 int64(aggregate.ErrorCount),
 			Timeline:                   append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		if stats := today[account.ID]; stats != nil {
 			row.RequestCount = stats.Requests
 			row.TodayStats = stats
@@ -284,11 +294,15 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	for _, account := range accounts {
 		window := windowAggregates[account.ID]
 		resolvedMultiplier := s.resolveMultiplier(&account, observedAt)
+		modelID := monitorModelForAccount(&account)
+		if current, ok := latest[account.ID]; ok {
+			modelID = current.ModelID
+		}
 		row := AccountMonitorAccount{
 			AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type,
 			Status: account.Status, Schedulable: account.Schedulable, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
-			GroupNames: accountGroupNames(account), ModelID: monitorModelForAccount(&account),
+			GroupNames: accountGroupNames(account), ModelID: modelID,
 			LatestStatus: "unavailable", Multiplier: resolvedMultiplier,
 			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
@@ -298,6 +312,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)
 		row.CostMode = cost.Mode
 		row.EffectiveMultiplier = cost.EffectiveMultiplier
@@ -998,6 +1013,41 @@ func accountMonitorEffectiveCost(account Account, windowStart, windowEnd time.Ti
 	default:
 		return accountMonitorLegacyWindowCost(account, windowStart, windowEnd, baseCost)
 	}
+}
+
+func accountMonitorEquivalentSiteMultiplier(account Account, model string, pricing accountMonitorModelPricingReader) *float64 {
+	model = strings.TrimSpace(model)
+	if pricing == nil || model == "" {
+		return nil
+	}
+	sitePricing, err := pricing.GetModelPricing(model)
+	if err != nil || sitePricing == nil {
+		return nil
+	}
+	upstreamModel := strings.TrimSpace(resolveAccountUpstreamModel(&account, model))
+	if upstreamModel == "" {
+		upstreamModel = model
+	}
+	upstreamPricing, err := pricing.GetModelPricing(upstreamModel)
+	if err != nil || upstreamPricing == nil {
+		return nil
+	}
+	siteUnitPrice := sitePricing.InputPricePerToken + sitePricing.OutputPricePerToken
+	upstreamUnitPrice := upstreamPricing.InputPricePerToken + upstreamPricing.OutputPricePerToken
+	if siteUnitPrice <= 0 || upstreamUnitPrice < 0 || math.IsNaN(siteUnitPrice) || math.IsNaN(upstreamUnitPrice) || math.IsInf(siteUnitPrice, 0) || math.IsInf(upstreamUnitPrice, 0) {
+		return nil
+	}
+	accountMultiplier := 0.0
+	if rate := accountMonitorMultiplierCost(account.RateMultiplier).EffectiveMultiplier; rate != nil {
+		accountMultiplier = *rate
+	} else if procurement := accountMonitorProcurementQuotaCost(account.ProcurementCostCNY, account.EstimatedUsableQuotaUSD).EffectiveMultiplier; procurement != nil {
+		accountMultiplier = *procurement
+	}
+	result := accountMultiplier * upstreamUnitPrice / siteUnitPrice
+	if math.IsNaN(result) || math.IsInf(result, 0) || result < 0 {
+		return nil
+	}
+	return &result
 }
 
 func accountMonitorProjectedEffectiveCost(

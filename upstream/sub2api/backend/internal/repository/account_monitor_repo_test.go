@@ -66,6 +66,32 @@ func TestAccountMonitorRepositoryPersistsSanitizedProbeResult(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryListsLatestProbeModel(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	checkedAt := time.Date(2026, 8, 8, 8, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`(?s)SELECT DISTINCT ON \(account_id\).*account_id, model_id, status.*FROM account_monitor_results`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "model_id", "status", "error_code", "http_status", "ttft_ms", "latency_ms", "checked_at"}).
+			AddRow(7, "gpt-latest-probe", "success", "", 200, 80.0, 240.0, checkedAt))
+
+	latest, err := repo.ListLatest(context.Background(), []int64{7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest[7].ModelID != "gpt-latest-probe" {
+		t.Fatalf("latest model_id = %q, want gpt-latest-probe", latest[7].ModelID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

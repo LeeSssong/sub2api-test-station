@@ -1,6 +1,5 @@
 import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
-import type { ReconciliationDecimal } from './reconciliation'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
@@ -47,47 +46,6 @@ export interface AccountMonitorMultiplier {
   status: AccountMonitorMultiplierStatus
   observed_at?: string | null
   sample_count: number
-}
-
-export type AccountMonitorCostGuardStatus =
-  | 'loss_confirmed'
-  | 'loss_observing'
-  | 'pricing_risk'
-  | 'loss_risk'
-  | 'zero_margin'
-  | 'cost_covered'
-  | 'insufficient_samples'
-  | 'unknown'
-  | string
-
-export type AccountMonitorCostSource =
-  | 'reconciled_bill'
-  | 'upstream_pricing'
-  | 'quota_measurement'
-  | 'unknown'
-  | string
-
-export type AccountMonitorUpstreamMultiplierSource =
-  | 'upstream_declared'
-  | 'upstream_pricing'
-  | 'quota_measurement'
-  | 'manual'
-  | 'unknown'
-  | string
-
-/** Lightweight, admin-only cost evidence projected for the active account group. */
-export interface AccountMonitorCostGuard {
-  upstream_multiplier?: ReconciliationDecimal
-  upstream_multiplier_source?: AccountMonitorUpstreamMultiplierSource | null
-  equivalent_site_multiplier?: ReconciliationDecimal
-  cost_source?: AccountMonitorCostSource | null
-  model?: string | null
-  sample_count?: number | null
-  required_sample_count?: number | null
-  group_multiplier?: ReconciliationDecimal
-  gap?: ReconciliationDecimal
-  status: AccountMonitorCostGuardStatus
-  observed_at?: string | null
 }
 
 export interface AccountMonitorBalance {
@@ -177,12 +135,12 @@ export interface AccountMonitorAccount {
   ttft_p95_ms?: number | null
   latency_p95_ms?: number | null
   multiplier: AccountMonitorMultiplier
-  cost_guard?: AccountMonitorCostGuard | null
   request_count: number
   error_count: number
   range?: AccountMonitorRange
   base_cost?: number
   effective_multiplier?: number | null
+  equivalent_site_multiplier?: number | null
   cost_mode?: 'multiplier' | 'procurement' | string
   cost_score?: number
   procurement_cost_cny?: number | null

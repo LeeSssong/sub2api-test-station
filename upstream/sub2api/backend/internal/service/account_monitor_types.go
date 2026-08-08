@@ -157,6 +157,7 @@ type AccountMonitorUsageWindow struct {
 }
 
 type AccountMonitorLatest struct {
+	ModelID    string    `json:"model_id"`
 	Status     string    `json:"status"`
 	ErrorCode  string    `json:"error_code,omitempty"`
 	HTTPStatus *int      `json:"http_status,omitempty"`
@@ -221,6 +222,7 @@ type AccountMonitorAccount struct {
 	Range                      AccountMonitorRange           `json:"range,omitempty"`
 	BaseCost                   float64                       `json:"base_cost"`
 	EffectiveMultiplier        *float64                      `json:"effective_multiplier,omitempty"`
+	EquivalentSiteMultiplier   *float64                      `json:"equivalent_site_multiplier"`
 	CostMode                   string                        `json:"cost_mode,omitempty"`
 	CostScore                  float64                       `json:"cost_score"`
 	QualityScore               *float64                      `json:"quality_score,omitempty"`

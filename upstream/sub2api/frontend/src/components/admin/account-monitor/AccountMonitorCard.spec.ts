@@ -200,9 +200,26 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="score-metric"]').attributes('title')).toContain('探测成功率 43.5')
   })
 
+  it('shows the score breakdown in an application tooltip on hover', async () => {
+    const wrapper = mountCard()
+    await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('mouseenter')
+    await nextTick()
+    const tooltip = document.body.querySelector('[data-test="score-breakdown-tooltip"]')
+    expect(tooltip?.textContent).toContain('成本优势 12.0')
+    expect(tooltip?.textContent).toContain('探测成功率 43.5')
+    expect(tooltip?.textContent).toContain('总耗时 17.5')
+  })
+
   it('marks manually maintained cost with a warning and explains its source', () => {
     const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
     expect(wrapper.get('[data-test="manual-cost-warning"]').attributes('title')).toContain('手工维护')
+  })
+
+  it('shows the cost source in an application tooltip on hover', async () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
+    await wrapper.get('[data-test="cost-tooltip-trigger"]').trigger('mouseenter')
+    await nextTick()
+    expect(document.body.querySelector('[data-test="cost-source-tooltip"]')?.textContent).toContain('手工维护')
   })
 
   it('exposes the native billing cost source tooltip', () => {

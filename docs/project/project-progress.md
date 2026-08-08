@@ -2,7 +2,7 @@
 
 **更新时间：** 2026-08-08
 
-**本轮登记（2026-08-08）：** 账号监控卡片统一探测口径及四项交互增强，状态：已完成（提交 `c69d31da51de00347f77305208bebd630fd6daf0` 已通过专项测试和前端构建，经现有 preloaded 蓝绿 host executor 发布到生产 green；线上 `/healthz`、`/readyz` 和管理员监控 API 返回主动探测来源、评分分项、外链地址及手工/原生成本来源；执行器确认 `downtime_required=false`，PostgreSQL/Redis/Caddy 身份未变化）。
+**本轮登记（2026-08-08）：** 账号监控卡片统一探测口径及四项交互增强，状态：进行中（生产反馈显示成本来源和评分仅有原生属性、应用内悬浮层未生效；本轮已补接统一 `HelpTooltip` 并完成前端定向测试、类型检查和生产构建，待推送、部署及在线悬浮层验证）。
 
 **本轮登记（2026-08-08）：** 账号运营损益页已完成本地实现并整理到提交，状态：已完成（提交 `d75eaf1de5911887bb2738c8527cb1cb28b58361` 已通过预加载镜像蓝绿部署；发布结果 `downtime_required=false`；生产 `/healthz`、`/readyz`、页面入口返回 200，运营损益 API 未认证返回 401，worker healthy，PostgreSQL/Redis/Caddy 身份与重启次数未变化）。后端接口 `/api/v1/admin/operations/account-profitability` 与前端 `/admin/operations/account-profitability` 兼容 sub2api、newapi、自购账号。收入按 `actual_cost`，中继支出按账号真实成本，采购成本按 CNY 单独展示；未配置汇率时自购账号利润/利润率保持待换算，避免混币误算。
 

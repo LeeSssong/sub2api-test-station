@@ -24,9 +24,16 @@
     <div class="px-[18px] pb-0 pt-4 max-[430px]:px-[14px]">
       <section class="grid grid-cols-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 divide-x divide-gray-200 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/50" aria-label="评分排名与优先级">
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="score-metric" :title="scoreTooltip" :aria-label="scoreTooltip">
-          <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
-          <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
-          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
+          <HelpTooltip class="!ml-0 w-full" width-class="w-80" data-test="score-tooltip-trigger">
+            <template #trigger>
+              <div class="w-full cursor-help">
+                <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
+                <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
+                <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
+              </div>
+            </template>
+            <div data-test="score-breakdown-tooltip">{{ scoreTooltip }}</div>
+          </HelpTooltip>
         </div>
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
@@ -73,8 +80,12 @@
         <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-slate-400">
-            <span :title="costSourceTooltip" :aria-label="costSourceTooltip">账号成本</span>
-            <span v-if="manualCost" class="cursor-help font-bold text-amber-500 dark:text-amber-300" data-test="manual-cost-warning" :title="costSourceTooltip" :aria-label="costSourceTooltip">!</span>
+            <HelpTooltip class="!ml-0" width-class="w-72" data-test="cost-tooltip-trigger">
+              <template #trigger>
+                <span class="cursor-help" :title="costSourceTooltip" :aria-label="costSourceTooltip">账号成本<span v-if="manualCost" class="ml-1 font-bold text-amber-500 dark:text-amber-300" data-test="manual-cost-warning" :title="costSourceTooltip" :aria-label="costSourceTooltip">!</span></span>
+              </template>
+              <div data-test="cost-source-tooltip">{{ costSourceTooltip }}</div>
+            </HelpTooltip>
           </div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>
           <p class="mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
@@ -148,6 +159,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import type { AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorRange } from '@/api/admin/accountMonitor'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }

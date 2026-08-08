@@ -4,7 +4,7 @@
 
 **本轮登记（2026-08-08）：** 账号监控卡片统一探测口径及四项交互增强，状态：进行中（用户已确认账号卡片主指标、成功率、TTFT、总耗时、评分和证据全部以主动探测为唯一来源；同时加入成本来源警示、账号名称上游外链、评分构成悬浮展示。仅允许相关专项测试、构建、蓝绿无停机部署和线上页面/API 验证；尚未推送、部署或线上验证，不得标记完成）。
 
-**本轮登记（2026-08-08）：** 账号运营损益页已完成本地实现并整理到提交，状态：进行中（已推送待部署；后端接口 `/api/v1/admin/operations/account-profitability` 与前端 `/admin/operations/account-profitability` 兼容 sub2api、newapi、自购账号。收入按 `actual_cost`，中继支出按账号真实成本，采购成本按 CNY 单独展示；未配置汇率时自购账号利润/利润率保持待换算，避免混币误算）。
+**本轮登记（2026-08-08）：** 账号运营损益页已完成本地实现并整理到提交，状态：已完成（提交 `d75eaf1de5911887bb2738c8527cb1cb28b58361` 已通过预加载镜像蓝绿部署；发布结果 `downtime_required=false`；生产 `/healthz`、`/readyz`、页面入口返回 200，运营损益 API 未认证返回 401，worker healthy，PostgreSQL/Redis/Caddy 身份与重启次数未变化）。后端接口 `/api/v1/admin/operations/account-profitability` 与前端 `/admin/operations/account-profitability` 兼容 sub2api、newapi、自购账号。收入按 `actual_cost`，中继支出按账号真实成本，采购成本按 CNY 单独展示；未配置汇率时自购账号利润/利润率保持待换算，避免混币误算。
 
 **本轮继续登记（2026-08-08）：** 账号盈利页仍待生产环境部署；官方升级流程正在收口为“管理员触发候选准备 → readiness 可观测 → 管理员二次确认后蓝绿切换”。不得恢复 GitHub Actions 发布链，也不得在候选未 ready 时执行生产切换；当前状态：进行中。
 

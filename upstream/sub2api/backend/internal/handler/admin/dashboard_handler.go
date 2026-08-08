@@ -17,9 +17,10 @@ import (
 
 // DashboardHandler handles admin dashboard statistics
 type DashboardHandler struct {
-	dashboardService   *service.DashboardService
-	aggregationService *service.DashboardAggregationService
-	startTime          time.Time // Server start time for uptime calculation
+	dashboardService            *service.DashboardService
+	aggregationService          *service.DashboardAggregationService
+	accountProfitabilityService *service.AccountProfitabilityService
+	startTime                   time.Time // Server start time for uptime calculation
 }
 
 // NewDashboardHandler creates a new admin dashboard handler
@@ -29,6 +30,70 @@ func NewDashboardHandler(dashboardService *service.DashboardService, aggregation
 		aggregationService: aggregationService,
 		startTime:          time.Now(),
 	}
+}
+
+// SetAccountProfitabilityService attaches the operations-page aggregation
+// service without changing the legacy dashboard constructor used by tests and
+// embedders.
+func (h *DashboardHandler) SetAccountProfitabilityService(svc *service.AccountProfitabilityService) {
+	if h != nil {
+		h.accountProfitabilityService = svc
+	}
+}
+
+// GetAccountProfitability returns per-account revenue, expense, profit, and
+// margin for an inclusive calendar-date range.
+// GET /api/v1/admin/operations/account-profitability
+func (h *DashboardHandler) GetAccountProfitability(c *gin.Context) {
+	if h == nil || h.accountProfitabilityService == nil {
+		response.InternalError(c, "Account profitability service not available")
+		return
+	}
+	start, end, err := parseAccountProfitabilityRange(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	report, err := h.accountProfitabilityService.GetReport(c.Request.Context(), start, end)
+	if err != nil {
+		response.InternalError(c, "Failed to get account profitability")
+		return
+	}
+	response.Success(c, report)
+}
+
+func parseAccountProfitabilityRange(c *gin.Context) (time.Time, time.Time, error) {
+	userTZ := strings.TrimSpace(c.Query("timezone"))
+	loc := timezone.Location()
+	if userTZ != "" {
+		loaded, err := time.LoadLocation(userTZ)
+		if err != nil {
+			return time.Time{}, time.Time{}, errors.New("invalid timezone")
+		}
+		loc = loaded
+	}
+	now := time.Now().In(loc)
+	startDate := strings.TrimSpace(c.Query("start_date"))
+	endDate := strings.TrimSpace(c.Query("end_date"))
+	if startDate == "" {
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc).Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+	start, err := time.ParseInLocation("2006-01-02", startDate, loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, errors.New("invalid start_date, use YYYY-MM-DD")
+	}
+	endDateStart, err := time.ParseInLocation("2006-01-02", endDate, loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, errors.New("invalid end_date, use YYYY-MM-DD")
+	}
+	end := endDateStart.AddDate(0, 0, 1)
+	if !end.After(start) {
+		return time.Time{}, time.Time{}, errors.New("end_date must be on or after start_date")
+	}
+	return start, end, nil
 }
 
 // parseTimeRange parses start_date, end_date query parameters

@@ -33,6 +33,9 @@ func RegisterAdminRoutes(
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
+		// 运营损益
+		registerOperationsRoutes(admin, h)
+
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
@@ -122,6 +125,13 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerOperationsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	operations := admin.Group("/operations")
+	{
+		operations.GET("/account-profitability", h.Admin.Dashboard.GetAccountProfitability)
 	}
 }
 

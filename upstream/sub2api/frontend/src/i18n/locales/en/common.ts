@@ -179,6 +179,8 @@ export default {
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',
+    operations: 'Operations',
+    accountProfitability: 'Account Profitability',
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',

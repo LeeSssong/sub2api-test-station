@@ -9,6 +9,18 @@ import (
 	"github.com/google/wire"
 )
 
+// ProvideDashboardHandler wires the account profitability operations service
+// into the legacy dashboard handler while preserving its public constructor.
+func ProvideDashboardHandler(
+	dashboardService *service.DashboardService,
+	aggregationService *service.DashboardAggregationService,
+	accountProfitabilityService *service.AccountProfitabilityService,
+) *admin.DashboardHandler {
+	h := admin.NewDashboardHandler(dashboardService, aggregationService)
+	h.SetAccountProfitabilityService(accountProfitabilityService)
+	return h
+}
+
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
 	dashboardHandler *admin.DashboardHandler,
@@ -256,7 +268,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBatchImageHandler,
 
 	// Admin handlers
-	admin.NewDashboardHandler,
+	ProvideDashboardHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandler,
 	admin.ProvideAccountHandler,

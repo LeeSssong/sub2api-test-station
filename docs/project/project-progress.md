@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮收口（2026-08-09）：** Sub2API 官方核心与星桥定制外置迁移已完成本地实现、合同测试、资格门禁和只读生产预检脚本；管理员使用路径保持同域、同账号、同 2FA、同 URL 和同数据查看语义。当前停在生产部署更新动作之前，尚未推送、部署、迁移、重启、蓝绿提升或线上验收，状态保持进行中。详见 [外置迁移手册](../runbooks/sub2api-externalization-migration.md)、[官方升级手册](../runbooks/sub2api-official-upgrade.md) 和 [生产前验证报告](../superpowers/reports/2026-08-08-externalization-production-verification.md)。
+
 **本轮任务登记（2026-08-09）：** Sub2API 外置定制 Task 1 基线清单、管理员体验合同和运行时清单，状态：进行中（已完成本地文档与契约测试；尚未推送、部署或线上复验，不能标记完成）。实施报告：`.superpowers/sdd/2026-08-08-sub2api-externalized-customization-implementation-plan/task-1-report.md`。
 
 **本轮推进（2026-08-09）：** Task 1 已完成任务级独立审查，Task 2 版本化集成合同与核心事务 Outbox 正在实施；当前仅进行本地实现和验证，尚未推送、部署或线上复验，不能标记完成。

@@ -58,6 +58,33 @@ type cancellationExecutor struct {
 	cancelled chan struct{}
 }
 
+type fakeCandidatePreparer struct {
+	mu      sync.Mutex
+	calls   int
+	entered chan struct{}
+	release chan struct{}
+	err     error
+}
+
+func (p *fakeCandidatePreparer) Prepare(context.Context, string) error {
+	p.mu.Lock()
+	p.calls++
+	p.mu.Unlock()
+	if p.entered != nil {
+		p.entered <- struct{}{}
+	}
+	if p.release != nil {
+		<-p.release
+	}
+	return p.err
+}
+
+func (p *fakeCandidatePreparer) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
 func (e *cancellationExecutor) Run(ctx context.Context, _ Operation) (ExecutionResult, error) {
 	close(e.entered)
 	<-ctx.Done()
@@ -334,5 +361,140 @@ func TestServiceAllowsNewOperationAfterTerminalResult(t *testing.T) {
 	executor.result = ExecutionResult{Stage: "promoted", Result: "promoted", Promoted: true}
 	if _, err := s.Schedule(context.Background(), 2, "now", "1.2.3", time.Now()); err != nil {
 		t.Fatalf("new operation after terminal result failed: %v", err)
+	}
+}
+
+func TestServicePrepareCandidateIsIdempotentWhileInFlight(t *testing.T) {
+	preparer := &fakeCandidatePreparer{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	s := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer s.Close()
+
+	first, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil || first.Stage != "preparing" {
+		t.Fatalf("first=%#v err=%v", first, err)
+	}
+	select {
+	case <-preparer.entered:
+	case <-time.After(time.Second):
+		t.Fatal("preparer did not start")
+	}
+	second, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil || second.Stage != "preparing" || second.TargetVersion != first.TargetVersion {
+		t.Fatalf("second=%#v err=%v", second, err)
+	}
+	if got := preparer.count(); got != 1 {
+		t.Fatalf("prepare calls=%d, want 1", got)
+	}
+
+	close(preparer.release)
+	deadline := time.Now().Add(time.Second)
+	for {
+		status, err := s.CandidateStatus()
+		if err == nil && status.Stage == "ready" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("candidate did not become ready: status=%#v err=%v", status, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestServicePrepareCandidateRecordsReadableFailureAndTargetChange(t *testing.T) {
+	preparer := &fakeCandidatePreparer{err: errors.New("candidate image pull failed")}
+	s := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer s.Close()
+	if _, err := s.PrepareCandidate(context.Background(), 1, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		status, err := s.CandidateStatus()
+		if err == nil && status.Stage == "failed" {
+			if status.Reason != "candidate image pull failed" {
+				t.Fatalf("reason=%q", status.Reason)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("candidate did not fail: status=%#v err=%v", status, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	preparer.err = ErrTargetChanged
+	if _, err := s.PrepareCandidate(context.Background(), 1, "1.2.4"); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for {
+		status, err := s.CandidateStatus()
+		if err == nil && status.TargetVersion == "1.2.4" && status.Stage == "target_changed" {
+			if status.Reason == "" {
+				t.Fatal("target_changed status has no reason")
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("candidate did not record target change: status=%#v err=%v", status, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestServicePrepareCandidateRetriesSameTargetAfterFailure(t *testing.T) {
+	preparer := &fakeCandidatePreparer{err: errors.New("candidate image pull failed")}
+	s := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer s.Close()
+	first, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForCandidateStage(t, s, "failed")
+
+	preparer.err = nil
+	second, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil || second.Stage != "preparing" || second.PreparationID == first.PreparationID {
+		t.Fatalf("retry=%#v err=%v first=%#v", second, err, first)
+	}
+	waitForCandidateStage(t, s, "ready")
+	if got := preparer.count(); got != 2 {
+		t.Fatalf("prepare calls=%d, want 2", got)
+	}
+}
+
+func TestServicePrepareCandidateRetriesSameTargetAfterTargetChange(t *testing.T) {
+	preparer := &fakeCandidatePreparer{err: ErrTargetChanged}
+	s := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer s.Close()
+	first, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForCandidateStage(t, s, "target_changed")
+
+	preparer.err = nil
+	second, err := s.PrepareCandidate(context.Background(), 1, "1.2.3")
+	if err != nil || second.Stage != "preparing" || second.PreparationID == first.PreparationID {
+		t.Fatalf("retry=%#v err=%v first=%#v", second, err, first)
+	}
+	waitForCandidateStage(t, s, "ready")
+	if got := preparer.count(); got != 2 {
+		t.Fatalf("prepare calls=%d, want 2", got)
+	}
+}
+
+func waitForCandidateStage(t *testing.T, service *Service, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		status, err := service.CandidateStatus()
+		if err == nil && status.Stage == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("candidate stage=%#v err=%v, want %q", status, err, want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

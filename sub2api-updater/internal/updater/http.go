@@ -18,6 +18,8 @@ const (
 	codeInvalidTime          = "UPDATE_INVALID_TIME"
 	codeTargetChanged        = "UPDATE_TARGET_CHANGED"
 	codeCandidateNotReady    = "UPDATE_CANDIDATE_NOT_READY"
+	codeCandidatePreparing   = "UPDATE_CANDIDATE_PREPARING"
+	codeCandidatePreparation = "UPDATE_CANDIDATE_PREPARATION_FAILED"
 	codeServiceError         = "UPDATE_SERVICE_ERROR"
 )
 
@@ -39,10 +41,33 @@ func NewHTTP(service *Service, identity IdentityVerifier, expectedOrigin, traceD
 	h := &updateHTTP{service: service, identity: identity, expectedOrigin: expectedOrigin, traceDir: traceDir, now: now}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/admin/system/update", h.update)
+	mux.HandleFunc("POST /api/v1/admin/system/host-update/prepare", h.prepare)
 	mux.HandleFunc("GET /api/v1/admin/system/host-update/status", h.status)
 	mux.HandleFunc("GET /api/v1/admin/system/host-update/readiness", h.readiness)
 	mux.HandleFunc("DELETE /api/v1/admin/system/host-update/schedule", h.cancel)
 	return mux
+}
+
+func (h *updateHTTP) prepare(w http.ResponseWriter, r *http.Request) {
+	identity, ok := h.authorize(w, r, true)
+	if !ok {
+		return
+	}
+	var request struct {
+		TargetVersion string `json:"target_version"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || decoder.More() || strings.TrimSpace(request.TargetVersion) == "" {
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
+		return
+	}
+	state, err := h.service.PrepareCandidate(r.Context(), identity.ID, request.TargetVersion)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusAccepted, state)
 }
 
 func (h *updateHTTP) update(w http.ResponseWriter, r *http.Request) {
@@ -86,17 +111,38 @@ func (h *updateHTTP) status(w http.ResponseWriter, r *http.Request) {
 	}
 	op, err := h.service.Status()
 	if errors.Is(err, ErrNoOperation) {
-		writeData(w, http.StatusOK, nil)
+		candidate, candidateErr := h.service.CandidateStatus()
+		if errors.Is(candidateErr, ErrNoCandidatePreparation) {
+			writeData(w, http.StatusOK, nil)
+			return
+		}
+		if candidateErr != nil {
+			h.writeServiceError(w, candidateErr)
+			return
+		}
+		writeData(w, http.StatusOK, struct {
+			Candidate CandidatePreparation `json:"candidate"`
+		}{candidate})
 		return
 	}
 	if err != nil {
 		h.writeServiceError(w, err)
 		return
 	}
+	candidate, candidateErr := h.service.CandidateStatus()
+	if candidateErr != nil && !errors.Is(candidateErr, ErrNoCandidatePreparation) {
+		h.writeServiceError(w, candidateErr)
+		return
+	}
+	var candidatePtr *CandidatePreparation
+	if candidateErr == nil {
+		candidatePtr = &candidate
+	}
 	writeData(w, http.StatusOK, struct {
 		Operation
-		Events []string `json:"events,omitempty"`
-	}{op, readTraceEvents(h.traceDir, op.OperationID)})
+		Candidate *CandidatePreparation `json:"candidate,omitempty"`
+		Events    []string              `json:"events,omitempty"`
+	}{op, candidatePtr, readTraceEvents(h.traceDir, op.OperationID)})
 }
 
 func (h *updateHTTP) readiness(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +241,12 @@ func (h *updateHTTP) writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, codeTargetChanged)
 	case errors.Is(err, ErrCandidateNotReady):
 		writeError(w, http.StatusConflict, codeCandidateNotReady)
+	case errors.Is(err, ErrCandidatePreparationRunning):
+		writeError(w, http.StatusConflict, codeCandidatePreparing)
+	case errors.Is(err, ErrCandidatePreparerUnavailable), errors.Is(err, ErrCandidatePreparationFailed):
+		writeError(w, http.StatusServiceUnavailable, codeCandidatePreparation)
+	case errors.Is(err, ErrInvalidCandidateTarget):
+		writeError(w, http.StatusBadRequest, codeConfirmationRequired)
 	case errors.Is(err, ErrNoOperation):
 		writeError(w, http.StatusNotFound, codeServiceError)
 	default:

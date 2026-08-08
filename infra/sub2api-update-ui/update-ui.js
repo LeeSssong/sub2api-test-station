@@ -5,6 +5,7 @@
   var UPDATE_PATH = '/api/v1/admin/system/update'
   var STATUS_PATH = '/api/v1/admin/system/host-update/status'
   var SCHEDULE_PATH = '/api/v1/admin/system/host-update/schedule'
+  var PREPARE_PATH = '/api/v1/admin/system/host-update/prepare'
   var READINESS_PATH = '/api/v1/admin/system/host-update/readiness'
   var READINESS_POLL_INTERVAL_MS = 30000
   var POLL_INTERVAL_MS = 3000
@@ -36,6 +37,9 @@
     upgrading: false,
     pollTimer: null,
     candidateReady: false,
+    candidatePreparing: false,
+    readinessFailed: false,
+    readinessReason: '',
     readinessTarget: '',
     readinessTimer: null,
     readinessGeneration: 0,
@@ -187,9 +191,13 @@
     state.dialog = null
     state.info = null
     state.existing = null
+    state.pending = false
     state.replacing = false
     state.upgrading = false
     state.candidateReady = false
+    state.candidatePreparing = false
+    state.readinessFailed = false
+    state.readinessReason = ''
     state.readinessTarget = ''
     state.readinessGeneration += 1
   }
@@ -242,7 +250,23 @@
     setText(label, status)
     if (tone) label.dataset.tone = tone
     else label.removeAttribute('data-tone')
+    var reason = state.dialog.querySelector('[data-role="readiness-reason"]')
+    setText(reason, state.readinessReason ? '原因：' + state.readinessReason : '')
     setMessage('')
+  }
+
+  function readinessReason(value) {
+    var reason = text(value)
+    if (!reason) return ''
+    return {
+      candidate_not_ready: '候选镜像仍在准备',
+      preparing: '候选镜像正在准备',
+      candidate_image_missing: '候选镜像尚未暂存',
+      candidate_qualification_failed: '候选镜像资格校验失败',
+      UPDATE_CANDIDATE_PREPARATION_FAILED: '候选准备命令未配置或执行失败',
+      UPDATE_CANDIDATE_PREPARING: '候选版本已在准备中',
+      UPDATE_AUTH_REQUIRED: '管理员身份校验失败',
+    }[reason] || reason
   }
 
   function operationStatus(operation) {
@@ -270,6 +294,11 @@
     var submit = state.dialog.querySelector('[data-action="submit"]')
     var busy = state.pending || state.upgrading
     submit.disabled = busy || !confirmed || !scheduleValid || !state.candidateReady
+    var prepare = state.dialog.querySelector('[data-action="prepare"]')
+    if (prepare) {
+      prepare.disabled = busy || state.candidatePreparing || state.candidateReady || !state.readinessTarget
+      prepare.hidden = state.candidateReady || state.upgrading || !state.readinessTarget
+    }
     input.disabled = mode === 'now' || busy
     state.dialog.querySelectorAll('[name="mode"], [name="confirm"]').forEach(function (control) {
       control.disabled = state.upgrading
@@ -418,6 +447,10 @@
     readinessStatus.dataset.role = 'readiness-status'
     setText(readinessStatus, '候选版本检查中')
     readiness.appendChild(readinessStatus)
+    var readinessReasonNode = document.createElement('small')
+    readinessReasonNode.dataset.role = 'readiness-reason'
+    readiness.appendChild(readinessReasonNode)
+    readiness.appendChild(button('准备候选版本', 'prepare'))
     body.appendChild(readiness)
     var message = document.createElement('p')
     message.className = 'xq-update-ui-message'
@@ -458,6 +491,53 @@
     return operation && operation.stage === 'scheduled' ? operation : null
   }
 
+  async function restoreCandidatePreparation(candidate) {
+    if (!state.dialog || !candidate || !state.info) return false
+    var candidateTarget = text(candidate.target_version)
+    var currentTarget = text(state.info.target)
+    var stage = text(candidate.stage || candidate.preparation_stage)
+    if (!candidateTarget || !currentTarget) return false
+
+    if (stage === 'target_changed') {
+      await reloadTargetAfterChange(candidateTarget)
+      return true
+    }
+    if (candidateTarget !== currentTarget) return false
+
+    state.readinessTarget = candidateTarget
+    state.candidateReady = false
+    state.candidatePreparing = false
+    state.readinessFailed = false
+    state.readinessReason = ''
+    stopReadinessPolling()
+    if (stage === 'preparing') {
+      state.candidatePreparing = true
+      state.readinessReason = readinessReason(candidate.reason || 'preparing')
+      setReadinessState('候选版本准备中', 'warning')
+      updateSubmitState()
+      await pollReadiness()
+      if (state.dialog && state.candidatePreparing && !state.candidateReady && !state.readinessFailed) {
+        startReadinessPolling()
+      }
+      updateSubmitState()
+      return true
+    }
+    if (stage === 'ready') {
+      state.candidateReady = true
+      setReadinessState('候选版本已准备完成', 'success')
+      updateSubmitState()
+      return true
+    }
+    if (stage === 'failed') {
+      state.readinessFailed = true
+      state.readinessReason = readinessReason(candidate.reason)
+      setReadinessState('候选版本准备失败', 'error')
+      updateSubmitState()
+      return true
+    }
+    return false
+  }
+
   function settled(promise) {
     return promise.then(function (value) {
       return { value: value }
@@ -470,6 +550,9 @@
     if (state.dialog) return state.dialog
     if (state.opening) return state.opening
     state.candidateReady = false
+    state.candidatePreparing = false
+    state.readinessFailed = false
+    state.readinessReason = ''
     state.readinessTarget = ''
     state.readinessGeneration += 1
     state.opening = Promise.all([settled(getUpdateInfo()), settled(getStatus())]).then(async function (results) {
@@ -483,18 +566,22 @@
       if (isAlreadyCurrent(state.info)) {
         state.candidateReady = false
         state.readinessTarget = ''
+        state.readinessReason = ''
         stopReadinessPolling()
         setReadinessState('当前版本已是目标版本', 'success')
         setMessage('当前版本已是目标版本，无需重复升级。', 'success')
         updateSubmitState()
         return state.dialog
       }
+      if (!infoResult.error && state.info.target && operation && operation.candidate) {
+        if (await restoreCandidatePreparation(operation.candidate)) return state.dialog
+      }
       if (infoResult.error || !state.info.target) {
         setReadinessState('候选版本准备失败', 'error')
       } else {
         state.readinessTarget = state.info.target
-        await pollReadiness()
-        startReadinessPolling()
+        setReadinessState('候选版本待准备', 'warning')
+        updateSubmitState()
       }
       return state.dialog
     }).finally(function () {
@@ -631,10 +718,22 @@
       if (text(readiness.target_version) !== target) {
         throw new Error('更新服务返回了不匹配的候选版本')
       }
+      var preparationStage = text(readiness.preparation_stage || readiness.stage)
+      if (preparationStage === 'target_changed') {
+        await reloadTargetAfterChange(target)
+        return null
+      }
       state.candidateReady = readiness.ready === true
-      if (!state.candidateReady) {
+      state.readinessReason = readinessReason(readiness.reason)
+      state.readinessFailed = false
+      if (!state.candidateReady && (preparationStage === 'failed' || (preparationStage && preparationStage !== 'preparing' && readiness.preparation_reason))) {
+        state.readinessFailed = true
+        state.readinessReason = readinessReason(readiness.preparation_reason || readiness.reason)
+        setReadinessState('候选版本准备失败', 'error')
+      } else if (!state.candidateReady) {
         setReadinessState('候选版本准备中', 'warning')
       } else {
+        state.readinessReason = ''
         setReadinessState('候选版本已准备完成', 'success')
       }
     } catch (error) {
@@ -644,6 +743,8 @@
         return null
       }
       state.candidateReady = false
+      state.readinessFailed = true
+      state.readinessReason = readinessReason(error.code === 'UPDATE_PREPARE_FAILED' ? error.message : (error.code || error.message))
       setReadinessState('候选版本准备失败', 'error')
     }
     updateSubmitState()
@@ -658,6 +759,9 @@
     var dialog = state.dialog
     var previousTarget = text(changedTarget || state.readinessTarget)
     state.candidateReady = false
+    state.candidatePreparing = false
+    state.readinessFailed = false
+    state.readinessReason = ''
     state.readinessTarget = ''
     state.readinessGeneration += 1
     setReadinessState('候选版本检查中', null)
@@ -676,8 +780,8 @@
         return
       }
       state.readinessTarget = info.target
-      await pollReadiness()
-      startReadinessPolling()
+      setReadinessState('候选版本待准备', 'warning')
+      updateSubmitState()
     } catch (error) {
       if (state.dialog !== dialog) return
       state.candidateReady = false
@@ -690,6 +794,50 @@
     stopReadinessPolling()
     if (!state.dialog || !state.readinessTarget || state.upgrading) return
     state.readinessTimer = window.setInterval(pollReadiness, READINESS_POLL_INTERVAL_MS)
+  }
+
+  async function prepareCandidate() {
+    if (!state.dialog || state.pending || state.upgrading || state.candidateReady || !state.readinessTarget) return
+    state.candidatePreparing = true
+    state.readinessFailed = false
+    state.readinessReason = ''
+    stopReadinessPolling()
+    setReadinessState('候选版本准备中', 'warning')
+    updateSubmitState()
+    state.pending = true
+    updateSubmitState()
+    try {
+      await apiRequest(PREPARE_PATH, {
+        method: 'POST',
+        body: JSON.stringify({ target_version: state.readinessTarget }),
+      })
+    } catch (error) {
+      if (!state.dialog) return
+      if (error.code === 'UPDATE_TARGET_CHANGED') {
+        state.pending = false
+        await reloadTargetAfterChange(state.readinessTarget)
+        return
+      }
+      state.candidatePreparing = false
+      state.readinessFailed = true
+      state.readinessReason = readinessReason(error.code === 'UPDATE_PREPARE_FAILED' ? error.message : (error.code || error.message))
+      setReadinessState('候选版本准备失败', 'error')
+      state.pending = false
+      updateSubmitState()
+      return
+    }
+    state.pending = false
+    updateSubmitState()
+    await pollReadiness()
+    if (!state.dialog || !state.candidatePreparing) return
+    if (state.candidateReady || state.readinessFailed) {
+      state.candidatePreparing = false
+      stopReadinessPolling()
+      updateSubmitState()
+      return
+    }
+    startReadinessPolling()
+    updateSubmitState()
   }
 
   function stopReadinessPolling() {
@@ -714,6 +862,7 @@
     if (!action) return
     if (action.dataset.action === 'close') closeDialog()
     if (action.dataset.action === 'submit') submitUpdate()
+    if (action.dataset.action === 'prepare') prepareCandidate()
     if (action.dataset.action === 'replace') replaceSchedule()
     if (action.dataset.action === 'cancel-schedule') cancelSchedule()
   }
@@ -767,6 +916,7 @@
     openConfirmation: openConfirmation,
     pollStatus: pollStatus,
     pollReadiness: pollReadiness,
+    prepareCandidate: prepareCandidate,
     startPolling: startPolling,
     stopPolling: stopPolling,
     isPolling: function () { return state.pollTimer !== null },

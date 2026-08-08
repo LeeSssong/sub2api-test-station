@@ -64,6 +64,7 @@ for setting in \
   'SUB2API_UPDATER_OFFICIAL_API=https://api.xingqiaolab.top' \
   'SUB2API_UPDATER_OFFICIAL_DIAL_ADDRESS=127.0.0.1:443' \
   'SUB2API_UPDATER_ORIGIN=https://api.xingqiaolab.top' \
+  'SUB2API_UPDATER_CANDIDATE_PREPARER=/usr/local/libexec/sub2api-candidate-preparer' \
   'SUB2API_BASE_URL=https://api.xingqiaolab.top' \
   'SUB2API_ADMIN_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key' \
   'SUB2API_GATEWAY_API_KEY_FILE=/opt/sub2api/production/secrets/sub2api-gateway-api-key' \

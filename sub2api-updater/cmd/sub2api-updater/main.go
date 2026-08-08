@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ const (
 	defaultOrigin       = "https://api.xingqiaolab.top"
 	defaultAPI          = "https://api.xingqiaolab.top"
 	defaultOfficialDial = "127.0.0.1:443"
+	defaultPreparer     = "/usr/local/libexec/sub2api-candidate-preparer"
 )
 
 func main() {
@@ -36,6 +38,7 @@ func main() {
 		officialDial = flag.String("official-dial-address", defaultOfficialDial, "loopback Caddy address for official authentication")
 		origin       = flag.String("origin", defaultOrigin, "required browser Origin")
 		githubURL    = flag.String("github-latest-release", "", "GitHub latest release API URL")
+		preparerPath = flag.String("candidate-preparer", defaultPreparer, "root-owned candidate preparation command")
 	)
 	flag.Parse()
 
@@ -53,11 +56,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("configure official authentication: %v", err)
 	}
-	service := updater.NewService(
-		updater.NewStore(*statePath),
-		updater.NewResolver(&http.Client{Timeout: 20 * time.Second}, *githubURL, nil),
-		updater.NewHostExecutor(*executor, filepath.Dir(*statePath), nil),
-	)
+	store := updater.NewStore(*statePath)
+	resolver := updater.NewResolver(&http.Client{Timeout: 20 * time.Second}, *githubURL, nil)
+	hostExecutor := updater.NewHostExecutor(*executor, filepath.Dir(*statePath), nil)
+	var service *updater.Service
+	if strings.TrimSpace(*preparerPath) == "" {
+		service = updater.NewService(store, resolver, hostExecutor)
+	} else {
+		service = updater.NewServiceWithPreparer(store, resolver, hostExecutor, updater.NewCommandCandidatePreparer(*preparerPath))
+	}
 	defer service.Close()
 
 	listener, err := listenUnix(*socketPath)

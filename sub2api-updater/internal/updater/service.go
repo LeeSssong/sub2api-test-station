@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -13,10 +14,15 @@ import (
 const stateSchemaVersion = 1
 
 var (
-	ErrOperationExists  = errors.New("an update operation already exists")
-	ErrOperationRunning = errors.New("update operation is already running")
-	ErrNoOperation      = errors.New("no update operation exists")
-	ErrServiceClosed    = errors.New("updater service is closed")
+	ErrOperationExists              = errors.New("an update operation already exists")
+	ErrOperationRunning             = errors.New("update operation is already running")
+	ErrNoOperation                  = errors.New("no update operation exists")
+	ErrServiceClosed                = errors.New("updater service is closed")
+	ErrCandidatePreparationRunning  = errors.New("candidate preparation is already running")
+	ErrNoCandidatePreparation       = errors.New("no candidate preparation exists")
+	ErrCandidatePreparerUnavailable = errors.New("candidate preparer is not configured")
+	ErrCandidatePreparationFailed   = errors.New("candidate preparation command failed")
+	ErrInvalidCandidateTarget       = errors.New("candidate target version is invalid")
 )
 
 type Operation struct {
@@ -56,9 +62,30 @@ type Resolver interface {
 }
 
 type Readiness struct {
-	TargetVersion string `json:"target_version"`
-	Ready         bool   `json:"ready"`
-	Reason        string `json:"reason,omitempty"`
+	TargetVersion     string `json:"target_version"`
+	Ready             bool   `json:"ready"`
+	Reason            string `json:"reason,omitempty"`
+	Stage             string `json:"stage,omitempty"`
+	PreparationStage  string `json:"preparation_stage,omitempty"`
+	PreparationReason string `json:"preparation_reason,omitempty"`
+}
+
+// CandidatePreparation describes the state of the administrator-triggered
+// candidate staging operation. Preparation never promotes the running service.
+type CandidatePreparation struct {
+	PreparationID string    `json:"preparation_id"`
+	TargetVersion string    `json:"target_version"`
+	Stage         string    `json:"stage"`
+	Reason        string    `json:"reason,omitempty"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
+	CompletedAt   time.Time `json:"completed_at,omitempty"`
+}
+
+// CandidatePreparer is the host-controlled preparation boundary. The concrete
+// implementation may invoke the restricted candidate loader, while tests can
+// inject a deterministic fake without building or using a network.
+type CandidatePreparer interface {
+	Prepare(context.Context, string) error
 }
 
 type Executor interface {
@@ -70,21 +97,33 @@ type Service struct {
 	store    *Store
 	resolver Resolver
 	executor Executor
+	preparer CandidatePreparer
 	now      func() time.Time
 	ctx      context.Context
 	cancel   context.CancelFunc
 
-	mu      sync.Mutex
-	op      *Operation
-	last    *Operation
-	loadErr error
-	timer   *time.Timer
-	closed  bool
-	wg      sync.WaitGroup
+	mu        sync.Mutex
+	op        *Operation
+	last      *Operation
+	candidate *CandidatePreparation
+	loadErr   error
+	timer     *time.Timer
+	closed    bool
+	wg        sync.WaitGroup
 }
 
 // NewService accepts an optional clock for deterministic callers and tests.
 func NewService(store *Store, resolver Resolver, executor Executor, clocks ...func() time.Time) *Service {
+	return newService(store, resolver, executor, nil, clocks...)
+}
+
+// NewServiceWithPreparer wires the administrator-triggered candidate staging
+// capability while preserving NewService's existing constructor contract.
+func NewServiceWithPreparer(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, clocks ...func() time.Time) *Service {
+	return newService(store, resolver, executor, preparer, clocks...)
+}
+
+func newService(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, clocks ...func() time.Time) *Service {
 	now := time.Now
 	if len(clocks) > 0 && clocks[0] != nil {
 		now = clocks[0]
@@ -94,6 +133,7 @@ func NewService(store *Store, resolver Resolver, executor Executor, clocks ...fu
 		store:    store,
 		resolver: resolver,
 		executor: executor,
+		preparer: preparer,
 		now:      now,
 		ctx:      ctx,
 		cancel:   cancel,
@@ -110,6 +150,97 @@ func NewService(store *Store, resolver Resolver, executor Executor, clocks ...fu
 		}
 	}
 	return s
+}
+
+// PrepareCandidate starts a single asynchronous preparation for targetVersion.
+// Repeating the same request while it is preparing or ready is idempotent;
+// terminal failures can be retried, while a different target cannot replace
+// an in-flight preparation.
+func (s *Service) PrepareCandidate(ctx context.Context, actorID int64, targetVersion string) (CandidatePreparation, error) {
+	_ = actorID // actor identity is enforced by HTTP; the state is target-bound.
+	targetVersion = strings.TrimSpace(targetVersion)
+	normalizedTarget, err := normalizeVersion(targetVersion)
+	if err != nil {
+		return CandidatePreparation{}, ErrInvalidCandidateTarget
+	}
+	targetVersion = normalizedTarget
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return CandidatePreparation{}, ErrServiceClosed
+	}
+	if s.loadErr != nil {
+		err := s.loadErr
+		s.mu.Unlock()
+		return CandidatePreparation{}, err
+	}
+	if s.candidate != nil {
+		if s.candidate.TargetVersion == targetVersion {
+			switch s.candidate.Stage {
+			case "preparing", "ready":
+				state := *s.candidate
+				s.mu.Unlock()
+				return state, nil
+			}
+		}
+		if s.candidate.Stage == "preparing" {
+			s.mu.Unlock()
+			return CandidatePreparation{}, ErrCandidatePreparationRunning
+		}
+	}
+	if s.preparer == nil {
+		now := s.now().UTC()
+		state := CandidatePreparation{PreparationID: newOperationID(), TargetVersion: targetVersion, Stage: "failed", Reason: ErrCandidatePreparerUnavailable.Error(), StartedAt: now, CompletedAt: now}
+		s.candidate = &state
+		s.mu.Unlock()
+		return state, ErrCandidatePreparerUnavailable
+	}
+	now := s.now().UTC()
+	state := CandidatePreparation{PreparationID: newOperationID(), TargetVersion: targetVersion, Stage: "preparing", StartedAt: now}
+	stored := state
+	s.candidate = &stored
+	s.wg.Add(1)
+	s.mu.Unlock()
+
+	go s.prepareCandidateAsync(state, ctx)
+	return state, nil
+}
+
+func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx context.Context) {
+	defer s.wg.Done()
+	// The service context owns the lifetime of preparation. The request context
+	// is intentionally not used as it normally ends as soon as HTTP responds.
+	_ = requestCtx
+	err := s.preparer.Prepare(s.ctx, state.TargetVersion)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.candidate == nil || s.candidate.PreparationID != state.PreparationID || s.closed {
+		return
+	}
+	s.candidate.CompletedAt = s.now().UTC()
+	if err == nil {
+		s.candidate.Stage = "ready"
+		s.candidate.Reason = ""
+		return
+	}
+	s.candidate.Reason = err.Error()
+	if errors.Is(err, ErrTargetChanged) {
+		s.candidate.Stage = "target_changed"
+	} else {
+		s.candidate.Stage = "failed"
+	}
+}
+
+func (s *Service) CandidateStatus() (CandidatePreparation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.loadErr != nil {
+		return CandidatePreparation{}, s.loadErr
+	}
+	if s.candidate == nil {
+		return CandidatePreparation{}, ErrNoCandidatePreparation
+	}
+	return *s.candidate, nil
 }
 
 func (s *Service) Schedule(ctx context.Context, actorID int64, mode, targetVersion string, scheduledAt time.Time) (Operation, error) {
@@ -146,13 +277,27 @@ func (s *Service) Schedule(ctx context.Context, actorID int64, mode, targetVersi
 }
 
 func (s *Service) Readiness(ctx context.Context, targetVersion string) (Readiness, error) {
+	s.mu.Lock()
+	if s.candidate != nil && s.candidate.TargetVersion == targetVersion {
+		candidate := *s.candidate
+		s.mu.Unlock()
+		switch candidate.Stage {
+		case "preparing":
+			return Readiness{TargetVersion: targetVersion, Reason: "preparing", Stage: candidate.Stage, PreparationStage: candidate.Stage, PreparationReason: candidate.Reason}, nil
+		case "ready":
+			return Readiness{TargetVersion: targetVersion, Ready: true, Stage: candidate.Stage, PreparationStage: candidate.Stage}, nil
+		case "failed", "target_changed":
+			return Readiness{TargetVersion: targetVersion, Reason: candidate.Reason, Stage: candidate.Stage, PreparationStage: candidate.Stage, PreparationReason: candidate.Reason}, nil
+		}
+	}
+	s.mu.Unlock()
 	if _, err := s.resolver.Resolve(ctx, targetVersion); err != nil {
 		if errors.Is(err, ErrCandidateNotReady) {
-			return Readiness{TargetVersion: targetVersion, Reason: "candidate_not_ready"}, nil
+			return Readiness{TargetVersion: targetVersion, Reason: "candidate_not_ready", Stage: "failed", PreparationStage: "failed", PreparationReason: "candidate_not_ready"}, nil
 		}
 		return Readiness{}, err
 	}
-	return Readiness{TargetVersion: targetVersion, Ready: true}, nil
+	return Readiness{TargetVersion: targetVersion, Ready: true, Stage: "ready", PreparationStage: "ready"}, nil
 }
 
 func (s *Service) Cancel() error {

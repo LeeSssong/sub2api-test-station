@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -418,6 +419,109 @@ func TestHTTPStatusReportsTraceEvents(t *testing.T) {
 		if envelope.Data.Events[i] != event {
 			t.Fatalf("events[%d] = %q, want %q", i, envelope.Data.Events[i], event)
 		}
+	}
+}
+
+func TestHTTPPrepareCandidateRequiresAdminAndReturnsPreparationState(t *testing.T) {
+	preparer := &fakeCandidatePreparer{}
+	service := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &fakeResolver{}, &fakeExecutor{}, preparer)
+	t.Cleanup(service.Close)
+	handler := NewHTTP(service, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", "")
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	request := func(body string) *http.Response {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/admin/system/host-update/prepare", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer valid")
+		req.Header.Set("Origin", "https://admin.example")
+		req.Header.Set("X-Admin-UI-Request", "1")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	first := request(`{"target_version":"1.2.3"}`)
+	defer first.Body.Close()
+	var firstEnvelope struct {
+		Code int                  `json:"code"`
+		Data CandidatePreparation `json:"data"`
+	}
+	if err := json.NewDecoder(first.Body).Decode(&firstEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if first.StatusCode != http.StatusAccepted || firstEnvelope.Code != 0 || firstEnvelope.Data.Stage != "preparing" {
+		t.Fatalf("first status=%d response=%#v", first.StatusCode, firstEnvelope)
+	}
+	second := request(`{"target_version":"1.2.3"}`)
+	defer second.Body.Close()
+	if second.StatusCode != http.StatusAccepted || preparer.count() != 1 {
+		t.Fatalf("second status=%d prepare calls=%d", second.StatusCode, preparer.count())
+	}
+}
+
+func TestHTTPStatusExposesCandidatePreparationFailureReason(t *testing.T) {
+	preparer := &fakeCandidatePreparer{err: errors.New("candidate image pull failed")}
+	service := NewServiceWithPreparer(NewStore(filepath.Join(t.TempDir(), "state.json")), &fakeResolver{}, &fakeExecutor{}, preparer)
+	t.Cleanup(service.Close)
+	handler := NewHTTP(service, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", "")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/host-update/prepare", strings.NewReader(`{"target_version":"1.2.3"}`))
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("Origin", "https://admin.example")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("prepare status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system/host-update/status", nil)
+		statusReq.Header.Set("Authorization", "Bearer valid")
+		statusReq.Header.Set("X-Admin-UI-Request", "1")
+		statusRR := httptest.NewRecorder()
+		handler.ServeHTTP(statusRR, statusReq)
+		var envelope struct {
+			Data struct {
+				Candidate *CandidatePreparation `json:"candidate"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(statusRR.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Data.Candidate != nil && envelope.Data.Candidate.Stage == "failed" {
+			if envelope.Data.Candidate.Reason != "candidate image pull failed" {
+				t.Fatalf("candidate=%#v", envelope.Data.Candidate)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status never exposed failure: %s", statusRR.Body.String())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestHTTPPrepareCandidateReportsUnavailablePreparationCommand(t *testing.T) {
+	service := NewService(NewStore(filepath.Join(t.TempDir(), "state.json")), &fakeResolver{}, &fakeExecutor{})
+	t.Cleanup(service.Close)
+	handler := NewHTTP(service, &fakeIdentity{id: 1, role: "admin", status: "active"}, "https://admin.example", "")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/host-update/prepare", strings.NewReader(`{"target_version":"1.2.3"}`))
+	req.Header.Set("Authorization", "Bearer valid")
+	req.Header.Set("Origin", "https://admin.example")
+	req.Header.Set("X-Admin-UI-Request", "1")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable || responseCodeFromBody(t, rr.Body) != "UPDATE_CANDIDATE_PREPARATION_FAILED" {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
 

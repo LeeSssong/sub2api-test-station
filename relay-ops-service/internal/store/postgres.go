@@ -60,6 +60,9 @@ var reconciliationGroupScopeMigration string
 //go:embed migrations/012_cost_guard.sql
 var costGuardMigration string
 
+//go:embed migrations/013_externalization_read_models.sql
+var externalizationReadModelsMigration string
+
 var ErrConflict = errors.New("record conflicts with existing identity")
 
 func init() {
@@ -71,6 +74,7 @@ func init() {
 	initialMigration += "\n" + upstreamCostReconciliationMigration
 	initialMigration += "\n" + reconciliationGroupScopeMigration
 	initialMigration += "\n" + costGuardMigration
+	initialMigration += "\n" + externalizationReadModelsMigration
 }
 
 type Store struct {

@@ -1,14 +1,14 @@
 # 项目全局进度总账
 
-**更新时间：** 2026-08-07
+**更新时间：** 2026-08-08
 
 **本轮登记（2026-08-07）：** 升级弹窗在当前版本已等于目标版本时仍显示残留失败状态，状态：已完成（修复提交 `177bab334` 已推送至工作分支和 `main`，缓存版本 `20260807-2` 已部署；公网 HTML/JS、新文案、`current_version=latest_version=0.1.171`、`has_update=false`、`/health=200`、22 个模型及受保护容器身份/重启次数均已复验；管理员强制刷新后的生产截图显示 `v0.1.171`、绿色成功标记和“已是最新版本”，不再显示残留的“升级失败”状态）。
 
-**本轮登记（2026-08-07）：** 账号卡片纯探测口径与管理员流水成本详情调整，状态：进行中（已确认保持现有视觉样式；账号卡片改为只使用主动探测评估服务质量，管理员流水详情接入 Sub2API/New API 原生流水与本站计费/成本证据；本地实现和验证已完成，尚未完成推送、部署和线上验证）。
+**本轮登记（2026-08-07）：** 账号卡片纯探测口径与管理员流水成本详情调整，状态：已完成（候选提交 `2af5cb245d55cd55a0f68cc69ba7de016ae325ee` 已推送；relay-ops 已部署同提交不可变镜像，Sub2API 已于 2026-08-08 经用户授权直接停机覆盖更新至镜像 ID `sha256:40ed21d1e6d472658bb1f4d4a6b5fcd9d6ae3ba63a8ebfd56c2cb5968d865967`。迁移 `199_add_usage_log_upstream_request_id.sql` 已在线应用；`/health`、`/healthz`、`/readyz`、release-state、镜像标签及纯探测投影均已验证，PostgreSQL、Redis、Caddy、relay-ops 容器身份保持不变。生产前端资源已确认包含探测、上游请求 ID、成本依据和待对账文案；当前无逐笔成本证据，故成本状态保持待对账，不伪造确认毛利）。
 
-**本轮审查修复（2026-08-07）：** 账号卡片纯探测口径与管理员流水成本详情首轮整分支审查的 4 项 Important 已完成本地修复，状态：进行中（提交 `07f47bd61`：失败探测不再污染成功延迟聚合；余额/认证及 401/402/403 致命探测可立即判不可用；relay-ops 保留独立的上游请求 ID；自购账号手工分摊改用 estimated 标准成本字段且不再被价格表覆盖。Sub2API 后端、relay-ops、前端全量测试与 lint/typecheck/build、Go vet、diff check 均通过；PostgreSQL 集成用例因未提供 `RELAY_OPS_TEST_DATABASE_URL` 跳过。尚未推送、部署和线上验证，不得标记完成）。
+**本轮审查修复（2026-08-07）：** 账号卡片纯探测口径与管理员流水成本详情首轮整分支审查的 4 项 Important 已完成并随最终提交部署。失败探测不再污染成功延迟聚合；余额/认证及 401/402/403 致命探测可立即判不可用；relay-ops 保留独立的上游请求 ID；自购账号手工分摊使用 estimated 标准成本字段且不再被价格表覆盖。最终验证包含 Sub2API 后端、relay-ops、前端全量测试与 lint/typecheck/build、Go vet、diff check，以及独立 PostgreSQL 集成测试。状态：已完成。
 
-**本轮审查修复 Round 2（2026-08-07）：** 状态：进行中。提交 `a1d527d67` 已按 RED→GREEN 修复真实 Antigravity 中文 `API 返回 401/402/403` 状态提取（中文 500 仍保持 abnormal），以及 relay-ops 同 attempt 周期重导入时仅从空值安全补写 `upstream_request_id` 并继续导入后续流水；local request ID、model 等不可变字段与不同非空上游 ID 仍 fail closed。独立 scoped re-review 判定两项均已关闭且无新增 Critical/Important；Sub2API 后端与 relay-ops 全量 `go test`/`go vet` 均通过，relay-ops 本轮使用独立临时 PostgreSQL 实际执行 store 集成测试。尚未推送、部署和线上验证，不得标记完成。
+**本轮审查修复 Round 2（2026-08-07）：** 状态：已完成。提交 `a1d527d67` 已按 RED→GREEN 修复真实 Antigravity 中文 `API 返回 401/402/403` 状态提取（中文 500 仍保持 abnormal），以及 relay-ops 同 attempt 周期重导入时仅从空值安全补写 `upstream_request_id` 并继续导入后续流水；local request ID、model 等不可变字段与不同非空上游 ID 仍 fail closed。独立 scoped re-review 判定两项均已关闭且无新增 Critical/Important；最终提交 `2af5cb245` 已推送、部署并完成线上验证。
 
 **本轮推进（2026-08-07）：** 管理页官方升级适配蓝绿生产拓扑已完成。修复提交 `ef6e12560`、`57793c0fd` 已推送；候选 `0.1.171`（提交 `20482a733af8caa40fde277c28c5df35c1ff08b4`，镜像 `sha256:bcb9a659…`）已通过完整资格矩阵、生产暂存和蓝绿切换；更新器已安装并校验，线上版本、健康接口、模型列表和共享容器身份均已复验。
 

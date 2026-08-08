@@ -57,6 +57,13 @@ export interface AccountMonitorBalance {
   failure_code?: string | null
 }
 
+export interface AccountMonitorScoreBreakdown {
+  cost: number
+  success: number
+  ttft: number
+  latency: number
+}
+
 export interface AccountMonitorScoreWeights {
   cost: number
   success: number
@@ -155,6 +162,8 @@ export interface AccountMonitorAccount {
   checked_at?: string | null
   stale: boolean
   quality_score?: number | null
+  score_breakdown?: AccountMonitorScoreBreakdown | null
+  evidence_source?: string
   group_rank?: number | null
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence

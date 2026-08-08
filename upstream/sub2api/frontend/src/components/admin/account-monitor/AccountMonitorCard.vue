@@ -3,7 +3,17 @@
     <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-[18px] py-4 dark:border-slate-800 max-[430px]:px-[14px] max-[430px]:py-[14px]" :class="statusHeaderClass" data-test="monitor-card-header">
       <div class="min-w-0">
         <h2 class="break-words text-base font-semibold text-gray-900 dark:text-white [overflow-wrap:anywhere]" data-test="account-identity">
-          {{ account.name }} <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400">#{{ account.account_id }}</span>
+          <a
+            v-if="account.homepage_url"
+            :href="account.homepage_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="border-b border-dotted border-gray-300 dark:border-slate-600"
+            data-test="account-homepage-link"
+            :title="`打开上游网站：${account.homepage_url}`"
+          >{{ account.name }}</a>
+          <span v-else>{{ account.name }}</span>
+          <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400"> #{{ account.account_id }}</span>
         </h2>
       </div>
       <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass" data-test="status-badge">
@@ -13,10 +23,10 @@
 
     <div class="px-[18px] pb-0 pt-4 max-[430px]:px-[14px]">
       <section class="grid grid-cols-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 divide-x divide-gray-200 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/50" aria-label="评分排名与优先级">
-        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="score-metric">
+        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="score-metric" :title="scoreTooltip" :aria-label="scoreTooltip">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
           <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
-          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">基于 {{ account.request_count }} 次真实请求</p>
+          <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
         </div>
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
@@ -58,11 +68,14 @@
       </section>
 
       <section class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6" aria-label="账号服务指标">
-        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="formatPercent(account.success_rate)" :detail="`${formatNumber(account.request_count)} 次真实请求，${formatNumber(account.error_count)} 次失败`" />
+        <MetricCell data-test="success-rate-metric" tone="success" label="探测成功率" :value="formatPercent(account.success_rate)" :detail="probeMetricDetail" />
         <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P50" :value="formatMs(account.ttft_p50_ms)" :detail="sampleDetail(account.ttft_sample_count)" />
         <MetricCell data-test="latency-metric" tone="latency" label="总耗时 P95" :value="formatMs(account.latency_p95_ms)" :detail="sampleDetail(account.latency_sample_count)" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
-          <div class="text-[11px] text-gray-500 dark:text-slate-400">账号成本</div>
+          <div class="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-slate-400">
+            <span>账号成本</span>
+            <span v-if="manualCost" class="cursor-help font-bold text-amber-500 dark:text-amber-300" data-test="manual-cost-warning" :title="costSourceTooltip" :aria-label="costSourceTooltip">!</span>
+          </div>
           <div class="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>
           <p class="mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
           <div class="mt-2 flex items-center gap-1" data-test="cost-actions">
@@ -193,6 +206,29 @@ const statusHeaderClass = computed(() => ({
   'border-red-100 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20': statusLabel.value === '不可用',
 }))
 const scoreLabel = computed(() => props.account.quality_score == null ? '--' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(props.account.quality_score))
+const evidenceDetail = computed(() => {
+  if (props.account.evidence_source === 'monitor_probe') return `基于 ${formatNumber(props.account.sample_count)} 次主动探测`
+  if (props.account.evidence_source === 'stale') return '暂无有效主动探测证据'
+  return '等待主动探测证据'
+})
+const probeMetricDetail = computed(() => `${formatNumber(props.account.success_sample_count)} / ${formatNumber(props.account.sample_count)} 次主动探测成功`)
+const manualCost = computed(() => {
+  if (props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type)) return props.account.multiplier.source === 'manual'
+  return props.account.cost_mode === 'procurement' || (props.account.procurement_cost_cny != null && props.account.multiplier.source !== 'declared')
+})
+const costSourceTooltip = computed(() => {
+  if (manualCost.value) {
+    if (props.account.cost_mode === 'procurement' || props.account.procurement_cost_cny != null) return '手工维护：采购成本/预计额度由管理员录入'
+    return '手工维护：账号倍率由管理员录入'
+  }
+  if (props.account.multiplier.source === 'declared') return '上游原生：倍率来自上游 billing 字段'
+  return '成本来源：当前没有可用的上游原生或手工成本证据'
+})
+const scoreTooltip = computed(() => {
+  const breakdown = props.account.score_breakdown
+  if (!breakdown || props.account.quality_score == null) return '暂无足够主动探测证据，无法计算评分构成'
+  return `评分构成：成本优势 ${formatScorePart(breakdown.cost)}，探测成功率 ${formatScorePart(breakdown.success)}，TTFT ${formatScorePart(breakdown.ttft)}，总耗时 ${formatScorePart(breakdown.latency)}，合计 ${scoreLabel.value} / 100`
+})
 const rankLabel = computed(() => props.account.group_rank == null ? '未排名' : `第 ${props.account.group_rank}`)
 const scoreTitle = computed(() => props.rankingScope === 'global' ? '账号服务评分' : '账号分组评分')
 const rankTitle = computed(() => props.rankingScope === 'global' ? '全站排名' : '组内排名')
@@ -271,6 +307,9 @@ const balanceDetail = computed(() => {
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value)
+}
+function formatScorePart(value?: number | null): string {
+  return value == null || !Number.isFinite(value) ? '--' : value.toFixed(1)
 }
 function formatMs(value?: number | null): string {
 	if (value == null || !Number.isFinite(value)) return '--'

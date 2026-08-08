@@ -81,6 +81,9 @@ const account = {
   })),
   stale: false,
   quality_score: 91,
+  score_breakdown: { cost: 12, success: 43.5, ttft: 18, latency: 17.5 },
+  evidence_source: 'monitor_probe',
+  homepage_url: 'https://upstream.example.com/v1',
   group_rank: 1,
   eligible: true,
 }
@@ -178,6 +181,7 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="rank-metric"]').text()).toContain('第 1')
     expect(wrapper.get('[data-test="priority-control"]').text()).toContain('1')
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('98.6%')
+    expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('71 / 72 次主动探测成功')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('1018 ms')
     expect(wrapper.get('[data-test="latency-metric"]').text()).toContain('1962 ms')
     expect(wrapper.get('[data-test="cost-metric"]').text()).toContain('成本待确认')
@@ -186,6 +190,19 @@ describe('AccountMonitorCard', () => {
     for (const label of ['分组倍率', '营收', '利润', '对账', '账务', '上游真实扣费', '用户实际计费']) {
       expect(wrapper.text()).not.toContain(label)
     }
+  })
+
+  it('uses probe evidence wording, links the account homepage, and exposes score composition', () => {
+    const wrapper = mountCard()
+    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('基于 72 次主动探测')
+    expect(wrapper.get('[data-test="account-homepage-link"]').attributes()).toMatchObject({ href: 'https://upstream.example.com/v1', target: '_blank', rel: 'noopener noreferrer' })
+    expect(wrapper.get('[data-test="score-metric"]').attributes('title')).toContain('成本优势 12.0')
+    expect(wrapper.get('[data-test="score-metric"]').attributes('title')).toContain('探测成功率 43.5')
+  })
+
+  it('marks manually maintained cost with a warning and explains its source', () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
+    expect(wrapper.get('[data-test="manual-cost-warning"]').attributes('title')).toContain('手工维护')
   })
 
   it('restores the rejected V3 green service card shell, five colored metrics, probe bars, and service-only footer', async () => {

@@ -225,7 +225,10 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context
 	if s == nil || event.AccountID <= 0 || normalizeOpenAIAccountModelTransientModel(event.CanonicalModel) == "" {
 		return decision
 	}
-	if !transientFailureStatus(event.StatusCode) && !strings.Contains(strings.ToLower(event.ErrorType), "transient") {
+	if event.StatusCode != 0 && !transientFailureStatus(event.StatusCode) {
+		return decision
+	}
+	if event.StatusCode == 0 && !strings.Contains(strings.ToLower(event.ErrorType), "transient") {
 		return decision
 	}
 	now := event.Now
@@ -257,7 +260,14 @@ func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID 
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	entry, exists := state.entries[key]
-	if !exists || (!entry.blockUntil.IsZero() && now.Before(entry.blockUntil)) || entry.halfOpenInFlight {
+	if !exists {
+		return false
+	}
+	if !entry.lastFailure.IsZero() && (now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow || now.Before(entry.lastFailure)) {
+		delete(state.entries, key)
+		return false
+	}
+	if entry.blockUntil.IsZero() || now.Before(entry.blockUntil) || entry.halfOpenInFlight {
 		return false
 	}
 	entry.halfOpenInFlight = true

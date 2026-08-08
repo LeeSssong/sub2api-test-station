@@ -152,8 +152,23 @@ func TestOpenAIModelTransient_RuntimeDecisionAndHalfOpen(t *testing.T) {
 func TestOpenAIModelTransient_HardFailureDoesNotMutate(t *testing.T) {
 	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
 	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
-	d := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 401, Now: now})
-	assert.True(t, d.ExcludeFromRequest)
-	assert.Zero(t, d.FailureStreak)
+	for _, status := range []int{400, 401, 402, 403, 404} {
+		d := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: status, ErrorType: "transient", Now: now})
+		assert.True(t, d.ExcludeFromRequest)
+		assert.Zero(t, d.FailureStreak)
+	}
 	assert.False(t, svc.isOpenAIAccountModelRuntimeBlocked(&Account{ID: 35}, "gpt-5.5"))
+}
+
+func TestOpenAIModelTransient_HalfOpenFailureExtendsCooldown(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
+	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 502, Now: now})
+	svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 502, Now: now.Add(time.Second)})
+	expired := now.Add(11 * time.Second)
+	require.True(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", expired))
+	svc.ReleaseOpenAIAccountModelHalfOpenProbe(35, "gpt-5.5", false, expired)
+	snap := svc.SnapshotOpenAIAccountModelRuntime(expired)
+	require.Len(t, snap, 1)
+	assert.Equal(t, expired.Add(openAIModelTransientShortCooldown), snap[0].BlockUntil)
 }

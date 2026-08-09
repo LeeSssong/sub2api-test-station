@@ -21,10 +21,11 @@ import (
 
 // UsageHandler handles admin usage-related requests
 type UsageHandler struct {
-	usageService   *service.UsageService
-	apiKeyService  *service.APIKeyService
-	adminService   service.AdminService
-	cleanupService *service.UsageCleanupService
+	usageService        *service.UsageService
+	apiKeyService       *service.APIKeyService
+	adminService        service.AdminService
+	cleanupService      *service.UsageCleanupService
+	upstreamCostService *service.SubUpstreamCostService
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -33,13 +34,36 @@ func NewUsageHandler(
 	apiKeyService *service.APIKeyService,
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
+	upstreamCostService *service.SubUpstreamCostService,
 ) *UsageHandler {
 	return &UsageHandler{
-		usageService:   usageService,
-		apiKeyService:  apiKeyService,
-		adminService:   adminService,
-		cleanupService: cleanupService,
+		usageService:        usageService,
+		apiKeyService:       apiKeyService,
+		adminService:        adminService,
+		cleanupService:      cleanupService,
+		upstreamCostService: upstreamCostService,
 	}
+}
+
+// GetUpstreamCost compares the local actual charge with the exact upstream
+// Sub actual_cost for one administrator usage row.
+// GET /api/v1/admin/usage/:id/upstream-cost
+func (h *UsageHandler) GetUpstreamCost(c *gin.Context) {
+	usageID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || usageID <= 0 {
+		response.BadRequest(c, "Invalid usage ID")
+		return
+	}
+	if h.upstreamCostService == nil {
+		response.InternalError(c, "upstream cost service unavailable")
+		return
+	}
+	detail, err := h.upstreamCostService.GetByUsageID(c.Request.Context(), usageID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, detail)
 }
 
 // CreateUsageCleanupTaskRequest represents cleanup task creation request

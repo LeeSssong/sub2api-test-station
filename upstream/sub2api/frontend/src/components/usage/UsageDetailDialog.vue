@@ -56,13 +56,13 @@
             emphasized
           />
           <DetailItem
-            :label="t('admin.usageCostDetail.includedCost')"
-            :value="includedCostValue"
+            :label="t('admin.usageCostDetail.upstreamActualCost')"
+            :value="upstreamActualCostValue"
             numeric
           />
           <DetailItem
-            :label="grossMarginSummaryLabel"
-            :value="grossMarginValue"
+            :label="t('admin.usageCostDetail.profit')"
+            :value="profitValue"
             numeric
             emphasized
           />
@@ -270,63 +270,9 @@
           </h4>
           <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             <DetailItem
-              :label="t('admin.usageCostDetail.siteRequestId')"
-              :value="displayValue(adminDetail.request_id)"
-              mono
-            />
-            <DetailItem
               :label="t('admin.usageCostDetail.upstreamRequestId')"
               :value="displayValue(adminUpstreamRequestId)"
               mono
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.siteStandardCost')"
-              :value="formatCost(adminDetail.total_cost)"
-              numeric
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.siteActualCost')"
-              :value="formatCost(adminDetail.actual_cost)"
-              numeric
-              emphasized
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.upstreamActualCost')"
-              :value="upstreamActualCostValue"
-              numeric
-            />
-            <div class="min-w-0">
-              <dt :class="labelClass">{{ t('admin.usageCostDetail.costSource') }}</dt>
-              <dd :class="[valueClass, 'flex flex-wrap items-center gap-2']">
-                <span>{{ costSourceLabel }}</span>
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="costEvidenceBadgeClass"
-                >
-                  {{ costEvidenceLabel }}
-                </span>
-              </dd>
-            </div>
-            <DetailItem
-              :label="t('admin.usageCostDetail.siteGroupMultiplier')"
-              :value="`${formatMultiplier(adminDetail.rate_multiplier ?? 1)}x`"
-              numeric
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.upstreamMultiplier')"
-              :value="`${formatMultiplier(adminDetail.account_rate_multiplier ?? 1)}x`"
-              numeric
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.includedCost')"
-              :value="includedCostValue"
-              numeric
-              emphasized
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.grossMarginStatus')"
-              :value="grossMarginStatusValue"
-              numeric
             />
             <DetailItem
               v-if="adminDetail.account"
@@ -394,11 +340,9 @@ import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
   confirmedUpstreamActualCost,
+  confirmedProfit,
   effectivePerMillion,
-  grossMargin,
   hasAdminUsageFields,
-  includedUpstreamCost,
-  usageCostEvidenceState,
   type UsageDetailScope,
 } from './usageDetail'
 
@@ -461,59 +405,16 @@ const adminDetail = computed<AdminUsageLog | null>(() => {
   return detail.value
 })
 
-const costEvidenceState = computed(() => usageCostEvidenceState(adminCostDetail.value))
 const confirmedActualCost = computed(() => confirmedUpstreamActualCost(adminCostDetail.value))
-const includedCost = computed(() => includedUpstreamCost(adminCostDetail.value))
-const margin = computed(() => grossMargin(adminDetail.value?.actual_cost, adminCostDetail.value))
+const confirmedProfitValue = computed(() => confirmedProfit(adminCostDetail.value))
 const adminUpstreamRequestId = computed(() => (
   adminCostDetail.value?.upstream_request_id || adminDetail.value?.upstream_request_id || null
-))
-const includedCostValue = computed(() => (
-  includedCost.value == null
-    ? t('admin.usageCostDetail.pendingReconciliation')
-    : formatCost(includedCost.value)
 ))
 const upstreamActualCostValue = computed(() => (
   confirmedActualCost.value == null ? '-' : formatCost(confirmedActualCost.value)
 ))
-const grossMarginSummaryLabel = computed(() => (
-  costEvidenceState.value === 'estimated'
-    ? t('admin.usageCostDetail.estimatedGrossMargin')
-    : t('admin.usageCostDetail.grossMargin')
-))
-const grossMarginValue = computed(() => (
-  margin.value == null
-    ? t('admin.usageCostDetail.pendingReconciliation')
-    : formatCost(margin.value)
-))
-const costEvidenceLabel = computed(() => t(`admin.usageCostDetail.${costEvidenceState.value}`))
-const costEvidenceBadgeClass = computed(() => {
-  if (costEvidenceState.value === 'confirmed') {
-    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-  }
-  if (costEvidenceState.value === 'estimated') {
-    return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
-  }
-  return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-dark-300'
-})
-const costSourceLabel = computed(() => {
-  const source = adminCostDetail.value?.cost_source?.trim()
-  const sourceKeys: Record<string, string> = {
-    '上游逐笔账单': 'nativeLedger',
-    '上游价格表推算': 'upstreamPriceTable',
-    '自购账号成本分摊': 'ownedAllocation',
-    '待对账': 'pending',
-  }
-  return source && sourceKeys[source]
-    ? t(`admin.usageCostDetail.costSources.${sourceKeys[source]}`)
-    : source || t('admin.usageCostDetail.costSources.pending')
-})
-const grossMarginStatusValue = computed(() => {
-  if (margin.value == null) return t('admin.usageCostDetail.pending')
-  const stateLabel = costEvidenceState.value === 'confirmed'
-    ? t('admin.usageCostDetail.confirmed')
-    : t('admin.usageCostDetail.estimated')
-  return `${stateLabel} · ${formatCost(margin.value)}`
+const profitValue = computed(() => {
+  return confirmedProfitValue.value == null ? '-' : formatCost(confirmedProfitValue.value)
 })
 
 const showImageDetails = computed(() => {
@@ -547,7 +448,7 @@ function clearState() {
 
 async function loadAdminCost(row: AdminUsageLog, sequence: number) {
   try {
-    const result = await adminUsageAPI.getRequestCost({ local_request_id: row.request_id })
+    const result = await adminUsageAPI.getUpstreamCost(row.id)
     if (sequence === requestSequence && props.show && props.scope === 'admin') {
       adminCostDetail.value = result ?? null
     }

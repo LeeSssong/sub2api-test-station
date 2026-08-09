@@ -1680,23 +1680,16 @@ export interface AdminUsageLog extends UsageLog {
   account?: UsageLogAccountSummary
 }
 
-export type AdminUsageCostDecimal = string | number | null
-
-/** Native upstream request-cost evidence returned by the administrator-only relay-ops endpoint. */
+/** Native upstream request-cost result returned by the administrator usage endpoint. */
 export interface AdminUsageCostDetail {
+  usage_id: number
   local_request_id: string
   upstream_request_id?: string | null
-  source_id?: string | null
-  adapter_type?: string | null
-  model?: string | null
-  prompt_tokens?: number | null
-  completion_tokens?: number | null
-  upstream_actual_cost: AdminUsageCostDecimal
-  upstream_standard_cost: AdminUsageCostDecimal
-  cost_source?: string | null
-  confidence?: string | null
-  matched_at?: string | null
-  status?: string | null
+  site_actual_cost: number
+  upstream_actual_cost: number | null
+  profit: number | null
+  status: 'confirmed' | 'unavailable' | string
+  reason?: string
 }
 
 export interface UsageCleanupFilters {

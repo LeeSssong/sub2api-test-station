@@ -31,7 +31,7 @@ func (r *adminUsageDetailRepo) GetByID(_ context.Context, id int64) (*service.Us
 func newAdminUsageDetailTestRouter(repo *adminUsageDetailRepo) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	usageService := service.NewUsageService(repo, nil, nil, nil)
-	handler := NewUsageHandler(usageService, nil, nil, nil)
+	handler := NewUsageHandler(usageService, nil, nil, nil, nil)
 	router := gin.New()
 	router.GET("/admin/usage/:id", handler.GetByID)
 	return router
@@ -137,4 +137,38 @@ func TestAdminUsageGetByIDPreservesNotFound(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
 	require.Equal(t, http.StatusNotFound, body.Code)
 	require.Equal(t, "USAGE_LOG_NOT_FOUND", body.Reason)
+}
+
+func TestAdminUsageGetUpstreamCostReturnsComparison(t *testing.T) {
+	repo := &adminUsageDetailRepo{record: &service.UsageLog{
+		ID: 42, RequestID: "local-req", ActualCost: 0.00688,
+		Account: &service.Account{Credentials: map[string]any{}},
+	}}
+	usageService := service.NewUsageService(repo, nil, nil, nil)
+	upstreamCostService := service.NewSubUpstreamCostService(usageService)
+	handler := NewUsageHandler(usageService, nil, nil, nil, upstreamCostService)
+	router := gin.New()
+	router.GET("/admin/usage/:id/upstream-cost", handler.GetUpstreamCost)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/usage/42/upstream-cost", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var body struct {
+		Code int                           `json:"code"`
+		Data service.SubUpstreamCostDetail `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Equal(t, 0, body.Code)
+	require.Equal(t, int64(42), body.Data.UsageID)
+	require.Equal(t, "unavailable", body.Data.Status)
+}
+
+func TestAdminUsageGetUpstreamCostRejectsInvalidID(t *testing.T) {
+	handler := NewUsageHandler(nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.GET("/admin/usage/:id/upstream-cost", handler.GetUpstreamCost)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/usage/not-an-id/upstream-cost", nil))
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
 }

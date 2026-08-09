@@ -46,6 +46,7 @@ export default {
     siteStandardCost: '本站标准费用',
     siteActualCost: '本站实际扣费',
     upstreamActualCost: '上游实际扣费',
+    profit: '利润',
     costSource: '成本依据',
     siteGroupMultiplier: '本站分组倍率',
     upstreamMultiplier: '上游倍率',

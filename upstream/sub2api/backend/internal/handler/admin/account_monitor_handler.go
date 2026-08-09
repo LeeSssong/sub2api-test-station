@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -18,10 +20,27 @@ type AccountMonitorHandler struct {
 	runner             *service.AccountMonitorRunner
 	accountRepo        AccountMonitorConcurrencyAccountRepository
 	concurrencyService *service.ConcurrencyService
+	runtimeService     accountModelRuntimeService
+}
+
+type accountModelRuntimeService interface {
+	SnapshotOpenAIAccountModelRuntime(time.Time) []service.OpenAIAccountModelRuntimeSnapshot
+	ImmediatelyCooldownAccountModel(context.Context, int64, string, time.Duration, time.Time) (service.OpenAIAccountModelRuntimeSnapshot, error)
+	RestoreAccountModelScheduling(context.Context, int64, string) error
+	ProbeAccountModelOnce(context.Context, int64, string, time.Time) (bool, error)
+	ReleaseOpenAIAccountModelHalfOpenProbe(int64, string, bool, time.Time)
 }
 
 type AccountMonitorConcurrencyAccountRepository interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]*service.Account, error)
+}
+
+// SetOpenAIGatewayService attaches the existing gateway runtime owner without
+// creating a parallel account-model state store in the admin surface.
+func (h *AccountMonitorHandler) SetOpenAIGatewayService(runtime accountModelRuntimeService) {
+	if h != nil {
+		h.runtimeService = runtime
+	}
 }
 
 func NewAccountMonitorHandler(
@@ -39,6 +58,7 @@ func NewAccountMonitorHandler(
 }
 
 const accountMonitorConcurrencyMaxUniqueIDs = 200
+const accountModelRuntimeMaxCooldownSeconds = 3600
 
 type accountMonitorConcurrencyRequest struct {
 	AccountIDs []int64 `json:"account_ids"`
@@ -60,6 +80,16 @@ type accountMonitorSettingsRequest struct {
 
 type accountMonitorHistoryResponse struct {
 	Items []dto.AccountMonitorHistoryItem `json:"items"`
+}
+
+type accountModelRuntimeActionRequest struct {
+	AccountID                int64  `json:"account_id" binding:"required"`
+	CanonicalSchedulingModel string `json:"canonical_scheduling_model" binding:"required"`
+	CooldownSeconds          int    `json:"cooldown_seconds"`
+}
+
+type accountModelRuntimeResponse struct {
+	Items []dto.AccountModelRuntimeItem `json:"items"`
 }
 
 type accountMonitorScoreWeightsRequest struct {
@@ -85,6 +115,101 @@ func (h *AccountMonitorHandler) List(c *gin.Context) {
 		return
 	}
 	response.Success(c, page)
+}
+
+func (h *AccountMonitorHandler) ListAccountModelRuntime(c *gin.Context) {
+	if h == nil || h.runtimeService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_RUNTIME_UNAVAILABLE", "OpenAI account model runtime is unavailable"))
+		return
+	}
+	response.Success(c, accountModelRuntimeResponse{Items: accountModelRuntimeDTOs(h.runtimeService.SnapshotOpenAIAccountModelRuntime(time.Now().UTC()))})
+}
+
+func (h *AccountMonitorHandler) ImmediatelyCooldownAccountModel(c *gin.Context) {
+	var req accountModelRuntimeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.AccountID <= 0 || strings.TrimSpace(req.CanonicalSchedulingModel) == "" || req.CooldownSeconds <= 0 || req.CooldownSeconds > accountModelRuntimeMaxCooldownSeconds {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_RUNTIME_ACTION", "account_id, canonical_scheduling_model and cooldown_seconds are required"))
+		return
+	}
+	if h == nil || h.runtimeService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_RUNTIME_UNAVAILABLE", "OpenAI account model runtime is unavailable"))
+		return
+	}
+	item, err := h.runtimeService.ImmediatelyCooldownAccountModel(c.Request.Context(), req.AccountID, req.CanonicalSchedulingModel, time.Duration(req.CooldownSeconds)*time.Second, time.Now().UTC())
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_MODEL_RUNTIME_ACTION_FAILED", err.Error()))
+		return
+	}
+	response.Success(c, accountModelRuntimeItemDTO(item))
+}
+
+func (h *AccountMonitorHandler) RestoreAccountModelScheduling(c *gin.Context) {
+	var req accountModelRuntimeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.AccountID <= 0 || strings.TrimSpace(req.CanonicalSchedulingModel) == "" {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_RUNTIME_ACTION", "account_id and canonical_scheduling_model are required"))
+		return
+	}
+	if h == nil || h.runtimeService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_RUNTIME_UNAVAILABLE", "OpenAI account model runtime is unavailable"))
+		return
+	}
+	if err := h.runtimeService.RestoreAccountModelScheduling(c.Request.Context(), req.AccountID, req.CanonicalSchedulingModel); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_MODEL_RUNTIME_ACTION_FAILED", err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"restored": true})
+}
+
+func (h *AccountMonitorHandler) ProbeAccountModelOnce(c *gin.Context) {
+	var req accountModelRuntimeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.AccountID <= 0 || strings.TrimSpace(req.CanonicalSchedulingModel) == "" {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_RUNTIME_ACTION", "account_id and canonical_scheduling_model are required"))
+		return
+	}
+	if h == nil || h.runtimeService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_RUNTIME_UNAVAILABLE", "OpenAI account model runtime is unavailable"))
+		return
+	}
+	pending, err := h.runtimeService.ProbeAccountModelOnce(c.Request.Context(), req.AccountID, req.CanonicalSchedulingModel, time.Now().UTC())
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_MODEL_RUNTIME_ACTION_FAILED", err.Error()))
+		return
+	}
+	if !pending {
+		response.Success(c, gin.H{"pending": false, "probed": false})
+		return
+	}
+	if h.monitorService == nil {
+		h.runtimeService.ReleaseOpenAIAccountModelHalfOpenProbe(req.AccountID, req.CanonicalSchedulingModel, false, time.Now().UTC())
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_PROBE_UNAVAILABLE", "account monitor probe is unavailable"))
+		return
+	}
+	success, probeErr := h.monitorService.ProbeOpenAIAccountModel(c.Request.Context(), req.AccountID, req.CanonicalSchedulingModel)
+	h.runtimeService.ReleaseOpenAIAccountModelHalfOpenProbe(req.AccountID, req.CanonicalSchedulingModel, success, time.Now().UTC())
+	if probeErr != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_MODEL_PROBE_FAILED", probeErr.Error()))
+		return
+	}
+	response.Success(c, gin.H{"pending": false, "probed": true, "success": success})
+}
+
+func accountModelRuntimeDTOs(snapshots []service.OpenAIAccountModelRuntimeSnapshot) []dto.AccountModelRuntimeItem {
+	items := make([]dto.AccountModelRuntimeItem, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		items = append(items, accountModelRuntimeItemDTO(snapshot))
+	}
+	return items
+}
+
+func accountModelRuntimeItemDTO(snapshot service.OpenAIAccountModelRuntimeSnapshot) dto.AccountModelRuntimeItem {
+	item := dto.AccountModelRuntimeItem{AccountID: snapshot.AccountID, CanonicalSchedulingModel: snapshot.CanonicalModel, State: snapshot.State, FailureStreak: snapshot.FailureStreak, HalfOpenInFlight: snapshot.HalfOpenInFlight, LastStatusCode: snapshot.LastStatusCode, LastErrorType: snapshot.LastErrorType, OutputStarted: snapshot.OutputStarted, StickyReferenceCount: snapshot.StickyReferenceCount}
+	if !snapshot.LastFailureAt.IsZero() {
+		item.LastFailureAt = snapshot.LastFailureAt.UTC().Format(time.RFC3339)
+	}
+	if !snapshot.BlockUntil.IsZero() {
+		item.CooldownUntil = snapshot.BlockUntil.UTC().Format(time.RFC3339)
+	}
+	return item
 }
 
 func (h *AccountMonitorHandler) Concurrency(c *gin.Context) {

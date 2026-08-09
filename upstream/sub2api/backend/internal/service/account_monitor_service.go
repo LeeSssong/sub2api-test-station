@@ -1328,6 +1328,24 @@ func (s *AccountMonitorService) RunOne(
 	return result, nil
 }
 
+// ProbeOpenAIAccountModel performs one real account-test request for the
+// supplied canonical model. It is intentionally narrow so admin recovery can
+// reuse the tested upstream transport instead of fabricating a probe result.
+func (s *AccountMonitorService) ProbeOpenAIAccountModel(ctx context.Context, accountID int64, canonicalModel string) (bool, error) {
+	if s == nil || s.testService == nil {
+		return false, fmt.Errorf("account test service is unavailable")
+	}
+	canonicalModel = strings.TrimSpace(canonicalModel)
+	if accountID <= 0 || canonicalModel == "" {
+		return false, fmt.Errorf("account_id and canonical_scheduling_model are required")
+	}
+	result, err := s.testService.RunTestBackground(ctx, accountID, canonicalModel)
+	if err != nil {
+		return false, err
+	}
+	return result != nil && result.Status == "success", nil
+}
+
 func (s *AccountMonitorService) beginRun(
 	ctx context.Context,
 	kind accountMonitorRunKind,

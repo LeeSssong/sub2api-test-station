@@ -607,7 +607,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	if s.service.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) {
-		slog.Info("openai.account_model_cooldown_skipped_for_cache",
+		RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownSkippedCache, 0, "sticky")
+		slog.Info(OpenAIEventAccountModelCooldownSkippedCache,
 			"account_id", account.ID,
 			"canonical_scheduling_model", account.GetMappedModel(req.RequestedModel),
 			"cache_preservation_mode", "sticky",
@@ -1327,7 +1328,8 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 			ReleaseFunc: result.ReleaseFunc,
 		})
 		if lease != nil {
-			slog.Info("openai.account_model_half_open_probe", "account_id", fresh.ID, "canonical_scheduling_model", lease.canonicalModel)
+			RecordOpenAIResilienceEvent(OpenAIEventAccountModelHalfOpenProbe, 0, "half_open_probe")
+			slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", fresh.ID, "canonical_scheduling_model", lease.canonicalModel, "attempt", 1, "status_code", 0, "output_started", false, "usage_produced", false, "cache_preservation_mode", "half_open_probe", "cooldown_seconds", 0, "retry_after_seconds", 0)
 			selection = attachOpenAIHalfOpenProbeLease(selection, lease)
 		}
 		return selection, compactBlocked, nil

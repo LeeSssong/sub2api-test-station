@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +29,9 @@ type openAIAccountModelTransientEntry struct {
 	blockUntil       time.Time
 	lastTouched      time.Time
 	halfOpenInFlight bool
+	lastStatusCode   int
+	lastErrorType    string
+	outputStarted    bool
 }
 
 type openAIAccountModelTransientDecision struct {
@@ -60,11 +65,17 @@ type OpenAIAccountModelRuntimeDecision struct {
 }
 
 type OpenAIAccountModelRuntimeSnapshot struct {
-	AccountID        int64
-	CanonicalModel   string
-	FailureStreak    int
-	BlockUntil       time.Time
-	HalfOpenInFlight bool
+	AccountID            int64
+	CanonicalModel       string
+	State                string
+	FailureStreak        int
+	LastFailureAt        time.Time
+	BlockUntil           time.Time
+	HalfOpenInFlight     bool
+	LastStatusCode       int
+	LastErrorType        string
+	OutputStarted        bool
+	StickyReferenceCount int
 }
 
 type openAIAccountModelTransientState struct {
@@ -147,6 +158,23 @@ func (s *openAIAccountModelTransientState) recordFailure(accountID int64, model 
 		Cooldown:      cooldown,
 		BlockUntil:    entry.blockUntil,
 	}
+}
+
+func (s *openAIAccountModelTransientState) setFailureDetails(accountID int64, model string, statusCode int, errorType string, outputStarted bool) {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, exists := s.entries[key]
+	if !exists {
+		return
+	}
+	entry.lastStatusCode = statusCode
+	entry.lastErrorType = strings.TrimSpace(errorType)
+	entry.outputStarted = outputStarted
+	s.entries[key] = entry
 }
 
 func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model string) {
@@ -261,12 +289,90 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context
 		return decision
 	}
 	raw := state.recordFailure(event.AccountID, event.CanonicalModel, now)
+	state.setFailureDetails(event.AccountID, event.CanonicalModel, event.StatusCode, event.ErrorType, event.OutputStarted)
 	decision.FailureStreak, decision.Cooldown, decision.BlockUntil = raw.FailureStreak, raw.Cooldown, raw.BlockUntil
 	decision.CurrentRequestRetry = !event.OutputStarted && event.SafeToReplay && !event.HasSideEffect && raw.FailureStreak == 1
 	if !decision.BlockUntil.IsZero() && decision.BlockUntil.After(now) {
 		decision.RetryAfterSeconds = int((decision.BlockUntil.Sub(now) + time.Second - 1) / time.Second)
 	}
+	RecordOpenAIResilienceEvent(OpenAIEventAccountModelSoftFailure, raw.FailureStreak, "")
+	slog.Info(OpenAIEventAccountModelSoftFailure,
+		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
+		"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
+		"usage_known", event.UsageKnown, "retry_after_seconds", decision.RetryAfterSeconds)
+	if decision.Cooldown > 0 {
+		RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, raw.FailureStreak, "")
+		slog.Warn(OpenAIEventAccountModelCooldownStarted,
+			"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
+			"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
+			"usage_known", event.UsageKnown, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
+	}
 	return decision
+}
+
+// ImmediatelyCooldownAccountModel records a transient-only operator cooldown.
+// It never mutates persistent account status, so a hard-disabled account remains disabled.
+func (s *OpenAIGatewayService) ImmediatelyCooldownAccountModel(_ context.Context, accountID int64, canonicalModel string, cooldown time.Duration, now time.Time) (OpenAIAccountModelRuntimeSnapshot, error) {
+	state := s.getOpenAIAccountModelTransientState()
+	key, ok := openAIAccountModelTransientKey(accountID, canonicalModel)
+	if state == nil || !ok {
+		return OpenAIAccountModelRuntimeSnapshot{}, fmt.Errorf("account_id and canonical_scheduling_model are required")
+	}
+	if cooldown <= 0 {
+		return OpenAIAccountModelRuntimeSnapshot{}, fmt.Errorf("cooldown must be positive")
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.mu.Lock()
+	entry := state.entries[key]
+	if entry.failureStreak < 2 {
+		entry.failureStreak = 2
+	}
+	entry.lastFailure = now
+	entry.lastTouched = now
+	entry.blockUntil = now.Add(cooldown)
+	entry.halfOpenInFlight = false
+	entry.lastStatusCode = 503
+	entry.lastErrorType = "admin_immediate_cooldown"
+	state.entries[key] = entry
+	state.mu.Unlock()
+	RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, entry.failureStreak, "")
+	slog.Warn(OpenAIEventAccountModelCooldownStarted, "account_id", accountID, "canonical_scheduling_model", key.Model, "attempt", entry.failureStreak, "status_code", entry.lastStatusCode, "output_started", false, "usage_known", false, "cooldown_seconds", int(cooldown.Seconds()), "retry_after_seconds", int(cooldown.Seconds()), "source", "admin")
+	return s.snapshotOpenAIAccountModelRuntime(key, now), nil
+}
+
+// RestoreAccountModelScheduling removes only the in-memory transient record.
+// Persistent hard-disable state is intentionally owned by the account restore workflow.
+func (s *OpenAIGatewayService) RestoreAccountModelScheduling(_ context.Context, accountID int64, canonicalModel string) error {
+	state := s.getOpenAIAccountModelTransientState()
+	key, ok := openAIAccountModelTransientKey(accountID, canonicalModel)
+	if state == nil || !ok {
+		return fmt.Errorf("account_id and canonical_scheduling_model are required")
+	}
+	state.recordSuccess(key.AccountID, key.Model)
+	return nil
+}
+
+// ProbeAccountModelOnce authorizes exactly one real scheduler half-open attempt.
+// It deliberately does not claim an upstream result: the request path that owns
+// the actual probe must call ReleaseOpenAIAccountModelHalfOpenProbe.
+func (s *OpenAIGatewayService) ProbeAccountModelOnce(_ context.Context, accountID int64, canonicalModel string, now time.Time) (bool, error) {
+	if !s.AcquireOpenAIAccountModelHalfOpenProbe(accountID, canonicalModel, now) {
+		return false, nil
+	}
+	RecordOpenAIResilienceEvent(OpenAIEventAccountModelHalfOpenProbe, 0, "")
+	slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", accountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(canonicalModel), "attempt", 1, "status_code", 0, "output_started", false, "usage_known", false, "state", "pending")
+	return true, nil
+}
+
+func (s *OpenAIGatewayService) snapshotOpenAIAccountModelRuntime(key openAIAccountModelKey, now time.Time) OpenAIAccountModelRuntimeSnapshot {
+	for _, snapshot := range s.SnapshotOpenAIAccountModelRuntime(now) {
+		if snapshot.AccountID == key.AccountID && snapshot.CanonicalModel == key.Model {
+			return snapshot
+		}
+	}
+	return OpenAIAccountModelRuntimeSnapshot{}
 }
 
 func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID int64, canonicalModel string, now time.Time) bool {
@@ -341,7 +447,13 @@ func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) 
 		if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow {
 			continue
 		}
-		result = append(result, OpenAIAccountModelRuntimeSnapshot{AccountID: key.AccountID, CanonicalModel: key.Model, FailureStreak: entry.failureStreak, BlockUntil: entry.blockUntil, HalfOpenInFlight: entry.halfOpenInFlight})
+		stateName := "soft_failure"
+		if entry.halfOpenInFlight {
+			stateName = "half_open"
+		} else if !entry.blockUntil.IsZero() && now.Before(entry.blockUntil) {
+			stateName = "cooldown"
+		}
+		result = append(result, OpenAIAccountModelRuntimeSnapshot{AccountID: key.AccountID, CanonicalModel: key.Model, State: stateName, FailureStreak: entry.failureStreak, LastFailureAt: entry.lastFailure, BlockUntil: entry.blockUntil, HalfOpenInFlight: entry.halfOpenInFlight, LastStatusCode: entry.lastStatusCode, LastErrorType: entry.lastErrorType, OutputStarted: entry.outputStarted, StickyReferenceCount: 0})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].AccountID != result[j].AccountID {

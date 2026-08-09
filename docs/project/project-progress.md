@@ -2,6 +2,8 @@
 
 **更新时间：** 2026-08-08
 
+**本轮登记（2026-08-09）：** 上游故障缓存感知恢复 Task 5（客户恢复合同、管理员账号模型运行态处置、结构化观测与告警输入），工作区 `codex/upstream-resilience-implementation@2379d8a16`；已盘点全部非 `main` worktree 与其提交/状态，`codex/image-account-fixed-cost` 和 `codex/resend-email-configuration` 保留各自既有工作区，当前任务严格基于获批的 Task 4 基线实施。本地实现与专项测试已完成，待独立审查、合并、推送、部署及线上验证。状态：进行中。
+
 **本轮登记（2026-08-08）：** 上游故障的缓存感知调度与流式恢复，状态：进行中（用户已确认设计规格与实施计划；当前进入逐任务实现、独立审查、受控蓝绿部署和线上验证。在完成“已推送到服务端 + 已部署 + 已验证生效”前不得标记完成）。
 
 **本轮推进（2026-08-09）：** Task 3 review fix round 5 已完成本地实现、专项验证与独立复审；`openai_advanced_scheduler_enabled=false` 时的 all-cooldown half-open fallback 已确认复用完整常规资格、freshness、DB recheck、并发槽和利润终检链，且维持单租约、无 WaitPlan、幂等完成/释放。Task 4 首轮独立审查发现 unknown usage 占用扣费幂等键、unknown 非零 token 仍可能扣费，以及 attempt/reconciliation 字段未持久化；当前处于修复轮次，正在补齐无扣费审计分支、usage-log 迁移/读写链和真实仓储集成验证。状态保持进行中；尚未推送、部署或线上验证。

@@ -782,6 +782,10 @@ func registerAccountMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 		monitors.GET("/groups/:group_id/score-weights", h.Admin.AccountMonitor.GetGroupScoreWeights)
 		monitors.PUT("/groups/:group_id/score-weights", gin.HandlerFunc(stepUpAuth), h.Admin.AccountMonitor.UpdateGroupScoreWeights)
 		monitors.DELETE("/groups/:group_id/score-weights", gin.HandlerFunc(stepUpAuth), h.Admin.AccountMonitor.ResetGroupScoreWeights)
+		monitors.GET("/runtime", h.Admin.AccountMonitor.ListAccountModelRuntime)
+		monitors.POST("/runtime/cooldown", h.Admin.AccountMonitor.ImmediatelyCooldownAccountModel)
+		monitors.POST("/runtime/restore", h.Admin.AccountMonitor.RestoreAccountModelScheduling)
+		monitors.POST("/runtime/probe", h.Admin.AccountMonitor.ProbeAccountModelOnce)
 	}
 }
 

@@ -28,6 +28,10 @@ was recorded.
 - Dashboard session: unavailable. The in-app browser had no existing Resend
   tab, and a new read-only navigation to the Resend overview did not leave
   `about:blank` before the bounded timeout.
+- Chrome fallback: the Chrome browser family and extension were available, but
+  read-only navigation to `https://resend.com/overview` timed out before any
+  visible page or authentication state loaded. No Chrome session state was
+  inferred.
 - Active plan: **not verified**.
 - Paid add-ons/card attachment/dedicated IP: **not verified**.
 - Monthly and daily limits, current usage, bounce/complaint warnings, and
@@ -80,5 +84,7 @@ dashboard check captures those facts and current quota/health status.
 
 - Read-only DNS queries executed on 2026-08-09 for NS, root MX/SPF/DMARC,
   `resend._domainkey`, and `send` SPF/MX.
+- Read-only Chrome fallback attempted on 2026-08-09; navigation timed out
+  before a visible Resend page loaded.
 - No screenshot was retained because the dashboard could not be reached.
 - No production mutation was performed.

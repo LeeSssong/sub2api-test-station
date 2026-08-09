@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminUsageLog, UsageLog } from '@/types'
 import {
-  confirmedUpstreamActualCost,
   effectivePerMillion,
-  grossMargin,
   hasAdminUsageFields,
-  includedUpstreamCost,
-  usageCostEvidenceState,
+  confirmedUpstreamActualCost,
+  confirmedProfit,
 } from '../usageDetail'
 
 describe('usage detail projections', () => {
@@ -32,54 +30,47 @@ describe('usage detail projections', () => {
     expect(hasAdminUsageFields({ id: 42, channel_id: 7 } as AdminUsageLog)).toBe(true)
   })
 
-  it('uses native actual cost for confirmed evidence without substituting the estimate', () => {
+  it('uses confirmed native actual cost and backend profit without client-side estimation', () => {
     const evidence = {
       upstream_actual_cost: '0.004',
-      upstream_standard_cost: '9.5',
-      confidence: 'confirmed',
+      profit: '0.00288',
+      status: 'confirmed',
     }
 
-    expect(usageCostEvidenceState(evidence)).toBe('confirmed')
     expect(confirmedUpstreamActualCost(evidence)).toBe(0.004)
-    expect(includedUpstreamCost(evidence)).toBe(0.004)
-    expect(grossMargin(0.00688, evidence)).toBeCloseTo(0.00288)
+    expect(confirmedProfit(evidence)).toBe(0.00288)
   })
 
-  it('uses upstream standard cost only for explicitly estimated evidence', () => {
+  it('accepts a confirmed zero upstream cost as real data', () => {
     const evidence = {
       upstream_actual_cost: '0',
-      upstream_standard_cost: '0.0045',
-      confidence: 'estimated',
+      profit: '0.00688',
+      status: 'confirmed',
     }
 
-    expect(usageCostEvidenceState(evidence)).toBe('estimated')
-    expect(confirmedUpstreamActualCost(evidence)).toBeNull()
-    expect(includedUpstreamCost(evidence)).toBe(0.0045)
-    expect(grossMargin(0.00688, evidence)).toBeCloseTo(0.00238)
+    expect(confirmedUpstreamActualCost(evidence)).toBe(0)
+    expect(confirmedProfit(evidence)).toBe(0.00688)
   })
 
-  it('uses owned-account allocation as estimated included cost', () => {
+  it('returns null for unavailable or malformed backend cost results', () => {
+    expect(confirmedUpstreamActualCost({ upstream_actual_cost: null, profit: null, status: 'unavailable' })).toBeNull()
+    expect(confirmedProfit({ upstream_actual_cost: null, profit: null, status: 'unavailable' })).toBeNull()
+    expect(confirmedUpstreamActualCost({ upstream_actual_cost: 'not-a-number', profit: '0.1', status: 'confirmed' })).toBeNull()
+    expect(confirmedProfit({ upstream_actual_cost: 'not-a-number', profit: '0.1', status: 'confirmed' })).toBeNull()
+    expect(confirmedUpstreamActualCost({ upstream_actual_cost: '0.004', profit: 'not-a-number', status: 'confirmed' })).toBe(0.004)
+    expect(confirmedProfit({ upstream_actual_cost: '0.004', profit: 'not-a-number', status: 'confirmed' })).toBeNull()
+    expect(confirmedUpstreamActualCost({ upstream_actual_cost: '0.004', profit: '0.1', status: 'matched' })).toBeNull()
+    expect(confirmedProfit({ upstream_actual_cost: '0.004', profit: '0.1', status: 'matched' })).toBeNull()
+  })
+
+  it('keeps upstream actual cost visible when backend profit is missing', () => {
     const evidence = {
-      upstream_actual_cost: '0',
-      upstream_standard_cost: '0.0032',
-      confidence: 'estimated',
+      upstream_actual_cost: '0.0032',
+      profit: null,
+      status: 'confirmed',
     }
 
-    expect(usageCostEvidenceState(evidence)).toBe('estimated')
-    expect(confirmedUpstreamActualCost(evidence)).toBeNull()
-    expect(includedUpstreamCost(evidence)).toBe(0.0032)
-    expect(grossMargin(0.00688, evidence)).toBeCloseTo(0.00368)
-  })
-
-  it('keeps unconfirmed or malformed cost evidence pending', () => {
-    for (const evidence of [
-      { upstream_actual_cost: null, upstream_standard_cost: null, confidence: 'pending' },
-      { upstream_actual_cost: 'not-a-number', upstream_standard_cost: '0.0045', confidence: 'confirmed' },
-      { upstream_actual_cost: '0.004', upstream_standard_cost: 'not-a-number', confidence: 'estimated' },
-    ]) {
-      expect(usageCostEvidenceState(evidence)).toBe('pending')
-      expect(includedUpstreamCost(evidence)).toBeNull()
-      expect(grossMargin(0.00688, evidence)).toBeNull()
-    }
+    expect(confirmedUpstreamActualCost(evidence)).toBe(0.0032)
+    expect(confirmedProfit(evidence)).toBeNull()
   })
 })

@@ -46,6 +46,7 @@ export default {
     siteStandardCost: 'Site Standard Cost',
     siteActualCost: 'Site Actual Charge',
     upstreamActualCost: 'Upstream Actual Charge',
+    profit: 'Profit',
     costSource: 'Cost Evidence',
     siteGroupMultiplier: 'Site Group Multiplier',
     upstreamMultiplier: 'Upstream Multiplier',

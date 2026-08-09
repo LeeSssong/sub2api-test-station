@@ -3,9 +3,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminUsageLog, UserUsageDetail } from '@/types'
 
-const { adminGetById, adminGetRequestCost, copyToClipboard, userGetById } = vi.hoisted(() => ({
+const { adminGetById, adminGetUpstreamCost, copyToClipboard, userGetById } = vi.hoisted(() => ({
   adminGetById: vi.fn(),
-  adminGetRequestCost: vi.fn(),
+  adminGetUpstreamCost: vi.fn(),
   copyToClipboard: vi.fn().mockResolvedValue(true),
   userGetById: vi.fn(),
 }))
@@ -34,7 +34,7 @@ vi.mock('@/api/usage', () => ({
 vi.mock('@/api/admin/usage', () => ({
   adminUsageAPI: {
     getById: adminGetById,
-    getRequestCost: adminGetRequestCost,
+    getUpstreamCost: adminGetUpstreamCost,
   },
 }))
 
@@ -135,21 +135,6 @@ const adminRecord: AdminUsageLog = {
   },
 }
 
-const confirmedCost = {
-  local_request_id: 'req-admin-42',
-  upstream_request_id: 'upstream-req-42',
-  source_id: 'native-charge-42',
-  adapter_type: 'sub2api',
-  model: 'claude-sonnet-4-20250514',
-  prompt_tokens: 1000,
-  completion_tokens: 250,
-  upstream_actual_cost: '0.004000',
-  upstream_standard_cost: '0',
-  cost_source: '上游逐笔账单',
-  confidence: 'confirmed',
-  status: 'matched',
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -195,7 +180,7 @@ function usageDetailMessages(locale: unknown): Record<string, string> {
 describe('UsageDetailDialog', () => {
   beforeEach(() => {
     adminGetById.mockReset()
-    adminGetRequestCost.mockReset()
+    adminGetUpstreamCost.mockReset()
     copyToClipboard.mockReset().mockResolvedValue(true)
     userGetById.mockReset()
   })
@@ -208,7 +193,7 @@ describe('UsageDetailDialog', () => {
 
     expect(userGetById).toHaveBeenCalledWith(42)
     expect(adminGetById).not.toHaveBeenCalled()
-    expect(adminGetRequestCost).not.toHaveBeenCalled()
+    expect(adminGetUpstreamCost).not.toHaveBeenCalled()
   })
 
   it('uses only the administrator endpoint in admin scope', async () => {
@@ -314,111 +299,90 @@ describe('UsageDetailDialog', () => {
     expect(valueForLabel(wrapper, 'usage.detail.modelMappingChain'))
       .toBe('sonnet-latest -> claude-sonnet-4-20250514')
     expect(valueForLabel(wrapper, 'usage.detail.billingTier')).toBe('premium')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamMultiplier')).toBe('0.25x')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost'))
-      .toBe('admin.usageCostDetail.pendingReconciliation')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
   })
 
   it('renders confirmed native cost evidence and confirmed gross margin for administrators', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: 'upstream-req-42' })
-    adminGetRequestCost.mockResolvedValue(confirmedCost)
+    adminGetUpstreamCost.mockResolvedValue({
+      usage_id: 42,
+      local_request_id: 'req-admin-42',
+      upstream_request_id: 'upstream-req-42',
+      site_actual_cost: 0.00688,
+      upstream_actual_cost: 0.004,
+      profit: 0.00288,
+      status: 'confirmed',
+    })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(adminGetRequestCost).toHaveBeenCalledWith({ local_request_id: 'req-admin-42' })
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteRequestId')).toBe('req-admin-42')
+    expect(adminGetUpstreamCost).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('upstream-req-42')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteStandardCost')).toBe('$0.008600')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteActualCost')).toBe('$0.006880')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource'))
-      .toContain('admin.usageCostDetail.costSources.nativeLedger')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost')).toBe('$0.004000')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.grossMargin')).toBe('$0.002880')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.confirmed')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.002880')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.siteRequestId')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.costSource')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.includedCost')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.grossMarginStatus')
   })
 
   it('labels price-table cost and gross margin as estimated', async () => {
     adminGetById.mockResolvedValue(adminRecord)
-    adminGetRequestCost.mockResolvedValue({
-      ...confirmedCost,
+    adminGetUpstreamCost.mockResolvedValue({
+      usage_id: 42,
+      local_request_id: 'req-admin-42',
       upstream_request_id: null,
-      upstream_actual_cost: '0',
-      upstream_standard_cost: '0.004500',
-      cost_source: '上游价格表推算',
-      confidence: 'estimated',
-      status: 'pending',
-    })
-
-    const wrapper = mountDialog({ scope: 'admin' })
-    await flushPromises()
-
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost')).toBe('$0.004500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.estimatedGrossMargin')).toBe('$0.002380')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.estimated')
-  })
-
-  it('renders owned-account allocation from estimated standard cost', async () => {
-    adminGetById.mockResolvedValue(adminRecord)
-    adminGetRequestCost.mockResolvedValue({
-      ...confirmedCost,
-      upstream_request_id: null,
-      upstream_actual_cost: '0',
-      upstream_standard_cost: '0.003200',
-      cost_source: '自购账号成本分摊',
-      confidence: 'estimated',
-      status: 'manual',
+      site_actual_cost: 0.00688,
+      upstream_actual_cost: null,
+      profit: null,
+      status: 'unavailable',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost')).toBe('$0.003200')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.estimatedGrossMargin')).toBe('$0.003680')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource'))
-      .toContain('admin.usageCostDetail.costSources.ownedAllocation')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.estimated')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
   })
 
   it('keeps cost and margin pending when native evidence is unavailable', async () => {
     adminGetById.mockResolvedValue(adminRecord)
-    adminGetRequestCost.mockResolvedValue({
-      ...confirmedCost,
+    adminGetUpstreamCost.mockResolvedValue({
+      usage_id: 42,
+      local_request_id: 'req-admin-42',
       upstream_request_id: null,
+      site_actual_cost: 0.00688,
       upstream_actual_cost: null,
-      upstream_standard_cost: null,
-      cost_source: '待对账',
-      confidence: 'pending',
-      status: 'pending',
+      profit: null,
+      status: 'unavailable',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.includedCost')).toBe('admin.usageCostDetail.pendingReconciliation')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.grossMargin')).toBe('admin.usageCostDetail.pendingReconciliation')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.pending')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
   })
 
   it('shows a placeholder for a missing upstream request ID while querying by local ID', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: null })
-    adminGetRequestCost.mockResolvedValue({
-      ...confirmedCost,
+    adminGetUpstreamCost.mockResolvedValue({
+      usage_id: 42,
+      local_request_id: 'req-admin-42',
       upstream_request_id: null,
+      site_actual_cost: 0.00688,
       upstream_actual_cost: null,
-      upstream_standard_cost: null,
-      cost_source: '待对账',
-      confidence: 'pending',
-      status: 'pending',
+      profit: null,
+      status: 'unavailable',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(adminGetRequestCost).toHaveBeenCalledWith({ local_request_id: 'req-admin-42' })
+    expect(adminGetUpstreamCost).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('-')
   })
 
@@ -570,8 +534,8 @@ describe('UsageDetailDialog', () => {
     const zh = (zhAdmin as { usageCostDetail: Record<string, string> }).usageCostDetail
 
     expect(en.siteActualCost).toBe('Site Actual Charge')
-    expect(en.estimatedGrossMargin).toBe('Estimated Gross Margin')
+    expect(en.profit).toBe('Profit')
     expect(zh.siteActualCost).toBe('本站实际扣费')
-    expect(zh.estimatedGrossMargin).toBe('预计毛利')
+    expect(zh.profit).toBe('利润')
   })
 })

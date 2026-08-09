@@ -1,4 +1,4 @@
-import type { AdminUsageCostDetail, AdminUsageCostDecimal, AdminUsageLog, UsageLog, UserUsageDetail } from '@/types'
+import type { AdminUsageCostDetail, AdminUsageLog, UsageLog, UserUsageDetail } from '@/types'
 
 export type UsageDetailScope = 'user' | 'admin'
 
@@ -28,53 +28,22 @@ export function hasAdminUsageFields(row: UsageLog | UserUsageDetail | AdminUsage
   return adminUsageFields.some((field) => Object.prototype.hasOwnProperty.call(row, field))
 }
 
-export type UsageCostEvidenceState = 'confirmed' | 'estimated' | 'pending'
-
-type UsageCostEvidence = Pick<
-  AdminUsageCostDetail,
-  'confidence' | 'upstream_actual_cost' | 'upstream_standard_cost'
->
-
-function finiteCost(value: AdminUsageCostDecimal | undefined): number | null {
-  if (value == null || value === '') return null
-  const numeric = typeof value === 'number' ? value : Number(value)
+function finiteCost(value: number | null | undefined): number | null {
+  if (value == null) return null
+  const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : null
 }
 
-export function usageCostEvidenceState(
-  evidence: UsageCostEvidence | null | undefined,
-): UsageCostEvidenceState {
-  if (evidence?.confidence === 'confirmed' && finiteCost(evidence.upstream_actual_cost) != null) {
-    return 'confirmed'
-  }
-  if (evidence?.confidence === 'estimated' && finiteCost(evidence.upstream_standard_cost) != null) {
-    return 'estimated'
-  }
-  return 'pending'
-}
-
 export function confirmedUpstreamActualCost(
-  evidence: UsageCostEvidence | null | undefined,
+  evidence: Pick<AdminUsageCostDetail, 'status' | 'upstream_actual_cost' | 'profit'> | null | undefined,
 ): number | null {
-  return usageCostEvidenceState(evidence) === 'confirmed'
-    ? finiteCost(evidence?.upstream_actual_cost)
-    : null
+  return evidence?.status === 'confirmed' ? finiteCost(evidence.upstream_actual_cost) : null
 }
 
-export function includedUpstreamCost(
-  evidence: UsageCostEvidence | null | undefined,
+export function confirmedProfit(
+  evidence: Pick<AdminUsageCostDetail, 'status' | 'profit' | 'upstream_actual_cost'> | null | undefined,
 ): number | null {
-  const state = usageCostEvidenceState(evidence)
-  if (state === 'confirmed') return finiteCost(evidence?.upstream_actual_cost)
-  if (state === 'estimated') return finiteCost(evidence?.upstream_standard_cost)
-  return null
-}
-
-export function grossMargin(
-  siteActualCost: number | null | undefined,
-  evidence: UsageCostEvidence | null | undefined,
-): number | null {
-  if (!Number.isFinite(siteActualCost)) return null
-  const includedCost = includedUpstreamCost(evidence)
-  return includedCost == null ? null : (siteActualCost as number) - includedCost
+  if (evidence?.status !== 'confirmed') return null
+  const upstreamCost = finiteCost(evidence.upstream_actual_cost)
+  return upstreamCost == null ? null : finiteCost(evidence.profit)
 }

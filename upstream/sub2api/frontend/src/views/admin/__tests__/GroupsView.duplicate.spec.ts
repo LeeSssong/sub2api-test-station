@@ -7,6 +7,8 @@ import GroupsView from '@/views/admin/GroupsView.vue'
 
 const {
   listGroups,
+  createGroup,
+  updateGroup,
   duplicateGroup,
   getModelsListCandidates,
   getUsageSummary,
@@ -16,6 +18,8 @@ const {
   showError
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
+  createGroup: vi.fn(),
+  updateGroup: vi.fn(),
   duplicateGroup: vi.fn(),
   getModelsListCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
@@ -35,8 +39,8 @@ vi.mock('@/api/admin', () => ({
       getCapacitySummary,
       getLiveCapability,
       getAll: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
+      create: createGroup,
+      update: updateGroup,
       delete: vi.fn(),
       updateSortOrder: vi.fn()
     },
@@ -123,6 +127,11 @@ const AppLayoutStub = defineComponent({
   template: '<main><slot /></main>'
 })
 
+const BaseDialogStub = defineComponent({
+  props: { show: Boolean },
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>'
+})
+
 const TablePageLayoutStub = defineComponent({
   template: '<section><slot name="filters" /><slot name="table" /><slot name="pagination" /></section>'
 })
@@ -144,7 +153,7 @@ function mountView() {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: true,
-        BaseDialog: true,
+        BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
         Select: true,
@@ -159,12 +168,14 @@ function mountView() {
   })
 }
 
-describe('GroupsView duplicate action', () => {
+describe('GroupsView group actions', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const fn of [
       listGroups,
+      createGroup,
+      updateGroup,
       duplicateGroup,
       getModelsListCandidates,
       getUsageSummary,
@@ -190,6 +201,8 @@ describe('GroupsView duplicate action', () => {
       name: 'Primary (Copy)',
       status: 'inactive'
     })
+    createGroup.mockResolvedValue({ ...sourceGroup, id: 43, name: 'Created' })
+    updateGroup.mockResolvedValue(sourceGroup)
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
@@ -268,6 +281,40 @@ describe('GroupsView duplicate action', () => {
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(showError).toHaveBeenCalledWith('admin.groups.failedToLoad')
     expect(showError).not.toHaveBeenCalledWith('admin.groups.duplicateFailed')
+    wrapper.unmount()
+  })
+
+  it('submits a cleared create RPM input as unlimited', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const createButton = wrapper.findAll('button').find((button) => button.text() === 'admin.groups.createGroup')
+    expect(createButton).toBeDefined()
+    await createButton!.trigger('click')
+
+    await wrapper.get('#create-group-form [data-tour="group-form-name"]').setValue('Created')
+    await wrapper.get('#create-group-form input[placeholder="admin.groups.form.rpmLimitPlaceholder"]').setValue('')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(createGroup).toHaveBeenCalledWith(expect.objectContaining({ rpm_limit: 0 }))
+    wrapper.unmount()
+  })
+
+  it('submits a cleared edit RPM input as unlimited', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('#edit-group-form input[placeholder="admin.groups.form.rpmLimitPlaceholder"]').setValue('')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ rpm_limit: 0 }))
     wrapper.unmount()
   })
 })

@@ -1,5 +1,13 @@
 # 项目全局进度总账
 
+**本轮 Task 6 外置余额、账单、倍率采集与受控写操作（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`，基线
+`370aa1b91`。范围限定为 relay-ops 的余额/账单/费率采集事实、过期语义和复用既有
+控制面幂等审计命令更新；官方 Sub2API 仍是核心业务表唯一写入者。本轮仅做本地 TDD、
+迁移、回归与提交，不推送、合并、部署、访问生产或使用 GitHub Actions。余额事实、
+官方窄更新适配、持久幂等/冲突/过期回归及全量本地 Go 验证已完成；因尚未合并、推送、
+部署和线上验证，状态继续为“进行中”。
+
 **本轮 Task 4 fix round 3（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
 范围限定为收紧 relay-ops trusted-proxy 身份：仅显式配置并解析实际 Caddy

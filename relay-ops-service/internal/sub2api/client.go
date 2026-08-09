@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/controlplane"
 )
 
@@ -500,6 +501,27 @@ func (c *HTTPReader) RefreshAccount(ctx context.Context, id int64, idempotencyKe
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-api-key", c.adminKey)
 	req.Header.Set("Idempotency-Key", idempotencyKey)
+	return c.do(req, &struct{}{})
+}
+
+// UpdateAccount forwards only a validated narrow command through the official
+// admin API. The relay does not gain database access to core account tables.
+func (c *HTTPReader) UpdateAccount(ctx context.Context, command billing.AccountUpdateCommand) error {
+	if err := command.Validate(); err != nil {
+		return err
+	}
+	data, err := json.Marshal(command.Fields)
+	if err != nil {
+		return fmt.Errorf("encode Sub2API account update: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(command.AccountID, 10), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("build Sub2API account update: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	req.Header.Set("Idempotency-Key", command.IdempotencyKey)
 	return c.do(req, &struct{}{})
 }
 

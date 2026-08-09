@@ -93,6 +93,62 @@ func TestMigrateIsIdempotentAndUpstreamIdentityIsUnique(t *testing.T) {
 	}
 }
 
+func TestBalanceFactsAreIdempotentConflictSafeAndExpire(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 8, 10, 4, 0, 0, 0, time.UTC)
+	snapshot := billing.BalanceSnapshot{AccountID: 71, Amount: "12.50", Currency: "USD", ObservedAt: observedAt, FreshUntil: observedAt.Add(time.Minute), Source: "sub2api"}
+	inserted, err := st.AppendBalanceSnapshot(ctx, snapshot)
+	if err != nil || !inserted {
+		t.Fatalf("first append inserted=%v err=%v", inserted, err)
+	}
+	inserted, err = st.AppendBalanceSnapshot(ctx, snapshot)
+	if err != nil || inserted {
+		t.Fatalf("replay inserted=%v err=%v", inserted, err)
+	}
+	conflicting := snapshot
+	conflicting.Amount = "13.50"
+	if _, err := st.AppendBalanceSnapshot(ctx, conflicting); !errors.Is(err, ErrConflict) {
+		t.Fatalf("conflicting replay error=%v, want ErrConflict", err)
+	}
+	fresh, found, err := st.LatestFreshBalanceSnapshot(ctx, snapshot.AccountID, observedAt.Add(59*time.Second))
+	if err != nil || !found || fresh.Amount != "12.50" || fresh.Source != "sub2api" {
+		t.Fatalf("fresh snapshot=%+v found=%v err=%v", fresh, found, err)
+	}
+	if _, found, err := st.LatestFreshBalanceSnapshot(ctx, snapshot.AccountID, snapshot.FreshUntil); err != nil || found {
+		t.Fatalf("expired snapshot found=%v err=%v", found, err)
+	}
+}
+
+func TestAccountUpdateCommandUsesExistingDurableIdempotencyAudit(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	dispatch, result, err := st.ClaimExternalizationCommand(ctx, 9, 71, "account:71:priority:1", "account_update", 1)
+	if err != nil || !dispatch || result != "pending" {
+		t.Fatalf("initial claim dispatch=%v result=%q err=%v", dispatch, result, err)
+	}
+	dispatch, result, err = st.ClaimExternalizationCommand(ctx, 9, 71, "account:71:priority:1", "account_update", 1)
+	if err != nil || dispatch || result != "pending" {
+		t.Fatalf("pending replay dispatch=%v result=%q err=%v", dispatch, result, err)
+	}
+	if err := st.CompleteExternalizationCommand(ctx, 9, 71, "account:71:priority:1", "accepted", 1); err != nil {
+		t.Fatal(err)
+	}
+	dispatch, result, err = st.ClaimExternalizationCommand(ctx, 9, 71, "account:71:priority:1", "account_update", 1)
+	if err != nil || dispatch || result != "accepted" {
+		t.Fatalf("accepted replay dispatch=%v result=%q err=%v", dispatch, result, err)
+	}
+	if _, _, err := st.ClaimExternalizationCommand(ctx, 10, 71, "account:71:priority:1", "account_update", 1); !errors.Is(err, ErrConflict) {
+		t.Fatalf("actor mismatch error=%v, want ErrConflict", err)
+	}
+}
+
 func TestProjectionStorePersistsConsumerCheckpointDeadLettersAndReadModels(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

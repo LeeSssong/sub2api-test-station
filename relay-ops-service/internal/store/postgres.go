@@ -70,6 +70,11 @@ var externalizationCommandsMigration string
 
 var ErrConflict = errors.New("record conflicts with existing identity")
 
+var externalizationCommandNames = map[string]struct{}{
+	"refresh_account": {},
+	"account_update":  {},
+}
+
 func init() {
 	initialMigration += "\n" + userImpactAlertingMigration
 	initialMigration += "\n" + notificationRetryMigration
@@ -91,7 +96,10 @@ func (s *Store) ClaimExternalizationCommand(ctx context.Context, actorID, accoun
 	if s == nil || s.pool == nil {
 		return false, "", errors.New("store is not initialized")
 	}
-	if actorID <= 0 || accountID <= 0 || strings.TrimSpace(idempotencyKey) == "" || command != "refresh_account" {
+	if actorID <= 0 || accountID <= 0 || strings.TrimSpace(idempotencyKey) == "" {
+		return false, "", errors.New("invalid externalization command")
+	}
+	if _, allowed := externalizationCommandNames[command]; !allowed {
 		return false, "", errors.New("invalid externalization command")
 	}
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", actorID, accountID, command, idempotencyKey)))
@@ -154,6 +162,70 @@ func (s *Store) RecordExternalizationCommand(ctx context.Context, actorID, accou
 		return fmt.Errorf("record externalization command: %w", err)
 	}
 	return nil
+}
+
+// AppendBalanceSnapshot records an immutable provider balance fact in the
+// control-plane schema. A byte-for-byte replay is accepted; a changed fact at
+// the same observation time is rejected rather than overwriting evidence.
+func (s *Store) AppendBalanceSnapshot(ctx context.Context, snapshot billing.BalanceSnapshot) (bool, error) {
+	if s == nil || s.pool == nil {
+		return false, errors.New("store is not initialized")
+	}
+	if err := snapshot.Validate(); err != nil {
+		return false, err
+	}
+	result, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.balance_snapshots (account_id, observed_at, amount, currency, fresh_until, source)
+		VALUES ($1, $2, $3::numeric, $4, $5, $6)
+		ON CONFLICT (account_id, observed_at) DO NOTHING`,
+		snapshot.AccountID, snapshot.ObservedAt.UTC(), snapshot.Amount, snapshot.Currency,
+		snapshot.FreshUntil.UTC(), snapshot.Source)
+	if err != nil {
+		return false, fmt.Errorf("append balance snapshot: %w", err)
+	}
+	if result.RowsAffected() == 1 {
+		return true, nil
+	}
+	var same bool
+	err = s.pool.QueryRow(ctx, `
+		SELECT amount = $3::numeric AND currency = $4 AND fresh_until = $5 AND source = $6
+		FROM relay_ops.balance_snapshots WHERE account_id = $1 AND observed_at = $2`,
+		snapshot.AccountID, snapshot.ObservedAt.UTC(), snapshot.Amount, snapshot.Currency,
+		snapshot.FreshUntil.UTC(), snapshot.Source).Scan(&same)
+	if err != nil {
+		return false, fmt.Errorf("load replayed balance snapshot: %w", err)
+	}
+	if !same {
+		return false, ErrConflict
+	}
+	return false, nil
+}
+
+// LatestFreshBalanceSnapshot returns the newest balance fact that has not
+// expired at now. Expired facts remain retained for audit and reconciliation.
+func (s *Store) LatestFreshBalanceSnapshot(ctx context.Context, accountID int64, now time.Time) (billing.BalanceSnapshot, bool, error) {
+	if s == nil || s.pool == nil {
+		return billing.BalanceSnapshot{}, false, errors.New("store is not initialized")
+	}
+	if accountID <= 0 {
+		return billing.BalanceSnapshot{}, false, errors.New("account ID must be positive")
+	}
+	var snapshot billing.BalanceSnapshot
+	err := s.pool.QueryRow(ctx, `
+		SELECT account_id, amount::text, currency, observed_at, fresh_until, source
+		FROM relay_ops.balance_snapshots
+		WHERE account_id = $1 AND fresh_until > $2
+		ORDER BY observed_at DESC LIMIT 1`, accountID, now.UTC()).Scan(
+		&snapshot.AccountID, &snapshot.Amount, &snapshot.Currency, &snapshot.ObservedAt, &snapshot.FreshUntil, &snapshot.Source)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return billing.BalanceSnapshot{}, false, nil
+	}
+	if err != nil {
+		return billing.BalanceSnapshot{}, false, fmt.Errorf("load fresh balance snapshot: %w", err)
+	}
+	snapshot.ObservedAt = snapshot.ObservedAt.UTC()
+	snapshot.FreshUntil = snapshot.FreshUntil.UTC()
+	return snapshot, true, nil
 }
 
 var _ events.Journal = (*Store)(nil)

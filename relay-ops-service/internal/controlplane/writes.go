@@ -13,7 +13,11 @@ type CommandSender interface {
 type AuditWriter interface {
 	RecordExternalizationCommand(context.Context, int64, int64, string, string, int) error
 }
-type IdempotencyWriter interface {
+
+// ExternalizationCommandAudit is the shared durable claim/completion protocol
+// for every control-plane command. Command implementations must use it rather
+// than introducing their own idempotency state.
+type ExternalizationCommandAudit interface {
 	ClaimExternalizationCommand(context.Context, int64, int64, string, string, int) (bool, string, error)
 	CompleteExternalizationCommand(context.Context, int64, int64, string, string, int) error
 }
@@ -36,7 +40,7 @@ func (r CommandRefresher) RefreshAccount(ctx context.Context, id int64, key stri
 	if (!ok && actorID <= 0) || actorID <= 0 {
 		return errors.New("admin identity is required")
 	}
-	if idempotency, ok := r.Audit.(IdempotencyWriter); ok {
+	if idempotency, ok := r.Audit.(ExternalizationCommandAudit); ok {
 		dispatch, storedResult, err := idempotency.ClaimExternalizationCommand(ctx, actorID, id, key, "refresh_account", 1)
 		if err != nil {
 			return err

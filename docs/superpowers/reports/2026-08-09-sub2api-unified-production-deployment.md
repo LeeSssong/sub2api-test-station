@@ -28,6 +28,8 @@
 - 带管理员 Key 的 `GET /api/v1/admin/accounts/monitor`：HTTP 200；返回 78 个账号，`evidence_source` 为 `monitor_probe=69`、`stale=9`，响应包含 `score_breakdown`、`homepage_url` 和 `multiplier.source`
 - 生产数据库确认 `usage_logs.account_cost` 列存在，`201_usage_log_account_cost.sql` 已登记
 
+收口复测（部署后自然数据继续变化）：`/healthz`、`/readyz` 仍为 HTTP 200；管理员 Monitor API 仍为 HTTP 200，当前返回 79 个账号，其中 69 个 `monitor_probe`、10 个 `stale`，45 个账号带评分分项，73 个账号带上游主页链接。共享容器重启次数仍为 0，固定成本 1K/2K/4K 三条区间仍完整存在。
+
 ## 生图固定成本配置
 
 部署后先执行默认只读检查，再执行显式 `--apply`，最后再次只读复核。生产配置结果为：

@@ -7,16 +7,23 @@ import (
 	"fmt"
 	"time"
 
+	coreevents "github.com/Wei-Shaw/sub2api/internal/events"
+	"github.com/Wei-Shaw/sub2api/internal/integration"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
 
 type accountMonitorRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	outbox *coreevents.Outbox
 }
 
 func NewAccountMonitorRepository(db *sql.DB) service.AccountMonitorRepository {
 	return &accountMonitorRepository{db: db}
+}
+
+func NewAccountMonitorRepositoryWithOutbox(db *sql.DB) service.AccountMonitorRepository {
+	return &accountMonitorRepository{db: db, outbox: coreevents.NewOutbox(db)}
 }
 
 func (r *accountMonitorRepository) LoadSettings(ctx context.Context) (service.AccountMonitorSettings, error) {
@@ -56,14 +63,40 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 	if result.Status == "" {
 		result.Status = "unknown"
 	}
-	_, err := r.db.ExecContext(ctx, `
+	if r.outbox == nil {
+		_, err := r.db.ExecContext(ctx, `
 		INSERT INTO account_monitor_results (
 			run_id, account_id, model_id, status, error_code, http_status,
 			ttft_ms, latency_ms, checked_at
 		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode,
-		result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.CheckedAt.UTC())
-	return err
+		`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode,
+			result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.CheckedAt.UTC())
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var previousStatus string
+	_ = tx.QueryRowContext(ctx, `SELECT status FROM account_monitor_results WHERE account_id = $1 ORDER BY checked_at DESC LIMIT 1`, result.AccountID).Scan(&previousStatus)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO account_monitor_results (run_id, account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode, result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.CheckedAt.UTC()); err != nil {
+		return err
+	}
+	if previousStatus != result.Status {
+		payload := integration.HealthChanged{AccountID: result.AccountID, Status: result.Status, ErrorCategory: result.ErrorCode, ObservedAt: result.CheckedAt.UTC(), CheckedAt: result.CheckedAt.UTC(), ProbeVersion: result.ModelID}
+		event, err := integration.NewHealthChangedEvent("sub2api-core", result.CheckedAt, payload)
+		if err != nil {
+			return err
+		}
+		if err := r.outbox.Append(ctx, tx, event); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *accountMonitorRepository) ListAggregates(

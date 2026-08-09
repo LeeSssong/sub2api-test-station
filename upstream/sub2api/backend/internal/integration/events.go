@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,6 +61,27 @@ func NewEvent(eventType, sourceVersion string, occurredAt time.Time, payload any
 	if err := e.Validate(); err != nil {
 		return Event{}, err
 	}
+	return e, nil
+}
+
+// stableEventID derives a UUIDv4-shaped identifier from an immutable business
+// identity. This preserves the envelope's UUIDv4 contract while making retries
+// idempotent at the outbox primary key.
+func stableEventID(identity string) string {
+	sum := sha256.Sum256([]byte(identity))
+	var id uuid.UUID
+	copy(id[:], sum[:16])
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	return id.String()
+}
+
+func newStableEvent(eventType, sourceVersion string, occurredAt time.Time, identity string, payload any) (Event, error) {
+	e, err := NewEvent(eventType, sourceVersion, occurredAt, payload)
+	if err != nil {
+		return Event{}, err
+	}
+	e.EventID = stableEventID(eventType + "\x00" + identity)
 	return e, nil
 }
 
@@ -197,26 +219,49 @@ func NewRequestCompletedEvent(sourceVersion string, occurredAt time.Time, payloa
 	if err := payload.Validate(); err != nil {
 		return Event{}, err
 	}
-	return NewEvent(EventTypeRequestCompleted, sourceVersion, occurredAt, payload)
+	return newStableEvent(EventTypeRequestCompleted, sourceVersion, occurredAt, payload.RequestID, payload)
 }
 
 type AccountHealthChanged struct {
-	AccountID int64     `json:"account_id"`
-	Status    string    `json:"status"`
-	CheckedAt time.Time `json:"checked_at"`
-	ErrorCode string    `json:"error_code,omitempty"`
+	AccountID     int64     `json:"account_id"`
+	Status        string    `json:"status"`
+	CheckedAt     time.Time `json:"checked_at"`
+	ErrorCode     string    `json:"error_code,omitempty"`
+	ErrorCategory string    `json:"error_category,omitempty"`
+	ObservedAt    time.Time `json:"observed_at,omitempty"`
+	ProbeVersion  string    `json:"probe_version,omitempty"`
 }
 
+// HealthChanged is the concise name used by the externalization adapter.
+type HealthChanged = AccountHealthChanged
+
 func NewHealthChangedEvent(sourceVersion string, occurredAt time.Time, payload AccountHealthChanged) (Event, error) {
+	if payload.CheckedAt.IsZero() {
+		payload.CheckedAt = payload.ObservedAt
+	}
+	if payload.ObservedAt.IsZero() {
+		payload.ObservedAt = payload.CheckedAt
+	}
 	if err := payload.Validate(); err != nil {
 		return Event{}, err
 	}
-	return NewEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt, payload)
+	identityAt := payload.ObservedAt
+	if identityAt.IsZero() {
+		identityAt = payload.CheckedAt
+	}
+	return newStableEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt,
+		fmt.Sprintf("%d:%s:%s:%s", payload.AccountID, payload.Status, payload.ErrorCategory, identityAt.UTC().Format(time.RFC3339Nano)), payload)
 }
 
 func (p AccountHealthChanged) Validate() error {
-	if p.AccountID <= 0 || strings.TrimSpace(p.Status) == "" || p.CheckedAt.IsZero() {
+	if p.AccountID <= 0 || strings.TrimSpace(p.Status) == "" || (p.CheckedAt.IsZero() && p.ObservedAt.IsZero()) {
 		return errors.New("account.health_changed requires account_id, status and checked_at")
+	}
+	if p.CheckedAt.IsZero() {
+		p.CheckedAt = p.ObservedAt
+	}
+	if p.ObservedAt.IsZero() {
+		p.ObservedAt = p.CheckedAt
 	}
 	return nil
 }

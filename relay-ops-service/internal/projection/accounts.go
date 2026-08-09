@@ -130,9 +130,14 @@ func (p *Accounts) apply(event events.Event) (AccountRow, bool, error) {
 			AccountID int64     `json:"account_id"`
 			Status    string    `json:"status"`
 			CheckedAt time.Time `json:"checked_at"`
+			ObservedAt time.Time `json:"observed_at"`
+			ErrorCategory string `json:"error_category"`
 		}
 		if err := json.Unmarshal(event.Payload, &value); err != nil {
 			return AccountRow{}, false, err
+		}
+		if value.CheckedAt.IsZero() {
+			value.CheckedAt = value.ObservedAt
 		}
 		if value.AccountID <= 0 || value.Status == "" || value.CheckedAt.IsZero() {
 			return AccountRow{}, false, errors.New("invalid account.health_changed payload")

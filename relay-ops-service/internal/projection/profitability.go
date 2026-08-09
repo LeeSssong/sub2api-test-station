@@ -266,6 +266,11 @@ type requestCompletedPayload struct {
 	RequestID  string `json:"request_id"`
 	AccountID  int64  `json:"account_id"`
 	Model      string `json:"model"`
+	RequestedModel string `json:"requested_model"`
+	UpstreamModel string `json:"upstream_model"`
+	ActualResponseModel string `json:"actual_response_model"`
+	InputTokens int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
 	UserCharge string `json:"user_charge"`
 	ActualCost string `json:"actual_cost"`
 	CostUSD    string `json:"cost_usd"`
@@ -276,8 +281,17 @@ func decodeRequestCompleted(event events.Event) (requestCompletedPayload, error)
 	if err := json.Unmarshal(event.Payload, &value); err != nil {
 		return value, err
 	}
-	if value.RequestID == "" || value.AccountID <= 0 || value.Model == "" {
+	if value.RequestID == "" || value.AccountID <= 0 {
 		return value, errors.New("invalid request.completed payload identity")
+	}
+	if value.Model == "" {
+		value.Model = value.RequestedModel
+	}
+	if value.Model == "" {
+		return value, errors.New("invalid request.completed payload model")
+	}
+	if value.ActualCost == "" {
+		value.ActualCost = value.CostUSD
 	}
 	if _, err := decimal.NewFromString(value.UserCharge); err != nil {
 		return value, fmt.Errorf("invalid user_charge: %w", err)

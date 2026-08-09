@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**本轮整合登记（2026-08-09）：** 将获批上游韧性分支 `e55fc3c9e` 合并至基于 `main@d9c68f86b` 的整合候选 `codex/upstream-resilience-integration`。范围仅为合并冲突消解，保留 Task 4 的 usage attempt/reconciliation 字段以及 Task 5 的恢复和观测行为，同时保留 main 的 `upstream_request_id` 与最终 `account_cost` 语义；尚未推送、部署或线上验证，状态：进行中。
+**本轮整合登记（2026-08-09）：** 将获批上游韧性分支 `e55fc3c9e` 合并至 `main`，合并提交 `d8cdc50d4`。Ent 已重新生成；service/handler 定向回归、编译检查、发布控制器测试通过。已 SSH 核查生产健康与日志，当前运行版本仍为 `release-abb87a0a…`。蓝绿发布已完成候选构建，但生产门禁以 `migration_set_changed` 阻止切换（新增 `200_usage_log_attempt_reconciliation.sql`，需要单独的维护授权）；未发生生产变更，状态：进行中。
 
 **更新时间：** 2026-08-08
 

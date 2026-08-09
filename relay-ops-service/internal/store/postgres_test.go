@@ -446,6 +446,67 @@ func TestProjectionCompletenessTracksProcessingAndDeadGapsInSameTransaction(t *t
 	assertExternalizationCompleteness(t, st, events.CompletenessPartial)
 }
 
+func TestGlobalProjectionCompletenessIncludesGapsFromOtherSources(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 10, 3, 40, 0, 0, time.UTC)
+	accounts := projection.NewAccountsWithRepository(st)
+	profitability := projection.NewProfitabilityWithRepository(st)
+	accounting := projection.NewAccountingWithRepository(st)
+	reconciliation := projection.NewReconciliationWithRepository(st)
+	consumer, err := events.NewPersistentConsumer(st, accounts, profitability, accounting, reconciliation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountEvent := events.Event{
+		EventID: "550e8400-e29b-41d4-a716-446655440051", Type: events.AccountHealthChanged,
+		OccurredAt: at, SourceVersion: "source-a", ContractVersion: events.ContractVersion,
+		Payload: []byte(`{"account_id":7,"status":"healthy","checked_at":"2026-08-10T03:40:00Z"}`),
+	}
+	seed := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440052", at.Add(time.Second), "1.00", "0.25")
+	seed.SourceVersion = "source-a"
+	if err := consumer.Handle(ctx, accountEvent); err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	sourceB := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440053", at.Add(2*time.Second), "0.50", "0.10")
+	sourceB.SourceVersion = "source-b"
+	sourceBClaim, err := st.ClaimEvent(ctx, sourceB)
+	if err != nil || !sourceBClaim.Acquired {
+		t.Fatalf("source B claim=%+v err=%v", sourceBClaim, err)
+	}
+	sourceAProcessingGap := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440054", at.Add(3*time.Second), "0.25", "0.05")
+	sourceAProcessingGap.SourceVersion = "source-a"
+	if err := consumer.Handle(ctx, sourceAProcessingGap); err != nil {
+		t.Fatal(err)
+	}
+	watermark, found, err := st.LoadWatermark(ctx, "source-a")
+	if err != nil || !found || watermark.Completeness != events.CompletenessComplete {
+		t.Fatalf("source A watermark=%+v found=%v err=%v, want complete", watermark, found, err)
+	}
+	assertProjectionRowsCompleteness(t, st, events.CompletenessPartial)
+
+	if err := st.FailEvent(ctx, sourceB, sourceBClaim, time.Now().UTC(), errors.New("source B permanent failure")); err != nil {
+		t.Fatal(err)
+	}
+	sourceADeadGap := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440055", at.Add(4*time.Second), "0.25", "0.05")
+	sourceADeadGap.SourceVersion = "source-a"
+	if err := consumer.Handle(ctx, sourceADeadGap); err != nil {
+		t.Fatal(err)
+	}
+	watermark, found, err = st.LoadWatermark(ctx, "source-a")
+	if err != nil || !found || watermark.Completeness != events.CompletenessComplete {
+		t.Fatalf("source A watermark with source B dead=%+v found=%v err=%v, want complete", watermark, found, err)
+	}
+	assertProjectionRowsCompleteness(t, st, events.CompletenessPartial)
+}
+
 func TestClaimAndFirstWatermarkCompletionShareProjectionLock(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
@@ -521,6 +582,12 @@ func assertExternalizationCompleteness(t *testing.T, st *Store, want string) {
 	if err != nil || !found || watermark.Completeness != want {
 		t.Fatalf("watermark=%+v found=%v err=%v, want completeness %q", watermark, found, err, want)
 	}
+	assertProjectionRowsCompleteness(t, st, want)
+}
+
+func assertProjectionRowsCompleteness(t *testing.T, st *Store, want string) {
+	t.Helper()
+	ctx := context.Background()
 	for _, table := range []string{
 		"account_read_models", "profitability_read_models", "accounting_read_models", "reconciliation_read_models",
 	} {

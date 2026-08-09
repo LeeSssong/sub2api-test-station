@@ -322,17 +322,26 @@ func (s *Store) ApplyEvent(ctx context.Context, event events.Event, claim events
 	if command.RowsAffected() != 1 {
 		return events.Watermark{}, fmt.Errorf("externalization event %s is not claimed", event.EventID)
 	}
-	var hasGap bool
+	var sourceHasGap, projectionHasGap bool
 	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM relay_ops.externalization_events
-			WHERE source_version=$1 AND status <> 'processed'
-		)`, event.SourceVersion).Scan(&hasGap); err != nil {
+		SELECT
+			EXISTS (
+				SELECT 1 FROM relay_ops.externalization_events
+				WHERE source_version=$1 AND status <> 'processed'
+			),
+			EXISTS (
+				SELECT 1 FROM relay_ops.externalization_events
+				WHERE status <> 'processed'
+			)`, event.SourceVersion).Scan(&sourceHasGap, &projectionHasGap); err != nil {
 		return events.Watermark{}, fmt.Errorf("read externalization completeness: %w", err)
 	}
 	completeness := events.CompletenessComplete
-	if hasGap {
+	if sourceHasGap {
 		completeness = events.CompletenessPartial
+	}
+	projectionCompleteness := events.CompletenessComplete
+	if projectionHasGap {
+		projectionCompleteness = events.CompletenessPartial
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO relay_ops.externalization_watermarks
@@ -347,7 +356,7 @@ func (s *Store) ApplyEvent(ctx context.Context, event events.Event, claim events
 		event.SourceVersion, event.EventID, event.OccurredAt.UTC(), processedAt.UTC(), completeness); err != nil {
 		return events.Watermark{}, fmt.Errorf("save externalization watermark: %w", err)
 	}
-	if err := setProjectionRowsCompleteness(ctx, tx, completeness); err != nil {
+	if err := setProjectionRowsCompleteness(ctx, tx, projectionCompleteness); err != nil {
 		return events.Watermark{}, err
 	}
 	var watermark events.Watermark

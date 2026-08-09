@@ -4,6 +4,13 @@
 **权威计划：** `docs/superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md`
 **项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（以该总账的生产部署、验证和用户验收口径为准）
 
+## 2026-08-09 GPT 分组配置研究基线
+
+- 已使用生产现有历史数据完成 67 个 GPT 文本账号的只读归组分析；没有产生新请求，也没有修改生产账号、分组、倍率、路由或优先级。
+- 建议基线：GPT-Pro 5 个、GPT-Plus 7 个、GPT-特惠 5 个、暂不进入公开组 38 个、人工处理后补跑 12 个；`【专属】GPT-Pro` 必须完整镜像公开 Pro。
+- 当前评分系统仍需后续工程调整：真实请求优先进入最终分数、Plus/特惠分离权重、错误类型分级、逐指标证据/置信展示、组内有效优先级和基线偏离提示。
+- 权威报告：[GPT 分组配置基线](../superpowers/reports/2026-08-09-gpt-group-configuration-baseline.md)；生产证据：[只读证据清单](../superpowers/reports/2026-08-09-gpt-group-baseline-production-evidence.md)。本研究为准备完成状态，不代表生产配置已应用。
+
 ## 当前指针
 
 > 2026-07-30 起，D04 内测服务及 relay-ops 自建运维控制面均已退役。账号监控唯一管理员入口是 `/admin/accounts/monitor`；旧 `/ops` 路径仍重定向到原生 `/admin/ops`。`relay-ops` 不暴露独立 UI，只保留内部定时采集、对账、日结、价格采集、受保护数据接口和飞书出站。

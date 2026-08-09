@@ -1541,6 +1541,36 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyRateLimite
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyCooldownFallsBackToFreshCandidate(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10102)
+	blocked := Account{ID: 31011, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0, GroupIDs: []int64{groupID}}
+	backup := Account{ID: 31012, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5, GroupIDs: []int64{groupID}}
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:session_hash_cooldown": blocked.ID}}
+	svc := &OpenAIGatewayService{
+		accountRepo:          schedulerTestOpenAIAccountRepo{accounts: []Account{blocked, backup}},
+		cache:                cache,
+		cfg:                  &config.Config{},
+		rateLimitService:     newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService:   NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		openaiModelTransient: newOpenAIAccountModelTransientState(16),
+	}
+	now := time.Now()
+	svc.RecordOpenAIAccountModelFailure(ctx, OpenAIAccountModelFailureEvent{AccountID: blocked.ID, CanonicalModel: "gpt-5.5", StatusCode: 502, SafeToReplay: true, Now: now})
+	svc.RecordOpenAIAccountModelFailure(ctx, OpenAIAccountModelFailureEvent{AccountID: blocked.ID, CanonicalModel: "gpt-5.5", StatusCode: 502, SafeToReplay: true, Now: now.Add(time.Millisecond)})
+
+	selection, decision, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "session_hash_cooldown", "gpt-5.5", nil, OpenAIUpstreamTransportAny, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, backup.ID, selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountForModelWithExclusions_AutoPauseBy5hThreshold(t *testing.T) {
 	ctx := context.Background()
 	primary := Account{
@@ -2657,6 +2687,26 @@ func TestOpenAIAccountScheduler_SkipsAccountBlockedForRequestedModel(t *testing.
 
 	require.False(t, scheduler.isAccountRequestCompatible(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.5"}))
 	require.True(t, scheduler.isAccountRequestCompatible(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.6-sol"}))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ForcedRetryPinsAccountDespitePriority(t *testing.T) {
+	groupID := int64(21640)
+	primary := Account{ID: 21640, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 10, GroupIDs: []int64{groupID}}
+	preferred := Account{ID: 21641, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0, GroupIDs: []int64{groupID}}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{primary, preferred}},
+		cfg:                &config.Config{RunMode: config.RunModeSimple},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(WithOpenAIForcedAccount(context.Background(), primary.ID), &groupID, "", "", "gpt-5.5", nil, OpenAIUpstreamTransportAny, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, primary.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
 }
 
 func TestReportOpenAIAccountScheduleResult_SuccessClearsModelTransientState(t *testing.T) {

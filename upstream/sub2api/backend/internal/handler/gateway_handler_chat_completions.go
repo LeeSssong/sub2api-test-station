@@ -313,7 +313,12 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false
 			if !upstreamErrorAlreadyCommunicated {
-				wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
+				if info, ok := service.OpenAIStreamRecoveryDetails(err); ok && info.OutputStarted {
+					wroteFallback = writeOpenAIStreamRecoverySSE(c, err)
+				}
+				if !wroteFallback {
+					wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
+				}
 			}
 			reqLog.Error("gateway.cc.forward_failed",
 				zap.Int64("account_id", account.ID),

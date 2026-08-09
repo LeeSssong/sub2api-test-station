@@ -28,7 +28,6 @@ var usageLogInsertArgTypes = [...]string{
 	"bigint",      // api_key_id
 	"bigint",      // account_id
 	"text",        // request_id
-	"text",        // upstream_request_id
 	"text",        // model
 	"text",        // requested_model
 	"text",        // upstream_model
@@ -80,8 +79,12 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // billing_tier
 	"text",        // billing_mode
 	"numeric",     // account_stats_cost
-	"numeric",     // account_cost
 	"text",        // session_id
+	"text",        // logical_request_id
+	"text",        // attempt_id
+	"text",        // usage_completeness
+	"boolean",     // reconciliation_required
+	"boolean",     // unsafe_to_replay
 	"timestamptz", // created_at
 }
 
@@ -226,7 +229,6 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -278,16 +280,20 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10,
-			$11, $12, $13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23, $24,
-			$25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9,
+			$10, $11, $12, $13,
+			$14, $15, $16, $17,
+			$18, $19, $20, $21, $22, $23,
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -683,7 +689,6 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -735,14 +740,18 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		) AS (VALUES `)
 
-	// Each batch row prepends the synthetic input_index before the 59
+	// Each batch row prepends the synthetic input_index before the 62
 	// usage-log column values.
-	args := make([]any, 0, len(keys)*59)
+	args := make([]any, 0, len(keys)*63)
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -775,7 +784,6 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				api_key_id,
 				account_id,
 				request_id,
-				upstream_request_id,
 				model,
 				requested_model,
 				upstream_model,
@@ -826,17 +834,20 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				model_mapping_chain,
 				billing_tier,
 				billing_mode,
-				account_stats_cost,
-				account_cost,
-				session_id,
-				created_at
+			account_stats_cost,
+			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
+			created_at
 			)
 			SELECT
 				user_id,
 				api_key_id,
 				account_id,
 				request_id,
-				upstream_request_id,
 				model,
 				requested_model,
 				upstream_model,
@@ -887,10 +898,14 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				model_mapping_chain,
 				billing_tier,
 				billing_mode,
-				account_stats_cost,
-				account_cost,
-				session_id,
-				created_at
+			account_stats_cost,
+			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
+			created_at
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -937,7 +952,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -989,12 +1003,16 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*59)
+	args := make([]any, 0, len(preparedList)*62)
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -1024,7 +1042,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -1076,8 +1093,12 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		)
 		SELECT
@@ -1085,7 +1106,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -1137,8 +1157,12 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
@@ -1154,7 +1178,6 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			api_key_id,
 			account_id,
 			request_id,
-			upstream_request_id,
 			model,
 			requested_model,
 			upstream_model,
@@ -1206,16 +1229,20 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			account_cost,
 			session_id,
+			logical_request_id,
+			attempt_id,
+			usage_completeness,
+			reconciliation_required,
+			unsafe_to_replay,
 			created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10,
-			$11, $12, $13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23, $24,
-			$25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9,
+			$10, $11, $12, $13,
+			$14, $15, $16, $17,
+			$18, $19, $20, $21, $22, $23,
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1230,7 +1257,6 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 
 	requestID := strings.TrimSpace(log.RequestID)
 	log.RequestID = requestID
-	upstreamRequestID := nullString(log.UpstreamRequestID)
 
 	rateMultiplier := log.RateMultiplier
 	log.SyncRequestTypeAndLegacyFields()
@@ -1258,6 +1284,17 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	billingTier := nullString(log.BillingTier)
 	billingMode := nullString(log.BillingMode)
 	sessionID := nullString(log.SessionID)
+	logicalRequestID := strings.TrimSpace(log.LogicalRequestID)
+	if logicalRequestID == "" {
+		logicalRequestID = requestID
+	}
+	attemptID := strings.TrimSpace(log.AttemptID)
+	usageCompleteness := log.UsageCompleteness
+	if strings.TrimSpace(string(usageCompleteness)) == "" {
+		usageCompleteness = service.UsageCompletenessComplete
+	} else {
+		usageCompleteness = usageCompleteness.Normalize()
+	}
 	requestedModel := strings.TrimSpace(log.RequestedModel)
 	if requestedModel == "" {
 		requestedModel = strings.TrimSpace(log.Model)
@@ -1279,7 +1316,6 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			log.APIKeyID,
 			log.AccountID,
 			requestIDArg,
-			upstreamRequestID,
 			log.Model,
 			nullString(&requestedModel),
 			upstreamModel,
@@ -1331,8 +1367,12 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			billingTier,
 			billingMode,
 			log.AccountStatsCost, // account_stats_cost
-			log.AccountCost,      // account_cost
 			sessionID,            // session_id
+			nullString(&logicalRequestID),
+			nullString(&attemptID),
+			string(usageCompleteness),
+			log.ReconciliationRequired,
+			log.UnsafeToReplay,
 			createdAt,
 		},
 	}

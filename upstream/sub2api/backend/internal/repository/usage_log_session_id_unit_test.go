@@ -30,9 +30,9 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 
 // TestPrepareUsageLogInsert_SessionIDArgWiring pins the session_id column to the
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
-// is the penultimate arg (created_at is always last).
+// precedes the five retry-audit fields and created_at.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 59, "arg-type table must include upstream_request_id, account_cost and session_id")
+	require.Len(t, usageLogInsertArgTypes, 62, "arg-type table must include retry audit fields")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
@@ -40,14 +40,13 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	// created_at is last; session_id is the arg immediately before it.
-	sessionArg := prepared.args[len(prepared.args)-2]
+	sessionArg := prepared.args[len(prepared.args)-7]
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.True(t, ns.Valid)
 	require.Equal(t, sessionID, ns.String)
 
-	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-2],
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-7],
 		"session_id arg type must be text")
 }
 
@@ -55,14 +54,14 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 // persisted as SQL NULL rather than an empty string.
 func TestPrepareUsageLogInsert_SessionIDNullWhenAbsent(t *testing.T) {
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(nil))
-	sessionArg := prepared.args[len(prepared.args)-2]
+	sessionArg := prepared.args[len(prepared.args)-7]
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.False(t, ns.Valid, "absent session id must be NULL, not empty string")
 
 	empty := ""
 	preparedEmpty := prepareUsageLogInsert(newSessionIDUsageLog(&empty))
-	nsEmpty := preparedEmpty.args[len(preparedEmpty.args)-2].(sql.NullString)
+	nsEmpty := preparedEmpty.args[len(preparedEmpty.args)-7].(sql.NullString)
 	require.False(t, nsEmpty.Valid, "empty session id must also be NULL")
 }
 
@@ -90,33 +89,30 @@ func TestUsageLogInsertQueries_IncludeSessionID(t *testing.T) {
 	require.Len(t, bestEffortArgs, len(prepared.args))
 }
 
-// TestPrepareUsageLogInsert_UpstreamRequestIDWiring keeps the locally-generated
-// usage request_id separate from the nullable upstream request id across every
-// raw SQL insert/select path.
-func TestPrepareUsageLogInsert_UpstreamRequestIDWiring(t *testing.T) {
-	upstreamRequestID := "upstream-req-123"
+func TestPrepareUsageLogInsert_AttemptAuditFields(t *testing.T) {
 	log := newSessionIDUsageLog(nil)
-	log.RequestID = "local:req-123"
-	log.UpstreamRequestID = &upstreamRequestID
+	log.LogicalRequestID = "logical-1"
+	log.AttemptID = "logical-1:2"
+	log.UsageCompleteness = service.UsageCompletenessPartial
+	log.ReconciliationRequired = true
+	log.UnsafeToReplay = true
+	prepared := prepareUsageLogInsert(log)
+
+	require.Equal(t, "logical-1", prepared.args[len(prepared.args)-6].(sql.NullString).String)
+	require.Equal(t, "logical-1:2", prepared.args[len(prepared.args)-5].(sql.NullString).String)
+	require.Equal(t, "partial", prepared.args[len(prepared.args)-4])
+	require.Equal(t, true, prepared.args[len(prepared.args)-3])
+	require.Equal(t, true, prepared.args[len(prepared.args)-2])
+	for _, column := range []string{"logical_request_id", "attempt_id", "usage_completeness", "reconciliation_required", "unsafe_to_replay"} {
+		require.Contains(t, usageLogSelectColumns, column)
+	}
+}
+
+func TestPrepareUsageLogInsert_NormalizesUnsupportedUsageCompleteness(t *testing.T) {
+	log := newSessionIDUsageLog(nil)
+	log.UsageCompleteness = service.UsageCompleteness("invalid")
 
 	prepared := prepareUsageLogInsert(log)
-	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
-	require.GreaterOrEqual(t, len(prepared.args), 2)
 
-	upstreamArg := prepared.args[4]
-	ns, ok := upstreamArg.(sql.NullString)
-	require.True(t, ok, "upstream_request_id arg should be a sql.NullString, got %T", upstreamArg)
-	require.True(t, ns.Valid)
-	require.Equal(t, upstreamRequestID, ns.String)
-	require.Equal(t, "local:req-123", prepared.args[3])
-
-	require.Contains(t, usageLogSelectColumns, "upstream_request_id")
-	require.Equal(t, "text", usageLogInsertArgTypes[4])
-
-	key := usageLogBatchKey(log.RequestID, log.APIKeyID)
-	batchQuery, _ := buildUsageLogBatchInsertQuery([]string{key}, map[string]usageLogInsertPrepared{key: prepared})
-	require.Contains(t, batchQuery, "upstream_request_id")
-
-	bestEffortQuery, _ := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
-	require.Contains(t, bestEffortQuery, "upstream_request_id")
+	require.Equal(t, "unknown", prepared.args[len(prepared.args)-4])
 }

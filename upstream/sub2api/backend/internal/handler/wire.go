@@ -132,8 +132,11 @@ func ProvideAccountMonitorHandler(
 	runner *service.AccountMonitorRunner,
 	accountRepo service.AccountRepository,
 	concurrencyService *service.ConcurrencyService,
+	openAIGatewayService *service.OpenAIGatewayService,
 ) *admin.AccountMonitorHandler {
-	return admin.NewAccountMonitorHandler(monitorService, runner, accountRepo, concurrencyService)
+	h := admin.NewAccountMonitorHandler(monitorService, runner, accountRepo, concurrencyService)
+	h.SetOpenAIGatewayService(openAIGatewayService)
+	return h
 }
 
 func ProvideOpenAIGatewayHandler(

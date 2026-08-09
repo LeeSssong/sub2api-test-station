@@ -444,7 +444,18 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 	if rule == nil {
 		return 0, false
 	}
+	resilience := openAIResilienceCountersForWindow(start, end, platform, groupID)
 	switch strings.TrimSpace(rule.MetricType) {
+	case "openai_account_model_repeated_failure_count":
+		return float64(resilience.RepeatedAccountModelFailures), true
+	case "openai_account_model_cooldown_saturation_count":
+		return float64(resilience.CooldownSaturation), true
+	case "openai_stream_failover_degradation_count":
+		return float64(resilience.StreamFailoverDegradation), true
+	case "openai_post_failure_selection_count":
+		return float64(resilience.PostFailureSelection), true
+	case "openai_cache_hit_failover_decline_count":
+		return float64(resilience.CacheHitFailoverDecline), true
 	case "cpu_usage_percent":
 		if systemMetrics != nil && systemMetrics.CPUUsagePercent != nil {
 			return *systemMetrics.CPUUsagePercent, true

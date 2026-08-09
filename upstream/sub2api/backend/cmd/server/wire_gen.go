@@ -266,7 +266,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db, configConfig)
 	accountMonitorService := service.ProvideAccountMonitorService(accountMonitorRepository, accountMonitorAccountRepository, accountRepository, accountTestService, accountUsageService, billingService, upstreamBillingProbeService)
 	accountMonitorRunner := service.ProvideAccountMonitorRunner(accountMonitorService, configConfig)
-	accountMonitorHandler := handler.ProvideAccountMonitorHandler(accountMonitorService, accountMonitorRunner, accountRepository, concurrencyService)
+	accountMonitorHandler := handler.ProvideAccountMonitorHandler(accountMonitorService, accountMonitorRunner, accountRepository, concurrencyService, openAIGatewayService)
 	contentModerationRepository := repository.NewContentModerationRepository(db)
 	contentModerationHashCache := repository.NewContentModerationHashCache(redisClient)
 	contentModerationService := service.ProvideContentModerationService(settingRepository, contentModerationRepository, contentModerationHashCache, groupRepository, userRepository, proxyRepository, apiKeyAuthCacheInvalidator, emailService, configConfig)

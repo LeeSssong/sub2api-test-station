@@ -17,6 +17,7 @@ type openAIUpstreamStreamReadError struct {
 	cause         error
 	clientCode    string
 	clientMessage string
+	recovery      *OpenAIStreamRecoveryInfo
 }
 
 func (e *openAIUpstreamStreamReadError) Error() string {
@@ -32,6 +33,69 @@ func newOpenAIUpstreamStreamReadError(err error) error {
 		clientCode:    code,
 		clientMessage: message,
 	}
+}
+
+// OpenAIStreamRecoveryInfo carries post-output stream metadata without
+// changing the legacy read-error identity.  In particular, callers can still
+// use OpenAIUpstreamStreamReadErrorDetails/errors.As while handlers decide
+// whether to append a structured recovery SSE event.
+type OpenAIStreamRecoveryInfo struct {
+	OutputStarted bool
+	ResponseID    string
+	UsageKnown    bool
+	Payload       OpenAIStreamRecoveryPayload
+}
+
+func (e *openAIUpstreamStreamReadError) OpenAIStreamRecoveryInfo() OpenAIStreamRecoveryInfo {
+	if e == nil || e.recovery == nil {
+		return OpenAIStreamRecoveryInfo{}
+	}
+	return *e.recovery
+}
+
+// newOpenAIUpstreamStreamReadRecoveryError preserves the existing stream-read
+// error contract while attaching the recovery payload needed after semantic
+// output has already been sent to the client.
+func newOpenAIUpstreamStreamReadRecoveryError(cause error, responseID string, usageKnown bool) error {
+	if cause == nil {
+		cause = errors.New("missing terminal event")
+	}
+	code, message := classifyOpenAIUpstreamStreamReadError(cause)
+	responseID = strings.TrimSpace(responseID)
+	return &openAIUpstreamStreamReadError{
+		cause:         cause,
+		clientCode:    code,
+		clientMessage: message,
+		recovery: &OpenAIStreamRecoveryInfo{
+			OutputStarted: true,
+			ResponseID:    responseID,
+			UsageKnown:    usageKnown,
+			Payload: OpenAIStreamRecoveryPayload{
+				Type:              "upstream_stream_error",
+				Message:           "Upstream response stream was interrupted",
+				Retryable:         true,
+				ResumeSupported:   responseID != "",
+				RetryAfterSeconds: 10,
+				ResponseID:        responseID,
+			},
+		},
+	}
+}
+
+// OpenAIStreamRecoveryDetails extracts optional post-output recovery metadata
+// from an error while preserving the wrapped error's legacy identity.
+func OpenAIStreamRecoveryDetails(err error) (OpenAIStreamRecoveryInfo, bool) {
+	if err == nil {
+		return OpenAIStreamRecoveryInfo{}, false
+	}
+	var provider interface {
+		OpenAIStreamRecoveryInfo() OpenAIStreamRecoveryInfo
+	}
+	if !errors.As(err, &provider) {
+		return OpenAIStreamRecoveryInfo{}, false
+	}
+	info := provider.OpenAIStreamRecoveryInfo()
+	return info, info.OutputStarted
 }
 
 // OpenAIUpstreamStreamReadErrorDetails returns the stable, sanitized client

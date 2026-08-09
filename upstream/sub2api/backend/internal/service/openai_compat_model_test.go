@@ -2008,6 +2008,9 @@ func TestForwardAsAnthropic_MissingTerminalAfterOutputRecordsOpsWithoutFailover(
 	require.Contains(t, err.Error(), "missing terminal event")
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr), "partial output must not be replayed through failover")
+	recovery, recoveryOK := OpenAIStreamRecoveryDetails(err)
+	require.True(t, recoveryOK)
+	require.Equal(t, "resp_1", recovery.ResponseID)
 	require.NotNil(t, result)
 	require.False(t, result.ClientDisconnect)
 	require.True(t, c.Writer.Written())

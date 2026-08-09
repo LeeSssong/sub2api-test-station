@@ -80,6 +80,31 @@ func UpstreamRequestID(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamRequestID, v))
 }
 
+// LogicalRequestID applies equality check predicate on the "logical_request_id" field. It's identical to LogicalRequestIDEQ.
+func LogicalRequestID(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldLogicalRequestID, v))
+}
+
+// AttemptID applies equality check predicate on the "attempt_id" field. It's identical to AttemptIDEQ.
+func AttemptID(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldAttemptID, v))
+}
+
+// UsageCompleteness applies equality check predicate on the "usage_completeness" field. It's identical to UsageCompletenessEQ.
+func UsageCompleteness(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageCompleteness, v))
+}
+
+// ReconciliationRequired applies equality check predicate on the "reconciliation_required" field. It's identical to ReconciliationRequiredEQ.
+func ReconciliationRequired(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldReconciliationRequired, v))
+}
+
+// UnsafeToReplay applies equality check predicate on the "unsafe_to_replay" field. It's identical to UnsafeToReplayEQ.
+func UnsafeToReplay(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUnsafeToReplay, v))
+}
+
 // Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
 func Model(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldModel, v))
@@ -483,6 +508,241 @@ func UpstreamRequestIDEqualFold(v string) predicate.UsageLog {
 // UpstreamRequestIDContainsFold applies the ContainsFold predicate on the "upstream_request_id" field.
 func UpstreamRequestIDContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldUpstreamRequestID, v))
+}
+
+// LogicalRequestIDEQ applies the EQ predicate on the "logical_request_id" field.
+func LogicalRequestIDEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDNEQ applies the NEQ predicate on the "logical_request_id" field.
+func LogicalRequestIDNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDIn applies the In predicate on the "logical_request_id" field.
+func LogicalRequestIDIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldLogicalRequestID, vs...))
+}
+
+// LogicalRequestIDNotIn applies the NotIn predicate on the "logical_request_id" field.
+func LogicalRequestIDNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldLogicalRequestID, vs...))
+}
+
+// LogicalRequestIDGT applies the GT predicate on the "logical_request_id" field.
+func LogicalRequestIDGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDGTE applies the GTE predicate on the "logical_request_id" field.
+func LogicalRequestIDGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDLT applies the LT predicate on the "logical_request_id" field.
+func LogicalRequestIDLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDLTE applies the LTE predicate on the "logical_request_id" field.
+func LogicalRequestIDLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDContains applies the Contains predicate on the "logical_request_id" field.
+func LogicalRequestIDContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDHasPrefix applies the HasPrefix predicate on the "logical_request_id" field.
+func LogicalRequestIDHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDHasSuffix applies the HasSuffix predicate on the "logical_request_id" field.
+func LogicalRequestIDHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDIsNil applies the IsNil predicate on the "logical_request_id" field.
+func LogicalRequestIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldLogicalRequestID))
+}
+
+// LogicalRequestIDNotNil applies the NotNil predicate on the "logical_request_id" field.
+func LogicalRequestIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldLogicalRequestID))
+}
+
+// LogicalRequestIDEqualFold applies the EqualFold predicate on the "logical_request_id" field.
+func LogicalRequestIDEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldLogicalRequestID, v))
+}
+
+// LogicalRequestIDContainsFold applies the ContainsFold predicate on the "logical_request_id" field.
+func LogicalRequestIDContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldLogicalRequestID, v))
+}
+
+// AttemptIDEQ applies the EQ predicate on the "attempt_id" field.
+func AttemptIDEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldAttemptID, v))
+}
+
+// AttemptIDNEQ applies the NEQ predicate on the "attempt_id" field.
+func AttemptIDNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldAttemptID, v))
+}
+
+// AttemptIDIn applies the In predicate on the "attempt_id" field.
+func AttemptIDIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldAttemptID, vs...))
+}
+
+// AttemptIDNotIn applies the NotIn predicate on the "attempt_id" field.
+func AttemptIDNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldAttemptID, vs...))
+}
+
+// AttemptIDGT applies the GT predicate on the "attempt_id" field.
+func AttemptIDGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldAttemptID, v))
+}
+
+// AttemptIDGTE applies the GTE predicate on the "attempt_id" field.
+func AttemptIDGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldAttemptID, v))
+}
+
+// AttemptIDLT applies the LT predicate on the "attempt_id" field.
+func AttemptIDLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldAttemptID, v))
+}
+
+// AttemptIDLTE applies the LTE predicate on the "attempt_id" field.
+func AttemptIDLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldAttemptID, v))
+}
+
+// AttemptIDContains applies the Contains predicate on the "attempt_id" field.
+func AttemptIDContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldAttemptID, v))
+}
+
+// AttemptIDHasPrefix applies the HasPrefix predicate on the "attempt_id" field.
+func AttemptIDHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldAttemptID, v))
+}
+
+// AttemptIDHasSuffix applies the HasSuffix predicate on the "attempt_id" field.
+func AttemptIDHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldAttemptID, v))
+}
+
+// AttemptIDIsNil applies the IsNil predicate on the "attempt_id" field.
+func AttemptIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldAttemptID))
+}
+
+// AttemptIDNotNil applies the NotNil predicate on the "attempt_id" field.
+func AttemptIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldAttemptID))
+}
+
+// AttemptIDEqualFold applies the EqualFold predicate on the "attempt_id" field.
+func AttemptIDEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldAttemptID, v))
+}
+
+// AttemptIDContainsFold applies the ContainsFold predicate on the "attempt_id" field.
+func AttemptIDContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldAttemptID, v))
+}
+
+// UsageCompletenessEQ applies the EQ predicate on the "usage_completeness" field.
+func UsageCompletenessEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessNEQ applies the NEQ predicate on the "usage_completeness" field.
+func UsageCompletenessNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessIn applies the In predicate on the "usage_completeness" field.
+func UsageCompletenessIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUsageCompleteness, vs...))
+}
+
+// UsageCompletenessNotIn applies the NotIn predicate on the "usage_completeness" field.
+func UsageCompletenessNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUsageCompleteness, vs...))
+}
+
+// UsageCompletenessGT applies the GT predicate on the "usage_completeness" field.
+func UsageCompletenessGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessGTE applies the GTE predicate on the "usage_completeness" field.
+func UsageCompletenessGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessLT applies the LT predicate on the "usage_completeness" field.
+func UsageCompletenessLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessLTE applies the LTE predicate on the "usage_completeness" field.
+func UsageCompletenessLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessContains applies the Contains predicate on the "usage_completeness" field.
+func UsageCompletenessContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessHasPrefix applies the HasPrefix predicate on the "usage_completeness" field.
+func UsageCompletenessHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessHasSuffix applies the HasSuffix predicate on the "usage_completeness" field.
+func UsageCompletenessHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessEqualFold applies the EqualFold predicate on the "usage_completeness" field.
+func UsageCompletenessEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldUsageCompleteness, v))
+}
+
+// UsageCompletenessContainsFold applies the ContainsFold predicate on the "usage_completeness" field.
+func UsageCompletenessContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldUsageCompleteness, v))
+}
+
+// ReconciliationRequiredEQ applies the EQ predicate on the "reconciliation_required" field.
+func ReconciliationRequiredEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldReconciliationRequired, v))
+}
+
+// ReconciliationRequiredNEQ applies the NEQ predicate on the "reconciliation_required" field.
+func ReconciliationRequiredNEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldReconciliationRequired, v))
+}
+
+// UnsafeToReplayEQ applies the EQ predicate on the "unsafe_to_replay" field.
+func UnsafeToReplayEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUnsafeToReplay, v))
+}
+
+// UnsafeToReplayNEQ applies the NEQ predicate on the "unsafe_to_replay" field.
+func UnsafeToReplayNEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUnsafeToReplay, v))
 }
 
 // ModelEQ applies the EQ predicate on the "model" field.

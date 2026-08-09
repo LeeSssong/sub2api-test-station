@@ -88,6 +88,38 @@ func (s *UsageLogRepoSuite) TestCreate() {
 	s.Require().NotZero(log.ID)
 }
 
+func (s *UsageLogRepoSuite) TestCreatePersistsAttemptReconciliationAudit() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "attempt-audit@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-attempt-audit", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-attempt-audit"})
+	log := &service.UsageLog{
+		UserID:                 user.ID,
+		APIKeyID:               apiKey.ID,
+		AccountID:              account.ID,
+		RequestID:              "logical-audit:1",
+		LogicalRequestID:       "logical-audit",
+		AttemptID:              "logical-audit:1",
+		UsageCompleteness:      service.UsageCompletenessPartial,
+		ReconciliationRequired: true,
+		UnsafeToReplay:         true,
+		Model:                  "gpt-5.1",
+		InputTokens:            10,
+		OutputTokens:           4,
+	}
+
+	inserted, err := s.repo.Create(s.ctx, log)
+	s.Require().NoError(err)
+	s.Require().True(inserted)
+
+	got, err := s.repo.GetByID(s.ctx, log.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(log.LogicalRequestID, got.LogicalRequestID)
+	s.Require().Equal(log.AttemptID, got.AttemptID)
+	s.Require().Equal(service.UsageCompletenessPartial, got.UsageCompleteness)
+	s.Require().True(got.ReconciliationRequired)
+	s.Require().True(got.UnsafeToReplay)
+}
+
 func TestUsageLogRepositoryCreate_BatchPathConcurrent(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

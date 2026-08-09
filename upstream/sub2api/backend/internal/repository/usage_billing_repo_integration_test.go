@@ -38,7 +38,9 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:           requestID,
+		LogicalRequestID:    requestID,
+		RequestFingerprint:  "complete-balance-usage",
+		UsageCompleteness:   service.UsageCompletenessComplete,
 		APIKeyID:            apiKey.ID,
 		UserID:              user.ID,
 		AccountID:           account.ID,
@@ -76,8 +78,108 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	require.Equal(t, service.StatusAPIKeyQuotaExhausted, status)
 
 	var dedupCount int
-	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2", requestID, apiKey.ID).Scan(&dedupCount))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2", cmd.RequestID, apiKey.ID).Scan(&dedupCount))
 	require.Equal(t, 1, dedupCount)
+}
+
+func TestUsageBillingRepositoryApply_PartialReconciliationRetryChargesOnce(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-reconcile-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Balance:      100,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-reconcile-" + uuid.NewString(),
+		Name:   "reconcile",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-reconcile-account-" + uuid.NewString(),
+		Type: service.AccountTypeAPIKey,
+	})
+
+	cmd := &service.UsageBillingCommand{
+		LogicalRequestID:       "logical-reconcile-" + uuid.NewString(),
+		AttemptID:              "attempt-1",
+		RequestFingerprint:     "observed-partial-usage",
+		UsageCompleteness:      service.UsageCompletenessPartial,
+		ReconciliationRequired: true,
+		APIKeyID:               apiKey.ID,
+		UserID:                 user.ID,
+		AccountID:              account.ID,
+		AccountType:            service.AccountTypeAPIKey,
+		BalanceCost:            1.75,
+	}
+	first, err := repo.Apply(ctx, cmd)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+
+	retry := *cmd
+	retry.AttemptID = "attempt-2"
+	second, err := repo.Apply(ctx, &retry)
+	require.NoError(t, err)
+	require.False(t, second.Applied)
+
+	var balance float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
+	require.InDelta(t, 98.25, balance, 0.000001)
+
+	var dedupCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2",
+		cmd.RequestID, apiKey.ID,
+	).Scan(&dedupCount))
+	require.Equal(t, 1, dedupCount)
+}
+
+func TestUsageBillingRepositoryApply_UnknownDoesNotClaimLaterCompleteObservation(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-unknown-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash", Balance: 10})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-unknown-" + uuid.NewString(), Name: "unknown"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "usage-unknown-account-" + uuid.NewString(), Type: service.AccountTypeAPIKey})
+
+	unknown := &service.UsageBillingCommand{LogicalRequestID: "logical-unknown-" + uuid.NewString(), RequestFingerprint: "no-usage", UsageCompleteness: service.UsageCompletenessUnknown, APIKeyID: apiKey.ID, UserID: user.ID, AccountID: account.ID, AccountType: service.AccountTypeAPIKey, BalanceCost: 2}
+	result, err := repo.Apply(ctx, unknown)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+
+	complete := *unknown
+	complete.RequestFingerprint = "observed-usage"
+	complete.UsageCompleteness = service.UsageCompletenessComplete
+	complete.BalanceCost = 2
+	result, err = repo.Apply(ctx, &complete)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+
+	var balance float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
+	require.InDelta(t, 8, balance, 0.000001)
+}
+
+func TestUsageBillingRepositoryApply_ChangedObservedUsageUsesSeparateLogicalFingerprintBoundary(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-changed-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash", Balance: 10})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-changed-" + uuid.NewString(), Name: "changed"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "usage-changed-account-" + uuid.NewString(), Type: service.AccountTypeAPIKey})
+
+	partial := &service.UsageBillingCommand{LogicalRequestID: "logical-changed-" + uuid.NewString(), RequestFingerprint: "partial", UsageCompleteness: service.UsageCompletenessPartial, APIKeyID: apiKey.ID, UserID: user.ID, AccountID: account.ID, AccountType: service.AccountTypeAPIKey, BalanceCost: 1}
+	first, err := repo.Apply(ctx, partial)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	complete := *partial
+	complete.RequestFingerprint = "complete"
+	complete.UsageCompleteness = service.UsageCompletenessComplete
+	complete.BalanceCost = 0.5
+	second, err := repo.Apply(ctx, &complete)
+	require.NoError(t, err)
+	require.True(t, second.Applied)
 }
 
 func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.T) {
@@ -107,12 +209,14 @@ func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:        requestID,
-		APIKeyID:         apiKey.ID,
-		UserID:           user.ID,
-		AccountID:        0,
-		SubscriptionID:   &subscription.ID,
-		SubscriptionCost: 2.5,
+		LogicalRequestID:   requestID,
+		RequestFingerprint: "complete-subscription-usage",
+		UsageCompleteness:  service.UsageCompletenessComplete,
+		APIKeyID:           apiKey.ID,
+		UserID:             user.ID,
+		AccountID:          0,
+		SubscriptionID:     &subscription.ID,
+		SubscriptionCost:   2.5,
 	}
 
 	result1, err := repo.Apply(ctx, cmd)
@@ -146,18 +250,20 @@ func TestUsageBillingRepositoryApply_RequestFingerprintConflict(t *testing.T) {
 
 	requestID := uuid.NewString()
 	_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 1.25,
+		RequestID:         requestID,
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		BalanceCost:       1.25,
 	})
 	require.NoError(t, err)
 
 	_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 2.50,
+		RequestID:         requestID,
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		BalanceCost:       2.50,
 	})
 	require.ErrorIs(t, err, service.ErrUsageBillingRequestConflict)
 }
@@ -185,12 +291,13 @@ func TestUsageBillingRepositoryApply_UpdatesAccountQuota(t *testing.T) {
 	})
 
 	_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:        uuid.NewString(),
-		APIKeyID:         apiKey.ID,
-		UserID:           user.ID,
-		AccountID:        account.ID,
-		AccountType:      service.AccountTypeAPIKey,
-		AccountQuotaCost: 3.5,
+		RequestID:         uuid.NewString(),
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		AccountID:         account.ID,
+		AccountType:       service.AccountTypeAPIKey,
+		AccountQuotaCost:  3.5,
 	})
 	require.NoError(t, err)
 
@@ -239,33 +346,36 @@ func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *t
 		})
 		// 第一次低于日限额：不应入队 outbox
 		_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 4,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  4,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 0, outboxCountFor(t, accountID), "below limit should not enqueue")
 
 		// 第二次跨越日限额：应入队一次 outbox
 		_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 8,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  8,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "crossing daily limit should enqueue once")
 
 		// 再次递增（已超）：不应重复入队
 		_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 2,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  2,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "subsequent increments beyond limit should not re-enqueue")
@@ -276,11 +386,12 @@ func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *t
 			"quota_weekly_limit": 10.0,
 		})
 		_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 15, // 单次即跨越
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  15, // 单次即跨越
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "single-shot crossing weekly limit should enqueue once")
@@ -339,10 +450,12 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 1.25,
+		LogicalRequestID:   requestID,
+		RequestFingerprint: "complete-archived-usage",
+		UsageCompleteness:  service.UsageCompletenessComplete,
+		APIKeyID:           apiKey.ID,
+		UserID:             user.ID,
+		BalanceCost:        1.25,
 	}
 
 	result1, err := repo.Apply(ctx, cmd)
@@ -353,7 +466,7 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 		UPDATE usage_billing_dedup
 		SET created_at = $1
 		WHERE request_id = $2 AND api_key_id = $3
-	`, time.Now().UTC().AddDate(0, 0, -400), requestID, apiKey.ID)
+	`, time.Now().UTC().AddDate(0, 0, -400), cmd.RequestID, apiKey.ID)
 	require.NoError(t, err)
 	require.NoError(t, aggRepo.CleanupUsageBillingDedup(ctx, time.Now().UTC().AddDate(0, 0, -365)))
 

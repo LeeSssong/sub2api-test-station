@@ -38,3 +38,28 @@ evidence without secrets or full email addresses.
 The public settings contract omits `frontend_url`; Task 3 should use its
 normal public flag checks plus authenticated Admin API/database checks for the
 reset-link base URL.
+
+## Independent Review
+
+**Decision: APPROVED - Task 3 authorized.**
+
+- Reviewed commit `721f1295a` and the activation report against the Task 2
+  brief. The recorded request and rollback payloads contain exactly the three
+  approved fields and the report identifies one authenticated Admin API PUT,
+  with no direct database write.
+- The baseline and post-change evidence covers the Admin API, public settings,
+  sanitized PostgreSQL values, health, runtime identities/restart counts,
+  invitation gating, CAPTCHA flags, whitelist, and sanitized SMTP settings.
+  The protected-settings hash is unchanged outside the three target keys.
+- Source inspection confirms the handler computes omitted fields from the raw
+  JSON payload and calls the omission-aware service update path. It also
+  confirms that the public-settings DTO intentionally excludes `frontend_url`,
+  so the Admin API and PostgreSQL checks are the correct evidence for that
+  field; this is a verification-path limitation, not a Task 2 failure.
+- The committed artifacts contain no credentials, tokens, passwords, full
+  email addresses, or message content. Full container IDs are included only as
+  the explicitly requested runtime identity evidence.
+
+Task 3 may proceed. It must retain invitation-code gating, avoid creating a
+production test user, and use authenticated Admin API/PostgreSQL checks for
+the reset-link base URL in addition to the normal public flag checks.

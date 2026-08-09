@@ -994,6 +994,8 @@ test_authorized_maintenance_transition() {
   local externalization_new_hash=5cc825b23a35f64ecb2b2def9ae73170c7c512015f112d0773ba232e5ab85703
   local account_cost_old_hash=5cc825b23a35f64ecb2b2def9ae73170c7c512015f112d0773ba232e5ab85703
   local account_cost_new_hash=9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0
+  local monitor_history_old_hash=9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0
+  local monitor_history_new_hash=1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98
   local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
   local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
@@ -1058,6 +1060,17 @@ test_authorized_maintenance_transition() {
     || fail "account_cost maintenance transition failed: $(cat "$CASE_DIR/stderr")"
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
     || fail 'account_cost transition did not use the bounded maintenance path'
+
+  setup_case monitor_history_maintenance_success
+  write_meminfo
+  MIGRATIONS_HASH=$monitor_history_new_hash
+  "$REAL_JQ" --arg hash "$monitor_history_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$monitor_history_old_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "monitor history maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'monitor history transition did not use the bounded maintenance path'
 
   setup_case maintenance_rollback
   write_meminfo

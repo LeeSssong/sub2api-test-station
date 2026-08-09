@@ -643,6 +643,8 @@ type AdminUsageLog struct {
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier"`
 	// AccountStatsCost 自定义定价规则计算的账号统计费用（nil 表示使用默认公式）
 	AccountStatsCost *float64 `json:"account_stats_cost,omitempty"`
+	// AccountCost 最终账号成本快照（nil 表示历史流水按旧公式计算）
+	AccountCost *float64 `json:"account_cost,omitempty"`
 
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`

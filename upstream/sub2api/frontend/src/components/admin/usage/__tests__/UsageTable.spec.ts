@@ -205,6 +205,34 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.069568')
   })
 
+  it('prefers the final account cost snapshot over the legacy multiplier formula', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-fixed-account-cost',
+          total_cost: 0.9,
+          account_stats_cost: 0.24,
+          account_cost: 0.24,
+          account_rate_multiplier: 0.5,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('A $0.240000')
+    expect(wrapper.text()).not.toContain('A $0.120000')
+  })
+
   it('shows requested and upstream models separately for admin rows', () => {
     const row = {
       request_id: 'req-admin-model-1',

@@ -149,7 +149,7 @@ func (s *AccountProfitabilityService) queryAggregates(ctx context.Context, start
 			a.procurement_cost_effective_at,
 			a.expires_at,
 			COALESCE(SUM(ul.actual_cost), 0)::double precision AS revenue,
-			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0)::double precision AS relay_expense,
+			COALESCE(SUM(COALESCE(ul.account_cost, COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))), 0)::double precision AS relay_expense,
 			COUNT(ul.id)::bigint AS request_count,
 			COALESCE(SUM(
 				ul.input_tokens + ul.output_tokens +

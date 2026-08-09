@@ -159,6 +159,7 @@ func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *test
 	ipAddress := "203.0.113.10"
 	accountRateMultiplier := 1.5
 	accountStatsCost := 0.21
+	accountCost := 0.18
 	log := &service.UsageLog{
 		RequestID:             "req_user_visible_billing",
 		Model:                 "gpt-5.4",
@@ -172,6 +173,7 @@ func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *test
 		IPAddress:             &ipAddress,
 		AccountRateMultiplier: &accountRateMultiplier,
 		AccountStatsCost:      &accountStatsCost,
+		AccountCost:           &accountCost,
 	}
 
 	userDTO := UsageLogFromService(log)
@@ -190,6 +192,10 @@ func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *test
 	require.NotContains(t, string(userJSON), "account_rate_multiplier")
 	require.NotContains(t, string(userJSON), "account_stats_cost")
 	require.NotContains(t, string(userJSON), "account_cost")
+
+	adminJSON, err := json.Marshal(UsageLogFromServiceAdmin(log))
+	require.NoError(t, err)
+	require.Contains(t, string(adminJSON), `"account_cost":0.18`)
 }
 
 func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *testing.T) {

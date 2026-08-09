@@ -64,6 +64,7 @@ describe('admin usage API', () => {
       model_mapping_chain: 'gpt-5 -> gpt-5-2026-07-01',
       account_rate_multiplier: 0.8,
       account_stats_cost: 0.00248,
+      account_cost: 0.00248,
       channel_id: 17,
       billing_tier: 'standard',
       account: {

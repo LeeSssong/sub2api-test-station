@@ -172,7 +172,7 @@ func accountProfitabilityRows() *sqlmock.Rows {
 }
 
 func accountProfitabilityQueryPattern() string {
-	return regexp.QuoteMeta("SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))")
+	return regexp.QuoteMeta("SUM(COALESCE(ul.account_cost, COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)))")
 }
 
 func balanceEvidenceJSON(source string) string {

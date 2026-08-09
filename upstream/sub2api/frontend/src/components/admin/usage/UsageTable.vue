@@ -469,6 +469,7 @@
                 ${{ accountBilled({
                   total_cost: tooltipData?.total_cost,
                   account_stats_cost: tooltipData?.account_stats_cost,
+                  account_cost: tooltipData?.account_cost,
                   account_rate_multiplier: tooltipData?.account_rate_multiplier,
                 }).toFixed(6) }}
               </span>
@@ -519,8 +520,9 @@ import {
   hasImageInputCost,
 } from '@/utils/imageUsage'
 
-/** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
-function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {
+/** Prefer the final snapshot; pre-migration rows retain the legacy formula. */
+function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_cost?: number | null; account_rate_multiplier?: number | null }): number {
+  if (row.account_cost != null) return Number.isNaN(row.account_cost) ? 0 : row.account_cost
   const base = row.account_stats_cost != null ? row.account_stats_cost : (row.total_cost ?? 0)
   const result = base * (row.account_rate_multiplier ?? 1)
   return Number.isNaN(result) ? 0 : result

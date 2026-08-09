@@ -30,7 +30,7 @@ func TestDashboardHandlerAccountProfitabilityReturnsContract(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	mock.ExpectQuery(regexp.QuoteMeta("SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))")).
+	mock.ExpectQuery(regexp.QuoteMeta("SUM(COALESCE(ul.account_cost, COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)))")).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"account_id", "name", "platform", "account_type", "status", "extra",

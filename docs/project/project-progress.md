@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮实施进展（2026-08-10）：** 账号监控卡片“推荐分组”进入 Task 1 后端纯评估器实施，继续保持状态“进行中”；当前仍不涉及生产部署、账号分组写入、调度或评分权重修改。
+
 **本轮登记（2026-08-10）：** 请求 `cad40d1b-b46a-4d0b-9878-9a7636cc6780:1` 显示 0 Token、0ms、本站实际扣费 `$0` 的计费异常，以及 Codex 任务“制定上游账号测试方案”“优化更新机制”多次 429 并发限制却未出现在 Sub 原生错误监控和使用记录中的生产只读根因排查，状态：进行中。范围为对齐 Codex 任务失败时间/平台请求 ID、Sub2API handler 并发门禁、错误采集、usage log 创建和扣费写入顺序，确认零值流水与监控漏记是否同源；本轮不修改生产数据、用户/账号并发、余额、计费、路由、账号或容器，不发送额外付费探测。当前工作区为根目录 `main`；已盘点全部非 `main` worktree，`.worktrees/fix-official-update-stuck` 对应用户点名的活动任务“优化更新机制”，`.worktrees/gpt-group-baseline-apply` 对应仍在进行的上游账号任务，均作为本轮保护例外保留，不合并、不修改、不清理。
 
 **本轮登记（2026-08-09）：** 账号监控卡片“推荐分组”与测试组定期打标闭环，状态：进行中（子代理驱动实施，Task 1 准备中）。目标是新账号先进入 `GPT-测试分组`，由既有主动探测/账号监控链路定期评估利润、可调度状态、最新错误、样本量、成功率和延迟，生成只读的“推荐分组”标签；管理员看到后仍通过现有 Sub2API 分组编辑能力人工迁移，不自动改组。用户已确认采用实时派生方案、质量证据仅用主动探测；推荐固定使用滚动 7 天探测窗口；测试组显示推荐/继续观察/暂缓/不建议，正式组仅对正常可调度账号分析且只有明确推荐其他正式档位时显示同行叹号；Codex Auth 正常时默认公开 Pro 与专属 Pro，异常测试组账号暂缓迁入。卡片只在现有平台/当前分组/调度状态同行追加字段，不新增区块或拉长正常布局。正式设计为 `docs/superpowers/specs/2026-08-09-account-monitor-group-recommendation-design.md`，实施计划为 `docs/superpowers/plans/2026-08-10-account-monitor-group-recommendation.md`。本任务工作区为 `.worktrees/account-monitor-group-recommendation`，分支 `codex/account-monitor-group-recommendation`。实施前再次盘点：`gpt-group-baseline-apply` 的唯一领先内容已有 main 等价提交；`fix-official-update-stuck` 仍含未提交活动实现，不作为完成候选合并并完整保留。本轮不修改生产、账号分组、调度、评分权重或数据库。

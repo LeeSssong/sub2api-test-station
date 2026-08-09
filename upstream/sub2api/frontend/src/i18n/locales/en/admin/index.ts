@@ -58,6 +58,17 @@ export default {
     estimated: 'Estimated',
     pending: 'Pending Reconciliation',
     pendingReconciliation: 'Pending reconciliation',
+    unavailableReasons: {
+      credentialsUnavailable: 'This account has no usable upstream ledger credentials, so the actual upstream charge and profit cannot be confirmed.',
+      endpointUnavailable: 'This account has no usable upstream ledger endpoint, so the actual upstream charge and profit cannot be confirmed.',
+      endpointUnsupported: 'This upstream does not expose a compatible per-request ledger, so the actual upstream charge and profit cannot be confirmed.',
+      authenticationRejected: 'The upstream rejected ledger authentication for this account, so the actual upstream charge and profit cannot be confirmed.',
+      requestUnavailable: 'The upstream ledger request is currently unavailable. Try again later.',
+      responseUnavailable: 'The upstream ledger returned an invalid response, so the actual upstream charge and profit cannot be confirmed.',
+      recordNotFound: 'No exact request record was found in the upstream ledger; an estimate will not be substituted.',
+      paginationUnavailable: 'The upstream ledger pagination was incomplete, so the actual upstream charge and profit cannot be confirmed.',
+      generic: 'The actual upstream charge and profit cannot currently be confirmed.',
+    },
     costSources: {
       nativeLedger: 'Native Upstream Ledger',
       upstreamPriceTable: 'Upstream Price-table Estimate',

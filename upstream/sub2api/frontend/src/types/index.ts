@@ -1689,6 +1689,7 @@ export interface AdminUsageCostDetail {
   upstream_actual_cost: number | null
   profit: number | null
   status: 'confirmed' | 'unavailable' | string
+  reason_code?: string
   reason?: string
 }
 

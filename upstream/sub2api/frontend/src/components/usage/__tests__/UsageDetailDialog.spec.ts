@@ -367,6 +367,28 @@ describe('UsageDetailDialog', () => {
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
   })
 
+  it('explains when the upstream does not expose a compatible usage ledger', async () => {
+    adminGetById.mockResolvedValue(adminRecord)
+    adminGetUpstreamCost.mockResolvedValue({
+      usage_id: 42,
+      local_request_id: 'req-admin-42',
+      upstream_request_id: 'upstream-req-42',
+      site_actual_cost: 0.00688,
+      upstream_actual_cost: null,
+      profit: null,
+      status: 'unavailable',
+      reason_code: 'endpoint_unsupported',
+      reason: 'upstream usage endpoint unsupported',
+    })
+
+    const wrapper = mountDialog({ scope: 'admin' })
+    await flushPromises()
+
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(wrapper.text()).toContain('admin.usageCostDetail.unavailableReasons.endpointUnsupported')
+  })
+
   it('shows a placeholder for a missing upstream request ID while querying by local ID', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: null })
     adminGetUpstreamCost.mockResolvedValue({

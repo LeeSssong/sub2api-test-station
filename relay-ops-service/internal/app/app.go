@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adapter"
+	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
@@ -206,6 +208,10 @@ func readFeishuSecret(path string) (string, error) {
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
+	trustedProxy, err := configuredTrustedProxy(cfg, nil)
+	if err != nil {
+		return nil, err
+	}
 	database, err := store.Open(ctx, cfg.DatabaseURLFile)
 	if err != nil {
 		return nil, err
@@ -497,7 +503,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
 	operations, err := newOperationsServer(httpserver.Dependencies{
-		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
+		BaseOrigin: cfg.PublicBaseURL, Auth: reader, TrustedProxy: trustedProxy, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:        billing.SessionRegistrationService{Repository: database},
 		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
@@ -520,6 +526,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/", operations)
 	failed = false
 	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService, Consumer: consumer, CoreOutbox: coreOutbox}, nil
+}
+
+func configuredTrustedProxy(cfg config.Config, lookup func(string) ([]net.IP, error)) (adminauth.TrustedProxy, error) {
+	policy, err := adminauth.NewTrustedProxyPolicy(cfg.TrustedProxyHost, lookup)
+	if err != nil {
+		return nil, fmt.Errorf("resolve trusted proxy host: %w", err)
+	}
+	return policy, nil
 }
 
 func (a *App) RunExternalization(ctx context.Context) error {

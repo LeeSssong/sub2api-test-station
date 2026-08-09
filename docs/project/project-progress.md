@@ -1,5 +1,13 @@
 # 项目全局进度总账
 
+**本轮 Task 4 fix round 3（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为收紧 relay-ops trusted-proxy 身份：仅显式配置并解析实际 Caddy
+Docker peer 可转发原始浏览器 IP；默认无配置回退 RemoteAddr；补齐 TDD、
+Compose/config 路由合同和本地回归；不推送、合并、部署或触碰生产。
+本地实现、严格聚焦回归、全量 Go 测试、race、vet 与路由合同已通过；因本轮
+明确禁止推送、部署和线上验证，状态继续为“进行中”。
+
 **本轮 Task 4 fix round 2（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
 范围限定为修复同域管理员会话原始客户端 IP 选择、四个空读模型元数据以及

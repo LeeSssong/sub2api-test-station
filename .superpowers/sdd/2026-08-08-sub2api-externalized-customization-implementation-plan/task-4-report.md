@@ -212,3 +212,62 @@ write failure after an official failure can still leave the durable row
 pending when storage is unavailable; subsequent identical requests now fail
 closed instead of being reported accepted, and operator/storage repair is
 required before retrying.
+
+## Fix Round 3
+
+### RED / GREEN
+
+- **Exact Caddy peer policy:** RED added HTTP and app startup wiring tests and
+  ran:
+
+  ```text
+  cd relay-ops-service
+  go test ./internal/http ./internal/app ./internal/sub2api \
+    -run 'Test(AdminMountsUseConfiguredTrustedProxy|ConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly|AdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe)$' -count=1 -v
+  ```
+
+  Exact output included:
+
+  ```text
+  internal/http/server_test.go:114:3: unknown field TrustedProxy in struct literal of type Dependencies
+  internal/app/app_test.go:41:17: undefined: configuredTrustedProxy
+  internal/app/app_test.go:50:11: undefined: configuredTrustedProxy
+  FAIL
+  ```
+
+  GREEN resolves `RELAY_OPS_TRUSTED_PROXY_HOST` exactly once during `app.New`,
+  before opening the database, and injects that immutable policy into every
+  production admin-auth mount: Xingqiao, accounting, and reconciliation. A
+  missing setting has an empty fail-closed policy; a configured hostname that
+  errors or resolves no IPs rejects startup. The policy accepts the resolved
+  Caddy address only, so a different private container cannot use forwarded
+  headers. The real middleware-to-`/api/v1/auth/me` boundary now supplies an
+  explicit Caddy policy and continues to assert the original browser IP.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/config ./internal/adminauth ./internal/app ./internal/http ./internal/sub2api \
+  -run 'Test(LoadConfiguresExactTrustedProxyHost|RequireAdmin(UsesOriginalIPFromTrustedCaddyProxy|RejectsForwardedIPFromDifferentPrivateContainer|DefaultFailsClosedForPrivatePeer)|ConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly|AdminMountsUseConfiguredTrustedProxy|AdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe)$' -count=1 -v
+# PASS: config, adminauth, app, http, sub2api
+go test ./...
+# PASS
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+# PASS
+go vet ./...
+# PASS
+cd ..
+bash tests/infra/validate-sub2api-update-routing.sh
+# PASS: Sub2API update UI and routing contracts
+git diff --check
+# PASS
+```
+
+### Residual Concerns
+
+The exact Docker DNS result is intentionally fixed for the relay process
+lifetime. If Caddy is recreated with a different peer IP, relay-ops must be
+restarted to resolve it again; it will otherwise fail closed rather than trust
+another container. This task remains local-only and in progress until a later,
+separately authorized push, deployment, and online verification.

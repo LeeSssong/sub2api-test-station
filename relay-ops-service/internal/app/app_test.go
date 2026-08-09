@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +34,29 @@ func TestCandidateServiceUsesConfiguredManagedSecretDirectory(t *testing.T) {
 	}
 	if store.Directory != "/var/lib/relay-ops/candidate-keys" {
 		t.Fatalf("Directory = %q", store.Directory)
+	}
+}
+
+func TestConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly(t *testing.T) {
+	lookups := 0
+	policy, err := configuredTrustedProxy(config.Config{TrustedProxyHost: "caddy"}, func(string) ([]net.IP, error) {
+		lookups++
+		return []net.IP{net.ParseIP("172.20.0.4")}, nil
+	})
+	if err != nil {
+		t.Fatalf("configuredTrustedProxy: %v", err)
+	}
+	if !policy.Trusted("172.20.0.4") || policy.Trusted("172.20.0.9") {
+		t.Fatal("configured proxy policy did not retain the exact resolved Caddy peer")
+	}
+	if lookups != 1 {
+		t.Fatalf("lookups = %d, want startup resolution once", lookups)
+	}
+	_, err = configuredTrustedProxy(config.Config{TrustedProxyHost: "caddy"}, func(string) ([]net.IP, error) {
+		return nil, errors.New("Docker DNS unavailable")
+	})
+	if err == nil || !strings.Contains(err.Error(), "resolve trusted proxy") {
+		t.Fatalf("startup error = %v", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,6 +94,44 @@ func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing
 	for _, secret := range []string{"session-secret", "session=private", "x-api-key"} {
 		if strings.Contains(rec.Body.String(), secret) {
 			t.Fatalf("response leaked %q: %s", secret, rec.Body.String())
+		}
+	}
+}
+
+func TestAdminMountsUseConfiguredTrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	policy, err := adminauth.NewTrustedProxyPolicy("caddy", func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("172.20.0.4")}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := &sessionBindingVerifier{identity: adminauth.Identity{UserID: 4, Role: "admin", Status: "active"}}
+	h, err := NewServer(Dependencies{
+		Pricing:        fakePricing{},
+		Auth:           verifier,
+		TrustedProxy:   policy,
+		ControlPlane:   http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }),
+		Accounting:     &fakeAccounting{},
+		Reconciliation: &fakeReconciliation{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/v1/xingqiao/accounts/monitor",
+		"/relay-ops/accounting",
+		"/relay-ops/api/reconciliation/summary",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "172.20.0.4:8100"
+		req.Header.Set("Authorization", "Bearer browser-session")
+		req.Header.Set("X-Forwarded-For", "198.51.100.23")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if verifier.session.ClientIP != "198.51.100.23" {
+			t.Fatalf("%s client IP = %q, want browser IP", path, verifier.session.ClientIP)
 		}
 	}
 }

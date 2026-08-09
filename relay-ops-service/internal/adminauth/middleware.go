@@ -2,6 +2,7 @@ package adminauth
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -28,17 +29,58 @@ type Verifier interface {
 	VerifyAdminSession(context.Context, Session) (Identity, error)
 }
 
+type TrustedProxy interface {
+	Trusted(string) bool
+}
+
+type trustedProxyPolicy struct{ peers map[string]struct{} }
+
+// NewTrustedProxyPolicy resolves the explicitly configured Docker peer once at
+// startup. Requests only compare their socket peer against the resulting set.
+func NewTrustedProxyPolicy(host string, lookup func(string) ([]net.IP, error)) (TrustedProxy, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return trustedProxyPolicy{}, nil
+	}
+	if lookup == nil {
+		lookup = net.LookupIP
+	}
+	addresses, err := lookup(host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve trusted proxy host %q: %w", host, err)
+	}
+	peers := make(map[string]struct{}, len(addresses))
+	for _, address := range addresses {
+		if address != nil {
+			peers[address.String()] = struct{}{}
+		}
+	}
+	if len(peers) == 0 {
+		return nil, fmt.Errorf("trusted proxy host %q resolved to no addresses", host)
+	}
+	return trustedProxyPolicy{peers: peers}, nil
+}
+
+func (p trustedProxyPolicy) Trusted(host string) bool {
+	_, ok := p.peers[strings.TrimSpace(host)]
+	return ok
+}
+
 type actorContextKey struct{}
 
 func RequireAdmin(verifier Verifier, next http.Handler) http.Handler {
-	return requireAdmin(verifier, next, false)
+	return requireAdmin(verifier, trustedProxyPolicy{}, next, false)
+}
+
+func RequireAdminWithTrustedProxy(verifier Verifier, proxy TrustedProxy, next http.Handler) http.Handler {
+	return requireAdmin(verifier, proxy, next, false)
 }
 
 func RequireHiddenAdmin(verifier Verifier, next http.Handler) http.Handler {
-	return requireAdmin(verifier, next, true)
+	return requireAdmin(verifier, trustedProxyPolicy{}, next, true)
 }
 
-func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handler {
+func requireAdmin(verifier Verifier, proxy TrustedProxy, next http.Handler, hidden bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reject := func(status int) {
 			if hidden {
@@ -57,7 +99,7 @@ func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handle
 			UserAgent:    r.UserAgent(),
 			ForwardedFor: strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
 			RealIP:       strings.TrimSpace(r.Header.Get("X-Real-IP")),
-			ClientIP:     requestClientIP(r),
+			ClientIP:     requestClientIP(r, proxy),
 			Origin:       strings.TrimSpace(r.Header.Get("Origin")),
 		})
 		if err != nil {
@@ -78,13 +120,13 @@ func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handle
 	})
 }
 
-func requestClientIP(r *http.Request) string {
+func requestClientIP(r *http.Request, proxy TrustedProxy) string {
 	if r == nil {
 		return ""
 	}
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil {
-		if trustedProxyIP(host) {
+		if proxy != nil && proxy.Trusted(host) {
 			if forwarded := firstForwardedIP(r.Header.Get("X-Forwarded-For")); forwarded != "" {
 				return forwarded
 			}
@@ -95,11 +137,6 @@ func requestClientIP(r *http.Request) string {
 		return host
 	}
 	return strings.TrimSpace(r.RemoteAddr)
-}
-
-func trustedProxyIP(host string) bool {
-	ip := net.ParseIP(strings.TrimSpace(host))
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
 }
 
 func firstForwardedIP(header string) string {

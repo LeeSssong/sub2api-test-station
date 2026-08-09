@@ -25,6 +25,7 @@ type Config struct {
 	TimezoneName                    string
 	DatabaseURLFile                 string
 	Sub2APIBaseURL                  string
+	TrustedProxyHost                string
 	Sub2APIAdminKeyFile             string
 	CoreDatabaseURLFile             string
 	ExternalizationEnabled          bool
@@ -225,6 +226,7 @@ func Load(env func(string) string) (Config, error) {
 		TimezoneName:                    timezoneName,
 		DatabaseURLFile:                 databaseURLFile,
 		Sub2APIBaseURL:                  baseURL,
+		TrustedProxyHost:                get("RELAY_OPS_TRUSTED_PROXY_HOST", ""),
 		Sub2APIAdminKeyFile:             adminKeyFile,
 		CoreDatabaseURLFile:             coreDatabaseURLFile,
 		ExternalizationEnabled:          externalizationEnabled,

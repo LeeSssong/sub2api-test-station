@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -100,7 +101,13 @@ func TestAdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := adminauth.RequireAdmin(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	policy, err := adminauth.NewTrustedProxyPolicy("caddy", func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("172.20.0.4")}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := adminauth.RequireAdminWithTrustedProxy(client, policy, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
 	req.RemoteAddr = "172.20.0.4:8100"
 	req.Header.Set("Authorization", "Bearer browser-session")

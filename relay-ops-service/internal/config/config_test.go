@@ -39,6 +39,20 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	}
 }
 
+func TestLoadConfiguresExactTrustedProxyHost(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_TRUSTED_PROXY_HOST"] = "caddy"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TrustedProxyHost != "caddy" {
+		t.Fatalf("TrustedProxyHost = %q", cfg.TrustedProxyHost)
+	}
+}
+
 func TestLoadRequiresStartDateWhenAccountingEnabled(t *testing.T) {
 	t.Parallel()
 

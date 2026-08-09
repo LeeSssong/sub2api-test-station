@@ -63,6 +63,7 @@ require_fixed 'header_up User-Agent {http.request.header.User-Agent}' infra/Cadd
 require_fixed 'header_up Origin {http.request.header.Origin}' infra/Caddyfile
 require_fixed 'header_up X-Forwarded-For {http.request.header.X-Forwarded-For}' infra/Caddyfile
 require_fixed 'header_up X-Real-IP {http.request.header.X-Real-IP}' infra/Caddyfile
+require_fixed 'RELAY_OPS_TRUSTED_PROXY_HOST: caddy' infra/compose.yaml
 require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
 require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
 require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}' infra/compose.yaml

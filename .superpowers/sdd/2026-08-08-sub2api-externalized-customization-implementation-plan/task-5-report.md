@@ -169,4 +169,5 @@ mechanism until Task 9 supplies complete field mapping and comparison evidence.
 
 ### Fix Commit
 
-Pending final Fix Round 1 commit.
+`b69e26b55ae61c28617683fe3ddd7dffd86dbfe9`
+`fix: keep external primary admin reads degraded`

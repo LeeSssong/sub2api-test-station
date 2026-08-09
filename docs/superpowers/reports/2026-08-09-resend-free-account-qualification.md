@@ -30,6 +30,8 @@ was recorded.
   Transactional plan is **Free**.
 - Usage displayed: monthly `1 / 3,000`; daily `0 / 100`.
 - Domains entitlement displayed: `1 / 1`.
+- Billing lists the Transactional and Marketing subscriptions at `$0 / mo`,
+  reports no payment methods, and reports no invoices.
 - Pay-as-you-go sending switches are disabled. Dedicated IP is shown only as
   pricing information and is not enabled.
 - Last-15-day metrics display `0` emails, `0%` bounce rate, and `0%` complaint
@@ -47,9 +49,10 @@ was recorded.
   separate transactional return path.
 - Authenticated dashboard evidence confirms `xingqiaolab.top` is verified for
   sending in the Tokyo (`ap-northeast-1`) region.
-- The dashboard verification state is consistent with the public DKIM and
-  sending-subdomain records observed above. A line-by-line dashboard DNS table
-  comparison was not separately retained.
+- Independent review compared every dashboard sending record with public DNS:
+  the DKIM TXT value, `send` MX target and priority, and `send` SPF TXT value
+  match, and all three dashboard rows report `verified`. Record contents remain
+  intentionally omitted from this report.
 
 ## Decision
 
@@ -75,8 +78,9 @@ approve unrestricted public registration.
 
 ## Not Verified
 
-- A line-by-line dashboard DNS-row comparison against public DNS was not
-  separately captured.
+- No screenshot artifact was retained. The independent reviewer re-queried the
+  authenticated dashboard rather than relying solely on the implementer's
+  written summary.
 - Current public Sub2API email, registration, invitation, whitelist, and
   CAPTCHA flags.
 
@@ -89,4 +93,9 @@ approve unrestricted public registration.
 - Subsequent authenticated, read-only Chrome dashboard inspection confirmed
   the plan, domain status, quota, paid-option state, and aggregate health
   indicators recorded above. No screenshot was retained.
+- Independent authenticated review confirmed the Free quotas, `$0 / mo`
+  subscriptions, absence of payment methods and invoices, disabled
+  pay-as-you-go controls, absence of a dedicated-IP subscription, verified
+  domain/record state, and aggregate health metrics. Public DNS was queried
+  again for the record comparison.
 - No production mutation was performed.

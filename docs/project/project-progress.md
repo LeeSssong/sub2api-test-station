@@ -2,6 +2,8 @@
 
 **本轮任务登记（2026-08-09）：** Resend SMTP 受控复现与 deadline 诊断，状态：进行中。当前工作区为 `.worktrees/resend-smtp-timeout`（`codex/resend-smtp-timeout`）。范围严格限定为向同一现有管理员邮箱再发送一封测试邮件，同步记录 Sub2API 接口状态/耗时与 Resend 事件/配额；仅在再次复现约 20 秒超时时才按 TDD 设计 SMTP 滑动 I/O deadline 修复。本轮不改动邀请码、CAPTCHA、SMTP 配置、DNS 或 Resend 套餐，不新建用户，不打开或消费 reset token；提供商事件和生产回归未闭合前不得标记完成或开放无邀请码注册。
 
+**本轮受控复现结论（2026-08-09）：** 状态：进行中且 fail-closed。唯一授权的测试邮件 POST 在客户端被中止后仍由只读审计证实完成：HTTP `400`、`20,191 ms`；客户端未保留响应错误类别或 request ID。Resend Emails 未见新的 test 事件，Transactional 用量仍为月 `2/3000`、日 `1/100`，Metrics 保持 0% 退信/投诉；健康检查、全量 Admin settings SHA-256、受保护容器 ID 和 restart count 均未变化。因缺少 deadline gate 所需的客户端 timeout 错误类别，且基线发现 `invitation_code_enabled=false` 同时所有 CAPTCHA 均关闭，决策为 `BLOCKED_OTHER`；不得重发邮件、不得启动 Task 2/3、不得修改生产配置。证据：[`Resend SMTP 受控复现`](../superpowers/reports/2026-08-09-resend-smtp-controlled-reproduction.md)。
+
 **本轮任务登记（2026-08-09）：** Resend Free 邮件配置 Task 2 生产激活，状态：进行中。范围仅为通过官方 Sub2API Admin API 设置 `frontend_url=https://api.xingqiaolab.top`、启用邮件验证与密码重置；保持邀请制、CAPTCHA、SMTP、OAuth、计费、通知及受保护容器身份不变。当前工作区为 `.worktrees/resend-email-configuration`（`codex/resend-email-configuration`）；尚未推送、部署或完成线上邮件投递验证，不能标记完成。
 
 **本轮 Task 2 实施与审查（2026-08-09）：** 已通过官方 Admin API 的一次三字段部分更新设置 `frontend_url=https://api.xingqiaolab.top` 并启用邮件验证和密码重置；Admin API、只读 PostgreSQL 和公共 flag 验证通过，`/healthz` 为 200，API/worker/PostgreSQL/Redis/Caddy 身份和重启计数未变，未发生重启或部署。公共 settings DTO 不暴露 `frontend_url`，该字段由 Admin API 和 PostgreSQL 证实。Task 2 独立审查已批准，Task 3 已获授权进行投递和找回密码流程线上验证；总任务状态保持进行中。

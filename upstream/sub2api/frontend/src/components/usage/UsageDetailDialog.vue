@@ -45,28 +45,34 @@
       </div>
 
       <div v-else class="space-y-6">
-        <dl
-          v-if="adminDetail"
-          class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3"
-        >
-          <DetailItem
-            :label="t('admin.usageCostDetail.siteActualCost')"
-            :value="formatCost(adminDetail.actual_cost)"
-            numeric
-            emphasized
-          />
-          <DetailItem
-            :label="t('admin.usageCostDetail.upstreamActualCost')"
-            :value="upstreamActualCostValue"
-            numeric
-          />
-          <DetailItem
-            :label="t('admin.usageCostDetail.profit')"
-            :value="profitValue"
-            numeric
-            emphasized
-          />
-        </dl>
+        <template v-if="adminDetail">
+          <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3">
+            <DetailItem
+              :label="t('admin.usageCostDetail.siteActualCost')"
+              :value="formatCost(adminDetail.actual_cost)"
+              numeric
+              emphasized
+            />
+            <DetailItem
+              :label="t('admin.usageCostDetail.upstreamActualCost')"
+              :value="upstreamActualCostValue"
+              numeric
+            />
+            <DetailItem
+              :label="t('admin.usageCostDetail.profit')"
+              :value="profitValue"
+              numeric
+              emphasized
+            />
+          </dl>
+          <p
+            v-if="upstreamCostUnavailableMessage"
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+            role="status"
+          >
+            {{ upstreamCostUnavailableMessage }}
+          </p>
+        </template>
         <div v-else class="flex items-center justify-between gap-4">
           <span class="text-xs font-semibold text-gray-500 dark:text-dark-400">
             {{ t('usage.detail.consumption') }}
@@ -415,6 +421,21 @@ const upstreamActualCostValue = computed(() => (
 ))
 const profitValue = computed(() => {
   return confirmedProfitValue.value == null ? '-' : formatCost(confirmedProfitValue.value)
+})
+const upstreamCostUnavailableMessage = computed(() => {
+  if (adminCostDetail.value?.status !== 'unavailable') return ''
+  const reasonKeyByCode: Record<string, string> = {
+    credentials_unavailable: 'credentialsUnavailable',
+    endpoint_unavailable: 'endpointUnavailable',
+    endpoint_unsupported: 'endpointUnsupported',
+    authentication_rejected: 'authenticationRejected',
+    request_unavailable: 'requestUnavailable',
+    response_unavailable: 'responseUnavailable',
+    record_not_found: 'recordNotFound',
+    pagination_unavailable: 'paginationUnavailable',
+  }
+  const reasonKey = reasonKeyByCode[adminCostDetail.value.reason_code ?? ''] ?? 'generic'
+  return t(`admin.usageCostDetail.unavailableReasons.${reasonKey}`)
 })
 
 const showImageDetails = computed(() => {

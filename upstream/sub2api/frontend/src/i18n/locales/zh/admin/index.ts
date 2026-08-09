@@ -58,6 +58,17 @@ export default {
     estimated: '估算',
     pending: '待对账',
     pendingReconciliation: '待对账',
+    unavailableReasons: {
+      credentialsUnavailable: '该账号缺少可用的上游查账凭据，暂时无法确认真实扣费与利润。',
+      endpointUnavailable: '该账号的上游查账地址不可用，暂时无法确认真实扣费与利润。',
+      endpointUnsupported: '该上游未提供兼容的逐笔账单接口，因此无法确认真实扣费与利润。',
+      authenticationRejected: '上游拒绝了当前账号的查账认证，暂时无法确认真实扣费与利润。',
+      requestUnavailable: '上游查账请求当前不可用，请稍后重试。',
+      responseUnavailable: '上游查账响应异常，暂时无法确认真实扣费与利润。',
+      recordNotFound: '上游账单中未找到该请求的精确记录，不会用估算值代替。',
+      paginationUnavailable: '上游账单分页未完整返回，暂时无法确认真实扣费与利润。',
+      generic: '暂时无法从上游确认该请求的真实扣费与利润。',
+    },
     costSources: {
       nativeLedger: '上游逐笔账单',
       upstreamPriceTable: '上游价格表推算',

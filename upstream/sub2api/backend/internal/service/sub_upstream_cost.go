@@ -31,6 +31,7 @@ type SubUpstreamCostDetail struct {
 	UpstreamActualCost *float64 `json:"upstream_actual_cost"`
 	Profit             *float64 `json:"profit"`
 	Status             string   `json:"status"`
+	ReasonCode         string   `json:"reason_code,omitempty"`
 	Reason             string   `json:"reason,omitempty"`
 }
 
@@ -70,20 +71,24 @@ func (s *SubUpstreamCostService) GetByUsageID(ctx context.Context, usageID int64
 
 	baseURL, apiKey, ok := subCredentials(usage.Account)
 	if !ok {
+		detail.ReasonCode = "credentials_unavailable"
 		detail.Reason = "upstream credentials unavailable"
 		return detail, nil
 	}
 	endpoint, err := subUsageRecordsURL(baseURL)
 	if err != nil {
+		detail.ReasonCode = "endpoint_unavailable"
 		detail.Reason = "upstream endpoint unavailable"
 		return detail, nil
 	}
-	matched, reason := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
+	matched, reasonCode, reason := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
 	if reason != "" {
+		detail.ReasonCode = reasonCode
 		detail.Reason = reason
 		return detail, nil
 	}
 	if matched == nil {
+		detail.ReasonCode = "record_not_found"
 		detail.Reason = "upstream usage record not found"
 		return detail, nil
 	}
@@ -107,7 +112,7 @@ type subUpstreamUsageRecordsResponse struct {
 	HasMore    bool                     `json:"has_more"`
 }
 
-func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoint, apiKey string, usage *UsageLog) (*subUpstreamUsageRecord, string) {
+func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoint, apiKey string, usage *UsageLog) (*subUpstreamUsageRecord, string, string) {
 	start := usage.CreatedAt.Add(-subUpstreamCostWindow)
 	end := usage.CreatedAt.Add(subUpstreamCostWindow)
 	cursor := ""
@@ -116,7 +121,7 @@ func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoin
 	for page := 0; page < subUpstreamCostMaxPages; page++ {
 		queryURL, err := url.Parse(endpoint)
 		if err != nil {
-			return nil, "upstream endpoint unavailable"
+			return nil, "endpoint_unavailable", "upstream endpoint unavailable"
 		}
 		q := queryURL.Query()
 		q.Set("start_time", start.Format(time.RFC3339Nano))
@@ -129,24 +134,30 @@ func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoin
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL.String(), nil)
 		if err != nil {
-			return nil, "upstream request unavailable"
+			return nil, "request_unavailable", "upstream request unavailable"
 		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
-			return nil, "upstream request unavailable"
+			return nil, "request_unavailable", "upstream request unavailable"
 		}
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, subUpstreamCostMaxBodyBytes+1))
 		_ = resp.Body.Close()
 		if readErr != nil || len(body) > subUpstreamCostMaxBodyBytes {
-			return nil, "upstream response unavailable"
+			return nil, "response_unavailable", "upstream response unavailable"
+		}
+		switch resp.StatusCode {
+		case http.StatusNotFound:
+			return nil, "endpoint_unsupported", "upstream usage endpoint unsupported"
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return nil, "authentication_rejected", "upstream authentication rejected"
 		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			return nil, "upstream response unavailable"
+			return nil, "response_unavailable", "upstream response unavailable"
 		}
 		var payload subUpstreamUsageRecordsResponse
 		if err := json.Unmarshal(body, &payload); err != nil {
-			return nil, "upstream response unavailable"
+			return nil, "response_unavailable", "upstream response unavailable"
 		}
 		for i := range payload.Data {
 			rank := subUsageRecordMatchRank(&payload.Data[i], usage)
@@ -154,19 +165,19 @@ func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoin
 				best = &payload.Data[i]
 				bestRank = rank
 				if bestRank == 1 {
-					return best, ""
+					return best, "", ""
 				}
 			}
 		}
 		if !payload.HasMore || strings.TrimSpace(payload.NextCursor) == "" {
-			return best, ""
+			return best, "", ""
 		}
 		cursor = strings.TrimSpace(payload.NextCursor)
 	}
 	if best != nil {
-		return best, ""
+		return best, "", ""
 	}
-	return nil, "upstream usage pagination unavailable"
+	return nil, "pagination_unavailable", "upstream usage pagination unavailable"
 }
 
 func subUsageRecordMatches(record *subUpstreamUsageRecord, usage *UsageLog) bool {

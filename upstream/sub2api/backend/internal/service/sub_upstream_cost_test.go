@@ -134,8 +134,28 @@ func TestSubUpstreamCostServiceReturnsUnavailableWithoutCredentials(t *testing.T
 	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 1)
 	require.NoError(t, err)
 	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "credentials_unavailable", detail.ReasonCode)
 	require.Nil(t, detail.UpstreamActualCost)
 	require.Nil(t, detail.Profit)
 	require.NotEmpty(t, detail.Reason)
 	require.NotContains(t, strings.ToLower(detail.Reason), "api")
+}
+
+func TestSubUpstreamCostServiceClassifiesUnsupportedUsageEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	upstreamID := "provider-id"
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 1, RequestID: "local-req", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.006, CreatedAt: time.Now(),
+		Account: &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "k"}},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "endpoint_unsupported", detail.ReasonCode)
+	require.Nil(t, detail.UpstreamActualCost)
+	require.Nil(t, detail.Profit)
 }

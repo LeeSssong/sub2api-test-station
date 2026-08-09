@@ -420,6 +420,10 @@ test_executor_bootstraps_when_final_file_is_absent() {
     || fail 'controller did not verify the executor directory chain before bootstrap installation'
   grep -F -- 'verify_executor_path_chain' "$CASE_DIR/ssh.log" >/dev/null \
     || fail 'controller did not verify the installed executor path chain after bootstrap installation'
+  grep -F -- 'sudo -n bash -s -- verify_executor_directory_chain /usr/local/libexec' "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'directory verifier did not receive its path as the first script argument'
+  grep -F -- 'sudo -n bash -s -- verify_executor_path_chain /usr/local/libexec/deploy-sub2api-blue-green-host.sh' "$CASE_DIR/ssh.log" >/dev/null \
+    || fail 'path verifier did not receive its path as the first script argument'
   directory_line=$(grep -n -m1 'verify_executor_directory_chain' "$CASE_DIR/ssh.log" | cut -d: -f1)
   install_line=$(grep -n -m1 'sudo -n install -o root -g root -m 0755' "$CASE_DIR/ssh.log" | cut -d: -f1)
   path_lines=$(grep -n 'verify_executor_path_chain' "$CASE_DIR/ssh.log" | cut -d: -f1)

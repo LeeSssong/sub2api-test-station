@@ -206,7 +206,7 @@ run_stage() {
 verify_remote_executor_directory_chain() {
   local verification_script
   verification_script='set -eu
-path=$2
+path=$1
 current=$path
 while :; do
   [[ ! -L "$current" ]] || exit 1
@@ -232,7 +232,7 @@ done'
 verify_remote_executor_path_chain() {
   local verification_script
   verification_script='set -eu
-path=$2
+path=$1
 current=$path
 while :; do
   [[ ! -L "$current" ]] || exit 1

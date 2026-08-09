@@ -376,3 +376,7 @@
 **本轮维护门禁登记（2026-08-04）：** 采购成本附加迁移维护门禁，状态：已完成（最终提交 `82095b80770236eac24adb0bdb1b80cd639675cb` 已推送并完成维护发布；生产迁移哈希已为 `337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76`。PostgreSQL `2db52788…`、Redis `c45202c0…`、Caddy `ace4a23b…` 与 `release-state` 一致且未重建；维护路径仅切换 API/Worker，生产验证通过）。
 
 **本轮新增登记（2026-08-09）：** GPT 文本上游账号分组配置基线分析；范围为排除生图、Claude 账号和自测分组目标，基于生产现有 7/30 天真实请求、主动探测、成本倍率、分组权重与调度优先级证据，形成 GPT-Pro、【专属】GPT-Pro、GPT-Plus、GPT-特惠的账号归属和主力/次级/备用基线，并评估现有评分体系是否足以持续检查分组与优先级合理性。当前工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/gpt-group-baseline-analysis`，分支 `codex/gpt-group-baseline-analysis`。**状态：进行中（已完成全部非 main worktree 盘点并确认无已完成且必须先合并的领先候选；仅使用现有生产数据，未修改生产分组、路由、优先级或账号状态）**。
+
+**本轮 Task 1 证据采集（2026-08-09）：** GPT 文本上游账号分组配置基线分析的只读生产证据快照，状态：进行中。范围仅限既有生产 PostgreSQL 聚合与现有管理员监控投影，收集 7/30 天真实请求和主动探测、账号/分组配置、评分权重、调度设置；不执行上游 API 探测，不修改生产数据库、服务、容器、文件、分组、路由、优先级或账号状态。当前工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/gpt-group-baseline-analysis`，分支 `codex/gpt-group-baseline-analysis`。保护例外：总账已登记的“新建运营界面”“优化账号卡片”，以及含未提交改动的 `codex/upstream-resilience-implementation` 工作区均保持不动。
+
+**本轮 Task 1 证据采集完成（2026-08-09）：** 只读生产快照已捕获，UTC `2026-08-09T10:15:42.482Z`；JSON SHA-256 `766fb926165614744480695b8080b1d7b281ec5107b7f995cfb470a9944ddfc3`，报告为 `docs/superpowers/reports/2026-08-09-gpt-group-baseline-production-evidence.md`。schema、聚合、管理员监控投影、结构校验和定向敏感词扫描已完成；扫描唯一命中为非秘密账户类型字面值 `apikey`，已在报告中标记手工复核。当前仍未推送、部署或线上验证，整体状态保持进行中。

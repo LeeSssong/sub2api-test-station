@@ -87,6 +87,32 @@ type Store struct {
 	pool *pgxpool.Pool
 }
 
+func (s *Store) RecordExternalizationCommand(ctx context.Context, actorID, accountID int64, idempotencyKey, result string, contractVersion int) error {
+	if s == nil || s.pool == nil {
+		return errors.New("store is not initialized")
+	}
+	if actorID <= 0 || accountID <= 0 || strings.TrimSpace(idempotencyKey) == "" {
+		return errors.New("invalid externalization command")
+	}
+	if strings.TrimSpace(result) == "" {
+		result = "accepted"
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s", actorID, accountID, idempotencyKey)))
+	commandID := hex.EncodeToString(sum[:])
+	payload, _ := json.Marshal(map[string]any{"account_id": accountID})
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO relay_ops.externalization_commands
+			(command_id, actor_id, account_id, idempotency_key, payload, status, result, contract_version, completed_at)
+		VALUES ($1,$2,$3,$4,$5::jsonb,$6,$6,$7,NOW())
+		ON CONFLICT (idempotency_key) DO UPDATE SET result=EXCLUDED.result, status=EXCLUDED.status,
+			contract_version=EXCLUDED.contract_version, completed_at=EXCLUDED.completed_at`,
+		commandID, actorID, accountID, idempotencyKey, payload, result, contractVersion)
+	if err != nil {
+		return fmt.Errorf("record externalization command: %w", err)
+	}
+	return nil
+}
+
 var _ events.Journal = (*Store)(nil)
 
 type Upstream struct {

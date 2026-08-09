@@ -35,7 +35,7 @@ func (s *Server) read(name string) http.HandlerFunc {
 				q[k] = v[0]
 			}
 		}
-		model, err := s.reader.Read(name, q)
+		model, err := s.reader.Read(r.Context(), name, q)
 		if err != nil {
 			http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
 			return

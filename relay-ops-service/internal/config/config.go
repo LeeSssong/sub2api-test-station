@@ -26,6 +26,7 @@ type Config struct {
 	DatabaseURLFile                 string
 	Sub2APIBaseURL                  string
 	Sub2APIAdminKeyFile             string
+	CoreDatabaseURLFile             string
 	Sub2APIAlertReadDatabaseURLFile string
 	AccountQualityResultFile        string
 	UpstreamGroupMappingFile        string
@@ -112,6 +113,15 @@ func Load(env func(string) string) (Config, error) {
 	} {
 		if err := validateSecretFile(path); err != nil {
 			return Config{}, fmt.Errorf("%s file: %w", label, err)
+		}
+	}
+	coreDatabaseURLFile := get("RELAY_OPS_CORE_DATABASE_URL_FILE", "")
+	if coreDatabaseURLFile != "" {
+		if !filepath.IsAbs(coreDatabaseURLFile) {
+			return Config{}, fmt.Errorf("RELAY_OPS_CORE_DATABASE_URL_FILE must be an absolute path")
+		}
+		if err := validateSecretFile(coreDatabaseURLFile); err != nil {
+			return Config{}, fmt.Errorf("core database URL file: %w", err)
 		}
 	}
 	feishuFile := get("RELAY_OPS_FEISHU_WEBHOOK_FILE", "")
@@ -211,6 +221,7 @@ func Load(env func(string) string) (Config, error) {
 		DatabaseURLFile:                 databaseURLFile,
 		Sub2APIBaseURL:                  baseURL,
 		Sub2APIAdminKeyFile:             adminKeyFile,
+		CoreDatabaseURLFile:             coreDatabaseURLFile,
 		Sub2APIAlertReadDatabaseURLFile: sub2APIAlertReadDatabaseURLFile,
 		AccountQualityResultFile:        accountQualityResultFile,
 		UpstreamGroupMappingFile:        upstreamGroupMappingFile,

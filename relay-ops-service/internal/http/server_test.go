@@ -12,6 +12,7 @@ import (
 
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -61,6 +62,44 @@ func TestRetiredOpsAndAcknowledgementRoutesAreNotMounted(t *testing.T) {
 			t.Fatalf("%s %s status=%d want=404", tt.method, tt.path, recorder.Code)
 		}
 	}
+}
+
+func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing.T) {
+	t.Parallel()
+	called := false
+	h, err := NewServer(Dependencies{
+		Pricing:      fakePricing{},
+		ControlPlane: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { called = true; w.WriteHeader(http.StatusNoContent) }),
+		ControlPlaneAuth: controlAuthFunc(func(_ context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
+			if bearer != "session-secret" || clientIP == "" || origin != "https://api.example.test" {
+				t.Fatalf("Me(%q,%q,%q)", bearer, clientIP, origin)
+			}
+			return controlplane.AdminIdentity{UserID: 4, Role: "admin", Status: "inactive"}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/xingqiao/accounts/monitor", nil)
+	req.Header.Set("Authorization", "Bearer session-secret")
+	req.Header.Set("Cookie", "session=private")
+	req.Header.Set("Origin", "https://api.example.test")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || called {
+		t.Fatalf("status=%d called=%v", rec.Code, called)
+	}
+	for _, secret := range []string{"session-secret", "session=private", "x-api-key"} {
+		if strings.Contains(rec.Body.String(), secret) {
+			t.Fatalf("response leaked %q: %s", secret, rec.Body.String())
+		}
+	}
+}
+
+type controlAuthFunc func(context.Context, string, string, string) (controlplane.AdminIdentity, error)
+
+func (f controlAuthFunc) Me(ctx context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
+	return f(ctx, bearer, clientIP, origin)
 }
 
 func TestCreateUpstreamPassesAdapterTypeAndReturnsIt(t *testing.T) {

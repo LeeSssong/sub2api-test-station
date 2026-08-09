@@ -493,6 +493,9 @@ func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
 		if got := r.Header.Get("X-Real-IP"); got != "203.0.113.9" {
 			t.Errorf("X-Real-IP = %q", got)
 		}
+		if got := r.Header.Get("Origin"); got != "https://api.example.test" {
+			t.Errorf("Origin = %q", got)
+		}
 		if got := r.Header.Get("Cookie"); got != "" {
 			t.Errorf("Cookie must not be forwarded: %q", got)
 		}
@@ -507,6 +510,7 @@ func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
 		UserAgent:    "Mozilla/5.0 session-browser",
 		ForwardedFor: "203.0.113.9",
 		RealIP:       "203.0.113.9",
+		Origin:       "https://api.example.test",
 	})
 	if err != nil || identity.UserID != 42 {
 		t.Fatalf("VerifyAdminSession = %#v, %v", identity, err)

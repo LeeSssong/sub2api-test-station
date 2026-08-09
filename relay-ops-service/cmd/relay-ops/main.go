@@ -29,6 +29,11 @@ func main() {
 	server := &http.Server{Addr: cfg.ListenAddress, Handler: application.Handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { _ = application.Scheduler.Run(ctx) }()
 	go func() {
+		if err := application.RunExternalization(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal("relay-ops externalization consumer failed")
+		}
+	}()
+	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

@@ -2,6 +2,7 @@ package adminauth
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"strings"
 
@@ -19,6 +20,8 @@ type Session struct {
 	UserAgent    string
 	ForwardedFor string
 	RealIP       string
+	ClientIP     string
+	Origin       string
 }
 
 type Verifier interface {
@@ -54,6 +57,8 @@ func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handle
 			UserAgent:    r.UserAgent(),
 			ForwardedFor: strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
 			RealIP:       strings.TrimSpace(r.Header.Get("X-Real-IP")),
+			ClientIP:     requestClientIP(r),
+			Origin:       strings.TrimSpace(r.Header.Get("Origin")),
 		})
 		if err != nil {
 			reject(http.StatusUnauthorized)
@@ -67,6 +72,17 @@ func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handle
 		ctx := context.WithValue(r.Context(), actorContextKey{}, actor)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requestClientIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func ActorFromContext(ctx context.Context) (domain.AdminActor, bool) {

@@ -8,3 +8,5 @@ CREATE TABLE IF NOT EXISTS relay_ops.externalization_commands (
  idempotency_key TEXT NOT NULL UNIQUE, payload JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'accepted',
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), completed_at TIMESTAMPTZ
 );
+ALTER TABLE relay_ops.externalization_commands ADD COLUMN IF NOT EXISTS result TEXT NOT NULL DEFAULT 'accepted';
+ALTER TABLE relay_ops.externalization_commands ADD COLUMN IF NOT EXISTS contract_version INTEGER NOT NULL DEFAULT 1;

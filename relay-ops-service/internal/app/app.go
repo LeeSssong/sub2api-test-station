@@ -11,14 +11,17 @@ import (
 
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accounting"
+	"example.invalid/relay-ops-service/internal/adapter"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
 	"example.invalid/relay-ops-service/internal/config"
+	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/events"
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	"example.invalid/relay-ops-service/internal/groupimpact"
 	httpserver "example.invalid/relay-ops-service/internal/http"
@@ -28,6 +31,7 @@ import (
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/pricingevents"
 	"example.invalid/relay-ops-service/internal/probes"
+	"example.invalid/relay-ops-service/internal/projection"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/scheduler"
@@ -46,6 +50,8 @@ type App struct {
 	Readiness  *Readiness
 	Agent      *agent.Service
 	Accounting *accounting.Service
+	Consumer   *events.Consumer
+	CoreOutbox *sub2api.CoreOutbox
 }
 
 type incidentMessageSender interface {
@@ -221,6 +227,25 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	var coreOutbox *sub2api.CoreOutbox
+	if cfg.Mode != config.ModeClosed {
+		if cfg.CoreDatabaseURLFile == "" {
+			return nil, fmt.Errorf("RELAY_OPS_CORE_DATABASE_URL_FILE is required for persistent externalization consumption")
+		}
+		coreURL, readErr := os.ReadFile(cfg.CoreDatabaseURLFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("read core database URL: %w", readErr)
+		}
+		coreOutbox, err = sub2api.NewCoreOutbox(ctx, string(bytes.TrimSpace(coreURL)))
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if failed {
+				coreOutbox.Close()
+			}
+		}()
+	}
 	readiness := &Readiness{Database: database}
 	syncer := sub2api.Synchronizer{
 		Reader: reader,
@@ -317,6 +342,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		},
 		Collector: costCollector,
 		Grace:     10 * time.Minute,
+	}
+	accountsProjection := projection.NewAccountsWithRepository(database)
+	profitabilityProjection := projection.NewProfitabilityWithRepository(database)
+	accountingProjection := projection.NewAccountingWithRepository(database)
+	reconciliationProjection := projection.NewReconciliationWithRepository(database)
+	consumer, err := events.NewPersistentConsumer(database, accountsProjection, profitabilityProjection, accountingProjection, reconciliationProjection)
+	if err != nil {
+		return nil, err
 	}
 	var accountingDaily func(context.Context) error
 	if accountingService != nil {
@@ -472,6 +505,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Reconciliation: reconciliationRuntime,
 		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
+		ControlPlane: controlplane.NewServer(
+			controlplane.StoreReader{Store: database},
+			controlplane.CommandRefresher{Sender: adapter.Sub2API{Client: reader}, Audit: database},
+		),
+		ControlPlaneAuth: reader,
 	}, accountingService)
 	if err != nil {
 		return nil, err
@@ -481,7 +519,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/readyz", HealthHandler(readiness))
 	root.Handle("/", operations)
 	failed = false
-	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService}, nil
+	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService, Consumer: consumer, CoreOutbox: coreOutbox}, nil
+}
+
+func (a *App) RunExternalization(ctx context.Context) error {
+	if a == nil || a.CoreOutbox == nil || a.Consumer == nil {
+		return fmt.Errorf("externalization consumer is not configured")
+	}
+	return a.CoreOutbox.Run(ctx, "relay-ops", a.Consumer)
 }
 
 func newOperationsServer(dependencies httpserver.Dependencies, accountingService *accounting.Service) (http.Handler, error) {
@@ -516,5 +561,8 @@ func configuredCandidateService(cfg config.Config, repository candidates.Reposit
 func (a *App) Close() {
 	if a != nil && a.Store != nil {
 		a.Store.Close()
+	}
+	if a != nil && a.CoreOutbox != nil {
+		a.CoreOutbox.Close()
 	}
 }

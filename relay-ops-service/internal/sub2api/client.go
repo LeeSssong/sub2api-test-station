@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/controlplane"
 )
 
 const (
@@ -480,6 +481,28 @@ func (c *HTTPReader) VerifyAdminSession(ctx context.Context, session adminauth.S
 	return adminauth.Identity{UserID: identity.UserID, Role: identity.Role, Status: identity.Status}, nil
 }
 
+func (c *HTTPReader) Me(ctx context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
+	identity, err := c.VerifyAdminSession(ctx, adminauth.Session{Bearer: bearer, ClientIP: clientIP, Origin: origin})
+	if err != nil {
+		return controlplane.AdminIdentity{}, err
+	}
+	return controlplane.AdminIdentity{UserID: identity.UserID, Role: identity.Role, Status: identity.Status}, nil
+}
+
+func (c *HTTPReader) RefreshAccount(ctx context.Context, id int64, idempotencyKey string) error {
+	if id <= 0 || strings.TrimSpace(idempotencyKey) == "" {
+		return errSchemaMismatch
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(id, 10)+"/refresh", nil)
+	if err != nil {
+		return fmt.Errorf("build Sub2API refresh request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	req.Header.Set("Idempotency-Key", idempotencyKey)
+	return c.do(req, &struct{}{})
+}
+
 func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out any) error {
 	requestURL := c.baseURL + path
 	if len(query) > 0 {
@@ -541,11 +564,20 @@ func (c *HTTPReader) getWithBearer(ctx context.Context, path string, session adm
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+session.Bearer)
 	req.Header["User-Agent"] = []string{session.UserAgent}
-	if session.ForwardedFor != "" {
-		req.Header.Set("X-Forwarded-For", session.ForwardedFor)
+	if session.ClientIP != "" {
+		req.Header.Set("X-Client-IP", session.ClientIP)
+		req.Header.Set("X-Forwarded-For", session.ClientIP)
+		req.Header.Set("X-Real-IP", session.ClientIP)
+	} else {
+		if session.ForwardedFor != "" {
+			req.Header.Set("X-Forwarded-For", session.ForwardedFor)
+		}
+		if session.RealIP != "" {
+			req.Header.Set("X-Real-IP", session.RealIP)
+		}
 	}
-	if session.RealIP != "" {
-		req.Header.Set("X-Real-IP", session.RealIP)
+	if session.Origin != "" {
+		req.Header.Set("Origin", session.Origin)
 	}
 	return c.do(req, out)
 }

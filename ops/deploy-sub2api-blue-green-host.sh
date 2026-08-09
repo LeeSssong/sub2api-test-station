@@ -8,8 +8,17 @@ fail() {
   exit 1
 }
 
+monotonic_millis() {
+  perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e \
+    'printf "%.0f\n", clock_gettime(CLOCK_MONOTONIC) * 1000'
+}
+
 trace_event() {
   [[ -n "${RELEASE_EVENT_LOG:-}" ]] || return 0
+  if [[ "${maintenance_stopped:-false}" == true || "${rollback_in_progress:-false}" == true ]]; then
+    run_post_stop_operation 'printf "%s\n" "$1" >>"$2"' "$1" "$RELEASE_EVENT_LOG"
+    return
+  fi
   printf '%s\n' "$1" >>"$RELEASE_EVENT_LOG"
 }
 
@@ -113,9 +122,10 @@ check_deadline() {
 
 check_maintenance_deadline() {
   [[ -z "$maintenance_deadline_epoch" ]] && return 0
-  local now elapsed remaining_window
-  if [[ "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
-    elapsed=$((SECONDS - maintenance_started_seconds))
+  local now elapsed_millis elapsed remaining_window
+  if [[ "${maintenance_started_millis:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+    elapsed_millis=$(( $(monotonic_millis) - maintenance_started_millis ))
+    elapsed=$((elapsed_millis / 1000))
     remaining_window=$((maintenance_window_seconds - elapsed))
     (( remaining_window > 0 )) || fail 'maintenance unavailable window expired'
   fi
@@ -125,27 +135,37 @@ check_maintenance_deadline() {
 }
 
 run_post_stop_command() {
-  local deadline now remaining elapsed remaining_window
+  local deadline now remaining elapsed_millis elapsed remaining_window phase_window_seconds=''
   if [[ -z "${maintenance_deadline_epoch:-}" && "${rollback_in_progress:-false}" != true ]]; then
     "$@"
     return
   fi
+  deadline=$deadline_epoch
   if [[ -n "${maintenance_deadline_epoch:-}" ]]; then
-    deadline=$maintenance_deadline_epoch
-  else
-    deadline=$deadline_epoch
+    deadline=$maintenance_forward_deadline_epoch
+    phase_window_seconds=$maintenance_forward_window_seconds
+    if [[ "${rollback_in_progress:-false}" == true ]]; then
+      deadline=$maintenance_rollback_deadline_epoch
+      phase_window_seconds=$maintenance_rollback_window_seconds
+    fi
+    if [[ "${finalization_in_progress:-false}" == true ]]; then
+      deadline=$maintenance_deadline_epoch
+      phase_window_seconds=$maintenance_window_seconds
+    fi
   fi
-  if [[ -n "${maintenance_deadline_epoch:-}" && "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
-    elapsed=$((SECONDS - maintenance_started_seconds))
-    remaining_window=$((maintenance_window_seconds - elapsed))
+  if [[ -n "$phase_window_seconds" && "${maintenance_started_millis:-}" =~ ^[0-9]+$ ]]; then
+    elapsed_millis=$(( $(monotonic_millis) - maintenance_started_millis ))
+    elapsed=$((elapsed_millis / 1000))
+    remaining_window=$((phase_window_seconds - elapsed))
     (( remaining_window > 0 )) || return 124
   fi
   now=$(date -u +%s) || return 1
   [[ "$now" =~ ^[0-9]+$ ]] || return 1
   remaining=$((deadline - now))
-  if [[ -n "${maintenance_deadline_epoch:-}" && "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
-    elapsed=$((SECONDS - maintenance_started_seconds))
-    remaining_window=$((maintenance_window_seconds - elapsed))
+  if [[ -n "$phase_window_seconds" && "${maintenance_started_millis:-}" =~ ^[0-9]+$ ]]; then
+    elapsed_millis=$(( $(monotonic_millis) - maintenance_started_millis ))
+    elapsed=$((elapsed_millis / 1000))
+    remaining_window=$((phase_window_seconds - elapsed))
     (( remaining_window < remaining )) && remaining=$remaining_window
   fi
   (( remaining > 0 )) || return 124
@@ -177,12 +197,14 @@ run_post_stop_command() {
   ' "$remaining" "$@"
 }
 
-check_deadline
-deadline_remaining=$((deadline_epoch - $(date -u +%s)))
-(( deadline_remaining > 0 )) || fail 'release exceeded its end-to-end deadline'
+run_post_stop_operation() {
+  local operation=$1
+  shift
+  run_post_stop_command bash -o pipefail -c "$operation" sub2api-bounded-operation "$@"
+}
+
 parent_pid=$$
-perl -e '($pid, $seconds) = @ARGV; sleep $seconds; kill "TERM", $pid' "$parent_pid" "$deadline_remaining" &
-deadline_watchdog_pid=$!
+deadline_watchdog_pid=''
 
 stop_deadline_watchdog() {
 	if [[ -n "${deadline_watchdog_pid:-}" ]]; then
@@ -191,6 +213,21 @@ stop_deadline_watchdog() {
 		deadline_watchdog_pid=''
 	fi
 }
+
+arm_deadline_watchdog() {
+  local seconds=$1
+  [[ "$seconds" =~ ^[1-9][0-9]*$ ]] || fail 'release deadline watchdog budget is invalid'
+  stop_deadline_watchdog
+  perl -e '($pid, $seconds) = @ARGV; sleep $seconds; kill "TERM", $pid' "$parent_pid" "$seconds" &
+  deadline_watchdog_pid=$!
+}
+
+check_deadline
+deadline_remaining=$((deadline_epoch - $(date -u +%s)))
+(( deadline_remaining > 0 )) || fail 'release exceeded its end-to-end deadline'
+release_deadline_window_seconds=$deadline_remaining
+release_deadline_started_millis=$(monotonic_millis)
+arm_deadline_watchdog "$deadline_remaining"
 trap stop_deadline_watchdog EXIT
 
 canonical_directory() {
@@ -325,9 +362,9 @@ lock_owned=false
 cleanup_lock() {
 	stop_deadline_watchdog
   if [[ "${lock_owned:-false}" == true ]]; then
-    rm -f -- "$lock_owner_path"
-    rmdir "$lock_dir" 2>/dev/null || true
-    lock_owned=false
+    if run_post_stop_operation 'rm -f -- "$1" && rmdir "$2"' "$lock_owner_path" "$lock_dir" 2>/dev/null; then
+      lock_owned=false
+    fi
   fi
 }
 
@@ -377,8 +414,13 @@ maintenance_stopped=false
 maintenance_identity_refresh=false
 maintenance_deadline_epoch=''
 maintenance_window_seconds=''
-maintenance_started_seconds=''
+maintenance_started_millis=''
+maintenance_forward_deadline_epoch=''
+maintenance_forward_window_seconds=''
+maintenance_rollback_deadline_epoch=''
+maintenance_rollback_window_seconds=''
 rollback_in_progress=false
+finalization_in_progress=false
 rollback_completed=false
 failure_reason='unexpected_exit'
 candidate_slot=''
@@ -417,7 +459,12 @@ write_final_record() {
   local result=$1 state=$2 reason=$3 temporary
   [[ "$record_finalized" == false ]] || return 0
   temporary="$record_root/.$attempt_id.record.tmp"
-  jq -n \
+  run_post_stop_operation '
+    temporary=$1
+    record_path=$2
+    shift 2
+    jq -n "$@" >"$temporary" && chmod 0600 "$temporary" && mv "$temporary" "$record_path"
+  ' "$temporary" "$record_path" \
     --arg attempt_id "$attempt_id" \
     --arg mode "$mode" \
     --arg image "$requested_image" \
@@ -432,18 +479,14 @@ write_final_record() {
     '{schema_version:1, attempt_id:$attempt_id, mode:$mode,
       requested:{image:$image, source_commit:$source_commit, source_tree:$source_tree,
         tested_tree:$tested_tree, migrations_hash:$migrations_hash},
-      result:$result, state:$state, reason:$reason, rolled_back:$rolled_back}' >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$record_path"
+      result:$result, state:$state, reason:$reason, rolled_back:$rolled_back}'
   record_finalized=true
 }
 
 write_release_env_values_to() {
-  local target=$1 blue_image=$2 green_image=$3 worker_image=$4 active_upstream=$5 active_slot=$6 previous=$7 temporary
-  temporary="$(dirname "$target")/.$(basename "$target").$attempt_id.tmp"
-  awk \
-    -v blue="$blue_image" -v green="$green_image" -v worker="$worker_image" \
-    -v upstream="$active_upstream" -v active="$active_slot" -v previous="$previous" '
+  local target=$1 blue_image=$2 green_image=$3 worker_image=$4 active_upstream=$5 active_slot=$6 previous=$7 temporary awk_program
+  temporary="${target%/*}/.${target##*/}.$attempt_id.tmp"
+  awk_program='
     BEGIN {
       values["SUB2API_BLUE_IMAGE"] = blue
       values["SUB2API_GREEN_IMAGE"] = green
@@ -466,9 +509,19 @@ write_release_env_values_to() {
     END {
       for (key in values) if (!(key in seen)) print key "=" values[key]
     }
-  ' "$release_env" >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$target"
+  '
+  run_post_stop_operation '
+    awk_program=$1 temporary=$2 target=$3 release_env=$4 blue_image=$5 green_image=$6
+    worker_image=$7 active_upstream=$8 active_slot=$9
+    shift 9
+    previous=$1
+    awk \
+      -v blue="$blue_image" -v green="$green_image" -v worker="$worker_image" \
+      -v upstream="$active_upstream" -v active="$active_slot" -v previous="$previous" \
+      "$awk_program" "$release_env" >"$temporary" &&
+      chmod 0600 "$temporary" && mv "$temporary" "$target"
+  ' "$awk_program" "$temporary" "$target" "$release_env" "$blue_image" "$green_image" \
+    "$worker_image" "$active_upstream" "$active_slot" "$previous"
 }
 
 write_release_env_values() {
@@ -480,9 +533,14 @@ write_state_values() {
     commit=$6 tree=$7 migrations=$8 postgres_id=$9
   shift 9
   local redis_id=$1 caddy_id=$2 blue_image_id=$3 green_image_id=$4 worker_image_id=$5 temporary
-  temporary="$(dirname "$release_state")/.$(basename "$release_state").$attempt_id.tmp"
+  temporary="${release_state%/*}/.${release_state##*/}.$attempt_id.tmp"
   if [[ ! "$blue_image_id" =~ ^sha256:[a-f0-9]{64}$ || ! "$green_image_id" =~ ^sha256:[a-f0-9]{64}$ || ! "$worker_image_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-    jq -n \
+    run_post_stop_operation '
+      temporary=$1
+      release_state=$2
+      shift 2
+      jq -n "$@" >"$temporary" && chmod 0600 "$temporary" && mv "$temporary" "$release_state"
+    ' "$temporary" "$release_state" \
       --arg active_slot "$active_slot" --arg active_upstream "$active_upstream" \
       --arg blue_image "$blue_image" --arg green_image "$green_image" --arg worker_image "$worker_image" \
       --arg source_commit "$commit" --arg source_tree "$tree" --arg migrations_hash "$migrations" \
@@ -490,12 +548,15 @@ write_state_values() {
       '{schema_version:1, active_slot:$active_slot, active_upstream:$active_upstream,
         blue_image:$blue_image, green_image:$green_image, worker_image:$worker_image,
         source_commit:$source_commit, source_tree:$source_tree, migrations_hash:$migrations,
-        postgres_id:$postgres_id, redis_id:$redis_id, caddy_id:$caddy_id}' >"$temporary"
-    chmod 0600 "$temporary"
-    mv "$temporary" "$release_state"
+        postgres_id:$postgres_id, redis_id:$redis_id, caddy_id:$caddy_id}'
     return
   fi
-  jq -n \
+  run_post_stop_operation '
+    temporary=$1
+    release_state=$2
+    shift 2
+    jq -n "$@" >"$temporary" && chmod 0600 "$temporary" && mv "$temporary" "$release_state"
+  ' "$temporary" "$release_state" \
     --arg active_slot "$active_slot" --arg active_upstream "$active_upstream" \
     --arg blue_image "$blue_image" --arg green_image "$green_image" --arg worker_image "$worker_image" \
     --arg source_commit "$commit" --arg source_tree "$tree" --arg migrations_hash "$migrations" \
@@ -505,16 +566,19 @@ write_state_values() {
       blue_image:$blue_image, green_image:$green_image, worker_image:$worker_image,
       blue_image_id:$blue_image_id, green_image_id:$green_image_id, worker_image_id:$worker_image_id,
       source_commit:$source_commit, source_tree:$source_tree, migrations_hash:$migrations_hash,
-      postgres_id:$postgres_id, redis_id:$redis_id, caddy_id:$caddy_id}' >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$release_state"
+      postgres_id:$postgres_id, redis_id:$redis_id, caddy_id:$caddy_id}'
 }
 
 write_partial() {
   local phase=$1 temporary
   [[ -n "$partial_path" ]] || return 0
   temporary="$partial_path.tmp"
-  jq -n \
+  run_post_stop_operation '
+    temporary=$1
+    partial_path=$2
+    shift 2
+    jq -n "$@" >"$temporary" && chmod 0600 "$temporary" && mv "$temporary" "$partial_path"
+  ' "$temporary" "$partial_path" \
     --arg attempt_id "$attempt_id" --arg mode "$mode" --argjson started_epoch "$started_epoch" \
     --arg phase "$phase" --argjson cutover_attempted "$cutover_attempted" \
     --argjson cutover_applied "$cutover_applied" \
@@ -539,9 +603,7 @@ write_partial() {
         source_commit:$previous_source_commit, source_tree:$previous_source_tree,
         migrations_hash:$previous_migrations_hash, postgres_id:$previous_postgres_id,
         redis_id:$previous_redis_id, caddy_id:$previous_caddy_id},
-      candidate:{slot:$candidate_slot, upstream:$candidate_upstream, image:$candidate_image, image_id:$candidate_image_id}}' >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$partial_path"
+      candidate:{slot:$candidate_slot, upstream:$candidate_upstream, image:$candidate_image, image_id:$candidate_image_id}}'
 }
 
 gate() {
@@ -580,16 +642,19 @@ managed_env_value() {
 }
 
 resolve_container_id() {
-  local service=$1 ids count
-  ids=$(run_post_stop_command "${compose_current[@]}" ps -q "$service") || return 1
-  count=$(printf '%s\n' "$ids" | awk 'NF { count++ } END { print count + 0 }')
-  [[ "$count" == 1 ]] || return 1
-  printf '%s\n' "$ids" | awk 'NF { print; exit }'
+  local service=$1
+  run_post_stop_operation '
+    service=$1
+    shift
+    "$@" ps -q "$service" | awk '\''NF { id=$0; count++ } END { if (count != 1) exit 1; print id }'\''
+  ' "$service" "${compose_current[@]}"
 }
 
 resolve_image_id() {
   local image=$1 image_id
-  image_id=$(run_post_stop_command docker image inspect --format '{{.Id}}' "$image" 2>/dev/null | tr -d '[:space:]') || return 1
+  image_id=$(run_post_stop_operation '
+    docker image inspect --format "{{.Id}}" "$1" 2>/dev/null | tr -d "[:space:]"
+  ' "$image") || return 1
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
   printf '%s\n' "$image_id"
 }
@@ -654,47 +719,63 @@ wait_for_candidate_healthy() {
 
 container_role() {
 	local container_id=$1
-	docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '
-		$1 == "SERVER_PROCESS_ROLE" { value=$2; count++ }
-		END { if (count != 1) exit 1; print value }
-	'
+	run_post_stop_operation '
+		docker inspect "$1" --format "{{range .Config.Env}}{{println .}}{{end}}" | awk -F= '\''
+			$1 == "SERVER_PROCESS_ROLE" { value=$2; count++ }
+			END { if (count != 1) exit 1; print value }
+		'\''
+	' "$container_id"
 }
 
 live_caddy_upstream() {
-	local config
-  config=$(run_post_stop_command "${compose_current[@]}" exec -T caddy wget -qO- http://127.0.0.1:2019/config/) || return 1
-	jq -er '
+  local jq_filter
+  jq_filter='
 		[.. | objects | .dial? // empty |
 		 select(. == "sub2api-blue:8080" or . == "sub2api-green:8080")] |
 		unique | if length == 1 then .[0] else error("active upstream is not unique") end
-	' <<<"$config"
+	'
+  run_post_stop_operation '
+    jq_filter=$1
+    shift
+    "$@" exec -T caddy wget -qO- http://127.0.0.1:2019/config/ | jq -er "$jq_filter"
+  ' "$jq_filter" "${compose_current[@]}"
 }
 
 write_acceptance_headers() {
 	[[ -n "$admin_header" && -n "$gateway_header" ]] && return 0
 	admin_header="$record_root/.$attempt_id.admin.header"
 	gateway_header="$record_root/.$attempt_id.gateway.header"
-	printf 'X-API-Key: %s\n' "$(tr -d '\r\n' <"$admin_key_file")" >"$admin_header"
-	printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$gateway_key_file")" >"$gateway_header"
-	chmod 0600 "$admin_header" "$gateway_header"
+	run_post_stop_operation '
+		printf "X-API-Key: %s\n" "$(tr -d "\r\n" <"$1")" >"$2" &&
+		printf "Authorization: Bearer %s\n" "$(tr -d "\r\n" <"$3")" >"$4" &&
+		chmod 0600 "$2" "$4"
+	' "$admin_key_file" "$admin_header" "$gateway_key_file" "$gateway_header"
 }
 
 public_acceptance() {
 	write_acceptance_headers || return 1
-  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 "$base_url/health" | jq -e '.status == "ok"' >/dev/null || return 1
-  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 -H "@$admin_header" "$base_url/api/v1/admin/system/version" | \
-    jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null || return 1
-  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 -H "@$gateway_header" "$base_url/v1/models" | \
-    jq -e '.data | type == "array"' >/dev/null || return 1
+  run_post_stop_operation '
+    curl -fsS --connect-timeout 5 --max-time 15 "$1/health" | jq -e '\''.status == "ok"'\'' >/dev/null
+  ' "$base_url" || return 1
+  run_post_stop_operation '
+    curl -fsS --connect-timeout 5 --max-time 15 -H "@$2" "$1/api/v1/admin/system/version" |
+      jq -e '\''(.data // .).version | type == "string" and length > 0'\'' >/dev/null
+  ' "$base_url" "$admin_header" || return 1
+  run_post_stop_operation '
+    curl -fsS --connect-timeout 5 --max-time 15 -H "@$2" "$1/v1/models" |
+      jq -e '\''.data | type == "array"'\'' >/dev/null
+  ' "$base_url" "$gateway_header" || return 1
 }
 
 worker_logs_are_acceptable() {
-  local worker_logs
-  worker_logs=$(run_post_stop_command "${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
   # Compose prefixes each line with the container name; avoid treating an
   # unrelated "Request failed" message as a worker startup failure.
-  printf '%s\n' "$worker_logs" | grep -Eiq '(^|[[:space:]])(panic:|fatal:|migration[^[:space:]]*[[:space:]]+failed|worker[[:space:]]+(startup|process|runtime)[^[:space:]]*[[:space:]]+failed)' && return 1
-  return 0
+  run_post_stop_operation '
+    worker_logs=$("$@" logs --no-color --tail 200 sub2api-worker) || exit $?
+    if printf "%s\n" "$worker_logs" | grep -Eiq '\''(^|[[:space:]])(panic:|fatal:|migration[^[:space:]]*[[:space:]]+failed|worker[[:space:]]+(startup|process|runtime)[^[:space:]]*[[:space:]]+failed)'\''; then
+      exit 1
+    fi
+  ' "${compose_current[@]}"
 }
 
 restore_previous() {
@@ -761,17 +842,32 @@ on_exit() {
   local status=$?
   trap - EXIT HUP INT TERM
   set +e
-  [[ -n "$candidate_env" ]] && rm -f -- "$candidate_env"
-  [[ -n "$rollback_env" ]] && rm -f -- "$rollback_env"
-  [[ -n "$admin_header" ]] && rm -f -- "$admin_header"
-  [[ -n "$gateway_header" ]] && rm -f -- "$gateway_header"
+  run_post_stop_operation '
+    for path in "$@"; do
+      [[ -z "$path" ]] || rm -f -- "$path" || exit $?
+    done
+  ' "$candidate_env" "$rollback_env" "$admin_header" "$gateway_header" || true
   if [[ "$status" -ne 0 && "$record_finalized" == false && -n "$partial_path" && -e "$partial_path" ]]; then
-    if restore_previous; then
-      write_final_record failed rolled_back "$failure_reason"
-    else
-      write_final_record failed rollback_failed "$failure_reason"
+    if [[ "$maintenance_stopped" == true && -n "${maintenance_deadline_epoch:-}" ]]; then
+      now=$(date -u +%s)
+      rollback_remaining=$((maintenance_deadline_epoch - now))
+      if [[ "${maintenance_started_millis:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+        elapsed_millis=$(( $(monotonic_millis) - maintenance_started_millis ))
+        monotonic_rollback_remaining=$((maintenance_window_seconds - elapsed_millis / 1000))
+        (( monotonic_rollback_remaining < rollback_remaining )) && rollback_remaining=$monotonic_rollback_remaining
+      fi
+      (( rollback_remaining > 0 )) && arm_deadline_watchdog "$rollback_remaining"
     fi
-    [[ "$rollback_completed" == true ]] && rm -f -- "$partial_path"
+    if restore_previous; then
+      finalization_in_progress=true
+      write_final_record failed rolled_back "$failure_reason" || true
+    else
+      finalization_in_progress=true
+      write_final_record failed rollback_failed "$failure_reason" || true
+    fi
+    if [[ "$rollback_completed" == true && "$record_finalized" == true ]]; then
+      run_post_stop_command rm -f -- "$partial_path" || true
+    fi
   fi
   cleanup_lock
   exit "$status"
@@ -1229,14 +1325,74 @@ write_partial preflight_complete
 
 failure_reason=candidate_pull_failed
 if [[ "$maintenance_transition" == true ]]; then
-  maintenance_window_seconds=${MAINTENANCE_UNAVAILABLE_SECONDS:-300}
-  [[ "$maintenance_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_window_seconds" -le 300 ]] \
+  maintenance_requested_window_seconds=${MAINTENANCE_UNAVAILABLE_SECONDS:-300}
+  [[ "$maintenance_requested_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_requested_window_seconds" -le 300 ]] \
     || fail 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 300'
-  maintenance_deadline_epoch=$(( $(date -u +%s) + maintenance_window_seconds ))
-  maintenance_started_seconds=$SECONDS
+  maintenance_started_epoch=$(date -u +%s) || fail 'maintenance deadline clock failed'
+  maintenance_end_to_end_remaining=$((deadline_epoch - maintenance_started_epoch))
+  maintenance_end_to_end_elapsed=$(( ($(monotonic_millis) - release_deadline_started_millis) / 1000 ))
+  maintenance_end_to_end_monotonic_remaining=$((release_deadline_window_seconds - maintenance_end_to_end_elapsed))
+  if (( maintenance_end_to_end_monotonic_remaining < maintenance_end_to_end_remaining )); then
+    maintenance_end_to_end_remaining=$maintenance_end_to_end_monotonic_remaining
+  fi
+  maintenance_window_seconds=$maintenance_requested_window_seconds
+  if (( maintenance_end_to_end_remaining < maintenance_window_seconds )); then
+    maintenance_window_seconds=$maintenance_end_to_end_remaining
+  fi
+  (( maintenance_window_seconds >= 5 )) \
+    || fail 'maintenance deadline budget is too small for bounded recovery'
+
+  # Reserve 20% of the hard unavailable-window budget for rollback, capped at
+  # 60 seconds.  The last portion of that reserve (up to five seconds) is kept
+  # exclusively for a truthful final record and checkpoint/lock cleanup.
+  maintenance_recovery_reserve_seconds=$(((maintenance_window_seconds + 4) / 5))
+  if (( maintenance_window_seconds < 60 )); then
+    maintenance_scaled_recovery_seconds=$(((maintenance_window_seconds * 2 + 2) / 3))
+    (( maintenance_recovery_reserve_seconds < maintenance_scaled_recovery_seconds )) \
+      && maintenance_recovery_reserve_seconds=$maintenance_scaled_recovery_seconds
+  elif (( maintenance_recovery_reserve_seconds < 4 )); then
+    maintenance_recovery_reserve_seconds=4
+  fi
+  (( maintenance_recovery_reserve_seconds > 60 )) && maintenance_recovery_reserve_seconds=60
+  maintenance_finalization_reserve_seconds=$(((maintenance_recovery_reserve_seconds + 11) / 12))
+  # A one-second finalization budget races the hard watchdog after a bounded
+  # rollback command is terminated. Keep two seconds for the final record and
+  # checkpoint cleanup, still within the same hard unavailable-window limit.
+  if (( maintenance_window_seconds >= 20 && maintenance_window_seconds < 60 \
+      && maintenance_finalization_reserve_seconds < 10 )); then
+    maintenance_finalization_reserve_seconds=10
+  elif (( maintenance_window_seconds >= 12 && maintenance_finalization_reserve_seconds < 4 )); then
+    maintenance_finalization_reserve_seconds=4
+  elif (( maintenance_finalization_reserve_seconds < 2 )); then
+    maintenance_finalization_reserve_seconds=2
+  fi
+  if (( maintenance_window_seconds < 60 )); then
+    (( maintenance_finalization_reserve_seconds > 10 )) && maintenance_finalization_reserve_seconds=10
+  else
+    (( maintenance_finalization_reserve_seconds > 5 )) && maintenance_finalization_reserve_seconds=5
+  fi
+
+  maintenance_forward_window_seconds=$((maintenance_window_seconds - maintenance_recovery_reserve_seconds))
+  maintenance_rollback_window_seconds=$((maintenance_window_seconds - maintenance_finalization_reserve_seconds))
+  (( maintenance_forward_window_seconds > 0 \
+      && maintenance_rollback_window_seconds > maintenance_forward_window_seconds )) \
+    || fail 'maintenance deadline budget cannot be partitioned safely'
+  maintenance_deadline_epoch=$((maintenance_started_epoch + maintenance_window_seconds))
+  maintenance_forward_deadline_epoch=$((maintenance_started_epoch + maintenance_forward_window_seconds))
+  maintenance_rollback_deadline_epoch=$((maintenance_started_epoch + maintenance_rollback_window_seconds))
+  maintenance_started_millis=$(monotonic_millis)
+  # Stop forward work at its partitioned deadline so EXIT can still spend the
+  # reserved rollback/finalization budget before the overall hard deadline.
+  arm_deadline_watchdog "$maintenance_forward_window_seconds"
   trace_event 'maintenance stop api-worker'
   maintenance_stopped=true
   run_post_stop_command "${compose_current[@]}" stop sub2api-blue sub2api-green sub2api-worker >/dev/null
+  # Rebase the process watchdog after the stop command so its duration tracks
+  # the remaining absolute forward budget rather than double-counting setup.
+  now=$(date -u +%s)
+  forward_remaining=$((maintenance_forward_deadline_epoch - now))
+  (( forward_remaining > 0 )) || fail 'maintenance forward budget expired while stopping API and worker'
+  arm_deadline_watchdog "$forward_remaining"
   [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired after stopping API and worker'
   trace_event 'maintenance start worker for migrations'
   if [[ "$preloaded_image" == false ]]; then
@@ -1250,16 +1406,18 @@ if [[ "$maintenance_transition" == true ]]; then
   [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired while applying migrations'
 fi
 candidate_env="$record_root/.$attempt_id.candidate.env"
-cp "$release_env" "$candidate_env"
-chmod 0600 "$candidate_env"
-awk -v blue="$candidate_blue" -v green="$candidate_green" -v worker="$candidate_worker" '
+candidate_env_awk='
   /^SUB2API_BLUE_IMAGE=/ { print "SUB2API_BLUE_IMAGE=" blue; next }
   /^SUB2API_GREEN_IMAGE=/ { print "SUB2API_GREEN_IMAGE=" green; next }
   /^SUB2API_WORKER_IMAGE=/ { print "SUB2API_WORKER_IMAGE=" worker; next }
   { print }
-' "$candidate_env" >"$candidate_env.tmp"
-chmod 0600 "$candidate_env.tmp"
-mv "$candidate_env.tmp" "$candidate_env"
+'
+run_post_stop_operation '
+  release_env=$1 candidate_env=$2 blue=$3 green=$4 worker=$5 awk_program=$6
+  cp "$release_env" "$candidate_env" && chmod 0600 "$candidate_env" &&
+    awk -v blue="$blue" -v green="$green" -v worker="$worker" "$awk_program" "$candidate_env" >"$candidate_env.tmp" &&
+    chmod 0600 "$candidate_env.tmp" && mv "$candidate_env.tmp" "$candidate_env"
+' "$release_env" "$candidate_env" "$candidate_blue" "$candidate_green" "$candidate_worker" "$candidate_env_awk"
 compose_candidate=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$candidate_env" -f "$base_compose")
 if [[ "$preloaded_image" == false ]]; then
@@ -1280,16 +1438,30 @@ write_acceptance_headers
 network_name="${compose_project}_default"
 candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
-run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
-  jq -e '.status == "ok"' >/dev/null
-run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$admin_header:/run/key:ro" "$network_curl_image" \
-  -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/api/v1/admin/system/version" | \
-  jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null
-run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 \
-  "$candidate_url/api/v1/settings/public" | jq -e 'type == "object"' >/dev/null
-run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$gateway_header:/run/key:ro" "$network_curl_image" \
-  -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/v1/models" | \
-  jq -e '.data | type == "array"' >/dev/null
+run_post_stop_operation '
+  url=$1
+  shift
+  docker run "$@" "$url" | jq -e '\''.status == "ok"'\'' >/dev/null
+' "$candidate_url/health" "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" \
+  "$network_curl_image" -fsS --connect-timeout 5 --max-time 15
+run_post_stop_operation '
+  url=$1
+  shift
+  docker run "$@" "$url" | jq -e '\''(.data // .).version | type == "string" and length > 0'\'' >/dev/null
+' "$candidate_url/api/v1/admin/system/version" "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" \
+  --user 0:0 -v "$admin_header:/run/key:ro" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 -H @/run/key
+run_post_stop_operation '
+  url=$1
+  shift
+  docker run "$@" "$url" | jq -e '\''type == "object"'\'' >/dev/null
+' "$candidate_url/api/v1/settings/public" "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" \
+  "$network_curl_image" -fsS --connect-timeout 5 --max-time 15
+run_post_stop_operation '
+  url=$1
+  shift
+  docker run "$@" "$url" | jq -e '\''.data | type == "array"'\'' >/dev/null
+' "$candidate_url/v1/models" "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" \
+  --user 0:0 -v "$gateway_header:/run/key:ro" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 -H @/run/key
 write_partial candidate_accepted
 check_maintenance_deadline
 
@@ -1344,7 +1516,7 @@ failure_reason=final_identity_check_failed
 write_final_record succeeded promoted ''
 trace_event 'persist success-record'
 record_finalized=true
-rm -f -- "$partial_path" "$candidate_env" "$admin_header" "$gateway_header"
+run_post_stop_command rm -f -- "$partial_path" "$candidate_env" "$admin_header" "$gateway_header"
 partial_path=''
 candidate_env=''
 cleanup_lock

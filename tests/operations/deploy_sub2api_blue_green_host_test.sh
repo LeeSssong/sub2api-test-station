@@ -7,6 +7,11 @@ FIXTURE=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-blue-green-host.XXXXXX")
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf -- "$FIXTURE"' EXIT
 
+monotonic_millis() {
+  perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e \
+    'printf "%d\n", clock_gettime(CLOCK_MONOTONIC) * 1000'
+}
+
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
   exit 1
@@ -93,6 +98,15 @@ EOF
   cat >"$CASE_DIR/bin/jq" <<EOF
 #!/usr/bin/env bash
 printf 'jq %s\n' "\$*" >>"\${FAKE_EVENT_LOG:?}"
+if [[ "\${FAKE_SCENARIO:-}" == maintenance_pipeline_consumer_hangs \
+    && "\${FAKE_DISABLE_HANG:-false}" != true \
+    && -e "\${FAKE_EVENT_LOG}.maintenance-stopped" \
+    && ! -e "\${FAKE_EVENT_LOG}.pipeline-hang-triggered" \
+    && "\$*" == *'.status == "ok"'* ]]; then
+  : >"\${FAKE_EVENT_LOG}.pipeline-hang-triggered"
+  : >"\${FAKE_EVENT_LOG}.pipeline-consumer-hung"
+  /bin/sleep "\${FAKE_HANG_SECONDS:-5}"
+fi
 exec "$REAL_JQ" "\$@"
 EOF
   cat >"$CASE_DIR/bin/uname" <<'EOF'
@@ -142,6 +156,28 @@ if [[ "${FAKE_PAUSE_AFTER_LOCK_MKDIR:-}" == 1 && "$1" == "${FAKE_LOCK_DIR:-}" ]]
     /bin/sleep 1
   done
 fi
+EOF
+  cat >"$CASE_DIR/bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'mv %s\n' "$*" >>"${FAKE_EVENT_LOG:?}"
+target="${@: -1}"
+scenario=${FAKE_SCENARIO:-success}
+if [[ "${FAKE_DISABLE_HANG:-false}" != true && -e "${FAKE_EVENT_LOG}.maintenance-stopped" \
+    && ! -e "${FAKE_EVENT_LOG}.filesystem-hang-triggered" ]]; then
+  marker=''
+  case "$scenario:$target" in
+    maintenance_checkpoint_hangs:*.partial) marker=checkpoint-operation-hung ;;
+    maintenance_persistence_hangs:*/release.env) marker=persistence-operation-hung ;;
+    maintenance_final_record_hangs:*/records/*.json) marker=final-record-operation-hung ;;
+  esac
+  if [[ -n "$marker" ]]; then
+    : >"${FAKE_EVENT_LOG}.filesystem-hang-triggered"
+    : >"${FAKE_EVENT_LOG}.$marker"
+    /bin/sleep "${FAKE_HANG_SECONDS:-5}"
+  fi
+fi
+exec /bin/mv "$@"
 EOF
   cat >"$CASE_DIR/kill-hook.bash" <<'EOF'
 kill() {
@@ -227,14 +263,29 @@ JSON
 		    "${EXPECTED_IMAGE:?}" "$role" "${PREVIOUS_IMAGE_FOR_FAKE:?}" "$worker_image"
     fi
     ;;
-  *' ps -q postgres') printf 'postgres-id\n' ;;
-  *' ps -q redis') printf 'redis-id\n' ;;
+  *' ps -q postgres')
+    if [[ "$scenario" == maintenance_rollback_postgres_drift && -e "${FAKE_EVENT_LOG}.rollback-phase" ]]; then
+      printf 'changed-postgres-id\n'
+    else
+      printf 'postgres-id\n'
+    fi
+    ;;
+  *' ps -q redis')
+    if [[ "$scenario" == maintenance_rollback_redis_drift && -e "${FAKE_EVENT_LOG}.rollback-phase" ]]; then
+      printf 'changed-redis-id\n'
+    else
+      printf 'redis-id\n'
+    fi
+    ;;
   *' ps -q caddy')
     [[ "$scenario" != rollback_shared_id_drift || ! -e "${FAKE_EVENT_LOG}.cutover-seen" ]] \
       || { printf 'changed-caddy-id\n'; exit 0; }
     printf 'caddy-id\n'
     ;;
-  *' ps -q sub2api-blue') printf 'blue-id\n' ;;
+  *' ps -q sub2api-blue')
+    [[ ! -e "${FAKE_EVENT_LOG}.partial-blue-stopped" ]] || exit 0
+    printf 'blue-id\n'
+    ;;
   *' ps -q sub2api-green') printf 'green-id\n' ;;
 	*' ps -q sub2api-worker')
 		if [[ "$scenario" == multiple_workers ]]; then printf 'worker-id\nworker-id-2\n'; else printf 'worker-id\n'; fi
@@ -253,15 +304,27 @@ JSON
 		fi
 		;;
 	'inspect blue-id --format {{.Image}}')
-		if [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then printf '%s\n' "${EXPECTED_IMAGE_ID:?}"; else printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; fi
-		;;
+			if [[ "$scenario" == maintenance_rollback_api_image_mismatch && -e "${FAKE_EVENT_LOG}.rollback-phase" ]]; then
+				printf 'sha256:%064d\n' 9
+			elif [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then
+				printf '%s\n' "${EXPECTED_IMAGE_ID:?}"
+			else
+				printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"
+			fi
+			;;
 	'inspect green-id --format {{.Image}}')
 		if [[ -e "${FAKE_EVENT_LOG}.live-route-green" ]]; then printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; else printf '%s\n' "${EXPECTED_IMAGE_ID:?}"; fi
 		;;
 	'inspect worker-id --format {{.Image}}')
-			worker_image_id_file="${FAKE_EVENT_LOG}.worker-image-id"
-			if [[ -f "$worker_image_id_file" ]]; then cat "$worker_image_id_file"; else printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"; fi
-			;;
+				worker_image_id_file="${FAKE_EVENT_LOG}.worker-image-id"
+				if [[ "$scenario" == maintenance_rollback_worker_image_mismatch && -e "${FAKE_EVENT_LOG}.rollback-phase" ]]; then
+					printf 'sha256:%064d\n' 8
+				elif [[ -f "$worker_image_id_file" ]]; then
+					cat "$worker_image_id_file"
+				else
+					printf '%s\n' "${PREVIOUS_IMAGE_ID_FOR_FAKE:?}"
+				fi
+				;;
 	'inspect worker-id --format {{.Config.Image}}') printf '%s\n' "${PREVIOUS_IMAGE_FOR_FAKE:?}" ;;
 	'inspect blue-id --format {{range .Config.Env}}{{println .}}{{end}}')
 		if [[ "$scenario" == active_role_all ]]; then printf 'SERVER_PROCESS_ROLE=all\n'; else printf 'SERVER_PROCESS_ROLE=api\n'; fi
@@ -273,19 +336,36 @@ JSON
 	'inspect legacy-id --format {{range .Config.Env}}{{println .}}{{end}}') printf 'SERVER_PROCESS_ROLE=all\n' ;;
   *'exec -T postgres '*'psql'*) printf '%s\n' "${FAKE_DB_HEADROOM:-30}" ;;
   *'stop sub2api-blue sub2api-green sub2api-worker')
+    : >"${FAKE_EVENT_LOG}.maintenance-stopped"
     if [[ "$scenario" == maintenance_partial_stop_failure ]]; then
       : >"${FAKE_EVENT_LOG}.partial-stop-seen"
+      : >"${FAKE_EVENT_LOG}.partial-blue-stopped"
       exit 1
     fi
     ;;
   *'pull sub2api-worker')
-    [[ "$scenario" != maintenance_worker_pull_failure ]] || exit 1
-    if [[ "$scenario" == maintenance_worker_pull_hangs || "$scenario" == maintenance_rollback_previous_api_unhealthy ]]; then
-      /bin/sleep 5
+    case "$scenario" in
+      maintenance_worker_pull_failure|maintenance_rollback_*) exit 1 ;;
+    esac
+    if [[ "$scenario" == maintenance_worker_pull_hangs || "$scenario" == maintenance_e2e_worker_pull_hangs ]]; then
+      : >"${FAKE_EVENT_LOG}.worker-pull-hung"
+      /bin/sleep "${FAKE_HANG_SECONDS:-5}"
       exit 1
     fi
     ;;
   *'pull sub2api-green') : ;;
+	*'up --no-deps -d sub2api-blue'|*'up --no-deps -d --pull never sub2api-blue')
+		if [[ "$*" == *'.rollback.env'* ]]; then
+			: >"${FAKE_EVENT_LOG}.rollback-phase"
+			rm -f -- "${FAKE_EVENT_LOG}.partial-blue-stopped"
+			: >"${FAKE_EVENT_LOG}.partial-blue-restored"
+			if [[ "$scenario" == maintenance_rollback_api_hangs ]]; then
+				: >"${FAKE_EVENT_LOG}.rollback-api-hung"
+				/bin/sleep "${FAKE_HANG_SECONDS:-5}"
+				exit 1
+			fi
+		fi
+		;;
   *'up --no-deps -d sub2api-green')
     [[ "$scenario" != candidate_up_failure ]] || exit 1
     ;;
@@ -363,10 +443,11 @@ JSON
     [[ "$scenario" != maintenance_rollback_previous_api_unhealthy ]] || { printf 'unhealthy\n'; exit 0; }
     printf 'healthy\n'
     ;;
-	*'exec -T caddy wget -qO- http://127.0.0.1:2019/config/'*)
-		upstream=sub2api-blue:8080
-		[[ "$scenario" == live_route_green || -e "${FAKE_EVENT_LOG}.live-route-green" ]] && upstream=sub2api-green:8080
-		printf '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"upstreams":[{"dial":"%s"}]}]}]}}}}}\n' "$upstream"
+		*'exec -T caddy wget -qO- http://127.0.0.1:2019/config/'*)
+			upstream=sub2api-blue:8080
+			[[ "$scenario" == live_route_green || -e "${FAKE_EVENT_LOG}.live-route-green" ]] && upstream=sub2api-green:8080
+			[[ "$scenario" == maintenance_rollback_caddy_mismatch && -e "${FAKE_EVENT_LOG}.rollback-phase" ]] && upstream=sub2api-green:8080
+			printf '{"apps":{"http":{"servers":{"srv0":{"routes":[{"handle":[{"upstreams":[{"dial":"%s"}]}]}]}}}}}\n' "$upstream"
 		;;
   *'logs --no-color --tail 200 sub2api-worker')
     [[ "$scenario" != worker_request_failure_log ]] || { printf 'sub2api-worker-1  | Request failed: upstream timeout\n'; exit 0; }
@@ -995,15 +1076,59 @@ test_maintenance_window_hard_maximum() {
     || fail 'maintenance window above five minutes stopped production services before rejection'
 }
 
-test_maintenance_pre_worker_failure_restores_previous_api() {
+prepare_maintenance_case() {
+  local name=$1
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
-  setup_case maintenance_pre_worker_failure_rollback
+  setup_case "$name"
   write_meminfo
   MIGRATIONS_HASH=$new_hash
   "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
-  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
-  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_pre_worker_failure_rollback run_executor \
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_FROM_HASH=$old_hash
+}
+
+assert_rollback_record_and_checkpoint() {
+  local expected_state=$1 expected_rolled_back=$2 checkpoint=$3 label=$4 record partial
+  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+  [[ -n "$record" ]] || fail "$label did not write a final record"
+  "$REAL_JQ" -e --arg state "$expected_state" --argjson rolled_back "$expected_rolled_back" \
+    '.result == "failed" and .state == $state and .rolled_back == $rolled_back' "$record" >/dev/null \
+    || fail "$label wrote an incorrect final rollback state: $(tr -d '\n' <"$record")"
+  partial=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.partial' -print -quit)
+  if [[ "$checkpoint" == retained ]]; then
+    [[ -n "$partial" ]] || fail "$label discarded its recovery checkpoint"
+  else
+    [[ -z "$partial" ]] || fail "$label retained a completed rollback checkpoint"
+  fi
+}
+
+assert_truthful_rollback_record_and_checkpoint() {
+  local label=$1 record partial state rolled_back
+  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+  [[ -n "$record" ]] || fail "$label did not write a final record"
+  state=$("$REAL_JQ" -r '.state' "$record")
+  rolled_back=$("$REAL_JQ" -r '.rolled_back' "$record")
+  partial=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.partial' -print -quit)
+  case "$state:$rolled_back" in
+    rolled_back:true) [[ -z "$partial" ]] || fail "$label retained a completed rollback checkpoint" ;;
+    rollback_failed:false) [[ -n "$partial" ]] || fail "$label discarded its failed-rollback checkpoint" ;;
+    *) fail "$label wrote an untruthful final rollback state: $(tr -d '\n' <"$record")" ;;
+  esac
+}
+
+assert_event_after_rollback_start() {
+  local needle=$1 label=$2 rollback_line
+  rollback_line=$(awk 'index($0, ".rollback.env") && index($0, "up --no-deps -d sub2api-blue") { print NR; exit }' "$EVENT_LOG")
+  [[ -n "$rollback_line" ]] || fail "$label did not enter the rollback runtime phase"
+  awk -v after="$rollback_line" -v needle="$needle" 'NR > after && index($0, needle) { found=1 } END { exit !found }' "$EVENT_LOG" \
+    || fail "$label was only observed before rollback"
+}
+
+test_maintenance_pre_worker_failure_restores_previous_api() {
+  prepare_maintenance_case maintenance_pre_worker_failure_rollback
+  MAINTENANCE_MODE=true expect_failure maintenance_pre_worker_failure_rollback run_executor \
     FAKE_SCENARIO=maintenance_worker_pull_failure
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
     || fail 'pre-worker maintenance failure did not occur after production services stopped'
@@ -1011,10 +1136,8 @@ test_maintenance_pre_worker_failure_restores_previous_api() {
     || fail 'pre-worker maintenance failure did not restart the previous API during rollback'
   grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" \
     || fail 'pre-worker maintenance failure did not recreate the previous worker during rollback'
-  grep -q 'inspect blue-id --format {{.Image}}' "$EVENT_LOG" \
-    || fail 'pre-worker rollback did not inspect the previous API image ID'
-  grep -q 'inspect worker-id --format {{.Image}}' "$EVENT_LOG" \
-    || fail 'pre-worker rollback did not inspect the previous worker image ID'
+  assert_event_after_rollback_start 'inspect blue-id --format {{.Image}}' 'previous API image inspection'
+  assert_event_after_rollback_start 'inspect worker-id --format {{.Image}}' 'previous worker image inspection'
   grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
     || fail 'pre-worker rollback did not prove previous API readiness'
   grep -q 'inspect worker-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
@@ -1023,60 +1146,119 @@ test_maintenance_pre_worker_failure_restores_previous_api() {
     || fail 'pre-worker rollback did not prove public API readiness'
   ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
     || fail 'pre-worker rollback touched a shared service'
-  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
-  "$REAL_JQ" -e '.state == "rolled_back" and .rolled_back == true' "$record" >/dev/null \
-    || fail 'pre-worker rollback did not prove a truthful rolled_back result'
+  assert_rollback_record_and_checkpoint rolled_back true removed 'pre-worker rollback'
 }
 
 test_maintenance_deadline_bounds_post_stop_operation() {
-  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
-  local started baseline_elapsed elapsed
+  local started elapsed baseline_elapsed
 
-  setup_case maintenance_worker_pull_failure_baseline
-  write_meminfo
-  MIGRATIONS_HASH=$new_hash
-  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
-  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
-  started=$SECONDS
-  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_worker_pull_failure_baseline run_executor \
-    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=1
-  baseline_elapsed=$((SECONDS - started))
+  prepare_maintenance_case maintenance_budget_too_small
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_budget_too_small run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=4
+  grep -q 'maintenance deadline budget is too small for bounded recovery' "$CASE_DIR/stderr" \
+    || fail 'undersized maintenance budget was not rejected with the recovery-budget error'
+  ! grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'undersized maintenance budget stopped production before failing closed'
 
-  setup_case maintenance_worker_pull_hangs
-  write_meminfo
-  MIGRATIONS_HASH=$new_hash
-  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
-  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
-  started=$SECONDS
-  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_worker_pull_hangs run_executor \
-    FAKE_SCENARIO=maintenance_worker_pull_hangs MAINTENANCE_UNAVAILABLE_SECONDS=1
-  elapsed=$((SECONDS - started))
-  (( elapsed <= baseline_elapsed + 3 )) \
-    || fail "post-stop maintenance watchdog added too much time: baseline=${baseline_elapsed}s hung=${elapsed}s"
-  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
-    || fail 'deadline test did not reach the post-stop worker operation'
+  prepare_maintenance_case maintenance_worker_pull_failure_baseline
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_worker_pull_failure_baseline run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=30
+  baseline_elapsed=$(( $(monotonic_millis) - started ))
+  prepare_maintenance_case maintenance_worker_pull_hangs
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_worker_pull_hangs run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_hangs FAKE_HANG_SECONDS=30 MAINTENANCE_UNAVAILABLE_SECONDS=30
+  elapsed=$(( $(monotonic_millis) - started ))
+  [[ -e "${EVENT_LOG}.worker-pull-hung" ]] || fail 'maintenance deadline test did not run the exact hung worker pull'
+  (( elapsed > 0 )) || fail 'maintenance deadline measured no elapsed time for hung worker pull'
+  (( elapsed <= baseline_elapsed + 31000 )) || fail "maintenance deadline did not reserve recovery time from the hung worker pull: baseline=${baseline_elapsed}ms hung=${elapsed}ms"
+  assert_truthful_rollback_record_and_checkpoint 'maintenance-deadline worker pull'
+
+  prepare_maintenance_case maintenance_e2e_worker_pull_baseline
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_e2e_worker_pull_baseline run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=30
+  baseline_elapsed=$(( $(monotonic_millis) - started ))
+  prepare_maintenance_case maintenance_e2e_worker_pull_hangs
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513625 MAINTENANCE_MODE=true \
+    expect_failure maintenance_e2e_worker_pull_hangs run_executor \
+    FAKE_SCENARIO=maintenance_e2e_worker_pull_hangs FAKE_HANG_SECONDS=30 MAINTENANCE_UNAVAILABLE_SECONDS=30
+  elapsed=$(( $(monotonic_millis) - started ))
+  [[ -e "${EVENT_LOG}.worker-pull-hung" ]] || fail 'end-to-end deadline test did not run the exact hung worker pull'
+  (( elapsed > 0 )) || fail 'end-to-end deadline measured no elapsed time for hung worker pull'
+  (( elapsed <= baseline_elapsed + 26000 )) || fail "earlier end-to-end deadline did not reserve recovery time from the hung worker pull: baseline=${baseline_elapsed}ms hung=${elapsed}ms"
+  assert_truthful_rollback_record_and_checkpoint 'end-to-end-deadline worker pull'
+
+  prepare_maintenance_case maintenance_rollback_api_baseline
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_rollback_api_baseline run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=30
+  baseline_elapsed=$(( $(monotonic_millis) - started ))
+  prepare_maintenance_case maintenance_rollback_api_hangs
+  started=$(monotonic_millis)
+  RELEASE_DEADLINE_EPOCH=1785513634 MAINTENANCE_MODE=true \
+    expect_failure maintenance_rollback_api_hangs run_executor \
+    FAKE_SCENARIO=maintenance_rollback_api_hangs FAKE_HANG_SECONDS=30 MAINTENANCE_UNAVAILABLE_SECONDS=30
+  elapsed=$(( $(monotonic_millis) - started ))
+  [[ -e "${EVENT_LOG}.rollback-api-hung" ]] || fail 'rollback deadline test did not run the exact hung API restoration'
+  (( elapsed > 0 )) || fail 'maintenance deadline measured no elapsed time for hung rollback operation'
+  (( elapsed <= baseline_elapsed + 31000 )) || fail "maintenance deadline did not reserve finalization time from the hung rollback operation: baseline=${baseline_elapsed}ms hung=${elapsed}ms"
+  assert_rollback_record_and_checkpoint rollback_failed false retained 'hung rollback operation'
+}
+
+test_maintenance_bounds_pipeline_and_filesystem_operations() {
+  local scenario marker started elapsed baseline_elapsed
+  for scenario in \
+    maintenance_pipeline_consumer_hangs \
+    maintenance_checkpoint_hangs \
+    maintenance_persistence_hangs \
+    maintenance_final_record_hangs; do
+    case "$scenario" in
+      maintenance_pipeline_consumer_hangs) marker=pipeline-consumer-hung ;;
+      maintenance_checkpoint_hangs) marker=checkpoint-operation-hung ;;
+      maintenance_persistence_hangs) marker=persistence-operation-hung ;;
+      maintenance_final_record_hangs) marker=final-record-operation-hung ;;
+    esac
+    prepare_maintenance_case "$scenario-baseline"
+    started=$SECONDS
+    RELEASE_DEADLINE_EPOCH=1785513640 MAINTENANCE_MODE=true \
+      run_executor FAKE_SCENARIO="$scenario" FAKE_DISABLE_HANG=true \
+      MAINTENANCE_UNAVAILABLE_SECONDS=30 \
+      >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+      || fail "$scenario baseline failed: $(cat "$CASE_DIR/stderr")"
+    baseline_elapsed=$((SECONDS - started))
+    prepare_maintenance_case "$scenario"
+    started=$SECONDS
+    RELEASE_DEADLINE_EPOCH=1785513640 MAINTENANCE_MODE=true \
+      expect_failure "$scenario" run_executor \
+      FAKE_SCENARIO="$scenario" FAKE_HANG_SECONDS=30 MAINTENANCE_UNAVAILABLE_SECONDS=30
+    elapsed=$((SECONDS - started))
+    [[ -e "${EVENT_LOG}.$marker" ]] || fail "$scenario did not run its exact blocking operation"
+    (( elapsed <= baseline_elapsed + 25 )) || fail "$scenario did not leave bounded recovery time: baseline=${baseline_elapsed}s hung=${elapsed}s"
+    assert_rollback_record_and_checkpoint rolled_back true removed "$scenario"
+  done
 }
 
 test_maintenance_partial_stop_arms_rollback() {
-  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
-  setup_case maintenance_partial_stop_failure
-  write_meminfo
-  MIGRATIONS_HASH=$new_hash
-  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
-  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
-  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_partial_stop_failure run_executor \
+  prepare_maintenance_case maintenance_partial_stop_failure
+  MAINTENANCE_MODE=true expect_failure maintenance_partial_stop_failure run_executor \
     FAKE_SCENARIO=maintenance_partial_stop_failure
   [[ -e "${EVENT_LOG}.partial-stop-seen" ]] || fail 'partial stop fixture did not execute the stop mutation'
+  [[ -e "${EVENT_LOG}.partial-blue-restored" && ! -e "${EVENT_LOG}.partial-blue-stopped" ]] \
+    || fail 'partial stop fixture did not prove restoration of the stopped API component'
   grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" \
     || fail 'partial stop failure did not restart the previous API'
   grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" \
     || fail 'partial stop failure did not recreate the previous worker'
-  grep -q 'inspect blue-id --format {{.Image}}' "$EVENT_LOG" \
-    || fail 'partial stop rollback did not inspect the previous API image ID'
-  grep -q 'inspect worker-id --format {{.Image}}' "$EVENT_LOG" \
-    || fail 'partial stop rollback did not inspect the previous worker image ID'
+  assert_event_after_rollback_start 'inspect blue-id --format {{.Image}}' 'partial-stop API image inspection'
+  assert_event_after_rollback_start 'inspect worker-id --format {{.Image}}' 'partial-stop worker image inspection'
   grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
     || fail 'partial stop rollback did not prove previous API readiness'
   grep -q 'inspect worker-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
@@ -1085,29 +1267,43 @@ test_maintenance_partial_stop_arms_rollback() {
     || fail 'partial stop rollback did not prove public API readiness'
   ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
     || fail 'partial stop rollback touched a shared service'
-  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
-  "$REAL_JQ" -e '.state == "rolled_back" and .rolled_back == true' "$record" >/dev/null \
-    || fail 'partial stop rollback did not prove a truthful rolled_back result'
+  assert_rollback_record_and_checkpoint rolled_back true removed 'partial-stop rollback'
 }
 
 test_maintenance_pre_cutover_readiness_is_truthful() {
-  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
-  local record
-  setup_case maintenance_rollback_previous_api_unhealthy
-  write_meminfo
-  MIGRATIONS_HASH=$new_hash
-  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
-  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
-  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_rollback_previous_api_unhealthy run_executor \
+  prepare_maintenance_case maintenance_rollback_previous_api_unhealthy
+  MAINTENANCE_MODE=true expect_failure maintenance_rollback_previous_api_unhealthy run_executor \
     FAKE_SCENARIO=maintenance_rollback_previous_api_unhealthy
-  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
   grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
     || fail 'unhealthy previous API rollback did not inspect API readiness'
-  "$REAL_JQ" -e '.state == "rollback_failed" and .rolled_back == false' "$record" >/dev/null \
-    || fail 'unhealthy previous API was finalized as a successful rollback'
-  [[ -n "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] \
-    || fail 'unhealthy previous API rollback discarded its recovery checkpoint'
+  assert_rollback_record_and_checkpoint rollback_failed false retained 'unhealthy previous API rollback'
+}
+
+test_maintenance_rollback_proof_gates() {
+  local scenario label
+  for scenario in \
+    maintenance_rollback_api_image_mismatch \
+    maintenance_rollback_worker_image_mismatch \
+    maintenance_rollback_caddy_mismatch \
+    maintenance_rollback_postgres_drift \
+    maintenance_rollback_redis_drift; do
+    case "$scenario" in
+      maintenance_rollback_api_image_mismatch) label='old API image mismatch' ;;
+      maintenance_rollback_worker_image_mismatch) label='old worker image mismatch' ;;
+      maintenance_rollback_caddy_mismatch) label='Caddy upstream mismatch' ;;
+      maintenance_rollback_postgres_drift) label='PostgreSQL identity drift' ;;
+      maintenance_rollback_redis_drift) label='Redis identity drift' ;;
+    esac
+    prepare_maintenance_case "$scenario"
+    MAINTENANCE_MODE=true expect_failure "$scenario" run_executor FAKE_SCENARIO="$scenario"
+    assert_rollback_record_and_checkpoint rollback_failed false retained "$label"
+  done
+
+  prepare_maintenance_case maintenance_rollback_image_phase_isolation
+  MAINTENANCE_MODE=true expect_failure maintenance_rollback_image_phase_isolation run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure
+  assert_event_after_rollback_start 'inspect blue-id --format {{.Image}}' 'rollback API image proof'
+  assert_event_after_rollback_start 'inspect worker-id --format {{.Image}}' 'rollback worker image proof'
 }
 
 test_caddy_reconciliation_route() {
@@ -1509,8 +1705,10 @@ case "${ONLY_TEST:-all}" in
     test_maintenance_window_hard_maximum
     test_maintenance_pre_worker_failure_restores_previous_api
     test_maintenance_deadline_bounds_post_stop_operation
+    test_maintenance_bounds_pipeline_and_filesystem_operations
     test_maintenance_partial_stop_arms_rollback
     test_maintenance_pre_cutover_readiness_is_truthful
+    test_maintenance_rollback_proof_gates
     test_caddy_reconciliation_route
     printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
@@ -1583,15 +1781,19 @@ case "${ONLY_TEST:-all}" in
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation
+		test_maintenance_bounds_pipeline_and_filesystem_operations
 		test_maintenance_partial_stop_arms_rollback
 		test_maintenance_pre_cutover_readiness_is_truthful
+		test_maintenance_rollback_proof_gates
 		test_caddy_reconciliation_route
 		;;
 	maintenance-window) test_maintenance_window_hard_maximum ;;
 	maintenance-pre-worker-rollback) test_maintenance_pre_worker_failure_restores_previous_api ;;
 	maintenance-deadline) test_maintenance_deadline_bounds_post_stop_operation ;;
+	maintenance-bounded-ops) test_maintenance_bounds_pipeline_and_filesystem_operations ;;
 	maintenance-partial-stop) test_maintenance_partial_stop_arms_rollback ;;
 	maintenance-readiness) test_maintenance_pre_cutover_readiness_is_truthful ;;
+	maintenance-rollback-proofs) test_maintenance_rollback_proof_gates ;;
 	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;

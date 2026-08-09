@@ -59,6 +59,9 @@ func (p *Profitability) Handle(ctx context.Context, event events.Event) error {
 	if event.Type != events.RequestCompleted {
 		return nil
 	}
+	if p.repository != nil {
+		return p.handlePersistent(ctx, event)
+	}
 	if err := p.ensureLoaded(ctx); err != nil {
 		return err
 	}
@@ -87,6 +90,32 @@ func (p *Profitability) Handle(ctx context.Context, event events.Event) error {
 		if err := p.repository.ReplaceProfitabilityReadModels(ctx, p.profitabilityRows()); err != nil {
 			return fmt.Errorf("persist profitability read models: %w", err)
 		}
+	}
+	return nil
+}
+
+func (p *Profitability) handlePersistent(ctx context.Context, event events.Event) error {
+	rows, err := p.repository.LoadProfitabilityReadModels(ctx)
+	if err != nil {
+		return fmt.Errorf("load profitability read models: %w", err)
+	}
+	working := NewProfitability()
+	for _, input := range rows {
+		row, err := normalizeProfitabilityRow(input)
+		if err != nil {
+			return err
+		}
+		working.Rows[row.AccountID] = row
+		if events.ComparePosition(row.SourceOccurredAt, row.Metadata.SourceWatermark, working.watermarkAt, working.Metadata.SourceWatermark) > 0 {
+			working.watermarkAt, working.Metadata = row.SourceOccurredAt, row.Metadata
+		}
+	}
+	working.recalculateTotals()
+	if err := working.Handle(ctx, event); err != nil {
+		return err
+	}
+	if err := p.repository.ReplaceProfitabilityReadModels(ctx, working.profitabilityRows()); err != nil {
+		return fmt.Errorf("persist profitability read models: %w", err)
 	}
 	return nil
 }

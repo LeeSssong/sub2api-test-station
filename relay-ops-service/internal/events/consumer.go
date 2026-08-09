@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var ErrUnsupportedContract = errors.New("unsupported integration contract")
+var (
+	ErrUnsupportedContract = errors.New("unsupported integration contract")
+	ErrStaleClaim          = errors.New("stale event claim")
+)
 
 type Handler interface {
 	Handle(context.Context, Event) error
@@ -25,13 +28,19 @@ type DeadLetter struct {
 	FailedAt time.Time `json:"failed_at"`
 }
 
+type Claim struct {
+	Acquired   bool
+	Token      string
+	Generation int64
+}
+
 // Journal is the durable ownership boundary for consumer idempotency,
 // checkpoints and dead letters. Implementations must claim event IDs
 // atomically across processes.
 type Journal interface {
-	ClaimEvent(context.Context, Event) (bool, error)
-	CompleteEvent(context.Context, Event, time.Time) (Watermark, error)
-	FailEvent(context.Context, Event, time.Time, error) error
+	ClaimEvent(context.Context, Event) (Claim, error)
+	ApplyEvent(context.Context, Event, Claim, time.Time, func(context.Context) error) (Watermark, error)
+	FailEvent(context.Context, Event, Claim, time.Time, error) error
 	LoadWatermark(context.Context, string) (Watermark, bool, error)
 	ListDeadLetters(context.Context) ([]DeadLetter, error)
 }
@@ -68,23 +77,31 @@ func (c *Consumer) Handle(ctx context.Context, event Event) error {
 	if err := event.Validate(); err != nil {
 		return err
 	}
-	claimed, err := c.journal.ClaimEvent(ctx, event)
+	claim, err := c.journal.ClaimEvent(ctx, event)
 	if err != nil {
 		return fmt.Errorf("claim event %s: %w", event.EventID, err)
 	}
-	if !claimed {
+	if !claim.Acquired {
 		return nil
 	}
-	for _, handler := range c.handlers {
-		if err := handler.Handle(ctx, event); err != nil {
-			failedAt := c.processedAt(event)
-			if journalErr := c.journal.FailEvent(ctx, event, failedAt, err); journalErr != nil {
-				return errors.Join(err, fmt.Errorf("dead-letter event %s: %w", event.EventID, journalErr))
+	var handlerErr error
+	_, err = c.journal.ApplyEvent(ctx, event, claim, c.processedAt(event), func(applyCtx context.Context) error {
+		for _, handler := range c.handlers {
+			if err := handler.Handle(applyCtx, event); err != nil {
+				handlerErr = err
+				return err
 			}
-			return err
 		}
+		return nil
+	})
+	if handlerErr != nil {
+		failedAt := c.processedAt(event)
+		if journalErr := c.journal.FailEvent(ctx, event, claim, failedAt, handlerErr); journalErr != nil {
+			return errors.Join(handlerErr, fmt.Errorf("dead-letter event %s: %w", event.EventID, journalErr))
+		}
+		return handlerErr
 	}
-	if _, err := c.journal.CompleteEvent(ctx, event, c.processedAt(event)); err != nil {
+	if err != nil {
 		return fmt.Errorf("complete event %s: %w", event.EventID, err)
 	}
 	return nil
@@ -138,33 +155,55 @@ func (c *Consumer) Watermark(source string) (Watermark, bool) {
 
 type memoryJournal struct {
 	mu         sync.Mutex
-	states     map[string]string
+	states     map[string]memoryEventState
 	watermarks map[string]Watermark
 	dead       map[string]DeadLetter
 }
 
+type memoryEventState struct {
+	status     string
+	source     string
+	claim      Claim
+	generation int64
+}
+
 func newMemoryJournal() *memoryJournal {
 	return &memoryJournal{
-		states:     map[string]string{},
+		states:     map[string]memoryEventState{},
 		watermarks: map[string]Watermark{},
 		dead:       map[string]DeadLetter{},
 	}
 }
 
-func (j *memoryJournal) ClaimEvent(_ context.Context, event Event) (bool, error) {
+func (j *memoryJournal) ClaimEvent(_ context.Context, event Event) (Claim, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if _, exists := j.states[event.EventID]; exists {
-		return false, nil
+		return Claim{}, nil
 	}
-	j.states[event.EventID] = "processing"
-	return true, nil
+	claim := Claim{Acquired: true, Token: "memory-claim-" + event.EventID, Generation: 1}
+	j.states[event.EventID] = memoryEventState{status: "processing", source: event.SourceVersion, claim: claim, generation: 1}
+	if watermark, found := j.watermarks[event.SourceVersion]; found {
+		watermark.Completeness = CompletenessPartial
+		j.watermarks[event.SourceVersion] = watermark
+	}
+	return claim, nil
 }
 
-func (j *memoryJournal) CompleteEvent(_ context.Context, event Event, processedAt time.Time) (Watermark, error) {
+func (j *memoryJournal) ApplyEvent(ctx context.Context, event Event, claim Claim, processedAt time.Time, apply func(context.Context) error) (Watermark, error) {
+	j.mu.Lock()
+	state, found := j.states[event.EventID]
+	j.mu.Unlock()
+	if !found || state.status != "processing" || state.claim.Token != claim.Token || state.generation != claim.Generation {
+		return Watermark{}, ErrStaleClaim
+	}
+	if err := apply(ctx); err != nil {
+		return Watermark{}, err
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.states[event.EventID] = "processed"
+	state.status = "processed"
+	j.states[event.EventID] = state
 	w := j.watermarks[event.SourceVersion]
 	if ComparePosition(event.OccurredAt, event.EventID, w.OccurredAt, w.LastEventID) > 0 {
 		w.Source = event.SourceVersion
@@ -173,15 +212,30 @@ func (j *memoryJournal) CompleteEvent(_ context.Context, event Event, processedA
 	}
 	w.ProcessedAt = processedAt.UTC()
 	w.Completeness = CompletenessComplete
+	for _, candidate := range j.states {
+		if candidate.source == event.SourceVersion && candidate.status != "processed" {
+			w.Completeness = CompletenessPartial
+			break
+		}
+	}
 	j.watermarks[event.SourceVersion] = w
 	return w, nil
 }
 
-func (j *memoryJournal) FailEvent(_ context.Context, event Event, failedAt time.Time, cause error) error {
+func (j *memoryJournal) FailEvent(_ context.Context, event Event, claim Claim, failedAt time.Time, cause error) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	j.states[event.EventID] = "dead"
+	state, found := j.states[event.EventID]
+	if !found || state.status != "processing" || state.claim.Token != claim.Token || state.generation != claim.Generation {
+		return ErrStaleClaim
+	}
+	state.status = "dead"
+	j.states[event.EventID] = state
 	j.dead[event.EventID] = DeadLetter{Event: event, Error: cause.Error(), FailedAt: failedAt.UTC()}
+	if watermark, found := j.watermarks[event.SourceVersion]; found {
+		watermark.Completeness = CompletenessPartial
+		j.watermarks[event.SourceVersion] = watermark
+	}
 	return nil
 }
 

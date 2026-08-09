@@ -41,6 +41,9 @@ func (p *Reconciliation) Handle(ctx context.Context, event events.Event) error {
 	if event.Type != events.RequestCompleted {
 		return nil
 	}
+	if p.repository != nil {
+		return p.handlePersistent(ctx, event)
+	}
 	if err := p.ensureLoaded(ctx); err != nil {
 		return err
 	}
@@ -71,6 +74,27 @@ func (p *Reconciliation) Handle(ctx context.Context, event events.Event) error {
 		if err := p.repository.SaveReconciliationReadModel(ctx, *p); err != nil {
 			return fmt.Errorf("persist reconciliation read model: %w", err)
 		}
+	}
+	return nil
+}
+
+func (p *Reconciliation) handlePersistent(ctx context.Context, event events.Event) error {
+	stored, found, err := p.repository.LoadReconciliationReadModel(ctx)
+	if err != nil {
+		return fmt.Errorf("load reconciliation read model: %w", err)
+	}
+	working := NewReconciliation()
+	if found {
+		working.Metadata = stored.Metadata
+		working.Matched = stored.Matched
+		working.Exceptions = stored.Exceptions
+		working.SourceOccurredAt = stored.SourceOccurredAt
+	}
+	if err := working.Handle(ctx, event); err != nil {
+		return err
+	}
+	if err := p.repository.SaveReconciliationReadModel(ctx, *working); err != nil {
+		return fmt.Errorf("persist reconciliation read model: %w", err)
 	}
 	return nil
 }

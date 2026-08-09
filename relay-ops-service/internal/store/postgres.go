@@ -187,90 +187,153 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 const externalizationEventLease = 2 * time.Minute
 
-func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (bool, error) {
+func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (events.Claim, error) {
+	claimToken, err := newExternalizationClaimToken()
+	if err != nil {
+		return events.Claim{}, err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return false, fmt.Errorf("begin externalization event claim: %w", err)
+		return events.Claim{}, fmt.Errorf("begin externalization event claim: %w", err)
 	}
 	defer tx.Rollback(ctx)
 	leaseUntil := time.Now().UTC().Add(externalizationEventLease)
 	command, err := tx.Exec(ctx, `
 		INSERT INTO relay_ops.externalization_events
-			(event_id, source_version, event_type, contract_version, occurred_at, payload, status, attempts, lease_until)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'processing', 1, $7)
+			(event_id, source_version, event_type, contract_version, occurred_at, payload,
+			 status, attempts, claim_token, claim_generation, lease_until)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'processing', 1, $7, 1, $8)
 		ON CONFLICT (event_id) DO NOTHING`,
-		event.EventID, event.SourceVersion, event.Type, event.ContractVersion, event.OccurredAt.UTC(), event.Payload, leaseUntil)
+		event.EventID, event.SourceVersion, event.Type, event.ContractVersion, event.OccurredAt.UTC(), event.Payload, claimToken, leaseUntil)
 	if err != nil {
-		return false, fmt.Errorf("insert externalization event claim: %w", err)
+		return events.Claim{}, fmt.Errorf("insert externalization event claim: %w", err)
 	}
 	if command.RowsAffected() == 1 {
-		if err := tx.Commit(ctx); err != nil {
-			return false, fmt.Errorf("commit externalization event claim: %w", err)
+		if _, err := tx.Exec(ctx, `
+			UPDATE relay_ops.externalization_watermarks SET completeness=$2 WHERE source=$1`,
+			event.SourceVersion, events.CompletenessPartial); err != nil {
+			return events.Claim{}, fmt.Errorf("mark externalization watermark partial: %w", err)
 		}
-		return true, nil
+		if err := tx.Commit(ctx); err != nil {
+			return events.Claim{}, fmt.Errorf("commit externalization event claim: %w", err)
+		}
+		return events.Claim{Acquired: true, Token: claimToken, Generation: 1}, nil
 	}
 
 	var envelopeMatches bool
 	var status string
 	var existingLease *time.Time
+	var generation int64
 	if err := tx.QueryRow(ctx, `
 		SELECT source_version=$2 AND event_type=$3 AND contract_version=$4
 			AND occurred_at=$5 AND payload=$6::jsonb,
-			status, lease_until
+			status, lease_until, claim_generation
 		FROM relay_ops.externalization_events
-		WHERE event_id=$1`, event.EventID, event.SourceVersion, event.Type, event.ContractVersion, event.OccurredAt.UTC(), event.Payload,
-	).Scan(&envelopeMatches, &status, &existingLease); err != nil {
-		return false, fmt.Errorf("read existing externalization event: %w", err)
+		WHERE event_id=$1
+		FOR UPDATE`, event.EventID, event.SourceVersion, event.Type, event.ContractVersion, event.OccurredAt.UTC(), event.Payload,
+	).Scan(&envelopeMatches, &status, &existingLease, &generation); err != nil {
+		return events.Claim{}, fmt.Errorf("read existing externalization event: %w", err)
 	}
 	if !envelopeMatches {
-		return false, fmt.Errorf("externalization event %s conflicts with persisted envelope", event.EventID)
+		return events.Claim{}, fmt.Errorf("externalization event %s conflicts with persisted envelope", event.EventID)
 	}
 	if status != "processing" || existingLease == nil || existingLease.After(time.Now().UTC()) {
 		if err := tx.Commit(ctx); err != nil {
-			return false, fmt.Errorf("commit duplicate externalization event: %w", err)
+			return events.Claim{}, fmt.Errorf("commit duplicate externalization event: %w", err)
 		}
-		return false, nil
+		return events.Claim{}, nil
 	}
+	generation++
 	command, err = tx.Exec(ctx, `
 		UPDATE relay_ops.externalization_events
-		SET attempts=attempts+1, lease_until=$2, updated_at=NOW()
-		WHERE event_id=$1 AND status='processing' AND lease_until <= NOW()`, event.EventID, leaseUntil)
+		SET attempts=attempts+1, claim_token=$2, claim_generation=$3, lease_until=$4, updated_at=NOW()
+		WHERE event_id=$1 AND status='processing' AND lease_until <= NOW()`, event.EventID, claimToken, generation, leaseUntil)
 	if err != nil {
-		return false, fmt.Errorf("resume externalization event: %w", err)
+		return events.Claim{}, fmt.Errorf("resume externalization event: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE relay_ops.externalization_watermarks SET completeness=$2 WHERE source=$1`,
+		event.SourceVersion, events.CompletenessPartial); err != nil {
+		return events.Claim{}, fmt.Errorf("mark resumed externalization watermark partial: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("commit resumed externalization event: %w", err)
+		return events.Claim{}, fmt.Errorf("commit resumed externalization event: %w", err)
 	}
-	return command.RowsAffected() == 1, nil
+	return events.Claim{Acquired: command.RowsAffected() == 1, Token: claimToken, Generation: generation}, nil
 }
 
-func (s *Store) CompleteEvent(ctx context.Context, event events.Event, processedAt time.Time) (events.Watermark, error) {
+func newExternalizationClaimToken() (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate externalization claim token: %w", err)
+	}
+	return hex.EncodeToString(value), nil
+}
+
+type projectionTransactionContextKey struct{}
+
+func (s *Store) ApplyEvent(ctx context.Context, event events.Event, claim events.Claim, processedAt time.Time, apply func(context.Context) error) (events.Watermark, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return events.Watermark{}, fmt.Errorf("begin externalization event completion: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('relay-ops:externalization-projections', 0))`); err != nil {
+		return events.Watermark{}, fmt.Errorf("lock externalization projections: %w", err)
+	}
+	var status, token string
+	var generation int64
+	var leaseUntil *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT status, COALESCE(claim_token, ''), claim_generation, lease_until
+		FROM relay_ops.externalization_events WHERE event_id=$1 FOR UPDATE`, event.EventID,
+	).Scan(&status, &token, &generation, &leaseUntil); err != nil {
+		return events.Watermark{}, fmt.Errorf("lock externalization event: %w", err)
+	}
+	if status != "processing" || token != claim.Token || generation != claim.Generation || leaseUntil == nil || leaseUntil.Before(time.Now().UTC()) {
+		return events.Watermark{}, fmt.Errorf("%w: event %s generation %d", events.ErrStaleClaim, event.EventID, claim.Generation)
+	}
+	if apply == nil {
+		return events.Watermark{}, errors.New("externalization projection callback is required")
+	}
+	applyCtx := context.WithValue(ctx, projectionTransactionContextKey{}, tx)
+	if err := apply(applyCtx); err != nil {
+		return events.Watermark{}, err
+	}
 	command, err := tx.Exec(ctx, `
 		UPDATE relay_ops.externalization_events
-		SET status='processed', processed_at=$2, lease_until=NULL, last_error=NULL, updated_at=NOW()
-		WHERE event_id=$1 AND status='processing'`, event.EventID, processedAt.UTC())
+		SET status='processed', processed_at=$4, lease_until=NULL, last_error=NULL, updated_at=NOW()
+		WHERE event_id=$1 AND status='processing' AND claim_token=$2 AND claim_generation=$3`,
+		event.EventID, claim.Token, claim.Generation, processedAt.UTC())
 	if err != nil {
 		return events.Watermark{}, fmt.Errorf("complete externalization event: %w", err)
 	}
 	if command.RowsAffected() != 1 {
 		return events.Watermark{}, fmt.Errorf("externalization event %s is not claimed", event.EventID)
 	}
+	var hasGap bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM relay_ops.externalization_events
+			WHERE source_version=$1 AND status <> 'processed'
+		)`, event.SourceVersion).Scan(&hasGap); err != nil {
+		return events.Watermark{}, fmt.Errorf("read externalization completeness: %w", err)
+	}
+	completeness := events.CompletenessComplete
+	if hasGap {
+		completeness = events.CompletenessPartial
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO relay_ops.externalization_watermarks
-			(source, last_event_id, occurred_at, processed_at, completeness)
-		VALUES ($1, $2, $3, $4, $5)
+			(source, last_event_id, occurred_at, processed_at, completeness, calculation_version)
+		VALUES ($1, $2, $3, $4, $5, 'event-consumer-v1')
 		ON CONFLICT (source) DO UPDATE
 		SET last_event_id = CASE WHEN (externalization_watermarks.occurred_at, externalization_watermarks.last_event_id)
 				< (EXCLUDED.occurred_at, EXCLUDED.last_event_id) THEN EXCLUDED.last_event_id ELSE externalization_watermarks.last_event_id END,
 			occurred_at = GREATEST(externalization_watermarks.occurred_at, EXCLUDED.occurred_at),
 			processed_at = GREATEST(externalization_watermarks.processed_at, EXCLUDED.processed_at),
 			completeness = EXCLUDED.completeness`,
-		event.SourceVersion, event.EventID, event.OccurredAt.UTC(), processedAt.UTC(), events.CompletenessComplete); err != nil {
+		event.SourceVersion, event.EventID, event.OccurredAt.UTC(), processedAt.UTC(), completeness); err != nil {
 		return events.Watermark{}, fmt.Errorf("save externalization watermark: %w", err)
 	}
 	var watermark events.Watermark
@@ -286,7 +349,7 @@ func (s *Store) CompleteEvent(ctx context.Context, event events.Event, processed
 	return watermark, nil
 }
 
-func (s *Store) FailEvent(ctx context.Context, event events.Event, failedAt time.Time, cause error) error {
+func (s *Store) FailEvent(ctx context.Context, event events.Event, claim events.Claim, failedAt time.Time, cause error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin externalization dead letter: %w", err)
@@ -298,13 +361,14 @@ func (s *Store) FailEvent(ctx context.Context, event events.Event, failedAt time
 	}
 	command, err := tx.Exec(ctx, `
 		UPDATE relay_ops.externalization_events
-		SET status='dead', processed_at=$2, lease_until=NULL, last_error=$3, updated_at=NOW()
-		WHERE event_id=$1 AND status='processing'`, event.EventID, failedAt.UTC(), message)
+		SET status='dead', processed_at=$4, lease_until=NULL, last_error=$5, updated_at=NOW()
+		WHERE event_id=$1 AND status='processing' AND claim_token=$2 AND claim_generation=$3`,
+		event.EventID, claim.Token, claim.Generation, failedAt.UTC(), message)
 	if err != nil {
 		return fmt.Errorf("mark externalization event dead: %w", err)
 	}
 	if command.RowsAffected() != 1 {
-		return fmt.Errorf("externalization event %s is not claimed", event.EventID)
+		return fmt.Errorf("%w: event %s generation %d", events.ErrStaleClaim, event.EventID, claim.Generation)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO relay_ops.externalization_dead_letters
@@ -313,6 +377,11 @@ func (s *Store) FailEvent(ctx context.Context, event events.Event, failedAt time
 		ON CONFLICT (event_id) DO UPDATE SET error=EXCLUDED.error, failed_at=EXCLUDED.failed_at`,
 		event.EventID, event.SourceVersion, event.Type, event.ContractVersion, event.OccurredAt.UTC(), event.Payload, message, failedAt.UTC()); err != nil {
 		return fmt.Errorf("save externalization dead letter: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE relay_ops.externalization_watermarks SET completeness=$2 WHERE source=$1`,
+		event.SourceVersion, events.CompletenessPartial); err != nil {
+		return fmt.Errorf("mark failed externalization watermark partial: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit externalization dead letter: %w", err)
@@ -359,7 +428,7 @@ func (s *Store) ListDeadLetters(ctx context.Context) ([]events.DeadLetter, error
 }
 
 func (s *Store) LoadAccountReadModels(ctx context.Context) ([]projection.AccountRow, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.projectionDB(ctx).Query(ctx, `
 		SELECT account_id, status, balance::text, currency, observed_at,
 			health_occurred_at, health_event_id, balance_occurred_at, balance_event_id,
 			generated_at, source_watermark, freshness_seconds, completeness, calculation_version
@@ -409,22 +478,20 @@ func (s *Store) LoadAccountReadModels(ctx context.Context) ([]projection.Account
 }
 
 func (s *Store) UpsertAccountReadModel(ctx context.Context, row projection.AccountRow) error {
-	return upsertAccountReadModel(ctx, s.pool, row)
+	return upsertAccountReadModel(ctx, s.projectionDB(ctx), row)
 }
 
 func (s *Store) ReplaceAccountReadModels(ctx context.Context, rows []projection.AccountRow) error {
+	if tx, ok := projectionTransaction(ctx); ok {
+		return replaceAccountReadModels(ctx, tx, rows)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin account read model rebuild: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `DELETE FROM relay_ops.account_read_models`); err != nil {
-		return fmt.Errorf("clear account read models: %w", err)
-	}
-	for _, row := range rows {
-		if err := upsertAccountReadModel(ctx, tx, row); err != nil {
-			return err
-		}
+	if err := replaceAccountReadModels(ctx, tx, rows); err != nil {
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit account read model rebuild: %w", err)
@@ -432,11 +499,37 @@ func (s *Store) ReplaceAccountReadModels(ctx context.Context, rows []projection.
 	return nil
 }
 
-type projectionExecer interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+func replaceAccountReadModels(ctx context.Context, executor projectionDB, rows []projection.AccountRow) error {
+	if _, err := executor.Exec(ctx, `DELETE FROM relay_ops.account_read_models`); err != nil {
+		return fmt.Errorf("clear account read models: %w", err)
+	}
+	for _, row := range rows {
+		if err := upsertAccountReadModel(ctx, executor, row); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func upsertAccountReadModel(ctx context.Context, executor projectionExecer, row projection.AccountRow) error {
+type projectionDB interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func projectionTransaction(ctx context.Context) (pgx.Tx, bool) {
+	tx, ok := ctx.Value(projectionTransactionContextKey{}).(pgx.Tx)
+	return tx, ok
+}
+
+func (s *Store) projectionDB(ctx context.Context) projectionDB {
+	if tx, ok := projectionTransaction(ctx); ok {
+		return tx
+	}
+	return s.pool
+}
+
+func upsertAccountReadModel(ctx context.Context, executor projectionDB, row projection.AccountRow) error {
 	status := row.Status
 	if status == "" {
 		status = "unknown"
@@ -467,7 +560,7 @@ func upsertAccountReadModel(ctx context.Context, executor projectionExecer, row 
 }
 
 func (s *Store) LoadProfitabilityReadModels(ctx context.Context) ([]projection.ProfitabilityRow, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.projectionDB(ctx).Query(ctx, `
 		SELECT account_id, requests, revenue::text, cost::text, profit::text, margin::text, rank,
 			source_occurred_at, generated_at, source_watermark, freshness_seconds, completeness, calculation_version
 		FROM relay_ops.profitability_read_models ORDER BY account_id`)
@@ -492,16 +585,29 @@ func (s *Store) LoadProfitabilityReadModels(ctx context.Context) ([]projection.P
 }
 
 func (s *Store) ReplaceProfitabilityReadModels(ctx context.Context, rows []projection.ProfitabilityRow) error {
+	if tx, ok := projectionTransaction(ctx); ok {
+		return replaceProfitabilityReadModels(ctx, tx, rows)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin profitability read model replace: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `DELETE FROM relay_ops.profitability_read_models`); err != nil {
+	if err := replaceProfitabilityReadModels(ctx, tx, rows); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit profitability read model replace: %w", err)
+	}
+	return nil
+}
+
+func replaceProfitabilityReadModels(ctx context.Context, executor projectionDB, rows []projection.ProfitabilityRow) error {
+	if _, err := executor.Exec(ctx, `DELETE FROM relay_ops.profitability_read_models`); err != nil {
 		return fmt.Errorf("clear profitability read models: %w", err)
 	}
 	for _, row := range rows {
-		if _, err := tx.Exec(ctx, `
+		if _, err := executor.Exec(ctx, `
 			INSERT INTO relay_ops.profitability_read_models
 				(account_id, requests, revenue, cost, profit, margin, rank, source_occurred_at,
 				 generated_at, source_watermark, freshness_seconds, completeness, calculation_version)
@@ -512,15 +618,12 @@ func (s *Store) ReplaceProfitabilityReadModels(ctx context.Context, rows []proje
 			return fmt.Errorf("insert profitability read model %d: %w", row.AccountID, err)
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit profitability read model replace: %w", err)
-	}
 	return nil
 }
 
 func (s *Store) LoadAccountingReadModel(ctx context.Context) (projection.Accounting, bool, error) {
 	var model projection.Accounting
-	err := s.pool.QueryRow(ctx, `
+	err := s.projectionDB(ctx).QueryRow(ctx, `
 		SELECT requests, revenue::text, cost::text, source_occurred_at,
 			generated_at, source_watermark, freshness_seconds, completeness, calculation_version
 		FROM relay_ops.accounting_read_models WHERE scope='all'`).Scan(
@@ -538,10 +641,10 @@ func (s *Store) LoadAccountingReadModel(ctx context.Context) (projection.Account
 
 func (s *Store) SaveAccountingReadModel(ctx context.Context, model projection.Accounting) error {
 	if model.Metadata.Completeness == projection.CompletenessEmpty {
-		_, err := s.pool.Exec(ctx, `DELETE FROM relay_ops.accounting_read_models WHERE scope='all'`)
+		_, err := s.projectionDB(ctx).Exec(ctx, `DELETE FROM relay_ops.accounting_read_models WHERE scope='all'`)
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `
+	_, err := s.projectionDB(ctx).Exec(ctx, `
 		INSERT INTO relay_ops.accounting_read_models
 			(scope, requests, revenue, cost, source_occurred_at, generated_at, source_watermark,
 			 freshness_seconds, completeness, calculation_version)
@@ -562,7 +665,7 @@ func (s *Store) SaveAccountingReadModel(ctx context.Context, model projection.Ac
 
 func (s *Store) LoadReconciliationReadModel(ctx context.Context) (projection.Reconciliation, bool, error) {
 	var model projection.Reconciliation
-	err := s.pool.QueryRow(ctx, `
+	err := s.projectionDB(ctx).QueryRow(ctx, `
 		SELECT matched, exceptions, source_occurred_at,
 			generated_at, source_watermark, freshness_seconds, completeness, calculation_version
 		FROM relay_ops.reconciliation_read_models WHERE scope='all'`).Scan(
@@ -580,10 +683,10 @@ func (s *Store) LoadReconciliationReadModel(ctx context.Context) (projection.Rec
 
 func (s *Store) SaveReconciliationReadModel(ctx context.Context, model projection.Reconciliation) error {
 	if model.Metadata.Completeness == projection.CompletenessEmpty {
-		_, err := s.pool.Exec(ctx, `DELETE FROM relay_ops.reconciliation_read_models WHERE scope='all'`)
+		_, err := s.projectionDB(ctx).Exec(ctx, `DELETE FROM relay_ops.reconciliation_read_models WHERE scope='all'`)
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `
+	_, err := s.projectionDB(ctx).Exec(ctx, `
 		INSERT INTO relay_ops.reconciliation_read_models
 			(scope, matched, exceptions, source_occurred_at, generated_at, source_watermark,
 			 freshness_seconds, completeness, calculation_version)

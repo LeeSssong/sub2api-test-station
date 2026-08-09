@@ -31,17 +31,20 @@ func newDurableJournal() *durableJournal {
 	}
 }
 
-func (j *durableJournal) ClaimEvent(_ context.Context, event Event) (bool, error) {
+func (j *durableJournal) ClaimEvent(_ context.Context, event Event) (Claim, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if _, exists := j.states[event.EventID]; exists {
-		return false, nil
+		return Claim{}, nil
 	}
 	j.states[event.EventID] = "processing"
-	return true, nil
+	return Claim{Acquired: true, Token: "test-claim-" + event.EventID, Generation: 1}, nil
 }
 
-func (j *durableJournal) CompleteEvent(_ context.Context, event Event, processedAt time.Time) (Watermark, error) {
+func (j *durableJournal) ApplyEvent(ctx context.Context, event Event, _ Claim, processedAt time.Time, apply func(context.Context) error) (Watermark, error) {
+	if err := apply(ctx); err != nil {
+		return Watermark{}, err
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.states[event.EventID] = "processed"
@@ -57,7 +60,7 @@ func (j *durableJournal) CompleteEvent(_ context.Context, event Event, processed
 	return w, nil
 }
 
-func (j *durableJournal) FailEvent(_ context.Context, event Event, processedAt time.Time, cause error) error {
+func (j *durableJournal) FailEvent(_ context.Context, event Event, _ Claim, processedAt time.Time, cause error) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.states[event.EventID] = "dead"

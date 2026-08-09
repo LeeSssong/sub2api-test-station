@@ -82,6 +82,9 @@ func (p *Accounts) Handle(ctx context.Context, event events.Event) error {
 	if p == nil {
 		return errors.New("accounts projection is nil")
 	}
+	if p.repository != nil {
+		return p.handlePersistent(ctx, event)
+	}
 	if err := p.ensureLoaded(ctx); err != nil {
 		return err
 	}
@@ -93,6 +96,28 @@ func (p *Accounts) Handle(ctx context.Context, event events.Event) error {
 		if err := p.repository.UpsertAccountReadModel(ctx, row); err != nil {
 			return fmt.Errorf("persist account read model: %w", err)
 		}
+	}
+	return nil
+}
+
+func (p *Accounts) handlePersistent(ctx context.Context, event events.Event) error {
+	rows, err := p.repository.LoadAccountReadModels(ctx)
+	if err != nil {
+		return fmt.Errorf("load account read models: %w", err)
+	}
+	working := NewAccounts()
+	for _, row := range rows {
+		working.Rows[row.AccountID] = row
+		if events.ComparePosition(row.ObservedAt, row.Metadata.SourceWatermark, working.watermarkAt, working.Metadata.SourceWatermark) > 0 {
+			working.watermarkAt, working.Metadata = row.ObservedAt, row.Metadata
+		}
+	}
+	row, changed, err := working.apply(event)
+	if err != nil || !changed {
+		return err
+	}
+	if err := p.repository.UpsertAccountReadModel(ctx, row); err != nil {
+		return fmt.Errorf("persist account read model: %w", err)
 	}
 	return nil
 }

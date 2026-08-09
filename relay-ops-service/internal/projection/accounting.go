@@ -41,6 +41,9 @@ func (p *Accounting) Handle(ctx context.Context, event events.Event) error {
 	if event.Type != events.RequestCompleted {
 		return nil
 	}
+	if p.repository != nil {
+		return p.handlePersistent(ctx, event)
+	}
 	if err := p.ensureLoaded(ctx); err != nil {
 		return err
 	}
@@ -69,6 +72,28 @@ func (p *Accounting) Handle(ctx context.Context, event events.Event) error {
 		if err := p.repository.SaveAccountingReadModel(ctx, *p); err != nil {
 			return fmt.Errorf("persist accounting read model: %w", err)
 		}
+	}
+	return nil
+}
+
+func (p *Accounting) handlePersistent(ctx context.Context, event events.Event) error {
+	stored, found, err := p.repository.LoadAccountingReadModel(ctx)
+	if err != nil {
+		return fmt.Errorf("load accounting read model: %w", err)
+	}
+	working := NewAccounting()
+	if found {
+		working.Metadata = stored.Metadata
+		working.Requests = stored.Requests
+		working.Revenue = stored.Revenue
+		working.Cost = stored.Cost
+		working.SourceOccurredAt = stored.SourceOccurredAt
+	}
+	if err := working.Handle(ctx, event); err != nil {
+		return err
+	}
+	if err := p.repository.SaveAccountingReadModel(ctx, *working); err != nil {
+		return fmt.Errorf("persist accounting read model: %w", err)
 	}
 	return nil
 }

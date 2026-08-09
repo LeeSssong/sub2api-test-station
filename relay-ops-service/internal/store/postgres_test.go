@@ -212,6 +212,256 @@ func TestProjectionStorePersistsConsumerCheckpointDeadLettersAndReadModels(t *te
 	}
 }
 
+func TestConsumerAtomicProjectionRollbackFencingAndCompleteness(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 10, 1, 0, 0, 0, time.UTC)
+	event := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440011", at, "1.00", "0.25")
+	consumer, err := events.NewPersistentConsumer(st,
+		projection.NewProfitabilityWithRepository(st),
+		events.HandlerFunc(func(context.Context, events.Event) error { return errors.New("second projection failed") }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, event); err == nil {
+		t.Fatal("expected second handler failure")
+	}
+	var profitabilityRows int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.profitability_read_models`).Scan(&profitabilityRows); err != nil {
+		t.Fatal(err)
+	}
+	if profitabilityRows != 0 {
+		t.Fatalf("partial projection rows=%d, want 0", profitabilityRows)
+	}
+	var status string
+	if err := st.pool.QueryRow(ctx, `SELECT status FROM relay_ops.externalization_events WHERE event_id=$1`, event.EventID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "dead" {
+		t.Fatalf("failed event status=%q", status)
+	}
+
+	good := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440012", at.Add(time.Second), "0.50", "0.10")
+	goodConsumer, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := goodConsumer.Handle(ctx, good); err != nil {
+		t.Fatal(err)
+	}
+	watermark, found, err := goodConsumer.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found {
+		t.Fatalf("watermark found=%v err=%v", found, err)
+	}
+	if watermark.Completeness != events.CompletenessPartial {
+		t.Fatalf("watermark completeness=%q with dead gap, want partial", watermark.Completeness)
+	}
+
+	fenced := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440013", at.Add(2*time.Second), "0.25", "0.05")
+	oldClaim, err := st.ClaimEvent(ctx, fenced)
+	if err != nil || !oldClaim.Acquired {
+		t.Fatalf("old claim=%+v err=%v", oldClaim, err)
+	}
+	if _, err := st.pool.Exec(ctx, `UPDATE relay_ops.externalization_events SET lease_until=NOW()-INTERVAL '1 second' WHERE event_id=$1`, fenced.EventID); err != nil {
+		t.Fatal(err)
+	}
+	newClaim, err := st.ClaimEvent(ctx, fenced)
+	if err != nil || !newClaim.Acquired || newClaim.Generation <= oldClaim.Generation || newClaim.Token == oldClaim.Token {
+		t.Fatalf("new claim=%+v old=%+v err=%v", newClaim, oldClaim, err)
+	}
+	_, err = st.ApplyEvent(ctx, fenced, oldClaim, time.Now().UTC(), func(context.Context) error { return nil })
+	if !errors.Is(err, events.ErrStaleClaim) {
+		t.Fatalf("old worker apply error=%v, want ErrStaleClaim", err)
+	}
+	if _, err := st.ApplyEvent(ctx, fenced, newClaim, time.Now().UTC(), func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("new worker apply: %v", err)
+	}
+}
+
+func TestConsumerCompleteFailureRollsBackProjectionAndRetryDoesNotDoubleCount(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		CREATE OR REPLACE FUNCTION relay_ops.reject_externalization_watermark() RETURNS trigger AS $$
+		BEGIN RAISE EXCEPTION 'forced watermark failure'; END;
+		$$ LANGUAGE plpgsql;
+		CREATE TRIGGER reject_externalization_watermark
+		BEFORE INSERT OR UPDATE ON relay_ops.externalization_watermarks
+		FOR EACH ROW EXECUTE FUNCTION relay_ops.reject_externalization_watermark();`); err != nil {
+		t.Fatal(err)
+	}
+	event := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440021", time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC), "1.00", "0.40")
+	consumer, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, event); err == nil {
+		t.Fatal("expected forced completion failure")
+	}
+	var rows int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.profitability_read_models`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("projection rows after completion rollback=%d err=%v", rows, err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		DROP TRIGGER reject_externalization_watermark ON relay_ops.externalization_watermarks;
+		DROP FUNCTION relay_ops.reject_externalization_watermark();`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, `
+		UPDATE relay_ops.externalization_events SET lease_until=NOW()-INTERVAL '1 second' WHERE event_id=$1`, event.EventID); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := retry.Handle(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	var requests int64
+	var revenue string
+	if err := st.pool.QueryRow(ctx, `SELECT requests, revenue::text FROM relay_ops.profitability_read_models WHERE account_id=7`).Scan(&requests, &revenue); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || revenue != "1" {
+		t.Fatalf("retried projection requests=%d revenue=%s", requests, revenue)
+	}
+}
+
+func TestConsumerConcurrentInstancesSerializeProjectionUpdates(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 10, 3, 0, 0, 0, time.UTC)
+	input := []events.Event{
+		externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440031", at, "0.10", "0.01"),
+		externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440032", at, "0.20", "0.02"),
+	}
+	start := make(chan struct{})
+	result := make(chan error, len(input))
+	for _, event := range input {
+		event := event
+		go func() {
+			consumer, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))
+			if err == nil {
+				<-start
+				err = consumer.Handle(ctx, event)
+			}
+			result <- err
+		}()
+	}
+	close(start)
+	for range input {
+		if err := <-result; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var requests int64
+	var revenue string
+	if err := st.pool.QueryRow(ctx, `SELECT requests, revenue::text FROM relay_ops.profitability_read_models WHERE account_id=7`).Scan(&requests, &revenue); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || revenue != "0.3" {
+		t.Fatalf("concurrent projection requests=%d revenue=%s", requests, revenue)
+	}
+	watermark, found, err := st.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found || watermark.Completeness != events.CompletenessComplete {
+		t.Fatalf("completed watermark=%+v found=%v err=%v", watermark, found, err)
+	}
+	pending := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440033", at.Add(time.Second), "0.30", "0.03")
+	claim, err := st.ClaimEvent(ctx, pending)
+	if err != nil || !claim.Acquired {
+		t.Fatalf("processing gap claim=%+v err=%v", claim, err)
+	}
+	watermark, found, err = st.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found || watermark.Completeness != events.CompletenessPartial {
+		t.Fatalf("processing-gap watermark=%+v found=%v err=%v", watermark, found, err)
+	}
+}
+
+func TestProjectionMigrationUpgradesPlaceholderSchemaInPlace(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if _, err := st.pool.Exec(ctx, `
+		CREATE SCHEMA relay_ops;
+		CREATE TABLE relay_ops.externalization_events (
+		 event_id TEXT PRIMARY KEY, source_version TEXT NOT NULL, event_type TEXT NOT NULL,
+		 occurred_at TIMESTAMPTZ NOT NULL, processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), payload JSONB NOT NULL
+		);
+		CREATE TABLE relay_ops.externalization_watermarks (
+		 source TEXT PRIMARY KEY, last_event_id TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL,
+		 processed_at TIMESTAMPTZ NOT NULL, completeness TEXT NOT NULL, calculation_version TEXT NOT NULL
+		);
+		CREATE TABLE relay_ops.externalization_dead_letters (
+		 event_id TEXT PRIMARY KEY, error TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE relay_ops.account_read_models (
+		 account_id BIGINT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'unknown', balance NUMERIC, currency TEXT,
+		 observed_at TIMESTAMPTZ, generated_at TIMESTAMPTZ NOT NULL, source_watermark TEXT NOT NULL,
+		 freshness_seconds BIGINT NOT NULL DEFAULT 0, completeness TEXT NOT NULL, calculation_version TEXT NOT NULL
+		);
+		INSERT INTO relay_ops.externalization_events
+			(event_id, source_version, event_type, occurred_at, payload)
+		VALUES ('legacy-event', 'legacy-v1', 'request.completed', '2026-08-09T00:00:00Z', '{"legacy":true}');
+		INSERT INTO relay_ops.externalization_watermarks
+			(source, last_event_id, occurred_at, processed_at, completeness, calculation_version)
+		VALUES ('legacy-v1', 'legacy-event', '2026-08-09T00:00:00Z', '2026-08-09T00:00:01Z', 'complete', 'legacy-v1');
+		INSERT INTO relay_ops.externalization_dead_letters
+			(event_id, error, payload)
+		VALUES ('legacy-dead', 'legacy failure', '{"legacy":true}');
+		INSERT INTO relay_ops.account_read_models
+			(account_id, status, generated_at, source_watermark, completeness, calculation_version)
+		VALUES (99, 'healthy', '2026-08-09T00:00:01Z', 'legacy-event', 'complete', 'accounts-v0');`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade placeholder schema: %v", err)
+	}
+	var legacyStatus string
+	var legacyGeneration int64
+	if err := st.pool.QueryRow(ctx, `
+		SELECT status, claim_generation FROM relay_ops.externalization_events WHERE event_id='legacy-event'`).Scan(&legacyStatus, &legacyGeneration); err != nil {
+		t.Fatal(err)
+	}
+	if legacyStatus != "processed" || legacyGeneration != 0 {
+		t.Fatalf("legacy event status=%s generation=%d", legacyStatus, legacyGeneration)
+	}
+	var legacyAccounts, legacyDead int
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.account_read_models WHERE account_id=99`).Scan(&legacyAccounts); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM relay_ops.externalization_dead_letters WHERE event_id='legacy-dead'`).Scan(&legacyDead); err != nil {
+		t.Fatal(err)
+	}
+	if legacyAccounts != 1 || legacyDead != 1 {
+		t.Fatalf("legacy rows accounts=%d dead=%d", legacyAccounts, legacyDead)
+	}
+	event := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440041", time.Date(2026, 8, 10, 4, 0, 0, 0, time.UTC), "1.00", "0.25")
+	consumer, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, event); err != nil {
+		t.Fatalf("consume after placeholder migration upgrade: %v", err)
+	}
+}
+
+func externalizationRequestEvent(id string, occurredAt time.Time, charge, cost string) events.Event {
+	return events.Event{
+		EventID: id, Type: events.RequestCompleted, OccurredAt: occurredAt, SourceVersion: "sub2api-v1", ContractVersion: events.ContractVersion,
+		Payload: []byte(`{"request_id":"request-` + id + `","account_id":7,"model":"gpt-test","prompt_tokens":1,"completion_tokens":1,"user_charge":"` + charge + `","actual_cost":"` + cost + `","cost_usd":"` + cost + `","currency":"USD"}`),
+	}
+}
+
 func TestMigrateRejectsDuplicateActiveBillingAccountMappings(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

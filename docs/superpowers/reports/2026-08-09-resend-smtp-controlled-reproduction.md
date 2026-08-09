@@ -13,11 +13,13 @@ administrator mailbox only. The mailbox was represented only by SHA-256
 and the masked domain `***@qq.com`.
 
 The request client was canceled in flight after approximately 11 seconds when
-a production-policy drift was identified. Read-only audit evidence later proved
-that the server had nevertheless completed that one request at
-`2026-08-09T09:19:52Z`: HTTP `400`, latency `20,191 ms`. The client therefore
-captured neither a final HTTP response nor a request ID, and the response error
-class is intentionally recorded as `unobserved_after_client_cancellation`.
+the production-policy drift was discovered during the request/audit, not as a
+pre-request gate. The exact client-captured request start timestamp is
+unavailable. Read-only audit evidence later proved that the server had
+nevertheless completed that one request at `2026-08-09T09:19:52Z`: HTTP `400`,
+latency `20,191 ms`. The client captured no final response, request ID, or
+error class; no value is inferred for any of those fields. The request was not
+retried.
 
 The one-email authorization is consumed. No retry is permitted.
 
@@ -35,6 +37,7 @@ request:
 - `transactional_daily_limit=100`
 - `bounce_rate=0%`
 - `complaint_rate=0%`
+- `resend_sending_domain_status=verified`
 
 ## Protected Production Baseline
 
@@ -76,10 +79,23 @@ the Emails and Usage checks are the direct no-event/no-quota evidence.
 1. The application audit proves an approximately 20-second HTTP 400, but the
    canceled client did not retain the response body, request ID, or a timeout
    error class required by the `DEADLINE_NO_EVENT` gate.
-2. The no-event/no-quota evidence rules out a provider-accepted completion,
-   but does not repair the missing client-side error classification.
+2. No provider acceptance was observed in Resend Emails or Usage (no matching
+   event and zero quota delta), but this does not repair the missing client-side
+   request ID or error classification.
 3. The baseline policy drift (`invitation_code_enabled=false` with CAPTCHA
-   disabled) violates the task's protected invariant independently of SMTP.
+   disabled) remains a separate unresolved gate condition; this task did not
+   change the intentional invitation policy.
+
+## Documentation Fix (2026-08-09)
+
+The original report overstated client evidence and chronology. This correction
+records the exact request start timestamp, client request ID, and client error
+class as unavailable; retains only the server completion UTC and audited
+duration; states that invitation drift was discovered during the in-flight
+request/audit; records that no retry occurred; and softens provider language to
+the direct observation that no provider acceptance appeared in Resend Emails or
+Usage. The `invitation_code_enabled=false` value is intentional user policy and
+was not changed. No production or email retry action was taken.
 
 Tasks 2 and 3 are not authorized. No code or production configuration change
 was made.

@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**本轮 Task 5 管理员页面双读无感迁移（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@22b21db2f`。
+范围限定为在原管理菜单和 URL 中接入版本化控制面客户端、双读模式与新鲜度/完整性状态，保持现有登录、2FA、字段、筛选、排序、分页、刷新、详情和 CSV 体验；控制面失败只局部降级，不清理主站会话。实施前已复盘全部非 `main` worktree：`account-monitor-group-recommendation` 虽领先 7 个提交但证据明确未合并、未推送、未部署和未线上验证，`gpt-group-baseline-apply` 领先 1 个提交且不是生产完成候选，均保持只读且不作为“已完成并必须先合并”处理。本轮仅本地 TDD、前端验证、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
+
 **本轮 Task 6 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@77c9ed585`。
 范围仅修复 Task 6 独立复审的 Critical/Important 项：把有界余额采集接入控制面调度、经既有认证边界暴露账户更新命令、收紧命令身份与官方端到端幂等、失败重放、注入客户端超时及采集重试稳定事实身份；不处理已在 SDD 总账延后的未来日期事实 Minor 项。实施前已盘点全部非 `main` worktree：根工作区有未跟踪发布证据，其他候选虽领先但均无“已推送 + 已部署 + 已线上验证”完成证据，故不合并且保持只读保护。本地 RED→GREEN 已完成，relay 全量、race、vet 和官方端点聚焦测试均通过；PostgreSQL durable identity 回归因未配置 `RELAY_OPS_TEST_DATABASE_URL` 跳过。未推送、不合并、不部署、不访问生产、不增加 GitHub Actions，状态保持“进行中”。

@@ -78,6 +78,15 @@ type accountMonitorModelPricingReader interface {
 	GetModelPricing(string) (*ModelPricing, error)
 }
 
+type accountMonitorRecommendationEvaluator func(
+	Account,
+	[]string,
+	[]AccountMonitorGroup,
+	AccountMonitorQualityEvidence,
+	AccountMonitorLatest,
+	time.Time,
+) *AccountMonitorGroupRecommendation
+
 type AccountMonitorService struct {
 	repo        AccountMonitorRepository
 	accountRepo AccountMonitorAccountRepository
@@ -85,6 +94,7 @@ type AccountMonitorService struct {
 	usage       *AccountUsageService
 	multiplier  accountMonitorMultiplierResolver
 	costPricing accountMonitorModelPricingReader
+	recommend   accountMonitorRecommendationEvaluator
 
 	probeConnection accountMonitorProbeConnection
 	probeTimeout    time.Duration
@@ -118,6 +128,7 @@ func NewAccountMonitorService(
 		testService:  testService,
 		usage:        usage,
 		multiplier:   multiplier,
+		recommend:    EvaluateAccountMonitorGroupRecommendation,
 		probeTimeout: accountMonitorProbeTimeout,
 	}
 }
@@ -276,6 +287,15 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor probe aggregates: %w", err)
 	}
+	recommendationAggregates := probeAggregates
+	if rangeValue != AccountMonitorRange7Days {
+		recommendationSince := observedAt.Add(-7 * 24 * time.Hour)
+		recommendationAggregates, err = s.repo.ListAggregates(ctx, ids, recommendationSince, observedAt)
+		if err != nil {
+			slog.WarnContext(ctx, "account monitor recommendation probe aggregates unavailable", "error", err)
+			recommendationAggregates = nil
+		}
+	}
 	latest, err := s.repo.ListLatest(ctx, ids)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor latest: %w", err)
@@ -337,12 +357,81 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}
 
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, latest, settings, observedAt)
+	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
 	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, latest, settings, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
 		Health: summarizeAccountMonitorHealth(rows), Groups: groups, Accounts: rows,
 	}}, nil
+}
+
+func (s *AccountMonitorService) projectGroupRecommendations(
+	ctx context.Context,
+	accounts []Account,
+	rows []AccountMonitorAccount,
+	probes map[int64]AccountMonitorAggregate,
+	latest map[int64]AccountMonitorLatest,
+	groups []AccountMonitorGroup,
+	settings AccountMonitorSettings,
+	now time.Time,
+) []AccountMonitorAccount {
+	accountsByID := make(map[int64]Account, len(accounts))
+	for _, account := range accounts {
+		accountsByID[account.ID] = account
+	}
+	for i := range rows {
+		row := &rows[i]
+		account, ok := accountsByID[row.AccountID]
+		if !ok {
+			continue
+		}
+		_, isTestGroup := accountMonitorRecommendationCurrentTarget(row.GroupNames)
+		if !isTestGroup && accountMonitorAccountPaused(account, now) {
+			continue
+		}
+		evidence := accountMonitorWindowEvidence(AccountMonitorWindowAggregate{}, probes[account.ID], latest[account.ID], settings, now)
+		recommendationAccount := account
+		if account.Type != AccountTypeAPIKey {
+			if row.Multiplier.Status == AccountMonitorMultiplierStatusOK && row.Multiplier.Value != nil {
+				recommendationAccount.RateMultiplier = row.Multiplier.Value
+			} else {
+				recommendationAccount.RateMultiplier = nil
+			}
+		}
+		row.GroupRecommendation = s.evaluateGroupRecommendation(
+			ctx,
+			recommendationAccount,
+			row.GroupNames,
+			groups,
+			evidence,
+			latest[account.ID],
+			now,
+		)
+	}
+	return rows
+}
+
+func (s *AccountMonitorService) evaluateGroupRecommendation(
+	ctx context.Context,
+	account Account,
+	currentGroupNames []string,
+	groups []AccountMonitorGroup,
+	evidence AccountMonitorQualityEvidence,
+	latest AccountMonitorLatest,
+	now time.Time,
+) (recommendation *AccountMonitorGroupRecommendation) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.WarnContext(ctx, "account monitor recommendation evaluation failed", "account_id", account.ID, "error", recovered)
+			recommendation = nil
+		}
+	}()
+	evaluator := s.recommend
+	if evaluator == nil {
+		evaluator = EvaluateAccountMonitorGroupRecommendation
+	}
+	return evaluator(account, currentGroupNames, groups, evidence, latest, now)
 }
 
 func (s *AccountMonitorService) projectGlobalWindowQuality(

@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	AccountMonitorSchemaVersion           = 4
+	AccountMonitorSchemaVersion           = 5
 	AccountMonitorDefaultIntervalSeconds  = 300
 	AccountMonitorMinIntervalSeconds      = 15
 	AccountMonitorMaxIntervalSeconds      = 3600

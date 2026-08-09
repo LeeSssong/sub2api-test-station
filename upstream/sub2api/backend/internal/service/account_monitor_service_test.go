@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -48,6 +50,8 @@ type accountMonitorRepoStub struct {
 	probeUntil         time.Time
 	windowSince        time.Time
 	windowUntil        time.Time
+	aggregateCalls     []time.Time
+	aggregateResults   []map[int64]AccountMonitorAggregate
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -62,8 +66,18 @@ func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error 
 }
 
 func (s *accountMonitorRepoStub) ListAggregates(_ context.Context, _ []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error) {
-	s.probeSince = since
-	s.probeUntil = until
+	if s.probeSince.IsZero() {
+		s.probeSince = since
+		s.probeUntil = until
+	}
+	s.aggregateCalls = append(s.aggregateCalls, since)
+	if len(s.aggregateResults) > 0 {
+		index := len(s.aggregateCalls) - 1
+		if index >= len(s.aggregateResults) {
+			index = len(s.aggregateResults) - 1
+		}
+		return s.aggregateResults[index], nil
+	}
 	return s.aggregates, nil
 }
 
@@ -1439,6 +1453,118 @@ func TestAccountMonitorListWindowProjectsNativeProcurementCostFields(t *testing.
 	}
 	if row.ExpiresAt == nil || !row.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expires_at = %#v, want %s", row.ExpiresAt, expiresAt)
+	}
+}
+
+func TestAccountMonitorListWindowUsesFixedSevenDayProbeEvidenceForRecommendation(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.1
+	testGroup := &Group{ID: 2, Name: "GPT-测试分组"}
+	account := Account{ID: 201, Name: "test-account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{2}, Groups: []*Group{testGroup}}
+	day24 := freshProbeAggregate(now, 0.70)
+	day7 := freshProbeAggregate(now, 0.99)
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{
+			{ID: 1, Name: "GPT-Pro", Status: StatusActive, RateMultiplier: 1},
+			{ID: 2, Name: "GPT-测试分组", Status: StatusActive, RateMultiplier: 1},
+		},
+		aggregateResults: []map[int64]AccountMonitorAggregate{{201: day24}, {201: day7}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{201: {RequestCount: 4}},
+		latest:           map[int64]AccountMonitorLatest{201: {Status: "success", CheckedAt: now}},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.aggregateCalls) != 2 || repo.aggregateCalls[0].Sub(repo.aggregateCalls[1]) < 6*24*time.Hour {
+		t.Fatalf("aggregate calls = %#v, want requested 24h plus fixed 7d recommendation window", repo.aggregateCalls)
+	}
+	row := page.Accounts[0]
+	if row.ProbeSuccessRate != day24.SuccessRate || row.SampleCount != day24.SampleCount {
+		t.Fatalf("existing 24h metrics changed: success=%.2f samples=%d", row.ProbeSuccessRate, row.SampleCount)
+	}
+	if row.GroupRecommendation == nil || row.GroupRecommendation.Target != AccountMonitorGroupRecommendationTargetPro {
+		t.Fatalf("recommendation = %#v, want Pro from 7d probe evidence", row.GroupRecommendation)
+	}
+}
+
+func TestAccountMonitorListWindowRecommendationScope(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.1
+	groups := []*Group{
+		{ID: 1, Name: "GPT-Pro"},
+		{ID: 2, Name: "GPT-Plus"},
+		{ID: 3, Name: "GPT-测试分组"},
+		{ID: 4, Name: "malformed"},
+	}
+	accounts := []Account{
+		{ID: 211, Name: "matching-pro", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{1}, Groups: []*Group{groups[0]}},
+		{ID: 212, Name: "migrate-plus", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{2}, Groups: []*Group{groups[1]}},
+		{ID: 213, Name: "disabled-plus", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusDisabled, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{2}, Groups: []*Group{groups[1]}},
+		{ID: 214, Name: "test-account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{3}, Groups: []*Group{groups[2]}},
+		{ID: 215, Name: "malformed-group", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{4}, Groups: []*Group{groups[3]}},
+		{ID: 216, Name: "unschedulable-plus", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: false, RateMultiplier: &rate, GroupIDs: []int64{2}, Groups: []*Group{groups[1]}},
+	}
+	probes := make(map[int64]AccountMonitorAggregate, len(accounts))
+	for _, account := range accounts {
+		probes[account.ID] = freshProbeAggregate(now, 0.99)
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups: []AccountMonitorGroup{
+			{ID: 1, Name: "GPT-Pro", Status: StatusActive, RateMultiplier: 1},
+			{ID: 2, Name: "GPT-Plus", Status: StatusActive, RateMultiplier: 1},
+			{ID: 3, Name: "GPT-测试分组", Status: StatusActive, RateMultiplier: 1},
+			{ID: 4, Name: "malformed", Status: StatusActive, RateMultiplier: 1},
+		},
+		aggregates:       probes,
+		aggregateResults: []map[int64]AccountMonitorAggregate{probes, probes},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{},
+		latest:           map[int64]AccountMonitorLatest{211: {Status: "success", CheckedAt: now}, 212: {Status: "success", CheckedAt: now}, 213: {Status: "success", CheckedAt: now}, 214: {Status: "success", CheckedAt: now}, 215: {Status: "success", CheckedAt: now}, 216: {Status: "success", CheckedAt: now}},
+	}
+
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(originalLogger)
+	service := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate))
+	service.recommend = func(account Account, currentGroupNames []string, groups []AccountMonitorGroup, evidence AccountMonitorQualityEvidence, latest AccountMonitorLatest, now time.Time) *AccountMonitorGroupRecommendation {
+		if account.ID == 215 {
+			panic("malformed recommendation input")
+		}
+		return EvaluateAccountMonitorGroupRecommendation(account, currentGroupNames, groups, evidence, latest, now)
+	}
+	page, err := service.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		byID[row.AccountID] = row
+	}
+	if byID[211].GroupRecommendation != nil {
+		t.Fatalf("matching formal group must remain nil: %#v", byID[211].GroupRecommendation)
+	}
+	if rec := byID[212].GroupRecommendation; rec == nil || rec.Action != AccountMonitorGroupRecommendationActionMigrate || rec.Target != AccountMonitorGroupRecommendationTargetPro {
+		t.Fatalf("formal alternate target recommendation = %#v", rec)
+	}
+	if byID[213].GroupRecommendation != nil {
+		t.Fatalf("disabled formal account must remain nil: %#v", byID[213].GroupRecommendation)
+	}
+	if byID[216].GroupRecommendation != nil {
+		t.Fatalf("unschedulable formal account must remain nil: %#v", byID[216].GroupRecommendation)
+	}
+	if rec := byID[214].GroupRecommendation; rec == nil || rec.Status != AccountMonitorGroupRecommendationStatusRecommended {
+		t.Fatalf("test group recommendation = %#v", rec)
+	}
+	if byID[215].GroupRecommendation != nil || len(page.Accounts) != len(accounts) {
+		t.Fatalf("malformed group must be isolated to one row: row=%#v account_count=%d", byID[215].GroupRecommendation, len(page.Accounts))
+	}
+	if !strings.Contains(logs.String(), "account_id=215") || !strings.Contains(logs.String(), "recommendation evaluation failed") {
+		t.Fatalf("isolated evaluator failure must emit warning log: %s", logs.String())
 	}
 }
 

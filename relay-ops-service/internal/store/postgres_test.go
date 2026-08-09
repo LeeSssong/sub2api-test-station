@@ -20,8 +20,10 @@ import (
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/events"
 	"example.invalid/relay-ops-service/internal/incidents"
 	"example.invalid/relay-ops-service/internal/notify"
+	"example.invalid/relay-ops-service/internal/projection"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/sub2api"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -88,6 +90,125 @@ func TestMigrateIsIdempotentAndUpstreamIdentityIsUnique(t *testing.T) {
 	second.Name = "Neko duplicate"
 	if _, err := st.CreateUpstream(ctx, second); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate base URL error = %v, want ErrConflict", err)
+	}
+}
+
+func TestProjectionStorePersistsConsumerCheckpointDeadLettersAndReadModels(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC)
+	event := events.Event{
+		EventID:         "550e8400-e29b-41d4-a716-446655440001",
+		Type:            events.RequestCompleted,
+		OccurredAt:      at,
+		SourceVersion:   "sub2api-v1",
+		ContractVersion: events.ContractVersion,
+		Payload:         []byte(`{"request_id":"request-1","account_id":7,"model":"gpt-test","prompt_tokens":1,"completion_tokens":1,"user_charge":"1.25","actual_cost":"0.40","cost_usd":"0.40","currency":"USD"}`),
+	}
+	profitability := projection.NewProfitabilityWithRepository(st)
+	accounting := projection.NewAccountingWithRepository(st)
+	consumer, err := events.NewPersistentConsumer(st, profitability, accounting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := events.NewPersistentConsumer(st, events.HandlerFunc(func(context.Context, events.Event) error {
+		t.Fatal("persisted duplicate was dispatched after restart")
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Handle(ctx, event); err != nil {
+		t.Fatalf("restart duplicate: %v", err)
+	}
+	next := event
+	next.EventID = "550e8400-e29b-41d4-a716-446655440002"
+	next.OccurredAt = at.Add(time.Second)
+	next.Payload = []byte(`{"request_id":"request-2","account_id":7,"model":"gpt-test","prompt_tokens":1,"completion_tokens":1,"user_charge":"0.75","actual_cost":"0.10","cost_usd":"0.10","currency":"USD"}`)
+	resumedProfitability := projection.NewProfitabilityWithRepository(st)
+	resumedAccounting := projection.NewAccountingWithRepository(st)
+	resumed, err := events.NewPersistentConsumer(st, resumedProfitability, resumedAccounting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.Handle(ctx, next); err != nil {
+		t.Fatalf("resume projection from persisted state: %v", err)
+	}
+	w, found, err := restarted.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found || w.LastEventID != next.EventID || w.Completeness != events.CompletenessComplete {
+		t.Fatalf("watermark=%+v found=%v err=%v", w, found, err)
+	}
+
+	var requestCount int64
+	var revenue, cost, profit, completeness, version string
+	if err := st.pool.QueryRow(ctx, `
+		SELECT requests, revenue::text, cost::text, profit::text, completeness, calculation_version
+		FROM relay_ops.profitability_read_models WHERE account_id=7`).Scan(
+		&requestCount, &revenue, &cost, &profit, &completeness, &version,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if requestCount != 2 || revenue != "2" || cost != "0.5" || profit != "1.5" || completeness != projection.CompletenessComplete || version != projection.ProfitabilityCalculationVersion {
+		t.Fatalf("persisted profitability requests=%d revenue=%s cost=%s profit=%s completeness=%s version=%s", requestCount, revenue, cost, profit, completeness, version)
+	}
+	if err := st.pool.QueryRow(ctx, `SELECT requests FROM relay_ops.accounting_read_models WHERE scope='all'`).Scan(&requestCount); err != nil || requestCount != 2 {
+		t.Fatalf("persisted accounting requests=%d err=%v", requestCount, err)
+	}
+	accountEvent := events.Event{
+		EventID:         "550e8400-e29b-41d4-a716-446655440003",
+		Type:            events.AccountHealthChanged,
+		OccurredAt:      at.Add(2 * time.Second),
+		SourceVersion:   "sub2api-v1",
+		ContractVersion: events.ContractVersion,
+		Payload:         []byte(`{"account_id":7,"status":"healthy","checked_at":"2026-08-09T00:00:02Z"}`),
+	}
+	accounts := projection.NewAccountsWithRepository(st)
+	accountConsumer, err := events.NewPersistentConsumer(st, accounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accountConsumer.Handle(ctx, accountEvent); err != nil {
+		t.Fatalf("persist account projection: %v", err)
+	}
+	var status, sourceWatermark string
+	var generatedAt time.Time
+	var freshness int64
+	if err := st.pool.QueryRow(ctx, `
+		SELECT status, generated_at, source_watermark, freshness_seconds
+		FROM relay_ops.account_read_models WHERE account_id=7`).Scan(&status, &generatedAt, &sourceWatermark, &freshness); err != nil {
+		t.Fatal(err)
+	}
+	if status != "healthy" || generatedAt.IsZero() || sourceWatermark != accountEvent.EventID || freshness < 0 {
+		t.Fatalf("persisted account status=%s generated_at=%s watermark=%s freshness=%d", status, generatedAt, sourceWatermark, freshness)
+	}
+
+	deadEvent := events.Event{
+		EventID:         "550e8400-e29b-41d4-a716-446655440004",
+		Type:            events.AccountHealthChanged,
+		OccurredAt:      at.Add(time.Second),
+		SourceVersion:   "sub2api-v1",
+		ContractVersion: events.ContractVersion,
+		Payload:         []byte(`{"account_id":7,"status":"healthy","checked_at":"2026-08-09T00:00:01Z"}`),
+	}
+	failing, err := events.NewPersistentConsumer(st, events.HandlerFunc(func(context.Context, events.Event) error {
+		return errors.New("projection rejected event")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failing.Handle(ctx, deadEvent); err == nil {
+		t.Fatal("expected projection failure")
+	}
+	dead, err := restarted.ListDeadLetters(ctx)
+	if err != nil || len(dead) != 1 || dead[0].Event.EventID != deadEvent.EventID || dead[0].Error != "projection rejected event" {
+		t.Fatalf("dead letters=%+v err=%v", dead, err)
 	}
 }
 

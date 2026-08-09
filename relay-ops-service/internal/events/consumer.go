@@ -3,8 +3,10 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
 
 var ErrUnsupportedContract = errors.New("unsupported integration contract")
@@ -12,67 +14,96 @@ var ErrUnsupportedContract = errors.New("unsupported integration contract")
 type Handler interface {
 	Handle(context.Context, Event) error
 }
+
 type HandlerFunc func(context.Context, Event) error
 
-func (f HandlerFunc) Handle(ctx context.Context, e Event) error { return f(ctx, e) }
+func (f HandlerFunc) Handle(ctx context.Context, event Event) error { return f(ctx, event) }
 
 type DeadLetter struct {
-	Event Event
-	Error string
+	Event    Event     `json:"event"`
+	Error    string    `json:"error"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// Journal is the durable ownership boundary for consumer idempotency,
+// checkpoints and dead letters. Implementations must claim event IDs
+// atomically across processes.
+type Journal interface {
+	ClaimEvent(context.Context, Event) (bool, error)
+	CompleteEvent(context.Context, Event, time.Time) (Watermark, error)
+	FailEvent(context.Context, Event, time.Time, error) error
+	LoadWatermark(context.Context, string) (Watermark, bool, error)
+	ListDeadLetters(context.Context) ([]DeadLetter, error)
 }
 
 type Consumer struct {
-	mu         sync.Mutex
-	seen       map[string]struct{}
-	dead       []DeadLetter
-	handlers   []Handler
-	watermarks map[string]Watermark
+	journal  Journal
+	handlers []Handler
+	now      func() time.Time
 }
 
+// NewConsumer remains useful for isolated callers. Production consumers
+// should use NewPersistentConsumer with the PostgreSQL store.
 func NewConsumer(handlers ...Handler) *Consumer {
-	return &Consumer{seen: map[string]struct{}{}, handlers: handlers, watermarks: map[string]Watermark{}}
+	consumer, _ := NewPersistentConsumer(newMemoryJournal(), handlers...)
+	return consumer
+}
+
+func NewPersistentConsumer(journal Journal, handlers ...Handler) (*Consumer, error) {
+	if journal == nil {
+		return nil, errors.New("event journal is required")
+	}
+	for _, handler := range handlers {
+		if handler == nil {
+			return nil, errors.New("event handler is required")
+		}
+	}
+	return &Consumer{journal: journal, handlers: append([]Handler(nil), handlers...), now: time.Now}, nil
 }
 
 func (c *Consumer) Handle(ctx context.Context, event Event) error {
+	if c == nil || c.journal == nil {
+		return errors.New("event consumer is not initialized")
+	}
 	if err := event.Validate(); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	if _, ok := c.seen[event.EventID]; ok {
-		c.mu.Unlock()
+	claimed, err := c.journal.ClaimEvent(ctx, event)
+	if err != nil {
+		return fmt.Errorf("claim event %s: %w", event.EventID, err)
+	}
+	if !claimed {
 		return nil
 	}
-	c.mu.Unlock()
 	for _, handler := range c.handlers {
 		if err := handler.Handle(ctx, event); err != nil {
-			c.mu.Lock()
-			c.dead = append(c.dead, DeadLetter{Event: event, Error: err.Error()})
-			c.mu.Unlock()
+			failedAt := c.processedAt(event)
+			if journalErr := c.journal.FailEvent(ctx, event, failedAt, err); journalErr != nil {
+				return errors.Join(err, fmt.Errorf("dead-letter event %s: %w", event.EventID, journalErr))
+			}
 			return err
 		}
 	}
-	c.mu.Lock()
-	c.seen[event.EventID] = struct{}{}
-	w := c.watermarks[event.SourceVersion]
-	if w.OccurredAt.Before(event.OccurredAt) || (w.OccurredAt.Equal(event.OccurredAt) && event.EventID > w.LastEventID) {
-		w.Source, w.LastEventID, w.OccurredAt = event.SourceVersion, event.EventID, event.OccurredAt
+	if _, err := c.journal.CompleteEvent(ctx, event, c.processedAt(event)); err != nil {
+		return fmt.Errorf("complete event %s: %w", event.EventID, err)
 	}
-	w.ProcessedAt = event.OccurredAt
-	w.Completeness = "complete"
-	c.watermarks[event.SourceVersion] = w
-	c.mu.Unlock()
 	return nil
 }
 
+func (c *Consumer) processedAt(event Event) time.Time {
+	processedAt := c.now().UTC()
+	if processedAt.Before(event.OccurredAt) {
+		return event.OccurredAt.UTC()
+	}
+	return processedAt
+}
+
 func (c *Consumer) HandleBatch(ctx context.Context, input []Event) error {
-	events := append([]Event(nil), input...)
-	sort.SliceStable(events, func(i, j int) bool {
-		if events[i].OccurredAt.Equal(events[j].OccurredAt) {
-			return events[i].EventID < events[j].EventID
-		}
-		return events[i].OccurredAt.Before(events[j].OccurredAt)
+	ordered := append([]Event(nil), input...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ComparePosition(ordered[i].OccurredAt, ordered[i].EventID, ordered[j].OccurredAt, ordered[j].EventID) < 0
 	})
-	for _, event := range events {
+	for _, event := range ordered {
 		if err := c.Handle(ctx, event); err != nil {
 			return err
 		}
@@ -80,14 +111,94 @@ func (c *Consumer) HandleBatch(ctx context.Context, input []Event) error {
 	return nil
 }
 
-func (c *Consumer) DeadLetters() []DeadLetter {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]DeadLetter(nil), c.dead...)
+func (c *Consumer) LoadWatermark(ctx context.Context, source string) (Watermark, bool, error) {
+	if c == nil || c.journal == nil {
+		return Watermark{}, false, errors.New("event consumer is not initialized")
+	}
+	return c.journal.LoadWatermark(ctx, source)
 }
+
+func (c *Consumer) ListDeadLetters(ctx context.Context) ([]DeadLetter, error) {
+	if c == nil || c.journal == nil {
+		return nil, errors.New("event consumer is not initialized")
+	}
+	return c.journal.ListDeadLetters(ctx)
+}
+
+// Compatibility helpers for existing in-process callers.
+func (c *Consumer) DeadLetters() []DeadLetter {
+	dead, _ := c.ListDeadLetters(context.Background())
+	return dead
+}
+
 func (c *Consumer) Watermark(source string) (Watermark, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	w, ok := c.watermarks[source]
-	return w, ok
+	w, found, _ := c.LoadWatermark(context.Background(), source)
+	return w, found
+}
+
+type memoryJournal struct {
+	mu         sync.Mutex
+	states     map[string]string
+	watermarks map[string]Watermark
+	dead       map[string]DeadLetter
+}
+
+func newMemoryJournal() *memoryJournal {
+	return &memoryJournal{
+		states:     map[string]string{},
+		watermarks: map[string]Watermark{},
+		dead:       map[string]DeadLetter{},
+	}
+}
+
+func (j *memoryJournal) ClaimEvent(_ context.Context, event Event) (bool, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if _, exists := j.states[event.EventID]; exists {
+		return false, nil
+	}
+	j.states[event.EventID] = "processing"
+	return true, nil
+}
+
+func (j *memoryJournal) CompleteEvent(_ context.Context, event Event, processedAt time.Time) (Watermark, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.states[event.EventID] = "processed"
+	w := j.watermarks[event.SourceVersion]
+	if ComparePosition(event.OccurredAt, event.EventID, w.OccurredAt, w.LastEventID) > 0 {
+		w.Source = event.SourceVersion
+		w.LastEventID = event.EventID
+		w.OccurredAt = event.OccurredAt.UTC()
+	}
+	w.ProcessedAt = processedAt.UTC()
+	w.Completeness = CompletenessComplete
+	j.watermarks[event.SourceVersion] = w
+	return w, nil
+}
+
+func (j *memoryJournal) FailEvent(_ context.Context, event Event, failedAt time.Time, cause error) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.states[event.EventID] = "dead"
+	j.dead[event.EventID] = DeadLetter{Event: event, Error: cause.Error(), FailedAt: failedAt.UTC()}
+	return nil
+}
+
+func (j *memoryJournal) LoadWatermark(_ context.Context, source string) (Watermark, bool, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	w, found := j.watermarks[source]
+	return w, found, nil
+}
+
+func (j *memoryJournal) ListDeadLetters(context.Context) ([]DeadLetter, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	result := make([]DeadLetter, 0, len(j.dead))
+	for _, dead := range j.dead {
+		result = append(result, dead)
+	}
+	sort.Slice(result, func(i, k int) bool { return result[i].Event.EventID < result[k].Event.EventID })
+	return result, nil
 }

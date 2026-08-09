@@ -1241,7 +1241,7 @@ test_maintenance_bounds_pipeline_and_filesystem_operations() {
     esac
     prepare_maintenance_case "$scenario-baseline"
     started=$SECONDS
-    RELEASE_DEADLINE_EPOCH=1785513640 MAINTENANCE_MODE=true \
+    RELEASE_DEADLINE_EPOCH=1785515400 MAINTENANCE_MODE=true \
       run_executor FAKE_SCENARIO="$scenario" FAKE_DISABLE_HANG=true \
       MAINTENANCE_UNAVAILABLE_SECONDS=30 \
       >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
@@ -1249,7 +1249,7 @@ test_maintenance_bounds_pipeline_and_filesystem_operations() {
     baseline_elapsed=$((SECONDS - started))
     prepare_maintenance_case "$scenario"
     started=$SECONDS
-    RELEASE_DEADLINE_EPOCH=1785513640 MAINTENANCE_MODE=true \
+    RELEASE_DEADLINE_EPOCH=1785515400 MAINTENANCE_MODE=true \
       expect_failure "$scenario" run_executor \
       FAKE_SCENARIO="$scenario" FAKE_HANG_SECONDS=30 MAINTENANCE_UNAVAILABLE_SECONDS=30
     elapsed=$((SECONDS - started))

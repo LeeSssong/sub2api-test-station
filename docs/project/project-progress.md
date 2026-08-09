@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮实施登记（2026-08-09）：** 修复生产 `/monitor` 只展示当前启用且绑定有效活动分组的渠道监控，并为监控配置身份性更新建立新的统计边界，避免旧端点、旧凭据、旧模型或旧分组历史污染更新后的 7 天可用率与时间线；状态：进行中。用户已批准快速实施、合并 `main`、推送并走无停机蓝绿生产覆盖更新。独立工作区为 `.worktrees/monitor-v2-current-config`、分支 `codex/monitor-v2-current-config`，基线为 `main@a90c07427`；全部非 `main` worktree 已盘点，没有已完成且必须先合并的领先候选，明确排除仍在进行或阻塞的调度、GPT 分组分析、SMTP 超时以及根目录发布器未提交内容。
+
 **本轮任务登记（2026-08-09）：** Resend Free 邮件配置 Task 2 生产激活，状态：进行中。范围仅为通过官方 Sub2API Admin API 设置 `frontend_url=https://api.xingqiaolab.top`、启用邮件验证与密码重置；保持邀请制、CAPTCHA、SMTP、OAuth、计费、通知及受保护容器身份不变。当前工作区为 `.worktrees/resend-email-configuration`（`codex/resend-email-configuration`）；尚未推送、部署或完成线上邮件投递验证，不能标记完成。
 
 **本轮 Task 2 实施与审查（2026-08-09）：** 已通过官方 Admin API 的一次三字段部分更新设置 `frontend_url=https://api.xingqiaolab.top` 并启用邮件验证和密码重置；Admin API、只读 PostgreSQL 和公共 flag 验证通过，`/healthz` 为 200，API/worker/PostgreSQL/Redis/Caddy 身份和重启计数未变，未发生重启或部署。公共 settings DTO 不暴露 `frontend_url`，该字段由 Admin API 和 PostgreSQL 证实。Task 2 独立审查已批准，Task 3 已获授权进行投递和找回密码流程线上验证；总任务状态保持进行中。

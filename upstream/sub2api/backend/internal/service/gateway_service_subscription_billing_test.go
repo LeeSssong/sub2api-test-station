@@ -83,3 +83,41 @@ func TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier(t *testing.T
 		})
 	}
 }
+
+func TestBuildUsageBillingCommand_UsesResolvedAccountCostForAccountQuota(t *testing.T) {
+	groupID := int64(7)
+	account := &Account{
+		ID:   3,
+		Type: AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_limit": 10.0,
+		},
+	}
+	p := &postUsageBillingParams{
+		Cost:                  &CostBreakdown{TotalCost: 0.90, ActualCost: 0.45},
+		User:                  &User{ID: 1},
+		APIKey:                &APIKey{ID: 2, GroupID: &groupID},
+		Account:               account,
+		AccountRateMultiplier: 0.5,
+		AccountCost:           0.24,
+		AccountCostSet:        true,
+	}
+
+	cmd := buildUsageBillingCommand("req-fixed-image", nil, p)
+	if cmd == nil {
+		t.Fatal("buildUsageBillingCommand returned nil")
+	}
+	if cmd.AccountQuotaCost != 0.24 {
+		t.Errorf("AccountQuotaCost = %v, want 0.24", cmd.AccountQuotaCost)
+	}
+	if cmd.BalanceCost != 0.45 {
+		t.Errorf("BalanceCost = %v, want 0.45", cmd.BalanceCost)
+	}
+
+	p.AccountCostSet = false
+	p.AccountCost = 0
+	legacy := buildUsageBillingCommand("req-legacy", nil, p)
+	if legacy.AccountQuotaCost != 0.45 {
+		t.Errorf("legacy AccountQuotaCost = %v, want 0.45", legacy.AccountQuotaCost)
+	}
+}

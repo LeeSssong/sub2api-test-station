@@ -1,7 +1,8 @@
 # Resend Free Account Qualification
 
 **Date:** 2026-08-09
-**Decision:** **BLOCKED - do not activate email verification or password reset.**
+**Decision:** **QUALIFIED - Task 2 may perform its separate, gated settings
+activation check.**
 
 ## Scope
 
@@ -25,17 +26,14 @@ was recorded.
 
 ## Resend Account
 
-- Dashboard session: unavailable. The in-app browser had no existing Resend
-  tab, and a new read-only navigation to the Resend overview did not leave
-  `about:blank` before the bounded timeout.
-- Chrome fallback: the Chrome browser family and extension were available, but
-  read-only navigation to `https://resend.com/overview` timed out before any
-  visible page or authentication state loaded. No Chrome session state was
-  inferred.
-- Active plan: **not verified**.
-- Paid add-ons/card attachment/dedicated IP: **not verified**.
-- Monthly and daily limits, current usage, bounce/complaint warnings, and
-  account health: **not verified**.
+- Authenticated, read-only dashboard evidence confirms the active
+  Transactional plan is **Free**.
+- Usage displayed: monthly `1 / 3,000`; daily `0 / 100`.
+- Domains entitlement displayed: `1 / 1`.
+- Pay-as-you-go sending switches are disabled. Dedicated IP is shown only as
+  pricing information and is not enabled.
+- Last-15-day metrics display `0` emails, `0%` bounce rate, and `0%` complaint
+  rate. No recipient, message, or event detail was inspected.
 
 ## Domain/DNS
 
@@ -47,36 +45,38 @@ was recorded.
 - Root MX/SPF/DMARC and the sending-subdomain records coexist, which is
   consistent with keeping Tencent Enterprise Mail for inbound delivery and a
   separate transactional return path.
-- Resend dashboard domain status and dashboard-to-DNS record match: **not
-  verified**. Public DNS presence alone is not proof that Resend has verified
-  the sending domain.
+- Authenticated dashboard evidence confirms `xingqiaolab.top` is verified for
+  sending in the Tokyo (`ap-northeast-1`) region.
+- The dashboard verification state is consistent with the public DKIM and
+  sending-subdomain records observed above. A line-by-line dashboard DNS table
+  comparison was not separately retained.
 
 ## Decision
 
-Task 2 is not authorized. The required evidence that the active Resend plan is
-Free, no paid add-on or dedicated IP is active, and `xingqiaolab.top` is
-verified for sending is absent. Keep `email_verify_enabled` and
-`password_reset_enabled` unchanged until an authenticated, read-only Resend
-dashboard check captures those facts and current quota/health status.
+Task 1 is qualified: the active plan is Free, pay-as-you-go and dedicated IP
+are not enabled, `xingqiaolab.top` is verified for sending, and the current
+quota and health indicators are acceptable for the proposed controlled use.
+
+This decision authorizes only Task 2's separate authenticated baseline and
+settings update procedure. It does not itself enable `email_verify_enabled` or
+`password_reset_enabled`, change DNS or SMTP, remove invitation gating, or
+approve unrestricted public registration.
 
 ## Risks
 
-- Activating from SMTP connectivity or public DNS alone could consume an
-  unqualified account or send through an unverified domain.
-- The public-settings endpoint was not reachable in this run, so the current
+- The public-settings endpoint was not reachable in the earlier read-only
+  check, so the current
   application flags and persisted SMTP configuration need a separate
   authenticated, sanitized check before any update.
-- DNS record presence cannot establish the plan tier, paid-product state,
-  quota, account health, or provider-domain verification.
+- DNS record presence was not used as the sole proof of plan tier,
+  paid-product state, quota, account health, or provider-domain verification.
+- Full public registration remains outside this qualification; invitation
+  gating must remain enabled and CAPTCHA state must be assessed separately.
 
 ## Not Verified
 
-- Resend active plan is Free.
-- No paid add-on, payment method, or dedicated IP is active.
-- `xingqiaolab.top` is Resend-verified for sending.
-- Dashboard DNS rows match the authoritative public records.
-- Dashboard monthly/daily quota, current usage, bounce/complaint warnings, and
-  account health.
+- A line-by-line dashboard DNS-row comparison against public DNS was not
+  separately captured.
 - Current public Sub2API email, registration, invitation, whitelist, and
   CAPTCHA flags.
 
@@ -86,5 +86,7 @@ dashboard check captures those facts and current quota/health status.
   `resend._domainkey`, and `send` SPF/MX.
 - Read-only Chrome fallback attempted on 2026-08-09; navigation timed out
   before a visible Resend page loaded.
-- No screenshot was retained because the dashboard could not be reached.
+- Subsequent authenticated, read-only Chrome dashboard inspection confirmed
+  the plan, domain status, quota, paid-option state, and aggregate health
+  indicators recorded above. No screenshot was retained.
 - No production mutation was performed.

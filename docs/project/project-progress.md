@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**本轮 Task 9 双读比对、逐页切换与回退门禁（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@d1e1d7fda`。
+范围限定为精确比较账号/请求/账单/Token/金额/倍率/评分/排名/余额/对账结果，持久化最小、默认和最大窗口报告，并用 `legacy_only → shadow_building → dual_read_comparing → external_primary → legacy_retired` 逐页门禁与可回退标记控制账号监控、盈利、账务和对账读路径；Task 5 的保守 legacy 回退在比较证据满足前必须保留。实施前重新盘点全部非 `main` worktree：`account-monitor-group-recommendation` 领先 7 个提交但未推送、部署和线上验证，`gpt-group-baseline-apply` 领先 1 个提交且无本次生产完成证据，均继续只读保护。本轮仅本地 TDD、回退演练、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
+
 **本轮 Task 5 管理员页面双读无感迁移（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@22b21db2f`。
 范围限定为在原管理菜单和 URL 中接入版本化控制面客户端、双读模式与新鲜度/完整性状态，保持现有登录、2FA、字段、筛选、排序、分页、刷新、详情和 CSV 体验；控制面失败只局部降级，不清理主站会话。实施前已复盘全部非 `main` worktree：`account-monitor-group-recommendation` 虽领先 7 个提交但证据明确未合并、未推送、未部署和未线上验证，`gpt-group-baseline-apply` 领先 1 个提交且不是生产完成候选，均保持只读且不作为“已完成并必须先合并”处理。本轮仅本地 TDD、前端验证、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。

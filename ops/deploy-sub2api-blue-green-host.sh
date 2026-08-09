@@ -113,10 +113,68 @@ check_deadline() {
 
 check_maintenance_deadline() {
   [[ -z "$maintenance_deadline_epoch" ]] && return 0
-  local now
+  local now elapsed remaining_window
+  if [[ "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+    elapsed=$((SECONDS - maintenance_started_seconds))
+    remaining_window=$((maintenance_window_seconds - elapsed))
+    (( remaining_window > 0 )) || fail 'maintenance unavailable window expired'
+  fi
   now=$(date -u +%s) || fail 'maintenance deadline clock failed'
   [[ "$now" =~ ^[0-9]+$ && "$now" -lt "$maintenance_deadline_epoch" ]] \
     || fail 'maintenance unavailable window expired'
+}
+
+run_post_stop_command() {
+  local deadline now remaining elapsed remaining_window
+  if [[ -z "${maintenance_deadline_epoch:-}" && "${rollback_in_progress:-false}" != true ]]; then
+    "$@"
+    return
+  fi
+  if [[ -n "${maintenance_deadline_epoch:-}" ]]; then
+    deadline=$maintenance_deadline_epoch
+  else
+    deadline=$deadline_epoch
+  fi
+  if [[ -n "${maintenance_deadline_epoch:-}" && "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+    elapsed=$((SECONDS - maintenance_started_seconds))
+    remaining_window=$((maintenance_window_seconds - elapsed))
+    (( remaining_window > 0 )) || return 124
+  fi
+  now=$(date -u +%s) || return 1
+  [[ "$now" =~ ^[0-9]+$ ]] || return 1
+  remaining=$((deadline - now))
+  if [[ -n "${maintenance_deadline_epoch:-}" && "${maintenance_started_seconds:-}" =~ ^[0-9]+$ && "${maintenance_window_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+    elapsed=$((SECONDS - maintenance_started_seconds))
+    remaining_window=$((maintenance_window_seconds - elapsed))
+    (( remaining_window < remaining )) && remaining=$remaining_window
+  fi
+  (( remaining > 0 )) || return 124
+  # Run each post-stop operation in its own process group.  A plain
+  # `alarm/exec` watchdog only terminates the wrapper process; a hung
+  # docker/curl child can keep inherited pipes open and exceed the maintenance
+  # window.  The parent timer therefore terminates the whole group and waits
+  # for it before returning a timeout status.
+  perl -MPOSIX=setpgid,WIFEXITED,WEXITSTATUS -e '
+    my $timeout = shift @ARGV;
+    my $pid = fork();
+    die "fork failed: $!" unless defined $pid;
+    if ($pid == 0) {
+      setpgid(0, 0) or die "setpgid failed: $!";
+      exec @ARGV or die "exec failed: $!";
+    }
+    $SIG{ALRM} = sub {
+      kill "TERM", -$pid;
+      select undef, undef, undef, 0.1;
+      kill "KILL", -$pid;
+      waitpid($pid, 0);
+      exit 124;
+    };
+    alarm $timeout;
+    waitpid($pid, 0);
+    alarm 0;
+    if (WIFEXITED($?)) { exit WEXITSTATUS($?); }
+    exit 1;
+  ' "$remaining" "$@"
 }
 
 check_deadline
@@ -318,6 +376,9 @@ maintenance_transition=false
 maintenance_stopped=false
 maintenance_identity_refresh=false
 maintenance_deadline_epoch=''
+maintenance_window_seconds=''
+maintenance_started_seconds=''
+rollback_in_progress=false
 rollback_completed=false
 failure_reason='unexpected_exit'
 candidate_slot=''
@@ -520,7 +581,7 @@ managed_env_value() {
 
 resolve_container_id() {
   local service=$1 ids count
-  ids=$("${compose_current[@]}" ps -q "$service") || return 1
+  ids=$(run_post_stop_command "${compose_current[@]}" ps -q "$service") || return 1
   count=$(printf '%s\n' "$ids" | awk 'NF { count++ } END { print count + 0 }')
   [[ "$count" == 1 ]] || return 1
   printf '%s\n' "$ids" | awk 'NF { print; exit }'
@@ -528,7 +589,7 @@ resolve_container_id() {
 
 resolve_image_id() {
   local image=$1 image_id
-  image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null | tr -d '[:space:]') || return 1
+  image_id=$(run_post_stop_command docker image inspect --format '{{.Id}}' "$image" 2>/dev/null | tr -d '[:space:]') || return 1
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
   printf '%s\n' "$image_id"
 }
@@ -540,14 +601,33 @@ wait_for_worker_healthy() {
   deadline=$(( $(date -u +%s) + timeout ))
   max_attempts=$((timeout / poll + 1))
   while true; do
-    worker_status=$(docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.State.Health.Status}}') || return 1
+    worker_status=$(run_post_stop_command docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.State.Health.Status}}') || return 1
     [[ "$worker_status" == healthy ]] && return 0
     attempts=$((attempts + 1))
     [[ "$attempts" -lt "$max_attempts" ]] || return 1
     now=$(date -u +%s)
     [[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline" ]] || return 1
     remaining=$((deadline - now))
-    if [[ "$poll" -lt "$remaining" ]]; then sleep "$poll"; else sleep "$remaining"; fi
+    if [[ "$poll" -lt "$remaining" ]]; then run_post_stop_command sleep "$poll"; else run_post_stop_command sleep "$remaining"; fi
+  done
+}
+
+wait_for_api_healthy() {
+  local service=$1 timeout=${API_HEALTH_TIMEOUT_SECONDS:-90} poll=${API_HEALTH_POLL_SECONDS:-1}
+  local deadline now remaining attempts=0 max_attempts api_status api_id
+  [[ "$timeout" =~ ^[1-9][0-9]*$ && "$poll" =~ ^[1-9][0-9]*$ ]] || return 1
+  deadline=$(( $(date -u +%s) + timeout ))
+  max_attempts=$((timeout / poll + 1))
+  while true; do
+    api_id=$(resolve_container_id "$service") || return 1
+    api_status=$(run_post_stop_command docker inspect "$api_id" --format '{{.State.Health.Status}}') || return 1
+    [[ "$api_status" == healthy ]] && return 0
+    attempts=$((attempts + 1))
+    [[ "$attempts" -lt "$max_attempts" ]] || return 1
+    now=$(date -u +%s)
+    [[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline" ]] || return 1
+    remaining=$((deadline - now))
+    if [[ "$poll" -lt "$remaining" ]]; then run_post_stop_command sleep "$poll"; else run_post_stop_command sleep "$remaining"; fi
   done
 }
 
@@ -560,7 +640,7 @@ wait_for_candidate_healthy() {
 	while true; do
 		check_deadline
 		candidate_id=$(resolve_container_id "$service") || return 1
-		candidate_status=$(docker inspect "$candidate_id" --format '{{.State.Health.Status}}') || return 1
+    candidate_status=$(run_post_stop_command docker inspect "$candidate_id" --format '{{.State.Health.Status}}') || return 1
 		[[ "$candidate_status" == healthy ]] && return 0
 		[[ "$candidate_status" != unhealthy ]] || return 1
 		attempts=$((attempts + 1))
@@ -568,7 +648,7 @@ wait_for_candidate_healthy() {
 		now=$(date -u +%s)
 		[[ "$now" =~ ^[0-9]+$ && "$now" -lt "$deadline" ]] || return 1
 		remaining=$((deadline - now))
-		if [[ "$poll" -lt "$remaining" ]]; then sleep "$poll"; else sleep "$remaining"; fi
+    if [[ "$poll" -lt "$remaining" ]]; then run_post_stop_command sleep "$poll"; else run_post_stop_command sleep "$remaining"; fi
 	done
 }
 
@@ -582,7 +662,7 @@ container_role() {
 
 live_caddy_upstream() {
 	local config
-	config=$("${compose_current[@]}" exec -T caddy wget -qO- http://127.0.0.1:2019/config/) || return 1
+  config=$(run_post_stop_command "${compose_current[@]}" exec -T caddy wget -qO- http://127.0.0.1:2019/config/) || return 1
 	jq -er '
 		[.. | objects | .dial? // empty |
 		 select(. == "sub2api-blue:8080" or . == "sub2api-green:8080")] |
@@ -601,16 +681,16 @@ write_acceptance_headers() {
 
 public_acceptance() {
 	write_acceptance_headers || return 1
-	curl -fsS --connect-timeout 5 --max-time 15 "$base_url/health" | jq -e '.status == "ok"' >/dev/null || return 1
-	curl -fsS --connect-timeout 5 --max-time 15 -H "@$admin_header" "$base_url/api/v1/admin/system/version" | \
-		jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null || return 1
-	curl -fsS --connect-timeout 5 --max-time 15 -H "@$gateway_header" "$base_url/v1/models" | \
-		jq -e '.data | type == "array"' >/dev/null || return 1
+  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 "$base_url/health" | jq -e '.status == "ok"' >/dev/null || return 1
+  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 -H "@$admin_header" "$base_url/api/v1/admin/system/version" | \
+    jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null || return 1
+  run_post_stop_command curl -fsS --connect-timeout 5 --max-time 15 -H "@$gateway_header" "$base_url/v1/models" | \
+    jq -e '.data | type == "array"' >/dev/null || return 1
 }
 
 worker_logs_are_acceptable() {
   local worker_logs
-  worker_logs=$("${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
+  worker_logs=$(run_post_stop_command "${compose_current[@]}" logs --no-color --tail 200 sub2api-worker) || return 1
   # Compose prefixes each line with the container name; avoid treating an
   # unrelated "Request failed" message as a worker startup failure.
   printf '%s\n' "$worker_logs" | grep -Eiq '(^|[[:space:]])(panic:|fatal:|migration[^[:space:]]*[[:space:]]+failed|worker[[:space:]]+(startup|process|runtime)[^[:space:]]*[[:space:]]+failed)' && return 1
@@ -619,11 +699,12 @@ worker_logs_are_acceptable() {
 
 restore_previous() {
   local rollback_ok=true current_blue current_green previous_previous
+  rollback_in_progress=true
   if [[ "$cutover_attempted" == true ]]; then
     if validate_upstream "$previous_upstream"; then
-      "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
+      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
         caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || rollback_ok=false
-      "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
+      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
         caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || rollback_ok=false
     else
       rollback_ok=false
@@ -637,26 +718,23 @@ restore_previous() {
       compose_rollback=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
         --env-file "$secret_env" --env-file "$rollback_env" -f "$base_compose")
       if [[ "$maintenance_stopped" == true ]]; then
-        "${compose_rollback[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" "sub2api-$previous_slot" >/dev/null 2>&1 || rollback_ok=false
+        run_post_stop_command "${compose_rollback[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" "sub2api-$previous_slot" >/dev/null 2>&1 || rollback_ok=false
       fi
-      "${compose_rollback[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null 2>&1 || rollback_ok=false
-      [[ "$rollback_ok" == false ]] || wait_for_worker_healthy || rollback_ok=false
-      [[ "$rollback_ok" == false ]] || worker_logs_are_acceptable || rollback_ok=false
-      if [[ "$rollback_ok" == true ]]; then
-        rollback_active_id=$(resolve_container_id "sub2api-$previous_slot") || rollback_ok=false
-        rollback_worker_id=$(resolve_container_id sub2api-worker) || rollback_ok=false
-        if [[ "$rollback_ok" == true && -n "$rollback_active_image_id" ]]; then
-          [[ "$(docker inspect "$rollback_active_id" --format '{{.Image}}')" == "$rollback_active_image_id" ]] || rollback_ok=false
-        fi
-        if [[ "$rollback_ok" == true && -n "$previous_worker_image_id" ]]; then
-          [[ "$(docker inspect "$rollback_worker_id" --format '{{.Image}}')" == "$previous_worker_image_id" ]] || rollback_ok=false
-        fi
-      fi
+      run_post_stop_command "${compose_rollback[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null 2>&1 || rollback_ok=false
     fi
   fi
-	if [[ "$rollback_ok" == true && "$cutover_attempted" == true ]]; then
+	if [[ "$rollback_ok" == true ]]; then
+		[[ "$rollback_ok" == false ]] || wait_for_api_healthy "sub2api-$previous_slot" || rollback_ok=false
+		[[ "$rollback_ok" == false ]] || wait_for_worker_healthy || rollback_ok=false
+		[[ "$rollback_ok" == false ]] || worker_logs_are_acceptable || rollback_ok=false
 		[[ "$(live_caddy_upstream)" == "$previous_upstream" ]] || rollback_ok=false
 		[[ "$rollback_ok" == false ]] || public_acceptance || rollback_ok=false
+		if [[ "$rollback_ok" == true ]]; then
+			rollback_active_id=$(resolve_container_id "sub2api-$previous_slot") || rollback_ok=false
+			rollback_worker_id=$(resolve_container_id sub2api-worker) || rollback_ok=false
+			[[ "$rollback_ok" == false || "$(run_post_stop_command docker inspect "$rollback_active_id" --format '{{.Image}}')" == "$rollback_active_image_id" ]] || rollback_ok=false
+			[[ "$rollback_ok" == false || "$(run_post_stop_command docker inspect "$rollback_worker_id" --format '{{.Image}}')" == "$previous_worker_image_id" ]] || rollback_ok=false
+		fi
 	fi
 	if [[ "$rollback_ok" == true ]]; then
 		[[ "$(resolve_container_id postgres)" == "$rollback_postgres_id" ]] || rollback_ok=false
@@ -1155,18 +1233,19 @@ if [[ "$maintenance_transition" == true ]]; then
   [[ "$maintenance_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_window_seconds" -le 300 ]] \
     || fail 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 300'
   maintenance_deadline_epoch=$(( $(date -u +%s) + maintenance_window_seconds ))
+  maintenance_started_seconds=$SECONDS
   trace_event 'maintenance stop api-worker'
-  "${compose_current[@]}" stop sub2api-blue sub2api-green sub2api-worker >/dev/null
   maintenance_stopped=true
+  run_post_stop_command "${compose_current[@]}" stop sub2api-blue sub2api-green sub2api-worker >/dev/null
   [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired after stopping API and worker'
   trace_event 'maintenance start worker for migrations'
   if [[ "$preloaded_image" == false ]]; then
-    "${compose_candidate[@]}" pull sub2api-worker >/dev/null
+    run_post_stop_command "${compose_candidate[@]}" pull sub2api-worker >/dev/null
   fi
-  "${compose_candidate[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null
+  run_post_stop_command "${compose_candidate[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null
   worker_update_started=true
   wait_for_worker_healthy || fail 'maintenance worker did not become healthy before timeout'
-  [[ "$(docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.Image}}')" == "$candidate_worker_image_id" ]] \
+  [[ "$(run_post_stop_command docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.Image}}')" == "$candidate_worker_image_id" ]] \
     || fail 'maintenance worker image ID differs from candidate'
   [[ "$(date -u +%s)" -lt "$maintenance_deadline_epoch" ]] || fail 'maintenance unavailable window expired while applying migrations'
 fi
@@ -1184,16 +1263,16 @@ mv "$candidate_env.tmp" "$candidate_env"
 compose_candidate=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$candidate_env" -f "$base_compose")
 if [[ "$preloaded_image" == false ]]; then
-  "${compose_candidate[@]}" pull "sub2api-$candidate_slot" >/dev/null
+  run_post_stop_command "${compose_candidate[@]}" pull "sub2api-$candidate_slot" >/dev/null
 fi
 
 failure_reason=candidate_start_failed
 check_maintenance_deadline
-"${compose_candidate[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" "sub2api-$candidate_slot" >/dev/null
+run_post_stop_command "${compose_candidate[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" "sub2api-$candidate_slot" >/dev/null
 write_partial candidate_started
 	wait_for_candidate_healthy "sub2api-$candidate_slot" || fail 'candidate did not become healthy before timeout'
 candidate_container_id=$(resolve_container_id "sub2api-$candidate_slot") || fail 'candidate container identity is not uniquely resolvable'
-candidate_runtime_image_id=$(docker inspect "$candidate_container_id" --format '{{.Image}}') || fail 'candidate image ID could not be inspected'
+candidate_runtime_image_id=$(run_post_stop_command docker inspect "$candidate_container_id" --format '{{.Image}}') || fail 'candidate image ID could not be inspected'
 [[ "$candidate_runtime_image_id" == "$requested_image_id" ]] || fail 'candidate image ID differs from requested image'
 check_maintenance_deadline
 
@@ -1201,28 +1280,28 @@ write_acceptance_headers
 network_name="${compose_project}_default"
 candidate_url="http://sub2api-$candidate_slot:8080"
 failure_reason=candidate_acceptance_failed
-docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
+run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 "$candidate_url/health" | \
   jq -e '.status == "ok"' >/dev/null
-docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$admin_header:/run/key:ro" "$network_curl_image" \
+run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$admin_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/api/v1/admin/system/version" | \
   jq -e '(.data // .).version | type == "string" and length > 0' >/dev/null
-docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 \
+run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" "$network_curl_image" -fsS --connect-timeout 5 --max-time 15 \
   "$candidate_url/api/v1/settings/public" | jq -e 'type == "object"' >/dev/null
-docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$gateway_header:/run/key:ro" "$network_curl_image" \
+run_post_stop_command docker run "${network_probe_pull_args[@]+${network_probe_pull_args[@]}}" --rm --network "$network_name" --user 0:0 -v "$gateway_header:/run/key:ro" "$network_curl_image" \
   -fsS --connect-timeout 5 --max-time 15 -H @/run/key "$candidate_url/v1/models" | \
   jq -e '.data | type == "array"' >/dev/null
 write_partial candidate_accepted
 check_maintenance_deadline
 
 failure_reason=caddy_validate_failed
-"${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
+run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 write_partial caddy_validated
 
 failure_reason=caddy_reload_failed
 cutover_attempted=true
 write_partial cutover_attempted
-"${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
+run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
   caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 cutover_applied=true
 write_partial cutover_applied
@@ -1250,10 +1329,10 @@ write_partial state_persisted
 failure_reason=worker_update_failed
 worker_update_started=true
 write_partial worker_updating
-"${compose_current[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null
+run_post_stop_command "${compose_current[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" --force-recreate sub2api-worker >/dev/null
 wait_for_worker_healthy || fail 'worker did not become healthy before timeout'
 worker_logs_are_acceptable || fail 'worker logs contain a startup failure'
-worker_runtime_image_id=$(docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.Image}}') || fail 'updated worker image ID could not be inspected'
+worker_runtime_image_id=$(run_post_stop_command docker inspect "$(resolve_container_id sub2api-worker)" --format '{{.Image}}') || fail 'updated worker image ID could not be inspected'
 [[ "$worker_runtime_image_id" == "$candidate_worker_image_id" ]] || fail 'updated worker image ID differs from candidate'
 write_partial worker_accepted
 

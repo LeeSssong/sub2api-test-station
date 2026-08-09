@@ -793,6 +793,57 @@ func TestResolveAccountStatsCost_CustomRulePriorityOverApplyPricing(t *testing.T
 	require.InDelta(t, 5.0, *result, 1e-12)
 }
 
+func TestResolveAccountStatsCostResolution_FixedImageTiersIgnoreAccountMultiplier(t *testing.T) {
+	prices := map[string]float64{"1K": 0.06, "2K": 0.08, "4K": 0.10}
+	intervals := make([]PricingInterval, 0, len(prices))
+	for tier, price := range prices {
+		priceCopy := price
+		intervals = append(intervals, PricingInterval{TierLabel: tier, PerRequestPrice: &priceCopy})
+	}
+	channel := &Channel{ID: 1, Status: StatusActive, AccountStatsPricingRules: []AccountStatsPricingRule{{
+		GroupIDs: []int64{10},
+		Pricing:  []ChannelModelPricing{{Models: []string{"gpt-image-*"}, BillingMode: BillingModeImage, Intervals: intervals}},
+	}}}
+	cs := newTestChannelServiceForStats(t, channel, 10, "openai")
+
+	for _, tc := range []struct {
+		tier  string
+		count int
+		want  float64
+	}{
+		{tier: "1K", count: 1, want: 0.06},
+		{tier: "2K", count: 3, want: 0.24},
+		{tier: "4K", count: 2, want: 0.20},
+	} {
+		resolution := resolveAccountStatsCostResolution(context.Background(), cs, nil, 1, 10,
+			"gpt-image-2", BillingModeImage, tc.tier, tc.count, UsageTokens{}, tc.count, 9)
+		require.True(t, resolution.Matched)
+		require.False(t, resolution.ApplyAccountRate)
+		require.InDelta(t, tc.want, *resolution.StatsCost, 1e-12)
+
+		log := &UsageLog{BillingMode: func() *string { v := string(BillingModeImage); return &v }(), ImageSize: &tc.tier, ImageCount: tc.count}
+		applyAccountStatsCost(context.Background(), log, cs, nil, 1, 10, "gpt-image-2", "gpt-image-2", UsageTokens{}, 9, 1.75)
+		require.InDelta(t, tc.want, *log.AccountCost, 1e-12)
+	}
+}
+
+func TestResolveAccountStatsCostResolution_UnknownImageTierFallsBack(t *testing.T) {
+	price := 0.08
+	channel := &Channel{ID: 1, Status: StatusActive, AccountStatsPricingRules: []AccountStatsPricingRule{{
+		GroupIDs: []int64{10},
+		Pricing: []ChannelModelPricing{{Models: []string{"gpt-image-*"}, BillingMode: BillingModeImage,
+			Intervals: []PricingInterval{{TierLabel: "2K", PerRequestPrice: &price}}}},
+	}}}
+	cs := newTestChannelServiceForStats(t, channel, 10, "openai")
+	resolution := resolveAccountStatsCostResolution(context.Background(), cs, nil, 1, 10,
+		"gpt-image-2", BillingModeImage, "auto", 1, UsageTokens{}, 1, 0.5)
+	require.False(t, resolution.Matched)
+	log := &UsageLog{BillingMode: func() *string { v := string(BillingModeImage); return &v }(), ImageSize: func() *string { v := "auto"; return &v }(), ImageCount: 1}
+	applyAccountStatsCost(context.Background(), log, cs, nil, 1, 10, "gpt-image-2", "gpt-image-2", UsageTokens{}, 0.5, 0.5)
+	require.NotNil(t, log.AccountCost)
+	require.InDelta(t, 0.25, *log.AccountCost, 1e-12)
+}
+
 // ---------------------------------------------------------------------------
 // helpers for resolveAccountStatsCost tests
 // ---------------------------------------------------------------------------

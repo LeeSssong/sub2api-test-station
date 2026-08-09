@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+// AccountStatsCostResolution separates the pre-multiplier account-stat cost
+// from the final account cost snapshot. Image tier prices are already final
+// upstream costs and therefore do not receive the account rate multiplier.
+type AccountStatsCostResolution struct {
+	StatsCost        *float64
+	ApplyAccountRate bool
+	Matched          bool
+}
+
 // resolveAccountStatsCost 计算账号统计定价费用。
 // 返回 nil 表示不覆盖，使用默认公式（total_cost × account_rate_multiplier）。
 //
@@ -27,36 +36,59 @@ func resolveAccountStatsCost(
 	requestCount int,
 	totalCost float64,
 ) *float64 {
+	resolution := resolveAccountStatsCostResolution(ctx, channelService, billingService,
+		accountID, groupID, upstreamModel, BillingModeToken, "", 0, tokens, requestCount, totalCost)
+	return resolution.StatsCost
+}
+
+func resolveAccountStatsCostResolution(
+	ctx context.Context,
+	channelService *ChannelService,
+	billingService *BillingService,
+	accountID int64,
+	groupID int64,
+	upstreamModel string,
+	billingMode BillingMode,
+	imageSize string,
+	imageCount int,
+	tokens UsageTokens,
+	requestCount int,
+	totalCost float64,
+) AccountStatsCostResolution {
 	if channelService == nil || upstreamModel == "" {
-		return nil
+		return AccountStatsCostResolution{ApplyAccountRate: true}
 	}
 	channel, err := channelService.GetChannelForGroup(ctx, groupID)
 	if err != nil || channel == nil {
-		return nil
+		return AccountStatsCostResolution{ApplyAccountRate: true}
 	}
 
 	platform := channelService.GetGroupPlatform(ctx, groupID)
 
 	// 优先级 1：自定义规则（始终尝试）
-	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount); cost != nil {
-		return cost
+	if resolution := tryCustomRulesResolution(channel, accountID, groupID, platform, upstreamModel,
+		billingMode, imageSize, imageCount, tokens, requestCount); resolution.Matched {
+		return resolution
 	}
 
 	// 优先级 2：渠道开启"应用模型定价到账号统计"时，直接使用客户计费（倍率前）
 	if channel.ApplyPricingToAccountStats {
 		cost := totalCost
 		if cost <= 0 {
-			return nil
+			return AccountStatsCostResolution{ApplyAccountRate: true}
 		}
-		return &cost
+		return AccountStatsCostResolution{StatsCost: &cost, ApplyAccountRate: true, Matched: true}
 	}
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
-		return tryModelFilePricing(billingService, upstreamModel, tokens)
+		cost := tryModelFilePricing(billingService, upstreamModel, tokens)
+		if cost != nil {
+			return AccountStatsCostResolution{StatsCost: cost, ApplyAccountRate: true, Matched: true}
+		}
 	}
 
-	return nil
+	return AccountStatsCostResolution{ApplyAccountRate: true}
 }
 
 // tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的标准价格计算费用。
@@ -88,6 +120,20 @@ func tryCustomRules(
 	channel *Channel, accountID, groupID int64,
 	platform, model string, tokens UsageTokens, requestCount int,
 ) *float64 {
+	return tryCustomRulesResolution(channel, accountID, groupID, platform, model,
+		BillingModeToken, "", 0, tokens, requestCount).StatsCost
+}
+
+func tryCustomRulesResolution(
+	channel *Channel,
+	accountID, groupID int64,
+	platform, model string,
+	billingMode BillingMode,
+	imageSize string,
+	imageCount int,
+	tokens UsageTokens,
+	requestCount int,
+) AccountStatsCostResolution {
 	modelLower := strings.ToLower(model)
 	for _, rule := range channel.AccountStatsPricingRules {
 		if !matchAccountStatsRule(&rule, accountID, groupID) {
@@ -97,9 +143,29 @@ func tryCustomRules(
 		if pricing == nil {
 			continue // 规则匹配但模型不在规则定价中，继续下一条
 		}
-		return calculateStatsCost(pricing, tokens, requestCount)
+		if pricing.BillingMode == BillingModeImage || billingMode == BillingModeImage {
+			if billingMode != BillingModeImage || imageCount <= 0 {
+				return AccountStatsCostResolution{ApplyAccountRate: true}
+			}
+			tier, ok := ClassifyImageBillingTier(imageSize)
+			if !ok {
+				return AccountStatsCostResolution{ApplyAccountRate: true}
+			}
+			for _, interval := range pricing.Intervals {
+				if strings.EqualFold(strings.TrimSpace(interval.TierLabel), tier) && interval.PerRequestPrice != nil && *interval.PerRequestPrice >= 0 {
+					cost := *interval.PerRequestPrice * float64(imageCount)
+					return AccountStatsCostResolution{StatsCost: &cost, Matched: true}
+				}
+			}
+			return AccountStatsCostResolution{ApplyAccountRate: true}
+		}
+		cost := calculateStatsCost(pricing, tokens, requestCount)
+		if cost == nil {
+			return AccountStatsCostResolution{ApplyAccountRate: true}
+		}
+		return AccountStatsCostResolution{StatsCost: cost, ApplyAccountRate: true, Matched: true}
 	}
-	return nil
+	return AccountStatsCostResolution{ApplyAccountRate: true}
 }
 
 // matchAccountStatsRule 检查规则是否匹配指定的 accountID 和 groupID。
@@ -232,6 +298,7 @@ func applyAccountStatsCost(
 	upstreamModel, requestedModel string,
 	tokens UsageTokens,
 	totalCost float64,
+	accountRateMultiplier float64,
 ) {
 	model := upstreamModel
 	if model == "" {
@@ -241,7 +308,27 @@ func applyAccountStatsCost(
 	if usageLog != nil && usageLog.ImageCount > 0 {
 		requestCount = usageLog.ImageCount
 	}
-	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost,
-	)
+	billingMode := BillingModeToken
+	if usageLog != nil && usageLog.BillingMode != nil && *usageLog.BillingMode != "" {
+		billingMode = BillingMode(*usageLog.BillingMode)
+	}
+	imageSize := ""
+	if usageLog != nil && usageLog.ImageSize != nil {
+		imageSize = *usageLog.ImageSize
+	}
+	imageCount := 0
+	if usageLog != nil {
+		imageCount = usageLog.ImageCount
+	}
+	resolution := resolveAccountStatsCostResolution(ctx, cs, bs, accountID, groupID, model,
+		billingMode, imageSize, imageCount, tokens, requestCount, totalCost)
+	usageLog.AccountStatsCost = resolution.StatsCost
+	finalCost := totalCost * accountRateMultiplier
+	if resolution.Matched && resolution.StatsCost != nil {
+		finalCost = *resolution.StatsCost
+		if resolution.ApplyAccountRate {
+			finalCost *= accountRateMultiplier
+		}
+	}
+	usageLog.AccountCost = &finalCost
 }

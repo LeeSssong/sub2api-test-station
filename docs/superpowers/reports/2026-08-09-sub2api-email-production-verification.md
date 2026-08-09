@@ -25,8 +25,9 @@ The configured frontend URL is the password-reset link base. The application's r
 
 | Evidence layer | Test email | Password reset |
 | --- | --- | --- |
-| Sub2API endpoint | One authenticated test-email call returned HTTP 400 because the SMTP connection timed out. | The public endpoint returned HTTP 200 with its normal generic anti-enumeration response. |
-| Application logs | Access log records the test endpoint HTTP 400. | Redacted logs record the request, enqueue, and worker send event; no server error occurred. |
+| Sub2API endpoint | One authenticated Admin test-email call reached Sub2API and returned HTTP 400 because the SMTP connection timed out. | The public endpoint returned HTTP 200 with its normal generic anti-enumeration response. |
+| SMTP authentication | Not verified; the connection-timeout response does not establish that SMTP authentication completed. | Not independently observable from the retained redacted application logs. |
+| Application logs | The access log records the test endpoint HTTP 400. | Redacted logs record the request, enqueue, and a worker success event; no server error occurred, but this application event does not prove provider acceptance or mailbox delivery. |
 | Provider evidence | Direct event acceptance is unverified. | Direct event acceptance is unverified. |
 | Mailbox evidence | The user explicitly confirmed receipt by the administrator mailbox. Mailbox UI metadata and message content were not inspected or retained. | Not verified; the message and reset link were intentionally not opened. |
 
@@ -42,4 +43,4 @@ The authenticated Resend domain page remains verified for `xingqiaolab.top`. Tas
 
 ## Conclusion
 
-The configuration is left active only for the current invitation-gated production flow. The user-confirmed test receipt plus the password-reset enqueue/send logs show useful delivery-path evidence, but the SMTP timeout and missing direct provider activity/quota records remain blockers to a fully verified provider-delivery claim. Reconcile the SMTP timeout and obtain redacted Resend event/quota evidence before relaxing any registration control.
+The configuration is acceptable to remain active only for the current invitation-gated production flow. The user-confirmed test receipt plus the password-reset enqueue/worker-success logs show useful layered evidence, but SMTP authentication is not established by the timed-out test request and the missing direct provider activity/quota records remain blockers to a fully verified provider-delivery claim. Reconcile the SMTP timeout and obtain redacted Resend event/quota evidence before relaxing any registration control.

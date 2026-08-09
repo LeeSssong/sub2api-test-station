@@ -17,8 +17,9 @@ COMPLETED WITH DOCUMENTED PROVIDER-OBSERVABILITY BLOCKER - configuration stays a
 
 | Layer | Test email | Password reset |
 | --- | --- | --- |
-| SMTP/API invocation | Authenticated request reached Sub2API; HTTP 400 due to SMTP connection timeout. | Public request returned HTTP 200. |
-| Application processing | The access log records the HTTP 400. | Redacted logs record enqueue and worker send, with no server error. |
+| Sub2API endpoint | The authenticated Admin request reached Sub2API; it returned HTTP 400 due to an SMTP connection timeout. | The public request returned HTTP 200. |
+| SMTP authentication | Not verified; the connection-timeout response does not establish that SMTP authentication completed. | Not independently observable from the retained redacted application logs. |
+| Application processing | The access log records the HTTP 400. | Redacted logs record enqueue and a worker success event, with no server error; this does not by itself prove provider acceptance or mailbox delivery. |
 | Provider acceptance/activity | Not directly verified. Resend activity navigation timed out; no event record was inferred. | Not directly verified for the same reason. |
 | Mailbox receipt | User explicitly confirmed receipt. Sender display, From domain, subject, rendering, folder, and authentication indicators were not independently inspected. | Not verified; no message or reset link was opened. |
 | Reset-link origin | Not applicable. | Configured base URL verified by Admin API and PostgreSQL as `https://api.xingqiaolab.top`; source construction therefore targets `https://api.xingqiaolab.top/reset-password`. No token or link was exposed or consumed. |
@@ -37,3 +38,13 @@ The email configuration remains active for the existing invitation-gated product
 
 - `git diff --check` and a focused secret/full-email scan are required before commit.
 - No SMTP/API/admin key, JWT, reset token, full email address, or message content is included in this report.
+
+## Independent Review
+
+**Decision: APPROVED for the existing invitation-gated production flow; BLOCKED for unrestricted public registration and for any clean end-to-end provider-delivery claim.**
+
+- Reviewed commit `51cb93dc7`, the Task 3 brief, the formal production verification report, and the frozen `59a769ae2..51cb93dc7` review package. The changed scope is documentation only and records one test-email request plus one forgot-password request to the same existing administrator mailbox; it records no new user, extra recipient, verification-code read, reset-token read, reset-link open, or token-consuming reset request.
+- The supplied evidence is layered without substitution: Admin HTTP 400 and user-confirmed test receipt remain conflicting facts; the generic forgot-password HTTP 200 is anti-enumeration evidence; enqueue/worker success is application evidence only; direct Resend event acceptance, current quota effect, bounce state, and complaint state remain unverified after two activity-view timeouts.
+- Source inspection confirms the configured `frontend_url` is read before the request, `/reset-password` is appended before enqueue, and token consumption occurs only on the separate reset-password path. Invitation-code gating is enforced before user creation. The forgot-password endpoint is rate-limited fail-closed, but CAPTCHA remains disabled, so the present approval depends on invitation gating remaining enabled.
+- Focused scans found no full email address, credential, API key, SMTP password, JWT, reset token, or message content in the three task reports or production reports. The retained SHA-256 recipient hash and masked domain are within the brief's permitted redaction format.
+- The configuration may remain active for the gated flow, but the SMTP timeout and unavailable Resend event/quota view must be reconciled before any claim of provider-verified delivery or any relaxation of registration controls.

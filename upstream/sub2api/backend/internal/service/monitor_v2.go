@@ -177,22 +177,33 @@ func (s *MonitorV2Service) Snapshot(
 		scope = MonitorV2ScopeAdmin
 	}
 	visibleGroups := make([]Group, 0, len(allGroups))
-	groupIDs := make([]int64, 0, len(allGroups))
 	for i := range allGroups {
 		group := allGroups[i]
 		if group.Status != StatusActive || (scope != MonitorV2ScopeAdmin && group.IsExclusive) {
 			continue
 		}
 		visibleGroups = append(visibleGroups, group)
-		groupIDs = append(groupIDs, group.ID)
 	}
 	if len(visibleGroups) > monitorV2MaxGroups {
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV2MaxGroups)
 	}
 
 	probes, _ := s.listProbes(ctx)
-	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
 	probesByGroup := monitorV2ProbesByGroup(visibleGroups, probes)
+	if s.probes != nil {
+		configuredGroups := visibleGroups[:0]
+		for _, group := range visibleGroups {
+			if len(probesByGroup[group.ID]) > 0 {
+				configuredGroups = append(configuredGroups, group)
+			}
+		}
+		visibleGroups = configuredGroups
+	}
+	groupIDs := make([]int64, 0, len(visibleGroups))
+	for _, group := range visibleGroups {
+		groupIDs = append(groupIDs, group.ID)
+	}
+	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
 
 	cards := make([]MonitorV2Group, len(visibleGroups))
 	sem := make(chan struct{}, monitorV2MetricWorkers)

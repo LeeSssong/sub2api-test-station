@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -133,6 +134,58 @@ func TestUsageLogRepositoryCreate_BatchPathConcurrent(t *testing.T) {
 	var count int
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_logs WHERE api_key_id = $1", apiKey.ID).Scan(&count))
 	require.Equal(t, total, count)
+}
+
+func TestUsageLogRepositoryAccountCostRoundTripAndHistoricalNull(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{Email: "usage-account-cost-" + uuid.NewString() + "@example.com"})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-account-cost-" + uuid.NewString(), Name: "k"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "acc-usage-account-cost-" + uuid.NewString()})
+
+	accountCost := 0.06
+	log := &service.UsageLog{
+		UserID:      user.ID,
+		APIKeyID:    apiKey.ID,
+		AccountID:   account.ID,
+		RequestID:   uuid.NewString(),
+		Model:       "gpt-image-2",
+		TotalCost:   0.2,
+		ActualCost:  0.2,
+		AccountCost: &accountCost,
+		CreatedAt:   time.Now().UTC(),
+	}
+	inserted, err := repo.Create(ctx, log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+
+	var nullable sql.NullFloat64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT account_cost FROM usage_logs WHERE id = $1", log.ID).Scan(&nullable))
+	require.True(t, nullable.Valid)
+	require.InEpsilon(t, 0.06, nullable.Float64, 1e-9)
+	got, err := repo.GetByID(ctx, log.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.AccountCost)
+	require.InEpsilon(t, 0.06, *got.AccountCost, 1e-9)
+
+	legacy := &service.UsageLog{
+		UserID:     user.ID,
+		APIKeyID:   apiKey.ID,
+		AccountID:  account.ID,
+		RequestID:  uuid.NewString(),
+		Model:      "gpt-image-2",
+		TotalCost:  0.2,
+		ActualCost: 0.2,
+		CreatedAt:  time.Now().UTC(),
+	}
+	inserted, err = repo.Create(ctx, legacy)
+	require.NoError(t, err)
+	require.True(t, inserted)
+	legacyGot, err := repo.GetByID(ctx, legacy.ID)
+	require.NoError(t, err)
+	require.Nil(t, legacyGot.AccountCost)
 }
 
 func TestUsageLogRepositoryCreate_BatchPathDuplicateRequestID(t *testing.T) {

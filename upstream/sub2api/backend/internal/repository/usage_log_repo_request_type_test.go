@@ -21,6 +21,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 	repo := &usageLogRepository{sql: db}
 
 	createdAt := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	accountCost := 0.06
 	log := &service.UsageLog{
 		UserID:         1,
 		APIKeyID:       2,
@@ -32,6 +33,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 		OutputTokens:   20,
 		TotalCost:      1,
 		ActualCost:     1,
+		AccountCost:    &accountCost,
 		BillingType:    service.BillingTypeBalance,
 		RequestType:    service.RequestTypeWSV2,
 		Stream:         false,
@@ -97,6 +99,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			&accountCost,     // account_cost
 			sqlmock.AnyArg(), // session_id
 			createdAt,
 		).
@@ -188,6 +191,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // account_cost
 			sqlmock.AnyArg(), // session_id
 			createdAt,
 		).
@@ -252,6 +256,31 @@ func TestPrepareUsageLogInsert_ArgCountMatchesTypes(t *testing.T) {
 	})
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+}
+
+func TestPrepareUsageLogInsert_AccountCostWiring(t *testing.T) {
+	accountCost := 0.06
+	prepared := prepareUsageLogInsert(&service.UsageLog{
+		UserID:      1,
+		APIKeyID:    2,
+		AccountID:   3,
+		RequestID:   "req-account-cost",
+		Model:       "gpt-image-2",
+		AccountCost: &accountCost,
+		CreatedAt:   time.Date(2025, 1, 5, 12, 0, 0, 0, time.UTC),
+	})
+
+	require.Equal(t, &accountCost, prepared.args[len(prepared.args)-3], "account_cost must precede session_id and created_at")
+	batchQuery, batchArgs := buildUsageLogBatchInsertQuery(
+		[]string{usageLogBatchKey(prepared.requestID, 2)},
+		map[string]usageLogInsertPrepared{usageLogBatchKey(prepared.requestID, 2): prepared},
+	)
+	require.Contains(t, batchQuery, "account_cost")
+	require.Len(t, batchArgs, len(prepared.args)+1)
+
+	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
+	require.Contains(t, bestEffortQuery, "account_cost")
+	require.Len(t, bestEffortArgs, len(prepared.args))
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
@@ -849,6 +878,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullFloat64{},
+			sql.NullFloat64{},
 			sql.NullString{},
 			now,
 		}})
@@ -926,6 +956,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullFloat64{}, // account_cost
 			sql.NullString{},  // session_id
 			now,
 		}})
@@ -986,6 +1017,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullFloat64{}, // account_cost
 			sql.NullString{},  // session_id
 			now,
 		}})
@@ -1046,6 +1078,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullFloat64{}, // account_cost
 			sql.NullString{},  // session_id
 			now,
 		}})

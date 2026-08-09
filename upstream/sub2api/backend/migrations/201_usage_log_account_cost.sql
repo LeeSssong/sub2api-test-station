@@ -1,0 +1,2 @@
+ALTER TABLE usage_logs
+    ADD COLUMN IF NOT EXISTS account_cost NUMERIC(20,10);

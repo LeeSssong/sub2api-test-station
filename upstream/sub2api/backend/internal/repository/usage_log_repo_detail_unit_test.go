@@ -37,6 +37,7 @@ func TestUsageLogRepositoryGetByID加载详情所需摘要关系(t *testing.T) {
 		"ALTER TABLE usage_logs ADD COLUMN inbound_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN upstream_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN account_stats_cost real NULL",
+		"ALTER TABLE usage_logs ADD COLUMN account_cost real NULL",
 		"ALTER TABLE usage_logs ADD COLUMN session_id text NULL",
 	} {
 		_, err = db.Exec(statement)
@@ -86,10 +87,14 @@ func TestUsageLogRepositoryGetByID加载详情所需摘要关系(t *testing.T) {
 		SetModel("gpt-5.4").
 		Save(ctx)
 	require.NoError(t, err)
+	_, err = db.Exec("UPDATE usage_logs SET account_cost = 0.06 WHERE id = ?", created.ID)
+	require.NoError(t, err)
 
 	repo := newUsageLogRepositoryWithSQL(client, db)
 	got, err := repo.GetByID(ctx, created.ID)
 	require.NoError(t, err)
+	require.NotNil(t, got.AccountCost)
+	require.InEpsilon(t, 0.06, *got.AccountCost, 1e-9)
 	require.NotNil(t, got.APIKey)
 	require.Equal(t, apiKey.ID, got.APIKey.ID)
 	require.Equal(t, "详情密钥", got.APIKey.Name)

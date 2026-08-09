@@ -76,6 +76,15 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "usage_logs", "video_count", "integer", 0, false)
 	requireColumn(t, tx, "usage_logs", "video_resolution", "character varying", 10, true)
 	requireColumn(t, tx, "usage_logs", "video_duration_seconds", "integer", 0, true)
+	requireColumn(t, tx, "usage_logs", "account_cost", "numeric", 0, true)
+	var accountCostPrecision, accountCostScale int
+	require.NoError(t, tx.QueryRowContext(context.Background(), `
+SELECT numeric_precision, numeric_scale
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'account_cost'
+`).Scan(&accountCostPrecision, &accountCostScale))
+	require.Equal(t, 20, accountCostPrecision)
+	require.Equal(t, 10, accountCostScale)
 	requireConstraintDefinitionContains(
 		t,
 		tx,

@@ -1,16 +1,12 @@
 # 项目全局进度总账
 
-**本轮任务登记（2026-08-09）：** Resend Free 邮件配置 Task 2 生产激活，状态：进行中。范围仅为通过官方 Sub2API Admin API 设置 `frontend_url=https://api.xingqiaolab.top`、启用邮件验证与密码重置；保持邀请制、CAPTCHA、SMTP、OAuth、计费、通知及受保护容器身份不变。当前工作区为 `.worktrees/resend-email-configuration`（`codex/resend-email-configuration`）；尚未推送、部署或完成线上邮件投递验证，不能标记完成。
+**本轮实施登记（2026-08-09）：** 使用 Resend 免费档配置 Sub2API 域名事务邮件并完成受控生产验收，状态：进行中。范围为确认 Resend 免费套餐与 `xingqiaolab.top` 域名状态，保持邀请码门禁，配置 `frontend_url`、邮箱验证和密码重置，向管理员邮箱发送测试邮件并验证注册验证码/密码找回链路；本轮不得关闭邀请码，不得在 CAPTCHA 未配置时开放完全公开注册，不修改现有腾讯企业邮收件链路。当前根目录 `main` 仅用于总账登记与协调，实施前须重新盘点全部非 `main` worktree；现有未跟踪发布证据和“新建运营界面”“优化账号卡片”保护例外继续保留。
 
-**本轮 Task 2 实施与审查（2026-08-09）：** 已通过官方 Admin API 的一次三字段部分更新设置 `frontend_url=https://api.xingqiaolab.top` 并启用邮件验证和密码重置；Admin API、只读 PostgreSQL 和公共 flag 验证通过，`/healthz` 为 200，API/worker/PostgreSQL/Redis/Caddy 身份和重启计数未变，未发生重启或部署。公共 settings DTO 不暴露 `frontend_url`，该字段由 Admin API 和 PostgreSQL 证实。Task 2 独立审查已批准，Task 3 已获授权进行投递和找回密码流程线上验证；总任务状态保持进行中。
-
-**本轮 Task 3 线上验证（2026-08-09）：** 已向首个活跃管理员邮箱发送且仅发送一次 Sub2API 测试邮件；接口因 SMTP 连接超时返回 HTTP 400，但用户明确确认该管理员邮箱实际收到测试邮件，两层证据均已保留且不互相替代。对同一邮箱的忘记密码请求返回通用 HTTP 200 反枚举响应，脱敏日志记录入队和 worker 发送；Admin API、公共 settings 和只读 PostgreSQL 复核了 `frontend_url`、邮件开关、邀请制、CAPTCHA 与白名单数量，容器身份/重启数和健康检查未变。Resend 域名仍为 verified，但活动/额度页两次超时，两个事件的直接 provider 状态、额度影响、退信/投诉均未验证；配置保持邀请制启用状态，不能批准无邀请码公开注册，任务总状态保持进行中。证据：[`Sub2API 邮件生产验证`](../superpowers/reports/2026-08-09-sub2api-email-production-verification.md)。
-
-**本轮 Task 3 独立复核（2026-08-09）：** 审查结论：批准配置继续用于现有邀请制生产流程；阻断无邀请码公开注册及“provider 全链路已验证”结论，总任务状态保持进行中。已独立复核提交 `51cb93dc7`、Task 3 报告、正式生产验证报告及 `59a769ae2..51cb93dc7` 审查包：文档只记录同一现有管理员邮箱的一次测试邮件请求和一次找回密码请求，没有新增用户、额外收件人、验证码/token 读取、链接打开或 token 消费；三份任务报告和生产报告的定向扫描未发现完整邮箱、凭据或消息内容。审查修正了 Admin API 认证与 SMTP 认证混层口径：SMTP 连接超时不能证明 SMTP 认证成功，worker success 也只属于应用层证据，Resend 事件、额度、退信和投诉仍未验证。源码核对确认 reset URL 从已验证的 `frontend_url` 拼接、token 仅由独立 reset-password 路径消费，邀请制在创建用户前执行；CAPTCHA 仍关闭，因此批准以邀请制持续启用为前提。本轮仅修改并提交审查文档，未触碰生产；工作区盘点确认 Resend 候选原本干净且领先 `main`，调度候选仍有未提交改动且为总账记录的活动排除项，`main` 的发布器与证据改动以及“新建运营界面”“优化账号卡片”保护例外均保持不动。
-
-**本轮 Resend whole-branch 最终审查（2026-08-09）：** 结论：`APPROVE`，仅限现有邀请制生产流程；`BLOCK` 无邀请码公开注册及“provider 全链路已验证”结论。已复核 `15cf3303d..1656be657`、计划、三份任务报告、三份正式报告、SDD/全局总账、冻结审查包的变更行集合及源码不变量。发现并修正两处文档状态/措辞漂移：Task 2 “待独立复核”已改为已复核，Task 1 “未记录 billing amount”已改为未记录支付方式/发票标识/付费购买。未发现凭据、完整邮箱或 token 泄露；三字段 Admin API 回滚载荷存在且不需直接写库。源码确认邀请码在普通注册创建用户前校验、reset URL 从已验证 `frontend_url` 拼接，CAPTCHA 仍关闭。SMTP 连接超时、Resend 事件/额度/退信/投诉仍未验证，故总账继续保持“进行中”；本轮仅修改并提交文档，未触碰生产。
+**本轮方案确认（2026-08-09）：** 已建立隔离候选 worktree `.worktrees/resend-email-configuration`、分支 `codex/resend-email-configuration`，并提交实施计划 `10db5ec43`。计划分为 Resend 免费账户/域名资格确认、Sub2API 三项最小生产设置写入、管理员测试邮件与密码找回分层验收；全程保持邀请码开启，不配置或关闭现有 CAPTCHA/白名单，不新增付费套餐、信用卡或专用 IP。状态保持进行中。
 
 **本轮登记（2026-08-09）：** 开放注册前的 Sub2API 域名邮箱可行性与配置调研，状态：进行中。范围为盘点 Sub2API 注册验证/找回密码等邮件能力、当前生产配置与域名 DNS 条件，并形成可执行的邮件服务商、发信域名、SMTP/DNS、安全和上线验证建议；本轮默认只读调研，不修改生产配置、不开放注册、不发送真实用户邮件。当前工作区为根目录 `main`，保留“新建运营界面”“优化账号卡片”保护例外，以及现有发布器修复和发布证据改动。
+
+**本轮调研结论（2026-08-09）：** 状态：准备完成（非终态）。生产已配置 Resend SMTP `smtp.resend.com:465`、TLS、发件人 `星桥AI <no-reply@xingqiaolab.top>` 和脱敏凭据，SMTP 连接/认证测试成功；公开 DNS 已具备 Resend DKIM、`send` 子域 SPF/MX、根域 SPF/DMARC，并由腾讯企业邮继续承接根域收件，因此可以直接使用现有域名发送 Sub2API 事务邮件。当前生产实际为 `registration_enabled=true`、`invitation_code_enabled=true`、`email_verify_enabled=false`、`password_reset_enabled=false`，即注册功能已开但仍受邀请码门禁；`frontend_url` 为空、Turnstile/腾讯验证码均未启用、邮箱白名单仅 QQ/Gmail/163，尚不满足取消邀请码公开注册条件。本轮未发送邮件、未修改生产配置、未开放注册；下一轮须先配置前端 URL 与 CAPTCHA，在邀请码门禁下完成多邮箱真实投递、注册和密码重置端到端验收，再决定白名单并最后关闭邀请码。证据见 [域名邮箱与注册准备度报告](../superpowers/reports/2026-08-09-domain-email-registration-readiness.md)。
 
 **本轮登记（2026-08-09）：** 客户 `client:56eb09d6-14c5-4942-986d-574f5da98e41` 经 SHUAI（账号 `#135`）调用 `gpt-image-2 /v1/images/edits` 的上游成本异常排查，后续范围扩大到“生图”分组全部上游账号，状态：进行中。范围仅限只读核对生产请求、用量、账号定价配置和成本写入链路；本轮不修改计费逻辑、不部署，当前工作区为根目录 `main`，并保留“新建运营界面”“优化账号卡片”保护例外及现有未跟踪发布证据。
 
@@ -30,12 +26,15 @@
 **本轮 Task 3 实现（2026-08-09）：** 统一扣费命令、legacy 兜底扣费和账号配额通知已改为消费解析后的最终 `account_cost`；无快照调用者继续回退 `total_cost × account_rate_multiplier`，客户余额、订阅、API Key 配额与限流继续使用 `actual_cost`。聚焦扣费测试和 `go vet ./internal/service` 已通过；数据库集成测试仍受本机 rootless Docker 缺失限制，尚未合并、推送、部署或线上验证，状态：进行中。
 **本轮 Task 4 实现（2026-08-09）：** 账号统计、趋势、分组/用户聚合、仪表盘、小时聚合和账号盈利支出已统一为 `account_cost` 优先、历史空值回退旧公式；管理员 DTO/用量表/tooltip/导出新增最终账号成本，普通用户 DTO 继续隐藏全部账号成本字段。相关 backend unit 套件、20 项前端定向测试、前端类型检查和 Go vet 已通过；尚未合并、推送、部署或线上验证，状态：进行中。
 **本轮 Task 5 实现（2026-08-09）：** 已增加默认只读、仅显式 `--apply` 写入的生产配置脚本；写模式使用单个 SERIALIZABLE 事务、表锁和冲突守卫，绑定唯一“生图”分组并配置 1K/2K/4K 固定成本，不写客户定价、不改账号倍率或历史流水。shell 合同测试和 Bash 语法检查通过；当前环境无 `shellcheck`，尚未执行生产数据库检查/写入，状态：进行中。
+**本轮生图固定成本合并与推送（2026-08-09）：** 候选已吸收最新 `main` 并快进合并到根 `main`；最终提交 `15cf3303d6b8caa16d11978d26bf160ed71b0efe`、树 `f987666cc18e00b146e8c6d5cd2a037fdc9dbe62` 已推送至 `origin/main`。合并后的后端全量测试与 vet、前端类型检查和 20 项定向测试、配置合同、蓝绿宿主回归及 diff 检查通过；`0600` 证据为 `/private/tmp/sub2api-image-account-cost-15cf3303d.json`。尚未部署、应用生产配置或线上验证，状态保持进行中。
 
 **本轮生产发布（2026-08-09）：** 状态：进行中。范围为当前 `main@e639cd494` 的 Sub2API 官方核心与星桥定制外置实现，以及“优化账号卡片”最终悬浮修复提交 `8562ca848774a28969793a9135fc9155aad3c94f`；明确排除“优化调度” worktree `/Users/gongtengxinwen/Documents/sub2api-upstream-resilience-spec` 的 8 个领先提交和当前未提交改动。发布必须先将账号卡片提交移植到 `main`，在合并后的 `main` 完成专项回归、构建、迁移/发布预检后推送并走本地/宿主蓝绿链；如发生不可用，必须在 5 分钟内完成切换或回退。只有推送、部署和线上验收全部通过后才能标记完成。
 
 **本轮发布器修复（2026-08-09）：** 在生产发布前发现 host executor 的维护停服路径仍缺少单次操作 watchdog、部分停服失败时的恢复武装，以及回滚前旧 API readiness 的真实性校验；状态：进行中。修复必须先以 TDD 红灯复现，再由独立代理范围复审；修复只更新发布器脚本和回归测试，不重启或重建当前生产应用，不触碰“优化调度”保护 worktree。
 
 **本轮发布器修复 Round 2（2026-08-09）：** 已按 RED→GREEN 完成每个停服后命令的剩余维护窗口 watchdog、stop 执行前恢复武装、旧 API/worker 镜像与健康证明、公共 API readiness、共享 PostgreSQL/Redis/Caddy 身份复核及 truthful rollback record。聚焦 maintenance 套件、完整 host executor matrix、Bash 语法和 diff 检查均通过；正式实现报告为 [`docs/superpowers/reports/2026-08-09-host-executor-round2-implementation.md`](../superpowers/reports/2026-08-09-host-executor-round2-implementation.md)。尚待独立范围复审、推送及仅更新生产 host executor，状态保持进行中。
+
+**本轮发布器修复 Round 3（2026-08-09）：** 状态：进行中。范围仅限 `ops/deploy-sub2api-blue-green-host.sh`、`tests/operations/deploy_sub2api_blue_green_host_test.sh`、一份 Round 3 实施报告及本条状态；按严格 TDD 修复 end-to-end/维护期限取最小值、停服后整组操作与持久化有界、deadline/rollback 证明测试真实性。工作区盘点确认 detached 发布 worktree 落后 `main` 3 个提交；“优化调度”分支领先 11 个提交且有未提交内容、“优化账号卡片”相关分支领先 9 个提交且有未提交内容，均按当前保护例外保留，不合并、不修改；未跟踪发布证据继续保留。本轮不推送、不部署，不停止或重建 PostgreSQL、Redis、Caddy，未完成线上验证前保持进行中。
 
 **本轮账号卡片整合（2026-08-09）：** 已在 `main` 记录候选提交 `8562ca848774a28969793a9135fc9155aad3c94f` 的空 cherry-pick；原因是等价应用内 `HelpTooltip` 补丁已由祖先提交 `a0aae015a543f390d5e7bd0dd48ccb6a14421454` 整合，当前树保留其后续探测口径更新。`AccountMonitorCard` 定向测试（27 项）和前端类型检查已通过；尚未推送、部署或线上验证，发布状态保持进行中。独立审查另记录键盘无法触发该悬浮层的 P2 可访问性风险，待单独批准处理。
 

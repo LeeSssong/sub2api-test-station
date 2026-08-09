@@ -17,9 +17,13 @@ const (
 type accountMonitorRecommendationTarget struct {
 	key         string
 	name        string
-	margin      float64
 	successRate float64
-	group       AccountMonitorGroup
+	constraints []accountMonitorRecommendationConstraint
+}
+
+type accountMonitorRecommendationConstraint struct {
+	group  AccountMonitorGroup
+	margin float64
 }
 
 // EvaluateAccountMonitorGroupRecommendation derives a read-only group
@@ -33,6 +37,9 @@ func EvaluateAccountMonitorGroupRecommendation(
 	latest AccountMonitorLatest,
 	now time.Time,
 ) *AccountMonitorGroupRecommendation {
+	if accountMonitorRecommendationExcluded(currentGroupNames, latest.ModelID) {
+		return nil
+	}
 	currentTarget, isTestGroup := accountMonitorRecommendationCurrentTarget(currentGroupNames)
 	if currentTarget == "" && !isTestGroup {
 		return nil
@@ -56,6 +63,12 @@ func EvaluateAccountMonitorGroupRecommendation(
 		}
 		if reason, status := accountMonitorRecommendationHardGate(account, evidence, latest, now, true); reason != "" {
 			return accountMonitorRecommendationBlocked(isTestGroup, pro, evidence, reason, status, true)
+		}
+		if account.RateMultiplier != nil && !accountMonitorRecommendationCostAllowed(account, pro) {
+			return accountMonitorRecommendationBlocked(isTestGroup, pro, evidence, "profit_below_minimum", AccountMonitorGroupRecommendationStatusBlocked, true)
+		}
+		if reason := accountMonitorRecommendationQualityReason(evidence, pro); reason != "" {
+			return accountMonitorRecommendationBlocked(isTestGroup, pro, evidence, reason, AccountMonitorGroupRecommendationStatusBlocked, true)
 		}
 		if !isTestGroup && currentTarget == AccountMonitorGroupRecommendationTargetPro {
 			return nil
@@ -128,29 +141,55 @@ func accountMonitorRecommendationTargets(groups []AccountMonitorGroup) map[strin
 		if key == "" || key == "test" {
 			continue
 		}
-		if _, exists := targets[key]; exists {
-			continue
+		target, exists := targets[key]
+		if !exists {
+			target = accountMonitorRecommendationTarget{key: key}
 		}
-		target := accountMonitorRecommendationTarget{key: key, group: group}
 		switch key {
 		case AccountMonitorGroupRecommendationTargetPro:
 			target.name = "GPT-Pro"
-			target.margin = accountMonitorGroupRecommendationMarginPro
 			target.successRate = .98
 		case AccountMonitorGroupRecommendationTargetPlus:
 			target.name = "GPT-Plus"
-			target.margin = accountMonitorGroupRecommendationMarginPlus
 			target.successRate = .95
 		case AccountMonitorGroupRecommendationTargetSpecial:
 			target.name = "GPT-特惠"
-			target.margin = accountMonitorGroupRecommendationMarginSpecial
 			target.successRate = .70
 		default:
 			continue
 		}
+		target.constraints = append(target.constraints, accountMonitorRecommendationConstraint{
+			group: group, margin: accountMonitorRecommendationMargin(group.Name, key),
+		})
 		targets[key] = target
 	}
 	return targets
+}
+
+func accountMonitorRecommendationMargin(name, key string) float64 {
+	if key == AccountMonitorGroupRecommendationTargetPro {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		normalized = strings.ReplaceAll(normalized, " ", "")
+		if strings.Contains(normalized, "【专属】") {
+			return accountMonitorGroupRecommendationMarginSpecial
+		}
+		return accountMonitorGroupRecommendationMarginPro
+	}
+	if key == AccountMonitorGroupRecommendationTargetPlus {
+		return accountMonitorGroupRecommendationMarginPlus
+	}
+	return accountMonitorGroupRecommendationMarginSpecial
+}
+
+func accountMonitorRecommendationExcluded(groupNames []string, modelID string) bool {
+	for _, name := range groupNames {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if strings.Contains(normalized, "生图") || strings.Contains(normalized, "claude") {
+			return true
+		}
+	}
+	model := strings.ToLower(strings.TrimSpace(modelID))
+	return strings.Contains(model, "image") || strings.Contains(model, "claude")
 }
 
 func accountMonitorRecommendationNormalizeGroupName(name string) string {
@@ -172,6 +211,9 @@ func accountMonitorRecommendationNormalizeGroupName(name string) string {
 }
 
 func accountMonitorRecommendationHardGate(account Account, evidence AccountMonitorQualityEvidence, latest AccountMonitorLatest, now time.Time, codexAuth bool) (string, string) {
+	if accountMonitorRecommendationModelUnavailable(latest) {
+		return "model_unavailable", AccountMonitorGroupRecommendationStatusBlocked
+	}
 	if evidence.Source == "stale" || evidence.ObservedAt.IsZero() || (!now.IsZero() && now.Sub(evidence.ObservedAt) > accountMonitorGroupRecommendationEvidenceAge) {
 		return "sample_insufficient", AccountMonitorGroupRecommendationStatusObserve
 	}
@@ -193,6 +235,17 @@ func accountMonitorRecommendationHardGate(account Account, evidence AccountMonit
 	return "", ""
 }
 
+func accountMonitorRecommendationModelUnavailable(latest AccountMonitorLatest) bool {
+	if latest.HTTPStatus != nil && *latest.HTTPStatus == 404 {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(latest.ErrorCode))
+	return strings.Contains(code, "model_unavailable") ||
+		strings.Contains(code, "model unavailable") ||
+		strings.Contains(code, "model_not_found") ||
+		strings.Contains(code, "model not found")
+}
+
 func accountMonitorRecommendationFatalReason(latest AccountMonitorLatest) string {
 	code := strings.ToLower(strings.TrimSpace(latest.ErrorCode))
 	switch {
@@ -208,10 +261,15 @@ func accountMonitorRecommendationFatalReason(latest AccountMonitorLatest) string
 }
 
 func accountMonitorRecommendationCostAllowed(account Account, target accountMonitorRecommendationTarget) bool {
-	if account.RateMultiplier == nil {
+	if account.RateMultiplier == nil || len(target.constraints) == 0 {
 		return false
 	}
-	return *account.RateMultiplier <= target.group.RateMultiplier-target.margin
+	for _, constraint := range target.constraints {
+		if *account.RateMultiplier > constraint.group.RateMultiplier-constraint.margin {
+			return false
+		}
+	}
+	return true
 }
 
 func accountMonitorRecommendationQualityReason(evidence AccountMonitorQualityEvidence, target accountMonitorRecommendationTarget) string {
@@ -225,11 +283,21 @@ func accountMonitorRecommendationQualityReason(evidence AccountMonitorQualityEvi
 			return "success_rate_below_special"
 		}
 	}
-	weights := normalizeAccountMonitorScoreWeights(target.group.ScoreWeights)
-	if *evidence.TTFTP50MS > float64(weights.TTFTLimitMS) {
+	ttftExceeded := false
+	latencyExceeded := false
+	for _, constraint := range target.constraints {
+		weights := normalizeAccountMonitorScoreWeights(constraint.group.ScoreWeights)
+		if *evidence.TTFTP50MS > float64(weights.TTFTLimitMS) {
+			ttftExceeded = true
+		}
+		if *evidence.LatencyP95MS > float64(weights.LatencyLimitMS) {
+			latencyExceeded = true
+		}
+	}
+	if ttftExceeded {
 		return "ttft_exceeds_target"
 	}
-	if *evidence.LatencyP95MS > float64(weights.LatencyLimitMS) {
+	if latencyExceeded {
 		return "latency_exceeds_limit"
 	}
 	return ""

@@ -219,7 +219,7 @@ const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
-const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim() === 'GPT-测试分组') ?? false)
+const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
 const recommendationTargetLabel = computed(() => recommendation.value?.target_name || ({ gpt_pro: 'GPT-Pro', gpt_plus: 'GPT-Plus', gpt_special: 'GPT-特惠' }[recommendation.value?.target ?? ''] ?? '目标分组'))
 const recommendationLabel = computed(() => {

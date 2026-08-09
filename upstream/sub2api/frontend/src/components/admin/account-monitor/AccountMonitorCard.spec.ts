@@ -158,6 +158,12 @@ describe('AccountMonitorCard', () => {
 		expect(content?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
 	})
 
+	it('normalizes test-group case and ASCII spaces before deciding whether to show a formal warning', () => {
+		const wrapper = mountCard({ account: { ...account, group_names: ['  gPt - 测试 分组  '], group_recommendation: recommendation } })
+		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain('推荐：GPT-Pro')
+		expect(wrapper.find('[data-test="recommendation-warning"]').exists()).toBe(false)
+	})
+
 	it('keeps formal matching or legacy rows free of recommendation text and warning icons', () => {
 		const wrapper = mountCard({ account: { ...account, group_names: ['GPT-Pro'] } })
 		expect(wrapper.find('[data-test="group-recommendation"]').exists()).toBe(false)

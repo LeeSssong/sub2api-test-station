@@ -120,6 +120,11 @@ func LastCheckedAt(v time.Time) predicate.ChannelMonitor {
 	return predicate.ChannelMonitor(sql.FieldEQ(FieldLastCheckedAt, v))
 }
 
+// HistoryStartedAt applies equality check predicate on the "history_started_at" field. It's identical to HistoryStartedAtEQ.
+func HistoryStartedAt(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldEQ(FieldHistoryStartedAt, v))
+}
+
 // CreatedBy applies equality check predicate on the "created_by" field. It's identical to CreatedByEQ.
 func CreatedBy(v int64) predicate.ChannelMonitor {
 	return predicate.ChannelMonitor(sql.FieldEQ(FieldCreatedBy, v))
@@ -823,6 +828,46 @@ func LastCheckedAtIsNil() predicate.ChannelMonitor {
 // LastCheckedAtNotNil applies the NotNil predicate on the "last_checked_at" field.
 func LastCheckedAtNotNil() predicate.ChannelMonitor {
 	return predicate.ChannelMonitor(sql.FieldNotNull(FieldLastCheckedAt))
+}
+
+// HistoryStartedAtEQ applies the EQ predicate on the "history_started_at" field.
+func HistoryStartedAtEQ(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldEQ(FieldHistoryStartedAt, v))
+}
+
+// HistoryStartedAtNEQ applies the NEQ predicate on the "history_started_at" field.
+func HistoryStartedAtNEQ(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldNEQ(FieldHistoryStartedAt, v))
+}
+
+// HistoryStartedAtIn applies the In predicate on the "history_started_at" field.
+func HistoryStartedAtIn(vs ...time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldIn(FieldHistoryStartedAt, vs...))
+}
+
+// HistoryStartedAtNotIn applies the NotIn predicate on the "history_started_at" field.
+func HistoryStartedAtNotIn(vs ...time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldNotIn(FieldHistoryStartedAt, vs...))
+}
+
+// HistoryStartedAtGT applies the GT predicate on the "history_started_at" field.
+func HistoryStartedAtGT(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldGT(FieldHistoryStartedAt, v))
+}
+
+// HistoryStartedAtGTE applies the GTE predicate on the "history_started_at" field.
+func HistoryStartedAtGTE(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldGTE(FieldHistoryStartedAt, v))
+}
+
+// HistoryStartedAtLT applies the LT predicate on the "history_started_at" field.
+func HistoryStartedAtLT(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldLT(FieldHistoryStartedAt, v))
+}
+
+// HistoryStartedAtLTE applies the LTE predicate on the "history_started_at" field.
+func HistoryStartedAtLTE(v time.Time) predicate.ChannelMonitor {
+	return predicate.ChannelMonitor(sql.FieldLTE(FieldHistoryStartedAt, v))
 }
 
 // CreatedByEQ applies the EQ predicate on the "created_by" field.

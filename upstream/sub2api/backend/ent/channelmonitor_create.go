@@ -179,6 +179,20 @@ func (_c *ChannelMonitorCreate) SetNillableLastCheckedAt(v *time.Time) *ChannelM
 	return _c
 }
 
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (_c *ChannelMonitorCreate) SetHistoryStartedAt(v time.Time) *ChannelMonitorCreate {
+	_c.mutation.SetHistoryStartedAt(v)
+	return _c
+}
+
+// SetNillableHistoryStartedAt sets the "history_started_at" field if the given value is not nil.
+func (_c *ChannelMonitorCreate) SetNillableHistoryStartedAt(v *time.Time) *ChannelMonitorCreate {
+	if v != nil {
+		_c.SetHistoryStartedAt(*v)
+	}
+	return _c
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_c *ChannelMonitorCreate) SetCreatedBy(v int64) *ChannelMonitorCreate {
 	_c.mutation.SetCreatedBy(v)
@@ -337,6 +351,10 @@ func (_c *ChannelMonitorCreate) defaults() {
 		v := channelmonitor.DefaultJitterSeconds
 		_c.mutation.SetJitterSeconds(v)
 	}
+	if _, ok := _c.mutation.HistoryStartedAt(); !ok {
+		v := channelmonitor.DefaultHistoryStartedAt()
+		_c.mutation.SetHistoryStartedAt(v)
+	}
 	if _, ok := _c.mutation.ExtraHeaders(); !ok {
 		v := channelmonitor.DefaultExtraHeaders
 		_c.mutation.SetExtraHeaders(v)
@@ -429,6 +447,9 @@ func (_c *ChannelMonitorCreate) check() error {
 		if err := channelmonitor.JitterSecondsValidator(v); err != nil {
 			return &ValidationError{Name: "jitter_seconds", err: fmt.Errorf(`ent: validator failed for field "ChannelMonitor.jitter_seconds": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.HistoryStartedAt(); !ok {
+		return &ValidationError{Name: "history_started_at", err: errors.New(`ent: missing required field "ChannelMonitor.history_started_at"`)}
 	}
 	if _, ok := _c.mutation.CreatedBy(); !ok {
 		return &ValidationError{Name: "created_by", err: errors.New(`ent: missing required field "ChannelMonitor.created_by"`)}
@@ -530,6 +551,10 @@ func (_c *ChannelMonitorCreate) createSpec() (*ChannelMonitor, *sqlgraph.CreateS
 	if value, ok := _c.mutation.LastCheckedAt(); ok {
 		_spec.SetField(channelmonitor.FieldLastCheckedAt, field.TypeTime, value)
 		_node.LastCheckedAt = &value
+	}
+	if value, ok := _c.mutation.HistoryStartedAt(); ok {
+		_spec.SetField(channelmonitor.FieldHistoryStartedAt, field.TypeTime, value)
+		_node.HistoryStartedAt = value
 	}
 	if value, ok := _c.mutation.CreatedBy(); ok {
 		_spec.SetField(channelmonitor.FieldCreatedBy, field.TypeInt64, value)
@@ -849,6 +874,18 @@ func (u *ChannelMonitorUpsert) UpdateLastCheckedAt() *ChannelMonitorUpsert {
 // ClearLastCheckedAt clears the value of the "last_checked_at" field.
 func (u *ChannelMonitorUpsert) ClearLastCheckedAt() *ChannelMonitorUpsert {
 	u.SetNull(channelmonitor.FieldLastCheckedAt)
+	return u
+}
+
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (u *ChannelMonitorUpsert) SetHistoryStartedAt(v time.Time) *ChannelMonitorUpsert {
+	u.Set(channelmonitor.FieldHistoryStartedAt, v)
+	return u
+}
+
+// UpdateHistoryStartedAt sets the "history_started_at" field to the value that was provided on create.
+func (u *ChannelMonitorUpsert) UpdateHistoryStartedAt() *ChannelMonitorUpsert {
+	u.SetExcluded(channelmonitor.FieldHistoryStartedAt)
 	return u
 }
 
@@ -1210,6 +1247,20 @@ func (u *ChannelMonitorUpsertOne) UpdateLastCheckedAt() *ChannelMonitorUpsertOne
 func (u *ChannelMonitorUpsertOne) ClearLastCheckedAt() *ChannelMonitorUpsertOne {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.ClearLastCheckedAt()
+	})
+}
+
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (u *ChannelMonitorUpsertOne) SetHistoryStartedAt(v time.Time) *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetHistoryStartedAt(v)
+	})
+}
+
+// UpdateHistoryStartedAt sets the "history_started_at" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertOne) UpdateHistoryStartedAt() *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateHistoryStartedAt()
 	})
 }
 
@@ -1750,6 +1801,20 @@ func (u *ChannelMonitorUpsertBulk) UpdateLastCheckedAt() *ChannelMonitorUpsertBu
 func (u *ChannelMonitorUpsertBulk) ClearLastCheckedAt() *ChannelMonitorUpsertBulk {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.ClearLastCheckedAt()
+	})
+}
+
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (u *ChannelMonitorUpsertBulk) SetHistoryStartedAt(v time.Time) *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetHistoryStartedAt(v)
+	})
+}
+
+// UpdateHistoryStartedAt sets the "history_started_at" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertBulk) UpdateHistoryStartedAt() *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateHistoryStartedAt()
 	})
 }
 

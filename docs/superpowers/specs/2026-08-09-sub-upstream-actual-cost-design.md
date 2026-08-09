@@ -84,4 +84,3 @@ GET /api/v1/admin/usage/:id/upstream-cost
 - 后台返回的 `profit` 严格等于本地 `actual_cost - upstream actual_cost`，上游真实费用为 0 时仍是已确认数据。
 - 管理员界面没有第二个“本站请求 ID”，也没有估算成本或 relay-ops 授权依赖。
 - 普通用户接口和界面行为不变。
-

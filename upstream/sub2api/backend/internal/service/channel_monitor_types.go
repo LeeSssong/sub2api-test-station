@@ -28,23 +28,24 @@ const (
 
 // ChannelMonitor 渠道监控配置（service 层模型，不直接暴露 ent 类型）。
 type ChannelMonitor struct {
-	ID              int64
-	Name            string
-	Provider        string
-	APIMode         string
-	Endpoint        string
-	APIKey          string // 解密后的明文 API Key（仅在 service 内部使用，handler 层不应直接序列化返回）
-	PrimaryModel    string
-	ExtraModels     []string
-	GroupName       string
-	GroupID         *int64
-	Enabled         bool
-	IntervalSeconds int
-	JitterSeconds   int // 每次调度 ± [0, jitter] 的随机偏移（秒），0 = 固定间隔
-	LastCheckedAt   *time.Time
-	CreatedBy       int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID               int64
+	Name             string
+	Provider         string
+	APIMode          string
+	Endpoint         string
+	APIKey           string // 解密后的明文 API Key（仅在 service 内部使用，handler 层不应直接序列化返回）
+	PrimaryModel     string
+	ExtraModels      []string
+	GroupName        string
+	GroupID          *int64
+	Enabled          bool
+	IntervalSeconds  int
+	JitterSeconds    int // 每次调度 ± [0, jitter] 的随机偏移（秒），0 = 固定间隔
+	LastCheckedAt    *time.Time
+	HistoryStartedAt time.Time
+	CreatedBy        int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 
 	// 请求自定义快照（来自模板拷贝 or 用户手填，运行时直接读取）
 	TemplateID       *int64            // 仅用于 UI 分组 + 一键应用，运行时不用

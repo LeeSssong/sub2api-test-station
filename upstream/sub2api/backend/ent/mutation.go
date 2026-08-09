@@ -14910,6 +14910,7 @@ type ChannelMonitorMutation struct {
 	jitter_seconds          *int
 	addjitter_seconds       *int
 	last_checked_at         *time.Time
+	history_started_at      *time.Time
 	created_by              *int64
 	addcreated_by           *int64
 	extra_headers           *map[string]string
@@ -15682,6 +15683,42 @@ func (m *ChannelMonitorMutation) ResetLastCheckedAt() {
 	delete(m.clearedFields, channelmonitor.FieldLastCheckedAt)
 }
 
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (m *ChannelMonitorMutation) SetHistoryStartedAt(t time.Time) {
+	m.history_started_at = &t
+}
+
+// HistoryStartedAt returns the value of the "history_started_at" field in the mutation.
+func (m *ChannelMonitorMutation) HistoryStartedAt() (r time.Time, exists bool) {
+	v := m.history_started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHistoryStartedAt returns the old "history_started_at" field's value of the ChannelMonitor entity.
+// If the ChannelMonitor object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelMonitorMutation) OldHistoryStartedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHistoryStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHistoryStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHistoryStartedAt: %w", err)
+	}
+	return oldValue.HistoryStartedAt, nil
+}
+
+// ResetHistoryStartedAt resets all changes to the "history_started_at" field.
+func (m *ChannelMonitorMutation) ResetHistoryStartedAt() {
+	m.history_started_at = nil
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (m *ChannelMonitorMutation) SetCreatedBy(i int64) {
 	m.created_by = &i
@@ -16090,7 +16127,7 @@ func (m *ChannelMonitorMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ChannelMonitorMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.created_at != nil {
 		fields = append(fields, channelmonitor.FieldCreatedAt)
 	}
@@ -16135,6 +16172,9 @@ func (m *ChannelMonitorMutation) Fields() []string {
 	}
 	if m.last_checked_at != nil {
 		fields = append(fields, channelmonitor.FieldLastCheckedAt)
+	}
+	if m.history_started_at != nil {
+		fields = append(fields, channelmonitor.FieldHistoryStartedAt)
 	}
 	if m.created_by != nil {
 		fields = append(fields, channelmonitor.FieldCreatedBy)
@@ -16189,6 +16229,8 @@ func (m *ChannelMonitorMutation) Field(name string) (ent.Value, bool) {
 		return m.JitterSeconds()
 	case channelmonitor.FieldLastCheckedAt:
 		return m.LastCheckedAt()
+	case channelmonitor.FieldHistoryStartedAt:
+		return m.HistoryStartedAt()
 	case channelmonitor.FieldCreatedBy:
 		return m.CreatedBy()
 	case channelmonitor.FieldTemplateID:
@@ -16238,6 +16280,8 @@ func (m *ChannelMonitorMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldJitterSeconds(ctx)
 	case channelmonitor.FieldLastCheckedAt:
 		return m.OldLastCheckedAt(ctx)
+	case channelmonitor.FieldHistoryStartedAt:
+		return m.OldHistoryStartedAt(ctx)
 	case channelmonitor.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
 	case channelmonitor.FieldTemplateID:
@@ -16361,6 +16405,13 @@ func (m *ChannelMonitorMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastCheckedAt(v)
+		return nil
+	case channelmonitor.FieldHistoryStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHistoryStartedAt(v)
 		return nil
 	case channelmonitor.FieldCreatedBy:
 		v, ok := value.(int64)
@@ -16574,6 +16625,9 @@ func (m *ChannelMonitorMutation) ResetField(name string) error {
 		return nil
 	case channelmonitor.FieldLastCheckedAt:
 		m.ResetLastCheckedAt()
+		return nil
+	case channelmonitor.FieldHistoryStartedAt:
+		m.ResetHistoryStartedAt()
 		return nil
 	case channelmonitor.FieldCreatedBy:
 		m.ResetCreatedBy()

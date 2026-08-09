@@ -90,7 +90,7 @@
         :completeness="readModel.completeness.value"
         :calculation-version="readModel.calculationVersion.value"
         :degraded="controlPlaneDegraded || readModel.degraded.value"
-        :source-label="usingControlPlane ? '控制面' : '现有系统'"
+        source-label="现有系统"
         @retry="load(activeRange)"
       />
 
@@ -251,7 +251,6 @@ const readMode = getControlPlaneReadMode('account_monitor')
 const projection = ref<AccountMonitorProjection | null>(null)
 const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
 const controlPlaneDegraded = ref(false)
-const usingControlPlane = ref(false)
 const readModel = useReadModelFreshness(controlPlaneResponse)
 const activeRange = ref<AccountMonitorRange>('24h')
 const pendingRange = ref<AccountMonitorRange | null>(null)
@@ -380,34 +379,20 @@ function selectGroup(groupID: number | null, event: MouseEvent): void {
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
-function asCompatibleProjection(value: unknown, range: AccountMonitorRange): AccountMonitorProjection | null {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<AccountMonitorProjection>
-  return candidate.range === range && Array.isArray(candidate.accounts) && Array.isArray(candidate.groups)
-    ? candidate as AccountMonitorProjection
-    : null
-}
-
-async function loadControlPlane(range: AccountMonitorRange, generation: number): Promise<AccountMonitorProjection | null> {
+async function loadControlPlane(range: AccountMonitorRange, generation: number): Promise<void> {
   controlPlaneDegraded.value = false
-  usingControlPlane.value = false
   try {
     const response = await controlPlaneAPI.monitor({ range })
-    if (generation !== loadGeneration) return null
+    if (generation !== loadGeneration) return
     controlPlaneResponse.value = response
-    const compatible = asCompatibleProjection(response.items, range)
-    if (readMode === 'external_primary' && compatible) {
-      usingControlPlane.value = true
-      return compatible
-    }
-    if (readMode === 'external_primary' && !compatible) controlPlaneDegraded.value = true
-    return null
+    // The Task 4 projection is narrower than the complete monitor contract.
+    // Do not promote it until Task 9 proves the mapping and comparison gate.
+    if (readMode === 'external_primary') controlPlaneDegraded.value = true
   } catch {
     if (generation === loadGeneration) {
       controlPlaneResponse.value = null
       controlPlaneDegraded.value = true
     }
-    return null
   }
 }
 
@@ -422,11 +407,9 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   try {
     const legacyResult = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
-    const controlPlaneResult = readMode === 'legacy_only'
-      ? null
-      : await loadControlPlane(range, generation)
+    if (readMode !== 'legacy_only') await loadControlPlane(range, generation)
     if (controller.signal.aborted || generation !== loadGeneration) return false
-    const result = controlPlaneResult ?? legacyResult
+    const result = legacyResult
     if (result.range !== range) {
       throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
     }

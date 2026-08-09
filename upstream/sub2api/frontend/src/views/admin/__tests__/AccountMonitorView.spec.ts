@@ -377,6 +377,31 @@ describe('admin account monitor view V3', () => {
     expect(showError).not.toHaveBeenCalledWith('control plane unavailable')
   })
 
+  it.each([
+    ['a complete-looking response', { items: projection('24h'), freshness: { completeness: 'complete', calculation_version: 'accounts-v1' } }],
+    ['an incomplete response', { items: { range: '24h', accounts: [], groups: [] }, freshness: { completeness: 'partial', calculation_version: 'accounts-v1' } }],
+  ])('keeps the legacy monitor source and degrades external_primary for %s', async (_label, externalResponse) => {
+    readMode.value = 'external_primary'
+    controlPlaneMonitor.mockResolvedValueOnce(externalResponse)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it.each([401, 403])('keeps the monitor page local when the control plane returns %s', async (status) => {
+    readMode.value = 'external_primary'
+    controlPlaneMonitor.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(showError).not.toHaveBeenCalledWith('control plane rejected request')
+  })
+
   it('does not load reconciled cost guards for account cards', async () => {
     mountView()
     await flushPromises()

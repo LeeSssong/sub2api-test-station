@@ -86,7 +86,7 @@
           :completeness="readModel.completeness.value"
           :calculation-version="readModel.calculationVersion.value"
           :degraded="controlPlaneDegraded || readModel.degraded.value"
-          :source-label="usingControlPlane ? '控制面' : '现有系统'"
+          source-label="现有系统"
           @retry="load"
         />
 
@@ -183,7 +183,6 @@ const error = ref<string | null>(null)
 const data = ref<AccountProfitabilityResponse | null>(null)
 const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
 const controlPlaneDegraded = ref(false)
-const usingControlPlane = ref(false)
 const readModel = useReadModelFreshness(controlPlaneResponse)
 
 const ranges: { value: Range }[] = [{ value: 'today' }, { value: '7d' }, { value: '30d' }, { value: 'month' }]
@@ -293,31 +292,18 @@ function statusLabel(status: string): string {
 const SourceBadge = (props: { source: AccountProfitabilitySource }) => h('span', { class: 'inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200' }, sourceLabel(props.source))
 const StatusBadge = (props: { status: string }) => h('span', { class: props.status === 'pending' ? 'inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }, statusLabel(props.status))
 
-function asCompatibleResponse(value: unknown): AccountProfitabilityResponse | null {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<AccountProfitabilityResponse>
-  return Array.isArray(candidate.rows) && Boolean(candidate.summary) && typeof candidate.start_date === 'string' && typeof candidate.end_date === 'string'
-    ? candidate as AccountProfitabilityResponse
-    : null
-}
-
-async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<AccountProfitabilityResponse | null> {
+async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<void> {
   controlPlaneDegraded.value = false
-  usingControlPlane.value = false
   try {
     const response = await controlPlaneAPI.profitability(params)
     controlPlaneResponse.value = response
-    const compatible = asCompatibleResponse(response.items)
-    if (readMode === 'external_primary' && compatible) {
-      usingControlPlane.value = true
-      return compatible
-    }
-    if (readMode === 'external_primary' && !compatible) controlPlaneDegraded.value = true
+    // The Task 4 projection is narrower than the complete profitability
+    // contract. Task 9 must prove mapping and comparison before promotion.
+    if (readMode === 'external_primary') controlPlaneDegraded.value = true
   } catch {
     controlPlaneResponse.value = null
     controlPlaneDegraded.value = true
   }
-  return null
 }
 
 async function load() {
@@ -327,8 +313,8 @@ async function load() {
   try {
     const params = { start_date: startDate.value, end_date: endDate.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     const legacyResult = await adminAPI.accountProfitability.get(params)
-    const controlPlaneResult = readMode === 'legacy_only' ? null : await loadControlPlane(params)
-    data.value = controlPlaneResult ?? legacyResult
+    if (readMode !== 'legacy_only') await loadControlPlane(params)
+    data.value = legacyResult
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : t('admin.accountProfitability.loadError')
     error.value = message

@@ -77,6 +77,31 @@ describe('AccountProfitabilityView', () => {
     expect(wrapper.text()).toContain('完整性：complete')
   })
 
+  it.each([
+    ['a complete-looking response', { items: response, freshness: { completeness: 'complete', calculation_version: 'profitability-v1' } }],
+    ['an incomplete response', { items: { start_date: response.start_date, end_date: response.end_date, rows: [], summary: {} }, freshness: { completeness: 'partial', calculation_version: 'profitability-v1' } }],
+  ])('keeps the legacy profitability source and degrades external_primary for %s', async (_label, externalResponse) => {
+    readMode.value = 'external_primary'
+    controlPlaneProfitability.mockResolvedValueOnce(externalResponse)
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it.each([401, 403])('keeps profitability local when the control plane returns %s', async (status) => {
+    readMode.value = 'external_primary'
+    controlPlaneProfitability.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(showError).not.toHaveBeenCalledWith('control plane rejected request')
+  })
+
   it('filters by source and pending status', async () => {
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
     await flushPromises()

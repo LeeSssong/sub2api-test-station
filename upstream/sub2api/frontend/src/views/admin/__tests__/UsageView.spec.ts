@@ -235,6 +235,16 @@ describe('admin UsageView route filters', () => {
     expect(wrapper.text()).toContain('完整性：complete')
   })
 
+  it.each([401, 403])('keeps usage local when the control plane returns %s', async (status) => {
+    readMode.value = 'external_primary'
+    controlPlaneLedger.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
   it('does not apply a stale routed user label after user_id changes', async () => {
     routeQuery.user_id = '42'
     let resolveLookup!: (user: { id: number; email: string }) => void

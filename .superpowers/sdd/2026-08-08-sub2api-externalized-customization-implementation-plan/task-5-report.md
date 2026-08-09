@@ -98,3 +98,75 @@ comparison gates and evidence needed before a production cutover.
 
 `e26649ab4b88e7b57852c855373f2cd71cedd8e6`
 `feat: dual-read admin views without changing routes`
+
+## Fix Round 1
+
+### Status
+
+DONE. The project-progress ledger remains `进行中`; this correction did not
+push, deploy, or perform online verification.
+
+### RED Evidence
+
+The new `external_primary` page tests first failed in four cases. A
+complete-looking control-plane monitor/profitability response was labelled
+`来源：控制面`, while a shallow incomplete response replaced the legacy cards or
+profitability rows. Those failures demonstrated that the old shape guards were
+not sufficient to preserve the legacy business contract.
+
+The added 401/403 page tests cover monitor, profitability, and usage local
+degradation. The new integration-level client test invokes
+`controlPlaneAPI.monitor` through the real Axios client and response
+interceptor, rather than testing a mocked request option.
+
+### GREEN Evidence
+
+```text
+cd upstream/sub2api/frontend
+pnpm vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts \
+  src/views/admin/__tests__/AccountProfitabilityView.spec.ts \
+  src/views/admin/__tests__/UsageView.spec.ts \
+  src/api/__tests__/client.spec.ts \
+  src/__tests__/controlPlaneApi.spec.ts
+```
+
+Passed: 5 files, 83 tests.
+
+```text
+pnpm vitest run
+pnpm lint
+pnpm typecheck
+pnpm build
+git diff --check
+```
+
+Passed: 231 test files and 1657 tests; lint, typecheck, build, and diff check
+all exited 0. Existing Vue/JSDOM warnings remain unrelated to this fix.
+
+### Fixes
+
+- Account Monitor and Account Profitability now always render their legacy
+  response in `external_primary`, even if the control-plane response appears
+  complete. The control-plane result remains observable only as freshness
+  metadata and a local degraded state until Task 9 proves the full mapping and
+  cross-source comparison gate.
+- Degraded status now names the actual active source (`现有系统`) as well as the
+  control-plane failure, so the display cannot imply a promoted external data
+  source.
+- Page regressions cover complete-looking and incomplete external responses,
+  plus 401 and 403 local degradation for monitor, profitability, and usage.
+- The real client/interceptor regression confirms a control-plane 401 carries
+  `skipSessionRecovery`, preserves access and refresh tokens, and leaves the
+  administrator route unchanged without a login redirect.
+
+### Self-Review And Residual Concern
+
+The correction is limited to the two external-primary selection paths, shared
+read-model status display, and focused page/client tests. No routes, menus,
+auth implementation, deployment, or workflow files changed. The deliberate
+residual limitation is that `external_primary` is not a production promotion
+mechanism until Task 9 supplies complete field mapping and comparison evidence.
+
+### Fix Commit
+
+Pending final Fix Round 1 commit.

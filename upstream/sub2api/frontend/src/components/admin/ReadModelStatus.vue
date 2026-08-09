@@ -3,6 +3,7 @@
     <span :class="degraded ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'">
       {{ degraded ? '控制面暂时不可用' : `来源：${sourceLabel}` }}
     </span>
+    <span v-if="degraded">来源：{{ sourceLabel }}</span>
     <span v-if="generatedAt">更新于 {{ formatTime(generatedAt) }}</span>
     <span>完整性：{{ completeness }}</span>
     <span v-if="calculationVersion !== 'unknown'">计算版本：{{ calculationVersion }}</span>
@@ -18,4 +19,3 @@ const formatTime = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 </script>
-

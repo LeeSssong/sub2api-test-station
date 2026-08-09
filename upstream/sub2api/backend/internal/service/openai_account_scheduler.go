@@ -2301,6 +2301,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 			for {
 				selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, sessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, useUpstreamTokenCost)
 				if err != nil {
+					if fallback := s.selectAccountWithDisabledSchedulerHalfOpenFallback(ctx, groupID, sessionHash, requestedModel, effectiveExcludedIDs, requiredTransport, requiredCapability, requiredImageCapability, requireCompact, platform, useUpstreamTokenCost, err); fallback != nil {
+						return fallback, decision, nil
+					}
 					return nil, decision, err
 				}
 				if selection == nil || selection.Account == nil {
@@ -2326,6 +2329,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		for {
 			selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, sessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, useUpstreamTokenCost)
 			if err != nil {
+				if fallback := s.selectAccountWithDisabledSchedulerHalfOpenFallback(ctx, groupID, sessionHash, requestedModel, effectiveExcludedIDs, requiredTransport, requiredCapability, requiredImageCapability, requireCompact, platform, useUpstreamTokenCost, err); fallback != nil {
+					return fallback, decision, nil
+				}
 				return nil, decision, err
 			}
 			if selection == nil || selection.Account == nil {
@@ -2387,6 +2393,52 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		ExcludedIDs:             excludedIDs,
 		ForcedAccountID:         openAIForcedAccountFromContext(ctx),
 	})
+}
+
+func (s *OpenAIGatewayService) selectAccountWithDisabledSchedulerHalfOpenFallback(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requiredImageCapability OpenAIImagesCapability,
+	requireCompact bool,
+	platform string,
+	useUpstreamTokenCost bool,
+	legacyErr error,
+) *AccountSelectionResult {
+	var exhaustedErr openAINoAvailableSelectionError
+	legacyPoolExhausted := legacyErr == ErrNoAvailableAccounts || legacyErr == ErrNoAvailableCompactAccounts || errors.As(legacyErr, &exhaustedErr)
+	if s == nil || !legacyPoolExhausted {
+		return nil
+	}
+
+	// halfOpenProbe makes the existing full-gate scheduler accept only the
+	// all-cooldown branch. If any otherwise eligible healthy candidate exists,
+	// lease acquisition is impossible and the legacy error remains authoritative.
+	scheduler := &defaultOpenAIAccountScheduler{service: s, stats: s.openaiAccountStats}
+	selection, _, _, _, err := scheduler.selectByLoadBalance(ctx, OpenAIAccountScheduleRequest{
+		GroupID:                 groupID,
+		Platform:                platform,
+		SessionHash:             sessionHash,
+		UseUpstreamTokenCost:    useUpstreamTokenCost,
+		RequestedModel:          requestedModel,
+		RequiredTransport:       requiredTransport,
+		RequiredCapability:      requiredCapability,
+		RequiredImageCapability: requiredImageCapability,
+		RequireCompact:          requireCompact,
+		ExcludedIDs:             excludedIDs,
+		halfOpenProbe:           true,
+	})
+	if err != nil || selection == nil || !selection.HalfOpenProbe || selection.WaitPlan != nil {
+		if selection != nil && selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		return nil
+	}
+	return selection
 }
 
 func accountSupportsOpenAICapabilities(account *Account, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {

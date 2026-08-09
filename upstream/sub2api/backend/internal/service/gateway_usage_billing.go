@@ -1077,19 +1077,23 @@ func (s *GatewayService) buildRecordUsageLog(
 	opts *recordUsageOpts,
 ) *UsageLog {
 	durationMs := int(result.Duration.Milliseconds())
-	requestID := strings.TrimSpace(input.LogicalRequestID)
+	logicalRequestID := strings.TrimSpace(input.LogicalRequestID)
+	requestID := logicalRequestID
 	if requestID == "" {
 		requestID = resolveUsageBillingRequestID(ctx, result.RequestID)
 	}
 	if attemptID := strings.TrimSpace(input.AttemptID); attemptID != "" {
-		requestID = attemptID
+		requestID = usageLogAttemptRequestID(attemptID)
+	}
+	if logicalRequestID == "" {
+		logicalRequestID = requestID
 	}
 	usageLog := &UsageLog{
 		UserID:                 user.ID,
 		APIKeyID:               apiKey.ID,
 		AccountID:              account.ID,
 		RequestID:              requestID,
-		LogicalRequestID:       requestID,
+		LogicalRequestID:       logicalRequestID,
 		AttemptID:              strings.TrimSpace(input.AttemptID),
 		UsageCompleteness:      input.UsageCompleteness,
 		ReconciliationRequired: input.ReconciliationRequired,

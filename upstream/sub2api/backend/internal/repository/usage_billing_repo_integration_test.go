@@ -128,7 +128,7 @@ func TestUsageBillingRepositoryApply_PartialReconciliationRetryChargesOnce(t *te
 	var dedupCount int
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2",
-		cmd.LogicalRequestID, apiKey.ID,
+		cmd.RequestID, apiKey.ID,
 	).Scan(&dedupCount))
 	require.Equal(t, 1, dedupCount)
 }

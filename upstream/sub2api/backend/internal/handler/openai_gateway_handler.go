@@ -951,25 +951,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+		recordInput := buildSuccessfulOpenAIUsageRecordInput(result, apiKey, account, subscription, result.AttemptMetadata, requestHasSideEffects, quotaPlatform)
+		recordInput.InboundEndpoint, recordInput.UpstreamEndpoint = inboundEndpoint, upstreamEndpoint
+		recordInput.UserAgent, recordInput.IPAddress, recordInput.RequestPayloadHash = userAgent, clientIP, requestPayloadHash
+		recordInput.APIKeyService, recordInput.QuotaPlatform, recordInput.SessionID = h.apiKeyService, quotaPlatform, sessionID
+		recordInput.ChannelUsageFields = clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
+		recordInput.PricingAt, recordInput.CyberBlocked = pricingAt, cyberBlocked
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-				Result:             result,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				QuotaPlatform:      quotaPlatform,
-				SessionID:          sessionID,
-				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
-				PricingAt:          pricingAt,
-				CyberBlocked:       cyberBlocked,
-			}); err != nil {
+			if err := h.gatewayService.RecordUsage(ctx, recordInput); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.responses"),
 					zap.Int64("user_id", subject.UserID),
@@ -1597,25 +1586,14 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		sessionID := service.ExtractClientSessionID(c)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+		recordInput := buildSuccessfulOpenAIUsageRecordInput(result, apiKey, account, subscription, result.AttemptMetadata, requestHasSideEffects, quotaPlatform)
+		recordInput.InboundEndpoint, recordInput.UpstreamEndpoint = inboundEndpoint, upstreamEndpoint
+		recordInput.UserAgent, recordInput.IPAddress, recordInput.RequestPayloadHash = userAgent, clientIP, requestPayloadHash
+		recordInput.APIKeyService, recordInput.QuotaPlatform, recordInput.SessionID = h.apiKeyService, quotaPlatform, sessionID
+		recordInput.ChannelUsageFields = clientRequestedUsageFields(c, channelMappingMsg, reqModel, result.UpstreamModel)
+		recordInput.PricingAt, recordInput.CyberBlocked = pricingAt, cyberBlocked
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-				Result:             result,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				QuotaPlatform:      quotaPlatform,
-				SessionID:          sessionID,
-				ChannelUsageFields: clientRequestedUsageFields(c, channelMappingMsg, reqModel, result.UpstreamModel),
-				PricingAt:          pricingAt,
-				CyberBlocked:       cyberBlocked,
-			}); err != nil {
+			if err := h.gatewayService.RecordUsage(ctx, recordInput); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.messages"),
 					zap.Int64("user_id", subject.UserID),
@@ -2800,7 +2778,7 @@ func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Contex
 	h.submitUsageRecordTask(parent, task)
 }
 
-func buildFailedOpenAIUsageRecordInput(result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, metadata service.OpenAIRequestAttemptMetadata, failure service.OpenAIUpstreamFailureClass) *service.OpenAIRecordUsageInput {
+func buildFailedOpenAIUsageRecordInput(result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, metadata service.OpenAIRequestAttemptMetadata, failure service.OpenAIUpstreamFailureClass, quotaPlatform string) *service.OpenAIRecordUsageInput {
 	completeness := service.UsageCompletenessUnknown
 	if result != nil && result.UsageKnown {
 		completeness = service.UsageCompletenessPartial
@@ -2817,6 +2795,15 @@ func buildFailedOpenAIUsageRecordInput(result *service.OpenAIForwardResult, apiK
 		UsageCompleteness:      completeness,
 		ReconciliationRequired: completeness == service.UsageCompletenessPartial,
 		UnsafeToReplay:         failure.HasSideEffect || failure.OutputStarted || metadata.OutputStarted,
+		QuotaPlatform:          quotaPlatform,
+	}
+}
+
+func buildSuccessfulOpenAIUsageRecordInput(result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, metadata service.OpenAIRequestAttemptMetadata, requestHasSideEffects bool, quotaPlatform string) *service.OpenAIRecordUsageInput {
+	return &service.OpenAIRecordUsageInput{
+		Result: result, APIKey: apiKey, User: apiKey.User, Account: account, Subscription: subscription,
+		AttemptMetadata: metadata, LogicalRequestID: metadata.LogicalRequestID, AttemptID: metadata.AttemptID,
+		UnsafeToReplay: requestHasSideEffects || metadata.OutputStarted, QuotaPlatform: quotaPlatform,
 	}
 }
 
@@ -2828,9 +2815,9 @@ func (h *OpenAIGatewayHandler) recordFailedOpenAIUsageAttempt(ctx context.Contex
 		result = &service.OpenAIForwardResult{RequestID: metadata.AttemptID, Model: model}
 	}
 	result.AttemptMetadata = metadata
-	input := buildFailedOpenAIUsageRecordInput(result, apiKey, account, subscription, metadata, failure)
+	quotaPlatform := service.QuotaPlatform(ctx, apiKey)
+	input := buildFailedOpenAIUsageRecordInput(result, apiKey, account, subscription, metadata, failure, quotaPlatform)
 	input.APIKeyService = h.apiKeyService
-	input.QuotaPlatform = service.QuotaPlatform(ctx, apiKey)
 	h.submitMandatoryUsageRecordTask(ctx, func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, input); err != nil {
 			logger.L().With(zap.String("component", "handler.openai_gateway"), zap.String("attempt_id", metadata.AttemptID)).Error("openai.failed_attempt_usage_record_failed", zap.Error(err))

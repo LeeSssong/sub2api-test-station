@@ -181,7 +181,13 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		logicalRequestID = strings.TrimSpace(attemptMetadata.LogicalRequestID)
 	}
 	if logicalRequestID == "" {
-		logicalRequestID = resolveUsageBillingRequestID(ctx, result.RequestID)
+		if result.OpenAIWSMode && strings.TrimSpace(result.RequestID) != "" {
+			// A WebSocket connection can carry multiple turns, so the upstream
+			// response ID is the stable per-turn logical billing identity.
+			logicalRequestID = strings.TrimSpace(result.RequestID)
+		} else {
+			logicalRequestID = resolveUsageBillingRequestID(ctx, result.RequestID)
+		}
 	}
 	usageCompleteness := normalizeUsageCompleteness(
 		input.UsageCompleteness,
@@ -320,7 +326,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	usageLogRequestID := requestID
 	if attemptID := strings.TrimSpace(attemptMetadata.AttemptID); attemptID != "" {
-		usageLogRequestID = attemptID
+		usageLogRequestID = usageLogAttemptRequestID(attemptID)
 	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）

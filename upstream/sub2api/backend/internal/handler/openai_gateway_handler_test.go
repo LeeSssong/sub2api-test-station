@@ -168,11 +168,17 @@ func TestBuildFailedOpenAIUsageRecordInput_RecordsPartialUnsafeAttempt(t *testin
 	input := buildFailedOpenAIUsageRecordInput(result, apiKey, account, nil,
 		service.OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-failed-1", AttemptID: "logical-failed-1:1", OutputStarted: true, UsageProduced: true},
 		service.OpenAIUpstreamFailureClass{HasSideEffect: true},
+		"openai",
 	)
 	require.Equal(t, "logical-failed-1", input.LogicalRequestID)
 	require.Equal(t, "logical-failed-1:1", input.AttemptID)
 	require.Equal(t, service.UsageCompletenessPartial, input.UsageCompleteness)
 	require.True(t, input.ReconciliationRequired)
+	require.True(t, input.UnsafeToReplay)
+}
+
+func TestBuildSuccessfulOpenAIUsageRecordInput_PersistsSideEffectSafety(t *testing.T) {
+	input := buildSuccessfulOpenAIUsageRecordInput(&service.OpenAIForwardResult{Model: "gpt-5.1", UsageKnown: true}, &service.APIKey{ID: 502, User: &service.User{ID: 602}}, &service.Account{ID: 702}, nil, service.OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-success-1", AttemptID: "logical-success-1:1"}, true, "openai")
 	require.True(t, input.UnsafeToReplay)
 }
 

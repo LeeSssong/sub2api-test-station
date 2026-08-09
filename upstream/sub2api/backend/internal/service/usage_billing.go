@@ -130,6 +130,15 @@ func usageBillingDedupRequestID(logicalRequestID, requestFingerprint string) str
 	return "billing:" + hex.EncodeToString(sum[:])
 }
 
+func usageLogAttemptRequestID(attemptID string) string {
+	attemptID = strings.TrimSpace(attemptID)
+	if len(attemptID) <= 64 {
+		return attemptID
+	}
+	sum := sha256.Sum256([]byte(attemptID))
+	return "attempt:" + hex.EncodeToString(sum[:])[:56]
+}
+
 func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 	if c == nil {
 		return ""

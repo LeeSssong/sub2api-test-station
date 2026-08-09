@@ -5,12 +5,60 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUsageLogAttemptReconciliationMigration_PartitionedApplyAndConstraint(t *testing.T) {
+	ctx := context.Background()
+	name := "usage_logs_partition_probe"
+	_, err := integrationDB.ExecContext(ctx, "DROP TABLE IF EXISTS usage_logs_partition_probe CASCADE")
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `CREATE TABLE usage_logs_partition_probe (id BIGINT NOT NULL, request_id VARCHAR(64), created_at TIMESTAMPTZ NOT NULL) PARTITION BY RANGE (created_at)`)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `CREATE TABLE usage_logs_partition_probe_2026 PARTITION OF usage_logs_partition_probe FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(context.Background(), "DROP TABLE IF EXISTS usage_logs_partition_probe CASCADE")
+	})
+	sqlBytes, err := dbmigrations.FS.ReadFile("200_usage_log_attempt_reconciliation.sql")
+	require.NoError(t, err)
+	probeSQL := strings.ReplaceAll(string(sqlBytes), "usage_logs", name)
+	// Apply exactly as ApplyMigrations does: one transactional migration file.
+	tx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, probeSQL)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+
+	// A rerun must be safe under the same transactional execution model.
+	tx, err = integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, probeSQL)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	// New rows must satisfy the check constraint on the partitioned parent.
+	_, err = integrationDB.ExecContext(ctx, "INSERT INTO "+name+" (id, request_id, created_at, usage_completeness) VALUES (1, 'attempt-1', '2026-06-01', 'partial')")
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, "INSERT INTO "+name+" (id, request_id, created_at, usage_completeness) VALUES (2, 'attempt-2', '2026-06-01', 'invalid')")
+	require.Error(t, err)
+
+	var dataType string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = 'logical_request_id'", name).Scan(&dataType))
+	require.Equal(t, "character varying", dataType)
+	var requestIDLength sql.NullInt64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT character_maximum_length FROM information_schema.columns WHERE table_name = $1 AND column_name = 'request_id'", name).Scan(&requestIDLength))
+	require.True(t, requestIDLength.Valid)
+	require.EqualValues(t, 160, requestIDLength.Int64)
+	var constraintCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_constraint WHERE conrelid = $1::regclass AND conname = $2", name, name+"_usage_completeness_check").Scan(&constraintCount))
+	require.Equal(t, 1, constraintCount)
+}
 
 func TestMigrationsRunner_ConcurrentInstancesSerializeOnSessionLock(t *testing.T) {
 	const instances = 2
@@ -66,14 +114,13 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "redeem_codes", "validity_days", "integer", 0, false)
 
 	// usage_logs: billing_type used by filters/stats
+	requireColumn(t, tx, "usage_logs", "request_id", "character varying", 160, false)
 	requireColumn(t, tx, "usage_logs", "billing_type", "smallint", 0, false)
 	requireColumn(t, tx, "usage_logs", "logical_request_id", "character varying", 128, true)
 	requireColumn(t, tx, "usage_logs", "attempt_id", "character varying", 160, true)
 	requireColumn(t, tx, "usage_logs", "usage_completeness", "character varying", 16, false)
 	requireColumn(t, tx, "usage_logs", "reconciliation_required", "boolean", 0, false)
 	requireColumn(t, tx, "usage_logs", "unsafe_to_replay", "boolean", 0, false)
-	requireIndex(t, tx, "usage_logs", "idx_usage_logs_logical_request_id")
-	requireIndex(t, tx, "usage_logs", "idx_usage_logs_reconciliation_pending")
 	requireColumn(t, tx, "usage_logs", "request_type", "smallint", 0, false)
 	requireColumn(t, tx, "usage_logs", "openai_ws_mode", "boolean", 0, false)
 	requireColumn(t, tx, "usage_logs", "image_input_size", "character varying", 32, true)

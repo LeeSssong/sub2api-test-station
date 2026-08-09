@@ -629,7 +629,7 @@ restore_previous() {
       rollback_ok=false
     fi
   fi
-  if [[ "$rollback_ok" == true && "$worker_update_started" == true ]]; then
+  if [[ "$rollback_ok" == true && ( "$maintenance_stopped" == true || "$worker_update_started" == true ) ]]; then
     rollback_env="$record_root/.$attempt_id.rollback.env"
     write_release_env_values_to "$rollback_env" "$rollback_blue_image" "$rollback_green_image" "$previous_worker_image" \
       "$previous_upstream" "$previous_slot" "$candidate_slot" || rollback_ok=false
@@ -1152,8 +1152,8 @@ write_partial preflight_complete
 failure_reason=candidate_pull_failed
 if [[ "$maintenance_transition" == true ]]; then
   maintenance_window_seconds=${MAINTENANCE_UNAVAILABLE_SECONDS:-300}
-  [[ "$maintenance_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_window_seconds" -le 600 ]] \
-    || fail 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 600'
+  [[ "$maintenance_window_seconds" =~ ^[1-9][0-9]*$ && "$maintenance_window_seconds" -le 300 ]] \
+    || fail 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 300'
   maintenance_deadline_epoch=$(( $(date -u +%s) + maintenance_window_seconds ))
   trace_event 'maintenance stop api-worker'
   "${compose_current[@]}" stop sub2api-blue sub2api-green sub2api-worker >/dev/null

@@ -272,6 +272,9 @@ JSON
 		;;
 	'inspect legacy-id --format {{range .Config.Env}}{{println .}}{{end}}') printf 'SERVER_PROCESS_ROLE=all\n' ;;
   *'exec -T postgres '*'psql'*) printf '%s\n' "${FAKE_DB_HEADROOM:-30}" ;;
+  *'pull sub2api-worker')
+    [[ "$scenario" != maintenance_worker_pull_failure ]] || exit 1
+    ;;
   *'pull sub2api-green') : ;;
   *'up --no-deps -d sub2api-green')
     [[ "$scenario" != candidate_up_failure ]] || exit 1
@@ -963,6 +966,38 @@ test_authorized_maintenance_transition() {
     || fail 'maintenance rollback touched a shared service'
 }
 
+test_maintenance_window_hard_maximum() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  setup_case maintenance_window_above_five_minutes
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_window_above_five_minutes run_executor \
+    MAINTENANCE_UNAVAILABLE_SECONDS=301
+  grep -q 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 300' "$CASE_DIR/stderr" \
+    || fail 'maintenance window above five minutes was not rejected with the bounded-window error'
+  ! grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'maintenance window above five minutes stopped production services before rejection'
+}
+
+test_maintenance_pre_worker_failure_restores_previous_api() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  setup_case maintenance_pre_worker_failure_rollback
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_pre_worker_failure_rollback run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'pre-worker maintenance failure did not occur after production services stopped'
+  grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" \
+    || fail 'pre-worker maintenance failure did not restart the previous API during rollback'
+}
+
 test_caddy_reconciliation_route() {
   sed -n '/handle @relay_ops_reconciliation {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'reverse_proxy relay-ops:8100' \
     || fail 'Caddy does not preserve reconciliation proxy ordering ahead of the retired page response'
@@ -1359,6 +1394,8 @@ case "${ONLY_TEST:-all}" in
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
     test_authorized_maintenance_transition
+    test_maintenance_window_hard_maximum
+    test_maintenance_pre_worker_failure_restores_previous_api
     test_caddy_reconciliation_route
     printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
@@ -1428,8 +1465,12 @@ case "${ONLY_TEST:-all}" in
   worker-request-log) test_worker_request_failure_log_does_not_trigger_startup_failure ;;
   maintenance)
 		test_authorized_maintenance_transition
+		test_maintenance_window_hard_maximum
+		test_maintenance_pre_worker_failure_restores_previous_api
 		test_caddy_reconciliation_route
 		;;
+	maintenance-window) test_maintenance_window_hard_maximum ;;
+	maintenance-pre-worker-rollback) test_maintenance_pre_worker_failure_restores_previous_api ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

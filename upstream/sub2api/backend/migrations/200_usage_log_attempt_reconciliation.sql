@@ -10,19 +10,11 @@ ALTER TABLE usage_logs
     ADD COLUMN IF NOT EXISTS unsafe_to_replay BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Existing rows keep a nil logical ID; callers use request_id as their legacy
--- fallback. New rows are validated without scanning/relocking all partitions.
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conrelid = 'usage_logs'::regclass
-          AND conname = 'usage_logs_usage_completeness_check'
-    ) THEN
-        ALTER TABLE usage_logs
-            ADD CONSTRAINT usage_logs_usage_completeness_check
-            CHECK (usage_completeness IN ('complete', 'partial', 'unknown')) NOT VALID;
-    END IF;
-END $$;
+-- fallback. A usage-completeness CHECK is intentionally deferred: this file is
+-- run in one transaction against a partitioned parent in production. Service
+-- normalization and the repository insert boundary persist only complete,
+-- partial, or unknown; any future database constraint must be provisioned as
+-- a separate, reviewed partition-aware operation.
 
 -- Optional reporting indexes are intentionally deferred. Creating an index on
 -- a partitioned parent recursively builds every child while this migration is

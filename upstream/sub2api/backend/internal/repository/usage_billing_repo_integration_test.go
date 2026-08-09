@@ -38,7 +38,9 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:           requestID,
+		LogicalRequestID:    requestID,
+		RequestFingerprint:  "complete-balance-usage",
+		UsageCompleteness:   service.UsageCompletenessComplete,
 		APIKeyID:            apiKey.ID,
 		UserID:              user.ID,
 		AccountID:           account.ID,
@@ -76,7 +78,7 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	require.Equal(t, service.StatusAPIKeyQuotaExhausted, status)
 
 	var dedupCount int
-	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2", requestID, apiKey.ID).Scan(&dedupCount))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2", cmd.RequestID, apiKey.ID).Scan(&dedupCount))
 	require.Equal(t, 1, dedupCount)
 }
 
@@ -207,12 +209,14 @@ func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:        requestID,
-		APIKeyID:         apiKey.ID,
-		UserID:           user.ID,
-		AccountID:        0,
-		SubscriptionID:   &subscription.ID,
-		SubscriptionCost: 2.5,
+		LogicalRequestID:   requestID,
+		RequestFingerprint: "complete-subscription-usage",
+		UsageCompleteness:  service.UsageCompletenessComplete,
+		APIKeyID:           apiKey.ID,
+		UserID:             user.ID,
+		AccountID:          0,
+		SubscriptionID:     &subscription.ID,
+		SubscriptionCost:   2.5,
 	}
 
 	result1, err := repo.Apply(ctx, cmd)
@@ -246,18 +250,20 @@ func TestUsageBillingRepositoryApply_RequestFingerprintConflict(t *testing.T) {
 
 	requestID := uuid.NewString()
 	_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 1.25,
+		RequestID:         requestID,
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		BalanceCost:       1.25,
 	})
 	require.NoError(t, err)
 
 	_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 2.50,
+		RequestID:         requestID,
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		BalanceCost:       2.50,
 	})
 	require.ErrorIs(t, err, service.ErrUsageBillingRequestConflict)
 }
@@ -285,12 +291,13 @@ func TestUsageBillingRepositoryApply_UpdatesAccountQuota(t *testing.T) {
 	})
 
 	_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:        uuid.NewString(),
-		APIKeyID:         apiKey.ID,
-		UserID:           user.ID,
-		AccountID:        account.ID,
-		AccountType:      service.AccountTypeAPIKey,
-		AccountQuotaCost: 3.5,
+		RequestID:         uuid.NewString(),
+		UsageCompleteness: service.UsageCompletenessComplete,
+		APIKeyID:          apiKey.ID,
+		UserID:            user.ID,
+		AccountID:         account.ID,
+		AccountType:       service.AccountTypeAPIKey,
+		AccountQuotaCost:  3.5,
 	})
 	require.NoError(t, err)
 
@@ -339,33 +346,36 @@ func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *t
 		})
 		// 第一次低于日限额：不应入队 outbox
 		_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 4,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  4,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 0, outboxCountFor(t, accountID), "below limit should not enqueue")
 
 		// 第二次跨越日限额：应入队一次 outbox
 		_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 8,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  8,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "crossing daily limit should enqueue once")
 
 		// 再次递增（已超）：不应重复入队
 		_, err = repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 2,
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  2,
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "subsequent increments beyond limit should not re-enqueue")
@@ -376,11 +386,12 @@ func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *t
 			"quota_weekly_limit": 10.0,
 		})
 		_, err := repo.Apply(ctx, &service.UsageBillingCommand{
-			RequestID:        uuid.NewString(),
-			APIKeyID:         apiKeyID,
-			AccountID:        accountID,
-			AccountType:      service.AccountTypeAPIKey,
-			AccountQuotaCost: 15, // 单次即跨越
+			RequestID:         uuid.NewString(),
+			UsageCompleteness: service.UsageCompletenessComplete,
+			APIKeyID:          apiKeyID,
+			AccountID:         accountID,
+			AccountType:       service.AccountTypeAPIKey,
+			AccountQuotaCost:  15, // 单次即跨越
 		})
 		require.NoError(t, err)
 		require.Equal(t, 1, outboxCountFor(t, accountID), "single-shot crossing weekly limit should enqueue once")
@@ -439,10 +450,12 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
-		RequestID:   requestID,
-		APIKeyID:    apiKey.ID,
-		UserID:      user.ID,
-		BalanceCost: 1.25,
+		LogicalRequestID:   requestID,
+		RequestFingerprint: "complete-archived-usage",
+		UsageCompleteness:  service.UsageCompletenessComplete,
+		APIKeyID:           apiKey.ID,
+		UserID:             user.ID,
+		BalanceCost:        1.25,
 	}
 
 	result1, err := repo.Apply(ctx, cmd)
@@ -453,7 +466,7 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 		UPDATE usage_billing_dedup
 		SET created_at = $1
 		WHERE request_id = $2 AND api_key_id = $3
-	`, time.Now().UTC().AddDate(0, 0, -400), requestID, apiKey.ID)
+	`, time.Now().UTC().AddDate(0, 0, -400), cmd.RequestID, apiKey.ID)
 	require.NoError(t, err)
 	require.NoError(t, aggRepo.CleanupUsageBillingDedup(ctx, time.Now().UTC().AddDate(0, 0, -365)))
 

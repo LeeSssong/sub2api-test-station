@@ -107,3 +107,12 @@ func TestPrepareUsageLogInsert_AttemptAuditFields(t *testing.T) {
 		require.Contains(t, usageLogSelectColumns, column)
 	}
 }
+
+func TestPrepareUsageLogInsert_NormalizesUnsupportedUsageCompleteness(t *testing.T) {
+	log := newSessionIDUsageLog(nil)
+	log.UsageCompleteness = service.UsageCompleteness("invalid")
+
+	prepared := prepareUsageLogInsert(log)
+
+	require.Equal(t, "unknown", prepared.args[len(prepared.args)-4])
+}

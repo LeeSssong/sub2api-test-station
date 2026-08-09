@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUsageLogAttemptReconciliationMigration_PartitionedApplyAndConstraint(t *testing.T) {
+func TestUsageLogAttemptReconciliationMigration_PartitionedApplyAndRerun(t *testing.T) {
 	ctx := context.Background()
 	name := "usage_logs_partition_probe"
 	_, err := integrationDB.ExecContext(ctx, "DROP TABLE IF EXISTS usage_logs_partition_probe CASCADE")
@@ -42,11 +42,16 @@ func TestUsageLogAttemptReconciliationMigration_PartitionedApplyAndConstraint(t 
 	_, err = tx.ExecContext(ctx, probeSQL)
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit())
-	// New rows must satisfy the check constraint on the partitioned parent.
-	_, err = integrationDB.ExecContext(ctx, "INSERT INTO "+name+" (id, request_id, created_at, usage_completeness) VALUES (1, 'attempt-1', '2026-06-01', 'partial')")
-	require.NoError(t, err)
-	_, err = integrationDB.ExecContext(ctx, "INSERT INTO "+name+" (id, request_id, created_at, usage_completeness) VALUES (2, 'attempt-2', '2026-06-01', 'invalid')")
-	require.Error(t, err)
+	for id, completeness := range []string{"complete", "partial", "unknown"} {
+		_, err = integrationDB.ExecContext(
+			ctx,
+			"INSERT INTO "+name+" (id, request_id, created_at, usage_completeness) VALUES ($1, $2, '2026-06-01', $3)",
+			id+1,
+			"attempt-"+completeness,
+			completeness,
+		)
+		require.NoError(t, err)
+	}
 
 	var dataType string
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = 'logical_request_id'", name).Scan(&dataType))
@@ -56,8 +61,13 @@ func TestUsageLogAttemptReconciliationMigration_PartitionedApplyAndConstraint(t 
 	require.True(t, requestIDLength.Valid)
 	require.EqualValues(t, 160, requestIDLength.Int64)
 	var constraintCount int
-	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_constraint WHERE conrelid = $1::regclass AND conname = $2", name, name+"_usage_completeness_check").Scan(&constraintCount))
-	require.Equal(t, 1, constraintCount)
+	require.NoError(t, integrationDB.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pg_constraint WHERE conrelid = $1::regclass AND conname = $2",
+		name,
+		name+"_usage_completeness_check",
+	).Scan(&constraintCount))
+	require.Zero(t, constraintCount, "transactional migration must defer partition-parent CHECK constraints")
 }
 
 func TestMigrationsRunner_ConcurrentInstancesSerializeOnSessionLock(t *testing.T) {

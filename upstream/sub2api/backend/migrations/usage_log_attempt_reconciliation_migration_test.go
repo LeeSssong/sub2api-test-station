@@ -21,7 +21,6 @@ func TestUsageLogAttemptReconciliationMigration(t *testing.T) {
 	} {
 		require.Contains(t, sql, "add column if not exists "+column)
 	}
-	require.Contains(t, sql, "check (usage_completeness in ('complete', 'partial', 'unknown'))")
 	require.NotContains(t, sql, "create index")
 	require.Contains(t, sql, "separate, reviewed online-index operation")
 }

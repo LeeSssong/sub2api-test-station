@@ -31,6 +31,9 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	if cmd.RequestID == "" {
 		return nil, service.ErrUsageBillingRequestIDRequired
 	}
+	if cmd.UsageCompleteness == service.UsageCompletenessUnknown {
+		return &service.UsageBillingApplyResult{Applied: false}, nil
+	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

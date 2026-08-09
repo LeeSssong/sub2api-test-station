@@ -133,6 +133,53 @@ func TestUsageBillingRepositoryApply_PartialReconciliationRetryChargesOnce(t *te
 	require.Equal(t, 1, dedupCount)
 }
 
+func TestUsageBillingRepositoryApply_UnknownDoesNotClaimLaterCompleteObservation(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-unknown-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash", Balance: 10})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-unknown-" + uuid.NewString(), Name: "unknown"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "usage-unknown-account-" + uuid.NewString(), Type: service.AccountTypeAPIKey})
+
+	unknown := &service.UsageBillingCommand{LogicalRequestID: "logical-unknown-" + uuid.NewString(), RequestFingerprint: "no-usage", UsageCompleteness: service.UsageCompletenessUnknown, APIKeyID: apiKey.ID, UserID: user.ID, AccountID: account.ID, AccountType: service.AccountTypeAPIKey, BalanceCost: 2}
+	result, err := repo.Apply(ctx, unknown)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+
+	complete := *unknown
+	complete.RequestFingerprint = "observed-usage"
+	complete.UsageCompleteness = service.UsageCompletenessComplete
+	complete.BalanceCost = 2
+	result, err = repo.Apply(ctx, &complete)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+
+	var balance float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
+	require.InDelta(t, 8, balance, 0.000001)
+}
+
+func TestUsageBillingRepositoryApply_ChangedObservedUsageUsesSeparateLogicalFingerprintBoundary(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-changed-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash", Balance: 10})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-changed-" + uuid.NewString(), Name: "changed"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "usage-changed-account-" + uuid.NewString(), Type: service.AccountTypeAPIKey})
+
+	partial := &service.UsageBillingCommand{LogicalRequestID: "logical-changed-" + uuid.NewString(), RequestFingerprint: "partial", UsageCompleteness: service.UsageCompletenessPartial, APIKeyID: apiKey.ID, UserID: user.ID, AccountID: account.ID, AccountType: service.AccountTypeAPIKey, BalanceCost: 1}
+	first, err := repo.Apply(ctx, partial)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	complete := *partial
+	complete.RequestFingerprint = "complete"
+	complete.UsageCompleteness = service.UsageCompletenessComplete
+	complete.BalanceCost = 0.5
+	second, err := repo.Apply(ctx, &complete)
+	require.NoError(t, err)
+	require.True(t, second.Applied)
+}
+
 func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

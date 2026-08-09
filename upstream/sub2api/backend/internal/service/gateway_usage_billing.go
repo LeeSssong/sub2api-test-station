@@ -320,6 +320,12 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
+		if cmd != nil && cmd.UsageCompleteness == UsageCompletenessUnknown {
+			if deps.deferredService != nil && p.Account != nil {
+				deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+			}
+			return true, nil
+		}
 		postUsageBilling(ctx, p, deps)
 		return true, nil
 	}
@@ -331,7 +337,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	// Apply: claiming usage_billing_dedup here would suppress a later complete
 	// retry for the same logical request.
 	if cmd.UsageCompleteness == UsageCompletenessUnknown {
-		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		if deps.deferredService != nil && p.Account != nil {
+			deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		}
 		return true, nil
 	}
 
@@ -1072,6 +1080,9 @@ func (s *GatewayService) buildRecordUsageLog(
 	requestID := strings.TrimSpace(input.LogicalRequestID)
 	if requestID == "" {
 		requestID = resolveUsageBillingRequestID(ctx, result.RequestID)
+	}
+	if attemptID := strings.TrimSpace(input.AttemptID); attemptID != "" {
+		requestID = attemptID
 	}
 	usageLog := &UsageLog{
 		UserID:                 user.ID,

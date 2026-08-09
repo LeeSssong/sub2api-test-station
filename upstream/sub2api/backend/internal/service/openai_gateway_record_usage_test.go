@@ -198,7 +198,8 @@ func TestOpenAIGatewayServiceRecordUsage_UnknownAttemptLeavesLaterCompleteRetryB
 	}))
 
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, "logical-recoverable", billingRepo.lastCmd.RequestID)
+	require.NotEqual(t, "logical-recoverable", billingRepo.lastCmd.RequestID)
+	require.Equal(t, "logical-recoverable", billingRepo.lastCmd.LogicalRequestID)
 	require.Equal(t, "logical-recoverable:2", billingRepo.lastCmd.AttemptID)
 	require.Equal(t, 2, usageRepo.calls)
 	require.Equal(t, "logical-recoverable:2", usageRepo.lastLog.RequestID)
@@ -282,6 +283,47 @@ func TestUsageBillingReconciliationRetryUsesSameIdempotencyBoundary(t *testing.T
 	second.Normalize()
 	require.Equal(t, first.RequestID, second.RequestID)
 	require.Equal(t, first.RequestFingerprint, second.RequestFingerprint)
+}
+
+func TestUsageBillingCommand_ChangedObservedUsageGetsDistinctLogicalFingerprintBoundary(t *testing.T) {
+	partial := &UsageBillingCommand{
+		LogicalRequestID:   "logical-observation-1",
+		RequestFingerprint: "partial-observation",
+		UsageCompleteness:  UsageCompletenessPartial,
+	}
+	complete := &UsageBillingCommand{
+		LogicalRequestID:   "logical-observation-1",
+		RequestFingerprint: "complete-observation",
+		UsageCompleteness:  UsageCompletenessComplete,
+	}
+	partial.Normalize()
+	complete.Normalize()
+
+	require.NotEqual(t, partial.RequestID, complete.RequestID)
+	require.NotEqual(t, "logical-observation-1", partial.RequestID)
+	require.NotEqual(t, "logical-observation-1", complete.RequestID)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_UsesAttemptIDForDurableAuditRows(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+
+	for _, attemptID := range []string{"logical-audit-1:1", "logical-audit-1:2"} {
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID:       "upstream-" + attemptID,
+				AttemptMetadata: OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-audit-1", AttemptID: attemptID},
+				UsageKnown:      true,
+				Usage:           OpenAIUsage{InputTokens: 3},
+				Model:           "gpt-5.1",
+			},
+			APIKey: &APIKey{ID: 1010, Group: &Group{RateMultiplier: 1}}, User: &User{ID: 2010}, Account: &Account{ID: 3010},
+		})
+		require.NoError(t, err)
+		require.Equal(t, attemptID, usageRepo.lastLog.RequestID)
+		require.Equal(t, "logical-audit-1", usageRepo.lastLog.LogicalRequestID)
+	}
 }
 
 func TestRecordCyberPolicyUsageLog_BillsRealUpstreamTokens(t *testing.T) {

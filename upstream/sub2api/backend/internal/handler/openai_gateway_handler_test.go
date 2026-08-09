@@ -157,6 +157,25 @@ func TestOpenAIRequestAttemptMetadata_ContextRoundTrip(t *testing.T) {
 	require.Equal(t, metadata, got)
 }
 
+func TestBuildFailedOpenAIUsageRecordInput_RecordsPartialUnsafeAttempt(t *testing.T) {
+	apiKey := &service.APIKey{ID: 501, User: &service.User{ID: 601}, Group: &service.Group{RateMultiplier: 1}}
+	account := &service.Account{ID: 701}
+	result := &service.OpenAIForwardResult{
+		Model:      "gpt-5.1",
+		UsageKnown: true,
+		Usage:      service.OpenAIUsage{InputTokens: 11, OutputTokens: 7},
+	}
+	input := buildFailedOpenAIUsageRecordInput(result, apiKey, account, nil,
+		service.OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-failed-1", AttemptID: "logical-failed-1:1", OutputStarted: true, UsageProduced: true},
+		service.OpenAIUpstreamFailureClass{HasSideEffect: true},
+	)
+	require.Equal(t, "logical-failed-1", input.LogicalRequestID)
+	require.Equal(t, "logical-failed-1:1", input.AttemptID)
+	require.Equal(t, service.UsageCompletenessPartial, input.UsageCompleteness)
+	require.True(t, input.ReconciliationRequired)
+	require.True(t, input.UnsafeToReplay)
+}
+
 func TestOpenAIDecideRetry_CachePreservationModes(t *testing.T) {
 	h := &OpenAIGatewayHandler{}
 	safeFailure := service.OpenAIUpstreamFailureClass{Transient: true, SafeToReplay: true}

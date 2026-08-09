@@ -755,6 +755,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if result != nil {
 				result.AttemptMetadata = attemptMetadata
 			}
+			h.recordFailedOpenAIUsageAttempt(attemptCtx, result, apiKey, account, subscription, reqModel, attemptMetadata, failure)
 			if classifiedFailoverErr != nil {
 				classifiedFailoverErr.LogicalRequestID = attemptMetadata.LogicalRequestID
 				classifiedFailoverErr.AttemptID = attemptMetadata.AttemptID
@@ -1423,6 +1424,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			if result != nil {
 				result.AttemptMetadata = attemptMetadata
 			}
+			h.recordFailedOpenAIUsageAttempt(attemptCtx, result, apiKey, account, subscription, reqModel, attemptMetadata, failure)
 			if classifiedFailoverErr != nil {
 				classifiedFailoverErr.LogicalRequestID = attemptMetadata.LogicalRequestID
 				classifiedFailoverErr.AttemptID = attemptMetadata.AttemptID
@@ -2796,6 +2798,44 @@ func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Contex
 		return
 	}
 	h.submitUsageRecordTask(parent, task)
+}
+
+func buildFailedOpenAIUsageRecordInput(result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, metadata service.OpenAIRequestAttemptMetadata, failure service.OpenAIUpstreamFailureClass) *service.OpenAIRecordUsageInput {
+	completeness := service.UsageCompletenessUnknown
+	if result != nil && result.UsageKnown {
+		completeness = service.UsageCompletenessPartial
+	}
+	return &service.OpenAIRecordUsageInput{
+		Result:                 result,
+		APIKey:                 apiKey,
+		User:                   apiKey.User,
+		Account:                account,
+		Subscription:           subscription,
+		AttemptMetadata:        metadata,
+		LogicalRequestID:       metadata.LogicalRequestID,
+		AttemptID:              metadata.AttemptID,
+		UsageCompleteness:      completeness,
+		ReconciliationRequired: completeness == service.UsageCompletenessPartial,
+		UnsafeToReplay:         failure.HasSideEffect || failure.OutputStarted || metadata.OutputStarted,
+	}
+}
+
+func (h *OpenAIGatewayHandler) recordFailedOpenAIUsageAttempt(ctx context.Context, result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, model string, metadata service.OpenAIRequestAttemptMetadata, failure service.OpenAIUpstreamFailureClass) {
+	if h == nil || h.gatewayService == nil || apiKey == nil || apiKey.User == nil || account == nil {
+		return
+	}
+	if result == nil {
+		result = &service.OpenAIForwardResult{RequestID: metadata.AttemptID, Model: model}
+	}
+	result.AttemptMetadata = metadata
+	input := buildFailedOpenAIUsageRecordInput(result, apiKey, account, subscription, metadata, failure)
+	input.APIKeyService = h.apiKeyService
+	input.QuotaPlatform = service.QuotaPlatform(ctx, apiKey)
+	h.submitMandatoryUsageRecordTask(ctx, func(taskCtx context.Context) {
+		if err := h.gatewayService.RecordUsage(taskCtx, input); err != nil {
+			logger.L().With(zap.String("component", "handler.openai_gateway"), zap.String("attempt_id", metadata.AttemptID)).Error("openai.failed_attempt_usage_record_failed", zap.Error(err))
+		}
+	})
 }
 
 func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {

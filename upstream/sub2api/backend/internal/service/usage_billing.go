@@ -92,6 +92,7 @@ func (c *UsageBillingCommand) Normalize() {
 	}
 	c.RequestID = strings.TrimSpace(c.RequestID)
 	c.LogicalRequestID = strings.TrimSpace(c.LogicalRequestID)
+	hasExplicitLogicalRequestID := c.LogicalRequestID != ""
 	c.AttemptID = strings.TrimSpace(c.AttemptID)
 	if c.LogicalRequestID == "" {
 		c.LogicalRequestID = c.RequestID
@@ -116,6 +117,17 @@ func (c *UsageBillingCommand) Normalize() {
 	if strings.TrimSpace(c.RequestFingerprint) == "" {
 		c.RequestFingerprint = buildUsageBillingFingerprint(c)
 	}
+	if hasExplicitLogicalRequestID {
+		c.RequestID = usageBillingDedupRequestID(c.LogicalRequestID, c.RequestFingerprint)
+	}
+}
+
+// usageBillingDedupRequestID keeps the existing physical (request_id,
+// api_key_id) uniqueness while making the logical request plus the immutable
+// observed-usage fingerprint the customer-billing boundary.
+func usageBillingDedupRequestID(logicalRequestID, requestFingerprint string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(logicalRequestID) + "|" + strings.TrimSpace(requestFingerprint)))
+	return "billing:" + hex.EncodeToString(sum[:])
 }
 
 func buildUsageBillingFingerprint(c *UsageBillingCommand) string {

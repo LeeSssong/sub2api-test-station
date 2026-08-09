@@ -39,4 +39,7 @@ func TestHealthChangedEventIdentityUsesStructuredFields(t *testing.T) {
 	b, err := NewHealthChangedEvent("core", at, HealthChanged{AccountID: 1, Status: "a", ErrorCategory: "b:c", ObservedAt: at, ProbeVersion: "v"})
 	require.NoError(t, err)
 	require.NotEqual(t, a.EventID, b.EventID)
+	c, err := NewHealthChangedEvent("core", at, HealthChanged{AccountID: 1, Status: "a:b", ErrorCategory: "c", ObservedAt: at, ProbeVersion: "v2"})
+	require.NoError(t, err)
+	require.Equal(t, a.EventID, c.EventID, "probe version is not an immutable health fact")
 }

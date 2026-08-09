@@ -254,8 +254,7 @@ func NewHealthChangedEvent(sourceVersion string, occurredAt time.Time, payload A
 		Status        string    `json:"status"`
 		ErrorCategory string    `json:"error_category"`
 		ObservedAt    time.Time `json:"observed_at"`
-		ProbeVersion  string    `json:"probe_version"`
-	}{payload.AccountID, payload.Status, payload.ErrorCategory, identityAt.UTC(), payload.ProbeVersion})
+	}{payload.AccountID, payload.Status, payload.ErrorCategory, identityAt.UTC()})
 	return newStableEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt, string(identity), payload)
 }
 

@@ -56,3 +56,12 @@
 - Health identity uses canonical JSON encoding before hashing, covering delimiter collision regression.
 
 Fix-round tests: `go test ./internal/integration ./internal/repository -run 'Test(HealthChangedEventIdentity|AccountMonitorRepositoryHealthHistoryError|UsageLogRequestEventIncludesActualResponseModel|RequestCompleted)' -v` PASS.
+
+## Fix Round 2
+
+- Health identity canonical JSON now contains only account_id, status, error_category and observed_at; probe_version remains payload-only. The collision regression also proves a probe-version-only change retains the same event id.
+- Added production-configured `CreateBestEffort` transaction-boundary tests for the repository integration harness's isolated temporary PostgreSQL Testcontainers instance: one commits both usage_logs and externalization_outbox for the shared repository entry point, and one injects an outbox INSERT failure via a temporary trigger and proves neither row remains. `CreateBestEffort` continues to bypass batching when the outbox is configured, so this is one SQL transaction rather than a flush-then-append design.
+- Added sqlmock supplementary rollback coverage for an Append error. The real PostgreSQL tests could not run locally because Testcontainers cannot locate rootless Docker; see command result below.
+- JSON, Responses and WebSocket converge before persistence at the existing `UsageLogRepository.CreateBestEffort` entry; the shared-entry test verifies the repository behavior once rather than duplicating protocol fixtures.
+
+Fix-round commands: `go test ./internal/integration ./internal/repository -run 'Test(HealthChangedEventIdentity|UsageLogCreateBestEffort|UsageLogRequestEvent)' -v` PASS. The isolated PostgreSQL Testcontainers command was attempted for both commit/rollback tests but is blocked in this environment: `panic: rootless Docker not found` during repository TestMain. The tests remain build-tagged and use a fresh container when Docker is available; sqlmock rollback coverage passed locally as the supplementary boundary check.

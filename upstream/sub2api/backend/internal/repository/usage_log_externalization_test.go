@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -30,6 +31,21 @@ func TestUsageLogRequestEventIncludesActualResponseModel(t *testing.T) {
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 
+}
+
+func TestUsageLogCreateBestEffortRollsBackWhenAppendFails(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	log := &service.UsageLog{RequestID: "req-rollback", APIKeyID: 9, AccountID: 7, Model: "model", TotalCost: 1, ActualCost: 1}
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO usage_logs").WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(11, time.Now()))
+	mock.ExpectExec("INSERT INTO externalization_outbox").WillReturnError(errors.New("outbox unavailable"))
+	mock.ExpectRollback()
+	err = repo.CreateBestEffort(context.Background(), log)
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 type payloadMatcher struct{ want string }

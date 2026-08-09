@@ -364,10 +364,11 @@
 10. **`api.xingqiaolab.top` TLS 兼容性修复**：nginx TLS 前置实现已以 `95a81dc37` 推送到 `main`；2026-08-01 生产切换后服务端 TLS 1.2/1.3 均正常，但受影响客户端和 CC Switch 验收仍失败，已完成受控回滚。后续需改用不被干预的兼容域名或更换公网/CDN 入口，nginx 配置当前不在生产生效。**状态：工程差异待部署（前置层方案未通过客户端门禁）**。
 11. **账号监控成本、余额、评分权重与官方倍率收敛**：已恢复分组评分权重入口，OpenAI API Key 统一使用官方 `accounts.rate_multiplier` 与 `extra.upstream_billing_rate_sync_enabled`，非 API Key 使用人民币采购成本和预计可用 USD 额度；支持上游余额、单卡强制刷新，并通过迁移 198 删除旧策略/measurement 数据。自动倍率展示现已读取官方 probe snapshot 的 `status`、`received_at`、`fresh_until`，过期/失败会明确标记。最终提交 `c12f930b1` 已推送并部署；生产迁移哈希已为 `0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d`，健康接口、监控 API、分组权重、native 倍率和余额快照均已线上验证。**状态：已完成；已推送、已部署、已验证生效**；[设计](../superpowers/specs/2026-08-06-account-monitor-cost-balance-and-score-weights-design.md)、[计划](../superpowers/plans/2026-08-06-account-monitor-cost-balance-and-score-weights-implementation-plan.md)。
 
-## 持续实施（2 项）
+## 持续实施（3 项）
 
 1. **原生 P0/P1 Feishu Bridge 独立扩展**：`ops_alert_events` 出站桥接实现尚缺通知策略兼容性和必需的只读数据库接线；**状态：持续实施**；[设计](../superpowers/specs/2026-07-30-native-p0-p1-feishu-bridge-design.md)。
 2. **用量明细/支持卡片/上游账号状态等后续运营功能**：仍待设计与实现；**状态：持续实施**；[证据](current-state.md)。
+3. **Monitor V2 当前配置映射修复（2026-08-09）**：仅让 `/monitor` 展示当前已启用监控实际绑定的活动分组，并重置生产中监控 `6/8/10` 的旧配置统计影响；工作区 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/monitor-v2-minimal-fix`，分支 `codex/monitor-v2-minimal-fix`。已盘点全部非 `main` worktree；明确排除仍在工作的上游韧性、GPT 分组分析、用量成本、Resend SMTP 与已中止的复杂 Monitor 候选内容。**状态：进行中**。
 
 ## 总账维护规则
 

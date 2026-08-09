@@ -154,6 +154,8 @@ func (s *monitorV2RepoStub) GetCacheStats(
 
 func TestMonitorV2SnapshotScopeControlsExclusiveGroups(t *testing.T) {
 	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	publicGroupID := int64(1)
+	exclusiveGroupID := int64(2)
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{
 			{ID: 1, Name: "公开组", Platform: PlatformOpenAI, Status: StatusActive},
@@ -161,7 +163,10 @@ func TestMonitorV2SnapshotScopeControlsExclusiveGroups(t *testing.T) {
 			{ID: 3, Name: "停用组", Platform: PlatformOpenAI, Status: StatusDisabled},
 		}},
 		nil,
-		nil,
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{
+			{GroupID: &publicGroupID},
+			{GroupID: &exclusiveGroupID},
+		}},
 		nil,
 		nil,
 	)
@@ -174,6 +179,27 @@ func TestMonitorV2SnapshotScopeControlsExclusiveGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, adminSnapshot.Groups, 2)
 	require.Equal(t, []int64{1, 2}, []int64{adminSnapshot.Groups[0].ID, adminSnapshot.Groups[1].ID})
+}
+
+func TestMonitorV2SnapshotShowsOnlyGroupsWithEnabledMonitors(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	configuredID := int64(20)
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{
+			{ID: 20, Name: "GPT-特惠分组", Platform: PlatformOpenAI, Status: StatusActive},
+			{ID: 21, Name: "历史分组", Platform: PlatformOpenAI, Status: StatusActive},
+		}},
+		nil,
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: &configuredID}}},
+		nil,
+		nil,
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, configuredID, snapshot.Groups[0].ID)
 }
 
 func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {
@@ -254,7 +280,7 @@ func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
 				IsExclusive: false,
 			}}},
 			&monitorV2ChannelReaderStub{},
-			&monitorV2ProbeReaderStub{},
+			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(1)}}},
 			&monitorV2OpsReaderStub{overview: &OpsDashboardOverview{
 				SuccessCount:    100,
 				RequestCountSLA: 100,
@@ -512,8 +538,7 @@ func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
 	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
 
 	require.NoError(t, err)
-	require.Len(t, snapshot.Groups, 1)
-	require.Equal(t, MonitorV2StatusUnconfigured, snapshot.Groups[0].Status)
+	require.Empty(t, snapshot.Groups)
 }
 
 func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
@@ -592,7 +617,7 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, MonitorV2ContractVersion, snapshot.ContractVersion)
 	require.Equal(t, MonitorV2Window7D, snapshot.Window)
 	require.Equal(t, now, snapshot.GeneratedAt)
-	require.Len(t, snapshot.Groups, 2)
+	require.Len(t, snapshot.Groups, 1)
 
 	first := snapshot.Groups[0]
 	require.Equal(t, int64(1), first.ID)
@@ -623,13 +648,6 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, int64(1), first.Timeline[0].EligibleCount)
 	require.Equal(t, 320, *first.Timeline[0].LatencyMS)
 
-	second := snapshot.Groups[1]
-	require.Equal(t, int64(2), second.ID)
-	require.InDelta(t, 0.3, second.RateMultiplier, 0.0001)
-	require.Equal(t, MonitorV2StatusUnconfigured, second.Status)
-	require.Equal(t, MonitorV2MetricInsufficientData, second.TTFT.State)
-	require.Equal(t, MonitorV2MetricInsufficientData, second.Availability.State)
-	require.Nil(t, second.Availability.Value)
 }
 
 func TestMonitorV2SnapshotMatchesProbeForPublicGroupWithoutChannel(t *testing.T) {
@@ -729,7 +747,7 @@ func TestMonitorV2SnapshotBoundsTimelineAndStrings(t *testing.T) {
 		svc := NewMonitorV2Service(
 			&monitorV2GroupRepoStub{groups: []Group{oversized}},
 			&monitorV2ChannelReaderStub{},
-			&monitorV2ProbeReaderStub{},
+			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(oversized.ID)}}},
 			nil,
 			&monitorV2RepoStub{},
 		)

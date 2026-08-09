@@ -36,8 +36,23 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("api_key_id"),
 		field.Int64("account_id"),
 		field.String("request_id").
-			MaxLen(64).
+			MaxLen(160).
 			NotEmpty(),
+		field.String("logical_request_id").
+			MaxLen(128).
+			Optional().
+			Nillable(),
+		field.String("attempt_id").
+			MaxLen(160).
+			Optional().
+			Nillable(),
+		field.String("usage_completeness").
+			MaxLen(16).
+			Default("complete"),
+		field.Bool("reconciliation_required").
+			Default(false),
+		field.Bool("unsafe_to_replay").
+			Default(false),
 		field.String("model").
 			MaxLen(100).
 			NotEmpty(),

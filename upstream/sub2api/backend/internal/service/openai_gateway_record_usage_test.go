@@ -86,8 +86,8 @@ func TestOpenAIGatewayServiceRecordUsage_DeduplicatesAttemptsByLogicalRequestAnd
 			Result: &OpenAIForwardResult{
 				RequestID:       "upstream-" + attemptID,
 				AttemptMetadata: metadata,
-				Usage:          OpenAIUsage{InputTokens: 8, OutputTokens: 4},
-				Model:          "gpt-5.1",
+				Usage:           OpenAIUsage{InputTokens: 8, OutputTokens: 4},
+				Model:           "gpt-5.1",
 			},
 			APIKey:             &APIKey{ID: 1001, Group: &Group{RateMultiplier: 1}},
 			User:               &User{ID: 2001},
@@ -122,9 +122,119 @@ func TestOpenAIGatewayServiceRecordUsage_UnknownTransientFailureDoesNotBill(t *t
 	})
 	require.NoError(t, err)
 	require.Zero(t, userRepo.deductCalls)
-	require.Zero(t, billingRepo.lastCmd.BalanceCost)
-	require.Equal(t, UsageCompletenessUnknown, billingRepo.lastCmd.UsageCompleteness)
-	require.False(t, billingRepo.lastCmd.ReconciliationRequired)
+	require.Zero(t, billingRepo.calls, "unknown usage must not claim the billing dedup key")
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "logical-connect-1", usageRepo.lastLog.LogicalRequestID)
+	require.Equal(t, "logical-connect-1:1", usageRepo.lastLog.AttemptID)
+	require.Equal(t, UsageCompletenessUnknown, usageRepo.lastLog.UsageCompleteness)
+	require.False(t, usageRepo.lastLog.ReconciliationRequired)
+}
+
+func TestUsageBillingCommandNormalize_UnknownObservedTokensRemainAuditOnly(t *testing.T) {
+	cmd := &UsageBillingCommand{
+		RequestID:           "logical-unknown-observed",
+		UsageCompleteness:   UsageCompletenessUnknown,
+		InputTokens:         100,
+		OutputTokens:        20,
+		BalanceCost:         1.5,
+		SubscriptionCost:    1.5,
+		APIKeyQuotaCost:     1.5,
+		APIKeyRateLimitCost: 1.5,
+		AccountQuotaCost:    1.5,
+	}
+
+	cmd.Normalize()
+
+	require.Equal(t, 100, cmd.InputTokens)
+	require.Equal(t, 20, cmd.OutputTokens)
+	require.False(t, usageBillingHasChargeableCost(cmd))
+	require.Zero(t, cmd.BalanceCost)
+	require.Zero(t, cmd.SubscriptionCost)
+	require.Zero(t, cmd.APIKeyQuotaCost)
+	require.Zero(t, cmd.APIKeyRateLimitCost)
+	require.Zero(t, cmd.AccountQuotaCost)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_UnknownAttemptLeavesLaterCompleteRetryBillable(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+	base := OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-recoverable"}
+
+	first := base
+	first.AttemptID = "logical-recoverable:1"
+	require.NoError(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:       "upstream-failed",
+			AttemptMetadata: first,
+			UsageKnown:      false,
+			Model:           "gpt-5.1",
+		},
+		APIKey:  &APIKey{ID: 1010, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2010},
+		Account: &Account{ID: 3010},
+	}))
+	require.Zero(t, billingRepo.calls)
+
+	second := base
+	second.AttemptID = "logical-recoverable:2"
+	require.NoError(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:       "upstream-success",
+			AttemptMetadata: second,
+			UsageKnown:      true,
+			Usage:           OpenAIUsage{InputTokens: 20, OutputTokens: 5},
+			Model:           "gpt-5.1",
+		},
+		APIKey:  &APIKey{ID: 1010, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2010},
+		Account: &Account{ID: 3010},
+	}))
+
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, "logical-recoverable", billingRepo.lastCmd.RequestID)
+	require.Equal(t, "logical-recoverable:2", billingRepo.lastCmd.AttemptID)
+	require.Equal(t, 2, usageRepo.calls)
+	require.Equal(t, "logical-recoverable:2", usageRepo.lastLog.RequestID)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ExplicitUnknownTokensPersistZeroCostAudit(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+	require.NoError(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:  "unknown-observed",
+			UsageKnown: true,
+			Usage:      OpenAIUsage{InputTokens: 100, OutputTokens: 20},
+			Model:      "gpt-5.1",
+		},
+		LogicalRequestID:  "logical-unknown-observed",
+		UsageCompleteness: UsageCompletenessUnknown,
+		APIKey:            &APIKey{ID: 1020, Group: &Group{RateMultiplier: 1}},
+		User:              &User{ID: 2020},
+		Account:           &Account{ID: 3020},
+	}))
+
+	require.Zero(t, billingRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, 100, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 20, usageRepo.lastLog.OutputTokens)
+	require.Equal(t, UsageCompletenessUnknown, usageRepo.lastLog.UsageCompleteness)
+	require.Zero(t, usageRepo.lastLog.TotalCost)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_PartialUsageRequiresReconciliation(t *testing.T) {
@@ -160,10 +270,10 @@ func TestOpenAIGatewayServiceRecordUsage_PartialUsageRequiresReconciliation(t *t
 
 func TestUsageBillingReconciliationRetryUsesSameIdempotencyBoundary(t *testing.T) {
 	first := &UsageBillingCommand{
-		LogicalRequestID:      "logical-reconcile-1",
-		AttemptID:             "logical-reconcile-1:1",
-		RequestFingerprint:    "usage-fingerprint-1",
-		UsageCompleteness:     UsageCompletenessPartial,
+		LogicalRequestID:       "logical-reconcile-1",
+		AttemptID:              "logical-reconcile-1:1",
+		RequestFingerprint:     "usage-fingerprint-1",
+		UsageCompleteness:      UsageCompletenessPartial,
 		ReconciliationRequired: true,
 	}
 	second := *first
@@ -409,7 +519,7 @@ func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, 1, billingRepo.calls)
+	require.Zero(t, billingRepo.calls, "zero unknown usage must not claim billing dedup")
 	require.Equal(t, 1, usageRepo.calls)
 	require.Equal(t, 0, userRepo.deductCalls)
 	require.Equal(t, 0, subRepo.incrementCalls)
@@ -429,12 +539,8 @@ func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing
 	require.Zero(t, usageRepo.lastLog.TotalCost)
 	require.Zero(t, usageRepo.lastLog.ActualCost)
 
-	require.NotNil(t, billingRepo.lastCmd)
-	require.Zero(t, billingRepo.lastCmd.BalanceCost)
-	require.Zero(t, billingRepo.lastCmd.SubscriptionCost)
-	require.Zero(t, billingRepo.lastCmd.APIKeyQuotaCost)
-	require.Zero(t, billingRepo.lastCmd.APIKeyRateLimitCost)
-	require.Zero(t, billingRepo.lastCmd.AccountQuotaCost)
+	require.Nil(t, billingRepo.lastCmd)
+	require.Equal(t, UsageCompletenessUnknown, usageRepo.lastLog.UsageCompleteness)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_MissingPricingRecordsZeroCostUsageLog(t *testing.T) {
@@ -447,7 +553,8 @@ func TestOpenAIGatewayServiceRecordUsage_MissingPricingRecordsZeroCostUsageLog(t
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "resp_missing_pricing",
+			RequestID:  "resp_missing_pricing",
+			UsageKnown: true,
 			Usage: OpenAIUsage{
 				InputTokens:  1200,
 				OutputTokens: 300,

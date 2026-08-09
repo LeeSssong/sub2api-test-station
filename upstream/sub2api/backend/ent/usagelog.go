@@ -31,6 +31,16 @@ type UsageLog struct {
 	AccountID int64 `json:"account_id,omitempty"`
 	// RequestID holds the value of the "request_id" field.
 	RequestID string `json:"request_id,omitempty"`
+	// LogicalRequestID holds the value of the "logical_request_id" field.
+	LogicalRequestID *string `json:"logical_request_id,omitempty"`
+	// AttemptID holds the value of the "attempt_id" field.
+	AttemptID *string `json:"attempt_id,omitempty"`
+	// UsageCompleteness holds the value of the "usage_completeness" field.
+	UsageCompleteness string `json:"usage_completeness,omitempty"`
+	// ReconciliationRequired holds the value of the "reconciliation_required" field.
+	ReconciliationRequired bool `json:"reconciliation_required,omitempty"`
+	// UnsafeToReplay holds the value of the "unsafe_to_replay" field.
+	UnsafeToReplay bool `json:"unsafe_to_replay,omitempty"`
 	// Model holds the value of the "model" field.
 	Model string `json:"model,omitempty"`
 	// RequestedModel holds the value of the "requested_model" field.
@@ -200,13 +210,13 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagelog.FieldImageSizeBreakdown:
 			values[i] = new([]byte)
-		case usagelog.FieldLongContextBillingApplied, usagelog.FieldStream, usagelog.FieldCacheTTLOverridden:
+		case usagelog.FieldReconciliationRequired, usagelog.FieldUnsafeToReplay, usagelog.FieldLongContextBillingApplied, usagelog.FieldStream, usagelog.FieldCacheTTLOverridden:
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
 		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldActualResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
+		case usagelog.FieldRequestID, usagelog.FieldLogicalRequestID, usagelog.FieldAttemptID, usagelog.FieldUsageCompleteness, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldActualResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -254,6 +264,38 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field request_id", values[i])
 			} else if value.Valid {
 				_m.RequestID = value.String
+			}
+		case usagelog.FieldLogicalRequestID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field logical_request_id", values[i])
+			} else if value.Valid {
+				_m.LogicalRequestID = new(string)
+				*_m.LogicalRequestID = value.String
+			}
+		case usagelog.FieldAttemptID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field attempt_id", values[i])
+			} else if value.Valid {
+				_m.AttemptID = new(string)
+				*_m.AttemptID = value.String
+			}
+		case usagelog.FieldUsageCompleteness:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_completeness", values[i])
+			} else if value.Valid {
+				_m.UsageCompleteness = value.String
+			}
+		case usagelog.FieldReconciliationRequired:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field reconciliation_required", values[i])
+			} else if value.Valid {
+				_m.ReconciliationRequired = value.Bool
+			}
+		case usagelog.FieldUnsafeToReplay:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field unsafe_to_replay", values[i])
+			} else if value.Valid {
+				_m.UnsafeToReplay = value.Bool
 			}
 		case usagelog.FieldModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -601,6 +643,25 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("request_id=")
 	builder.WriteString(_m.RequestID)
+	builder.WriteString(", ")
+	if v := _m.LogicalRequestID; v != nil {
+		builder.WriteString("logical_request_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.AttemptID; v != nil {
+		builder.WriteString("attempt_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("usage_completeness=")
+	builder.WriteString(_m.UsageCompleteness)
+	builder.WriteString(", ")
+	builder.WriteString("reconciliation_required=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ReconciliationRequired))
+	builder.WriteString(", ")
+	builder.WriteString("unsafe_to_replay=")
+	builder.WriteString(fmt.Sprintf("%v", _m.UnsafeToReplay))
 	builder.WriteString(", ")
 	builder.WriteString("model=")
 	builder.WriteString(_m.Model)

@@ -22,6 +22,16 @@ const (
 	FieldAccountID = "account_id"
 	// FieldRequestID holds the string denoting the request_id field in the database.
 	FieldRequestID = "request_id"
+	// FieldLogicalRequestID holds the string denoting the logical_request_id field in the database.
+	FieldLogicalRequestID = "logical_request_id"
+	// FieldAttemptID holds the string denoting the attempt_id field in the database.
+	FieldAttemptID = "attempt_id"
+	// FieldUsageCompleteness holds the string denoting the usage_completeness field in the database.
+	FieldUsageCompleteness = "usage_completeness"
+	// FieldReconciliationRequired holds the string denoting the reconciliation_required field in the database.
+	FieldReconciliationRequired = "reconciliation_required"
+	// FieldUnsafeToReplay holds the string denoting the unsafe_to_replay field in the database.
+	FieldUnsafeToReplay = "unsafe_to_replay"
 	// FieldModel holds the string denoting the model field in the database.
 	FieldModel = "model"
 	// FieldRequestedModel holds the string denoting the requested_model field in the database.
@@ -162,6 +172,11 @@ var Columns = []string{
 	FieldAPIKeyID,
 	FieldAccountID,
 	FieldRequestID,
+	FieldLogicalRequestID,
+	FieldAttemptID,
+	FieldUsageCompleteness,
+	FieldReconciliationRequired,
+	FieldUnsafeToReplay,
 	FieldModel,
 	FieldRequestedModel,
 	FieldUpstreamModel,
@@ -219,6 +234,18 @@ func ValidColumn(column string) bool {
 var (
 	// RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
 	RequestIDValidator func(string) error
+	// LogicalRequestIDValidator is a validator for the "logical_request_id" field. It is called by the builders before save.
+	LogicalRequestIDValidator func(string) error
+	// AttemptIDValidator is a validator for the "attempt_id" field. It is called by the builders before save.
+	AttemptIDValidator func(string) error
+	// DefaultUsageCompleteness holds the default value on creation for the "usage_completeness" field.
+	DefaultUsageCompleteness string
+	// UsageCompletenessValidator is a validator for the "usage_completeness" field. It is called by the builders before save.
+	UsageCompletenessValidator func(string) error
+	// DefaultReconciliationRequired holds the default value on creation for the "reconciliation_required" field.
+	DefaultReconciliationRequired bool
+	// DefaultUnsafeToReplay holds the default value on creation for the "unsafe_to_replay" field.
+	DefaultUnsafeToReplay bool
 	// ModelValidator is a validator for the "model" field. It is called by the builders before save.
 	ModelValidator func(string) error
 	// RequestedModelValidator is a validator for the "requested_model" field. It is called by the builders before save.
@@ -315,6 +342,31 @@ func ByAccountID(opts ...sql.OrderTermOption) OrderOption {
 // ByRequestID orders the results by the request_id field.
 func ByRequestID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRequestID, opts...).ToFunc()
+}
+
+// ByLogicalRequestID orders the results by the logical_request_id field.
+func ByLogicalRequestID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLogicalRequestID, opts...).ToFunc()
+}
+
+// ByAttemptID orders the results by the attempt_id field.
+func ByAttemptID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAttemptID, opts...).ToFunc()
+}
+
+// ByUsageCompleteness orders the results by the usage_completeness field.
+func ByUsageCompleteness(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageCompleteness, opts...).ToFunc()
+}
+
+// ByReconciliationRequired orders the results by the reconciliation_required field.
+func ByReconciliationRequired(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReconciliationRequired, opts...).ToFunc()
+}
+
+// ByUnsafeToReplay orders the results by the unsafe_to_replay field.
+func ByUnsafeToReplay(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUnsafeToReplay, opts...).ToFunc()
 }
 
 // ByModel orders the results by the model field.

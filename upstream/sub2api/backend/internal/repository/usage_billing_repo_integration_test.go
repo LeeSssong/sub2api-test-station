@@ -80,6 +80,59 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	require.Equal(t, 1, dedupCount)
 }
 
+func TestUsageBillingRepositoryApply_PartialReconciliationRetryChargesOnce(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-reconcile-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Balance:      100,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-reconcile-" + uuid.NewString(),
+		Name:   "reconcile",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-reconcile-account-" + uuid.NewString(),
+		Type: service.AccountTypeAPIKey,
+	})
+
+	cmd := &service.UsageBillingCommand{
+		LogicalRequestID:       "logical-reconcile-" + uuid.NewString(),
+		AttemptID:              "attempt-1",
+		RequestFingerprint:     "observed-partial-usage",
+		UsageCompleteness:      service.UsageCompletenessPartial,
+		ReconciliationRequired: true,
+		APIKeyID:               apiKey.ID,
+		UserID:                 user.ID,
+		AccountID:              account.ID,
+		AccountType:            service.AccountTypeAPIKey,
+		BalanceCost:            1.75,
+	}
+	first, err := repo.Apply(ctx, cmd)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+
+	retry := *cmd
+	retry.AttemptID = "attempt-2"
+	second, err := repo.Apply(ctx, &retry)
+	require.NoError(t, err)
+	require.False(t, second.Applied)
+
+	var balance float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
+	require.InDelta(t, 98.25, balance, 0.000001)
+
+	var dedupCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2",
+		cmd.LogicalRequestID, apiKey.ID,
+	).Scan(&dedupCount))
+	require.Equal(t, 1, dedupCount)
+}
+
 func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

@@ -88,6 +88,88 @@ func (_u *UsageLogUpdate) SetNillableRequestID(v *string) *UsageLogUpdate {
 	return _u
 }
 
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (_u *UsageLogUpdate) SetLogicalRequestID(v string) *UsageLogUpdate {
+	_u.mutation.SetLogicalRequestID(v)
+	return _u
+}
+
+// SetNillableLogicalRequestID sets the "logical_request_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableLogicalRequestID(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetLogicalRequestID(*v)
+	}
+	return _u
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (_u *UsageLogUpdate) ClearLogicalRequestID() *UsageLogUpdate {
+	_u.mutation.ClearLogicalRequestID()
+	return _u
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (_u *UsageLogUpdate) SetAttemptID(v string) *UsageLogUpdate {
+	_u.mutation.SetAttemptID(v)
+	return _u
+}
+
+// SetNillableAttemptID sets the "attempt_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableAttemptID(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetAttemptID(*v)
+	}
+	return _u
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (_u *UsageLogUpdate) ClearAttemptID() *UsageLogUpdate {
+	_u.mutation.ClearAttemptID()
+	return _u
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (_u *UsageLogUpdate) SetUsageCompleteness(v string) *UsageLogUpdate {
+	_u.mutation.SetUsageCompleteness(v)
+	return _u
+}
+
+// SetNillableUsageCompleteness sets the "usage_completeness" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUsageCompleteness(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUsageCompleteness(*v)
+	}
+	return _u
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (_u *UsageLogUpdate) SetReconciliationRequired(v bool) *UsageLogUpdate {
+	_u.mutation.SetReconciliationRequired(v)
+	return _u
+}
+
+// SetNillableReconciliationRequired sets the "reconciliation_required" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableReconciliationRequired(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetReconciliationRequired(*v)
+	}
+	return _u
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (_u *UsageLogUpdate) SetUnsafeToReplay(v bool) *UsageLogUpdate {
+	_u.mutation.SetUnsafeToReplay(v)
+	return _u
+}
+
+// SetNillableUnsafeToReplay sets the "unsafe_to_replay" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUnsafeToReplay(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUnsafeToReplay(*v)
+	}
+	return _u
+}
+
 // SetModel sets the "model" field.
 func (_u *UsageLogUpdate) SetModel(v string) *UsageLogUpdate {
 	_u.mutation.SetModel(v)
@@ -1021,6 +1103,21 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.LogicalRequestID(); ok {
+		if err := usagelog.LogicalRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "logical_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.logical_request_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AttemptID(); ok {
+		if err := usagelog.AttemptIDValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.attempt_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UsageCompleteness(); ok {
+		if err := usagelog.UsageCompletenessValidator(v); err != nil {
+			return &ValidationError{Name: "usage_completeness", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_completeness": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Model(); ok {
 		if err := usagelog.ModelValidator(v); err != nil {
 			return &ValidationError{Name: "model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model": %w`, err)}
@@ -1117,6 +1214,27 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LogicalRequestID(); ok {
+		_spec.SetField(usagelog.FieldLogicalRequestID, field.TypeString, value)
+	}
+	if _u.mutation.LogicalRequestIDCleared() {
+		_spec.ClearField(usagelog.FieldLogicalRequestID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AttemptID(); ok {
+		_spec.SetField(usagelog.FieldAttemptID, field.TypeString, value)
+	}
+	if _u.mutation.AttemptIDCleared() {
+		_spec.ClearField(usagelog.FieldAttemptID, field.TypeString)
+	}
+	if value, ok := _u.mutation.UsageCompleteness(); ok {
+		_spec.SetField(usagelog.FieldUsageCompleteness, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ReconciliationRequired(); ok {
+		_spec.SetField(usagelog.FieldReconciliationRequired, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.UnsafeToReplay(); ok {
+		_spec.SetField(usagelog.FieldUnsafeToReplay, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
@@ -1572,6 +1690,88 @@ func (_u *UsageLogUpdateOne) SetRequestID(v string) *UsageLogUpdateOne {
 func (_u *UsageLogUpdateOne) SetNillableRequestID(v *string) *UsageLogUpdateOne {
 	if v != nil {
 		_u.SetRequestID(*v)
+	}
+	return _u
+}
+
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (_u *UsageLogUpdateOne) SetLogicalRequestID(v string) *UsageLogUpdateOne {
+	_u.mutation.SetLogicalRequestID(v)
+	return _u
+}
+
+// SetNillableLogicalRequestID sets the "logical_request_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableLogicalRequestID(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetLogicalRequestID(*v)
+	}
+	return _u
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (_u *UsageLogUpdateOne) ClearLogicalRequestID() *UsageLogUpdateOne {
+	_u.mutation.ClearLogicalRequestID()
+	return _u
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (_u *UsageLogUpdateOne) SetAttemptID(v string) *UsageLogUpdateOne {
+	_u.mutation.SetAttemptID(v)
+	return _u
+}
+
+// SetNillableAttemptID sets the "attempt_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableAttemptID(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetAttemptID(*v)
+	}
+	return _u
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (_u *UsageLogUpdateOne) ClearAttemptID() *UsageLogUpdateOne {
+	_u.mutation.ClearAttemptID()
+	return _u
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (_u *UsageLogUpdateOne) SetUsageCompleteness(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUsageCompleteness(v)
+	return _u
+}
+
+// SetNillableUsageCompleteness sets the "usage_completeness" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUsageCompleteness(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUsageCompleteness(*v)
+	}
+	return _u
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (_u *UsageLogUpdateOne) SetReconciliationRequired(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetReconciliationRequired(v)
+	return _u
+}
+
+// SetNillableReconciliationRequired sets the "reconciliation_required" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableReconciliationRequired(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetReconciliationRequired(*v)
+	}
+	return _u
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (_u *UsageLogUpdateOne) SetUnsafeToReplay(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetUnsafeToReplay(v)
+	return _u
+}
+
+// SetNillableUnsafeToReplay sets the "unsafe_to_replay" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUnsafeToReplay(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUnsafeToReplay(*v)
 	}
 	return _u
 }
@@ -2522,6 +2722,21 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.LogicalRequestID(); ok {
+		if err := usagelog.LogicalRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "logical_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.logical_request_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AttemptID(); ok {
+		if err := usagelog.AttemptIDValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.attempt_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UsageCompleteness(); ok {
+		if err := usagelog.UsageCompletenessValidator(v); err != nil {
+			return &ValidationError{Name: "usage_completeness", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_completeness": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Model(); ok {
 		if err := usagelog.ModelValidator(v); err != nil {
 			return &ValidationError{Name: "model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model": %w`, err)}
@@ -2635,6 +2850,27 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LogicalRequestID(); ok {
+		_spec.SetField(usagelog.FieldLogicalRequestID, field.TypeString, value)
+	}
+	if _u.mutation.LogicalRequestIDCleared() {
+		_spec.ClearField(usagelog.FieldLogicalRequestID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AttemptID(); ok {
+		_spec.SetField(usagelog.FieldAttemptID, field.TypeString, value)
+	}
+	if _u.mutation.AttemptIDCleared() {
+		_spec.ClearField(usagelog.FieldAttemptID, field.TypeString)
+	}
+	if value, ok := _u.mutation.UsageCompleteness(); ok {
+		_spec.SetField(usagelog.FieldUsageCompleteness, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ReconciliationRequired(); ok {
+		_spec.SetField(usagelog.FieldReconciliationRequired, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.UnsafeToReplay(); ok {
+		_spec.SetField(usagelog.FieldUnsafeToReplay, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)

@@ -306,6 +306,13 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	return cmd
 }
 
+func usageBillingHasChargeableCost(cmd *UsageBillingCommand) bool {
+	if cmd == nil || cmd.UsageCompleteness == UsageCompletenessUnknown {
+		return false
+	}
+	return cmd.BalanceCost > 0 || cmd.SubscriptionCost > 0 || cmd.APIKeyQuotaCost > 0 || cmd.APIKeyRateLimitCost > 0 || cmd.AccountQuotaCost > 0
+}
+
 func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
 	if p == nil || deps == nil {
 		return false, nil
@@ -319,6 +326,14 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
+
+	// Unknown usage is recorded by the usage-log audit path only. Do not call
+	// Apply: claiming usage_billing_dedup here would suppress a later complete
+	// retry for the same logical request.
+	if cmd.UsageCompleteness == UsageCompletenessUnknown {
+		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		return true, nil
+	}
 
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {

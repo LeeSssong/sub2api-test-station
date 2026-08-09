@@ -97,6 +97,11 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			sqlmock.AnyArg(), // session_id
+			sqlmock.AnyArg(), // logical_request_id
+			sqlmock.AnyArg(), // attempt_id
+			sqlmock.AnyArg(), // usage_completeness
+			sqlmock.AnyArg(), // reconciliation_required
+			sqlmock.AnyArg(), // unsafe_to_replay
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -187,6 +192,11 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			sqlmock.AnyArg(), // session_id
+			sqlmock.AnyArg(), // logical_request_id
+			sqlmock.AnyArg(), // attempt_id
+			sqlmock.AnyArg(), // usage_completeness
+			sqlmock.AnyArg(), // reconciliation_required
+			sqlmock.AnyArg(), // unsafe_to_replay
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
@@ -847,6 +857,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullFloat64{},
 			sql.NullString{},
+			sql.NullString{},
+			sql.NullString{},
+			"complete",
+			false,
+			false,
 			now,
 		}})
 		require.NoError(t, err)
@@ -923,6 +938,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			sql.NullString{},  // session_id
+			sql.NullString{},  // logical_request_id
+			sql.NullString{},  // attempt_id
+			"complete",        // usage_completeness
+			false,             // reconciliation_required
+			false,             // unsafe_to_replay
 			now,
 		}})
 		require.NoError(t, err)
@@ -982,6 +1002,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			sql.NullString{},  // session_id
+			sql.NullString{},  // logical_request_id
+			sql.NullString{},  // attempt_id
+			"complete",        // usage_completeness
+			false,             // reconciliation_required
+			false,             // unsafe_to_replay
 			now,
 		}})
 		require.NoError(t, err)
@@ -1041,6 +1066,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			sql.NullString{},  // session_id
+			sql.NullString{},  // logical_request_id
+			sql.NullString{},  // attempt_id
+			"complete",        // usage_completeness
+			false,             // reconciliation_required
+			false,             // unsafe_to_replay
 			now,
 		}})
 		require.NoError(t, err)

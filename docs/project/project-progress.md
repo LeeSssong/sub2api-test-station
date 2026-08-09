@@ -4,7 +4,7 @@
 
 **本轮登记（2026-08-08）：** 上游故障的缓存感知调度与流式恢复，状态：进行中（用户已确认设计规格与实施计划；当前进入逐任务实现、独立审查、受控蓝绿部署和线上验证。在完成“已推送到服务端 + 已部署 + 已验证生效”前不得标记完成）。
 
-**本轮推进（2026-08-08）：** Task 3 review fix round 5 已完成本地实现与专项验证：`openai_advanced_scheduler_enabled=false` 时，legacy load-aware 路径仅在精确的无可用账号结果后进入 all-cooldown half-open fallback，并复用完整常规资格、freshness、DB recheck、并发槽和利润终检链；匹配账号与 canonical model 的单租约、无 WaitPlan、幂等完成/释放和普通健康账号的 disabled-scheduler 行为均由服务级公开选号路径回归覆盖。状态保持进行中，待独立复审；尚未推送、部署或线上验证。
+**本轮推进（2026-08-09）：** Task 3 review fix round 5 已完成本地实现、专项验证与独立复审；`openai_advanced_scheduler_enabled=false` 时的 all-cooldown half-open fallback 已确认复用完整常规资格、freshness、DB recheck、并发槽和利润终检链，且维持单租约、无 WaitPlan、幂等完成/释放。Task 4 首轮独立审查发现 unknown usage 占用扣费幂等键、unknown 非零 token 仍可能扣费，以及 attempt/reconciliation 字段未持久化；当前处于修复轮次，正在补齐无扣费审计分支、usage-log 迁移/读写链和真实仓储集成验证。状态保持进行中；尚未推送、部署或线上验证。
 
 **本轮登记（2026-08-08）：** 账号监控卡片统一探测口径及四项交互增强，状态：进行中（用户已确认账号卡片主指标、成功率、TTFT、总耗时、评分和证据全部以主动探测为唯一来源；同时加入成本来源警示、账号名称上游外链、评分构成悬浮展示。仅允许相关专项测试、构建、蓝绿无停机部署和线上页面/API 验证；尚未推送、部署或线上验证，不得标记完成）。
 

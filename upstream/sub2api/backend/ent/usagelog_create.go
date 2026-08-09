@@ -51,6 +51,76 @@ func (_c *UsageLogCreate) SetRequestID(v string) *UsageLogCreate {
 	return _c
 }
 
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (_c *UsageLogCreate) SetLogicalRequestID(v string) *UsageLogCreate {
+	_c.mutation.SetLogicalRequestID(v)
+	return _c
+}
+
+// SetNillableLogicalRequestID sets the "logical_request_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableLogicalRequestID(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetLogicalRequestID(*v)
+	}
+	return _c
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (_c *UsageLogCreate) SetAttemptID(v string) *UsageLogCreate {
+	_c.mutation.SetAttemptID(v)
+	return _c
+}
+
+// SetNillableAttemptID sets the "attempt_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableAttemptID(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetAttemptID(*v)
+	}
+	return _c
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (_c *UsageLogCreate) SetUsageCompleteness(v string) *UsageLogCreate {
+	_c.mutation.SetUsageCompleteness(v)
+	return _c
+}
+
+// SetNillableUsageCompleteness sets the "usage_completeness" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUsageCompleteness(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUsageCompleteness(*v)
+	}
+	return _c
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (_c *UsageLogCreate) SetReconciliationRequired(v bool) *UsageLogCreate {
+	_c.mutation.SetReconciliationRequired(v)
+	return _c
+}
+
+// SetNillableReconciliationRequired sets the "reconciliation_required" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableReconciliationRequired(v *bool) *UsageLogCreate {
+	if v != nil {
+		_c.SetReconciliationRequired(*v)
+	}
+	return _c
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (_c *UsageLogCreate) SetUnsafeToReplay(v bool) *UsageLogCreate {
+	_c.mutation.SetUnsafeToReplay(v)
+	return _c
+}
+
+// SetNillableUnsafeToReplay sets the "unsafe_to_replay" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUnsafeToReplay(v *bool) *UsageLogCreate {
+	if v != nil {
+		_c.SetUnsafeToReplay(*v)
+	}
+	return _c
+}
+
 // SetModel sets the "model" field.
 func (_c *UsageLogCreate) SetModel(v string) *UsageLogCreate {
 	_c.mutation.SetModel(v)
@@ -683,6 +753,18 @@ func (_c *UsageLogCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *UsageLogCreate) defaults() {
+	if _, ok := _c.mutation.UsageCompleteness(); !ok {
+		v := usagelog.DefaultUsageCompleteness
+		_c.mutation.SetUsageCompleteness(v)
+	}
+	if _, ok := _c.mutation.ReconciliationRequired(); !ok {
+		v := usagelog.DefaultReconciliationRequired
+		_c.mutation.SetReconciliationRequired(v)
+	}
+	if _, ok := _c.mutation.UnsafeToReplay(); !ok {
+		v := usagelog.DefaultUnsafeToReplay
+		_c.mutation.SetUnsafeToReplay(v)
+	}
 	if _, ok := _c.mutation.InputTokens(); !ok {
 		v := usagelog.DefaultInputTokens
 		_c.mutation.SetInputTokens(v)
@@ -783,6 +865,30 @@ func (_c *UsageLogCreate) check() error {
 		if err := usagelog.RequestIDValidator(v); err != nil {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
 		}
+	}
+	if v, ok := _c.mutation.LogicalRequestID(); ok {
+		if err := usagelog.LogicalRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "logical_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.logical_request_id": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.AttemptID(); ok {
+		if err := usagelog.AttemptIDValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.attempt_id": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.UsageCompleteness(); !ok {
+		return &ValidationError{Name: "usage_completeness", err: errors.New(`ent: missing required field "UsageLog.usage_completeness"`)}
+	}
+	if v, ok := _c.mutation.UsageCompleteness(); ok {
+		if err := usagelog.UsageCompletenessValidator(v); err != nil {
+			return &ValidationError{Name: "usage_completeness", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_completeness": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ReconciliationRequired(); !ok {
+		return &ValidationError{Name: "reconciliation_required", err: errors.New(`ent: missing required field "UsageLog.reconciliation_required"`)}
+	}
+	if _, ok := _c.mutation.UnsafeToReplay(); !ok {
+		return &ValidationError{Name: "unsafe_to_replay", err: errors.New(`ent: missing required field "UsageLog.unsafe_to_replay"`)}
 	}
 	if _, ok := _c.mutation.Model(); !ok {
 		return &ValidationError{Name: "model", err: errors.New(`ent: missing required field "UsageLog.model"`)}
@@ -956,6 +1062,26 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
 		_node.RequestID = value
+	}
+	if value, ok := _c.mutation.LogicalRequestID(); ok {
+		_spec.SetField(usagelog.FieldLogicalRequestID, field.TypeString, value)
+		_node.LogicalRequestID = &value
+	}
+	if value, ok := _c.mutation.AttemptID(); ok {
+		_spec.SetField(usagelog.FieldAttemptID, field.TypeString, value)
+		_node.AttemptID = &value
+	}
+	if value, ok := _c.mutation.UsageCompleteness(); ok {
+		_spec.SetField(usagelog.FieldUsageCompleteness, field.TypeString, value)
+		_node.UsageCompleteness = value
+	}
+	if value, ok := _c.mutation.ReconciliationRequired(); ok {
+		_spec.SetField(usagelog.FieldReconciliationRequired, field.TypeBool, value)
+		_node.ReconciliationRequired = value
+	}
+	if value, ok := _c.mutation.UnsafeToReplay(); ok {
+		_spec.SetField(usagelog.FieldUnsafeToReplay, field.TypeBool, value)
+		_node.UnsafeToReplay = value
 	}
 	if value, ok := _c.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
@@ -1299,6 +1425,78 @@ func (u *UsageLogUpsert) SetRequestID(v string) *UsageLogUpsert {
 // UpdateRequestID sets the "request_id" field to the value that was provided on create.
 func (u *UsageLogUpsert) UpdateRequestID() *UsageLogUpsert {
 	u.SetExcluded(usagelog.FieldRequestID)
+	return u
+}
+
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (u *UsageLogUpsert) SetLogicalRequestID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldLogicalRequestID, v)
+	return u
+}
+
+// UpdateLogicalRequestID sets the "logical_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateLogicalRequestID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldLogicalRequestID)
+	return u
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (u *UsageLogUpsert) ClearLogicalRequestID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldLogicalRequestID)
+	return u
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (u *UsageLogUpsert) SetAttemptID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldAttemptID, v)
+	return u
+}
+
+// UpdateAttemptID sets the "attempt_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateAttemptID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldAttemptID)
+	return u
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (u *UsageLogUpsert) ClearAttemptID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldAttemptID)
+	return u
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (u *UsageLogUpsert) SetUsageCompleteness(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUsageCompleteness, v)
+	return u
+}
+
+// UpdateUsageCompleteness sets the "usage_completeness" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUsageCompleteness() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUsageCompleteness)
+	return u
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (u *UsageLogUpsert) SetReconciliationRequired(v bool) *UsageLogUpsert {
+	u.Set(usagelog.FieldReconciliationRequired, v)
+	return u
+}
+
+// UpdateReconciliationRequired sets the "reconciliation_required" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateReconciliationRequired() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldReconciliationRequired)
+	return u
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (u *UsageLogUpsert) SetUnsafeToReplay(v bool) *UsageLogUpsert {
+	u.Set(usagelog.FieldUnsafeToReplay, v)
+	return u
+}
+
+// UpdateUnsafeToReplay sets the "unsafe_to_replay" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUnsafeToReplay() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUnsafeToReplay)
 	return u
 }
 
@@ -2144,6 +2342,90 @@ func (u *UsageLogUpsertOne) SetRequestID(v string) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateRequestID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRequestID()
+	})
+}
+
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (u *UsageLogUpsertOne) SetLogicalRequestID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetLogicalRequestID(v)
+	})
+}
+
+// UpdateLogicalRequestID sets the "logical_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateLogicalRequestID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateLogicalRequestID()
+	})
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (u *UsageLogUpsertOne) ClearLogicalRequestID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearLogicalRequestID()
+	})
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (u *UsageLogUpsertOne) SetAttemptID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAttemptID(v)
+	})
+}
+
+// UpdateAttemptID sets the "attempt_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateAttemptID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAttemptID()
+	})
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (u *UsageLogUpsertOne) ClearAttemptID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAttemptID()
+	})
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (u *UsageLogUpsertOne) SetUsageCompleteness(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageCompleteness(v)
+	})
+}
+
+// UpdateUsageCompleteness sets the "usage_completeness" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUsageCompleteness() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageCompleteness()
+	})
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (u *UsageLogUpsertOne) SetReconciliationRequired(v bool) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetReconciliationRequired(v)
+	})
+}
+
+// UpdateReconciliationRequired sets the "reconciliation_required" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateReconciliationRequired() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateReconciliationRequired()
+	})
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (u *UsageLogUpsertOne) SetUnsafeToReplay(v bool) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUnsafeToReplay(v)
+	})
+}
+
+// UpdateUnsafeToReplay sets the "unsafe_to_replay" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUnsafeToReplay() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUnsafeToReplay()
 	})
 }
 
@@ -3279,6 +3561,90 @@ func (u *UsageLogUpsertBulk) SetRequestID(v string) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateRequestID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRequestID()
+	})
+}
+
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (u *UsageLogUpsertBulk) SetLogicalRequestID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetLogicalRequestID(v)
+	})
+}
+
+// UpdateLogicalRequestID sets the "logical_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateLogicalRequestID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateLogicalRequestID()
+	})
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (u *UsageLogUpsertBulk) ClearLogicalRequestID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearLogicalRequestID()
+	})
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (u *UsageLogUpsertBulk) SetAttemptID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAttemptID(v)
+	})
+}
+
+// UpdateAttemptID sets the "attempt_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateAttemptID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAttemptID()
+	})
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (u *UsageLogUpsertBulk) ClearAttemptID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAttemptID()
+	})
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (u *UsageLogUpsertBulk) SetUsageCompleteness(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageCompleteness(v)
+	})
+}
+
+// UpdateUsageCompleteness sets the "usage_completeness" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUsageCompleteness() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageCompleteness()
+	})
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (u *UsageLogUpsertBulk) SetReconciliationRequired(v bool) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetReconciliationRequired(v)
+	})
+}
+
+// UpdateReconciliationRequired sets the "reconciliation_required" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateReconciliationRequired() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateReconciliationRequired()
+	})
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (u *UsageLogUpsertBulk) SetUnsafeToReplay(v bool) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUnsafeToReplay(v)
+	})
+}
+
+// UpdateUnsafeToReplay sets the "unsafe_to_replay" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUnsafeToReplay() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUnsafeToReplay()
 	})
 }
 

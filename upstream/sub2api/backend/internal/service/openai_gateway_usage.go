@@ -318,6 +318,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			requestID = upstreamRequestID
 		}
 	}
+	usageLogRequestID := requestID
+	if attemptID := strings.TrimSpace(attemptMetadata.AttemptID); attemptID != "" {
+		usageLogRequestID = attemptID
+	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model
@@ -329,7 +333,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		UserID:                 user.ID,
 		APIKeyID:               apiKey.ID,
 		AccountID:              account.ID,
-		RequestID:              requestID,
+		RequestID:              usageLogRequestID,
 		LogicalRequestID:       logicalRequestID,
 		AttemptID:              strings.TrimSpace(attemptMetadata.AttemptID),
 		UsageCompleteness:      usageCompleteness,
@@ -433,6 +437,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
 			tokens, cost.TotalCost,
 		)
+	}
+	if usageCompleteness == UsageCompletenessUnknown {
+		usageLog.InputCost = 0
+		usageLog.OutputCost = 0
+		usageLog.CacheCreationCost = 0
+		usageLog.CacheReadCost = 0
+		usageLog.ImageInputCost = 0
+		usageLog.ImageOutputCost = 0
+		usageLog.TotalCost = 0
+		usageLog.ActualCost = 0
+		usageLog.AccountStatsCost = nil
+		usageLog.LongContextBillingApplied = false
 	}
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {

@@ -43747,6 +43747,11 @@ type UsageLogMutation struct {
 	typ                          string
 	id                           *int64
 	request_id                   *string
+	logical_request_id           *string
+	attempt_id                   *string
+	usage_completeness           *string
+	reconciliation_required      *bool
+	unsafe_to_replay             *bool
 	model                        *string
 	requested_model              *string
 	upstream_model               *string
@@ -44064,6 +44069,212 @@ func (m *UsageLogMutation) OldRequestID(ctx context.Context) (v string, err erro
 // ResetRequestID resets all changes to the "request_id" field.
 func (m *UsageLogMutation) ResetRequestID() {
 	m.request_id = nil
+}
+
+// SetLogicalRequestID sets the "logical_request_id" field.
+func (m *UsageLogMutation) SetLogicalRequestID(s string) {
+	m.logical_request_id = &s
+}
+
+// LogicalRequestID returns the value of the "logical_request_id" field in the mutation.
+func (m *UsageLogMutation) LogicalRequestID() (r string, exists bool) {
+	v := m.logical_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLogicalRequestID returns the old "logical_request_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldLogicalRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLogicalRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLogicalRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLogicalRequestID: %w", err)
+	}
+	return oldValue.LogicalRequestID, nil
+}
+
+// ClearLogicalRequestID clears the value of the "logical_request_id" field.
+func (m *UsageLogMutation) ClearLogicalRequestID() {
+	m.logical_request_id = nil
+	m.clearedFields[usagelog.FieldLogicalRequestID] = struct{}{}
+}
+
+// LogicalRequestIDCleared returns if the "logical_request_id" field was cleared in this mutation.
+func (m *UsageLogMutation) LogicalRequestIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldLogicalRequestID]
+	return ok
+}
+
+// ResetLogicalRequestID resets all changes to the "logical_request_id" field.
+func (m *UsageLogMutation) ResetLogicalRequestID() {
+	m.logical_request_id = nil
+	delete(m.clearedFields, usagelog.FieldLogicalRequestID)
+}
+
+// SetAttemptID sets the "attempt_id" field.
+func (m *UsageLogMutation) SetAttemptID(s string) {
+	m.attempt_id = &s
+}
+
+// AttemptID returns the value of the "attempt_id" field in the mutation.
+func (m *UsageLogMutation) AttemptID() (r string, exists bool) {
+	v := m.attempt_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptID returns the old "attempt_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldAttemptID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptID: %w", err)
+	}
+	return oldValue.AttemptID, nil
+}
+
+// ClearAttemptID clears the value of the "attempt_id" field.
+func (m *UsageLogMutation) ClearAttemptID() {
+	m.attempt_id = nil
+	m.clearedFields[usagelog.FieldAttemptID] = struct{}{}
+}
+
+// AttemptIDCleared returns if the "attempt_id" field was cleared in this mutation.
+func (m *UsageLogMutation) AttemptIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldAttemptID]
+	return ok
+}
+
+// ResetAttemptID resets all changes to the "attempt_id" field.
+func (m *UsageLogMutation) ResetAttemptID() {
+	m.attempt_id = nil
+	delete(m.clearedFields, usagelog.FieldAttemptID)
+}
+
+// SetUsageCompleteness sets the "usage_completeness" field.
+func (m *UsageLogMutation) SetUsageCompleteness(s string) {
+	m.usage_completeness = &s
+}
+
+// UsageCompleteness returns the value of the "usage_completeness" field in the mutation.
+func (m *UsageLogMutation) UsageCompleteness() (r string, exists bool) {
+	v := m.usage_completeness
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageCompleteness returns the old "usage_completeness" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUsageCompleteness(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageCompleteness is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageCompleteness requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageCompleteness: %w", err)
+	}
+	return oldValue.UsageCompleteness, nil
+}
+
+// ResetUsageCompleteness resets all changes to the "usage_completeness" field.
+func (m *UsageLogMutation) ResetUsageCompleteness() {
+	m.usage_completeness = nil
+}
+
+// SetReconciliationRequired sets the "reconciliation_required" field.
+func (m *UsageLogMutation) SetReconciliationRequired(b bool) {
+	m.reconciliation_required = &b
+}
+
+// ReconciliationRequired returns the value of the "reconciliation_required" field in the mutation.
+func (m *UsageLogMutation) ReconciliationRequired() (r bool, exists bool) {
+	v := m.reconciliation_required
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReconciliationRequired returns the old "reconciliation_required" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldReconciliationRequired(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReconciliationRequired is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReconciliationRequired requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReconciliationRequired: %w", err)
+	}
+	return oldValue.ReconciliationRequired, nil
+}
+
+// ResetReconciliationRequired resets all changes to the "reconciliation_required" field.
+func (m *UsageLogMutation) ResetReconciliationRequired() {
+	m.reconciliation_required = nil
+}
+
+// SetUnsafeToReplay sets the "unsafe_to_replay" field.
+func (m *UsageLogMutation) SetUnsafeToReplay(b bool) {
+	m.unsafe_to_replay = &b
+}
+
+// UnsafeToReplay returns the value of the "unsafe_to_replay" field in the mutation.
+func (m *UsageLogMutation) UnsafeToReplay() (r bool, exists bool) {
+	v := m.unsafe_to_replay
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUnsafeToReplay returns the old "unsafe_to_replay" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUnsafeToReplay(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUnsafeToReplay is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUnsafeToReplay requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUnsafeToReplay: %w", err)
+	}
+	return oldValue.UnsafeToReplay, nil
+}
+
+// ResetUnsafeToReplay resets all changes to the "unsafe_to_replay" field.
+func (m *UsageLogMutation) ResetUnsafeToReplay() {
+	m.unsafe_to_replay = nil
 }
 
 // SetModel sets the "model" field.
@@ -46445,7 +46656,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 46)
+	fields := make([]string, 0, 51)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -46457,6 +46668,21 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
+	}
+	if m.logical_request_id != nil {
+		fields = append(fields, usagelog.FieldLogicalRequestID)
+	}
+	if m.attempt_id != nil {
+		fields = append(fields, usagelog.FieldAttemptID)
+	}
+	if m.usage_completeness != nil {
+		fields = append(fields, usagelog.FieldUsageCompleteness)
+	}
+	if m.reconciliation_required != nil {
+		fields = append(fields, usagelog.FieldReconciliationRequired)
+	}
+	if m.unsafe_to_replay != nil {
+		fields = append(fields, usagelog.FieldUnsafeToReplay)
 	}
 	if m.model != nil {
 		fields = append(fields, usagelog.FieldModel)
@@ -46600,6 +46826,16 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.AccountID()
 	case usagelog.FieldRequestID:
 		return m.RequestID()
+	case usagelog.FieldLogicalRequestID:
+		return m.LogicalRequestID()
+	case usagelog.FieldAttemptID:
+		return m.AttemptID()
+	case usagelog.FieldUsageCompleteness:
+		return m.UsageCompleteness()
+	case usagelog.FieldReconciliationRequired:
+		return m.ReconciliationRequired()
+	case usagelog.FieldUnsafeToReplay:
+		return m.UnsafeToReplay()
 	case usagelog.FieldModel:
 		return m.Model()
 	case usagelog.FieldRequestedModel:
@@ -46701,6 +46937,16 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAccountID(ctx)
 	case usagelog.FieldRequestID:
 		return m.OldRequestID(ctx)
+	case usagelog.FieldLogicalRequestID:
+		return m.OldLogicalRequestID(ctx)
+	case usagelog.FieldAttemptID:
+		return m.OldAttemptID(ctx)
+	case usagelog.FieldUsageCompleteness:
+		return m.OldUsageCompleteness(ctx)
+	case usagelog.FieldReconciliationRequired:
+		return m.OldReconciliationRequired(ctx)
+	case usagelog.FieldUnsafeToReplay:
+		return m.OldUnsafeToReplay(ctx)
 	case usagelog.FieldModel:
 		return m.OldModel(ctx)
 	case usagelog.FieldRequestedModel:
@@ -46821,6 +47067,41 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRequestID(v)
+		return nil
+	case usagelog.FieldLogicalRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLogicalRequestID(v)
+		return nil
+	case usagelog.FieldAttemptID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptID(v)
+		return nil
+	case usagelog.FieldUsageCompleteness:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageCompleteness(v)
+		return nil
+	case usagelog.FieldReconciliationRequired:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReconciliationRequired(v)
+		return nil
+	case usagelog.FieldUnsafeToReplay:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUnsafeToReplay(v)
 		return nil
 	case usagelog.FieldModel:
 		v, ok := value.(string)
@@ -47401,6 +47682,12 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *UsageLogMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(usagelog.FieldLogicalRequestID) {
+		fields = append(fields, usagelog.FieldLogicalRequestID)
+	}
+	if m.FieldCleared(usagelog.FieldAttemptID) {
+		fields = append(fields, usagelog.FieldAttemptID)
+	}
 	if m.FieldCleared(usagelog.FieldRequestedModel) {
 		fields = append(fields, usagelog.FieldRequestedModel)
 	}
@@ -47478,6 +47765,12 @@ func (m *UsageLogMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *UsageLogMutation) ClearField(name string) error {
 	switch name {
+	case usagelog.FieldLogicalRequestID:
+		m.ClearLogicalRequestID()
+		return nil
+	case usagelog.FieldAttemptID:
+		m.ClearAttemptID()
+		return nil
 	case usagelog.FieldRequestedModel:
 		m.ClearRequestedModel()
 		return nil
@@ -47560,6 +47853,21 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldRequestID:
 		m.ResetRequestID()
+		return nil
+	case usagelog.FieldLogicalRequestID:
+		m.ResetLogicalRequestID()
+		return nil
+	case usagelog.FieldAttemptID:
+		m.ResetAttemptID()
+		return nil
+	case usagelog.FieldUsageCompleteness:
+		m.ResetUsageCompleteness()
+		return nil
+	case usagelog.FieldReconciliationRequired:
+		m.ResetReconciliationRequired()
+		return nil
+	case usagelog.FieldUnsafeToReplay:
+		m.ResetUnsafeToReplay()
 		return nil
 	case usagelog.FieldModel:
 		m.ResetModel()

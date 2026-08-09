@@ -100,6 +100,16 @@ func (c *UsageBillingCommand) Normalize() {
 		c.RequestID = c.LogicalRequestID
 	}
 	c.UsageCompleteness = c.UsageCompleteness.Normalize()
+	// Unknown usage is an audit-only outcome. Preserve observed token fields for
+	// reconciliation, but never let an incomplete upstream attempt charge or
+	// claim the customer billing idempotency key.
+	if c.UsageCompleteness == UsageCompletenessUnknown {
+		c.BalanceCost = 0
+		c.SubscriptionCost = 0
+		c.APIKeyQuotaCost = 0
+		c.APIKeyRateLimitCost = 0
+		c.AccountQuotaCost = 0
+	}
 	if c.UsageCompleteness == UsageCompletenessPartial {
 		c.ReconciliationRequired = true
 	}

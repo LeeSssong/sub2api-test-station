@@ -77,4 +77,21 @@ describe('HelpTooltip', () => {
 
     wrapper.unmount()
   })
+
+	it('opens hover details when a keyboard-focusable trigger receives focus', async () => {
+		const wrapper = mount(HelpTooltip, {
+			attachTo: document.body,
+			props: { content: 'keyboard details' },
+			slots: { trigger: '<button type="button">!</button>' },
+		})
+
+		const button = wrapper.get('button')
+		button.element.focus()
+		await nextTick()
+		expect(getTooltipElement().style.display).not.toBe('none')
+
+		button.element.blur()
+		await nextTick()
+		expect(getTooltipElement().style.display).toBe('none')
+	})
 })

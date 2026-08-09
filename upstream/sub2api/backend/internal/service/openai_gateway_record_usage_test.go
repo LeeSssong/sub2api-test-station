@@ -69,6 +69,111 @@ func TestOpenAIGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
 	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{}))
 }
 
+func TestOpenAIGatewayServiceRecordUsage_DeduplicatesAttemptsByLogicalRequestAndUsageFingerprint(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+	metadata := OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-usage-1", AttemptID: "logical-usage-1:2", AttemptNumber: 2}
+	for _, attemptID := range []string{"logical-usage-1:1", "logical-usage-1:2"} {
+		metadata.AttemptID = attemptID
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID:       "upstream-" + attemptID,
+				AttemptMetadata: metadata,
+				Usage:          OpenAIUsage{InputTokens: 8, OutputTokens: 4},
+				Model:          "gpt-5.1",
+			},
+			APIKey:             &APIKey{ID: 1001, Group: &Group{RateMultiplier: 1}},
+			User:               &User{ID: 2001},
+			Account:            &Account{ID: 3001},
+			RequestPayloadHash: "same-request-fingerprint",
+		})
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, "logical-usage-1", billingRepo.lastCmd.LogicalRequestID)
+	require.Equal(t, "logical-usage-1:2", billingRepo.lastCmd.AttemptID)
+	require.Equal(t, UsageCompletenessComplete, billingRepo.lastCmd.UsageCompleteness)
+	require.False(t, billingRepo.lastCmd.ReconciliationRequired)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_UnknownTransientFailureDoesNotBill(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:       "connect-failure",
+			AttemptMetadata: OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-connect-1", AttemptID: "logical-connect-1:1"},
+			UsageKnown:      false,
+			Model:           "gpt-5.1",
+		},
+		APIKey:  &APIKey{ID: 1002, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2002},
+		Account: &Account{ID: 3002},
+	})
+	require.NoError(t, err)
+	require.Zero(t, userRepo.deductCalls)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost)
+	require.Equal(t, UsageCompletenessUnknown, billingRepo.lastCmd.UsageCompleteness)
+	require.False(t, billingRepo.lastCmd.ReconciliationRequired)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_PartialUsageRequiresReconciliation(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:       "partial-response",
+			AttemptMetadata: OpenAIRequestAttemptMetadata{LogicalRequestID: "logical-partial-1", AttemptID: "logical-partial-1:1", OutputStarted: true, UsageProduced: true},
+			UsageKnown:      true,
+			Usage:           OpenAIUsage{InputTokens: 80, OutputTokens: 20},
+			Model:           "gpt-5.1",
+		},
+		APIKey:  &APIKey{ID: 1003, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2003},
+		Account: &Account{ID: 3003},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, 80, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 20, usageRepo.lastLog.OutputTokens)
+	require.Equal(t, UsageCompletenessPartial, billingRepo.lastCmd.UsageCompleteness)
+	require.True(t, billingRepo.lastCmd.ReconciliationRequired)
+}
+
+func TestUsageBillingReconciliationRetryUsesSameIdempotencyBoundary(t *testing.T) {
+	first := &UsageBillingCommand{
+		LogicalRequestID:      "logical-reconcile-1",
+		AttemptID:             "logical-reconcile-1:1",
+		RequestFingerprint:    "usage-fingerprint-1",
+		UsageCompleteness:     UsageCompletenessPartial,
+		ReconciliationRequired: true,
+	}
+	second := *first
+	second.AttemptID = "logical-reconcile-1:2"
+	first.Normalize()
+	second.Normalize()
+	require.Equal(t, first.RequestID, second.RequestID)
+	require.Equal(t, first.RequestFingerprint, second.RequestFingerprint)
+}
+
 func TestRecordCyberPolicyUsageLog_BillsRealUpstreamTokens(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}

@@ -12,12 +12,57 @@ import (
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
 
+// UsageCompleteness describes how much upstream usage was observed for an
+// attempt. Unknown usage is retained as an audit row but must not create a
+// customer charge; partial usage is chargeable only for the observed amount
+// and requires later reconciliation.
+type UsageCompleteness string
+
+const (
+	UsageCompletenessComplete UsageCompleteness = "complete"
+	UsageCompletenessPartial  UsageCompleteness = "partial"
+	UsageCompletenessUnknown  UsageCompleteness = "unknown"
+)
+
+func (c UsageCompleteness) Normalize() UsageCompleteness {
+	switch c {
+	case UsageCompletenessComplete, UsageCompletenessPartial, UsageCompletenessUnknown:
+		return c
+	default:
+		return UsageCompletenessUnknown
+	}
+}
+
+// normalizeUsageCompleteness infers a conservative completeness state when a
+// caller did not provide one explicitly. Any observed usage is complete unless
+// the attempt also reports output/usage production without a final snapshot.
+func normalizeUsageCompleteness(c UsageCompleteness, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, imageCount int, usageKnown, outputStarted, usageProduced bool) UsageCompleteness {
+	if strings.TrimSpace(string(c)) != "" {
+		return c.Normalize()
+	}
+	if outputStarted && usageProduced {
+		return UsageCompletenessPartial
+	}
+	if usageKnown || inputTokens > 0 || outputTokens > 0 || cacheCreationTokens > 0 || cacheReadTokens > 0 || imageCount > 0 {
+		return UsageCompletenessComplete
+	}
+	return UsageCompletenessUnknown
+}
+
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
-	RequestID          string
-	APIKeyID           int64
-	RequestFingerprint string
-	RequestPayloadHash string
+	RequestID string
+	// LogicalRequestID remains stable across upstream retries and failover.
+	LogicalRequestID string
+	// AttemptID identifies the individual upstream call for audit purposes; it
+	// is intentionally excluded from the dedup key.
+	AttemptID              string
+	APIKeyID               int64
+	RequestFingerprint     string
+	RequestPayloadHash     string
+	UsageCompleteness      UsageCompleteness
+	ReconciliationRequired bool
+	UnsafeToReplay         bool
 
 	UserID              int64
 	AccountID           int64
@@ -46,6 +91,18 @@ func (c *UsageBillingCommand) Normalize() {
 		return
 	}
 	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.LogicalRequestID = strings.TrimSpace(c.LogicalRequestID)
+	c.AttemptID = strings.TrimSpace(c.AttemptID)
+	if c.LogicalRequestID == "" {
+		c.LogicalRequestID = c.RequestID
+	}
+	if c.RequestID == "" {
+		c.RequestID = c.LogicalRequestID
+	}
+	c.UsageCompleteness = c.UsageCompleteness.Normalize()
+	if c.UsageCompleteness == UsageCompletenessPartial {
+		c.ReconciliationRequired = true
+	}
 	if strings.TrimSpace(c.RequestFingerprint) == "" {
 		c.RequestFingerprint = buildUsageBillingFingerprint(c)
 	}

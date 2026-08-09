@@ -107,7 +107,14 @@ type UsageLog struct {
 	APIKeyID  int64
 	AccountID int64
 	RequestID string
-	Model     string
+	// LogicalRequestID is stable across upstream retry attempts. AttemptID is
+	// retained for operational audit and is not part of billing deduplication.
+	LogicalRequestID       string
+	AttemptID              string
+	UsageCompleteness      UsageCompleteness
+	ReconciliationRequired bool
+	UnsafeToReplay         bool
+	Model                  string
 	// ActualResponseModel is the model returned by the OpenAI upstream response.
 	ActualResponseModel *string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.

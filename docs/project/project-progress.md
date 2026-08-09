@@ -6,6 +6,8 @@
 
 **本轮发布门禁修复（2026-08-09）：** 并版预检发现 Sub2API 新增 outbox 迁移会被宿主现有“迁移集合变化”门禁统一阻断。现已按 TDD 增加显式完整哈希对 allowlist：仅批准生产 `aee795202a3d...` 到本次 expand-only 集合 `5cc825b23a35...`，控制器必须同时收到 `--maintenance-authorized` 和受校验的 `RELEASE_MAINTENANCE_FROM_HASH`；未知/退休哈希仍在构建或停服前失败。宿主与控制器回归、Bash 语法和 diff 检查通过，维护不可用预算保持最多 300 秒；尚未推送、部署或线上验证，状态继续进行中。
 
+**本轮生产推送（2026-08-09）：** 已将验证后的 `main@48c215115` 推送至 `origin/main`；推送前重新抓取远端并确认无并发领先，同时确认“优化调度”分支 9 个领先提交仍全部未合并。当前仅完成推送，尚未构建/暂存最终统一候选、部署或线上验收，状态继续进行中。
+
 **本轮收口（2026-08-09）：** Sub2API 官方核心与星桥定制外置迁移已完成本地实现、合同测试、资格门禁和只读生产预检脚本；管理员使用路径保持同域、同账号、同 2FA、同 URL 和同数据查看语义。当前停在生产部署更新动作之前，尚未推送、部署、迁移、重启、蓝绿提升或线上验收，状态保持进行中。详见 [外置迁移手册](../runbooks/sub2api-externalization-migration.md)、[官方升级手册](../runbooks/sub2api-official-upgrade.md) 和 [生产前验证报告](../superpowers/reports/2026-08-08-externalization-production-verification.md)。
 
 **本轮任务登记（2026-08-09）：** Sub2API 外置定制 Task 1 基线清单、管理员体验合同和运行时清单，状态：进行中（已完成本地文档与契约测试；尚未推送、部署或线上复验，不能标记完成）。实施报告：`.superpowers/sdd/2026-08-08-sub2api-externalized-customization-implementation-plan/task-1-report.md`。

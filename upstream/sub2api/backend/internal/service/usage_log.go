@@ -107,11 +107,17 @@ type UsageLog struct {
 	APIKeyID  int64
 	AccountID int64
 	RequestID string
-	// UpstreamRequestID is the request identifier reported by the upstream
-	// provider. It remains separate from RequestID, which is local and used for
-	// idempotency and correlation within Sub2API.
+	// UpstreamRequestID is the provider request identifier, separate from the
+	// local idempotency/correlation key in RequestID.
 	UpstreamRequestID *string
-	Model             string
+	// LogicalRequestID is stable across upstream retry attempts. AttemptID is
+	// retained for operational audit and is not part of billing deduplication.
+	LogicalRequestID       string
+	AttemptID              string
+	UsageCompleteness      UsageCompleteness
+	ReconciliationRequired bool
+	UnsafeToReplay         bool
+	Model                  string
 	// ActualResponseModel is the model returned by the OpenAI upstream response.
 	ActualResponseModel *string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.
@@ -167,7 +173,8 @@ type UsageLog struct {
 	AccountRateMultiplier *float64
 	// AccountStatsCost 账号统计定价预计算费用（nil = 使用默认公式 total_cost × account_rate_multiplier）
 	AccountStatsCost *float64
-	// AccountCost 最终账号成本快照（nil 表示迁移前的历史流水，继续使用旧公式）
+	// AccountCost is the final upstream account-cost snapshot. Nil preserves
+	// historical fallback semantics.
 	AccountCost *float64
 
 	BillingType  int8

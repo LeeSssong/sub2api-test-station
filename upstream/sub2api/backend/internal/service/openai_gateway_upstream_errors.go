@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -16,6 +17,220 @@ import (
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
+
+type openAIRequestAttemptMetadataContextKey struct{}
+
+// OpenAIRequestAttemptMetadata identifies one upstream call while preserving
+// the client-visible logical request across retries and account failover.
+type OpenAIRequestAttemptMetadata struct {
+	LogicalRequestID      string
+	AttemptID             string
+	AttemptNumber         int
+	AccountID             int64
+	CanonicalModel        string
+	CachePreservationMode string
+	OutputStarted         bool
+	UsageProduced         bool
+}
+
+// WithOpenAIRequestAttemptMetadata attaches immutable attempt identity to an
+// upstream context. Result-only state is copied into the result/error after
+// the call finishes.
+func WithOpenAIRequestAttemptMetadata(ctx context.Context, metadata OpenAIRequestAttemptMetadata) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIRequestAttemptMetadataContextKey{}, metadata)
+}
+
+// OpenAIRequestAttemptMetadataFromContext returns the request attempt identity
+// attached by the handler before an upstream call.
+func OpenAIRequestAttemptMetadataFromContext(ctx context.Context) (OpenAIRequestAttemptMetadata, bool) {
+	if ctx == nil {
+		return OpenAIRequestAttemptMetadata{}, false
+	}
+	metadata, ok := ctx.Value(openAIRequestAttemptMetadataContextKey{}).(OpenAIRequestAttemptMetadata)
+	return metadata, ok
+}
+
+// OpenAIUpstreamFailureClass is the protocol-independent classification used
+// by the gateway retry/failover policy.  The fields intentionally describe
+// observable request safety rather than a particular handler implementation.
+type OpenAIUpstreamFailureClass struct {
+	StatusCode               int
+	ErrorType                string
+	Message                  string
+	Transient                bool
+	Hard                     bool
+	Retryable                bool
+	SafeToReplay             bool
+	SafeToFailoverAfterWrite bool
+	OutputStarted            bool
+	HasSideEffect            bool
+	RequestScopedTransient   bool
+}
+
+// OpenAIStreamRecoveryPayload is the wire contract emitted after an already
+// committed stream fails.  Keep this small and stable: clients use it to decide
+// whether an explicit continue/resume action is safe.
+type OpenAIStreamRecoveryPayload struct {
+	Type              string `json:"type"`
+	Message           string `json:"message"`
+	Retryable         bool   `json:"retryable"`
+	ResumeSupported   bool   `json:"resume_supported"`
+	RetryAfterSeconds int    `json:"retry_after_seconds"`
+	ResponseID        string `json:"response_id,omitempty"`
+}
+
+// OpenAIStreamRecoveryError carries a serializable recovery payload while
+// preserving the Go error contract used by existing handler loops.
+type OpenAIStreamRecoveryError struct {
+	Payload    OpenAIStreamRecoveryPayload
+	Cause      error
+	UsageKnown bool
+}
+
+func (e *OpenAIStreamRecoveryError) Error() string {
+	if e == nil {
+		return "upstream stream failure"
+	}
+	if e.Payload.Message != "" {
+		return e.Payload.Message
+	}
+	return "upstream stream failure"
+}
+
+func (e *OpenAIStreamRecoveryError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+func (e *OpenAIStreamRecoveryError) RecoveryPayload() OpenAIStreamRecoveryPayload {
+	if e == nil {
+		return OpenAIStreamRecoveryPayload{}
+	}
+	return e.Payload
+}
+
+// OpenAIStreamRecoveryInfo exposes the same structured metadata contract used
+// by legacy stream-read errors, allowing handlers to append one recovery event
+// without changing the error identity.
+func (e *OpenAIStreamRecoveryError) OpenAIStreamRecoveryInfo() OpenAIStreamRecoveryInfo {
+	if e == nil {
+		return OpenAIStreamRecoveryInfo{}
+	}
+	return OpenAIStreamRecoveryInfo{
+		OutputStarted: true,
+		ResponseID:    strings.TrimSpace(e.Payload.ResponseID),
+		UsageKnown:    e.UsageKnown,
+		Payload:       e.Payload,
+	}
+}
+
+// NewRetryableOpenAIStreamError creates the canonical post-output recovery
+// error.  A response ID is required before a client may safely resume; usage
+// may be known even when no resumable response ID exists.
+func NewRetryableOpenAIStreamError(retryAfter time.Duration, responseID string, usageKnown bool) error {
+	seconds := int(retryAfter / time.Second)
+	if seconds <= 0 {
+		seconds = 10
+	}
+	responseID = strings.TrimSpace(responseID)
+	return &OpenAIStreamRecoveryError{Payload: OpenAIStreamRecoveryPayload{
+		Type:              "upstream_stream_error",
+		Message:           "Upstream response stream was interrupted",
+		Retryable:         true,
+		ResumeSupported:   responseID != "",
+		RetryAfterSeconds: seconds,
+		ResponseID:        responseID,
+	}, Cause: nil, UsageKnown: usageKnown}
+}
+
+func newOpenAIStreamReadRecoveryFailoverError(cause error, responseID string, usageKnown bool) error {
+	// Keep the legacy stream-read error as the primary error.  A post-output
+	// failure is not an account failover signal: replaying would splice a second
+	// response into an already committed stream.  Recovery metadata is attached
+	// through the optional OpenAIStreamRecoveryInfo interface and consumed by
+	// handlers when they append a single SSE recovery event.
+	return newOpenAIUpstreamStreamReadRecoveryError(cause, responseID, usageKnown)
+}
+
+// ClassifyOpenAIUpstreamFailure unifies HTTP and transport/reader failures.
+// It is deliberately conservative: hard authentication, balance, permission,
+// and model errors always win over a generic transient marker.
+func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, responseBody []byte, outputStarted bool, requestHasSideEffects bool) OpenAIUpstreamFailureClass {
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(upstreamMessage))
+	if message == "" && len(responseBody) > 0 {
+		message = sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	}
+	text := strings.ToLower(strings.TrimSpace(message + " " + string(responseBody)))
+	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.type").String()))
+	if errType == "" {
+		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "response.error.type").String()))
+	}
+	errCode := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.code").String()))
+	if errCode == "" {
+		errCode = strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "response.error.code").String()))
+	}
+	combined := strings.TrimSpace(errType + " " + errCode + " " + text)
+
+	hard := statusCode == http.StatusUnauthorized || statusCode == http.StatusPaymentRequired || statusCode == http.StatusForbidden
+	for _, marker := range []string{
+		"model_not_found", "model not found", "does not exist", "unknown model",
+		"insufficient balance", "insufficient_balance", "balance insufficient", "insufficient funds", "billing issue", "quota exceeded",
+		"permission denied", "permission_error", "authentication_error", "invalid api key",
+		"forbidden", "unauthorized",
+	} {
+		if strings.Contains(combined, marker) {
+			hard = true
+			break
+		}
+	}
+
+	transient := false
+	switch statusCode {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout,
+		http.StatusInternalServerError, 520, 521, 522, 523, 524, 529:
+		transient = true
+	case http.StatusTooManyRequests:
+		transient = true
+	case http.StatusBadRequest:
+		transient = isOpenAITransientProcessingError(statusCode, message, responseBody)
+	}
+	if statusCode == 0 {
+		// A zero status is only transient for recognizable transport failures.
+		// Do not infer retryability from arbitrary upstream/business text such as
+		// "request timeout" unless it carries a transport signature.
+		for _, marker := range []string{
+			"connection reset", "connection refused", "unexpected eof", "broken pipe",
+			"i/o timeout", "context deadline exceeded", "dial tcp", "tls handshake timeout",
+			"http2: stream", "stream error: stream id",
+		} {
+			if strings.Contains(combined, marker) {
+				transient = true
+				break
+			}
+		}
+	}
+	if hard {
+		transient = false
+	}
+	return OpenAIUpstreamFailureClass{
+		StatusCode:               statusCode,
+		ErrorType:                errType,
+		Message:                  message,
+		Transient:                transient,
+		Hard:                     hard,
+		Retryable:                transient && !outputStarted,
+		SafeToReplay:             transient && !outputStarted && !requestHasSideEffects,
+		SafeToFailoverAfterWrite: transient && !outputStarted,
+		OutputStarted:            outputStarted,
+		HasSideEffect:            requestHasSideEffects,
+		RequestScopedTransient:   statusCode == http.StatusBadRequest && isOpenAITransientProcessingError(statusCode, message, responseBody),
+	}
+}
 
 func logOpenAIInstructionsRequiredDebug(
 	ctx context.Context,

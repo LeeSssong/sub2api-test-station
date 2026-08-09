@@ -543,14 +543,25 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account     *Account
-	Acquired    bool
-	ReleaseFunc func()
-	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	Account       *Account
+	Acquired      bool
+	ReleaseFunc   func()
+	HalfOpenProbe bool
+	WaitPlan      *AccountWaitPlan // nil means no wait allowed
+	halfOpenLease *openAIAccountModelHalfOpenLease
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
 	profitGate *openAIProfitControlGate
+}
+
+// CompleteHalfOpenProbe records the outcome of the one upstream call admitted
+// by this selection. ReleaseFunc remains the safety net for every path that
+// abandons the selection before Forward.
+func (r *AccountSelectionResult) CompleteHalfOpenProbe(success bool) {
+	if r != nil && r.halfOpenLease != nil {
+		r.halfOpenLease.complete(success)
+	}
 }
 
 // ProfitGateActive 报告本次选号是否处于利润门之下。
@@ -641,6 +652,19 @@ type UpstreamFailoverError struct {
 	NextAccountAction        NextAccountAction
 	ClientStatusCode         int
 	ClientMessage            string
+	// OutputStarted is true when semantic upstream output has already been
+	// forwarded to the client. Such failures must never silently replay the
+	// request because doing so would splice two model streams together.
+	OutputStarted bool
+	// SafeToFailoverAfterWrite is retained for non-semantic bytes (for example
+	// a keepalive comment). It is deliberately independent from OutputStarted.
+	// The resilience policy defaults this to false for semantic output.
+	ResponseID       string
+	UsageKnown       bool
+	LogicalRequestID string
+	AttemptID        string
+	AttemptMetadata  OpenAIRequestAttemptMetadata
+	Recovery         *OpenAIStreamRecoveryPayload
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -651,7 +675,13 @@ func (e *UpstreamFailoverError) Error() string {
 }
 
 func (e *UpstreamFailoverError) ShouldRetryNextAccount() bool {
-	return e != nil && e.NextAccountAction != NextAccountStop
+	if e == nil {
+		return false
+	}
+	if e.OutputStarted && !e.SafeToFailoverAfterWrite {
+		return false
+	}
+	return e.NextAccountAction != NextAccountStop
 }
 
 func (e *UpstreamFailoverError) IsCredentialFailure() bool {

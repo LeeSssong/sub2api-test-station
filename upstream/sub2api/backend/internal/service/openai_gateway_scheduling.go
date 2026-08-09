@@ -1230,6 +1230,10 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 }
 
 func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
+	return s.resolveFreshSchedulableOpenAIAccountWithLease(ctx, account, platform, requestedModel, requireCompact, requiredCapability, nil)
+}
+
+func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountWithLease(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, lease *openAIAccountModelHalfOpenLease) *Account {
 	if account == nil {
 		return nil
 	}
@@ -1250,7 +1254,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel) {
+	if s.isOpenAIAccountRequestRuntimeBlockedWithLease(fresh, requestedModel, lease) {
 		return nil
 	}
 	if s.isOpenAIProxyStreamQuarantined(ctx, fresh) {
@@ -1274,6 +1278,10 @@ func (s *OpenAIGatewayService) parentAccountLookup(ctx context.Context) func(int
 }
 
 func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
+	return s.recheckSelectedOpenAIAccountFromDBWithLease(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability, nil)
+}
+
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBWithLease(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, lease *openAIAccountModelHalfOpenLease) *Account {
 	if account == nil {
 		return nil
 	}
@@ -1283,6 +1291,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 			return nil
 		}
 		if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+			return nil
+		}
+		if s.isOpenAIAccountRequestRuntimeBlockedWithLease(account, requestedModel, lease) {
 			return nil
 		}
 		if s.isOpenAIProxyStreamQuarantined(ctx, account) {
@@ -1304,7 +1315,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
+	if s.isOpenAIAccountRequestRuntimeBlockedWithLease(latest, requestedModel, lease) {
 		return nil
 	}
 	if s.isOpenAIProxyStreamQuarantined(ctx, latest) {

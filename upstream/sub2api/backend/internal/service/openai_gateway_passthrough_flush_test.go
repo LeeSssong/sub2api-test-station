@@ -191,6 +191,39 @@ func TestOpenAIStreamingPassthroughNonRetryableFailedBeforeOutputFlushesAtBounda
 	require.Zero(t, result.usage.OutputTokens)
 }
 
+func TestOpenAIStreamingPassthroughPostOutputReadErrorCarriesRecoveryMetadata(t *testing.T) {
+	firstOutput := "event: response.created\n" +
+		`data: {"type":"response.created","response":{"id":"resp_partial"}}` + "\n\n" +
+		`data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"
+	result, _, _, err := runPassthroughFlushTest(t, &passthroughFlushTestErrorBody{
+		payload: []byte(firstOutput),
+		err:     errors.New("stream error: stream ID 7; INTERNAL_ERROR; received from peer"),
+	}, -1)
+	require.Error(t, err)
+	var readErr *openAIUpstreamStreamReadError
+	require.ErrorAs(t, err, &readErr)
+	code, _, ok := OpenAIUpstreamStreamReadErrorDetails(err)
+	require.True(t, ok)
+	require.Equal(t, OpenAIUpstreamHTTP2StreamErrorCode, code)
+	info, ok := OpenAIStreamRecoveryDetails(err)
+	require.True(t, ok)
+	require.Equal(t, "resp_partial", info.ResponseID)
+	require.False(t, info.UsageKnown)
+	require.NotNil(t, result)
+}
+
+func TestOpenAIStreamingPassthroughMissingTerminalCarriesRecoveryMetadata(t *testing.T) {
+	upstream := `data: {"type":"response.created","response":{"id":"resp_missing_terminal"}}` + "\n\n" +
+		`data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"
+	result, _, _, err := runPassthroughFlushTest(t, io.NopCloser(strings.NewReader(upstream)), -1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing terminal event")
+	info, ok := OpenAIStreamRecoveryDetails(err)
+	require.True(t, ok)
+	require.Equal(t, "resp_missing_terminal", info.ResponseID)
+	require.NotNil(t, result)
+}
+
 func TestOpenAIStreamingPassthroughFailedAfterOutputFlushesAtBoundaryAndKeepsUsage(t *testing.T) {
 	firstOutput := `data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"
 	failedEvent := "event: response.failed\n" +

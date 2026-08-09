@@ -21,6 +21,7 @@ import (
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
 	Result             *OpenAIForwardResult
+	AttemptMetadata    OpenAIRequestAttemptMetadata
 	APIKey             *APIKey
 	User               *User
 	Account            *Account
@@ -36,7 +37,12 @@ type OpenAIRecordUsageInput struct {
 	// PricingAt 是请求级定价时刻（请求开始捕获，与利润门的 D 同源）：高峰因子
 	// 按该时刻计算，保证同一请求从准入到扣费不中途变价。零值回退记录时刻
 	//（既有行为），供未装配的路径（图片/异步/cyber 等）沿用。
-	PricingAt time.Time
+	PricingAt              time.Time
+	LogicalRequestID       string
+	AttemptID              string
+	UsageCompleteness      UsageCompleteness
+	ReconciliationRequired bool
+	UnsafeToReplay         bool
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	ChannelUsageFields
@@ -135,6 +141,67 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result == nil {
 		return errors.New("openai usage result is nil")
 	}
+	attemptMetadata := result.AttemptMetadata
+	if strings.TrimSpace(input.AttemptMetadata.LogicalRequestID) != "" {
+		attemptMetadata.LogicalRequestID = input.AttemptMetadata.LogicalRequestID
+	}
+	if strings.TrimSpace(input.AttemptMetadata.AttemptID) != "" {
+		attemptMetadata.AttemptID = input.AttemptMetadata.AttemptID
+	}
+	if input.AttemptMetadata.AttemptNumber != 0 {
+		attemptMetadata.AttemptNumber = input.AttemptMetadata.AttemptNumber
+	}
+	if input.AttemptMetadata.AccountID != 0 {
+		attemptMetadata.AccountID = input.AttemptMetadata.AccountID
+	}
+	if strings.TrimSpace(input.AttemptMetadata.CanonicalModel) != "" {
+		attemptMetadata.CanonicalModel = input.AttemptMetadata.CanonicalModel
+	}
+	if strings.TrimSpace(input.AttemptMetadata.CachePreservationMode) != "" {
+		attemptMetadata.CachePreservationMode = input.AttemptMetadata.CachePreservationMode
+	}
+	attemptMetadata.OutputStarted = attemptMetadata.OutputStarted || input.AttemptMetadata.OutputStarted
+	attemptMetadata.UsageProduced = attemptMetadata.UsageProduced || input.AttemptMetadata.UsageProduced
+	if contextMetadata, ok := OpenAIRequestAttemptMetadataFromContext(ctx); ok {
+		if strings.TrimSpace(attemptMetadata.LogicalRequestID) == "" {
+			attemptMetadata.LogicalRequestID = contextMetadata.LogicalRequestID
+		}
+		if strings.TrimSpace(attemptMetadata.AttemptID) == "" {
+			attemptMetadata.AttemptID = contextMetadata.AttemptID
+		}
+		if !attemptMetadata.OutputStarted {
+			attemptMetadata.OutputStarted = contextMetadata.OutputStarted
+		}
+		if !attemptMetadata.UsageProduced {
+			attemptMetadata.UsageProduced = contextMetadata.UsageProduced
+		}
+	}
+	logicalRequestID := strings.TrimSpace(input.LogicalRequestID)
+	if logicalRequestID == "" {
+		logicalRequestID = strings.TrimSpace(attemptMetadata.LogicalRequestID)
+	}
+	if logicalRequestID == "" {
+		if result.OpenAIWSMode && strings.TrimSpace(result.RequestID) != "" {
+			// A WebSocket connection can carry multiple turns, so the upstream
+			// response ID is the stable per-turn logical billing identity.
+			logicalRequestID = strings.TrimSpace(result.RequestID)
+		} else {
+			logicalRequestID = resolveUsageBillingRequestID(ctx, result.RequestID)
+		}
+	}
+	usageCompleteness := normalizeUsageCompleteness(
+		input.UsageCompleteness,
+		result.Usage.InputTokens,
+		result.Usage.OutputTokens,
+		result.Usage.CacheCreationInputTokens,
+		result.Usage.CacheReadInputTokens,
+		result.ImageCount+result.VideoCount+result.WebSearchCalls,
+		result.UsageKnown,
+		result.OutputStarted || attemptMetadata.OutputStarted,
+		attemptMetadata.UsageProduced,
+	)
+	reconciliationRequired := input.ReconciliationRequired || usageCompleteness == UsageCompletenessPartial
+	unsafeToReplay := input.UnsafeToReplay || reconciliationRequired || attemptMetadata.OutputStarted
 	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
@@ -251,11 +318,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
-	if result.OpenAIWSMode {
+	requestID := logicalRequestID
+	if strings.TrimSpace(input.LogicalRequestID) == "" && strings.TrimSpace(attemptMetadata.LogicalRequestID) == "" && result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
 			requestID = upstreamRequestID
 		}
+	}
+	usageLogRequestID := requestID
+	if attemptID := strings.TrimSpace(attemptMetadata.AttemptID); attemptID != "" {
+		usageLogRequestID = usageLogAttemptRequestID(attemptID)
 	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
@@ -265,29 +336,34 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	usageLog := &UsageLog{
-		UserID:              user.ID,
-		APIKeyID:            apiKey.ID,
-		AccountID:           account.ID,
-		RequestID:           requestID,
-		Model:               result.Model,
-		RequestedModel:      requestedModel,
-		UpstreamModel:       optionalTrimmedStringPtr(result.UpstreamModel),
-		ServiceTier:         result.ServiceTier,
-		ReasoningEffort:     result.ReasoningEffort,
-		InboundEndpoint:     optionalTrimmedStringPtr(input.InboundEndpoint),
-		UpstreamEndpoint:    optionalTrimmedStringPtr(input.UpstreamEndpoint),
-		InputTokens:         actualInputTokens,
-		OutputTokens:        result.Usage.OutputTokens,
-		CacheCreationTokens: result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:     result.Usage.CacheReadInputTokens,
-		ImageInputTokens:    result.Usage.ImageInputTokens,
-		ImageOutputTokens:   result.Usage.ImageOutputTokens,
-		ImageCount:          result.ImageCount,
-		ImageSize:           optionalTrimmedStringPtr(result.ImageSize),
-		ImageInputSize:      optionalTrimmedStringPtr(result.ImageInputSize),
-		ImageOutputSize:     optionalTrimmedStringPtr(result.ImageOutputSize),
-		ImageSizeSource:     optionalTrimmedStringPtr(result.ImageSizeSource),
-		ImageSizeBreakdown:  result.ImageSizeBreakdown,
+		UserID:                 user.ID,
+		APIKeyID:               apiKey.ID,
+		AccountID:              account.ID,
+		RequestID:              usageLogRequestID,
+		LogicalRequestID:       logicalRequestID,
+		AttemptID:              strings.TrimSpace(attemptMetadata.AttemptID),
+		UsageCompleteness:      usageCompleteness,
+		ReconciliationRequired: reconciliationRequired,
+		UnsafeToReplay:         unsafeToReplay,
+		Model:                  result.Model,
+		RequestedModel:         requestedModel,
+		UpstreamModel:          optionalTrimmedStringPtr(result.UpstreamModel),
+		ServiceTier:            result.ServiceTier,
+		ReasoningEffort:        result.ReasoningEffort,
+		InboundEndpoint:        optionalTrimmedStringPtr(input.InboundEndpoint),
+		UpstreamEndpoint:       optionalTrimmedStringPtr(input.UpstreamEndpoint),
+		InputTokens:            actualInputTokens,
+		OutputTokens:           result.Usage.OutputTokens,
+		CacheCreationTokens:    result.Usage.CacheCreationInputTokens,
+		CacheReadTokens:        result.Usage.CacheReadInputTokens,
+		ImageInputTokens:       result.Usage.ImageInputTokens,
+		ImageOutputTokens:      result.Usage.ImageOutputTokens,
+		ImageCount:             result.ImageCount,
+		ImageSize:              optionalTrimmedStringPtr(result.ImageSize),
+		ImageInputSize:         optionalTrimmedStringPtr(result.ImageInputSize),
+		ImageOutputSize:        optionalTrimmedStringPtr(result.ImageOutputSize),
+		ImageSizeSource:        optionalTrimmedStringPtr(result.ImageSizeSource),
+		ImageSizeBreakdown:     result.ImageSizeBreakdown,
 	}
 	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
 	if isVideoUsage {
@@ -362,14 +438,24 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
-	groupID := int64(0)
 	if apiKey.GroupID != nil {
-		groupID = *apiKey.GroupID
+		applyAccountStatsCost(ctx, usageLog, s.channelService, s.billingService,
+			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
+			tokens, cost.TotalCost, accountRateMultiplier,
+		)
 	}
-	applyAccountStatsCost(ctx, usageLog, s.channelService, s.billingService,
-		account.ID, groupID, result.UpstreamModel, result.Model,
-		tokens, cost.TotalCost, accountRateMultiplier,
-	)
+	if usageCompleteness == UsageCompletenessUnknown {
+		usageLog.InputCost = 0
+		usageLog.OutputCost = 0
+		usageLog.CacheCreationCost = 0
+		usageLog.CacheReadCost = 0
+		usageLog.ImageInputCost = 0
+		usageLog.ImageOutputCost = 0
+		usageLog.TotalCost = 0
+		usageLog.ActualCost = 0
+		usageLog.AccountStatsCost = nil
+		usageLog.LongContextBillingApplied = false
+	}
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
@@ -387,25 +473,27 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	billingErr := func() error {
-		accountCost := cost.TotalCost * accountRateMultiplier
-		accountCostSet := false
-		if usageLog.AccountCost != nil {
-			accountCost = *usageLog.AccountCost
-			accountCostSet = true
-		}
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
-			Cost:                  cost,
-			User:                  user,
-			APIKey:                apiKey,
-			Account:               account,
-			Subscription:          subscription,
-			RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
-			IsSubscriptionBill:    isSubscriptionBilling,
-			AccountRateMultiplier: accountRateMultiplier,
-			AccountCost:           accountCost,
-			AccountCostSet:        accountCostSet,
-			APIKeyService:         input.APIKeyService,
-			Platform:              quotaPlatform,
+			Cost:                   cost,
+			User:                   user,
+			APIKey:                 apiKey,
+			Account:                account,
+			Subscription:           subscription,
+			RequestPayloadHash:     resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
+			IsSubscriptionBill:     isSubscriptionBilling,
+			AccountRateMultiplier:  accountRateMultiplier,
+			APIKeyService:          input.APIKeyService,
+			Platform:               quotaPlatform,
+			LogicalRequestID:       logicalRequestID,
+			AttemptID:              strings.TrimSpace(attemptMetadata.AttemptID),
+			AttemptNumber:          attemptMetadata.AttemptNumber,
+			CanonicalModel:         attemptMetadata.CanonicalModel,
+			CacheMode:              attemptMetadata.CachePreservationMode,
+			OutputStarted:          attemptMetadata.OutputStarted || result.OutputStarted,
+			UsageProduced:          attemptMetadata.UsageProduced || result.UsageKnown,
+			UsageCompleteness:      usageCompleteness,
+			ReconciliationRequired: reconciliationRequired,
+			UnsafeToReplay:         unsafeToReplay,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()

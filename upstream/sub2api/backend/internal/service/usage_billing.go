@@ -12,12 +12,57 @@ import (
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
 
+// UsageCompleteness describes how much upstream usage was observed for an
+// attempt. Unknown usage is retained as an audit row but must not create a
+// customer charge; partial usage is chargeable only for the observed amount
+// and requires later reconciliation.
+type UsageCompleteness string
+
+const (
+	UsageCompletenessComplete UsageCompleteness = "complete"
+	UsageCompletenessPartial  UsageCompleteness = "partial"
+	UsageCompletenessUnknown  UsageCompleteness = "unknown"
+)
+
+func (c UsageCompleteness) Normalize() UsageCompleteness {
+	switch c {
+	case UsageCompletenessComplete, UsageCompletenessPartial, UsageCompletenessUnknown:
+		return c
+	default:
+		return UsageCompletenessUnknown
+	}
+}
+
+// normalizeUsageCompleteness infers a conservative completeness state when a
+// caller did not provide one explicitly. Any observed usage is complete unless
+// the attempt also reports output/usage production without a final snapshot.
+func normalizeUsageCompleteness(c UsageCompleteness, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, imageCount int, usageKnown, outputStarted, usageProduced bool) UsageCompleteness {
+	if strings.TrimSpace(string(c)) != "" {
+		return c.Normalize()
+	}
+	if outputStarted && usageProduced {
+		return UsageCompletenessPartial
+	}
+	if usageKnown || inputTokens > 0 || outputTokens > 0 || cacheCreationTokens > 0 || cacheReadTokens > 0 || imageCount > 0 {
+		return UsageCompletenessComplete
+	}
+	return UsageCompletenessUnknown
+}
+
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
-	RequestID          string
-	APIKeyID           int64
-	RequestFingerprint string
-	RequestPayloadHash string
+	RequestID string
+	// LogicalRequestID remains stable across upstream retries and failover.
+	LogicalRequestID string
+	// AttemptID identifies the individual upstream call for audit purposes; it
+	// is intentionally excluded from the dedup key.
+	AttemptID              string
+	APIKeyID               int64
+	RequestFingerprint     string
+	RequestPayloadHash     string
+	UsageCompleteness      UsageCompleteness
+	ReconciliationRequired bool
+	UnsafeToReplay         bool
 
 	UserID              int64
 	AccountID           int64
@@ -46,9 +91,52 @@ func (c *UsageBillingCommand) Normalize() {
 		return
 	}
 	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.LogicalRequestID = strings.TrimSpace(c.LogicalRequestID)
+	hasExplicitLogicalRequestID := c.LogicalRequestID != ""
+	c.AttemptID = strings.TrimSpace(c.AttemptID)
+	if c.LogicalRequestID == "" {
+		c.LogicalRequestID = c.RequestID
+	}
+	if c.RequestID == "" {
+		c.RequestID = c.LogicalRequestID
+	}
+	c.UsageCompleteness = c.UsageCompleteness.Normalize()
+	// Unknown usage is an audit-only outcome. Preserve observed token fields for
+	// reconciliation, but never let an incomplete upstream attempt charge or
+	// claim the customer billing idempotency key.
+	if c.UsageCompleteness == UsageCompletenessUnknown {
+		c.BalanceCost = 0
+		c.SubscriptionCost = 0
+		c.APIKeyQuotaCost = 0
+		c.APIKeyRateLimitCost = 0
+		c.AccountQuotaCost = 0
+	}
+	if c.UsageCompleteness == UsageCompletenessPartial {
+		c.ReconciliationRequired = true
+	}
 	if strings.TrimSpace(c.RequestFingerprint) == "" {
 		c.RequestFingerprint = buildUsageBillingFingerprint(c)
 	}
+	if hasExplicitLogicalRequestID {
+		c.RequestID = usageBillingDedupRequestID(c.LogicalRequestID, c.RequestFingerprint)
+	}
+}
+
+// usageBillingDedupRequestID keeps the existing physical (request_id,
+// api_key_id) uniqueness while making the logical request plus the immutable
+// observed-usage fingerprint the customer-billing boundary.
+func usageBillingDedupRequestID(logicalRequestID, requestFingerprint string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(logicalRequestID) + "|" + strings.TrimSpace(requestFingerprint)))
+	return "billing:" + hex.EncodeToString(sum[:])
+}
+
+func usageLogAttemptRequestID(attemptID string) string {
+	attemptID = strings.TrimSpace(attemptID)
+	if len(attemptID) <= 64 {
+		return attemptID
+	}
+	sum := sha256.Sum256([]byte(attemptID))
+	return "attempt:" + hex.EncodeToString(sum[:])[:56]
 }
 
 func buildUsageBillingFingerprint(c *UsageBillingCommand) string {

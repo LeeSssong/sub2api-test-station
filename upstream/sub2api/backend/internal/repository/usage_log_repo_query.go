@@ -19,7 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, upstream_request_id, model, requested_model, upstream_model, actual_response_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, image_input_tokens, image_input_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, video_count, video_resolution, video_duration_seconds, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, long_context_billing_applied, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, account_cost, session_id, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, actual_response_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, image_input_tokens, image_input_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, video_count, video_resolution, video_duration_seconds, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, long_context_billing_applied, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, session_id, logical_request_id, attempt_id, usage_completeness, reconciliation_required, unsafe_to_replay, created_at"
 
 func (r *usageLogRepository) UpdateActualResponseModelByRequestID(ctx context.Context, requestID, model string) error {
 	requestID = strings.TrimSpace(requestID)
@@ -477,7 +477,6 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		apiKeyID                  int64
 		accountID                 int64
 		requestID                 sql.NullString
-		upstreamRequestID         sql.NullString
 		model                     string
 		requestedModel            sql.NullString
 		upstreamModel             sql.NullString
@@ -530,8 +529,12 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		billingTier               sql.NullString
 		billingMode               sql.NullString
 		accountStatsCost          sql.NullFloat64
-		accountCost               sql.NullFloat64
 		sessionID                 sql.NullString
+		logicalRequestID          sql.NullString
+		attemptID                 sql.NullString
+		usageCompleteness         string
+		reconciliationRequired    bool
+		unsafeToReplay            bool
 		createdAt                 time.Time
 	)
 
@@ -541,7 +544,6 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&apiKeyID,
 		&accountID,
 		&requestID,
-		&upstreamRequestID,
 		&model,
 		&requestedModel,
 		&upstreamModel,
@@ -594,8 +596,12 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&billingTier,
 		&billingMode,
 		&accountStatsCost,
-		&accountCost,
 		&sessionID,
+		&logicalRequestID,
+		&attemptID,
+		&usageCompleteness,
+		&reconciliationRequired,
+		&unsafeToReplay,
 		&createdAt,
 	); err != nil {
 		return nil, err
@@ -626,13 +632,15 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		ActualCost:                actualCost,
 		RateMultiplier:            rateMultiplier,
 		AccountRateMultiplier:     nullFloat64Ptr(accountRateMultiplier),
-		AccountCost:               nullFloat64Ptr(accountCost),
 		BillingType:               int8(billingType),
 		RequestType:               service.RequestTypeFromInt16(requestTypeRaw),
 		ImageCount:                imageCount,
 		VideoCount:                videoCount,
 		CacheTTLOverridden:        cacheTTLOverridden,
 		LongContextBillingApplied: longContextBillingApplied,
+		UsageCompleteness:         service.UsageCompleteness(usageCompleteness).Normalize(),
+		ReconciliationRequired:    reconciliationRequired,
+		UnsafeToReplay:            unsafeToReplay,
 		CreatedAt:                 createdAt,
 	}
 	if actualResponseModel.Valid {
@@ -647,9 +655,6 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 
 	if requestID.Valid {
 		log.RequestID = requestID.String
-	}
-	if upstreamRequestID.Valid {
-		log.UpstreamRequestID = &upstreamRequestID.String
 	}
 	if groupID.Valid {
 		value := groupID.Int64
@@ -726,6 +731,12 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	}
 	if sessionID.Valid {
 		log.SessionID = &sessionID.String
+	}
+	if logicalRequestID.Valid {
+		log.LogicalRequestID = logicalRequestID.String
+	}
+	if attemptID.Valid {
+		log.AttemptID = attemptID.String
 	}
 
 	return log, nil

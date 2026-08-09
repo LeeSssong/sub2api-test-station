@@ -1,0 +1,94 @@
+package service
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestClassifyOpenAIUpstreamFailure_PreOutputTransientIsReplayable(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(http.StatusBadGateway, "bad gateway", nil, false, false)
+	require.True(t, got.Transient)
+	require.True(t, got.Retryable)
+	require.True(t, got.SafeToReplay)
+	require.False(t, got.Hard)
+	require.False(t, got.OutputStarted)
+}
+
+func TestClassifyOpenAIUpstreamFailure_HardAuthNeverReplayable(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(http.StatusUnauthorized, "invalid api key", []byte(`{"error":{"type":"authentication_error"}}`), false, false)
+	require.True(t, got.Hard)
+	require.False(t, got.Transient)
+	require.False(t, got.Retryable)
+	require.False(t, got.SafeToReplay)
+}
+
+func TestClassifyOpenAIUpstreamFailure_HardFailedEventMarkersNeverFailover(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "model_not_found", body: `{"error":{"code":"model_not_found","message":"model not found"}}`},
+		{name: "permission", body: `{"error":{"type":"permission_error","message":"permission denied"}}`},
+		{name: "balance", body: `{"error":{"code":"insufficient_balance","message":"insufficient balance"}}`},
+		{name: "forbidden", body: `{"error":{"message":"forbidden"}}`},
+		{name: "unauthorized", body: `{"error":{"message":"unauthorized"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := []byte(tc.body)
+			message := extractOpenAISSEErrorMessage(payload)
+			require.False(t, openAIStreamFailedEventShouldFailover(payload, message))
+		})
+	}
+}
+
+func TestUpstreamFailoverError_PostOutputDefensivelyStopsRetry(t *testing.T) {
+	require.False(t, (&UpstreamFailoverError{
+		OutputStarted:     true,
+		NextAccountAction: NextAccountRetry,
+	}).ShouldRetryNextAccount())
+	require.True(t, (&UpstreamFailoverError{
+		OutputStarted:            true,
+		SafeToFailoverAfterWrite: true,
+		NextAccountAction:        NextAccountRetry,
+	}).ShouldRetryNextAccount())
+}
+
+func TestClassifyOpenAIUpstreamFailure_PostOutputReaderFailureIsNotFailoverable(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(0, "connection reset by peer", nil, true, false)
+	require.True(t, got.OutputStarted)
+	require.True(t, got.Transient)
+	require.False(t, got.Retryable)
+	require.False(t, got.SafeToFailoverAfterWrite)
+}
+
+func TestClassifyOpenAIUpstreamFailure_StatusZeroRequiresTransportSignature(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(0, "upstream timeout was reported by provider", nil, false, false)
+	require.False(t, got.Transient)
+
+	got = ClassifyOpenAIUpstreamFailure(0, "read tcp 10.0.0.1:443: i/o timeout", nil, false, false)
+	require.True(t, got.Transient)
+}
+
+func TestNewRetryableOpenAIStreamErrorCarriesRecoveryContract(t *testing.T) {
+	err := NewRetryableOpenAIStreamError(10*time.Second, "resp_123", true)
+	var recovery *OpenAIStreamRecoveryError
+	require.True(t, errors.As(err, &recovery))
+	payload := recovery.RecoveryPayload()
+	require.Equal(t, "upstream_stream_error", payload.Type)
+	require.Equal(t, "Upstream response stream was interrupted", payload.Message)
+	require.True(t, payload.Retryable)
+	require.True(t, payload.ResumeSupported)
+	require.Equal(t, 10, payload.RetryAfterSeconds)
+	_, marshalErr := json.Marshal(payload)
+	require.NoError(t, marshalErr)
+	info, ok := OpenAIStreamRecoveryDetails(err)
+	require.True(t, ok)
+	require.True(t, info.OutputStarted)
+	require.True(t, info.UsageKnown)
+	require.Equal(t, "resp_123", info.ResponseID)
+}

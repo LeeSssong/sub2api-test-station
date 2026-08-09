@@ -715,6 +715,7 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 
 type openaiStreamingResultPassthrough struct {
 	usage            *OpenAIUsage
+	UsageKnown       bool
 	firstTokenMs     *int
 	responseID       string
 	imageCount       int
@@ -897,6 +898,18 @@ func applyOpenAIStreamFailedErrorPassthroughRule(
 }
 
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
+	// Hard credential/model/policy failures must never enter the account
+	// failover loop, even though response.failed is transported over HTTP 200.
+	classification := ClassifyOpenAIUpstreamFailure(
+		openAIStreamFailedEventSemanticStatus(payload, message),
+		message,
+		payload,
+		false,
+		false,
+	)
+	if classification.Hard {
+		return false
+	}
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
@@ -1018,6 +1031,9 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
 		headers = responseHeaders[0].Clone()
 	}
+	outputStarted := openAIStreamClientOutputStarted(c, false)
+	responseID := extractOpenAIResponseIDFromJSONBytes(payload)
+	usageKnown := len(payload) > 0 && (gjson.GetBytes(payload, "usage.input_tokens").Int() > 0 || gjson.GetBytes(payload, "usage.output_tokens").Int() > 0 || gjson.GetBytes(payload, "response.usage.input_tokens").Int() > 0 || gjson.GetBytes(payload, "response.usage.output_tokens").Int() > 0)
 	// 流内 failed 事件承载于 HTTP 200，响应头是正常配额快照而非限流信号，
 	// 不写账号级限流/封禁状态；重试与切号由 failover 引擎按
 	// StatusCode/RetryableOnSameAccount 决定。
@@ -1032,12 +1048,32 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
+	classification := ClassifyOpenAIUpstreamFailure(statusCode, message, payload, outputStarted, false)
+	var recovery *OpenAIStreamRecoveryPayload
+	if outputStarted {
+		recovery = &OpenAIStreamRecoveryPayload{
+			Type: "upstream_stream_error", Message: "Upstream response stream was interrupted",
+			Retryable: classification.Transient, ResumeSupported: classification.Transient && responseID != "", RetryAfterSeconds: 10,
+			ResponseID: responseID,
+		}
+	}
 	return &UpstreamFailoverError{
-		StatusCode:             statusCode,
-		ResponseBody:           body,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
-		RequestScopedTransient: isOpenAIUpstreamCapacityShedEvent(payload),
+		StatusCode:               statusCode,
+		ResponseBody:             body,
+		ResponseHeaders:          headers,
+		RetryableOnSameAccount:   !classification.Hard && openAIStreamFailedEventRetryableOnSameAccount(account, payload, message) && classification.SafeToReplay,
+		RequestScopedTransient:   isOpenAIUpstreamCapacityShedEvent(payload),
+		OutputStarted:            outputStarted,
+		SafeToFailoverAfterWrite: false,
+		ResponseID:               responseID,
+		UsageKnown:               usageKnown,
+		Recovery:                 recovery,
+		NextAccountAction: func() NextAccountAction {
+			if outputStarted || classification.Hard {
+				return NextAccountStop
+			}
+			return NextAccountLegacyRetry
+		}(),
 	}
 }
 
@@ -1114,8 +1150,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
 	resultWithUsage := func() *openaiStreamingResultPassthrough {
+		usageKnown := usage != nil && (usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheReadInputTokens > 0 || usage.CacheCreationInputTokens > 0)
 		return &openaiStreamingResultPassthrough{
 			usage:            usage,
+			UsageKnown:       usageKnown,
 			firstTokenMs:     firstTokenMs,
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
@@ -1280,7 +1318,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
-		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
+		result := resultWithUsage()
+		return result, newOpenAIStreamReadRecoveryFailoverError(err, responseID, result.UsageKnown)
 	}
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -1296,7 +1335,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
 		}
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
-		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
+		result := resultWithUsage()
+		return result, newOpenAIStreamReadRecoveryFailoverError(nil, responseID, result.UsageKnown)
 	}
 	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)

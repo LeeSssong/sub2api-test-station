@@ -93,7 +93,7 @@
 - **100 pro-猫哥**：7d 成功率仅 93.67%；最新探测 failed/account_test_error。
 - **101 pro20x-猫哥**：7d 成功率仅 93.71%；有效倍率 0.22 无法覆盖任何满足质量条件的目标组。
 - **104 特惠-sheapi**：7d 成功率仅 3.06%；有效倍率 1 无法覆盖任何满足质量条件的目标组。
-- **117 特惠-ai8**：7d 成功率仅 0.00%；最新探测 failed/http_error；有效倍率 1 无法覆盖任何满足质量条件的目标组。
+- **117 特惠-ai8**：7d 成功率仅 0.00%；成功样本不足，延迟指标缺失；最新探测 failed/http_error。
 - **118 特惠-mosshub**：7d 成功率仅 34.91%。
 - **120 plus-mosshub**：7d 成功率仅 90.62%。
 - **136 特惠-tk**：7d 成功率仅 40.85%；TTFT P50 5348ms 超出当前上限；最新探测 failed/http_error。
@@ -152,7 +152,7 @@
 |104|特惠-sheapi|GPT-特惠分组|3.06%（探测/98）|1316ms|4336ms|3.06%|success|31/40/40|不进公开组|--|低|
 |105|plus-sheapi|GPT-测试分组|100.00%（探测/98）|1318ms|3328ms|100.00%|success|89/83/83|人工处理|--|待补|
 |106|pro20x-sheapi|GPT-测试分组|100.00%（探测/98）|1859ms|4702ms|100.00%|success|87/81/81|人工处理|--|待补|
-|117|特惠-ai8|GPT-特惠分组|0.00%（探测/34）|2132ms|2858ms|0.00%|failed/http_error|26/34/34|不进公开组|--|低|
+|117|特惠-ai8|GPT-特惠分组|0.00%（探测/34）|--|--|0.00%|failed/http_error|0/0/0|不进公开组|--|低|
 |118|特惠-mosshub|GPT-特惠分组|34.91%（探测/928）|1979ms|8900ms|34.91%|success|56/62/59|不进公开组|--|中|
 |119|特惠2-mosshub|GPT-Plus|92.44%（真实/3149）|10079ms|48782ms|92.44%|success|66/55/49|GPT-特惠|次级/2|高|
 |120|plus-mosshub|GPT-Plus|90.62%（探测/597）|1807ms|8729ms|90.62%|success|86/80/77|不进公开组|--|中|
@@ -173,13 +173,13 @@
 |157|pro-apizh|GPT-Pro、【专属】GPT-PRO|9.84%（探测/122）|2522ms|22496ms|9.84%|success|30/33/32|不进公开组|--|中|
 |158|ai8-0.15|GPT-测试分组、GPT-Plus|81.52%（探测/92）|1786ms|2650ms|81.52%|success|76/73/73|不进公开组|--|低|
 |159|ai8-0.2|GPT-Plus|55.26%（探测/38）|1856ms|3217ms|55.26%|success|63/61/61|不进公开组|--|低|
-|163|[redacted-email]|【专属】GPT-PRO、GPT-Pro|--（缺失/0）|--|--|--|缺失|0/0/0|人工处理|--|待补|
-|164|海豚科技1|【专属】GPT-PRO、GPT-Pro|--（缺失/0）|--|--|--|success|6/5/0|人工处理|--|待补|
-|165|海豚科技2|GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|success|5/4/0|人工处理|--|待补|
-|168|[redacted-email]|GPT-Pro、【专属】GPT-PRO、GPT-Plus|--（缺失/0）|--|--|--|failed/http_error|0/0/0|人工处理|--|待补|
-|169|[redacted-email]|GPT-Pro、【专属】GPT-PRO、GPT-Plus|--（缺失/0）|--|--|--|failed/http_error|0/0/0|人工处理|--|待补|
-|170|[redacted-email]|GPT-Plus、GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|failed/http_error|0/0/0|人工处理|--|待补|
-|171|[redacted-email]|GPT-Plus、GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|success|0/0/0|人工处理|--|待补|
+|163|[redacted-email]|【专属】GPT-PRO、GPT-Pro|--（缺失/0）|--|--|--|缺失|--|人工处理|--|待补|
+|164|海豚科技1|【专属】GPT-PRO、GPT-Pro|--（缺失/0）|--|--|--|success|--|人工处理|--|待补|
+|165|海豚科技2|GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|success|--|人工处理|--|待补|
+|168|[redacted-email]|GPT-Pro、【专属】GPT-PRO、GPT-Plus|--（缺失/0）|--|--|--|failed/http_error|--|人工处理|--|待补|
+|169|[redacted-email]|GPT-Pro、【专属】GPT-PRO、GPT-Plus|--（缺失/0）|--|--|--|failed/http_error|--|人工处理|--|待补|
+|170|[redacted-email]|GPT-Plus、GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|failed/http_error|--|人工处理|--|待补|
+|171|[redacted-email]|GPT-Plus、GPT-Pro、【专属】GPT-PRO|--（缺失/0）|--|--|--|success|--|人工处理|--|待补|
 
 ## 7d/30d 漂移
 

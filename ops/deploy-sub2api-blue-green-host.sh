@@ -26,11 +26,13 @@ preloaded_archive=''
 preloaded_archive_sha256=''
 preloaded_image_id=''
 
-# The only migration transition permitted by the maintenance path. These
-# hashes cover the complete normalized migration set, so a modified file or
-# any additional migration fails closed before production is stopped.
-readonly MAINTENANCE_OLD_MIGRATIONS_HASH=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-readonly MAINTENANCE_NEW_MIGRATIONS_HASH=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+# Only these migration transitions are permitted by the maintenance path.
+# The hashes cover complete normalized migration sets, so any other change
+# fails closed before production is stopped.
+readonly MAINTENANCE_1_OLD_MIGRATIONS_HASH=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+readonly MAINTENANCE_1_NEW_MIGRATIONS_HASH=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+readonly MAINTENANCE_2_OLD_MIGRATIONS_HASH=aee795202a3dd14c191c5e395add6beb58942950bf530d9961ae80a359998429
+readonly MAINTENANCE_2_NEW_MIGRATIONS_HASH=5cc825b23a35f64ecb2b2def9ae73170c7c512015f112d0773ba232e5ab85703
 
 while (($#)); do
   case "$1" in
@@ -54,8 +56,15 @@ done
 [[ "$maintenance_authorized" == false || "$mode" == production ]] || fail '--maintenance-authorized is only valid in production mode'
 [[ -z "$maintenance_from_hash" || "$maintenance_from_hash" =~ ^[a-f0-9]{64}$ ]] || fail '--maintenance-from-hash must be 64 lowercase hex'
 if [[ "$maintenance_authorized" == true ]]; then
-  [[ "$maintenance_from_hash" == "$MAINTENANCE_OLD_MIGRATIONS_HASH" ]] || fail '--maintenance-from-hash must equal the approved active migration hash'
+  [[ "$maintenance_from_hash" =~ ^[a-f0-9]{64}$ ]] \
+    || fail '--maintenance-from-hash must identify an approved active migration set'
 fi
+
+approved_maintenance_transition() {
+  local from_hash=$1 to_hash=$2
+  [[ "$from_hash" == "$MAINTENANCE_1_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_1_NEW_MIGRATIONS_HASH" \
+    || "$from_hash" == "$MAINTENANCE_2_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_2_NEW_MIGRATIONS_HASH" ]]
+}
 preloaded_image=${RELEASE_PRELOADED_IMAGE:-false}
 [[ "$preloaded_image" == true || "$preloaded_image" == false ]] \
   || fail 'RELEASE_PRELOADED_IMAGE must be true or false'
@@ -1012,9 +1021,8 @@ state_previous_slot=green
 
 if [[ "$migrations_hash" != "$state_migrations_hash" ]]; then
   if [[ "$maintenance_authorized" == true \
-      && "$maintenance_from_hash" == "$state_migrations_hash" \
-      && "$state_migrations_hash" == "$MAINTENANCE_OLD_MIGRATIONS_HASH" \
-      && "$migrations_hash" == "$MAINTENANCE_NEW_MIGRATIONS_HASH" ]]; then
+      && "$maintenance_from_hash" == "$state_migrations_hash" ]] \
+      && approved_maintenance_transition "$state_migrations_hash" "$migrations_hash"; then
     maintenance_transition=true
   else
     gate migration_set_changed 'candidate migration set differs from the active release' 300

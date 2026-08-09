@@ -36,6 +36,14 @@ done
 
 [[ "$mode" == rehearsal || "$mode" == production ]] || fail '--mode must be rehearsal or production'
 [[ "$maintenance_authorized" == false || "$mode" == production ]] || fail '--maintenance-authorized is only valid in production mode'
+maintenance_from_hash=${RELEASE_MAINTENANCE_FROM_HASH:-}
+if [[ "$maintenance_authorized" == true ]]; then
+  [[ "$maintenance_from_hash" =~ ^[a-f0-9]{64}$ ]] \
+    || fail 'RELEASE_MAINTENANCE_FROM_HASH must be 64 lowercase hex when maintenance is authorized'
+else
+  [[ -z "$maintenance_from_hash" ]] \
+    || fail 'RELEASE_MAINTENANCE_FROM_HASH requires --maintenance-authorized'
+fi
 [[ "$evidence" == /* && -f "$evidence" && -r "$evidence" && ! -L "$evidence" ]] \
   || fail '--evidence must be an absolute readable non-symlink file'
 evidence_parent=$(dirname "$evidence")
@@ -453,7 +461,7 @@ if [[ "$transport" == preloaded ]]; then
 fi
 if [[ "$maintenance_authorized" == true ]]; then
   host_args+=(--maintenance-authorized --maintenance-from-hash \
-    ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39)
+    "$maintenance_from_hash")
 fi
 host_output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$host_timeout" "$ssh_bin" \
   -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \

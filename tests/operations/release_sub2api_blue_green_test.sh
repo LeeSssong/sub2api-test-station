@@ -336,17 +336,25 @@ test_build_publish_and_host_invocation() {
 }
 
 test_maintenance_controller_forwards_exact_current_migration_hash() {
-  local current_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-  local legacy_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
+  local current_hash=aee795202a3dd14c191c5e395add6beb58942950bf530d9961ae80a359998429
+  local retired_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
 
   setup_case maintenance-current-hash
   write_evidence
-  CONTROLLER_MAINTENANCE_AUTHORIZED=true run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+  CONTROLLER_MAINTENANCE_AUTHORIZED=true RELEASE_MAINTENANCE_FROM_HASH=$current_hash \
+    run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
     || fail "maintenance controller failed: $(cat "$CASE_DIR/stderr")"
   grep -F -- "--maintenance-authorized --maintenance-from-hash $current_hash" "$CASE_DIR/ssh.log" >/dev/null \
     || fail 'maintenance controller did not forward the current production migration hash'
-  ! grep -F -- "$legacy_hash" "$CASE_DIR/ssh.log" >/dev/null \
+  ! grep -F -- "$retired_hash" "$CASE_DIR/ssh.log" >/dev/null \
     || fail 'maintenance controller forwarded the retired migration hash'
+
+  setup_case maintenance-missing-hash
+  write_evidence
+  if CONTROLLER_MAINTENANCE_AUTHORIZED=true run_controller >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then
+    fail 'maintenance controller accepted a missing source migration hash'
+  fi
+  [[ ! -s "$CASE_DIR/docker.log" ]] || fail 'missing maintenance source hash reached image build'
 }
 
 test_downtime_gate_is_propagated_without_retry() {

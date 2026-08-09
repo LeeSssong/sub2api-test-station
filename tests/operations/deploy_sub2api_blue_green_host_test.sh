@@ -893,6 +893,8 @@ test_downtime_gates() {
 test_authorized_maintenance_transition() {
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  local externalization_old_hash=aee795202a3dd14c191c5e395add6beb58942950bf530d9961ae80a359998429
+  local externalization_new_hash=5cc825b23a35f64ecb2b2def9ae73170c7c512015f112d0773ba232e5ab85703
   local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
   local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
@@ -920,7 +922,7 @@ test_authorized_maintenance_transition() {
   "$REAL_JQ" --arg hash "$legacy_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
   mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
   MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$legacy_old_hash expect_failure maintenance_legacy_transition run_executor
-  grep -q 'approved active migration hash' "$CASE_DIR/stderr" || fail 'retired migration transition was not rejected'
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'retired migration transition was not rejected'
   assert_no_mutation maintenance_legacy_transition
 
   setup_case maintenance_success
@@ -935,6 +937,17 @@ test_authorized_maintenance_transition() {
     || fail 'maintenance path stopped a shared service'
   ! grep -Eq 'compose .* (up|pull|rm|restart|recreate).*postgres|compose .* (up|pull|rm|restart|recreate).*redis|compose .* (up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
     || fail 'maintenance path rebuilt a shared service'
+
+  setup_case externalization_maintenance_success
+  write_meminfo
+  MIGRATIONS_HASH=$externalization_new_hash
+  "$REAL_JQ" --arg hash "$externalization_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$externalization_old_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "externalization maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'externalization transition did not use the bounded maintenance path'
 
   setup_case maintenance_rollback
   write_meminfo

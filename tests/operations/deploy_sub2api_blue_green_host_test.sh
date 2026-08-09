@@ -1120,6 +1120,25 @@ test_authorized_maintenance_transition() {
     || fail 'maintenance rollback touched a shared service'
 }
 
+test_verified_production_maintenance_transition() {
+  local production_hash=fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d
+  local candidate_hash=f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc
+
+  setup_case verified_production_maintenance_transition
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "verified production maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'verified production transition did not enter the bounded maintenance path'
+}
+
 test_maintenance_window_hard_maximum() {
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
@@ -1762,6 +1781,7 @@ case "${ONLY_TEST:-all}" in
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
     test_authorized_maintenance_transition
+    test_verified_production_maintenance_transition
     test_maintenance_window_hard_maximum
     test_maintenance_pre_worker_failure_restores_previous_api
     test_maintenance_deadline_bounds_post_stop_operation
@@ -1838,6 +1858,7 @@ case "${ONLY_TEST:-all}" in
   worker-request-log) test_worker_request_failure_log_does_not_trigger_startup_failure ;;
   maintenance)
 		test_authorized_maintenance_transition
+		test_verified_production_maintenance_transition
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation
@@ -1854,6 +1875,7 @@ case "${ONLY_TEST:-all}" in
 	maintenance-partial-stop) test_maintenance_partial_stop_arms_rollback ;;
 	maintenance-readiness) test_maintenance_pre_cutover_readiness_is_truthful ;;
 	maintenance-rollback-proofs) test_maintenance_rollback_proof_gates ;;
+	maintenance-approved-transition) test_verified_production_maintenance_transition ;;
 	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;

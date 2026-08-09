@@ -96,4 +96,5 @@ comparison gates and evidence needed before a production cutover.
 
 ## Commits
 
-Pending final Task 5 commit.
+`e26649ab4b88e7b57852c855373f2cd71cedd8e6`
+`feat: dual-read admin views without changing routes`

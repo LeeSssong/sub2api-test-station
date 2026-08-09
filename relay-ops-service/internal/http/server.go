@@ -180,9 +180,7 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	mux := http.NewServeMux()
 	if dependencies.ControlPlane != nil {
 		controlHandler := http.StripPrefix("/api/v1/xingqiao", dependencies.ControlPlane)
-		if dependencies.ControlPlaneAuth != nil {
-			mux.Handle("/api/v1/xingqiao/", controlplane.RequireAdmin(dependencies.ControlPlaneAuth, controlHandler))
-		} else if dependencies.Auth != nil {
+		if dependencies.Auth != nil {
 			mux.Handle("/api/v1/xingqiao/", adminauth.RequireAdmin(dependencies.Auth, controlHandler))
 		}
 	}

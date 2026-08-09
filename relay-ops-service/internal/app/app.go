@@ -228,7 +228,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	var coreOutbox *sub2api.CoreOutbox
-	if cfg.Mode != config.ModeClosed {
+	if cfg.ExternalizationEnabled {
 		if cfg.CoreDatabaseURLFile == "" {
 			return nil, fmt.Errorf("RELAY_OPS_CORE_DATABASE_URL_FILE is required for persistent externalization consumption")
 		}

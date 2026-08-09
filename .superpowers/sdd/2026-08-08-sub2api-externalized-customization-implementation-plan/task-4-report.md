@@ -93,3 +93,69 @@ claim/ack path still need a staging database exercise before production.
 ## Commit
 
 Pending at report creation.
+
+## Fix Round 1
+
+### RED / GREEN
+
+- `TestLoadKeepsReadOnlyExternalizationOptIn` first failed to compile because
+  `ExternalizationEnabled` did not exist. The configuration now defaults it to
+  `false`; only an explicit `RELAY_OPS_EXTERNALIZATION_ENABLED=true` requires
+  `RELAY_OPS_CORE_DATABASE_URL_FILE` and starts the core outbox loop.
+- Routing test first returned `404` after switching the Xingqiao mount to the
+  established admin-auth middleware. The test was then updated to exercise the
+  real session-verifier boundary and proved Bearer, User-Agent, forwarded IP,
+  real IP, and Origin reach `/auth/me` verification while Cookie is not
+  forwarded by Caddy.
+- The PostgreSQL lease test initially failed with `expected 2 arguments, got
+  3`, exposing the stale claim SQL placeholder after adding the token. It now
+  passes against a fresh PostgreSQL 18 container: an expired `processing`
+  lease is reclaimed with a new random token, and stale publish plus stale
+  failure acknowledgement are both rejected.
+
+### Fix Mapping
+
+- Added same-origin Caddy `/api/v1/xingqiao/*` route with relay proxying,
+  explicit User-Agent/Origin/trusted IP preservation, and Cookie removal.
+  `tests/infra/validate-sub2api-update-routing.sh` verifies the route contract.
+- Core outbox claims now include expired `processing` rows, set a cryptographic
+  claim token, and fence `MarkPublished`/`MarkFailed` on event ID, owner, and
+  token; both acknowledgement paths require exactly one updated row.
+- Refresh commands use Store-backed claim/result persistence. The first
+  matching actor/command/account/idempotency key dispatches; concurrent or
+  repeated matching requests replay stored state without another official
+  refresh. Conflicting command identity returns the Store conflict error.
+- `StoreReader.Now` now recomputes `freshness_seconds` on read. Empty
+  accounting/reconciliation responses carry deterministic generated-at,
+  `empty` completeness, and their calculation version.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/config ./internal/controlplane ./internal/http -run 'Test(LoadKeeps|Xingqiao|ReadModel)' -count=1 -v
+go test ./internal/sub2api -run '^TestCoreOutboxReclaimsExpiredLeaseAndRejectsStaleOwner$' -count=1 -v
+go test ./...
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+go vet ./...
+cd .. && bash tests/infra/validate-sub2api-update-routing.sh
+git diff --check
+```
+
+All recorded commands exited `0`. The lease/fencing test used a fresh local
+PostgreSQL 18 container and `RELAY_OPS_TEST_CORE_DATABASE_URL`; the container
+was stopped with `--rm` after completion.
+
+### Files
+
+- Config/startup: `internal/config/*`, `internal/app/app.go`,
+  `cmd/relay-ops/main.go`
+- Auth/routing: `internal/adminauth/*`, `internal/http/*`, `infra/Caddyfile`,
+  `tests/infra/validate-sub2api-update-routing.sh`
+- Command replay/freshness: `internal/controlplane/*`, `internal/store/*`
+- Core transport/migration: `internal/sub2api/outbox*`,
+  `upstream/sub2api/backend/migrations/200_externalization_outbox.sql`
+
+### Commit
+
+Pending fix-round commit.

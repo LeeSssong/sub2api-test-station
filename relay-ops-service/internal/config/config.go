@@ -27,6 +27,7 @@ type Config struct {
 	Sub2APIBaseURL                  string
 	Sub2APIAdminKeyFile             string
 	CoreDatabaseURLFile             string
+	ExternalizationEnabled          bool
 	Sub2APIAlertReadDatabaseURLFile string
 	AccountQualityResultFile        string
 	UpstreamGroupMappingFile        string
@@ -78,6 +79,10 @@ func Load(env func(string) string) (Config, error) {
 	accountingEnabled, err := parseBool(get("RELAY_OPS_ACCOUNTING_ENABLED", "false"))
 	if err != nil {
 		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_ENABLED must be true or false")
+	}
+	externalizationEnabled, err := parseBool(get("RELAY_OPS_EXTERNALIZATION_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("RELAY_OPS_EXTERNALIZATION_ENABLED must be true or false")
 	}
 	accountingStartDateText := get("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE", "")
 	var accountingStartDate time.Time
@@ -222,6 +227,7 @@ func Load(env func(string) string) (Config, error) {
 		Sub2APIBaseURL:                  baseURL,
 		Sub2APIAdminKeyFile:             adminKeyFile,
 		CoreDatabaseURLFile:             coreDatabaseURLFile,
+		ExternalizationEnabled:          externalizationEnabled,
 		Sub2APIAlertReadDatabaseURLFile: sub2APIAlertReadDatabaseURLFile,
 		AccountQualityResultFile:        accountQualityResultFile,
 		UpstreamGroupMappingFile:        upstreamGroupMappingFile,

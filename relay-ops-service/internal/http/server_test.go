@@ -12,7 +12,6 @@ import (
 
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adminauth"
-	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/upstreams"
@@ -67,15 +66,11 @@ func TestRetiredOpsAndAcknowledgementRoutesAreNotMounted(t *testing.T) {
 func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing.T) {
 	t.Parallel()
 	called := false
+	verifier := &sessionBindingVerifier{identity: adminauth.Identity{UserID: 4, Role: "admin", Status: "inactive"}}
 	h, err := NewServer(Dependencies{
 		Pricing:      fakePricing{},
+		Auth:         verifier,
 		ControlPlane: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { called = true; w.WriteHeader(http.StatusNoContent) }),
-		ControlPlaneAuth: controlAuthFunc(func(_ context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
-			if bearer != "session-secret" || clientIP == "" || origin != "https://api.example.test" {
-				t.Fatalf("Me(%q,%q,%q)", bearer, clientIP, origin)
-			}
-			return controlplane.AdminIdentity{UserID: 4, Role: "admin", Status: "inactive"}, nil
-		}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -83,11 +78,17 @@ func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/xingqiao/accounts/monitor", nil)
 	req.Header.Set("Authorization", "Bearer session-secret")
 	req.Header.Set("Cookie", "session=private")
+	req.Header.Set("User-Agent", "browser-binding")
+	req.Header.Set("X-Forwarded-For", "203.0.113.8")
+	req.Header.Set("X-Real-IP", "203.0.113.8")
 	req.Header.Set("Origin", "https://api.example.test")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized || called {
 		t.Fatalf("status=%d called=%v", rec.Code, called)
+	}
+	if verifier.session.Bearer != "session-secret" || verifier.session.UserAgent != "browser-binding" || verifier.session.ForwardedFor != "203.0.113.8" || verifier.session.RealIP != "203.0.113.8" || verifier.session.Origin != "https://api.example.test" {
+		t.Fatalf("session=%+v", verifier.session)
 	}
 	for _, secret := range []string{"session-secret", "session=private", "x-api-key"} {
 		if strings.Contains(rec.Body.String(), secret) {
@@ -96,10 +97,14 @@ func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing
 	}
 }
 
-type controlAuthFunc func(context.Context, string, string, string) (controlplane.AdminIdentity, error)
+type sessionBindingVerifier struct {
+	identity adminauth.Identity
+	session  adminauth.Session
+}
 
-func (f controlAuthFunc) Me(ctx context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
-	return f(ctx, bearer, clientIP, origin)
+func (v *sessionBindingVerifier) VerifyAdminSession(_ context.Context, session adminauth.Session) (adminauth.Identity, error) {
+	v.session = session
+	return v.identity, nil
 }
 
 func TestCreateUpstreamPassesAdapterTypeAndReturnsIt(t *testing.T) {
@@ -160,7 +165,7 @@ func TestAccountingRoutesRequireAnActiveAdministrator(t *testing.T) {
 	}{
 		{name: "missing session", want: http.StatusUnauthorized},
 		{name: "ordinary user", bearer: "user", identity: adminauth.Identity{UserID: 7, Role: "user", Status: "active"}, want: http.StatusForbidden},
-		{name: "disabled admin", bearer: "disabled", identity: adminauth.Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusForbidden},
+		{name: "disabled admin", bearer: "disabled", identity: adminauth.Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusUnauthorized},
 		{name: "active admin", bearer: "admin", identity: adminauth.Identity{UserID: 9, Role: "admin", Status: "active"}, want: http.StatusOK},
 	}
 	for _, test := range tests {

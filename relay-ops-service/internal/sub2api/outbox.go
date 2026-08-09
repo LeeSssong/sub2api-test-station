@@ -2,6 +2,8 @@ package sub2api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,6 +18,11 @@ import (
 // tables or write projection data.
 type CoreOutbox struct {
 	pool *pgxpool.Pool
+}
+
+type OutboxClaim struct {
+	Event events.Event
+	Token string
 }
 
 func NewCoreOutbox(ctx context.Context, databaseURL string) (*CoreOutbox, error) {
@@ -41,13 +48,17 @@ func (o *CoreOutbox) Close() {
 	}
 }
 
-func (o *CoreOutbox) ClaimBatch(ctx context.Context, consumer string, limit int) ([]events.Event, error) {
+func (o *CoreOutbox) ClaimBatch(ctx context.Context, consumer string, limit int) ([]OutboxClaim, error) {
 	if o == nil || o.pool == nil {
 		return nil, errors.New("core outbox is not initialized")
 	}
 	consumer = strings.TrimSpace(consumer)
 	if consumer == "" || limit <= 0 {
 		return nil, errors.New("consumer and positive limit are required")
+	}
+	token, err := claimToken()
+	if err != nil {
+		return nil, err
 	}
 	tx, err := o.pool.Begin(ctx)
 	if err != nil {
@@ -57,26 +68,26 @@ func (o *CoreOutbox) ClaimBatch(ctx context.Context, consumer string, limit int)
 	rows, err := tx.Query(ctx, `
 		WITH candidates AS (
 			SELECT event_id FROM externalization_outbox
-			WHERE status IN ('pending', 'retry') AND available_at <= NOW()
-			  AND (claimed_at IS NULL OR claimed_at < NOW() - INTERVAL '60 seconds')
-			ORDER BY occurred_at ASC, event_id ASC FOR UPDATE SKIP LOCKED LIMIT $2
+			WHERE (status IN ('pending', 'retry') AND available_at <= NOW())
+			   OR (status='processing' AND claimed_at < NOW() - INTERVAL '60 seconds')
+			ORDER BY occurred_at ASC, event_id ASC FOR UPDATE SKIP LOCKED LIMIT $3
 		)
 		UPDATE externalization_outbox AS e
-		SET status='processing', claimed_by=$1, claimed_at=NOW(), attempts=e.attempts+1
+		SET status='processing', claimed_by=$1, claim_token=$2, claimed_at=NOW(), attempts=e.attempts+1
 		FROM candidates WHERE e.event_id=candidates.event_id
 		RETURNING e.event_id, e.event_type, e.occurred_at, e.source_version,
-		          e.contract_version, e.payload`, consumer, limit)
+		          e.contract_version, e.payload, e.claim_token`, consumer, token, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim core outbox events: %w", err)
 	}
 	defer rows.Close()
-	result := make([]events.Event, 0, limit)
+	result := make([]OutboxClaim, 0, limit)
 	for rows.Next() {
-		var event events.Event
-		if err := rows.Scan(&event.EventID, &event.Type, &event.OccurredAt, &event.SourceVersion, &event.ContractVersion, &event.Payload); err != nil {
+		var claim OutboxClaim
+		if err := rows.Scan(&claim.Event.EventID, &claim.Event.Type, &claim.Event.OccurredAt, &claim.Event.SourceVersion, &claim.Event.ContractVersion, &claim.Event.Payload, &claim.Token); err != nil {
 			return nil, fmt.Errorf("scan core outbox event: %w", err)
 		}
-		result = append(result, event)
+		result = append(result, claim)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read core outbox events: %w", err)
@@ -87,21 +98,21 @@ func (o *CoreOutbox) ClaimBatch(ctx context.Context, consumer string, limit int)
 	return result, nil
 }
 
-func (o *CoreOutbox) MarkPublished(ctx context.Context, eventID, consumer string) error {
+func (o *CoreOutbox) MarkPublished(ctx context.Context, claim OutboxClaim, consumer string) error {
 	if o == nil || o.pool == nil {
 		return errors.New("core outbox is not initialized")
 	}
-	result, err := o.pool.Exec(ctx, `UPDATE externalization_outbox SET status='published', published_at=NOW(), claimed_at=NULL, claimed_by=NULL WHERE event_id=$1 AND claimed_by=$2`, eventID, consumer)
+	result, err := o.pool.Exec(ctx, `UPDATE externalization_outbox SET status='published', published_at=NOW(), claimed_at=NULL, claimed_by=NULL, claim_token=NULL WHERE event_id=$1 AND claimed_by=$2 AND claim_token=$3`, claim.Event.EventID, consumer, claim.Token)
 	if err != nil {
 		return fmt.Errorf("mark core outbox published: %w", err)
 	}
 	if result.RowsAffected() != 1 {
-		return fmt.Errorf("core outbox event %q is not owned by %q", eventID, consumer)
+		return fmt.Errorf("core outbox event %q is not owned by %q", claim.Event.EventID, consumer)
 	}
 	return nil
 }
 
-func (o *CoreOutbox) MarkFailed(ctx context.Context, eventID, consumer string, cause error) error {
+func (o *CoreOutbox) MarkFailed(ctx context.Context, claim OutboxClaim, consumer string, cause error) error {
 	if o == nil || o.pool == nil {
 		return errors.New("core outbox is not initialized")
 	}
@@ -109,9 +120,12 @@ func (o *CoreOutbox) MarkFailed(ctx context.Context, eventID, consumer string, c
 	if cause != nil {
 		message = cause.Error()
 	}
-	_, err := o.pool.Exec(ctx, `UPDATE externalization_outbox SET status='retry', available_at=NOW()+LEAST((2 ^ LEAST(attempts, 8))*INTERVAL '1 second', INTERVAL '15 minutes'), last_error_class='relay', last_error=NULLIF($3,''), claimed_at=NULL, claimed_by=NULL WHERE event_id=$1 AND claimed_by=$2`, eventID, consumer, message)
+	result, err := o.pool.Exec(ctx, `UPDATE externalization_outbox SET status='retry', available_at=NOW()+LEAST((2 ^ LEAST(attempts, 8))*INTERVAL '1 second', INTERVAL '15 minutes'), last_error_class='relay', last_error=NULLIF($4,''), claimed_at=NULL, claimed_by=NULL, claim_token=NULL WHERE event_id=$1 AND claimed_by=$2 AND claim_token=$3`, claim.Event.EventID, consumer, claim.Token, message)
 	if err != nil {
 		return fmt.Errorf("mark core outbox retry: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return fmt.Errorf("core outbox event %q is not owned by %q", claim.Event.EventID, consumer)
 	}
 	return nil
 }
@@ -124,18 +138,26 @@ func (o *CoreOutbox) PumpOnce(ctx context.Context, consumerName string, consumer
 	if err != nil {
 		return err
 	}
-	for _, event := range claimed {
-		if err := consumer.Handle(ctx, event); err != nil {
-			if markErr := o.MarkFailed(ctx, event.EventID, consumerName, err); markErr != nil {
+	for _, claim := range claimed {
+		if err := consumer.Handle(ctx, claim.Event); err != nil {
+			if markErr := o.MarkFailed(ctx, claim, consumerName, err); markErr != nil {
 				return errors.Join(err, markErr)
 			}
 			continue
 		}
-		if err := o.MarkPublished(ctx, event.EventID, consumerName); err != nil {
+		if err := o.MarkPublished(ctx, claim, consumerName); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func claimToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate core outbox claim token: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 func (o *CoreOutbox) Run(ctx context.Context, consumerName string, consumer *events.Consumer) error {

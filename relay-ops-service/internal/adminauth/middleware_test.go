@@ -47,7 +47,7 @@ func TestRequireAdminRejectsMissingAndNonAdminSessions(t *testing.T) {
 	}{
 		{name: "missing", want: http.StatusUnauthorized},
 		{name: "user", bearer: "user-token", identity: Identity{UserID: 7, Role: "user", Status: "active"}, want: http.StatusForbidden},
-		{name: "disabled admin", bearer: "admin-token", identity: Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusForbidden},
+		{name: "disabled admin", bearer: "admin-token", identity: Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusUnauthorized},
 	}
 	for _, test := range tests {
 		test := test

@@ -10,3 +10,4 @@ CREATE TABLE IF NOT EXISTS relay_ops.externalization_commands (
 );
 ALTER TABLE relay_ops.externalization_commands ADD COLUMN IF NOT EXISTS result TEXT NOT NULL DEFAULT 'accepted';
 ALTER TABLE relay_ops.externalization_commands ADD COLUMN IF NOT EXISTS contract_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE relay_ops.externalization_commands ADD COLUMN IF NOT EXISTS command_name TEXT NOT NULL DEFAULT 'refresh_account';

@@ -14,11 +14,14 @@ CREATE TABLE IF NOT EXISTS externalization_outbox (
     attempts         INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     claimed_at       TIMESTAMPTZ,
     claimed_by       TEXT,
+	claim_token       TEXT,
     last_error_class TEXT,
     last_error       TEXT,
     published_at     TIMESTAMPTZ,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE externalization_outbox ADD COLUMN IF NOT EXISTS claim_token TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_externalization_outbox_claimable
     ON externalization_outbox (available_at, occurred_at, event_id)

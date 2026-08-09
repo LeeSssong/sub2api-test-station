@@ -64,7 +64,11 @@ func requireAdmin(verifier Verifier, next http.Handler, hidden bool) http.Handle
 			reject(http.StatusUnauthorized)
 			return
 		}
-		if identity.UserID <= 0 || identity.Role != "admin" || identity.Status != "active" {
+		if identity.Status != "active" || identity.UserID <= 0 {
+			reject(http.StatusUnauthorized)
+			return
+		}
+		if identity.Role != "admin" {
 			reject(http.StatusForbidden)
 			return
 		}

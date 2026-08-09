@@ -56,6 +56,13 @@ require_fixed '@legacy_ops path /ops /ops/*' infra/Caddyfile
 require_fixed 'redir @legacy_ops /admin/ops 302' infra/Caddyfile
 require_fixed '@retired_relay_ops_api path /relay-ops/api/ops-view /relay-ops/api/incidents/ack /relay-ops/api/feishu/events' infra/Caddyfile
 require_fixed 'respond @retired_relay_ops_api 404' infra/Caddyfile
+require_fixed '@xingqiao_controlplane path /api/v1/xingqiao/*' infra/Caddyfile
+require_fixed 'handle @xingqiao_controlplane {' infra/Caddyfile
+require_fixed 'header_up -Cookie' infra/Caddyfile
+require_fixed 'header_up User-Agent {http.request.header.User-Agent}' infra/Caddyfile
+require_fixed 'header_up Origin {http.request.header.Origin}' infra/Caddyfile
+require_fixed 'header_up X-Forwarded-For {http.request.header.X-Forwarded-For}' infra/Caddyfile
+require_fixed 'header_up X-Real-IP {http.request.header.X-Real-IP}' infra/Caddyfile
 require_fixed './sub2api-update-ui:/srv/sub2api-update-ui:ro' infra/compose.yaml
 require_fixed '/run/sub2api-updater:/run/sub2api-updater:ro' infra/compose.yaml
 require_fixed 'CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}' infra/compose.yaml

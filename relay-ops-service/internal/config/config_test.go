@@ -412,6 +412,21 @@ func TestLoadAcceptsOnlyAbsoluteAccountQualityResultPath(t *testing.T) {
 	}
 }
 
+func TestLoadKeepsReadOnlyExternalizationOptIn(t *testing.T) {
+	t.Parallel()
+	env := validEnv(t)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ExternalizationEnabled {
+		t.Fatal("externalization unexpectedly enabled")
+	}
+	if cfg.CoreDatabaseURLFile != "" {
+		t.Fatalf("core database file=%q", cfg.CoreDatabaseURLFile)
+	}
+}
+
 func validEnv(t *testing.T) map[string]string {
 	t.Helper()
 	dir := t.TempDir()

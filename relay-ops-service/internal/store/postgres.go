@@ -87,6 +87,49 @@ type Store struct {
 	pool *pgxpool.Pool
 }
 
+func (s *Store) ClaimExternalizationCommand(ctx context.Context, actorID, accountID int64, idempotencyKey, command string, contractVersion int) (bool, string, error) {
+	if s == nil || s.pool == nil {
+		return false, "", errors.New("store is not initialized")
+	}
+	if actorID <= 0 || accountID <= 0 || strings.TrimSpace(idempotencyKey) == "" || command != "refresh_account" {
+		return false, "", errors.New("invalid externalization command")
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", actorID, accountID, command, idempotencyKey)))
+	payload, _ := json.Marshal(map[string]any{"command": command, "account_id": accountID})
+	commandID := hex.EncodeToString(sum[:])
+	result, err := s.pool.Exec(ctx, `INSERT INTO relay_ops.externalization_commands (command_id, actor_id, account_id, idempotency_key, payload, status, result, contract_version, command_name) VALUES ($1,$2,$3,$4,$5::jsonb,'processing','pending',$6,$7) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, actorID, accountID, idempotencyKey, payload, contractVersion, command)
+	if err != nil {
+		return false, "", fmt.Errorf("claim externalization command: %w", err)
+	}
+	if result.RowsAffected() == 1 {
+		return true, "pending", nil
+	}
+	var existingActor, existingAccount int64
+	var existingCommand, status, storedResult string
+	err = s.pool.QueryRow(ctx, `SELECT actor_id, account_id, command_name, status, result FROM relay_ops.externalization_commands WHERE idempotency_key=$1`, idempotencyKey).Scan(&existingActor, &existingAccount, &existingCommand, &status, &storedResult)
+	if err != nil {
+		return false, "", fmt.Errorf("load externalization command: %w", err)
+	}
+	if existingActor != actorID || existingAccount != accountID || existingCommand != command {
+		return false, "", ErrConflict
+	}
+	return false, storedResult, nil
+}
+
+func (s *Store) CompleteExternalizationCommand(ctx context.Context, actorID, accountID int64, idempotencyKey, result string, contractVersion int) error {
+	if result != "accepted" && result != "failed" {
+		return errors.New("invalid externalization command result")
+	}
+	command, err := s.pool.Exec(ctx, `UPDATE relay_ops.externalization_commands SET status='completed', result=$4, contract_version=$5, completed_at=NOW() WHERE actor_id=$1 AND account_id=$2 AND idempotency_key=$3`, actorID, accountID, idempotencyKey, result, contractVersion)
+	if err != nil {
+		return fmt.Errorf("complete externalization command: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Store) RecordExternalizationCommand(ctx context.Context, actorID, accountID int64, idempotencyKey, result string, contractVersion int) error {
 	if s == nil || s.pool == nil {
 		return errors.New("store is not initialized")

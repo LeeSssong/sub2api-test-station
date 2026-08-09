@@ -53,50 +53,65 @@ func (r StoreReader) Read(ctx context.Context, name string, _ map[string]string)
 		if err != nil {
 			return ReadModel{}, err
 		}
-		return rowsModel(rows, func(row projection.AccountRow) projection.Metadata { return row.Metadata }), nil
+		return rowsModel(rows, func(row projection.AccountRow) projection.Metadata { return row.Metadata }, r.now()), nil
 	case "operations/profitability":
 		rows, err := r.Store.LoadProfitabilityReadModels(ctx)
 		if err != nil {
 			return ReadModel{}, err
 		}
-		return rowsModel(rows, func(row projection.ProfitabilityRow) projection.Metadata { return row.Metadata }), nil
+		return rowsModel(rows, func(row projection.ProfitabilityRow) projection.Metadata { return row.Metadata }, r.now()), nil
 	case "accounting/ledger":
 		row, found, err := r.Store.LoadAccountingReadModel(ctx)
 		if err != nil {
 			return ReadModel{}, err
 		}
 		if !found {
-			return ReadModel{Items: []any{}, Freshness: Freshness{Completeness: "empty", CalculationVersion: "accounting-v1"}}, nil
+			return emptyModel("accounting-v1", r.now()), nil
 		}
-		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata)}, nil
+		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata, r.now())}, nil
 	case "reconciliation":
 		row, found, err := r.Store.LoadReconciliationReadModel(ctx)
 		if err != nil {
 			return ReadModel{}, err
 		}
 		if !found {
-			return ReadModel{Items: []any{}, Freshness: Freshness{Completeness: "empty", CalculationVersion: "reconciliation-v1"}}, nil
+			return emptyModel("reconciliation-v1", r.now()), nil
 		}
-		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata)}, nil
+		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata, r.now())}, nil
 	default:
 		return ReadModel{}, context.Canceled
 	}
 }
 
-func rowsModel[T any](rows []T, metadata func(T) projection.Metadata) ReadModel {
+func (r StoreReader) now() time.Time {
+	if r.Now != nil {
+		return r.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func emptyModel(version string, now time.Time) ReadModel {
+	return ReadModel{Items: []any{}, Freshness: Freshness{GeneratedAt: now, FreshnessSeconds: 0, Completeness: "empty", CalculationVersion: version}}
+}
+
+func rowsModel[T any](rows []T, metadata func(T) projection.Metadata, now time.Time) ReadModel {
 	model := ReadModel{Items: rows, Total: len(rows)}
 	for _, row := range rows {
 		value := metadata(row)
 		if value.GeneratedAt.After(model.Freshness.GeneratedAt) {
-			model.Freshness = fromMetadata(value)
+			model.Freshness = fromMetadata(value, now)
 		}
 	}
-	if model.Freshness.CalculationVersion == "" && len(rows) == 0 {
-		model.Freshness.Completeness = "empty"
+	if len(rows) == 0 {
+		return emptyModel("unknown", now)
 	}
 	return model
 }
 
-func fromMetadata(value projection.Metadata) Freshness {
-	return Freshness{GeneratedAt: value.GeneratedAt, SourceWatermark: value.SourceWatermark, FreshnessSeconds: value.FreshnessSeconds, Completeness: value.Completeness, CalculationVersion: value.CalculationVersion}
+func fromMetadata(value projection.Metadata, now time.Time) Freshness {
+	freshness := int64(0)
+	if !value.GeneratedAt.IsZero() && now.After(value.GeneratedAt) {
+		freshness = int64(now.Sub(value.GeneratedAt).Seconds())
+	}
+	return Freshness{GeneratedAt: value.GeneratedAt, SourceWatermark: value.SourceWatermark, FreshnessSeconds: freshness, Completeness: value.Completeness, CalculationVersion: value.CalculationVersion}
 }

@@ -159,3 +159,56 @@ was stopped with `--rm` after completion.
 ### Commit
 
 Pending fix-round commit.
+
+## Fix Round 2
+
+### RED / GREEN
+
+- **Trusted-proxy session binding:** RED command
+  `cd relay-ops-service && go test ./internal/adminauth -run 'TestRequireAdmin(UsesOriginal|IgnoresForwarded)' -count=1 -v`
+  failed with `ClientIP:172.20.0.4`, proving the relay socket peer was sent
+  instead of the browser IP. GREEN now trusts `X-Forwarded-For`/`X-Real-IP`
+  only when the immediate peer is loopback/private, selects the first valid
+  forwarded address, and retains the peer for untrusted callers. The real
+  `adminauth.RequireAdmin -> sub2api.HTTPReader.VerifyAdminSession ->
+  /api/v1/auth/me` boundary test asserts all three IP headers equal
+  `198.51.100.23`; focused result: `PASS`.
+- **Empty read-model metadata:** RED was the existing focused assertion showing
+  empty accounts/profitability as `unknown` and `0` (the accounting assertion
+  covered only one endpoint). GREEN uses the four projection calculation
+  version constants and API empty convention `freshness_seconds=-1`; the
+  injected-clock test covers all four empty endpoints and verifies a non-empty
+  account row still recomputes to `90` seconds. Focused result: `PASS`.
+- **Refresh error durability:** RED added tests for a failed official dispatch
+  plus failed completion and for replaying a durable `pending` result. Before
+  the fix, the former returned only the dispatch error and the latter returned
+  success without dispatch. GREEN joins both errors with `errors.Join` and
+  returns `ErrExternalizationCommandPending` for pending/processing/unknown
+  replays, while accepted/failed replays remain idempotent. Focused result:
+  `PASS`.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/adminauth -run 'TestRequireAdmin(UsesOriginal|IgnoresForwarded)' -count=1 -v   # PASS
+go test ./internal/sub2api -run '^TestAdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe$' -count=1 -v   # PASS
+go test ./internal/controlplane -run 'Test(StoreReaderRecomputes|Refresh(ReturnsCombined|DoesNotAccept))' -count=1 -v   # PASS
+go test ./internal/controlplane ./internal/adminauth ./internal/http ./internal/sub2api -count=1   # PASS
+go test ./internal/controlplane ./internal/adminauth ./internal/http -run 'Test(Auth|ReadModel|Refresh|Xingqiao)' -count=1 -v   # PASS
+go test ./...   # PASS
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http   # PASS
+go vet ./...   # PASS
+cd .. && bash tests/infra/validate-sub2api-update-routing.sh   # PASS
+git diff --check   # PASS
+```
+
+### Residual Concerns
+
+Forwarded-IP trust is intentionally limited to private/loopback immediate
+peers; deployments using a public-address Caddy-to-relay hop must configure a
+private network or the relay will fail closed to the proxy peer. A completion
+write failure after an official failure can still leave the durable row
+pending when storage is unavailable; subsequent identical requests now fail
+closed instead of being reported accepted, and operator/storage repair is
+required before retrying.

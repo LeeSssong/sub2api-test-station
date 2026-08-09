@@ -80,6 +80,42 @@ func TestReaderAccountRoutingContract(t *testing.T) {
 	}
 }
 
+func TestAdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe(t *testing.T) {
+	var gotIP, gotForwarded, gotReal string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/me" {
+			http.NotFound(w, r)
+			return
+		}
+		gotIP, gotForwarded, gotReal = r.Header.Get("X-Client-IP"), r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":42,"role":"admin","status":"active"}`)
+	}))
+	defer upstream.Close()
+	keyPath := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(keyPath, []byte("relay-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewHTTPReader(upstream.URL, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := adminauth.RequireAdmin(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+	req.RemoteAddr = "172.20.0.4:8100"
+	req.Header.Set("Authorization", "Bearer browser-session")
+	req.Header.Set("X-Forwarded-For", "198.51.100.23, 172.20.0.3")
+	req.Header.Set("X-Real-IP", "198.51.100.23")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if gotIP != "198.51.100.23" || gotForwarded != "198.51.100.23" || gotReal != "198.51.100.23" {
+		t.Fatalf("auth/me IP headers = %q %q %q", gotIP, gotForwarded, gotReal)
+	}
+}
+
 func TestHTTPReaderSyncUpstreamModelsUsesNativeAdminEndpoint(t *testing.T) {
 	t.Parallel()
 

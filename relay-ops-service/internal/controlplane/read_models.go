@@ -66,7 +66,7 @@ func (r StoreReader) Read(ctx context.Context, name string, _ map[string]string)
 			return ReadModel{}, err
 		}
 		if !found {
-			return emptyModel("accounting-v1", r.now()), nil
+			return emptyModel(projection.AccountingCalculationVersion, r.now()), nil
 		}
 		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata, r.now())}, nil
 	case "reconciliation":
@@ -75,7 +75,7 @@ func (r StoreReader) Read(ctx context.Context, name string, _ map[string]string)
 			return ReadModel{}, err
 		}
 		if !found {
-			return emptyModel("reconciliation-v1", r.now()), nil
+			return emptyModel(projection.ReconciliationCalculationVersion, r.now()), nil
 		}
 		return ReadModel{Items: row, Total: 1, Freshness: fromMetadata(row.Metadata, r.now())}, nil
 	default:
@@ -91,7 +91,7 @@ func (r StoreReader) now() time.Time {
 }
 
 func emptyModel(version string, now time.Time) ReadModel {
-	return ReadModel{Items: []any{}, Freshness: Freshness{GeneratedAt: now, FreshnessSeconds: 0, Completeness: "empty", CalculationVersion: version}}
+	return ReadModel{Items: []any{}, Freshness: Freshness{GeneratedAt: now, FreshnessSeconds: -1, Completeness: "empty", CalculationVersion: version}}
 }
 
 func rowsModel[T any](rows []T, metadata func(T) projection.Metadata, now time.Time) ReadModel {
@@ -103,7 +103,10 @@ func rowsModel[T any](rows []T, metadata func(T) projection.Metadata, now time.T
 		}
 	}
 	if len(rows) == 0 {
-		return emptyModel("unknown", now)
+		if _, ok := any(rows).([]projection.AccountRow); ok {
+			return emptyModel(projection.AccountsCalculationVersion, now)
+		}
+		return emptyModel(projection.ProfitabilityCalculationVersion, now)
 	}
 	return model
 }

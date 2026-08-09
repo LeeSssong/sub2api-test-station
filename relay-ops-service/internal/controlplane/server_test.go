@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,12 +42,55 @@ func TestStoreReaderRecomputesFreshnessAndNormalizesEmptyMetadata(t *testing.T) 
 	if model.Freshness.FreshnessSeconds != 90 || model.Freshness.GeneratedAt != now.Add(-90*time.Second) {
 		t.Fatalf("freshness=%+v", model.Freshness)
 	}
-	empty, err := reader.Read(context.Background(), "accounting/ledger", nil)
-	if err != nil {
-		t.Fatal(err)
+	emptyReader := StoreReader{Now: func() time.Time { return now }, Store: projectionStoreStub{}}
+	for name, version := range map[string]string{
+		"accounts/monitor":         "accounts-v1",
+		"operations/profitability": "profitability-v1",
+		"accounting/ledger":        "accounting-v1",
+		"reconciliation":           "reconciliation-v1",
+	} {
+		empty, err := emptyReader.Read(context.Background(), name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if empty.Freshness.GeneratedAt != now || empty.Freshness.FreshnessSeconds != -1 || empty.Freshness.Completeness != "empty" || empty.Freshness.CalculationVersion != version {
+			t.Fatalf("%s empty=%+v", name, empty.Freshness)
+		}
 	}
-	if empty.Freshness.GeneratedAt != now || empty.Freshness.Completeness != "empty" || empty.Freshness.CalculationVersion != "accounting-v1" {
-		t.Fatalf("empty=%+v", empty.Freshness)
+}
+
+func TestRefreshReturnsCombinedDispatchAndCompletionFailures(t *testing.T) {
+	sendErr := errors.New("official refresh failed")
+	completeErr := errors.New("persist failed")
+	audit := &failingCompletionAudit{idempotencyAudit: idempotencyAudit{claimed: map[string]bool{}}, completeErr: completeErr}
+	refresher := CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { return sendErr }), Audit: audit}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(NewMemoryReader(), refresher))
+	req := httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+	req.Header.Set("Authorization", "Bearer session")
+	req.Header.Set("Idempotency-Key", "refresh:7:failed")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway || !errors.Is(audit.lastErr, completeErr) {
+		t.Fatalf("status=%d audit=%v", rec.Code, audit.lastErr)
+	}
+}
+
+func TestRefreshDoesNotAcceptPendingReplay(t *testing.T) {
+	audit := &pendingReplayAudit{}
+	calls := 0
+	refresher := CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { calls++; return nil }), Audit: audit}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(NewMemoryReader(), refresher))
+	req := httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+	req.Header.Set("Authorization", "Bearer session")
+	req.Header.Set("Idempotency-Key", "refresh:7:pending")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway || calls != 0 {
+		t.Fatalf("status=%d dispatches=%d", rec.Code, calls)
 	}
 }
 
@@ -169,5 +213,28 @@ func (a *idempotencyAudit) CompleteExternalizationCommand(context.Context, int64
 	return nil
 }
 func (a *idempotencyAudit) RecordExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
+}
+
+type failingCompletionAudit struct {
+	idempotencyAudit
+	completeErr error
+	lastErr     error
+}
+
+func (a *failingCompletionAudit) CompleteExternalizationCommand(ctx context.Context, actorID, accountID int64, key, result string, contract int) error {
+	a.lastErr = a.completeErr
+	return a.completeErr
+}
+
+type pendingReplayAudit struct{}
+
+func (pendingReplayAudit) ClaimExternalizationCommand(context.Context, int64, int64, string, string, int) (bool, string, error) {
+	return false, "pending", nil
+}
+func (pendingReplayAudit) CompleteExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
+}
+func (pendingReplayAudit) RecordExternalizationCommand(context.Context, int64, int64, string, string, int) error {
 	return nil
 }

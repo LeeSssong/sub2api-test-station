@@ -36,6 +36,35 @@ func TestRequireAdminAuthenticatesThroughSub2API(t *testing.T) {
 	}
 }
 
+func TestRequireAdminUsesOriginalIPFromTrustedCaddyProxy(t *testing.T) {
+	verifier := &fakeVerifier{identity: Identity{UserID: 42, Role: "admin", Status: "active"}}
+	handler := RequireAdmin(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+	req.RemoteAddr = "172.20.0.4:8100"
+	req.Header.Set("Authorization", "Bearer browser-token")
+	req.Header.Set("X-Forwarded-For", "198.51.100.23, 172.20.0.3")
+	req.Header.Set("X-Real-IP", "198.51.100.23")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || verifier.session.ClientIP != "198.51.100.23" {
+		t.Fatalf("status=%d session=%+v", rec.Code, verifier.session)
+	}
+}
+
+func TestRequireAdminIgnoresForwardedIPFromUntrustedPeer(t *testing.T) {
+	verifier := &fakeVerifier{identity: Identity{UserID: 42, Role: "admin", Status: "active"}}
+	handler := RequireAdmin(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+	req.RemoteAddr = "198.51.100.9:8100"
+	req.Header.Set("Authorization", "Bearer browser-token")
+	req.Header.Set("X-Forwarded-For", "203.0.113.77")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || verifier.session.ClientIP != "198.51.100.9" {
+		t.Fatalf("status=%d session=%+v", rec.Code, verifier.session)
+	}
+}
+
 func TestRequireAdminRejectsMissingAndNonAdminSessions(t *testing.T) {
 	t.Parallel()
 

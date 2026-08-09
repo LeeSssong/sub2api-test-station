@@ -1,5 +1,11 @@
 # 项目全局进度总账
 
+**本轮 Task 4 fix round 2（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为修复同域管理员会话原始客户端 IP 选择、四个空读模型元数据以及
+官方刷新失败与持久命令完成失败的错误组合；仅本地 TDD、回归和提交，不推送、
+合并、部署或触碰生产。
+
 **本轮官方更新“候选版本准备中”卡住修复（2026-08-09）：** 状态：进行中。用户在管理员界面从当前 `0.1.170` 升级至官方 `0.1.173` 时，弹窗持续显示“候选版本准备中”且“现在升级”不可用。证据已确认：生产 updater 进程与硬盘上均为 2026-08-07 旧版（SHA-256 `c9c5e2ab…`），2026-08-09 只安装了新 candidate preparer（SHA-256 `7c4c561d…`），形成版本断裂；且宿主并无 `xingqiao-sub2api:upstream-0.1.173` 合格镜像，所以修复更新器后还需按本地/宿主发布链生成候选。本轮同时以 TDD 补齐上游账单失败原因结构化返回和管理页提示：账号 `#42 Plus-WAWAZZ` 的 `/v1/usage/records` 返回 HTTP 404，不会用估算值填充上游实际扣费。当前工作区为 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`；“制定上游账号测试方案”的 `.worktrees/gpt-group-baseline-apply` 及其未提交内容作为保护例外，不修改。
 
 **本轮范围纠偏（2026-08-10）：** 状态：进行中。用户明确要求回到已批准的 `docs/superpowers/specs/2026-08-08-sub2api-externalized-customization-official-update-design.md`，不得把“更新器恢复 + 合格定制镜像”误报为定制解耦完成。仓库复核确认外置合同、事务 Outbox、控制面读模型、双读比较、feature flags 和后台资格状态机已经实现并进入主线；本轮继续核验生产是否已切到 `external_primary`、核心定制是否只剩薄适配器、最近三个官方候选是否达到 `ready`。在这三项均有生产证据前，外置解耦与官方优先升级保持“进行中”，`0.1.173` 仅可生成和暂存合格候选，不得宣称已完成解耦或直接覆盖生产。控制面持久投影 Task 3 与核心薄事件 Task 7 已完成本地实现并分别通过独立 SPEC/QUALITY 复审；Task 7 的真实 Testcontainers PostgreSQL 18.1/Redis 8.4 回归证明 `CreateBestEffort` 成功时 usage/outbox 同事务提交，注入 outbox 失败时两表同时回滚，请求事件在落库前包含 actual response model，健康事件查询错误会回滚。当前进入 relay 持久消费者、同域控制面 API 与隔离认证接线；所有变更仍未推送、部署或修改生产，整体状态保持进行中。

@@ -84,9 +84,32 @@ func requestClientIP(r *http.Request) string {
 	}
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil {
+		if trustedProxyIP(host) {
+			if forwarded := firstForwardedIP(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+				return forwarded
+			}
+			if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); net.ParseIP(realIP) != nil {
+				return realIP
+			}
+		}
 		return host
 	}
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func trustedProxyIP(host string) bool {
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
+func firstForwardedIP(header string) string {
+	for _, value := range strings.Split(header, ",") {
+		candidate := strings.TrimSpace(value)
+		if net.ParseIP(candidate) != nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func ActorFromContext(ctx context.Context) (domain.AdminActor, bool) {

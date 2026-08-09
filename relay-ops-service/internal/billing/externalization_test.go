@@ -64,9 +64,59 @@ func TestCommandRejectsUnauthorizedOrUnsafeFieldsBeforeOfficialWrite(t *testing.
 	}
 }
 
+func TestCommandFailedReplayReturnsSameFailure(t *testing.T) {
+	writer := &failingWriter{}
+	audit := &failedReplayAudit{}
+	command := AccountUpdateCommand{CommandID: "cmd-failed", ActorID: 9, AccountID: 1, IdempotencyKey: "failed:1", Fields: map[string]any{"priority": 2}}
+	if err := ExecuteAccountUpdate(context.Background(), writer, audit, command); err == nil {
+		t.Fatal("initial failure was accepted")
+	}
+	if err := ExecuteAccountUpdate(context.Background(), writer, audit, command); !errors.Is(err, ErrAccountUpdateFailed) {
+		t.Fatalf("replay=%v", err)
+	}
+	if writer.calls != 1 {
+		t.Fatalf("calls=%d", writer.calls)
+	}
+}
+
+type failingWriter struct{ calls int }
+
+func (w *failingWriter) SendAccountUpdateCommand(context.Context, AccountUpdateCommand) error {
+	w.calls++
+	return errors.New("official failure")
+}
+
+type failedReplayAudit struct{ failed bool }
+
+func (a *failedReplayAudit) ClaimAccountUpdateCommand(context.Context, AccountUpdateCommand, string, int) (bool, string, error) {
+	if a.failed {
+		return false, "failed", nil
+	}
+	return true, "pending", nil
+}
+func (a *failedReplayAudit) CompleteAccountUpdateCommand(_ context.Context, _ AccountUpdateCommand, result string, _ int) error {
+	a.failed = result == "failed"
+	return nil
+}
+
 type commandAudit struct {
 	claimed   map[string]bool
 	completed int
+}
+
+func (a *commandAudit) ClaimAccountUpdateCommand(_ context.Context, command AccountUpdateCommand, _ string, _ int) (bool, string, error) {
+	if a.claimed[command.IdempotencyKey] {
+		return false, "accepted", nil
+	}
+	a.claimed[command.IdempotencyKey] = true
+	return true, "pending", nil
+}
+func (a *commandAudit) CompleteAccountUpdateCommand(_ context.Context, _ AccountUpdateCommand, result string, _ int) error {
+	if result != "accepted" {
+		return errors.New("unexpected command failure")
+	}
+	a.completed++
+	return nil
 }
 
 func (a *commandAudit) ClaimExternalizationCommand(_ context.Context, _, _ int64, key, _ string, _ int) (bool, string, error) {

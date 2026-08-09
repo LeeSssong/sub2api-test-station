@@ -514,7 +514,11 @@ func (c *HTTPReader) UpdateAccount(ctx context.Context, command billing.AccountU
 	if err != nil {
 		return fmt.Errorf("encode Sub2API account update: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(command.AccountID, 10), bytes.NewReader(data))
+	body, err := json.Marshal(map[string]any{"command_id": command.CommandID, "fields": json.RawMessage(data)})
+	if err != nil {
+		return fmt.Errorf("encode Sub2API account command: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(command.AccountID, 10)+"/external-command/v1", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build Sub2API account update: %w", err)
 	}

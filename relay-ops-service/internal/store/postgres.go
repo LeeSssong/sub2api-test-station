@@ -124,6 +124,57 @@ func (s *Store) ClaimExternalizationCommand(ctx context.Context, actorID, accoun
 	return false, storedResult, nil
 }
 
+func (s *Store) ClaimAccountUpdateCommand(ctx context.Context, command billing.AccountUpdateCommand, payloadHash string, contractVersion int) (bool, string, error) {
+	if s == nil || s.pool == nil {
+		return false, "", errors.New("store is not initialized")
+	}
+	if err := command.Validate(); err != nil {
+		return false, "", err
+	}
+	if payloadHash == "" || contractVersion != 1 {
+		return false, "", errors.New("invalid account update command identity")
+	}
+	payload, err := json.Marshal(map[string]any{"command": "account_update", "fields": command.Fields, "payload_hash": payloadHash})
+	if err != nil {
+		return false, "", fmt.Errorf("encode account update payload: %w", err)
+	}
+	result, err := s.pool.Exec(ctx, `INSERT INTO relay_ops.externalization_commands (command_id, actor_id, account_id, idempotency_key, payload, status, result, contract_version, command_name) VALUES ($1,$2,$3,$4,$5::jsonb,'processing','pending',$6,'account_update') ON CONFLICT (idempotency_key) DO NOTHING`, command.CommandID, command.ActorID, command.AccountID, command.IdempotencyKey, payload, contractVersion)
+	if err != nil {
+		return false, "", fmt.Errorf("claim account update command: %w", err)
+	}
+	if result.RowsAffected() == 1 {
+		return true, "pending", nil
+	}
+	var existingID string
+	var actorID, accountID int64
+	var existingPayloadHash string
+	var commandName string
+	var version int
+	var storedResult string
+	err = s.pool.QueryRow(ctx, `SELECT command_id, actor_id, account_id, payload->>'payload_hash', command_name, contract_version, result FROM relay_ops.externalization_commands WHERE idempotency_key=$1`, command.IdempotencyKey).Scan(&existingID, &actorID, &accountID, &existingPayloadHash, &commandName, &version, &storedResult)
+	if err != nil {
+		return false, "", fmt.Errorf("load account update command: %w", err)
+	}
+	if existingID != command.CommandID || actorID != command.ActorID || accountID != command.AccountID || commandName != "account_update" || version != contractVersion || existingPayloadHash != payloadHash {
+		return false, "", ErrConflict
+	}
+	return false, storedResult, nil
+}
+
+func (s *Store) CompleteAccountUpdateCommand(ctx context.Context, command billing.AccountUpdateCommand, result string, contractVersion int) error {
+	if result != "accepted" && result != "failed" {
+		return errors.New("invalid account update command result")
+	}
+	completed, err := s.pool.Exec(ctx, `UPDATE relay_ops.externalization_commands SET status='completed', result=$2, completed_at=NOW() WHERE command_id=$1 AND actor_id=$3 AND account_id=$4 AND idempotency_key=$5 AND command_name='account_update' AND contract_version=$6`, command.CommandID, result, command.ActorID, command.AccountID, command.IdempotencyKey, contractVersion)
+	if err != nil {
+		return fmt.Errorf("complete account update command: %w", err)
+	}
+	if completed.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Store) CompleteExternalizationCommand(ctx context.Context, actorID, accountID int64, idempotencyKey, result string, contractVersion int) error {
 	if result != "accepted" && result != "failed" {
 		return errors.New("invalid externalization command result")

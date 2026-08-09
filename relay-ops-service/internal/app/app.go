@@ -414,6 +414,24 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 					failures = append(failures, err)
 				}
 			}
+			observation := time.Now().UTC()
+			billingSources, err := database.ListBillingSources(runCtx)
+			if err != nil {
+				return err
+			}
+			for _, source := range billingSources {
+				reader, readerErr := billing.NewBalanceReader(source, nil)
+				if readerErr != nil {
+					failures = append(failures, readerErr)
+					continue
+				}
+				collectCtx, cancel := context.WithTimeout(runCtx, 20*time.Second)
+				_, collectErr := (billing.BalanceCollector{Reader: reader, Writer: database, FreshFor: 10 * time.Minute, Source: source.AdapterType}).CollectAt(collectCtx, source.AccountID, observation)
+				cancel()
+				if collectErr != nil {
+					failures = append(failures, collectErr)
+				}
+			}
 			return errors.Join(failures...)
 		},
 		Candidates: func(runCtx context.Context) ([]domain.UpstreamID, error) {
@@ -511,9 +529,10 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Reconciliation: reconciliationRuntime,
 		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
-		ControlPlane: controlplane.NewServer(
+		ControlPlane: controlplane.NewServerWithAccountUpdates(
 			controlplane.StoreReader{Store: database},
 			controlplane.CommandRefresher{Sender: adapter.Sub2API{Client: reader}, Audit: database},
+			adapter.Sub2API{Client: reader}, database,
 		),
 		ControlPlaneAuth: reader,
 	}, accountingService)

@@ -149,6 +149,43 @@ func TestAccountUpdateCommandUsesExistingDurableIdempotencyAudit(t *testing.T) {
 	}
 }
 
+func TestAccountUpdateCommandDurablyBindsCommandIDPayloadActorAndVersion(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	command := billing.AccountUpdateCommand{CommandID: "command-durable-1", ActorID: 9, AccountID: 71, IdempotencyKey: "account:71:priority:durable", Fields: map[string]any{"priority": 2}}
+	hash, err := command.CanonicalPayloadHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch, result, err := st.ClaimAccountUpdateCommand(ctx, command, hash, 1)
+	if err != nil || !dispatch || result != "pending" {
+		t.Fatalf("initial dispatch=%v result=%q err=%v", dispatch, result, err)
+	}
+	for _, changed := range []billing.AccountUpdateCommand{
+		{CommandID: "command-durable-2", ActorID: 9, AccountID: 71, IdempotencyKey: command.IdempotencyKey, Fields: map[string]any{"priority": 2}},
+		{CommandID: command.CommandID, ActorID: 10, AccountID: 71, IdempotencyKey: command.IdempotencyKey, Fields: map[string]any{"priority": 2}},
+		{CommandID: command.CommandID, ActorID: 9, AccountID: 71, IdempotencyKey: command.IdempotencyKey, Fields: map[string]any{"priority": 3}},
+	} {
+		changedHash, hashErr := changed.CanonicalPayloadHash()
+		if hashErr != nil {
+			t.Fatal(hashErr)
+		}
+		if _, _, claimErr := st.ClaimAccountUpdateCommand(ctx, changed, changedHash, 1); !errors.Is(claimErr, ErrConflict) {
+			t.Fatalf("changed=%+v err=%v, want ErrConflict", changed, claimErr)
+		}
+	}
+	if err := st.CompleteAccountUpdateCommand(ctx, command, "failed", 1); err != nil {
+		t.Fatal(err)
+	}
+	dispatch, result, err = st.ClaimAccountUpdateCommand(ctx, command, hash, 1)
+	if err != nil || dispatch || result != "failed" {
+		t.Fatalf("failed replay dispatch=%v result=%q err=%v", dispatch, result, err)
+	}
+}
+
 func TestProjectionStorePersistsConsumerCheckpointDeadLettersAndReadModels(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

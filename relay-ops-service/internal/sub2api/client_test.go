@@ -85,14 +85,20 @@ func TestReaderAccountRoutingContract(t *testing.T) {
 
 func TestUpdateAccountUsesNarrowOfficialAdminAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/admin/accounts/12" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/admin/accounts/12/external-command/v1" {
 			http.NotFound(w, r)
 			return
 		}
 		if r.Header.Get("x-api-key") != "admin-test-key" || r.Header.Get("Idempotency-Key") != "account:12:priority:1" {
 			t.Fatalf("headers api=%q idempotency=%q", r.Header.Get("x-api-key"), r.Header.Get("Idempotency-Key"))
 		}
-		assertOnlyJSONField(t, r, "priority", float64(3))
+		var body struct {
+			CommandID string         `json:"command_id"`
+			Fields    map[string]any `json:"fields"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CommandID != "command-1" || len(body.Fields) != 1 || body.Fields["priority"] != float64(3) {
+			t.Fatalf("body=%#v err=%v", body, err)
+		}
 		fmt.Fprint(w, `{}`)
 	}))
 	defer server.Close()

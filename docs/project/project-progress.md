@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**本轮 Task 6 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@77c9ed585`。
+范围仅修复 Task 6 独立复审的 Critical/Important 项：把有界余额采集接入控制面调度、经既有认证边界暴露账户更新命令、收紧命令身份与官方端到端幂等、失败重放、注入客户端超时及采集重试稳定事实身份；不处理已在 SDD 总账延后的未来日期事实 Minor 项。实施前已盘点全部非 `main` worktree：根工作区有未跟踪发布证据，其他候选虽领先但均无“已推送 + 已部署 + 已线上验证”完成证据，故不合并且保持只读保护。本地 RED→GREEN 已完成，relay 全量、race、vet 和官方端点聚焦测试均通过；PostgreSQL durable identity 回归因未配置 `RELAY_OPS_TEST_DATABASE_URL` 跳过。未推送、不合并、不部署、不访问生产、不增加 GitHub Actions，状态保持“进行中”。
+
 **本轮 Task 6 外置余额、账单、倍率采集与受控写操作（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`，基线
 `370aa1b91`。范围限定为 relay-ops 的余额/账单/费率采集事实、过期语义和复用既有

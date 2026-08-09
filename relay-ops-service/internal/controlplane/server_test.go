@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,64 @@ import (
 	"testing"
 	"time"
 
+	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/projection"
 )
+
+func TestAccountCommandRequiresVerifiedAdminAndIgnoresBodyActor(t *testing.T) {
+	writer := &accountCommandWriter{}
+	audit := &accountCommandAudit{}
+	plain := NewServerWithAccountUpdates(NewMemoryReader(), nil, writer, audit)
+	request := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/accounts/7/commands/v1", bytes.NewBufferString(`{"command_id":"cmd-1","actor_id":999,"fields":{"priority":2}}`))
+		r.Header.Set("Idempotency-Key", "key-1")
+		return r
+	}
+	for _, identity := range []AdminIdentity{{}, {UserID: 4, Role: "user", Status: "active"}} {
+		h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) { return identity, nil }), plain)
+		rec := httptest.NewRecorder()
+		req := request()
+		req.Header.Set("Authorization", "Bearer session")
+		h.ServeHTTP(rec, req)
+		want := http.StatusForbidden
+		if identity.UserID == 0 {
+			want = http.StatusUnauthorized
+		}
+		if rec.Code != want {
+			t.Fatalf("identity=%+v status=%d", identity, rec.Code)
+		}
+	}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), plain)
+	rec := httptest.NewRecorder()
+	req := request()
+	req.Header.Set("Authorization", "Bearer session")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || writer.command.ActorID != 42 || writer.command.ActorID == 999 {
+		t.Fatalf("status=%d command=%+v", rec.Code, writer.command)
+	}
+}
+
+type accountCommandWriter struct{ command billing.AccountUpdateCommand }
+
+func (w *accountCommandWriter) SendAccountUpdateCommand(_ context.Context, command billing.AccountUpdateCommand) error {
+	w.command = command
+	return nil
+}
+
+type accountCommandAudit struct{ done bool }
+
+func (a *accountCommandAudit) ClaimAccountUpdateCommand(context.Context, billing.AccountUpdateCommand, string, int) (bool, string, error) {
+	if a.done {
+		return false, "accepted", nil
+	}
+	return true, "pending", nil
+}
+func (a *accountCommandAudit) CompleteAccountUpdateCommand(context.Context, billing.AccountUpdateCommand, string, int) error {
+	a.done = true
+	return nil
+}
 
 func TestReadModelsExposeFreshnessAndRefreshRequiresIdempotency(t *testing.T) {
 	r := NewMemoryReader()

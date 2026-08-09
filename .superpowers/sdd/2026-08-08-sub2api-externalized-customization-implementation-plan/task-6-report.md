@@ -109,3 +109,29 @@ through the official API adapter.
 - Local verification is complete, but project status remains `进行中` until the
   candidate is reviewed, merged to `main`, pushed, deployed, and verified
   online under the project lifecycle rules.
+
+## Fix Round 1
+
+### RED Evidence
+
+`cd relay-ops-service && go test ./internal/billing ./internal/controlplane ./internal/sub2api -run 'Test(Balance|Command|UpdateAccount)' -count=1` initially failed after the stricter contract was introduced: legacy test audits did not implement the narrow command identity protocol, Task 4 tests used the legacy server constructor, and the client test expected the unversioned official endpoint. The test doubles and compatibility constructor were then updated minimally.
+
+### GREEN Evidence
+
+1. `cd relay-ops-service && go test ./internal/billing ./internal/collection ./internal/controlplane ./internal/app ./internal/sub2api ./internal/adapter -run 'Test(Balance|Rate|Command|UpdateAccount|AccountCommand)' -count=1 -v` passed. It covers delayed injected-client timeout with zero fact writes, stable retry identity after ambiguous append, failed-command replay, 401/403, verified-admin actor overwrite, and the versioned adapter endpoint.
+2. `cd upstream/sub2api/backend && go test ./internal/handler/admin -run TestAccountExternalCommandV1EnforcesIdempotencyKeyAndPayload -count=1 -v` passed. It proves real official v1 handling executes once, marks exact replay, and conflicts on changed fields or command ID under one key.
+3. `cd relay-ops-service && go test ./...`, `go test -race ./internal/billing ./internal/collection ./internal/controlplane`, and `go vet ./...` passed. `git diff --check` passed.
+4. `cd relay-ops-service && go test ./internal/store -run TestAccountUpdateCommand -count=1 -v` compiled and skipped durable PostgreSQL cases because `RELAY_OPS_TEST_DATABASE_URL` is absent. The added integration test covers command ID, canonical allowed-field payload hash, actor, account, contract version, failed completion, and same-key conflicts when a database is configured.
+
+### Changed Behavior
+
+- Production's five-minute collection closure now enumerates enabled billing sources, collects bounded balance facts with ten-minute freshness, and uses a stable observation time for the full scheduled pass. It stays outside routing and charging.
+- `POST /accounts/{id}/commands/v1` is behind `RequireAdmin`, derives actor from verified context, ignores body actor/account/key, and reaches the narrow official writer.
+- Durable account-update identity binds caller command ID, canonical allowed-field payload hash/payload, actor, account, command name, and contract version. Any divergence under its idempotency key conflicts. Failed durable replays return `ErrAccountUpdateFailed`.
+- The relay calls `POST /api/v1/admin/accounts/:id/external-command/v1`; the official handler itself invokes `executeAdminIdempotent` using command ID and fields.
+- Every billing adapter request has a provider deadline despite injected HTTP clients; `CollectAt` preserves the fact identity over an ambiguous append retry.
+
+### Residual Concerns
+
+- PostgreSQL durable-identity execution remains pending a configured local test database; skipped is not reported as passed.
+- The review-deferred future-dated-fact Minor item remains untouched. This candidate remains `进行中`: no push, merge, deployment, or online validation occurred.

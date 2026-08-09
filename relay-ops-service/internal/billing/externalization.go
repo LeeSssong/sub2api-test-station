@@ -2,12 +2,14 @@ package billing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"example.invalid/relay-ops-service/internal/controlplane"
 	"github.com/shopspring/decimal"
 )
 
@@ -64,6 +66,15 @@ type BalanceCollector struct {
 }
 
 func (c BalanceCollector) Collect(ctx context.Context, accountID int64) (BalanceSnapshot, error) {
+	now := time.Now().UTC()
+	if c.Now != nil {
+		now = c.Now().UTC()
+	}
+	return c.CollectAt(ctx, accountID, now)
+}
+
+// CollectAt gives one scheduled observation a stable identity across retries.
+func (c BalanceCollector) CollectAt(ctx context.Context, accountID int64, observedAt time.Time) (BalanceSnapshot, error) {
 	if accountID <= 0 || c.Reader == nil || c.Writer == nil || c.FreshFor <= 0 || strings.TrimSpace(c.Source) == "" {
 		return BalanceSnapshot{}, errors.New("balance collector is not configured")
 	}
@@ -71,13 +82,10 @@ func (c BalanceCollector) Collect(ctx context.Context, accountID int64) (Balance
 	if err != nil {
 		return BalanceSnapshot{}, fmt.Errorf("read provider balance: %w", err)
 	}
-	now := time.Now().UTC()
-	if c.Now != nil {
-		now = c.Now().UTC()
-	}
+	observedAt = observedAt.UTC()
 	snapshot := BalanceSnapshot{
 		AccountID: accountID, Amount: strings.TrimSpace(value.Amount), Currency: strings.ToUpper(strings.TrimSpace(value.Currency)),
-		ObservedAt: now, FreshUntil: now.Add(c.FreshFor), Source: strings.TrimSpace(c.Source),
+		ObservedAt: observedAt, FreshUntil: observedAt.Add(c.FreshFor), Source: strings.TrimSpace(c.Source),
 	}
 	if err := snapshot.Validate(); err != nil {
 		return BalanceSnapshot{}, err
@@ -110,6 +118,24 @@ func ApplyAccountUpdate(ctx context.Context, writer OfficialAccountWriter, comma
 }
 
 var ErrAccountUpdatePending = errors.New("account update command remains pending")
+var ErrAccountUpdateFailed = errors.New("account update command previously failed")
+
+type AccountUpdateCommandAudit interface {
+	ClaimAccountUpdateCommand(context.Context, AccountUpdateCommand, string, int) (bool, string, error)
+	CompleteAccountUpdateCommand(context.Context, AccountUpdateCommand, string, int) error
+}
+
+func (c AccountUpdateCommand) CanonicalPayloadHash() (string, error) {
+	if err := c.Validate(); err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(c.Fields)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 func (c AccountUpdateCommand) Validate() error {
 	if c.ActorID <= 0 || c.AccountID <= 0 || strings.TrimSpace(c.CommandID) == "" || strings.TrimSpace(c.IdempotencyKey) == "" || len(c.Fields) == 0 {
@@ -128,20 +154,27 @@ func (c AccountUpdateCommand) Validate() error {
 // ExecuteAccountUpdate reuses the control-plane's durable command audit for
 // a narrowly allowed official account update. A replay never reaches the
 // official writer, and a completion failure is returned to the caller.
-func ExecuteAccountUpdate(ctx context.Context, writer OfficialAccountWriter, audit controlplane.ExternalizationCommandAudit, command AccountUpdateCommand) error {
+func ExecuteAccountUpdate(ctx context.Context, writer OfficialAccountWriter, audit AccountUpdateCommandAudit, command AccountUpdateCommand) error {
 	if err := command.Validate(); err != nil {
 		return err
 	}
 	if writer == nil || audit == nil {
 		return errors.New("account update command dependencies are unavailable")
 	}
-	dispatch, storedResult, err := audit.ClaimExternalizationCommand(ctx, command.ActorID, command.AccountID, command.IdempotencyKey, "account_update", 1)
+	payloadHash, err := command.CanonicalPayloadHash()
+	if err != nil {
+		return err
+	}
+	dispatch, storedResult, err := audit.ClaimAccountUpdateCommand(ctx, command, payloadHash, 1)
 	if err != nil {
 		return err
 	}
 	if !dispatch {
 		if storedResult == "pending" || storedResult == "processing" || storedResult == "" {
 			return ErrAccountUpdatePending
+		}
+		if storedResult == "failed" {
+			return ErrAccountUpdateFailed
 		}
 		return nil
 	}
@@ -150,7 +183,7 @@ func ExecuteAccountUpdate(ctx context.Context, writer OfficialAccountWriter, aud
 	if err != nil {
 		result = "failed"
 	}
-	if completeErr := audit.CompleteExternalizationCommand(ctx, command.ActorID, command.AccountID, command.IdempotencyKey, result, 1); completeErr != nil {
+	if completeErr := audit.CompleteAccountUpdateCommand(ctx, command, result, 1); completeErr != nil {
 		return errors.Join(err, completeErr)
 	}
 	return err

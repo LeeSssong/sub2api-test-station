@@ -277,10 +277,12 @@ func TestPrepareUsageLogInsert_AccountCostWiring(t *testing.T) {
 	)
 	require.Contains(t, batchQuery, "account_cost")
 	require.Len(t, batchArgs, len(prepared.args)+1)
+	require.Equal(t, &accountCost, batchArgs[1+(len(prepared.args)-3)], "batch account_cost must follow account_stats_cost")
 
 	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
 	require.Contains(t, bestEffortQuery, "account_cost")
 	require.Len(t, bestEffortArgs, len(prepared.args))
+	require.Equal(t, &accountCost, bestEffortArgs[len(prepared.args)-3], "best-effort account_cost must follow account_stats_cost")
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {

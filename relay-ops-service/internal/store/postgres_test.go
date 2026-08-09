@@ -388,6 +388,187 @@ func TestConsumerConcurrentInstancesSerializeProjectionUpdates(t *testing.T) {
 	}
 }
 
+func TestProjectionCompletenessTracksProcessingAndDeadGapsInSameTransaction(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 10, 3, 30, 0, 0, time.UTC)
+	accounts := projection.NewAccountsWithRepository(st)
+	profitability := projection.NewProfitabilityWithRepository(st)
+	accounting := projection.NewAccountingWithRepository(st)
+	reconciliation := projection.NewReconciliationWithRepository(st)
+	consumer, err := events.NewPersistentConsumer(st, accounts, profitability, accounting, reconciliation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountEvent := events.Event{
+		EventID: "550e8400-e29b-41d4-a716-446655440034", Type: events.AccountHealthChanged,
+		OccurredAt: at, SourceVersion: "sub2api-v1", ContractVersion: events.ContractVersion,
+		Payload: []byte(`{"account_id":7,"status":"healthy","checked_at":"2026-08-10T03:30:00Z"}`),
+	}
+	requestEvent := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440035", at.Add(time.Second), "1.00", "0.25")
+	if err := consumer.Handle(ctx, accountEvent); err != nil {
+		t.Fatal(err)
+	}
+	if err := consumer.Handle(ctx, requestEvent); err != nil {
+		t.Fatal(err)
+	}
+	assertExternalizationCompleteness(t, st, events.CompletenessComplete)
+
+	processing := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440036", at.Add(2*time.Second), "0.50", "0.10")
+	claim, err := st.ClaimEvent(ctx, processing)
+	if err != nil || !claim.Acquired {
+		t.Fatalf("processing claim=%+v err=%v", claim, err)
+	}
+	assertExternalizationCompleteness(t, st, events.CompletenessPartial)
+	if _, err := st.ApplyEvent(ctx, processing, claim, time.Now().UTC(), func(applyCtx context.Context) error {
+		for _, handler := range []events.Handler{accounts, profitability, accounting, reconciliation} {
+			if err := handler.Handle(applyCtx, processing); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertExternalizationCompleteness(t, st, events.CompletenessComplete)
+
+	dead := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440037", at.Add(3*time.Second), "0.25", "0.05")
+	deadClaim, err := st.ClaimEvent(ctx, dead)
+	if err != nil || !deadClaim.Acquired {
+		t.Fatalf("dead claim=%+v err=%v", deadClaim, err)
+	}
+	if err := st.FailEvent(ctx, dead, deadClaim, time.Now().UTC(), errors.New("permanent projection failure")); err != nil {
+		t.Fatal(err)
+	}
+	assertExternalizationCompleteness(t, st, events.CompletenessPartial)
+}
+
+func TestClaimAndFirstWatermarkCompletionShareProjectionLock(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 10, 3, 45, 0, 0, time.UTC)
+	first := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440038", at, "1.00", "0.25")
+	firstClaim, err := st.ClaimEvent(ctx, first)
+	if err != nil || !firstClaim.Acquired {
+		t.Fatalf("first claim=%+v err=%v", firstClaim, err)
+	}
+
+	blocker, err := st.pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Release()
+	blockerTx, err := blocker.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blockerTx.Rollback(ctx)
+	if _, err := blockerTx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('relay-ops:externalization-projections', 0))`); err != nil {
+		t.Fatal(err)
+	}
+
+	applyResult := make(chan error, 1)
+	go func() {
+		_, err := st.ApplyEvent(ctx, first, firstClaim, time.Now().UTC(), func(context.Context) error { return nil })
+		applyResult <- err
+	}()
+	waitForAdvisoryWaiters(t, st, 1)
+
+	second := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440039", at.Add(time.Second), "0.50", "0.10")
+	type claimResult struct {
+		claim events.Claim
+		err   error
+	}
+	secondResult := make(chan claimResult, 1)
+	go func() {
+		claim, err := st.ClaimEvent(ctx, second)
+		secondResult <- claimResult{claim: claim, err: err}
+	}()
+	waitForAdvisoryWaiters(t, st, 2)
+	if err := blockerTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-applyResult; err != nil {
+		t.Fatal(err)
+	}
+	claimed := <-secondResult
+	if claimed.err != nil || !claimed.claim.Acquired {
+		t.Fatalf("second claim=%+v err=%v", claimed.claim, claimed.err)
+	}
+	watermark, found, err := st.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found || watermark.Completeness != events.CompletenessPartial {
+		t.Fatalf("watermark=%+v found=%v err=%v, want partial", watermark, found, err)
+	}
+	var status string
+	if err := st.pool.QueryRow(ctx, `SELECT status FROM relay_ops.externalization_events WHERE event_id=$1`, second.EventID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "processing" {
+		t.Fatalf("second event status=%q, want processing", status)
+	}
+}
+
+func assertExternalizationCompleteness(t *testing.T, st *Store, want string) {
+	t.Helper()
+	ctx := context.Background()
+	watermark, found, err := st.LoadWatermark(ctx, "sub2api-v1")
+	if err != nil || !found || watermark.Completeness != want {
+		t.Fatalf("watermark=%+v found=%v err=%v, want completeness %q", watermark, found, err, want)
+	}
+	for _, table := range []string{
+		"account_read_models", "profitability_read_models", "accounting_read_models", "reconciliation_read_models",
+	} {
+		var values []string
+		rows, err := st.pool.Query(ctx, `SELECT completeness FROM relay_ops.`+table)
+		if err != nil {
+			t.Fatalf("query %s completeness: %v", table, err)
+		}
+		for rows.Next() {
+			var value string
+			if err := rows.Scan(&value); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			values = append(values, value)
+		}
+		rows.Close()
+		if len(values) == 0 {
+			t.Fatalf("%s has no projection rows", table)
+		}
+		for _, value := range values {
+			if value != want {
+				t.Fatalf("%s completeness=%q, want %q", table, value, want)
+			}
+		}
+	}
+}
+
+func waitForAdvisoryWaiters(t *testing.T, st *Store, want int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		var waiting int
+		if err := st.pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_locks WHERE locktype='advisory' AND NOT granted`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting >= want {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("advisory lock waiters=%d, want at least %d", waiting, want)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func TestProjectionMigrationUpgradesPlaceholderSchemaInPlace(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
@@ -418,9 +599,9 @@ func TestProjectionMigrationUpgradesPlaceholderSchemaInPlace(t *testing.T) {
 		INSERT INTO relay_ops.externalization_dead_letters
 			(event_id, error, payload)
 		VALUES ('legacy-dead', 'legacy failure', '{"legacy":true}');
-		INSERT INTO relay_ops.account_read_models
-			(account_id, status, generated_at, source_watermark, completeness, calculation_version)
-		VALUES (99, 'healthy', '2026-08-09T00:00:01Z', 'legacy-event', 'complete', 'accounts-v0');`); err != nil {
+			INSERT INTO relay_ops.account_read_models
+				(account_id, status, balance, currency, observed_at, generated_at, source_watermark, completeness, calculation_version)
+			VALUES (99, 'healthy', 12.50, 'USD', '2026-08-09T00:00:00Z', '2026-08-09T00:00:01Z', 'legacy-event', 'complete', 'accounts-v0');`); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Migrate(ctx); err != nil {
@@ -444,6 +625,46 @@ func TestProjectionMigrationUpgradesPlaceholderSchemaInPlace(t *testing.T) {
 	}
 	if legacyAccounts != 1 || legacyDead != 1 {
 		t.Fatalf("legacy rows accounts=%d dead=%d", legacyAccounts, legacyDead)
+	}
+	var healthAt, balanceAt *time.Time
+	var healthEventID, balanceEventID *string
+	if err := st.pool.QueryRow(ctx, `
+		SELECT health_occurred_at, health_event_id, balance_occurred_at, balance_event_id
+		FROM relay_ops.account_read_models WHERE account_id=99`).Scan(&healthAt, &healthEventID, &balanceAt, &balanceEventID); err != nil {
+		t.Fatal(err)
+	}
+	legacyObservedAt := time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC)
+	if healthAt == nil || !healthAt.Equal(legacyObservedAt) || healthEventID == nil || *healthEventID != "legacy-event" ||
+		balanceAt == nil || !balanceAt.Equal(legacyObservedAt) || balanceEventID == nil || *balanceEventID != "legacy-event" {
+		t.Fatalf("legacy positions health=(%v,%v) balance=(%v,%v)", healthAt, healthEventID, balanceAt, balanceEventID)
+	}
+	accounts := projection.NewAccountsWithRepository(st)
+	accountConsumer, err := events.NewPersistentConsumer(st, accounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, delayed := range []events.Event{
+		{
+			EventID: "legacy-health-delayed", Type: events.AccountHealthChanged,
+			OccurredAt: legacyObservedAt.Add(-time.Second), SourceVersion: "legacy-v1", ContractVersion: events.ContractVersion,
+			Payload: []byte(`{"account_id":99,"status":"unhealthy","checked_at":"2026-08-08T23:59:59Z"}`),
+		},
+		{
+			EventID: "legacy-balance-delayed", Type: events.AccountBalanceSnapshot,
+			OccurredAt: legacyObservedAt.Add(-time.Second), SourceVersion: "legacy-v1", ContractVersion: events.ContractVersion,
+			Payload: []byte(`{"account_id":99,"balance":"1.25","currency":"USD","captured_at":"2026-08-08T23:59:59Z"}`),
+		},
+	} {
+		if err := accountConsumer.Handle(ctx, delayed); err != nil {
+			t.Fatalf("consume delayed legacy account event: %v", err)
+		}
+	}
+	var legacyAccountStatus, legacyBalance string
+	if err := st.pool.QueryRow(ctx, `SELECT status, balance::text FROM relay_ops.account_read_models WHERE account_id=99`).Scan(&legacyAccountStatus, &legacyBalance); err != nil {
+		t.Fatal(err)
+	}
+	if legacyAccountStatus != "healthy" || legacyBalance != "12.50" {
+		t.Fatalf("delayed event overwrote legacy account status=%q balance=%q", legacyAccountStatus, legacyBalance)
 	}
 	event := externalizationRequestEvent("550e8400-e29b-41d4-a716-446655440041", time.Date(2026, 8, 10, 4, 0, 0, 0, time.UTC), "1.00", "0.25")
 	consumer, err := events.NewPersistentConsumer(st, projection.NewProfitabilityWithRepository(st))

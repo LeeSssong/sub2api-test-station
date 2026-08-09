@@ -187,6 +187,8 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 const externalizationEventLease = 2 * time.Minute
 
+const externalizationProjectionLockSQL = `SELECT pg_advisory_xact_lock(hashtextextended('relay-ops:externalization-projections', 0))`
+
 func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (events.Claim, error) {
 	claimToken, err := newExternalizationClaimToken()
 	if err != nil {
@@ -197,6 +199,9 @@ func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (events.Clai
 		return events.Claim{}, fmt.Errorf("begin externalization event claim: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, externalizationProjectionLockSQL); err != nil {
+		return events.Claim{}, fmt.Errorf("lock externalization event claim: %w", err)
+	}
 	leaseUntil := time.Now().UTC().Add(externalizationEventLease)
 	command, err := tx.Exec(ctx, `
 		INSERT INTO relay_ops.externalization_events
@@ -213,6 +218,9 @@ func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (events.Clai
 			UPDATE relay_ops.externalization_watermarks SET completeness=$2 WHERE source=$1`,
 			event.SourceVersion, events.CompletenessPartial); err != nil {
 			return events.Claim{}, fmt.Errorf("mark externalization watermark partial: %w", err)
+		}
+		if err := setProjectionRowsCompleteness(ctx, tx, events.CompletenessPartial); err != nil {
+			return events.Claim{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return events.Claim{}, fmt.Errorf("commit externalization event claim: %w", err)
@@ -256,6 +264,9 @@ func (s *Store) ClaimEvent(ctx context.Context, event events.Event) (events.Clai
 		event.SourceVersion, events.CompletenessPartial); err != nil {
 		return events.Claim{}, fmt.Errorf("mark resumed externalization watermark partial: %w", err)
 	}
+	if err := setProjectionRowsCompleteness(ctx, tx, events.CompletenessPartial); err != nil {
+		return events.Claim{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return events.Claim{}, fmt.Errorf("commit resumed externalization event: %w", err)
 	}
@@ -278,7 +289,7 @@ func (s *Store) ApplyEvent(ctx context.Context, event events.Event, claim events
 		return events.Watermark{}, fmt.Errorf("begin externalization event completion: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('relay-ops:externalization-projections', 0))`); err != nil {
+	if _, err := tx.Exec(ctx, externalizationProjectionLockSQL); err != nil {
 		return events.Watermark{}, fmt.Errorf("lock externalization projections: %w", err)
 	}
 	var status, token string
@@ -336,6 +347,9 @@ func (s *Store) ApplyEvent(ctx context.Context, event events.Event, claim events
 		event.SourceVersion, event.EventID, event.OccurredAt.UTC(), processedAt.UTC(), completeness); err != nil {
 		return events.Watermark{}, fmt.Errorf("save externalization watermark: %w", err)
 	}
+	if err := setProjectionRowsCompleteness(ctx, tx, completeness); err != nil {
+		return events.Watermark{}, err
+	}
 	var watermark events.Watermark
 	if err := tx.QueryRow(ctx, `
 		SELECT source, last_event_id, occurred_at, processed_at, completeness
@@ -355,6 +369,9 @@ func (s *Store) FailEvent(ctx context.Context, event events.Event, claim events.
 		return fmt.Errorf("begin externalization dead letter: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, externalizationProjectionLockSQL); err != nil {
+		return fmt.Errorf("lock externalization dead letter: %w", err)
+	}
 	message := "unknown projection failure"
 	if cause != nil {
 		message = cause.Error()
@@ -383,8 +400,25 @@ func (s *Store) FailEvent(ctx context.Context, event events.Event, claim events.
 		event.SourceVersion, events.CompletenessPartial); err != nil {
 		return fmt.Errorf("mark failed externalization watermark partial: %w", err)
 	}
+	if err := setProjectionRowsCompleteness(ctx, tx, events.CompletenessPartial); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit externalization dead letter: %w", err)
+	}
+	return nil
+}
+
+func setProjectionRowsCompleteness(ctx context.Context, executor projectionDB, completeness string) error {
+	for _, table := range []string{
+		"account_read_models",
+		"profitability_read_models",
+		"accounting_read_models",
+		"reconciliation_read_models",
+	} {
+		if _, err := executor.Exec(ctx, `UPDATE relay_ops.`+table+` SET completeness=$1`, completeness); err != nil {
+			return fmt.Errorf("update %s completeness: %w", table, err)
+		}
 	}
 	return nil
 }

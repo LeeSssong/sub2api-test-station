@@ -2,6 +2,7 @@ package projection
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -59,6 +60,66 @@ func TestRebuildAccountsFromSnapshotAndEventsIsDeterministic(t *testing.T) {
 	}
 	if first.Rows[7].Balance != "12.5" || first.Rows[7].Status != "healthy" {
 		t.Fatalf("rebuilt account = %+v", first.Rows[7])
+	}
+}
+
+func TestSnapshotJSONRoundTripPreservesPositionsForOutOfOrderRebuild(t *testing.T) {
+	healthAt := time.Date(2026, 8, 10, 5, 0, 3, 0, time.UTC)
+	balanceAt := healthAt.Add(time.Second)
+	profitabilityAt := balanceAt.Add(time.Second)
+	snapshot := Snapshot{
+		Accounts: []AccountRow{{
+			AccountID: 7, Status: "healthy", Balance: "12.50", Currency: "USD", ObservedAt: balanceAt,
+			HealthOccurredAt: healthAt, HealthEventID: "health-current",
+			BalanceOccurredAt: balanceAt, BalanceEventID: "balance-current",
+			Metadata: Metadata{GeneratedAt: balanceAt, SourceWatermark: "balance-current", FreshnessSeconds: 0, Completeness: CompletenessComplete, CalculationVersion: AccountsCalculationVersion},
+		}},
+		Profitability: []ProfitabilityRow{{
+			AccountID: 7, Requests: 5, Revenue: "10", Cost: "4", Profit: "6", Margin: "0.6", Rank: 1,
+			SourceOccurredAt: profitabilityAt,
+			Metadata:         Metadata{GeneratedAt: profitabilityAt, SourceWatermark: "profitability-current", FreshnessSeconds: 0, Completeness: CompletenessComplete, CalculationVersion: ProfitabilityCalculationVersion},
+		}},
+	}
+
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTripped Snapshot
+	if err := json.Unmarshal(encoded, &roundTripped); err != nil {
+		t.Fatal(err)
+	}
+	account := roundTripped.Accounts[0]
+	if !account.HealthOccurredAt.Equal(healthAt) || account.HealthEventID != "health-current" ||
+		!account.BalanceOccurredAt.Equal(balanceAt) || account.BalanceEventID != "balance-current" {
+		t.Fatalf("account positions lost after JSON round trip: %+v", account)
+	}
+	if got := roundTripped.Profitability[0].SourceOccurredAt; !got.Equal(profitabilityAt) {
+		t.Fatalf("profitability position lost after JSON round trip: %s", got)
+	}
+
+	accounts := NewAccounts()
+	accountEvents := []events.Event{
+		accountHealthEvent("health-stale", healthAt.Add(-time.Second), "unhealthy"),
+		accountBalanceEvent("balance-stale", balanceAt.Add(-time.Second), "1.25"),
+	}
+	if err := accounts.Rebuild(context.Background(), roundTripped, accountEvents); err != nil {
+		t.Fatal(err)
+	}
+	if row := accounts.Rows[7]; row.Status != "healthy" || row.Balance != "12.5" {
+		t.Fatalf("stale account events overwrote round-tripped snapshot: %+v", row)
+	}
+
+	profitability := NewProfitability()
+	profitabilityEvents := []events.Event{
+		requestEvent("profitability-stale", profitabilityAt.Add(-time.Second), 7, "100", "1", "1"),
+		requestEvent("profitability-next", profitabilityAt.Add(time.Second), 7, "2", "1", "1"),
+	}
+	if err := profitability.Rebuild(context.Background(), roundTripped, profitabilityEvents); err != nil {
+		t.Fatal(err)
+	}
+	if row := profitability.Rows[7]; row.Requests != 6 || row.Revenue != "12" || row.Cost != "5" {
+		t.Fatalf("profitability rebuild re-applied pre-snapshot event: %+v", row)
 	}
 }
 

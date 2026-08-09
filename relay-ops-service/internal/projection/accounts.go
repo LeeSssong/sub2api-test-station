@@ -37,10 +37,10 @@ type AccountRow struct {
 	Balance           string    `json:"balance,omitempty"`
 	Currency          string    `json:"currency,omitempty"`
 	ObservedAt        time.Time `json:"observed_at,omitempty"`
-	HealthOccurredAt  time.Time `json:"-"`
-	HealthEventID     string    `json:"-"`
-	BalanceOccurredAt time.Time `json:"-"`
-	BalanceEventID    string    `json:"-"`
+	HealthOccurredAt  time.Time `json:"health_occurred_at,omitempty"`
+	HealthEventID     string    `json:"health_event_id,omitempty"`
+	BalanceOccurredAt time.Time `json:"balance_occurred_at,omitempty"`
+	BalanceEventID    string    `json:"balance_event_id,omitempty"`
 	Metadata          Metadata  `json:"metadata"`
 }
 
@@ -106,7 +106,8 @@ func (p *Accounts) handlePersistent(ctx context.Context, event events.Event) err
 		return fmt.Errorf("load account read models: %w", err)
 	}
 	working := NewAccounts()
-	for _, row := range rows {
+	for _, input := range rows {
+		row := backfillAccountRowPositions(input)
 		working.Rows[row.AccountID] = row
 		if events.ComparePosition(row.ObservedAt, row.Metadata.SourceWatermark, working.watermarkAt, working.Metadata.SourceWatermark) > 0 {
 			working.watermarkAt, working.Metadata = row.ObservedAt, row.Metadata
@@ -208,12 +209,7 @@ func (p *Accounts) Rebuild(ctx context.Context, snapshot Snapshot, stream []even
 			}
 			row.Balance = value.String()
 		}
-		if row.HealthOccurredAt.IsZero() {
-			row.HealthOccurredAt, row.HealthEventID = row.ObservedAt, row.Metadata.SourceWatermark
-		}
-		if row.BalanceOccurredAt.IsZero() {
-			row.BalanceOccurredAt, row.BalanceEventID = row.ObservedAt, row.Metadata.SourceWatermark
-		}
+		row = backfillAccountRowPositions(row)
 		p.Rows[row.AccountID] = row
 		if events.ComparePosition(row.ObservedAt, row.Metadata.SourceWatermark, p.watermarkAt, p.Metadata.SourceWatermark) > 0 {
 			p.watermarkAt, p.Metadata = row.ObservedAt, row.Metadata
@@ -249,13 +245,27 @@ func (p *Accounts) ensureLoaded(ctx context.Context) error {
 		p.loaded = false
 		return fmt.Errorf("load account read models: %w", err)
 	}
-	for _, row := range rows {
+	for _, input := range rows {
+		row := backfillAccountRowPositions(input)
 		p.Rows[row.AccountID] = row
 		if events.ComparePosition(row.ObservedAt, row.Metadata.SourceWatermark, p.watermarkAt, p.Metadata.SourceWatermark) > 0 {
 			p.watermarkAt, p.Metadata = row.ObservedAt, row.Metadata
 		}
 	}
 	return nil
+}
+
+func backfillAccountRowPositions(row AccountRow) AccountRow {
+	if row.ObservedAt.IsZero() || row.Metadata.SourceWatermark == "" {
+		return row
+	}
+	if row.HealthOccurredAt.IsZero() && row.Status != "" {
+		row.HealthOccurredAt, row.HealthEventID = row.ObservedAt, row.Metadata.SourceWatermark
+	}
+	if row.BalanceOccurredAt.IsZero() && (row.Balance != "" || row.Currency != "") {
+		row.BalanceOccurredAt, row.BalanceEventID = row.ObservedAt, row.Metadata.SourceWatermark
+	}
+	return row
 }
 
 func (p *Accounts) accountRows() []AccountRow {

@@ -21,7 +21,7 @@ type ProfitabilityRow struct {
 	Margin           string    `json:"margin"`
 	Rank             int       `json:"rank"`
 	Metadata         Metadata  `json:"metadata"`
-	SourceOccurredAt time.Time `json:"-"`
+	SourceOccurredAt time.Time `json:"source_occurred_at,omitempty"`
 }
 
 type ProfitabilityRepository interface {
@@ -144,9 +144,13 @@ func (p *Profitability) Rebuild(ctx context.Context, snapshot Snapshot, stream [
 		}
 	}
 	p.recalculateTotals()
+	snapshotAt, snapshotEventID := p.watermarkAt, p.Metadata.SourceWatermark
 	repository := p.repository
 	p.repository = nil
 	for _, event := range sortedUniqueEvents(stream) {
+		if !snapshotAt.IsZero() && events.ComparePosition(event.OccurredAt, event.EventID, snapshotAt, snapshotEventID) <= 0 {
+			continue
+		}
 		if err := p.Handle(ctx, event); err != nil {
 			p.repository = repository
 			return err

@@ -85,6 +85,22 @@ ALTER TABLE relay_ops.account_read_models ADD COLUMN IF NOT EXISTS health_event_
 ALTER TABLE relay_ops.account_read_models ADD COLUMN IF NOT EXISTS balance_occurred_at TIMESTAMPTZ;
 ALTER TABLE relay_ops.account_read_models ADD COLUMN IF NOT EXISTS balance_event_id TEXT;
 
+UPDATE relay_ops.account_read_models
+SET health_occurred_at = COALESCE(health_occurred_at, observed_at),
+    health_event_id = COALESCE(NULLIF(health_event_id, ''), source_watermark)
+WHERE observed_at IS NOT NULL
+  AND NULLIF(source_watermark, '') IS NOT NULL
+  AND NULLIF(status, '') IS NOT NULL
+  AND (health_occurred_at IS NULL OR NULLIF(health_event_id, '') IS NULL);
+
+UPDATE relay_ops.account_read_models
+SET balance_occurred_at = COALESCE(balance_occurred_at, observed_at),
+    balance_event_id = COALESCE(NULLIF(balance_event_id, ''), source_watermark)
+WHERE observed_at IS NOT NULL
+  AND NULLIF(source_watermark, '') IS NOT NULL
+  AND (balance IS NOT NULL OR NULLIF(currency, '') IS NOT NULL)
+  AND (balance_occurred_at IS NULL OR NULLIF(balance_event_id, '') IS NULL);
+
 CREATE TABLE IF NOT EXISTS relay_ops.profitability_read_models (
     account_id BIGINT PRIMARY KEY,
     requests BIGINT NOT NULL CHECK (requests >= 0),

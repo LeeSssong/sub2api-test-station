@@ -444,7 +444,7 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 	if rule == nil {
 		return 0, false
 	}
-	resilience := SnapshotOpenAIResilienceAlertCounters()
+	resilience := openAIResilienceCountersForWindow(start, end, platform, groupID)
 	switch strings.TrimSpace(rule.MetricType) {
 	case "openai_account_model_repeated_failure_count":
 		return float64(resilience.RepeatedAccountModelFailures), true

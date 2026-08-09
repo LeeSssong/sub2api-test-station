@@ -582,7 +582,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	switchCount := 0
 	firstOutputTimeoutSwitchCount := 0
 	profitVetoCount := 0
-	failedAccountIDs := make(map[int64]struct{})
+	failedAccountIDs := h.gatewayService.OpenAIRecoveryExcludedAccountIDs(sessionHash, time.Now())
 	sameAccountRetryCount := make(map[int64]int)
 	forcedRetryAccountID := int64(0)
 	attemptSequence := newOpenAIRequestAttemptSequence(c)
@@ -784,6 +784,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 			})
+			h.gatewayService.RecordOpenAIRecoveryFailedAccount(sessionHash, account.ID, canonicalSchedulingModel, time.Now())
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
 			if failure.OutputStarted {
 				service.RecordOpenAIResilienceEvent(service.OpenAIEventStreamUpstreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
@@ -807,8 +808,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if retryDecision.TerminalRecovery {
-						service.RecordOpenAIResilienceEvent(service.OpenAIEventFailoverAfterStreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
-						logOpenAIResilienceEvent(reqLog, service.OpenAIEventFailoverAfterStreamFailure, attemptMetadata, failure, runtimeDecision, retryDecision.CachePreservationMode)
 						if !failure.OutputStarted {
 							writeOpenAIExplicitContinueError(c, false)
 							return
@@ -1275,7 +1274,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	profitVetoCount := 0
-	failedAccountIDs := make(map[int64]struct{})
+	failedAccountIDs := h.gatewayService.OpenAIRecoveryExcludedAccountIDs(sessionHash, time.Now())
 	sameAccountRetryCount := make(map[int64]int)
 	forcedRetryAccountID := int64(0)
 	attemptSequence := newOpenAIRequestAttemptSequence(c)
@@ -1448,6 +1447,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 			})
+			h.gatewayService.RecordOpenAIRecoveryFailedAccount(sessionHash, account.ID, canonicalSchedulingModel, time.Now())
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
 			if failure.OutputStarted {
 				service.RecordOpenAIResilienceEvent(service.OpenAIEventStreamUpstreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
@@ -1471,8 +1471,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if retryDecision.TerminalRecovery {
-						service.RecordOpenAIResilienceEvent(service.OpenAIEventFailoverAfterStreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
-						logOpenAIResilienceEvent(reqLog, service.OpenAIEventFailoverAfterStreamFailure, attemptMetadata, failure, runtimeDecision, retryDecision.CachePreservationMode)
 						if !failure.OutputStarted {
 							writeOpenAIExplicitContinueError(c, true)
 							return
@@ -2851,14 +2849,6 @@ func (h *OpenAIGatewayHandler) recordFailedOpenAIUsageAttempt(ctx context.Contex
 	h.submitMandatoryUsageRecordTask(ctx, func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, input); err != nil {
 			logger.L().With(zap.String("component", "handler.openai_gateway"), zap.String("attempt_id", metadata.AttemptID)).Error("openai.failed_attempt_usage_record_failed", zap.Error(err))
-		} else if input.ReconciliationRequired {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway"), zap.Int64("account_id", account.ID),
-				zap.String("canonical_scheduling_model", metadata.CanonicalModel), zap.String("attempt_id", metadata.AttemptID),
-				zap.Bool("output_started", failure.OutputStarted), zap.Bool("usage_produced", metadata.UsageProduced),
-				zap.Int("status_code", failure.StatusCode), zap.String("cache_preservation_mode", metadata.CachePreservationMode),
-				zap.Int("cooldown_seconds", 0), zap.Int("retry_after_seconds", 0),
-			).Info(service.OpenAIEventRetryBillingReconciled)
 		}
 	})
 }

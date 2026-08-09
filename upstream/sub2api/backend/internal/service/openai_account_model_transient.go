@@ -202,7 +202,7 @@ func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model stri
 	if !exists {
 		return false
 	}
-	if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow {
+	if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)) {
 		delete(s.entries, key)
 		return false
 	}
@@ -299,13 +299,13 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context
 	slog.Info(OpenAIEventAccountModelSoftFailure,
 		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 		"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
-		"usage_known", event.UsageKnown, "retry_after_seconds", decision.RetryAfterSeconds)
+		"usage_produced", event.UsageKnown, "cache_preservation_mode", "", "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	if decision.Cooldown > 0 {
 		RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, raw.FailureStreak, "")
 		slog.Warn(OpenAIEventAccountModelCooldownStarted,
 			"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 			"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
-			"usage_known", event.UsageKnown, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
+			"usage_produced", event.UsageKnown, "cache_preservation_mode", "", "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	}
 	return decision
 }
@@ -338,7 +338,7 @@ func (s *OpenAIGatewayService) ImmediatelyCooldownAccountModel(_ context.Context
 	state.entries[key] = entry
 	state.mu.Unlock()
 	RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, entry.failureStreak, "")
-	slog.Warn(OpenAIEventAccountModelCooldownStarted, "account_id", accountID, "canonical_scheduling_model", key.Model, "attempt", entry.failureStreak, "status_code", entry.lastStatusCode, "output_started", false, "usage_known", false, "cooldown_seconds", int(cooldown.Seconds()), "retry_after_seconds", int(cooldown.Seconds()), "source", "admin")
+	slog.Warn(OpenAIEventAccountModelCooldownStarted, "account_id", accountID, "canonical_scheduling_model", key.Model, "attempt", entry.failureStreak, "status_code", entry.lastStatusCode, "output_started", false, "usage_produced", false, "cache_preservation_mode", "", "cooldown_seconds", int(cooldown.Seconds()), "retry_after_seconds", int(cooldown.Seconds()), "source", "admin")
 	return s.snapshotOpenAIAccountModelRuntime(key, now), nil
 }
 
@@ -362,7 +362,7 @@ func (s *OpenAIGatewayService) ProbeAccountModelOnce(_ context.Context, accountI
 		return false, nil
 	}
 	RecordOpenAIResilienceEvent(OpenAIEventAccountModelHalfOpenProbe, 0, "")
-	slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", accountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(canonicalModel), "attempt", 1, "status_code", 0, "output_started", false, "usage_known", false, "state", "pending")
+	slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", accountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(canonicalModel), "attempt", 1, "status_code", 0, "output_started", false, "usage_produced", false, "cache_preservation_mode", "half_open_probe", "cooldown_seconds", 0, "retry_after_seconds", 0, "state", "pending")
 	return true, nil
 }
 
@@ -390,7 +390,7 @@ func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID 
 	if !exists {
 		return false
 	}
-	if !entry.lastFailure.IsZero() && (now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow || now.Before(entry.lastFailure)) {
+	if !entry.lastFailure.IsZero() && (now.Before(entry.lastFailure) || (now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)))) {
 		delete(state.entries, key)
 		return false
 	}
@@ -424,6 +424,7 @@ func (s *OpenAIGatewayService) ReleaseOpenAIAccountModelHalfOpenProbe(accountID 
 	}
 	entry.halfOpenInFlight = false
 	entry.lastTouched = now
+	entry.lastFailure = now
 	cooldown := openAIModelTransientShortCooldown
 	if entry.failureStreak >= 3 {
 		cooldown = openAIModelTransientLongCooldown
@@ -444,7 +445,7 @@ func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) 
 	defer state.mu.Unlock()
 	result := make([]OpenAIAccountModelRuntimeSnapshot, 0, len(state.entries))
 	for key, entry := range state.entries {
-		if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow {
+		if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)) {
 			continue
 		}
 		stateName := "soft_failure"
@@ -453,7 +454,7 @@ func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) 
 		} else if !entry.blockUntil.IsZero() && now.Before(entry.blockUntil) {
 			stateName = "cooldown"
 		}
-		result = append(result, OpenAIAccountModelRuntimeSnapshot{AccountID: key.AccountID, CanonicalModel: key.Model, State: stateName, FailureStreak: entry.failureStreak, LastFailureAt: entry.lastFailure, BlockUntil: entry.blockUntil, HalfOpenInFlight: entry.halfOpenInFlight, LastStatusCode: entry.lastStatusCode, LastErrorType: entry.lastErrorType, OutputStarted: entry.outputStarted, StickyReferenceCount: 0})
+		result = append(result, OpenAIAccountModelRuntimeSnapshot{AccountID: key.AccountID, CanonicalModel: key.Model, State: stateName, FailureStreak: entry.failureStreak, LastFailureAt: entry.lastFailure, BlockUntil: entry.blockUntil, HalfOpenInFlight: entry.halfOpenInFlight, LastStatusCode: entry.lastStatusCode, LastErrorType: entry.lastErrorType, OutputStarted: entry.outputStarted, StickyReferenceCount: s.OpenAIRecoveryStickyReferenceCount(key.AccountID, key.Model, now)})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].AccountID != result[j].AccountID {

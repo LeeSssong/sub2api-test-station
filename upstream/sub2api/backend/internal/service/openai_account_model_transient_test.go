@@ -172,6 +172,7 @@ func TestOpenAIModelTransient_HalfOpenFailureExtendsCooldown(t *testing.T) {
 	snap := svc.SnapshotOpenAIAccountModelRuntime(expired)
 	require.Len(t, snap, 1)
 	assert.Equal(t, expired.Add(openAIModelTransientShortCooldown), snap[0].BlockUntil)
+	assert.Equal(t, expired, snap[0].LastFailureAt)
 }
 
 func TestOpenAIModelTransient_HalfOpenLeaseIsSingleAfterCooldownExpiry(t *testing.T) {

@@ -53,11 +53,12 @@ func resolveStreamRecoveryPayload(source any) (*service.OpenAIStreamRecoveryPayl
 	payload.Message = streamRecoveryMessage
 	payload.Retryable = true
 	payload.RetryAfterSeconds = 10
-	payload.ResponseID = responseID
-	payload.ResumeSupported = responseID != ""
-	if !payload.ResumeSupported {
-		payload.ResponseID = ""
-	}
+	// HTTP Responses and Messages reject previous_response_id; advertising the
+	// upstream ID here would promise an unsupported continuation path. Keep the
+	// ID internal for recovery exclusion only and make this wire contract honest.
+	_ = responseID
+	payload.ResponseID = ""
+	payload.ResumeSupported = false
 	return &payload, true
 }
 

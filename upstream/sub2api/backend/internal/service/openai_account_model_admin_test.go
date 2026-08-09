@@ -46,3 +46,14 @@ func TestOpenAIAccountModelAdminProbeAcquiresAndReleasesHalfOpenLease(t *testing
 	svc.ReleaseOpenAIAccountModelHalfOpenProbe(72, "gpt-5.5", true, now.Add(3*time.Second))
 	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(now.Add(3*time.Second)))
 }
+
+func TestOpenAIAccountModelAdminCooldownSurvivesFailureStreakWindow(t *testing.T) {
+	now := time.Date(2026, 8, 9, 8, 0, 0, 0, time.UTC)
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	_, err := svc.ImmediatelyCooldownAccountModel(context.Background(), 73, "gpt-5.5", 5*time.Minute, now)
+	require.NoError(t, err)
+	require.True(t, svc.openaiModelTransient.isBlocked(73, "gpt-5.5", now.Add(2*time.Minute)))
+	runtime := svc.SnapshotOpenAIAccountModelRuntime(now.Add(2 * time.Minute))
+	require.Len(t, runtime, 1)
+	require.Equal(t, "cooldown", runtime[0].State)
+}

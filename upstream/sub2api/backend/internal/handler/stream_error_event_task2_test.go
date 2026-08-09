@@ -37,7 +37,8 @@ func TestWriteOpenAIStreamRecoverySSE_EmitsOneStructuredRetryableEvent(t *testin
 	require.Equal(t, "upstream_temporarily_unavailable", errorObject["type"])
 	require.Equal(t, "当前上游暂时不可用，请稍后继续", errorObject["message"])
 	require.Equal(t, true, errorObject["retryable"])
-	require.Equal(t, true, errorObject["resume_supported"])
+	require.Equal(t, false, errorObject["resume_supported"])
+	require.NotContains(t, errorObject, "response_id")
 	require.Equal(t, float64(10), errorObject["retry_after_seconds"])
 }
 
@@ -61,8 +62,8 @@ func TestWriteOpenAIStreamRecoverySSE_NormalizesResponseIDAndResumeFlag(t *testi
 	require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(strings.Split(frame, "\n")[1], "data: ")), &payload))
 	errorObject, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "resp_outer", errorObject["response_id"])
-	require.Equal(t, true, errorObject["resume_supported"])
+	require.NotContains(t, errorObject, "response_id")
+	require.Equal(t, false, errorObject["resume_supported"])
 }
 
 func TestWriteOpenAIStreamRecoverySSE_ExactContractWithoutResponseID(t *testing.T) {
@@ -93,7 +94,7 @@ func TestWriteAnthropicStreamRecoverySSE_UsesMessagesEnvelope(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "api_error", errorObject["type"])
 	require.Equal(t, "当前上游暂时不可用，请稍后继续", errorObject["message"])
-	require.Equal(t, "resp_msg", errorObject["response_id"])
+	require.NotContains(t, errorObject, "response_id")
 }
 
 func TestHandleAnthropicFailoverExhausted_UsesMessagesRecoveryEnvelope(t *testing.T) {

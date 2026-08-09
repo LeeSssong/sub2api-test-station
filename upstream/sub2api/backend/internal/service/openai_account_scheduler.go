@@ -611,7 +611,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		slog.Info(OpenAIEventAccountModelCooldownSkippedCache,
 			"account_id", account.ID,
 			"canonical_scheduling_model", account.GetMappedModel(req.RequestedModel),
+			"attempt", 0, "status_code", 0, "output_started", false, "usage_produced", false,
 			"cache_preservation_mode", "sticky",
+			"cooldown_seconds", 0, "retry_after_seconds", 0,
 		)
 		return nil, false, nil
 	}

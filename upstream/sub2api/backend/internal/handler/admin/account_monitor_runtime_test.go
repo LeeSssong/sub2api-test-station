@@ -48,3 +48,18 @@ func TestAccountMonitorRuntimeActionsRejectInvalidInput(t *testing.T) {
 	h.RestoreAccountModelScheduling(c)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+func TestAccountMonitorRuntimeSoftFailureKeepsAllDTOKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gateway := &service.OpenAIGatewayService{}
+	gateway.RecordOpenAIAccountModelFailure(nil, service.OpenAIAccountModelFailureEvent{AccountID: 82, CanonicalModel: "gpt-5.5", StatusCode: 502, ErrorType: "transient_upstream"})
+	h := NewAccountMonitorHandler(nil, nil, nil, nil)
+	h.SetOpenAIGatewayService(gateway)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/account-monitors/runtime", nil)
+	h.ListAccountModelRuntime(c)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"cooldown_until":null`)
+	require.Contains(t, recorder.Body.String(), `"last_error_type":"transient_upstream"`)
+}

@@ -204,10 +204,12 @@ func accountModelRuntimeDTOs(snapshots []service.OpenAIAccountModelRuntimeSnapsh
 func accountModelRuntimeItemDTO(snapshot service.OpenAIAccountModelRuntimeSnapshot) dto.AccountModelRuntimeItem {
 	item := dto.AccountModelRuntimeItem{AccountID: snapshot.AccountID, CanonicalSchedulingModel: snapshot.CanonicalModel, State: snapshot.State, FailureStreak: snapshot.FailureStreak, HalfOpenInFlight: snapshot.HalfOpenInFlight, LastStatusCode: snapshot.LastStatusCode, LastErrorType: snapshot.LastErrorType, OutputStarted: snapshot.OutputStarted, StickyReferenceCount: snapshot.StickyReferenceCount}
 	if !snapshot.LastFailureAt.IsZero() {
-		item.LastFailureAt = snapshot.LastFailureAt.UTC().Format(time.RFC3339)
+		value := snapshot.LastFailureAt.UTC().Format(time.RFC3339)
+		item.LastFailureAt = &value
 	}
 	if !snapshot.BlockUntil.IsZero() {
-		item.CooldownUntil = snapshot.BlockUntil.UTC().Format(time.RFC3339)
+		value := snapshot.BlockUntil.UTC().Format(time.RFC3339)
+		item.CooldownUntil = &value
 	}
 	return item
 }

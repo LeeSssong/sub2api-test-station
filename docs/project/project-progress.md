@@ -89,7 +89,7 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 
 **本轮 Task 4 修复 Round 4 登记（2026-08-10）：** 修复 relay-ops 仅在启动时解析固定 `RELAY_OPS_TRUSTED_PROXY_HOST=caddy`、导致 Caddy 独立重建换 IP 后管理员浏览器会话 `/auth/me` 绑定失败的问题；保持启动解析就绪门禁，并以固定配置主机名的本地 Docker DNS 动态身份校验实现换址接纳、旧址及时拒绝和运行时解析失败关闭。当前工作区 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@5c070d2a6`。实施前已盘点全部已注册 worktree：两个其他非 `main` 分支均仍为进行中或未完成推送、部署、线上验证闭环，不存在必须先合并的已完成领先候选；根工作区和其他 worktree 保持只读、不作修改。**状态：进行中；本轮仅本地 TDD、回归、独立审查和提交，不推送、不合并、不部署、不访问生产。**
 
-**本轮 Task 4 修复 Round 4 本地验证（2026-08-10）：** 已按严格 RED→GREEN 改为每个认证请求仅解析固定配置主机名 `caddy`，Caddy 换址无需重启 relay 即可接纳，新地址生效后旧地址和同网其他容器立即失去信任，运行时 Docker DNS 失败不使用陈旧地址并关闭失败；真实 `/auth/me` 边界继续隔离浏览器 IP、User-Agent、Origin、Bearer、Cookie 和服务密钥。聚焦测试、`go test ./...`、指定 race 套件、`go vet ./...` 和更新路由合同均通过；尚待独立审查与本地提交，且未推送、未合并、未部署、未访问生产。**状态：进行中。**
+**本轮 Task 4 修复 Round 4 本地验证（2026-08-10）：** 已按严格 RED→GREEN 改为每个认证请求仅解析固定配置主机名 `caddy`，Caddy 换址无需重启 relay 即可接纳，新地址生效后旧地址和同网其他容器立即失去信任，运行时 Docker DNS 失败不使用陈旧地址并关闭失败；真实 `/auth/me` 边界继续隔离浏览器 IP、User-Agent、Origin、Bearer、Cookie 和服务密钥。聚焦测试、`go test ./...`、指定 race 套件、`go vet ./...` 和更新路由合同均通过；独立复审结论为 SPEC/QUALITY 双 PASS、无 P0/P1/P2 问题，本地提交为 `569db06b7`。尚未推送、未合并、未部署、未访问生产。**状态：进行中。**
 
 **本轮实施登记（2026-08-09）：** 基于当前 `main` 执行 Sub2API 官方核心与星桥定制外置迁移，状态：进行中。目标是完成本地实现、测试、候选资格、生产预检，并停在生产部署更新动作前；未满足“已推送 + 已部署 + 已验证生效”前不得标记完成。现有两个活动线程及未跟踪发布证据保留，不执行清理或覆盖。
 

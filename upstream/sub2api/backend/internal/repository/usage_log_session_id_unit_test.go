@@ -32,7 +32,7 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // precedes the five retry-audit fields and created_at.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 64, "arg-type table must include upstream/account cost and retry audit fields")
+	require.Len(t, usageLogInsertArgTypes, 66, "arg-type table must include upstream response, account cost, session, and retry audit fields")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))

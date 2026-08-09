@@ -124,7 +124,10 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "redeem_codes", "validity_days", "integer", 0, false)
 
 	// usage_logs: billing_type used by filters/stats
-	requireColumn(t, tx, "usage_logs", "request_id", "character varying", 160, false)
+	// Legacy installations created request_id as nullable. New application
+	// writes require it, but the metadata-only partition-safe migration only
+	// widens the column and deliberately does not add a blocking NOT NULL scan.
+	requireColumn(t, tx, "usage_logs", "request_id", "character varying", 160, true)
 	requireColumn(t, tx, "usage_logs", "billing_type", "smallint", 0, false)
 	requireColumn(t, tx, "usage_logs", "logical_request_id", "character varying", 128, true)
 	requireColumn(t, tx, "usage_logs", "attempt_id", "character varying", 160, true)
@@ -149,6 +152,24 @@ WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'a
 `).Scan(&accountCostPrecision, &accountCostScale))
 	require.Equal(t, 20, accountCostPrecision)
 	require.Equal(t, 10, accountCostScale)
+	requireColumn(t, tx, "usage_logs", "upstream_response_model", "character varying", 200, true)
+	requireColumn(t, tx, "usage_logs", "upstream_model_mismatch", "boolean", 0, true)
+	requireIndex(t, tx, "usage_logs", usageLogsUpstreamModelMismatchIndex)
+
+	var mismatchIndexDef string
+	require.NoError(t, tx.QueryRowContext(context.Background(), `
+SELECT pg_get_indexdef(i.indexrelid)
+FROM pg_class idx
+JOIN pg_index i ON i.indexrelid = idx.oid
+JOIN pg_class tbl ON tbl.oid = i.indrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = 'usage_logs'
+  AND idx.relname = $1
+`, usageLogsUpstreamModelMismatchIndex).Scan(&mismatchIndexDef))
+	require.Contains(t, mismatchIndexDef, "created_at DESC")
+	require.Contains(t, mismatchIndexDef, "id DESC")
+	require.Contains(t, mismatchIndexDef, "WHERE (upstream_model_mismatch IS TRUE)")
 	requireConstraintDefinitionContains(
 		t,
 		tx,

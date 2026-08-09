@@ -27,6 +27,18 @@ func (*stickyReferenceCountingCache) DeleteSessionAccountID(context.Context, int
 func (c *stickyReferenceCountingCache) CountStickyAccountReferences(context.Context, int64) (int, error) {
 	return c.count, nil
 }
+func (*stickyReferenceCountingCache) SetGrokVideoPendingBilling(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+func (*stickyReferenceCountingCache) GetGrokVideoPendingBilling(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+func (*stickyReferenceCountingCache) ClaimGrokVideoBilled(context.Context, string, time.Duration) (bool, error) {
+	return false, nil
+}
+func (*stickyReferenceCountingCache) ReleaseGrokVideoBilled(context.Context, string) error {
+	return nil
+}
 
 func TestOpenAIAccountModelRuntimeCountsLiveRedisStickyReferences(t *testing.T) {
 	svc := &OpenAIGatewayService{cache: &stickyReferenceCountingCache{count: 3}}

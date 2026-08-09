@@ -235,4 +235,3 @@ git add docs/project/project-progress.md docs/project/current-state.md \
   docs/superpowers/reports/2026-08-09-gpt-group-configuration-baseline.md
 git commit -m "docs: verify GPT group baseline analysis"
 ```
-

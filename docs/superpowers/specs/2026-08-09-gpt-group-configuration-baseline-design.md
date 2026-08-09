@@ -45,4 +45,3 @@
 - 只读 SSH/SQL/API，禁止 `INSERT`、`UPDATE`、`DELETE`、迁移、服务重启、容器重建或调度配置更改。
 - 不读取或输出 `.env`、API Key、Cookie、密码、TOTP、请求正文或模型输出。
 - 可在生产主机内部使用受保护的 Admin Key 文件调用本地管理 API，但凭据值不得离开主机或进入日志/报告。
-

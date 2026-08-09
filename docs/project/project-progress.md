@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮非 `main` 工作区整合与发布冻结（2026-08-09）：** 状态：准备完成，等待用户生产部署指令。全部本地分支相对 `main` 的独有提交数均为 0；已并入 GPT 分组基线、Resend SMTP 诊断、Sub 上游实际成本、监控当前配置历史边界及其交叉兼容修复。并版回归修复了 `upstream_request_id`、`account_cost` 与韧性尝试元数据在最新版 UsageLog SQL 中的列序接线，并为生产迁移集合 `9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0` → `1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98` 增加唯一精确维护 allowlist；未知、未授权或退休哈希仍在停服前失败。候选仅完成本地并版、发布资格和远程推送准备，生产尚未迁移、重启、切换或写入；后续仅按冻结证据执行发布，并保留 release identity、镜像/迁移一致性、健康检查和失败回滚最低门禁。
+
 **本轮整合登记（2026-08-09）：** 将获批上游韧性分支 `e55fc3c9e` 合并至 `main`，合并提交 `d8cdc50d4`。Ent 已重新生成；service/handler 定向回归、编译检查、发布控制器测试通过。已 SSH 核查生产健康与日志，当前运行版本仍为 `release-abb87a0a…`。蓝绿发布已完成候选构建，但生产门禁以 `migration_set_changed` 阻止切换（新增 `200_usage_log_attempt_reconciliation.sql`，需要单独的维护授权）；未发生生产变更，状态：进行中。
 
 **本轮任务登记（2026-08-09）：** Resend SMTP 受控复现与 deadline 诊断，状态：进行中。当前工作区为 `.worktrees/resend-smtp-timeout`（`codex/resend-smtp-timeout`）。范围严格限定为向同一现有管理员邮箱再发送一封测试邮件，同步记录 Sub2API 接口状态/耗时与 Resend 事件/配额；仅在再次复现约 20 秒超时时才按 TDD 设计 SMTP 滑动 I/O deadline 修复。本轮不改动邀请码、CAPTCHA、SMTP 配置、DNS 或 Resend 套餐，不新建用户，不打开或消费 reset token；提供商事件和生产回归未闭合前不得标记完成或开放无邀请码注册。

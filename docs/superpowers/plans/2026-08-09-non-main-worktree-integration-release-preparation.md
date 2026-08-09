@@ -19,32 +19,32 @@
 
 **Files:** `docs/project/project-progress.md`, Git worktree metadata.
 
-- [ ] Capture path, branch, HEAD, ahead/behind counts, dirty state, and missing/prunable state for every worktree.
-- [ ] Classify candidates as clean docs-only, clean code, dirty, or missing/prunable.
+- [x] Capture path, branch, HEAD, ahead/behind counts, dirty state, and missing/prunable state for every worktree.
+- [x] Classify candidates as clean docs-only, clean code, dirty, or missing/prunable.
 
 ### Task 2: Review clean candidates
 
 **Candidates:** `codex/gpt-group-baseline-analysis`, `codex/resend-smtp-timeout`, `codex/usage-upstream-actual-cost`.
 
-- [ ] Inspect commit scope and branch reports.
-- [ ] Run the smallest relevant tests for code branches.
-- [ ] Merge only candidates with no unresolved conflicts or review blockers.
+- [x] Inspect commit scope and branch reports.
+- [x] Run the smallest relevant tests for code branches.
+- [x] Merge only candidates with no unresolved conflicts or review blockers.
 
 ### Task 3: Preserve and review dirty candidate
 
 **Candidate:** `codex/monitor-v2-current-config`.
 
-- [ ] Save a binary diff and untracked-file archive before any edits.
-- [ ] Review whether its uncommitted changes are complete and testable.
-- [ ] Commit only if the worktree has a coherent completed change; otherwise preserve it and leave it unmerged.
+- [x] Save a binary diff and untracked-file archive before any edits.
+- [x] Review whether its uncommitted changes are complete and testable.
+- [x] Commit only if the worktree has a coherent completed change; otherwise preserve it and leave it unmerged.
 
 ### Task 4: Integrate and push
 
-- [ ] Merge approved candidates into `main` in dependency order.
-- [ ] Run conflict checks, focused regression, build/type checks, and `git diff --check`.
-- [ ] Push `main` to `origin/main` and record the final release candidate commit/tree/evidence.
+- [x] Merge approved candidates into `main` in dependency order.
+- [x] Run conflict checks, focused regression, build/type checks, and `git diff --check`.
+- [x] Push `main` to `origin/main` and record the final release candidate commit/tree/evidence.
 
 ### Task 5: Prepare release handoff
 
-- [ ] Produce a release manifest listing included commits, excluded/preserved worktrees, migration hash, image repository, and production command parameters.
-- [ ] Stop without production writes and wait for the user's deployment instruction.
+- [x] Produce a release manifest listing included commits, excluded/preserved worktrees, migration hash, image repository, and production command parameters.
+- [x] Stop without production writes and wait for the user's deployment instruction.

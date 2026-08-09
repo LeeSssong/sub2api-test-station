@@ -143,8 +143,8 @@ func tryCustomRulesResolution(
 		if pricing == nil {
 			continue // 规则匹配但模型不在规则定价中，继续下一条
 		}
-		if pricing.BillingMode == BillingModeImage || billingMode == BillingModeImage {
-			if billingMode != BillingModeImage || imageCount <= 0 {
+		if billingMode == BillingModeImage {
+			if pricing.BillingMode != BillingModeImage || imageCount <= 0 {
 				return AccountStatsCostResolution{ApplyAccountRate: true}
 			}
 			tier, ok := ClassifyImageBillingTier(imageSize)
@@ -157,6 +157,9 @@ func tryCustomRulesResolution(
 					return AccountStatsCostResolution{StatsCost: &cost, Matched: true}
 				}
 			}
+			return AccountStatsCostResolution{ApplyAccountRate: true}
+		}
+		if pricing.BillingMode == BillingModeImage {
 			return AccountStatsCostResolution{ApplyAccountRate: true}
 		}
 		cost := calculateStatsCost(pricing, tokens, requestCount)

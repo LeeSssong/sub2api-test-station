@@ -3,7 +3,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountProfitabilityView from '../AccountProfitabilityView.vue'
 
-const { get, showError } = vi.hoisted(() => ({ get: vi.fn(), showError: vi.fn() }))
+const { get, showError, controlPlaneProfitability, readMode } = vi.hoisted(() => ({
+  get: vi.fn(),
+  showError: vi.fn(),
+  controlPlaneProfitability: vi.fn(),
+  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
+}))
+
+vi.mock('@/api/controlPlane', () => ({
+  controlPlaneAPI: { profitability: controlPlaneProfitability },
+  getControlPlaneReadMode: () => readMode.value,
+}))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: { accountProfitability: { get } },
@@ -33,6 +43,11 @@ describe('AccountProfitabilityView', () => {
   beforeEach(() => {
     get.mockReset().mockResolvedValue(response)
     showError.mockReset()
+    controlPlaneProfitability.mockReset().mockResolvedValue({
+      items: [],
+      freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
+    })
+    readMode.value = 'legacy_only'
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-08T12:00:00+08:00'))
   })
@@ -49,6 +64,17 @@ describe('AccountProfitabilityView', () => {
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-08' }))
     expect(wrapper.find('[data-test="summary-revenue"]').text()).toContain('120')
     expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+  })
+
+  it('keeps legacy filter and CSV rows visible during a shadow read', async () => {
+    readMode.value = 'shadow'
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(controlPlaneProfitability).toHaveBeenCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-08' }))
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('完整性：complete')
   })
 
   it('filters by source and pending status', async () => {

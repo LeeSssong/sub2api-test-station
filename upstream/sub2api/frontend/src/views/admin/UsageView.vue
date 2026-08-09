@@ -2,6 +2,15 @@
   <AppLayout>
     <div class="space-y-6">
       <UsageStatsCards :stats="usageStats" />
+      <ReadModelStatus
+        v-if="readMode !== 'legacy_only'"
+        :generated-at="readModel.generatedAt.value"
+        :completeness="readModel.completeness.value"
+        :calculation-version="readModel.calculationVersion.value"
+        :degraded="controlPlaneDegraded || readModel.degraded.value"
+        source-label="现有系统"
+        @retry="loadStats(true)"
+      />
       <!-- Charts Section -->
       <div class="space-y-4">
         <div class="card p-4">
@@ -193,11 +202,14 @@ import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'; import { adminAPI } from '@/api/admin'; import { adminUsageAPI } from '@/api/admin/usage'
+import { controlPlaneAPI, getControlPlaneReadMode, type ControlPlaneResponse } from '@/api/controlPlane'
+import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
+import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
 import UsageDetailDialog from '@/components/usage/UsageDetailDialog.vue'
 import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
@@ -214,6 +226,10 @@ import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat,
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const readMode = getControlPlaneReadMode('usage')
+const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
+const controlPlaneDegraded = ref(false)
+const readModel = useReadModelFreshness(controlPlaneResponse)
 type DistributionMetric = 'tokens' | 'actual_cost'
 type EndpointSource = 'inbound' | 'upstream' | 'path'
 type ModelDistributionSource = 'requested' | 'upstream' | 'mapping'
@@ -425,6 +441,7 @@ const loadStats = async (force = false) => {
     inboundEndpointStats.value = s.endpoints || []
     upstreamEndpointStats.value = s.upstream_endpoints || []
     endpointPathStats.value = s.endpoint_paths || []
+    if (readMode !== 'legacy_only') await loadControlPlaneLedger()
   } catch (error) {
     if (seq !== statsReqSeq) return
     console.error('Failed to load usage stats:', error)
@@ -433,6 +450,24 @@ const loadStats = async (force = false) => {
     endpointPathStats.value = []
   } finally {
     if (seq === statsReqSeq) endpointStatsLoading.value = false
+  }
+}
+
+const loadControlPlaneLedger = async () => {
+  controlPlaneDegraded.value = false
+  try {
+    controlPlaneResponse.value = await controlPlaneAPI.ledger({
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value,
+    })
+    if (readMode === 'external_primary') {
+      // Ledger metadata can be external-primary, but the current control-plane
+      // contract intentionally does not replace the legacy detail table.
+      controlPlaneDegraded.value = true
+    }
+  } catch {
+    controlPlaneResponse.value = null
+    controlPlaneDegraded.value = true
   }
 }
 

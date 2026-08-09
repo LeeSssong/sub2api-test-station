@@ -24,6 +24,8 @@ const {
   accounting,
   showError,
   showSuccess,
+  controlPlaneMonitor,
+  readMode,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   groupsGetAllIncludingInactive: vi.fn(),
@@ -44,6 +46,13 @@ const {
   accounting: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  controlPlaneMonitor: vi.fn(),
+  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
+}))
+
+vi.mock('@/api/controlPlane', () => ({
+  controlPlaneAPI: { monitor: controlPlaneMonitor },
+  getControlPlaneReadMode: () => readMode.value,
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -310,6 +319,15 @@ describe('admin account monitor view V3', () => {
     costGuard.mockResolvedValue({ status: 'unknown', group_multiplier: 1.2, required_sample_count: 6 })
     showError.mockReset()
     showSuccess.mockReset()
+    controlPlaneMonitor.mockReset().mockResolvedValue({
+      items: [],
+      freshness: {
+        generated_at: '2026-08-04T04:20:42Z',
+        completeness: 'complete',
+        calculation_version: 'accounts-v1',
+      },
+    })
+    readMode.value = 'legacy_only'
   })
 
   afterEach(() => {
@@ -334,6 +352,29 @@ describe('admin account monitor view V3', () => {
     expect(list).toHaveBeenNthCalledWith(3, '30d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.get('[data-test="range-30d"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.text()).toContain('Rank one A 30d')
+  })
+
+  it('keeps legacy cards in shadow mode while surfacing control-plane freshness', async () => {
+    readMode.value = 'shadow'
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith('24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(controlPlaneMonitor).toHaveBeenCalledWith({ range: '24h' })
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('完整性：complete')
+    expect(wrapper.text()).toContain('Rank one A 24h')
+  })
+
+  it('treats a control-plane failure as local degradation without replacing legacy cards', async () => {
+    readMode.value = 'external_primary'
+    controlPlaneMonitor.mockRejectedValueOnce(new Error('control plane unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(showError).not.toHaveBeenCalledWith('control plane unavailable')
   })
 
   it('does not load reconciled cost guards for account cards', async () => {

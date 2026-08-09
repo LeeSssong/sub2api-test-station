@@ -84,6 +84,16 @@
         </div>
       </section>
 
+      <ReadModelStatus
+        v-if="readMode !== 'legacy_only'"
+        :generated-at="readModel.generatedAt.value"
+        :completeness="readModel.completeness.value"
+        :calculation-version="readModel.calculationVersion.value"
+        :degraded="controlPlaneDegraded || readModel.degraded.value"
+        :source-label="usingControlPlane ? '控制面' : '现有系统'"
+        @retry="load(activeRange)"
+      />
+
       <div
         v-if="rangeError"
         class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
@@ -192,6 +202,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
+import { controlPlaneAPI, getControlPlaneReadMode, type ControlPlaneResponse } from '@/api/controlPlane'
+import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import type {
   AccountMonitorAccount,
   AccountMonitorConcurrencyItem,
@@ -207,6 +219,7 @@ import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/A
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
+import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
@@ -234,7 +247,12 @@ const groupSummaryLabels = {
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const readMode = getControlPlaneReadMode('account_monitor')
 const projection = ref<AccountMonitorProjection | null>(null)
+const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
+const controlPlaneDegraded = ref(false)
+const usingControlPlane = ref(false)
+const readModel = useReadModelFreshness(controlPlaneResponse)
 const activeRange = ref<AccountMonitorRange>('24h')
 const pendingRange = ref<AccountMonitorRange | null>(null)
 const activeGroupId = ref<number | null>(null)
@@ -362,6 +380,37 @@ function selectGroup(groupID: number | null, event: MouseEvent): void {
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
+function asCompatibleProjection(value: unknown, range: AccountMonitorRange): AccountMonitorProjection | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<AccountMonitorProjection>
+  return candidate.range === range && Array.isArray(candidate.accounts) && Array.isArray(candidate.groups)
+    ? candidate as AccountMonitorProjection
+    : null
+}
+
+async function loadControlPlane(range: AccountMonitorRange, generation: number): Promise<AccountMonitorProjection | null> {
+  controlPlaneDegraded.value = false
+  usingControlPlane.value = false
+  try {
+    const response = await controlPlaneAPI.monitor({ range })
+    if (generation !== loadGeneration) return null
+    controlPlaneResponse.value = response
+    const compatible = asCompatibleProjection(response.items, range)
+    if (readMode === 'external_primary' && compatible) {
+      usingControlPlane.value = true
+      return compatible
+    }
+    if (readMode === 'external_primary' && !compatible) controlPlaneDegraded.value = true
+    return null
+  } catch {
+    if (generation === loadGeneration) {
+      controlPlaneResponse.value = null
+      controlPlaneDegraded.value = true
+    }
+    return null
+  }
+}
+
 async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
   abortController?.abort()
   const controller = new AbortController()
@@ -371,8 +420,13 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   pendingRange.value = range
   rangeError.value = null
   try {
-    const result = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
+    const legacyResult = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
+    const controlPlaneResult = readMode === 'legacy_only'
+      ? null
+      : await loadControlPlane(range, generation)
+    if (controller.signal.aborted || generation !== loadGeneration) return false
+    const result = controlPlaneResult ?? legacyResult
     if (result.range !== range) {
       throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
     }

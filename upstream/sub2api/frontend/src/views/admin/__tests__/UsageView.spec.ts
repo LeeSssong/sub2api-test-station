@@ -4,7 +4,7 @@ import { defineComponent, ref } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery } = vi.hoisted(() => {
+const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, readMode } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -19,8 +19,15 @@ const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, ro
     getModelStats: vi.fn(),
     listErrorLogs: vi.fn(),
     routeQuery: {} as Record<string, string>,
+    controlPlaneLedger: vi.fn(),
+    readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
   }
 })
+
+vi.mock('@/api/controlPlane', () => ({
+  controlPlaneAPI: { ledger: controlPlaneLedger },
+  getControlPlaneReadMode: () => readMode.value,
+}))
 
 const messages: Record<string, string> = {
   'admin.dashboard.timeRange': 'Time Range',
@@ -193,6 +200,11 @@ describe('admin UsageView route filters', () => {
     getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
     getModelStats.mockReset().mockResolvedValue({ models: [] })
     getById.mockReset()
+    controlPlaneLedger.mockReset().mockResolvedValue({
+      items: {},
+      freshness: { completeness: 'complete', calculation_version: 'accounting-v1' },
+    })
+    readMode.value = 'legacy_only'
   })
 
   afterEach(() => {
@@ -210,6 +222,17 @@ describe('admin UsageView route filters', () => {
     expect(getById).toHaveBeenCalledWith(42, true)
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('route-user@test.com')
+  })
+
+  it('keeps legacy usage pagination and rows in shadow mode while loading ledger freshness', async () => {
+    readMode.value = 'shadow'
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
+    expect(controlPlaneLedger).toHaveBeenCalledWith(expect.objectContaining({ start_date: expect.any(String), end_date: expect.any(String) }))
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('完整性：complete')
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {

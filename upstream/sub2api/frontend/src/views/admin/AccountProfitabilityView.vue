@@ -80,6 +80,16 @@
           </div>
         </section>
 
+        <ReadModelStatus
+          v-if="readMode !== 'legacy_only'"
+          :generated-at="readModel.generatedAt.value"
+          :completeness="readModel.completeness.value"
+          :calculation-version="readModel.calculationVersion.value"
+          :degraded="controlPlaneDegraded || readModel.degraded.value"
+          :source-label="usingControlPlane ? '控制面' : '现有系统'"
+          @retry="load"
+        />
+
         <div v-if="error" class="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300" role="alert" data-test="load-error">
           <span>{{ error }}</span>
           <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="load">{{ t('common.refresh') }}</button>
@@ -148,9 +158,12 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
+import { controlPlaneAPI, getControlPlaneReadMode, type ControlPlaneResponse } from '@/api/controlPlane'
 import type { AccountProfitabilityResponse, AccountProfitabilitySource } from '@/api/admin/accountProfitability'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
+import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { useAppStore } from '@/stores/app'
 
 type Range = 'today' | '7d' | '30d' | 'month' | 'custom'
@@ -158,6 +171,7 @@ type Filter = 'all' | AccountProfitabilitySource
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const readMode = getControlPlaneReadMode('account_profitability')
 const activeRange = ref<Range>('month')
 const startDate = ref('')
 const endDate = ref('')
@@ -167,6 +181,10 @@ const search = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 const data = ref<AccountProfitabilityResponse | null>(null)
+const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
+const controlPlaneDegraded = ref(false)
+const usingControlPlane = ref(false)
+const readModel = useReadModelFreshness(controlPlaneResponse)
 
 const ranges: { value: Range }[] = [{ value: 'today' }, { value: '7d' }, { value: '30d' }, { value: 'month' }]
 const columns = computed(() => [
@@ -275,12 +293,42 @@ function statusLabel(status: string): string {
 const SourceBadge = (props: { source: AccountProfitabilitySource }) => h('span', { class: 'inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200' }, sourceLabel(props.source))
 const StatusBadge = (props: { status: string }) => h('span', { class: props.status === 'pending' ? 'inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }, statusLabel(props.status))
 
+function asCompatibleResponse(value: unknown): AccountProfitabilityResponse | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<AccountProfitabilityResponse>
+  return Array.isArray(candidate.rows) && Boolean(candidate.summary) && typeof candidate.start_date === 'string' && typeof candidate.end_date === 'string'
+    ? candidate as AccountProfitabilityResponse
+    : null
+}
+
+async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<AccountProfitabilityResponse | null> {
+  controlPlaneDegraded.value = false
+  usingControlPlane.value = false
+  try {
+    const response = await controlPlaneAPI.profitability(params)
+    controlPlaneResponse.value = response
+    const compatible = asCompatibleResponse(response.items)
+    if (readMode === 'external_primary' && compatible) {
+      usingControlPlane.value = true
+      return compatible
+    }
+    if (readMode === 'external_primary' && !compatible) controlPlaneDegraded.value = true
+  } catch {
+    controlPlaneResponse.value = null
+    controlPlaneDegraded.value = true
+  }
+  return null
+}
+
 async function load() {
   ensureDates()
   loading.value = true
   error.value = null
   try {
-    data.value = await adminAPI.accountProfitability.get({ start_date: startDate.value, end_date: endDate.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' })
+    const params = { start_date: startDate.value, end_date: endDate.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
+    const legacyResult = await adminAPI.accountProfitability.get(params)
+    const controlPlaneResult = readMode === 'legacy_only' ? null : await loadControlPlane(params)
+    data.value = controlPlaneResult ?? legacyResult
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : t('admin.accountProfitability.loadError')
     error.value = message

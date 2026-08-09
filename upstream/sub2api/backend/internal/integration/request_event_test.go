@@ -31,3 +31,12 @@ func TestHealthChangedEventUsesStableMinimalFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, event.EventID, retry.EventID)
 }
+
+func TestHealthChangedEventIdentityUsesStructuredFields(t *testing.T) {
+	at := time.Date(2026, 8, 10, 1, 2, 3, 0, time.UTC)
+	a, err := NewHealthChangedEvent("core", at, HealthChanged{AccountID: 1, Status: "a:b", ErrorCategory: "c", ObservedAt: at, ProbeVersion: "v"})
+	require.NoError(t, err)
+	b, err := NewHealthChangedEvent("core", at, HealthChanged{AccountID: 1, Status: "a", ErrorCategory: "b:c", ObservedAt: at, ProbeVersion: "v"})
+	require.NoError(t, err)
+	require.NotEqual(t, a.EventID, b.EventID)
+}

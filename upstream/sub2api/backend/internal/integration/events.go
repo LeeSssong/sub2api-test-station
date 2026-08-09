@@ -249,8 +249,14 @@ func NewHealthChangedEvent(sourceVersion string, occurredAt time.Time, payload A
 	if identityAt.IsZero() {
 		identityAt = payload.CheckedAt
 	}
-	return newStableEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt,
-		fmt.Sprintf("%d:%s:%s:%s", payload.AccountID, payload.Status, payload.ErrorCategory, identityAt.UTC().Format(time.RFC3339Nano)), payload)
+	identity, _ := json.Marshal(struct {
+		AccountID     int64     `json:"account_id"`
+		Status        string    `json:"status"`
+		ErrorCategory string    `json:"error_category"`
+		ObservedAt    time.Time `json:"observed_at"`
+		ProbeVersion  string    `json:"probe_version"`
+	}{payload.AccountID, payload.Status, payload.ErrorCategory, identityAt.UTC(), payload.ProbeVersion})
+	return newStableEvent(EventTypeAccountHealthChanged, sourceVersion, occurredAt, string(identity), payload)
 }
 
 func (p AccountHealthChanged) Validate() error {

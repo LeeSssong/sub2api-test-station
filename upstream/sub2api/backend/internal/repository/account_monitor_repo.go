@@ -79,7 +79,10 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 	}
 	defer func() { _ = tx.Rollback() }()
 	var previousStatus string
-	_ = tx.QueryRowContext(ctx, `SELECT status FROM account_monitor_results WHERE account_id = $1 ORDER BY checked_at DESC LIMIT 1`, result.AccountID).Scan(&previousStatus)
+	queryErr := tx.QueryRowContext(ctx, `SELECT status FROM account_monitor_results WHERE account_id = $1 ORDER BY checked_at DESC LIMIT 1`, result.AccountID).Scan(&previousStatus)
+	if queryErr != nil && !errors.Is(queryErr, sql.ErrNoRows) {
+		return queryErr
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO account_monitor_results (run_id, account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at)
 		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)

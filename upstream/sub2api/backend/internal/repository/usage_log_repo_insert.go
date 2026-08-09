@@ -251,7 +251,16 @@ func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.
 	}
 
 	if tx := dbent.TxFromContext(ctx); tx != nil {
-		_, err := r.createSingle(ctx, tx.Client(), log)
+		inserted, err := r.createSingle(ctx, tx.Client(), log)
+		if err == nil && inserted {
+			err = r.appendRequestEvent(ctx, tx.Client(), log)
+		}
+		return err
+	}
+	// Externalized request events must share the usage write transaction. The
+	// asynchronous batcher is intentionally bypassed for this adapter path.
+	if r.outbox != nil && r.db != nil {
+		_, err := r.createAtomic(ctx, log)
 		return err
 	}
 	if r.db == nil {

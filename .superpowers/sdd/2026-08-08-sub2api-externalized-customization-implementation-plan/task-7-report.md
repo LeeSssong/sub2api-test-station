@@ -47,3 +47,12 @@
 ## Commit
 
 待提交：`feat: emit minimal request and health events`
+
+## Fix Round 1
+
+- `CreateBestEffort` now bypasses the asynchronous batcher whenever the externalization outbox is configured and uses the same `createAtomic` transaction as `Create`; no post-flush or async补发 path is used.
+- OpenAI usage snapshots now set `ActualResponseModel` before persistence, so request events do not depend on the later best-effort audit UPDATE.
+- Health history query distinguishes `sql.ErrNoRows` from real database errors; real errors rollback and suppress event creation.
+- Health identity uses canonical JSON encoding before hashing, covering delimiter collision regression.
+
+Fix-round tests: `go test ./internal/integration ./internal/repository -run 'Test(HealthChangedEventIdentity|AccountMonitorRepositoryHealthHistoryError|UsageLogRequestEventIncludesActualResponseModel|RequestCompleted)' -v` PASS.

@@ -272,6 +272,19 @@ JSON
 		;;
 	'inspect legacy-id --format {{range .Config.Env}}{{println .}}{{end}}') printf 'SERVER_PROCESS_ROLE=all\n' ;;
   *'exec -T postgres '*'psql'*) printf '%s\n' "${FAKE_DB_HEADROOM:-30}" ;;
+  *'stop sub2api-blue sub2api-green sub2api-worker')
+    if [[ "$scenario" == maintenance_partial_stop_failure ]]; then
+      : >"${FAKE_EVENT_LOG}.partial-stop-seen"
+      exit 1
+    fi
+    ;;
+  *'pull sub2api-worker')
+    [[ "$scenario" != maintenance_worker_pull_failure ]] || exit 1
+    if [[ "$scenario" == maintenance_worker_pull_hangs || "$scenario" == maintenance_rollback_previous_api_unhealthy ]]; then
+      /bin/sleep 5
+      exit 1
+    fi
+    ;;
   *'pull sub2api-green') : ;;
   *'up --no-deps -d sub2api-green')
     [[ "$scenario" != candidate_up_failure ]] || exit 1
@@ -346,7 +359,10 @@ JSON
 		[[ "$scenario" != candidate_health_timeout ]] || { printf 'starting\n'; exit 0; }
 		printf 'healthy\n'
 		;;
-	'inspect blue-id --format {{.State.Health.Status}}') printf 'healthy\n' ;;
+	'inspect blue-id --format {{.State.Health.Status}}')
+    [[ "$scenario" != maintenance_rollback_previous_api_unhealthy ]] || { printf 'unhealthy\n'; exit 0; }
+    printf 'healthy\n'
+    ;;
 	*'exec -T caddy wget -qO- http://127.0.0.1:2019/config/'*)
 		upstream=sub2api-blue:8080
 		[[ "$scenario" == live_route_green || -e "${FAKE_EVENT_LOG}.live-route-green" ]] && upstream=sub2api-green:8080
@@ -963,6 +979,137 @@ test_authorized_maintenance_transition() {
     || fail 'maintenance rollback touched a shared service'
 }
 
+test_maintenance_window_hard_maximum() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  setup_case maintenance_window_above_five_minutes
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_window_above_five_minutes run_executor \
+    MAINTENANCE_UNAVAILABLE_SECONDS=301
+  grep -q 'MAINTENANCE_UNAVAILABLE_SECONDS must be an integer between 1 and 300' "$CASE_DIR/stderr" \
+    || fail 'maintenance window above five minutes was not rejected with the bounded-window error'
+  ! grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'maintenance window above five minutes stopped production services before rejection'
+}
+
+test_maintenance_pre_worker_failure_restores_previous_api() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  setup_case maintenance_pre_worker_failure_rollback
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_pre_worker_failure_rollback run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'pre-worker maintenance failure did not occur after production services stopped'
+  grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" \
+    || fail 'pre-worker maintenance failure did not restart the previous API during rollback'
+  grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" \
+    || fail 'pre-worker maintenance failure did not recreate the previous worker during rollback'
+  grep -q 'inspect blue-id --format {{.Image}}' "$EVENT_LOG" \
+    || fail 'pre-worker rollback did not inspect the previous API image ID'
+  grep -q 'inspect worker-id --format {{.Image}}' "$EVENT_LOG" \
+    || fail 'pre-worker rollback did not inspect the previous worker image ID'
+  grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
+    || fail 'pre-worker rollback did not prove previous API readiness'
+  grep -q 'inspect worker-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
+    || fail 'pre-worker rollback did not prove previous worker readiness'
+  grep -q 'curl .*https://example.invalid/health' "$EVENT_LOG" \
+    || fail 'pre-worker rollback did not prove public API readiness'
+  ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'pre-worker rollback touched a shared service'
+  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+  "$REAL_JQ" -e '.state == "rolled_back" and .rolled_back == true' "$record" >/dev/null \
+    || fail 'pre-worker rollback did not prove a truthful rolled_back result'
+}
+
+test_maintenance_deadline_bounds_post_stop_operation() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  local started baseline_elapsed elapsed
+
+  setup_case maintenance_worker_pull_failure_baseline
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  started=$SECONDS
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_worker_pull_failure_baseline run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_failure MAINTENANCE_UNAVAILABLE_SECONDS=1
+  baseline_elapsed=$((SECONDS - started))
+
+  setup_case maintenance_worker_pull_hangs
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  started=$SECONDS
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_worker_pull_hangs run_executor \
+    FAKE_SCENARIO=maintenance_worker_pull_hangs MAINTENANCE_UNAVAILABLE_SECONDS=1
+  elapsed=$((SECONDS - started))
+  (( elapsed <= baseline_elapsed + 3 )) \
+    || fail "post-stop maintenance watchdog added too much time: baseline=${baseline_elapsed}s hung=${elapsed}s"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'deadline test did not reach the post-stop worker operation'
+}
+
+test_maintenance_partial_stop_arms_rollback() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  setup_case maintenance_partial_stop_failure
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_partial_stop_failure run_executor \
+    FAKE_SCENARIO=maintenance_partial_stop_failure
+  [[ -e "${EVENT_LOG}.partial-stop-seen" ]] || fail 'partial stop fixture did not execute the stop mutation'
+  grep -q 'up --no-deps -d sub2api-blue' "$EVENT_LOG" \
+    || fail 'partial stop failure did not restart the previous API'
+  grep -Eq 'up --no-deps .*--force-recreate sub2api-worker' "$EVENT_LOG" \
+    || fail 'partial stop failure did not recreate the previous worker'
+  grep -q 'inspect blue-id --format {{.Image}}' "$EVENT_LOG" \
+    || fail 'partial stop rollback did not inspect the previous API image ID'
+  grep -q 'inspect worker-id --format {{.Image}}' "$EVENT_LOG" \
+    || fail 'partial stop rollback did not inspect the previous worker image ID'
+  grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
+    || fail 'partial stop rollback did not prove previous API readiness'
+  grep -q 'inspect worker-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
+    || fail 'partial stop rollback did not prove previous worker readiness'
+  grep -q 'curl .*https://example.invalid/health' "$EVENT_LOG" \
+    || fail 'partial stop rollback did not prove public API readiness'
+  ! grep -Eq 'compose .* (stop|up|pull|rm|restart|recreate).*postgres|compose .* (stop|up|pull|rm|restart|recreate).*redis|compose .* (stop|up|pull|rm|restart|recreate).*caddy' "$EVENT_LOG" \
+    || fail 'partial stop rollback touched a shared service'
+  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+  "$REAL_JQ" -e '.state == "rolled_back" and .rolled_back == true' "$record" >/dev/null \
+    || fail 'partial stop rollback did not prove a truthful rolled_back result'
+}
+
+test_maintenance_pre_cutover_readiness_is_truthful() {
+  local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
+  local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
+  local record
+  setup_case maintenance_rollback_previous_api_unhealthy
+  write_meminfo
+  MIGRATIONS_HASH=$new_hash
+  "$REAL_JQ" --arg hash "$old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$old_hash expect_failure maintenance_rollback_previous_api_unhealthy run_executor \
+    FAKE_SCENARIO=maintenance_rollback_previous_api_unhealthy
+  record=$(find "$CASE_DIR/records" -maxdepth 1 -type f -name '*.json' -print -quit)
+  grep -q 'inspect blue-id --format {{.State.Health.Status}}' "$EVENT_LOG" \
+    || fail 'unhealthy previous API rollback did not inspect API readiness'
+  "$REAL_JQ" -e '.state == "rollback_failed" and .rolled_back == false' "$record" >/dev/null \
+    || fail 'unhealthy previous API was finalized as a successful rollback'
+  [[ -n "$(find "$CASE_DIR/records" -maxdepth 1 -name '*.partial' -print -quit)" ]] \
+    || fail 'unhealthy previous API rollback discarded its recovery checkpoint'
+}
+
 test_caddy_reconciliation_route() {
   sed -n '/handle @relay_ops_reconciliation {/,/^\t}/p' "$ROOT/infra/Caddyfile" | grep -q 'reverse_proxy relay-ops:8100' \
     || fail 'Caddy does not preserve reconciliation proxy ordering ahead of the retired page response'
@@ -1359,6 +1506,11 @@ case "${ONLY_TEST:-all}" in
     test_downtime_gates
     printf 'PASS: downtime gates precede mutation\n'
     test_authorized_maintenance_transition
+    test_maintenance_window_hard_maximum
+    test_maintenance_pre_worker_failure_restores_previous_api
+    test_maintenance_deadline_bounds_post_stop_operation
+    test_maintenance_partial_stop_arms_rollback
+    test_maintenance_pre_cutover_readiness_is_truthful
     test_caddy_reconciliation_route
     printf 'PASS: authorized maintenance transition and Caddy reconciliation route\n'
     test_success_order_and_atomic_records
@@ -1428,8 +1580,19 @@ case "${ONLY_TEST:-all}" in
   worker-request-log) test_worker_request_failure_log_does_not_trigger_startup_failure ;;
   maintenance)
 		test_authorized_maintenance_transition
+		test_maintenance_window_hard_maximum
+		test_maintenance_pre_worker_failure_restores_previous_api
+		test_maintenance_deadline_bounds_post_stop_operation
+		test_maintenance_partial_stop_arms_rollback
+		test_maintenance_pre_cutover_readiness_is_truthful
 		test_caddy_reconciliation_route
 		;;
+	maintenance-window) test_maintenance_window_hard_maximum ;;
+	maintenance-pre-worker-rollback) test_maintenance_pre_worker_failure_restores_previous_api ;;
+	maintenance-deadline) test_maintenance_deadline_bounds_post_stop_operation ;;
+	maintenance-partial-stop) test_maintenance_partial_stop_arms_rollback ;;
+	maintenance-readiness) test_maintenance_pre_cutover_readiness_is_truthful ;;
+	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;
 esac

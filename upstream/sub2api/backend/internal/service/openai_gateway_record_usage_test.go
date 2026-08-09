@@ -883,7 +883,7 @@ func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamReque
 	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "openai-client-stable-123")
 	err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "upstream-openai-volatile-456",
+			RequestID: "upstream-openai-456",
 			Usage: OpenAIUsage{
 				InputTokens:  8,
 				OutputTokens: 4,
@@ -901,6 +901,8 @@ func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamReque
 	require.Equal(t, "client:openai-client-stable-123", billingRepo.lastCmd.RequestID)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, "client:openai-client-stable-123", usageRepo.lastLog.RequestID)
+	require.NotNil(t, usageRepo.lastLog.UpstreamRequestID)
+	require.Equal(t, "upstream-openai-456", *usageRepo.lastLog.UpstreamRequestID)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_WSModePrefersUpstreamRequestIDOverClientRequestID(t *testing.T) {

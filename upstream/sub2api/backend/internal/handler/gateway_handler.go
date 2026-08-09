@@ -135,7 +135,7 @@ func (h *GatewayHandler) UsageRecords(c *gin.Context) {
 	items := make([]UsageRecord, 0, len(logs))
 	for _, log := range logs {
 		items = append(items, UsageRecord{
-			ID: log.ID, RequestID: log.RequestID, AccountID: log.AccountID, Model: log.Model,
+			ID: log.ID, RequestID: log.RequestID, UpstreamRequestID: valueOrEmpty(log.UpstreamRequestID), AccountID: log.AccountID, Model: log.Model,
 			InputTokens: log.InputTokens, OutputTokens: log.OutputTokens, ActualCost: log.ActualCost,
 			CreatedAt: log.CreatedAt.UTC(),
 		})
@@ -161,6 +161,13 @@ func parseUsageRecordTime(raw string) (time.Time, error) {
 		return time.Unix(unix, 0).UTC(), nil
 	}
 	return time.Parse(time.RFC3339Nano, raw)
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // NewGatewayHandler creates a new GatewayHandler

@@ -74,6 +74,7 @@ type ChannelMonitorService struct {
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
 	scheduler MonitorScheduler
+	now       func() time.Time
 }
 
 const maxChannelMonitorNameRunes = 100
@@ -90,7 +91,7 @@ func NewChannelMonitorService(
 	encryptor SecretEncryptor,
 	groupReaders ...ChannelMonitorGroupReader,
 ) *ChannelMonitorService {
-	service := &ChannelMonitorService{repo: repo, encryptor: encryptor}
+	service := &ChannelMonitorService{repo: repo, encryptor: encryptor, now: time.Now}
 	if len(groupReaders) > 0 {
 		service.groupReader = groupReaders[0]
 	}
@@ -163,6 +164,7 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		Enabled:          p.Enabled,
 		IntervalSeconds:  p.IntervalSeconds,
 		JitterSeconds:    p.JitterSeconds,
+		HistoryStartedAt: s.currentTime(),
 		CreatedBy:        p.CreatedBy,
 		TemplateID:       p.TemplateID,
 		ExtraHeaders:     emptyHeadersIfNil(p.ExtraHeaders),
@@ -229,6 +231,7 @@ func (s *ChannelMonitorService) Duplicate(
 		Enabled:              false,
 		IntervalSeconds:      source.IntervalSeconds,
 		JitterSeconds:        source.JitterSeconds,
+		HistoryStartedAt:     s.currentTime(),
 		CreatedBy:            createdBy,
 		TemplateID:           cloneInt64Pointer(source.TemplateID),
 		ExtraHeaders:         cloneChannelMonitorHeaders(source.ExtraHeaders),
@@ -372,6 +375,7 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	if err != nil {
 		return nil, err
 	}
+	before := *existing
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
 	}
@@ -386,6 +390,9 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	newPlainAPIKey, apiKeyUpdated, err := s.applyAPIKeyUpdate(existing, p.APIKey)
 	if err != nil {
 		return nil, err
+	}
+	if channelMonitorIdentityChanged(&before, existing, apiKeyUpdated) {
+		existing.HistoryStartedAt = s.currentTime()
 	}
 
 	if err := s.repo.Update(ctx, existing); err != nil {
@@ -421,6 +428,13 @@ func (s *ChannelMonitorService) applyAPIKeyUpdate(existing *ChannelMonitor, raw 
 	}
 	existing.APIKey = encrypted
 	return plain, true, nil
+}
+
+func (s *ChannelMonitorService) currentTime() time.Time {
+	if s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
 }
 
 // Delete 删除监控（历史通过外键 CASCADE 自动清理）。
@@ -735,6 +749,27 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 		}
 	}
 	return applyMonitorAdvancedUpdate(existing, p, providerChanged)
+}
+
+// channelMonitorIdentityChanged reports whether an update changed the remote
+// target whose history feeds current-state monitor statistics.
+func channelMonitorIdentityChanged(before, after *ChannelMonitor, apiKeyUpdated bool) bool {
+	if before == nil || after == nil {
+		return before != after || apiKeyUpdated
+	}
+	return apiKeyUpdated ||
+		before.Provider != after.Provider ||
+		before.APIMode != after.APIMode ||
+		before.Endpoint != after.Endpoint ||
+		before.PrimaryModel != after.PrimaryModel ||
+		!equalInt64Pointers(before.GroupID, after.GroupID)
+}
+
+func equalInt64Pointers(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func (s *ChannelMonitorService) resolveGroupAssociation(

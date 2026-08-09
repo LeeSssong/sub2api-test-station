@@ -45,6 +45,8 @@ const (
 	FieldJitterSeconds = "jitter_seconds"
 	// FieldLastCheckedAt holds the string denoting the last_checked_at field in the database.
 	FieldLastCheckedAt = "last_checked_at"
+	// FieldHistoryStartedAt holds the string denoting the history_started_at field in the database.
+	FieldHistoryStartedAt = "history_started_at"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
 	FieldCreatedBy = "created_by"
 	// FieldTemplateID holds the string denoting the template_id field in the database.
@@ -104,6 +106,7 @@ var Columns = []string{
 	FieldIntervalSeconds,
 	FieldJitterSeconds,
 	FieldLastCheckedAt,
+	FieldHistoryStartedAt,
 	FieldCreatedBy,
 	FieldTemplateID,
 	FieldExtraHeaders,
@@ -154,6 +157,8 @@ var (
 	DefaultJitterSeconds int
 	// JitterSecondsValidator is a validator for the "jitter_seconds" field. It is called by the builders before save.
 	JitterSecondsValidator func(int) error
+	// DefaultHistoryStartedAt holds the default value on creation for the "history_started_at" field.
+	DefaultHistoryStartedAt func() time.Time
 	// DefaultExtraHeaders holds the default value on creation for the "extra_headers" field.
 	DefaultExtraHeaders map[string]string
 	// DefaultBodyOverrideMode holds the default value on creation for the "body_override_mode" field.
@@ -263,6 +268,11 @@ func ByJitterSeconds(opts ...sql.OrderTermOption) OrderOption {
 // ByLastCheckedAt orders the results by the last_checked_at field.
 func ByLastCheckedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastCheckedAt, opts...).ToFunc()
+}
+
+// ByHistoryStartedAt orders the results by the history_started_at field.
+func ByHistoryStartedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHistoryStartedAt, opts...).ToFunc()
 }
 
 // ByCreatedBy orders the results by the created_by field.

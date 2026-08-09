@@ -49,6 +49,8 @@ type ChannelMonitor struct {
 	JitterSeconds int `json:"jitter_seconds,omitempty"`
 	// LastCheckedAt holds the value of the "last_checked_at" field.
 	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
+	// Current monitor identity statistics include history checked at or after this time
+	HistoryStartedAt time.Time `json:"history_started_at,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
@@ -120,7 +122,7 @@ func (*ChannelMonitor) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case channelmonitor.FieldName, channelmonitor.FieldProvider, channelmonitor.FieldAPIMode, channelmonitor.FieldEndpoint, channelmonitor.FieldAPIKeyEncrypted, channelmonitor.FieldPrimaryModel, channelmonitor.FieldGroupName, channelmonitor.FieldBodyOverrideMode:
 			values[i] = new(sql.NullString)
-		case channelmonitor.FieldCreatedAt, channelmonitor.FieldUpdatedAt, channelmonitor.FieldLastCheckedAt:
+		case channelmonitor.FieldCreatedAt, channelmonitor.FieldUpdatedAt, channelmonitor.FieldLastCheckedAt, channelmonitor.FieldHistoryStartedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -236,6 +238,12 @@ func (_m *ChannelMonitor) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.LastCheckedAt = new(time.Time)
 				*_m.LastCheckedAt = value.Time
+			}
+		case channelmonitor.FieldHistoryStartedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field history_started_at", values[i])
+			} else if value.Valid {
+				_m.HistoryStartedAt = value.Time
 			}
 		case channelmonitor.FieldCreatedBy:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -370,6 +378,9 @@ func (_m *ChannelMonitor) String() string {
 		builder.WriteString("last_checked_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("history_started_at=")
+	builder.WriteString(_m.HistoryStartedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
 	builder.WriteString("created_by=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CreatedBy))

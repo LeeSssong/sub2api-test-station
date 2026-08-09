@@ -638,6 +638,7 @@ var (
 		{Name: "interval_seconds", Type: field.TypeInt},
 		{Name: "jitter_seconds", Type: field.TypeInt, Default: 0},
 		{Name: "last_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "history_started_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeInt64},
 		{Name: "extra_headers", Type: field.TypeJSON},
 		{Name: "body_override_mode", Type: field.TypeString, Size: 10, Default: "off"},
@@ -652,7 +653,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "channel_monitors_channel_monitor_request_templates_request_template",
-				Columns:    []*schema.Column{ChannelMonitorsColumns[20]},
+				Columns:    []*schema.Column{ChannelMonitorsColumns[21]},
 				RefColumns: []*schema.Column{ChannelMonitorRequestTemplatesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -686,7 +687,7 @@ var (
 			{
 				Name:    "channelmonitor_template_id",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[20]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[21]},
 			},
 		},
 	}

@@ -257,6 +257,20 @@ func (_u *ChannelMonitorUpdate) ClearLastCheckedAt() *ChannelMonitorUpdate {
 	return _u
 }
 
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (_u *ChannelMonitorUpdate) SetHistoryStartedAt(v time.Time) *ChannelMonitorUpdate {
+	_u.mutation.SetHistoryStartedAt(v)
+	return _u
+}
+
+// SetNillableHistoryStartedAt sets the "history_started_at" field if the given value is not nil.
+func (_u *ChannelMonitorUpdate) SetNillableHistoryStartedAt(v *time.Time) *ChannelMonitorUpdate {
+	if v != nil {
+		_u.SetHistoryStartedAt(*v)
+	}
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *ChannelMonitorUpdate) SetCreatedBy(v int64) *ChannelMonitorUpdate {
 	_u.mutation.ResetCreatedBy()
@@ -599,6 +613,9 @@ func (_u *ChannelMonitorUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if _u.mutation.LastCheckedAtCleared() {
 		_spec.ClearField(channelmonitor.FieldLastCheckedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HistoryStartedAt(); ok {
+		_spec.SetField(channelmonitor.FieldHistoryStartedAt, field.TypeTime, value)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(channelmonitor.FieldCreatedBy, field.TypeInt64, value)
@@ -982,6 +999,20 @@ func (_u *ChannelMonitorUpdateOne) ClearLastCheckedAt() *ChannelMonitorUpdateOne
 	return _u
 }
 
+// SetHistoryStartedAt sets the "history_started_at" field.
+func (_u *ChannelMonitorUpdateOne) SetHistoryStartedAt(v time.Time) *ChannelMonitorUpdateOne {
+	_u.mutation.SetHistoryStartedAt(v)
+	return _u
+}
+
+// SetNillableHistoryStartedAt sets the "history_started_at" field if the given value is not nil.
+func (_u *ChannelMonitorUpdateOne) SetNillableHistoryStartedAt(v *time.Time) *ChannelMonitorUpdateOne {
+	if v != nil {
+		_u.SetHistoryStartedAt(*v)
+	}
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *ChannelMonitorUpdateOne) SetCreatedBy(v int64) *ChannelMonitorUpdateOne {
 	_u.mutation.ResetCreatedBy()
@@ -1354,6 +1385,9 @@ func (_u *ChannelMonitorUpdateOne) sqlSave(ctx context.Context) (_node *ChannelM
 	}
 	if _u.mutation.LastCheckedAtCleared() {
 		_spec.ClearField(channelmonitor.FieldLastCheckedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HistoryStartedAt(); ok {
+		_spec.SetField(channelmonitor.FieldHistoryStartedAt, field.TypeTime, value)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(channelmonitor.FieldCreatedBy, field.TypeInt64, value)

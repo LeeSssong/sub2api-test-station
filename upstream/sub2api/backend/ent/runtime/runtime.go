@@ -705,12 +705,16 @@ func init() {
 	channelmonitor.DefaultJitterSeconds = channelmonitorDescJitterSeconds.Default.(int)
 	// channelmonitor.JitterSecondsValidator is a validator for the "jitter_seconds" field. It is called by the builders before save.
 	channelmonitor.JitterSecondsValidator = channelmonitorDescJitterSeconds.Validators[0].(func(int) error)
+	// channelmonitorDescHistoryStartedAt is the schema descriptor for history_started_at field.
+	channelmonitorDescHistoryStartedAt := channelmonitorFields[13].Descriptor()
+	// channelmonitor.DefaultHistoryStartedAt holds the default value on creation for the history_started_at field.
+	channelmonitor.DefaultHistoryStartedAt = channelmonitorDescHistoryStartedAt.Default.(func() time.Time)
 	// channelmonitorDescExtraHeaders is the schema descriptor for extra_headers field.
-	channelmonitorDescExtraHeaders := channelmonitorFields[15].Descriptor()
+	channelmonitorDescExtraHeaders := channelmonitorFields[16].Descriptor()
 	// channelmonitor.DefaultExtraHeaders holds the default value on creation for the extra_headers field.
 	channelmonitor.DefaultExtraHeaders = channelmonitorDescExtraHeaders.Default.(map[string]string)
 	// channelmonitorDescBodyOverrideMode is the schema descriptor for body_override_mode field.
-	channelmonitorDescBodyOverrideMode := channelmonitorFields[16].Descriptor()
+	channelmonitorDescBodyOverrideMode := channelmonitorFields[17].Descriptor()
 	// channelmonitor.DefaultBodyOverrideMode holds the default value on creation for the body_override_mode field.
 	channelmonitor.DefaultBodyOverrideMode = channelmonitorDescBodyOverrideMode.Default.(string)
 	// channelmonitor.BodyOverrideModeValidator is a validator for the "body_override_mode" field. It is called by the builders before save.

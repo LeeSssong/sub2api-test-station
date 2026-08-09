@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 
 	"entgo.io/ent"
@@ -73,6 +75,9 @@ func (ChannelMonitor) Fields() []ent.Field {
 		field.Time("last_checked_at").
 			Optional().
 			Nillable(),
+		field.Time("history_started_at").
+			Default(time.Now).
+			Comment("Current monitor identity statistics include history checked at or after this time"),
 		field.Int64("created_by"),
 
 		// ---- 自定义请求快照字段（来自模板 / 手动编辑） ----

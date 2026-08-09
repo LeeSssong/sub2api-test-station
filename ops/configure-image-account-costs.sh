@@ -16,7 +16,7 @@ esac
 : "${SUB2API_IMAGE_OVERLAY:?Set SUB2API_IMAGE_OVERLAY}"
 
 case "$SUB2API_COMPOSE_PROJECT" in
-  sub2api-deploy|sub2api-official-rehearsal) ;;
+  sub2api|sub2api-deploy|sub2api-official-rehearsal) ;;
   *) printf 'Unsupported Compose project identity\n' >&2; exit 1 ;;
 esac
 for path in "$SUB2API_SECRET_ENV_FILE" "$SUB2API_RELEASE_ENV_FILE" "$SUB2API_COMPOSE_FILE" "$SUB2API_IMAGE_OVERLAY"; do

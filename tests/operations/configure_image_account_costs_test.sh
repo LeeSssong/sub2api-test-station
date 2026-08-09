@@ -32,6 +32,10 @@ run_script() {
   env "${context[@]}" bash "$root/ops/configure-image-account-costs.sh" "$@"
 }
 
+run_production_project_script() {
+  env "${context[@]}" SUB2API_COMPOSE_PROJECT=sub2api bash "$root/ops/configure-image-account-costs.sh" "$@"
+}
+
 check_output=$(run_script)
 rg -Fq 'BEGIN READ ONLY;' "$fixture/sql.1"
 rg -Fq "FROM groups WHERE name = '生图'" "$fixture/sql.1"
@@ -50,6 +54,9 @@ rg -Fq "('4K', 0.10::numeric, 2)" "$fixture/sql.2"
 rg -Fq 'apply_pricing_to_account_stats' "$fixture/sql.2"
 rg -Fq 'channel_model_pricing' "$fixture/sql.2"
 cmp "$fixture/sql.2" "$fixture/sql.3"
+
+run_production_project_script >/dev/null
+rg -Fq 'BEGIN READ ONLY;' "$fixture/sql.4"
 
 ! rg -n -i 'UPDATE[[:space:]]+usage_logs|DELETE[[:space:]]+FROM[[:space:]]+usage_logs|rate_multiplier[[:space:]]*=' "$fixture/sql.2"
 ! rg -n '\.github/workflows|workflow_dispatch|schedule:' "$root/ops/configure-image-account-costs.sh"

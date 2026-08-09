@@ -2,13 +2,76 @@ package adminauth
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"example.invalid/relay-ops-service/internal/domain"
 )
+
+func TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed(t *testing.T) {
+	resolver := &rotatingProxyResolver{ips: []net.IP{net.ParseIP("172.20.0.4")}}
+	policy, err := NewTrustedProxyPolicy(" caddy ", resolver.lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.Trusted("172.20.0.4") {
+		t.Fatal("first Caddy IP is not trusted")
+	}
+
+	resolver.set([]net.IP{net.ParseIP("172.20.0.8")}, nil)
+	errCh := make(chan error, 96)
+	var workers sync.WaitGroup
+	for range 32 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if !policy.Trusted("172.20.0.8") {
+				errCh <- errors.New("rotated Caddy IP is not trusted")
+			}
+			if policy.Trusted("172.20.0.4") {
+				errCh <- errors.New("old Caddy IP remains trusted")
+			}
+			if policy.Trusted("172.20.0.9") {
+				errCh <- errors.New("other same-network container is trusted")
+			}
+		}()
+	}
+	workers.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Error(err)
+	}
+
+	resolver.set(nil, errors.New("Docker DNS unavailable"))
+	if policy.Trusted("172.20.0.8") || policy.Trusted("172.20.0.4") {
+		t.Fatal("runtime resolver failure trusted a current or stale peer")
+	}
+	for _, host := range resolver.lookupHosts() {
+		if host != "caddy" {
+			t.Fatalf("resolver hostname = %q, want fixed configured hostname caddy", host)
+		}
+	}
+}
+
+func TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		lookup func(string) ([]net.IP, error)
+	}{
+		{name: "resolver failure", lookup: func(string) ([]net.IP, error) { return nil, errors.New("unavailable") }},
+		{name: "empty answer", lookup: func(string) ([]net.IP, error) { return nil, nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NewTrustedProxyPolicy("caddy", test.lookup); err == nil {
+				t.Fatal("startup succeeded without a usable Caddy DNS answer")
+			}
+		})
+	}
+}
 
 func TestRequireAdminAuthenticatesThroughSub2API(t *testing.T) {
 	t.Parallel()
@@ -175,6 +238,35 @@ type fakeVerifier struct {
 	identity Identity
 	session  Session
 	err      error
+}
+
+type rotatingProxyResolver struct {
+	mu    sync.RWMutex
+	ips   []net.IP
+	err   error
+	hosts []string
+}
+
+func (r *rotatingProxyResolver) lookup(host string) ([]net.IP, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hosts = append(r.hosts, host)
+	ips := make([]net.IP, len(r.ips))
+	copy(ips, r.ips)
+	return ips, r.err
+}
+
+func (r *rotatingProxyResolver) set(ips []net.IP, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ips = ips
+	r.err = err
+}
+
+func (r *rotatingProxyResolver) lookupHosts() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]string(nil), r.hosts...)
 }
 
 func (f *fakeVerifier) VerifyAdminSession(_ context.Context, session Session) (Identity, error) {

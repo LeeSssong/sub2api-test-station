@@ -271,3 +271,104 @@ lifetime. If Caddy is recreated with a different peer IP, relay-ops must be
 restarted to resolve it again; it will otherwise fail closed rather than trust
 another container. This task remains local-only and in progress until a later,
 separately authorized push, deployment, and online verification.
+
+## Fix Round 4
+
+### RED / GREEN
+
+- **Dynamic fixed-host identity:** the regression uses an injected,
+  concurrency-safe resolver. It proves startup resolution, the first Caddy IP,
+  immediate acceptance of a rotated Caddy IP, immediate rejection of the old
+  IP and another same-network container, fixed-hostname-only lookups, and
+  fail-closed behavior after a runtime resolver error. RED command/output:
+
+  ```text
+  $ go test ./internal/adminauth -run 'Test(TrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed|NewTrustedProxyPolicyRequiresSuccessfulStartupResolution)$' -count=1 -v
+  === RUN   TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed
+      middleware_test.go:46: rotated Caddy IP is not trusted
+      middleware_test.go:46: old Caddy IP remains trusted
+      ... repeated by concurrent workers ...
+      middleware_test.go:51: runtime resolver failure trusted a current or stale peer
+  --- FAIL: TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed (0.00s)
+  === RUN   TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution
+  --- PASS: TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution (0.00s)
+  FAIL
+  FAIL example.invalid/relay-ops-service/internal/adminauth 1.581s
+  ```
+
+- **Real `/auth/me` boundary:** the integration regression verifies the first
+  and rotated Caddy peers preserve browser IP, User-Agent, Origin and Bearer,
+  while Cookie and the relay admin key remain absent. Reuse of the old IP and
+  a different container send only their socket peer and fail session binding.
+  RED command/output:
+
+  ```text
+  $ go test ./internal/app ./internal/sub2api -run 'Test(ConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck|AdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation)$' -count=1 -v
+  === RUN   TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck
+      app_test.go:53: lookups = 1, want one startup resolution and one per trust check
+  --- FAIL: TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck (0.00s)
+  FAIL example.invalid/relay-ops-service/internal/app 0.807s
+  === RUN   TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation
+      client_test.go:156: rotated Caddy status=401 body=Unauthorized
+  --- FAIL: TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation (0.00s)
+  FAIL example.invalid/relay-ops-service/internal/sub2api 0.394s
+  FAIL
+  ```
+
+GREEN keeps the configured hostname and injected resolver immutable. The
+constructor performs a mandatory startup lookup as the readiness gate;
+`Trusted(peer)` resolves that same fixed hostname on every authenticated
+request and compares only the socket peer against the current answer. It does
+not retain an address cache and does not use request-supplied names, private or
+loopback CIDRs, or stale fallback addresses. Exact focused output:
+
+```text
+$ go test ./internal/adminauth ./internal/app ./internal/sub2api -run 'Test(TrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed|NewTrustedProxyPolicyRequiresSuccessfulStartupResolution|ConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck|AdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation)$' -count=1 -v
+--- PASS: TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed (0.00s)
+--- PASS: TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/adminauth 1.578s
+--- PASS: TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/app 1.498s
+--- PASS: TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/sub2api 1.942s
+
+$ go test ./internal/adminauth ./internal/app ./internal/http ./internal/sub2api -count=1
+ok  example.invalid/relay-ops-service/internal/adminauth 0.362s
+ok  example.invalid/relay-ops-service/internal/app 0.633s
+ok  example.invalid/relay-ops-service/internal/http 1.038s
+ok  example.invalid/relay-ops-service/internal/sub2api 1.430s
+```
+
+### Required Regression
+
+```text
+$ cd relay-ops-service && go test ./...
+PASS; all packages exited 0 (adminauth 1.726s, app 1.987s,
+controlplane 2.408s, http 2.842s, sub2api 2.961s; remaining packages cached
+or reported no test files).
+
+$ go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+ok  example.invalid/relay-ops-service/internal/controlplane 1.461s
+ok  example.invalid/relay-ops-service/internal/adminauth 1.865s
+ok  example.invalid/relay-ops-service/internal/http 1.566s
+
+$ go vet ./...
+(no output; exit 0)
+
+$ cd .. && bash tests/infra/validate-sub2api-update-routing.sh
+PASS: Sub2API update UI and routing contracts
+
+$ git diff --check
+(no output; exit 0)
+```
+
+### Residual Concerns
+
+Runtime Docker DNS failure intentionally fails closed: the relay ignores
+forwarded identity and `/auth/me` rejects browser-IP-bound sessions until local
+Docker DNS recovers. This favors the trust boundary over admin API
+availability, and adds one local DNS lookup per authenticated request. No
+production, deployment, push, or merge validation was performed or authorized.

@@ -33,10 +33,15 @@ type TrustedProxy interface {
 	Trusted(string) bool
 }
 
-type trustedProxyPolicy struct{ peers map[string]struct{} }
+type trustedProxyPolicy struct {
+	host   string
+	lookup func(string) ([]net.IP, error)
+}
 
-// NewTrustedProxyPolicy resolves the explicitly configured Docker peer once at
-// startup. Requests only compare their socket peer against the resulting set.
+// NewTrustedProxyPolicy resolves the explicitly configured Docker peer at
+// startup as a readiness gate. Trusted resolves that same fixed hostname for
+// every request so Caddy address rotation is immediate; runtime DNS failures
+// fail closed without retaining a stale address.
 func NewTrustedProxyPolicy(host string, lookup func(string) ([]net.IP, error)) (TrustedProxy, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -49,21 +54,36 @@ func NewTrustedProxyPolicy(host string, lookup func(string) ([]net.IP, error)) (
 	if err != nil {
 		return nil, fmt.Errorf("resolve trusted proxy host %q: %w", host, err)
 	}
-	peers := make(map[string]struct{}, len(addresses))
-	for _, address := range addresses {
-		if address != nil {
-			peers[address.String()] = struct{}{}
-		}
-	}
-	if len(peers) == 0 {
+	if !hasUsableAddress(addresses) {
 		return nil, fmt.Errorf("trusted proxy host %q resolved to no addresses", host)
 	}
-	return trustedProxyPolicy{peers: peers}, nil
+	return trustedProxyPolicy{host: host, lookup: lookup}, nil
 }
 
 func (p trustedProxyPolicy) Trusted(host string) bool {
-	_, ok := p.peers[strings.TrimSpace(host)]
-	return ok
+	peer := net.ParseIP(strings.TrimSpace(host))
+	if peer == nil || p.host == "" || p.lookup == nil {
+		return false
+	}
+	addresses, err := p.lookup(p.host)
+	if err != nil {
+		return false
+	}
+	for _, address := range addresses {
+		if address != nil && address.Equal(peer) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUsableAddress(addresses []net.IP) bool {
+	for _, address := range addresses {
+		if address != nil && net.ParseIP(address.String()) != nil {
+			return true
+		}
+	}
+	return false
 }
 
 type actorContextKey struct{}

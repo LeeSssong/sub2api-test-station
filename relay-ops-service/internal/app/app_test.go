@@ -37,7 +37,7 @@ func TestCandidateServiceUsesConfiguredManagedSecretDirectory(t *testing.T) {
 	}
 }
 
-func TestConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly(t *testing.T) {
+func TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck(t *testing.T) {
 	lookups := 0
 	policy, err := configuredTrustedProxy(config.Config{TrustedProxyHost: "caddy"}, func(string) ([]net.IP, error) {
 		lookups++
@@ -49,8 +49,8 @@ func TestConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly(t *testing.T) 
 	if !policy.Trusted("172.20.0.4") || policy.Trusted("172.20.0.9") {
 		t.Fatal("configured proxy policy did not retain the exact resolved Caddy peer")
 	}
-	if lookups != 1 {
-		t.Fatalf("lookups = %d, want startup resolution once", lookups)
+	if lookups != 3 {
+		t.Fatalf("lookups = %d, want one startup resolution and one per trust check", lookups)
 	}
 	_, err = configuredTrustedProxy(config.Config{TrustedProxyHost: "caddy"}, func(string) ([]net.IP, error) {
 		return nil, errors.New("Docker DNS unavailable")

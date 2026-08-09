@@ -1,8 +1,8 @@
 # 项目全局进度总账
 
 **本轮 Task 9 双读比对、逐页切换与回退门禁（2026-08-10）：** 状态：进行中。当前工作区为
-`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@d1e1d7fda`。
-范围限定为精确比较账号/请求/账单/Token/金额/倍率/评分/排名/余额/对账结果，持久化最小、默认和最大窗口报告，并用 `legacy_only → shadow_building → dual_read_comparing → external_primary → legacy_retired` 逐页门禁与可回退标记控制账号监控、盈利、账务和对账读路径；Task 5 的保守 legacy 回退在比较证据满足前必须保留。实施前重新盘点全部非 `main` worktree：`account-monitor-group-recommendation` 领先 7 个提交但未推送、部署和线上验证，`gpt-group-baseline-apply` 领先 1 个提交且无本次生产完成证据，均继续只读保护。本轮仅本地 TDD、回退演练、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@647948095`。
+范围限定为精确比较账号/请求/账单/Token/金额/倍率/评分/排名/余额/对账结果，持久化最小、默认和最大窗口报告，并用 `legacy_only → shadow_building → dual_read_comparing → external_primary → legacy_retired` 逐页门禁与可回退标记控制账号监控、盈利、账务和对账读路径；Task 5 的保守 legacy 回退在比较证据满足前必须保留。实施前重新盘点全部非 `main` worktree：`account-monitor-group-recommendation` 领先 7 个提交但未推送、部署和线上验证，`gpt-group-baseline-apply` 领先 1 个提交且无本次生产完成证据，均继续只读保护。本地 TDD 已完成：relay-ops 全量 Go 测试、前端 232 个文件/1663 个测试、lint、typecheck、生产构建及发布 smoke/deploy 离线合同测试通过。brief 中的字面演练命令因未提供真实 rehearsal Compose、密钥文件、基线计数和 URL/版本环境而失败，未宣称回退演练成功。本轮仅本地 TDD、安全干跑、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
 
 **本轮 Task 5 管理员页面双读无感迁移（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@22b21db2f`。

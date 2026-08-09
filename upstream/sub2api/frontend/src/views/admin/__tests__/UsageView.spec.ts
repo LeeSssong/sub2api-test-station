@@ -20,7 +20,7 @@ const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, ro
     listErrorLogs: vi.fn(),
     routeQuery: {} as Record<string, string>,
     controlPlaneLedger: vi.fn(),
-    readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
+    readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
   }
 })
 
@@ -225,7 +225,7 @@ describe('admin UsageView route filters', () => {
   })
 
   it('keeps legacy usage pagination and rows in shadow mode while loading ledger freshness', async () => {
-    readMode.value = 'shadow'
+    readMode.value = 'shadow_building'
     const wrapper = mountRouteFilteredUsageView()
     await flushPromises()
 

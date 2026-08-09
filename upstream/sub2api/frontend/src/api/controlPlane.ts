@@ -1,25 +1,23 @@
 import { apiClient } from './client'
+import {
+  getExternalizationReadMode,
+  normalizeReadMode,
+  type CutoverEvidence,
+  type ReadMode,
+} from '@/config/externalizationFlags'
 
-export type ControlPlaneReadMode = 'legacy_only' | 'shadow' | 'external_primary'
+export type ControlPlaneReadMode = ReadMode
 export type ControlPlaneReadSurface = 'account_monitor' | 'account_profitability' | 'usage'
 
-const READ_MODES = new Set<ControlPlaneReadMode>(['legacy_only', 'shadow', 'external_primary'])
-
 export function resolveControlPlaneReadMode(value: unknown): ControlPlaneReadMode {
-  return typeof value === 'string' && READ_MODES.has(value as ControlPlaneReadMode)
-    ? value as ControlPlaneReadMode
-    : 'legacy_only'
+  return normalizeReadMode(value)
 }
 
 export function getControlPlaneReadMode(surface?: ControlPlaneReadSurface): ControlPlaneReadMode {
-  const surfaceValue = surface === 'account_monitor'
-    ? import.meta.env.VITE_ACCOUNT_MONITOR_READ_MODE
-    : surface === 'account_profitability'
-      ? import.meta.env.VITE_ACCOUNT_PROFITABILITY_READ_MODE
-      : surface === 'usage'
-        ? import.meta.env.VITE_USAGE_READ_MODE
-        : undefined
-  return resolveControlPlaneReadMode(surfaceValue || import.meta.env.VITE_CONTROL_PLANE_READ_MODE)
+  if (surface === 'account_monitor') return getExternalizationReadMode('monitor')
+  if (surface === 'account_profitability') return getExternalizationReadMode('profitability')
+  if (surface === 'usage') return getExternalizationReadMode('accounting')
+  return 'legacy_only'
 }
 
 export type ReadModelFreshness = {
@@ -41,6 +39,7 @@ export type ControlPlaneResponse<T = unknown> = {
   calculation_version?: string
   degraded?: boolean
   degraded_reason?: string
+  cutover?: CutoverEvidence
 }
 
 function normalizedFreshness(data: ControlPlaneResponse<unknown>): ReadModelFreshness | undefined {

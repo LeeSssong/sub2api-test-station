@@ -207,6 +207,7 @@ import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import { resolvePageReadDecision } from '@/config/externalizationFlags'
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
@@ -456,15 +457,15 @@ const loadStats = async (force = false) => {
 const loadControlPlaneLedger = async () => {
   controlPlaneDegraded.value = false
   try {
-    controlPlaneResponse.value = await controlPlaneAPI.ledger({
+    const response = await controlPlaneAPI.ledger({
       start_date: filters.value.start_date || startDate.value,
       end_date: filters.value.end_date || endDate.value,
     })
-    if (readMode === 'external_primary') {
-      // Ledger metadata can be external-primary, but the current control-plane
-      // contract intentionally does not replace the legacy detail table.
-      controlPlaneDegraded.value = true
-    }
+    controlPlaneResponse.value = response
+    const decision = resolvePageReadDecision('accounting', readMode, response.cutover)
+    // The ledger projection does not implement the usage detail, pagination,
+    // filters, sorting and export contract, so it cannot become this page's source.
+    controlPlaneDegraded.value = Boolean(response.degraded) || decision.degraded || decision.source === 'external'
   } catch {
     controlPlaneResponse.value = null
     controlPlaneDegraded.value = true

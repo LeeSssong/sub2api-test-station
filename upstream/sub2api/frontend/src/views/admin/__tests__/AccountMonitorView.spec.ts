@@ -47,7 +47,7 @@ const {
   showError: vi.fn(),
   showSuccess: vi.fn(),
   controlPlaneMonitor: vi.fn(),
-  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
+  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
 }))
 
 vi.mock('@/api/controlPlane', () => ({
@@ -355,7 +355,7 @@ describe('admin account monitor view V3', () => {
   })
 
   it('keeps legacy cards in shadow mode while surfacing control-plane freshness', async () => {
-    readMode.value = 'shadow'
+    readMode.value = 'shadow_building'
     const wrapper = mountView()
     await flushPromises()
 
@@ -389,6 +389,29 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 24h')
     expect(wrapper.text()).toContain('来源：现有系统')
     expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it('renders a fully mapped monitor projection only after its three-window cutover gate passes', async () => {
+    readMode.value = 'external_primary'
+    controlPlaneMonitor.mockResolvedValueOnce({
+      items: {
+        ...projection('24h'),
+        accounts: projection('24h').accounts.map((item) => ({ ...item, name: `External ${item.name}` })),
+      },
+      freshness: { completeness: 'complete', calculation_version: 'accounts-v1' },
+      cutover: {
+        page: 'monitor', windows: ['minimum', 'default', 'maximum'], passed: true,
+        fresh_until: '2099-08-10T09:10:00Z', contract_complete: true,
+        permission_passed: true, export_passed: true, rollback_passed: true,
+        degraded: false, evidence_ref: 'compare:monitor:42',
+      },
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('External Rank one A 24h')
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
   })
 
   it.each([401, 403])('keeps the monitor page local when the control plane returns %s', async (status) => {

@@ -38,7 +38,8 @@ describe('control plane API', () => {
 
   it('fails closed to legacy-only for unknown read modes', () => {
     expect(resolveControlPlaneReadMode('external_primary')).toBe('external_primary')
-    expect(resolveControlPlaneReadMode('shadow')).toBe('shadow')
+    expect(resolveControlPlaneReadMode('shadow')).toBe('shadow_building')
+    expect(resolveControlPlaneReadMode('dual_read_comparing')).toBe('dual_read_comparing')
     expect(resolveControlPlaneReadMode('unexpected')).toBe('legacy_only')
   })
 

@@ -7,7 +7,7 @@ const { get, showError, controlPlaneProfitability, readMode } = vi.hoisted(() =>
   get: vi.fn(),
   showError: vi.fn(),
   controlPlaneProfitability: vi.fn(),
-  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow' | 'external_primary' },
+  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
 }))
 
 vi.mock('@/api/controlPlane', () => ({
@@ -67,7 +67,7 @@ describe('AccountProfitabilityView', () => {
   })
 
   it('keeps legacy filter and CSV rows visible during a shadow read', async () => {
-    readMode.value = 'shadow'
+    readMode.value = 'shadow_building'
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
     await flushPromises()
 
@@ -89,6 +89,29 @@ describe('AccountProfitabilityView', () => {
     expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('来源：现有系统')
     expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it('renders fully mapped profitability rows only after its three-window cutover gate passes', async () => {
+    readMode.value = 'external_primary'
+    controlPlaneProfitability.mockResolvedValueOnce({
+      items: {
+        ...response,
+        rows: response.rows.map((row) => ({ ...row, name: `External ${row.name}` })),
+      },
+      freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
+      cutover: {
+        page: 'profitability', windows: ['minimum', 'default', 'maximum'], passed: true,
+        fresh_until: '2099-08-10T09:10:00Z', contract_complete: true,
+        permission_passed: true, export_passed: true, rollback_passed: true,
+        degraded: false, evidence_ref: 'compare:profitability:42',
+      },
+    })
+
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('External Sub account')
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
   })
 
   it.each([401, 403])('keeps profitability local when the control plane returns %s', async (status) => {

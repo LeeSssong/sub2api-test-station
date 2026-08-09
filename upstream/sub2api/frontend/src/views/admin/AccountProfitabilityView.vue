@@ -86,7 +86,7 @@
           :completeness="readModel.completeness.value"
           :calculation-version="readModel.calculationVersion.value"
           :degraded="controlPlaneDegraded || readModel.degraded.value"
-          source-label="现有系统"
+          :source-label="renderSource === 'external' ? '控制面' : '现有系统'"
           @retry="load"
         />
 
@@ -165,6 +165,7 @@ import Icon from '@/components/icons/Icon.vue'
 import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { useAppStore } from '@/stores/app'
+import { resolvePageReadDecision } from '@/config/externalizationFlags'
 
 type Range = 'today' | '7d' | '30d' | 'month' | 'custom'
 type Filter = 'all' | AccountProfitabilitySource
@@ -183,6 +184,7 @@ const error = ref<string | null>(null)
 const data = ref<AccountProfitabilityResponse | null>(null)
 const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
 const controlPlaneDegraded = ref(false)
+const renderSource = ref<'legacy' | 'external'>('legacy')
 const readModel = useReadModelFreshness(controlPlaneResponse)
 
 const ranges: { value: Range }[] = [{ value: 'today' }, { value: '7d' }, { value: '30d' }, { value: 'month' }]
@@ -292,17 +294,49 @@ function statusLabel(status: string): string {
 const SourceBadge = (props: { source: AccountProfitabilitySource }) => h('span', { class: 'inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200' }, sourceLabel(props.source))
 const StatusBadge = (props: { status: string }) => h('span', { class: props.status === 'pending' ? 'inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }, statusLabel(props.status))
 
-async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<void> {
+function isRecord(value: unknown): value is Record<string, any> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasProfitabilitySummary(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return ['revenue', 'expense', 'profit', 'margin', 'account_count', 'pending_count'].every((field) => field in value)
+}
+
+function isProfitabilityRow(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  const required = ['account_id', 'name', 'platform', 'account_type', 'source', 'status', 'revenue', 'expense', 'profit', 'margin', 'expense_status', 'request_count', 'tokens']
+  return required.every((field) => field in value) && typeof value.account_id === 'number' &&
+    typeof value.name === 'string' && typeof value.platform === 'string' && typeof value.account_type === 'string' &&
+    typeof value.source === 'string' && typeof value.status === 'string' && typeof value.expense_status === 'string' &&
+    typeof value.request_count === 'number' && typeof value.tokens === 'number'
+}
+
+function isCompleteProfitabilityResponse(value: unknown, startDateValue: string, endDateValue: string): value is AccountProfitabilityResponse {
+  return isRecord(value) && value.start_date === startDateValue && value.end_date === endDateValue &&
+    typeof value.generated_at === 'string' && hasProfitabilitySummary(value.summary) &&
+    Array.isArray(value.rows) && value.rows.every(isProfitabilityRow)
+}
+
+async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<AccountProfitabilityResponse | null> {
   controlPlaneDegraded.value = false
   try {
     const response = await controlPlaneAPI.profitability(params)
     controlPlaneResponse.value = response
-    // The Task 4 projection is narrower than the complete profitability
-    // contract. Task 9 must prove mapping and comparison before promotion.
-    if (readMode === 'external_primary') controlPlaneDegraded.value = true
+    const decision = resolvePageReadDecision('profitability', readMode, response.cutover)
+    if (decision.source === 'external' && isCompleteProfitabilityResponse(response.items, params.start_date, params.end_date)) {
+      renderSource.value = 'external'
+      controlPlaneDegraded.value = Boolean(response.degraded)
+      return response.items
+    }
+    renderSource.value = 'legacy'
+    controlPlaneDegraded.value = Boolean(response.degraded) || decision.degraded || decision.source === 'external'
+    return null
   } catch {
     controlPlaneResponse.value = null
     controlPlaneDegraded.value = true
+    renderSource.value = 'legacy'
+    return null
   }
 }
 
@@ -313,8 +347,8 @@ async function load() {
   try {
     const params = { start_date: startDate.value, end_date: endDate.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     const legacyResult = await adminAPI.accountProfitability.get(params)
-    if (readMode !== 'legacy_only') await loadControlPlane(params)
-    data.value = legacyResult
+    const externalResult = readMode === 'legacy_only' ? null : await loadControlPlane(params)
+    data.value = externalResult ?? legacyResult
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : t('admin.accountProfitability.loadError')
     error.value = message

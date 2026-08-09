@@ -1,5 +1,23 @@
 # 项目全局进度总账
 
+**本轮实施登记（2026-08-09）：** 修复生产 `/monitor` 只展示当前启用且绑定有效活动分组的 3 个渠道监控，并为监控配置身份性更新建立新的统计边界，避免旧端点、旧凭据、旧模型或旧分组历史污染更新后的 7 天可用率与时间线；状态：进行中。用户已批准快速实施、合并 `main`、推送并走无停机蓝绿生产覆盖更新。实施必须从盘点后的最新 `main` 创建隔离 worktree，仅纳入本任务代码、测试、规格、计划和总账，剔除仍在工作的线程内容；部署前须合并回 `main` 并在合并结果上完成回归、构建、迁移/发布预检。本轮保护“新建运营界面”“优化账号卡片”以及其他明确仍在工作的候选，不带入其未提交内容。
+
+**本轮登记（2026-08-09）：** 本地经自建中转调用时频繁出现 `stream disconnected before completion: Concurrency limit exceeded for user, please retry later` 与 `stream disconnected before completion: Our servers are currently overloaded. Please try again later.` 的生产只读根因排查，状态：进行中。范围为核对本地客户端请求、中转服务日志与资源、上游响应和并发/重试链路，确认错误生成层及触发条件；本轮默认不修改生产配置、不重启或重建容器、不调整账号/路由/限流、不发送额外付费探测。当前工作区为根目录 `main`；已盘点全部非 `main` worktree，现有领先候选均为进行中、准备完成但尚未部署，或带受保护未提交内容，不在本轮合并或清理；继续保留“新建运营界面”“优化账号卡片”、调度候选、邮件候选及当前发布器/发布证据改动。
+
+**本轮排查结论（2026-08-09）：** 状态：准备完成（非终态，尚未实施修复）。生产主机和 API/worker/PostgreSQL/Redis/Caddy 均无 OOM 或重启，公开 `healthz/readyz` 为 200，CPU/内存不是根因。过去 2 小时用户 `#1`、API Key `#29` 有 1323 条成功用量记录，同时应用日志记录 66 次上游 `Our servers are currently overloaded`、6 次其他明确上游失败、1 次通用 `Upstream request failed`，以及 23 次等待用户并发槽 30 秒超时；上游过载主要集中在账号 `#164`（56 次），其次为 `#169`（9 次）。用户并发配置为 10，排查时 Redis 实时普通槽为 6–9、成员年龄仅数秒，未发现槽位泄漏；错误来自高密度并行请求打满用户并发与若干上游账号流内过载叠加，客户端随后自动重试，所以任务通常能继续但会显示断流。Caddy 在 12:08:53–12:09:09 蓝绿发布切换窗口曾有 35 次解析已退出 green 槽失败，但当前活动配置已指向 `sub2api-blue:8080`，不解释 17:40 后持续发生的并发/上游错误。本轮未修改生产配置、账号、路由、限流或容器，未重启、未部署。
+
+**本轮登记（2026-08-09）：** 管理员用量详情字段去重及 Sub 上游请求 ID/实际扣费空值根因排查，状态：进行中。范围为移除管理员信息区重复的“本站请求 ID”，并追踪用户区本站请求 ID、上游请求 ID、上游实际扣费从 Sub2API 上游响应、本站网关记录、数据库字段、管理 API 到前端展示的完整数据链；先只读确认 Sub 原生是否返回逐笔上游请求 ID 与真实扣费，再经方案确认实施和验证。本轮不伪造上游请求 ID 或实际扣费，不回填历史数据，不修改客户计费、账号倍率、生产配置或生产数据；当前工作区为根目录 `main`，保留“新建运营界面”“优化账号卡片”保护例外、调度候选未提交内容、SMTP 超时阻塞候选及现有发布器/发布证据改动。
+
+**本轮根因确认（2026-08-09）：** 状态：进行中（待方案确认）。截图中的本站请求 ID 实际为 `client:30f91dd0-f531-4f40-a244-aa110e4bb2a9`，用户信息区与管理员信息区重复展示；管理员信息区可删除该重复项。本站 `usage_logs.request_id` 是本地幂等/追踪键，`upstream_request_id` 则仅在转发链取得上游 HTTP `x-request-id` 时写入。Sub2API 原生 `/v1/usage/records` 已声明 `upstream_request_id` 且返回逐笔 `actual_cost`，但当前 handler 映射遗漏 `upstream_request_id` 赋值，造成 Sub-to-Sub 对账缺少最可靠的关联键；`actual_cost` 不是生成响应的内联字段，须由 relay-ops 使用合法只读账单授权和明确账号映射采集后逐笔匹配。生产现有证据显示账单授权/映射尚未接通、五类核心账务数据为 0，因此该笔“上游实际扣费”保持待对账是诚实状态，不能以本站标准费用或本站实际扣费冒充。全部非 `main` worktree 已重新盘点：新增 GPT 分组基线候选仅含进行中计划，SMTP 候选仍为阻塞文档，调度候选保留未提交内容，其余候选不领先 `main`；没有已完成且须先合并的领先候选。
+
+**本轮登记（2026-08-09）：** 生产监控页面分组卡片缺少状态柱状探测图、监控状态统一显示“未配置监控”，且分组倍率/状态疑似不正确的只读根因排查，状态：进行中。范围为对照用户截图核对监控前端渲染、管理 API 数据契约、后端聚合与监控配置、数据库迁移及近期变更；本轮仅诊断并形成证据链，不修改监控配置、倍率、生产数据，不部署。当前工作区为根目录 `main`，保留“新建运营界面”“优化账号卡片”保护例外，以及现有发布器修复、邮件配置和发布证据改动。
+
+**本轮排查结论（2026-08-09）：** 状态：准备完成（非终态）。生产 Monitor V2 的调用指标与主动渠道探测是独立数据源；当前 7 个未删除活动分组的 `bound_monitors` 全为 0。6 个 `channel_monitors` 中 5 个旧监控的 `group_id`、`group_name` 同时为空，唯一绑定的“GPT Plus 内测”又指向已软删除分组 `#16`，因此所有当前可见分组均被后端判为 `unconfigured`，探测时间线为空，前端按契约只渲染灰色基线和“该时段暂无探测记录”。探测任务本身仍在运行：近 7 天 GPT-特惠/GPT PRO/GPT PLUS 各有 189 条历史；最新 GPT-特惠为上游响应头超时，GPT PRO/GPT PLUS/GPT Pro 20x 为 401 无效令牌。卡片右上角数值不是探测倍率或上游账号成本倍率，而是直接显示 `groups.rate_multiplier`；生产当前 GPT-Pro/GPT-Plus/GPT-特惠分组分别为 `0.3/0.2/0.1`，且审计记录显示它们在 2026-08-08 至 2026-08-09 被管理员请求明确写入，因此不是前端格式化错误。若业务目标倍率不同，后续必须由用户确认目标值后单独修正分组配置；监控恢复还需把有效监控稳定绑定到当前分组、修复失效探测凭据/超时并完成线上验收。本轮未修改生产配置、倍率、凭据或数据，未部署。
+
+**本轮线上状态修正（2026-08-09）：** 用户随后删除旧监控并将现存 3 个启用监控分别绑定到 GPT-Pro `#2`、GPT-Plus `#6`、GPT-特惠分组 `#20`；生产当前 `channel_monitors` 确为 3 行，历史表不存在已删除监控对应的孤儿记录。`/monitor` 仍显示额外分组的原因不是读取历史监控，而是 Monitor V2 在管理员身份下先枚举全部 7 个未删除活动业务分组，再把这 3 个监控的探测历史按 `group_id` 合并；Claude Code Max、【专属】GPT-PRO、生图、GPT-测试分组虽从未绑定监控，仍被返回为 `unconfigured` 卡片。用户期望口径已明确为“只展示实际配置的 3 个监控分组”；后续实现应把 Monitor V2 卡片主集合收敛为当前启用且绑定有效活动分组的监控，并继续只按现存 monitor ID 读取历史。本轮仍为只读诊断，未实施代码、配置或生产数据变更。
+
+**本轮历史口径补充（2026-08-09）：** 当前没有孤儿历史，但三个现存监控沿用了 2026-07-24 创建的旧 monitor ID；2026-08-09 17:47–17:49 的操作是 `PUT` 更新/重绑，不是新建。监控更新路径不会清空 `channel_monitor_histories`，7 天可用率查询又只按 `monitor_id + model + checked_at >= now()-7d` 聚合，不区分配置版本，因而截图数值确实混入修改前历史：GPT Pro `1/190=0.53%`、GPT PLUS `2/190=1.05%`、GPT-特惠 `144/190=75.79%`。这与“额外无监控分组仍被返回”是两个独立根因；后续实现除收敛卡片主集合外，还应让会改变监控身份的配置更新建立新的历史统计边界，防止旧端点/旧凭据/旧分组结果污染新配置窗口。
+
 **本轮实施登记（2026-08-09）：** 使用 Resend 免费档配置 Sub2API 域名事务邮件并完成受控生产验收，状态：进行中。范围为确认 Resend 免费套餐与 `xingqiaolab.top` 域名状态，保持邀请码门禁，配置 `frontend_url`、邮箱验证和密码重置，向管理员邮箱发送测试邮件并验证注册验证码/密码找回链路；本轮不得关闭邀请码，不得在 CAPTCHA 未配置时开放完全公开注册，不修改现有腾讯企业邮收件链路。当前根目录 `main` 仅用于总账登记与协调，实施前须重新盘点全部非 `main` worktree；现有未跟踪发布证据和“新建运营界面”“优化账号卡片”保护例外继续保留。
 
 **本轮方案确认（2026-08-09）：** 已建立隔离候选 worktree `.worktrees/resend-email-configuration`、分支 `codex/resend-email-configuration`，并提交实施计划 `10db5ec43`。计划分为 Resend 免费账户/域名资格确认、Sub2API 三项最小生产设置写入、管理员测试邮件与密码找回分层验收；全程保持邀请码开启，不配置或关闭现有 CAPTCHA/白名单，不新增付费套餐、信用卡或专用 IP。状态保持进行中。
@@ -26,23 +44,25 @@
 **本轮 Task 3 实现（2026-08-09）：** 统一扣费命令、legacy 兜底扣费和账号配额通知已改为消费解析后的最终 `account_cost`；无快照调用者继续回退 `total_cost × account_rate_multiplier`，客户余额、订阅、API Key 配额与限流继续使用 `actual_cost`。聚焦扣费测试和 `go vet ./internal/service` 已通过；数据库集成测试仍受本机 rootless Docker 缺失限制，尚未合并、推送、部署或线上验证，状态：进行中。
 **本轮 Task 4 实现（2026-08-09）：** 账号统计、趋势、分组/用户聚合、仪表盘、小时聚合和账号盈利支出已统一为 `account_cost` 优先、历史空值回退旧公式；管理员 DTO/用量表/tooltip/导出新增最终账号成本，普通用户 DTO 继续隐藏全部账号成本字段。相关 backend unit 套件、20 项前端定向测试、前端类型检查和 Go vet 已通过；尚未合并、推送、部署或线上验证，状态：进行中。
 **本轮 Task 5 实现（2026-08-09）：** 已增加默认只读、仅显式 `--apply` 写入的生产配置脚本；写模式使用单个 SERIALIZABLE 事务、表锁和冲突守卫，绑定唯一“生图”分组并配置 1K/2K/4K 固定成本，不写客户定价、不改账号倍率或历史流水。shell 合同测试和 Bash 语法检查通过；当前环境无 `shellcheck`，尚未执行生产数据库检查/写入，状态：进行中。
-**本轮生图固定成本合并与推送（2026-08-09）：** 候选已吸收最新 `main` 并快进合并到根 `main`；最终提交 `15cf3303d6b8caa16d11978d26bf160ed71b0efe`、树 `f987666cc18e00b146e8c6d5cd2a037fdc9dbe62` 已推送至 `origin/main`。合并后的后端全量测试与 vet、前端类型检查和 20 项定向测试、配置合同、蓝绿宿主回归及 diff 检查通过；`0600` 证据为 `/private/tmp/sub2api-image-account-cost-15cf3303d.json`。尚未部署、应用生产配置或线上验证，状态保持进行中。
+**本轮生图固定成本合并与推送（2026-08-09）：** 候选已吸收最新 `main` 并快进合并到根 `main`；最终提交 `15cf3303d6b8caa16d11978d26bf160ed71b0efe`、树 `f987666cc18e00b146e8c6d5cd2a037fdc9dbe62` 已推送至 `origin/main`。合并后的后端全量测试与 vet、前端类型检查和 20 项定向测试、配置合同、蓝绿宿主回归及 diff 检查通过；`0600` 证据为 `/private/tmp/sub2api-image-account-cost-15cf3303d.json`。候选已部署，生产配置已通过只读检查→`--apply`→只读复核，状态：已完成；首条自然 1K/2K/4K 流水的最终成本观察继续作为运维跟进。
 
-**本轮生产发布（2026-08-09）：** 状态：进行中。范围为当前 `main@e639cd494` 的 Sub2API 官方核心与星桥定制外置实现，以及“优化账号卡片”最终悬浮修复提交 `8562ca848774a28969793a9135fc9155aad3c94f`；明确排除“优化调度” worktree `/Users/gongtengxinwen/Documents/sub2api-upstream-resilience-spec` 的 8 个领先提交和当前未提交改动。发布必须先将账号卡片提交移植到 `main`，在合并后的 `main` 完成专项回归、构建、迁移/发布预检后推送并走本地/宿主蓝绿链；如发生不可用，必须在 5 分钟内完成切换或回退。只有推送、部署和线上验收全部通过后才能标记完成。
+**本轮生产发布（2026-08-09）：** 已完成候选 `main@abb87a0a8ba4d57cfcf8e38065c5459825062346` 的推送、预加载 Linux AMD64 构建、生产蓝绿部署和线上验收；范围明确排除“优化调度” worktree `/Users/gongtengxinwen/Documents/sub2api-upstream-resilience-spec`，其未合并、未部署。生产切换结果为 `green`、`downtime_required=false`；仅 API/worker 被更新，PostgreSQL、Redis、Caddy 身份未变。证据：[统一生产部署验证](../superpowers/reports/2026-08-09-sub2api-unified-production-deployment.md)。状态：已完成。
 
 **本轮发布器修复（2026-08-09）：** 在生产发布前发现 host executor 的维护停服路径仍缺少单次操作 watchdog、部分停服失败时的恢复武装，以及回滚前旧 API readiness 的真实性校验；状态：进行中。修复必须先以 TDD 红灯复现，再由独立代理范围复审；修复只更新发布器脚本和回归测试，不重启或重建当前生产应用，不触碰“优化调度”保护 worktree。
 
 **本轮发布器修复 Round 2（2026-08-09）：** 已按 RED→GREEN 完成每个停服后命令的剩余维护窗口 watchdog、stop 执行前恢复武装、旧 API/worker 镜像与健康证明、公共 API readiness、共享 PostgreSQL/Redis/Caddy 身份复核及 truthful rollback record。聚焦 maintenance 套件、完整 host executor matrix、Bash 语法和 diff 检查均通过；正式实现报告为 [`docs/superpowers/reports/2026-08-09-host-executor-round2-implementation.md`](../superpowers/reports/2026-08-09-host-executor-round2-implementation.md)。尚待独立范围复审、推送及仅更新生产 host executor，状态保持进行中。
 
-**本轮发布器修复 Round 3（2026-08-09）：** 状态：进行中。范围仅限 `ops/deploy-sub2api-blue-green-host.sh`、`tests/operations/deploy_sub2api_blue_green_host_test.sh`、一份 Round 3 实施报告及本条状态；按严格 TDD 修复 end-to-end/维护期限取最小值、停服后整组操作与持久化有界、deadline/rollback 证明测试真实性。工作区盘点确认 detached 发布 worktree 落后 `main` 3 个提交；“优化调度”分支领先 11 个提交且有未提交内容、“优化账号卡片”相关分支领先 9 个提交且有未提交内容，均按当前保护例外保留，不合并、不修改；未跟踪发布证据继续保留。本轮不推送、不部署，不停止或重建 PostgreSQL、Redis、Caddy，未完成线上验证前保持进行中。
+**本轮发布器修复 Round 3（2026-08-09）：** 已完成 TDD 修复、专项回归、推送并随候选生产发布生效。范围仅限 `ops/deploy-sub2api-blue-green-host.sh`、`tests/operations/deploy_sub2api_blue_green_host_test.sh` 及实现报告；生产切换结果 `succeeded`、`downtime_required=false`，共享 PostgreSQL/Redis/Caddy 未重建。状态：已完成。
 
-**本轮账号卡片整合（2026-08-09）：** 已在 `main` 记录候选提交 `8562ca848774a28969793a9135fc9155aad3c94f` 的空 cherry-pick；原因是等价应用内 `HelpTooltip` 补丁已由祖先提交 `a0aae015a543f390d5e7bd0dd48ccb6a14421454` 整合，当前树保留其后续探测口径更新。`AccountMonitorCard` 定向测试（27 项）和前端类型检查已通过；尚未推送、部署或线上验证，发布状态保持进行中。独立审查另记录键盘无法触发该悬浮层的 P2 可访问性风险，待单独批准处理。
+**本轮账号卡片整合（2026-08-09）：** 候选账号卡片实现已随 `abb87a0a8` 生产发布生效；线上 Monitor API 返回 `score_breakdown`、`homepage_url`、`multiplier.source`，健康和管理员接口验收通过。状态：已完成；键盘悬浮层 P2 可访问性风险仍作为后续独立优化，不阻断本轮部署。
 
-**本轮发布门禁修复（2026-08-09）：** 并版预检发现 Sub2API 新增 outbox 迁移会被宿主现有“迁移集合变化”门禁统一阻断。现已按 TDD 增加显式完整哈希对 allowlist：仅批准生产 `aee795202a3d...` 到本次 expand-only 集合 `5cc825b23a35...`，控制器必须同时收到 `--maintenance-authorized` 和受校验的 `RELEASE_MAINTENANCE_FROM_HASH`；未知/退休哈希仍在构建或停服前失败。宿主与控制器回归、Bash 语法和 diff 检查通过，维护不可用预算保持最多 300 秒；尚未推送、部署或线上验证，状态继续进行中。
+**本轮发布门禁修复（2026-08-09）：** 并版预检发现 Sub2API 新增 outbox 迁移会被宿主现有“迁移集合变化”门禁统一阻断。现已按 TDD 增加显式完整哈希对 allowlist：仅批准生产 `aee795202a3d...` 到本次 expand-only 集合 `5cc825b23a35...`，控制器必须同时收到 `--maintenance-authorized` 和受校验的 `RELEASE_MAINTENANCE_FROM_HASH`；未知/退休哈希仍在构建或停服前失败。宿主与控制器回归、Bash 语法和 diff 检查通过，并已随 `abb87a0a8` 生产发布验证生效；状态：已完成。
 
-**本轮生产推送（2026-08-09）：** 已将验证后的 `main@48c215115` 推送至 `origin/main`；推送前重新抓取远端并确认无并发领先，同时确认“优化调度”分支 9 个领先提交仍全部未合并。当前仅完成推送，尚未构建/暂存最终统一候选、部署或线上验收，状态继续进行中。
+**本轮生产推送（2026-08-09）：** 已将验证后的候选推送至 `origin/main`，并完成最终候选 `abb87a0a8` 的构建、暂存、生产部署和线上验收；推送前确认远端无并发领先，“优化调度”分支仍未合并。状态：已完成。
 
-**本轮收口（2026-08-09）：** Sub2API 官方核心与星桥定制外置迁移已完成本地实现、合同测试、资格门禁和只读生产预检脚本；管理员使用路径保持同域、同账号、同 2FA、同 URL 和同数据查看语义。当前停在生产部署更新动作之前，尚未推送、部署、迁移、重启、蓝绿提升或线上验收，状态保持进行中。详见 [外置迁移手册](../runbooks/sub2api-externalization-migration.md)、[官方升级手册](../runbooks/sub2api-official-upgrade.md) 和 [生产前验证报告](../superpowers/reports/2026-08-08-externalization-production-verification.md)。
+**本轮收口（2026-08-09）：** Sub2API 官方核心与星桥定制外置迁移已完成本地实现、合同测试、资格门禁、生产部署和线上验收；管理员使用路径保持同域、同账号、同 2FA、同 URL 和同数据查看语义。候选 `abb87a0a8` 已切换至 green，迁移哈希为 `9caff81ff628...`，健康、模型目录、管理员监控和共享容器身份均已验证。状态：已完成。详见 [统一生产部署验证](../superpowers/reports/2026-08-09-sub2api-unified-production-deployment.md)。
+
+**本轮生产部署执行（2026-08-09）：** 候选 `main@abb87a0a8ba4d57cfcf8e38065c5459825062346` 已通过预加载 Linux AMD64 镜像链路部署到 `ubuntu@43.133.75.82:2222`；生产共享 PostgreSQL/Redis/Caddy 保持不重建，迁移集合已按批准门禁从 `5cc825b23a35...` 转换至 `9caff81ff628...`。线上 `/healthz`、`/readyz`、`/v1/models`、管理员 Monitor API、镜像身份和生图固定成本配置均已验收。状态：已完成；证据见 [统一生产部署验证](../superpowers/reports/2026-08-09-sub2api-unified-production-deployment.md)。
 
 **本轮任务登记（2026-08-09）：** Sub2API 外置定制 Task 1 基线清单、管理员体验合同和运行时清单，状态：进行中（已完成本地文档与契约测试；尚未推送、部署或线上复验，不能标记完成）。实施报告：`.superpowers/sdd/2026-08-08-sub2api-externalized-customization-implementation-plan/task-1-report.md`。
 
@@ -374,3 +394,5 @@
 以后每次任务都必须在实施前先登记到本文件，并将初始状态写为“进行中”。任务收尾时，只有完成服务端推送、生产部署和生效验证，才可转入“生产工程代码/配置已部署并验证”；仍存在运行时代码或生产配置差异的事项进入“工程代码/配置差异待部署”，尚未完成实现的进入“持续实施”，文档、研究、离线证据和外部验收进入“运维/研究跟进”，不得仅因这些材料缺失而声称工程未部署。每次收尾同时更新统计摘要和 current-state 入口。
 
 **本轮维护门禁登记（2026-08-04）：** 采购成本附加迁移维护门禁，状态：已完成（最终提交 `82095b80770236eac24adb0bdb1b80cd639675cb` 已推送并完成维护发布；生产迁移哈希已为 `337212b4af85839c9497d0fef3153e5c858bd976fed268086459c21a12abcc76`。PostgreSQL `2db52788…`、Redis `c45202c0…`、Caddy `ace4a23b…` 与 `release-state` 一致且未重建；维护路径仅切换 API/Worker，生产验证通过）。
+
+**本轮新增登记（2026-08-09）：** GPT 文本上游账号分组配置基线分析；范围为排除生图、Claude 账号和自测分组目标，基于生产现有 7/30 天真实请求、主动探测、成本倍率、分组权重与调度优先级证据，形成 GPT-Pro、【专属】GPT-Pro、GPT-Plus、GPT-特惠的账号归属和主力/次级/备用基线，并评估现有评分体系是否足以持续检查分组与优先级合理性。当前工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/gpt-group-baseline-analysis`，分支 `codex/gpt-group-baseline-analysis`。**状态：进行中（已完成全部非 main worktree 盘点并确认无已完成且必须先合并的领先候选；仅使用现有生产数据，未修改生产分组、路由、优先级或账号状态）**。

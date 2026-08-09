@@ -65,3 +65,9 @@ Fix-round tests: `go test ./internal/integration ./internal/repository -run 'Tes
 - JSON, Responses and WebSocket converge before persistence at the existing `UsageLogRepository.CreateBestEffort` entry; the shared-entry test verifies the repository behavior once rather than duplicating protocol fixtures.
 
 Fix-round commands: `go test ./internal/integration ./internal/repository -run 'Test(HealthChangedEventIdentity|UsageLogCreateBestEffort|UsageLogRequestEvent)' -v` PASS. The isolated PostgreSQL Testcontainers command was attempted for both commit/rollback tests but is blocked in this environment: `panic: rootless Docker not found` during repository TestMain. The tests remain build-tagged and use a fresh container when Docker is available; sqlmock rollback coverage passed locally as the supplementary boundary check.
+
+Controller verification reran the tagged integration tests with the active Colima socket explicitly configured:
+
+`DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock go test -tags=integration ./internal/repository -run '^TestUsageLogBestEffortExternalization' -count=1 -v`
+
+Both `TestUsageLogBestEffortExternalizationCommitsUsageAndOutboxTogether` and `TestUsageLogBestEffortExternalizationRollsBackOnAppendFailure` passed against fresh Testcontainers PostgreSQL 18.1 and Redis 8.4 instances; package result `ok` in 54.258s. Testcontainers terminated the isolated containers after the run.

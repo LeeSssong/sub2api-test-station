@@ -201,11 +201,11 @@
 
 ### 必须调整
 
-- **真实请求优先必须进入最终分数**：当前服务的 `accountMonitorWindowEvidence` 实际优先使用主动探测，真实请求窗口没有进入质量分数；页面展示与评分来源不一致。
+- **真实请求优先必须进入最终分数**：当前服务的 `accountMonitorWindowEvidence`（`upstream/sub2api/backend/internal/service/account_monitor_service.go:1275`）实际优先使用主动探测，真实请求窗口没有进入质量分数；页面展示与评分来源不一致。
 - **Plus 与特惠不能继续使用同一套质量权重**：两组目前除成本倍率外，成功率/TTFT/总耗时权重完全相同，无法表达“Plus 要稳定、特惠可波动”的产品定位。建议 Plus 提高成功率权重，特惠降低成功率和延迟权重、提高成本权重。
 - **硬门槛必须按错误类型区分**：余额耗尽、认证、模型不可用应立即阻断；单次普通 HTTP/测试错误在有大量新鲜真实请求时只能降级，不能机械覆盖全部真实证据。
 - **显示每项证据来源和样本数**：成功率、TTFT、总耗时可能分别来自真实或探测，页面必须逐项标注来源、窗口、样本数和置信度。
-- **调度优先级改为组内有效**：当前调度读取全局 `accounts.priority`，导致跨组账号无法设置不同优先级；若仍允许跨组，必须让调度器使用组关联优先级。
+- **调度优先级改为组内有效**：当前 `openAIAccountSchedulingPriority`（`upstream/sub2api/backend/internal/service/openai_account_scheduler.go:568`）读取全局 `accounts.priority`，导致跨组账号无法设置不同优先级；若仍允许跨组，必须让调度器使用组关联优先级。
 - **增加基线偏离提示**：页面应直接提示“当前分组不匹配”“优先级层级不匹配”“Pro/专属 Pro 不一致”。
 
 ### 建议增加

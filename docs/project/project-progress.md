@@ -380,3 +380,5 @@
 **本轮 Task 1 证据采集（2026-08-09）：** GPT 文本上游账号分组配置基线分析的只读生产证据快照，状态：进行中。范围仅限既有生产 PostgreSQL 聚合与现有管理员监控投影，收集 7/30 天真实请求和主动探测、账号/分组配置、评分权重、调度设置；不执行上游 API 探测，不修改生产数据库、服务、容器、文件、分组、路由、优先级或账号状态。当前工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/gpt-group-baseline-analysis`，分支 `codex/gpt-group-baseline-analysis`。保护例外：总账已登记的“新建运营界面”“优化账号卡片”，以及含未提交改动的 `codex/upstream-resilience-implementation` 工作区均保持不动。
 
 **本轮 Task 1 证据采集完成（2026-08-09）：** 只读生产快照已捕获，UTC `2026-08-09T10:15:42.482Z`；JSON SHA-256 `766fb926165614744480695b8080b1d7b281ec5107b7f995cfb470a9944ddfc3`，报告为 `docs/superpowers/reports/2026-08-09-gpt-group-baseline-production-evidence.md`。schema、聚合、管理员监控投影、结构校验和定向敏感词扫描已完成；扫描唯一命中为非秘密账户类型字面值 `apikey`，已在报告中标记手工复核。当前仍未推送、部署或线上验证，整体状态保持进行中。
+
+**本轮 GPT 分组配置研究基线收口（2026-08-09）：** 已基于同一只读快照完成全部 67 个 GPT 文本账号的逐项分析，形成 `GPT-Pro 5`、`GPT-Plus 7`、`GPT-特惠 5`、`暂不进入公开组 38`、`人工处理后补跑 12` 的配置基线；公开与专属 Pro 统一为同一账号池和 `1/2/3` 优先级层级。报告为 `docs/superpowers/reports/2026-08-09-gpt-group-configuration-baseline.md`。同时确认现有评分公式可保留为组内排序基础，但真实请求尚未进入最终质量分、Plus 与特惠质量权重相同、OpenAI 调度仍读取全局 `accounts.priority`，因此不足以独立完成持续归组和组内优先级审计。**状态：准备完成，不能标记已完成；本轮无生产配置变更，后续若采纳账号迁移或评分/调度改造，必须另行审批、合并到 main、部署并线上验证。**

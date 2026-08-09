@@ -267,7 +267,7 @@ func hardOpenAIAccountModelFailureType(errorType string) bool {
 	return false
 }
 
-func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context, event OpenAIAccountModelFailureEvent) OpenAIAccountModelRuntimeDecision {
+func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Context, event OpenAIAccountModelFailureEvent) OpenAIAccountModelRuntimeDecision {
 	decision := OpenAIAccountModelRuntimeDecision{ExcludeFromRequest: true}
 	if s == nil || event.AccountID <= 0 || normalizeOpenAIAccountModelTransientModel(event.CanonicalModel) == "" {
 		return decision
@@ -298,17 +298,25 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context
 	if !decision.BlockUntil.IsZero() && decision.BlockUntil.After(now) {
 		decision.RetryAfterSeconds = int((decision.BlockUntil.Sub(now) + time.Second - 1) / time.Second)
 	}
-	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelSoftFailure, FailureStreak: raw.FailureStreak, CacheMode: event.CacheMode, Outcome: "failure"})
+	resilienceEvent := OpenAIResilienceEvent{
+		At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelSoftFailure,
+		AccountID: event.AccountID, CanonicalModel: event.CanonicalModel, StatusCode: event.StatusCode,
+		OutputStarted: event.OutputStarted, UsageProduced: event.UsageKnown, FailureStreak: raw.FailureStreak,
+		CacheMode: event.CacheMode, CooldownSeconds: int(decision.Cooldown.Seconds()), RetryAfterSeconds: decision.RetryAfterSeconds,
+		Outcome: "failure",
+	}
+	RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
 	slog.Info(OpenAIEventAccountModelSoftFailure,
 		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 		"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
-		"usage_produced", event.UsageKnown, "cache_preservation_mode", "", "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
+		"usage_produced", event.UsageKnown, "cache_preservation_mode", event.CacheMode, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	if decision.Cooldown > 0 {
-		RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelCooldownStarted, FailureStreak: raw.FailureStreak, CacheMode: event.CacheMode, Outcome: "failure"})
+		resilienceEvent.Name = OpenAIEventAccountModelCooldownStarted
+		RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
 		slog.Warn(OpenAIEventAccountModelCooldownStarted,
 			"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 			"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
-			"usage_produced", event.UsageKnown, "cache_preservation_mode", "", "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
+			"usage_produced", event.UsageKnown, "cache_preservation_mode", event.CacheMode, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	}
 	return decision
 }
@@ -340,7 +348,11 @@ func (s *OpenAIGatewayService) ImmediatelyCooldownAccountModel(_ context.Context
 	entry.lastErrorType = "admin_immediate_cooldown"
 	state.entries[key] = entry
 	state.mu.Unlock()
-	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelCooldownStarted, FailureStreak: entry.failureStreak, Outcome: "manual"})
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{
+		At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelCooldownStarted,
+		AccountID: accountID, CanonicalModel: key.Model, StatusCode: entry.lastStatusCode,
+		FailureStreak: entry.failureStreak, CooldownSeconds: int(cooldown.Seconds()), RetryAfterSeconds: int(cooldown.Seconds()), Outcome: "manual",
+	})
 	slog.Warn(OpenAIEventAccountModelCooldownStarted, "account_id", accountID, "canonical_scheduling_model", key.Model, "attempt", entry.failureStreak, "status_code", entry.lastStatusCode, "output_started", false, "usage_produced", false, "cache_preservation_mode", "", "cooldown_seconds", int(cooldown.Seconds()), "retry_after_seconds", int(cooldown.Seconds()), "source", "admin")
 	return s.snapshotOpenAIAccountModelRuntime(key, now), nil
 }
@@ -364,7 +376,10 @@ func (s *OpenAIGatewayService) ProbeAccountModelOnce(_ context.Context, accountI
 	if !s.AcquireOpenAIAccountModelHalfOpenProbe(accountID, canonicalModel, now) {
 		return false, nil
 	}
-	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelHalfOpenProbe, CacheMode: "half_open_probe", Outcome: "selected"})
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{
+		At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelHalfOpenProbe,
+		AccountID: accountID, CanonicalModel: canonicalModel, AttemptNumber: 1, CacheMode: "half_open_probe", Outcome: "selected",
+	})
 	slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", accountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(canonicalModel), "attempt", 1, "status_code", 0, "output_started", false, "usage_produced", false, "cache_preservation_mode", "half_open_probe", "cooldown_seconds", 0, "retry_after_seconds", 0, "state", "pending")
 	return true, nil
 }

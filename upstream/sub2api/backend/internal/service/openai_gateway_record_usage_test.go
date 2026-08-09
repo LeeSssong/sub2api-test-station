@@ -33,6 +33,7 @@ type openAIRecordUsageBillingRepoStub struct {
 	UsageBillingRepository
 
 	result     *UsageBillingApplyResult
+	results    []*UsageBillingApplyResult
 	err        error
 	calls      int
 	lastCmd    *UsageBillingCommand
@@ -56,6 +57,9 @@ func (s *openAIRecordUsageBillingRepoStub) Apply(ctx context.Context, cmd *Usage
 	s.lastCtxErr = ctx.Err()
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.results) >= s.calls {
+		return s.results[s.calls-1], nil
 	}
 	if s.result != nil {
 		return s.result, nil
@@ -267,6 +271,61 @@ func TestOpenAIGatewayServiceRecordUsage_PartialUsageRequiresReconciliation(t *t
 	require.Equal(t, 20, usageRepo.lastLog.OutputTokens)
 	require.Equal(t, UsageCompletenessPartial, billingRepo.lastCmd.UsageCompleteness)
 	require.True(t, billingRepo.lastCmd.ReconciliationRequired)
+}
+
+func TestOpenAIGatewayServiceRecordUsageEmitsRetryBillingReconciledOnlyAfterCompleteDedupConfirmation(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{results: []*UsageBillingApplyResult{{Applied: true}, {Applied: false}}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+	groupID := int64(704)
+	apiKey := &APIKey{ID: 1004, GroupID: &groupID, Group: &Group{Platform: PlatformOpenAI, RateMultiplier: 1}}
+	user := &User{ID: 2004}
+	account := &Account{ID: 3004, Platform: PlatformOpenAI}
+	start := time.Now().Add(-time.Second)
+
+	partial := &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "retry-billing-response", Model: "gpt-5.1", UsageKnown: true,
+			Usage: OpenAIUsage{InputTokens: 80, OutputTokens: 20},
+			AttemptMetadata: OpenAIRequestAttemptMetadata{
+				LogicalRequestID: "logical-retry-billing", AttemptID: "logical-retry-billing:1", AttemptNumber: 1,
+				AccountID: account.ID, CanonicalModel: "gpt-5.1", OutputStarted: true, UsageProduced: true,
+			},
+		},
+		APIKey: apiKey, User: user, Account: account, UsageCompleteness: UsageCompletenessPartial,
+	}
+	require.NoError(t, svc.RecordUsage(context.Background(), partial))
+	require.Empty(t, openAIResilienceEventsForWindow(start, time.Now().Add(time.Second), PlatformOpenAI, &groupID))
+
+	complete := *partial
+	complete.Result = &OpenAIForwardResult{
+		RequestID: "retry-billing-response", Model: "gpt-5.1", UsageKnown: true,
+		Usage: OpenAIUsage{InputTokens: 80, OutputTokens: 20},
+		AttemptMetadata: OpenAIRequestAttemptMetadata{
+			LogicalRequestID: "logical-retry-billing", AttemptID: "logical-retry-billing:2", AttemptNumber: 2,
+			AccountID: account.ID, CanonicalModel: "gpt-5.1", OutputStarted: true, UsageProduced: true,
+		},
+	}
+	complete.UsageCompleteness = UsageCompletenessComplete
+	complete.ReconciliationRequired = false
+	require.NoError(t, svc.RecordUsage(context.Background(), &complete))
+
+	events := openAIResilienceEventsForWindow(start, time.Now().Add(time.Second), PlatformOpenAI, &groupID)
+	require.Len(t, events, 1)
+	require.Equal(t, OpenAIEventRetryBillingReconciled, events[0].Name)
+	require.Equal(t, "logical-retry-billing", events[0].CorrelationID)
+	require.Equal(t, "logical-retry-billing:2", events[0].AttemptID)
+	require.Equal(t, 2, events[0].AttemptNumber)
+	require.Equal(t, account.ID, events[0].AccountID)
+	require.Equal(t, "gpt-5.1", events[0].CanonicalModel)
+	require.True(t, events[0].UsageProduced)
+	require.Equal(t, "success", events[0].Outcome)
 }
 
 func TestUsageBillingReconciliationRetryUsesSameIdempotencyBoundary(t *testing.T) {

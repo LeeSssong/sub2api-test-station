@@ -90,6 +90,11 @@ type postUsageBillingParams struct {
 	Platform               string // 来自 APIKey 关联 Group 的平台标识
 	LogicalRequestID       string
 	AttemptID              string
+	AttemptNumber          int
+	CanonicalModel         string
+	CacheMode              string
+	OutputStarted          bool
+	UsageProduced          bool
 	UsageCompleteness      UsageCompleteness
 	ReconciliationRequired bool
 	UnsafeToReplay         bool
@@ -347,6 +352,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	if err != nil {
 		return false, err
 	}
+	recordOpenAIRetryBillingResult(p, cmd, result)
 
 	if result == nil || !result.Applied {
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)

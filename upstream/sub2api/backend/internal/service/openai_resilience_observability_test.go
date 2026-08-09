@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -19,35 +20,80 @@ func TestOpenAIResilienceEventContractAndAlertCounters(t *testing.T) {
 	at := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	groupID := int64(700)
 	for _, event := range []OpenAIResilienceEvent{
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 2, Outcome: "failure"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelCooldownStarted, Outcome: "failure"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventStreamUpstreamFailure, Outcome: "failure"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelPostFailureSelected, Outcome: "selected"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelCooldownSkippedCache, CacheMode: "failover_after_failure", Outcome: "cache_hit"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-1", Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 2, Outcome: "failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-1", Name: OpenAIEventAccountModelCooldownStarted, Outcome: "failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-1", Name: OpenAIEventStreamUpstreamFailure, Outcome: "failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-1", Name: OpenAIEventAccountModelPostFailureSelected, Outcome: "selected"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-1", Name: OpenAIEventAccountModelCooldownSkippedCache, CacheMode: "failover_after_failure", Outcome: "cache_hit"},
 	} {
 		RecordOpenAIResilienceOutcome(event)
 	}
 	counters := openAIResilienceCountersForWindow(at, at, PlatformOpenAI, &groupID)
 	require.Equal(t, int64(1), counters.RepeatedAccountModelFailures)
-	require.Equal(t, int64(100), counters.CooldownSaturation)
-	require.Equal(t, int64(100), counters.StreamFailoverDegradation)
-	require.Equal(t, int64(100), counters.PostFailureSelection)
-	require.Equal(t, int64(100), counters.CacheHitFailoverDecline)
+	require.Equal(t, int64(1), counters.CooldownSaturation)
+	require.Equal(t, int64(1), counters.StreamFailoverDegradation)
+	require.Equal(t, int64(1), counters.PostFailureSelection)
+	require.Equal(t, int64(1), counters.CacheHitFailoverDecline)
+}
+
+func TestRecordOpenAIRetryBillingReconciledEmitsCompletedAttemptEvent(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(799)
+	ctx := WithOpenAIRequestAttemptMetadata(context.Background(), OpenAIRequestAttemptMetadata{
+		LogicalRequestID: "request-reconciled", AttemptID: "request-reconciled:2", AttemptNumber: 2,
+		AccountID: 92, CanonicalModel: "gpt-5.5", CachePreservationMode: "failover_after_failure",
+	})
+
+	RecordOpenAIRetryBillingReconciled(ctx, PlatformOpenAI, &groupID, 503, true, true, 10)
+
+	events := openAIResilienceEventsForWindow(now.Add(-time.Second), now.Add(time.Second), PlatformOpenAI, &groupID)
+	var got *OpenAIResilienceEvent
+	for i := range events {
+		if events[i].CorrelationID == "request-reconciled" {
+			got = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, got)
+	require.Equal(t, OpenAIEventRetryBillingReconciled, got.Name)
+	require.Equal(t, "success", got.Outcome)
+	require.Equal(t, int64(92), got.AccountID)
+	require.Equal(t, "gpt-5.5", got.CanonicalModel)
+	require.Equal(t, "request-reconciled:2", got.AttemptID)
+	require.Equal(t, 2, got.AttemptNumber)
+	require.Equal(t, 503, got.StatusCode)
+	require.True(t, got.OutputStarted)
+	require.True(t, got.UsageProduced)
+	require.Equal(t, 10, got.RetryAfterSeconds)
 }
 
 func TestRecordOpenAIAccountModelFailureRecordsDimensionedOutcome(t *testing.T) {
 	at := time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC)
 	groupID := int64(703)
 	svc := &OpenAIGatewayService{}
-	svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{
+	ctx := WithOpenAIRequestAttemptMetadata(nil, OpenAIRequestAttemptMetadata{
+		LogicalRequestID: "request-schema", AttemptID: "request-schema:2", AttemptNumber: 2,
+		AccountID: 91, CanonicalModel: "gpt-5.5", CachePreservationMode: "failover_after_failure",
+	})
+	svc.RecordOpenAIAccountModelFailure(ctx, OpenAIAccountModelFailureEvent{
 		AccountID: 91, CanonicalModel: "gpt-5.5", StatusCode: 502, ErrorType: "transient_upstream",
-		Platform: PlatformOpenAI, GroupID: &groupID, CacheMode: "failover_after_failure", Now: at,
+		OutputStarted: true, UsageKnown: true, Platform: PlatformOpenAI, GroupID: &groupID,
+		CacheMode: "failover_after_failure", Now: at,
 	})
 
 	counters := openAIResilienceCountersForWindow(at, at, PlatformOpenAI, &groupID)
 	require.Equal(t, int64(0), counters.RepeatedAccountModelFailures)
 	require.Equal(t, int64(0), counters.PostFailureSelection)
 	require.Equal(t, int64(0), counters.CooldownSaturation)
+
+	events := openAIResilienceEventsForWindow(at, at, PlatformOpenAI, &groupID)
+	require.Len(t, events, 1)
+	require.Equal(t, OpenAIResilienceEvent{
+		At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-schema",
+		Name: OpenAIEventAccountModelSoftFailure, AccountID: 91, CanonicalModel: "gpt-5.5",
+		AttemptID: "request-schema:2", AttemptNumber: 2, StatusCode: 502, OutputStarted: true,
+		UsageProduced: true, FailureStreak: 1, CacheMode: "failover_after_failure", Outcome: "failure",
+	}, events[0])
 }
 
 func TestOpenAIResilienceAlertCountersHonorWindowDimensionsAndCorrelation(t *testing.T) {
@@ -55,23 +101,26 @@ func TestOpenAIResilienceAlertCountersHonorWindowDimensionsAndCorrelation(t *tes
 	groupID := int64(701)
 	otherGroupID := int64(702)
 	for _, event := range []OpenAIResilienceEvent{
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 1},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 2},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelCooldownStarted},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventStreamUpstreamFailure},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventFailoverAfterStreamFailure, Outcome: "success"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelPostFailureSelected, Outcome: "selected"},
-		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventAccountModelCooldownSkippedCache, Outcome: "cache_hit", CacheMode: "failover_after_failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-a", Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 1},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-b", Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 2},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-b", Name: OpenAIEventAccountModelCooldownStarted},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-c", Name: OpenAIEventStreamUpstreamFailure},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-c", Name: OpenAIEventFailoverAfterStreamFailure, Outcome: "success"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-d", Name: OpenAIEventAccountModelSoftFailure, FailureStreak: 1},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-d", Name: OpenAIEventAccountModelPostFailureSelected, Outcome: "selected"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-d", Name: OpenAIEventAccountModelCooldownSkippedCache, Outcome: "cache_hit", CacheMode: "failover_after_failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "unrelated", Name: OpenAIEventAccountModelCooldownSkippedCache, Outcome: "cache_hit", CacheMode: "failover_after_failure"},
+		{At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "unrelated", Name: OpenAIEventAccountModelPostFailureSelected, Outcome: "selected"},
 		{At: at, Platform: PlatformOpenAI, GroupID: &otherGroupID, Name: OpenAIEventAccountModelCooldownStarted},
 	} {
 		RecordOpenAIResilienceOutcome(event)
 	}
 
 	counters := openAIResilienceCountersForWindow(at.Add(-time.Second), at.Add(time.Second), PlatformOpenAI, &groupID)
-	require.Equal(t, int64(50), counters.CooldownSaturation)
+	require.Equal(t, int64(1), counters.CooldownSaturation)
 	require.Equal(t, int64(0), counters.StreamFailoverDegradation)
-	require.Equal(t, int64(50), counters.PostFailureSelection)
-	require.Equal(t, int64(50), counters.CacheHitFailoverDecline)
+	require.Equal(t, int64(1), counters.PostFailureSelection)
+	require.Equal(t, int64(1), counters.CacheHitFailoverDecline, "an unrelated cache skip must not be counted as a failover decline")
 	require.Equal(t, int64(1), counters.RepeatedAccountModelFailures)
 	require.Equal(t, OpenAIResilienceAlertCounters{}, openAIResilienceCountersForWindow(at.Add(2*time.Second), at.Add(3*time.Second), PlatformOpenAI, &groupID))
 }

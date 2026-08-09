@@ -30,7 +30,7 @@ DONE - QUALIFIED
 - Manual content review: report has the required Scope, Baseline, Resend
   Account, Domain/DNS, Decision, Risks, and Not Verified sections. It contains
   no SMTP/API key, credential, full email address, recipient, message content,
-  or billing amount.
+  payment method, invoice identifier, or paid-plan purchase.
 
 ## Self-Review
 

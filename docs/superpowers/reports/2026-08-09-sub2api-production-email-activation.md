@@ -1,7 +1,7 @@
 # Sub2API Production Email Activation
 
 **Date:** 2026-08-09
-**Status:** Implemented; pending independent review and Task 3 delivery verification.
+**Status:** Implemented and independently reviewed; Task 3 delivery verification is recorded separately with a provider-observability blocker.
 
 ## Scope
 

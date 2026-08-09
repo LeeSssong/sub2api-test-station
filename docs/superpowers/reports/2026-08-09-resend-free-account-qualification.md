@@ -9,8 +9,8 @@ activation check.**
 This was a read-only qualification of the existing transactional-mail setup for
 `xingqiaolab.top`. It did not change Resend, DNS, billing, cards, dedicated IPs,
 SMTP settings, Sub2API settings, or production data. No SMTP/API credential,
-full email address, message content, recipient, billing amount, or screenshot
-was recorded.
+full email address, message content, recipient, payment method, invoice
+identifier, or paid-plan purchase was recorded.
 
 ## Baseline
 

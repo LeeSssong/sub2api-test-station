@@ -1,6 +1,6 @@
 # 项目当前状态
 
-**更新日期：** 2026-08-05
+**更新日期：** 2026-08-09
 **权威计划：** `docs/superpowers/plans/2026-08-05-six-stage-production-closure-deployment-units.md`
 **项目全局进度总账：** [docs/project/project-progress.md](project-progress.md)（以该总账的生产部署、验证和用户验收口径为准）
 
@@ -10,6 +10,13 @@
 - 建议基线：GPT-Pro 5 个、GPT-Plus 7 个、GPT-特惠 5 个、暂不进入公开组 38 个、人工处理后补跑 12 个；`【专属】GPT-Pro` 必须完整镜像公开 Pro。
 - 当前评分系统仍需后续工程调整：真实请求优先进入最终分数、Plus/特惠分离权重、错误类型分级、逐指标证据/置信展示、组内有效优先级和基线偏离提示。
 - 权威报告：[GPT 分组配置基线](../superpowers/reports/2026-08-09-gpt-group-configuration-baseline.md)；生产证据：[只读证据清单](../superpowers/reports/2026-08-09-gpt-group-baseline-production-evidence.md)。本研究为准备完成状态，不代表生产配置已应用。
+
+## 2026-08-09 GPT 分组基线生产应用
+
+- Sub2API 管理接口已将 69 个 GPT 文本账号全部归位：Pro 4、专属 Pro 同池 4、Plus 4、特惠 4、测试隔离 57。
+- 最低利润已验证：公开 Pro 0.10、专属 Pro 0.05、Plus 0.05、特惠 0.02；账号倍率、状态、可调度状态、凭据和并发未修改。
+- 14 个无最终质量结论账号留在测试组，等待成本资料、故障处理和最低样本数；评分/调度系统建议尚未实施。
+- 生产证据与处理清单见 [GPT 分组基线生产应用](../superpowers/reports/2026-08-09-gpt-group-baseline-production-application.md)。
 
 ## 当前指针
 

@@ -64,6 +64,36 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	return c.rdb.Del(ctx, key).Err()
 }
 
+// CountStickyAccountReferences counts live Redis session and response bindings
+// pointing to one account. It is only used by the administrator runtime view.
+func (c *gatewayCache) CountStickyAccountReferences(ctx context.Context, accountID int64) (int, error) {
+	if c == nil || c.rdb == nil || accountID <= 0 {
+		return 0, nil
+	}
+	var cursor uint64
+	count := 0
+	for {
+		keys, next, err := c.rdb.Scan(ctx, cursor, stickySessionPrefix+"*", 256).Result()
+		if err != nil {
+			return 0, err
+		}
+		for _, key := range keys {
+			value, getErr := c.rdb.Get(ctx, key).Int64()
+			if getErr == nil && value == accountID {
+				count++
+				continue
+			}
+			if getErr != nil && !errors.Is(getErr, redis.Nil) {
+				return 0, getErr
+			}
+		}
+		if next == 0 {
+			return count, nil
+		}
+		cursor = next
+	}
+}
+
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)

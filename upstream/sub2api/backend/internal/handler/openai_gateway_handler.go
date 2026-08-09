@@ -616,6 +616,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selectionCtx := c.Request.Context()
+		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -723,6 +724,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			attemptMode = openAICachePreservationModeHalfOpenProbe
 		}
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
+		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
+			service.RecordOpenAIResilienceOutcome(service.OpenAIResilienceEvent{
+				Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventAccountModelPostFailureSelected,
+				CacheMode: attemptMode, Outcome: "selected",
+			})
+		}
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		reqLog.Debug("openai.request_attempt",
 			zap.Int("attempt_number", attemptMetadata.AttemptNumber),
@@ -783,11 +790,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				AccountID: account.ID, CanonicalModel: canonicalSchedulingModel, StatusCode: failure.StatusCode,
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
+				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
 			h.gatewayService.RecordOpenAIRecoveryFailedAccount(sessionHash, account.ID, canonicalSchedulingModel, time.Now())
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
 			if failure.OutputStarted {
-				service.RecordOpenAIResilienceEvent(service.OpenAIEventStreamUpstreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
+				service.RecordOpenAIResilienceOutcome(service.OpenAIResilienceEvent{
+					Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventStreamUpstreamFailure,
+					FailureStreak: runtimeDecision.FailureStreak, CacheMode: retryDecision.CachePreservationMode, Outcome: "failure",
+				})
 				logOpenAIResilienceEvent(reqLog, service.OpenAIEventStreamUpstreamFailure, attemptMetadata, failure, runtimeDecision, retryDecision.CachePreservationMode)
 			}
 			reqLog.Warn("openai.retry_decision",
@@ -1298,6 +1309,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selectionCtx := c.Request.Context()
+		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -1389,6 +1401,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			attemptMode = openAICachePreservationModeHalfOpenProbe
 		}
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
+		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
+			service.RecordOpenAIResilienceOutcome(service.OpenAIResilienceEvent{
+				Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventAccountModelPostFailureSelected,
+				CacheMode: attemptMode, Outcome: "selected",
+			})
+		}
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		reqLog.Debug("openai_messages.request_attempt",
 			zap.Int("attempt_number", attemptMetadata.AttemptNumber),
@@ -1446,11 +1464,15 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				AccountID: account.ID, CanonicalModel: canonicalSchedulingModel, StatusCode: failure.StatusCode,
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
+				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
 			h.gatewayService.RecordOpenAIRecoveryFailedAccount(sessionHash, account.ID, canonicalSchedulingModel, time.Now())
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
 			if failure.OutputStarted {
-				service.RecordOpenAIResilienceEvent(service.OpenAIEventStreamUpstreamFailure, runtimeDecision.FailureStreak, retryDecision.CachePreservationMode)
+				service.RecordOpenAIResilienceOutcome(service.OpenAIResilienceEvent{
+					Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventStreamUpstreamFailure,
+					FailureStreak: runtimeDecision.FailureStreak, CacheMode: retryDecision.CachePreservationMode, Outcome: "failure",
+				})
 				logOpenAIResilienceEvent(reqLog, service.OpenAIEventStreamUpstreamFailure, attemptMetadata, failure, runtimeDecision, retryDecision.CachePreservationMode)
 			}
 			reqLog.Warn("openai_messages.retry_decision",

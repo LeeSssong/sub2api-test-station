@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ const (
 	OpenAIEventAccountModelSoftFailure          = "openai.account_model_soft_failure"
 	OpenAIEventAccountModelCooldownStarted      = "openai.account_model_cooldown_started"
 	OpenAIEventAccountModelCooldownSkippedCache = "openai.account_model_cooldown_skipped_for_cache"
+	OpenAIEventAccountModelPostFailureSelected  = "openai.account_model_post_failure_selected"
 	OpenAIEventFailoverAfterStreamFailure       = "openai.failover_after_stream_failure"
 	OpenAIEventAccountModelHalfOpenProbe        = "openai.account_model_half_open_probe"
 	OpenAIEventRetryBillingReconciled           = "openai.retry_billing_reconciled"
@@ -39,6 +41,23 @@ type OpenAIResilienceEvent struct {
 	Outcome       string // success, failure, selected, cache_hit
 }
 
+type openAIResilienceCacheModeContextKey struct{}
+
+func WithOpenAIResilienceCacheMode(ctx context.Context, mode string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIResilienceCacheModeContextKey{}, strings.TrimSpace(mode))
+}
+
+func openAIResilienceCacheModeFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	mode, _ := ctx.Value(openAIResilienceCacheModeContextKey{}).(string)
+	return strings.TrimSpace(mode)
+}
+
 var openAIResilienceEventLedger struct {
 	sync.Mutex
 	events []OpenAIResilienceEvent
@@ -65,8 +84,8 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	}
 }
 
-func RecordOpenAIResilienceEvent(name string, failureStreak int, _ string) {
-	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{Name: name, FailureStreak: failureStreak})
+func RecordOpenAIResilienceEvent(name string, failureStreak int, cacheMode string) {
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{Name: name, FailureStreak: failureStreak, CacheMode: cacheMode})
 }
 
 func SnapshotOpenAIResilienceAlertCounters() OpenAIResilienceAlertCounters {
@@ -76,7 +95,7 @@ func SnapshotOpenAIResilienceAlertCounters() OpenAIResilienceAlertCounters {
 func openAIResilienceCountersForWindow(start, end time.Time, platform string, groupID *int64) OpenAIResilienceAlertCounters {
 	openAIResilienceEventLedger.Lock()
 	defer openAIResilienceEventLedger.Unlock()
-	var failures, cooldowns, streams, failoverSuccess, reselections, cacheFailovers int64
+	var failures, repeatedFailures, cooldowns, streams, failoverSuccess, postFailureSelections, cacheFailovers int64
 	for _, event := range openAIResilienceEventLedger.events {
 		if !start.IsZero() && event.At.Before(start) || !end.IsZero() && event.At.After(end) {
 			continue
@@ -91,7 +110,7 @@ func openAIResilienceCountersForWindow(start, end time.Time, platform string, gr
 		case OpenAIEventAccountModelSoftFailure:
 			failures++
 			if event.FailureStreak >= 2 {
-				reselections++
+				repeatedFailures++
 			}
 		case OpenAIEventAccountModelCooldownStarted:
 			cooldowns++
@@ -101,11 +120,12 @@ func openAIResilienceCountersForWindow(start, end time.Time, platform string, gr
 			if event.Outcome == "success" {
 				failoverSuccess++
 			}
+		case OpenAIEventAccountModelPostFailureSelected:
 			if event.Outcome == "selected" {
-				reselections++
+				postFailureSelections++
 			}
 		case OpenAIEventAccountModelCooldownSkippedCache:
-			if event.Outcome == "cache_hit" || event.CacheMode == "failover_after_failure" {
+			if event.Outcome == "cache_hit" && event.CacheMode == "failover_after_failure" {
 				cacheFailovers++
 			}
 		}
@@ -119,10 +139,10 @@ func openAIResilienceCountersForWindow(start, end time.Time, platform string, gr
 		streamDenom = 1
 	}
 	return OpenAIResilienceAlertCounters{
-		RepeatedAccountModelFailures: reselections,
+		RepeatedAccountModelFailures: repeatedFailures,
 		CooldownSaturation:           cooldowns * 100 / denom,
 		StreamFailoverDegradation:    (streams - failoverSuccess) * 100 / streamDenom,
-		PostFailureSelection:         reselections * 100 / denom,
+		PostFailureSelection:         postFailureSelections * 100 / denom,
 		CacheHitFailoverDecline:      cacheFailovers * 100 / denom,
 	}
 }

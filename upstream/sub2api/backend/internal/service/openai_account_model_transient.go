@@ -50,6 +50,9 @@ type OpenAIAccountModelFailureEvent struct {
 	SafeToReplay   bool
 	HasSideEffect  bool
 	UsageKnown     bool
+	Platform       string
+	GroupID        *int64
+	CacheMode      string
 	Now            time.Time
 }
 
@@ -295,13 +298,13 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(_ context.Context
 	if !decision.BlockUntil.IsZero() && decision.BlockUntil.After(now) {
 		decision.RetryAfterSeconds = int((decision.BlockUntil.Sub(now) + time.Second - 1) / time.Second)
 	}
-	RecordOpenAIResilienceEvent(OpenAIEventAccountModelSoftFailure, raw.FailureStreak, "")
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelSoftFailure, FailureStreak: raw.FailureStreak, CacheMode: event.CacheMode, Outcome: "failure"})
 	slog.Info(OpenAIEventAccountModelSoftFailure,
 		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 		"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
 		"usage_produced", event.UsageKnown, "cache_preservation_mode", "", "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	if decision.Cooldown > 0 {
-		RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, raw.FailureStreak, "")
+		RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelCooldownStarted, FailureStreak: raw.FailureStreak, CacheMode: event.CacheMode, Outcome: "failure"})
 		slog.Warn(OpenAIEventAccountModelCooldownStarted,
 			"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
 			"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
@@ -337,7 +340,7 @@ func (s *OpenAIGatewayService) ImmediatelyCooldownAccountModel(_ context.Context
 	entry.lastErrorType = "admin_immediate_cooldown"
 	state.entries[key] = entry
 	state.mu.Unlock()
-	RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownStarted, entry.failureStreak, "")
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelCooldownStarted, FailureStreak: entry.failureStreak, Outcome: "manual"})
 	slog.Warn(OpenAIEventAccountModelCooldownStarted, "account_id", accountID, "canonical_scheduling_model", key.Model, "attempt", entry.failureStreak, "status_code", entry.lastStatusCode, "output_started", false, "usage_produced", false, "cache_preservation_mode", "", "cooldown_seconds", int(cooldown.Seconds()), "retry_after_seconds", int(cooldown.Seconds()), "source", "admin")
 	return s.snapshotOpenAIAccountModelRuntime(key, now), nil
 }
@@ -361,7 +364,7 @@ func (s *OpenAIGatewayService) ProbeAccountModelOnce(_ context.Context, accountI
 	if !s.AcquireOpenAIAccountModelHalfOpenProbe(accountID, canonicalModel, now) {
 		return false, nil
 	}
-	RecordOpenAIResilienceEvent(OpenAIEventAccountModelHalfOpenProbe, 0, "")
+	RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{At: now, Platform: PlatformOpenAI, Name: OpenAIEventAccountModelHalfOpenProbe, CacheMode: "half_open_probe", Outcome: "selected"})
 	slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", accountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(canonicalModel), "attempt", 1, "status_code", 0, "output_started", false, "usage_produced", false, "cache_preservation_mode", "half_open_probe", "cooldown_seconds", 0, "retry_after_seconds", 0, "state", "pending")
 	return true, nil
 }
@@ -442,12 +445,17 @@ func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) 
 		now = time.Now()
 	}
 	state.mu.Lock()
-	defer state.mu.Unlock()
-	result := make([]OpenAIAccountModelRuntimeSnapshot, 0, len(state.entries))
+	entries := make(map[openAIAccountModelKey]openAIAccountModelTransientEntry, len(state.entries))
 	for key, entry := range state.entries {
 		if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientFailureWindow && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)) {
 			continue
 		}
+		entries[key] = entry
+	}
+	state.mu.Unlock()
+
+	result := make([]OpenAIAccountModelRuntimeSnapshot, 0, len(entries))
+	for key, entry := range entries {
 		stateName := "soft_failure"
 		if entry.halfOpenInFlight {
 			stateName = "half_open"

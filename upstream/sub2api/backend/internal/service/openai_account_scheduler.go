@@ -82,6 +82,7 @@ type OpenAIAccountScheduleRequest struct {
 	RequiredTransport       OpenAIUpstreamTransport
 	RequiredCapability      OpenAIEndpointCapability
 	RequiredImageCapability OpenAIImagesCapability
+	CacheMode               string
 	RequireCompact          bool
 	ExcludedIDs             map[int64]struct{}
 	ForcedAccountID         int64
@@ -607,7 +608,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	if s.service.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) {
-		RecordOpenAIResilienceEvent(OpenAIEventAccountModelCooldownSkippedCache, 0, "sticky")
+		RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{Platform: req.Platform, GroupID: req.GroupID, Name: OpenAIEventAccountModelCooldownSkippedCache, CacheMode: req.CacheMode, Outcome: "cache_hit"})
 		slog.Info(OpenAIEventAccountModelCooldownSkippedCache,
 			"account_id", account.ID,
 			"canonical_scheduling_model", account.GetMappedModel(req.RequestedModel),
@@ -1330,7 +1331,7 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 			ReleaseFunc: result.ReleaseFunc,
 		})
 		if lease != nil {
-			RecordOpenAIResilienceEvent(OpenAIEventAccountModelHalfOpenProbe, 0, "half_open_probe")
+			RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{Platform: req.Platform, GroupID: req.GroupID, Name: OpenAIEventAccountModelHalfOpenProbe, CacheMode: "half_open_probe", Outcome: "selected"})
 			slog.Info(OpenAIEventAccountModelHalfOpenProbe, "account_id", fresh.ID, "canonical_scheduling_model", lease.canonicalModel, "attempt", 1, "status_code", 0, "output_started", false, "usage_produced", false, "cache_preservation_mode", "half_open_probe", "cooldown_seconds", 0, "retry_after_seconds", 0)
 			selection = attachOpenAIHalfOpenProbeLease(selection, lease)
 		}
@@ -2394,6 +2395,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		RequiredCapability:      requiredCapability,
 		RequiredImageCapability: requiredImageCapability,
 		RequireCompact:          requireCompact,
+		CacheMode:               openAIResilienceCacheModeFromContext(ctx),
 		ExcludedIDs:             excludedIDs,
 		ForcedAccountID:         openAIForcedAccountFromContext(ctx),
 	})

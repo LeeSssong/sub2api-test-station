@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -73,32 +74,20 @@ func (s *OpenAIGatewayService) OpenAIRecoveryExcludedAccountIDs(sessionKey strin
 	return result
 }
 
-// OpenAIRecoveryStickyReferenceCount reports live continuation/session bindings
-// for one account-model. It is derived from the same recovery session records
-// used to hydrate a new logical request rather than a DTO placeholder.
+// OpenAIRecoveryStickyReferenceCount reports live Redis sticky session and
+// response bindings for an account-model runtime row. The existing Redis
+// bindings are the source of truth; recovery exclusions are never counted.
 func (s *OpenAIGatewayService) OpenAIRecoveryStickyReferenceCount(accountID int64, canonicalModel string, now time.Time) int {
-	state := s.getOpenAIRecoveryExclusionState()
-	key, ok := openAIAccountModelTransientKey(accountID, canonicalModel)
-	if state == nil || !ok {
+	if s == nil || accountID <= 0 || normalizeOpenAIAccountModelTransientModel(canonicalModel) == "" {
 		return 0
 	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	count := 0
-	for session, entries := range state.entries {
-		if until, exists := entries[key]; exists {
-			if now.Before(until) {
-				count++
-				continue
-			}
-			delete(entries, key)
-		}
-		if len(entries) == 0 {
-			delete(state.entries, session)
+	if counter, ok := s.cache.(interface {
+		CountStickyAccountReferences(context.Context, int64) (int, error)
+	}); ok {
+		count, err := counter.CountStickyAccountReferences(context.Background(), accountID)
+		if err == nil && count > 0 {
+			return count
 		}
 	}
-	return count
+	return 0
 }

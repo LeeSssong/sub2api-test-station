@@ -2,7 +2,7 @@
 
 **更新时间：** 2026-08-08
 
-**本轮登记（2026-08-09）：** 上游故障缓存感知恢复 Task 5（客户恢复合同、管理员账号模型运行态处置、结构化观测与告警输入），工作区 `codex/upstream-resilience-implementation@2379d8a16`；已盘点全部非 `main` worktree 与其提交/状态，`codex/image-account-fixed-cost` 和 `codex/resend-email-configuration` 保留各自既有工作区，当前任务严格基于获批的 Task 4 基线实施。本地实现与专项测试已完成，待独立审查、合并、推送、部署及线上验证。状态：进行中。
+**本轮登记（2026-08-09）：** 上游故障缓存感知恢复 Task 5（客户恢复合同、管理员账号模型运行态处置、结构化观测与告警输入），工作区 `codex/upstream-resilience-implementation@e711f883d`；已盘点全部非 `main` worktree 与其提交/状态，`codex/image-account-fixed-cost` 和 `codex/resend-email-configuration` 保留各自既有工作区，当前任务严格基于获批的 Task 4 基线实施。修复轮次 2/5：正在补足真实路径的事件维度/相关性、Redis 粘性绑定引用计数、路由鉴权审计和端到端契约覆盖；尚未合并、推送、部署或线上验证。状态：进行中。
 
 **本轮登记（2026-08-08）：** 上游故障的缓存感知调度与流式恢复，状态：进行中（用户已确认设计规格与实施计划；当前进入逐任务实现、独立审查、受控蓝绿部署和线上验证。在完成“已推送到服务端 + 已部署 + 已验证生效”前不得标记完成）。
 

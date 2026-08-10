@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**本轮 Task 8 资格门禁收口（2026-08-10）：** 状态：进行中。Task 9 Fix Round 1 已完成本地提交与独立复核；盘点发现官方 Release 资格实现仍仅写入伪造 `ready` 状态，promote/rollback 脚本未执行真实门禁或切换。本轮范围限定为补齐候选身份/checksum/合同测试/迁移分类/数据差异/有效期和失败保持活动槽位不变的资格链，以及让提升和回退入口调用 reviewed host executor；继续不推送、不部署、不访问生产、不使用 GitHub Actions。
+
+Task 8 本轮已将资格、提升、回退脚本改为 fail-closed：资格命令必须是绝对路径受控 host command，输出需通过 tag/commit/asset/SHA-256/adapter/contract/迁移/测试/数据差异/Passed 校验；ready 带一小时有效期，promote 与 rollback 必须调用可执行 reviewed host executor；新增脚本合同测试，`sub2api-updater` 全量 `go test ./...` 与 `go vet ./...` 通过。仍未推送、部署或线上验证，不能标记完成。
+
 **本轮 Task 9 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
 范围限定为修复 Task 9 独立复审的 C1/C2/I1-I5：把逐页晋级和运行时回退权威收敛到经认证的 relay/control-plane 持久边界，强化余额时差/差额规则、三窗口同一运行和完整币种/排名/对账/版本维度，在服务端强制“监控 → 盈利 → 账务 → 对账”顺序，并用隔离本地 fixture 完成非生产演练和审计证据。本轮仅本地 TDD、演练、审查与提交；不修改 `main`/其他 worktree/远端/生产/GitHub Actions/核心业务表，未满足推送、部署和线上验证前继续为“进行中”。

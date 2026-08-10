@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮任务登记（2026-08-10）：** 合并全部已实施并停在发布前的非 `main` worktree 到 `main`，完成合并后专项回归、构建/类型检查、迁移与发布预检，推送远程；本轮不执行生产部署，完成后停在“可申请部署”状态。范围包括 `.worktrees/account-monitor-group-recommendation`、`.worktrees/fix-official-update-stuck`、`.worktrees/gpt-group-baseline-apply`；根目录 `main` 现有未跟踪发布证据和“新建运营界面”“优化账号卡片”保护例外均保留。状态：进行中。
+
 **本轮任务登记（2026-08-10）：** 排查账号监控卡片疑似仅每个分组前两个账号能悬浮展示评分明细与账号成本来源的问题，状态：准备完成（非终态，尚未实施修复）。真实页面已确认所有卡片均渲染评分/成本 Tooltip 且后续卡片 `mouseenter` 正常触发；共同 `HelpTooltip` 使用 `position: fixed`，却把 `window.scrollY/window.scrollX` 叠加到 `getBoundingClientRect()` 的视口坐标，滚动后将 Tooltip 推出视口。范围仅为只读复现、DOM/组件事件与定位层级分析；本轮未修改业务实现、未切换或回滚生产。当前工作区为根目录 `main`；“新建运营界面”和“优化账号卡片”继续作为保护例外，保留全部现有未提交内容。
 
 **本轮任务登记（2026-08-10）：** 排查并修复管理员将 `GPT-Plus` 分组 RPM 更新为 `0（不限制）` 时出现“更新分组失败”，并分析中转站对上游 overloaded、平台/本站并发限制、泛化 upstream stream failure 三类错误的可控措施；状态：已完成。根因是管理页清空数字输入框后 Vue `v-model.number` 产生空字符串，`PUT /api/v1/admin/groups/6` 在 Go JSON 绑定阶段返回 400，未进入服务、数据库或缓存更新。永久修复提交 `db86c8bf9` 在创建/编辑 payload 边界把空值归一化为 `0`，含 helper 与表单级回归测试；合并后的 `main@cfae5d5d10e7f1a6783a28d299848109408fa4c7` 已推送并通过预加载镜像蓝绿发布至生产 green，宿主返回 `downtime_required=false/result=succeeded`，迁移哈希保持 `1f47135f…`。公网 `/healthz`、`/readyz` 均为 200；数据库确认 `groups.id=6/GPT-Plus/rpm_limit=0/rate_multiplier=0.2000/status=active`；已登录生产管理页实测清空 RPM 后更新成功，重新打开显示 `0`。PostgreSQL、Redis、Caddy 未因发布重建，倍率、账号绑定、调度强度、用户级限额、路由和计费保持不变；本轮专用 `.worktrees/fix-group-rpm-unlimited` 与 `.worktrees/rpm-production-release` 已在确认干净且可由 `main` 恢复后删除，对应本地分支已安全删除，三个既有活动 worktree 均未修改、未清理。

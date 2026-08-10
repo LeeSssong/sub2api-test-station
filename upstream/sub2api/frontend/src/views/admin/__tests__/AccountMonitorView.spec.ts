@@ -25,7 +25,7 @@ const {
   showError,
   showSuccess,
   controlPlaneMonitor,
-  readMode,
+  controlPlaneDecision,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   groupsGetAllIncludingInactive: vi.fn(),
@@ -47,12 +47,11 @@ const {
   showError: vi.fn(),
   showSuccess: vi.fn(),
   controlPlaneMonitor: vi.fn(),
-  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
+  controlPlaneDecision: vi.fn(),
 }))
 
 vi.mock('@/api/controlPlane', () => ({
-  controlPlaneAPI: { monitor: controlPlaneMonitor },
-  getControlPlaneReadMode: () => readMode.value,
+  controlPlaneAPI: { monitor: controlPlaneMonitor, decision: controlPlaneDecision },
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -327,7 +326,7 @@ describe('admin account monitor view V3', () => {
         calculation_version: 'accounts-v1',
       },
     })
-    readMode.value = 'legacy_only'
+    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'monitor', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
   })
 
   afterEach(() => {
@@ -355,7 +354,7 @@ describe('admin account monitor view V3', () => {
   })
 
   it('keeps legacy cards in shadow mode while surfacing control-plane freshness', async () => {
-    readMode.value = 'shadow_building'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
     const wrapper = mountView()
     await flushPromises()
 
@@ -367,7 +366,7 @@ describe('admin account monitor view V3', () => {
   })
 
   it('treats a control-plane failure as local degradation without replacing legacy cards', async () => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneMonitor.mockRejectedValueOnce(new Error('control plane unavailable'))
     const wrapper = mountView()
     await flushPromises()
@@ -381,7 +380,7 @@ describe('admin account monitor view V3', () => {
     ['a complete-looking response', { items: projection('24h'), freshness: { completeness: 'complete', calculation_version: 'accounts-v1' } }],
     ['an incomplete response', { items: { range: '24h', accounts: [], groups: [] }, freshness: { completeness: 'partial', calculation_version: 'accounts-v1' } }],
   ])('keeps the legacy monitor source and degrades external_primary for %s', async (_label, externalResponse) => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'legacy_only', use_external: false, degraded: true, reason: 'comparison_gate_failed' })
     controlPlaneMonitor.mockResolvedValueOnce(externalResponse)
     const wrapper = mountView()
     await flushPromises()
@@ -392,19 +391,13 @@ describe('admin account monitor view V3', () => {
   })
 
   it('renders a fully mapped monitor projection only after its three-window cutover gate passes', async () => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneMonitor.mockResolvedValueOnce({
       items: {
         ...projection('24h'),
         accounts: projection('24h').accounts.map((item) => ({ ...item, name: `External ${item.name}` })),
       },
       freshness: { completeness: 'complete', calculation_version: 'accounts-v1' },
-      cutover: {
-        page: 'monitor', windows: ['minimum', 'default', 'maximum'], passed: true,
-        fresh_until: '2099-08-10T09:10:00Z', contract_complete: true,
-        permission_passed: true, export_passed: true, rollback_passed: true,
-        degraded: false, evidence_ref: 'compare:monitor:42',
-      },
     })
 
     const wrapper = mountView()
@@ -415,7 +408,7 @@ describe('admin account monitor view V3', () => {
   })
 
   it.each([401, 403])('keeps the monitor page local when the control plane returns %s', async (status) => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneMonitor.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
     const wrapper = mountView()
     await flushPromises()

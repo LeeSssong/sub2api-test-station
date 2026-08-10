@@ -3,16 +3,15 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountProfitabilityView from '../AccountProfitabilityView.vue'
 
-const { get, showError, controlPlaneProfitability, readMode } = vi.hoisted(() => ({
+const { get, showError, controlPlaneProfitability, controlPlaneDecision } = vi.hoisted(() => ({
   get: vi.fn(),
   showError: vi.fn(),
   controlPlaneProfitability: vi.fn(),
-  readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
+  controlPlaneDecision: vi.fn(),
 }))
 
 vi.mock('@/api/controlPlane', () => ({
-  controlPlaneAPI: { profitability: controlPlaneProfitability },
-  getControlPlaneReadMode: () => readMode.value,
+  controlPlaneAPI: { profitability: controlPlaneProfitability, decision: controlPlaneDecision },
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -47,7 +46,7 @@ describe('AccountProfitabilityView', () => {
       items: [],
       freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
     })
-    readMode.value = 'legacy_only'
+    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'profitability', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-08T12:00:00+08:00'))
   })
@@ -67,7 +66,7 @@ describe('AccountProfitabilityView', () => {
   })
 
   it('keeps legacy filter and CSV rows visible during a shadow read', async () => {
-    readMode.value = 'shadow_building'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
     await flushPromises()
 
@@ -81,7 +80,7 @@ describe('AccountProfitabilityView', () => {
     ['a complete-looking response', { items: response, freshness: { completeness: 'complete', calculation_version: 'profitability-v1' } }],
     ['an incomplete response', { items: { start_date: response.start_date, end_date: response.end_date, rows: [], summary: {} }, freshness: { completeness: 'partial', calculation_version: 'profitability-v1' } }],
   ])('keeps the legacy profitability source and degrades external_primary for %s', async (_label, externalResponse) => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'legacy_only', use_external: false, degraded: true, reason: 'comparison_gate_failed' })
     controlPlaneProfitability.mockResolvedValueOnce(externalResponse)
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
     await flushPromises()
@@ -92,19 +91,13 @@ describe('AccountProfitabilityView', () => {
   })
 
   it('renders fully mapped profitability rows only after its three-window cutover gate passes', async () => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-profitability', run_id: 'run-profitability', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneProfitability.mockResolvedValueOnce({
       items: {
         ...response,
         rows: response.rows.map((row) => ({ ...row, name: `External ${row.name}` })),
       },
       freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
-      cutover: {
-        page: 'profitability', windows: ['minimum', 'default', 'maximum'], passed: true,
-        fresh_until: '2099-08-10T09:10:00Z', contract_complete: true,
-        permission_passed: true, export_passed: true, rollback_passed: true,
-        degraded: false, evidence_ref: 'compare:profitability:42',
-      },
     })
 
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
@@ -115,7 +108,7 @@ describe('AccountProfitabilityView', () => {
   })
 
   it.each([401, 403])('keeps profitability local when the control plane returns %s', async (status) => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-profitability', run_id: 'run-profitability', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneProfitability.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
     await flushPromises()

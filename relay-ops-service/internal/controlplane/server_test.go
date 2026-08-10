@@ -13,8 +13,49 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/billing"
+	"example.invalid/relay-ops-service/internal/compare"
 	"example.invalid/relay-ops-service/internal/projection"
 )
+
+func TestRuntimeCutoverRoutesUseVerifiedActorAndReturnTrustedDecision(t *testing.T) {
+	authority := &cutoverAuthorityStub{decision: compare.CutoverDecision{RequestedMode: compare.ExternalPrimary, EffectiveMode: compare.ExternalPrimary, UseExternal: true, ReportSetID: "set-monitor", Operator: "evidence-operator"}}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServerWithRuntimeCutover(NewMemoryReader(), nil, nil, nil, authority))
+
+	get := httptest.NewRequest(http.MethodGet, "/externalization/pages/monitor", nil)
+	get.Header.Set("Authorization", "Bearer session")
+	getRecorder := httptest.NewRecorder()
+	h.ServeHTTP(getRecorder, get)
+	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"report_set_id":"set-monitor"`) {
+		t.Fatalf("GET status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/externalization/pages/monitor/mode", bytes.NewBufferString(`{"mode":"legacy_only","actor_id":999}`))
+	post.Header.Set("Authorization", "Bearer session")
+	post.Header.Set("Idempotency-Key", "rollback-monitor")
+	postRecorder := httptest.NewRecorder()
+	h.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusOK || authority.actorID != 42 || authority.actorID == 999 || authority.key != "rollback-monitor" || authority.mode != compare.LegacyOnly {
+		t.Fatalf("POST status=%d actor=%d key=%q mode=%q body=%s", postRecorder.Code, authority.actorID, authority.key, authority.mode, postRecorder.Body.String())
+	}
+}
+
+type cutoverAuthorityStub struct {
+	decision compare.CutoverDecision
+	actorID  int64
+	key      string
+	mode     compare.ReadMode
+}
+
+func (s *cutoverAuthorityStub) Decision(context.Context, compare.Page) (compare.CutoverDecision, error) {
+	return s.decision, nil
+}
+
+func (s *cutoverAuthorityStub) SetMode(_ context.Context, page compare.Page, mode compare.ReadMode, actorID int64, key string, retirement *compare.RetirementEvidence) (compare.CutoverAuditRecord, error) {
+	s.actorID, s.key, s.mode = actorID, key, mode
+	return compare.CutoverAuditRecord{Page: page, RequestedMode: mode, EffectiveMode: mode, ActorID: actorID, IdempotencyKey: key, Result: "rolled_back"}, nil
+}
 
 func TestAccountCommandRequiresVerifiedAdminAndIgnoresBodyActor(t *testing.T) {
 	writer := &accountCommandWriter{}

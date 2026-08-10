@@ -29,6 +29,8 @@ type Config struct {
 	Sub2APIAdminKeyFile             string
 	CoreDatabaseURLFile             string
 	ExternalizationEnabled          bool
+	ComparisonReportSetFile         string
+	CutoverStateFile                string
 	Sub2APIAlertReadDatabaseURLFile string
 	AccountQualityResultFile        string
 	UpstreamGroupMappingFile        string
@@ -218,6 +220,14 @@ func Load(env func(string) string) (Config, error) {
 	if !filepath.IsAbs(candidateSecretDir) {
 		return Config{}, fmt.Errorf("RELAY_OPS_CANDIDATE_SECRET_DIR must be an absolute path")
 	}
+	comparisonReportSetFile := filepath.Clean(get("RELAY_OPS_COMPARISON_REPORT_SET_FILE", "/var/lib/relay-ops/comparison-report-sets.jsonl"))
+	cutoverStateFile := filepath.Clean(get("RELAY_OPS_CUTOVER_STATE_FILE", "/var/lib/relay-ops/cutover-state.jsonl"))
+	if !filepath.IsAbs(comparisonReportSetFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_COMPARISON_REPORT_SET_FILE must be an absolute path")
+	}
+	if !filepath.IsAbs(cutoverStateFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_CUTOVER_STATE_FILE must be an absolute path")
+	}
 	analyzerCommandPath := get("RELAY_OPS_ACCOUNT_MONITOR_ANALYZER_PATH", "/app/ops/analyze-account-monitor.rb")
 	return Config{
 		Mode:                            mode,
@@ -230,6 +240,8 @@ func Load(env func(string) string) (Config, error) {
 		Sub2APIAdminKeyFile:             adminKeyFile,
 		CoreDatabaseURLFile:             coreDatabaseURLFile,
 		ExternalizationEnabled:          externalizationEnabled,
+		ComparisonReportSetFile:         comparisonReportSetFile,
+		CutoverStateFile:                cutoverStateFile,
 		Sub2APIAlertReadDatabaseURLFile: sub2APIAlertReadDatabaseURLFile,
 		AccountQualityResultFile:        accountQualityResultFile,
 		UpstreamGroupMappingFile:        upstreamGroupMappingFile,

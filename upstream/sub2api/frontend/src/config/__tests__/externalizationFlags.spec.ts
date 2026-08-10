@@ -1,67 +1,52 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeReadMode, resolvePageReadDecision, type CutoverEvidence } from '../externalizationFlags'
+import { normalizeReadMode, resolveTrustedPageDecision, type ServerPageReadDecision } from '../externalizationFlags'
 
-const passedEvidence = (overrides: Partial<CutoverEvidence> = {}): CutoverEvidence => ({
+const serverDecision = (overrides: Partial<ServerPageReadDecision> = {}): ServerPageReadDecision => ({
   page: 'monitor',
-  windows: ['minimum', 'default', 'maximum'],
-  passed: true,
-  fresh_until: '2026-08-10T09:10:00Z',
-  contract_complete: true,
-  permission_passed: true,
-  export_passed: true,
-  rollback_passed: true,
+  requested_mode: 'external_primary',
+  effective_mode: 'external_primary',
+  use_external: true,
   degraded: false,
-  evidence_ref: 'compare:monitor:42',
+  reason: 'comparison_gate_passed',
+  report_set_id: 'set-monitor-42',
+  run_id: 'run-monitor-42',
+  operator: 'operator@example.com',
+  compared_at: '2026-08-10T09:00:00Z',
   ...overrides,
 })
 
-describe('externalization page read decisions', () => {
-  it('normalizes the Task 5 shadow alias and fails closed for unknown modes', () => {
+describe('trusted externalization page decisions', () => {
+  it('normalizes stored modes and fails closed for unknown values', () => {
     expect(normalizeReadMode('shadow')).toBe('shadow_building')
     expect(normalizeReadMode('dual_read_comparing')).toBe('dual_read_comparing')
     expect(normalizeReadMode('unexpected')).toBe('legacy_only')
   })
 
-  it('keeps shadow and dual-read pages on the legacy source', () => {
-    expect(resolvePageReadDecision('monitor', 'shadow_building', undefined, new Date('2026-08-10T09:00:00Z'))).toMatchObject({
-      source: 'legacy', effectiveMode: 'shadow_building', degraded: false,
+  it('uses an external source only for a page-matched server decision with immutable evidence identity', () => {
+    expect(resolveTrustedPageDecision('monitor', serverDecision())).toMatchObject({
+      source: 'external', effectiveMode: 'external_primary', degraded: false, reportSetID: 'set-monitor-42',
     })
-    expect(resolvePageReadDecision('monitor', 'dual_read_comparing', passedEvidence(), new Date('2026-08-10T09:00:00Z'))).toMatchObject({
-      source: 'legacy', effectiveMode: 'dual_read_comparing', degraded: false,
-    })
-  })
-
-  it('allows external primary only with page-matched, fresh, complete three-window evidence', () => {
-    expect(resolvePageReadDecision('monitor', 'external_primary', passedEvidence(), new Date('2026-08-10T09:00:00Z'))).toMatchObject({
-      source: 'external', effectiveMode: 'external_primary', degraded: false,
-    })
-
-    for (const evidence of [
+    for (const decision of [
       undefined,
-      passedEvidence({ page: 'profitability' }),
-      passedEvidence({ windows: ['minimum', 'default'] }),
-      passedEvidence({ fresh_until: '2026-08-10T08:59:59Z' }),
-      passedEvidence({ contract_complete: false }),
-      passedEvidence({ permission_passed: false }),
-      passedEvidence({ export_passed: false }),
-      passedEvidence({ rollback_passed: false }),
-      passedEvidence({ degraded: true }),
+      serverDecision({ page: 'profitability' }),
+      serverDecision({ effective_mode: 'legacy_only' }),
+      serverDecision({ use_external: false }),
+      serverDecision({ report_set_id: '' }),
+      serverDecision({ run_id: '' }),
+      serverDecision({ operator: '' }),
+      serverDecision({ compared_at: '' }),
+      serverDecision({ degraded: true }),
     ]) {
-      expect(resolvePageReadDecision('monitor', 'external_primary', evidence, new Date('2026-08-10T09:00:00Z'))).toMatchObject({
+      expect(resolveTrustedPageDecision('monitor', decision)).toMatchObject({
         source: 'legacy', effectiveMode: 'legacy_only', degraded: true,
       })
     }
   })
 
-  it('keeps legacy_retired unreachable without separate retirement evidence', () => {
-    expect(resolvePageReadDecision('monitor', 'legacy_retired', passedEvidence(), new Date('2026-08-10T09:00:00Z'))).toMatchObject({
-      source: 'legacy', effectiveMode: 'legacy_only', degraded: true,
-    })
-    expect(resolvePageReadDecision('monitor', 'legacy_retired', passedEvidence({
-      retirement: { passed: true, evidence_ref: 'retirement:review:9', operator: 'operator@example.com', recorded_at: '2026-08-10T08:50:00Z' },
-    }), new Date('2026-08-10T09:00:00Z'))).toMatchObject({
-      source: 'external', effectiveMode: 'legacy_retired', degraded: false,
+  it('keeps server shadow and dual-read modes on legacy without browser-authored evidence', () => {
+    expect(resolveTrustedPageDecision('monitor', serverDecision({ requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, report_set_id: '', run_id: '', operator: '', compared_at: '' }))).toMatchObject({
+      source: 'legacy', effectiveMode: 'shadow_building', degraded: false,
     })
   })
 })

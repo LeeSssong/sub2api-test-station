@@ -211,6 +211,11 @@ type ReportRepository interface {
 	SaveCompareReport(context.Context, CompareReport) error
 }
 
+type ReportSetRepository interface {
+	SaveReportSet(context.Context, CompareReportSet) error
+	LoadReportSets(context.Context, Page) ([]CompareReportSet, error)
+}
+
 type JSONLReportRepository struct {
 	path string
 	mu   sync.Mutex
@@ -303,6 +308,17 @@ func (s *ReportService) CompareAndPersist(ctx context.Context, input ComparisonI
 	if s == nil || s.repository == nil {
 		return CompareReport{}, fmt.Errorf("compare report repository is required")
 	}
+	report, err := buildCompareReport(input)
+	if err != nil {
+		return CompareReport{}, err
+	}
+	if err := s.repository.SaveCompareReport(ctx, report); err != nil {
+		return CompareReport{}, fmt.Errorf("persist compare report: %w", err)
+	}
+	return report, nil
+}
+
+func buildCompareReport(input ComparisonInput) (CompareReport, error) {
 	if input.Operator == "" || input.ComparedAt.IsZero() {
 		return CompareReport{}, fmt.Errorf("comparison operator and timestamp are required")
 	}
@@ -315,22 +331,26 @@ func (s *ReportService) CompareAndPersist(ctx context.Context, input ComparisonI
 	}
 
 	report := CompareReport{
-		ID:               fmt.Sprintf("%s:%s:%d", input.Legacy.Page, input.Legacy.Window, input.ComparedAt.UnixNano()),
-		Page:             input.Legacy.Page,
-		Window:           input.Legacy.Window,
-		WindowStart:      input.Legacy.WindowStart.UTC(),
-		WindowEnd:        input.Legacy.WindowEnd.UTC(),
-		Counts:           make(map[string]CountComparison, len(requiredCountMetrics)),
-		Identifiers:      make(map[string]IdentifierComparison, len(requiredIdentifierMetrics)),
-		DecimalAmounts:   make(map[string]DecimalComparison, len(requiredDecimalMetrics)),
-		RateVersions:     make(map[string]VersionComparison, len(requiredRateVersionMetrics)),
-		Permission:       input.Permission,
-		Export:           input.Export,
-		Rollback:         input.Rollback,
-		ContractComplete: input.Legacy.ContractComplete && input.External.ContractComplete,
-		Operator:         input.Operator,
-		ComparedAt:       input.ComparedAt.UTC(),
-		PersistedAt:      time.Now().UTC(),
+		ID:                   fmt.Sprintf("%s:%s:%d", input.Legacy.Page, input.Legacy.Window, input.ComparedAt.UnixNano()),
+		Page:                 input.Legacy.Page,
+		Window:               input.Legacy.Window,
+		WindowStart:          input.Legacy.WindowStart.UTC(),
+		WindowEnd:            input.Legacy.WindowEnd.UTC(),
+		Counts:               make(map[string]CountComparison, len(requiredCountMetrics)),
+		Identifiers:          make(map[string]IdentifierComparison, len(requiredIdentifierMetrics)),
+		DecimalAmounts:       make(map[string]DecimalComparison, len(requiredDecimalMetrics)),
+		CurrencyAmounts:      make(map[string]map[string]DecimalComparison, len(requiredCurrencyMetrics)),
+		Ranks:                make(map[string]CountComparison),
+		ReconciliationCounts: make(map[string]CountComparison, len(requiredReconciliationDimensions)),
+		MetricVersions:       make(map[string]MetricVersionComparison, len(requiredDerivedMetrics)),
+		RateVersions:         make(map[string]VersionComparison, len(requiredRateVersionMetrics)),
+		Permission:           input.Permission,
+		Export:               input.Export,
+		Rollback:             input.Rollback,
+		ContractComplete:     input.Legacy.ContractComplete && input.External.ContractComplete,
+		Operator:             input.Operator,
+		ComparedAt:           input.ComparedAt.UTC(),
+		PersistedAt:          time.Now().UTC(),
 	}
 
 	passed := true
@@ -371,12 +391,62 @@ func (s *ReportService) CompareAndPersist(ctx context.Context, input ComparisonI
 			comparison.LegacySourceEvidence = input.Legacy.BalanceSourceEvidence
 			comparison.ExternalSourceEvidence = input.External.BalanceSourceEvidence
 			if !matched && legacyOK && externalOK && legacyErr == nil && externalErr == nil {
-				comparison.ObservationGapExplained = balanceGapExplained(input.Legacy, input.External)
+				comparison.ObservationGapExplained = balanceGapExplained(input.Legacy, input.External, input.BalanceReconciliation)
 			}
 		}
 		report.DecimalAmounts[metric] = comparison
 		if !matched && !comparison.ObservationGapExplained {
 			addMismatch("decimal:" + metric)
+		}
+	}
+	for _, metric := range requiredCurrencyMetrics {
+		report.CurrencyAmounts[metric] = make(map[string]DecimalComparison, len(requiredCurrencies))
+		for _, currency := range requiredCurrencies {
+			legacyText, legacyOK := input.Legacy.CurrencyAmounts[metric][currency]
+			externalText, externalOK := input.External.CurrencyAmounts[metric][currency]
+			legacyValue, legacyErr := decimal.NewFromString(legacyText)
+			externalValue, externalErr := decimal.NewFromString(externalText)
+			matched := legacyOK && externalOK && legacyErr == nil && externalErr == nil && legacyValue.Equal(externalValue)
+			comparison := DecimalComparison{Legacy: legacyText, External: externalText, Matched: matched, Missing: !legacyOK || !externalOK}
+			report.CurrencyAmounts[metric][currency] = comparison
+			if !matched {
+				addMismatch("currency:" + metric + ":" + currency)
+			}
+		}
+	}
+	if len(input.Legacy.Ranks) == 0 || len(input.External.Ranks) == 0 {
+		addMismatch("ranks:missing")
+	}
+	for entityID, legacy := range input.Legacy.Ranks {
+		external, ok := input.External.Ranks[entityID]
+		comparison := CountComparison{Legacy: legacy, External: external, Matched: ok && legacy == external, Missing: !ok}
+		report.Ranks[entityID] = comparison
+		if !comparison.Matched {
+			addMismatch("rank:" + entityID)
+		}
+	}
+	for entityID, external := range input.External.Ranks {
+		if _, ok := input.Legacy.Ranks[entityID]; !ok {
+			report.Ranks[entityID] = CountComparison{External: external, Missing: true}
+			addMismatch("rank:" + entityID)
+		}
+	}
+	for _, dimension := range requiredReconciliationDimensions {
+		legacy, legacyOK := input.Legacy.ReconciliationCounts[dimension]
+		external, externalOK := input.External.ReconciliationCounts[dimension]
+		comparison := CountComparison{Legacy: legacy, External: external, Matched: legacyOK && externalOK && legacy == external, Missing: !legacyOK || !externalOK}
+		report.ReconciliationCounts[dimension] = comparison
+		if !comparison.Matched {
+			addMismatch("reconciliation:" + dimension)
+		}
+	}
+	for _, metric := range requiredDerivedMetrics {
+		legacy, legacyOK := input.Legacy.MetricVersions[metric]
+		external, externalOK := input.External.MetricVersions[metric]
+		matched := legacyOK && externalOK && legacy.RateVersion != "" && legacy.CalculationVersion != "" && legacy == external
+		report.MetricVersions[metric] = MetricVersionComparison{Legacy: legacy, External: external, Matched: matched, Missing: !legacyOK || !externalOK}
+		if !matched {
+			addMismatch("metric_version:" + metric)
 		}
 	}
 	for _, metric := range requiredRateVersionMetrics {
@@ -417,14 +487,11 @@ func (s *ReportService) CompareAndPersist(ctx context.Context, input ComparisonI
 		addMismatch("degraded")
 	}
 	report.Passed = passed
-	if err := s.repository.SaveCompareReport(ctx, report); err != nil {
-		return CompareReport{}, fmt.Errorf("persist compare report: %w", err)
-	}
 	return report, nil
 }
 
 func EvaluatePageCutover(requested ReadMode, page Page, reports []CompareReport, now time.Time, maxAge time.Duration, retirement *RetirementEvidence) CutoverDecision {
-	decision := CutoverDecision{RequestedMode: requested, EffectiveMode: LegacyOnly, Reason: "legacy_default"}
+	decision := CutoverDecision{Page: page, RequestedMode: requested, EffectiveMode: LegacyOnly, Reason: "legacy_default"}
 	switch requested {
 	case LegacyOnly:
 		return decision
@@ -470,15 +537,36 @@ func sortedCopy(values []string) []string {
 	return result
 }
 
-func balanceGapExplained(legacy, external SourceSnapshot) bool {
+const (
+	maximumBalanceObservationSkew = 2 * time.Minute
+	maximumBalanceVariance        = "0.01"
+)
+
+func balanceGapExplained(legacy, external SourceSnapshot, reconciliation BalanceReconciliationEvidence) bool {
+	legacyValue, legacyErr := decimal.NewFromString(legacy.DecimalAmounts[MetricBalance])
+	externalValue, externalErr := decimal.NewFromString(external.DecimalAmounts[MetricBalance])
+	limit, limitErr := decimal.NewFromString(maximumBalanceVariance)
+	skew := legacy.BalanceObservedAt.Sub(external.BalanceObservedAt)
+	if skew < 0 {
+		skew = -skew
+	}
 	return !legacy.BalanceObservedAt.IsZero() && !external.BalanceObservedAt.IsZero() &&
 		!legacy.BalanceObservedAt.Equal(external.BalanceObservedAt) &&
-		legacy.BalanceSourceEvidence != "" && external.BalanceSourceEvidence != ""
+		skew <= maximumBalanceObservationSkew &&
+		legacy.SnapshotID != "" && external.SnapshotID != "" &&
+		legacy.SnapshotDigest != "" && external.SnapshotDigest != "" &&
+		legacy.BalanceSourceEvidence != "" && external.BalanceSourceEvidence != "" &&
+		reconciliation.EvidenceRef != "" &&
+		reconciliation.LegacySnapshotID == legacy.SnapshotID &&
+		reconciliation.ExternalSnapshotID == external.SnapshotID &&
+		legacyErr == nil && externalErr == nil && limitErr == nil &&
+		legacyValue.Sub(externalValue).Abs().LessThanOrEqual(limit)
 }
 
 func freshnessPassed(evidence FreshnessEvidence, comparedAt time.Time) bool {
 	return evidence.Complete && !evidence.GeneratedAt.IsZero() && evidence.SourceWatermark != "" &&
-		!evidence.FreshUntil.IsZero() && !comparedAt.After(evidence.FreshUntil)
+		!evidence.FreshUntil.IsZero() && !evidence.GeneratedAt.After(comparedAt) &&
+		!comparedAt.After(evidence.FreshUntil)
 }
 
 func firstNonEmpty(values ...string) string {

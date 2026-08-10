@@ -95,3 +95,32 @@ the two passing operations suites are dry-run contract evidence only.
 This is a local implementation and contract report. Project status remains
 `进行中`. Production promotion still requires real page/window comparison
 records, an authorized rehearsal, push, deployment, and online verification.
+
+## Fix Round 1 Evidence
+
+The original literal command failure was the acceptance gap that this round
+closed with a non-production fixture. The command now passes:
+
+```text
+ops/smoke-sub2api-release.sh --rehearsal --rollback
+externalization_rehearsal=passed output=evidence/sub2api-rehearsal/task-9-local
+```
+
+The fixture writes regular `0600` JSONL artifacts: four immutable report sets
+(monitor, profitability, accounting, reconciliation), three explicit windows
+per set (minimum 15 minutes, default 24 hours, maximum 30 days), one shared
+run/operator/lineage per set, and eight authenticated idempotent audit records
+(four ordered promotions followed by four rollbacks). The summary records all
+twelve report IDs, comparison timestamps, promotion results, rollback results,
+and the final `legacy_only` mode for every page. This evidence is isolated
+local data; it is not production authorization or deployment evidence.
+
+The promotion authority is now server-side and authenticated. It loads the
+durable report-set repository, rejects future/ancient or mixed-run evidence,
+enforces the recursive monitor → profitability → accounting → reconciliation
+predecessor chain, and persists runtime mode changes and rollback results. The
+frontend only consumes the separate trusted decision endpoint; data responses
+cannot supply cutover evidence, and Vite build-time modes are no longer an
+authority. Accounting uses validated relay ledger totals for the summary while
+retaining the legacy detail/filter/pagination/export contract; reconciliation
+remains a separately authenticated control-plane read surface.

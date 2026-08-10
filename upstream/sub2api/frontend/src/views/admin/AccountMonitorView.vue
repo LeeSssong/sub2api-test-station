@@ -85,7 +85,7 @@
       </section>
 
       <ReadModelStatus
-        v-if="readMode !== 'legacy_only'"
+        v-if="controlPlaneResponse || controlPlaneDegraded"
         :generated-at="readModel.generatedAt.value"
         :completeness="readModel.completeness.value"
         :calculation-version="readModel.calculationVersion.value"
@@ -202,7 +202,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import { controlPlaneAPI, getControlPlaneReadMode, type ControlPlaneResponse } from '@/api/controlPlane'
+import { controlPlaneAPI, type ControlPlaneResponse } from '@/api/controlPlane'
 import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import type {
   AccountMonitorAccount,
@@ -220,7 +220,7 @@ import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
-import { resolvePageReadDecision } from '@/config/externalizationFlags'
+import { resolveTrustedPageDecision } from '@/config/externalizationFlags'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
@@ -248,7 +248,6 @@ const groupSummaryLabels = {
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const readMode = getControlPlaneReadMode('account_monitor')
 const projection = ref<AccountMonitorProjection | null>(null)
 const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
 const controlPlaneDegraded = ref(false)
@@ -424,10 +423,16 @@ function isCompleteMonitorProjection(value: unknown, range: AccountMonitorRange)
 async function loadControlPlane(range: AccountMonitorRange, generation: number): Promise<AccountMonitorProjection | null> {
   controlPlaneDegraded.value = false
   try {
+    const decision = resolveTrustedPageDecision('monitor', await controlPlaneAPI.decision('monitor'))
+    if (generation !== loadGeneration) return null
+    if (decision.effectiveMode === 'legacy_only' && !decision.degraded) {
+      controlPlaneResponse.value = null
+      renderSource.value = 'legacy'
+      return null
+    }
     const response = await controlPlaneAPI.monitor({ range })
     if (generation !== loadGeneration) return null
     controlPlaneResponse.value = response
-    const decision = resolvePageReadDecision('monitor', readMode, response.cutover)
     if (decision.source === 'external' && isCompleteMonitorProjection(response.items, range)) {
       renderSource.value = 'external'
       controlPlaneDegraded.value = Boolean(response.degraded)
@@ -457,7 +462,7 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   try {
     const legacyResult = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
-    const externalResult = readMode === 'legacy_only' ? null : await loadControlPlane(range, generation)
+    const externalResult = await loadControlPlane(range, generation)
     if (controller.signal.aborted || generation !== loadGeneration) return false
     const result = externalResult ?? legacyResult
     if (result.range !== range) {

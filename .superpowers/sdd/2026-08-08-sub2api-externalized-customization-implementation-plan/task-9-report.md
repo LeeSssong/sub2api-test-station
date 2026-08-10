@@ -181,3 +181,30 @@ strongest safe dry-run evidence; they are not represented as a real rollback.
   dual-read report, and project ledger update.
 - This report is committed separately so it can cite the immutable
   implementation SHA above.
+
+## Fix Round 1 Implementation Report
+
+Status: `DONE_WITH_CONCERNS` pending independent review and the required
+push/deploy/online-verification lifecycle. No production access or core-table
+writes occurred.
+
+RED→GREEN evidence added in this round:
+
+- `go test ./internal/compare -run 'TestCompareAndPersistSet|TestEvaluateLatestValidSet|TestBalanceVarianceRequires'`: RED on absent coherent-set/snapshot-bound contracts, then PASS.
+- `go test ./internal/compare -run TestComparisonRequiresCurrencyRanks`: RED on absent currency/rank/reconciliation/version dimensions, then PASS.
+- `go test ./internal/compare -run TestRuntimeCutoverAuthority`: RED on absent runtime authority, then PASS, including recursive downstream fail-closed after an earlier-page rollback.
+- `go test ./internal/controlplane -run TestRuntimeCutoverRoutes`: RED on absent trusted decision/mode routes, then PASS with actor derived from verified context.
+- `pnpm vitest run src/config/__tests__/externalizationFlags.spec.ts src/__tests__/controlPlaneApi.spec.ts`: RED on browser-owned evidence/API, then PASS after separate server decision and idempotent runtime mode APIs.
+- Focused monitor, profitability, Usage view suites: RED on missing trusted decision integration, then PASS. Usage now applies only validated relay accounting summary totals while preserving legacy detail/filter/export behavior.
+- `bash tests/operations/smoke_sub2api_release_test.sh`: PASS after the new literal fixture case. `ops/smoke-sub2api-release.sh --rehearsal --rollback` produced actual local artifacts under `evidence/sub2api-rehearsal/task-9-local/` (4 report sets, 12 windows, 8 audit records, all final modes `legacy_only`).
+
+Independent implementation review completed locally after the broad suite. It
+confirmed authenticated server-side decision authority, recursive predecessor
+fail-closed behavior, idempotent durable cutover records, and frontend fallback
+when decision or payload contracts are invalid. The review also tightened
+report-set eligibility so child reports must retain the parent set/run/lineage
+and persistence identity before a set can authorize cutover.
+
+Residual lifecycle concern: all evidence is local/non-production. The project
+must remain `进行中` until the candidate is reviewed, pushed, deployed, and
+verified online under the repository worktree rules.

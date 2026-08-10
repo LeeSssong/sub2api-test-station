@@ -3,6 +3,25 @@ set -euo pipefail
 
 umask 077
 
+if (($#)); then
+  rehearsal=false
+  rollback=false
+  while (($#)); do
+    case "$1" in
+      --rehearsal) rehearsal=true ;;
+      --rollback) rollback=true ;;
+      *) printf 'release smoke failed\n' >&2; exit 1 ;;
+    esac
+    shift
+  done
+  [[ "$rehearsal" == true ]] || { printf 'release smoke failed\n' >&2; exit 1; }
+  script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+  rehearsal_output=${REHEARSAL_OUTPUT_DIR:-$script_root/evidence/sub2api-rehearsal/task-9-local}
+  [[ "$rehearsal_output" == /* ]] || { printf 'release smoke failed\n' >&2; exit 1; }
+  cd "$script_root/relay-ops-service"
+  exec go run ./cmd/externalization-rehearsal --output "$rehearsal_output" --rollback="$rollback"
+fi
+
 fail() {
   printf 'release smoke failed\n' >&2
   exit 1

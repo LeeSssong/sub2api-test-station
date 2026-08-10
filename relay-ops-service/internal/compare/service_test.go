@@ -50,6 +50,27 @@ func completeSnapshot(page Page, window WindowKind, observedAt time.Time) Source
 			MetricMultiplier:      "0.5800",
 			MetricScore:           "91.2500",
 		},
+		CurrencyAmounts: map[string]map[string]string{
+			MetricRawCost:         {"USD": "1.23", "CNY": "8.84"},
+			MetricRevenue:         {"USD": "2.00", "CNY": "14.36"},
+			MetricProcurementCost: {"USD": "0.75", "CNY": "5.39"},
+			MetricProfit:          {"USD": "1.25", "CNY": "8.97"},
+			MetricBalance:         {"USD": "81.50", "CNY": "585.17"},
+		},
+		Ranks: map[string]int64{"account-1": 1, "account-2": 2},
+		ReconciliationCounts: map[string]int64{
+			"matched": 10, "pending": 2, "conflict": 1, "unattributed": 3, "exception": 4,
+		},
+		MetricVersions: map[string]MetricVersionEvidence{
+			MetricRawCost:         {RateVersion: "rate-v4", CalculationVersion: "cost-v2"},
+			MetricRevenue:         {RateVersion: "rate-v4", CalculationVersion: "revenue-v2"},
+			MetricProcurementCost: {RateVersion: "rate-v4", CalculationVersion: "procurement-v2"},
+			MetricProfit:          {RateVersion: "rate-v4", CalculationVersion: "profit-v3"},
+			MetricProfitMargin:    {RateVersion: "rate-v4", CalculationVersion: "margin-v3"},
+			MetricMultiplier:      {RateVersion: "rate-v4", CalculationVersion: "multiplier-v2"},
+			MetricScore:           {RateVersion: "rate-v4", CalculationVersion: "score-v2"},
+			MetricRank:            {RateVersion: "rate-v4", CalculationVersion: "rank-v2"},
+		},
 		RateVersions: map[string]string{
 			MetricRateVersion:        "rate-v4",
 			MetricCalculationVersion: "profit-v3",
@@ -128,13 +149,17 @@ func TestReportServicePersistsExactIdentifierAndDecimalMismatches(t *testing.T) 
 	}
 }
 
-func TestReportServiceRequiresTimestampedSourceEvidenceForBalanceDifferences(t *testing.T) {
+func TestReportServiceRequiresBoundedSnapshotReconciliationForBalanceDifferences(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
 	repository := &recordingReportRepository{}
 	service := NewReportService(repository)
 	input := completeComparisonInput(WindowMinimum, now)
-	input.External.DecimalAmounts[MetricBalance] = "80.50"
+	input.Legacy.SnapshotID = "legacy-snapshot"
+	input.Legacy.SnapshotDigest = "sha256:legacy"
+	input.External.SnapshotID = "external-snapshot"
+	input.External.SnapshotDigest = "sha256:external"
+	input.External.DecimalAmounts[MetricBalance] = "81.49"
 	input.External.BalanceObservedAt = time.Time{}
 	input.External.BalanceSourceEvidence = ""
 
@@ -148,6 +173,9 @@ func TestReportServiceRequiresTimestampedSourceEvidenceForBalanceDifferences(t *
 
 	input.External.BalanceObservedAt = now.Add(-time.Minute)
 	input.External.BalanceSourceEvidence = "collector:balance:143"
+	input.BalanceReconciliation = BalanceReconciliationEvidence{
+		EvidenceRef: "reconciliation:42", LegacySnapshotID: "legacy-snapshot", ExternalSnapshotID: "external-snapshot",
+	}
 	explained, err := service.CompareAndPersist(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)

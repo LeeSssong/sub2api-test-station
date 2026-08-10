@@ -1,9 +1,9 @@
 import { apiClient } from './client'
 import {
-  getExternalizationReadMode,
   normalizeReadMode,
-  type CutoverEvidence,
+  type ExternalizationPage,
   type ReadMode,
+  type ServerPageReadDecision,
 } from '@/config/externalizationFlags'
 
 export type ControlPlaneReadMode = ReadMode
@@ -13,10 +13,8 @@ export function resolveControlPlaneReadMode(value: unknown): ControlPlaneReadMod
   return normalizeReadMode(value)
 }
 
-export function getControlPlaneReadMode(surface?: ControlPlaneReadSurface): ControlPlaneReadMode {
-  if (surface === 'account_monitor') return getExternalizationReadMode('monitor')
-  if (surface === 'account_profitability') return getExternalizationReadMode('profitability')
-  if (surface === 'usage') return getExternalizationReadMode('accounting')
+export function getControlPlaneReadMode(_surface?: ControlPlaneReadSurface): ControlPlaneReadMode {
+
   return 'legacy_only'
 }
 
@@ -39,7 +37,6 @@ export type ControlPlaneResponse<T = unknown> = {
   calculation_version?: string
   degraded?: boolean
   degraded_reason?: string
-  cutover?: CutoverEvidence
 }
 
 function normalizedFreshness(data: ControlPlaneResponse<unknown>): ReadModelFreshness | undefined {
@@ -77,6 +74,19 @@ export const controlPlaneAPI = {
   profitability: (params?: Record<string, string | number | undefined>) => get('/xingqiao/operations/profitability', params),
   ledger: (params?: Record<string, string | number | undefined>) => get('/xingqiao/accounting/ledger', params),
   reconciliation: (params?: Record<string, string | number | undefined>) => get('/xingqiao/reconciliation', params),
+  decision: async (page: ExternalizationPage) => {
+    const { data } = await apiClient.get<ServerPageReadDecision>(`/xingqiao/externalization/pages/${page}`, {
+      skipSessionRecovery: true,
+    })
+    return data
+  },
+  setReadMode: async (page: ExternalizationPage, mode: ReadMode, idempotencyKey: string) => {
+    const { data } = await apiClient.post(`/xingqiao/externalization/pages/${page}/mode`, { mode }, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      skipSessionRecovery: true,
+    })
+    return data
+  },
   refreshAccount: async (accountId: number, idempotencyKey: string) => {
     const { data } = await apiClient.post(`/xingqiao/accounts/${accountId}/refresh`, {}, {
       headers: { 'Idempotency-Key': idempotencyKey },

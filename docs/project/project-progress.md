@@ -1,5 +1,11 @@
 # 项目全局进度总账
 
+**本轮 Task 9 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为修复 Task 9 独立复审的 C1/C2/I1-I5：把逐页晋级和运行时回退权威收敛到经认证的 relay/control-plane 持久边界，强化余额时差/差额规则、三窗口同一运行和完整币种/排名/对账/版本维度，在服务端强制“监控 → 盈利 → 账务 → 对账”顺序，并用隔离本地 fixture 完成非生产演练和审计证据。本轮仅本地 TDD、演练、审查与提交；不修改 `main`/其他 worktree/远端/生产/GitHub Actions/核心业务表，未满足推送、部署和线上验证前继续为“进行中”。
+
+Fix Round 1 实现与本地验证已完成：可信 report-set/运行时 authority、递归四页顺序、持久化幂等回退、服务端独立决策 API、前端去除 Vite/响应自证门禁、账务摘要接入及隔离 fixture 演练均有 focused RED→GREEN 证据。`ops/smoke-sub2api-release.sh --rehearsal --rollback` 已真实生成 `evidence/sub2api-rehearsal/task-9-local/` 下 4 个 report-set、12 个窗口、8 条晋级/回退审计记录，所有页面回到 `legacy_only`；独立本地复审另补强了子报告的 set/run/lineage/persistence 绑定；仍未推送、部署或线上验证，状态继续为“进行中”。
+
 **本轮 Task 9 双读比对、逐页切换与回退门禁（2026-08-10）：** 状态：进行中。当前工作区为
 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@647948095`。
 范围限定为精确比较账号/请求/账单/Token/金额/倍率/评分/排名/余额/对账结果，持久化最小、默认和最大窗口报告，并用 `legacy_only → shadow_building → dual_read_comparing → external_primary → legacy_retired` 逐页门禁与可回退标记控制账号监控、盈利、账务和对账读路径；Task 5 的保守 legacy 回退在比较证据满足前必须保留。实施前重新盘点全部非 `main` worktree：`account-monitor-group-recommendation` 领先 7 个提交但未推送、部署和线上验证，`gpt-group-baseline-apply` 领先 1 个提交且无本次生产完成证据，均继续只读保护。本地 TDD 已完成：relay-ops 全量 Go 测试、前端 232 个文件/1663 个测试、lint、typecheck、生产构建及发布 smoke/deploy 离线合同测试通过。brief 中的字面演练命令因未提供真实 rehearsal Compose、密钥文件、基线计数和 URL/版本环境而失败，未宣称回退演练成功。本轮仅本地 TDD、安全干跑、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。

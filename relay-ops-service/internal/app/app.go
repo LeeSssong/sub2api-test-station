@@ -19,6 +19,7 @@ import (
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
+	"example.invalid/relay-ops-service/internal/compare"
 	"example.invalid/relay-ops-service/internal/config"
 	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/dailyreport"
@@ -529,10 +530,16 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Reconciliation: reconciliationRuntime,
 		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
-		ControlPlane: controlplane.NewServerWithAccountUpdates(
+		ControlPlane: controlplane.NewServerWithRuntimeCutover(
 			controlplane.StoreReader{Store: database},
 			controlplane.CommandRefresher{Sender: adapter.Sub2API{Client: reader}, Audit: database},
 			adapter.Sub2API{Client: reader}, database,
+			compare.NewJSONLCutoverAuthority(
+				cfg.CutoverStateFile,
+				compare.NewJSONLReportSetRepository(cfg.ComparisonReportSetFile),
+				nil,
+				10*time.Minute,
+			),
 		),
 		ControlPlaneAuth: reader,
 	}, accountingService)

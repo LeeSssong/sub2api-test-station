@@ -1,26 +1,17 @@
 export type ReadMode = 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired'
 export type ExternalizationPage = 'monitor' | 'profitability' | 'accounting' | 'reconciliation'
-export type ComparisonWindow = 'minimum' | 'default' | 'maximum'
 
-export type RetirementEvidence = {
-  passed: boolean
-  evidence_ref: string
-  operator: string
-  recorded_at: string
-}
-
-export type CutoverEvidence = {
+export type ServerPageReadDecision = {
   page: ExternalizationPage
-  windows: ComparisonWindow[]
-  passed: boolean
-  fresh_until: string
-  contract_complete: boolean
-  permission_passed: boolean
-  export_passed: boolean
-  rollback_passed: boolean
+  requested_mode: ReadMode
+  effective_mode: ReadMode
+  use_external: boolean
   degraded: boolean
-  evidence_ref: string
-  retirement?: RetirementEvidence
+  reason: string
+  report_set_id?: string
+  run_id?: string
+  operator?: string
+  compared_at?: string
 }
 
 export type PageReadDecision = {
@@ -29,9 +20,11 @@ export type PageReadDecision = {
   source: 'legacy' | 'external'
   degraded: boolean
   reason: string
+  reportSetID?: string
+  runID?: string
+  operator?: string
+  comparedAt?: string
 }
-
-const requiredWindows = new Set<ComparisonWindow>(['minimum', 'default', 'maximum'])
 
 export const normalizeReadMode = (value: unknown): ReadMode => {
   if (value === 'shadow') return 'shadow_building'
@@ -39,50 +32,28 @@ export const normalizeReadMode = (value: unknown): ReadMode => {
   return 'legacy_only'
 }
 
-const evidencePasses = (page: ExternalizationPage, evidence: CutoverEvidence | undefined, now: Date): boolean => {
-  if (!evidence || evidence.page !== page || !evidence.passed || !evidence.contract_complete ||
-      !evidence.permission_passed || !evidence.export_passed || !evidence.rollback_passed ||
-      evidence.degraded || !evidence.evidence_ref) return false
-  const windows = new Set(evidence.windows)
-  if (windows.size !== requiredWindows.size || [...requiredWindows].some((window) => !windows.has(window))) return false
-  const freshUntil = Date.parse(evidence.fresh_until)
-  return Number.isFinite(freshUntil) && now.getTime() <= freshUntil
-}
-
-const retirementPasses = (evidence: RetirementEvidence | undefined): boolean => {
-  if (!evidence?.passed || !evidence.evidence_ref || !evidence.operator) return false
-  return Number.isFinite(Date.parse(evidence.recorded_at))
-}
-
-export function resolvePageReadDecision(
+export function resolveTrustedPageDecision(
   page: ExternalizationPage,
-  requestedValue: unknown,
-  evidence?: CutoverEvidence,
-  now = new Date(),
+  decision?: ServerPageReadDecision,
 ): PageReadDecision {
-  const requestedMode = normalizeReadMode(requestedValue)
-  if (requestedMode === 'legacy_only') {
-    return { requestedMode, effectiveMode: 'legacy_only', source: 'legacy', degraded: false, reason: 'legacy_default' }
+  if (!decision || decision.page !== page) {
+    return { requestedMode: 'legacy_only', effectiveMode: 'legacy_only', source: 'legacy', degraded: true, reason: 'trusted_decision_unavailable' }
   }
-  if (requestedMode === 'shadow_building' || requestedMode === 'dual_read_comparing') {
-    return { requestedMode, effectiveMode: requestedMode, source: 'legacy', degraded: false, reason: 'legacy_visible_during_comparison' }
+  const requestedMode = normalizeReadMode(decision.requested_mode)
+  const effectiveMode = normalizeReadMode(decision.effective_mode)
+  if (effectiveMode === 'shadow_building' || effectiveMode === 'dual_read_comparing') {
+    return { requestedMode, effectiveMode, source: 'legacy', degraded: decision.degraded, reason: decision.reason }
   }
-  if (!evidencePasses(page, evidence, now)) {
-    return { requestedMode, effectiveMode: 'legacy_only', source: 'legacy', degraded: true, reason: 'comparison_gate_failed' }
+  if (effectiveMode === 'legacy_only' && !decision.use_external) {
+    return { requestedMode, effectiveMode, source: 'legacy', degraded: decision.degraded, reason: decision.reason }
   }
-  if (requestedMode === 'legacy_retired' && !retirementPasses(evidence?.retirement)) {
-    return { requestedMode, effectiveMode: 'legacy_only', source: 'legacy', degraded: true, reason: 'retirement_evidence_missing' }
+  const comparedAt = Date.parse(decision.compared_at ?? '')
+  if ((effectiveMode === 'external_primary' || effectiveMode === 'legacy_retired') && decision.use_external && !decision.degraded &&
+      decision.report_set_id && decision.run_id && decision.operator && Number.isFinite(comparedAt)) {
+    return {
+      requestedMode, effectiveMode, source: 'external', degraded: false, reason: decision.reason,
+      reportSetID: decision.report_set_id, runID: decision.run_id, operator: decision.operator, comparedAt: decision.compared_at,
+    }
   }
-  return { requestedMode, effectiveMode: requestedMode, source: 'external', degraded: false, reason: 'comparison_gate_passed' }
+  return { requestedMode, effectiveMode: 'legacy_only', source: 'legacy', degraded: true, reason: 'trusted_decision_invalid' }
 }
-
-const globalMode = import.meta.env.VITE_CONTROL_PLANE_READ_MODE
-
-export const externalizationFlags: Record<ExternalizationPage, ReadMode> = {
-  monitor: normalizeReadMode(import.meta.env.VITE_EXTERNALIZATION_MONITOR_MODE || import.meta.env.VITE_ACCOUNT_MONITOR_READ_MODE || globalMode),
-  profitability: normalizeReadMode(import.meta.env.VITE_EXTERNALIZATION_PROFITABILITY_MODE || import.meta.env.VITE_ACCOUNT_PROFITABILITY_READ_MODE || globalMode),
-  accounting: normalizeReadMode(import.meta.env.VITE_EXTERNALIZATION_ACCOUNTING_MODE || import.meta.env.VITE_USAGE_READ_MODE || globalMode),
-  reconciliation: normalizeReadMode(import.meta.env.VITE_EXTERNALIZATION_RECONCILIATION_MODE || globalMode),
-}
-
-export const getExternalizationReadMode = (page: ExternalizationPage): ReadMode => externalizationFlags[page] ?? 'legacy_only'

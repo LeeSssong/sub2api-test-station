@@ -81,7 +81,7 @@
         </section>
 
         <ReadModelStatus
-          v-if="readMode !== 'legacy_only'"
+          v-if="controlPlaneResponse || controlPlaneDegraded"
           :generated-at="readModel.generatedAt.value"
           :completeness="readModel.completeness.value"
           :calculation-version="readModel.calculationVersion.value"
@@ -158,21 +158,20 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import { controlPlaneAPI, getControlPlaneReadMode, type ControlPlaneResponse } from '@/api/controlPlane'
+import { controlPlaneAPI, type ControlPlaneResponse } from '@/api/controlPlane'
 import type { AccountProfitabilityResponse, AccountProfitabilitySource } from '@/api/admin/accountProfitability'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { useAppStore } from '@/stores/app'
-import { resolvePageReadDecision } from '@/config/externalizationFlags'
+import { resolveTrustedPageDecision } from '@/config/externalizationFlags'
 
 type Range = 'today' | '7d' | '30d' | 'month' | 'custom'
 type Filter = 'all' | AccountProfitabilitySource
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const readMode = getControlPlaneReadMode('account_profitability')
 const activeRange = ref<Range>('month')
 const startDate = ref('')
 const endDate = ref('')
@@ -321,9 +320,14 @@ function isCompleteProfitabilityResponse(value: unknown, startDateValue: string,
 async function loadControlPlane(params: { start_date: string; end_date: string; timezone: string }): Promise<AccountProfitabilityResponse | null> {
   controlPlaneDegraded.value = false
   try {
+    const decision = resolveTrustedPageDecision('profitability', await controlPlaneAPI.decision('profitability'))
+    if (decision.effectiveMode === 'legacy_only' && !decision.degraded) {
+      controlPlaneResponse.value = null
+      renderSource.value = 'legacy'
+      return null
+    }
     const response = await controlPlaneAPI.profitability(params)
     controlPlaneResponse.value = response
-    const decision = resolvePageReadDecision('profitability', readMode, response.cutover)
     if (decision.source === 'external' && isCompleteProfitabilityResponse(response.items, params.start_date, params.end_date)) {
       renderSource.value = 'external'
       controlPlaneDegraded.value = Boolean(response.degraded)
@@ -347,7 +351,7 @@ async function load() {
   try {
     const params = { start_date: startDate.value, end_date: endDate.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     const legacyResult = await adminAPI.accountProfitability.get(params)
-    const externalResult = readMode === 'legacy_only' ? null : await loadControlPlane(params)
+    const externalResult = await loadControlPlane(params)
     data.value = externalResult ?? legacyResult
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : t('admin.accountProfitability.loadError')

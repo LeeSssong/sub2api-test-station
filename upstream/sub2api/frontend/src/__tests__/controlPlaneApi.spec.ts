@@ -36,6 +36,21 @@ describe('control plane API', () => {
     })
   })
 
+  it('loads trusted page decisions separately and changes runtime mode idempotently', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { page: 'monitor', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' } })
+    await controlPlaneAPI.decision('monitor')
+    expect(apiClient.get).toHaveBeenCalledWith('/xingqiao/externalization/pages/monitor', {
+      skipSessionRecovery: true,
+    })
+
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: { page: 'monitor', effective_mode: 'legacy_only', result: 'rolled_back' } })
+    await controlPlaneAPI.setReadMode('monitor', 'legacy_only', 'rollback-monitor-42')
+    expect(apiClient.post).toHaveBeenCalledWith('/xingqiao/externalization/pages/monitor/mode', { mode: 'legacy_only' }, {
+      headers: { 'Idempotency-Key': 'rollback-monitor-42' },
+      skipSessionRecovery: true,
+    })
+  })
+
   it('fails closed to legacy-only for unknown read modes', () => {
     expect(resolveControlPlaneReadMode('external_primary')).toBe('external_primary')
     expect(resolveControlPlaneReadMode('shadow')).toBe('shadow_building')

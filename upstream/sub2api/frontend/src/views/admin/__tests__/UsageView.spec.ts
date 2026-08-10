@@ -4,7 +4,7 @@ import { defineComponent, ref } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, readMode } = vi.hoisted(() => {
+const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, controlPlaneDecision } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -20,13 +20,12 @@ const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, ro
     listErrorLogs: vi.fn(),
     routeQuery: {} as Record<string, string>,
     controlPlaneLedger: vi.fn(),
-    readMode: { value: 'legacy_only' as 'legacy_only' | 'shadow_building' | 'dual_read_comparing' | 'external_primary' | 'legacy_retired' },
+    controlPlaneDecision: vi.fn(),
   }
 })
 
 vi.mock('@/api/controlPlane', () => ({
-  controlPlaneAPI: { ledger: controlPlaneLedger },
-  getControlPlaneReadMode: () => readMode.value,
+  controlPlaneAPI: { ledger: controlPlaneLedger, decision: controlPlaneDecision },
 }))
 
 const messages: Record<string, string> = {
@@ -204,7 +203,7 @@ describe('admin UsageView route filters', () => {
       items: {},
       freshness: { completeness: 'complete', calculation_version: 'accounting-v1' },
     })
-    readMode.value = 'legacy_only'
+    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'accounting', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
   })
 
   afterEach(() => {
@@ -225,7 +224,7 @@ describe('admin UsageView route filters', () => {
   })
 
   it('keeps legacy usage pagination and rows in shadow mode while loading ledger freshness', async () => {
-    readMode.value = 'shadow_building'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
     const wrapper = mountRouteFilteredUsageView()
     await flushPromises()
 
@@ -236,13 +235,31 @@ describe('admin UsageView route filters', () => {
   })
 
   it.each([401, 403])('keeps usage local when the control plane returns %s', async (status) => {
-    readMode.value = 'external_primary'
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-accounting', run_id: 'run-accounting', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
     controlPlaneLedger.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
     const wrapper = mountRouteFilteredUsageView()
     await flushPromises()
 
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
     expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it('applies trusted accounting totals while preserving legacy detail rows and filters', async () => {
+    getStats.mockResolvedValueOnce({
+      total_requests: 7, total_input_tokens: 10, total_output_tokens: 20, total_cache_tokens: 0,
+      total_cache_creation_tokens: 0, total_cache_read_tokens: 0, total_tokens: 30,
+      total_cost: 2, total_actual_cost: 1, total_account_cost: 1, average_duration_ms: 100,
+    })
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-accounting', run_id: 'run-accounting', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneLedger.mockResolvedValueOnce({
+      items: { requests: 42, revenue: '9.50', cost: '4.25' },
+      freshness: { completeness: 'complete', calculation_version: 'accounting-v1' },
+    })
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    expect((wrapper.vm as any).usageStats).toMatchObject({ total_requests: 42, total_cost: 9.5, total_actual_cost: 4.25, total_tokens: 30 })
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {

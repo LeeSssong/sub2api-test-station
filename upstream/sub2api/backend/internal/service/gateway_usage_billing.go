@@ -558,7 +558,7 @@ func notifyAccountQuota(p *postUsageBillingParams, deps *billingDeps, result *Us
 		)
 		return
 	}
-	accountCost := p.Cost.TotalCost * p.AccountRateMultiplier
+	accountCost := accountCostForBilling(p)
 	var quotaState *AccountQuotaState
 	if result != nil {
 		quotaState = result.QuotaState

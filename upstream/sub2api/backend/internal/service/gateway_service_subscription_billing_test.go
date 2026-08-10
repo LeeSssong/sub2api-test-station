@@ -3,6 +3,9 @@
 package service
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +69,7 @@ func TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier(t *testing.T
 				User:               &User{ID: 1},
 				APIKey:             &APIKey{ID: 2, GroupID: &groupID},
 				Account:            &Account{ID: 3},
+				UsageCompleteness:  UsageCompletenessComplete,
 				Subscription:       &UserSubscription{ID: subID},
 				IsSubscriptionBill: tt.isSubscription,
 			}
@@ -98,6 +102,7 @@ func TestBuildUsageBillingCommand_UsesResolvedAccountCostForAccountQuota(t *test
 		User:                  &User{ID: 1},
 		APIKey:                &APIKey{ID: 2, GroupID: &groupID},
 		Account:               account,
+		UsageCompleteness:     UsageCompletenessComplete,
 		AccountRateMultiplier: 0.5,
 		AccountCost:           0.24,
 		AccountCostSet:        true,
@@ -119,5 +124,25 @@ func TestBuildUsageBillingCommand_UsesResolvedAccountCostForAccountQuota(t *test
 	legacy := buildUsageBillingCommand("req-legacy", nil, p)
 	if legacy.AccountQuotaCost != 0.45 {
 		t.Errorf("legacy AccountQuotaCost = %v, want 0.45", legacy.AccountQuotaCost)
+	}
+}
+
+func TestNotifyAccountQuota_UsesResolvedAccountCost(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previous)
+
+	p := &postUsageBillingParams{
+		Cost:                  &CostBreakdown{TotalCost: 0.90, ActualCost: 0.45},
+		Account:               &Account{ID: 3, Type: AccountTypeAPIKey},
+		AccountRateMultiplier: 0.5,
+		AccountCost:           0.24,
+		AccountCostSet:        true,
+	}
+	notifyAccountQuota(p, &billingDeps{balanceNotifyService: &BalanceNotifyService{}}, nil)
+
+	if !strings.Contains(logs.String(), "account_cost=0.24") {
+		t.Fatalf("notifyAccountQuota log = %q, want resolved account_cost=0.24", logs.String())
 	}
 }

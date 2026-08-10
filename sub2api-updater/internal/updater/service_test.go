@@ -484,6 +484,63 @@ func TestServicePrepareCandidateRetriesSameTargetAfterTargetChange(t *testing.T)
 	}
 }
 
+func TestServiceRestoresCandidatePreparationAfterRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	preparer := &fakeCandidatePreparer{}
+	first := NewServiceWithPreparer(NewStore(statePath), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	if _, err := first.PrepareCandidate(context.Background(), 1, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	waitForCandidateStage(t, first, "ready")
+	first.Close()
+
+	second := NewServiceWithPreparer(NewStore(statePath), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer second.Close()
+	status, err := second.CandidateStatus()
+	if err != nil || status.Stage != "ready" || status.TargetVersion != "1.2.3" {
+		t.Fatalf("restored status=%#v err=%v", status, err)
+	}
+}
+
+func TestServiceRestoresCandidateFailureReasonAfterRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	preparer := &fakeCandidatePreparer{err: errors.New("candidate image pull failed")}
+	first := NewServiceWithPreparer(NewStore(statePath), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	if _, err := first.PrepareCandidate(context.Background(), 1, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	waitForCandidateStage(t, first, "failed")
+	first.Close()
+
+	second := NewServiceWithPreparer(NewStore(statePath), &schedulerResolver{}, &schedulerExecutor{}, preparer, time.Now)
+	defer second.Close()
+	status, err := second.CandidateStatus()
+	if err != nil || status.Stage != "failed" || status.Reason != "candidate image pull failed" {
+		t.Fatalf("restored failure=%#v err=%v", status, err)
+	}
+}
+
+func TestServiceMarksInterruptedCandidatePreparationFailedAfterRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	store := NewStore(statePath)
+	started := time.Date(2026, 8, 10, 1, 0, 0, 0, time.UTC)
+	if err := store.SaveCandidate(CandidatePreparation{
+		PreparationID: "preparing-id",
+		TargetVersion: "1.2.3",
+		Stage:         "preparing",
+		StartedAt:     started,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewServiceWithPreparer(store, &schedulerResolver{}, &schedulerExecutor{}, &fakeCandidatePreparer{}, func() time.Time { return started.Add(time.Minute) })
+	defer service.Close()
+	status, err := service.CandidateStatus()
+	if err != nil || status.Stage != "failed" || status.Reason != "candidate preparation interrupted by updater restart" {
+		t.Fatalf("interrupted status=%#v err=%v", status, err)
+	}
+}
+
 func waitForCandidateStage(t *testing.T, service *Service, want string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)

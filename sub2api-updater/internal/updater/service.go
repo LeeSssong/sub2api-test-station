@@ -138,6 +138,19 @@ func newService(store *Store, resolver Resolver, executor Executor, preparer Can
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	if candidate, err := store.LoadCandidate(); err != nil {
+		s.loadErr = err
+	} else if candidate != nil {
+		s.candidate = candidate
+		if candidate.Stage == "preparing" {
+			candidate.Stage = "failed"
+			candidate.Reason = "candidate preparation interrupted by updater restart"
+			candidate.CompletedAt = now().UTC()
+			if err := store.SaveCandidate(*candidate); err != nil {
+				s.loadErr = err
+			}
+		}
+	}
 	if op, err := store.Load(); err != nil {
 		s.loadErr = err
 	} else if op != nil {
@@ -192,6 +205,7 @@ func (s *Service) PrepareCandidate(ctx context.Context, actorID int64, targetVer
 		now := s.now().UTC()
 		state := CandidatePreparation{PreparationID: newOperationID(), TargetVersion: targetVersion, Stage: "failed", Reason: ErrCandidatePreparerUnavailable.Error(), StartedAt: now, CompletedAt: now}
 		s.candidate = &state
+		_ = s.store.SaveCandidate(state)
 		s.mu.Unlock()
 		return state, ErrCandidatePreparerUnavailable
 	}
@@ -199,6 +213,11 @@ func (s *Service) PrepareCandidate(ctx context.Context, actorID int64, targetVer
 	state := CandidatePreparation{PreparationID: newOperationID(), TargetVersion: targetVersion, Stage: "preparing", StartedAt: now}
 	stored := state
 	s.candidate = &stored
+	if err := s.store.SaveCandidate(stored); err != nil {
+		s.loadErr = err
+		s.mu.Unlock()
+		return CandidatePreparation{}, err
+	}
 	s.wg.Add(1)
 	s.mu.Unlock()
 
@@ -211,7 +230,9 @@ func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx c
 	// The service context owns the lifetime of preparation. The request context
 	// is intentionally not used as it normally ends as soon as HTTP responds.
 	_ = requestCtx
-	err := s.preparer.Prepare(s.ctx, state.TargetVersion)
+	prepareCtx, cancel := context.WithTimeout(s.ctx, 15*time.Minute)
+	defer cancel()
+	err := s.preparer.Prepare(prepareCtx, state.TargetVersion)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.candidate == nil || s.candidate.PreparationID != state.PreparationID || s.closed {
@@ -221,6 +242,7 @@ func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx c
 	if err == nil {
 		s.candidate.Stage = "ready"
 		s.candidate.Reason = ""
+		_ = s.store.SaveCandidate(*s.candidate)
 		return
 	}
 	s.candidate.Reason = err.Error()
@@ -229,6 +251,7 @@ func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx c
 	} else {
 		s.candidate.Stage = "failed"
 	}
+	_ = s.store.SaveCandidate(*s.candidate)
 }
 
 func (s *Service) CandidateStatus() (CandidatePreparation, error) {

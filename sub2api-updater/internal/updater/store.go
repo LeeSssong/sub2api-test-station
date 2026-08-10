@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var ErrCorruptState = errors.New("updater state is corrupt")
@@ -16,6 +17,34 @@ type Store struct {
 }
 
 func NewStore(path string) *Store { return &Store{path: path} }
+
+func (s *Store) candidatePath() string { return s.path + ".candidate" }
+
+func (s *Store) LoadCandidate() (*CandidatePreparation, error) {
+	data, err := os.ReadFile(s.candidatePath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read candidate state: %w", err)
+	}
+	var state CandidatePreparation
+	if err := json.Unmarshal(data, &state); err != nil || state.PreparationID == "" || strings.TrimSpace(state.TargetVersion) == "" || state.Stage == "" {
+		return nil, fmt.Errorf("%w: candidate state", ErrCorruptState)
+	}
+	return &state, nil
+}
+
+func (s *Store) SaveCandidate(state CandidatePreparation) error {
+	if state.PreparationID == "" || strings.TrimSpace(state.TargetVersion) == "" || strings.TrimSpace(state.Stage) == "" {
+		return fmt.Errorf("%w: invalid candidate state", ErrCorruptState)
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("encode candidate state: %w", err)
+	}
+	return writeAtomicState(s.candidatePath(), data)
+}
 
 func (s *Store) Load() (*Operation, error) {
 	data, err := os.ReadFile(s.path)
@@ -33,14 +62,18 @@ func (s *Store) Load() (*Operation, error) {
 }
 
 func (s *Store) Save(op Operation) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("create updater state directory: %w", err)
-	}
 	data, err := json.Marshal(op)
 	if err != nil {
 		return fmt.Errorf("encode updater state: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".state-*")
+	return writeAtomicState(s.path, data)
+}
+
+func writeAtomicState(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create updater state directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".state-*")
 	if err != nil {
 		return fmt.Errorf("create updater state temp file: %w", err)
 	}
@@ -61,10 +94,10 @@ func (s *Store) Save(op Operation) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close updater state: %w", err)
 	}
-	if err := os.Rename(tmpName, s.path); err != nil {
+	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("replace updater state: %w", err)
 	}
-	return os.Chmod(s.path, 0o600)
+	return os.Chmod(path, 0o600)
 }
 
 func (s *Store) Clear() error {

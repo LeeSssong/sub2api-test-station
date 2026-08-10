@@ -1,11 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -75,29 +78,59 @@ func (s *SubUpstreamCostService) GetByUsageID(ctx context.Context, usageID int64
 		detail.Reason = "upstream credentials unavailable"
 		return detail, nil
 	}
-	endpoint, err := subUsageRecordsURL(baseURL)
-	if err != nil {
-		detail.ReasonCode = "endpoint_unavailable"
-		detail.Reason = "upstream endpoint unavailable"
-		return detail, nil
-	}
-	matched, reasonCode, reason := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
+	upstreamCost, found, reasonCode, reason := s.lookupUpstreamCost(ctx, baseURL, apiKey, usage)
 	if reason != "" {
 		detail.ReasonCode = reasonCode
 		detail.Reason = reason
 		return detail, nil
 	}
-	if matched == nil {
+	if !found {
 		detail.ReasonCode = "record_not_found"
 		detail.Reason = "upstream usage record not found"
 		return detail, nil
 	}
-	upstreamCost := matched.ActualCost
 	profit := usage.ActualCost - upstreamCost
 	detail.UpstreamActualCost = &upstreamCost
 	detail.Profit = &profit
 	detail.Status = "confirmed"
 	return detail, nil
+}
+
+func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL, apiKey string, usage *UsageLog) (float64, bool, string, string) {
+	if isNewAPIUsageLedger(usage.Account) {
+		logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
+		if err != nil {
+			return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
+		}
+		statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
+		if err != nil {
+			return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
+		}
+		matched, reasonCode, reason := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+		if reason != "" || matched == nil {
+			return 0, false, reasonCode, reason
+		}
+		upstreamCost, reasonCode, reason := s.newAPIQuotaCost(ctx, statusEndpoint, apiKey, matched)
+		if reason != "" {
+			return 0, false, reasonCode, reason
+		}
+		return upstreamCost, true, "", ""
+	}
+
+	endpoint, err := subUsageRecordsURL(baseURL)
+	if err != nil {
+		return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
+	}
+	matched, reasonCode, reason := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
+	if reason != "" || matched == nil {
+		return 0, false, reasonCode, reason
+	}
+	return matched.ActualCost, true, "", ""
+}
+
+func isNewAPIUsageLedger(account *Account) bool {
+	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	return snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported
 }
 
 type subUpstreamUsageRecord struct {
@@ -180,11 +213,172 @@ func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoin
 	return nil, "pagination_unavailable", "upstream usage pagination unavailable"
 }
 
+type newAPIUpstreamUsageRecord struct {
+	Type              int         `json:"type"`
+	Quota             json.Number `json:"quota"`
+	RequestID         string      `json:"request_id"`
+	UpstreamRequestID string      `json:"upstream_request_id"`
+}
+
+type newAPIUpstreamUsageRecordsResponse struct {
+	Data       []newAPIUpstreamUsageRecord `json:"data"`
+	Logs       []newAPIUpstreamUsageRecord `json:"logs"`
+	NextCursor string                      `json:"next_cursor"`
+}
+
+func (s *SubUpstreamCostService) findNewAPIRecord(ctx context.Context, endpoint, apiKey string, usage *UsageLog) (*newAPIUpstreamUsageRecord, string, string) {
+	start := usage.CreatedAt.Add(-subUpstreamCostWindow)
+	end := usage.CreatedAt.Add(subUpstreamCostWindow)
+	cursor := ""
+	var best *newAPIUpstreamUsageRecord
+	bestRank := 4
+	for page := 0; page < subUpstreamCostMaxPages; page++ {
+		queryURL, err := url.Parse(endpoint)
+		if err != nil {
+			return nil, "endpoint_unavailable", "upstream endpoint unavailable"
+		}
+		q := queryURL.Query()
+		q.Set("start_timestamp", strconv.FormatInt(start.Unix(), 10))
+		q.Set("end_timestamp", strconv.FormatInt(end.Unix(), 10))
+		q.Set("limit", strconv.Itoa(subUpstreamCostPageLimit))
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		queryURL.RawQuery = q.Encode()
+
+		body, reasonCode, reason := s.fetchUpstreamJSON(ctx, queryURL.String(), apiKey)
+		if reason != "" {
+			return nil, reasonCode, reason
+		}
+		var payload newAPIUpstreamUsageRecordsResponse
+		if err := decodeUpstreamJSON(body, &payload); err != nil {
+			return nil, "response_unavailable", "upstream response unavailable"
+		}
+		logs := payload.Data
+		if len(logs) == 0 && payload.Logs != nil {
+			logs = payload.Logs
+		}
+		for i := range logs {
+			rank := newAPIUsageRecordMatchRank(&logs[i], usage)
+			if rank < bestRank {
+				best = &logs[i]
+				bestRank = rank
+				if bestRank == 1 {
+					return best, "", ""
+				}
+			}
+		}
+		if strings.TrimSpace(payload.NextCursor) == "" {
+			return best, "", ""
+		}
+		cursor = strings.TrimSpace(payload.NextCursor)
+	}
+	if best != nil {
+		return best, "", ""
+	}
+	return nil, "pagination_unavailable", "upstream usage pagination unavailable"
+}
+
+func (s *SubUpstreamCostService) newAPIQuotaCost(ctx context.Context, statusEndpoint, apiKey string, record *newAPIUpstreamUsageRecord) (float64, string, string) {
+	body, reasonCode, reason := s.fetchUpstreamJSON(ctx, statusEndpoint, apiKey)
+	if reason != "" {
+		return 0, reasonCode, reason
+	}
+	var payload struct {
+		Data struct {
+			QuotaPerUnit json.Number `json:"quota_per_unit"`
+		} `json:"data"`
+		QuotaPerUnit json.Number `json:"quota_per_unit"`
+	}
+	if err := decodeUpstreamJSON(body, &payload); err != nil {
+		return 0, "response_unavailable", "upstream response unavailable"
+	}
+	quotaPerUnit := payload.Data.QuotaPerUnit
+	if strings.TrimSpace(quotaPerUnit.String()) == "" {
+		quotaPerUnit = payload.QuotaPerUnit
+	}
+	cost, err := newAPIQuotaToCost(record.Quota, quotaPerUnit)
+	if err != nil {
+		return 0, "response_unavailable", "upstream response unavailable"
+	}
+	if record.Type == 6 {
+		cost = -cost
+	}
+	return cost, "", ""
+}
+
+func (s *SubUpstreamCostService) fetchUpstreamJSON(ctx context.Context, endpoint, apiKey string) ([]byte, string, string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, "request_unavailable", "upstream request unavailable"
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, "request_unavailable", "upstream request unavailable"
+	}
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, subUpstreamCostMaxBodyBytes+1))
+	_ = resp.Body.Close()
+	if readErr != nil || len(body) > subUpstreamCostMaxBodyBytes {
+		return nil, "response_unavailable", "upstream response unavailable"
+	}
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return nil, "endpoint_unsupported", "upstream usage endpoint unsupported"
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, "authentication_rejected", "upstream authentication rejected"
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, "response_unavailable", "upstream response unavailable"
+	}
+	return body, "", ""
+}
+
+func decodeUpstreamJSON(body []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	return decoder.Decode(target)
+}
+
+func newAPIQuotaToCost(quota, quotaPerUnit json.Number) (float64, error) {
+	quotaValue, ok := new(big.Rat).SetString(strings.TrimSpace(quota.String()))
+	if !ok || quotaValue.Sign() < 0 {
+		return 0, errors.New("New API quota is invalid")
+	}
+	unitValue, ok := new(big.Rat).SetString(strings.TrimSpace(quotaPerUnit.String()))
+	if !ok || unitValue.Sign() <= 0 {
+		return 0, errors.New("New API quota_per_unit is invalid")
+	}
+	cost, _ := new(big.Rat).Quo(quotaValue, unitValue).Float64()
+	if math.IsNaN(cost) || math.IsInf(cost, 0) || cost < 0 {
+		return 0, errors.New("New API cost is invalid")
+	}
+	return cost, nil
+}
+
 func subUsageRecordMatches(record *subUpstreamUsageRecord, usage *UsageLog) bool {
 	return subUsageRecordMatchRank(record, usage) < 4
 }
 
 func subUsageRecordMatchRank(record *subUpstreamUsageRecord, usage *UsageLog) int {
+	if record == nil || usage == nil {
+		return 4
+	}
+	if id := strings.TrimSpace(usage.UpstreamRequestIDOrEmpty()); id != "" {
+		if id == strings.TrimSpace(record.UpstreamRequestID) {
+			return 1
+		}
+		if id == strings.TrimSpace(record.RequestID) {
+			return 2
+		}
+	}
+	if strings.TrimSpace(usage.RequestID) != "" && strings.TrimSpace(usage.RequestID) == strings.TrimSpace(record.RequestID) {
+		return 3
+	}
+	return 4
+}
+
+func newAPIUsageRecordMatchRank(record *newAPIUpstreamUsageRecord, usage *UsageLog) int {
 	if record == nil || usage == nil {
 		return 4
 	}
@@ -233,6 +427,14 @@ func subUsageRecordsURL(baseURL string) (string, error) {
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String(), nil
+}
+
+func newAPIEndpointURL(baseURL, endpoint string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("invalid upstream base url")
+	}
+	return buildNewAPIEndpointURL(u.String(), endpoint), nil
 }
 
 func cloneStringPtr(value *string) *string {

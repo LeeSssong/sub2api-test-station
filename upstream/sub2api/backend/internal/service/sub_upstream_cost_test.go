@@ -80,6 +80,55 @@ func TestSubUpstreamCostServiceConfirmsMatchedActualCost(t *testing.T) {
 	require.Equal(t, createdAt.Add(10*time.Minute), end)
 }
 
+func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForExactRequestMatch(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 9, 10, 0, 0, 0, time.UTC)
+	upstreamID := "provider-req-456"
+	var gotPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		require.Equal(t, "Bearer stored-upstream-key", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/api/log/token":
+			require.Equal(t, "1000", r.URL.Query().Get("limit"))
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+				"type":                2,
+				"quota":               125000,
+				"request_id":          "local-req-123",
+				"upstream_request_id": upstreamID,
+			}}})
+		case "/api/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"quota_per_unit": 500000}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID:                43,
+		RequestID:         "local-req-123",
+		UpstreamRequestID: &upstreamID,
+		ActualCost:        0.00688,
+		CreatedAt:         createdAt,
+		Account: &Account{Credentials: map[string]any{
+			"base_url": server.URL + "/v1",
+			"api_key":  "stored-upstream-key",
+		}, Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		}},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 43)
+
+	require.NoError(t, err)
+	require.Equal(t, "confirmed", detail.Status)
+	require.NotNil(t, detail.UpstreamActualCost)
+	require.InDelta(t, 0.25, *detail.UpstreamActualCost, 1e-9)
+	require.NotNil(t, detail.Profit)
+	require.InDelta(t, -0.24312, *detail.Profit, 1e-9)
+	require.Equal(t, []string{"/api/log/token", "/api/status"}, gotPaths)
+}
+
 func TestSubUpstreamCostServiceUsesExactMatchingFallbackOrder(t *testing.T) {
 	localUpstreamID := "provider-id"
 	cases := []struct {

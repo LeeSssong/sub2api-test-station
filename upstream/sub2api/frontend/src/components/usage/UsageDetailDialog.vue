@@ -45,35 +45,7 @@
       </div>
 
       <div v-else class="space-y-6">
-        <template v-if="adminDetail">
-          <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3">
-            <DetailItem
-              :label="t('admin.usageCostDetail.siteActualCost')"
-              :value="formatCost(adminDetail.actual_cost)"
-              numeric
-              emphasized
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.upstreamActualCost')"
-              :value="upstreamActualCostValue"
-              numeric
-            />
-            <DetailItem
-              :label="t('admin.usageCostDetail.profit')"
-              :value="profitValue"
-              numeric
-              emphasized
-            />
-          </dl>
-          <p
-            v-if="upstreamCostUnavailableMessage"
-            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
-            role="status"
-          >
-            {{ upstreamCostUnavailableMessage }}
-          </p>
-        </template>
-        <div v-else class="flex items-center justify-between gap-4">
+        <div v-if="!adminDetail" class="flex items-center justify-between gap-4">
           <span class="text-xs font-semibold text-gray-500 dark:text-dark-400">
             {{ t('usage.detail.consumption') }}
           </span>
@@ -274,6 +246,32 @@
           >
             {{ t('usage.detail.adminSection') }}
           </h4>
+          <dl class="mb-4 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3">
+            <DetailItem
+              :label="t('admin.usageCostDetail.siteActualCost')"
+              :value="formatCost(adminDetail.actual_cost)"
+              numeric
+              emphasized
+            />
+            <DetailItem
+              :label="t('admin.usageCostDetail.upstreamActualCost')"
+              :value="upstreamActualCostValue"
+              numeric
+            />
+            <DetailItem
+              :label="t('admin.usageCostDetail.profit')"
+              :value="profitValue"
+              numeric
+              emphasized
+            />
+          </dl>
+          <p
+            v-if="upstreamCostUnavailableMessage"
+            class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+            role="status"
+          >
+            {{ upstreamCostUnavailableMessage }}
+          </p>
           <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             <DetailItem
               :label="t('admin.usageCostDetail.upstreamRequestId')"

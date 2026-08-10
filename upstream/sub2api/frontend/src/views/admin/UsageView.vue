@@ -2,6 +2,15 @@
   <AppLayout>
     <div class="space-y-6">
       <UsageStatsCards :stats="usageStats" />
+      <ReadModelStatus
+        v-if="controlPlaneResponse || controlPlaneDegraded"
+        :generated-at="readModel.generatedAt.value"
+        :completeness="readModel.completeness.value"
+        :calculation-version="readModel.calculationVersion.value"
+        :degraded="controlPlaneDegraded || readModel.degraded.value"
+        :source-label="renderSource === 'external' ? '控制面' : '现有系统'"
+        @retry="loadStats(true)"
+      />
       <!-- Charts Section -->
       <div class="space-y-4">
         <div class="card p-4">
@@ -193,11 +202,15 @@ import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'; import { adminAPI } from '@/api/admin'; import { adminUsageAPI } from '@/api/admin/usage'
+import { controlPlaneAPI, type ControlPlaneResponse } from '@/api/controlPlane'
+import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import { resolveTrustedPageDecision } from '@/config/externalizationFlags'
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
+import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
 import UsageDetailDialog from '@/components/usage/UsageDetailDialog.vue'
 import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
@@ -214,6 +227,10 @@ import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat,
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
+const controlPlaneDegraded = ref(false)
+const renderSource = ref<'legacy' | 'external'>('legacy')
+const readModel = useReadModelFreshness(controlPlaneResponse)
 type DistributionMetric = 'tokens' | 'actual_cost'
 type EndpointSource = 'inbound' | 'upstream' | 'path'
 type ModelDistributionSource = 'requested' | 'upstream' | 'mapping'
@@ -425,6 +442,7 @@ const loadStats = async (force = false) => {
     inboundEndpointStats.value = s.endpoints || []
     upstreamEndpointStats.value = s.upstream_endpoints || []
     endpointPathStats.value = s.endpoint_paths || []
+    await loadControlPlaneLedger()
   } catch (error) {
     if (seq !== statsReqSeq) return
     console.error('Failed to load usage stats:', error)
@@ -434,6 +452,50 @@ const loadStats = async (force = false) => {
   } finally {
     if (seq === statsReqSeq) endpointStatsLoading.value = false
   }
+}
+
+const loadControlPlaneLedger = async () => {
+  controlPlaneDegraded.value = false
+  try {
+    const decision = resolveTrustedPageDecision('accounting', await controlPlaneAPI.decision('accounting'))
+    if (decision.effectiveMode === 'legacy_only' && !decision.degraded) {
+      controlPlaneResponse.value = null
+      renderSource.value = 'legacy'
+      return
+    }
+    const response = await controlPlaneAPI.ledger({
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value,
+    })
+    controlPlaneResponse.value = response
+    const ledger = accountingLedger(response.items)
+    if (decision.source === 'external' && ledger && usageStats.value) {
+      usageStats.value = {
+        ...usageStats.value,
+        total_requests: ledger.requests,
+        total_cost: ledger.revenue,
+        total_actual_cost: ledger.cost,
+      }
+      renderSource.value = 'external'
+      controlPlaneDegraded.value = Boolean(response.degraded)
+      return
+    }
+    renderSource.value = 'legacy'
+    controlPlaneDegraded.value = Boolean(response.degraded) || decision.degraded || decision.source === 'external'
+  } catch {
+    controlPlaneResponse.value = null
+    controlPlaneDegraded.value = true
+    renderSource.value = 'legacy'
+  }
+}
+
+const accountingLedger = (value: unknown): { requests: number; revenue: number; cost: number } | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const source = value as Record<string, unknown>
+  const revenue = typeof source.revenue === 'string' && source.revenue.trim() ? Number(source.revenue) : Number.NaN
+  const cost = typeof source.cost === 'string' && source.cost.trim() ? Number(source.cost) : Number.NaN
+  if (!Number.isSafeInteger(source.requests) || Number(source.requests) < 0 || !Number.isFinite(revenue) || !Number.isFinite(cost)) return null
+  return { requests: Number(source.requests), revenue, cost }
 }
 
 // 失效模型统计缓存:仅标记需要重取,保留旧数据直到新数据到达(避免刷新时图表闪空)。

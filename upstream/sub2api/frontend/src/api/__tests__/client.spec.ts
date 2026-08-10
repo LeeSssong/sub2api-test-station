@@ -351,6 +351,43 @@ describe('API Client', () => {
       })
     })
 
+    it('control-plane client 401 preserves the primary admin session without a login redirect', async () => {
+      localStorage.setItem('auth_token', 'admin-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/admin/accounts/monitor', href: '/admin/accounts/monitor' },
+        writable: true,
+      })
+      const adapter = vi.fn().mockImplementation((config) => Promise.reject({
+        response: {
+          status: 401,
+          data: { code: 'ADMIN_UNAUTHORIZED', message: '需要管理员认证' },
+        },
+        config,
+        code: 'ERR_BAD_REQUEST',
+      }))
+      apiClient.defaults.adapter = adapter
+      const { controlPlaneAPI } = await import('@/api/controlPlane')
+
+      await expect(controlPlaneAPI.monitor({ range: '24h' })).rejects.toEqual(
+        expect.objectContaining({ status: 401, code: 'ADMIN_UNAUTHORIZED' })
+      )
+
+      expect(adapter.mock.calls[0][0]).toEqual(expect.objectContaining({
+        url: '/xingqiao/accounts/monitor',
+        skipSessionRecovery: true,
+      }))
+      expect(localStorage.getItem('auth_token')).toBe('admin-token')
+      expect(localStorage.getItem('refresh_token')).toBe('refresh-token')
+      expect(window.location.pathname).toBe('/admin/accounts/monitor')
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
     it('无 refresh_token 时 401 清除 localStorage', async () => {
       localStorage.setItem('auth_token', 'expired-token')
       // 不设置 refresh_token

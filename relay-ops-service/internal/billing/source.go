@@ -52,6 +52,21 @@ func NewBillingAdapter(source BillingSource, client *http.Client) (CostAdapter, 
 	return NewCostAdapter(source.AdapterType, source.BaseURL, string(secret), client)
 }
 
+// NewBalanceReader constructs the provider balance reader from the same
+// credential lifetime as immutable billing collection. Unsupported providers
+// fail closed instead of fabricating a balance fact from cost data.
+func NewBalanceReader(source BillingSource, client *http.Client) (BalanceReader, error) {
+	adapter, err := NewBillingAdapter(source, client)
+	if err != nil {
+		return nil, err
+	}
+	reader, ok := adapter.(BalanceReader)
+	if !ok {
+		return nil, fmt.Errorf("billing adapter does not expose a balance reader")
+	}
+	return reader, nil
+}
+
 // ReadBillingSecret resolves a file: secret reference rooted at
 // /run/secrets/upstream-sessions. It never returns filesystem details in an
 // error, avoiding leakage of secret paths through scheduler logs.

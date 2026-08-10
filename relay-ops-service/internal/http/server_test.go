@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,88 @@ func TestRetiredOpsAndAcknowledgementRoutesAreNotMounted(t *testing.T) {
 			t.Fatalf("%s %s status=%d want=404", tt.method, tt.path, recorder.Code)
 		}
 	}
+}
+
+func TestXingqiaoRoutesUseLocalBearerVerificationWithoutSensitiveEcho(t *testing.T) {
+	t.Parallel()
+	called := false
+	verifier := &sessionBindingVerifier{identity: adminauth.Identity{UserID: 4, Role: "admin", Status: "inactive"}}
+	h, err := NewServer(Dependencies{
+		Pricing:      fakePricing{},
+		Auth:         verifier,
+		ControlPlane: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { called = true; w.WriteHeader(http.StatusNoContent) }),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/xingqiao/accounts/monitor", nil)
+	req.Header.Set("Authorization", "Bearer session-secret")
+	req.Header.Set("Cookie", "session=private")
+	req.Header.Set("User-Agent", "browser-binding")
+	req.Header.Set("X-Forwarded-For", "203.0.113.8")
+	req.Header.Set("X-Real-IP", "203.0.113.8")
+	req.Header.Set("Origin", "https://api.example.test")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || called {
+		t.Fatalf("status=%d called=%v", rec.Code, called)
+	}
+	if verifier.session.Bearer != "session-secret" || verifier.session.UserAgent != "browser-binding" || verifier.session.ForwardedFor != "203.0.113.8" || verifier.session.RealIP != "203.0.113.8" || verifier.session.Origin != "https://api.example.test" {
+		t.Fatalf("session=%+v", verifier.session)
+	}
+	for _, secret := range []string{"session-secret", "session=private", "x-api-key"} {
+		if strings.Contains(rec.Body.String(), secret) {
+			t.Fatalf("response leaked %q: %s", secret, rec.Body.String())
+		}
+	}
+}
+
+func TestAdminMountsUseConfiguredTrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	policy, err := adminauth.NewTrustedProxyPolicy("caddy", func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("172.20.0.4")}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := &sessionBindingVerifier{identity: adminauth.Identity{UserID: 4, Role: "admin", Status: "active"}}
+	h, err := NewServer(Dependencies{
+		Pricing:        fakePricing{},
+		Auth:           verifier,
+		TrustedProxy:   policy,
+		ControlPlane:   http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }),
+		Accounting:     &fakeAccounting{},
+		Reconciliation: &fakeReconciliation{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/v1/xingqiao/accounts/monitor",
+		"/relay-ops/accounting",
+		"/relay-ops/api/reconciliation/summary",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "172.20.0.4:8100"
+		req.Header.Set("Authorization", "Bearer browser-session")
+		req.Header.Set("X-Forwarded-For", "198.51.100.23")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if verifier.session.ClientIP != "198.51.100.23" {
+			t.Fatalf("%s client IP = %q, want browser IP", path, verifier.session.ClientIP)
+		}
+	}
+}
+
+type sessionBindingVerifier struct {
+	identity adminauth.Identity
+	session  adminauth.Session
+}
+
+func (v *sessionBindingVerifier) VerifyAdminSession(_ context.Context, session adminauth.Session) (adminauth.Identity, error) {
+	v.session = session
+	return v.identity, nil
 }
 
 func TestCreateUpstreamPassesAdapterTypeAndReturnsIt(t *testing.T) {
@@ -121,7 +204,7 @@ func TestAccountingRoutesRequireAnActiveAdministrator(t *testing.T) {
 	}{
 		{name: "missing session", want: http.StatusUnauthorized},
 		{name: "ordinary user", bearer: "user", identity: adminauth.Identity{UserID: 7, Role: "user", Status: "active"}, want: http.StatusForbidden},
-		{name: "disabled admin", bearer: "disabled", identity: adminauth.Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusForbidden},
+		{name: "disabled admin", bearer: "disabled", identity: adminauth.Identity{UserID: 8, Role: "admin", Status: "disabled"}, want: http.StatusUnauthorized},
 		{name: "active admin", bearer: "admin", identity: adminauth.Identity{UserID: 9, Role: "admin", Status: "active"}, want: http.StatusOK},
 	}
 	for _, test := range tests {

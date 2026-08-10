@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/billing"
+	"example.invalid/relay-ops-service/internal/controlplane"
 )
 
 const (
@@ -480,6 +482,53 @@ func (c *HTTPReader) VerifyAdminSession(ctx context.Context, session adminauth.S
 	return adminauth.Identity{UserID: identity.UserID, Role: identity.Role, Status: identity.Status}, nil
 }
 
+func (c *HTTPReader) Me(ctx context.Context, bearer, clientIP, origin string) (controlplane.AdminIdentity, error) {
+	identity, err := c.VerifyAdminSession(ctx, adminauth.Session{Bearer: bearer, ClientIP: clientIP, Origin: origin})
+	if err != nil {
+		return controlplane.AdminIdentity{}, err
+	}
+	return controlplane.AdminIdentity{UserID: identity.UserID, Role: identity.Role, Status: identity.Status}, nil
+}
+
+func (c *HTTPReader) RefreshAccount(ctx context.Context, id int64, idempotencyKey string) error {
+	if id <= 0 || strings.TrimSpace(idempotencyKey) == "" {
+		return errSchemaMismatch
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(id, 10)+"/refresh", nil)
+	if err != nil {
+		return fmt.Errorf("build Sub2API refresh request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	req.Header.Set("Idempotency-Key", idempotencyKey)
+	return c.do(req, &struct{}{})
+}
+
+// UpdateAccount forwards only a validated narrow command through the official
+// admin API. The relay does not gain database access to core account tables.
+func (c *HTTPReader) UpdateAccount(ctx context.Context, command billing.AccountUpdateCommand) error {
+	if err := command.Validate(); err != nil {
+		return err
+	}
+	data, err := json.Marshal(command.Fields)
+	if err != nil {
+		return fmt.Errorf("encode Sub2API account update: %w", err)
+	}
+	body, err := json.Marshal(map[string]any{"command_id": command.CommandID, "fields": json.RawMessage(data)})
+	if err != nil {
+		return fmt.Errorf("encode Sub2API account command: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/admin/accounts/"+strconv.FormatInt(command.AccountID, 10)+"/external-command/v1", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build Sub2API account update: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.adminKey)
+	req.Header.Set("Idempotency-Key", command.IdempotencyKey)
+	return c.do(req, &struct{}{})
+}
+
 func (c *HTTPReader) get(ctx context.Context, path string, query url.Values, out any) error {
 	requestURL := c.baseURL + path
 	if len(query) > 0 {
@@ -541,11 +590,20 @@ func (c *HTTPReader) getWithBearer(ctx context.Context, path string, session adm
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+session.Bearer)
 	req.Header["User-Agent"] = []string{session.UserAgent}
-	if session.ForwardedFor != "" {
-		req.Header.Set("X-Forwarded-For", session.ForwardedFor)
+	if session.ClientIP != "" {
+		req.Header.Set("X-Client-IP", session.ClientIP)
+		req.Header.Set("X-Forwarded-For", session.ClientIP)
+		req.Header.Set("X-Real-IP", session.ClientIP)
+	} else {
+		if session.ForwardedFor != "" {
+			req.Header.Set("X-Forwarded-For", session.ForwardedFor)
+		}
+		if session.RealIP != "" {
+			req.Header.Set("X-Real-IP", session.RealIP)
+		}
 	}
-	if session.RealIP != "" {
-		req.Header.Set("X-Real-IP", session.RealIP)
+	if session.Origin != "" {
+		req.Header.Set("Origin", session.Origin)
 	}
 	return c.do(req, out)
 }

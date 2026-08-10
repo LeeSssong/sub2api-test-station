@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	integrationevents "github.com/Wei-Shaw/sub2api/internal/events"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -142,6 +143,7 @@ type usageLogRepository struct {
 	client *dbent.Client
 	sql    sqlExecutor
 	db     *sql.DB
+	outbox *integrationevents.Outbox
 
 	createBatchOnce     sync.Once
 	createBatchCh       chan usageLogCreateRequest
@@ -159,6 +161,7 @@ func newUsageLogRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *usage
 	repo := &usageLogRepository{client: client, sql: sqlq}
 	if db, ok := sqlq.(*sql.DB); ok {
 		repo.db = db
+		repo.outbox = integrationevents.NewOutbox(db)
 	}
 	repo.bestEffortRecent = gocache.New(usageLogBestEffortRecentTTL, time.Minute)
 	return repo

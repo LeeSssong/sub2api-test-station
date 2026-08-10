@@ -25,7 +25,12 @@ type Config struct {
 	TimezoneName                    string
 	DatabaseURLFile                 string
 	Sub2APIBaseURL                  string
+	TrustedProxyHost                string
 	Sub2APIAdminKeyFile             string
+	CoreDatabaseURLFile             string
+	ExternalizationEnabled          bool
+	ComparisonReportSetFile         string
+	CutoverStateFile                string
 	Sub2APIAlertReadDatabaseURLFile string
 	AccountQualityResultFile        string
 	UpstreamGroupMappingFile        string
@@ -78,6 +83,10 @@ func Load(env func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("RELAY_OPS_ACCOUNTING_ENABLED must be true or false")
 	}
+	externalizationEnabled, err := parseBool(get("RELAY_OPS_EXTERNALIZATION_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("RELAY_OPS_EXTERNALIZATION_ENABLED must be true or false")
+	}
 	accountingStartDateText := get("RELAY_OPS_ACCOUNTING_LEDGER_START_DATE", "")
 	var accountingStartDate time.Time
 	if accountingEnabled {
@@ -112,6 +121,15 @@ func Load(env func(string) string) (Config, error) {
 	} {
 		if err := validateSecretFile(path); err != nil {
 			return Config{}, fmt.Errorf("%s file: %w", label, err)
+		}
+	}
+	coreDatabaseURLFile := get("RELAY_OPS_CORE_DATABASE_URL_FILE", "")
+	if coreDatabaseURLFile != "" {
+		if !filepath.IsAbs(coreDatabaseURLFile) {
+			return Config{}, fmt.Errorf("RELAY_OPS_CORE_DATABASE_URL_FILE must be an absolute path")
+		}
+		if err := validateSecretFile(coreDatabaseURLFile); err != nil {
+			return Config{}, fmt.Errorf("core database URL file: %w", err)
 		}
 	}
 	feishuFile := get("RELAY_OPS_FEISHU_WEBHOOK_FILE", "")
@@ -202,6 +220,14 @@ func Load(env func(string) string) (Config, error) {
 	if !filepath.IsAbs(candidateSecretDir) {
 		return Config{}, fmt.Errorf("RELAY_OPS_CANDIDATE_SECRET_DIR must be an absolute path")
 	}
+	comparisonReportSetFile := filepath.Clean(get("RELAY_OPS_COMPARISON_REPORT_SET_FILE", "/var/lib/relay-ops/comparison-report-sets.jsonl"))
+	cutoverStateFile := filepath.Clean(get("RELAY_OPS_CUTOVER_STATE_FILE", "/var/lib/relay-ops/cutover-state.jsonl"))
+	if !filepath.IsAbs(comparisonReportSetFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_COMPARISON_REPORT_SET_FILE must be an absolute path")
+	}
+	if !filepath.IsAbs(cutoverStateFile) {
+		return Config{}, fmt.Errorf("RELAY_OPS_CUTOVER_STATE_FILE must be an absolute path")
+	}
 	analyzerCommandPath := get("RELAY_OPS_ACCOUNT_MONITOR_ANALYZER_PATH", "/app/ops/analyze-account-monitor.rb")
 	return Config{
 		Mode:                            mode,
@@ -210,7 +236,12 @@ func Load(env func(string) string) (Config, error) {
 		TimezoneName:                    timezoneName,
 		DatabaseURLFile:                 databaseURLFile,
 		Sub2APIBaseURL:                  baseURL,
+		TrustedProxyHost:                get("RELAY_OPS_TRUSTED_PROXY_HOST", ""),
 		Sub2APIAdminKeyFile:             adminKeyFile,
+		CoreDatabaseURLFile:             coreDatabaseURLFile,
+		ExternalizationEnabled:          externalizationEnabled,
+		ComparisonReportSetFile:         comparisonReportSetFile,
+		CutoverStateFile:                cutoverStateFile,
 		Sub2APIAlertReadDatabaseURLFile: sub2APIAlertReadDatabaseURLFile,
 		AccountQualityResultFile:        accountQualityResultFile,
 		UpstreamGroupMappingFile:        upstreamGroupMappingFile,

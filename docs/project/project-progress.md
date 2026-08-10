@@ -1,5 +1,63 @@
 # 项目全局进度总账
 
++**本轮 Task 8 资格门禁收口（2026-08-10）：** 状态：进行中。Task 9 Fix Round 1 已完成本地提交与独立复核；盘点发现官方 Release 资格实现仍仅写入伪造 `ready` 状态，promote/rollback 脚本未执行真实门禁或切换。本轮范围限定为补齐候选身份/checksum/合同测试/迁移分类/数据差异/有效期和失败保持活动槽位不变的资格链，以及让提升和回退入口调用 reviewed host executor；继续不推送、不部署、不访问生产、不使用 GitHub Actions。
+
+Task 8 本轮已将资格、提升、回退脚本改为 fail-closed：资格命令必须是绝对路径受控 host command，输出需通过 tag/commit/asset/SHA-256/adapter/contract/迁移/测试/数据差异/Passed 校验；ready 带一小时有效期，promote 与 rollback 必须调用可执行 reviewed host executor；新增脚本合同测试，`sub2api-updater` 全量 `go test ./...` 与 `go vet ./...` 通过。仍未推送、部署或线上验证，不能标记完成。
+
+**本轮 Task 9 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为修复 Task 9 独立复审的 C1/C2/I1-I5：把逐页晋级和运行时回退权威收敛到经认证的 relay/control-plane 持久边界，强化余额时差/差额规则、三窗口同一运行和完整币种/排名/对账/版本维度，在服务端强制“监控 → 盈利 → 账务 → 对账”顺序，并用隔离本地 fixture 完成非生产演练和审计证据。本轮仅本地 TDD、演练、审查与提交；不修改 `main`/其他 worktree/远端/生产/GitHub Actions/核心业务表，未满足推送、部署和线上验证前继续为“进行中”。
+
+Fix Round 1 实现与本地验证已完成：可信 report-set/运行时 authority、递归四页顺序、持久化幂等回退、服务端独立决策 API、前端去除 Vite/响应自证门禁、账务摘要接入及隔离 fixture 演练均有 focused RED→GREEN 证据。`ops/smoke-sub2api-release.sh --rehearsal --rollback` 已真实生成 `evidence/sub2api-rehearsal/task-9-local/` 下 4 个 report-set、12 个窗口、8 条晋级/回退审计记录，所有页面回到 `legacy_only`；独立本地复审另补强了子报告的 set/run/lineage/persistence 绑定；仍未推送、部署或线上验证，状态继续为“进行中”。
+
+**本轮 Task 9 双读比对、逐页切换与回退门禁（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@647948095`。
+范围限定为精确比较账号/请求/账单/Token/金额/倍率/评分/排名/余额/对账结果，持久化最小、默认和最大窗口报告，并用 `legacy_only → shadow_building → dual_read_comparing → external_primary → legacy_retired` 逐页门禁与可回退标记控制账号监控、盈利、账务和对账读路径；Task 5 的保守 legacy 回退在比较证据满足前必须保留。实施前重新盘点全部非 `main` worktree：`account-monitor-group-recommendation` 领先 7 个提交但未推送、部署和线上验证，`gpt-group-baseline-apply` 领先 1 个提交且无本次生产完成证据，均继续只读保护。本地 TDD 已完成：relay-ops 全量 Go 测试、前端 232 个文件/1663 个测试、lint、typecheck、生产构建及发布 smoke/deploy 离线合同测试通过。brief 中的字面演练命令因未提供真实 rehearsal Compose、密钥文件、基线计数和 URL/版本环境而失败，未宣称回退演练成功。本轮仅本地 TDD、安全干跑、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
+
+**本轮 Task 5 管理员页面双读无感迁移（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@22b21db2f`。
+范围限定为在原管理菜单和 URL 中接入版本化控制面客户端、双读模式与新鲜度/完整性状态，保持现有登录、2FA、字段、筛选、排序、分页、刷新、详情和 CSV 体验；控制面失败只局部降级，不清理主站会话。实施前已复盘全部非 `main` worktree：`account-monitor-group-recommendation` 虽领先 7 个提交但证据明确未合并、未推送、未部署和未线上验证，`gpt-group-baseline-apply` 领先 1 个提交且不是生产完成候选，均保持只读且不作为“已完成并必须先合并”处理。本轮仅本地 TDD、前端验证、独立审查与提交，不推送、不合并、不部署、不访问生产、不使用 GitHub Actions；未具备生产三段证据前状态保持“进行中”。
+
+**本轮 Task 6 Fix Round 1（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck@77c9ed585`。
+范围仅修复 Task 6 独立复审的 Critical/Important 项：把有界余额采集接入控制面调度、经既有认证边界暴露账户更新命令、收紧命令身份与官方端到端幂等、失败重放、注入客户端超时及采集重试稳定事实身份；不处理已在 SDD 总账延后的未来日期事实 Minor 项。实施前已盘点全部非 `main` worktree：根工作区有未跟踪发布证据，其他候选虽领先但均无“已推送 + 已部署 + 已线上验证”完成证据，故不合并且保持只读保护。本地 RED→GREEN 已完成，relay 全量、race、vet 和官方端点聚焦测试均通过；PostgreSQL durable identity 回归因未配置 `RELAY_OPS_TEST_DATABASE_URL` 跳过。未推送、不合并、不部署、不访问生产、不增加 GitHub Actions，状态保持“进行中”。
+
+**本轮 Task 6 外置余额、账单、倍率采集与受控写操作（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`，基线
+`370aa1b91`。范围限定为 relay-ops 的余额/账单/费率采集事实、过期语义和复用既有
+控制面幂等审计命令更新；官方 Sub2API 仍是核心业务表唯一写入者。本轮仅做本地 TDD、
+迁移、回归与提交，不推送、合并、部署、访问生产或使用 GitHub Actions。余额事实、
+官方窄更新适配、持久幂等/冲突/过期回归及全量本地 Go 验证已完成；因尚未合并、推送、
+部署和线上验证，状态继续为“进行中”。
+
+**本轮 Task 4 fix round 3（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为收紧 relay-ops trusted-proxy 身份：仅显式配置并解析实际 Caddy
+Docker peer 可转发原始浏览器 IP；默认无配置回退 RemoteAddr；补齐 TDD、
+Compose/config 路由合同和本地回归；不推送、合并、部署或触碰生产。
+本地实现、严格聚焦回归、全量 Go 测试、race、vet 与路由合同已通过；因本轮
+明确禁止推送、部署和线上验证，状态继续为“进行中”。
+
+**本轮 Task 4 fix round 2（2026-08-10）：** 状态：进行中。当前工作区为
+`.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`。
+范围限定为修复同域管理员会话原始客户端 IP 选择、四个空读模型元数据以及
+官方刷新失败与持久命令完成失败的错误组合；仅本地 TDD、回归和提交，不推送、
+合并、部署或触碰生产。
+
+**本轮官方更新“候选版本准备中”卡住修复（2026-08-09）：** 状态：进行中。用户在管理员界面从当前 `0.1.170` 升级至官方 `0.1.173` 时，弹窗持续显示“候选版本准备中”且“现在升级”不可用。证据已确认：生产 updater 进程与硬盘上均为 2026-08-07 旧版（SHA-256 `c9c5e2ab…`），2026-08-09 只安装了新 candidate preparer（SHA-256 `7c4c561d…`），形成版本断裂；且宿主并无 `xingqiao-sub2api:upstream-0.1.173` 合格镜像，所以修复更新器后还需按本地/宿主发布链生成候选。本轮同时以 TDD 补齐上游账单失败原因结构化返回和管理页提示：账号 `#42 Plus-WAWAZZ` 的 `/v1/usage/records` 返回 HTTP 404，不会用估算值填充上游实际扣费。当前工作区为 `.worktrees/fix-official-update-stuck`，分支 `codex/fix-official-update-stuck`；“制定上游账号测试方案”的 `.worktrees/gpt-group-baseline-apply` 及其未提交内容作为保护例外，不修改。
+
+**本轮范围纠偏（2026-08-10）：** 状态：进行中。用户明确要求回到已批准的 `docs/superpowers/specs/2026-08-08-sub2api-externalized-customization-official-update-design.md`，不得把“更新器恢复 + 合格定制镜像”误报为定制解耦完成。仓库复核确认外置合同、事务 Outbox、控制面读模型、双读比较、feature flags 和后台资格状态机已经实现并进入主线；本轮继续核验生产是否已切到 `external_primary`、核心定制是否只剩薄适配器、最近三个官方候选是否达到 `ready`。在这三项均有生产证据前，外置解耦与官方优先升级保持“进行中”，`0.1.173` 仅可生成和暂存合格候选，不得宣称已完成解耦或直接覆盖生产。控制面持久投影 Task 3 与核心薄事件 Task 7 已完成本地实现并分别通过独立 SPEC/QUALITY 复审；Task 7 的真实 Testcontainers PostgreSQL 18.1/Redis 8.4 回归证明 `CreateBestEffort` 成功时 usage/outbox 同事务提交，注入 outbox 失败时两表同时回滚，请求事件在落库前包含 actual response model，健康事件查询错误会回滚。当前进入 relay 持久消费者、同域控制面 API 与隔离认证接线；所有变更仍未推送、部署或修改生产，整体状态保持进行中。
+
+**本轮生产只读审计（2026-08-10）：** 状态：进行中，确认尚未启用外置主路径。生产 relay-ops 仍为 `RELAY_OPS_MODE=read_only`，compose/release 环境没有 `external_primary` 配置；Sub2API 的 `externalization_outbox` 表虽已由 migration 200 创建，但事件数为 0；生产数据库没有 `relay_ops` 外置读模型 schema、水位或命令表；同域 `/api/v1/xingqiao` 路由返回 404。后台 release qualification timer 未启用且 service 失败，最近 updater 记录仍为失败。当前业务容器保持 healthy，审计全程未写数据库、未重启、未部署、未切流量。
+
+**本轮生产更新汇总与工作区清理（2026-08-09）：** 状态：已完成。已基于成功发布的生产提交 `3fb79f5291961a99a50d13b3306937a8db156b04` 形成更新汇总与可恢复清理记录；15 个已并入、干净的非 `main` worktree 已删除，9 个对应已合并本地分支已通过 `git branch -d` 安全删除，3 条已缺失的临时 worktree 注册已 prune。当前 Git 仅保留根目录 `main` 和任务“制定上游账号测试方案”的 `.worktrees/gpt-group-baseline-apply`（`codex/gpt-group-baseline-apply`）；该保护工作区的 14 个异常 GPT 账号补跑登记仍完整未提交。清理后公网 `/healthz` 与 `/readyz` 均通过。完整证据见 `docs/superpowers/reports/2026-08-09-production-update-and-worktree-cleanup.md`。
+
+**本轮非 `main` 工作区整合与发布冻结（2026-08-09）：** 状态：准备完成，等待用户生产部署指令。全部本地分支相对 `main` 的独有提交数均为 0；已并入 GPT 分组基线、Resend SMTP 诊断、Sub 上游实际成本、监控当前配置历史边界及其交叉兼容修复。并版回归修复了 `upstream_request_id`、`account_cost` 与韧性尝试元数据在最新版 UsageLog SQL 中的列序接线，并为生产迁移集合 `9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0` → `1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98` 增加唯一精确维护 allowlist；未知、未授权或退休哈希仍在停服前失败。候选仅完成本地并版、发布资格和远程推送准备，生产尚未迁移、重启、切换或写入；后续仅按冻结证据执行发布，并保留 release identity、镜像/迁移一致性、健康检查和失败回滚最低门禁。
+
+**本轮整合登记（2026-08-09）：** 将获批上游韧性分支 `e55fc3c9e` 合并至 `main`，合并提交 `d8cdc50d4`。Ent 已重新生成；service/handler 定向回归、编译检查、发布控制器测试通过。已 SSH 核查生产健康与日志，当前运行版本仍为 `release-abb87a0a…`。蓝绿发布已完成候选构建，但生产门禁以 `migration_set_changed` 阻止切换（新增 `200_usage_log_attempt_reconciliation.sql`，需要单独的维护授权）；未发生生产变更，状态：进行中。
+
+**本轮任务登记（2026-08-09）：** Resend SMTP 受控复现与 deadline 诊断，状态：进行中。当前工作区为 `.worktrees/resend-smtp-timeout`（`codex/resend-smtp-timeout`）。范围严格限定为向同一现有管理员邮箱再发送一封测试邮件，同步记录 Sub2API 接口状态/耗时与 Resend 事件/配额；仅在再次复现约 20 秒超时时才按 TDD 设计 SMTP 滑动 I/O deadline 修复。本轮不改动邀请码、CAPTCHA、SMTP 配置、DNS 或 Resend 套餐，不新建用户，不打开或消费 reset token；提供商事件和生产回归未闭合前不得标记完成或开放无邀请码注册。
+
 **本轮任务登记（2026-08-10）：** 合并全部已实施并停在发布前的非 `main` worktree 到 `main`，完成合并后专项回归、构建/类型检查、迁移与发布预检，推送远程；本轮不执行生产部署，完成后停在“可申请部署”状态。范围包括 `.worktrees/account-monitor-group-recommendation`、`.worktrees/fix-official-update-stuck`、`.worktrees/gpt-group-baseline-apply`；根目录 `main` 现有未跟踪发布证据和“新建运营界面”“优化账号卡片”保护例外均保留。状态：进行中。
 
 **本轮任务登记（2026-08-10）：** 排查账号监控卡片疑似仅每个分组前两个账号能悬浮展示评分明细与账号成本来源的问题，状态：准备完成（非终态，尚未实施修复）。真实页面已确认所有卡片均渲染评分/成本 Tooltip 且后续卡片 `mouseenter` 正常触发；共同 `HelpTooltip` 使用 `position: fixed`，却把 `window.scrollY/window.scrollX` 叠加到 `getBoundingClientRect()` 的视口坐标，滚动后将 Tooltip 推出视口。范围仅为只读复现、DOM/组件事件与定位层级分析；本轮未修改业务实现、未切换或回滚生产。当前工作区为根目录 `main`；“新建运营界面”和“优化账号卡片”继续作为保护例外，保留全部现有未提交内容。

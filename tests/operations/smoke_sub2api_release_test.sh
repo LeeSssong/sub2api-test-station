@@ -234,10 +234,31 @@ test_each_guard_rejects_wrong_status_malformed_json_and_wrong_code() {
   done
 }
 
+test_literal_externalization_rehearsal_writes_report_sets_and_rollbacks() {
+  local output_root output
+  output_root=$(cd "$(mktemp -d)" && pwd -P)
+  output=$(REHEARSAL_OUTPUT_DIR="$output_root" /bin/bash "$SCRIPT" --rehearsal --rollback 2>&1) \
+    || fail "literal rehearsal failed: $output"
+  [[ "$output" == externalization_rehearsal=passed* ]] || fail "unexpected literal rehearsal output: $output"
+  [[ -f "$output_root/report-sets.jsonl" && -f "$output_root/cutover-audit.jsonl" && -f "$output_root/summary.json" ]] \
+    || fail 'literal rehearsal omitted durable artifacts'
+  [[ $(wc -l <"$output_root/report-sets.jsonl" | tr -d ' ') == 4 ]] || fail 'literal rehearsal did not persist four report sets'
+  [[ $(wc -l <"$output_root/cutover-audit.jsonl" | tr -d ' ') == 8 ]] || fail 'literal rehearsal did not persist promotion and rollback for four pages'
+  jq -e '
+    .schema_version == 1 and .environment == "isolated_local_fixture" and
+    (.pages | length) == 4 and
+    ([.pages[].windows[]] | length) == 12 and
+    ([.pages[].windows[]] | all(.kind == "minimum" or .kind == "default" or .kind == "maximum")) and
+    ([.pages[]] | all(.operator == "local-rehearsal-operator" and (.compared_at | length > 0) and .promotion_result == "mode_changed" and .rollback_result == "rolled_back" and .active_mode == "legacy_only"))
+  ' "$output_root/summary.json" >/dev/null || fail 'literal rehearsal summary is incomplete'
+  rm -rf -- "$output_root"
+}
+
 test_success_requires_bounded_requests_and_both_guards
 test_rehearsal_project_never_falls_back_to_production
 test_compose_context_is_exact
 test_read_only_mismatches_are_redacted
 test_each_guard_rejects_wrong_status_malformed_json_and_wrong_code
+test_literal_externalization_rehearsal_writes_report_sets_and_rollbacks
 
 printf 'PASS: Sub2API release smoke contracts\n'

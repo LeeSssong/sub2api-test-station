@@ -3,7 +3,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountProfitabilityView from '../AccountProfitabilityView.vue'
 
-const { get, showError } = vi.hoisted(() => ({ get: vi.fn(), showError: vi.fn() }))
+const { get, showError, controlPlaneProfitability, controlPlaneDecision } = vi.hoisted(() => ({
+  get: vi.fn(),
+  showError: vi.fn(),
+  controlPlaneProfitability: vi.fn(),
+  controlPlaneDecision: vi.fn(),
+}))
+
+vi.mock('@/api/controlPlane', () => ({
+  controlPlaneAPI: { profitability: controlPlaneProfitability, decision: controlPlaneDecision },
+}))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: { accountProfitability: { get } },
@@ -33,6 +42,11 @@ describe('AccountProfitabilityView', () => {
   beforeEach(() => {
     get.mockReset().mockResolvedValue(response)
     showError.mockReset()
+    controlPlaneProfitability.mockReset().mockResolvedValue({
+      items: [],
+      freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
+    })
+    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'profitability', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-08T12:00:00+08:00'))
   })
@@ -49,6 +63,59 @@ describe('AccountProfitabilityView', () => {
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-08' }))
     expect(wrapper.find('[data-test="summary-revenue"]').text()).toContain('120')
     expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+  })
+
+  it('keeps legacy filter and CSV rows visible during a shadow read', async () => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(controlPlaneProfitability).toHaveBeenCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-08' }))
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('完整性：complete')
+  })
+
+  it.each([
+    ['a complete-looking response', { items: response, freshness: { completeness: 'complete', calculation_version: 'profitability-v1' } }],
+    ['an incomplete response', { items: { start_date: response.start_date, end_date: response.end_date, rows: [], summary: {} }, freshness: { completeness: 'partial', calculation_version: 'profitability-v1' } }],
+  ])('keeps the legacy profitability source and degrades external_primary for %s', async (_label, externalResponse) => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'legacy_only', use_external: false, degraded: true, reason: 'comparison_gate_failed' })
+    controlPlaneProfitability.mockResolvedValueOnce(externalResponse)
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it('renders fully mapped profitability rows only after its three-window cutover gate passes', async () => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-profitability', run_id: 'run-profitability', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneProfitability.mockResolvedValueOnce({
+      items: {
+        ...response,
+        rows: response.rows.map((row) => ({ ...row, name: `External ${row.name}` })),
+      },
+      freshness: { completeness: 'complete', calculation_version: 'profitability-v1' },
+    })
+
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('External Sub account')
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
+  })
+
+  it.each([401, 403])('keeps profitability local when the control plane returns %s', async (status) => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'profitability', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-profitability', run_id: 'run-profitability', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneProfitability.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="account-row-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(showError).not.toHaveBeenCalledWith('control plane rejected request')
   })
 
   it('filters by source and pending status', async () => {

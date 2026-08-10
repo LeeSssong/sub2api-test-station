@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/domain"
@@ -95,4 +96,30 @@ func (a *Sub2APIAdapter) ReadSnapshot(ctx context.Context) (CostSnapshot, error)
 		return CostSnapshot{}, fmt.Errorf("invalid Sub2API cumulative actual_cost")
 	}
 	return CostSnapshot{ActualCost: cost, ObservedAt: time.Now().UTC()}, nil
+}
+
+func (a *Sub2APIAdapter) ReadBalance(ctx context.Context) (BalanceValue, error) {
+	var response struct {
+		Balance  json.Number `json:"balance"`
+		Currency string      `json:"currency"`
+		Data     struct {
+			Balance  json.Number `json:"balance"`
+			Currency string      `json:"currency"`
+		} `json:"data"`
+	}
+	if err := a.doJSON(ctx, http.MethodGet, "/v1/usage", nil, &response); err != nil {
+		return BalanceValue{}, err
+	}
+	amount := response.Balance
+	if amount.String() == "" {
+		amount = response.Data.Balance
+	}
+	currency := response.Currency
+	if currency == "" {
+		currency = response.Data.Currency
+	}
+	if amount.String() == "" || strings.TrimSpace(currency) == "" {
+		return BalanceValue{}, fmt.Errorf("invalid Sub2API balance response")
+	}
+	return BalanceValue{Amount: amount.String(), Currency: currency}, nil
 }

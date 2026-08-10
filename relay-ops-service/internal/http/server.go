@@ -21,6 +21,7 @@ import (
 	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
+	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
@@ -136,19 +137,21 @@ type CostGuardService interface {
 }
 
 type Dependencies struct {
-	BaseOrigin     string
-	Auth           adminauth.Verifier
-	Pricing        PricingSource
-	Candidates     CandidateService
-	Upstreams      ProductionUpstreamService
-	Billing        BillingSessionService
-	Acceptance     SyntheticAcceptanceService
-	DailyReport    DailyReportAcceptanceService
-	QualityReview  QualityReviewService
-	Accounting     AccountingService
-	Reconciliation ReconciliationService
-	CostGuard      CostGuardService
-	ControlPlane   http.Handler
+	BaseOrigin       string
+	Auth             adminauth.Verifier
+	TrustedProxy     adminauth.TrustedProxy
+	Pricing          PricingSource
+	Candidates       CandidateService
+	Upstreams        ProductionUpstreamService
+	Billing          BillingSessionService
+	Acceptance       SyntheticAcceptanceService
+	DailyReport      DailyReportAcceptanceService
+	QualityReview    QualityReviewService
+	Accounting       AccountingService
+	Reconciliation   ReconciliationService
+	CostGuard        CostGuardService
+	ControlPlane     http.Handler
+	ControlPlaneAuth controlplane.AuthClient
 }
 
 type server struct {
@@ -176,8 +179,11 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 	}
 	s := &server{dependencies: dependencies, templates: templates, css: css, accountingJS: accountingJS}
 	mux := http.NewServeMux()
-	if dependencies.ControlPlane != nil && dependencies.Auth != nil {
-		mux.Handle("/api/v1/xingqiao/", adminauth.RequireAdmin(dependencies.Auth, http.StripPrefix("/api/v1/xingqiao", dependencies.ControlPlane)))
+	if dependencies.ControlPlane != nil {
+		controlHandler := http.StripPrefix("/api/v1/xingqiao", dependencies.ControlPlane)
+		if dependencies.Auth != nil {
+			mux.Handle("/api/v1/xingqiao/", adminauth.RequireAdminWithTrustedProxy(dependencies.Auth, dependencies.TrustedProxy, controlHandler))
+		}
 	}
 	mux.HandleFunc("GET /relay-ops/static/app.css", s.styles)
 	mux.HandleFunc("GET /pricing", s.pricing)
@@ -187,7 +193,7 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 		accountingMux.HandleFunc("GET /relay-ops/api/accounting/daily", s.accountingDaily)
 		accountingMux.HandleFunc("POST /relay-ops/api/accounting/cash-events", s.createAccountingCashEvent)
 		mux.HandleFunc("GET /relay-ops/static/accounting.js", s.accountingScript)
-		mux.Handle("/relay-ops/", adminauth.RequireAdmin(dependencies.Auth, accountingMux))
+		mux.Handle("/relay-ops/", adminauth.RequireAdminWithTrustedProxy(dependencies.Auth, dependencies.TrustedProxy, accountingMux))
 	}
 	if dependencies.Reconciliation != nil {
 		reconciliationMux := http.NewServeMux()
@@ -201,7 +207,7 @@ func NewServer(dependencies Dependencies) (http.Handler, error) {
 		reconciliationMux.HandleFunc("GET /relay-ops/api/reconciliation/exceptions", s.reconciliationExceptions)
 		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/refresh", s.reconciliationRefresh)
 		reconciliationMux.HandleFunc("POST /relay-ops/api/reconciliation/exceptions/{id}/adjust", s.reconciliationManualAdjust)
-		mux.Handle("/relay-ops/api/reconciliation/", adminauth.RequireAdmin(dependencies.Auth, reconciliationMux))
+		mux.Handle("/relay-ops/api/reconciliation/", adminauth.RequireAdminWithTrustedProxy(dependencies.Auth, dependencies.TrustedProxy, reconciliationMux))
 	}
 	return mux, nil
 }

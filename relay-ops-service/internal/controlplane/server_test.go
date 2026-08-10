@@ -1,10 +1,116 @@
 package controlplane
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"example.invalid/relay-ops-service/internal/billing"
+	"example.invalid/relay-ops-service/internal/compare"
+	"example.invalid/relay-ops-service/internal/projection"
 )
+
+func TestRuntimeCutoverRoutesUseVerifiedActorAndReturnTrustedDecision(t *testing.T) {
+	authority := &cutoverAuthorityStub{decision: compare.CutoverDecision{RequestedMode: compare.ExternalPrimary, EffectiveMode: compare.ExternalPrimary, UseExternal: true, ReportSetID: "set-monitor", Operator: "evidence-operator"}}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServerWithRuntimeCutover(NewMemoryReader(), nil, nil, nil, authority))
+
+	get := httptest.NewRequest(http.MethodGet, "/externalization/pages/monitor", nil)
+	get.Header.Set("Authorization", "Bearer session")
+	getRecorder := httptest.NewRecorder()
+	h.ServeHTTP(getRecorder, get)
+	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"report_set_id":"set-monitor"`) {
+		t.Fatalf("GET status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/externalization/pages/monitor/mode", bytes.NewBufferString(`{"mode":"legacy_only","actor_id":999}`))
+	post.Header.Set("Authorization", "Bearer session")
+	post.Header.Set("Idempotency-Key", "rollback-monitor")
+	postRecorder := httptest.NewRecorder()
+	h.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusOK || authority.actorID != 42 || authority.actorID == 999 || authority.key != "rollback-monitor" || authority.mode != compare.LegacyOnly {
+		t.Fatalf("POST status=%d actor=%d key=%q mode=%q body=%s", postRecorder.Code, authority.actorID, authority.key, authority.mode, postRecorder.Body.String())
+	}
+}
+
+type cutoverAuthorityStub struct {
+	decision compare.CutoverDecision
+	actorID  int64
+	key      string
+	mode     compare.ReadMode
+}
+
+func (s *cutoverAuthorityStub) Decision(context.Context, compare.Page) (compare.CutoverDecision, error) {
+	return s.decision, nil
+}
+
+func (s *cutoverAuthorityStub) SetMode(_ context.Context, page compare.Page, mode compare.ReadMode, actorID int64, key string, retirement *compare.RetirementEvidence) (compare.CutoverAuditRecord, error) {
+	s.actorID, s.key, s.mode = actorID, key, mode
+	return compare.CutoverAuditRecord{Page: page, RequestedMode: mode, EffectiveMode: mode, ActorID: actorID, IdempotencyKey: key, Result: "rolled_back"}, nil
+}
+
+func TestAccountCommandRequiresVerifiedAdminAndIgnoresBodyActor(t *testing.T) {
+	writer := &accountCommandWriter{}
+	audit := &accountCommandAudit{}
+	plain := NewServerWithAccountUpdates(NewMemoryReader(), nil, writer, audit)
+	request := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/accounts/7/commands/v1", bytes.NewBufferString(`{"command_id":"cmd-1","actor_id":999,"fields":{"priority":2}}`))
+		r.Header.Set("Idempotency-Key", "key-1")
+		return r
+	}
+	for _, identity := range []AdminIdentity{{}, {UserID: 4, Role: "user", Status: "active"}} {
+		h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) { return identity, nil }), plain)
+		rec := httptest.NewRecorder()
+		req := request()
+		req.Header.Set("Authorization", "Bearer session")
+		h.ServeHTTP(rec, req)
+		want := http.StatusForbidden
+		if identity.UserID == 0 {
+			want = http.StatusUnauthorized
+		}
+		if rec.Code != want {
+			t.Fatalf("identity=%+v status=%d", identity, rec.Code)
+		}
+	}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), plain)
+	rec := httptest.NewRecorder()
+	req := request()
+	req.Header.Set("Authorization", "Bearer session")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || writer.command.ActorID != 42 || writer.command.ActorID == 999 {
+		t.Fatalf("status=%d command=%+v", rec.Code, writer.command)
+	}
+}
+
+type accountCommandWriter struct{ command billing.AccountUpdateCommand }
+
+func (w *accountCommandWriter) SendAccountUpdateCommand(_ context.Context, command billing.AccountUpdateCommand) error {
+	w.command = command
+	return nil
+}
+
+type accountCommandAudit struct{ done bool }
+
+func (a *accountCommandAudit) ClaimAccountUpdateCommand(context.Context, billing.AccountUpdateCommand, string, int) (bool, string, error) {
+	if a.done {
+		return false, "accepted", nil
+	}
+	return true, "pending", nil
+}
+func (a *accountCommandAudit) CompleteAccountUpdateCommand(context.Context, billing.AccountUpdateCommand, string, int) error {
+	a.done = true
+	return nil
+}
 
 func TestReadModelsExposeFreshnessAndRefreshRequiresIdempotency(t *testing.T) {
 	r := NewMemoryReader()
@@ -22,4 +128,211 @@ func TestReadModelsExposeFreshnessAndRefreshRequiresIdempotency(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatal(rec.Code)
 	}
+}
+
+func TestStoreReaderRecomputesFreshnessAndNormalizesEmptyMetadata(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	reader := StoreReader{Now: func() time.Time { return now }, Store: projectionStoreStub{accounts: []projection.AccountRow{{AccountID: 7, Metadata: projection.Metadata{GeneratedAt: now.Add(-90 * time.Second), SourceWatermark: "event-7", Completeness: "complete", CalculationVersion: "accounts-v1"}}}}}
+	model, err := reader.Read(context.Background(), "accounts/monitor", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.Freshness.FreshnessSeconds != 90 || model.Freshness.GeneratedAt != now.Add(-90*time.Second) {
+		t.Fatalf("freshness=%+v", model.Freshness)
+	}
+	emptyReader := StoreReader{Now: func() time.Time { return now }, Store: projectionStoreStub{}}
+	for name, version := range map[string]string{
+		"accounts/monitor":         "accounts-v1",
+		"operations/profitability": "profitability-v1",
+		"accounting/ledger":        "accounting-v1",
+		"reconciliation":           "reconciliation-v1",
+	} {
+		empty, err := emptyReader.Read(context.Background(), name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if empty.Freshness.GeneratedAt != now || empty.Freshness.FreshnessSeconds != -1 || empty.Freshness.Completeness != "empty" || empty.Freshness.CalculationVersion != version {
+			t.Fatalf("%s empty=%+v", name, empty.Freshness)
+		}
+	}
+}
+
+func TestRefreshReturnsCombinedDispatchAndCompletionFailures(t *testing.T) {
+	sendErr := errors.New("official refresh failed")
+	completeErr := errors.New("persist failed")
+	audit := &failingCompletionAudit{idempotencyAudit: idempotencyAudit{claimed: map[string]bool{}}, completeErr: completeErr}
+	refresher := CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { return sendErr }), Audit: audit}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(NewMemoryReader(), refresher))
+	req := httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+	req.Header.Set("Authorization", "Bearer session")
+	req.Header.Set("Idempotency-Key", "refresh:7:failed")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway || !errors.Is(audit.lastErr, completeErr) {
+		t.Fatalf("status=%d audit=%v", rec.Code, audit.lastErr)
+	}
+}
+
+func TestRefreshDoesNotAcceptPendingReplay(t *testing.T) {
+	audit := &pendingReplayAudit{}
+	calls := 0
+	refresher := CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { calls++; return nil }), Audit: audit}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(NewMemoryReader(), refresher))
+	req := httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+	req.Header.Set("Authorization", "Bearer session")
+	req.Header.Set("Idempotency-Key", "refresh:7:pending")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway || calls != 0 {
+		t.Fatalf("status=%d dispatches=%d", rec.Code, calls)
+	}
+}
+
+type projectionStoreStub struct{ accounts []projection.AccountRow }
+
+func (s projectionStoreStub) LoadAccountReadModels(context.Context) ([]projection.AccountRow, error) {
+	return s.accounts, nil
+}
+func (projectionStoreStub) LoadProfitabilityReadModels(context.Context) ([]projection.ProfitabilityRow, error) {
+	return nil, nil
+}
+func (projectionStoreStub) LoadAccountingReadModel(context.Context) (projection.Accounting, bool, error) {
+	return projection.Accounting{}, false, nil
+}
+func (projectionStoreStub) LoadReconciliationReadModel(context.Context) (projection.Reconciliation, bool, error) {
+	return projection.Reconciliation{}, false, nil
+}
+
+func TestRefreshIdempotencyDispatchesOnceForConcurrentRequests(t *testing.T) {
+	audit := &idempotencyAudit{claimed: map[string]bool{}}
+	var mu sync.Mutex
+	calls := 0
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(NewMemoryReader(), CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { mu.Lock(); calls++; mu.Unlock(); return nil }), Audit: audit}))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+			req.Header.Set("Authorization", "Bearer session")
+			req.Header.Set("Idempotency-Key", "refresh:7:one")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted {
+				t.Errorf("status=%d", rec.Code)
+			}
+		}()
+	}
+	wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("dispatches=%d want=1", calls)
+	}
+}
+
+func TestReadModelResponseHasTopLevelFreshnessAndRefreshAuditsActor(t *testing.T) {
+	r := NewMemoryReader()
+	r.Set("accounts/monitor", ReadModel{Items: []string{"ok"}, Total: 1, Freshness: Freshness{GeneratedAt: time.Unix(1, 0).UTC(), SourceWatermark: "event-1", FreshnessSeconds: 4, Completeness: "complete", CalculationVersion: "accounts-v1"}})
+	audit := &recordingAudit{}
+	h := RequireAdmin(authClientFunc(func(context.Context, string, string, string) (AdminIdentity, error) {
+		return AdminIdentity{UserID: 42, Role: "admin", Status: "active"}, nil
+	}), NewServer(r, CommandRefresher{Sender: commandSenderFunc(func(context.Context, int64, string) error { return nil }), Audit: audit}))
+	req := httptest.NewRequest(http.MethodGet, "/accounts/monitor", nil)
+	req.Header.Set("Authorization", "Bearer browser-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status=%d", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"generated_at", "source_watermark", "freshness_seconds", "completeness", "calculation_version"} {
+		if _, ok := body[key]; !ok {
+			t.Fatalf("response omitted %s: %#v", key, body)
+		}
+	}
+	req = httptest.NewRequest(http.MethodPost, "/accounts/7/refresh", nil)
+	req.Header.Set("Authorization", "Bearer browser-token")
+	req.Header.Set("Idempotency-Key", "account:7:refresh:1")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if audit.actorID != 42 || audit.accountID != 7 || audit.key != "account:7:refresh:1" || audit.result != "accepted" || audit.contract != 1 {
+		t.Fatalf("audit=%+v", audit)
+	}
+	if strings.Contains(rec.Body.String(), "browser-token") {
+		t.Fatalf("response leaked bearer: %s", rec.Body.String())
+	}
+}
+
+type commandSenderFunc func(context.Context, int64, string) error
+
+func (f commandSenderFunc) SendAccountUpdate(ctx context.Context, id int64, key string) error {
+	return f(ctx, id, key)
+}
+
+type recordingAudit struct {
+	actorID, accountID int64
+	key, result        string
+	contract           int
+}
+
+func (a *recordingAudit) RecordExternalizationCommand(_ context.Context, actorID, accountID int64, key, result string, contract int) error {
+	a.actorID, a.accountID, a.key, a.result, a.contract = actorID, accountID, key, result, contract
+	return nil
+}
+
+type idempotencyAudit struct {
+	mu      sync.Mutex
+	claimed map[string]bool
+}
+
+func (a *idempotencyAudit) ClaimExternalizationCommand(_ context.Context, _, _ int64, key, _ string, _ int) (bool, string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.claimed[key] {
+		return false, "accepted", nil
+	}
+	a.claimed[key] = true
+	return true, "pending", nil
+}
+func (a *idempotencyAudit) CompleteExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
+}
+func (a *idempotencyAudit) RecordExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
+}
+
+type failingCompletionAudit struct {
+	idempotencyAudit
+	completeErr error
+	lastErr     error
+}
+
+func (a *failingCompletionAudit) CompleteExternalizationCommand(ctx context.Context, actorID, accountID int64, key, result string, contract int) error {
+	a.lastErr = a.completeErr
+	return a.completeErr
+}
+
+type pendingReplayAudit struct{}
+
+func (pendingReplayAudit) ClaimExternalizationCommand(context.Context, int64, int64, string, string, int) (bool, string, error) {
+	return false, "pending", nil
+}
+func (pendingReplayAudit) CompleteExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
+}
+func (pendingReplayAudit) RecordExternalizationCommand(context.Context, int64, int64, string, string, int) error {
+	return nil
 }

@@ -13,11 +13,13 @@ import (
 )
 
 const adapterMaxResponseBytes = 2 << 20
+const providerRequestTimeout = 15 * time.Second
 
 type httpAdapter struct {
 	baseURL string
 	token   string
 	client  *http.Client
+	timeout time.Duration
 }
 
 func newHTTPAdapter(baseURL, token string, client *http.Client) (*httpAdapter, error) {
@@ -30,12 +32,18 @@ func newHTTPAdapter(baseURL, token string, client *http.Client) (*httpAdapter, e
 		return nil, fmt.Errorf("billing adapter token is empty")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = &http.Client{Timeout: providerRequestTimeout}
 	}
-	return &httpAdapter{baseURL: baseURL, token: token, client: client}, nil
+	return &httpAdapter{baseURL: baseURL, token: token, client: client, timeout: providerRequestTimeout}, nil
 }
 
 func (a *httpAdapter) doJSON(ctx context.Context, method, path string, query url.Values, out any) error {
+	timeout := a.timeout
+	if timeout <= 0 {
+		timeout = providerRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	u, err := url.Parse(a.baseURL + "/" + strings.TrimLeft(path, "/"))
 	if err != nil {
 		return fmt.Errorf("build billing request: %w", err)

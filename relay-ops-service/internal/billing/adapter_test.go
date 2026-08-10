@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -90,6 +91,110 @@ func TestSub2APIAdapterReadsTransactionsAndSnapshot(t *testing.T) {
 	if snapshot.ActualCost != 18250001 || time.Since(snapshot.ObservedAt) > time.Minute {
 		t.Fatalf("snapshot=%#v", snapshot)
 	}
+}
+
+func TestBalanceAdapterCollectsFreshSnapshotAndRejectsProviderTimeout(t *testing.T) {
+	observedAt := time.Date(2026, 8, 10, 3, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/usage" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"balance":12.5,"currency":"USD"}`)
+	}))
+	defer server.Close()
+	adapter, err := NewSub2APIAdapter(server.URL, "sk-sub2api", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := BalanceCollector{
+		Reader:   adapter,
+		Writer:   &memoryBalanceWriter{},
+		Now:      func() time.Time { return observedAt },
+		FreshFor: time.Minute,
+		Source:   "sub2api",
+	}
+	snapshot, err := collector.Collect(context.Background(), 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.AccountID != 9 || snapshot.Amount != "12.5" || snapshot.Currency != "USD" || !snapshot.FreshUntil.Equal(observedAt.Add(time.Minute)) {
+		t.Fatalf("snapshot=%+v", snapshot)
+	}
+	if !snapshot.IsFreshAt(observedAt.Add(59*time.Second)) || snapshot.IsFreshAt(observedAt.Add(time.Minute)) {
+		t.Fatalf("freshness boundary was not enforced: %+v", snapshot)
+	}
+
+	timeout := BalanceCollector{Reader: balanceReaderFunc(func(context.Context) (BalanceValue, error) {
+		return BalanceValue{}, context.DeadlineExceeded
+	}), Writer: &memoryBalanceWriter{}, Now: func() time.Time { return observedAt }, FreshFor: time.Minute, Source: "sub2api"}
+	if _, err := timeout.Collect(context.Background(), 9); err == nil {
+		t.Fatal("provider timeout was accepted as a balance snapshot")
+	}
+}
+
+func TestBalanceAdapterTimeoutAppliesToInjectedClientAndWritesNoFact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { time.Sleep(200 * time.Millisecond) }))
+	defer server.Close()
+	adapter, err := NewSub2APIAdapter(server.URL, "token", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.httpAdapter.timeout = 20 * time.Millisecond
+	writer := &memoryBalanceWriter{}
+	collector := BalanceCollector{Reader: adapter, Writer: writer, FreshFor: time.Minute, Source: "sub2api"}
+	if _, err := collector.Collect(context.Background(), 9); err == nil {
+		t.Fatal("delayed provider request succeeded")
+	}
+	if len(writer.snapshots) != 0 {
+		t.Fatalf("facts=%#v", writer.snapshots)
+	}
+}
+
+func TestBalanceCollectorRetryUsesStableObservationIdentity(t *testing.T) {
+	observed := time.Date(2026, 8, 10, 3, 0, 0, 0, time.UTC)
+	writer := &ambiguousBalanceWriter{}
+	collector := BalanceCollector{Reader: balanceReaderFunc(func(context.Context) (BalanceValue, error) { return BalanceValue{Amount: "1", Currency: "USD"}, nil }), Writer: writer, FreshFor: time.Minute, Source: "test"}
+	if _, err := collector.CollectAt(context.Background(), 9, observed); err == nil {
+		t.Fatal("ambiguous append succeeded")
+	}
+	if _, err := collector.CollectAt(context.Background(), 9, observed); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.snapshots) != 1 {
+		t.Fatalf("logical facts=%d", len(writer.snapshots))
+	}
+}
+
+type ambiguousBalanceWriter struct {
+	snapshots []BalanceSnapshot
+	first     bool
+}
+
+func (w *ambiguousBalanceWriter) AppendBalanceSnapshot(_ context.Context, snapshot BalanceSnapshot) (bool, error) {
+	for _, old := range w.snapshots {
+		if old.AccountID == snapshot.AccountID && old.ObservedAt.Equal(snapshot.ObservedAt) {
+			return false, nil
+		}
+	}
+	w.snapshots = append(w.snapshots, snapshot)
+	if !w.first {
+		w.first = true
+		return false, errors.New("ambiguous append")
+	}
+	return true, nil
+}
+
+type memoryBalanceWriter struct{ snapshots []BalanceSnapshot }
+
+func (w *memoryBalanceWriter) AppendBalanceSnapshot(_ context.Context, snapshot BalanceSnapshot) (bool, error) {
+	for _, existing := range w.snapshots {
+		if existing.AccountID == snapshot.AccountID && existing.ObservedAt.Equal(snapshot.ObservedAt) {
+			return false, nil
+		}
+	}
+	w.snapshots = append(w.snapshots, snapshot)
+	return true, nil
 }
 
 func TestNewAPIAdapterPreservesMissingUpstreamRequestID(t *testing.T) {

@@ -5,20 +5,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accounting"
+	"example.invalid/relay-ops-service/internal/adapter"
+	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
+	"example.invalid/relay-ops-service/internal/compare"
 	"example.invalid/relay-ops-service/internal/config"
+	"example.invalid/relay-ops-service/internal/controlplane"
 	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
+	"example.invalid/relay-ops-service/internal/events"
 	"example.invalid/relay-ops-service/internal/feishuapi"
 	"example.invalid/relay-ops-service/internal/groupimpact"
 	httpserver "example.invalid/relay-ops-service/internal/http"
@@ -28,6 +34,7 @@ import (
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/pricingevents"
 	"example.invalid/relay-ops-service/internal/probes"
+	"example.invalid/relay-ops-service/internal/projection"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 	"example.invalid/relay-ops-service/internal/reconciliation"
 	"example.invalid/relay-ops-service/internal/scheduler"
@@ -46,6 +53,8 @@ type App struct {
 	Readiness  *Readiness
 	Agent      *agent.Service
 	Accounting *accounting.Service
+	Consumer   *events.Consumer
+	CoreOutbox *sub2api.CoreOutbox
 }
 
 type incidentMessageSender interface {
@@ -200,6 +209,10 @@ func readFeishuSecret(path string) (string, error) {
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
+	trustedProxy, err := configuredTrustedProxy(cfg, nil)
+	if err != nil {
+		return nil, err
+	}
 	database, err := store.Open(ctx, cfg.DatabaseURLFile)
 	if err != nil {
 		return nil, err
@@ -220,6 +233,25 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	reader, err := sub2api.NewHTTPReader(cfg.Sub2APIBaseURL, cfg.Sub2APIAdminKeyFile)
 	if err != nil {
 		return nil, err
+	}
+	var coreOutbox *sub2api.CoreOutbox
+	if cfg.ExternalizationEnabled {
+		if cfg.CoreDatabaseURLFile == "" {
+			return nil, fmt.Errorf("RELAY_OPS_CORE_DATABASE_URL_FILE is required for persistent externalization consumption")
+		}
+		coreURL, readErr := os.ReadFile(cfg.CoreDatabaseURLFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("read core database URL: %w", readErr)
+		}
+		coreOutbox, err = sub2api.NewCoreOutbox(ctx, string(bytes.TrimSpace(coreURL)))
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if failed {
+				coreOutbox.Close()
+			}
+		}()
 	}
 	readiness := &Readiness{Database: database}
 	syncer := sub2api.Synchronizer{
@@ -318,6 +350,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Collector: costCollector,
 		Grace:     10 * time.Minute,
 	}
+	accountsProjection := projection.NewAccountsWithRepository(database)
+	profitabilityProjection := projection.NewProfitabilityWithRepository(database)
+	accountingProjection := projection.NewAccountingWithRepository(database)
+	reconciliationProjection := projection.NewReconciliationWithRepository(database)
+	consumer, err := events.NewPersistentConsumer(database, accountsProjection, profitabilityProjection, accountingProjection, reconciliationProjection)
+	if err != nil {
+		return nil, err
+	}
 	var accountingDaily func(context.Context) error
 	if accountingService != nil {
 		accountingDaily = func(runCtx context.Context) error {
@@ -373,6 +413,24 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 					Enabled: source.Enabled,
 				}, false); err != nil {
 					failures = append(failures, err)
+				}
+			}
+			observation := time.Now().UTC()
+			billingSources, err := database.ListBillingSources(runCtx)
+			if err != nil {
+				return err
+			}
+			for _, source := range billingSources {
+				reader, readerErr := billing.NewBalanceReader(source, nil)
+				if readerErr != nil {
+					failures = append(failures, readerErr)
+					continue
+				}
+				collectCtx, cancel := context.WithTimeout(runCtx, 20*time.Second)
+				_, collectErr := (billing.BalanceCollector{Reader: reader, Writer: database, FreshFor: 10 * time.Minute, Source: source.AdapterType}).CollectAt(collectCtx, source.AccountID, observation)
+				cancel()
+				if collectErr != nil {
+					failures = append(failures, collectErr)
 				}
 			}
 			return errors.Join(failures...)
@@ -464,7 +522,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	qualityRepository := qualityReportStoreAdapter{Store: database}
 	qualityReview := qualityReviewAdapter{Service: qualityreports.Service{Repository: qualityRepository}}
 	operations, err := newOperationsServer(httpserver.Dependencies{
-		BaseOrigin: cfg.PublicBaseURL, Auth: reader, Pricing: httpserver.NativePricingSource{Reader: reader},
+		BaseOrigin: cfg.PublicBaseURL, Auth: reader, TrustedProxy: trustedProxy, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:        billing.SessionRegistrationService{Repository: database},
 		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
@@ -472,6 +530,18 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Reconciliation: reconciliationRuntime,
 		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
+		ControlPlane: controlplane.NewServerWithRuntimeCutover(
+			controlplane.StoreReader{Store: database},
+			controlplane.CommandRefresher{Sender: adapter.Sub2API{Client: reader}, Audit: database},
+			adapter.Sub2API{Client: reader}, database,
+			compare.NewJSONLCutoverAuthority(
+				cfg.CutoverStateFile,
+				compare.NewJSONLReportSetRepository(cfg.ComparisonReportSetFile),
+				nil,
+				10*time.Minute,
+			),
+		),
+		ControlPlaneAuth: reader,
 	}, accountingService)
 	if err != nil {
 		return nil, err
@@ -481,7 +551,22 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/readyz", HealthHandler(readiness))
 	root.Handle("/", operations)
 	failed = false
-	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService}, nil
+	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService, Consumer: consumer, CoreOutbox: coreOutbox}, nil
+}
+
+func configuredTrustedProxy(cfg config.Config, lookup func(string) ([]net.IP, error)) (adminauth.TrustedProxy, error) {
+	policy, err := adminauth.NewTrustedProxyPolicy(cfg.TrustedProxyHost, lookup)
+	if err != nil {
+		return nil, fmt.Errorf("resolve trusted proxy host: %w", err)
+	}
+	return policy, nil
+}
+
+func (a *App) RunExternalization(ctx context.Context) error {
+	if a == nil || a.CoreOutbox == nil || a.Consumer == nil {
+		return fmt.Errorf("externalization consumer is not configured")
+	}
+	return a.CoreOutbox.Run(ctx, "relay-ops", a.Consumer)
 }
 
 func newOperationsServer(dependencies httpserver.Dependencies, accountingService *accounting.Service) (http.Handler, error) {
@@ -516,5 +601,8 @@ func configuredCandidateService(cfg config.Config, repository candidates.Reposit
 func (a *App) Close() {
 	if a != nil && a.Store != nil {
 		a.Store.Close()
+	}
+	if a != nil && a.CoreOutbox != nil {
+		a.CoreOutbox.Close()
 	}
 }

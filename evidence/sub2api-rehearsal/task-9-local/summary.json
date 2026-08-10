@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "environment": "isolated_local_fixture",
+  "generated_at": "2026-08-10T00:59:03Z",
+  "pages": [
+    {
+      "page": "monitor",
+      "report_set_id": "local-rehearsal-set-monitor",
+      "run_id": "local-rehearsal-run-monitor",
+      "operator": "local-rehearsal-operator",
+      "compared_at": "2026-08-10T00:59:03Z",
+      "windows": [
+        {
+          "kind": "minimum",
+          "start": "2026-08-10T00:44:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "monitor:minimum:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "default",
+          "start": "2026-08-09T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "monitor:default:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "maximum",
+          "start": "2026-07-11T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "monitor:maximum:1786323543000000000",
+          "passed": true
+        }
+      ],
+      "promotion_result": "mode_changed",
+      "rollback_result": "rolled_back",
+      "active_mode": "legacy_only"
+    },
+    {
+      "page": "profitability",
+      "report_set_id": "local-rehearsal-set-profitability",
+      "run_id": "local-rehearsal-run-profitability",
+      "operator": "local-rehearsal-operator",
+      "compared_at": "2026-08-10T00:59:03Z",
+      "windows": [
+        {
+          "kind": "minimum",
+          "start": "2026-08-10T00:44:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "profitability:minimum:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "default",
+          "start": "2026-08-09T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "profitability:default:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "maximum",
+          "start": "2026-07-11T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "profitability:maximum:1786323543000000000",
+          "passed": true
+        }
+      ],
+      "promotion_result": "mode_changed",
+      "rollback_result": "rolled_back",
+      "active_mode": "legacy_only"
+    },
+    {
+      "page": "accounting",
+      "report_set_id": "local-rehearsal-set-accounting",
+      "run_id": "local-rehearsal-run-accounting",
+      "operator": "local-rehearsal-operator",
+      "compared_at": "2026-08-10T00:59:03Z",
+      "windows": [
+        {
+          "kind": "minimum",
+          "start": "2026-08-10T00:44:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "accounting:minimum:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "default",
+          "start": "2026-08-09T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "accounting:default:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "maximum",
+          "start": "2026-07-11T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "accounting:maximum:1786323543000000000",
+          "passed": true
+        }
+      ],
+      "promotion_result": "mode_changed",
+      "rollback_result": "rolled_back",
+      "active_mode": "legacy_only"
+    },
+    {
+      "page": "reconciliation",
+      "report_set_id": "local-rehearsal-set-reconciliation",
+      "run_id": "local-rehearsal-run-reconciliation",
+      "operator": "local-rehearsal-operator",
+      "compared_at": "2026-08-10T00:59:03Z",
+      "windows": [
+        {
+          "kind": "minimum",
+          "start": "2026-08-10T00:44:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "reconciliation:minimum:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "default",
+          "start": "2026-08-09T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "reconciliation:default:1786323543000000000",
+          "passed": true
+        },
+        {
+          "kind": "maximum",
+          "start": "2026-07-11T00:59:03Z",
+          "end": "2026-08-10T00:59:03Z",
+          "report_id": "reconciliation:maximum:1786323543000000000",
+          "passed": true
+        }
+      ],
+      "promotion_result": "mode_changed",
+      "rollback_result": "rolled_back",
+      "active_mode": "legacy_only"
+    }
+  ]
+}

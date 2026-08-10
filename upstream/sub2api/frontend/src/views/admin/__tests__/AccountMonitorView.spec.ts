@@ -24,6 +24,8 @@ const {
   accounting,
   showError,
   showSuccess,
+  controlPlaneMonitor,
+  controlPlaneDecision,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   groupsGetAllIncludingInactive: vi.fn(),
@@ -44,6 +46,12 @@ const {
   accounting: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  controlPlaneMonitor: vi.fn(),
+  controlPlaneDecision: vi.fn(),
+}))
+
+vi.mock('@/api/controlPlane', () => ({
+  controlPlaneAPI: { monitor: controlPlaneMonitor, decision: controlPlaneDecision },
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -310,6 +318,15 @@ describe('admin account monitor view V3', () => {
     costGuard.mockResolvedValue({ status: 'unknown', group_multiplier: 1.2, required_sample_count: 6 })
     showError.mockReset()
     showSuccess.mockReset()
+    controlPlaneMonitor.mockReset().mockResolvedValue({
+      items: [],
+      freshness: {
+        generated_at: '2026-08-04T04:20:42Z',
+        completeness: 'complete',
+        calculation_version: 'accounts-v1',
+      },
+    })
+    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'monitor', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
   })
 
   afterEach(() => {
@@ -334,6 +351,71 @@ describe('admin account monitor view V3', () => {
     expect(list).toHaveBeenNthCalledWith(3, '30d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.get('[data-test="range-30d"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.text()).toContain('Rank one A 30d')
+  })
+
+  it('keeps legacy cards in shadow mode while surfacing control-plane freshness', async () => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith('24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(controlPlaneMonitor).toHaveBeenCalledWith({ range: '24h' })
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('完整性：complete')
+    expect(wrapper.text()).toContain('Rank one A 24h')
+  })
+
+  it('treats a control-plane failure as local degradation without replacing legacy cards', async () => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneMonitor.mockRejectedValueOnce(new Error('control plane unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(showError).not.toHaveBeenCalledWith('control plane unavailable')
+  })
+
+  it.each([
+    ['a complete-looking response', { items: projection('24h'), freshness: { completeness: 'complete', calculation_version: 'accounts-v1' } }],
+    ['an incomplete response', { items: { range: '24h', accounts: [], groups: [] }, freshness: { completeness: 'partial', calculation_version: 'accounts-v1' } }],
+  ])('keeps the legacy monitor source and degrades external_primary for %s', async (_label, externalResponse) => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'legacy_only', use_external: false, degraded: true, reason: 'comparison_gate_failed' })
+    controlPlaneMonitor.mockResolvedValueOnce(externalResponse)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).toContain('来源：现有系统')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+  })
+
+  it('renders a fully mapped monitor projection only after its three-window cutover gate passes', async () => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneMonitor.mockResolvedValueOnce({
+      items: {
+        ...projection('24h'),
+        accounts: projection('24h').accounts.map((item) => ({ ...item, name: `External ${item.name}` })),
+      },
+      freshness: { completeness: 'complete', calculation_version: 'accounts-v1' },
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('External Rank one A 24h')
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
+  })
+
+  it.each([401, 403])('keeps the monitor page local when the control plane returns %s', async (status) => {
+    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
+    controlPlaneMonitor.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Rank one A 24h')
+    expect(wrapper.text()).toContain('控制面暂时不可用')
+    expect(showError).not.toHaveBeenCalledWith('control plane rejected request')
   })
 
   it('does not load reconciled cost guards for account cards', async () => {

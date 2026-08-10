@@ -1,0 +1,374 @@
+# Task 4 Report: Same-Origin Control Plane
+
+## Status
+
+Local implementation and verification complete. No production deployment or
+project-progress ledger update was performed by this task.
+
+## RED / GREEN
+
+RED was recorded before implementation with:
+
+```text
+go test ./internal/controlplane ./internal/sub2api \
+  -run 'Test(RequireAdminTreatsInactiveSessionAsLocalUnauthorized|VerifyAdminSessionForwardsBearerAndRequiresAdmin)' -count=1 -v
+```
+
+The control-plane test failed because it passed `RemoteAddr` including the
+port and returned `403` for an inactive session. The Sub2API test did not
+compile because `Origin` was not part of the isolated authentication session.
+
+GREEN added canonical client-IP parsing, Origin propagation, local `401` for
+inactive sessions, and no `Set-Cookie` side effect. Follow-on RED/GREEN tests
+cover the mounted `/api/v1/xingqiao/*` route, top-level freshness fields,
+command audit facts, explicit core outbox configuration, and a nil persistent
+consumer rejection.
+
+## Specification Mapping
+
+- `GET /api/v1/xingqiao/accounts/monitor`, profitability, accounting, and
+  reconciliation are mounted through the existing HTTP server. `StoreReader`
+  is limited to relay-owned `relay_ops` projection loaders; it has no core
+  account/group/usage/billing access.
+- Every read response has `generated_at`, `source_watermark`,
+  `freshness_seconds`, `completeness`, and `calculation_version` at the top
+  level and retains the structured `freshness` object.
+- Same-origin bearer verification calls only `/api/v1/auth/me`. It forwards
+  the canonical socket client IP and Origin, does not forward Cookie or API
+  key, turns inactive/invalid sessions into local `401`, and returns `403`
+  only for an active non-admin identity.
+- Refresh requires `Idempotency-Key`, uses the official
+  `/api/v1/admin/accounts/{id}/refresh` endpoint with the service key, and
+  never reuses the browser bearer on a write. The relay audit records actor,
+  account command, idempotency key, result, and contract version before and
+  after dispatch.
+- Normal non-closed startup requires `RELAY_OPS_CORE_DATABASE_URL_FILE` and
+  builds one Task-3 `NewPersistentConsumer` from the same relay Store used as
+  its journal and by all four projections. `cmd/relay-ops` supervises the
+  loop and terminates on an unexpected consumer failure.
+
+## Runtime Call Chain
+
+```text
+core externalization_outbox
+  -> CoreOutbox.ClaimBatch (SKIP LOCKED lease)
+  -> events.NewPersistentConsumer(relay Store, accounts/profitability/accounting/reconciliation)
+  -> relay_ops projection transaction + watermark/dead-letter
+  -> CoreOutbox.MarkPublished or MarkFailed
+```
+
+The cross-DB adapter contains a fixed SQL allowlist for only
+`externalization_outbox` claim/published/retry state. It does not query or
+modify any core business table. Deployment must provide a least-privilege core
+database role restricted to that table's SELECT/UPDATE operations.
+
+## Sensitive Fields
+
+- Request tests prove only Bearer is supplied to `/api/v1/auth/me`; Cookie and
+  `x-api-key` are absent.
+- Control-plane `401` responses neither echo Bearer/Cookie/API-key text nor
+  emit logout cookies.
+- The official refresh request carries the relay service API key and the
+  idempotency key; the administrator Bearer is not available to that path.
+
+## Verification
+
+```text
+cd relay-ops-service
+go test ./...
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+go vet ./...
+git diff --check
+```
+
+All commands exited `0`.
+
+## Residual Risk
+
+The repository has no local core+relay database integration fixture for the
+cross-database lease cycle. Unit coverage validates explicit configuration and
+the persistent-consumer precondition; the deployed core role and full
+claim/ack path still need a staging database exercise before production.
+
+## Commit
+
+Pending at report creation.
+
+## Fix Round 1
+
+### RED / GREEN
+
+- `TestLoadKeepsReadOnlyExternalizationOptIn` first failed to compile because
+  `ExternalizationEnabled` did not exist. The configuration now defaults it to
+  `false`; only an explicit `RELAY_OPS_EXTERNALIZATION_ENABLED=true` requires
+  `RELAY_OPS_CORE_DATABASE_URL_FILE` and starts the core outbox loop.
+- Routing test first returned `404` after switching the Xingqiao mount to the
+  established admin-auth middleware. The test was then updated to exercise the
+  real session-verifier boundary and proved Bearer, User-Agent, forwarded IP,
+  real IP, and Origin reach `/auth/me` verification while Cookie is not
+  forwarded by Caddy.
+- The PostgreSQL lease test initially failed with `expected 2 arguments, got
+  3`, exposing the stale claim SQL placeholder after adding the token. It now
+  passes against a fresh PostgreSQL 18 container: an expired `processing`
+  lease is reclaimed with a new random token, and stale publish plus stale
+  failure acknowledgement are both rejected.
+
+### Fix Mapping
+
+- Added same-origin Caddy `/api/v1/xingqiao/*` route with relay proxying,
+  explicit User-Agent/Origin/trusted IP preservation, and Cookie removal.
+  `tests/infra/validate-sub2api-update-routing.sh` verifies the route contract.
+- Core outbox claims now include expired `processing` rows, set a cryptographic
+  claim token, and fence `MarkPublished`/`MarkFailed` on event ID, owner, and
+  token; both acknowledgement paths require exactly one updated row.
+- Refresh commands use Store-backed claim/result persistence. The first
+  matching actor/command/account/idempotency key dispatches; concurrent or
+  repeated matching requests replay stored state without another official
+  refresh. Conflicting command identity returns the Store conflict error.
+- `StoreReader.Now` now recomputes `freshness_seconds` on read. Empty
+  accounting/reconciliation responses carry deterministic generated-at,
+  `empty` completeness, and their calculation version.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/config ./internal/controlplane ./internal/http -run 'Test(LoadKeeps|Xingqiao|ReadModel)' -count=1 -v
+go test ./internal/sub2api -run '^TestCoreOutboxReclaimsExpiredLeaseAndRejectsStaleOwner$' -count=1 -v
+go test ./...
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+go vet ./...
+cd .. && bash tests/infra/validate-sub2api-update-routing.sh
+git diff --check
+```
+
+All recorded commands exited `0`. The lease/fencing test used a fresh local
+PostgreSQL 18 container and `RELAY_OPS_TEST_CORE_DATABASE_URL`; the container
+was stopped with `--rm` after completion.
+
+### Files
+
+- Config/startup: `internal/config/*`, `internal/app/app.go`,
+  `cmd/relay-ops/main.go`
+- Auth/routing: `internal/adminauth/*`, `internal/http/*`, `infra/Caddyfile`,
+  `tests/infra/validate-sub2api-update-routing.sh`
+- Command replay/freshness: `internal/controlplane/*`, `internal/store/*`
+- Core transport/migration: `internal/sub2api/outbox*`,
+  `upstream/sub2api/backend/migrations/200_externalization_outbox.sql`
+
+### Commit
+
+Pending fix-round commit.
+
+## Fix Round 2
+
+### RED / GREEN
+
+- **Trusted-proxy session binding:** RED command
+  `cd relay-ops-service && go test ./internal/adminauth -run 'TestRequireAdmin(UsesOriginal|IgnoresForwarded)' -count=1 -v`
+  failed with `ClientIP:172.20.0.4`, proving the relay socket peer was sent
+  instead of the browser IP. GREEN now trusts `X-Forwarded-For`/`X-Real-IP`
+  only when the immediate peer is loopback/private, selects the first valid
+  forwarded address, and retains the peer for untrusted callers. The real
+  `adminauth.RequireAdmin -> sub2api.HTTPReader.VerifyAdminSession ->
+  /api/v1/auth/me` boundary test asserts all three IP headers equal
+  `198.51.100.23`; focused result: `PASS`.
+- **Empty read-model metadata:** RED was the existing focused assertion showing
+  empty accounts/profitability as `unknown` and `0` (the accounting assertion
+  covered only one endpoint). GREEN uses the four projection calculation
+  version constants and API empty convention `freshness_seconds=-1`; the
+  injected-clock test covers all four empty endpoints and verifies a non-empty
+  account row still recomputes to `90` seconds. Focused result: `PASS`.
+- **Refresh error durability:** RED added tests for a failed official dispatch
+  plus failed completion and for replaying a durable `pending` result. Before
+  the fix, the former returned only the dispatch error and the latter returned
+  success without dispatch. GREEN joins both errors with `errors.Join` and
+  returns `ErrExternalizationCommandPending` for pending/processing/unknown
+  replays, while accepted/failed replays remain idempotent. Focused result:
+  `PASS`.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/adminauth -run 'TestRequireAdmin(UsesOriginal|IgnoresForwarded)' -count=1 -v   # PASS
+go test ./internal/sub2api -run '^TestAdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe$' -count=1 -v   # PASS
+go test ./internal/controlplane -run 'Test(StoreReaderRecomputes|Refresh(ReturnsCombined|DoesNotAccept))' -count=1 -v   # PASS
+go test ./internal/controlplane ./internal/adminauth ./internal/http ./internal/sub2api -count=1   # PASS
+go test ./internal/controlplane ./internal/adminauth ./internal/http -run 'Test(Auth|ReadModel|Refresh|Xingqiao)' -count=1 -v   # PASS
+go test ./...   # PASS
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http   # PASS
+go vet ./...   # PASS
+cd .. && bash tests/infra/validate-sub2api-update-routing.sh   # PASS
+git diff --check   # PASS
+```
+
+### Residual Concerns
+
+Forwarded-IP trust is intentionally limited to private/loopback immediate
+peers; deployments using a public-address Caddy-to-relay hop must configure a
+private network or the relay will fail closed to the proxy peer. A completion
+write failure after an official failure can still leave the durable row
+pending when storage is unavailable; subsequent identical requests now fail
+closed instead of being reported accepted, and operator/storage repair is
+required before retrying.
+
+## Fix Round 3
+
+### RED / GREEN
+
+- **Exact Caddy peer policy:** RED added HTTP and app startup wiring tests and
+  ran:
+
+  ```text
+  cd relay-ops-service
+  go test ./internal/http ./internal/app ./internal/sub2api \
+    -run 'Test(AdminMountsUseConfiguredTrustedProxy|ConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly|AdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe)$' -count=1 -v
+  ```
+
+  Exact output included:
+
+  ```text
+  internal/http/server_test.go:114:3: unknown field TrustedProxy in struct literal of type Dependencies
+  internal/app/app_test.go:41:17: undefined: configuredTrustedProxy
+  internal/app/app_test.go:50:11: undefined: configuredTrustedProxy
+  FAIL
+  ```
+
+  GREEN resolves `RELAY_OPS_TRUSTED_PROXY_HOST` exactly once during `app.New`,
+  before opening the database, and injects that immutable policy into every
+  production admin-auth mount: Xingqiao, accounting, and reconciliation. A
+  missing setting has an empty fail-closed policy; a configured hostname that
+  errors or resolves no IPs rejects startup. The policy accepts the resolved
+  Caddy address only, so a different private container cannot use forwarded
+  headers. The real middleware-to-`/api/v1/auth/me` boundary now supplies an
+  explicit Caddy policy and continues to assert the original browser IP.
+
+### Commands / Results
+
+```text
+cd relay-ops-service
+go test ./internal/config ./internal/adminauth ./internal/app ./internal/http ./internal/sub2api \
+  -run 'Test(LoadConfiguresExactTrustedProxyHost|RequireAdmin(UsesOriginalIPFromTrustedCaddyProxy|RejectsForwardedIPFromDifferentPrivateContainer|DefaultFailsClosedForPrivatePeer)|ConfiguredTrustedProxyResolvesOnceAndFailsStartupClearly|AdminMountsUseConfiguredTrustedProxy|AdminAuthClientBoundarySendsOriginalBrowserIPToAuthMe)$' -count=1 -v
+# PASS: config, adminauth, app, http, sub2api
+go test ./...
+# PASS
+go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+# PASS
+go vet ./...
+# PASS
+cd ..
+bash tests/infra/validate-sub2api-update-routing.sh
+# PASS: Sub2API update UI and routing contracts
+git diff --check
+# PASS
+```
+
+### Residual Concerns
+
+The exact Docker DNS result is intentionally fixed for the relay process
+lifetime. If Caddy is recreated with a different peer IP, relay-ops must be
+restarted to resolve it again; it will otherwise fail closed rather than trust
+another container. This task remains local-only and in progress until a later,
+separately authorized push, deployment, and online verification.
+
+## Fix Round 4
+
+### RED / GREEN
+
+- **Dynamic fixed-host identity:** the regression uses an injected,
+  concurrency-safe resolver. It proves startup resolution, the first Caddy IP,
+  immediate acceptance of a rotated Caddy IP, immediate rejection of the old
+  IP and another same-network container, fixed-hostname-only lookups, and
+  fail-closed behavior after a runtime resolver error. RED command/output:
+
+  ```text
+  $ go test ./internal/adminauth -run 'Test(TrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed|NewTrustedProxyPolicyRequiresSuccessfulStartupResolution)$' -count=1 -v
+  === RUN   TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed
+      middleware_test.go:46: rotated Caddy IP is not trusted
+      middleware_test.go:46: old Caddy IP remains trusted
+      ... repeated by concurrent workers ...
+      middleware_test.go:51: runtime resolver failure trusted a current or stale peer
+  --- FAIL: TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed (0.00s)
+  === RUN   TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution
+  --- PASS: TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution (0.00s)
+  FAIL
+  FAIL example.invalid/relay-ops-service/internal/adminauth 1.581s
+  ```
+
+- **Real `/auth/me` boundary:** the integration regression verifies the first
+  and rotated Caddy peers preserve browser IP, User-Agent, Origin and Bearer,
+  while Cookie and the relay admin key remain absent. Reuse of the old IP and
+  a different container send only their socket peer and fail session binding.
+  RED command/output:
+
+  ```text
+  $ go test ./internal/app ./internal/sub2api -run 'Test(ConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck|AdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation)$' -count=1 -v
+  === RUN   TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck
+      app_test.go:53: lookups = 1, want one startup resolution and one per trust check
+  --- FAIL: TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck (0.00s)
+  FAIL example.invalid/relay-ops-service/internal/app 0.807s
+  === RUN   TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation
+      client_test.go:156: rotated Caddy status=401 body=Unauthorized
+  --- FAIL: TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation (0.00s)
+  FAIL example.invalid/relay-ops-service/internal/sub2api 0.394s
+  FAIL
+  ```
+
+GREEN keeps the configured hostname and injected resolver immutable. The
+constructor performs a mandatory startup lookup as the readiness gate;
+`Trusted(peer)` resolves that same fixed hostname on every authenticated
+request and compares only the socket peer against the current answer. It does
+not retain an address cache and does not use request-supplied names, private or
+loopback CIDRs, or stale fallback addresses. Exact focused output:
+
+```text
+$ go test ./internal/adminauth ./internal/app ./internal/sub2api -run 'Test(TrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed|NewTrustedProxyPolicyRequiresSuccessfulStartupResolution|ConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck|AdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation)$' -count=1 -v
+--- PASS: TestTrustedProxyPolicyRefreshesFixedHostnameAndFailsClosed (0.00s)
+--- PASS: TestNewTrustedProxyPolicyRequiresSuccessfulStartupResolution (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/adminauth 1.578s
+--- PASS: TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/app 1.498s
+--- PASS: TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation (0.00s)
+PASS
+ok  example.invalid/relay-ops-service/internal/sub2api 1.942s
+
+$ go test ./internal/adminauth ./internal/app ./internal/http ./internal/sub2api -count=1
+ok  example.invalid/relay-ops-service/internal/adminauth 0.362s
+ok  example.invalid/relay-ops-service/internal/app 0.633s
+ok  example.invalid/relay-ops-service/internal/http 1.038s
+ok  example.invalid/relay-ops-service/internal/sub2api 1.430s
+```
+
+### Required Regression
+
+```text
+$ cd relay-ops-service && go test ./...
+PASS; all packages exited 0 (adminauth 1.726s, app 1.987s,
+controlplane 2.408s, http 2.842s, sub2api 2.961s; remaining packages cached
+or reported no test files).
+
+$ go test -race ./internal/controlplane ./internal/adminauth ./internal/http
+ok  example.invalid/relay-ops-service/internal/controlplane 1.461s
+ok  example.invalid/relay-ops-service/internal/adminauth 1.865s
+ok  example.invalid/relay-ops-service/internal/http 1.566s
+
+$ go vet ./...
+(no output; exit 0)
+
+$ cd .. && bash tests/infra/validate-sub2api-update-routing.sh
+PASS: Sub2API update UI and routing contracts
+
+$ git diff --check
+(no output; exit 0)
+```
+
+### Residual Concerns
+
+Runtime Docker DNS failure intentionally fails closed: the relay ignores
+forwarded identity and `/auth/me` rejects browser-IP-bound sessions until local
+Docker DNS recovers. This favors the trust boundary over admin API
+availability, and adds one local DNS lookup per authenticated request. No
+production, deployment, push, or merge validation was performed or authorized.

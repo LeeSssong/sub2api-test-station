@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/adminauth"
+	"example.invalid/relay-ops-service/internal/billing"
 )
 
 func TestReaderAccountRoutingContract(t *testing.T) {
@@ -78,6 +81,144 @@ func TestReaderAccountRoutingContract(t *testing.T) {
 	if fmt.Sprint(requests) != fmt.Sprint(want) {
 		t.Fatalf("requests = %v, want %v", requests, want)
 	}
+}
+
+func TestUpdateAccountUsesNarrowOfficialAdminAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/admin/accounts/12/external-command/v1" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("x-api-key") != "admin-test-key" || r.Header.Get("Idempotency-Key") != "account:12:priority:1" {
+			t.Fatalf("headers api=%q idempotency=%q", r.Header.Get("x-api-key"), r.Header.Get("Idempotency-Key"))
+		}
+		var body struct {
+			CommandID string         `json:"command_id"`
+			Fields    map[string]any `json:"fields"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CommandID != "command-1" || len(body.Fields) != 1 || body.Fields["priority"] != float64(3) {
+			t.Fatalf("body=%#v err=%v", body, err)
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	defer server.Close()
+	reader := newTestReader(t, server.URL)
+	command := billing.AccountUpdateCommand{CommandID: "command-1", ActorID: 8, AccountID: 12, IdempotencyKey: "account:12:priority:1", Fields: map[string]any{"priority": 3}}
+	if err := reader.UpdateAccount(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAdminAuthClientBoundaryPreservesSessionIsolationAcrossCaddyIPRotation(t *testing.T) {
+	type authRequest struct {
+		authorization string
+		userAgent     string
+		clientIP      string
+		forwardedFor  string
+		realIP        string
+		origin        string
+		cookie        string
+		adminKey      string
+	}
+	var requestsMu sync.Mutex
+	requests := make([]authRequest, 0, 4)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/me" {
+			http.NotFound(w, r)
+			return
+		}
+		request := authRequest{
+			authorization: r.Header.Get("Authorization"),
+			userAgent:     r.Header.Get("User-Agent"),
+			clientIP:      r.Header.Get("X-Client-IP"),
+			forwardedFor:  r.Header.Get("X-Forwarded-For"),
+			realIP:        r.Header.Get("X-Real-IP"),
+			origin:        r.Header.Get("Origin"),
+			cookie:        r.Header.Get("Cookie"),
+			adminKey:      r.Header.Get("x-api-key"),
+		}
+		requestsMu.Lock()
+		requests = append(requests, request)
+		requestsMu.Unlock()
+		if request.clientIP != "198.51.100.23" || request.userAgent != "Mozilla/5.0 bound-browser" || request.origin != "https://api.example.test" {
+			http.Error(w, "session binding mismatch", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":42,"role":"admin","status":"active"}`)
+	}))
+	defer upstream.Close()
+	keyPath := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(keyPath, []byte("relay-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewHTTPReader(upstream.URL, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &authBoundaryResolver{ips: []net.IP{net.ParseIP("172.20.0.4")}}
+	policy, err := adminauth.NewTrustedProxyPolicy("caddy", resolver.lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := adminauth.RequireAdminWithTrustedProxy(client, policy, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	request := func(peer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+		req.RemoteAddr = peer + ":8100"
+		req.Header.Set("Authorization", "Bearer browser-session")
+		req.Header.Set("User-Agent", "Mozilla/5.0 bound-browser")
+		req.Header.Set("X-Forwarded-For", "198.51.100.23, 172.20.0.3")
+		req.Header.Set("X-Real-IP", "198.51.100.23")
+		req.Header.Set("Origin", "https://api.example.test")
+		req.Header.Set("Cookie", "browser-cookie=must-stay-local")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := request("172.20.0.4"); rec.Code != http.StatusNoContent {
+		t.Fatalf("first Caddy status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	resolver.set([]net.IP{net.ParseIP("172.20.0.8")}, nil)
+	if rec := request("172.20.0.8"); rec.Code != http.StatusNoContent {
+		t.Fatalf("rotated Caddy status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, peer := range []string{"172.20.0.4", "172.20.0.9"} {
+		if rec := request(peer); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("untrusted peer %s status=%d, want 401", peer, rec.Code)
+		}
+	}
+	requestsMu.Lock()
+	defer requestsMu.Unlock()
+	if len(requests) != 4 {
+		t.Fatalf("auth/me requests = %d, want 4", len(requests))
+	}
+	for i, request := range requests[:2] {
+		if request.authorization != "Bearer browser-session" || request.clientIP != "198.51.100.23" || request.forwardedFor != "198.51.100.23" || request.realIP != "198.51.100.23" || request.cookie != "" || request.adminKey != "" {
+			t.Fatalf("trusted auth/me request %d = %+v", i, request)
+		}
+	}
+	for i, wantPeer := range []string{"172.20.0.4", "172.20.0.9"} {
+		if requests[i+2].clientIP != wantPeer || requests[i+2].forwardedFor != wantPeer || requests[i+2].realIP != wantPeer {
+			t.Fatalf("untrusted auth/me request %d = %+v, want peer %s", i+2, requests[i+2], wantPeer)
+		}
+	}
+}
+
+type authBoundaryResolver struct {
+	mu  sync.RWMutex
+	ips []net.IP
+}
+
+func (r *authBoundaryResolver) lookup(string) ([]net.IP, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]net.IP(nil), r.ips...), nil
+}
+
+func (r *authBoundaryResolver) set(ips []net.IP, _ error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ips = ips
 }
 
 func TestHTTPReaderSyncUpstreamModelsUsesNativeAdminEndpoint(t *testing.T) {
@@ -493,6 +634,9 @@ func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
 		if got := r.Header.Get("X-Real-IP"); got != "203.0.113.9" {
 			t.Errorf("X-Real-IP = %q", got)
 		}
+		if got := r.Header.Get("Origin"); got != "https://api.example.test" {
+			t.Errorf("Origin = %q", got)
+		}
 		if got := r.Header.Get("Cookie"); got != "" {
 			t.Errorf("Cookie must not be forwarded: %q", got)
 		}
@@ -507,6 +651,7 @@ func TestVerifyAdminSessionForwardsBearerAndRequiresAdmin(t *testing.T) {
 		UserAgent:    "Mozilla/5.0 session-browser",
 		ForwardedFor: "203.0.113.9",
 		RealIP:       "203.0.113.9",
+		Origin:       "https://api.example.test",
 	})
 	if err != nil || identity.UserID != 42 {
 		t.Fatalf("VerifyAdminSession = %#v, %v", identity, err)

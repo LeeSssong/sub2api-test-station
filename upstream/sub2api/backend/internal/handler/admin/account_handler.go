@@ -165,6 +165,67 @@ type UpdateAccountRequest struct {
 	ConfirmMixedChannelRisk *bool                  `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
+type externalAccountCommandV1Request struct {
+	CommandID string                     `json:"command_id" binding:"required"`
+	Fields    map[string]json.RawMessage `json:"fields" binding:"required"`
+}
+
+// UpdateExternalCommandV1 is the narrow, idempotent relay command boundary.
+func (h *AccountHandler) UpdateExternalCommandV1(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	var req externalAccountCommandV1Request
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Fields) == 0 {
+		response.BadRequest(c, "Invalid external account command")
+		return
+	}
+	input := &service.UpdateAccountInput{}
+	for name, raw := range req.Fields {
+		switch name {
+		case "rate_multiplier":
+			var value float64
+			if json.Unmarshal(raw, &value) != nil || value < 0 {
+				response.BadRequest(c, "invalid rate_multiplier")
+				return
+			}
+			input.RateMultiplier = &value
+		case "priority":
+			var value int
+			if json.Unmarshal(raw, &value) != nil || value < 1 {
+				response.BadRequest(c, "invalid priority")
+				return
+			}
+			input.Priority = &value
+		case "status":
+			var value string
+			if json.Unmarshal(raw, &value) != nil || (value != "active" && value != "inactive" && value != "error") {
+				response.BadRequest(c, "invalid status")
+				return
+			}
+			input.Status = value
+		default:
+			response.BadRequest(c, "external command field is not allowed")
+			return
+		}
+	}
+	result, err := executeAdminIdempotent(c, "admin.accounts.external-command.v1", struct {
+		AccountID int64                      `json:"account_id"`
+		CommandID string                     `json:"command_id"`
+		Fields    map[string]json.RawMessage `json:"fields"`
+	}{accountID, req.CommandID, req.Fields}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) { return h.adminService.UpdateAccount(ctx, accountID, input) })
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if result.Replayed {
+		c.Header("X-Idempotency-Replayed", "true")
+	}
+	response.Success(c, result.Data)
+}
+
 // procurementCostRequest records whether the JSON key was present, including
 // when it was explicitly set to null.
 type procurementCostRequest struct {

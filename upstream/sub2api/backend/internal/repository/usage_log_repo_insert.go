@@ -12,6 +12,8 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	coreevents "github.com/Wei-Shaw/sub2api/internal/events"
+	"github.com/Wei-Shaw/sub2api/internal/integration"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -158,7 +160,14 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	}
 
 	if tx := dbent.TxFromContext(ctx); tx != nil {
-		return r.createSingle(ctx, tx.Client(), log)
+		inserted, err := r.createSingle(ctx, tx.Client(), log)
+		if err == nil && inserted {
+			err = r.appendRequestEvent(ctx, tx.Client(), log)
+		}
+		return inserted, err
+	}
+	if r.outbox != nil && r.db != nil {
+		return r.createAtomic(ctx, log)
 	}
 	requestID := strings.TrimSpace(log.RequestID)
 	if requestID == "" {
@@ -168,13 +177,90 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	return r.createBatched(ctx, log)
 }
 
+func (r *usageLogRepository) createAtomic(ctx context.Context, log *service.UsageLog) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, service.MarkUsageLogCreateNotPersisted(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	inserted, err := r.createSingle(ctx, tx, log)
+	if err != nil {
+		return false, service.MarkUsageLogCreateNotPersisted(err)
+	}
+	if inserted {
+		if err := r.appendRequestEvent(ctx, tx, log); err != nil {
+			return false, service.MarkUsageLogCreateNotPersisted(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, service.MarkUsageLogCreateNotPersisted(err)
+	}
+	return inserted, nil
+}
+
+func (r *usageLogRepository) appendRequestEvent(ctx context.Context, tx coreevents.DBTX, log *service.UsageLog) error {
+	if r.outbox == nil || log == nil || log.AccountID <= 0 || strings.TrimSpace(log.RequestID) == "" {
+		return nil
+	}
+	requested := strings.TrimSpace(log.RequestedModel)
+	if requested == "" {
+		requested = strings.TrimSpace(log.Model)
+	}
+	upstream := ""
+	if log.UpstreamModel != nil {
+		upstream = strings.TrimSpace(*log.UpstreamModel)
+	}
+	actual := ""
+	if log.ActualResponseModel != nil {
+		actual = strings.TrimSpace(*log.ActualResponseModel)
+	}
+	occurredAt := log.CreatedAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	payload := integration.RequestCompleted{
+		RequestID: log.RequestID, AccountID: log.AccountID, Model: requested,
+		RequestedModel: requested, UpstreamModel: upstream, ActualResponseModel: actual,
+		PromptTokens: int64(log.InputTokens), CompletionTokens: int64(log.OutputTokens),
+		InputTokens: int64(log.InputTokens), OutputTokens: int64(log.OutputTokens),
+		UserCharge: formatEventDecimal(log.TotalCost), ActualCost: formatEventDecimal(log.ActualCost),
+		CostUSD: formatEventDecimal(log.ActualCost), LatencyMS: durationMillis(log.DurationMs),
+		Currency: "USD",
+	}
+	event, err := integration.NewRequestCompletedEvent("sub2api-core", occurredAt, payload)
+	if err != nil {
+		return err
+	}
+	return r.outbox.Append(ctx, tx, event)
+}
+
+func durationMillis(value *int) int64 {
+	if value == nil || *value < 0 {
+		return 0
+	}
+	return int64(*value)
+}
+
+func formatEventDecimal(value float64) string {
+	return strconv.FormatFloat(value, 'f', 10, 64)
+}
+
 func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.UsageLog) error {
 	if log == nil {
 		return nil
 	}
 
 	if tx := dbent.TxFromContext(ctx); tx != nil {
-		_, err := r.createSingle(ctx, tx.Client(), log)
+		inserted, err := r.createSingle(ctx, tx.Client(), log)
+		if err == nil && inserted {
+			err = r.appendRequestEvent(ctx, tx.Client(), log)
+		}
+		return err
+	}
+	// Externalized request events must share the usage write transaction. The
+	// asynchronous batcher is intentionally bypassed for this adapter path.
+	if r.outbox != nil && r.db != nil {
+		_, err := r.createAtomic(ctx, log)
 		return err
 	}
 	if r.db == nil {

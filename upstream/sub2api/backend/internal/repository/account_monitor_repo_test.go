@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -9,6 +10,26 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+func TestAccountMonitorRepositoryHealthHistoryErrorRollsBackWithoutEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepositoryWithOutbox(db)
+	at := time.Date(2026, 8, 10, 1, 2, 3, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT status FROM account_monitor_results").WithArgs(int64(7)).WillReturnError(errors.New("history unavailable"))
+	mock.ExpectRollback()
+	err = repo.InsertResult(context.Background(), service.AccountMonitorProbeResult{AccountID: 7, ModelID: "probe", Status: "success", CheckedAt: at}, "7d4b56d2-8223-4f77-8d22-f6a93d818980")
+	if err == nil {
+		t.Fatal("expected history query error")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestAccountMonitorRepositoryLoadsAndSavesSingletonSettings(t *testing.T) {
 	db, mock, err := sqlmock.New()

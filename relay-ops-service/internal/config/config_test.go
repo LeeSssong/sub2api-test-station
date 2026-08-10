@@ -37,6 +37,38 @@ func TestLoadUsesFixedMonitoringCadence(t *testing.T) {
 	if cfg.AnalyzerCommandPath != "/app/ops/analyze-account-monitor.rb" {
 		t.Fatalf("AnalyzerCommandPath = %q", cfg.AnalyzerCommandPath)
 	}
+	if cfg.ComparisonReportSetFile != "/var/lib/relay-ops/comparison-report-sets.jsonl" || cfg.CutoverStateFile != "/var/lib/relay-ops/cutover-state.jsonl" {
+		t.Fatalf("cutover paths = %q %q", cfg.ComparisonReportSetFile, cfg.CutoverStateFile)
+	}
+}
+
+func TestLoadRejectsRelativeCutoverAuthorityPaths(t *testing.T) {
+	for key, value := range map[string]string{
+		"RELAY_OPS_COMPARISON_REPORT_SET_FILE": "relative/sets.jsonl",
+		"RELAY_OPS_CUTOVER_STATE_FILE":         "relative/state.jsonl",
+	} {
+		t.Run(key, func(t *testing.T) {
+			env := validEnv(t)
+			env[key] = value
+			if _, err := Load(func(name string) string { return env[name] }); err == nil {
+				t.Fatalf("accepted %s=%q", key, value)
+			}
+		})
+	}
+}
+
+func TestLoadConfiguresExactTrustedProxyHost(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(t)
+	env["RELAY_OPS_TRUSTED_PROXY_HOST"] = "caddy"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TrustedProxyHost != "caddy" {
+		t.Fatalf("TrustedProxyHost = %q", cfg.TrustedProxyHost)
+	}
 }
 
 func TestLoadRequiresStartDateWhenAccountingEnabled(t *testing.T) {
@@ -409,6 +441,21 @@ func TestLoadAcceptsOnlyAbsoluteAccountQualityResultPath(t *testing.T) {
 	env["RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE"] = "relative.json"
 	if _, err := Load(func(key string) string { return env[key] }); err == nil {
 		t.Fatal("relative account quality result path was accepted")
+	}
+}
+
+func TestLoadKeepsReadOnlyExternalizationOptIn(t *testing.T) {
+	t.Parallel()
+	env := validEnv(t)
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ExternalizationEnabled {
+		t.Fatal("externalization unexpectedly enabled")
+	}
+	if cfg.CoreDatabaseURLFile != "" {
+		t.Fatalf("core database file=%q", cfg.CoreDatabaseURLFile)
 	}
 }
 

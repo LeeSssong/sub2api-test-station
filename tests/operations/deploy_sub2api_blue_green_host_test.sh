@@ -996,6 +996,9 @@ test_authorized_maintenance_transition() {
   local account_cost_new_hash=9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0
   local monitor_history_old_hash=9caff81ff628266bf6cdcdf21aac716b1fa400a37681cfc5921845cf2ec3aad0
   local monitor_history_new_hash=1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98
+  local claim_token_old_hash=1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98
+  local claim_token_new_hash=fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d
+  local claim_token_mutated_candidate_hash=738ad63324d900283383a523ce82e821fe5d8bb19d56de3834a6c817fb6611a5
   local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
   local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
@@ -1071,6 +1074,37 @@ test_authorized_maintenance_transition() {
     || fail "monitor history maintenance transition failed: $(cat "$CASE_DIR/stderr")"
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
     || fail 'monitor history transition did not use the bounded maintenance path'
+
+  setup_case claim_token_mutated_candidate_rejected
+  write_meminfo
+  MIGRATIONS_HASH=$claim_token_mutated_candidate_hash
+  "$REAL_JQ" --arg hash "$claim_token_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$claim_token_old_hash \
+    expect_failure claim_token_mutated_candidate_rejected run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'mutated claim-token candidate was not gated'
+  assert_no_mutation claim_token_mutated_candidate_rejected
+
+  setup_case claim_token_unknown_candidate_rejected
+  write_meminfo
+  MIGRATIONS_HASH=$(printf '8%.0s' {1..64})
+  "$REAL_JQ" --arg hash "$claim_token_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$claim_token_old_hash \
+    expect_failure claim_token_unknown_candidate_rejected run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'unknown claim-token candidate was not gated'
+  assert_no_mutation claim_token_unknown_candidate_rejected
+
+  setup_case claim_token_maintenance_success
+  write_meminfo
+  MIGRATIONS_HASH=$claim_token_new_hash
+  "$REAL_JQ" --arg hash "$claim_token_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$claim_token_old_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "claim-token maintenance transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'claim-token transition did not use the bounded maintenance path'
 
   setup_case maintenance_rollback
   write_meminfo

@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**本轮纠偏部署登记（2026-08-10）：** 状态：进行中。用户明确要求纠正此前“总账滞后即视为已上线”的判断，将当前 `main` 中仍有生产发布证据不足的内容逐项完成部署闭环。范围包括全部非 `main` worktree 审计、最终 `main` 发布树资格、Sub2API/relay-ops/Caddy/宿主配置同步、允许停机的生产发布、迁移与回滚门禁、线上专项验收；未同时满足“已推送 + 已部署 + 已验证生效”的事项继续保持进行中。本轮不启用 relay-ops 外置主写入，不绕过 TLS 客户端门禁，不使用 GitHub Actions。
+**本轮纠偏部署登记（2026-08-10）：** 状态：已完成。已审计全部非 `main` worktree，保留用户点名的两个工作区；`main` 已推送至 `origin/main`，并从 `main@fa63c136c345914e1b60412cf8acd35edfd89ab3` 完成停机蓝绿发布。生产记录：`20260810T061914Z-production-2991041`，结果 `succeeded/promoted`，活动槽位 `green`，镜像 `ghcr.io/leesssong/xingqiao-sub2api:release-fa63c136c345914e1b60412cf8acd35edfd89ab3-64977dcd44307856faf29140f4959f25fd17483d0309351b59c204b4c06b7936`，迁移哈希 `fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d`。线上 `/healthz`、`/readyz`、首页均为 200，未认证管理 API 为 401；API、worker、PostgreSQL、Redis、Caddy、relay-ops 均健康。relay-ops 仍保持 `read_only`，未启用外置主写入或账务写入；不使用 GitHub Actions。
 
 **本轮宿主门禁修复（2026-08-10）：** 首次停机预检发现生产 Caddy 容器曾被独立重建，导致 release-state 中的 Caddy 身份过期；在保持 PostgreSQL/Redis 连续性、校验当前 Caddy 镜像且用户已明确授权停机的前提下，允许同迁移集维护发布刷新共享容器身份。修复已进入 `ops/deploy-sub2api-blue-green-host.sh`，待重新推送并发布验证。
 

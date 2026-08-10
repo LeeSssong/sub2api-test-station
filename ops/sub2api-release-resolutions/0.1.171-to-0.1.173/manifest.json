@@ -1,0 +1,965 @@
+{
+  "base_version": "0.1.171",
+  "base_commit": "f0e7a9c7a23a7d02fb159b62fa809621eb0475a6",
+  "target_version": "0.1.173",
+  "target_tag": "v0.1.173",
+  "target_tag_object": "9e2a27ad39201a14074982bae331c4610161586a",
+  "target_commit": "29009f0b2ea14edf3b11ae2564fb617ff91a03b4",
+  "resolution_patch": "resolution.patch",
+  "resolution_patch_blob": "597f3c210f9c479de0a302b335b6345a4c7e160a",
+  "generation_profile": "ent_and_wire",
+  "generated_paths": [
+    "backend/cmd/server/wire_gen.go",
+    "backend/ent/group.go",
+    "backend/ent/group/group.go",
+    "backend/ent/group/where.go",
+    "backend/ent/group_create.go",
+    "backend/ent/group_update.go",
+    "backend/ent/migrate/schema.go",
+    "backend/ent/mutation.go",
+    "backend/ent/runtime/runtime.go",
+    "backend/ent/usagelog.go",
+    "backend/ent/usagelog/usagelog.go",
+    "backend/ent/usagelog/where.go",
+    "backend/ent/usagelog_create.go",
+    "backend/ent/usagelog_update.go"
+  ],
+  "generated_preimages": {
+    "backend/ent/group.go": "3b1d2a4a51695e591541c7305426f3b15b373be7",
+    "backend/ent/group/group.go": "76a07b96a08d44ec9b518b3ccf6acf664eccb92d",
+    "backend/ent/group/where.go": "630ec582e8988664b88d121a32b1ada24591314b",
+    "backend/ent/group_create.go": "3246b92a5087c578090c7db4abf82682c949cb9e",
+    "backend/ent/group_update.go": "de5474e069bc0c461093ab50cabc8d636df438cd"
+  },
+  "ent_seed_paths": [
+    "backend/ent/account.go",
+    "backend/ent/account/account.go",
+    "backend/ent/account/where.go",
+    "backend/ent/account_create.go",
+    "backend/ent/account_delete.go",
+    "backend/ent/account_query.go",
+    "backend/ent/account_update.go",
+    "backend/ent/accountgroup.go",
+    "backend/ent/accountgroup/accountgroup.go",
+    "backend/ent/accountgroup/where.go",
+    "backend/ent/accountgroup_create.go",
+    "backend/ent/accountgroup_delete.go",
+    "backend/ent/accountgroup_query.go",
+    "backend/ent/accountgroup_update.go",
+    "backend/ent/announcement.go",
+    "backend/ent/announcement/announcement.go",
+    "backend/ent/announcement/where.go",
+    "backend/ent/announcement_create.go",
+    "backend/ent/announcement_delete.go",
+    "backend/ent/announcement_query.go",
+    "backend/ent/announcement_update.go",
+    "backend/ent/announcementread.go",
+    "backend/ent/announcementread/announcementread.go",
+    "backend/ent/announcementread/where.go",
+    "backend/ent/announcementread_create.go",
+    "backend/ent/announcementread_delete.go",
+    "backend/ent/announcementread_query.go",
+    "backend/ent/announcementread_update.go",
+    "backend/ent/apikey.go",
+    "backend/ent/apikey/apikey.go",
+    "backend/ent/apikey/where.go",
+    "backend/ent/apikey_create.go",
+    "backend/ent/apikey_delete.go",
+    "backend/ent/apikey_query.go",
+    "backend/ent/apikey_update.go",
+    "backend/ent/authidentity.go",
+    "backend/ent/authidentity/authidentity.go",
+    "backend/ent/authidentity/where.go",
+    "backend/ent/authidentity_create.go",
+    "backend/ent/authidentity_delete.go",
+    "backend/ent/authidentity_query.go",
+    "backend/ent/authidentity_update.go",
+    "backend/ent/authidentitychannel.go",
+    "backend/ent/authidentitychannel/authidentitychannel.go",
+    "backend/ent/authidentitychannel/where.go",
+    "backend/ent/authidentitychannel_create.go",
+    "backend/ent/authidentitychannel_delete.go",
+    "backend/ent/authidentitychannel_query.go",
+    "backend/ent/authidentitychannel_update.go",
+    "backend/ent/batchimageevent.go",
+    "backend/ent/batchimageevent/batchimageevent.go",
+    "backend/ent/batchimageevent/where.go",
+    "backend/ent/batchimageevent_create.go",
+    "backend/ent/batchimageevent_delete.go",
+    "backend/ent/batchimageevent_query.go",
+    "backend/ent/batchimageevent_update.go",
+    "backend/ent/batchimageitem.go",
+    "backend/ent/batchimageitem/batchimageitem.go",
+    "backend/ent/batchimageitem/where.go",
+    "backend/ent/batchimageitem_create.go",
+    "backend/ent/batchimageitem_delete.go",
+    "backend/ent/batchimageitem_query.go",
+    "backend/ent/batchimageitem_update.go",
+    "backend/ent/batchimagejob.go",
+    "backend/ent/batchimagejob/batchimagejob.go",
+    "backend/ent/batchimagejob/where.go",
+    "backend/ent/batchimagejob_create.go",
+    "backend/ent/batchimagejob_delete.go",
+    "backend/ent/batchimagejob_query.go",
+    "backend/ent/batchimagejob_update.go",
+    "backend/ent/channelmonitor.go",
+    "backend/ent/channelmonitor/channelmonitor.go",
+    "backend/ent/channelmonitor/where.go",
+    "backend/ent/channelmonitor_create.go",
+    "backend/ent/channelmonitor_delete.go",
+    "backend/ent/channelmonitor_query.go",
+    "backend/ent/channelmonitor_update.go",
+    "backend/ent/channelmonitordailyrollup.go",
+    "backend/ent/channelmonitordailyrollup/channelmonitordailyrollup.go",
+    "backend/ent/channelmonitordailyrollup/where.go",
+    "backend/ent/channelmonitordailyrollup_create.go",
+    "backend/ent/channelmonitordailyrollup_delete.go",
+    "backend/ent/channelmonitordailyrollup_query.go",
+    "backend/ent/channelmonitordailyrollup_update.go",
+    "backend/ent/channelmonitorhistory.go",
+    "backend/ent/channelmonitorhistory/channelmonitorhistory.go",
+    "backend/ent/channelmonitorhistory/where.go",
+    "backend/ent/channelmonitorhistory_create.go",
+    "backend/ent/channelmonitorhistory_delete.go",
+    "backend/ent/channelmonitorhistory_query.go",
+    "backend/ent/channelmonitorhistory_update.go",
+    "backend/ent/channelmonitorrequesttemplate.go",
+    "backend/ent/channelmonitorrequesttemplate/channelmonitorrequesttemplate.go",
+    "backend/ent/channelmonitorrequesttemplate/where.go",
+    "backend/ent/channelmonitorrequesttemplate_create.go",
+    "backend/ent/channelmonitorrequesttemplate_delete.go",
+    "backend/ent/channelmonitorrequesttemplate_query.go",
+    "backend/ent/channelmonitorrequesttemplate_update.go",
+    "backend/ent/client.go",
+    "backend/ent/compositemodelroute.go",
+    "backend/ent/compositemodelroute/compositemodelroute.go",
+    "backend/ent/compositemodelroute/where.go",
+    "backend/ent/compositemodelroute_create.go",
+    "backend/ent/compositemodelroute_delete.go",
+    "backend/ent/compositemodelroute_query.go",
+    "backend/ent/compositemodelroute_update.go",
+    "backend/ent/ent.go",
+    "backend/ent/enttest/enttest.go",
+    "backend/ent/errorpassthroughrule.go",
+    "backend/ent/errorpassthroughrule/errorpassthroughrule.go",
+    "backend/ent/errorpassthroughrule/where.go",
+    "backend/ent/errorpassthroughrule_create.go",
+    "backend/ent/errorpassthroughrule_delete.go",
+    "backend/ent/errorpassthroughrule_query.go",
+    "backend/ent/errorpassthroughrule_update.go",
+    "backend/ent/group.go",
+    "backend/ent/group/group.go",
+    "backend/ent/group/where.go",
+    "backend/ent/group_create.go",
+    "backend/ent/group_delete.go",
+    "backend/ent/group_query.go",
+    "backend/ent/group_update.go",
+    "backend/ent/hook/hook.go",
+    "backend/ent/idempotencyrecord.go",
+    "backend/ent/idempotencyrecord/idempotencyrecord.go",
+    "backend/ent/idempotencyrecord/where.go",
+    "backend/ent/idempotencyrecord_create.go",
+    "backend/ent/idempotencyrecord_delete.go",
+    "backend/ent/idempotencyrecord_query.go",
+    "backend/ent/idempotencyrecord_update.go",
+    "backend/ent/identityadoptiondecision.go",
+    "backend/ent/identityadoptiondecision/identityadoptiondecision.go",
+    "backend/ent/identityadoptiondecision/where.go",
+    "backend/ent/identityadoptiondecision_create.go",
+    "backend/ent/identityadoptiondecision_delete.go",
+    "backend/ent/identityadoptiondecision_query.go",
+    "backend/ent/identityadoptiondecision_update.go",
+    "backend/ent/intercept/intercept.go",
+    "backend/ent/migrate/migrate.go",
+    "backend/ent/migrate/schema.go",
+    "backend/ent/mutation.go",
+    "backend/ent/paymentauditlog.go",
+    "backend/ent/paymentauditlog/paymentauditlog.go",
+    "backend/ent/paymentauditlog/where.go",
+    "backend/ent/paymentauditlog_create.go",
+    "backend/ent/paymentauditlog_delete.go",
+    "backend/ent/paymentauditlog_query.go",
+    "backend/ent/paymentauditlog_update.go",
+    "backend/ent/paymentorder.go",
+    "backend/ent/paymentorder/paymentorder.go",
+    "backend/ent/paymentorder/where.go",
+    "backend/ent/paymentorder_create.go",
+    "backend/ent/paymentorder_delete.go",
+    "backend/ent/paymentorder_query.go",
+    "backend/ent/paymentorder_update.go",
+    "backend/ent/paymentproviderinstance.go",
+    "backend/ent/paymentproviderinstance/paymentproviderinstance.go",
+    "backend/ent/paymentproviderinstance/where.go",
+    "backend/ent/paymentproviderinstance_create.go",
+    "backend/ent/paymentproviderinstance_delete.go",
+    "backend/ent/paymentproviderinstance_query.go",
+    "backend/ent/paymentproviderinstance_update.go",
+    "backend/ent/pendingauthsession.go",
+    "backend/ent/pendingauthsession/pendingauthsession.go",
+    "backend/ent/pendingauthsession/where.go",
+    "backend/ent/pendingauthsession_create.go",
+    "backend/ent/pendingauthsession_delete.go",
+    "backend/ent/pendingauthsession_query.go",
+    "backend/ent/pendingauthsession_update.go",
+    "backend/ent/predicate/predicate.go",
+    "backend/ent/promocode.go",
+    "backend/ent/promocode/promocode.go",
+    "backend/ent/promocode/where.go",
+    "backend/ent/promocode_create.go",
+    "backend/ent/promocode_delete.go",
+    "backend/ent/promocode_query.go",
+    "backend/ent/promocode_update.go",
+    "backend/ent/promocodeusage.go",
+    "backend/ent/promocodeusage/promocodeusage.go",
+    "backend/ent/promocodeusage/where.go",
+    "backend/ent/promocodeusage_create.go",
+    "backend/ent/promocodeusage_delete.go",
+    "backend/ent/promocodeusage_query.go",
+    "backend/ent/promocodeusage_update.go",
+    "backend/ent/proxy.go",
+    "backend/ent/proxy/proxy.go",
+    "backend/ent/proxy/where.go",
+    "backend/ent/proxy_create.go",
+    "backend/ent/proxy_delete.go",
+    "backend/ent/proxy_query.go",
+    "backend/ent/proxy_update.go",
+    "backend/ent/redeemcode.go",
+    "backend/ent/redeemcode/redeemcode.go",
+    "backend/ent/redeemcode/where.go",
+    "backend/ent/redeemcode_create.go",
+    "backend/ent/redeemcode_delete.go",
+    "backend/ent/redeemcode_query.go",
+    "backend/ent/redeemcode_update.go",
+    "backend/ent/runtime.go",
+    "backend/ent/runtime/runtime.go",
+    "backend/ent/securitysecret.go",
+    "backend/ent/securitysecret/securitysecret.go",
+    "backend/ent/securitysecret/where.go",
+    "backend/ent/securitysecret_create.go",
+    "backend/ent/securitysecret_delete.go",
+    "backend/ent/securitysecret_query.go",
+    "backend/ent/securitysecret_update.go",
+    "backend/ent/setting.go",
+    "backend/ent/setting/setting.go",
+    "backend/ent/setting/where.go",
+    "backend/ent/setting_create.go",
+    "backend/ent/setting_delete.go",
+    "backend/ent/setting_query.go",
+    "backend/ent/setting_update.go",
+    "backend/ent/subscriptionplan.go",
+    "backend/ent/subscriptionplan/subscriptionplan.go",
+    "backend/ent/subscriptionplan/where.go",
+    "backend/ent/subscriptionplan_create.go",
+    "backend/ent/subscriptionplan_delete.go",
+    "backend/ent/subscriptionplan_query.go",
+    "backend/ent/subscriptionplan_update.go",
+    "backend/ent/tlsfingerprintprofile.go",
+    "backend/ent/tlsfingerprintprofile/tlsfingerprintprofile.go",
+    "backend/ent/tlsfingerprintprofile/where.go",
+    "backend/ent/tlsfingerprintprofile_create.go",
+    "backend/ent/tlsfingerprintprofile_delete.go",
+    "backend/ent/tlsfingerprintprofile_query.go",
+    "backend/ent/tlsfingerprintprofile_update.go",
+    "backend/ent/tx.go",
+    "backend/ent/usagecleanuptask.go",
+    "backend/ent/usagecleanuptask/usagecleanuptask.go",
+    "backend/ent/usagecleanuptask/where.go",
+    "backend/ent/usagecleanuptask_create.go",
+    "backend/ent/usagecleanuptask_delete.go",
+    "backend/ent/usagecleanuptask_query.go",
+    "backend/ent/usagecleanuptask_update.go",
+    "backend/ent/usagelog.go",
+    "backend/ent/usagelog/usagelog.go",
+    "backend/ent/usagelog/where.go",
+    "backend/ent/usagelog_create.go",
+    "backend/ent/usagelog_delete.go",
+    "backend/ent/usagelog_query.go",
+    "backend/ent/usagelog_update.go",
+    "backend/ent/user.go",
+    "backend/ent/user/user.go",
+    "backend/ent/user/where.go",
+    "backend/ent/user_create.go",
+    "backend/ent/user_delete.go",
+    "backend/ent/user_query.go",
+    "backend/ent/user_update.go",
+    "backend/ent/userallowedgroup.go",
+    "backend/ent/userallowedgroup/userallowedgroup.go",
+    "backend/ent/userallowedgroup/where.go",
+    "backend/ent/userallowedgroup_create.go",
+    "backend/ent/userallowedgroup_delete.go",
+    "backend/ent/userallowedgroup_query.go",
+    "backend/ent/userallowedgroup_update.go",
+    "backend/ent/userattributedefinition.go",
+    "backend/ent/userattributedefinition/userattributedefinition.go",
+    "backend/ent/userattributedefinition/where.go",
+    "backend/ent/userattributedefinition_create.go",
+    "backend/ent/userattributedefinition_delete.go",
+    "backend/ent/userattributedefinition_query.go",
+    "backend/ent/userattributedefinition_update.go",
+    "backend/ent/userattributevalue.go",
+    "backend/ent/userattributevalue/userattributevalue.go",
+    "backend/ent/userattributevalue/where.go",
+    "backend/ent/userattributevalue_create.go",
+    "backend/ent/userattributevalue_delete.go",
+    "backend/ent/userattributevalue_query.go",
+    "backend/ent/userattributevalue_update.go",
+    "backend/ent/userplatformquota.go",
+    "backend/ent/userplatformquota/userplatformquota.go",
+    "backend/ent/userplatformquota/where.go",
+    "backend/ent/userplatformquota_create.go",
+    "backend/ent/userplatformquota_delete.go",
+    "backend/ent/userplatformquota_query.go",
+    "backend/ent/userplatformquota_update.go",
+    "backend/ent/usersubscription.go",
+    "backend/ent/usersubscription/usersubscription.go",
+    "backend/ent/usersubscription/where.go",
+    "backend/ent/usersubscription_create.go",
+    "backend/ent/usersubscription_delete.go",
+    "backend/ent/usersubscription_query.go",
+    "backend/ent/usersubscription_update.go"
+  ],
+  "ent_seed_preimages": {
+    "backend/ent/account.go": "4c6a1d7ac483bbc5e002ae38c2b4b172f0bf24a2",
+    "backend/ent/account/account.go": "110820ab638682a7d222645c3270432b8c35f8ea",
+    "backend/ent/account/where.go": "7c9da2575e36598eb2629f09b2800df7e905a849",
+    "backend/ent/account_create.go": "e4f7292f9fc008974d7f00920f1b6f5e5be6165f",
+    "backend/ent/account_delete.go": "44cf2f5593563a3b41d3940f858e1e6938bcd003",
+    "backend/ent/account_query.go": "f774d5bd95f14eb60c5bd644049b8cfc73c221d8",
+    "backend/ent/account_update.go": "d8b467e8b2a87d11de7591ce50aead70c1d9eeb9",
+    "backend/ent/accountgroup.go": "71d8a1f983a13107192f0eb6f58bcb49e564fd0f",
+    "backend/ent/accountgroup/accountgroup.go": "5db485b6bd1589cd9cd485bc8f1003219fababea",
+    "backend/ent/accountgroup/where.go": "8226856b09b89f546b0c61ab0115650473af8dda",
+    "backend/ent/accountgroup_create.go": "6a1840a1bbfa5bc33fae800d9e3fa826bb1ca82c",
+    "backend/ent/accountgroup_delete.go": "41f65ad6dc7b018dad71af18d32cd49c3e7b172c",
+    "backend/ent/accountgroup_query.go": "d0a4f58d77e3eda55b7d81fc7234e55aa2cd70c7",
+    "backend/ent/accountgroup_update.go": "fd7b5430b8128f39349e836bbe693133563cd56e",
+    "backend/ent/announcement.go": "6c5b21da4060d3522027bc3c0c57c694dcdbd790",
+    "backend/ent/announcement/announcement.go": "71ba25ff40b625bc435b6d5b0fbe4d2b29b0dbdf",
+    "backend/ent/announcement/where.go": "2eea5f0b7ddea7bef8a254fe69027bf759af7abb",
+    "backend/ent/announcement_create.go": "d9029792ad77a94de9c3049a1ee710f784795d0f",
+    "backend/ent/announcement_delete.go": "d185e9f70abbe3ba174c27ff9506b564f39cc8f1",
+    "backend/ent/announcement_query.go": "a27d50fa625ebfc15978dc3092a93b67a4575b1b",
+    "backend/ent/announcement_update.go": "f93f4f0eac6d8ce3fdb001769d8ef7aef99225f6",
+    "backend/ent/announcementread.go": "7bba04f2aba6b5c6cec647f04df5f85cbec77a37",
+    "backend/ent/announcementread/announcementread.go": "cf5fe4580730943c15204f8cc26b28f8f1faeefc",
+    "backend/ent/announcementread/where.go": "1a4305e85e1acef362faddedb8870c4af3ee933c",
+    "backend/ent/announcementread_create.go": "c8c211ff72425240671f383749df1b544b1736ab",
+    "backend/ent/announcementread_delete.go": "a4da0821577717b575f2ca4ab3842d0abdc2d365",
+    "backend/ent/announcementread_query.go": "108299fdb238016bc5e8551865c40fae852b7650",
+    "backend/ent/announcementread_update.go": "55a4eef8f55970ace263fbfca21ec3fa2c441dfb",
+    "backend/ent/apikey.go": "9ee660c2da6937c75908c66812d564fb9b9d1868",
+    "backend/ent/apikey/apikey.go": "d398a027b867e7303c839d6dd1c910e6acd30afd",
+    "backend/ent/apikey/where.go": "edd2652baaedd10d168e316a0e75542ffb3012e0",
+    "backend/ent/apikey_create.go": "4ec8aeaae4e38f9aaef18675d717b90368598e6e",
+    "backend/ent/apikey_delete.go": "761db81d1775c0c9f5526c25be2b517c26442ac8",
+    "backend/ent/apikey_query.go": "9eee4077bd387dae6f57215a68d6d1004bc25c6e",
+    "backend/ent/apikey_update.go": "db341e4c9d5361b07b6bd43c2d6906c0392a905a",
+    "backend/ent/authidentity.go": "5ccfcf19102d780646333f5f2da43d21ca8ce685",
+    "backend/ent/authidentity/authidentity.go": "c90be759e827db02e0f8637d6a2bdfe559e10303",
+    "backend/ent/authidentity/where.go": "3dbf317879b8813b2dee21acdda4f6122d477865",
+    "backend/ent/authidentity_create.go": "e287705ce2af71def4c2140c10877347c24ff459",
+    "backend/ent/authidentity_delete.go": "4f1f6f3ce48d3a28fb14bd08fdcc11e4b4420576",
+    "backend/ent/authidentity_query.go": "ff27ef3cd260d445c356f55e39e761055fd25ac0",
+    "backend/ent/authidentity_update.go": "c457470b9b17b7bd03231239b19455e5e53d893a",
+    "backend/ent/authidentitychannel.go": "1ff3e5d1c88a1d5e596e7ee998c6d14eb1f34407",
+    "backend/ent/authidentitychannel/authidentitychannel.go": "7dcc98bb60b185f24fa7f97de257c4cb480ca811",
+    "backend/ent/authidentitychannel/where.go": "827dc38450ede777c9442f4855c6c234ad03f1c2",
+    "backend/ent/authidentitychannel_create.go": "4ce284792b16cdad35c6817a6b256cd0ec366be5",
+    "backend/ent/authidentitychannel_delete.go": "1a4acac59063fad5d80c787dec54c431928672e8",
+    "backend/ent/authidentitychannel_query.go": "7a202b7f1fd9573923b6f29d7bc18e0373efacd4",
+    "backend/ent/authidentitychannel_update.go": "b550c4545fdf8187dff66fd9dc574920270dde9a",
+    "backend/ent/batchimageevent.go": "3f95616e814268dabe1f29639e32f6b1f0b19f78",
+    "backend/ent/batchimageevent/batchimageevent.go": "88b3dd8eca80f482e3613edaac44875c7d20ca25",
+    "backend/ent/batchimageevent/where.go": "3b5ef034f3479ad9e18d6f3fb566f4c106ca3898",
+    "backend/ent/batchimageevent_create.go": "c6ebef1dff89bd3d5dee3377d867987b555cb12b",
+    "backend/ent/batchimageevent_delete.go": "54a51bef35ce32e341e347ce2743d4aaf65cb795",
+    "backend/ent/batchimageevent_query.go": "26fc5189a1acda14d5363ff60dc78a0ebe5a682f",
+    "backend/ent/batchimageevent_update.go": "39035d6691cc24bff95adf1890b76e0a76b5ee55",
+    "backend/ent/batchimageitem.go": "47b876f158d3b80d9e13215ffa7aa28bca3fead6",
+    "backend/ent/batchimageitem/batchimageitem.go": "3656e31dfe627800da71ccb4f096d1fc6f9e376f",
+    "backend/ent/batchimageitem/where.go": "55dc32fde7931facb8d9063d45a512f8fe955461",
+    "backend/ent/batchimageitem_create.go": "f9ee14998a6aa57f7ad1b0474a656d41296d5fc3",
+    "backend/ent/batchimageitem_delete.go": "7aa3bf32e8ed3ee0aa547d3152850c2fd9a18171",
+    "backend/ent/batchimageitem_query.go": "7e1d08f7be51c96957aa3cee4245964bb018d4cf",
+    "backend/ent/batchimageitem_update.go": "edca025b7ec34121557c509a53d4c8d40cbfea67",
+    "backend/ent/batchimagejob.go": "29f09bb289cd6fc422cd6d76d93cd6448e8bea46",
+    "backend/ent/batchimagejob/batchimagejob.go": "be819183da4185887cf99ad21297a29abca3d957",
+    "backend/ent/batchimagejob/where.go": "b94722e41d0ae0929bcb07a9da4c65586563a982",
+    "backend/ent/batchimagejob_create.go": "88c1197b154ee13b1735ed4ad41bd4c647c0c7b3",
+    "backend/ent/batchimagejob_delete.go": "da3dec210927266a4120a545890976ea2f9faebd",
+    "backend/ent/batchimagejob_query.go": "5ea4af42b24fb7537e16a0330eb152a90b4cc737",
+    "backend/ent/batchimagejob_update.go": "8df73025007dd20558733df992c18cdf2852e127",
+    "backend/ent/channelmonitor.go": "30caa34f06f6db95d935c3f8681b1e220153feda",
+    "backend/ent/channelmonitor/channelmonitor.go": "842750bf6cb2f96c7c043f139c011a8a2c64dcf4",
+    "backend/ent/channelmonitor/where.go": "b10f7270eb98b17c352d2695cd7c66e319f7a6b6",
+    "backend/ent/channelmonitor_create.go": "d559731658cb6b5613937cb37ab2a8dea48ad80d",
+    "backend/ent/channelmonitor_delete.go": "500dbb4872ceca5808b474c708818064032fd2c6",
+    "backend/ent/channelmonitor_query.go": "b6722e7801bdf88407342d3099f870892741d11a",
+    "backend/ent/channelmonitor_update.go": "f40a369559be315a7fcc4016b4195208fe31ab74",
+    "backend/ent/channelmonitordailyrollup.go": "78a5f48916d62fe0e89b739aa0271f2f580bcfef",
+    "backend/ent/channelmonitordailyrollup/channelmonitordailyrollup.go": "e7cb9307e6f02d897808d441531e44f3a77eade6",
+    "backend/ent/channelmonitordailyrollup/where.go": "424c957ec9d65693dae21e9e51d6a0da68a3e313",
+    "backend/ent/channelmonitordailyrollup_create.go": "5f8754babd59a69337faec6b25a99d91497b1f00",
+    "backend/ent/channelmonitordailyrollup_delete.go": "460c94f85cac19fb115baed42c10e8fc8f611b6b",
+    "backend/ent/channelmonitordailyrollup_query.go": "e34afc6163ae92811f5a3450d1a1fe57546640a2",
+    "backend/ent/channelmonitordailyrollup_update.go": "02cd86c5c7c4f3f76d8deb0d0b73550e931229a8",
+    "backend/ent/channelmonitorhistory.go": "70dde5422a7d2777d68f39b0cab797eebe40447e",
+    "backend/ent/channelmonitorhistory/channelmonitorhistory.go": "6a9dc006703bef0adee45e61783f81115b76cd5f",
+    "backend/ent/channelmonitorhistory/where.go": "afa73f35c87594111eb4779c69356f19ebcbfa76",
+    "backend/ent/channelmonitorhistory_create.go": "71034865c97017a5babcca6fe84815cfa07841f0",
+    "backend/ent/channelmonitorhistory_delete.go": "97110e69191f8a4f493068c87a8d17326dbab871",
+    "backend/ent/channelmonitorhistory_query.go": "1fb872ad1b14582005bdd4b000a5e3c593450c1a",
+    "backend/ent/channelmonitorhistory_update.go": "a85a8072a9e6cbc0e7907f9e211eef103a6279dd",
+    "backend/ent/channelmonitorrequesttemplate.go": "7f417efbde076ee0575d3c153567fda6f815e973",
+    "backend/ent/channelmonitorrequesttemplate/channelmonitorrequesttemplate.go": "5989d0e74386244a97d26a7b5598918ce01bf9a2",
+    "backend/ent/channelmonitorrequesttemplate/where.go": "9f6d7333141d30cfe8f89fe23478c9b0cff53fb4",
+    "backend/ent/channelmonitorrequesttemplate_create.go": "4540527005f322f51990519d939c0197f63a9f7a",
+    "backend/ent/channelmonitorrequesttemplate_delete.go": "98d365c8ed1742a88cc58177cf33f1045f6b95bb",
+    "backend/ent/channelmonitorrequesttemplate_query.go": "6491ea608e16f7743bdab34bc8f5e69e877eab84",
+    "backend/ent/channelmonitorrequesttemplate_update.go": "f27cac1cc5cbe79be4c71aef103e98c77aee3344",
+    "backend/ent/client.go": "7cdb7394fd67914df75296daaecc988ca0cec6f9",
+    "backend/ent/compositemodelroute.go": "4c6637d5443b59990e45f42576ef6e713b2eacb2",
+    "backend/ent/compositemodelroute/compositemodelroute.go": "b0709d5488f72a35dca751cbaa436af7473ad60b",
+    "backend/ent/compositemodelroute/where.go": "61f881f65713734b8731de72eb1a08023716321d",
+    "backend/ent/compositemodelroute_create.go": "0dd20edf4d115c3e59f6b8dec24995a3e7fe0fab",
+    "backend/ent/compositemodelroute_delete.go": "0e5c398166078a7c01d930ed00b5d416b046caee",
+    "backend/ent/compositemodelroute_query.go": "0405dce257bbff088b892a3c3bfa149b80b3ba3f",
+    "backend/ent/compositemodelroute_update.go": "c7ad6762d4f07a41c7cf046b0f32ad109d8f9ab1",
+    "backend/ent/ent.go": "29f3f0d68fb4f58cb2487cf43419e5679d1a23e2",
+    "backend/ent/enttest/enttest.go": "fbeace40a7351c6b1f93650d1a1fbc03ba875231",
+    "backend/ent/errorpassthroughrule.go": "62468719ff0a50047ad5cb90961d19033606f423",
+    "backend/ent/errorpassthroughrule/errorpassthroughrule.go": "859fc7618bc9f4ad4134eb9b7e74e75c3aa741a9",
+    "backend/ent/errorpassthroughrule/where.go": "87654678e0eb966a07b804f715fb13434d2cf294",
+    "backend/ent/errorpassthroughrule_create.go": "8173936b8c373dbe08efa33c2f03facf4b9f7b0d",
+    "backend/ent/errorpassthroughrule_delete.go": "943c7e2bacd893b395eab5b48c5bebfe5c06f5ea",
+    "backend/ent/errorpassthroughrule_query.go": "bfab5bd8267bbebe0bceaa3255d19ea0136ced4e",
+    "backend/ent/errorpassthroughrule_update.go": "7e42d9fc047d813dd98d3ab168689e267f702b3c",
+    "backend/ent/group.go": "81a3e349c09fb1034358d0b4d95668a1d4fd5076",
+    "backend/ent/group/group.go": "35d6de133684b863411e3f5d07c1189794bf9899",
+    "backend/ent/group/where.go": "64e52ba80a784586555264bc7ee7c8b7bb217b75",
+    "backend/ent/group_create.go": "54e34a32f6454b4cd409ebf02cefa16dec35ff2f",
+    "backend/ent/group_delete.go": "6587466fbb963ceeacd0635a932fd5274ce2e654",
+    "backend/ent/group_query.go": "d4cc4f8df98c553c633e402f533a30913f2d6e2f",
+    "backend/ent/group_update.go": "c2fdea3f51b4219e4a90b1d48e293b9789d8a43a",
+    "backend/ent/hook/hook.go": "f3beb5b644cddc5e4c5a938fbfd3e95838e908d2",
+    "backend/ent/idempotencyrecord.go": "ab120f8f8ecba6f29c8c57362d21d45afbaadabd",
+    "backend/ent/idempotencyrecord/idempotencyrecord.go": "d9686f6078f0afdb3cbe2da8ae36e25312a73557",
+    "backend/ent/idempotencyrecord/where.go": "c3d8d9d5edd542fcab5a7a392cca49d955e5265b",
+    "backend/ent/idempotencyrecord_create.go": "bf4deaf20b27eddc3454c4eeedd8567d8a5ab4b7",
+    "backend/ent/idempotencyrecord_delete.go": "f5c87559149bde91d38d3aa7ed0d6abc1075552f",
+    "backend/ent/idempotencyrecord_query.go": "fbba4dfa8d158a50fe29c3df5f69bcae2b1d7fb8",
+    "backend/ent/idempotencyrecord_update.go": "f839e5c01a6b591dd35ee330906214d52d38f89d",
+    "backend/ent/identityadoptiondecision.go": "ecaee65c2fc3b5f5cf3a6df4c3d5455a54691188",
+    "backend/ent/identityadoptiondecision/identityadoptiondecision.go": "93adaf7397c4d18c07fee9601737b17f571905ef",
+    "backend/ent/identityadoptiondecision/where.go": "1968f175063ac5962573aa4fbfcb2f0742527835",
+    "backend/ent/identityadoptiondecision_create.go": "491ba9f9a6626000bbc7095ba4390d03fcd00390",
+    "backend/ent/identityadoptiondecision_delete.go": "ef3d328d050c8743b8d6080d8d7daca8a6b59d4a",
+    "backend/ent/identityadoptiondecision_query.go": "4082d8ee74e4d0210372e7e710032975cde08ceb",
+    "backend/ent/identityadoptiondecision_update.go": "0ca21d270aa3dd30254c874b44e25bd7f34bd203",
+    "backend/ent/intercept/intercept.go": "5a6bd40cfe5ba01f24c80dad2a75e4524fdf0962",
+    "backend/ent/migrate/migrate.go": "1956a6bf6437cc325c80e7a8e34b793fc4a3094e",
+    "backend/ent/migrate/schema.go": "9f5830d3ac612779ef9f20f75a7925bcfb92bb43",
+    "backend/ent/mutation.go": "cc65282783d79a9a5209dfdbfd68f789943efab5",
+    "backend/ent/paymentauditlog.go": "ffcdcfcd95562d08ea78e132c467f3f98b60402f",
+    "backend/ent/paymentauditlog/paymentauditlog.go": "9d480eef21971edb19687fbcc671cf75bc90c624",
+    "backend/ent/paymentauditlog/where.go": "2fd80a42130d305977fb344d712d74889abd27a2",
+    "backend/ent/paymentauditlog_create.go": "1906aba110ba67ba068fa25e1e0b2c042572d1f8",
+    "backend/ent/paymentauditlog_delete.go": "ca22d8db37e450e7ccd510a4c0026b17c401dd8f",
+    "backend/ent/paymentauditlog_query.go": "7a4e9115e7f5820ae81f26ea9838964b8115f20d",
+    "backend/ent/paymentauditlog_update.go": "52b4afe794437008afc840096a7cc6080f485a90",
+    "backend/ent/paymentorder.go": "b131b8c8804575eb74196359508d52db2122391f",
+    "backend/ent/paymentorder/paymentorder.go": "6288379434280fe4c3cee2a8294ebdf98f686ed2",
+    "backend/ent/paymentorder/where.go": "e96bf51ebd09499c5f478fa88720e669f3b02894",
+    "backend/ent/paymentorder_create.go": "3ee24f8e918dbd18a1f3aad0c805bf870af6eebd",
+    "backend/ent/paymentorder_delete.go": "a4bc1bdf6d124a595c38d295acf28930de3933b5",
+    "backend/ent/paymentorder_query.go": "92fd74a73c48a97178c1f98e2b49b6566976b39d",
+    "backend/ent/paymentorder_update.go": "378e0dad2f90f2233387fd8bb02bf7018a09ed69",
+    "backend/ent/paymentproviderinstance.go": "4279b86e82a9988f3f4d400dc0430c3eca14625e",
+    "backend/ent/paymentproviderinstance/paymentproviderinstance.go": "eb1b0c52bae11d09dadab601dfbc41f3a709b598",
+    "backend/ent/paymentproviderinstance/where.go": "40e5a1f6e5f436b7fc6f267d0c8ff3035fa51c30",
+    "backend/ent/paymentproviderinstance_create.go": "d1b146173538045d520ec80ba47bbada3ff71796",
+    "backend/ent/paymentproviderinstance_delete.go": "0cffe7310433c529aaf4e59d478e371eb61b613c",
+    "backend/ent/paymentproviderinstance_query.go": "c021208858c7f681ea0449652cd9341cdba7b478",
+    "backend/ent/paymentproviderinstance_update.go": "6bb3a82de7206ca45edabd66a7e530a5275c6f63",
+    "backend/ent/pendingauthsession.go": "e77c065f779add6dc6dd6cbf860bfda6dfe418ba",
+    "backend/ent/pendingauthsession/pendingauthsession.go": "8a3ac9bf783f191c796ce78f71c6d89130ae3c1c",
+    "backend/ent/pendingauthsession/where.go": "cb316f476e44195e74f961699d058837cbe38630",
+    "backend/ent/pendingauthsession_create.go": "60276daa1bd9a1913f8fb65b0ff515471dc48210",
+    "backend/ent/pendingauthsession_delete.go": "ee4fe6051d11812bdced2f78b4cc9554828910fa",
+    "backend/ent/pendingauthsession_query.go": "78e29cd2bedf07258e955a0ca95420c5e3da9e3e",
+    "backend/ent/pendingauthsession_update.go": "00066f699baf7a7fe87a01f4870035ba87c4431e",
+    "backend/ent/predicate/predicate.go": "f8b33fe366ebb24decb26e403bb9e3cbb6994bf6",
+    "backend/ent/promocode.go": "1123bbd643864e68ea45491b1006a840c8dff278",
+    "backend/ent/promocode/promocode.go": "ba91658f0bfca60640b2452de9a0c5eacb82fef6",
+    "backend/ent/promocode/where.go": "84b6460a6af4341e4c8424ed13bf33f465fed923",
+    "backend/ent/promocode_create.go": "4fd2c39c54a6ba398bd5ded23628ac43cf14ba36",
+    "backend/ent/promocode_delete.go": "7e4fa3a60ef146ee2a2352986f82d87cdd777821",
+    "backend/ent/promocode_query.go": "2156b0f025f1edea2dbc5696748a17c959ec23fb",
+    "backend/ent/promocode_update.go": "1a7481c870ce7818f02a9492c2bb2db41246a307",
+    "backend/ent/promocodeusage.go": "1ba3a8bf2661378ac5fa213bfdc4428712940be4",
+    "backend/ent/promocodeusage/promocodeusage.go": "f4e05970682d61c6efd12fc817171886d189c4ee",
+    "backend/ent/promocodeusage/where.go": "fe657fd41babcadfc48d2a5f0135de046977ab46",
+    "backend/ent/promocodeusage_create.go": "79d9c7680e6a8c3ac4ae49c63de75f6b5df28592",
+    "backend/ent/promocodeusage_delete.go": "bd3fa5e14431b2a32a889de8ce51434fcf99d6c3",
+    "backend/ent/promocodeusage_query.go": "95b02a16f38827e78679d0f2e476f59423682a08",
+    "backend/ent/promocodeusage_update.go": "d91a1f104bd2a464a5b70385ac4bbb42787160ac",
+    "backend/ent/proxy.go": "3dc4491bd124a23c87d28c1c372bcc615abff562",
+    "backend/ent/proxy/proxy.go": "afd45e3af5abf3643a0f76460f94cbdbc818a7f8",
+    "backend/ent/proxy/where.go": "5150196a419563913ee69efec59982794699bb4a",
+    "backend/ent/proxy_create.go": "925ce9cb314bab43aab279ca89638e4abbfdfa78",
+    "backend/ent/proxy_delete.go": "eeeea58b579faf860e214d74f17c3871b688ff37",
+    "backend/ent/proxy_query.go": "93caf34665bfcc5a2c5256b1073e9b2f3a176552",
+    "backend/ent/proxy_update.go": "36b49ced6d311bc8457262993f7f67fb08f8c1b9",
+    "backend/ent/redeemcode.go": "34b55f6be0089e1c3ea4a18174b23312da566a70",
+    "backend/ent/redeemcode/redeemcode.go": "c7b30c15d196c1944d4911a0b275603ea136792c",
+    "backend/ent/redeemcode/where.go": "8325b9fc140be2dd5f11053071705e9d326d3035",
+    "backend/ent/redeemcode_create.go": "1bba027ba82cc4b72e129d8d726e92337bb5fe84",
+    "backend/ent/redeemcode_delete.go": "f16ef1e97140c5e78157298a457fcb821faeee3f",
+    "backend/ent/redeemcode_query.go": "f5b8baefb1db5ed021da5f04832f863ebb5a6bab",
+    "backend/ent/redeemcode_update.go": "1e0ec1e681f2a724339787efad49eaa1c07c1008",
+    "backend/ent/runtime.go": "ee3195e265d972f8bfdd0e8891307666d64f0741",
+    "backend/ent/runtime/runtime.go": "d1de211179403eb78ad4abb993f61fa2c2c128ad",
+    "backend/ent/securitysecret.go": "e0e93c9155262302e7f811f86386c62f030e7838",
+    "backend/ent/securitysecret/securitysecret.go": "4c5d9ef61a5374a42a7926bf9d0909bc8abd6aef",
+    "backend/ent/securitysecret/where.go": "34f50752e349598be968c989c42ff0383a1d97b3",
+    "backend/ent/securitysecret_create.go": "397503beda659e3eba282ae2b3b57665cff08548",
+    "backend/ent/securitysecret_delete.go": "667571385f67d704724462f28f0ea8a84fa21ebe",
+    "backend/ent/securitysecret_query.go": "fe53adf111381a4d51119cc24e374306a0ac6c74",
+    "backend/ent/securitysecret_update.go": "ec3979af08ada1c25b9982dddbbef1aca5d4cf7e",
+    "backend/ent/setting.go": "08ce81e4045937e7f78cec29923d19863dfe2965",
+    "backend/ent/setting/setting.go": "79abe970d51e8d28e6fe745fdeccfd133da5d6d9",
+    "backend/ent/setting/where.go": "23343e9e32b69f83655e15b242a2aa3600c23dd3",
+    "backend/ent/setting_create.go": "553261e7f9db8005eb83d023cfda4bc64d553ef1",
+    "backend/ent/setting_delete.go": "6491967399e6f050ab8b754381a659241708057e",
+    "backend/ent/setting_query.go": "38eb9462dba7cdb9bab8b2682382c70ffde0c565",
+    "backend/ent/setting_update.go": "42d016d6378376e16bf648edea034b9ba91aa1b2",
+    "backend/ent/subscriptionplan.go": "3158dc271a9e0ba40b1317f1265326b83fde64ae",
+    "backend/ent/subscriptionplan/subscriptionplan.go": "e004d6b3701d6c16319da5cdf2cf45d43db19864",
+    "backend/ent/subscriptionplan/where.go": "46f9713f6353fb847beab9d63613ea7d2ba5af66",
+    "backend/ent/subscriptionplan_create.go": "ff7f5b4596a09383dd387e7cc839af1d2ce76e00",
+    "backend/ent/subscriptionplan_delete.go": "90c71239e2aebf92198bfd60f213dc9833910892",
+    "backend/ent/subscriptionplan_query.go": "6c301dcd2948d120ac91e7a9e1a697c432401ec1",
+    "backend/ent/subscriptionplan_update.go": "c56b8c3dfb1b5066a489970dbd6bfc9947825c39",
+    "backend/ent/tlsfingerprintprofile.go": "c945560902b2291f1c49b33ba9a4bb9335c50568",
+    "backend/ent/tlsfingerprintprofile/tlsfingerprintprofile.go": "49426d36ac9691d9f1da97763be334b5766aeeac",
+    "backend/ent/tlsfingerprintprofile/where.go": "f7d1ba273cdc6c20453c623cf20e6bb622445167",
+    "backend/ent/tlsfingerprintprofile_create.go": "70a5e6be6b72908cd28148868b7942a0a1d966ee",
+    "backend/ent/tlsfingerprintprofile_delete.go": "2f6dea2e43d273cc87de66ec7a37a403d3228c0c",
+    "backend/ent/tlsfingerprintprofile_query.go": "d1ef4f1dfb38c9466cf15cac2b50fdac21d9e7e6",
+    "backend/ent/tlsfingerprintprofile_update.go": "3b12508c7ce95df75d7af1c68821e80cddcccbc4",
+    "backend/ent/tx.go": "f0288403400c38d9df1808015521df7b3b969a4a",
+    "backend/ent/usagecleanuptask.go": "e3a17b5aed18c7e6e50a863716de626b5c0066fe",
+    "backend/ent/usagecleanuptask/usagecleanuptask.go": "a8ddd9a02786f9231f4a81af15e3c88a516f7e30",
+    "backend/ent/usagecleanuptask/where.go": "99e790ca2a8c189041d6a7b1125213d488a8f835",
+    "backend/ent/usagecleanuptask_create.go": "0b1dcff55e7bc49d0ef785a7c13e97bb7030d3e6",
+    "backend/ent/usagecleanuptask_delete.go": "158555f7954ab78a42eb49cdbd757d8c7d241b0a",
+    "backend/ent/usagecleanuptask_query.go": "9d8d54100712f1a81919dab2753cbc9755c8ebb9",
+    "backend/ent/usagecleanuptask_update.go": "604202c679f0fd536cb85a1f0cf0e9d8660e6004",
+    "backend/ent/usagelog.go": "cb8b45602bbd4f1e75effa5cd3af4db36cbdc781",
+    "backend/ent/usagelog/usagelog.go": "b586cc36360d020e5b7b03d107d74bebfd177a24",
+    "backend/ent/usagelog/where.go": "e84e46f383a5a5eb5cf063cfcc39c36854a4068b",
+    "backend/ent/usagelog_create.go": "a6331853659c9a70fd28407bebce5acad2da80aa",
+    "backend/ent/usagelog_delete.go": "73450fda937ecddc56af2f9a5392bf6055a9030b",
+    "backend/ent/usagelog_query.go": "c709bde08020bdbb21658e1dda19592fe8630024",
+    "backend/ent/usagelog_update.go": "4409fe6a4ff328ee1168bc325b3d3e1d24bfb0c3",
+    "backend/ent/user.go": "299a8d627fd7f9cbf3c9eaa52813afbb59002445",
+    "backend/ent/user/user.go": "ae1a84494d7d17b034b42fe6cf06e643f0a794c9",
+    "backend/ent/user/where.go": "c2a71f6172a667dc6a335181ade17ae585006c2c",
+    "backend/ent/user_create.go": "b5bdf986a02a5d349edcfd2f788a8c85fa0a4989",
+    "backend/ent/user_delete.go": "002ef1cf407c6bbd65b4ef15e7c56910b3c8b8ee",
+    "backend/ent/user_query.go": "86f4eccd79427c3dfc86b63c278d685b5600575f",
+    "backend/ent/user_update.go": "6df9b320da1779ab6b4e4345d271b805cac06b95",
+    "backend/ent/userallowedgroup.go": "93cbd37432f01caaf065ab0b175da7675f08048a",
+    "backend/ent/userallowedgroup/userallowedgroup.go": "56d604c8a1b43c340a527e3d73972ee4f0772cac",
+    "backend/ent/userallowedgroup/where.go": "0951201be3081a8480c10638113e80cc87cbff99",
+    "backend/ent/userallowedgroup_create.go": "2b04a757d2bb7c8370bd152074e756ac06d5043d",
+    "backend/ent/userallowedgroup_delete.go": "e366ea97d96a922b11851c6633b217a3b7450b39",
+    "backend/ent/userallowedgroup_query.go": "527ddc77646d35547d97cc4e79c26a554a3e6514",
+    "backend/ent/userallowedgroup_update.go": "27071b18ba01f6ecd62a2f7530a5820b71720fb4",
+    "backend/ent/userattributedefinition.go": "2ed86e4e9187075ef27de330fd54990484833595",
+    "backend/ent/userattributedefinition/userattributedefinition.go": "ce398c0356fa298ee7c92270e2213b6db5140a2f",
+    "backend/ent/userattributedefinition/where.go": "7f4d06cb7e03d42e13e03bec32375d5f3f2c300e",
+    "backend/ent/userattributedefinition_create.go": "a018c0601aa716ca2bfad2a596bc9a1949716e32",
+    "backend/ent/userattributedefinition_delete.go": "8d879eb5acb85dd5ab5c7f9a62ba814e4cacb0c1",
+    "backend/ent/userattributedefinition_query.go": "0727b47c967764375b076af5151d382b4701f3d4",
+    "backend/ent/userattributedefinition_update.go": "6b9eb7d04dcaf530858ba2e067ef28d144b08cd7",
+    "backend/ent/userattributevalue.go": "8dced925ef96a309f763ef1725eb74e66bd0c794",
+    "backend/ent/userattributevalue/userattributevalue.go": "b8bb584253b8cf859dfea70997276d9f1c189e09",
+    "backend/ent/userattributevalue/where.go": "43c3213e0d8abad4472b66963d83bdb0dd742423",
+    "backend/ent/userattributevalue_create.go": "c52481dc3ba8bbd1984f5792fe17c6a71ef1853f",
+    "backend/ent/userattributevalue_delete.go": "2805e49fc91bbf3dd1c987748830d268cfe7af0f",
+    "backend/ent/userattributevalue_query.go": "a7c6b74a741933949e70f544d452cbfe4a017421",
+    "backend/ent/userattributevalue_update.go": "7dfce024a1d1231570cb5ca0ae79f7212086effb",
+    "backend/ent/userplatformquota.go": "d00a1f9a1f1fa5c9ae15a5474152163c72463729",
+    "backend/ent/userplatformquota/userplatformquota.go": "01903853a0b22b3cad7b8bcc237a04bc404d4785",
+    "backend/ent/userplatformquota/where.go": "37d371c6673a5d1e21e3473dec321921c81a44cb",
+    "backend/ent/userplatformquota_create.go": "da6c3ce66240864d15b98e3cfc237da6f6bc69d9",
+    "backend/ent/userplatformquota_delete.go": "1d80e31b5bd932d2f20bb3369276d5b5f3ba7fa2",
+    "backend/ent/userplatformquota_query.go": "c68fe90425017762aa2fe68c221cbafcbc822257",
+    "backend/ent/userplatformquota_update.go": "4e924cc846a6403c903d06805248f0799bebf05f",
+    "backend/ent/usersubscription.go": "01beb2fcc9b240fea683eb80ac1a7388c1b2762e",
+    "backend/ent/usersubscription/usersubscription.go": "064416461f818fa4aa6d835ec88cd52c49d6aa54",
+    "backend/ent/usersubscription/where.go": "250e5ed56919a9e1f60e1692687dd14e23bf2dfc",
+    "backend/ent/usersubscription_create.go": "dd03115bb20b4189545fab889df5c97c70ab05b6",
+    "backend/ent/usersubscription_delete.go": "02096763a590317a3b3956ce5582443b6fefa472",
+    "backend/ent/usersubscription_query.go": "288b7b1d04fa520fefd05bac8328474731aa6559",
+    "backend/ent/usersubscription_update.go": "811dae7ede5074144c9e5dfd0bc0f4f902eaacd9"
+  },
+  "clean_preimages": {
+    "backend/internal/service/account_usage_service_batch_test.go": "067bf0ddd137d1345ca6797ab48140dd09d91f51",
+    "backend/internal/service/billing_search_audio_cost_test.go": "94d2e5c6596bfe9adba42967bf57f80ddd22c839",
+    "backend/internal/service/openai_sticky_reference_test.go": "1b28796819d9fab1c8c9b4296eb93371fd78b52d"
+  },
+  "conflicts": {
+    "backend/cmd/server/wire.go": {
+      "stages": {
+        "1": "2e4b0d902c516c17251fdb2b3668d2259521fbd1",
+        "2": "d8827e7abd756b7eb4d2a60bd5ce77c9410f7630",
+        "3": "8bd9ac5b1685f8e2011146a43f71dc6dff60243e"
+      }
+    },
+    "backend/cmd/server/wire_gen.go": {
+      "stages": {
+        "1": "2369e09049590dea87947883865f88e949736a14",
+        "2": "baee38434d587e31bea6b5fefd19f5e4fa8521f0",
+        "3": "8969bf4411a3778d7fedda28b1014690385bccd0"
+      }
+    },
+    "backend/cmd/server/wire_gen_test.go": {
+      "stages": {
+        "1": "805ba5353ae1edca7df356c67d9e59633d6fca08",
+        "2": "705ee7695eb53bfa323ed580de59641627e41a23",
+        "3": "dff3a9129efbc3a6f977916659cfac97544a9efe"
+      }
+    },
+    "backend/ent/migrate/schema.go": {
+      "stages": {
+        "1": "0475bca3bf5ce223677093bd9a2a4d61dbd6f1b2",
+        "2": "9f5830d3ac612779ef9f20f75a7925bcfb92bb43",
+        "3": "491f038bc721af0aed337f75b91b2709c09a5583"
+      }
+    },
+    "backend/ent/mutation.go": {
+      "stages": {
+        "1": "61ff4f9e6d342468971b3f4335e5a1b023ab4072",
+        "2": "cc65282783d79a9a5209dfdbfd68f789943efab5",
+        "3": "99e8a2cd95871ecf924d69437db1357ab34db4f5"
+      }
+    },
+    "backend/ent/runtime/runtime.go": {
+      "stages": {
+        "1": "e85660dcc1028f73af3ae02e9fc06e656179ef32",
+        "2": "d1de211179403eb78ad4abb993f61fa2c2c128ad",
+        "3": "8042a835a92a5a08d9af83d8287bff4ecc76d588"
+      }
+    },
+    "backend/ent/schema/usage_log.go": {
+      "stages": {
+        "1": "6d8c2d41915801880800a7b6aa1c3831ad19fc21",
+        "2": "885367cb125736924a2919d22763f9081c2adc69",
+        "3": "f13d07170c1355b4568d9282c0ecdb895b46954b"
+      }
+    },
+    "backend/ent/usagelog.go": {
+      "stages": {
+        "1": "b13e29b2f713ea576ae0fab3a28cb0ad7bb6dffe",
+        "2": "cb8b45602bbd4f1e75effa5cd3af4db36cbdc781",
+        "3": "1bd424f8d55077f822585d3ad9a68fb99d09262a"
+      }
+    },
+    "backend/ent/usagelog/usagelog.go": {
+      "stages": {
+        "1": "a87d9371956ee57b44212f3f0ba9232802cfa6ec",
+        "2": "b586cc36360d020e5b7b03d107d74bebfd177a24",
+        "3": "d3f8dfa1b3107ae58abb8f07be66ebefbc782b49"
+      }
+    },
+    "backend/ent/usagelog/where.go": {
+      "stages": {
+        "1": "a9462e0d0ef6f9706a668e643281c192e0d460ea",
+        "2": "e84e46f383a5a5eb5cf063cfcc39c36854a4068b",
+        "3": "7982d74c5ff5d993c1a5ea4075bc09d076ac242a"
+      }
+    },
+    "backend/ent/usagelog_create.go": {
+      "stages": {
+        "1": "31cf45328e4f728d1ecfc844ec257595f5345432",
+        "2": "a6331853659c9a70fd28407bebce5acad2da80aa",
+        "3": "8178fa07106c7ef45699800c13c62146b4bf2568"
+      }
+    },
+    "backend/ent/usagelog_update.go": {
+      "stages": {
+        "1": "2a60d6f44d51ef550e3fbe7e750002b51a9ce343",
+        "2": "4409fe6a4ff328ee1168bc325b3d3e1d24bfb0c3",
+        "3": "6c23ebd355066a8c99f664cee20f5170741f069e"
+      }
+    },
+    "backend/internal/handler/admin/setting_handler_update.go": {
+      "stages": {
+        "1": "6635a218993ced75818a98baa1a770e5106c85da",
+        "2": "09652424048d7dc3e1f6cb1b44f3ae4459010a0d",
+        "3": "5884dc392e17dffe39b137313c9b01a63ca523c2"
+      }
+    },
+    "backend/internal/handler/admin/usage_handler.go": {
+      "stages": {
+        "1": "ad2bbecd2220227418f7f9454c39279b0673d389",
+        "2": "d87669a1b240692cefd503dff020eb76cd478b1f",
+        "3": "829730c647f551e9b81b8f10a6838f0e1344e8af"
+      }
+    },
+    "backend/internal/handler/handler.go": {
+      "stages": {
+        "1": "9334ffe26a5aa22a253c32bc941b5b31d4a465fc",
+        "2": "62e6c0b4c0f4b42810c9e9cad63169b02393b119",
+        "3": "359aff007188acd9a449f5f72475bd7bb6b54ac7"
+      }
+    },
+    "backend/internal/handler/wire.go": {
+      "stages": {
+        "1": "73b36dc0cc04648304f4d7618834a7f9fbbf915a",
+        "2": "6a9673f6a3d7af033e6b8347d10bb02178e50681",
+        "3": "36fdb8528014a95d34f0588019eccdbce4a61114"
+      }
+    },
+    "backend/internal/repository/gateway_cache.go": {
+      "stages": {
+        "1": "6c345e1a7862f9e81208c5e2042a447c35a30dbe",
+        "2": "426a490f05fb11e4847d7bfe0256463d2764f354",
+        "3": "dc3d4a980ada75c6492164c6950697f6900da9d3"
+      }
+    },
+    "backend/internal/repository/migrations_schema_integration_test.go": {
+      "stages": {
+        "1": "b393bc15b64b0bedc08041e2ca35cfdcb8b3b7c0",
+        "2": "12d71fa582f43c6e4fb6b3c32765699055adf100",
+        "3": "e4af36ae253a8e38424677014ffc5a3121ee0d06"
+      }
+    },
+    "backend/internal/repository/usage_log_repo_insert.go": {
+      "stages": {
+        "1": "809b0652b5de23f6a2b43887de3f693faceb7558",
+        "2": "80fe459273247cbaf39225707a81f16e5a887c8a",
+        "3": "6d932c0d435795f7423cd14cd3eb64bfc3777d5d"
+      }
+    },
+    "backend/internal/repository/usage_log_repo_query.go": {
+      "stages": {
+        "1": "084b79ad97d970ce9359c5358b862f025e0c39be",
+        "2": "8e5a032f03aceac85ec6713a4b5ba2c28ad0fe15",
+        "3": "f2fa6e30b036edf0b58ce113255f7624f17c458f"
+      }
+    },
+    "backend/internal/repository/usage_log_repo_request_type_test.go": {
+      "stages": {
+        "1": "047d0bf65f1b627837db5dd1b845d31e96f8a494",
+        "2": "585e605c88f95a8de735a00d654c5a2dc35cc797",
+        "3": "a2b82dfa60e2ce0eb33ade15f7b846333ce12f46"
+      }
+    },
+    "backend/internal/repository/usage_log_session_id_unit_test.go": {
+      "stages": {
+        "1": "7804dce3060bafaac373f0e45808112af935e36f",
+        "2": "22426455e33b5e32ac4a1d24c882740b7e0cf863",
+        "3": "64c1c1bab2a91c42190d61fafe30934e4aa49f5f"
+      }
+    },
+    "backend/internal/repository/wire.go": {
+      "stages": {
+        "1": "84cecf59e462f84204d82a2453ae3a9e934d77e2",
+        "2": "2ab283b228e8c4da48b2842f49b727d497d75f7d",
+        "3": "34c1a1b9d2f45b7ffbf04727714da7dfdc9ec90b"
+      }
+    },
+    "backend/internal/server/routes/user.go": {
+      "stages": {
+        "1": "bcb2a8c9170ea4380eb77fa4694550fd3644bb6e",
+        "2": "e71b8628c8a5a8de8d0b67a4a87f0426969986e6",
+        "3": "65ecaa037d8c7aa4403a23339bb0eee2f2cc57cf"
+      }
+    },
+    "backend/internal/service/channel_monitor_service.go": {
+      "stages": {
+        "1": "9cc793b43b5929fc528cd1f0937683f2b8d23af5",
+        "2": "b229026fe744013379b3d59b6a8b7d3a9b04e852",
+        "3": "248b72133dfc265a3703291250cb9563635424c4"
+      }
+    },
+    "backend/internal/service/domain_constants.go": {
+      "stages": {
+        "1": "52197cc659902e2f35f5fb04b2e2b63e24a1d284",
+        "2": "46afde09672033696b285ce38be5cfa85c11f67b",
+        "3": "2d5311bb2442a8741a12515ae1d8d463c1a4ecf3"
+      }
+    },
+    "backend/internal/service/gateway_usage_billing.go": {
+      "stages": {
+        "1": "0d07b355c636a305232f742f1f8ed99a3619bbf4",
+        "2": "87e6ed60029437d962ac52e257fa98b0206a4dd6",
+        "3": "ee212afde1de7b9546bb5af35965d4b4ca9e2f8c"
+      }
+    },
+    "backend/internal/service/openai_account_model_transient.go": {
+      "stages": {
+        "1": "6ef710d23c2d3250092e5ac166b044968f71ecbe",
+        "2": "7f7e8f15cf13c298060c907421a96991d05b5795",
+        "3": "60fcff9053ac611adea750120cea9ce5afc3e945"
+      }
+    },
+    "backend/internal/service/openai_account_scheduler.go": {
+      "stages": {
+        "1": "497c183eb9ba74edd1420615843716a633cee596",
+        "2": "9ee5224b66fa15d610efa253358023d6de530d9c",
+        "3": "6457ef8fc28c21cd3a1517391ca9c269d2fbd45b"
+      }
+    },
+    "backend/internal/service/openai_gateway_chat_completions.go": {
+      "stages": {
+        "1": "171a6c880532a0f83d1e18977ab6b5c07d205662",
+        "2": "14736ee3acd757f4b6f3b49fb21d34f7e774d1ac",
+        "3": "1a0702a87e93c0ac9240892d937b5081cad0a2ff"
+      }
+    },
+    "backend/internal/service/openai_gateway_chat_completions_raw.go": {
+      "stages": {
+        "1": "49cd59182962c8257d9b7baca29d9da6fc090b89",
+        "2": "1ec7ffb381f828c7c98d919cf169993179c5ec79",
+        "3": "d7eb8d6122e7bbab3fd8abcf4835be1b44c528e6"
+      }
+    },
+    "backend/internal/service/openai_gateway_forward.go": {
+      "stages": {
+        "1": "0484ea7d36f97a45cacd02d68c57271e532bdbff",
+        "2": "de3edb7b990aba56aa506f94e83fecfedce5a5d6",
+        "3": "34c92dfe893d8987f2a6fa521b115d7eda655d6b"
+      }
+    },
+    "backend/internal/service/openai_gateway_messages.go": {
+      "stages": {
+        "1": "066fc82cec98b4c7cf4ac797d64e706fc670df02",
+        "2": "9eea00b1b6a5ca936be707df39d2b597054a69b8",
+        "3": "2aa226dcd4312702ca8b1ff36579751d69bcfed9"
+      }
+    },
+    "backend/internal/service/openai_gateway_response_handling.go": {
+      "stages": {
+        "1": "2a1993c463e399278753eb4c0f212d2471f0842c",
+        "2": "6934aa9d8ca88ca1cb61a25234c5c3cfdcff3343",
+        "3": "cda23fa07b6de0c542139d6b29bcc97dd2ed1f6a"
+      }
+    },
+    "backend/internal/service/openai_gateway_service.go": {
+      "stages": {
+        "1": "f2e00dda4c6d600663c9f026cc521ffcc0ef1180",
+        "2": "47ffc780b02024e455104a2f3576ccca16f0c7f9",
+        "3": "55353e1d0a728261c4a419d0dca65a12619ce9ca"
+      }
+    },
+    "backend/internal/service/openai_gateway_usage.go": {
+      "stages": {
+        "1": "0725c34cf7010faec624e60ea237f12fcb62aabf",
+        "2": "822ced242e6f84598486506e22354e75a30b7430",
+        "3": "1bba5fce725229aabed35f8b7865cee6d1654315"
+      }
+    },
+    "backend/internal/service/openai_ws_forwarder_v2.go": {
+      "stages": {
+        "1": "62aee29c20f8e3b903e3028600cf2a7001fae6a9",
+        "2": "fe999cb4cbf9a79bc43f478c69808cc317657d76",
+        "3": "e0dbd58bd4f504b32112d9fc5a0c269366330be6"
+      }
+    },
+    "backend/internal/service/openai_ws_v2/passthrough_relay.go": {
+      "stages": {
+        "1": "b6936fe99419d55436520cd1a51379bd69b1f60b",
+        "2": "c3797d393be8f672b1c690de63b4ced543f2c33f",
+        "3": "b3fe6d30841c0645d6954c4d8295cbc02565205c"
+      }
+    },
+    "backend/internal/service/openai_ws_v2_passthrough_adapter.go": {
+      "stages": {
+        "1": "ae74027bca1c99b6998c084228df712fd1e40982",
+        "2": "c4070d5b106ef47be0fe655f19e234b0201c7dec",
+        "3": "775e26980ce0bc70e15f895f9af8be22ccd7aa7e"
+      }
+    },
+    "backend/internal/service/usage_billing.go": {
+      "stages": {
+        "1": "8d52c92d26e2e25716bb7e94f1cc58ec223f64d6",
+        "2": "e9ee8e2fb90ca849d8c795b523aa49b69debb4e8",
+        "3": "e058ecb1b0295d26cdc0072178607768b0b07eec"
+      }
+    },
+    "backend/internal/service/wire.go": {
+      "stages": {
+        "1": "0e9f61c95a702e62b3219c7369a308c611fbbd43",
+        "2": "2905c0a02c855e3661d0ca1c8c08704a93af40f1",
+        "3": "93555730a7373ccf55e6bdadeddb0350f0c09983"
+      }
+    },
+    "frontend/src/api/admin/settings.ts": {
+      "stages": {
+        "1": "079556fe986a73005bdb240523610fb55341427e",
+        "2": "ba16cf92e36c27d975187a00ef8ab601c98e4c00",
+        "3": "b176024ae6bce1db8609a64ad6da668638915745"
+      }
+    },
+    "frontend/src/components/admin/usage/__tests__/UsageTable.spec.ts": {
+      "stages": {
+        "1": "6f527f1d5f5b9340f415e31eda9d977454ebf784",
+        "2": "b8c0334bf12096d38f1b9297e9a95b1a22195253",
+        "3": "6fc34d474aae3f0956d8f5bf659f4a219463a801"
+      }
+    },
+    "frontend/src/i18n/locales/en/dashboard.ts": {
+      "stages": {
+        "1": "f07f98a1229e269f54061296008016ca9da13482",
+        "2": "781ed615217a51631c8301cb299ce7021af4b2e3",
+        "3": "4204a9d679c54ad0c38e544c47edcec3074fe184"
+      }
+    },
+    "frontend/src/i18n/locales/zh/dashboard.ts": {
+      "stages": {
+        "1": "c28f6896315cd8573c3f1cf32e26709d3c6d721c",
+        "2": "158925d9280e7313ee97d623c31eee6ce82a20ba",
+        "3": "1d9b8f45746521dc6b35cc2f4e81385938661dc7"
+      }
+    },
+    "frontend/src/types/index.ts": {
+      "stages": {
+        "1": "62a3e608951f7274b870607d90d91dfd2e4df700",
+        "2": "c0b4664a9a66495553f55b0e3502ceb3f4be41a2",
+        "3": "24498cf7ca7ecb4658a45c9b7c045478ffb08de7"
+      }
+    },
+    "frontend/src/views/admin/GroupsView.vue": {
+      "stages": {
+        "1": "89eee0e9f876d49ad7b79c92d670ff32db886b70",
+        "2": "f7fb76eabda2fb7a56ae66088d6be089ae5b33fb",
+        "3": "bc9ac2d19b6062661de58ba42d0cf7adce62dfda"
+      }
+    },
+    "frontend/src/views/admin/SettingsView.vue": {
+      "stages": {
+        "1": "a7e066f1c197cbe47174426f9212f0de050bdcf9",
+        "2": "9c87b6b803f662edffff0f6f055fd25acad65c6d",
+        "3": "b153865ff3bc3ae72293ee49c896c24413c07279"
+      }
+    },
+    "frontend/src/views/admin/UsageView.vue": {
+      "stages": {
+        "1": "2d64c92f0a4d1adcf0398cd607e424a282abcd37",
+        "2": "4e82882c964d70f895c1bbade770382af3e2cf17",
+        "3": "b466c864288916484344c07909c441558a150a5b"
+      }
+    },
+    "frontend/src/views/admin/__tests__/UsageView.spec.ts": {
+      "stages": {
+        "1": "e0fc24b122c3576b31a50970acc37ea074789e9b",
+        "2": "ba9638b713c990a891a89e371f10bcfd711478c6",
+        "3": "a0ad96fb79f15d5b3b7484bdcc2deae3f5343851"
+      }
+    }
+  }
+}

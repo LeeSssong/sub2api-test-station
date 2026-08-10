@@ -54,6 +54,20 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_tracks_new_official_files_even_when_the_snapshot_gitignore_matches
+    with_repositories(ignored_official_addition: true) do |fixture|
+      status, output = run_merge(fixture)
+
+      assert status.success?, output
+      tracked_paths = git(fixture[:root], "ls-tree", "-r", "--name-only", "HEAD").lines.map(&:strip)
+      assert_includes tracked_paths, "upstream/sub2api/docs/official-safe-defaults.md"
+      refute_includes tracked_paths, "upstream/sub2api/docs/local-ignored.md"
+      assert_equal "official tracked\n", File.read(
+        File.join(fixture[:root], "upstream/sub2api/docs/official-safe-defaults.md")
+      )
+    end
+  end
+
   def test_conflict_fails_before_changing_root_head_or_files
     with_repositories(conflict: true) do |fixture|
       before_head = git(fixture[:root], "rev-parse", "HEAD")
@@ -84,11 +98,34 @@ class MergeSub2APIReleaseTest < Minitest::Test
   end
 
   def test_v0171_does_not_fallback_to_wire_only_when_resolver_fails
-    with_repositories(generated_conflict: true, release_version: "0.1.171", release_tag: "v0.1.171") do |fixture|
+    with_repositories(
+      generated_conflict: true,
+      base_version: "0.1.169",
+      release_version: "0.1.171",
+      release_tag: "v0.1.171"
+    ) do |fixture|
       status, output = run_merge(fixture)
 
       refute status.success?
-      assert_includes output, "sub2api_release_resolution status=failed reason=record_missing"
+      assert_includes output, "sub2api_release_resolution status=failed reason="
+      refute_includes output, "sub2api_merge generated_paths="
+      refute File.exist?(fixture[:bundle])
+      refute File.exist?(fixture[:report])
+    end
+  end
+
+  def test_v0173_does_not_fallback_to_wire_only_when_resolver_fails
+    with_repositories(
+      generated_conflict: true,
+      base_version: "0.1.171",
+      release_version: "0.1.173",
+      release_tag: "v0.1.173"
+    ) do |fixture|
+      status, output = run_merge(fixture)
+
+      refute status.success?
+      assert_includes output, "sub2api_release_resolution status=failed reason="
+      refute_includes output, "sub2api_merge generated_paths="
       refute File.exist?(fixture[:bundle])
       refute File.exist?(fixture[:report])
     end
@@ -122,6 +159,38 @@ class MergeSub2APIReleaseTest < Minitest::Test
       assert_equal "generated sum\n", File.read(File.join(fixture[:repository], "backend/go.sum"))
       assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
       assert_empty git(fixture[:repository], "diff", "--name-only")
+    end
+  end
+
+  def test_v0173_resolution_seeds_ent_generated_tree_before_regeneration
+    with_resolver_fixture(
+      generation_profile: "ent_and_wire",
+      auto_merged_generated: true,
+      include_clean_preimage: false
+    ) do |fixture|
+      status, output = run_resolver(fixture, target_version: "0.1.173", target_tag: "v0.1.173")
+
+      assert status.success?, output
+      assert_equal "generated ent\n", File.read(File.join(fixture[:repository], "backend/ent/generated.go"))
+      assert_equal "generated group\n", File.read(File.join(fixture[:repository], "backend/ent/group.go"))
+      assert_equal "generated wire\n", File.read(File.join(fixture[:repository], "backend/cmd/server/wire_gen.go"))
+      assert_equal "seed\n", File.read(File.join(fixture[:repository], "backend/ent/seed.go"))
+      assert_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+      assert_empty git(fixture[:repository], "diff", "--name-only")
+    end
+  end
+
+  def test_v0173_resolution_rejects_ent_seed_preimage_mismatch_without_writing
+    with_resolver_fixture(generation_profile: "ent_and_wire", include_clean_preimage: false) do |fixture|
+      manifest = JSON.parse(File.read(fixture[:manifest]))
+      manifest.fetch("ent_seed_preimages")["backend/ent/seed.go"] = "0" * 40
+      File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+      status, output = run_resolver(fixture, target_version: "0.1.173", target_tag: "v0.1.173")
+
+      refute status.success?
+      assert_includes output, "reason=preimage_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
     end
   end
 
@@ -377,12 +446,23 @@ class MergeSub2APIReleaseTest < Minitest::Test
 
   private
 
-  def with_resolver_fixture(auto_merged_path: false)
+  def with_resolver_fixture(
+    auto_merged_path: false,
+    generation_profile: "wire_and_modules",
+    auto_merged_generated: false,
+    include_clean_preimage: true
+  )
     Dir.mktmpdir("resolve-sub2api-release") do |dir|
       repository = File.join(dir, "repository")
       records_root = File.join(dir, "records")
-      record = File.join(records_root, "0.1.169-to-0.1.171")
-      FileUtils.mkdir_p([File.join(repository, "backend/cmd/server"), File.join(record, "postimages")])
+      target_version = generation_profile == "ent_and_wire" ? "0.1.173" : "0.1.171"
+      target_tag = "v#{target_version}"
+      record = File.join(records_root, "0.1.169-to-#{target_version}")
+      FileUtils.mkdir_p([
+        File.join(repository, "backend/cmd/server"),
+        File.join(repository, "backend/ent"),
+        File.join(record, "postimages")
+      ])
       git(repository, "init", "-q")
       configure_git(repository)
 
@@ -390,8 +470,14 @@ class MergeSub2APIReleaseTest < Minitest::Test
       File.write(File.join(repository, "clean.txt"), "base clean\n")
       File.write(File.join(repository, "auto.txt"), "base auto\n") if auto_merged_path
       File.write(File.join(repository, "backend/go.mod"), "module example.invalid/fixture\n\ngo 1.24\n")
-      File.write(File.join(repository, "backend/go.sum"), "base sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "base wire\n")
+      if generation_profile == "ent_and_wire"
+        File.write(File.join(repository, "backend/ent/seed.go"), "seed\n")
+        File.write(File.join(repository, "backend/ent/generated.go"), "base ent\n")
+        File.write(File.join(repository, "backend/ent/group.go"), "base group\n") if auto_merged_generated
+      else
+        File.write(File.join(repository, "backend/go.sum"), "base sum\n")
+      end
       git(repository, "add", ".")
       git(repository, "commit", "-q", "-m", "base")
       base_commit = git(repository, "rev-parse", "HEAD").strip
@@ -399,21 +485,30 @@ class MergeSub2APIReleaseTest < Minitest::Test
       git(repository, "branch", "target")
 
       File.write(File.join(repository, "semantic.txt"), "ours\n")
-      File.write(File.join(repository, "backend/go.sum"), "ours sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "ours wire\n")
+      if generation_profile == "ent_and_wire"
+        File.write(File.join(repository, "backend/ent/generated.go"), "ours ent\n")
+      else
+        File.write(File.join(repository, "backend/go.sum"), "ours sum\n")
+      end
       git(repository, "add", ".")
       git(repository, "commit", "-q", "-m", "ours")
 
       git(repository, "checkout", "-q", "target")
       File.write(File.join(repository, "semantic.txt"), "theirs\n")
-      File.write(File.join(repository, "backend/go.sum"), "theirs sum\n")
       File.write(File.join(repository, "backend/cmd/server/wire_gen.go"), "theirs wire\n")
+      if generation_profile == "ent_and_wire"
+        File.write(File.join(repository, "backend/ent/generated.go"), "theirs ent\n")
+        File.write(File.join(repository, "backend/ent/group.go"), "official group\n") if auto_merged_generated
+      else
+        File.write(File.join(repository, "backend/go.sum"), "theirs sum\n")
+      end
       File.write(File.join(repository, "auto.txt"), "official auto\n") if auto_merged_path
       git(repository, "add", ".")
       git(repository, "commit", "-q", "-m", "theirs")
       target_commit = git(repository, "rev-parse", "HEAD").strip
-      git(repository, "tag", "-a", "v0.1.171", "-m", "release", target_commit)
-      target_tag_object = git(repository, "rev-parse", "v0.1.171").strip
+      git(repository, "tag", "-a", target_tag, "-m", "release", target_commit)
+      target_tag_object = git(repository, "rev-parse", target_tag).strip
       git(repository, "checkout", "-q", base_branch)
       _stdout, _stderr, merge_status = Open3.capture3("git", "-C", repository, "merge", "--no-ff", "--no-edit", "target")
       refute merge_status.success?, "fixture merge unexpectedly succeeded"
@@ -423,42 +518,68 @@ class MergeSub2APIReleaseTest < Minitest::Test
       git(repository, "checkout", "--conflict=merge", "--", "semantic.txt")
       conflict_lines = File.readlines(semantic_path)
       postimage = File.join(record, "postimages/semantic.patch")
-      File.write(postimage, <<~PATCH)
+      patch = <<~PATCH
         diff --git a/semantic.txt b/semantic.txt
         --- a/semantic.txt
         +++ b/semantic.txt
         @@ -1,#{conflict_lines.length} +1 @@
         #{conflict_lines.map { |line| "-#{line}" }.join}+resolved
-        diff --git a/clean.txt b/clean.txt
-        --- a/clean.txt
-        +++ b/clean.txt
-        @@ -1 +1 @@
-        -base clean
-        +resolved clean
       PATCH
+      if include_clean_preimage
+        patch += <<~PATCH
+          diff --git a/clean.txt b/clean.txt
+          --- a/clean.txt
+          +++ b/clean.txt
+          @@ -1 +1 @@
+          -base clean
+          +resolved clean
+        PATCH
+      end
+      File.write(postimage, patch)
       File.binwrite(semantic_path, original_conflict)
       conflicts = unmerged_stages(repository).transform_values do |stages|
         { "stages" => stages }
       end
       manifest = File.join(record, "manifest.json")
-      File.write(manifest, JSON.pretty_generate(
+      manifest_data = {
         "base_version" => "0.1.169",
         "base_commit" => base_commit,
-        "target_version" => "0.1.171",
-        "target_tag" => "v0.1.171",
+        "target_version" => target_version,
+        "target_tag" => target_tag,
         "target_tag_object" => target_tag_object,
         "target_commit" => target_commit,
         "resolution_patch" => "postimages/semantic.patch",
         "resolution_patch_blob" => git(repository, "hash-object", postimage).strip,
-        "generated_paths" => [
+        "generated_paths" => generation_profile == "ent_and_wire" ? [
+          "backend/cmd/server/wire_gen.go",
+          "backend/ent/generated.go",
+          *(auto_merged_generated ? ["backend/ent/group.go"] : [])
+        ] : [
           "backend/cmd/server/wire_gen.go",
           "backend/go.sum"
         ],
-        "clean_preimages" => {
+        "generation_profile" => generation_profile,
+        "clean_preimages" => include_clean_preimage ? {
           "clean.txt" => git(repository, "rev-parse", ":clean.txt").strip
-        },
+        } : {},
         "conflicts" => conflicts
-      ) + "\n")
+      }
+      if generation_profile == "ent_and_wire"
+        manifest_data["ent_seed_paths"] = [
+          "backend/ent/generated.go",
+          "backend/ent/seed.go",
+          *(auto_merged_generated ? ["backend/ent/group.go"] : [])
+        ]
+        manifest_data["ent_seed_preimages"] = manifest_data.fetch("ent_seed_paths").to_h do |path|
+          [path, git(repository, "rev-parse", "HEAD:#{path}").strip]
+        end
+        if auto_merged_generated
+          manifest_data["generated_preimages"] = {
+            "backend/ent/group.go" => git(repository, "rev-parse", ":backend/ent/group.go").strip
+          }
+        end
+      end
+      File.write(manifest, JSON.pretty_generate(manifest_data) + "\n")
 
       fake_bin = File.join(dir, "bin")
       FileUtils.mkdir_p(fake_bin)
@@ -470,6 +591,12 @@ class MergeSub2APIReleaseTest < Minitest::Test
         shift 2
         case "$*" in
           "mod tidy") printf 'generated sum\n' > "$backend/go.sum" ;;
+          *"entgo.io/ent/cmd/ent generate"*)
+            printf 'generated ent\n' > "$backend/ent/generated.go"
+            if [[ -f "$backend/ent/group.go" ]]; then
+              printf 'generated group\n' > "$backend/ent/group.go"
+            fi
+            ;;
           "generate ./cmd/server") printf 'generated wire\n' > "$backend/cmd/server/wire_gen.go" ;;
           *) exit 64 ;;
         esac
@@ -525,7 +652,14 @@ class MergeSub2APIReleaseTest < Minitest::Test
     ).then { |stdout, stderr, status| [status, stdout + stderr] }
   end
 
-  def with_repositories(conflict: false, generated_conflict: false, release_version: "0.1.167", release_tag: "v0.1.167")
+  def with_repositories(
+    conflict: false,
+    generated_conflict: false,
+    ignored_official_addition: false,
+    base_version: "0.1.166",
+    release_version: "0.1.167",
+    release_tag: "v0.1.167"
+  )
     Dir.mktmpdir("merge-sub2api-release") do |dir|
       official = File.join(dir, "official")
       root = File.join(dir, "root")
@@ -534,6 +668,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       configure_git(official)
       File.write(File.join(official, "app.txt"), "base\n")
       File.write(File.join(official, "common.txt"), "base\n")
+      File.write(File.join(official, ".gitignore"), "docs/*\n") if ignored_official_addition
       if generated_conflict
         server = File.join(official, "backend/cmd/server")
         FileUtils.mkdir_p(server)
@@ -557,6 +692,11 @@ class MergeSub2APIReleaseTest < Minitest::Test
       base_commit = git(official, "rev-parse", "HEAD").strip
       File.write(File.join(official, "app.txt"), "official\n")
       File.write(File.join(official, "new.txt"), "new\n")
+      if ignored_official_addition
+        FileUtils.mkdir_p(File.join(official, "docs"))
+        File.write(File.join(official, "docs/official-safe-defaults.md"), "official tracked\n")
+        git(official, "add", "-f", "docs/official-safe-defaults.md")
+      end
       if generated_conflict
         File.write(File.join(official, "backend/cmd/server/wire_gen.go"), <<~GO)
           package main
@@ -576,6 +716,11 @@ class MergeSub2APIReleaseTest < Minitest::Test
       File.write(File.join(upstream, "app.txt"), conflict ? "custom-conflict\n" : "base\n")
       File.write(File.join(upstream, "common.txt"), "base\n")
       File.write(File.join(upstream, "custom.txt"), "custom\n")
+      if ignored_official_addition
+        File.write(File.join(upstream, ".gitignore"), "docs/*\n")
+        FileUtils.mkdir_p(File.join(upstream, "docs"))
+        File.write(File.join(upstream, "docs/local-ignored.md"), "local ignored\n")
+      end
       if generated_conflict
         FileUtils.cp_r(
           File.join(official, "backend"),
@@ -603,7 +748,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
       File.write(metadata, JSON.generate(
         "has_update" => true,
         "base_sha" => root_base,
-        "base_version" => "0.1.166",
+        "base_version" => base_version,
         "base_commit" => base_commit,
         "version" => release_version,
         "tag" => release_tag,

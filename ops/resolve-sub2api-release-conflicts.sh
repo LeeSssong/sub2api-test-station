@@ -66,6 +66,24 @@ if ! ruby -rjson -e '
     abort unless value.is_a?(String) && !value.empty? && !value.match?(/[\t\r\n]/)
     puts ["identity", key, value].join("\t")
   end
+  generation_profile = manifest.fetch("generation_profile", "wire_and_modules")
+  abort unless %w[wire_and_modules ent_and_wire].include?(generation_profile)
+  puts ["generation", generation_profile].join("\t")
+  ent_seed_paths = []
+  if generation_profile == "ent_and_wire"
+    ent_seed_paths = manifest.fetch("ent_seed_paths")
+    abort unless ent_seed_paths.is_a?(Array) && ent_seed_paths.uniq.length == ent_seed_paths.length && !ent_seed_paths.empty?
+    ent_seed_paths.each do |path|
+      abort unless path.is_a?(String) && path.start_with?("backend/ent/") && !path.include?("/schema/")
+    end
+    ent_seed_preimages = manifest.fetch("ent_seed_preimages")
+    abort unless ent_seed_preimages.is_a?(Hash) && ent_seed_preimages.keys.sort == ent_seed_paths.sort
+    ent_seed_preimages.keys.sort.each do |path|
+      blob = ent_seed_preimages.fetch(path)
+      abort unless blob.is_a?(String) && blob.match?(/\A[0-9a-f]{40}\z/)
+      puts ["seed", path, blob].join("\t")
+    end
+  end
   generated = manifest.fetch("generated_paths")
   abort unless generated.is_a?(Array) && generated.uniq.length == generated.length
   generated.each do |path|
@@ -91,8 +109,17 @@ if ! ruby -rjson -e '
     abort unless entry.keys.sort == ["stages"]
     puts ["conflict", path, *blobs, generated_entry ? "generated" : "semantic"].join("\t")
   end
+  generated_preimages = manifest.fetch("generated_preimages", {})
+  abort unless generated_preimages.is_a?(Hash)
+  generated_preimages.keys.sort.each do |path|
+    blob = generated_preimages.fetch(path)
+    abort unless path.is_a?(String) && path.match?(/\A(?!\/)(?!.*(?:\A|\/)\.\.(?:\/|\z))[^\t\r\n]+\z/)
+    abort if conflicts.key?(path) || !generated.include?(path)
+    abort unless blob.is_a?(String) && blob.match?(/\A[0-9a-f]{40}\z/)
+    puts ["generated_clean", path, blob].join("\t")
+  end
   clean_preimages = manifest.fetch("clean_preimages")
-  abort unless clean_preimages.is_a?(Hash) && !clean_preimages.empty?
+  abort unless clean_preimages.is_a?(Hash)
   clean_preimages.keys.sort.each do |path|
     blob = clean_preimages.fetch(path)
     abort unless path.is_a?(String) && path.match?(/\A(?!\/)(?!.*(?:\A|\/)\.\.(?:\/|\z))[^\t\r\n]+\z/)
@@ -100,8 +127,17 @@ if ! ruby -rjson -e '
     abort unless blob.is_a?(String) && blob.match?(/\A[0-9a-f]{40}\z/)
     puts ["clean", path, blob].join("\t")
   end
-  abort unless generated.sort == ["backend/cmd/server/wire_gen.go", "backend/go.sum"].sort
-  abort unless (generated - conflicts.keys).empty?
+  case generation_profile
+  when "wire_and_modules"
+    abort unless generated.sort == ["backend/cmd/server/wire_gen.go", "backend/go.sum"].sort
+  when "ent_and_wire"
+    abort unless generated.include?("backend/cmd/server/wire_gen.go")
+    abort unless generated.all? do |path|
+      path == "backend/cmd/server/wire_gen.go" ||
+        (path.start_with?("backend/ent/") && !path.include?("/schema/") && ent_seed_paths.include?(path))
+    end
+  end
+  abort unless (generated - conflicts.keys - generated_preimages.keys).empty?
 ' "$manifest" >"$normalized"; then
   fail record_invalid
 fi
@@ -110,6 +146,8 @@ manifest_value() {
   local key=$1
   awk -F '\t' -v key="$key" '$1 == "identity" && $2 == key { print $3 }' "$normalized"
 }
+
+generation_profile=$(awk -F '\t' '$1 == "generation" { print $2 }' "$normalized")
 
 [[ "$(manifest_value base_version)" == "$base_version" && "$(manifest_value base_commit)" == "$base_commit" ]] || fail base_identity_mismatch
 [[ "$(manifest_value target_version)" == "$target_version" &&
@@ -137,6 +175,18 @@ while IFS=$'\t' read -r kind conflict_file stage1 stage2 stage3 _resolution_kind
   actual_stage2=$(git -C "$repository" ls-files -u -- "$conflict_file" | awk '$3 == 2 { print $2 }')
   actual_stage3=$(git -C "$repository" ls-files -u -- "$conflict_file" | awk '$3 == 3 { print $2 }')
   [[ "$actual_stage1" == "$stage1" && "$actual_stage2" == "$stage2" && "$actual_stage3" == "$stage3" ]] || fail preimage_mismatch
+done <"$normalized"
+
+while IFS=$'\t' read -r kind seed_path expected_blob; do
+  [[ "$kind" == seed ]] || continue
+  actual_blob=$(git -C "$repository" rev-parse "HEAD:$seed_path" 2>/dev/null || true)
+  [[ "$actual_blob" == "$expected_blob" ]] || fail preimage_mismatch
+done <"$normalized"
+
+while IFS=$'\t' read -r kind generated_file expected_blob; do
+  [[ "$kind" == generated_clean ]] || continue
+  actual_blob=$(git -C "$repository" rev-parse ":$generated_file" 2>/dev/null || true)
+  [[ "$actual_blob" == "$expected_blob" ]] || fail preimage_mismatch
 done <"$normalized"
 
 while IFS=$'\t' read -r kind clean_file expected_blob; do
@@ -190,13 +240,26 @@ while IFS=$'\t' read -r kind clean_file _expected_blob; do
   git -C "$repository" add -- "$clean_file"
 done <"$normalized"
 
-git -C "$repository" checkout --theirs -- backend/cmd/server/wire_gen.go backend/go.sum
-rm -f -- "$repository/backend/go.sum"
-GOFLAGS=-mod=mod go -C "$repository/backend" mod tidy || fail generation_failed
-GOFLAGS=-mod=mod go -C "$repository/backend" generate ./cmd/server || fail generation_failed
-[[ -f "$repository/backend/go.sum" && -f "$repository/backend/cmd/server/wire_gen.go" ]] || fail generation_failed
+if [[ "$generation_profile" == ent_and_wire ]]; then
+  seed_paths=()
+  while IFS=$'\t' read -r kind seed_path _expected_blob; do
+    [[ "$kind" == seed ]] || continue
+    seed_paths+=("$seed_path")
+  done <"$normalized"
+  git -C "$repository" checkout HEAD -- "${seed_paths[@]}" backend/cmd/server/wire_gen.go
+  GOFLAGS=-mod=mod go -C "$repository/backend" run entgo.io/ent/cmd/ent generate \
+    --feature sql/upsert,intercept,sql/execquery,sql/lock \
+    --idtype int64 ./ent/schema || fail generation_failed
+  GOFLAGS=-mod=mod go -C "$repository/backend" generate ./cmd/server || fail generation_failed
+else
+  git -C "$repository" checkout --theirs -- backend/cmd/server/wire_gen.go backend/go.sum
+  rm -f -- "$repository/backend/go.sum"
+  GOFLAGS=-mod=mod go -C "$repository/backend" mod tidy || fail generation_failed
+  GOFLAGS=-mod=mod go -C "$repository/backend" generate ./cmd/server || fail generation_failed
+  [[ -f "$repository/backend/go.sum" && -f "$repository/backend/cmd/server/wire_gen.go" ]] || fail generation_failed
+fi
 
-expected_generated=$(awk -F '\t' '$1 == "conflict" && $6 == "generated" { print $2 }' "$normalized" | LC_ALL=C sort -u)
+expected_generated=$(awk -F '\t' '$1 == "generated" { print $2 }' "$normalized" | LC_ALL=C sort -u)
 actual_generated=$(
   {
     git -C "$repository" diff --name-only
@@ -204,7 +267,10 @@ actual_generated=$(
   } | LC_ALL=C sort -u
 )
 [[ "$actual_generated" == "$expected_generated" ]] || fail generation_scope_mismatch
-git -C "$repository" add -- backend/cmd/server/wire_gen.go backend/go.sum
+while IFS= read -r generated_file; do
+  [[ -n "$generated_file" ]] || continue
+  git -C "$repository" add -- "$generated_file"
+done <<<"$expected_generated"
 
 verified_files=()
 while IFS= read -r conflict_file; do

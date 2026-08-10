@@ -96,7 +96,8 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
   GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
     git -C "$official" merge -q --no-ff --no-edit "$target_commit"; then
   conflicts=$(git -C "$official" diff --name-only --diff-filter=U)
-  if [[ "$target_version" == "0.1.171" ]]; then
+  if [[ ( "$base_version" == "0.1.169" && "$target_version" == "0.1.171" ) ||
+    ( "$base_version" == "0.1.171" && "$target_version" == "0.1.173" ) ]]; then
     "$(dirname "$0")/resolve-sub2api-release-conflicts.sh" \
       --repository "$official" \
       --base-version "$base_version" \
@@ -145,6 +146,18 @@ rsync -a --delete --exclude=.git/ "$official/" "$root/upstream/sub2api/"
   --annotated-tag "$tag_object"
 
 git -C "$root" add -A -- upstream/sub2api
+if ! git -C "$official" ls-files -z |
+  ruby -e '
+    STDIN.binmode
+    STDOUT.binmode
+    STDIN.read.split("\0").each do |path|
+      next if path.empty?
+      STDOUT.write(":(literal)upstream/sub2api/", path, "\0")
+    end
+  ' |
+  git -C "$root" add -f --pathspec-from-file=- --pathspec-file-nul; then
+  fail
+fi
 GIT_AUTHOR_NAME='Xingqiao Release Automation' \
 GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
 GIT_COMMITTER_NAME='Xingqiao Release Automation' \

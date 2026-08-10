@@ -22,4 +22,15 @@ class Sub2APIReleaseProcessTest < Minitest::Test
       assert File.file?(path), "missing local release step: #{relative_path}"
     end
   end
+
+  def test_current_candidate_source_version_matches_recorded_release_tag
+    provenance = File.binread(File.join(ROOT, "upstream/sub2api/XINGQIAO_UPSTREAM.md"))
+    target_version = provenance.match(/^- Release tag: `v([0-9]+(?:\.[0-9]+){1,2})`$/)&.captures&.first
+    refute_nil target_version, "upstream provenance must record a release tag"
+
+    candidate_version = File.binread(
+      File.join(ROOT, "upstream/sub2api/backend/cmd/server/VERSION")
+    ).strip
+    assert_equal target_version, candidate_version
+  end
 end

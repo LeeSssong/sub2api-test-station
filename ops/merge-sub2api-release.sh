@@ -135,6 +135,19 @@ if ! GIT_AUTHOR_NAME='Xingqiao Release Automation' \
     git -C "$official" commit -q --no-edit
 fi
 
+version_path='backend/cmd/server/VERSION'
+[[ "$(git -C "$official" cat-file -t "${target_commit}:${version_path}" 2>/dev/null || true)" == blob ]] || fail
+[[ -f "$official/$version_path" && ! -L "$official/$version_path" ]] || fail
+printf '%s\n' "$target_version" >"$official/$version_path"
+[[ "$(<"$official/$version_path")" == "$target_version" ]] || fail
+git -C "$official" add -- "$version_path"
+GIT_AUTHOR_NAME='Xingqiao Release Automation' \
+GIT_AUTHOR_EMAIL='release-automation@xingqialab.invalid' \
+GIT_COMMITTER_NAME='Xingqiao Release Automation' \
+GIT_COMMITTER_EMAIL='release-automation@xingqialab.invalid' \
+GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
+  git -C "$official" commit -q --allow-empty -m "chore: materialize release version $target_version"
+
 [[ -z "$(git -C "$official" status --porcelain=v1)" ]] || fail
 
 root_modified=1
@@ -167,6 +180,8 @@ GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
 
 candidate_commit=$(git -C "$root" rev-parse HEAD)
 [[ "$(git -C "$root" rev-parse HEAD^)" == "$base_sha" ]] || fail
+candidate_version=$(git -C "$root" show "${candidate_commit}:upstream/sub2api/${version_path}" 2>/dev/null || true)
+[[ "$candidate_version" == "$target_version" ]] || fail
 git -C "$root" branch -f candidate-artifact "$candidate_commit" >/dev/null
 umask 077
 git -C "$root" bundle create "$bundle" candidate-artifact

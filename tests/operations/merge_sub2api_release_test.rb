@@ -54,6 +54,65 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_materializes_target_version_in_candidate_source_before_export
+    with_repositories(
+      base_version: "0.1.171",
+      release_version: "0.1.173",
+      release_tag: "v0.1.173",
+      source_version: "0.1.172"
+    ) do |fixture|
+      status, output = run_merge(fixture)
+
+      assert status.success?, output
+      version_path = File.join(fixture[:root], "upstream/sub2api/backend/cmd/server/VERSION")
+      assert_equal "0.1.173\n", File.binread(version_path)
+
+      report = JSON.parse(File.read(fixture[:report]))
+      assert_equal "0.1.173\n", git(
+        fixture[:root], "show",
+        "#{report.fetch("candidate_commit")}:upstream/sub2api/backend/cmd/server/VERSION"
+      )
+    end
+  end
+
+  def test_fails_closed_when_stale_candidate_version_cannot_be_materialized
+    with_repositories(
+      base_version: "0.1.171",
+      release_version: "0.1.173",
+      release_tag: "v0.1.173",
+      source_version: "0.1.172",
+      source_version_symlink: true
+    ) do |fixture|
+      before_head = git(fixture[:root], "rev-parse", "HEAD").strip
+
+      status, output = run_merge(fixture)
+
+      refute status.success?, output
+      assert_includes output, "sub2api_merge status=failed"
+      assert_equal before_head, git(fixture[:root], "rev-parse", "HEAD").strip
+      refute File.exist?(fixture[:bundle])
+      refute File.exist?(fixture[:report])
+    end
+  end
+
+  def test_allows_same_version_forced_rebuild_when_version_is_already_materialized
+    with_repositories(
+      base_version: "0.1.167",
+      release_version: "0.1.167",
+      release_tag: "v0.1.167",
+      source_version: "0.1.167",
+      same_official_commit: true
+    ) do |fixture|
+      status, output = run_merge(fixture)
+
+      assert status.success?, output
+      assert File.file?(fixture[:bundle])
+      report = JSON.parse(File.read(fixture[:report]))
+      assert_equal "0.1.167", report.fetch("version")
+      assert_equal fixture[:official_base], report.fetch("official_commit")
+    end
+  end
+
   def test_tracks_new_official_files_even_when_the_snapshot_gitignore_matches
     with_repositories(ignored_official_addition: true) do |fixture|
       status, output = run_merge(fixture)
@@ -709,16 +768,23 @@ class MergeSub2APIReleaseTest < Minitest::Test
     ignored_official_addition: false,
     base_version: "0.1.166",
     release_version: "0.1.167",
-    release_tag: "v0.1.167"
+    release_tag: "v0.1.167",
+    source_version: nil,
+    source_version_symlink: false,
+    same_official_commit: false
   )
     Dir.mktmpdir("merge-sub2api-release") do |dir|
       official = File.join(dir, "official")
       root = File.join(dir, "root")
+      candidate_source_version = source_version || base_version
       FileUtils.mkdir_p([official, root])
       git(official, "init", "-q")
       configure_git(official)
       File.write(File.join(official, "app.txt"), "base\n")
       File.write(File.join(official, "common.txt"), "base\n")
+      version_path = File.join(official, "backend/cmd/server/VERSION")
+      FileUtils.mkdir_p(File.dirname(version_path))
+      File.write(version_path, "#{candidate_source_version}\n")
       File.write(File.join(official, ".gitignore"), "docs/*\n") if ignored_official_addition
       if generated_conflict
         server = File.join(official, "backend/cmd/server")
@@ -741,22 +807,24 @@ class MergeSub2APIReleaseTest < Minitest::Test
       git(official, "add", ".")
       git(official, "commit", "-q", "-m", "base")
       base_commit = git(official, "rev-parse", "HEAD").strip
-      File.write(File.join(official, "app.txt"), "official\n")
-      File.write(File.join(official, "new.txt"), "new\n")
-      if ignored_official_addition
-        FileUtils.mkdir_p(File.join(official, "docs"))
-        File.write(File.join(official, "docs/official-safe-defaults.md"), "official tracked\n")
-        git(official, "add", "-f", "docs/official-safe-defaults.md")
-      end
-      if generated_conflict
-        File.write(File.join(official, "backend/cmd/server/wire_gen.go"), <<~GO)
-          package main
+      unless same_official_commit
+        File.write(File.join(official, "app.txt"), "official\n")
+        File.write(File.join(official, "new.txt"), "new\n")
+        if ignored_official_addition
+          FileUtils.mkdir_p(File.join(official, "docs"))
+          File.write(File.join(official, "docs/official-safe-defaults.md"), "official tracked\n")
+          git(official, "add", "-f", "docs/official-safe-defaults.md")
+        end
+        if generated_conflict
+          File.write(File.join(official, "backend/cmd/server/wire_gen.go"), <<~GO)
+            package main
 
-          const generatedValue = "official"
-        GO
+            const generatedValue = "official"
+          GO
+        end
+        git(official, "add", ".")
+        git(official, "commit", "-q", "-m", "target")
       end
-      git(official, "add", ".")
-      git(official, "commit", "-q", "-m", "target")
       target_commit = git(official, "rev-parse", "HEAD").strip
       git(official, "tag", "-a", release_tag, "-m", "release", target_commit)
 
@@ -767,6 +835,15 @@ class MergeSub2APIReleaseTest < Minitest::Test
       File.write(File.join(upstream, "app.txt"), conflict ? "custom-conflict\n" : "base\n")
       File.write(File.join(upstream, "common.txt"), "base\n")
       File.write(File.join(upstream, "custom.txt"), "custom\n")
+      version_path = File.join(upstream, "backend/cmd/server/VERSION")
+      FileUtils.mkdir_p(File.dirname(version_path))
+      File.write(version_path, "#{candidate_source_version}\n")
+      if source_version_symlink
+        stale_version_path = File.join(File.dirname(version_path), "STALE_VERSION")
+        File.write(stale_version_path, "#{candidate_source_version}\n")
+        FileUtils.rm_f(version_path)
+        File.symlink("STALE_VERSION", version_path)
+      end
       if ignored_official_addition
         File.write(File.join(upstream, ".gitignore"), "docs/*\n")
         FileUtils.mkdir_p(File.join(upstream, "docs"))
@@ -807,7 +884,7 @@ class MergeSub2APIReleaseTest < Minitest::Test
         "published_at" => "2026-07-28T01:02:03Z"
       ))
       yield(
-        dir: dir, official: official, root: root, root_base: root_base,
+        dir: dir, official: official, official_base: base_commit, root: root, root_base: root_base,
         metadata: metadata, bundle: File.join(dir, "candidate.bundle"),
         report: File.join(dir, "report.json")
       )

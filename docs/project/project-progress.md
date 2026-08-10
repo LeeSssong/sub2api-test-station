@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮 `v0.1.173` 版本身份收口（2026-08-10）：** 状态：进行中。生产维护发布已把 `main@0b8377a971e95edff8a9a332dbfbedcc40932128`、tree `686afce1d1e925fa4ce8c914264f55e18b21e8b9` 和迁移集 `f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc` 成功提升到活动 `blue` 槽，发布记录 `20260810T194408Z-production-3545218` 为 `succeeded/promoted`，线上 health/ready/home 为 200、未认证管理接口为 401；但登录态验收发现版本按钮仍显示 `v0.1.172`。根因已定位为候选源码 `upstream/sub2api/backend/cmd/server/VERSION` 仍为 `0.1.172`，Dockerfile 未显式传 `VERSION` 时按设计从该文件解析，导致已发布二进制和升级状态使用旧版本身份。本轮将新增真实发布合并回归，要求目标元数据版本、候选源码 VERSION 与构建身份一致，再从最新 `main` 生成、审查、推送和重新发布候选；当前准备创建 `.worktrees/fix-release-version-identity`，两个用户明确保护 worktree 继续不修改、不合并、不清理。只有新 `main` 已推送、生产再次部署并完成登录态版本/升级状态和三项原缺陷线上验证后才能标记完成。GHCR 正式候选发布仍因缺少私有仓库凭据阻塞，本轮继续使用已审查的 preloaded 宿主蓝绿链，不使用 GitHub Actions。
+
 **本轮生产迁移集维护门禁补全（2026-08-10）：** 状态：进行中（本地实现与验证已完成，待合并、推送、部署与线上验证）。根因已确认为生产活动迁移集 `fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d` 到已验证候选迁移集 `f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc` 尚未纳入宿主执行器的精确 allowlist，因此在启动任何候选服务前以 `reason_code=migration_set_changed` 安全退出。本轮工作区为 `.worktrees/maintenance-allowlist-fix`，分支 `codex/maintenance-allowlist-fix`；已用真实 host executor 受控 fixture 先复现 RED（精确转换被拒绝），再仅补充第 6 条已批准转换，精确回归、两个 Bash 语法检查及 `git diff --check` 均通过，独立复审无发现。本轮没有修改迁移内容、生产数据或其他发布行为，未推送、未部署，两个受保护 worktree 未修改或删除。
 
 **本轮三项生产缺陷排查与修复（2026-08-10）：** 状态：进行中（Task 4 本地实施审查已通过，待整分支审查与后续生产收口）。

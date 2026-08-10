@@ -1210,6 +1210,14 @@ if [[ "$migrations_hash" != "$state_migrations_hash" ]]; then
   else
     gate migration_set_changed 'candidate migration set differs from the active release' 300
   fi
+elif [[ "$maintenance_authorized" == true \
+    && "$maintenance_from_hash" == "$state_migrations_hash" ]]; then
+  # A previously promoted release may have had its shared Caddy container
+  # recreated independently of the release-state checkpoint. An explicitly
+  # authorized maintenance run must be able to refresh that identity while
+  # keeping the migration set unchanged; the identity block below still
+  # verifies PostgreSQL/Redis continuity and the expected Caddy image.
+  maintenance_transition=true
 fi
 
 postgres_id=$(resolve_container_id postgres) || gate legacy_topology_bootstrap 'PostgreSQL container identity is not uniquely resolvable' 600

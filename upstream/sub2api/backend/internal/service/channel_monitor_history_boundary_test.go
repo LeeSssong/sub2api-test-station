@@ -55,7 +55,7 @@ func TestChannelMonitorUpdateHistoryBoundary(t *testing.T) {
 	}{
 		{name: "provider", update: ChannelMonitorUpdateParams{Provider: stringPointer(MonitorProviderAnthropic)}, resetExpected: true},
 		{name: "api mode", update: ChannelMonitorUpdateParams{APIMode: stringPointer(MonitorAPIModeResponses)}, resetExpected: true},
-		{name: "endpoint", update: ChannelMonitorUpdateParams{Endpoint: stringPointer("https://updated.example.com")}, resetExpected: true},
+		{name: "endpoint", update: ChannelMonitorUpdateParams{Endpoint: stringPointer("https://1.1.1.1")}, resetExpected: true},
 		{name: "primary model", update: ChannelMonitorUpdateParams{PrimaryModel: stringPointer("gpt-5.4-mini")}, resetExpected: true},
 		{name: "api key", update: ChannelMonitorUpdateParams{APIKey: stringPointer("new-api-key")}, resetExpected: true},
 		{name: "group id", update: ChannelMonitorUpdateParams{GroupID: int64Pointer(13)}, resetExpected: true},

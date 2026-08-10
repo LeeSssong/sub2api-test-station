@@ -24,6 +24,22 @@
     "backend/ent/usagelog_create.go",
     "backend/ent/usagelog_update.go"
   ],
+  "generated_postimages": {
+    "backend/cmd/server/wire_gen.go": "70d794a4c069743af9102917b24b16b85033f186",
+    "backend/ent/group.go": "3b1d2a4a51695e591541c7305426f3b15b373be7",
+    "backend/ent/group/group.go": "76a07b96a08d44ec9b518b3ccf6acf664eccb92d",
+    "backend/ent/group/where.go": "630ec582e8988664b88d121a32b1ada24591314b",
+    "backend/ent/group_create.go": "3246b92a5087c578090c7db4abf82682c949cb9e",
+    "backend/ent/group_update.go": "de5474e069bc0c461093ab50cabc8d636df438cd",
+    "backend/ent/migrate/schema.go": "3d2ffc1dfea7049e42c5ace34e8c475347c3100f",
+    "backend/ent/mutation.go": "a53cfda98d0f027365a3aef90442d947f7a5cdb5",
+    "backend/ent/runtime/runtime.go": "39bf275e2c6212fc88267a0fe80277b9e1c62a91",
+    "backend/ent/usagelog.go": "50f1f00a514ea553530990837983b9b4cc48a20c",
+    "backend/ent/usagelog/usagelog.go": "83b9dc813b988e789c5d7d2cb65f4b87caf38d23",
+    "backend/ent/usagelog/where.go": "7fc25356eeecfb619a6b1cd615f0c9e6153426d5",
+    "backend/ent/usagelog_create.go": "1a98cda58871bf3b4834d66d6e92e0522772233c",
+    "backend/ent/usagelog_update.go": "0be693188528cd0b66ab780703b64f1303b9b887"
+  },
   "generated_preimages": {
     "backend/ent/group.go": "3b1d2a4a51695e591541c7305426f3b15b373be7",
     "backend/ent/group/group.go": "76a07b96a08d44ec9b518b3ccf6acf664eccb92d",

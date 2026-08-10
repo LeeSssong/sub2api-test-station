@@ -66,6 +66,7 @@ if ! ruby -rjson -e '
     abort unless value.is_a?(String) && !value.empty? && !value.match?(/[\t\r\n]/)
     puts ["identity", key, value].join("\t")
   end
+  safe_path_pattern = /\A(?!\/)(?!.*(?:\A|\/)\.\.(?:\/|\z))[^\t\r\n]+\z/
   generation_profile = manifest.fetch("generation_profile", "wire_and_modules")
   abort unless %w[wire_and_modules ent_and_wire].include?(generation_profile)
   puts ["generation", generation_profile].join("\t")
@@ -74,7 +75,8 @@ if ! ruby -rjson -e '
     ent_seed_paths = manifest.fetch("ent_seed_paths")
     abort unless ent_seed_paths.is_a?(Array) && ent_seed_paths.uniq.length == ent_seed_paths.length && !ent_seed_paths.empty?
     ent_seed_paths.each do |path|
-      abort unless path.is_a?(String) && path.start_with?("backend/ent/") && !path.include?("/schema/")
+      abort unless path.is_a?(String) && path.match?(safe_path_pattern)
+      abort unless path.match?(/\Abackend\/ent\/.+\z/) && !path.include?("/schema/")
     end
     ent_seed_preimages = manifest.fetch("ent_seed_preimages")
     abort unless ent_seed_preimages.is_a?(Hash) && ent_seed_preimages.keys.sort == ent_seed_paths.sort
@@ -89,6 +91,13 @@ if ! ruby -rjson -e '
   generated.each do |path|
     abort unless path.is_a?(String) && path.match?(/\A(?!\/)(?!.*(?:\A|\/)\.\.(?:\/|\z))[^\t\r\n]+\z/)
     puts ["generated", path].join("\t")
+  end
+  generated_postimages = manifest.fetch("generated_postimages")
+  abort unless generated_postimages.is_a?(Hash) && generated_postimages.keys.sort == generated.sort
+  generated_postimages.keys.sort.each do |path|
+    blob = generated_postimages.fetch(path)
+    abort unless blob.is_a?(String) && blob.match?(/\A[0-9a-f]{40}\z/)
+    puts ["postimage", path, blob].join("\t")
   end
   resolution_patch = manifest.fetch("resolution_patch")
   resolution_patch_blob = manifest.fetch("resolution_patch_blob")
@@ -267,6 +276,11 @@ actual_generated=$(
   } | LC_ALL=C sort -u
 )
 [[ "$actual_generated" == "$expected_generated" ]] || fail generation_scope_mismatch
+while IFS=$'\t' read -r kind generated_file expected_blob; do
+  [[ "$kind" == postimage ]] || continue
+  actual_blob=$(git -C "$repository" hash-object -- "$generated_file" 2>/dev/null || true)
+  [[ "$actual_blob" == "$expected_blob" ]] || fail generation_postimage_mismatch
+done <"$normalized"
 while IFS= read -r generated_file; do
   [[ -n "$generated_file" ]] || continue
   git -C "$repository" add -- "$generated_file"

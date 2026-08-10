@@ -11,6 +11,10 @@
     "backend/cmd/server/wire_gen.go",
     "backend/go.sum"
   ],
+  "generated_postimages": {
+    "backend/cmd/server/wire_gen.go": "baee38434d587e31bea6b5fefd19f5e4fa8521f0",
+    "backend/go.sum": "cdea1a5b91362c8df92472957c65c6a314fe8621"
+  },
   "clean_preimages": {
     "backend/internal/repository/account_repo_upstream_billing_probe_cas_test.go": "f9fe019554aca0e86031dbf2599bb54a589e4483",
     "backend/internal/repository/account_repo_upstream_billing_rate_multiplier_sync_test.go": "74ec06b9ae2fd8391d39ecc13c8bd509b7e08c70",

@@ -180,6 +180,22 @@ class MergeSub2APIReleaseTest < Minitest::Test
     end
   end
 
+  def test_v0173_resolution_rejects_generated_content_mismatch_and_restores_merge_state
+    with_resolver_fixture(generation_profile: "ent_and_wire", include_clean_preimage: false) do |fixture|
+      fake_go = File.join(fixture.fetch(:fake_bin), "go")
+      File.write(
+        fake_go,
+        File.read(fake_go).sub("generated wire\n", "tampered wire\n")
+      )
+
+      status, output = run_resolver(fixture, target_version: "0.1.173", target_tag: "v0.1.173")
+
+      refute status.success?
+      assert_includes output, "reason=generation_postimage_mismatch"
+      refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
   def test_v0173_resolution_rejects_ent_seed_preimage_mismatch_without_writing
     with_resolver_fixture(generation_profile: "ent_and_wire", include_clean_preimage: false) do |fixture|
       manifest = JSON.parse(File.read(fixture[:manifest]))
@@ -191,6 +207,32 @@ class MergeSub2APIReleaseTest < Minitest::Test
       refute status.success?
       assert_includes output, "reason=preimage_mismatch"
       refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+    end
+  end
+
+  def test_v0173_resolution_rejects_unsafe_ent_seed_paths_before_writing
+    unsafe_paths = [
+      "backend/ent/../escape.go",
+      "backend/ent/seed.go\tgenerated\tbackend/cmd/server/wire_gen.go",
+      "backend/ent/seed.go\nclean\tsemantic.txt\t#{"0" * 40}"
+    ]
+
+    unsafe_paths.each do |unsafe_path|
+      with_resolver_fixture(generation_profile: "ent_and_wire", include_clean_preimage: false) do |fixture|
+        manifest = JSON.parse(File.read(fixture[:manifest]))
+        seed_paths = manifest.fetch("ent_seed_paths")
+        seed_index = seed_paths.index("backend/ent/seed.go")
+        seed_blob = manifest.fetch("ent_seed_preimages").delete("backend/ent/seed.go")
+        seed_paths[seed_index] = unsafe_path
+        manifest.fetch("ent_seed_preimages")[unsafe_path] = seed_blob
+        File.write(fixture[:manifest], JSON.pretty_generate(manifest) + "\n")
+
+        status, output = run_resolver(fixture, target_version: "0.1.173", target_tag: "v0.1.173")
+
+        refute status.success?
+        assert_includes output, "reason=record_invalid"
+        refute_empty git(fixture[:repository], "diff", "--name-only", "--diff-filter=U")
+      end
     end
   end
 
@@ -540,6 +582,19 @@ class MergeSub2APIReleaseTest < Minitest::Test
       conflicts = unmerged_stages(repository).transform_values do |stages|
         { "stages" => stages }
       end
+      generated_contents = if generation_profile == "ent_and_wire"
+        contents = {
+          "backend/cmd/server/wire_gen.go" => "generated wire\n",
+          "backend/ent/generated.go" => "generated ent\n"
+        }
+        contents["backend/ent/group.go"] = "generated group\n" if auto_merged_generated
+        contents
+      else
+        {
+          "backend/cmd/server/wire_gen.go" => "generated wire\n",
+          "backend/go.sum" => "generated sum\n"
+        }
+      end
       manifest = File.join(record, "manifest.json")
       manifest_data = {
         "base_version" => "0.1.169",
@@ -550,14 +605,10 @@ class MergeSub2APIReleaseTest < Minitest::Test
         "target_commit" => target_commit,
         "resolution_patch" => "postimages/semantic.patch",
         "resolution_patch_blob" => git(repository, "hash-object", postimage).strip,
-        "generated_paths" => generation_profile == "ent_and_wire" ? [
-          "backend/cmd/server/wire_gen.go",
-          "backend/ent/generated.go",
-          *(auto_merged_generated ? ["backend/ent/group.go"] : [])
-        ] : [
-          "backend/cmd/server/wire_gen.go",
-          "backend/go.sum"
-        ],
+        "generated_paths" => generated_contents.keys,
+        "generated_postimages" => generated_contents.transform_values do |content|
+          git_blob_oid(repository, content)
+        end,
         "generation_profile" => generation_profile,
         "clean_preimages" => include_clean_preimage ? {
           "clean.txt" => git(repository, "rev-parse", ":clean.txt").strip
@@ -777,6 +828,15 @@ class MergeSub2APIReleaseTest < Minitest::Test
   def configure_git(path)
     git(path, "config", "user.name", "Test")
     git(path, "config", "user.email", "test@example.invalid")
+  end
+
+  def git_blob_oid(path, content)
+    stdout, stderr, status = Open3.capture3(
+      "git", "-C", path, "hash-object", "--stdin", stdin_data: content
+    )
+    raise "git hash-object --stdin: #{stderr}" unless status.success?
+
+    stdout.strip
   end
 
   def git(path, *arguments)

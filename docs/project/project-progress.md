@@ -1,10 +1,10 @@
 # 项目全局进度总账
 
-**本轮三项生产缺陷排查与修复（2026-08-10）：** 状态：进行中（Task 4 独立审查修复轮次 1，待聚焦复审与后续生产收口）。
+**本轮三项生产缺陷排查与修复（2026-08-10）：** 状态：进行中（Task 4 本地实施审查已通过，待整分支审查与后续生产收口）。
 范围：一是追查 Sub2API 与 NEW 上游逐笔扣费为何未进入日志详情的“上游实际扣费/利润”，并将仅管理员可见的费用字段移入管理员信息分组；二是追查账号监控第三张及后续卡片的评分、成本悬浮层失效，统一为稳定且可访问的交互并举一反三检查同类卡片控件；三是追查官方版本 `0.1.173` 候选长期停留“检查中/准备中”、无法立即升级的状态机和宿主执行链。
 当前工作区为 `.worktrees/fix-production-defects`，分支 `codex/fix-production-defects`，Tasks 1–3 基线为 `6553f6f23` 且已通过独立审查。Task 4 提交 `4ca6947bb` 已形成 `0.1.171→0.1.173` 精确冲突记录，真实 resolver 重放与人工语义合并得到同一 tree `81aa3869fb02932a782981b5686f154e1f78430a`，并修复“官方已跟踪新文件命中快照 `.gitignore` 后只留在磁盘、未进入 candidate commit”的发布链缺口；真实脚本候选提交 `2a5f5a3e3` 已导入当前工作区。
 最终本地门禁已通过：后端全量 test/vet 与显式 `0.1.173` 版本注入、前端 246 文件/1746 测试及 typecheck/lint/build、updater 与 release 全套、PostgreSQL/Redis Testcontainers 迁移、候选 bundle/report 身份、normalized tree `4948ae094ce9021bfdb4020079ab034828bab894` 一致性、官方 Markdown 硬换行例外后的 diff 检查及 clean worktree。
-Task 4 首轮独立审查发现 resolver 仅约束生成文件名、未约束生成内容，以及 `ent_seed_paths` 可接受路径穿越/控制字符。修复轮次 1 已按 TDD 增加逐文件 `generated_postimages` blob 合同，并在任何写入前统一拒绝不安全 Ent seed 路径；新测试先得到 2 项预期失败，修复后聚焦回归为 2 runs/24 assertions，全量 merge suite 为 28 runs/194 assertions，真实 50 冲突重放继续得到 tree `81aa3869fb02932a782981b5686f154e1f78430a`，且两份既有 resolution record 的全部生成后 blob 均与已审查快照一致。当前待本修复轮聚焦复审和整分支最终审查；未合并 `main`、未推送、未部署、未修改生产，状态不得标记完成。
+Task 4 首轮独立审查发现 resolver 仅约束生成文件名、未约束生成内容，以及 `ent_seed_paths` 可接受路径穿越/控制字符。修复轮次 1 已按 TDD 增加逐文件 `generated_postimages` blob 合同，并在任何写入前统一拒绝不安全 Ent seed 路径；新测试先得到 2 项预期失败，修复后聚焦回归为 2 runs/24 assertions，全量 merge suite 为 28 runs/194 assertions，真实 50 冲突重放继续得到 tree `81aa3869fb02932a782981b5686f154e1f78430a`，且两份既有 resolution record 的全部生成后 blob 均与已审查快照一致。聚焦独立复审已将两项 finding 均判定为 ADDRESSED，修复 diff 无新增 Critical/Important 问题；当前待整分支最终审查。未合并 `main`、未推送、未部署、未修改生产，状态不得标记完成。
 两个用户明确保护工作区继续保留，不合并、不修改、不清理；不启用 relay-ops 外置主写入，不使用 GitHub Actions。
 
 **本轮纠偏部署登记（2026-08-10）：** 状态：已完成。已审计全部非 `main` worktree，保留用户点名的两个工作区；`main` 已推送至 `origin/main`，并从 `main@fa63c136c345914e1b60412cf8acd35edfd89ab3` 完成停机蓝绿发布。生产记录：`20260810T061914Z-production-2991041`，结果 `succeeded/promoted`，活动槽位 `green`，镜像 `ghcr.io/leesssong/xingqiao-sub2api:release-fa63c136c345914e1b60412cf8acd35edfd89ab3-64977dcd44307856faf29140f4959f25fd17483d0309351b59c204b4c06b7936`，迁移哈希 `fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d`。线上 `/healthz`、`/readyz`、首页均为 200，未认证管理 API 为 401；API、worker、PostgreSQL、Redis、Caddy、relay-ops 均健康。relay-ops 仍保持 `read_only`，未启用外置主写入或账务写入；不使用 GitHub Actions。

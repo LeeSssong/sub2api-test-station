@@ -66,6 +66,16 @@ type fakeCandidatePreparer struct {
 	err     error
 }
 
+type deadlineCandidatePreparer struct {
+	entered chan struct{}
+}
+
+func (p *deadlineCandidatePreparer) Prepare(ctx context.Context, _ string) error {
+	close(p.entered)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 func (p *fakeCandidatePreparer) Prepare(context.Context, string) error {
 	p.mu.Lock()
 	p.calls++
@@ -397,6 +407,136 @@ func TestServicePrepareCandidateIsIdempotentWhileInFlight(t *testing.T) {
 			t.Fatalf("candidate did not become ready: status=%#v err=%v", status, err)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestServiceSurfacesCandidateTerminalPersistenceFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		preparer CandidatePreparer
+		terminal string
+	}{
+		{
+			name:     "unavailable preparer",
+			terminal: "failed",
+		},
+		{
+			name:     "ready",
+			preparer: &fakeCandidatePreparer{entered: make(chan struct{}, 1), release: make(chan struct{})},
+			terminal: "ready",
+		},
+		{
+			name:     "failed",
+			preparer: &fakeCandidatePreparer{entered: make(chan struct{}, 1), release: make(chan struct{}), err: errors.New("candidate image pull failed")},
+			terminal: "failed",
+		},
+		{
+			name:     "target changed",
+			preparer: &fakeCandidatePreparer{entered: make(chan struct{}, 1), release: make(chan struct{}), err: ErrTargetChanged},
+			terminal: "target_changed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewStore(filepath.Join(t.TempDir(), "state.json"))
+			service := NewServiceWithPreparer(store, &schedulerResolver{}, &schedulerExecutor{}, tt.preparer, time.Now)
+			defer service.Close()
+
+			if tt.preparer == nil {
+				if err := os.Mkdir(store.candidatePath(), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				_, err := service.PrepareCandidate(context.Background(), 1, "1.2.3")
+				if err == nil {
+					t.Fatal("PrepareCandidate succeeded despite durable state write failure")
+				}
+				if _, err := service.CandidateStatus(); err == nil {
+					t.Fatal("CandidateStatus returned an in-memory state after failed persistence")
+				}
+				return
+			}
+
+			preparer := tt.preparer.(*fakeCandidatePreparer)
+			if _, err := service.PrepareCandidate(context.Background(), 1, "1.2.3"); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-preparer.entered:
+			case <-time.After(time.Second):
+				t.Fatal("preparer did not start")
+			}
+			if err := os.Remove(store.candidatePath()); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(store.candidatePath(), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			close(preparer.release)
+
+			deadline := time.Now().Add(time.Second)
+			for {
+				_, err := service.CandidateStatus()
+				if err != nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("CandidateStatus returned in-memory %s state after failed persistence", tt.terminal)
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if _, err := service.Readiness(context.Background(), "1.2.3"); err == nil {
+				t.Fatalf("Readiness returned in-memory %s state after failed persistence", tt.terminal)
+			}
+		})
+	}
+}
+
+func TestServiceMarksHungCandidatePreparationFailedAfterConfiguredTimeout(t *testing.T) {
+	preparer := &deadlineCandidatePreparer{entered: make(chan struct{})}
+	service, err := NewServiceWithPreparerConfig(
+		NewStore(filepath.Join(t.TempDir(), "state.json")),
+		&schedulerResolver{}, &schedulerExecutor{}, preparer,
+		ServiceConfig{CandidatePreparationTimeout: 25 * time.Millisecond}, time.Now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+
+	if _, err := service.PrepareCandidate(context.Background(), 1, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-preparer.entered:
+	case <-time.After(time.Second):
+		t.Fatal("preparer did not start")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		status, err := service.CandidateStatus()
+		if err == nil && status.Stage == "failed" {
+			if status.Reason != "candidate preparation timed out after 25ms" {
+				t.Fatalf("timeout reason = %q", status.Reason)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("hung candidate did not fail: status=%#v err=%v", status, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestServiceRejectsInvalidCandidatePreparationTimeout(t *testing.T) {
+	_, err := NewServiceWithPreparerConfig(
+		NewStore(filepath.Join(t.TempDir(), "state.json")),
+		&schedulerResolver{}, &schedulerExecutor{}, &fakeCandidatePreparer{},
+		ServiceConfig{CandidatePreparationTimeout: 0}, time.Now,
+	)
+	if err == nil || !strings.Contains(err.Error(), "candidate preparation timeout") {
+		t.Fatalf("invalid timeout error = %v", err)
 	}
 }
 

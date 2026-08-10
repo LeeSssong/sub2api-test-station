@@ -31,16 +31,19 @@ const (
 
 func main() {
 	var (
-		socketPath   = flag.String("socket", defaultSocket, "Unix socket path")
-		statePath    = flag.String("state", defaultState, "persistent operation state path")
-		executor     = flag.String("executor", defaultExecutor, "root-owned host update executor")
-		official     = flag.String("official-api", defaultAPI, "official Sub2API API base URL")
-		officialDial = flag.String("official-dial-address", defaultOfficialDial, "loopback Caddy address for official authentication")
-		origin       = flag.String("origin", defaultOrigin, "required browser Origin")
-		githubURL    = flag.String("github-latest-release", "", "GitHub latest release API URL")
-		preparerPath = flag.String("candidate-preparer", defaultPreparer, "root-owned candidate preparation command")
+		socketPath         = flag.String("socket", defaultSocket, "Unix socket path")
+		statePath          = flag.String("state", defaultState, "persistent operation state path")
+		executor           = flag.String("executor", defaultExecutor, "root-owned host update executor")
+		official           = flag.String("official-api", defaultAPI, "official Sub2API API base URL")
+		officialDial       = flag.String("official-dial-address", defaultOfficialDial, "loopback Caddy address for official authentication")
+		origin             = flag.String("origin", defaultOrigin, "required browser Origin")
+		githubURL          = flag.String("github-latest-release", "", "GitHub latest release API URL")
+		preparerPath       = flag.String("candidate-preparer", defaultPreparer, "root-owned candidate preparation command")
+		preparationTimeout = flag.Duration("candidate-preparation-timeout", updater.DefaultCandidatePreparationTimeout, "maximum candidate preparation duration")
 	)
 	flag.Parse()
+	serviceConfig := updater.DefaultServiceConfig()
+	serviceConfig.CandidatePreparationTimeout = *preparationTimeout
 
 	if err := os.MkdirAll(filepath.Dir(*statePath), 0o700); err != nil {
 		log.Fatalf("create state directory: %v", err)
@@ -61,9 +64,12 @@ func main() {
 	hostExecutor := updater.NewHostExecutor(*executor, filepath.Dir(*statePath), nil)
 	var service *updater.Service
 	if strings.TrimSpace(*preparerPath) == "" {
-		service = updater.NewService(store, resolver, hostExecutor)
+		service, err = updater.NewServiceWithConfig(store, resolver, hostExecutor, serviceConfig)
 	} else {
-		service = updater.NewServiceWithPreparer(store, resolver, hostExecutor, updater.NewCommandCandidatePreparer(*preparerPath))
+		service, err = updater.NewServiceWithPreparerConfig(store, resolver, hostExecutor, updater.NewCommandCandidatePreparer(*preparerPath), serviceConfig)
+	}
+	if err != nil {
+		log.Fatalf("configure updater service: %v", err)
 	}
 	defer service.Close()
 

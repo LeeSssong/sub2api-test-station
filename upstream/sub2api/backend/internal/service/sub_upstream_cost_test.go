@@ -129,6 +129,49 @@ func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForExactRequestMatch(t *te
 	require.Equal(t, []string{"/api/log/token", "/api/status"}, gotPaths)
 }
 
+func TestSubUpstreamCostServiceFallsBackToNewAPILedgerWhenProbeMetadataIsUnresolved(t *testing.T) {
+	for _, probeStatus := range []string{"missing", UpstreamBillingProbeStatusFailed, "stale"} {
+		t.Run(probeStatus, func(t *testing.T) {
+			createdAt := time.Date(2026, time.August, 9, 10, 0, 0, 0, time.UTC)
+			upstreamID := "provider-req-fallback"
+			var gotPaths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPaths = append(gotPaths, r.URL.Path)
+				switch r.URL.Path {
+				case "/v1/usage/records":
+					http.NotFound(w, r)
+				case "/api/log/token":
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+						"type": 2, "quota": 125000, "request_id": "local-fallback", "upstream_request_id": upstreamID,
+					}}})
+				case "/api/status":
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"quota_per_unit": 500000}})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			extra := map[string]any{}
+			if probeStatus != "missing" {
+				extra[UpstreamBillingProbeExtraKey] = UpstreamBillingProbeSnapshot{Status: probeStatus}
+			}
+			repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+				ID: 44, RequestID: "local-fallback", UpstreamRequestID: &upstreamID,
+				ActualCost: 0.00688, CreatedAt: createdAt,
+				Account: &Account{Credentials: map[string]any{"base_url": server.URL + "/v1", "api_key": "stored-upstream-key"}, Extra: extra},
+			}}
+
+			detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 44)
+			require.NoError(t, err)
+			require.Equal(t, "confirmed", detail.Status, "detail=%#v paths=%#v", detail, gotPaths)
+			require.NotNil(t, detail.UpstreamActualCost)
+			require.InDelta(t, 0.25, *detail.UpstreamActualCost, 1e-9)
+			require.Equal(t, []string{"/v1/usage/records", "/api/log/token", "/api/status"}, gotPaths)
+		})
+	}
+}
+
 func TestSubUpstreamCostServiceUsesExactMatchingFallbackOrder(t *testing.T) {
 	localUpstreamID := "provider-id"
 	cases := []struct {

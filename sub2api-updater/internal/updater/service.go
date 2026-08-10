@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-const stateSchemaVersion = 1
+const (
+	stateSchemaVersion                 = 1
+	DefaultCandidatePreparationTimeout = 15 * time.Minute
+)
 
 var (
 	ErrOperationExists              = errors.New("an update operation already exists")
@@ -88,19 +91,38 @@ type CandidatePreparer interface {
 	Prepare(context.Context, string) error
 }
 
+// ServiceConfig controls bounded updater operations. Zero values are rejected
+// by the configuration-aware constructors; the legacy constructors use the
+// safe default.
+type ServiceConfig struct {
+	CandidatePreparationTimeout time.Duration
+}
+
+func DefaultServiceConfig() ServiceConfig {
+	return ServiceConfig{CandidatePreparationTimeout: DefaultCandidatePreparationTimeout}
+}
+
+func (c ServiceConfig) validate() error {
+	if c.CandidatePreparationTimeout <= 0 {
+		return errors.New("candidate preparation timeout must be greater than zero")
+	}
+	return nil
+}
+
 type Executor interface {
 	Run(context.Context, Operation) (ExecutionResult, error)
 }
 
 // Service owns at most one non-terminal operation and one timer.
 type Service struct {
-	store    *Store
-	resolver Resolver
-	executor Executor
-	preparer CandidatePreparer
-	now      func() time.Time
-	ctx      context.Context
-	cancel   context.CancelFunc
+	store                       *Store
+	resolver                    Resolver
+	executor                    Executor
+	preparer                    CandidatePreparer
+	candidatePreparationTimeout time.Duration
+	now                         func() time.Time
+	ctx                         context.Context
+	cancel                      context.CancelFunc
 
 	mu        sync.Mutex
 	op        *Operation
@@ -114,29 +136,49 @@ type Service struct {
 
 // NewService accepts an optional clock for deterministic callers and tests.
 func NewService(store *Store, resolver Resolver, executor Executor, clocks ...func() time.Time) *Service {
-	return newService(store, resolver, executor, nil, clocks...)
+	service, err := newService(store, resolver, executor, nil, DefaultServiceConfig(), clocks...)
+	if err != nil {
+		panic(err)
+	}
+	return service
+}
+
+func NewServiceWithConfig(store *Store, resolver Resolver, executor Executor, config ServiceConfig, clocks ...func() time.Time) (*Service, error) {
+	return newService(store, resolver, executor, nil, config, clocks...)
 }
 
 // NewServiceWithPreparer wires the administrator-triggered candidate staging
 // capability while preserving NewService's existing constructor contract.
 func NewServiceWithPreparer(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, clocks ...func() time.Time) *Service {
-	return newService(store, resolver, executor, preparer, clocks...)
+	service, err := newService(store, resolver, executor, preparer, DefaultServiceConfig(), clocks...)
+	if err != nil {
+		panic(err)
+	}
+	return service
 }
 
-func newService(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, clocks ...func() time.Time) *Service {
+func NewServiceWithPreparerConfig(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, config ServiceConfig, clocks ...func() time.Time) (*Service, error) {
+	return newService(store, resolver, executor, preparer, config, clocks...)
+}
+
+func newService(store *Store, resolver Resolver, executor Executor, preparer CandidatePreparer, config ServiceConfig, clocks ...func() time.Time) (*Service, error) {
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
 	now := time.Now
 	if len(clocks) > 0 && clocks[0] != nil {
 		now = clocks[0]
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
-		store:    store,
-		resolver: resolver,
-		executor: executor,
-		preparer: preparer,
-		now:      now,
-		ctx:      ctx,
-		cancel:   cancel,
+		store:                       store,
+		resolver:                    resolver,
+		executor:                    executor,
+		preparer:                    preparer,
+		candidatePreparationTimeout: config.CandidatePreparationTimeout,
+		now:                         now,
+		ctx:                         ctx,
+		cancel:                      cancel,
 	}
 	if candidate, err := store.LoadCandidate(); err != nil {
 		s.loadErr = err
@@ -162,7 +204,7 @@ func newService(store *Store, resolver Resolver, executor Executor, preparer Can
 			s.last = op
 		}
 	}
-	return s
+	return s, nil
 }
 
 // PrepareCandidate starts a single asynchronous preparation for targetVersion.
@@ -205,7 +247,12 @@ func (s *Service) PrepareCandidate(ctx context.Context, actorID int64, targetVer
 		now := s.now().UTC()
 		state := CandidatePreparation{PreparationID: newOperationID(), TargetVersion: targetVersion, Stage: "failed", Reason: ErrCandidatePreparerUnavailable.Error(), StartedAt: now, CompletedAt: now}
 		s.candidate = &state
-		_ = s.store.SaveCandidate(state)
+		if err := s.store.SaveCandidate(state); err != nil {
+			persistErr := candidatePersistenceError("failed", err)
+			s.loadErr = persistErr
+			s.mu.Unlock()
+			return CandidatePreparation{}, persistErr
+		}
 		s.mu.Unlock()
 		return state, ErrCandidatePreparerUnavailable
 	}
@@ -230,7 +277,7 @@ func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx c
 	// The service context owns the lifetime of preparation. The request context
 	// is intentionally not used as it normally ends as soon as HTTP responds.
 	_ = requestCtx
-	prepareCtx, cancel := context.WithTimeout(s.ctx, 15*time.Minute)
+	prepareCtx, cancel := context.WithTimeout(s.ctx, s.candidatePreparationTimeout)
 	defer cancel()
 	err := s.preparer.Prepare(prepareCtx, state.TargetVersion)
 	s.mu.Lock()
@@ -242,16 +289,24 @@ func (s *Service) prepareCandidateAsync(state CandidatePreparation, requestCtx c
 	if err == nil {
 		s.candidate.Stage = "ready"
 		s.candidate.Reason = ""
-		_ = s.store.SaveCandidate(*s.candidate)
+		if saveErr := s.store.SaveCandidate(*s.candidate); saveErr != nil {
+			s.loadErr = candidatePersistenceError("ready", saveErr)
+		}
 		return
 	}
-	s.candidate.Reason = err.Error()
+	if errors.Is(err, context.DeadlineExceeded) {
+		s.candidate.Reason = fmt.Sprintf("candidate preparation timed out after %s", s.candidatePreparationTimeout)
+	} else {
+		s.candidate.Reason = err.Error()
+	}
 	if errors.Is(err, ErrTargetChanged) {
 		s.candidate.Stage = "target_changed"
 	} else {
 		s.candidate.Stage = "failed"
 	}
-	_ = s.store.SaveCandidate(*s.candidate)
+	if saveErr := s.store.SaveCandidate(*s.candidate); saveErr != nil {
+		s.loadErr = candidatePersistenceError(s.candidate.Stage, saveErr)
+	}
 }
 
 func (s *Service) CandidateStatus() (CandidatePreparation, error) {
@@ -301,6 +356,11 @@ func (s *Service) Schedule(ctx context.Context, actorID int64, mode, targetVersi
 
 func (s *Service) Readiness(ctx context.Context, targetVersion string) (Readiness, error) {
 	s.mu.Lock()
+	if s.loadErr != nil {
+		err := s.loadErr
+		s.mu.Unlock()
+		return Readiness{}, err
+	}
 	if s.candidate != nil && s.candidate.TargetVersion == targetVersion {
 		candidate := *s.candidate
 		s.mu.Unlock()
@@ -321,6 +381,10 @@ func (s *Service) Readiness(ctx context.Context, targetVersion string) (Readines
 		return Readiness{}, err
 	}
 	return Readiness{TargetVersion: targetVersion, Ready: true, Stage: "ready", PreparationStage: "ready"}, nil
+}
+
+func candidatePersistenceError(stage string, err error) error {
+	return fmt.Errorf("persist candidate %s state: %w", stage, err)
 }
 
 func (s *Service) Cancel() error {

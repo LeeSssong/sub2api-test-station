@@ -98,23 +98,7 @@ func (s *SubUpstreamCostService) GetByUsageID(ctx context.Context, usageID int64
 
 func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL, apiKey string, usage *UsageLog) (float64, bool, string, string) {
 	if isNewAPIUsageLedger(usage.Account) {
-		logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
-		if err != nil {
-			return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
-		}
-		statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
-		if err != nil {
-			return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
-		}
-		matched, reasonCode, reason := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
-		if reason != "" || matched == nil {
-			return 0, false, reasonCode, reason
-		}
-		upstreamCost, reasonCode, reason := s.newAPIQuotaCost(ctx, statusEndpoint, apiKey, matched)
-		if reason != "" {
-			return 0, false, reasonCode, reason
-		}
-		return upstreamCost, true, "", ""
+		return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 	}
 
 	endpoint, err := subUsageRecordsURL(baseURL)
@@ -122,15 +106,49 @@ func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL
 		return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
 	}
 	matched, reasonCode, reason := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
-	if reason != "" || matched == nil {
-		return 0, false, reasonCode, reason
+	if matched != nil || reasonCode != "endpoint_unsupported" {
+		if reason != "" || matched == nil {
+			return 0, false, reasonCode, reason
+		}
+		return matched.ActualCost, true, "", ""
 	}
-	return matched.ActualCost, true, "", ""
+
+	// Probe metadata may be absent, stale, or failed for a newly deployed
+	// upstream. A bounded 404-only fallback discovers the New API ledger while
+	// preserving the normal Sub2API path whenever its records endpoint works.
+	return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 }
 
 func isNewAPIUsageLedger(account *Account) bool {
+	if account == nil {
+		return false
+	}
 	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
-	return snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported
+	if snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported {
+		return true
+	}
+	balance := decodeAccountMonitorBalance(account.Extra)
+	return balance != nil && balance.Source == AccountMonitorBalanceSourceNewAPI
+}
+
+func (s *SubUpstreamCostService) lookupNewAPIUsageCost(ctx context.Context, baseURL, apiKey string, usage *UsageLog) (float64, bool, string, string) {
+	logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
+	if err != nil {
+		return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
+	}
+	statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
+	if err != nil {
+		return 0, false, "endpoint_unavailable", "upstream endpoint unavailable"
+	}
+	matched, reasonCode, reason := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	if reason != "" || matched == nil {
+		return 0, false, reasonCode, reason
+	}
+	upstreamCost, reasonCode, reason := s.newAPIQuotaCost(ctx, statusEndpoint, apiKey, matched)
+	if reason != "" {
+		return 0, false, reasonCode, reason
+	}
+	return upstreamCost, true, "", ""
 }
 
 type subUpstreamUsageRecord struct {

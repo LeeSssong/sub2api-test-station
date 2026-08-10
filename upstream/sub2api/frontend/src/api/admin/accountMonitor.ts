@@ -5,6 +5,9 @@ export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
 export type AccountMonitorAvailabilityStatus = 'normal' | 'abnormal' | 'unavailable' | 'disabled' | 'stale' | string
 export type AccountMonitorScoreStatus = 'eligible' | 'capped' | 'ineligible' | string
+export type AccountMonitorGroupRecommendationStatus = 'recommended' | 'observe' | 'blocked' | 'not_recommended' | string
+export type AccountMonitorGroupRecommendationTarget = 'gpt_pro' | 'gpt_plus' | 'gpt_special' | string
+export type AccountMonitorGroupRecommendationAction = 'keep' | 'migrate' | 'hold' | 'none' | string
 
 export interface AccountMonitorConcurrencyItem {
   account_id: number
@@ -77,6 +80,17 @@ export interface AccountMonitorScoreWeights {
   latency_limit_ms?: number
   updated_by?: number
   updated_at?: string
+}
+
+export interface AccountMonitorGroupRecommendation {
+  status: AccountMonitorGroupRecommendationStatus
+  target: AccountMonitorGroupRecommendationTarget
+  target_name: string
+  action: AccountMonitorGroupRecommendationAction
+  reason_codes: string[]
+  sample_count: number
+  observed_at: string
+  source: 'monitor_probe' | string
 }
 
 export interface AccountMonitorHealthSummary {
@@ -176,6 +190,7 @@ export interface AccountMonitorAccount {
   group_rank?: number | null
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence
+  group_recommendation?: AccountMonitorGroupRecommendation | null
 }
 
 export interface AccountMonitorGroup {

@@ -1,7 +1,7 @@
 <template>
   <article class="overflow-hidden rounded-lg border border-l-4 border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" :class="statusBorderClass" data-test="monitor-card">
     <header class="flex items-start justify-between gap-3 border-b border-gray-100 px-[18px] py-4 dark:border-slate-800 max-[430px]:px-[14px] max-[430px]:py-[14px]" :class="statusHeaderClass" data-test="monitor-card-header">
-      <div class="min-w-0">
+      <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <h2 class="break-words text-base font-semibold text-gray-900 dark:text-white [overflow-wrap:anywhere]" data-test="account-identity">
           <a
             v-if="account.homepage_url"
@@ -15,6 +15,32 @@
           <span v-else>{{ account.name }}</span>
           <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400"> #{{ account.account_id }}</span>
         </h2>
+        <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-4 text-gray-500 dark:text-slate-400" data-test="account-metadata">
+          <span>平台 {{ platformLabel }}</span>
+          <span aria-hidden="true">/</span>
+          <span class="min-w-0 break-words">当前分组 {{ currentGroupLabel }}</span>
+          <span aria-hidden="true">/</span>
+          <span>调度状态 {{ schedulableLabel }}</span>
+          <template v-if="recommendation">
+            <span aria-hidden="true">/</span>
+            <HelpTooltip v-if="formalMigration" class="!ml-0" width-class="w-80" data-test="recommendation-tooltip-trigger">
+              <template #trigger>
+                <span class="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-300" data-test="group-recommendation">
+                  <span>{{ recommendationLabel }}</span>
+                  <button
+                    class="inline-flex h-5 w-5 items-center justify-center transition-colors hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-200"
+                    data-test="recommendation-warning"
+                    type="button"
+                    :title="recommendationTooltip"
+                    :aria-label="recommendationTooltip"
+                  >!</button>
+                </span>
+              </template>
+              <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
+            </HelpTooltip>
+            <span v-else data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
+          </template>
+        </div>
       </div>
       <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass" data-test="status-badge">
         {{ statusLabel }}
@@ -160,7 +186,7 @@
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
-import type { AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorRange } from '@/api/admin/accountMonitor'
+import type { AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type ProbeBar = { colorClass: string, height: number, title: string }
@@ -188,6 +214,50 @@ const draftPriority = ref(String(displayedPriority.value))
 const priorityError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
+
+const platformLabel = computed(() => props.account.platform || '--')
+const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
+const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
+const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
+const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
+const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
+const recommendationTargetLabel = computed(() => recommendation.value?.target_name || ({ gpt_pro: 'GPT-Pro', gpt_plus: 'GPT-Plus', gpt_special: 'GPT-特惠' }[recommendation.value?.target ?? ''] ?? '目标分组'))
+const recommendationLabel = computed(() => {
+  switch (recommendation.value?.status) {
+    case 'recommended': return `推荐：${recommendationTargetLabel.value}`
+    case 'observe': return '继续观察'
+    case 'blocked': return '暂缓迁入'
+    case 'not_recommended': return '暂不建议入组'
+    default: return ''
+  }
+})
+const recommendationTextClass = computed(() => ({
+  'text-emerald-600 dark:text-emerald-300': recommendation.value?.status === 'recommended',
+  'text-amber-600 dark:text-amber-300': recommendation.value?.status === 'observe' || recommendation.value?.status === 'blocked',
+  'text-red-600 dark:text-red-300': recommendation.value?.status === 'not_recommended',
+}))
+const recommendationReason = computed(() => {
+  const code = recommendation.value?.reason_codes?.[0]
+  return ({
+    codex_auth_default_pro: 'Codex Auth 默认进入 Pro',
+    sample_insufficient: '主动探测样本不足',
+    profit_below_minimum: '成本超过该分组利润下限',
+    auth_failed: '认证失败',
+    balance_unavailable: '余额不可用',
+    quota_unavailable: '配额不可用',
+    model_unavailable: '模型不可用',
+    success_rate_below_pro: '探测成功率未达到 Pro 门槛',
+    success_rate_below_plus: '探测成功率未达到 Plus 门槛',
+    success_rate_below_special: '探测成功率未达到特惠门槛',
+    ttft_exceeds_target: '首 Token 延迟超过目标',
+    latency_exceeds_limit: '完整响应耗时超过目标',
+  }[code ?? ''] ?? '主动探测质量不满足目标')
+})
+const recommendationTooltip = computed(() => {
+  const item = recommendation.value
+  if (!item) return ''
+  return `推荐迁移至 ${recommendationTargetLabel.value}。原因：${recommendationReason.value}。依据：固定 7d 主动探测 ${formatNumber(item.sample_count)} 次，观察于 ${formatDateTime(item.observed_at)}。`
+})
 
 watch(() => props.account.priority, (value) => {
   if (!editingPriority.value && !savingPriority.value) displayedPriority.value = value

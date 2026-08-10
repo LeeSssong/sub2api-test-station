@@ -105,6 +105,72 @@ afterEach(() => {
 })
 
 describe('AccountMonitorCard', () => {
+	const recommendation = {
+		status: 'recommended',
+		target: 'gpt_pro',
+		target_name: 'GPT-Pro',
+		action: 'migrate',
+		reason_codes: ['codex_auth_default_pro'],
+		sample_count: 72,
+		observed_at: '2026-08-10T00:00:00Z',
+		source: 'monitor_probe',
+	}
+
+	it('keeps platform, current group, schedulable state, and recommendation in one compact metadata row', () => {
+		const wrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: recommendation } })
+		const metadata = wrapper.get('[data-test="account-metadata"]')
+		expect(metadata.text()).toContain('平台 openai')
+		expect(metadata.text()).toContain('当前分组 GPT-测试分组')
+		expect(metadata.text()).toContain('调度状态 可调度')
+		expect(metadata.text()).toContain('推荐：GPT-Pro')
+	})
+
+	it.each([
+		['observe', 'keep', '继续观察'],
+		['blocked', 'hold', '暂缓迁入'],
+		['not_recommended', 'none', '暂不建议入组'],
+	])('shows the test-group %s state as %s', (status, action, label) => {
+		const wrapper = mountCard({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: { ...recommendation, status, action, target: status === 'blocked' ? 'gpt_pro' : '', target_name: status === 'blocked' ? 'GPT-Pro' : '' },
+			},
+		})
+		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain(label)
+		expect(wrapper.find('[data-test="recommendation-warning"]').exists()).toBe(false)
+	})
+
+	it('shows an accessible warning tooltip only for an explicit formal-group migration', async () => {
+		const wrapper = mountCard({ account: { ...account, group_names: ['GPT-Plus'], group_recommendation: recommendation } })
+		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain('推荐：GPT-Pro')
+		const warning = wrapper.get<HTMLElement>('[data-test="recommendation-warning"]')
+		expect(warning.attributes('title')).toContain('推荐迁移至 GPT-Pro')
+		expect(warning.attributes('aria-label')).toContain('推荐迁移至 GPT-Pro')
+
+		warning.element.focus()
+		await nextTick()
+		const content = document.body.querySelector('[data-test="group-recommendation-tooltip"]')
+		expect(content?.textContent).toContain('推荐迁移至 GPT-Pro')
+		expect(content?.textContent).toContain('Codex Auth 默认进入 Pro')
+		expect(content?.textContent).toContain('固定 7d 主动探测 72 次')
+		expect(content?.textContent).toContain('2026')
+		expect(content?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+	})
+
+	it('normalizes test-group case and ASCII spaces before deciding whether to show a formal warning', () => {
+		const wrapper = mountCard({ account: { ...account, group_names: ['  gPt - 测试 分组  '], group_recommendation: recommendation } })
+		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain('推荐：GPT-Pro')
+		expect(wrapper.find('[data-test="recommendation-warning"]').exists()).toBe(false)
+	})
+
+	it('keeps formal matching or legacy rows free of recommendation text and warning icons', () => {
+		const wrapper = mountCard({ account: { ...account, group_names: ['GPT-Pro'] } })
+		expect(wrapper.find('[data-test="group-recommendation"]').exists()).toBe(false)
+		expect(wrapper.find('[data-test="recommendation-warning"]').exists()).toBe(false)
+		expect(wrapper.get('[data-test="account-metadata"]').text()).not.toContain('继续观察')
+	})
+
   it('shows only the projected equivalent site multiplier in the cost evidence area', () => {
     const wrapper = mountCard({
       account: {

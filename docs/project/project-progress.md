@@ -1,6 +1,10 @@
 # 项目全局进度总账
 
-+**本轮 Task 8 资格门禁收口（2026-08-10）：** 状态：进行中。Task 9 Fix Round 1 已完成本地提交与独立复核；盘点发现官方 Release 资格实现仍仅写入伪造 `ready` 状态，promote/rollback 脚本未执行真实门禁或切换。本轮范围限定为补齐候选身份/checksum/合同测试/迁移分类/数据差异/有效期和失败保持活动槽位不变的资格链，以及让提升和回退入口调用 reviewed host executor；继续不推送、不部署、不访问生产、不使用 GitHub Actions。
+**本轮实施进展（2026-08-10）：** 账号监控卡片“推荐分组”已完成本地 Tasks 1–4 实现、审查和验证：新增固定滚动 7 天主动探测推荐投影，测试组显示推荐/观察/暂缓/不建议，正式组仅对正常可调度账号在明确不匹配时显示同行推荐文字与叹号 Tooltip；Codex Auth 正常默认 Pro，且没有账号改组、优先级、调度、评分权重、定时器或数据库写入。独立 whole-branch 审查发现并阻断了 Pro/专属 Pro 约束聚合、模型不可用、Codex Auth 质量门、生图/Claude 排除、前后端别名一致性和首要原因顺序稳定性问题，均已由 `663551bb8` 的 TDD 回归修复并复审。后端相关包测试与全仓 `go vet` 通过；前端 231 个测试文件、1647 项测试、类型检查和构建通过；`390px` 窄屏无横向溢出。实现报告为 `docs/superpowers/reports/2026-08-10-account-monitor-group-recommendation-implementation.md`。**状态：进行中（本地实现、独立审查与验证完成；尚未合并到 `main`、推送、生产部署或线上验证）**。
+
+**本轮登记（2026-08-10）：** 请求 `cad40d1b-b46a-4d0b-9878-9a7636cc6780:1` 显示 0 Token、0ms、本站实际扣费 `$0` 的计费异常，以及 Codex 任务“制定上游账号测试方案”“优化更新机制”多次 429 并发限制却未出现在 Sub 原生错误监控和使用记录中的生产只读根因排查，状态：进行中。范围为对齐 Codex 任务失败时间/平台请求 ID、Sub2API handler 并发门禁、错误采集、usage log 创建和扣费写入顺序，确认零值流水与监控漏记是否同源；本轮不修改生产数据、用户/账号并发、余额、计费、路由、账号或容器，不发送额外付费探测。当前工作区为根目录 `main`；已盘点全部非 `main` worktree，`.worktrees/fix-official-update-stuck` 对应用户点名的活动任务“优化更新机制”，`.worktrees/gpt-group-baseline-apply` 对应仍在进行的上游账号任务，均作为本轮保护例外保留，不合并、不修改、不清理。
+
+**本轮 Task 8 资格门禁收口（2026-08-10）：** 状态：进行中。Task 9 Fix Round 1 已完成本地提交与独立复核；盘点发现官方 Release 资格实现仍仅写入伪造 `ready` 状态，promote/rollback 脚本未执行真实门禁或切换。本轮范围限定为补齐候选身份/checksum/合同测试/迁移分类/数据差异/有效期和失败保持活动槽位不变的资格链，以及让提升和回退入口调用 reviewed host executor；继续不推送、不部署、不访问生产、不使用 GitHub Actions。
 
 Task 8 本轮已将资格、提升、回退脚本改为 fail-closed：资格命令必须是绝对路径受控 host command，输出需通过 tag/commit/asset/SHA-256/adapter/contract/迁移/测试/数据差异/Passed 校验；ready 带一小时有效期，promote 与 rollback 必须调用可执行 reviewed host executor；新增脚本合同测试，`sub2api-updater` 全量 `go test ./...` 与 `go vet ./...` 通过。仍未推送、部署或线上验证，不能标记完成。
 

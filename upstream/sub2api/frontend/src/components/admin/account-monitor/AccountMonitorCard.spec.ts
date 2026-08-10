@@ -266,9 +266,9 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="score-metric"]').attributes('title')).toContain('探测成功率 43.5')
   })
 
-  it('shows the score breakdown in an application tooltip on hover', async () => {
+  it('shows the score breakdown in an application tooltip on click', async () => {
     const wrapper = mountCard()
-    await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('mouseenter')
+    await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('click')
     await nextTick()
     const tooltip = document.body.querySelector('[data-test="score-breakdown-tooltip"]')
     expect(tooltip?.textContent).toContain('成本优势 12.0')
@@ -276,21 +276,33 @@ describe('AccountMonitorCard', () => {
     expect(tooltip?.textContent).toContain('总耗时 17.5')
   })
 
-  it('marks manually maintained cost with a warning and explains its source', () => {
+  it('opens score and cost details by click so later cards remain usable after scrolling', async () => {
     const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
-    expect(wrapper.get('[data-test="manual-cost-warning"]').attributes('title')).toContain('手工维护')
+
+    await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('click')
+    await nextTick()
+    expect(document.body.querySelector('[data-test="score-breakdown-tooltip"]')?.textContent).toContain('成本优势 12.0')
+
+    await wrapper.get('[data-test="cost-tooltip-trigger"]').trigger('click')
+    await nextTick()
+    expect(document.body.querySelector('[data-test="cost-source-tooltip"]')?.textContent).toContain('手工维护')
   })
 
-  it('shows the cost source in an application tooltip on hover', async () => {
+  it('marks manually maintained cost with a warning and explains its source', () => {
     const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
-    await wrapper.get('[data-test="cost-tooltip-trigger"]').trigger('mouseenter')
+    expect(wrapper.get('[data-test="cost-tooltip-trigger"] button').attributes('title')).toContain('手工维护')
+  })
+
+  it('shows the cost source in an application tooltip on click', async () => {
+    const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'manual', status: 'ok', sample_count: 72 } } })
+    await wrapper.get('[data-test="cost-tooltip-trigger"]').trigger('click')
     await nextTick()
     expect(document.body.querySelector('[data-test="cost-source-tooltip"]')?.textContent).toContain('手工维护')
   })
 
   it('exposes the native billing cost source tooltip', () => {
     const wrapper = mountCard({ account: { ...account, account_type: 'apikey', multiplier: { value: 0.08, source: 'declared', status: 'ok', sample_count: 72 } } })
-    expect(wrapper.get('[data-test="cost-metric"] span[title]').attributes('title')).toContain('上游原生')
+    expect(wrapper.get('[data-test="cost-tooltip-trigger"] button').attributes('title')).toContain('上游原生')
   })
 
   it('restores the rejected V3 green service card shell, five colored metrics, probe bars, and service-only footer', async () => {

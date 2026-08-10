@@ -480,6 +480,8 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 
 **本轮非 main 工作区整合与发布前准备（2026-08-10）：** 已审查并合并 `codex/account-monitor-group-recommendation`、`codex/fix-official-update-stuck`、`codex/gpt-group-baseline-apply` 三个干净候选到 `main`；三者相对 `main` 均为 0 个独有提交，保护例外 worktree 与根目录未跟踪发布证据均保留。合并后 Sub2API 后端 `go test ./...`、`go vet ./...`、后端/前端生产构建、前端全量 Vitest/lint/typecheck，以及当前蓝绿拓扑、host executor、更新器、发布资格/冒烟/备份/relay-ops 合同均通过。`make -C upstream/sub2api/backend test` 仅因环境缺少 `golangci-lint` 在 lint 阶段退出；旧版 `validate-official-sub2api-release.sh`、`validate-sub2api-rehearsal.sh` 和 `validate-baseline.sh` 与现行蓝绿拓扑/3072MB 构建参数不匹配，已改用现行蓝绿拓扑与基线合同覆盖并记录该差异。当前迁移集合哈希为 `738ad63324d900283383a523ce82e821fe5d8bb19d56de3834a6c817fb6611a5`。**状态：进行中（已合并、发布前检查完成，待推送；不执行部署，等待用户部署指令）。**
 
+**本轮非 main 工作区整合与发布状态更新（2026-08-10）：** `main` 已推送至 `origin/main`，远程指针为 `becb50bdb`；候选 worktree 均无相对 `main` 的独有提交，部署前证据与未跟踪文件仍保留。**状态：进行中（已推送、发布前检查完成，等待用户明确部署指令；本轮未执行部署或线上写入）。**
+
 **本轮 14 个异常 GPT 账号补跑复核（2026-08-09）：** 用户已人工处理账号 `49,50,80,105,106,163,164,165,168,169,170,171,172,173`，授权基于最新生产真实请求、主动探测、成本倍率与可调度状态定向复核；仅在现有证据不足时通过 Sub2API 原生账号测试每账号最多补测一次。仍异常、不可调度、成本未知或利润不达标的账号直接跳过并保留测试隔离；已恢复且证据充分的账号按最高适配档和利润门槛调用 Sub2API 管理接口归组。当前工作区与分支继续使用 `codex/gpt-group-baseline-apply`。**状态：进行中。**
 
 **本轮 14 个异常 GPT 账号补跑复核结果（2026-08-09）：** 已通过 Sub2API 管理接口将 `49,164,165` 归入 Plus，`50` 归入特惠，`172,173` 归入公开/专属 Pro 镜像池；`80,105,106,163,168,169,170,171` 因成本、删除、不可调度、持续探测失败或质量不匹配继续跳过。并发新建且直接进入公开池的 `174–177` 因仅 0–1 条样本（其中 177 还违反 Plus 利润门槛）已隔离到测试组。最终为 Pro/专属 Pro 各 6、Plus 7、特惠 5，最低利润 `0.10/0.05/0.05/0.02`，连续三次 API 读回、数据库利润/镜像校验和活动 blue API/worker/relay-ops 健康均通过。证据见 `docs/superpowers/reports/2026-08-09-gpt-group-baseline-production-application.md`。**状态：进行中（生产配置已应用并验证；本分支仍未合并、推送到 main，按总账规则不标记已完成）。**

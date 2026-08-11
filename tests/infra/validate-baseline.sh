@@ -49,6 +49,7 @@ require_file infra/Dockerfile.relay-ops
 require_file upstream/sub2api/Dockerfile
 require_file tests/relay_ops/validate_relay_ops_contract.sh
 require_file tests/infra/validate-nginx-tls-front.sh
+require_file tests/infra/validate-caddy-inbound-upload-policy.sh
 require_file tests/operations/sub2api_blue_green_topology_test.sh
 require_file tests/infra/audit-public-links.sh
 test -x tests/infra/audit-public-links.sh || fail 'public link audit must be executable'
@@ -82,6 +83,7 @@ docker compose \
   config --quiet || fail 'docker compose config failed'
 
 bash tests/infra/validate-nginx-tls-front.sh || fail 'nginx TLS front contract failed'
+bash tests/infra/validate-caddy-inbound-upload-policy.sh || fail 'Caddy inbound upload policy contract failed'
 bash tests/operations/sub2api_blue_green_topology_test.sh || fail 'blue/green release topology contract failed'
 
 SITE_ADDRESS=api.example.com docker compose \

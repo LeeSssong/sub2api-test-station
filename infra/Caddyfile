@@ -2,6 +2,11 @@
 	servers {
 		trusted_proxies static {$CADDY_TRUSTED_PROXIES:172.30.0.3/32}
 		trusted_proxies_strict
+		timeouts {
+			# Large-context clients on unstable links may need more than five
+			# minutes to finish uploading, but abandoned bodies must stay bounded.
+			read_body 15m
+		}
 	}
 }
 
@@ -214,7 +219,7 @@
 		header_down Content-Security-Policy "frame-src " "frame-src 'self' https://shop.xingqiaolab.top https://catfk.com "
 		transport http {
 			dial_timeout 10s
-			response_header_timeout 300s
+			response_header_timeout 15m
 			keepalive 30s
 		}
 	}

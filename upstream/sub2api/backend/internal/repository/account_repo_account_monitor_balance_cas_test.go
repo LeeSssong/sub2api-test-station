@@ -92,3 +92,12 @@ func TestUpdateAccountMonitorBalanceRejectsChangedPriorSnapshot(t *testing.T) {
 	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestSchedulableBalanceVetoPredicateFailsOpenForMissingSnapshot(t *testing.T) {
+	selector := entsql.Select().From(entsql.Table("accounts"))
+	schedulableBalanceVetoPredicate()(selector)
+	query, args := selector.Query()
+	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'status', '')")
+	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'failure_code', '')")
+	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable"}, args)
+}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -99,7 +100,7 @@ func TestSchedulableBalanceVetoPredicateFailsOpenForMissingSnapshot(t *testing.T
 	query, args := selector.Query()
 	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'status', '')")
 	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'failure_code', '')")
-	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable", service.AccountMonitorBalanceVersion}, args)
+	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable", fmt.Sprintf("%d", service.AccountMonitorBalanceVersion)}, args)
 }
 
 func TestListSchedulableCapacityByGroupIDsAppliesBalanceVeto(t *testing.T) {

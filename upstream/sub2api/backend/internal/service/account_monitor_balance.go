@@ -334,11 +334,6 @@ func accountMonitorBalanceFailureCode(err error) string {
 		}
 		return "upstream_http_error"
 	}
-	// Keep compatibility with callers/tests that surface a plain HTTP error,
-	// while still avoiding the old catch-all balance veto for non-HTTP failures.
-	if strings.Contains(err.Error(), "HTTP ") {
-		return "upstream_http_error"
-	}
 	if errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
 		return "upstream_unavailable"
 	}

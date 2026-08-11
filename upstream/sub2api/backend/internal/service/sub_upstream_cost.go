@@ -452,7 +452,7 @@ func newAPIEndpointURL(baseURL, endpoint string) (string, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return "", fmt.Errorf("invalid upstream base url")
 	}
-	return buildNewAPIEndpointURL(u.String(), endpoint), nil
+	return buildNewAPIEndpointURLWithNativePrefix(u.String(), endpoint, true), nil
 }
 
 func cloneStringPtr(value *string) *string {

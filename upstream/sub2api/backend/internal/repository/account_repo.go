@@ -1922,22 +1922,8 @@ func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.Accou
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority))
-}
-
-func schedulableBalanceVetoPredicate() dbpredicate.Account {
-	return dbpredicate.Account(func(s *entsql.Selector) {
-		s.Where(entsql.Not(entsql.And(
-			entsql.EQ(s.C(dbaccount.FieldPlatform), service.PlatformOpenAI),
-			entsql.EQ(s.C(dbaccount.FieldType), service.AccountTypeAPIKey),
-			sqljson.ValueEQ(dbaccount.FieldExtra, service.AccountMonitorBalanceStatusFailed,
-				sqljson.Path(service.AccountMonitorBalanceExtraKey, "status")),
-			sqljson.ValueEQ(dbaccount.FieldExtra, "balance_unavailable",
-				sqljson.Path(service.AccountMonitorBalanceExtraKey, "failure_code")),
-		)))
-	})
 }
 
 func (r *accountRepository) ListSchedulableByGroupID(ctx context.Context, groupID int64) ([]service.Account, error) {
@@ -2042,7 +2028,6 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2077,7 +2062,6 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2099,7 +2083,6 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2124,7 +2107,6 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -3215,7 +3197,6 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 				notExpiredPredicate(now),
 				dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 				dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
-				schedulableBalanceVetoPredicate(),
 			)
 		}
 	}

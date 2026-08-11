@@ -1939,6 +1939,7 @@ func schedulableBalanceVetoPredicate() dbpredicate.Account {
 			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'status', '') = ").Arg(service.AccountMonitorBalanceStatusFailed)
 			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'failure_code', '') = ").Arg("balance_unavailable")
 			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'version', '') = ").Arg(fmt.Sprintf("%d", service.AccountMonitorBalanceVersion))
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'source', '') IN ('', 'sub2api', 'newapi')")
 			b.WriteByte(')')
 		}))
 	})
@@ -2004,6 +2005,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'status', '') = 'failed'
 				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'failure_code', '') = 'balance_unavailable'
 				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'version', '') = '1'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'source', '') IN ('', 'sub2api', 'newapi')
 			)
 		ORDER BY ag.group_id ASC, ag.priority ASC, a.priority ASC, a.id ASC
 	`, pq.Array(groupIDs), service.StatusActive, time.Now())

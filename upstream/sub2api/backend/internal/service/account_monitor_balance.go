@@ -329,7 +329,7 @@ func accountMonitorBalanceFailureCode(err error) string {
 	}
 	var httpErr *accountMonitorHTTPError
 	if errors.As(err, &httpErr) {
-		if httpErr.statusCode == http.StatusPaymentRequired || explicitBalanceUnavailableBody([]byte(httpErr.body)) {
+		if explicitBalanceUnavailableBody([]byte(httpErr.body)) {
 			return "balance_unavailable"
 		}
 		return "upstream_http_error"

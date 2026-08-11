@@ -93,8 +93,8 @@ func TestAccountMonitorBalanceFailureCodeClassifiesHTTPFailures(t *testing.T) {
 	if got := accountMonitorBalanceFailureCode(&accountMonitorHTTPError{statusCode: http.StatusBadGateway, body: `{"error":"insufficient quota"}`}); got != "balance_unavailable" {
 		t.Fatalf("explicit quota error = %q, want balance_unavailable", got)
 	}
-	if got := accountMonitorBalanceFailureCode(&accountMonitorHTTPError{statusCode: http.StatusPaymentRequired}); got != "balance_unavailable" {
-		t.Fatalf("HTTP 402 = %q, want balance_unavailable", got)
+	if got := accountMonitorBalanceFailureCode(&accountMonitorHTTPError{statusCode: http.StatusPaymentRequired}); got != "upstream_http_error" {
+		t.Fatalf("HTTP 402 without explicit balance evidence = %q, want upstream_http_error", got)
 	}
 }
 

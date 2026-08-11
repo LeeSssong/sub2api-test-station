@@ -101,3 +101,19 @@ func TestSchedulableBalanceVetoPredicateFailsOpenForMissingSnapshot(t *testing.T
 	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'failure_code', '')")
 	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable"}, args)
 }
+
+func TestListSchedulableCapacityByGroupIDsAppliesBalanceVeto(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+	mock.ExpectQuery(`(?s)SELECT.*account_monitor_balance`).
+		WithArgs(sqlmock.AnyArg(), service.StatusActive, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "concurrency", "extra", "session_window_start", "session_window_end", "session_window_status"}))
+	repo := newAccountRepositoryWithSQL(client, db, nil)
+	rows, err := repo.ListSchedulableCapacityByGroupIDs(context.Background(), []int64{7})
+	require.NoError(t, err)
+	require.Empty(t, rows)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -201,9 +201,6 @@ func buildNewAPIEndpointURL(baseURL string, endpoint string) string {
 	} else if isOpenAIAPIVersionSegment(strings.TrimLeft(path, "/")) {
 		path = ""
 	}
-	if path == "/api" {
-		path = ""
-	}
 	parsed.Path = strings.TrimRight(path, "/") + "/" + strings.TrimLeft(endpoint, "/")
 	parsed.RawPath = ""
 	parsed.RawQuery = ""

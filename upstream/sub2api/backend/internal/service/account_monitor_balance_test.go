@@ -112,6 +112,7 @@ func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 	tests := []struct {
 		name        string
 		declaration *UpstreamBillingProbeSnapshot
+		baseURL     string
 		responses   map[string]string
 		wantSource  string
 		wantPaths   []string
@@ -122,6 +123,14 @@ func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 			responses:   map[string]string{"/v1/usage": `{"balance":12.5}`},
 			wantSource:  AccountMonitorBalanceSourceSub2API,
 			wantPaths:   []string{"/v1/usage"},
+		},
+		{
+			name:        "Sub2API API-prefixed base preserves usage path",
+			declaration: &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK},
+			baseURL:     "http://balance.example/api",
+			responses:   map[string]string{"/api/v1/usage": `{"balance":12.5}`},
+			wantSource:  AccountMonitorBalanceSourceSub2API,
+			wantPaths:   []string{"/api/v1/usage"},
 		},
 		{
 			name:        "explicitly unsupported declaration uses New API only",
@@ -138,9 +147,13 @@ func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
+			baseURL := tt.baseURL
+			if baseURL == "" {
+				baseURL = "http://balance.example"
+			}
 			account := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 				Status: StatusActive, Schedulable: true, Concurrency: 1,
-				Credentials: map[string]any{"api_key": "sk-test", "base_url": "http://balance.example"},
+				Credentials: map[string]any{"api_key": "sk-test", "base_url": baseURL},
 				Extra:       map[string]any{UpstreamBillingProbeExtraKey: *tt.declaration},
 			}
 			baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}

@@ -99,7 +99,7 @@ func TestSchedulableBalanceVetoPredicateFailsOpenForMissingSnapshot(t *testing.T
 	query, args := selector.Query()
 	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'status', '')")
 	require.Contains(t, query, "COALESCE(`accounts`.`extra` -> 'account_monitor_balance' ->> 'failure_code', '')")
-	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable"}, args)
+	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable", service.AccountMonitorBalanceVersion}, args)
 }
 
 func TestListSchedulableCapacityByGroupIDsAppliesBalanceVeto(t *testing.T) {

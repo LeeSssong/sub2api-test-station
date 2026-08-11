@@ -60,4 +60,3 @@ Close the remaining production cost gap without presenting configured or calcula
 - [ ] Verify public health/readiness, version `0.1.173`, account-monitor tooltips, updater settled state, and a fresh natural New API usage row whose stored immediate relay request ID matches `/api/log/token` and yields exact cost/profit.
 - [ ] Keep account #42 unavailable unless its upstream actually exposes a compatible exact per-request ledger; record that boundary explicitly.
 - [ ] Update `docs/project/project-progress.md` and clean the candidate only after push, deployment, and online verification all succeed.
-

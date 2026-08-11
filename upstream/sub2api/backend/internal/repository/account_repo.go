@@ -1922,8 +1922,27 @@ func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.Accou
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority))
+}
+
+func schedulableBalanceVetoPredicate() dbpredicate.Account {
+	return dbpredicate.Account(func(s *entsql.Selector) {
+		// Keep the veto fail-open. JSON extraction from a missing/NULL extra
+		// field yields NULL in PostgreSQL; COALESCE turns that into a non-match
+		// instead of letting NOT(NULL) silently remove an unknown account.
+		s.Where(entsql.P(func(b *entsql.Builder) {
+			b.WriteString("NOT (")
+			b.Ident(s.C(dbaccount.FieldPlatform)).WriteString(" = ").Arg(service.PlatformOpenAI)
+			b.WriteString(" AND ").Ident(s.C(dbaccount.FieldType)).WriteString(" = ").Arg(service.AccountTypeAPIKey)
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'status', '') = ").Arg(service.AccountMonitorBalanceStatusFailed)
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'failure_code', '') = ").Arg("balance_unavailable")
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'version', '') = ").Arg(fmt.Sprintf("%d", service.AccountMonitorBalanceVersion))
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'source', '') IN ('', 'sub2api', 'newapi')")
+			b.WriteByte(')')
+		}))
+	})
 }
 
 func (r *accountRepository) ListSchedulableByGroupID(ctx context.Context, groupID int64) ([]service.Account, error) {
@@ -1980,6 +1999,14 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
 			AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= $3)
+			AND NOT (
+				a.platform = 'openai'
+				AND a.type = 'api_key'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'status', '') = 'failed'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'failure_code', '') = 'balance_unavailable'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'version', '') = '1'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'source', '') IN ('', 'sub2api', 'newapi')
+			)
 		ORDER BY ag.group_id ASC, ag.priority ASC, a.priority ASC, a.id ASC
 	`, pq.Array(groupIDs), service.StatusActive, time.Now())
 	if err != nil {
@@ -2028,6 +2055,7 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2062,6 +2090,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2083,6 +2112,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2107,6 +2137,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 			dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+			schedulableBalanceVetoPredicate(),
 		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2682,7 +2713,13 @@ func (r *accountRepository) UpdateAccountMonitorBalance(
 	if err := r.updateAccountMonitorBalanceInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The outbox event is committed atomically above; this direct write only
+	// reduces visibility latency for sticky/GetAccount cache readers.
+	r.syncSchedulerAccountSnapshot(ctx, account.ID)
+	return nil
 }
 
 func (r *accountRepository) updateAccountMonitorBalanceInTx(
@@ -2741,6 +2778,9 @@ func (r *accountRepository) updateAccountMonitorBalanceInTx(
 	}
 	if affected == 0 {
 		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil); err != nil {
+		return err
 	}
 	return nil
 }
@@ -3197,6 +3237,7 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 				notExpiredPredicate(now),
 				dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 				dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
+				schedulableBalanceVetoPredicate(),
 			)
 		}
 	}

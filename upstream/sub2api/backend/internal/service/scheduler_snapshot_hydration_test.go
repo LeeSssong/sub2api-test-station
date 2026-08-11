@@ -136,6 +136,30 @@ func TestOpenAISelectAccountWithLoadAwareness_HydratesSelectedAccountFromSchedul
 	}
 }
 
+func TestSchedulerSnapshotGetAccountRejectsExplicitBalanceVeto(t *testing.T) {
+	now := time.Now().UTC()
+	cache := &snapshotHydrationCache{accounts: map[int64]*Account{
+		7: {
+			ID: 7, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true,
+			Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+				Version:       AccountMonitorBalanceVersion,
+				Status:        AccountMonitorBalanceStatusFailed,
+				FailureCode:   "balance_unavailable",
+				LastAttemptAt: &now,
+			}},
+		},
+	}}
+	svc := NewSchedulerSnapshotService(cache, nil, nil, nil, nil)
+	got, err := svc.GetAccount(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("GetAccount() = %#v, want vetoed account rejected", got)
+	}
+}
+
 func TestOpenAINewAcquiredSelectionResult_ReleasesSlotWhenHydrationFails(t *testing.T) {
 	cache := &snapshotHydrationCache{
 		accounts: map[int64]*Account{},

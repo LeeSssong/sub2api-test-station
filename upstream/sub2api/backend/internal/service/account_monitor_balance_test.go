@@ -87,6 +87,24 @@ func TestAccountMonitorBalanceFailureCodeClassifiesHTTPFailures(t *testing.T) {
 	if got := accountMonitorBalanceFailureCode(errors.New("account multiplier upstream returned HTTP 502")); got != "upstream_http_error" {
 		t.Fatalf("accountMonitorBalanceFailureCode() = %q, want upstream_http_error", got)
 	}
+	if got := accountMonitorBalanceFailureCode(errors.New("account monitor upstream response is empty")); got == "balance_unavailable" {
+		t.Fatalf("empty response must not be classified as balance exhaustion: %q", got)
+	}
+	if got := accountMonitorBalanceFailureCode(&accountMonitorHTTPError{statusCode: http.StatusBadGateway, body: `{"error":"insufficient quota"}`}); got != "balance_unavailable" {
+		t.Fatalf("explicit quota error = %q, want balance_unavailable", got)
+	}
+	if got := accountMonitorBalanceFailureCode(&accountMonitorHTTPError{statusCode: http.StatusPaymentRequired}); got != "upstream_http_error" {
+		t.Fatalf("HTTP 402 without explicit balance evidence = %q, want upstream_http_error", got)
+	}
+}
+
+func TestDecodeBalanceOnlyVetoesExplicitExhaustionEvidence(t *testing.T) {
+	if _, err := decodeSub2APIBalanceUSD([]byte(`{"error":"insufficient balance"}`)); !errors.Is(err, errExplicitBalanceUnavailable) {
+		t.Fatalf("explicit balance exhaustion error = %v", err)
+	}
+	if _, err := decodeSub2APIBalanceUSD([]byte(`{"error":"temporary upstream failure"}`)); errors.Is(err, errExplicitBalanceUnavailable) {
+		t.Fatal("generic upstream payload must not be classified as balance exhaustion")
+	}
 }
 
 func TestResolveBalanceOnlyProjectsOpenAIAPIKey(t *testing.T) {

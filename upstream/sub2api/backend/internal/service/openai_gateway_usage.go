@@ -499,6 +499,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	billingErr := func() error {
+		accountCost := cost.TotalCost * accountRateMultiplier
+		accountCostSet := false
+		if usageLog.AccountCost != nil {
+			accountCost = *usageLog.AccountCost
+			accountCostSet = true
+		}
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 			Cost:                   cost,
 			User:                   user,
@@ -508,6 +514,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			RequestPayloadHash:     resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
 			IsSubscriptionBill:     isSubscriptionBilling,
 			AccountRateMultiplier:  accountRateMultiplier,
+			AccountCost:            accountCost,
+			AccountCostSet:         accountCostSet,
 			APIKeyService:          input.APIKeyService,
 			Platform:               quotaPlatform,
 			LogicalRequestID:       logicalRequestID,

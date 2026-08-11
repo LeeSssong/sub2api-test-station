@@ -676,7 +676,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		if err != nil {
 			if streamCount > 0 {
 				return &OpenAIForwardResult{
-					RequestID:        resp.Header.Get("x-request-id"),
+					RequestID:        openAIUpstreamRequestID(resp.Header),
 					Usage:            streamUsage,
 					Model:            requestModel,
 					UpstreamModel:    upstreamModel,
@@ -697,7 +697,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		imageOutputSizes := streamSizes
 		firstTokenMs = ttft
 		return &OpenAIForwardResult{
-			RequestID:        resp.Header.Get("x-request-id"),
+			RequestID:        openAIUpstreamRequestID(resp.Header),
 			Usage:            usage,
 			Model:            requestModel,
 			UpstreamModel:    upstreamModel,
@@ -720,7 +720,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			imageCount = nonStreamCount
 		}
 		return &OpenAIForwardResult{
-			RequestID:        resp.Header.Get("x-request-id"),
+			RequestID:        openAIUpstreamRequestID(resp.Header),
 			Usage:            usage,
 			Model:            requestModel,
 			UpstreamModel:    upstreamModel,

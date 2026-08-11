@@ -61,8 +61,12 @@ func TestForwardAlphaSearchOAuthPreservesWire(t *testing.T) {
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"encrypted_output":"ciphertext","output":"search result"}`)),
+		Header: http.Header{
+			"Content-Type":        []string{"application/json"},
+			"X-Oneapi-Request-Id": []string{"new-api-alpha-request-id"},
+			"X-Request-Id":        []string{"provider-alpha-request-id"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"encrypted_output":"ciphertext","output":"search result"}`)),
 	}}
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
@@ -81,6 +85,7 @@ func TestForwardAlphaSearchOAuthPreservesWire(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.WebSearchCalls)
+	require.Equal(t, "new-api-alpha-request-id", result.RequestID)
 	require.Equal(t, "gpt-5.6-sol", result.Model)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.JSONEq(t, `{"encrypted_output":"ciphertext","output":"search result"}`, recorder.Body.String())
@@ -122,8 +127,12 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req-search"}},
-		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
+		Header: http.Header{
+			"Content-Type":        []string{"text/event-stream"},
+			"X-Oneapi-Request-Id": []string{"new-api-alpha-fallback-request-id"},
+			"X-Request-Id":        []string{"provider-alpha-fallback-request-id"},
+		},
+		Body: io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
 	}}
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
@@ -144,6 +153,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.WebSearchCalls)
+	require.Equal(t, "new-api-alpha-fallback-request-id", result.RequestID)
 	require.Equal(t, "/v1/responses", result.UpstreamEndpoint)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.JSONEq(t, `{"output":"search result","results":[{"type":"text_result","ref_id":"turn0search0","url":"https://example.com/news","title":"Example News"}]}`, recorder.Body.String())

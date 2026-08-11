@@ -89,6 +89,17 @@ func TestHandleChatStreamingResponse_ClassifiesHTTP2ReadError(t *testing.T) {
 	require.NotContains(t, message, "INTERNAL_ERROR")
 }
 
+func TestOpenAIUpstreamRequestIDPreservesProviderFallbacks(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "provider-request-id", openAIUpstreamRequestID(http.Header{
+		"X-Request-Id": []string{"provider-request-id"},
+	}))
+	require.Equal(t, "xai-request-id", openAIUpstreamRequestID(http.Header{
+		"Xai-Request-Id": []string{"xai-request-id"},
+	}))
+}
+
 func TestNormalizeResponsesRequestServiceTier(t *testing.T) {
 	t.Parallel()
 
@@ -555,8 +566,12 @@ func TestForwardAsChatCompletions_StreamsUsageWithoutClientStreamOptions(t *test
 	}, "\n")
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_usage_no_stream_options"}},
-		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		Header: http.Header{
+			"Content-Type":        []string{"text/event-stream"},
+			"X-Oneapi-Request-Id": []string{"new-api-ledger-request-id"},
+			"x-request-id":        []string{"downstream-provider-request-id"},
+		},
+		Body: io.NopCloser(strings.NewReader(upstreamBody)),
 	}}
 
 	svc := &OpenAIGatewayService{httpUpstream: upstream}
@@ -578,6 +593,7 @@ func TestForwardAsChatCompletions_StreamsUsageWithoutClientStreamOptions(t *test
 	require.Equal(t, 13, result.Usage.InputTokens)
 	require.Equal(t, 7, result.Usage.OutputTokens)
 	require.Equal(t, 5, result.Usage.CacheReadInputTokens)
+	require.Equal(t, "new-api-ledger-request-id", result.RequestID)
 
 	responseBody := rec.Body.String()
 	require.Contains(t, responseBody, `"usage"`)

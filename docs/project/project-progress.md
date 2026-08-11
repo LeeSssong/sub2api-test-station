@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮逐笔计费修正实现与独立审查（2026-08-11）：** 状态：进行中。实现提交 `1c8d8eea8`、`75b7bf69e`、`f2949b3b8` 已完成；New API `/api/v1` 原生账单地址归一化通过 RED/GREEN，Sub2API `/api/v1/usage` 路径保护回归通过，独立复审结论为 spec compliant / task quality approved。当前只剩合并回 `main`、推送、生产部署和本功能线上验证；旧的 Task 1 登记保留为过程快照。
+
 **本轮逐笔计费原生字段直读修正（2026-08-11）：** 状态：进行中。用户确认简化为 Sub2API 原生流水 `actual_cost` 直读，以及 New API 原生日志 `quota` 除以 `/api/status` 的 `quota_per_unit`；只保留 `request_id/upstream_request_id` 精确匹配，不增加估算、模糊匹配、relay-ops 前置条件或无关兼容工作。实施前已把除引用任务“合并工作区并完成发布准备”之外的既有非 `main` worktree 合并到 `main@a7f57d2f6`，未做重复验证；引用任务工作区 `.worktrees/external-primary-production-closure` 作为本轮明确保护例外，不合并、不修改、不清理。当前实施工作区为 `.worktrees/direct-upstream-billing-fields`，分支 `codex/direct-upstream-billing-fields`；已定位 New API 推理地址 `/api/v1` 被错误拼成 `/api/api/log/token` 和 `/api/api/status`，本轮仅以定向 TDD 修正原生接口地址归一化。实现完成后只做本功能验收，合并回 `main`、推送并从已验证 `main` 直接覆盖生产；生产专项验证成功后才删除本候选及已收口的旧工作区/分支，全程不使用 GitHub Actions。
 
 **本轮逐笔上游扣费空值复核（2026-08-11）：** 状态：进行中。根据管理员日志详情中“上游实际扣费/利润”为 `-` 的现象，只读追踪 Sub2API / New API 上游逐请求费用能力、请求 ID 持久化、账单查询适配与精确匹配状态；本轮不修改业务代码、生产配置、账号、计费或历史流水。当前工作区为根目录 `main@b4e72628f`；实施前已盘点全部非 `main` worktree，四个工作区均干净且 tip 已纳入 `main`，未发现完成且领先 `main` 的候选；既有保护工作区保留，不合并、不修改、不清理。

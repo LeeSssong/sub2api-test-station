@@ -191,6 +191,10 @@ func accountMultiplierProxyURL(account *Account) (string, error) {
 }
 
 func buildNewAPIEndpointURL(baseURL string, endpoint string) string {
+	return buildNewAPIEndpointURLWithNativePrefix(baseURL, endpoint, false)
+}
+
+func buildNewAPIEndpointURLWithNativePrefix(baseURL string, endpoint string, stripNativeAPIPrefix bool) string {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
 		return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(endpoint, "/")
@@ -199,6 +203,9 @@ func buildNewAPIEndpointURL(baseURL string, endpoint string) string {
 	if slash := strings.LastIndex(path, "/"); slash >= 0 && isOpenAIAPIVersionSegment(path[slash+1:]) {
 		path = path[:slash]
 	} else if isOpenAIAPIVersionSegment(strings.TrimLeft(path, "/")) {
+		path = ""
+	}
+	if stripNativeAPIPrefix && path == "/api" {
 		path = ""
 	}
 	parsed.Path = strings.TrimRight(path, "/") + "/" + strings.TrimLeft(endpoint, "/")

@@ -452,28 +452,7 @@ func newAPIEndpointURL(baseURL, endpoint string) (string, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return "", fmt.Errorf("invalid upstream base url")
 	}
-	return buildNewAPIBillingEndpointURL(u.String(), endpoint), nil
-}
-
-func buildNewAPIBillingEndpointURL(baseURL, endpoint string) string {
-	u, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil {
-		return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(endpoint, "/")
-	}
-	path := strings.TrimRight(u.Path, "/")
-	if slash := strings.LastIndex(path, "/"); slash >= 0 && isOpenAIAPIVersionSegment(path[slash+1:]) {
-		path = path[:slash]
-	} else if isOpenAIAPIVersionSegment(strings.TrimLeft(path, "/")) {
-		path = ""
-	}
-	if path == "/api" {
-		path = ""
-	}
-	u.Path = strings.TrimRight(path, "/") + "/" + strings.TrimLeft(endpoint, "/")
-	u.RawPath = ""
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String()
+	return buildNewAPIEndpointURLWithNativePrefix(u.String(), endpoint, true), nil
 }
 
 func cloneStringPtr(value *string) *string {

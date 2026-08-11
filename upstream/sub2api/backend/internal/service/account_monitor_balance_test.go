@@ -108,6 +108,52 @@ func TestResolveBalanceOnlyProjectsOpenAIAPIKey(t *testing.T) {
 	}
 }
 
+func TestAccountBalanceVetoBlocksOnlyExplicitUnavailableOpenAIAPIKey(t *testing.T) {
+	now := time.Now().UTC()
+	value := 0.0
+
+	blocked := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+				Version:       AccountMonitorBalanceVersion,
+				Status:        AccountMonitorBalanceStatusFailed,
+				FailureCode:   "balance_unavailable",
+				ValueUSD:      &value,
+				ObservedAt:    &now,
+				LastAttemptAt: &now,
+			},
+		},
+	}
+	unknown := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+				Version:     AccountMonitorBalanceVersion,
+				Status:      AccountMonitorBalanceStatusFailed,
+				FailureCode: "timeout",
+			},
+		},
+	}
+	nonOpenAI := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra:    blocked.Extra,
+	}
+
+	if !accountBalanceVetoesScheduling(blocked) {
+		t.Fatal("explicit unavailable OpenAI API-key balance must veto scheduling")
+	}
+	if accountBalanceVetoesScheduling(unknown) {
+		t.Fatal("unknown balance state must not veto scheduling")
+	}
+	if accountBalanceVetoesScheduling(nonOpenAI) {
+		t.Fatal("non-OpenAI account balance evidence must not veto scheduling")
+	}
+}
+
 func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 	tests := []struct {
 		name        string

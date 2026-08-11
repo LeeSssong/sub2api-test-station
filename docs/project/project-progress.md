@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮余额证据调度 veto MVP（2026-08-12）：** 状态：进行中。范围严格限定为 OpenAI API Key 账号的明确 `account_monitor_balance.status=failed` 且 `failure_code=balance_unavailable` 证据；该账号从数据库候选查询和调度快照/缓存结果中排除。未知、超时、网络失败、非 OpenAI 账号、403 冷却规则、分组、计费和外置控制面均不改。当前候选工作区为 `.worktrees/balance-scheduler-veto`，分支 `codex/balance-scheduler-veto`；定向 TDD、`internal/service` 与 `internal/repository` 包级回归、`git diff --check` 已通过。当前仍未合并、推送、部署或线上验证，待专项审查和发布门禁。
+
 **本轮小步发布编排准备（2026-08-11）：** 状态：进行中。目标是在不启动派生线程、不实施功能、不部署生产的前提下，固化所有后续任务包必须遵守的全局约束、原生 Sub 单体边界、线程/worktree 生命周期、单候选串行合并与快速部署门禁，并把已确认需求拆成可独立验证、独立合并、独立发布的小任务包。当前工作区为根目录 `main@cea37c7f9`，与 `origin/main` 一致；根目录既有未跟踪文件 `docs/superpowers/plans/2026-08-11-release-gap-closure.md` 继续保留不动。实施前盘点确认唯一非 `main` worktree 为 `.worktrees/external-primary-production-closure`，工作区干净、分支比 `main` 领先 30 个提交且 `main` 比其领先 11 个提交；其 69 个分支差异文件和约 7,032 行新增内容属于用户已明确否决的 `external-primary` 外置主路径，因此与“只在原生 Sub 内嵌页面、增加功能”的当前产品约束冲突。在用户确认如何处置前不合并、不删除、不部署该工作区；本轮仅写约束与编排文件并等待确认。
 
 **本轮逐笔计费工作区收口（2026-08-11）：** 状态：已完成。生产专项验证完成后，已逐一确认 `.worktrees/account-monitor-group-recommendation`、`.worktrees/direct-upstream-billing-fields`、`.worktrees/fix-release-version-identity`、`.worktrees/gpt-group-baseline-apply`、`.worktrees/maintenance-allowlist-fix` 均无未提交内容且 tip 已成为 `main` 祖先，随后删除五个 worktree，并通过非强制 `git branch -d` 删除对应五个本地分支；恢复依据为远端 `main@dae4afa02`、生产记录 `20260811T060627Z-production-4003239` 和可达的原提交 SHA。用户引用任务 `.worktrees/external-primary-production-closure` 当前仍有未提交实现且不属于 `main` 祖先，继续作为唯一保护工作区保留，未修改、未合并、未清理。根目录未跟踪计划 `docs/superpowers/plans/2026-08-11-release-gap-closure.md` 已完整恢复并保留。

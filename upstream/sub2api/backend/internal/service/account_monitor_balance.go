@@ -25,6 +25,23 @@ const (
 	AccountMonitorBalanceStatusUnavailable = "unavailable"
 )
 
+var errExplicitBalanceUnavailable = errors.New("explicit upstream balance unavailable")
+
+// accountMonitorHTTPError preserves the small amount of upstream evidence
+// needed to distinguish an explicit billing/credit exhaustion response from
+// an otherwise generic HTTP failure. The body is never returned to callers.
+type accountMonitorHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *accountMonitorHTTPError) Error() string {
+	if e == nil {
+		return "account monitor upstream returned HTTP error"
+	}
+	return fmt.Sprintf("account monitor upstream returned HTTP %d", e.statusCode)
+}
+
 // AccountMonitorBalance is display-only upstream balance evidence. It is
 // deliberately separate from cost scoring and account scheduling state.
 type AccountMonitorBalance struct {
@@ -186,6 +203,9 @@ func decodeSub2APIBalanceUSD(body []byte) (float64, error) {
 			return value, nil
 		}
 	}
+	if explicitBalanceUnavailableBody(body) {
+		return 0, errExplicitBalanceUnavailable
+	}
 	return 0, errors.New("Sub2API balance is unavailable")
 }
 
@@ -195,6 +215,9 @@ func decodeNewAPIBalanceUSD(body []byte, quotaPerUnit float64) (float64, error) 
 	}
 	totalAvailable, err := decodeNewAPINumber(body, "total_available")
 	if err != nil || totalAvailable < 0 {
+		if explicitBalanceUnavailableBody(body) {
+			return 0, errExplicitBalanceUnavailable
+		}
 		return 0, errors.New("New API total_available is unavailable")
 	}
 	value := totalAvailable / quotaPerUnit
@@ -301,13 +324,51 @@ func accountMonitorBalanceFailureCode(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "timeout"
 	}
+	if errors.Is(err, errExplicitBalanceUnavailable) {
+		return "balance_unavailable"
+	}
+	var httpErr *accountMonitorHTTPError
+	if errors.As(err, &httpErr) {
+		if httpErr.statusCode == http.StatusPaymentRequired || explicitBalanceUnavailableBody([]byte(httpErr.body)) {
+			return "balance_unavailable"
+		}
+		return "upstream_http_error"
+	}
+	// Keep compatibility with callers/tests that surface a plain HTTP error,
+	// while still avoiding the old catch-all balance veto for non-HTTP failures.
 	if strings.Contains(err.Error(), "HTTP ") {
 		return "upstream_http_error"
 	}
 	if errors.Is(err, ErrUpstreamBillingProbeUnavailable) {
 		return "upstream_unavailable"
 	}
-	return "balance_unavailable"
+	// Preserve the historical classification for wrapped/string-only HTTP
+	// errors emitted by callers outside doJSONRequest; these are not balance
+	// evidence and therefore remain non-vetoing.
+	if strings.Contains(err.Error(), "HTTP ") {
+		return "upstream_http_error"
+	}
+	return "unknown"
+}
+
+func explicitBalanceUnavailableBody(body []byte) bool {
+	text := strings.ToLower(string(body))
+	for _, marker := range []string{
+		"insufficient balance",
+		"insufficient quota",
+		"quota exceeded",
+		"balance exhausted",
+		"run out of credits",
+		"billing hard limit",
+		"payment required",
+		"余额不足",
+		"额度不足",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *AccountMultiplierService) refreshBalanceForDeclaration(

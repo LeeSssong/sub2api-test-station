@@ -38,7 +38,6 @@ func TestUpdateAccountMonitorBalanceRequiresSameIdentityStateAndSnapshot(t *test
 			`{"api_key":"sk-test","base_url":"https://upstream.example"}`, nil, service.StatusActive, true,
 			`{"status":"stale"}`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-
 	now := time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC)
 	value := 12.5
 	account := &service.Account{ID: 21, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
@@ -50,6 +49,9 @@ func TestUpdateAccountMonitorBalanceRequiresSameIdentityStateAndSnapshot(t *test
 		Source: service.AccountMonitorBalanceSourceNewAPI, Status: service.AccountMonitorBalanceStatusOK,
 		ObservedAt: &now, LastAttemptAt: &now}
 	repo := newAccountRepositoryWithSQL(client, db, nil)
+	mock.ExpectExec(`(?s)`+regexp.QuoteMeta("INSERT INTO scheduler_outbox")+`.*`).
+		WithArgs(service.SchedulerOutboxEventAccountChanged, int64(21), nil, nil, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	require.NoError(t, repo.UpdateAccountMonitorBalance(dbent.NewTxContext(context.Background(), tx), account, snapshot))
 	mock.ExpectRollback()
 	require.NoError(t, tx.Rollback())

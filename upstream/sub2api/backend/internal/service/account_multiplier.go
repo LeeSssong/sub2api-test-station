@@ -165,7 +165,7 @@ func (s *AccountMultiplierService) doJSONRequest(
 		return nil, errors.New("account monitor upstream response is too large")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("account monitor upstream returned HTTP %d", resp.StatusCode)
+		return nil, &accountMonitorHTTPError{statusCode: resp.StatusCode, body: string(body)}
 	}
 	return body, nil
 }

@@ -1929,14 +1929,17 @@ func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.Accou
 
 func schedulableBalanceVetoPredicate() dbpredicate.Account {
 	return dbpredicate.Account(func(s *entsql.Selector) {
-		s.Where(entsql.Not(entsql.And(
-			entsql.EQ(s.C(dbaccount.FieldPlatform), service.PlatformOpenAI),
-			entsql.EQ(s.C(dbaccount.FieldType), service.AccountTypeAPIKey),
-			sqljson.ValueEQ(dbaccount.FieldExtra, service.AccountMonitorBalanceStatusFailed,
-				sqljson.Path(service.AccountMonitorBalanceExtraKey, "status")),
-			sqljson.ValueEQ(dbaccount.FieldExtra, "balance_unavailable",
-				sqljson.Path(service.AccountMonitorBalanceExtraKey, "failure_code")),
-		)))
+		// Keep the veto fail-open. JSON extraction from a missing/NULL extra
+		// field yields NULL in PostgreSQL; COALESCE turns that into a non-match
+		// instead of letting NOT(NULL) silently remove an unknown account.
+		s.Where(entsql.P(func(b *entsql.Builder) {
+			b.WriteString("NOT (")
+			b.Ident(s.C(dbaccount.FieldPlatform)).WriteString(" = ").Arg(service.PlatformOpenAI)
+			b.WriteString(" AND ").Ident(s.C(dbaccount.FieldType)).WriteString(" = ").Arg(service.AccountTypeAPIKey)
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'status', '') = ").Arg(service.AccountMonitorBalanceStatusFailed)
+			b.WriteString(" AND COALESCE(").Ident(s.C(dbaccount.FieldExtra)).WriteString(" -> '").WriteString(service.AccountMonitorBalanceExtraKey).WriteString("' ->> 'failure_code', '') = ").Arg("balance_unavailable")
+			b.WriteByte(')')
+		}))
 	})
 }
 
@@ -1994,6 +1997,12 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
 			AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= $3)
+			AND NOT (
+				a.platform = 'openai'
+				AND a.type = 'api_key'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'status', '') = 'failed'
+				AND COALESCE(a.extra -> 'account_monitor_balance' ->> 'failure_code', '') = 'balance_unavailable'
+			)
 		ORDER BY ag.group_id ASC, ag.priority ASC, a.priority ASC, a.id ASC
 	`, pq.Array(groupIDs), service.StatusActive, time.Now())
 	if err != nil {
@@ -2700,7 +2709,13 @@ func (r *accountRepository) UpdateAccountMonitorBalance(
 	if err := r.updateAccountMonitorBalanceInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The outbox event is committed atomically above; this direct write only
+	// reduces visibility latency for sticky/GetAccount cache readers.
+	r.syncSchedulerAccountSnapshot(ctx, account.ID)
+	return nil
 }
 
 func (r *accountRepository) updateAccountMonitorBalanceInTx(
@@ -2759,6 +2774,9 @@ func (r *accountRepository) updateAccountMonitorBalanceInTx(
 	}
 	if affected == 0 {
 		return service.ErrUpstreamBillingProbeIdentityChanged
+	}
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil); err != nil {
+		return err
 	}
 	return nil
 }

@@ -4,6 +4,8 @@
 
 **本轮余额证据调度 veto MVP（2026-08-11）：** 状态：已完成。候选 `codex/balance-scheduler-veto` 经独立复审修复 402/未知失败与 malformed 快照边界后合并到 `main@2fc0fea2e73fe9d637063db4c3c9a658386bc48e`，定向 service/repository 测试、`go vet`、构建和 diff 检查通过；通过预加载蓝绿链无停机发布，生产 `release-state` 绑定 source commit/tree 与迁移哈希 `f1b1f353…`，活动槽 `blue`，公网 `/healthz`/`/readyz` 为 alive/ready，API/worker/PostgreSQL/Redis/Caddy/relay-ops 健康。首次上传超时失败证据保留，第二次发布成功；待完成候选 bundle 归档、删除 worktree/本地分支和下一任务包启动前的总账更新。
 
+**本轮 T01 大上下文入站上传稳定性（2026-08-11）：** 状态：进行中。余额 veto 已完成线上验证后，根线程从 `main@80eed324440bceaec8e5d583be5f24bc8edd4b49` 启动唯一下一任务包；范围仅限 Caddy 入站超时策略、既有请求体大小保护、配置合同测试及慢速/不完整上传验证，不包含错误转译、重试、调度或 CDN。T01 派生线程必须先提交规格书/计划，再在独立 worktree 实施、复审并等待根线程授权合并；若发布预检返回 `downtime_required=true`，立即暂停等待人工确认。
+
 **本轮余额证据调度 veto MVP 发布回退（2026-08-11）：** 首次候选 `main@ccd328188` 已完成无停机发布，但线上专项验收和独立审查发现 PostgreSQL `NULL` 语义、失败码过宽、粘性直取绕过以及余额写入缓存/容量查询一致性问题。已创建回退提交 `bca98b6ed`，并于本轮以 `main@2f54e7970` 通过同一蓝绿链无停机恢复生产；公网 `/healthz`、`/readyz` 返回 alive/ready，生产 release-state 已绑定 `source_commit=2f54e7970`、活动槽 `green`，API/worker/PostgreSQL/Redis/Caddy/relay-ops 健康。候选 worktree、失败证据和审查结论保留，禁止启动下一任务包，直至余额 veto 修复版重新通过审查、合并、部署和线上验证。
 
 **日期校正（2026-08-11）：** 下方本轮新增条目标题中的 `2026-08-12` 为先前会话的日期误记；本轮实际执行、合并与发布日期以 `2026-08-11` 的提交时间、发布记录和线上验证时间为准，后续状态更新统一使用 `2026-08-11`。

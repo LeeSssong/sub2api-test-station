@@ -272,6 +272,18 @@ func isAccountMonitorBalanceEligible(account *Account) bool {
 	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey
 }
 
+// accountBalanceVetoesScheduling is intentionally narrow: only an explicit
+// upstream "balance unavailable" result is strong enough to remove an
+// account from the scheduling pool. Unknown, stale, timeout, and transport
+// failures must not turn into an accidental account outage.
+func accountBalanceVetoesScheduling(account *Account) bool {
+	if !isAccountMonitorBalanceEligible(account) {
+		return false
+	}
+	snapshot := decodeAccountMonitorBalance(account.Extra)
+	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusFailed && snapshot.FailureCode == "balance_unavailable"
+}
+
 func validAccountMonitorBalanceStatus(status string) bool {
 	switch status {
 	case AccountMonitorBalanceStatusOK, AccountMonitorBalanceStatusStale, AccountMonitorBalanceStatusFailed,

@@ -42,6 +42,22 @@ type openaiNonStreamingResult struct {
 	searchCount         int
 }
 
+// openAIUpstreamRequestID returns the request identity issued by the immediate
+// OpenAI-compatible relay. New API exposes its ledger request ID via
+// X-Oneapi-Request-Id; direct providers continue to use x-request-id or xAI's
+// xai-request-id fallback.
+func openAIUpstreamRequestID(header http.Header) string {
+	if header == nil {
+		return ""
+	}
+	for _, name := range []string{"X-Oneapi-Request-Id", "x-request-id", "xai-request-id"} {
+		if requestID := strings.TrimSpace(header.Get(name)); requestID != "" {
+			return requestID
+		}
+	}
+	return ""
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
 	return s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, mappedModel, "")
 }
@@ -233,7 +249,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	sawFailedEvent := false
 	failedMessage := ""
 	clientOutputStarted := false
-	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	upstreamRequestID := openAIUpstreamRequestID(resp.Header)
 	var streamEarlyErr error
 	eventInProgress := false
 	eventStartsClientOutput := false

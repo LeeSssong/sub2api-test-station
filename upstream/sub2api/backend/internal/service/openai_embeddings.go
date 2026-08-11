@@ -154,7 +154,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 
 	return &OpenAIForwardResult{
-		RequestID:     firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
+		RequestID:     firstNonEmptyString(openAIUpstreamRequestID(resp.Header), resp.Header.Get("request-id")),
 		Usage:         extractOpenAIEmbeddingsUsage(respBody),
 		Model:         originalModel,
 		BillingModel:  billingModel,

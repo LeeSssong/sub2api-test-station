@@ -1777,7 +1777,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		if err != nil {
 			if imageCount > 0 {
 				return &OpenAIForwardResult{
-					RequestID:        resp.Header.Get("x-request-id"),
+					RequestID:        openAIUpstreamRequestID(resp.Header),
 					Usage:            usage,
 					Model:            requestModel,
 					UpstreamModel:    requestModel,
@@ -1821,7 +1821,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		imageCount = parsed.N
 	}
 	return &OpenAIForwardResult{
-		RequestID:        resp.Header.Get("x-request-id"),
+		RequestID:        openAIUpstreamRequestID(resp.Header),
 		Usage:            usage,
 		Model:            requestModel,
 		UpstreamModel:    requestModel,

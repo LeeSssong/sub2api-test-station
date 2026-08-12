@@ -353,69 +353,39 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 30d')
   })
 
-  it('keeps legacy cards in shadow mode while surfacing control-plane freshness', async () => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
+  it('loads native monitor snapshots without page-level control-plane reads', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(list).toHaveBeenCalledWith('24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(controlPlaneMonitor).toHaveBeenCalledWith({ range: '24h' })
-    expect(wrapper.text()).toContain('来源：现有系统')
-    expect(wrapper.text()).toContain('完整性：complete')
-    expect(wrapper.text()).toContain('Rank one A 24h')
-  })
+    await selectRange(wrapper, '7d')
 
-  it('treats a control-plane failure as local degradation without replacing legacy cards', async () => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
-    controlPlaneMonitor.mockRejectedValueOnce(new Error('control plane unavailable'))
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('控制面暂时不可用')
-    expect(wrapper.text()).toContain('Rank one A 24h')
-    expect(showError).not.toHaveBeenCalledWith('control plane unavailable')
-  })
-
-  it.each([
-    ['a complete-looking response', { items: projection('24h'), freshness: { completeness: 'complete', calculation_version: 'accounts-v1' } }],
-    ['an incomplete response', { items: { range: '24h', accounts: [], groups: [] }, freshness: { completeness: 'partial', calculation_version: 'accounts-v1' } }],
-  ])('keeps the legacy monitor source and degrades external_primary for %s', async (_label, externalResponse) => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'legacy_only', use_external: false, degraded: true, reason: 'comparison_gate_failed' })
-    controlPlaneMonitor.mockResolvedValueOnce(externalResponse)
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Rank one A 24h')
-    expect(wrapper.text()).toContain('来源：现有系统')
-    expect(wrapper.text()).toContain('控制面暂时不可用')
-  })
-
-  it('renders a fully mapped monitor projection only after its three-window cutover gate passes', async () => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
-    controlPlaneMonitor.mockResolvedValueOnce({
-      items: {
-        ...projection('24h'),
-        accounts: projection('24h').accounts.map((item) => ({ ...item, name: `External ${item.name}` })),
-      },
-      freshness: { completeness: 'complete', calculation_version: 'accounts-v1' },
-    })
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('External Rank one A 24h')
+    expect(list).toHaveBeenNthCalledWith(1, '24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(list).toHaveBeenNthCalledWith(2, '7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(controlPlaneDecision).not.toHaveBeenCalled()
+    expect(controlPlaneMonitor).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Rank one A 7d')
     expect(wrapper.text()).not.toContain('控制面暂时不可用')
+    expect(wrapper.text()).not.toContain('完整性：')
+    expect(wrapper.text()).not.toContain('来源：现有系统')
+    expect(wrapper.text()).not.toContain('来源：控制面')
+    expect(wrapper.find('[data-test="read-model-status"]').exists()).toBe(false)
   })
 
-  it.each([401, 403])('keeps the monitor page local when the control plane returns %s', async (status) => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'monitor', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-monitor', run_id: 'run-monitor', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
-    controlPlaneMonitor.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
+  it('renders an explicit retryable empty state when the first native monitor load fails', async () => {
+    list.mockRejectedValueOnce(new Error('initial monitor unavailable'))
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Rank one A 24h')
-    expect(wrapper.text()).toContain('控制面暂时不可用')
-    expect(showError).not.toHaveBeenCalledWith('control plane rejected request')
+    expect(wrapper.get('[data-test="account-monitor-error-empty"]').text()).toContain('initial monitor unavailable')
+    expect(wrapper.get('[data-test="account-monitor-error-empty"] button').text()).toContain('刷新')
+    expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(0)
+    expect(controlPlaneDecision).not.toHaveBeenCalled()
+    expect(controlPlaneMonitor).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-test="account-monitor-error-empty"] button').trigger('click')
+    await flushPromises()
+
+    expect(list).toHaveBeenNthCalledWith(2, '24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('does not load reconciled cost guards for account cards', async () => {
@@ -491,6 +461,8 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).not.toContain('Rank one A 7d')
     expect(wrapper.get('[data-test="range-24h"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('range unavailable')
+    expect(controlPlaneDecision).not.toHaveBeenCalled()
+    expect(controlPlaneMonitor).not.toHaveBeenCalled()
   })
 
   it('retains the last complete snapshot when a response range does not match the request', async () => {
@@ -832,6 +804,8 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one A 24h')
     expect(showSuccess).not.toHaveBeenCalled()
     expect(showError).toHaveBeenCalledWith('探测已完成，但最新卡片加载失败，请重试')
+    expect(controlPlaneDecision).not.toHaveBeenCalled()
+    expect(controlPlaneMonitor).not.toHaveBeenCalled()
   })
 
   it('reports explicit success only after a single probe and current-range reload both complete', async () => {
@@ -851,6 +825,10 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.text()).toContain('Rank one refreshed')
     expect(showError).not.toHaveBeenCalled()
     expect(showSuccess).toHaveBeenCalledWith('账号探测与监控卡片已刷新')
+    expect(list).toHaveBeenNthCalledWith(1, '24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(list).toHaveBeenNthCalledWith(2, '24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(controlPlaneDecision).not.toHaveBeenCalled()
+    expect(controlPlaneMonitor).not.toHaveBeenCalled()
   })
 
   it('opens the page-level cost dialog and persists procurement, multiplier, restore, and clear actions', async () => {

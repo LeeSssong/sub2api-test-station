@@ -29,7 +29,12 @@ type NativeErrorDiagnosis struct {
 	UserSuggestion          string `json:"-"`
 }
 
-var nativeErrorInlineSecretPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*(?:bearer\s+)?|bearer\s+|(?:sk|key)-)[^\s,"}]+`)
+var (
+	nativeErrorNamedSecretPattern  = regexp.MustCompile(`(?i)((?:authorization|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\s*[:=]\s*(?:bearer\s+)?)(?:"[^"]*"|'[^']*'|[^&\s,;"'}]+)`)
+	nativeErrorBearerSecretPattern = regexp.MustCompile(`(?i)(bearer\s+)[^&\s,;"'}]+`)
+	nativeErrorCookieSecretPattern = regexp.MustCompile(`(?i)((?:set-)?cookie\s*[:=]\s*)[^\r\n]+`)
+	nativeErrorKeyPrefixPattern    = regexp.MustCompile(`(?i)(?:sk|key)-[^&\s,;"'}]+`)
+)
 
 func ProjectNativeErrorDiagnosis(detail *OpsErrorLogDetail) *NativeErrorDiagnosis {
 	if detail == nil {
@@ -65,32 +70,32 @@ func AttachNativeErrorDiagnosis(detail *OpsErrorLogDetail) *OpsErrorLogDetail {
 }
 
 func classifyNativeError(detail *OpsErrorLogDetail) string {
+	accountSelected := hasSelectedNativeUpstreamAccount(detail)
 	text := strings.ToLower(strings.Join([]string{
 		detail.Message, detail.Type, detail.Source, detail.UpstreamErrorMessage, detail.UpstreamErrorDetail,
 	}, " "))
-	if detail.AccountID == nil && detail.Phase == "request" &&
+	if !accountSelected && detail.Phase == "request" &&
 		(strings.Contains(text, "failed to read request body") ||
 			strings.Contains(text, "request body read") ||
 			strings.Contains(text, "unexpected eof") ||
 			strings.Contains(text, "upload interrupted")) {
 		return NativeErrorClassUploadInterrupted
 	}
-	if detail.AccountID == nil && (detail.IsBusinessLimited ||
-		(detail.Phase == "request" && detail.Type == "rate_limit_error") ||
-		isNativeLocalLimitText(text)) {
+	if detail.IsBusinessLimited || (!accountSelected &&
+		((detail.Phase == "request" && detail.Type == "rate_limit_error") || isNativeLocalLimitText(text))) {
 		return NativeErrorClassLocalLimit
 	}
 	status := 0
 	if detail.UpstreamStatusCode != nil {
 		status = *detail.UpstreamStatusCode
-	} else if detail.AccountID != nil {
+	} else if accountSelected {
 		// List queries expose COALESCE(upstream_status_code, status_code) as
 		// StatusCode, while detail queries retain the original upstream field.
 		status = detail.StatusCode
 	}
-	if status == 429 || status == 529 || strings.Contains(text, "overload") ||
+	if accountSelected && (status == 429 || status == 529 || strings.Contains(text, "overload") ||
 		strings.Contains(text, "capacity") || strings.Contains(text, "high demand") ||
-		(detail.AccountID != nil && strings.Contains(text, "rate limit")) {
+		strings.Contains(text, "rate limit")) {
 		return NativeErrorClassUpstreamOverloaded
 	}
 	return NativeErrorClassUpstreamFailed
@@ -98,20 +103,48 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 
 func isNativeLocalLimitText(text string) bool {
 	for _, marker := range []string{
+		"api key in query parameter is deprecated",
+		"query parameter api_key is deprecated",
+		"no active subscription found for this group",
 		"requests-per-minute limit exceeded",
 		"too many pending requests",
 		"concurrency limit exceeded",
+		"image generation concurrency limit exceeded",
 		"usage limit exceeded",
+		"daily usage limit exceeded",
+		"weekly usage limit exceeded",
+		"monthly usage limit exceeded",
+		"usage quota exhausted for this platform",
 		"quota exhausted",
 		"insufficient balance",
+		"insufficient account balance",
 		"subscription is invalid or expired",
 		"no active subscription",
+		"api key 额度已用完",
+		"api key 5小时限额已用完",
+		"api key 日限额已用完",
+		"api key 7天限额已用完",
+		"api key group platform is not gemini",
+		"this group is restricted to claude code clients",
+		"this group does not allow /v1/messages dispatch",
+		"image generation is not enabled for this group",
+		"token counting is not supported for this platform",
+		"images api is not supported for this platform",
+		"this account only allows codex official clients",
+		"openai wsv1 is temporarily unsupported",
+		"openai codex passthrough requires a non-empty instructions field",
 	} {
 		if strings.Contains(text, marker) {
 			return true
 		}
 	}
-	return false
+	return (strings.Contains(text, "model ") && strings.Contains(text, " not in whitelist")) ||
+		(strings.Contains(text, "beta feature ") && strings.Contains(text, " is not allowed")) ||
+		(strings.Contains(text, "openai service_tier=") && strings.Contains(text, " is not allowed for model"))
+}
+
+func hasSelectedNativeUpstreamAccount(detail *OpsErrorLogDetail) bool {
+	return detail != nil && detail.AccountID != nil && *detail.AccountID > 0
 }
 
 func nativeErrorExplanation(class string) (code, meaning, suggestion string) {
@@ -164,6 +197,9 @@ func sanitizeNativeDiagnosticEvidence(raw string, maxBytes int) string {
 		value = sanitized
 	}
 	value = sanitizeUpstreamErrorMessage(value)
-	value = nativeErrorInlineSecretPattern.ReplaceAllString(value, "[REDACTED]")
+	value = nativeErrorCookieSecretPattern.ReplaceAllString(value, `${1}[REDACTED]`)
+	value = nativeErrorNamedSecretPattern.ReplaceAllString(value, `${1}[REDACTED]`)
+	value = nativeErrorBearerSecretPattern.ReplaceAllString(value, `${1}[REDACTED]`)
+	value = nativeErrorKeyPrefixPattern.ReplaceAllString(value, "[REDACTED]")
 	return truncateString(value, maxBytes)
 }

@@ -29,8 +29,9 @@ func TestProjectNativeErrorDiagnosisFourClasses(t *testing.T) {
 			name: "local limit before selection",
 			detail: OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 				Phase: "request", Type: "rate_limit_error", Owner: "client",
-				Message: "requests-per-minute limit exceeded",
-			}, IsBusinessLimited: true},
+				Message:           "requests-per-minute limit exceeded",
+				IsBusinessLimited: true,
+			}},
 			wantClass: "local_limit", wantCode: "LOCAL_LIMIT", wantStage: "request", wantOwner: "client",
 			wantMeaning: "请求过于频繁", wantSuggestion: "请稍后重试或降低并发",
 		},
@@ -101,6 +102,24 @@ func TestProjectNativeErrorDiagnosisSanitizesAdminEvidence(t *testing.T) {
 	require.Contains(t, got.OriginalUpstreamDetail, "[REDACTED]")
 }
 
+func TestProjectNativeErrorDiagnosisSanitizesCommonNonJSONCredentials(t *testing.T) {
+	detail := &OpsErrorLogDetail{
+		UpstreamErrorMessage: "x-api-key: x-secret-123 access_token=oauth-secret-456 Cookie: session=private-cookie",
+		UpstreamErrorDetail:  `api_key=sk-body-secret&access_token=query-secret client_secret="quoted-secret" Authorization: Bearer bearer-secret`,
+	}
+
+	got := ProjectNativeErrorDiagnosis(detail)
+	combined := got.OriginalUpstreamMessage + " " + got.OriginalUpstreamDetail
+	for _, secret := range []string{
+		"x-secret-123", "oauth-secret-456", "private-cookie", "sk-body-secret", "query-secret", "quoted-secret", "bearer-secret",
+	} {
+		require.NotContains(t, combined, secret)
+	}
+	require.Contains(t, combined, "[REDACTED]")
+	require.LessOrEqual(t, len(got.OriginalUpstreamMessage), 2048)
+	require.LessOrEqual(t, len(got.OriginalUpstreamDetail), opsMaxStoredErrorBodyBytes)
+}
+
 func TestProjectNativeErrorDiagnosisUnknownFallsBackWithoutInventingSelection(t *testing.T) {
 	got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{})
 	require.Equal(t, "upstream_failed", got.Class)
@@ -124,6 +143,43 @@ func TestProjectNativeErrorDiagnosisUsesEffectiveListStatusOnlyAfterSelection(t 
 	require.Equal(t, NativeErrorClassUpstreamFailed, preselection.Class)
 }
 
+func TestProjectNativeErrorDiagnosisListAndDetailShareCanonicalBusinessLimit(t *testing.T) {
+	base := OpsErrorLog{
+		Phase: "auth", Type: "invalid_request_error", Owner: "client",
+		Message: "custom administrator policy rejection", IsBusinessLimited: true,
+	}
+	listDiagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: base})
+	detailDiagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: base})
+
+	require.Equal(t, NativeErrorClassLocalLimit, listDiagnosis.Class)
+	require.Equal(t, listDiagnosis.Class, detailDiagnosis.Class)
+	require.False(t, listDiagnosis.UpstreamAccountSelected)
+}
+
+func TestProjectNativeErrorDiagnosisMatchesCanonicalBusinessLimitEvidence(t *testing.T) {
+	for _, message := range []string{
+		"API key 额度已用完",
+		"daily usage limit exceeded",
+		"This group does not allow /v1/messages dispatch",
+		"model gpt-private not in whitelist",
+	} {
+		t.Run(message, func(t *testing.T) {
+			got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: "request", Owner: "client", Message: message,
+			}})
+			require.Equal(t, NativeErrorClassLocalLimit, got.Class)
+		})
+	}
+}
+
+func TestProjectNativeErrorDiagnosisDoesNotCallPreselectionCapacityUpstreamOverload(t *testing.T) {
+	got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+		Phase: "routing", Owner: "platform", Message: "No upstream capacity available",
+	}})
+	require.Equal(t, NativeErrorClassUpstreamFailed, got.Class)
+	require.False(t, got.UpstreamAccountSelected)
+}
+
 func TestProjectNativeErrorDiagnosisDoesNotTreatOversizedBodyAsInterruptedUpload(t *testing.T) {
 	got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Type: "invalid_request_error", Owner: "client",
@@ -135,10 +191,12 @@ func TestProjectNativeErrorDiagnosisDoesNotTreatOversizedBodyAsInterruptedUpload
 func TestProjectNativeErrorDiagnosisHTTPAndSSEStoredRecordsShareSemantics(t *testing.T) {
 	httpRecord := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Type: "rate_limit_error", Owner: "client", Message: "concurrency limit exceeded", Stream: false,
-	}, IsBusinessLimited: true}
+		IsBusinessLimited: true,
+	}}
 	sseRecord := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Type: "rate_limit_error", Owner: "client", Message: "concurrency limit exceeded", Stream: true,
-	}, IsBusinessLimited: true}
+		IsBusinessLimited: true,
+	}}
 
 	httpDiagnosis := ProjectNativeErrorDiagnosis(httpRecord)
 	sseDiagnosis := ProjectNativeErrorDiagnosis(sseRecord)

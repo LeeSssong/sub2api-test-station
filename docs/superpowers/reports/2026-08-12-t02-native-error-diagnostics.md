@@ -108,3 +108,40 @@ The frontend build emitted only existing Browserslist age, dynamic/static import
 - No live browser smoke test, production deployment, or online verification was performed in this candidate task.
 - Classification is intentionally conservative: unknown evidence falls back to `upstream_failed`, and account selection is never inferred without a positive persisted account ID.
 - Root review should confirm the strict user DTO allowlist and administrator-only evidence boundary before merge.
+
+## Independent Review Follow-up
+
+The follow-up review identified and fixed three important boundaries without expanding T02 scope:
+
+- `is_business_limited` is now carried by the base persisted error record and selected by the list repository query, so list and detail projections use the same canonical native flag. Text fallback also covers the existing native policy, API-key quota, subscription, platform quota, and model/policy rejection markers.
+- `upstream_overloaded` now requires a positive selected account ID. Pre-selection capacity/overload wording conservatively falls back to `upstream_failed`; selected-account list status still recognizes effective 429/529.
+- Administrator evidence redaction now covers non-JSON `x-api-key`, `api_key`, `access_token`, `refresh_token`, `client_secret`, `authorization`/Bearer, Cookie, quoted values, and key-like prefixes with bounded output. User DTO behavior is unchanged.
+
+Follow-up TDD evidence:
+
+```text
+go test ./internal/service ./internal/repository -run 'Test(ProjectNativeErrorDiagnosis(ListAndDetail|MatchesCanonical|DoesNotCallPreselection|SanitizesCommon)|OpsErrorListSelectsCanonical)' -count=1
+ok internal/service; ok internal/repository
+```
+
+The quoted non-JSON credential case first failed as expected, then passed after the regex correction.
+
+Fresh post-review verification:
+
+```text
+go test ./internal/service ./internal/handler ./internal/repository
+ok internal/service 103.937s
+ok internal/handler 39.685s
+ok internal/repository 2.463s
+
+go vet ./internal/service ./internal/handler ./internal/repository
+go build ./cmd/server
+# exit 0
+
+pnpm vitest run ...
+# 4 files passed, 19 tests passed
+pnpm typecheck
+# exit 0
+pnpm build
+# exit 0; 1044 modules transformed
+```

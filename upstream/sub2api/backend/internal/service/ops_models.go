@@ -37,6 +37,9 @@ type OpsErrorLog struct {
 	Source string `json:"error_source"`
 
 	Severity string `json:"severity"`
+	// Canonical flag persisted by the native ops error classifier. Keeping it
+	// on the base record makes list and detail diagnosis use the same evidence.
+	IsBusinessLimited bool `json:"is_business_limited"`
 
 	StatusCode int    `json:"status_code"`
 	Platform   string `json:"platform"`
@@ -95,9 +98,6 @@ type OpsErrorLogDetail struct {
 	UpstreamLatencyMs  *int64 `json:"upstream_latency_ms"`
 	ResponseLatencyMs  *int64 `json:"response_latency_ms"`
 	TimeToFirstTokenMs *int64 `json:"time_to_first_token_ms"`
-
-	// vNext metric semantics
-	IsBusinessLimited bool `json:"is_business_limited"`
 
 	// Bound (non-deleted) key prefix, snapshotted at error time.
 	APIKeyPrefix string `json:"api_key_prefix,omitempty"`

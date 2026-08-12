@@ -1,11 +1,9 @@
 # Task 2 Report: Official v0.1.175 Semantic Merge
 
-Status: the initial independent review was `REJECT` with one Important
-replay-safety finding covering both handler loops and their missing regression
-proof. Fix round 1 implementation and required local validation are now
-complete; the new candidate HEAD remains `进行中` and must receive scoped
-independent re-review before root authorization, merge, push, deployment, or
-online verification.
+Status: Task 2 fix round 2 implementation and required local validation are
+complete. The candidate remains `进行中` and must receive scoped independent
+re-review before root authorization, merge, push, deployment, or online
+verification.
 
 ## Candidate
 
@@ -13,6 +11,8 @@ online verification.
 - Worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/official-v0175-fast-merge`
 - Task 1 baseline: `75c491d5e72f7fc32e125b6060c319ef9b96fb63`
 - Review-fix implementation: `3cde9e99f081e25eb9074080f0993f27ccffd7b9`
+- Fix-round-2 regressions: `e4cb5363ed7d84451729e3909027c89520dac701`
+- Fix-round-2 helper implementation: `ada3a69dfb22bcdff3922549042afffbed6fba1a`
 - Official release: `v0.1.175`
 - Official commit: `93c32fa1a2450351561abc46156d2e28cb5f74ca`
 - Annotated tag object: `b898c60c422d1de059968c56aca22f6643f1fed4`
@@ -93,6 +93,22 @@ HEAD while retaining the new tests.
 
 The resulting new HEAD is pending independent re-review; this report does not
 mark Task 2 complete.
+
+## Fix Round 2
+
+The second scoped review found that the existing side-effect detector covered
+Responses `function_call_output` but not Anthropic Messages historical
+`tool_result` blocks. On the exact starting candidate, a 401/403 pool auth
+failure for a raw Messages tool-result continuation called
+`[9910, 9910, 9911]`, demonstrating both same-account and next-account replay.
+
+Fix round 2 adds symmetric handler regression fixtures for legal Responses
+function-output continuations and Messages tool-result continuations. The
+minimal helper change scans array-valued `messages[].content[]` blocks for
+`type=tool_result`, preserving safe plain-text Messages requests. The focused
+matrix proves unsafe continuations stop at `[9910]`, while safe configured
+pool requests remain `[9910, 9910, 9911]` for 401 and 403. Full verification
+is recorded in `task-2-fix-round-2-report.md`.
 
 ## Official Delta and Identity
 

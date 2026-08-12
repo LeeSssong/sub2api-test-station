@@ -85,6 +85,7 @@ git diff --check
 - 候选恢复归档：`/Users/gongtengxinwen/Documents/sub2api-archives/t03-upstream-cost-profit-values-72c3645d7.bundle`。
 - 归档 SHA-256：`4021d92ee877e78dd9c781bff0ee0a9bcf120cd9fb3f475f525cbe9f2d6e0e2a`。
 - 归档权限：`0600`；`git bundle verify` 已确认完整历史与候选 ref。
+- 清理：确认候选工作区干净、`72c3645d7` 已是 `main` 祖先且 bundle 可恢复后，已删除 `.worktrees/t03-upstream-cost-profit-values` 与本地分支 `codex/t03-upstream-cost-profit-values`。
 
 ## 边界与剩余风险
 

@@ -3,10 +3,10 @@
 Actual work date: 2026-08-12. The existing directory name is retained as a
 stable task-package path and is not an assertion about the actual date.
 
-Status: local implementation and all required verification gates passed. The
-candidate remains `进行中` pending the third independent scoped review. No
-merge to `main`, push, deployment, production access, or online verification
-was performed.
+Status: the third independent scoped review was `REJECT`. Local implementation
+and all required verification gates passed. The candidate remains `进行中`
+pending a new scoped independent review. No merge to `main`, push, deployment,
+production access, or online verification was performed.
 
 ## Scope and Identity
 
@@ -17,6 +17,8 @@ was performed.
   `d3fc44fa88359ab110897908e7a987e608df54c0`
 - Explicit protocol-selection test cleanup:
   `731dedc641c6c2100848813212cb1d760994ed2b`
+- Pre-existing draft backup retained unchanged at
+  `.superpowers/sdd/2026-08-13-official-v0175-fast-merge/root-review/fix-round-3-draft.patch`.
 - Changed runtime surface: Responses and Messages failover loops only.
 - Changed test surface: handler regressions and their local account-repository
   fixture only.
@@ -55,7 +57,7 @@ exact starting candidate:
 ```text
 GOFLAGS=-mod=mod go test ./internal/handler \
   -run 'TestOpenAI(Responses|Messages)_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry$' \
-  -count=1 -v
+  -count=1
 ```
 
 Result: expected FAIL. All eight cases — Responses/Messages × non-pool or
@@ -69,11 +71,11 @@ The final explicit matrix command was:
 
 ```text
 GOFLAGS=-mod=mod go test ./internal/handler \
-  -run '^(TestOpenAIResponses_(SafeAuthFailureSwitchesWithoutSameAccountPoolRetry|APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount|APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays|APIKeyPassthroughPoolAuthFailureWithFunctionCallOutputNeverReplays|PostOutputFailureNeverReplays)|TestOpenAIMessages_(SafeAuthFailureSwitchesWithoutSameAccountPoolRetry|APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount|APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays|APIKeyPassthroughPoolAuthFailureWithToolResultNeverReplays))$' \
-  -count=1 -v
+  -run 'TestOpenAI(Responses_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry|Messages_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry|Responses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount|Messages_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount|Responses_APIKeyPassthroughPoolAuthFailureWith(FunctionCallOutput|Tools)NeverReplays|Messages_APIKeyPassthroughPoolAuthFailureWith(ToolResult|Tools)NeverReplays|Responses_PostOutputFailureNeverReplays|Messages_TransientFailureRetriesOnceThenFailsOver)$' \
+  -count=1
 ```
 
-Result: PASS (`ok github.com/Wei-Shaw/sub2api/internal/handler 4.164s`). The
+Result: PASS (`ok github.com/Wei-Shaw/sub2api/internal/handler 3.945s`). The
 observable call sequences were:
 
 - safe non-pool 401/403: `[9910, 9911]`
@@ -82,6 +84,7 @@ observable call sequences were:
 - Responses tools/function-call-output and Messages tools/tool-result:
   `[9910]`
 - post-output failure: `[9930]`
+- existing Messages 502/transient retries and failover remain green
 
 Both safe fallback endpoint responses contained semantic text `ok`.
 
@@ -90,29 +93,17 @@ The handler account-repository test double therefore implements no-op
 `SetError` and `SetTempUnschedulable` methods, allowing the real auth side
 effect to complete without mutating the in-memory backup account.
 
-## Full Verification
+## Required Verification
 
 - `GOFLAGS=-mod=mod go test ./internal/handler -count=1`
   - PASS on the final source/test tree:
-    `ok github.com/Wei-Shaw/sub2api/internal/handler 39.981s`
-- `GOFLAGS=-mod=mod go test ./internal/service -count=1`
-  - PASS: `ok github.com/Wei-Shaw/sub2api/internal/service 108.963s`
-- `GOFLAGS=-mod=mod go vet ./internal/handler ./internal/service`
+    `ok github.com/Wei-Shaw/sub2api/internal/handler 39.944s`
+- `GOFLAGS=-mod=mod go vet ./internal/handler`
   - PASS; no output.
-- `pnpm vitest run src/components/admin/usage/__tests__/UsageTable.spec.ts src/views/admin/__tests__/UsageView.spec.ts`
-  - PASS: 2 files, 39 tests, duration 2.55s.
-  - Non-failing warnings: ignored legacy `pnpm.overrides`, Node localStorage
-    experimental warning, and stale Browserslist data.
-- `pnpm typecheck`
-  - PASS: `vue-tsc --noEmit` exited 0.
 - `gofmt -d internal/handler/openai_gateway_handler.go internal/handler/openai_gateway_handler_test.go`
   - PASS; no output.
 - `git diff --check`
   - PASS; no output.
-- `git diff --name-only --diff-filter=U`
-  - PASS; no output.
-- `rg -n '^(<<<<<<< .+|=======$|>>>>>>> .+)' upstream/sub2api`
-  - PASS; no conflict markers found.
 
 ## Release Boundary
 
@@ -122,5 +113,5 @@ effect to complete without mutating the in-memory backup account.
 - No migration or configuration change.
 - `downtime_required` remains deferred to the root task's reviewed merged-main
   release preflight.
-- Remaining gate: third independent scoped review of the final candidate,
+- Remaining gate: a new scoped independent review of the final candidate,
   followed by the root whole-branch review and merged-main release gates.

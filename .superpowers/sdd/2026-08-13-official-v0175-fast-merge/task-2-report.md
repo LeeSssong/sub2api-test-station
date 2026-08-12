@@ -1,9 +1,9 @@
 # Task 2 Report: Official v0.1.175 Semantic Merge
 
-Status: Task 2 fix round 3 local implementation and all required verification
-gates are complete. The candidate remains `进行中` and must receive the third
-scoped independent review before root authorization, merge, push, deployment,
-or online verification.
+Status: The third independent scoped review was `REJECT`. Task 2 fix round 3
+local implementation and all required verification gates are complete. The
+candidate remains `进行中` and must receive a new scoped independent review
+before root authorization, merge, push, deployment, or online verification.
 
 ## Candidate
 
@@ -17,6 +17,8 @@ or online verification.
   `d3fc44fa88359ab110897908e7a987e608df54c0`
 - Fix-round-3 explicit endpoint protocol fixture cleanup:
   `731dedc641c6c2100848813212cb1d760994ed2b`
+- Preserved draft backup:
+  `.superpowers/sdd/2026-08-13-official-v0175-fast-merge/root-review/fix-round-3-draft.patch`
 - Final candidate SHA: produced by this documentation commit; bind it from
   `git rev-parse HEAD` after the commit succeeds rather than predeclaring its
   not-yet-created object ID in this report.
@@ -125,13 +127,13 @@ account-mode, and 401/403 combinations calling only `[9910]` instead of
 `[9910, 9911]`, configured pool `[9910, 9910, 9911]`, unsafe tools/function
 output/tool result `[9910]`, and post-output `[9930]`.
 
-Fresh full verification also passes `internal/handler` (`39.981s` on the final
-source/test tree),
-`internal/service` (`108.963s`), handler/service vet, the two required frontend
-files (39 tests), frontend typecheck, gofmt, diff checks, and conflict scans.
-The detailed commands and exact evidence are in `task-2-fix-round-3-report.md`.
-No migration or configuration change was made. The candidate remains pending
-the third independent scoped review.
+Fresh required verification also passes complete `internal/handler`
+(`39.944s` on the final source/test tree), `go vet ./internal/handler`, gofmt,
+and `git diff --check`. The focused matrix retains the existing Messages
+502/transient behavior. The detailed commands and exact evidence are in
+`task-2-fix-round-3-report.md`. No migration, configuration, or production
+account `Extra` behavior changed. The candidate remains pending a new scoped
+independent review.
 
 ## Fix Round 2
 
@@ -179,8 +181,8 @@ candidate is waiting for a third independent scoped review of fix round 2.
 
 ## Candidate Verification Boundary
 
-- Fix round 3 binds the focused RED/GREEN replay matrix and the fresh full
-  backend/frontend verification listed above.
+- Fix round 3 binds the focused RED/GREEN replay matrix and the required
+  handler verification listed above.
 - This documentation-only commit is checked with `git diff --check` before it
   is created.
 
@@ -194,7 +196,7 @@ candidate is waiting for a third independent scoped review of fix round 2.
 - Rollback before merge is the Task 1 baseline commit. After root-authorized
   release, rollback must use the existing reviewed blue-green host chain and
   its release evidence.
-- Remaining risk is integration outside the focused handler/service and usage
-  UI scopes; the required third scoped independent review is still pending,
-  and the root task must later run its approved whole-branch review and
-  merged-main release gates before promotion.
+- Remaining risk is integration outside the focused handler package; a new
+  scoped independent review is still pending, and the root task must later run
+  its approved whole-branch review and merged-main release gates before
+  promotion.

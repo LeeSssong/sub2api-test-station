@@ -12,6 +12,12 @@ type APIKey func(*sql.Selector)
 // Account is the predicate function for account builders.
 type Account func(*sql.Selector)
 
+// AccountDailyFinancialValue is the predicate function for accountdailyfinancialvalue builders.
+type AccountDailyFinancialValue func(*sql.Selector)
+
+// AccountFinancialSetting is the predicate function for accountfinancialsetting builders.
+type AccountFinancialSetting func(*sql.Selector)
+
 // AccountGroup is the predicate function for accountgroup builders.
 type AccountGroup func(*sql.Selector)
 
@@ -102,8 +108,14 @@ type TLSFingerprintProfile func(*sql.Selector)
 // UsageCleanupTask is the predicate function for usagecleanuptask builders.
 type UsageCleanupTask func(*sql.Selector)
 
+// UsageCostReview is the predicate function for usagecostreview builders.
+type UsageCostReview func(*sql.Selector)
+
 // UsageLog is the predicate function for usagelog builders.
 type UsageLog func(*sql.Selector)
+
+// UsageUpstreamCostEvidence is the predicate function for usageupstreamcostevidence builders.
+type UsageUpstreamCostEvidence func(*sql.Selector)
 
 // User is the predicate function for user builders.
 type User func(*sql.Selector)

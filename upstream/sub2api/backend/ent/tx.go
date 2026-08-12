@@ -18,6 +18,10 @@ type Tx struct {
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountDailyFinancialValue is the client for interacting with the AccountDailyFinancialValue builders.
+	AccountDailyFinancialValue *AccountDailyFinancialValueClient
+	// AccountFinancialSetting is the client for interacting with the AccountFinancialSetting builders.
+	AccountFinancialSetting *AccountFinancialSettingClient
 	// AccountGroup is the client for interacting with the AccountGroup builders.
 	AccountGroup *AccountGroupClient
 	// Announcement is the client for interacting with the Announcement builders.
@@ -78,8 +82,12 @@ type Tx struct {
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
 	UsageCleanupTask *UsageCleanupTaskClient
+	// UsageCostReview is the client for interacting with the UsageCostReview builders.
+	UsageCostReview *UsageCostReviewClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
+	// UsageUpstreamCostEvidence is the client for interacting with the UsageUpstreamCostEvidence builders.
+	UsageUpstreamCostEvidence *UsageUpstreamCostEvidenceClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserAllowedGroup is the client for interacting with the UserAllowedGroup builders.
@@ -225,6 +233,8 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.Account = NewAccountClient(tx.config)
+	tx.AccountDailyFinancialValue = NewAccountDailyFinancialValueClient(tx.config)
+	tx.AccountFinancialSetting = NewAccountFinancialSettingClient(tx.config)
 	tx.AccountGroup = NewAccountGroupClient(tx.config)
 	tx.Announcement = NewAnnouncementClient(tx.config)
 	tx.AnnouncementRead = NewAnnouncementReadClient(tx.config)
@@ -255,7 +265,9 @@ func (tx *Tx) init() {
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)
+	tx.UsageCostReview = NewUsageCostReviewClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
+	tx.UsageUpstreamCostEvidence = NewUsageUpstreamCostEvidenceClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserAllowedGroup = NewUserAllowedGroupClient(tx.config)
 	tx.UserAttributeDefinition = NewUserAttributeDefinitionClient(tx.config)

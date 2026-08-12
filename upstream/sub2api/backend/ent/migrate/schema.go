@@ -223,6 +223,64 @@ var (
 			},
 		},
 	}
+	// AccountDailyFinancialValuesColumns holds the columns for the "account_daily_financial_values" table.
+	AccountDailyFinancialValuesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "business_date", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "date"}},
+		{Name: "oauth_cost_cny", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "revenue_override_cny", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "revenue_override_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "revenue_evidence_cutoff_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "revenue_review_cutoff_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "cost_override_cny", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "cost_override_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "cost_evidence_cutoff_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "cost_review_cutoff_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt64},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "account_id", Type: field.TypeInt64},
+	}
+	// AccountDailyFinancialValuesTable holds the schema information for the "account_daily_financial_values" table.
+	AccountDailyFinancialValuesTable = &schema.Table{
+		Name:       "account_daily_financial_values",
+		Columns:    AccountDailyFinancialValuesColumns,
+		PrimaryKey: []*schema.Column{AccountDailyFinancialValuesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "account_daily_financial_values_accounts_account",
+				Columns:    []*schema.Column{AccountDailyFinancialValuesColumns[14]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "account_daily_financial_values_account_date_key",
+				Unique:  true,
+				Columns: []*schema.Column{AccountDailyFinancialValuesColumns[14], AccountDailyFinancialValuesColumns[1]},
+			},
+			{
+				Name:    "idx_account_daily_financial_values_account_id_business_date",
+				Unique:  false,
+				Columns: []*schema.Column{AccountDailyFinancialValuesColumns[14], AccountDailyFinancialValuesColumns[1]},
+			},
+		},
+	}
+	// AccountFinancialSettingsColumns holds the columns for the "account_financial_settings" table.
+	AccountFinancialSettingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "key", Type: field.TypeString, Unique: true, Size: 100},
+		{Name: "enabled_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// AccountFinancialSettingsTable holds the schema information for the "account_financial_settings" table.
+	AccountFinancialSettingsTable = &schema.Table{
+		Name:       "account_financial_settings",
+		Columns:    AccountFinancialSettingsColumns,
+		PrimaryKey: []*schema.Column{AccountFinancialSettingsColumns[0]},
+	}
 	// AccountGroupsColumns holds the columns for the "account_groups" table.
 	AccountGroupsColumns = []*schema.Column{
 		{Name: "priority", Type: field.TypeInt, Default: 50},
@@ -1629,6 +1687,38 @@ var (
 			},
 		},
 	}
+	// UsageCostReviewsColumns holds the columns for the "usage_cost_reviews" table.
+	UsageCostReviewsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "review_status", Type: field.TypeEnum, Enums: []string{"reviewed"}, Default: "reviewed"},
+		{Name: "manual_cost_cny", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "manual_profit_cny", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "reviewed_by", Type: field.TypeInt64},
+		{Name: "reviewed_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "usage_log_id", Type: field.TypeInt64},
+	}
+	// UsageCostReviewsTable holds the schema information for the "usage_cost_reviews" table.
+	UsageCostReviewsTable = &schema.Table{
+		Name:       "usage_cost_reviews",
+		Columns:    UsageCostReviewsColumns,
+		PrimaryKey: []*schema.Column{UsageCostReviewsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "usage_cost_reviews_usage_logs_usage_log",
+				Columns:    []*schema.Column{UsageCostReviewsColumns[7]},
+				RefColumns: []*schema.Column{UsageLogsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_usage_cost_reviews_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsageCostReviewsColumns[7]},
+			},
+		},
+	}
 	// UsageLogsColumns holds the columns for the "usage_logs" table.
 	UsageLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1784,6 +1874,46 @@ var (
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[52], UsageLogsColumns[49]},
+			},
+		},
+	}
+	// UsageUpstreamCostEvidenceColumns holds the columns for the "usage_upstream_cost_evidence" table.
+	UsageUpstreamCostEvidenceColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "source", Type: field.TypeEnum, Enums: []string{"sub", "newapi"}},
+		{Name: "upstream_request_id", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "upstream_billing_time", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "upstream_model", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "sub_actual_cost", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "newapi_quota", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "newapi_quota_per_unit", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "normalized_cost_cny", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "profit_cny", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,10)"}},
+		{Name: "evidence_status", Type: field.TypeEnum, Enums: []string{"confirmed", "confirmed_zero", "unavailable"}},
+		{Name: "reason_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "recorded_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "usage_log_id", Type: field.TypeInt64},
+	}
+	// UsageUpstreamCostEvidenceTable holds the schema information for the "usage_upstream_cost_evidence" table.
+	UsageUpstreamCostEvidenceTable = &schema.Table{
+		Name:       "usage_upstream_cost_evidence",
+		Columns:    UsageUpstreamCostEvidenceColumns,
+		PrimaryKey: []*schema.Column{UsageUpstreamCostEvidenceColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "usage_upstream_cost_evidence_usage_logs_usage_log",
+				Columns:    []*schema.Column{UsageUpstreamCostEvidenceColumns[15]},
+				RefColumns: []*schema.Column{UsageLogsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_usage_upstream_cost_evidence_status_usage_log_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsageUpstreamCostEvidenceColumns[10], UsageUpstreamCostEvidenceColumns[15]},
 			},
 		},
 	}
@@ -2092,6 +2222,8 @@ var (
 	Tables = []*schema.Table{
 		APIKeysTable,
 		AccountsTable,
+		AccountDailyFinancialValuesTable,
+		AccountFinancialSettingsTable,
 		AccountGroupsTable,
 		AnnouncementsTable,
 		AnnouncementReadsTable,
@@ -2122,7 +2254,9 @@ var (
 		SubscriptionPlansTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
+		UsageCostReviewsTable,
 		UsageLogsTable,
+		UsageUpstreamCostEvidenceTable,
 		UsersTable,
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
@@ -2142,6 +2276,13 @@ func init() {
 	AccountsTable.ForeignKeys[1].RefTable = AccountsTable
 	AccountsTable.Annotation = &entsql.Annotation{
 		Table: "accounts",
+	}
+	AccountDailyFinancialValuesTable.ForeignKeys[0].RefTable = AccountsTable
+	AccountDailyFinancialValuesTable.Annotation = &entsql.Annotation{
+		Table: "account_daily_financial_values",
+	}
+	AccountFinancialSettingsTable.Annotation = &entsql.Annotation{
+		Table: "account_financial_settings",
 	}
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
@@ -2252,6 +2393,10 @@ func init() {
 	UsageCleanupTasksTable.Annotation = &entsql.Annotation{
 		Table: "usage_cleanup_tasks",
 	}
+	UsageCostReviewsTable.ForeignKeys[0].RefTable = UsageLogsTable
+	UsageCostReviewsTable.Annotation = &entsql.Annotation{
+		Table: "usage_cost_reviews",
+	}
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable
@@ -2259,6 +2404,10 @@ func init() {
 	UsageLogsTable.ForeignKeys[4].RefTable = UserSubscriptionsTable
 	UsageLogsTable.Annotation = &entsql.Annotation{
 		Table: "usage_logs",
+	}
+	UsageUpstreamCostEvidenceTable.ForeignKeys[0].RefTable = UsageLogsTable
+	UsageUpstreamCostEvidenceTable.Annotation = &entsql.Annotation{
+		Table: "usage_upstream_cost_evidence",
 	}
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",

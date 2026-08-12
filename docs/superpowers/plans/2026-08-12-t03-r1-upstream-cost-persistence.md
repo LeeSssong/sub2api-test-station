@@ -1,4 +1,11 @@
-# T03-R1 Upstream Cost Persistence Implementation Plan
+# T03-R1 Upstream Cost Persistence Implementation Plan (SUPERSEDED — DO NOT EXECUTE)
+
+> **Frozen historical plan.** User decisions replaced the direct `usage_logs`
+> expansion with an independent evidence/reconciliation model. Do not execute
+> any task in this file. The active design is
+> `docs/superpowers/specs/2026-08-12-t03-r1-account-financial-reconciliation-design.md`;
+> a new plan may be written only after that specification receives explicit
+> written approval.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Every task uses a fresh implementer, an independent task reviewer, and a fix/re-review loop before the next task. After all tasks, run a final whole-branch review.
 

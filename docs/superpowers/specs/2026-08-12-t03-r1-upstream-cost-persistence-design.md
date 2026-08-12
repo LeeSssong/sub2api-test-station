@@ -1,4 +1,9 @@
-# T03-R1 上游扣费异步持久化修复设计
+# T03-R1 上游扣费异步持久化修复设计（已废弃）
+
+> **状态：已由用户后续产品决策取代。** 本文件只保留历史追溯，不再是实施事实源。
+> 当前有效规格为
+> `docs/superpowers/specs/2026-08-12-t03-r1-account-financial-reconciliation-design.md`。
+> 禁止依据本文件恢复“直接扩展 usage_logs”实现。
 
 ## 状态与批准门禁
 

@@ -25,6 +25,7 @@ type AccountStatsCostResolution struct {
 //
 // upstreamModel 是最终发往上游的模型 ID。
 // totalCost 是本次请求的客户计费（倍率前），用于优先级 2。
+// serviceTier 是最终参与用户计费的 OpenAI 服务层级，用于优先级 3。
 func resolveAccountStatsCost(
 	ctx context.Context,
 	channelService *ChannelService,
@@ -35,9 +36,10 @@ func resolveAccountStatsCost(
 	tokens UsageTokens,
 	requestCount int,
 	totalCost float64,
+	serviceTier string,
 ) *float64 {
 	resolution := resolveAccountStatsCostResolution(ctx, channelService, billingService,
-		accountID, groupID, upstreamModel, BillingModeToken, "", 0, tokens, requestCount, totalCost)
+		accountID, groupID, upstreamModel, BillingModeToken, "", 0, tokens, requestCount, totalCost, serviceTier)
 	return resolution.StatsCost
 }
 
@@ -54,6 +56,7 @@ func resolveAccountStatsCostResolution(
 	tokens UsageTokens,
 	requestCount int,
 	totalCost float64,
+	serviceTier string,
 ) AccountStatsCostResolution {
 	if channelService == nil || upstreamModel == "" {
 		return AccountStatsCostResolution{ApplyAccountRate: true}
@@ -82,7 +85,7 @@ func resolveAccountStatsCostResolution(
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
-		cost := tryModelFilePricing(billingService, upstreamModel, tokens)
+		cost := tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier)
 		if cost != nil {
 			return AccountStatsCostResolution{StatsCost: cost, ApplyAccountRate: true, Matched: true}
 		}
@@ -91,14 +94,16 @@ func resolveAccountStatsCostResolution(
 	return AccountStatsCostResolution{ApplyAccountRate: true}
 }
 
-// tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的标准价格计算费用。
-func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens) *float64 {
+// tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的价格计算费用。
+func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens, serviceTier string) *float64 {
 	pricing, err := billingService.GetModelPricing(model)
 	if err != nil || pricing == nil {
 		return nil
 	}
-	if billingService.shouldApplySessionLongContextPricing(tokens, pricing) {
-		breakdown, err := billingService.CalculateCost(model, tokens, 1)
+	normalizedTier := normalizeBillingServiceTier(serviceTier)
+	if normalizedTier == "priority" || normalizedTier == "flex" ||
+		billingService.shouldApplySessionLongContextPricing(tokens, pricing) {
+		breakdown, err := billingService.CalculateCostWithServiceTier(model, tokens, 1, normalizedTier)
 		if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
 			return nil
 		}
@@ -323,8 +328,12 @@ func applyAccountStatsCost(
 	if usageLog != nil {
 		imageCount = usageLog.ImageCount
 	}
+	serviceTier := ""
+	if usageLog != nil && usageLog.ServiceTier != nil {
+		serviceTier = *usageLog.ServiceTier
+	}
 	resolution := resolveAccountStatsCostResolution(ctx, cs, bs, accountID, groupID, model,
-		billingMode, imageSize, imageCount, tokens, requestCount, totalCost)
+		billingMode, imageSize, imageCount, tokens, requestCount, totalCost, serviceTier)
 	usageLog.AccountStatsCost = resolution.StatsCost
 	finalCost := totalCost * accountRateMultiplier
 	if resolution.Matched && resolution.StatsCost != nil {

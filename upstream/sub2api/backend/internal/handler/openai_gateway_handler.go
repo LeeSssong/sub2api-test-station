@@ -875,6 +875,32 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
 					}
+					// Pool-mode retries honor the account's configured status codes and
+					// limit. A hard auth classification must not override an explicit
+					// pool retry rule, but semantic output and side effects still make
+					// replay unsafe.
+					poolRetryLimit := account.GetPoolModeRetryCount()
+					poolRetryAllowed := failoverErr.RetryableOnSameAccount &&
+						!failure.OutputStarted && !failure.HasSideEffect && sameAccountRetryCount[account.ID] < poolRetryLimit
+					if retryDecision.RetrySameAccount || poolRetryAllowed {
+						sameAccountRetryCount[account.ID]++
+						forcedRetryAccountID = account.ID
+						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
+						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						reqLog.Warn("openai.pool_mode_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_limit", poolRetryLimit),
+							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+							zap.Duration("retry_delay", retryDelay),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						case <-time.After(retryDelay):
+						}
+						continue
+					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -882,31 +908,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
-					}
-					// The runtime policy supersedes pool retry counts: one safe replay per
-					// logical request avoids multiplying tool/output side effects.
-					if retryDecision.RetrySameAccount || (failoverErr.RetryableOnSameAccount && failure.SafeToReplay && sameAccountRetryCount[account.ID] == 0) {
-						if sameAccountRetryCount[account.ID] == 0 {
-							sameAccountRetryCount[account.ID]++
-							forcedRetryAccountID = account.ID
-							attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-							retryDelay := retryDecision.RetryDelay
-							if retryDelay <= 0 {
-								retryDelay = openAISameAccountRetryDelay(attemptMetadata.AttemptID)
-							}
-							reqLog.Warn("openai.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", 1),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
-							}
-							continue
-						}
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					if failure.OutputStarted {
@@ -1578,32 +1579,33 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 					}
+					// See Responses: an explicit pool retry rule may cover hard auth
+					// status codes, but it never permits replay after output or side effects.
+					poolRetryLimit := account.GetPoolModeRetryCount()
+					poolRetryAllowed := failoverErr.RetryableOnSameAccount &&
+						!failure.OutputStarted && !failure.HasSideEffect && sameAccountRetryCount[account.ID] < poolRetryLimit
+					if retryDecision.RetrySameAccount || poolRetryAllowed {
+						sameAccountRetryCount[account.ID]++
+						forcedRetryAccountID = account.ID
+						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
+						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						reqLog.Warn("openai_messages.pool_mode_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_limit", poolRetryLimit),
+							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+							zap.Duration("retry_delay", retryDelay),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						case <-time.After(retryDelay):
+						}
+						continue
+					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
-					}
-					if retryDecision.RetrySameAccount || (failoverErr.RetryableOnSameAccount && failure.SafeToReplay && sameAccountRetryCount[account.ID] == 0) {
-						if sameAccountRetryCount[account.ID] == 0 {
-							sameAccountRetryCount[account.ID]++
-							forcedRetryAccountID = account.ID
-							attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-							retryDelay := retryDecision.RetryDelay
-							if retryDelay <= 0 {
-								retryDelay = openAISameAccountRetryDelay(attemptMetadata.AttemptID)
-							}
-							reqLog.Warn("openai_messages.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", 1),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
-							}
-							continue
-						}
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					if failure.OutputStarted {
@@ -2514,6 +2516,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffort:      maxReasoningEffort,
 			ReasoningEffortMappings: reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				c.Set(securityAuditWSTurnContextKey, turn)
 				if turn == 1 {
 					return nil
 				}
@@ -3246,7 +3249,11 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 		imageKeepalivePaddingOnly = adjustedSize < 0
 		imageKeepaliveResponseWritten = adjustedSize >= 0
 	}
-	if service.IsResponseCommitted(c) || (!compactKeepaliveCommitted && imageKeepaliveResponseWritten) {
+	compactKeepaliveHasMeaningfulOutput := compactKeepaliveCommitted && service.OpenAICompactKeepaliveAdjustedWrittenSize(c) > 0
+	// Compact keepalive may have committed 200 headers without writing a
+	// semantic SSE event. In that case the Responses stream still needs its
+	// protocol-correct terminal response.failed event.
+	if (service.IsResponseCommitted(c) && (!compactKeepaliveCommitted || compactKeepaliveHasMeaningfulOutput)) || (!compactKeepaliveCommitted && imageKeepaliveResponseWritten) {
 		return false
 	}
 	if c.Writer.Written() && !imageKeepalivePaddingOnly {

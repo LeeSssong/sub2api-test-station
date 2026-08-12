@@ -1,7 +1,8 @@
 # Task 2 Report: Official v0.1.175 Semantic Merge
 
-Status: the initial independent review was `REJECT` with three Important
-blockers. Fix round 1 implementation and required local validation are now
+Status: the initial independent review was `REJECT` with one Important
+replay-safety finding covering both handler loops and their missing regression
+proof. Fix round 1 implementation and required local validation are now
 complete; the new candidate HEAD remains `进行中` and must receive scoped
 independent re-review before root authorization, merge, push, deployment, or
 online verification.
@@ -39,8 +40,8 @@ behavior remains intact.
 
 ## Independent Review Fix
 
-The initial independent review rejected the candidate on three Important
-items:
+The initial independent review rejected the candidate on one Important
+finding. Its required correction had three verification surfaces:
 
 1. Responses requests carrying tools/function side-effect risk could skip the
    configured same-account retry but still fall through to next-account replay
@@ -105,14 +106,16 @@ mark Task 2 complete.
 
 ## Candidate Verification
 
-- Fix-round `GOFLAGS=-mod=mod go test ./internal/handler -count=1`: PASS.
+- Fix-round `GOFLAGS=-mod=mod go test ./internal/handler -count=1`: PASS
+  (`41.107s` on the committed file hashes).
 - Fix-round official empty-completed semantic tests: PASS.
 - Fix-round pool auth and post-output no-replay tests: PASS.
-- Pre-review `GOFLAGS=-mod=mod go test ./internal/service -count=1`: PASS.
-- Pre-review `GOFLAGS=-mod=mod go vet ./internal/handler ./internal/service`: PASS.
+- Fix-round `GOFLAGS=-mod=mod go test ./internal/service -count=1`: PASS
+  (`107.455s`).
+- Fix-round `GOFLAGS=-mod=mod go vet ./internal/handler ./internal/service`: PASS.
 - `pnpm vitest run src/components/admin/usage/__tests__/UsageTable.spec.ts src/views/admin/__tests__/UsageView.spec.ts`:
-  pre-review PASS, 2 files and 39 tests.
-- Pre-review `pnpm typecheck`: PASS.
+  fix-round PASS, 2 files and 39 tests.
+- Fix-round `pnpm typecheck`: PASS.
 - Fix-round `git diff --check`: PASS.
 - Unmerged paths: none.
 - Literal conflict markers under `upstream/sub2api`: none.

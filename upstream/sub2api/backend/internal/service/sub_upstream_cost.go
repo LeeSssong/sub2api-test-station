@@ -110,7 +110,11 @@ func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL
 		if reason != "" || matched == nil {
 			return 0, false, reasonCode, reason
 		}
-		return matched.ActualCost, true, "", ""
+		actualCost, err := matched.ActualCost.Float64()
+		if err != nil {
+			return 0, false, "response_unavailable", "upstream response unavailable"
+		}
+		return actualCost, true, "", ""
 	}
 
 	// Probe metadata may be absent, stale, or failed for a newly deployed
@@ -152,9 +156,9 @@ func (s *SubUpstreamCostService) lookupNewAPIUsageCost(ctx context.Context, base
 }
 
 type subUpstreamUsageRecord struct {
-	RequestID         string  `json:"request_id"`
-	UpstreamRequestID string  `json:"upstream_request_id"`
-	ActualCost        float64 `json:"actual_cost"`
+	RequestID         string                `json:"request_id"`
+	UpstreamRequestID string                `json:"upstream_request_id"`
+	ActualCost        upstreamBillingNumber `json:"actual_cost"`
 }
 
 type subUpstreamUsageRecordsResponse struct {
@@ -232,10 +236,10 @@ func (s *SubUpstreamCostService) findUpstreamRecord(ctx context.Context, endpoin
 }
 
 type newAPIUpstreamUsageRecord struct {
-	Type              int         `json:"type"`
-	Quota             json.Number `json:"quota"`
-	RequestID         string      `json:"request_id"`
-	UpstreamRequestID string      `json:"upstream_request_id"`
+	Type              int                   `json:"type"`
+	Quota             upstreamBillingNumber `json:"quota"`
+	RequestID         string                `json:"request_id"`
+	UpstreamRequestID string                `json:"upstream_request_id"`
 }
 
 type newAPIUpstreamUsageRecordsResponse struct {
@@ -358,7 +362,51 @@ func decodeUpstreamJSON(body []byte, target any) error {
 	return decoder.Decode(target)
 }
 
-func newAPIQuotaToCost(quota, quotaPerUnit json.Number) (float64, error) {
+type upstreamBillingNumber struct {
+	value string
+}
+
+func (n *upstreamBillingNumber) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		n.value = "0"
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		raw = strings.TrimSpace(value)
+		if raw == "" {
+			n.value = "0"
+			return nil
+		}
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return errors.New("upstream billing number is invalid")
+	}
+	n.value = raw
+	return nil
+}
+
+func (n upstreamBillingNumber) String() string {
+	if strings.TrimSpace(n.value) == "" {
+		return "0"
+	}
+	return n.value
+}
+
+func (n upstreamBillingNumber) Float64() (float64, error) {
+	value, err := strconv.ParseFloat(n.String(), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, errors.New("upstream billing number is invalid")
+	}
+	return value, nil
+}
+
+func newAPIQuotaToCost(quota upstreamBillingNumber, quotaPerUnit json.Number) (float64, error) {
 	quotaValue, ok := new(big.Rat).SetString(strings.TrimSpace(quota.String()))
 	if !ok || quotaValue.Sign() < 0 {
 		return 0, errors.New("New API quota is invalid")

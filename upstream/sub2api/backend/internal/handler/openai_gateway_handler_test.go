@@ -2104,6 +2104,14 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) SetRateLimited(ctx context.Cont
 	return nil
 }
 
+func (s *openAIWSFailoverHandlerAccountRepoStub) SetError(ctx context.Context, id int64, errorMsg string) error {
+	return nil
+}
+
+func (s *openAIWSFailoverHandlerAccountRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
+	return nil
+}
+
 type openAIWSUsageHandlerUsageLogRepoStub struct {
 	service.UsageLogRepository
 	created chan *service.UsageLog
@@ -2433,6 +2441,35 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 	}
 }
 
+func TestOpenAIResponses_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry(t *testing.T) {
+	for _, accountConfig := range []struct {
+		name             string
+		poolMode         bool
+		retryStatusCodes []any
+	}{
+		{name: "non_pool"},
+		{name: "pool_override_excludes_auth", poolMode: true, retryStatusCodes: []any{float64(http.StatusTooManyRequests)}},
+	} {
+		for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+			t.Run(accountConfig.name+"_"+strconv.Itoa(statusCode), func(t *testing.T) {
+				h, upstream, groupID := newOpenAIAuthFailoverHandler(t, statusCode, false, accountConfig.poolMode, accountConfig.retryStatusCodes, true)
+
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.2","input":"hello","stream":false}`))
+				c.Request.Header.Set("Content-Type", "application/json")
+				setOpenAIPoolAuthHandlerContext(c, groupID, false)
+
+				h.Responses(c)
+
+				require.Equal(t, []int64{9910, 9911}, upstream.calls())
+				require.Equal(t, http.StatusOK, rec.Code)
+				require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "output.0.content.0.text").String())
+			})
+		}
+	}
+}
+
 func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
@@ -2489,6 +2526,35 @@ func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHea
 	}
 }
 
+func TestOpenAIMessages_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry(t *testing.T) {
+	for _, accountConfig := range []struct {
+		name             string
+		poolMode         bool
+		retryStatusCodes []any
+	}{
+		{name: "non_pool"},
+		{name: "pool_override_excludes_auth", poolMode: true, retryStatusCodes: []any{float64(http.StatusTooManyRequests)}},
+	} {
+		for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+			t.Run(accountConfig.name+"_"+strconv.Itoa(statusCode), func(t *testing.T) {
+				h, upstream, groupID := newOpenAIAuthFailoverHandler(t, statusCode, true, accountConfig.poolMode, accountConfig.retryStatusCodes, false)
+
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.2","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`))
+				c.Request.Header.Set("Content-Type", "application/json")
+				setOpenAIPoolAuthHandlerContext(c, groupID, true)
+
+				h.Messages(c)
+
+				require.Equal(t, []int64{9910, 9911}, upstream.calls())
+				require.Equal(t, http.StatusOK, rec.Code)
+				require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "content.0.text").String())
+			})
+		}
+	}
+}
+
 func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
@@ -2526,21 +2592,32 @@ func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolResultNeverRepla
 }
 
 func newOpenAIPoolAuthFailoverHandler(t *testing.T, statusCode int, healthySSE bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {
+	return newOpenAIAuthFailoverHandler(t, statusCode, healthySSE, true, []any{float64(statusCode)}, healthySSE == false)
+}
+
+func newOpenAIAuthFailoverHandler(t *testing.T, statusCode int, healthySSE, poolMode bool, retryStatusCodes []any, forceResponses bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	groupID := int64(4203)
+	primaryCredentials := map[string]any{
+		"api_key":  "sk-pool",
+		"base_url": "https://api.example.test",
+	}
+	if poolMode {
+		primaryCredentials["pool_mode"] = true
+		primaryCredentials["pool_mode_retry_count"] = float64(1)
+		primaryCredentials["pool_mode_retry_status_codes"] = retryStatusCodes
+	}
+	accountExtra := map[string]any{"openai_passthrough": true}
+	if forceResponses {
+		accountExtra = map[string]any{"openai_responses_mode": "force_responses"}
+	}
 	accounts := []service.Account{
 		{
 			ID: 9910, Name: "pool-api-key", Platform: service.PlatformOpenAI,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Priority: 1,
-			Credentials: map[string]any{
-				"api_key":                      "sk-pool",
-				"base_url":                     "https://api.example.test",
-				"pool_mode":                    true,
-				"pool_mode_retry_count":        float64(1),
-				"pool_mode_retry_status_codes": []any{float64(statusCode)},
-			},
-			Extra: map[string]any{"openai_passthrough": true},
+			Credentials: primaryCredentials,
+			Extra:       accountExtra,
 		},
 		{
 			ID: 9911, Name: "fallback-api-key", Platform: service.PlatformOpenAI,
@@ -2549,7 +2626,7 @@ func newOpenAIPoolAuthFailoverHandler(t *testing.T, statusCode int, healthySSE b
 				"api_key":  "sk-fallback",
 				"base_url": "https://api.example.test",
 			},
-			Extra: map[string]any{"openai_passthrough": true},
+			Extra: accountExtra,
 		},
 	}
 	cfg := &config.Config{RunMode: config.RunModeSimple}

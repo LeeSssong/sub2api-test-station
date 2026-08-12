@@ -18,14 +18,14 @@ type UserErrorRequest struct {
 	CreatedAt       time.Time `json:"created_at"`
 	Model           string    `json:"model"`
 	InboundEndpoint string    `json:"inbound_endpoint"`
-	StatusCode      int       `json:"status_code"`
 	Category        string    `json:"category"`
-	Platform        string    `json:"platform"`
 	Message         string    `json:"message"`
+	ErrorClass      string    `json:"error_class,omitempty"`
+	Meaning         string    `json:"meaning"`
+	Suggestion      string    `json:"suggestion"`
 	KeyName         string    `json:"key_name"`
 	KeyDeleted      bool      `json:"key_deleted"`
 	ClientIP        string    `json:"client_ip,omitempty"`
-	GroupName       string    `json:"group_name,omitempty"`
 	RequestType     *int16    `json:"request_type,omitempty"`
 	Stream          bool      `json:"stream"`
 	UserAgent       string    `json:"user_agent,omitempty"`
@@ -105,33 +105,29 @@ func ToUserErrorRequest(e *OpsErrorLog) *UserErrorRequest {
 	if e.ClientIP != nil {
 		clientIP = *e.ClientIP
 	}
-	return &UserErrorRequest{
+	diagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: *e})
+	out := &UserErrorRequest{
 		ID:              e.ID,
 		CreatedAt:       e.CreatedAt,
 		Model:           model,
 		InboundEndpoint: e.InboundEndpoint,
-		StatusCode:      e.StatusCode,
 		Category:        MapUserErrorCategory(e.Phase, e.Type),
-		Platform:        e.Platform,
-		Message:         e.Message,
 		KeyName:         e.APIKeyName,
 		KeyDeleted:      e.APIKeyDeleted,
 		ClientIP:        clientIP,
-		GroupName:       e.GroupName,
 		RequestType:     e.RequestType,
 		Stream:          e.Stream,
 		UserAgent:       e.UserAgent,
 	}
+	applyNativeUserErrorProjection(out, diagnosis, e.Message)
+	return out
 }
 
 // UserErrorRequestDetail 是错误请求详情的脱敏视图(点击单行查看)。
-// 在 UserErrorRequest 基础上额外暴露 error_body(上游错误响应正文)与 upstream_status_code;
-// 仍严禁任何内部/敏感字段。
+// 原始上游错误、状态与内部账号信息只属于管理员诊断，不进入用户 DTO。
 type UserErrorRequestDetail struct {
 	UserErrorRequest
-	RequestID          string `json:"request_id,omitempty"`
-	ErrorBody          string `json:"error_body"`
-	UpstreamStatusCode *int   `json:"upstream_status_code,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // ToUserErrorRequestDetail 把内部 OpsErrorLogDetail 裁剪为用户安全详情视图。
@@ -140,14 +136,35 @@ func ToUserErrorRequestDetail(e *OpsErrorLogDetail) *UserErrorRequestDetail {
 		return nil
 	}
 	base := ToUserErrorRequest(&e.OpsErrorLog)
+	diagnosis := ProjectNativeErrorDiagnosis(e)
+	applyNativeUserErrorProjection(base, diagnosis, e.Message)
 	requestID := strings.TrimSpace(e.RequestID)
 	if requestID == "" {
 		requestID = strings.TrimSpace(e.ClientRequestID)
 	}
 	return &UserErrorRequestDetail{
-		UserErrorRequest:   *base,
-		RequestID:          requestID,
-		ErrorBody:          e.ErrorBody,
-		UpstreamStatusCode: e.UpstreamStatusCode,
+		UserErrorRequest: *base,
+		RequestID:        requestID,
 	}
+}
+
+func applyNativeUserErrorProjection(out *UserErrorRequest, diagnosis *NativeErrorDiagnosis, nativeMessage string) {
+	if out == nil {
+		return
+	}
+	if diagnosis != nil {
+		out.Message = diagnosis.UserMeaning
+		out.ErrorClass = diagnosis.Class
+		out.Meaning = diagnosis.UserMeaning
+		out.Suggestion = diagnosis.UserSuggestion
+		return
+	}
+	safeMessage := sanitizeNativeDiagnosticEvidence(nativeMessage, 2048)
+	if safeMessage == "" {
+		safeMessage = "请求失败"
+	}
+	out.Message = safeMessage
+	out.ErrorClass = ""
+	out.Meaning = safeMessage
+	out.Suggestion = ""
 }

@@ -116,6 +116,35 @@
 
       </div>
 
+      <div
+        v-if="detail.diagnosis"
+        data-testid="admin-error-diagnosis"
+        class="rounded-xl border border-blue-200 bg-blue-50 p-6 dark:border-blue-900/50 dark:bg-blue-950/20"
+      >
+        <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">
+          {{ t('admin.ops.errorDetail.adminDiagnosis') }}
+        </h3>
+        <div class="mt-4 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div><span class="text-gray-500">{{ t('admin.ops.errorDetail.diagnosisClass') }}：</span><span class="font-mono">{{ detail.diagnosis.class }} / {{ detail.diagnosis.code }}</span></div>
+          <div><span class="text-gray-500">{{ t('admin.ops.errorDetail.diagnosisStage') }}：</span>{{ detail.diagnosis.stage }}</div>
+          <div><span class="text-gray-500">{{ t('admin.ops.errorDetail.diagnosisOwner') }}：</span>{{ detail.diagnosis.ownership }}</div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <span class="font-semibold">
+              {{ detail.diagnosis.upstream_account_selected ? t('admin.ops.errorDetail.selectedUpstream') : t('admin.ops.errorDetail.noUpstreamSelected') }}
+            </span>
+            <span v-if="detail.diagnosis.upstream_account_selected" class="ml-2">
+              {{ detail.diagnosis.selected_account_name || detail.diagnosis.selected_account_id || '—' }}
+              <template v-if="detail.diagnosis.group_name || detail.diagnosis.group_id">
+                · {{ detail.diagnosis.group_name || detail.diagnosis.group_id }}
+              </template>
+            </span>
+          </div>
+          <div v-if="detail.diagnosis.original_upstream_status != null"><span class="text-gray-500">{{ t('admin.ops.errorDetail.originalUpstreamStatus') }}：</span>{{ detail.diagnosis.original_upstream_status }}</div>
+          <div v-if="detail.diagnosis.original_upstream_message" class="break-words sm:col-span-2"><span class="text-gray-500">{{ t('admin.ops.errorDetail.originalUpstreamMessage') }}：</span>{{ detail.diagnosis.original_upstream_message }}</div>
+          <div v-if="detail.diagnosis.original_upstream_detail" class="break-words sm:col-span-2 lg:col-span-3"><span class="text-gray-500">{{ t('admin.ops.errorDetail.originalUpstreamDetail') }}：</span>{{ detail.diagnosis.original_upstream_detail }}</div>
+        </div>
+      </div>
+
       <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
@@ -229,6 +258,10 @@ const showUpstreamList = computed(() => props.errorType === 'request')
 const requestId = computed(() => detail.value?.request_id || detail.value?.client_request_id || '')
 
 const primaryResponseBody = computed(() => {
+	const diagnosis = detail.value?.diagnosis
+	if (diagnosis) {
+		return String(diagnosis.original_upstream_detail || diagnosis.original_upstream_message || '').trim()
+	}
   return resolvePrimaryResponseBody(detail.value, props.errorType)
 })
 
@@ -282,6 +315,9 @@ const correlatedUpstreamErrors = computed<OpsErrorDetail[]>(() => correlatedUpst
 const expandedUpstreamDetailIds = ref(new Set<number>())
 
 function getUpstreamResponsePreview(ev: OpsErrorDetail): string {
+	if (ev.diagnosis) {
+		return String(ev.diagnosis.original_upstream_detail || ev.diagnosis.original_upstream_message || '').trim()
+	}
   const upstreamPayload = resolveUpstreamPayload(ev)
   if (upstreamPayload) return upstreamPayload
   return String(ev.error_body || '').trim()

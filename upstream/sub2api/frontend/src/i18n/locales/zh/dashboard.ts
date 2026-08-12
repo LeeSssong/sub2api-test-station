@@ -521,8 +521,8 @@ export default {
       detail: {
         title: '错误请求详情',
         requestId: '请求 ID',
-        responseBody: '上游响应内容',
-        upstreamStatus: '上游状态码',
+        meaning: '错误含义',
+        suggestion: '处理建议',
         loadFailed: '加载详情失败，请稍后重试',
       },
     },

@@ -45,11 +45,12 @@ const detail = {
   user_id: 11,
   request_id: 'req-user-error-7',
   status_code: 500,
-  upstream_status_code: 502,
+  error_class: 'upstream_failed',
+  meaning: '上游请求失败',
+  suggestion: '请稍后重试；持续失败请联系管理员并提供请求 ID',
   category: 'upstream_error',
   model: 'gpt-5.4',
-  message: 'upstream failed',
-  error_body: '{"error":"failed"}',
+  message: '上游请求失败',
   created_at: '2026-07-25T12:00:00Z',
   client_ip: '203.0.113.7',
   inbound_endpoint: '/v1/responses',
@@ -91,6 +92,26 @@ describe('UserErrorDetailModal', () => {
   beforeEach(() => {
     getMyErrorDetail.mockReset()
     copyToClipboard.mockReset()
+  })
+
+  it('shows only safe meaning and suggestion even if an unsafe legacy payload is returned', async () => {
+    getMyErrorDetail.mockResolvedValue({
+      ...detail,
+      message: 'RAW provider message sk-secret',
+      error_body: '{"api_key":"sk-secret","body":"private prompt"}',
+      upstream_status_code: 503,
+    })
+    const wrapper = mountModal()
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="user-error-meaning"]').text()).toBe('上游请求失败')
+    expect(wrapper.get('[data-testid="user-error-suggestion"]').text()).toContain('提供请求 ID')
+    expect(wrapper.text()).not.toContain('RAW provider message')
+    expect(wrapper.text()).not.toContain('sk-secret')
+    expect(wrapper.text()).not.toContain('private prompt')
+    expect(wrapper.text()).not.toContain('503')
   })
 
   it('renders and copies only the owned request ID', async () => {

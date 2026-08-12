@@ -89,10 +89,6 @@
               <label class="input-label">{{ t('usage.errors.category') }}</label>
               <Select v-model="errorFilter.category" :options="errorCategoryOptions" @change="applyErrorFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[180px]">
-              <label class="input-label">{{ t('usage.errors.status') }}</label>
-              <Select v-model="errorFilter.status_code" :options="errorStatusOptions" @change="applyErrorFilters" />
-            </div>
           </div>
           <div v-else class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
@@ -254,7 +250,6 @@ import type {
   UserErrorRequest,
 } from '@/types'
 import type { Column } from '@/components/common/types'
-import { COMMON_ERROR_STATUS_CODES } from '@/utils/errorBadges'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -285,11 +280,10 @@ const errorPageSize = ref(20)
 const errorSortBy = ref('created_at')
 const errorSortOrder = ref<'asc' | 'desc'>('desc')
 const errorTotal = ref(0)
-const errorFilter = ref<{ model: string | null; category: string; api_key_id: number | null; status_code: number | null }>({
+const errorFilter = ref<{ model: string | null; category: string; api_key_id: number | null }>({
   model: '',
   category: '',
   api_key_id: null,
-  status_code: null,
 })
 
 const errorKeyOptions = computed<SelectOption[]>(() => [
@@ -315,13 +309,6 @@ const errorCategoryCodes = ['auth', 'rate_limit', 'quota', 'invalid_request', 's
 const errorCategoryOptions = computed<SelectOption[]>(() => [
   { value: '', label: t('usage.errors.allCategories') },
   ...errorCategoryCodes.map((c) => ({ value: c, label: t('usage.errors.categories.' + c) })),
-])
-
-// 状态码候选用固定常用列表(与管理端 UsageFilters 共用常量),不受当前页数据限制:
-// 后端 status_code 过滤对全量生效,若只列当前页出现过的码,用户就选不到仅在后续页的码。
-const errorStatusOptions = computed<SelectOption[]>(() => [
-  { value: null, label: t('usage.errors.allStatuses') },
-  ...COMMON_ERROR_STATUS_CODES.map((c) => ({ value: c, label: String(c) })),
 ])
 
 const applyErrorFilters = () => {
@@ -567,7 +554,7 @@ const resetFilters = () => {
   granularity.value = getGranularityForRange(range.start, range.end)
   applyFilters()
   if (activeTab.value === 'errors') {
-    errorFilter.value = { model: '', category: '', api_key_id: null, status_code: null }
+    errorFilter.value = { model: '', category: '', api_key_id: null }
     applyErrorFilters()
   }
 }
@@ -756,7 +743,7 @@ const loadSavedColumns = () => {
 }
 
 // 错误请求 tab 独立列设置(机制同用量列设置,存储互不影响)
-const ERR_ALWAYS_VISIBLE = ['status', 'created_at']
+const ERR_ALWAYS_VISIBLE = ['created_at']
 const ERR_DEFAULT_HIDDEN_COLUMNS = ['user_agent']
 const ERR_HIDDEN_COLUMNS_KEY = 'user-usage-error-hidden-columns'
 
@@ -766,11 +753,8 @@ const errAllColumns = computed<Column[]>(() => [
   { key: 'model', label: t('usage.errors.model') },
   { key: 'endpoint', label: t('usage.errors.endpoint') },
   { key: 'client_ip', label: 'IP' },
-  { key: 'group', label: t('admin.usage.group') },
   { key: 'type', label: t('usage.type') },
-  { key: 'platform', label: t('usage.errors.platform') },
   { key: 'category', label: t('usage.errors.category') },
-  { key: 'status', label: t('usage.errors.status') },
   { key: 'message', label: t('usage.errors.message') },
   { key: 'created_at', label: t('usage.errors.time') },
   { key: 'user_agent', label: t('usage.userAgent') },
@@ -854,7 +838,6 @@ const loadErrors = async () => {
       model: (errorFilter.value.model ?? '').trim() || undefined,
       category: errorFilter.value.category || undefined,
       api_key_id: errorFilter.value.api_key_id ?? undefined,
-      status_code: errorFilter.value.status_code ?? undefined,
       sort_by: errorSortBy.value,
       sort_order: errorSortOrder.value,
     })

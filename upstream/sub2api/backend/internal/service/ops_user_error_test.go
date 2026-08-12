@@ -78,7 +78,8 @@ func TestToUserErrorRequest_RedactsSensitiveFields(t *testing.T) {
 		Platform:        "openai",
 		Phase:           "request",
 		Type:            "rate_limit_error",
-		Message:         "rate limit exceeded",
+		Message:         "rate limit exceeded with internal limiter name",
+		Owner:           "client",
 		APIKeyName:      "my-key",
 		APIKeyDeleted:   true,
 	}
@@ -92,18 +93,32 @@ func TestToUserErrorRequest_RedactsSensitiveFields(t *testing.T) {
 	if out.Category != "rate_limit" {
 		t.Errorf("category=%q", out.Category)
 	}
-	if out.StatusCode != 429 || out.InboundEndpoint != "/v1/chat/completions" || out.Platform != "openai" {
+	if out.InboundEndpoint != "/v1/chat/completions" {
 		t.Errorf("basic fields wrong: %+v", out)
 	}
-	if out.Message != "rate limit exceeded" {
-		t.Errorf("want message=%q, got %q", "rate limit exceeded", out.Message)
-	}
+	require.Equal(t, "local_limit", out.ErrorClass)
+	require.Equal(t, "请求过于频繁", out.Meaning)
+	require.Equal(t, "请稍后重试或降低并发", out.Suggestion)
+	require.Equal(t, out.Meaning, out.Message)
+	require.NotContains(t, out.Message, "internal limiter")
 	if out.KeyName != "my-key" {
 		t.Errorf("want key_name=my-key, got %q", out.KeyName)
 	}
 	if !out.KeyDeleted {
 		t.Error("want key_deleted=true")
 	}
+}
+
+func TestToUserErrorRequestPreservesSanitizedNativeMessageWithoutInventingDiagnosis(t *testing.T) {
+	out := ToUserErrorRequest(&OpsErrorLog{
+		Phase: "request", Type: "invalid_request_error", Owner: "client",
+		Message: `model is required; api_key="sk-private-model-key"`,
+	})
+	require.Empty(t, out.ErrorClass)
+	require.Contains(t, out.Message, "model is required")
+	require.NotContains(t, out.Message, "sk-private-model-key")
+	require.Equal(t, out.Message, out.Meaning)
+	require.Empty(t, out.Suggestion)
 }
 
 func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
@@ -147,25 +162,17 @@ func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 	if out.ID != 999 {
 		t.Errorf("want ID=999, got %d", out.ID)
 	}
-	if out.Message != "upstream error" {
-		t.Errorf("want message=%q, got %q", "upstream error", out.Message)
-	}
-	if out.ErrorBody != src.ErrorBody {
-		t.Errorf("ErrorBody mismatch")
-	}
-	if out.UpstreamStatusCode == nil || *out.UpstreamStatusCode != 503 {
-		t.Errorf("UpstreamStatusCode mismatch")
-	}
+	require.Equal(t, "upstream_failed", out.ErrorClass)
+	require.Equal(t, "上游请求失败", out.Meaning)
+	require.Equal(t, "请稍后重试；持续失败请联系管理员并提供请求 ID", out.Suggestion)
+	require.Equal(t, out.Meaning, out.Message)
 
-	// client_ip / user_agent / group_name / stream 经产品决策开放（与用量明细口径对齐）
+	// client_ip / user_agent / stream 是该用户自己的请求属性。
 	if out.ClientIP != "1.2.3.4" {
 		t.Errorf("want client_ip=1.2.3.4, got %q", out.ClientIP)
 	}
 	if out.UserAgent != "codex_cli_rs/0.125.0" {
 		t.Errorf("want user_agent=codex_cli_rs/0.125.0, got %q", out.UserAgent)
-	}
-	if out.GroupName != "grp-a" {
-		t.Errorf("want group_name=grp-a, got %q", out.GroupName)
 	}
 	if !out.Stream {
 		t.Errorf("want stream=true")
@@ -180,9 +187,15 @@ func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 	for _, forbidden := range []string{
 		"account_id",
 		"client_request_id",
+		"error_body",
+		"group_name",
+		"status_code",
+		"upstream_status_code",
 		"upstream_endpoint",
 		"upstream_model",
 		"user_email",
+		"upstream failed",
+		"server_error",
 	} {
 		if strings.Contains(raw, forbidden) {
 			t.Errorf("sensitive field %q leaked in JSON output: %s", forbidden, raw)
@@ -216,6 +229,10 @@ func TestToUserErrorRequestDetailJSONWhitelistKeepsListAndAdminFieldsRedacted(t 
 	for _, forbidden := range []string{
 		"account_id",
 		"client_request_id",
+		"error_body",
+		"group_name",
+		"status_code",
+		"upstream_status_code",
 		"upstream_endpoint",
 		"upstream_model",
 	} {

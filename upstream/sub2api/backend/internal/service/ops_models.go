@@ -37,6 +37,9 @@ type OpsErrorLog struct {
 	Source string `json:"error_source"`
 
 	Severity string `json:"severity"`
+	// Canonical flag persisted by the native ops error classifier. Keeping it
+	// on the base record makes list and detail diagnosis use the same evidence.
+	IsBusinessLimited bool `json:"is_business_limited"`
 
 	StatusCode int    `json:"status_code"`
 	Platform   string `json:"platform"`
@@ -71,6 +74,12 @@ type OpsErrorLog struct {
 	RequestType      *int16 `json:"request_type"`
 	UserAgent        string `json:"user_agent"`
 
+	// Internal-only evidence selected by list queries so list/detail diagnosis
+	// classifies the same persisted row. These fields are deliberately absent
+	// from list JSON and user DTOs.
+	DiagnosisUpstreamErrorMessage string `json:"-"`
+	DiagnosisUpstreamErrorDetail  string `json:"-"`
+
 	// 关联 api_key 名称（LEFT JOIN api_keys 取得；软删只覆盖 key 列，name 保留，故已删 key 仍有原名）。
 	APIKeyName    string `json:"api_key_name,omitempty"`
 	APIKeyDeleted bool   `json:"api_key_deleted,omitempty"`
@@ -78,6 +87,8 @@ type OpsErrorLog struct {
 
 type OpsErrorLogDetail struct {
 	OpsErrorLog
+
+	Diagnosis *NativeErrorDiagnosis `json:"diagnosis,omitempty"`
 
 	ErrorBody string `json:"error_body"`
 
@@ -93,9 +104,6 @@ type OpsErrorLogDetail struct {
 	UpstreamLatencyMs  *int64 `json:"upstream_latency_ms"`
 	ResponseLatencyMs  *int64 `json:"response_latency_ms"`
 	TimeToFirstTokenMs *int64 `json:"time_to_first_token_ms"`
-
-	// vNext metric semantics
-	IsBusinessLimited bool `json:"is_business_limited"`
 
 	// Bound (non-deleted) key prefix, snapshotted at error time.
 	APIKeyPrefix string `json:"api_key_prefix,omitempty"`

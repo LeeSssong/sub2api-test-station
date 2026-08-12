@@ -2062,14 +2062,14 @@ export interface UserErrorRequest {
   created_at: string
   model: string
   inbound_endpoint: string
-  status_code: number
   category: string
-  platform: string
   message: string
+  error_class?: 'local_limit' | 'upstream_overloaded' | 'upstream_failed' | 'upload_interrupted'
+  meaning: string
+  suggestion: string
   key_name: string
   key_deleted: boolean
   client_ip?: string
-  group_name?: string
   request_type?: number
   stream?: boolean
   user_agent?: string
@@ -2077,8 +2077,6 @@ export interface UserErrorRequest {
 
 export interface UserErrorRequestDetail extends UserErrorRequest {
   request_id?: string
-  error_body: string
-  upstream_status_code?: number
 }
 
 export interface UserErrorListParams {

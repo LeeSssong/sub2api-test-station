@@ -1,9 +1,9 @@
 # Task 2 Report: Official v0.1.175 Semantic Merge
 
-Status: Task 2 fix round 2 implementation and focused local validation are
-complete. The second independent scoped review was `REJECT`; the candidate
-remains `进行中` and must receive a third scoped independent review before root
-authorization, merge, push, deployment, or online verification.
+Status: Task 2 fix round 3 local implementation and all required verification
+gates are complete. The candidate remains `进行中` and must receive the third
+scoped independent review before root authorization, merge, push, deployment,
+or online verification.
 
 ## Candidate
 
@@ -13,6 +13,10 @@ authorization, merge, push, deployment, or online verification.
 - Review-fix implementation: `3cde9e99f081e25eb9074080f0993f27ccffd7b9`
 - Fix-round-2 regressions: `e4cb5363ed7d84451729e3909027c89520dac701`
 - Fix-round-2 helper implementation: `ada3a69dfb22bcdff3922549042afffbed6fba1a`
+- Fix-round-3 semantic failover implementation and symmetric regressions:
+  `d3fc44fa88359ab110897908e7a987e608df54c0`
+- Fix-round-3 explicit endpoint protocol fixture cleanup:
+  `731dedc641c6c2100848813212cb1d760994ed2b`
 - Final candidate SHA: produced by this documentation commit; bind it from
   `git rev-parse HEAD` after the commit succeeds rather than predeclaring its
   not-yet-created object ID in this report.
@@ -35,12 +39,13 @@ the stream read cancellation/deadline/body-size classification guard.
 
 The Responses and Messages loops allow explicitly configured pool statuses,
 including 401/403, to retry on the same account only before semantic output or
-tool/side effects. A replay-safe request may switch to a healthy account after
-the configured same-account retry limit is exhausted, with call sequence
-`[primary, primary, fallback]`. A request containing tools or function output
-consumes the retry decision's `NoRetry` result before the next-account branch,
-so its call sequence remains `[primary]`. Existing post-output no-replay
-behavior remains intact.
+tool/side effects. A replay-safe configured-pool request may switch to a healthy
+account after the same-account retry limit is exhausted, with call sequence
+`[primary, primary, fallback]`. A replay-safe non-pool request, or a pool
+request whose status override excludes 401/403, skips same-account retry but
+may still switch accounts as `[primary, fallback]`. Requests containing tools,
+function output, or tool result remain `[primary]`, and existing post-output
+no-replay behavior remains intact.
 
 ## Independent Review Fix
 
@@ -97,6 +102,37 @@ HEAD while retaining the new tests.
 The resulting new HEAD is pending independent re-review; this report does not
 mark Task 2 complete.
 
+## Fix Round 3
+
+The third independent scoped review retained one Important finding: both
+endpoint loops used the absence of configured same-account pool retry
+eligibility as a proxy for semantic replay unsafety. Safe non-pool 401/403
+requests and pool status overrides excluding 401/403 stopped before
+`ShouldRetryNextAccount()`.
+
+Fix round 3 is bound to:
+
+- `d3fc44fa88359ab110897908e7a987e608df54c0` — symmetric handler regressions,
+  the minimal two-loop separation of semantic safety from pool eligibility,
+  and the account-state methods required by the real non-pool auth path.
+- `731dedc641c6c2100848813212cb1d760994ed2b` — explicit endpoint protocol
+  selection in the shared auth-failover test helper.
+
+The genuine RED on exact starting HEAD
+`ce4e2d320701dfa9fde58b024a005b208d22a766` showed all eight safe endpoint,
+account-mode, and 401/403 combinations calling only `[9910]` instead of
+`[9910, 9911]`. The final focused matrix passes safe non-pool/override
+`[9910, 9911]`, configured pool `[9910, 9910, 9911]`, unsafe tools/function
+output/tool result `[9910]`, and post-output `[9930]`.
+
+Fresh full verification also passes `internal/handler` (`39.981s` on the final
+source/test tree),
+`internal/service` (`108.963s`), handler/service vet, the two required frontend
+files (39 tests), frontend typecheck, gofmt, diff checks, and conflict scans.
+The detailed commands and exact evidence are in `task-2-fix-round-3-report.md`.
+No migration or configuration change was made. The candidate remains pending
+the third independent scoped review.
+
 ## Fix Round 2
 
 The second independent scoped review returned `REJECT` because the side-effect
@@ -143,10 +179,8 @@ candidate is waiting for a third independent scoped review of fix round 2.
 
 ## Candidate Verification Boundary
 
-- Evidence newly bound by fix round 2 is limited to the focused RED/GREEN
-  replay matrix listed above.
-- No package-wide or full-suite test result is newly asserted by this document
-  update.
+- Fix round 3 binds the focused RED/GREEN replay matrix and the fresh full
+  backend/frontend verification listed above.
 - This documentation-only commit is checked with `git diff --check` before it
   is created.
 

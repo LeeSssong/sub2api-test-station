@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1957,6 +1958,7 @@ type openAIHTTPPassthroughAuthFailoverUpstream struct {
 	mu         sync.Mutex
 	accountIDs []int64
 	statusCode int
+	healthySSE bool
 }
 
 func (u *openAIHTTPPassthroughAuthFailoverUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -1964,10 +1966,25 @@ func (u *openAIHTTPPassthroughAuthFailoverUpstream) Do(_ *http.Request, _ string
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.mu.Unlock()
 	if accountID == 9911 {
+		if u.healthySSE {
+			body := strings.Join([]string{
+				`data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"ok"}`,
+				"",
+				`data: {"type":"response.completed","response":{"id":"resp_healthy","object":"response","model":"gpt-5.2","status":"completed","output":[{"type":"message","id":"msg_healthy","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+				"",
+			}, "\n")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_healthy","object":"response","model":"gpt-5.2","status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)),
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_healthy","object":"response","model":"gpt-5.2","status":"completed","output":[{"type":"message","id":"msg_healthy","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
+			)),
 		}, nil
 	}
 	return &http.Response{
@@ -2355,7 +2372,7 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 			cfg.Gateway.MaxAccountSwitches = 1
 
 			accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
-			upstream := &openAIHTTPPassthroughAuthFailoverUpstream{statusCode: tt.statusCode}
+			upstream := &openAIHTTPPassthroughAuthFailoverUpstream{statusCode: tt.statusCode, healthySSE: true}
 			rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
 			billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 			t.Cleanup(billingCacheSvc.Stop)
@@ -2411,8 +2428,118 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 			require.Equal(t, []int64{9910, 9910, 9911}, upstream.calls())
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Equal(t, "resp_healthy", gjson.GetBytes(rec.Body.Bytes(), "id").String())
+			require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "output.0.content.0.text").String())
 		})
 	}
+}
+
+func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, false)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.2","input":"hello","stream":false,"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setOpenAIPoolAuthHandlerContext(c, groupID, false)
+
+			h.Responses(c)
+
+			require.Equal(t, []int64{9910}, upstream.calls(), "tool-capable requests must not retry or switch accounts")
+		})
+	}
+}
+
+func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.2","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setOpenAIPoolAuthHandlerContext(c, groupID, true)
+
+			h.Messages(c)
+
+			require.Equal(t, []int64{9910, 9910, 9911}, upstream.calls())
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, "ok", gjson.GetBytes(rec.Body.Bytes(), "content.0.text").String())
+		})
+	}
+}
+
+func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.2","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}]}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setOpenAIPoolAuthHandlerContext(c, groupID, true)
+
+			h.Messages(c)
+
+			require.Equal(t, []int64{9910}, upstream.calls(), "tool-capable requests must not retry or switch accounts")
+		})
+	}
+}
+
+func newOpenAIPoolAuthFailoverHandler(t *testing.T, statusCode int, healthySSE bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	groupID := int64(4203)
+	accounts := []service.Account{
+		{
+			ID: 9910, Name: "pool-api-key", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Priority: 1,
+			Credentials: map[string]any{
+				"api_key":                      "sk-pool",
+				"base_url":                     "https://api.example.test",
+				"pool_mode":                    true,
+				"pool_mode_retry_count":        float64(1),
+				"pool_mode_retry_status_codes": []any{float64(statusCode)},
+			},
+			Extra: map[string]any{"openai_passthrough": true},
+		},
+		{
+			ID: 9911, Name: "fallback-api-key", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Priority: 2,
+			Credentials: map[string]any{
+				"api_key":  "sk-fallback",
+				"base_url": "https://api.example.test",
+			},
+			Extra: map[string]any{"openai_passthrough": true},
+		},
+	}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.MaxAccountSwitches = 1
+	accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
+	upstream := &openAIHTTPPassthroughAuthFailoverUpstream{statusCode: statusCode, healthySSE: healthySSE}
+	rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCacheSvc.Stop)
+	gatewaySvc := service.NewOpenAIGatewayService(accountRepo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, service.NewBillingService(cfg, nil), rateLimitSvc, billingCacheSvc, upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil)
+	h := NewOpenAIGatewayHandler(gatewaySvc, service.NewConcurrencyService(nil), billingCacheSvc, service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
+	return h, upstream, groupID
+}
+
+func setOpenAIPoolAuthHandlerContext(c *gin.Context, groupID int64, allowMessages bool) {
+	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+		ID: 1803, GroupID: &groupID,
+		User: &service.User{ID: 1703, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			AllowMessagesDispatch: allowMessages,
+		},
+	})
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1703, Concurrency: 0})
 }
 
 func TestOpenAIResponses_APIKeyPassthroughSSERateLimitUsesConfiguredPoolRetry(t *testing.T) {

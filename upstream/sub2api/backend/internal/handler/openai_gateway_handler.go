@@ -880,8 +880,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// pool retry rule, but semantic output and side effects still make
 					// replay unsafe.
 					poolRetryLimit := account.GetPoolModeRetryCount()
-					poolRetryAllowed := failoverErr.RetryableOnSameAccount &&
-						!failure.OutputStarted && !failure.HasSideEffect && sameAccountRetryCount[account.ID] < poolRetryLimit
+					poolReplaySafe := failoverErr.RetryableOnSameAccount && !failure.OutputStarted && !failure.HasSideEffect
+					poolRetryAllowed := poolReplaySafe && sameAccountRetryCount[account.ID] < poolRetryLimit
 					if retryDecision.RetrySameAccount || poolRetryAllowed {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
@@ -900,6 +900,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						case <-time.After(retryDelay):
 						}
 						continue
+					}
+					if retryDecision.NoRetry && !poolReplaySafe {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -1582,8 +1586,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					// See Responses: an explicit pool retry rule may cover hard auth
 					// status codes, but it never permits replay after output or side effects.
 					poolRetryLimit := account.GetPoolModeRetryCount()
-					poolRetryAllowed := failoverErr.RetryableOnSameAccount &&
-						!failure.OutputStarted && !failure.HasSideEffect && sameAccountRetryCount[account.ID] < poolRetryLimit
+					poolReplaySafe := failoverErr.RetryableOnSameAccount && !failure.OutputStarted && !failure.HasSideEffect
+					poolRetryAllowed := poolReplaySafe && sameAccountRetryCount[account.ID] < poolRetryLimit
 					if retryDecision.RetrySameAccount || poolRetryAllowed {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
@@ -1602,6 +1606,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						case <-time.After(retryDelay):
 						}
 						continue
+					}
+					if retryDecision.NoRetry && !poolReplaySafe {
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)

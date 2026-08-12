@@ -229,8 +229,26 @@ func openAIRequestHasSideEffects(body []byte) bool {
 	if len(body) == 0 {
 		return false
 	}
-	return gjson.GetBytes(body, `input.#(type=="function_call_output")`).Exists() ||
-		gjson.GetBytes(body, "tools.#").Int() > 0
+	if gjson.GetBytes(body, `input.#(type=="function_call_output")`).Exists() || gjson.GetBytes(body, "tools.#").Int() > 0 {
+		return true
+	}
+
+	hasToolResult := false
+	gjson.GetBytes(body, "messages").ForEach(func(_, message gjson.Result) bool {
+		content := message.Get("content")
+		if !content.IsArray() {
+			return true
+		}
+		content.ForEach(func(_, block gjson.Result) bool {
+			if block.Get("type").String() == "tool_result" {
+				hasToolResult = true
+				return false
+			}
+			return true
+		})
+		return !hasToolResult
+	})
+	return hasToolResult
 }
 
 func classifyOpenAIAttemptFailure(err error, failoverErr *service.UpstreamFailoverError, outputStarted, hasSideEffects bool) service.OpenAIUpstreamFailureClass {

@@ -6,7 +6,7 @@
 - Official source: tag `v0.1.175`, commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`.
 - Production source commit: `350e050575377d8e31ed153624bb19da3591517f`.
 - Production source tree: `47e98861f921bebb6d62e41e8a44c142d4d7fe4f`.
-- Final documentation main: `72b4dfcdba47075df2795465957a9225f7e8594c`, pushed to `origin/main`.
+- Production acceptance and this report are pushed to `origin/main`.
 - Final review: `APPROVE` in commit `011bf2b0c48f775e624c82bff3bceddf8e12c69a`.
 
 ## Qualification

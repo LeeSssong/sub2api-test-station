@@ -2451,6 +2451,24 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t
 	}
 }
 
+func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithFunctionCallOutputNeverReplays(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.2","input":[{"type":"function_call","id":"item_1","call_id":"call_1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"{}"}],"stream":false}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setOpenAIPoolAuthHandlerContext(c, groupID, false)
+
+			h.Responses(c)
+
+			require.Equal(t, []int64{9910}, upstream.calls(), "function call output requests must not retry or switch accounts")
+		})
+	}
+}
+
 func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
@@ -2485,6 +2503,24 @@ func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t 
 			h.Messages(c)
 
 			require.Equal(t, []int64{9910}, upstream.calls(), "tool-capable requests must not retry or switch accounts")
+		})
+	}
+}
+
+func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolResultNeverReplays(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.2","max_tokens":16,"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_1","content":"{}"}]}]}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setOpenAIPoolAuthHandlerContext(c, groupID, true)
+
+			h.Messages(c)
+
+			require.Equal(t, []int64{9910}, upstream.calls(), "tool result requests must not retry or switch accounts")
 		})
 	}
 }

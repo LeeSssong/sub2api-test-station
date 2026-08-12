@@ -103,7 +103,9 @@ func TestProjectNativeErrorDiagnosisSanitizesAdminEvidence(t *testing.T) {
 }
 
 func TestProjectNativeErrorDiagnosisSanitizesCommonNonJSONCredentials(t *testing.T) {
+	accountID := int64(8)
 	detail := &OpsErrorLogDetail{
+		OpsErrorLog:          OpsErrorLog{Phase: "upstream", Owner: "provider", AccountID: &accountID},
 		UpstreamErrorMessage: "x-api-key: x-secret-123 access_token=oauth-secret-456 Cookie: session=private-cookie",
 		UpstreamErrorDetail:  `api_key=sk-body-secret&access_token=query-secret client_secret="quoted-secret" Authorization: Bearer bearer-secret`,
 	}
@@ -120,14 +122,20 @@ func TestProjectNativeErrorDiagnosisSanitizesCommonNonJSONCredentials(t *testing
 	require.LessOrEqual(t, len(got.OriginalUpstreamDetail), opsMaxStoredErrorBodyBytes)
 }
 
-func TestProjectNativeErrorDiagnosisUnknownFallsBackWithoutInventingSelection(t *testing.T) {
-	got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{})
-	require.Equal(t, "upstream_failed", got.Class)
-	require.Equal(t, "UPSTREAM_FAILED", got.Code)
-	require.Equal(t, "upstream", got.Stage)
-	require.Equal(t, "provider", got.Ownership)
-	require.False(t, got.UpstreamAccountSelected)
-	require.Nil(t, got.SelectedAccountID)
+func TestProjectNativeErrorDiagnosisNonTargetErrorsReturnNil(t *testing.T) {
+	for _, detail := range []*OpsErrorLogDetail{
+		{OpsErrorLog: OpsErrorLog{Phase: "auth", Type: "authentication_error", Owner: "client", Message: "Invalid API key"}},
+		{OpsErrorLog: OpsErrorLog{Phase: "routing", Type: "api_error", Owner: "platform", Message: "No available accounts"}},
+		{OpsErrorLog: OpsErrorLog{Phase: "request", Type: "invalid_request_error", Owner: "client", Message: "model is required"}},
+		{OpsErrorLog: OpsErrorLog{Phase: "auth", Type: "invalid_request_error", Owner: "client", Message: "custom policy rejection", IsBusinessLimited: true}},
+	} {
+		require.Nil(t, ProjectNativeErrorDiagnosis(detail))
+	}
+	detail := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+		Phase: "auth", Type: "authentication_error", Owner: "client", Message: "Invalid API key",
+	}}
+	AttachNativeErrorDiagnosis(detail)
+	require.Nil(t, detail.Diagnosis)
 }
 
 func TestProjectNativeErrorDiagnosisUsesEffectiveListStatusOnlyAfterSelection(t *testing.T) {
@@ -140,13 +148,13 @@ func TestProjectNativeErrorDiagnosisUsesEffectiveListStatusOnlyAfterSelection(t 
 	preselection := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Owner: "client", StatusCode: 429,
 	}})
-	require.Equal(t, NativeErrorClassUpstreamFailed, preselection.Class)
+	require.Nil(t, preselection)
 }
 
 func TestProjectNativeErrorDiagnosisListAndDetailShareCanonicalBusinessLimit(t *testing.T) {
 	base := OpsErrorLog{
-		Phase: "auth", Type: "invalid_request_error", Owner: "client",
-		Message: "custom administrator policy rejection", IsBusinessLimited: true,
+		Phase: "request", Type: "billing_error", Owner: "client",
+		Message: "API key 额度已用完", IsBusinessLimited: true,
 	}
 	listDiagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: base})
 	detailDiagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: base})
@@ -176,8 +184,7 @@ func TestProjectNativeErrorDiagnosisDoesNotCallPreselectionCapacityUpstreamOverl
 	got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "routing", Owner: "platform", Message: "No upstream capacity available",
 	}})
-	require.Equal(t, NativeErrorClassUpstreamFailed, got.Class)
-	require.False(t, got.UpstreamAccountSelected)
+	require.Nil(t, got)
 }
 
 func TestProjectNativeErrorDiagnosisDoesNotTreatOversizedBodyAsInterruptedUpload(t *testing.T) {
@@ -185,7 +192,7 @@ func TestProjectNativeErrorDiagnosisDoesNotTreatOversizedBodyAsInterruptedUpload
 		Phase: "request", Type: "invalid_request_error", Owner: "client",
 		Message: "request body too large",
 	}})
-	require.Equal(t, NativeErrorClassUpstreamFailed, got.Class)
+	require.Nil(t, got)
 }
 
 func TestProjectNativeErrorDiagnosisHTTPAndSSEStoredRecordsShareSemantics(t *testing.T) {

@@ -17,7 +17,7 @@ No transport error code/body changes are made. HTTP and SSE clients keep existin
 
 `OpsErrorLogDetail.diagnosis` contains stable `class` and `code`, stage, ownership, `upstream_account_selected`, optional selected account/group identity, and sanitized original upstream status/message/detail. Account selection is true only when `account_id > 0`. Pre-selection local limits and upload interruptions therefore explicitly project as not selected.
 
-Classification order is upload interruption, local business limit, upstream overload, then generic upstream failure. Unrecognized records use `upstream_failed` with their persisted stage/owner and without inventing account selection.
+Classification order is upload interruption, explicit local business-limit evidence, selected-account upstream overload, then explicit generic upstream-failure evidence. Records outside these four evidenced classes have no diagnosis; administrator JSON omits the diagnosis section and the user projection preserves only a sanitized, bounded native-safe message without inventing `upstream_failed`. The persisted `is_business_limited` flag is supporting canonical evidence but never classifies a record by itself.
 
 The user DTO exposes only `error_class`, a concise Chinese-safe `meaning`, and an actionable `suggestion`. Its existing `message` is replaced by the safe meaning for compatibility with current table rendering. User detail no longer serializes raw error body or upstream status.
 

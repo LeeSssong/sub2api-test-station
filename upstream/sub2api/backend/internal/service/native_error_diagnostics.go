@@ -42,6 +42,9 @@ func ProjectNativeErrorDiagnosis(detail *OpsErrorLogDetail) *NativeErrorDiagnosi
 	}
 
 	class := classifyNativeError(detail)
+	if class == "" {
+		return nil
+	}
 	diagnosis := &NativeErrorDiagnosis{
 		Class:                   class,
 		Stage:                   normalizedNativeErrorStage(detail, class),
@@ -81,8 +84,10 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 			strings.Contains(text, "upload interrupted")) {
 		return NativeErrorClassUploadInterrupted
 	}
-	if detail.IsBusinessLimited || (!accountSelected &&
-		((detail.Phase == "request" && detail.Type == "rate_limit_error") || isNativeLocalLimitText(text))) {
+	localLimitEvidence := (detail.Phase == "request" && (detail.Type == "rate_limit_error" ||
+		detail.Type == "billing_error" || detail.Type == "subscription_error" || detail.Type == "cyber_policy")) ||
+		isNativeLocalLimitText(text)
+	if !accountSelected && localLimitEvidence {
 		return NativeErrorClassLocalLimit
 	}
 	status := 0
@@ -98,7 +103,10 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 		strings.Contains(text, "rate limit")) {
 		return NativeErrorClassUpstreamOverloaded
 	}
-	return NativeErrorClassUpstreamFailed
+	if hasNativeUpstreamFailureEvidence(detail, accountSelected) {
+		return NativeErrorClassUpstreamFailed
+	}
+	return ""
 }
 
 func isNativeLocalLimitText(text string) bool {
@@ -145,6 +153,19 @@ func isNativeLocalLimitText(text string) bool {
 
 func hasSelectedNativeUpstreamAccount(detail *OpsErrorLogDetail) bool {
 	return detail != nil && detail.AccountID != nil && *detail.AccountID > 0
+}
+
+func hasNativeUpstreamFailureEvidence(detail *OpsErrorLogDetail, accountSelected bool) bool {
+	if detail == nil {
+		return false
+	}
+	switch strings.TrimSpace(detail.Phase) {
+	case "upstream", "network", "account_auth":
+		return true
+	}
+	return accountSelected || positiveStatus(detail.UpstreamStatusCode) != nil ||
+		strings.TrimSpace(detail.UpstreamErrorMessage) != "" ||
+		strings.TrimSpace(detail.UpstreamErrorDetail) != ""
 }
 
 func nativeErrorExplanation(class string) (code, meaning, suggestion string) {

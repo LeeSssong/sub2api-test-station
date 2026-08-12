@@ -20,7 +20,7 @@ type UserErrorRequest struct {
 	InboundEndpoint string    `json:"inbound_endpoint"`
 	Category        string    `json:"category"`
 	Message         string    `json:"message"`
-	ErrorClass      string    `json:"error_class"`
+	ErrorClass      string    `json:"error_class,omitempty"`
 	Meaning         string    `json:"meaning"`
 	Suggestion      string    `json:"suggestion"`
 	KeyName         string    `json:"key_name"`
@@ -106,16 +106,12 @@ func ToUserErrorRequest(e *OpsErrorLog) *UserErrorRequest {
 		clientIP = *e.ClientIP
 	}
 	diagnosis := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: *e})
-	return &UserErrorRequest{
+	out := &UserErrorRequest{
 		ID:              e.ID,
 		CreatedAt:       e.CreatedAt,
 		Model:           model,
 		InboundEndpoint: e.InboundEndpoint,
 		Category:        MapUserErrorCategory(e.Phase, e.Type),
-		Message:         diagnosis.UserMeaning,
-		ErrorClass:      diagnosis.Class,
-		Meaning:         diagnosis.UserMeaning,
-		Suggestion:      diagnosis.UserSuggestion,
 		KeyName:         e.APIKeyName,
 		KeyDeleted:      e.APIKeyDeleted,
 		ClientIP:        clientIP,
@@ -123,6 +119,8 @@ func ToUserErrorRequest(e *OpsErrorLog) *UserErrorRequest {
 		Stream:          e.Stream,
 		UserAgent:       e.UserAgent,
 	}
+	applyNativeUserErrorProjection(out, diagnosis, e.Message)
+	return out
 }
 
 // UserErrorRequestDetail 是错误请求详情的脱敏视图(点击单行查看)。
@@ -139,10 +137,7 @@ func ToUserErrorRequestDetail(e *OpsErrorLogDetail) *UserErrorRequestDetail {
 	}
 	base := ToUserErrorRequest(&e.OpsErrorLog)
 	diagnosis := ProjectNativeErrorDiagnosis(e)
-	base.Message = diagnosis.UserMeaning
-	base.ErrorClass = diagnosis.Class
-	base.Meaning = diagnosis.UserMeaning
-	base.Suggestion = diagnosis.UserSuggestion
+	applyNativeUserErrorProjection(base, diagnosis, e.Message)
 	requestID := strings.TrimSpace(e.RequestID)
 	if requestID == "" {
 		requestID = strings.TrimSpace(e.ClientRequestID)
@@ -151,4 +146,25 @@ func ToUserErrorRequestDetail(e *OpsErrorLogDetail) *UserErrorRequestDetail {
 		UserErrorRequest: *base,
 		RequestID:        requestID,
 	}
+}
+
+func applyNativeUserErrorProjection(out *UserErrorRequest, diagnosis *NativeErrorDiagnosis, nativeMessage string) {
+	if out == nil {
+		return
+	}
+	if diagnosis != nil {
+		out.Message = diagnosis.UserMeaning
+		out.ErrorClass = diagnosis.Class
+		out.Meaning = diagnosis.UserMeaning
+		out.Suggestion = diagnosis.UserSuggestion
+		return
+	}
+	safeMessage := sanitizeNativeDiagnosticEvidence(nativeMessage, 2048)
+	if safeMessage == "" {
+		safeMessage = "请求失败"
+	}
+	out.Message = safeMessage
+	out.ErrorClass = ""
+	out.Meaning = safeMessage
+	out.Suggestion = ""
 }

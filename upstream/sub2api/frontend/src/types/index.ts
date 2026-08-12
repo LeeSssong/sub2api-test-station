@@ -2064,7 +2064,7 @@ export interface UserErrorRequest {
   inbound_endpoint: string
   category: string
   message: string
-  error_class: 'local_limit' | 'upstream_overloaded' | 'upstream_failed' | 'upload_interrupted'
+  error_class?: 'local_limit' | 'upstream_overloaded' | 'upstream_failed' | 'upload_interrupted'
   meaning: string
   suggestion: string
   key_name: string

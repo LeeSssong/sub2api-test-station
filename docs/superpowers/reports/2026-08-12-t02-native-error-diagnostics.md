@@ -106,7 +106,7 @@ The frontend build emitted only existing Browserslist age, dynamic/static import
 ## Review / Remaining Risk
 
 - No live browser smoke test, production deployment, or online verification was performed in this candidate task.
-- Classification is intentionally conservative: unknown evidence falls back to `upstream_failed`, and account selection is never inferred without a positive persisted account ID.
+- Classification is intentionally conservative: non-target or unknown evidence produces no diagnosis, and account selection is never inferred without a positive persisted account ID.
 - Root review should confirm the strict user DTO allowlist and administrator-only evidence boundary before merge.
 
 ## Independent Review Follow-up
@@ -116,6 +116,8 @@ The follow-up review identified and fixed three important boundaries without exp
 - `is_business_limited` is now carried by the base persisted error record and selected by the list repository query, so list and detail projections use the same canonical native flag. Text fallback also covers the existing native policy, API-key quota, subscription, platform quota, and model/policy rejection markers.
 - `upstream_overloaded` now requires a positive selected account ID. Pre-selection capacity/overload wording conservatively falls back to `upstream_failed`; selected-account list status still recognizes effective 429/529.
 - Administrator evidence redaction now covers non-JSON `x-api-key`, `api_key`, `access_token`, `refresh_token`, `client_secret`, `authorization`/Bearer, Cookie, quoted values, and key-like prefixes with bounded output. User DTO behavior is unchanged.
+
+A subsequent review removed the former catch-all `upstream_failed` projection. Authentication failures, generic routing failures, required-model validation, oversized request bodies, and a bare `is_business_limited=true` flag now produce `diagnosis=nil`. The administrator diagnosis section is omitted, while the user record keeps only a credential-sanitized, bounded native-safe message with no four-class code or suggestion. `upstream_failed` is emitted only with explicit upstream/network/account-auth, selected-account, upstream status, or upstream evidence fields.
 
 Follow-up TDD evidence:
 

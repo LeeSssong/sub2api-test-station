@@ -109,6 +109,18 @@ func TestToUserErrorRequest_RedactsSensitiveFields(t *testing.T) {
 	}
 }
 
+func TestToUserErrorRequestPreservesSanitizedNativeMessageWithoutInventingDiagnosis(t *testing.T) {
+	out := ToUserErrorRequest(&OpsErrorLog{
+		Phase: "request", Type: "invalid_request_error", Owner: "client",
+		Message: `model is required; api_key="sk-private-model-key"`,
+	})
+	require.Empty(t, out.ErrorClass)
+	require.Contains(t, out.Message, "model is required")
+	require.NotContains(t, out.Message, "sk-private-model-key")
+	require.Equal(t, out.Message, out.Meaning)
+	require.Empty(t, out.Suggestion)
+}
+
 func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 	uid := int64(42)
 	accountID := int64(7)

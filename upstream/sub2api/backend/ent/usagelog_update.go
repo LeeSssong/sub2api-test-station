@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -745,6 +746,120 @@ func (_u *UsageLogUpdate) ClearAccountRateMultiplier() *UsageLogUpdate {
 	return _u
 }
 
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (_u *UsageLogUpdate) SetUpstreamActualCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamActualCost()
+	_u.mutation.SetUpstreamActualCost(v)
+	return _u
+}
+
+// SetNillableUpstreamActualCost sets the "upstream_actual_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamActualCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamActualCost(*v)
+	}
+	return _u
+}
+
+// AddUpstreamActualCost adds value to the "upstream_actual_cost" field.
+func (_u *UsageLogUpdate) AddUpstreamActualCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddUpstreamActualCost(v)
+	return _u
+}
+
+// ClearUpstreamActualCost clears the value of the "upstream_actual_cost" field.
+func (_u *UsageLogUpdate) ClearUpstreamActualCost() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamActualCost()
+	return _u
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (_u *UsageLogUpdate) SetUpstreamCostStatus(v string) *UsageLogUpdate {
+	_u.mutation.SetUpstreamCostStatus(v)
+	return _u
+}
+
+// SetNillableUpstreamCostStatus sets the "upstream_cost_status" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamCostStatus(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamCostStatus(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostStatus clears the value of the "upstream_cost_status" field.
+func (_u *UsageLogUpdate) ClearUpstreamCostStatus() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamCostStatus()
+	return _u
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (_u *UsageLogUpdate) SetUpstreamCostReason(v string) *UsageLogUpdate {
+	_u.mutation.SetUpstreamCostReason(v)
+	return _u
+}
+
+// SetNillableUpstreamCostReason sets the "upstream_cost_reason" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamCostReason(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamCostReason(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostReason clears the value of the "upstream_cost_reason" field.
+func (_u *UsageLogUpdate) ClearUpstreamCostReason() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamCostReason()
+	return _u
+}
+
+// SetProfit sets the "profit" field.
+func (_u *UsageLogUpdate) SetProfit(v float64) *UsageLogUpdate {
+	_u.mutation.ResetProfit()
+	_u.mutation.SetProfit(v)
+	return _u
+}
+
+// SetNillableProfit sets the "profit" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableProfit(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetProfit(*v)
+	}
+	return _u
+}
+
+// AddProfit adds value to the "profit" field.
+func (_u *UsageLogUpdate) AddProfit(v float64) *UsageLogUpdate {
+	_u.mutation.AddProfit(v)
+	return _u
+}
+
+// ClearProfit clears the value of the "profit" field.
+func (_u *UsageLogUpdate) ClearProfit() *UsageLogUpdate {
+	_u.mutation.ClearProfit()
+	return _u
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (_u *UsageLogUpdate) SetUpstreamCostRecordedAt(v time.Time) *UsageLogUpdate {
+	_u.mutation.SetUpstreamCostRecordedAt(v)
+	return _u
+}
+
+// SetNillableUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamCostRecordedAt(v *time.Time) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamCostRecordedAt(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostRecordedAt clears the value of the "upstream_cost_recorded_at" field.
+func (_u *UsageLogUpdate) ClearUpstreamCostRecordedAt() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamCostRecordedAt()
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdate) SetBillingType(v int8) *UsageLogUpdate {
 	_u.mutation.ResetBillingType()
@@ -1223,6 +1338,16 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UpstreamCostStatus(); ok {
+		if err := usagelog.UpstreamCostStatusValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UpstreamCostReason(); ok {
+		if err := usagelog.UpstreamCostReasonValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_reason", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_reason": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -1461,6 +1586,42 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamActualCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamActualCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamActualCost(); ok {
+		_spec.AddField(usagelog.FieldUpstreamActualCost, field.TypeFloat64, value)
+	}
+	if _u.mutation.UpstreamActualCostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamActualCost, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamCostStatus(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostStatus, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamCostStatusCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostStatus, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamCostReason(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostReason, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamCostReasonCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.Profit(); ok {
+		_spec.SetField(usagelog.FieldProfit, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProfit(); ok {
+		_spec.AddField(usagelog.FieldProfit, field.TypeFloat64, value)
+	}
+	if _u.mutation.ProfitCleared() {
+		_spec.ClearField(usagelog.FieldProfit, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamCostRecordedAt(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostRecordedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UpstreamCostRecordedAtCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostRecordedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -2439,6 +2600,120 @@ func (_u *UsageLogUpdateOne) ClearAccountRateMultiplier() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (_u *UsageLogUpdateOne) SetUpstreamActualCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamActualCost()
+	_u.mutation.SetUpstreamActualCost(v)
+	return _u
+}
+
+// SetNillableUpstreamActualCost sets the "upstream_actual_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamActualCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamActualCost(*v)
+	}
+	return _u
+}
+
+// AddUpstreamActualCost adds value to the "upstream_actual_cost" field.
+func (_u *UsageLogUpdateOne) AddUpstreamActualCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamActualCost(v)
+	return _u
+}
+
+// ClearUpstreamActualCost clears the value of the "upstream_actual_cost" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamActualCost() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamActualCost()
+	return _u
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (_u *UsageLogUpdateOne) SetUpstreamCostStatus(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUpstreamCostStatus(v)
+	return _u
+}
+
+// SetNillableUpstreamCostStatus sets the "upstream_cost_status" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamCostStatus(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamCostStatus(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostStatus clears the value of the "upstream_cost_status" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamCostStatus() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamCostStatus()
+	return _u
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (_u *UsageLogUpdateOne) SetUpstreamCostReason(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUpstreamCostReason(v)
+	return _u
+}
+
+// SetNillableUpstreamCostReason sets the "upstream_cost_reason" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamCostReason(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamCostReason(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostReason clears the value of the "upstream_cost_reason" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamCostReason() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamCostReason()
+	return _u
+}
+
+// SetProfit sets the "profit" field.
+func (_u *UsageLogUpdateOne) SetProfit(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetProfit()
+	_u.mutation.SetProfit(v)
+	return _u
+}
+
+// SetNillableProfit sets the "profit" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableProfit(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetProfit(*v)
+	}
+	return _u
+}
+
+// AddProfit adds value to the "profit" field.
+func (_u *UsageLogUpdateOne) AddProfit(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddProfit(v)
+	return _u
+}
+
+// ClearProfit clears the value of the "profit" field.
+func (_u *UsageLogUpdateOne) ClearProfit() *UsageLogUpdateOne {
+	_u.mutation.ClearProfit()
+	return _u
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (_u *UsageLogUpdateOne) SetUpstreamCostRecordedAt(v time.Time) *UsageLogUpdateOne {
+	_u.mutation.SetUpstreamCostRecordedAt(v)
+	return _u
+}
+
+// SetNillableUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamCostRecordedAt(v *time.Time) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamCostRecordedAt(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamCostRecordedAt clears the value of the "upstream_cost_recorded_at" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamCostRecordedAt() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamCostRecordedAt()
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdateOne) SetBillingType(v int8) *UsageLogUpdateOne {
 	_u.mutation.ResetBillingType()
@@ -2930,6 +3205,16 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UpstreamCostStatus(); ok {
+		if err := usagelog.UpstreamCostStatusValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UpstreamCostReason(); ok {
+		if err := usagelog.UpstreamCostReasonValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_reason", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_reason": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -3185,6 +3470,42 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamActualCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamActualCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamActualCost(); ok {
+		_spec.AddField(usagelog.FieldUpstreamActualCost, field.TypeFloat64, value)
+	}
+	if _u.mutation.UpstreamActualCostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamActualCost, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamCostStatus(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostStatus, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamCostStatusCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostStatus, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamCostReason(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostReason, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamCostReasonCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.Profit(); ok {
+		_spec.SetField(usagelog.FieldProfit, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProfit(); ok {
+		_spec.AddField(usagelog.FieldProfit, field.TypeFloat64, value)
+	}
+	if _u.mutation.ProfitCleared() {
+		_spec.ClearField(usagelog.FieldProfit, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.UpstreamCostRecordedAt(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostRecordedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UpstreamCostRecordedAtCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCostRecordedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)

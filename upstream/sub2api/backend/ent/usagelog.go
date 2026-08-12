@@ -97,6 +97,16 @@ type UsageLog struct {
 	LongContextBillingApplied bool `json:"long_context_billing_applied,omitempty"`
 	// AccountRateMultiplier holds the value of the "account_rate_multiplier" field.
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier,omitempty"`
+	// UpstreamActualCost holds the value of the "upstream_actual_cost" field.
+	UpstreamActualCost *float64 `json:"upstream_actual_cost,omitempty"`
+	// UpstreamCostStatus holds the value of the "upstream_cost_status" field.
+	UpstreamCostStatus *string `json:"upstream_cost_status,omitempty"`
+	// UpstreamCostReason holds the value of the "upstream_cost_reason" field.
+	UpstreamCostReason *string `json:"upstream_cost_reason,omitempty"`
+	// Profit holds the value of the "profit" field.
+	Profit *float64 `json:"profit,omitempty"`
+	// UpstreamCostRecordedAt holds the value of the "upstream_cost_recorded_at" field.
+	UpstreamCostRecordedAt *time.Time `json:"upstream_cost_recorded_at,omitempty"`
 	// BillingType holds the value of the "billing_type" field.
 	BillingType int8 `json:"billing_type,omitempty"`
 	// Stream holds the value of the "stream" field.
@@ -218,13 +228,13 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case usagelog.FieldReconciliationRequired, usagelog.FieldUnsafeToReplay, usagelog.FieldUpstreamModelMismatch, usagelog.FieldLongContextBillingApplied, usagelog.FieldStream, usagelog.FieldCacheTTLOverridden:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
+		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier, usagelog.FieldUpstreamActualCost, usagelog.FieldProfit:
 			values[i] = new(sql.NullFloat64)
 		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldUpstreamRequestID, usagelog.FieldLogicalRequestID, usagelog.FieldAttemptID, usagelog.FieldUsageCompleteness, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldActualResponseModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
+		case usagelog.FieldRequestID, usagelog.FieldUpstreamRequestID, usagelog.FieldLogicalRequestID, usagelog.FieldAttemptID, usagelog.FieldUsageCompleteness, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldActualResponseModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUpstreamCostStatus, usagelog.FieldUpstreamCostReason, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
-		case usagelog.FieldCreatedAt:
+		case usagelog.FieldUpstreamCostRecordedAt, usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -483,6 +493,41 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.AccountRateMultiplier = new(float64)
 				*_m.AccountRateMultiplier = value.Float64
+			}
+		case usagelog.FieldUpstreamActualCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_actual_cost", values[i])
+			} else if value.Valid {
+				_m.UpstreamActualCost = new(float64)
+				*_m.UpstreamActualCost = value.Float64
+			}
+		case usagelog.FieldUpstreamCostStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_cost_status", values[i])
+			} else if value.Valid {
+				_m.UpstreamCostStatus = new(string)
+				*_m.UpstreamCostStatus = value.String
+			}
+		case usagelog.FieldUpstreamCostReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_cost_reason", values[i])
+			} else if value.Valid {
+				_m.UpstreamCostReason = new(string)
+				*_m.UpstreamCostReason = value.String
+			}
+		case usagelog.FieldProfit:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field profit", values[i])
+			} else if value.Valid {
+				_m.Profit = new(float64)
+				*_m.Profit = value.Float64
+			}
+		case usagelog.FieldUpstreamCostRecordedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_cost_recorded_at", values[i])
+			} else if value.Valid {
+				_m.UpstreamCostRecordedAt = new(time.Time)
+				*_m.UpstreamCostRecordedAt = value.Time
 			}
 		case usagelog.FieldBillingType:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -798,6 +843,31 @@ func (_m *UsageLog) String() string {
 	if v := _m.AccountRateMultiplier; v != nil {
 		builder.WriteString("account_rate_multiplier=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamActualCost; v != nil {
+		builder.WriteString("upstream_actual_cost=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamCostStatus; v != nil {
+		builder.WriteString("upstream_cost_status=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamCostReason; v != nil {
+		builder.WriteString("upstream_cost_reason=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.Profit; v != nil {
+		builder.WriteString("profit=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamCostRecordedAt; v != nil {
+		builder.WriteString("upstream_cost_recorded_at=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("billing_type=")

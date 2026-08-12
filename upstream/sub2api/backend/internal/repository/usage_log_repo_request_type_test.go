@@ -284,19 +284,19 @@ func TestPrepareUsageLogInsert_AccountCostWiring(t *testing.T) {
 		CreatedAt:   time.Date(2025, 1, 5, 12, 0, 0, 0, time.UTC),
 	})
 
-	require.Equal(t, &accountCost, prepared.args[len(prepared.args)-8], "account_cost must precede session and reconciliation metadata")
+	require.Equal(t, &accountCost, prepared.args[len(prepared.args)-13], "account_cost must precede session and reconciliation metadata")
 	batchQuery, batchArgs := buildUsageLogBatchInsertQuery(
 		[]string{usageLogBatchKey(prepared.requestID, 2)},
 		map[string]usageLogInsertPrepared{usageLogBatchKey(prepared.requestID, 2): prepared},
 	)
 	require.Contains(t, batchQuery, "account_cost")
 	require.Len(t, batchArgs, len(prepared.args)+1)
-	require.Equal(t, &accountCost, batchArgs[1+(len(prepared.args)-8)], "batch account_cost must follow account_stats_cost")
+	require.Equal(t, &accountCost, batchArgs[1+(len(prepared.args)-13)], "batch account_cost must follow account_stats_cost")
 
 	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
 	require.Contains(t, bestEffortQuery, "account_cost")
 	require.Len(t, bestEffortArgs, len(prepared.args))
-	require.Equal(t, &accountCost, bestEffortArgs[len(prepared.args)-8], "best-effort account_cost must follow account_stats_cost")
+	require.Equal(t, &accountCost, bestEffortArgs[len(prepared.args)-13], "best-effort account_cost must follow account_stats_cost")
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {

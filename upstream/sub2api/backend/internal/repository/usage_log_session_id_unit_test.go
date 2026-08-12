@@ -32,7 +32,7 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // precedes the five retry-audit fields and created_at.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 66, "arg-type table must include upstream response, account cost, session, and retry audit fields")
+	require.Len(t, usageLogInsertArgTypes, 71, "arg-type table must include upstream cost persistence fields")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
@@ -40,13 +40,13 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	sessionArg := prepared.args[len(prepared.args)-7]
+	sessionArg := prepared.args[len(prepared.args)-12]
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.True(t, ns.Valid)
 	require.Equal(t, sessionID, ns.String)
 
-	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-7],
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-12],
 		"session_id arg type must be text")
 }
 
@@ -54,14 +54,14 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 // persisted as SQL NULL rather than an empty string.
 func TestPrepareUsageLogInsert_SessionIDNullWhenAbsent(t *testing.T) {
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(nil))
-	sessionArg := prepared.args[len(prepared.args)-7]
+	sessionArg := prepared.args[len(prepared.args)-12]
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.False(t, ns.Valid, "absent session id must be NULL, not empty string")
 
 	empty := ""
 	preparedEmpty := prepareUsageLogInsert(newSessionIDUsageLog(&empty))
-	nsEmpty := preparedEmpty.args[len(preparedEmpty.args)-7].(sql.NullString)
+	nsEmpty := preparedEmpty.args[len(preparedEmpty.args)-12].(sql.NullString)
 	require.False(t, nsEmpty.Valid, "empty session id must also be NULL")
 }
 
@@ -98,11 +98,11 @@ func TestPrepareUsageLogInsert_AttemptAuditFields(t *testing.T) {
 	log.UnsafeToReplay = true
 	prepared := prepareUsageLogInsert(log)
 
-	require.Equal(t, "logical-1", prepared.args[len(prepared.args)-6].(sql.NullString).String)
-	require.Equal(t, "logical-1:2", prepared.args[len(prepared.args)-5].(sql.NullString).String)
-	require.Equal(t, "partial", prepared.args[len(prepared.args)-4])
-	require.Equal(t, true, prepared.args[len(prepared.args)-3])
-	require.Equal(t, true, prepared.args[len(prepared.args)-2])
+	require.Equal(t, "logical-1", prepared.args[len(prepared.args)-11].(sql.NullString).String)
+	require.Equal(t, "logical-1:2", prepared.args[len(prepared.args)-10].(sql.NullString).String)
+	require.Equal(t, "partial", prepared.args[len(prepared.args)-9])
+	require.Equal(t, true, prepared.args[len(prepared.args)-8])
+	require.Equal(t, true, prepared.args[len(prepared.args)-7])
 	for _, column := range []string{"logical_request_id", "attempt_id", "usage_completeness", "reconciliation_required", "unsafe_to_replay"} {
 		require.Contains(t, usageLogSelectColumns, column)
 	}
@@ -114,5 +114,5 @@ func TestPrepareUsageLogInsert_NormalizesUnsupportedUsageCompleteness(t *testing
 
 	prepared := prepareUsageLogInsert(log)
 
-	require.Equal(t, "unknown", prepared.args[len(prepared.args)-4])
+	require.Equal(t, "unknown", prepared.args[len(prepared.args)-9])
 }

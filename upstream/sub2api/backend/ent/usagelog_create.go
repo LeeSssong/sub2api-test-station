@@ -505,6 +505,76 @@ func (_c *UsageLogCreate) SetNillableAccountRateMultiplier(v *float64) *UsageLog
 	return _c
 }
 
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (_c *UsageLogCreate) SetUpstreamActualCost(v float64) *UsageLogCreate {
+	_c.mutation.SetUpstreamActualCost(v)
+	return _c
+}
+
+// SetNillableUpstreamActualCost sets the "upstream_actual_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamActualCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamActualCost(*v)
+	}
+	return _c
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (_c *UsageLogCreate) SetUpstreamCostStatus(v string) *UsageLogCreate {
+	_c.mutation.SetUpstreamCostStatus(v)
+	return _c
+}
+
+// SetNillableUpstreamCostStatus sets the "upstream_cost_status" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamCostStatus(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamCostStatus(*v)
+	}
+	return _c
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (_c *UsageLogCreate) SetUpstreamCostReason(v string) *UsageLogCreate {
+	_c.mutation.SetUpstreamCostReason(v)
+	return _c
+}
+
+// SetNillableUpstreamCostReason sets the "upstream_cost_reason" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamCostReason(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamCostReason(*v)
+	}
+	return _c
+}
+
+// SetProfit sets the "profit" field.
+func (_c *UsageLogCreate) SetProfit(v float64) *UsageLogCreate {
+	_c.mutation.SetProfit(v)
+	return _c
+}
+
+// SetNillableProfit sets the "profit" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableProfit(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetProfit(*v)
+	}
+	return _c
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (_c *UsageLogCreate) SetUpstreamCostRecordedAt(v time.Time) *UsageLogCreate {
+	_c.mutation.SetUpstreamCostRecordedAt(v)
+	return _c
+}
+
+// SetNillableUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamCostRecordedAt(v *time.Time) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamCostRecordedAt(*v)
+	}
+	return _c
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_c *UsageLogCreate) SetBillingType(v int8) *UsageLogCreate {
 	_c.mutation.SetBillingType(v)
@@ -1022,6 +1092,16 @@ func (_c *UsageLogCreate) check() error {
 	if _, ok := _c.mutation.LongContextBillingApplied(); !ok {
 		return &ValidationError{Name: "long_context_billing_applied", err: errors.New(`ent: missing required field "UsageLog.long_context_billing_applied"`)}
 	}
+	if v, ok := _c.mutation.UpstreamCostStatus(); ok {
+		if err := usagelog.UpstreamCostStatusValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_status": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.UpstreamCostReason(); ok {
+		if err := usagelog.UpstreamCostReasonValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_cost_reason", err: fmt.Errorf(`ent: validator failed for field "UsageLog.upstream_cost_reason": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
 	}
@@ -1238,6 +1318,26 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AccountRateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64, value)
 		_node.AccountRateMultiplier = &value
+	}
+	if value, ok := _c.mutation.UpstreamActualCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamActualCost, field.TypeFloat64, value)
+		_node.UpstreamActualCost = &value
+	}
+	if value, ok := _c.mutation.UpstreamCostStatus(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostStatus, field.TypeString, value)
+		_node.UpstreamCostStatus = &value
+	}
+	if value, ok := _c.mutation.UpstreamCostReason(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostReason, field.TypeString, value)
+		_node.UpstreamCostReason = &value
+	}
+	if value, ok := _c.mutation.Profit(); ok {
+		_spec.SetField(usagelog.FieldProfit, field.TypeFloat64, value)
+		_node.Profit = &value
+	}
+	if value, ok := _c.mutation.UpstreamCostRecordedAt(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCostRecordedAt, field.TypeTime, value)
+		_node.UpstreamCostRecordedAt = &value
 	}
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -2065,6 +2165,108 @@ func (u *UsageLogUpsert) AddAccountRateMultiplier(v float64) *UsageLogUpsert {
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (u *UsageLogUpsert) ClearAccountRateMultiplier() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldAccountRateMultiplier)
+	return u
+}
+
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (u *UsageLogUpsert) SetUpstreamActualCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamActualCost, v)
+	return u
+}
+
+// UpdateUpstreamActualCost sets the "upstream_actual_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamActualCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamActualCost)
+	return u
+}
+
+// AddUpstreamActualCost adds v to the "upstream_actual_cost" field.
+func (u *UsageLogUpsert) AddUpstreamActualCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamActualCost, v)
+	return u
+}
+
+// ClearUpstreamActualCost clears the value of the "upstream_actual_cost" field.
+func (u *UsageLogUpsert) ClearUpstreamActualCost() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamActualCost)
+	return u
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (u *UsageLogUpsert) SetUpstreamCostStatus(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamCostStatus, v)
+	return u
+}
+
+// UpdateUpstreamCostStatus sets the "upstream_cost_status" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamCostStatus() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamCostStatus)
+	return u
+}
+
+// ClearUpstreamCostStatus clears the value of the "upstream_cost_status" field.
+func (u *UsageLogUpsert) ClearUpstreamCostStatus() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamCostStatus)
+	return u
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (u *UsageLogUpsert) SetUpstreamCostReason(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamCostReason, v)
+	return u
+}
+
+// UpdateUpstreamCostReason sets the "upstream_cost_reason" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamCostReason() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamCostReason)
+	return u
+}
+
+// ClearUpstreamCostReason clears the value of the "upstream_cost_reason" field.
+func (u *UsageLogUpsert) ClearUpstreamCostReason() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamCostReason)
+	return u
+}
+
+// SetProfit sets the "profit" field.
+func (u *UsageLogUpsert) SetProfit(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldProfit, v)
+	return u
+}
+
+// UpdateProfit sets the "profit" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateProfit() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldProfit)
+	return u
+}
+
+// AddProfit adds v to the "profit" field.
+func (u *UsageLogUpsert) AddProfit(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldProfit, v)
+	return u
+}
+
+// ClearProfit clears the value of the "profit" field.
+func (u *UsageLogUpsert) ClearProfit() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldProfit)
+	return u
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsert) SetUpstreamCostRecordedAt(v time.Time) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamCostRecordedAt, v)
+	return u
+}
+
+// UpdateUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamCostRecordedAt() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamCostRecordedAt)
+	return u
+}
+
+// ClearUpstreamCostRecordedAt clears the value of the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsert) ClearUpstreamCostRecordedAt() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamCostRecordedAt)
 	return u
 }
 
@@ -3132,6 +3334,125 @@ func (u *UsageLogUpsertOne) UpdateAccountRateMultiplier() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearAccountRateMultiplier() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (u *UsageLogUpsertOne) SetUpstreamActualCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamActualCost(v)
+	})
+}
+
+// AddUpstreamActualCost adds v to the "upstream_actual_cost" field.
+func (u *UsageLogUpsertOne) AddUpstreamActualCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamActualCost(v)
+	})
+}
+
+// UpdateUpstreamActualCost sets the "upstream_actual_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamActualCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamActualCost()
+	})
+}
+
+// ClearUpstreamActualCost clears the value of the "upstream_actual_cost" field.
+func (u *UsageLogUpsertOne) ClearUpstreamActualCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamActualCost()
+	})
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (u *UsageLogUpsertOne) SetUpstreamCostStatus(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostStatus(v)
+	})
+}
+
+// UpdateUpstreamCostStatus sets the "upstream_cost_status" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamCostStatus() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostStatus()
+	})
+}
+
+// ClearUpstreamCostStatus clears the value of the "upstream_cost_status" field.
+func (u *UsageLogUpsertOne) ClearUpstreamCostStatus() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostStatus()
+	})
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (u *UsageLogUpsertOne) SetUpstreamCostReason(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostReason(v)
+	})
+}
+
+// UpdateUpstreamCostReason sets the "upstream_cost_reason" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamCostReason() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostReason()
+	})
+}
+
+// ClearUpstreamCostReason clears the value of the "upstream_cost_reason" field.
+func (u *UsageLogUpsertOne) ClearUpstreamCostReason() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostReason()
+	})
+}
+
+// SetProfit sets the "profit" field.
+func (u *UsageLogUpsertOne) SetProfit(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetProfit(v)
+	})
+}
+
+// AddProfit adds v to the "profit" field.
+func (u *UsageLogUpsertOne) AddProfit(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddProfit(v)
+	})
+}
+
+// UpdateProfit sets the "profit" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateProfit() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateProfit()
+	})
+}
+
+// ClearProfit clears the value of the "profit" field.
+func (u *UsageLogUpsertOne) ClearProfit() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearProfit()
+	})
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsertOne) SetUpstreamCostRecordedAt(v time.Time) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostRecordedAt(v)
+	})
+}
+
+// UpdateUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamCostRecordedAt() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostRecordedAt()
+	})
+}
+
+// ClearUpstreamCostRecordedAt clears the value of the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsertOne) ClearUpstreamCostRecordedAt() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostRecordedAt()
 	})
 }
 
@@ -4414,6 +4735,125 @@ func (u *UsageLogUpsertBulk) UpdateAccountRateMultiplier() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearAccountRateMultiplier() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetUpstreamActualCost sets the "upstream_actual_cost" field.
+func (u *UsageLogUpsertBulk) SetUpstreamActualCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamActualCost(v)
+	})
+}
+
+// AddUpstreamActualCost adds v to the "upstream_actual_cost" field.
+func (u *UsageLogUpsertBulk) AddUpstreamActualCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamActualCost(v)
+	})
+}
+
+// UpdateUpstreamActualCost sets the "upstream_actual_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamActualCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamActualCost()
+	})
+}
+
+// ClearUpstreamActualCost clears the value of the "upstream_actual_cost" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamActualCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamActualCost()
+	})
+}
+
+// SetUpstreamCostStatus sets the "upstream_cost_status" field.
+func (u *UsageLogUpsertBulk) SetUpstreamCostStatus(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostStatus(v)
+	})
+}
+
+// UpdateUpstreamCostStatus sets the "upstream_cost_status" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamCostStatus() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostStatus()
+	})
+}
+
+// ClearUpstreamCostStatus clears the value of the "upstream_cost_status" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamCostStatus() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostStatus()
+	})
+}
+
+// SetUpstreamCostReason sets the "upstream_cost_reason" field.
+func (u *UsageLogUpsertBulk) SetUpstreamCostReason(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostReason(v)
+	})
+}
+
+// UpdateUpstreamCostReason sets the "upstream_cost_reason" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamCostReason() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostReason()
+	})
+}
+
+// ClearUpstreamCostReason clears the value of the "upstream_cost_reason" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamCostReason() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostReason()
+	})
+}
+
+// SetProfit sets the "profit" field.
+func (u *UsageLogUpsertBulk) SetProfit(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetProfit(v)
+	})
+}
+
+// AddProfit adds v to the "profit" field.
+func (u *UsageLogUpsertBulk) AddProfit(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddProfit(v)
+	})
+}
+
+// UpdateProfit sets the "profit" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateProfit() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateProfit()
+	})
+}
+
+// ClearProfit clears the value of the "profit" field.
+func (u *UsageLogUpsertBulk) ClearProfit() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearProfit()
+	})
+}
+
+// SetUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsertBulk) SetUpstreamCostRecordedAt(v time.Time) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCostRecordedAt(v)
+	})
+}
+
+// UpdateUpstreamCostRecordedAt sets the "upstream_cost_recorded_at" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamCostRecordedAt() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCostRecordedAt()
+	})
+}
+
+// ClearUpstreamCostRecordedAt clears the value of the "upstream_cost_recorded_at" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamCostRecordedAt() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCostRecordedAt()
 	})
 }
 

@@ -240,6 +240,31 @@ func AccountRateMultiplier(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldAccountRateMultiplier, v))
 }
 
+// UpstreamActualCost applies equality check predicate on the "upstream_actual_cost" field. It's identical to UpstreamActualCostEQ.
+func UpstreamActualCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamActualCost, v))
+}
+
+// UpstreamCostStatus applies equality check predicate on the "upstream_cost_status" field. It's identical to UpstreamCostStatusEQ.
+func UpstreamCostStatus(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostReason applies equality check predicate on the "upstream_cost_reason" field. It's identical to UpstreamCostReasonEQ.
+func UpstreamCostReason(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostReason, v))
+}
+
+// Profit applies equality check predicate on the "profit" field. It's identical to ProfitEQ.
+func Profit(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldProfit, v))
+}
+
+// UpstreamCostRecordedAt applies equality check predicate on the "upstream_cost_recorded_at" field. It's identical to UpstreamCostRecordedAtEQ.
+func UpstreamCostRecordedAt(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostRecordedAt, v))
+}
+
 // BillingType applies equality check predicate on the "billing_type" field. It's identical to BillingTypeEQ.
 func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
@@ -2053,6 +2078,306 @@ func AccountRateMultiplierIsNil() predicate.UsageLog {
 // AccountRateMultiplierNotNil applies the NotNil predicate on the "account_rate_multiplier" field.
 func AccountRateMultiplierNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldAccountRateMultiplier))
+}
+
+// UpstreamActualCostEQ applies the EQ predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostNEQ applies the NEQ predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostIn applies the In predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUpstreamActualCost, vs...))
+}
+
+// UpstreamActualCostNotIn applies the NotIn predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUpstreamActualCost, vs...))
+}
+
+// UpstreamActualCostGT applies the GT predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostGTE applies the GTE predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostLT applies the LT predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostLTE applies the LTE predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUpstreamActualCost, v))
+}
+
+// UpstreamActualCostIsNil applies the IsNil predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUpstreamActualCost))
+}
+
+// UpstreamActualCostNotNil applies the NotNil predicate on the "upstream_actual_cost" field.
+func UpstreamActualCostNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUpstreamActualCost))
+}
+
+// UpstreamCostStatusEQ applies the EQ predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusNEQ applies the NEQ predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusIn applies the In predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUpstreamCostStatus, vs...))
+}
+
+// UpstreamCostStatusNotIn applies the NotIn predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUpstreamCostStatus, vs...))
+}
+
+// UpstreamCostStatusGT applies the GT predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusGTE applies the GTE predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusLT applies the LT predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusLTE applies the LTE predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusContains applies the Contains predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusHasPrefix applies the HasPrefix predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusHasSuffix applies the HasSuffix predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusIsNil applies the IsNil predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUpstreamCostStatus))
+}
+
+// UpstreamCostStatusNotNil applies the NotNil predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUpstreamCostStatus))
+}
+
+// UpstreamCostStatusEqualFold applies the EqualFold predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostStatusContainsFold applies the ContainsFold predicate on the "upstream_cost_status" field.
+func UpstreamCostStatusContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldUpstreamCostStatus, v))
+}
+
+// UpstreamCostReasonEQ applies the EQ predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonNEQ applies the NEQ predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonIn applies the In predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUpstreamCostReason, vs...))
+}
+
+// UpstreamCostReasonNotIn applies the NotIn predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUpstreamCostReason, vs...))
+}
+
+// UpstreamCostReasonGT applies the GT predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonGTE applies the GTE predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonLT applies the LT predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonLTE applies the LTE predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonContains applies the Contains predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonHasPrefix applies the HasPrefix predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonHasSuffix applies the HasSuffix predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonIsNil applies the IsNil predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUpstreamCostReason))
+}
+
+// UpstreamCostReasonNotNil applies the NotNil predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUpstreamCostReason))
+}
+
+// UpstreamCostReasonEqualFold applies the EqualFold predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldUpstreamCostReason, v))
+}
+
+// UpstreamCostReasonContainsFold applies the ContainsFold predicate on the "upstream_cost_reason" field.
+func UpstreamCostReasonContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldUpstreamCostReason, v))
+}
+
+// ProfitEQ applies the EQ predicate on the "profit" field.
+func ProfitEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldProfit, v))
+}
+
+// ProfitNEQ applies the NEQ predicate on the "profit" field.
+func ProfitNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldProfit, v))
+}
+
+// ProfitIn applies the In predicate on the "profit" field.
+func ProfitIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldProfit, vs...))
+}
+
+// ProfitNotIn applies the NotIn predicate on the "profit" field.
+func ProfitNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldProfit, vs...))
+}
+
+// ProfitGT applies the GT predicate on the "profit" field.
+func ProfitGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldProfit, v))
+}
+
+// ProfitGTE applies the GTE predicate on the "profit" field.
+func ProfitGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldProfit, v))
+}
+
+// ProfitLT applies the LT predicate on the "profit" field.
+func ProfitLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldProfit, v))
+}
+
+// ProfitLTE applies the LTE predicate on the "profit" field.
+func ProfitLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldProfit, v))
+}
+
+// ProfitIsNil applies the IsNil predicate on the "profit" field.
+func ProfitIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldProfit))
+}
+
+// ProfitNotNil applies the NotNil predicate on the "profit" field.
+func ProfitNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldProfit))
+}
+
+// UpstreamCostRecordedAtEQ applies the EQ predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtEQ(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtNEQ applies the NEQ predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtNEQ(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtIn applies the In predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtIn(vs ...time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUpstreamCostRecordedAt, vs...))
+}
+
+// UpstreamCostRecordedAtNotIn applies the NotIn predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtNotIn(vs ...time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUpstreamCostRecordedAt, vs...))
+}
+
+// UpstreamCostRecordedAtGT applies the GT predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtGT(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtGTE applies the GTE predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtGTE(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtLT applies the LT predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtLT(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtLTE applies the LTE predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtLTE(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUpstreamCostRecordedAt, v))
+}
+
+// UpstreamCostRecordedAtIsNil applies the IsNil predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUpstreamCostRecordedAt))
+}
+
+// UpstreamCostRecordedAtNotNil applies the NotNil predicate on the "upstream_cost_recorded_at" field.
+func UpstreamCostRecordedAtNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUpstreamCostRecordedAt))
 }
 
 // BillingTypeEQ applies the EQ predicate on the "billing_type" field.

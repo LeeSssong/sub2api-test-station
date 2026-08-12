@@ -1,9 +1,9 @@
 # Task 2 Report: Official v0.1.175 Semantic Merge
 
-Status: Task 2 fix round 2 implementation and required local validation are
-complete. The candidate remains `进行中` and must receive scoped independent
-re-review before root authorization, merge, push, deployment, or online
-verification.
+Status: Task 2 fix round 2 implementation and focused local validation are
+complete. The second independent scoped review was `REJECT`; the candidate
+remains `进行中` and must receive a third scoped independent review before root
+authorization, merge, push, deployment, or online verification.
 
 ## Candidate
 
@@ -13,6 +13,9 @@ verification.
 - Review-fix implementation: `3cde9e99f081e25eb9074080f0993f27ccffd7b9`
 - Fix-round-2 regressions: `e4cb5363ed7d84451729e3909027c89520dac701`
 - Fix-round-2 helper implementation: `ada3a69dfb22bcdff3922549042afffbed6fba1a`
+- Final candidate SHA: produced by this documentation commit; bind it from
+  `git rev-parse HEAD` after the commit succeeds rather than predeclaring its
+  not-yet-created object ID in this report.
 - Official release: `v0.1.175`
 - Official commit: `93c32fa1a2450351561abc46156d2e28cb5f74ca`
 - Annotated tag object: `b898c60c422d1de059968c56aca22f6643f1fed4`
@@ -96,19 +99,36 @@ mark Task 2 complete.
 
 ## Fix Round 2
 
-The second scoped review found that the existing side-effect detector covered
-Responses `function_call_output` but not Anthropic Messages historical
-`tool_result` blocks. On the exact starting candidate, a 401/403 pool auth
-failure for a raw Messages tool-result continuation called
+The second independent scoped review returned `REJECT` because the side-effect
+detector covered Responses `input[].type=function_call_output` but did not
+cover Anthropic Messages historical
+`messages[].content[].type=tool_result`. On the old candidate, a 401/403 pool
+auth failure for a raw Messages tool-result continuation called
 `[9910, 9910, 9911]`, demonstrating both same-account and next-account replay.
 
-Fix round 2 adds symmetric handler regression fixtures for legal Responses
-function-output continuations and Messages tool-result continuations. The
-minimal helper change scans array-valued `messages[].content[]` blocks for
-`type=tool_result`, preserving safe plain-text Messages requests. The focused
-matrix proves unsafe continuations stop at `[9910]`, while safe configured
-pool requests remain `[9910, 9910, 9911]` for 401 and 403. Full verification
-is recorded in `task-2-fix-round-2-report.md`.
+Fix round 2 is bound to exactly these implementation commits:
+
+- `e4cb5363ed7d84451729e3909027c89520dac701` — adds the focused Responses
+  function-call-output and Messages tool-result regressions.
+- `ada3a69dfb22bcdff3922549042afffbed6fba1a` — adds the minimal recognition of
+  array-valued `messages[].content[].type=tool_result` while preserving safe
+  plain-message behavior.
+
+The focused RED/GREEN evidence is:
+
+- RED on the old candidate: Messages `tool_result` under both 401 and 403
+  replayed as `[9910, 9910, 9911]`.
+- GREEN on `ada3a69df`: Responses `function_call_output` under 401 and 403
+  calls only `[9910]`.
+- GREEN on `ada3a69df`: Messages `tool_result` under 401 and 403 calls only
+  `[9910]`.
+- Existing safety behavior remains green: configured replay-safe pool requests
+  call `[9910, 9910, 9911]`, and existing top-level `tools` requests call only
+  `[9910]`.
+
+This documentation closure does not claim that the package-wide backend,
+frontend, vet, typecheck, build, or other full suites were rerun here. The
+candidate is waiting for a third independent scoped review of fix round 2.
 
 ## Official Delta and Identity
 
@@ -121,21 +141,14 @@ is recorded in `task-2-fix-round-2-report.md`.
 - Official migration delta under `backend/migrations`: none.
 - Deployment/host configuration changes made by this task: none.
 
-## Candidate Verification
+## Candidate Verification Boundary
 
-- Fix-round `GOFLAGS=-mod=mod go test ./internal/handler -count=1`: PASS
-  (`41.107s` on the committed file hashes).
-- Fix-round official empty-completed semantic tests: PASS.
-- Fix-round pool auth and post-output no-replay tests: PASS.
-- Fix-round `GOFLAGS=-mod=mod go test ./internal/service -count=1`: PASS
-  (`107.455s`).
-- Fix-round `GOFLAGS=-mod=mod go vet ./internal/handler ./internal/service`: PASS.
-- `pnpm vitest run src/components/admin/usage/__tests__/UsageTable.spec.ts src/views/admin/__tests__/UsageView.spec.ts`:
-  fix-round PASS, 2 files and 39 tests.
-- Fix-round `pnpm typecheck`: PASS.
-- Fix-round `git diff --check`: PASS.
-- Unmerged paths: none.
-- Literal conflict markers under `upstream/sub2api`: none.
+- Evidence newly bound by fix round 2 is limited to the focused RED/GREEN
+  replay matrix listed above.
+- No package-wide or full-suite test result is newly asserted by this document
+  update.
+- This documentation-only commit is checked with `git diff --check` before it
+  is created.
 
 ## Release Boundary and Risks
 
@@ -148,5 +161,6 @@ is recorded in `task-2-fix-round-2-report.md`.
   release, rollback must use the existing reviewed blue-green host chain and
   its release evidence.
 - Remaining risk is integration outside the focused handler/service and usage
-  UI scopes; the root task must run its approved whole-branch review and
+  UI scopes; the required third scoped independent review is still pending,
+  and the root task must later run its approved whole-branch review and
   merged-main release gates before promotion.

@@ -2473,7 +2473,7 @@ func TestOpenAIResponses_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry(t *t
 func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
-			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, false)
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, false, true)
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -2491,7 +2491,7 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t
 func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithFunctionCallOutputNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
-			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true, true)
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -2509,7 +2509,7 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureWithFunctionCallOutputN
 func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHealthyAccount(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
-			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true, false)
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -2558,7 +2558,7 @@ func TestOpenAIMessages_SafeAuthFailureSwitchesWithoutSameAccountPoolRetry(t *te
 func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
-			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true, false)
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -2576,7 +2576,7 @@ func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolsNeverReplays(t 
 func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolResultNeverReplays(t *testing.T) {
 	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
-			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true)
+			h, upstream, groupID := newOpenAIPoolAuthFailoverHandler(t, statusCode, true, false)
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -2591,8 +2591,8 @@ func TestOpenAIMessages_APIKeyPassthroughPoolAuthFailureWithToolResultNeverRepla
 	}
 }
 
-func newOpenAIPoolAuthFailoverHandler(t *testing.T, statusCode int, healthySSE bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {
-	return newOpenAIAuthFailoverHandler(t, statusCode, healthySSE, true, []any{float64(statusCode)}, healthySSE == false)
+func newOpenAIPoolAuthFailoverHandler(t *testing.T, statusCode int, healthySSE, forceResponses bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {
+	return newOpenAIAuthFailoverHandler(t, statusCode, healthySSE, true, []any{float64(statusCode)}, forceResponses)
 }
 
 func newOpenAIAuthFailoverHandler(t *testing.T, statusCode int, healthySSE, poolMode bool, retryStatusCodes []any, forceResponses bool) (*OpenAIGatewayHandler, *openAIHTTPPassthroughAuthFailoverUpstream, int64) {

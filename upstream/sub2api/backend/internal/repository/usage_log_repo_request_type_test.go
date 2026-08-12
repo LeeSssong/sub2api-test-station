@@ -108,6 +108,11 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // usage_completeness
 			sqlmock.AnyArg(), // reconciliation_required
 			sqlmock.AnyArg(), // unsafe_to_replay
+			sqlmock.AnyArg(), // upstream_actual_cost
+			sqlmock.AnyArg(), // upstream_cost_status
+			sqlmock.AnyArg(), // upstream_cost_reason
+			sqlmock.AnyArg(), // profit
+			sqlmock.AnyArg(), // upstream_cost_recorded_at
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -207,6 +212,11 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // usage_completeness
 			sqlmock.AnyArg(), // reconciliation_required
 			sqlmock.AnyArg(), // unsafe_to_replay
+			sqlmock.AnyArg(), // upstream_actual_cost
+			sqlmock.AnyArg(), // upstream_cost_status
+			sqlmock.AnyArg(), // upstream_cost_reason
+			sqlmock.AnyArg(), // profit
+			sqlmock.AnyArg(), // upstream_cost_recorded_at
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))

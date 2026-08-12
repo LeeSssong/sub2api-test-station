@@ -258,6 +258,10 @@ const showUpstreamList = computed(() => props.errorType === 'request')
 const requestId = computed(() => detail.value?.request_id || detail.value?.client_request_id || '')
 
 const primaryResponseBody = computed(() => {
+	const diagnosis = detail.value?.diagnosis
+	if (diagnosis) {
+		return String(diagnosis.original_upstream_detail || diagnosis.original_upstream_message || '').trim()
+	}
   return resolvePrimaryResponseBody(detail.value, props.errorType)
 })
 
@@ -311,6 +315,9 @@ const correlatedUpstreamErrors = computed<OpsErrorDetail[]>(() => correlatedUpst
 const expandedUpstreamDetailIds = ref(new Set<number>())
 
 function getUpstreamResponsePreview(ev: OpsErrorDetail): string {
+	if (ev.diagnosis) {
+		return String(ev.diagnosis.original_upstream_detail || ev.diagnosis.original_upstream_message || '').trim()
+	}
   const upstreamPayload = resolveUpstreamPayload(ev)
   if (upstreamPayload) return upstreamPayload
   return String(ev.error_body || '').trim()

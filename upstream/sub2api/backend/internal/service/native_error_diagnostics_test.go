@@ -196,12 +196,15 @@ func TestProjectNativeErrorDiagnosisDoesNotTreatOversizedBodyAsInterruptedUpload
 }
 
 func TestProjectNativeErrorDiagnosisHTTPAndSSEStoredRecordsShareSemantics(t *testing.T) {
+	accountID := int64(31)
 	httpRecord := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Type: "rate_limit_error", Owner: "client", Message: "concurrency limit exceeded", Stream: false,
+		AccountID:         &accountID,
 		IsBusinessLimited: true,
 	}}
 	sseRecord := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
 		Phase: "request", Type: "rate_limit_error", Owner: "client", Message: "concurrency limit exceeded", Stream: true,
+		AccountID:         &accountID,
 		IsBusinessLimited: true,
 	}}
 
@@ -211,6 +214,105 @@ func TestProjectNativeErrorDiagnosisHTTPAndSSEStoredRecordsShareSemantics(t *tes
 	require.Equal(t, httpDiagnosis.Code, sseDiagnosis.Code)
 	require.Equal(t, httpDiagnosis.UserMeaning, sseDiagnosis.UserMeaning)
 	require.Equal(t, httpDiagnosis.UserSuggestion, sseDiagnosis.UserSuggestion)
+	require.Equal(t, NativeErrorClassLocalLimit, httpDiagnosis.Class)
+	require.True(t, httpDiagnosis.UpstreamAccountSelected)
+}
+
+func TestProjectNativeErrorDiagnosisSelectedAccountLocalQueueLimitWinsOver429(t *testing.T) {
+	accountID := int64(81)
+	status429 := 429
+	detail := &OpsErrorLogDetail{
+		OpsErrorLog: OpsErrorLog{
+			Phase: "request", Type: "rate_limit_error", Owner: "client",
+			Message: "too many pending requests", AccountID: &accountID,
+			StatusCode: 429, IsBusinessLimited: true,
+		},
+		UpstreamStatusCode: &status429,
+	}
+
+	got := ProjectNativeErrorDiagnosis(detail)
+	require.NotNil(t, got)
+	require.Equal(t, NativeErrorClassLocalLimit, got.Class)
+	require.Equal(t, "请求过于频繁", got.UserMeaning)
+	require.True(t, got.UpstreamAccountSelected)
+}
+
+func TestProjectNativeErrorDiagnosisLocalLimitUsesAccurateSubreasonCopy(t *testing.T) {
+	tests := []struct {
+		name       string
+		detail     OpsErrorLogDetail
+		meaning    string
+		suggestion string
+	}{
+		{
+			name: "frequency and concurrency",
+			detail: OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: "request", Type: "rate_limit_error", Owner: "client",
+				Message: "concurrency limit exceeded", IsBusinessLimited: true,
+			}},
+			meaning: "请求过于频繁", suggestion: "请稍后重试或降低并发",
+		},
+		{
+			name: "quota and subscription",
+			detail: OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: "request", Type: "billing_error", Owner: "client",
+				Message: "insufficient balance", IsBusinessLimited: true,
+			}},
+			meaning: "额度或订阅不可用", suggestion: "请检查余额、额度或订阅状态",
+		},
+		{
+			name: "policy and model whitelist",
+			detail: OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: "request", Type: "cyber_policy", Owner: "client",
+				Message: "model gpt-private not in whitelist", IsBusinessLimited: true,
+			}},
+			meaning: "请求不符合当前使用规则", suggestion: "请更换可用模型或按当前分组规则调整请求",
+		},
+		{
+			name: "deprecated api key transport rule",
+			detail: OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: "request", Type: "invalid_request_error", Owner: "client",
+				Message: "API key in query parameter is deprecated", IsBusinessLimited: true,
+			}},
+			meaning: "请求不符合当前使用规则", suggestion: "请更换可用模型或按当前分组规则调整请求",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ProjectNativeErrorDiagnosis(&tt.detail)
+			require.NotNil(t, got)
+			require.Equal(t, NativeErrorClassLocalLimit, got.Class)
+			require.Equal(t, tt.meaning, got.UserMeaning)
+			require.Equal(t, tt.suggestion, got.UserSuggestion)
+		})
+	}
+}
+
+func TestAttachNativeErrorDiagnosisSecondPassRedactsAllAdminResponseEvidence(t *testing.T) {
+	accountID := int64(20)
+	detail := &OpsErrorLogDetail{
+		OpsErrorLog: OpsErrorLog{
+			Phase: "upstream", Owner: "provider", AccountID: &accountID,
+			Message: `failed X-Goog-Api-Key: goog-secret apikey=query-secret`,
+		},
+		ErrorBody:            "Authorization: Bearer bearer-secret\nCookie: sid=cookie-secret; session=second-cookie-secret\nservice_api_key=body-secret",
+		UpstreamErrorMessage: `x-provider-token: token-secret customSecret="quoted-secret"`,
+		UpstreamErrorDetail:  `https://provider.test/path?apikey=url-secret&access_token=access-secret`,
+		UpstreamErrors:       `[{"message":"x-extra-secret=event-secret"}]`,
+	}
+
+	got := AttachNativeErrorDiagnosis(detail)
+	require.NotNil(t, got.Diagnosis)
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	for _, secret := range []string{
+		"goog-secret", "query-secret", "bearer-secret", "cookie-secret", "second-cookie-secret", "body-secret",
+		"token-secret", "quoted-secret", "url-secret", "access-secret", "event-secret",
+	} {
+		require.NotContains(t, string(raw), secret)
+	}
+	require.Contains(t, string(raw), "[REDACTED]")
 }
 
 func TestAttachNativeErrorDiagnosisAddsAdminProjection(t *testing.T) {

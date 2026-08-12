@@ -74,6 +74,12 @@ type OpsErrorLog struct {
 	RequestType      *int16 `json:"request_type"`
 	UserAgent        string `json:"user_agent"`
 
+	// Internal-only evidence selected by list queries so list/detail diagnosis
+	// classifies the same persisted row. These fields are deliberately absent
+	// from list JSON and user DTOs.
+	DiagnosisUpstreamErrorMessage string `json:"-"`
+	DiagnosisUpstreamErrorDetail  string `json:"-"`
+
 	// 关联 api_key 名称（LEFT JOIN api_keys 取得；软删只覆盖 key 列，name 保留，故已删 key 仍有原名）。
 	APIKeyName    string `json:"api_key_name,omitempty"`
 	APIKeyDeleted bool   `json:"api_key_deleted,omitempty"`

@@ -147,3 +147,56 @@ pnpm typecheck
 pnpm build
 # exit 0; 1044 modules transformed
 ```
+
+## Final P1 Review Fix (2026-08-12)
+
+The final root review found three P1 boundaries. They were fixed without adding a fifth class or changing transport, scheduling, billing, migrations, configuration, or production state.
+
+- Selected-account local concurrency/queue rejection now wins over an effective 429 when the persisted record has `phase=request`, `owner=client`, canonical `is_business_limited=true`, and explicit native local-limit text. HTTP and SSE stored-record regressions cover the same selected-account behavior.
+- List queries now select only `upstream_error_message` and `upstream_error_detail` into internal `json:"-"` fields. The user DTO remains an explicit whitelist, while list/detail classification of the same `503 + overloaded/capacity` row is identical.
+- Administrator read projection re-sanitizes every legacy response field. Credential matching now covers `X-Goog-Api-Key`, `apikey`, arbitrary `*api*key`/`*token`/`*secret` names, Authorization/Proxy-Authorization Bearer values, Cookie/Set-Cookie lines, quoted key-value values, and query variants. The old response panel and correlated preview prefer only diagnosis-sanitized evidence when a diagnosis exists.
+- `local_limit` keeps one stable class/code while selecting accurate user copy from evidence: frequency/concurrency, balance/quota/subscription, or policy/model/transport rule.
+
+### P1 RED evidence
+
+The initial focused service run failed with the selected-account HTTP/SSE records projected as `upstream_failed`/`upstream_overloaded`, quota and policy records projected as `请求过于频繁`, and raw administrator fields still containing credential fixtures.
+
+The repository shape test failed because the list SQL did not select `upstream_error_message/detail`; the administrator modal test failed because the legacy response section rendered `raw-upstream-secret`. A final rule-copy RED failed because `API key in query parameter is deprecated` still projected as frequency pressure.
+
+### P1 GREEN and fresh final verification
+
+```text
+go test ./internal/service -run 'Test(ProjectNativeErrorDiagnosis|AttachNativeErrorDiagnosis|ToUserErrorRequest|ListUserErrorRequests|GetUserErrorRequestDetail)' -count=1
+ok github.com/Wei-Shaw/sub2api/internal/service
+
+go test ./internal/repository -run 'TestOpsError(ListSelectsCanonicalBusinessLimitFlag|RepositoryListAndDetailPreserveOverloadClassificationEvidence)' -count=1
+ok github.com/Wei-Shaw/sub2api/internal/repository
+```
+
+```text
+pnpm vitest run \
+  src/components/user/__tests__/UserErrorRequestsTable.spec.ts \
+  src/components/user/__tests__/UserErrorDetailModal.spec.ts \
+  src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts \
+  src/views/admin/ops/utils/__tests__/errorDetailResponse.spec.ts \
+  src/views/user/__tests__/UsageView.spec.ts
+# 5 files passed, 26 tests passed
+```
+
+```text
+go test ./internal/service ./internal/handler ./internal/repository
+# exit 0
+
+go vet ./internal/service ./internal/handler ./internal/repository
+go build ./cmd/server
+# exit 0
+
+pnpm typecheck
+pnpm build
+# exit 0; 1044 modules transformed
+
+git diff --check
+# exit 0
+```
+
+The frontend build emitted only the existing Browserslist age, dynamic/static import, and chunk-size warnings. The candidate remains `downtime_required=false`, with no migration or configuration changes and no production access.

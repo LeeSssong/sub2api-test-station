@@ -112,7 +112,10 @@ describe('OpsErrorDetailModal diagnosis', () => {
   })
 
   it('reuses diagnosis for upstream context with selected account and sanitized evidence', async () => {
-    getUpstreamErrorDetail.mockResolvedValue(makeDetail(true))
+    const rawDetail = makeDetail(true)
+    rawDetail.error_body = 'Authorization: Bearer raw-body-secret'
+    rawDetail.upstream_error_detail = 'X-Goog-Api-Key: raw-upstream-secret'
+    getUpstreamErrorDetail.mockResolvedValue(rawDetail)
     const wrapper = mountModal('upstream')
     await flushPromises()
 
@@ -122,5 +125,7 @@ describe('OpsErrorDetailModal diagnosis', () => {
     expect(diagnosis.text()).toContain('paid')
     expect(diagnosis.text()).toContain('provider unavailable')
     expect(diagnosis.text()).toContain('maintenance')
+    expect(wrapper.text()).not.toContain('raw-body-secret')
+    expect(wrapper.text()).not.toContain('raw-upstream-secret')
   })
 })

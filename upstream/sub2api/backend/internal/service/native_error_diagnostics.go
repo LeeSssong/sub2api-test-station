@@ -30,9 +30,9 @@ type NativeErrorDiagnosis struct {
 }
 
 var (
-	nativeErrorNamedSecretPattern  = regexp.MustCompile(`(?i)((?:authorization|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\s*[:=]\s*(?:bearer\s+)?)(?:"[^"]*"|'[^']*'|[^&\s,;"'}]+)`)
+	nativeErrorNamedSecretPattern  = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization|(?:set-)?cookie|[a-z0-9_-]*(?:api[a-z0-9_-]*key|token|secret)[a-z0-9_-]*)\s*[:=]\s*(?:bearer\s+)?)(?:"[^"]*"|'[^']*'|[^&\s,;"'}]+)`)
 	nativeErrorBearerSecretPattern = regexp.MustCompile(`(?i)(bearer\s+)[^&\s,;"'}]+`)
-	nativeErrorCookieSecretPattern = regexp.MustCompile(`(?i)((?:set-)?cookie\s*[:=]\s*)[^\r\n]+`)
+	nativeErrorCookieSecretPattern = regexp.MustCompile(`(?im)((?:set-)?cookie\s*:\s*)[^\r\n]+`)
 	nativeErrorKeyPrefixPattern    = regexp.MustCompile(`(?i)(?:sk|key)-[^&\s,;"'}]+`)
 )
 
@@ -53,7 +53,7 @@ func ProjectNativeErrorDiagnosis(detail *OpsErrorLogDetail) *NativeErrorDiagnosi
 		OriginalUpstreamMessage: sanitizeNativeDiagnosticEvidence(detail.UpstreamErrorMessage, 2048),
 		OriginalUpstreamDetail:  sanitizeNativeDiagnosticEvidence(detail.UpstreamErrorDetail, opsMaxStoredErrorBodyBytes),
 	}
-	diagnosis.Code, diagnosis.UserMeaning, diagnosis.UserSuggestion = nativeErrorExplanation(class)
+	diagnosis.Code, diagnosis.UserMeaning, diagnosis.UserSuggestion = nativeErrorExplanation(detail, class)
 
 	if detail.AccountID != nil && *detail.AccountID > 0 {
 		diagnosis.UpstreamAccountSelected = true
@@ -68,6 +68,14 @@ func ProjectNativeErrorDiagnosis(detail *OpsErrorLogDetail) *NativeErrorDiagnosi
 func AttachNativeErrorDiagnosis(detail *OpsErrorLogDetail) *OpsErrorLogDetail {
 	if detail != nil {
 		detail.Diagnosis = ProjectNativeErrorDiagnosis(detail)
+		// Administrator details historically expose several raw response fields.
+		// Re-sanitize every one of those fields at the read boundary so the legacy
+		// response panel cannot bypass diagnosis evidence redaction.
+		detail.Message = sanitizeNativeDiagnosticEvidence(detail.Message, 2048)
+		detail.ErrorBody = sanitizeNativeDiagnosticEvidence(detail.ErrorBody, opsMaxStoredErrorBodyBytes)
+		detail.UpstreamErrorMessage = sanitizeNativeDiagnosticEvidence(detail.UpstreamErrorMessage, 2048)
+		detail.UpstreamErrorDetail = sanitizeNativeDiagnosticEvidence(detail.UpstreamErrorDetail, opsMaxStoredErrorBodyBytes)
+		detail.UpstreamErrors = sanitizeNativeDiagnosticEvidence(detail.UpstreamErrors, opsMaxStoredErrorBodyBytes)
 	}
 	return detail
 }
@@ -76,6 +84,7 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 	accountSelected := hasSelectedNativeUpstreamAccount(detail)
 	text := strings.ToLower(strings.Join([]string{
 		detail.Message, detail.Type, detail.Source, detail.UpstreamErrorMessage, detail.UpstreamErrorDetail,
+		detail.DiagnosisUpstreamErrorMessage, detail.DiagnosisUpstreamErrorDetail,
 	}, " "))
 	if !accountSelected && detail.Phase == "request" &&
 		(strings.Contains(text, "failed to read request body") ||
@@ -87,7 +96,10 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 	localLimitEvidence := (detail.Phase == "request" && (detail.Type == "rate_limit_error" ||
 		detail.Type == "billing_error" || detail.Type == "subscription_error" || detail.Type == "cyber_policy")) ||
 		isNativeLocalLimitText(text)
-	if !accountSelected && localLimitEvidence {
+	selectedLocalLimitEvidence := accountSelected && detail.Phase == "request" &&
+		strings.EqualFold(strings.TrimSpace(detail.Owner), "client") && detail.IsBusinessLimited &&
+		isNativeLocalLimitText(text)
+	if (!accountSelected && localLimitEvidence) || selectedLocalLimitEvidence {
 		return NativeErrorClassLocalLimit
 	}
 	status := 0
@@ -165,13 +177,15 @@ func hasNativeUpstreamFailureEvidence(detail *OpsErrorLogDetail, accountSelected
 	}
 	return accountSelected || positiveStatus(detail.UpstreamStatusCode) != nil ||
 		strings.TrimSpace(detail.UpstreamErrorMessage) != "" ||
-		strings.TrimSpace(detail.UpstreamErrorDetail) != ""
+		strings.TrimSpace(detail.UpstreamErrorDetail) != "" ||
+		strings.TrimSpace(detail.DiagnosisUpstreamErrorMessage) != "" ||
+		strings.TrimSpace(detail.DiagnosisUpstreamErrorDetail) != ""
 }
 
-func nativeErrorExplanation(class string) (code, meaning, suggestion string) {
+func nativeErrorExplanation(detail *OpsErrorLogDetail, class string) (code, meaning, suggestion string) {
 	switch class {
 	case NativeErrorClassLocalLimit:
-		return "LOCAL_LIMIT", "请求过于频繁", "请稍后重试或降低并发"
+		return nativeLocalLimitExplanation(detail)
 	case NativeErrorClassUpstreamOverloaded:
 		return "UPSTREAM_OVERLOADED", "上游服务繁忙", "请稍后重试"
 	case NativeErrorClassUploadInterrupted:
@@ -179,6 +193,34 @@ func nativeErrorExplanation(class string) (code, meaning, suggestion string) {
 	default:
 		return "UPSTREAM_FAILED", "上游请求失败", "请稍后重试；持续失败请联系管理员并提供请求 ID"
 	}
+}
+
+func nativeLocalLimitExplanation(detail *OpsErrorLogDetail) (code, meaning, suggestion string) {
+	text := ""
+	errType := ""
+	if detail != nil {
+		errType = strings.ToLower(strings.TrimSpace(detail.Type))
+		text = strings.ToLower(strings.Join([]string{detail.Message, detail.Source}, " "))
+	}
+	if errType == "billing_error" || errType == "subscription_error" || containsAnyNativeErrorMarker(text,
+		"balance", "quota", "usage limit", "subscription", "额度", "限额") {
+		return "LOCAL_LIMIT", "额度或订阅不可用", "请检查余额、额度或订阅状态"
+	}
+	if errType == "cyber_policy" || containsAnyNativeErrorMarker(text,
+		"whitelist", "not allowed", "restricted", "does not allow", "not supported", "requires a non-empty instructions",
+		"query parameter is deprecated", "query parameter api_key is deprecated") {
+		return "LOCAL_LIMIT", "请求不符合当前使用规则", "请更换可用模型或按当前分组规则调整请求"
+	}
+	return "LOCAL_LIMIT", "请求过于频繁", "请稍后重试或降低并发"
+}
+
+func containsAnyNativeErrorMarker(text string, markers ...string) bool {
+	for _, marker := range markers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizedNativeErrorStage(detail *OpsErrorLogDetail, class string) string {

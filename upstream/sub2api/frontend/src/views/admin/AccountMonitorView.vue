@@ -84,18 +84,8 @@
         </div>
       </section>
 
-      <ReadModelStatus
-        v-if="controlPlaneResponse || controlPlaneDegraded"
-        :generated-at="readModel.generatedAt.value"
-        :completeness="readModel.completeness.value"
-        :calculation-version="readModel.calculationVersion.value"
-        :degraded="controlPlaneDegraded || readModel.degraded.value"
-        :source-label="renderSource === 'external' ? '控制面' : '现有系统'"
-        @retry="load(activeRange)"
-      />
-
       <div
-        v-if="rangeError"
+        v-if="rangeError && projection"
         class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
         data-test="range-error"
         role="alert"
@@ -143,6 +133,18 @@
 
       <div v-if="loading && !projection" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div v-for="item in 4" :key="item" class="card h-[310px] animate-pulse bg-gray-100 dark:bg-dark-800" />
+      </div>
+
+      <div
+        v-else-if="rangeError && !projection"
+        class="flex flex-col items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
+        data-test="account-monitor-error-empty"
+        role="alert"
+      >
+        <span>{{ rangeError }}</span>
+        <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="load(activeRange)">
+          {{ t('common.refresh') }}
+        </button>
       </div>
 
       <div
@@ -202,8 +204,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import { controlPlaneAPI, type ControlPlaneResponse } from '@/api/controlPlane'
-import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import type {
   AccountMonitorAccount,
   AccountMonitorConcurrencyItem,
@@ -219,8 +219,6 @@ import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/A
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
-import { useReadModelFreshness } from '@/composables/useReadModelFreshness'
-import { resolveTrustedPageDecision } from '@/config/externalizationFlags'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
@@ -249,10 +247,6 @@ const groupSummaryLabels = {
 const { t } = useI18n()
 const appStore = useAppStore()
 const projection = ref<AccountMonitorProjection | null>(null)
-const controlPlaneResponse = ref<ControlPlaneResponse<unknown> | null>(null)
-const controlPlaneDegraded = ref(false)
-const renderSource = ref<'legacy' | 'external'>('legacy')
-const readModel = useReadModelFreshness(controlPlaneResponse)
 const activeRange = ref<AccountMonitorRange>('24h')
 const pendingRange = ref<AccountMonitorRange | null>(null)
 const activeGroupId = ref<number | null>(null)
@@ -380,77 +374,6 @@ function selectGroup(groupID: number | null, event: MouseEvent): void {
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasMonitorHealth(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  return ['total_accounts', 'monitoring_accounts', 'available_accounts', 'unavailable_accounts', 'pending_accounts', 'paused_accounts', 'success_rate', 'success_sample_count', 'ttft_sample_count', 'latency_sample_count']
-    .every((field) => typeof value[field] === 'number')
-}
-
-function isMonitorAccount(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  const stringFields = ['name', 'platform', 'account_type', 'status', 'management_state', 'service_state', 'group_eligibility', 'monitor_bucket', 'model_id', 'latest_status']
-  const numberFields = ['account_id', 'priority', 'sample_count', 'success_sample_count', 'ttft_sample_count', 'latency_sample_count', 'success_rate', 'request_count', 'error_count']
-  return stringFields.every((field) => typeof value[field] === 'string') &&
-    numberFields.every((field) => typeof value[field] === 'number') &&
-    typeof value.schedulable === 'boolean' && typeof value.stale === 'boolean' &&
-    Array.isArray(value.group_ids) && value.group_ids.every((item: unknown) => typeof item === 'number') &&
-    Array.isArray(value.group_names) && value.group_names.every((item: unknown) => typeof item === 'string') &&
-    isRecord(value.multiplier) && typeof value.multiplier.status === 'string' && typeof value.multiplier.sample_count === 'number' &&
-    Array.isArray(value.timeline) && value.timeline.every((item: unknown) => isRecord(item) && typeof item.status === 'string' && typeof item.checked_at === 'string')
-}
-
-function isMonitorGroup(value: unknown): boolean {
-  return isRecord(value) && typeof value.id === 'number' && typeof value.name === 'string' &&
-    typeof value.rate_multiplier === 'number' && typeof value.customer_visible === 'boolean' &&
-    typeof value.native_order === 'number' && typeof value.operational_state === 'string' &&
-    isRecord(value.score_weights) && ['cost', 'success', 'ttft', 'latency'].every((field) => typeof value.score_weights[field] === 'number') &&
-    hasMonitorHealth(value.health) && Array.isArray(value.accounts) && value.accounts.every(isMonitorAccount)
-}
-
-function isCompleteMonitorProjection(value: unknown, range: AccountMonitorRange): value is AccountMonitorProjection {
-  return isRecord(value) && typeof value.schema_version === 'number' && value.range === range &&
-    typeof value.observed_at === 'string' && typeof value.stale === 'boolean' &&
-    isRecord(value.settings) && typeof value.settings.interval_seconds === 'number' &&
-    typeof value.settings.updated_by === 'number' && typeof value.settings.updated_at === 'string' &&
-    hasMonitorHealth(value.health) && Array.isArray(value.accounts) && value.accounts.every(isMonitorAccount) &&
-    Array.isArray(value.groups) && value.groups.every(isMonitorGroup)
-}
-
-async function loadControlPlane(range: AccountMonitorRange, generation: number): Promise<AccountMonitorProjection | null> {
-  controlPlaneDegraded.value = false
-  try {
-    const decision = resolveTrustedPageDecision('monitor', await controlPlaneAPI.decision('monitor'))
-    if (generation !== loadGeneration) return null
-    if (decision.effectiveMode === 'legacy_only' && !decision.degraded) {
-      controlPlaneResponse.value = null
-      renderSource.value = 'legacy'
-      return null
-    }
-    const response = await controlPlaneAPI.monitor({ range })
-    if (generation !== loadGeneration) return null
-    controlPlaneResponse.value = response
-    if (decision.source === 'external' && isCompleteMonitorProjection(response.items, range)) {
-      renderSource.value = 'external'
-      controlPlaneDegraded.value = Boolean(response.degraded)
-      return response.items
-    }
-    renderSource.value = 'legacy'
-    controlPlaneDegraded.value = Boolean(response.degraded) || decision.degraded || decision.source === 'external'
-    return null
-  } catch {
-    if (generation === loadGeneration) {
-      controlPlaneResponse.value = null
-      controlPlaneDegraded.value = true
-      renderSource.value = 'legacy'
-    }
-    return null
-  }
-}
-
 async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
   abortController?.abort()
   const controller = new AbortController()
@@ -460,11 +383,8 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   pendingRange.value = range
   rangeError.value = null
   try {
-    const legacyResult = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
+    const result = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
-    const externalResult = await loadControlPlane(range, generation)
-    if (controller.signal.aborted || generation !== loadGeneration) return false
-    const result = externalResult ?? legacyResult
     if (result.range !== range) {
       throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
     }

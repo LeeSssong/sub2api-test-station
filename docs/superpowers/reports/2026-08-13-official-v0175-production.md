@@ -40,6 +40,7 @@ The first Task 3 controller call had no release profile loaded and stopped befor
 - Authenticated administrator version state: `0.1.175`.
 - Authenticated Usage stats/list: HTTP 200 with data.
 - Unauthenticated protected administrator endpoint: expected HTTP 401.
+- Read-only final recheck after documentation push reconfirmed all three public health endpoints and the healthy green API/worker image identity.
 
 ## Handoff
 

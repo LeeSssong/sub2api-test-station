@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -162,6 +163,47 @@ func TestAdminUsageGetUpstreamCostReturnsComparison(t *testing.T) {
 	require.Equal(t, 0, body.Code)
 	require.Equal(t, int64(42), body.Data.UsageID)
 	require.Equal(t, "unavailable", body.Data.Status)
+}
+
+func TestAdminUsageGetUpstreamCostReturnsConfirmedZeroAndProfit(t *testing.T) {
+	upstreamID := "upstream-blank-cost"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+			"request_id":          "local-blank-cost",
+			"upstream_request_id": upstreamID,
+			"actual_cost":         "",
+		}}})
+	}))
+	defer upstream.Close()
+
+	repo := &adminUsageDetailRepo{record: &service.UsageLog{
+		ID: 42, RequestID: "local-blank-cost", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.00688, CreatedAt: time.Now(),
+		Account: &service.Account{Credentials: map[string]any{
+			"base_url": upstream.URL,
+			"api_key":  "stored-upstream-key",
+		}},
+	}}
+	usageService := service.NewUsageService(repo, nil, nil, nil)
+	handler := NewUsageHandler(usageService, nil, nil, nil, service.NewSubUpstreamCostService(usageService))
+	router := gin.New()
+	router.GET("/admin/usage/:id/upstream-cost", handler.GetUpstreamCost)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/usage/42/upstream-cost", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var body struct {
+		Code int                           `json:"code"`
+		Data service.SubUpstreamCostDetail `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Equal(t, 0, body.Code)
+	require.Equal(t, "confirmed", body.Data.Status)
+	require.NotNil(t, body.Data.UpstreamActualCost)
+	require.Zero(t, *body.Data.UpstreamActualCost)
+	require.NotNil(t, body.Data.Profit)
+	require.InDelta(t, 0.00688, *body.Data.Profit, 1e-9)
 }
 
 func TestAdminUsageGetUpstreamCostRejectsInvalidID(t *testing.T) {

@@ -38,7 +38,7 @@ func TestSubUpstreamCostServiceConfirmsMatchedActualCost(t *testing.T) {
 			"data": []map[string]any{{
 				"request_id":          "local-req-123",
 				"upstream_request_id": upstreamID,
-				"actual_cost":         0.004,
+				"actual_cost":         "0.004",
 			}},
 			"has_more": false,
 		})
@@ -78,6 +78,102 @@ func TestSubUpstreamCostServiceConfirmsMatchedActualCost(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, createdAt.Add(-10*time.Minute), start)
 	require.Equal(t, createdAt.Add(10*time.Minute), end)
+}
+
+func TestSubUpstreamCostServiceTreatsBlankMatchedActualCostAsZero(t *testing.T) {
+	cases := []struct {
+		name       string
+		actualCost any
+		omit       bool
+	}{
+		{name: "null", actualCost: nil},
+		{name: "missing", omit: true},
+		{name: "empty string", actualCost: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			upstreamID := "upstream-blank-actual-cost"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				row := map[string]any{
+					"request_id":          "local-blank-actual-cost",
+					"upstream_request_id": upstreamID,
+				}
+				if !tc.omit {
+					row["actual_cost"] = tc.actualCost
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{row}})
+			}))
+			defer server.Close()
+
+			repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+				ID: 46, RequestID: "local-blank-actual-cost", UpstreamRequestID: &upstreamID,
+				ActualCost: 0.00688, CreatedAt: time.Now(),
+				Account: &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "k"}},
+			}}
+
+			detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 46)
+
+			require.NoError(t, err)
+			require.Equal(t, "confirmed", detail.Status)
+			require.NotNil(t, detail.UpstreamActualCost)
+			require.Zero(t, *detail.UpstreamActualCost)
+			require.NotNil(t, detail.Profit)
+			require.InDelta(t, 0.00688, *detail.Profit, 1e-9)
+		})
+	}
+}
+
+func TestSubUpstreamCostServiceRejectsInvalidMatchedActualCost(t *testing.T) {
+	upstreamID := "upstream-invalid-actual-cost"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+			"request_id":          "local-invalid-actual-cost",
+			"upstream_request_id": upstreamID,
+			"actual_cost":         "not-a-number",
+		}}})
+	}))
+	defer server.Close()
+
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 47, RequestID: "local-invalid-actual-cost", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.00688, CreatedAt: time.Now(),
+		Account: &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "k"}},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 47)
+
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "response_unavailable", detail.ReasonCode)
+	require.Nil(t, detail.UpstreamActualCost)
+	require.Nil(t, detail.Profit)
+}
+
+func TestSubUpstreamCostServiceDoesNotConfirmZeroWithoutExactMatch(t *testing.T) {
+	upstreamID := "expected-upstream-id"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+			"request_id":          "different-request-id",
+			"upstream_request_id": "different-upstream-id",
+			"actual_cost":         nil,
+		}}})
+	}))
+	defer server.Close()
+
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 50, RequestID: "local-unmatched", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.00688, CreatedAt: time.Now(),
+		Account: &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "k"}},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 50)
+
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "record_not_found", detail.ReasonCode)
+	require.Nil(t, detail.UpstreamActualCost)
+	require.Nil(t, detail.Profit)
 }
 
 func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForExactRequestMatch(t *testing.T) {
@@ -129,6 +225,135 @@ func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForExactRequestMatch(t *te
 	require.Equal(t, []string{"/api/log/token", "/api/status"}, gotPaths)
 }
 
+func TestSubUpstreamCostServiceTreatsBlankMatchedNewAPIQuotaAsZero(t *testing.T) {
+	cases := []struct {
+		name  string
+		quota any
+		omit  bool
+	}{
+		{name: "null", quota: nil},
+		{name: "missing", omit: true},
+		{name: "empty string", quota: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			upstreamID := "upstream-blank-quota"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/log/token":
+					row := map[string]any{
+						"type":                2,
+						"request_id":          "local-blank-quota",
+						"upstream_request_id": upstreamID,
+					}
+					if !tc.omit {
+						row["quota"] = tc.quota
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{row}})
+				case "/api/status":
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"quota_per_unit": 500000}})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+				ID: 48, RequestID: "local-blank-quota", UpstreamRequestID: &upstreamID,
+				ActualCost: 0.00688, CreatedAt: time.Now(),
+				Account: &Account{
+					Credentials: map[string]any{"base_url": server.URL, "api_key": "k"},
+					Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+						Status: UpstreamBillingProbeStatusUnsupported,
+					}},
+				},
+			}}
+
+			detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 48)
+
+			require.NoError(t, err)
+			require.Equal(t, "confirmed", detail.Status)
+			require.NotNil(t, detail.UpstreamActualCost)
+			require.Zero(t, *detail.UpstreamActualCost)
+			require.NotNil(t, detail.Profit)
+			require.InDelta(t, 0.00688, *detail.Profit, 1e-9)
+		})
+	}
+}
+
+func TestSubUpstreamCostServiceRejectsInvalidMatchedNewAPIQuota(t *testing.T) {
+	upstreamID := "upstream-invalid-quota"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/log/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+				"type": 2, "quota": "not-a-number", "request_id": "local-invalid-quota", "upstream_request_id": upstreamID,
+			}}})
+		case "/api/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"quota_per_unit": 500000}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 49, RequestID: "local-invalid-quota", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.00688, CreatedAt: time.Now(),
+		Account: &Account{
+			Credentials: map[string]any{"base_url": server.URL, "api_key": "k"},
+			Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusUnsupported,
+			}},
+		},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 49)
+
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "response_unavailable", detail.ReasonCode)
+	require.Nil(t, detail.UpstreamActualCost)
+	require.Nil(t, detail.Profit)
+}
+
+func TestSubUpstreamCostServiceKeepsBlankNewAPIQuotaUnavailableWithoutQuotaPerUnit(t *testing.T) {
+	upstreamID := "upstream-missing-quota-per-unit"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/log/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
+				"type": 2, "quota": nil, "request_id": "local-missing-quota-per-unit", "upstream_request_id": upstreamID,
+			}}})
+		case "/api/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	repo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 51, RequestID: "local-missing-quota-per-unit", UpstreamRequestID: &upstreamID,
+		ActualCost: 0.00688, CreatedAt: time.Now(),
+		Account: &Account{
+			Credentials: map[string]any{"base_url": server.URL, "api_key": "k"},
+			Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusUnsupported,
+			}},
+		},
+	}}
+
+	detail, err := NewSubUpstreamCostService(NewUsageService(repo, nil, nil, nil)).GetByUsageID(context.Background(), 51)
+
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", detail.Status)
+	require.Equal(t, "response_unavailable", detail.ReasonCode)
+	require.Nil(t, detail.UpstreamActualCost)
+	require.Nil(t, detail.Profit)
+}
+
 func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForAPIInferenceBase(t *testing.T) {
 	createdAt := time.Date(2026, time.August, 9, 10, 0, 0, 0, time.UTC)
 	upstreamID := "provider-api-base-456"
@@ -140,7 +365,7 @@ func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForAPIInferenceBase(t *tes
 		case "/api/log/token":
 			require.Equal(t, "1000", r.URL.Query().Get("limit"))
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
-				"type": 2, "quota": 125000, "request_id": "local-api-base", "upstream_request_id": upstreamID,
+				"type": 2, "quota": "125000", "request_id": "local-api-base", "upstream_request_id": upstreamID,
 			}}})
 		case "/api/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"quota_per_unit": 500000}})

@@ -147,26 +147,6 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.Float("upstream_actual_cost").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
-		field.String("upstream_cost_status").
-			MaxLen(16).
-			Optional().
-			Nillable(),
-		field.String("upstream_cost_reason").
-			MaxLen(64).
-			Optional().
-			Nillable(),
-		field.Float("profit").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
-		field.Time("upstream_cost_recorded_at").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		// 其他字段
 		field.Int8("billing_type").

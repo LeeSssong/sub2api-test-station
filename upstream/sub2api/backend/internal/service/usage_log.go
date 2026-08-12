@@ -9,9 +9,6 @@ import (
 const (
 	BillingTypeBalance      int8 = 0 // 钱包余额
 	BillingTypeSubscription int8 = 1 // 订阅套餐
-
-	UsageUpstreamCostStatusConfirmed   = "confirmed"
-	UsageUpstreamCostStatusUnavailable = "unavailable"
 )
 
 type RequestType int16
@@ -185,13 +182,6 @@ type UsageLog struct {
 	// AccountCost is the final upstream account-cost snapshot. Nil preserves
 	// historical fallback semantics.
 	AccountCost *float64
-	// UpstreamActualCost is the persisted precise Sub/New upstream bill.
-	// Nil preserves historical rows and records still awaiting availability.
-	UpstreamActualCost     *float64
-	UpstreamCostStatus     *string
-	UpstreamCostReason     *string
-	Profit                 *float64
-	UpstreamCostRecordedAt *time.Time
 
 	BillingType  int8
 	RequestType  RequestType

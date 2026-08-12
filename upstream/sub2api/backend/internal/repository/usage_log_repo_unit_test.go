@@ -3,7 +3,6 @@
 package repository
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -65,37 +64,4 @@ func TestBuildUsageLogBatchInsertQuery_UsesConflictDoNothing(t *testing.T) {
 
 	require.Contains(t, query, "ON CONFLICT (request_id, api_key_id) DO NOTHING")
 	require.NotContains(t, strings.ToUpper(query), "DO UPDATE")
-}
-
-func TestPrepareUsageLogInsertPreservesUpstreamCostPersistence(t *testing.T) {
-	status := service.UsageUpstreamCostStatusConfirmed
-	cost := 0.004
-	profit := 0.00288
-	recordedAt := time.Date(2026, 8, 12, 13, 0, 0, 0, time.UTC)
-
-	prepared := prepareUsageLogInsert(&service.UsageLog{
-		UserID:                 1,
-		APIKeyID:               2,
-		AccountID:              3,
-		RequestID:              "req-upstream-cost-insert",
-		Model:                  "gpt-5",
-		UpstreamActualCost:     &cost,
-		UpstreamCostStatus:     &status,
-		UpstreamCostReason:     nil,
-		Profit:                 &profit,
-		UpstreamCostRecordedAt: &recordedAt,
-	})
-
-	require.Len(t, usageLogInsertArgTypes, 71)
-	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
-	require.Equal(t, "numeric", usageLogInsertArgTypes[65])
-	require.Equal(t, "text", usageLogInsertArgTypes[66])
-	require.Equal(t, "text", usageLogInsertArgTypes[67])
-	require.Equal(t, "numeric", usageLogInsertArgTypes[68])
-	require.Equal(t, "timestamptz", usageLogInsertArgTypes[69])
-	require.Equal(t, &cost, prepared.args[65])
-	require.Equal(t, sql.NullString{String: status, Valid: true}, prepared.args[66])
-	require.Equal(t, sql.NullString{}, prepared.args[67])
-	require.Equal(t, &profit, prepared.args[68])
-	require.Equal(t, &recordedAt, prepared.args[69])
 }

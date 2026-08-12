@@ -88,16 +88,6 @@ const (
 	FieldLongContextBillingApplied = "long_context_billing_applied"
 	// FieldAccountRateMultiplier holds the string denoting the account_rate_multiplier field in the database.
 	FieldAccountRateMultiplier = "account_rate_multiplier"
-	// FieldUpstreamActualCost holds the string denoting the upstream_actual_cost field in the database.
-	FieldUpstreamActualCost = "upstream_actual_cost"
-	// FieldUpstreamCostStatus holds the string denoting the upstream_cost_status field in the database.
-	FieldUpstreamCostStatus = "upstream_cost_status"
-	// FieldUpstreamCostReason holds the string denoting the upstream_cost_reason field in the database.
-	FieldUpstreamCostReason = "upstream_cost_reason"
-	// FieldProfit holds the string denoting the profit field in the database.
-	FieldProfit = "profit"
-	// FieldUpstreamCostRecordedAt holds the string denoting the upstream_cost_recorded_at field in the database.
-	FieldUpstreamCostRecordedAt = "upstream_cost_recorded_at"
 	// FieldBillingType holds the string denoting the billing_type field in the database.
 	FieldBillingType = "billing_type"
 	// FieldStream holds the string denoting the stream field in the database.
@@ -221,11 +211,6 @@ var Columns = []string{
 	FieldRateMultiplier,
 	FieldLongContextBillingApplied,
 	FieldAccountRateMultiplier,
-	FieldUpstreamActualCost,
-	FieldUpstreamCostStatus,
-	FieldUpstreamCostReason,
-	FieldProfit,
-	FieldUpstreamCostRecordedAt,
 	FieldBillingType,
 	FieldStream,
 	FieldDurationMs,
@@ -316,10 +301,6 @@ var (
 	DefaultRateMultiplier float64
 	// DefaultLongContextBillingApplied holds the default value on creation for the "long_context_billing_applied" field.
 	DefaultLongContextBillingApplied bool
-	// UpstreamCostStatusValidator is a validator for the "upstream_cost_status" field. It is called by the builders before save.
-	UpstreamCostStatusValidator func(string) error
-	// UpstreamCostReasonValidator is a validator for the "upstream_cost_reason" field. It is called by the builders before save.
-	UpstreamCostReasonValidator func(string) error
 	// DefaultBillingType holds the default value on creation for the "billing_type" field.
 	DefaultBillingType int8
 	// DefaultStream holds the default value on creation for the "stream" field.
@@ -539,31 +520,6 @@ func ByLongContextBillingApplied(opts ...sql.OrderTermOption) OrderOption {
 // ByAccountRateMultiplier orders the results by the account_rate_multiplier field.
 func ByAccountRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAccountRateMultiplier, opts...).ToFunc()
-}
-
-// ByUpstreamActualCost orders the results by the upstream_actual_cost field.
-func ByUpstreamActualCost(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUpstreamActualCost, opts...).ToFunc()
-}
-
-// ByUpstreamCostStatus orders the results by the upstream_cost_status field.
-func ByUpstreamCostStatus(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUpstreamCostStatus, opts...).ToFunc()
-}
-
-// ByUpstreamCostReason orders the results by the upstream_cost_reason field.
-func ByUpstreamCostReason(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUpstreamCostReason, opts...).ToFunc()
-}
-
-// ByProfit orders the results by the profit field.
-func ByProfit(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProfit, opts...).ToFunc()
-}
-
-// ByUpstreamCostRecordedAt orders the results by the upstream_cost_recorded_at field.
-func ByUpstreamCostRecordedAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUpstreamCostRecordedAt, opts...).ToFunc()
 }
 
 // ByBillingType orders the results by the billing_type field.

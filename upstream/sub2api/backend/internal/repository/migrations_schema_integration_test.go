@@ -152,21 +152,6 @@ WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = 'a
 `).Scan(&accountCostPrecision, &accountCostScale))
 	require.Equal(t, 20, accountCostPrecision)
 	require.Equal(t, 10, accountCostScale)
-	requireColumn(t, tx, "usage_logs", "upstream_actual_cost", "numeric", 0, true)
-	requireColumn(t, tx, "usage_logs", "upstream_cost_status", "character varying", 16, true)
-	requireColumn(t, tx, "usage_logs", "upstream_cost_reason", "character varying", 64, true)
-	requireColumn(t, tx, "usage_logs", "profit", "numeric", 0, true)
-	requireColumn(t, tx, "usage_logs", "upstream_cost_recorded_at", "timestamp with time zone", 0, true)
-	for _, column := range []string{"upstream_actual_cost", "profit"} {
-		var precision, scale int
-		require.NoError(t, tx.QueryRowContext(context.Background(), `
-SELECT numeric_precision, numeric_scale
-FROM information_schema.columns
-WHERE table_schema = 'public' AND table_name = 'usage_logs' AND column_name = $1
-`, column).Scan(&precision, &scale))
-		require.Equal(t, 20, precision, "%s precision", column)
-		require.Equal(t, 10, scale, "%s scale", column)
-	}
 	requireColumn(t, tx, "usage_logs", "upstream_response_model", "character varying", 200, true)
 	requireColumn(t, tx, "usage_logs", "upstream_model_mismatch", "boolean", 0, true)
 	requireIndex(t, tx, "usage_logs", usageLogsUpstreamModelMismatchIndex)

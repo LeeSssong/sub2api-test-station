@@ -219,6 +219,8 @@
 		header_down Content-Security-Policy "frame-src " "frame-src 'self' https://shop.xingqiaolab.top https://catfk.com "
 		transport http {
 			dial_timeout 10s
+			# Starts after Caddy has finished writing the request (including its
+			# body) upstream; read_body above is the slow-upload protection.
 			response_header_timeout 15m
 			keepalive 30s
 		}

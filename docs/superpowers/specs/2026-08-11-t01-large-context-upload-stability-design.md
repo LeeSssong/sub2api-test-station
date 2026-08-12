@@ -18,7 +18,7 @@
 
 ## Design
 
-公共 Caddy 全局 `servers.timeouts.read_body` 设为 `15m`，让持续有数据的大请求不会因默认/隐含的短入站窗口被误杀，同时仍对长期无数据连接设置有限资源释放边界。Sub2API fallback upstream 的 `response_header_timeout` 设为 `15m`，移除固定 `300s` 窗口；该值与现有更新代理的 15 分钟窗口一致，且应用自身仍保有响应头超时。
+公共 Caddy 全局 `servers.timeouts.read_body` 设为 `15m`，这是覆盖慢速上传、避免请求体尚未读完就被终止的直接策略，同时仍为未完成连接设置有限资源释放边界。Sub2API fallback upstream 的 `response_header_timeout` 设为 `15m`，移除固定 `300s` 窗口；它只在 Caddy 已把完整请求（包括请求体）写给 upstream 后开始计时，用于允许长推理等待响应头，不作为慢上传修复的因果证据。
 
 请求体大小保护继续由当前 Compose 环境和 Sub2API 原生 middleware 承担：全局 128 MiB、网关 128 MiB、纯文本 16 MiB。Caddy 不新增更小的 `request_body` 限制，避免大上下文在边缘被提前截断。
 
@@ -27,7 +27,7 @@
 1. 配置适配/校验成功，公共 fallback 不再包含 `response_header_timeout 300s`，且 read-body 与 response-header 均为 15 分钟。
 2. 合同测试确认三项应用侧 body limit 未变化。
 3. 受控慢上传持续超过 300 秒后收到 upstream 成功响应；不再因 Caddy 300 秒窗口返回 502。
-4. 受控不完整上传在达到长窗口后被释放，健康检查与普通请求不回归。
+4. 配置合同/Caddy adapt 证明生产 `read_body` 为有限的 `15m`；从同一生产 Caddyfile 派生的短覆盖配置仅把该值改为 `2s`，快速证明不完整上传到期后连接会释放且不会到达 upstream。健康检查与普通请求不回归。
 
 ## Deployment / rollback
 

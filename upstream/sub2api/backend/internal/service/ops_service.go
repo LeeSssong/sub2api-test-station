@@ -691,10 +691,10 @@ func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLo
 		}
 		return nil, infraerrors.InternalServer("OPS_ERROR_LOAD_FAILED", "Failed to load ops error log").WithCause(err)
 	}
-	return detail, nil
+	return AttachNativeErrorDiagnosis(detail), nil
 }
 
-// GetUserErrorRequestDetail 返回某用户自己某条错误请求的脱敏详情(含 error_body)。
+// GetUserErrorRequestDetail 返回某用户自己某条错误请求的脱敏详情。
 // 安全:强制按用户归属校验;非本人记录一律返回 NotFound(不泄露存在性)。
 func (s *OpsService) GetUserErrorRequestDetail(ctx context.Context, userID, id int64) (*UserErrorRequestDetail, error) {
 	if s.opsRepo == nil {

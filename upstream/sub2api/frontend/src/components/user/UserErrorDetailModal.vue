@@ -60,40 +60,21 @@
           <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.endpoint') }}</span>
           <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.inbound_endpoint || '-' }}</p>
         </div>
-        <!-- Status Code -->
-        <div>
-          <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.status') }}</span>
-          <p class="mt-0.5">
-            <span class="badge" :class="statusClass(detail.status_code)">{{ detail.status_code || '-' }}</span>
-          </p>
-        </div>
         <!-- Category -->
         <div>
           <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.category') }}</span>
           <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ t('usage.errors.categories.' + detail.category) }}</p>
         </div>
-        <!-- Platform -->
-        <div>
-          <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.platform') }}</span>
-          <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.platform || '-' }}</p>
-        </div>
-        <!-- Upstream status code -->
-        <div v-if="detail.upstream_status_code != null">
-          <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.detail.upstreamStatus') }}</span>
-          <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.upstream_status_code }}</p>
-        </div>
       </div>
 
-      <!-- Message -->
-      <div v-if="detail.message">
-        <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.message') }}</span>
-        <p class="mt-0.5 text-gray-900 dark:text-dark-100 break-all">{{ detail.message }}</p>
+      <div>
+        <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.detail.meaning') }}</span>
+        <p data-testid="user-error-meaning" class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.meaning }}</p>
       </div>
 
-      <!-- Error Body -->
-      <div v-if="detail.error_body">
-        <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.detail.responseBody') }}</span>
-        <pre class="mt-1 overflow-auto max-h-[40vh] whitespace-pre-wrap break-all rounded-lg bg-gray-50 dark:bg-dark-900 border border-gray-200 dark:border-dark-700 p-3 text-xs text-gray-800 dark:text-dark-200">{{ detail.error_body }}</pre>
+      <div>
+        <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.detail.suggestion') }}</span>
+        <p data-testid="user-error-suggestion" class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.suggestion }}</p>
       </div>
     </div>
   </BaseDialog>
@@ -181,12 +162,6 @@ function handleClose() {
 async function copyRequestId() {
   if (!detail.value?.request_id) return
   await copyToClipboard(detail.value.request_id, t('usage.detail.copied'))
-}
-
-function statusClass(code: number) {
-  if (code >= 500) return 'badge-danger'
-  if (code === 429) return 'badge-warning'
-  return 'badge-gray'
 }
 
 onBeforeUnmount(() => {

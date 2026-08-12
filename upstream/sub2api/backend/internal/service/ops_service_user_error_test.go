@@ -23,7 +23,8 @@ func (s *stubOpsRepoForUserErr) ListErrorLogs(ctx context.Context, f *OpsErrorLo
 		Errors: []*OpsErrorLog{{
 			Phase: "request", Type: "rate_limit_error",
 			Model: "m", RequestedModel: "rm", StatusCode: 429,
-			Message: "secret", UserEmail: "a@b.c",
+			Message: "secret internal limiter", UserEmail: "a@b.c",
+			Owner: "client",
 		}},
 		Total: 1, Page: 1, PageSize: 20,
 	}, nil
@@ -73,6 +74,9 @@ func TestListUserErrorRequests_ForcesScopeAndRedacts(t *testing.T) {
 	// 脱敏：返回条目含 message 字段
 	if len(out.Items) != 1 || out.Items[0].Category != "rate_limit" || out.Items[0].Model != "rm" {
 		t.Fatalf("bad item: %+v", out.Items)
+	}
+	if out.Items[0].ErrorClass != "local_limit" || out.Items[0].Message != "请求过于频繁" {
+		t.Fatalf("unsafe or incorrect user explanation: %+v", out.Items[0])
 	}
 }
 
@@ -125,14 +129,8 @@ func TestGetUserErrorRequestDetail_OwnershipEnforced(t *testing.T) {
 	if got2.ID != 42 {
 		t.Errorf("want ID=42, got %d", got2.ID)
 	}
-	if got2.ErrorBody != `{"error":"upstream"}` {
-		t.Errorf("want ErrorBody=%q, got %q", `{"error":"upstream"}`, got2.ErrorBody)
-	}
-	if got2.UpstreamStatusCode == nil || *got2.UpstreamStatusCode != 503 {
-		t.Errorf("want UpstreamStatusCode=503, got %v", got2.UpstreamStatusCode)
-	}
-	if got2.Message != "upstream failed" {
-		t.Errorf("want Message=%q, got %q", "upstream failed", got2.Message)
+	if got2.ErrorClass != "upstream_failed" || got2.Message != "上游请求失败" {
+		t.Errorf("want safe upstream failure explanation, got %+v", got2)
 	}
 }
 

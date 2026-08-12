@@ -38,12 +38,6 @@
           </div>
         </template>
 
-        <template #cell-status="{ row }">
-          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="statusClass(row.status_code)">
-            {{ row.status_code || '-' }}
-          </span>
-        </template>
-
         <template #cell-category="{ row }">
           <span class="text-sm text-gray-900 dark:text-white">{{ t('usage.errors.categories.' + row.category) }}</span>
         </template>
@@ -57,14 +51,6 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
-        <template #cell-group="{ row }">
-          <span
-            v-if="row.group_name"
-            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
-          >{{ row.group_name }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
-        </template>
-
         <template #cell-type="{ row }">
           <span
             v-if="requestTypeBadge(row)"
@@ -72,10 +58,6 @@
             :class="requestTypeBadge(row)!.className"
           >{{ requestTypeBadge(row)!.label }}</span>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
-        </template>
-
-        <template #cell-platform="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.platform || '-' }}</span>
         </template>
 
         <template #cell-client_ip="{ row }">
@@ -150,7 +132,6 @@ import {
   numericRequestTypeKind,
   requestTypeBadgeClass,
   requestTypeLabelKey,
-  statusCodeBadgeClass,
 } from '@/utils/errorBadges'
 import type { UserErrorRequest } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -185,11 +166,8 @@ const allColumns = computed<Column[]>(() => [
   { key: 'model', label: t('usage.errors.model'), sortable: true },
   { key: 'endpoint', label: t('usage.errors.endpoint') },
   { key: 'client_ip', label: 'IP' },
-  { key: 'group', label: t('admin.usage.group') },
   { key: 'type', label: t('usage.type') },
-  { key: 'platform', label: t('usage.errors.platform') },
   { key: 'category', label: t('usage.errors.category') },
-  { key: 'status', label: t('usage.errors.status'), sortable: true },
   { key: 'message', label: t('usage.errors.message') },
   { key: 'created_at', label: t('usage.errors.time'), sortable: true },
   { key: 'user_agent', label: t('usage.userAgent') },
@@ -222,5 +200,4 @@ function openDetail(id: number) {
   showDetail.value = true
 }
 
-const statusClass = statusCodeBadgeClass
 </script>

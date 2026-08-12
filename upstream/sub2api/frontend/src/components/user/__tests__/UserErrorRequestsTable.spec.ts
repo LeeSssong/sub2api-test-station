@@ -76,6 +76,13 @@ function mountTable(visibleColumnKeys?: string[]) {
 }
 
 describe('UserErrorRequestsTable', () => {
+  it('does not render raw status or group internals', () => {
+    const wrapper = mountTable()
+    const columns = wrapper.getComponent({ name: 'DataTable' }).props('columns') as Array<{ key: string }>
+    expect(columns.map((column) => column.key)).not.toContain('status')
+    expect(columns.map((column) => column.key)).not.toContain('group')
+  })
+
   it('opens the same owned detail from the explicit action and the row', async () => {
     const wrapper = mountTable()
 

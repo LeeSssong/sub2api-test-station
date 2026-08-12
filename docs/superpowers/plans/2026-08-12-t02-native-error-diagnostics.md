@@ -23,10 +23,10 @@
 - Modify: `upstream/sub2api/backend/internal/service/ops_models.go`
 - Modify: `upstream/sub2api/backend/internal/service/ops_service.go`
 
-- [ ] Add failing table tests for four classes, selected/not-selected, sanitization, fallback, and HTTP/SSE equivalence.
-- [ ] Run focused test and retain expected RED output.
-- [ ] Implement the minimal pure projector and attach it in the admin service read path.
-- [ ] Run focused test and retain GREEN output.
+- [x] Add failing table tests for four classes, selected/not-selected, sanitization, fallback, and HTTP/SSE equivalence.
+- [x] Run focused test and retain expected RED output.
+- [x] Implement the minimal pure projector and attach it in the admin service read path.
+- [x] Run focused test and retain GREEN output.
 
 ### Task 2: User-safe projection
 
@@ -35,10 +35,10 @@
 - Modify: `upstream/sub2api/backend/internal/service/ops_user_error_test.go`
 - Modify: `upstream/sub2api/backend/internal/service/ops_service_user_error_test.go`
 
-- [ ] Add failing tests proving safe meaning/suggestion and JSON absence of raw body/status/internal evidence.
-- [ ] Run focused test and retain expected RED output.
-- [ ] Replace raw user fields with the safe projection while retaining request ID and ordinary owned request metadata.
-- [ ] Run focused test and retain GREEN output.
+- [x] Add failing tests proving safe meaning/suggestion and JSON absence of raw body/status/internal evidence.
+- [x] Run focused test and retain expected RED output.
+- [x] Replace raw user fields with the safe projection while retaining request ID and ordinary owned request metadata.
+- [x] Run focused test and retain GREEN output.
 
 ### Task 3: Existing modal UI and types
 
@@ -52,17 +52,17 @@
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/{zh,en}/dashboard.ts`
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/{zh,en}/admin/ops.ts`
 
-- [ ] Add failing UI tests for safe user rendering and shared admin diagnosis rendering.
-- [ ] Run focused Vitest and retain expected RED output.
-- [ ] Add types/i18n and minimally render the new DTO fields in the existing modals.
-- [ ] Run focused Vitest and retain GREEN output.
+- [x] Add failing UI tests for safe user rendering and shared admin diagnosis rendering.
+- [x] Run focused Vitest and retain expected RED output.
+- [x] Add types/i18n and minimally render the new DTO fields in the existing modals.
+- [x] Run focused Vitest and retain GREEN output.
 
 ### Task 4: Verification and handoff
 
-- [ ] Run focused and relevant backend tests, `go vet`, backend build.
-- [ ] Run focused frontend tests, typecheck, and build.
-- [ ] Run `git diff --check`, inspect diff for scope and secrets, update the ledger to implementation-ready review state (still “进行中”).
-- [ ] Commit all T02 changes and confirm clean worktree; stop at `READY_FOR_ROOT_REVIEW`.
+- [x] Run focused and relevant backend tests, `go vet`, backend build.
+- [x] Run focused frontend tests, typecheck, and build.
+- [x] Run `git diff --check`, inspect diff for scope and secrets, update the ledger to implementation-ready review state (still “进行中”).
+- [x] Commit all T02 changes and confirm clean worktree; stop at `READY_FOR_ROOT_REVIEW`.
 
 ## Rollback
 

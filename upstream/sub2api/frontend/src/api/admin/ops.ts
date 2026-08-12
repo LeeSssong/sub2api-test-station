@@ -940,6 +940,21 @@ export interface OpsErrorLog {
 export interface OpsErrorDetail extends OpsErrorLog {
   error_body: string
 
+  diagnosis?: {
+    class: 'local_limit' | 'upstream_overloaded' | 'upstream_failed' | 'upload_interrupted'
+    code: string
+    stage: string
+    ownership: string
+    upstream_account_selected: boolean
+    selected_account_id?: number | null
+    selected_account_name?: string
+    group_id?: number | null
+    group_name?: string
+    original_upstream_status?: number | null
+    original_upstream_message?: string
+    original_upstream_detail?: string
+  }
+
   // Upstream context (optional; enriched by gateway services)
   upstream_status_code?: number | null
   upstream_error_message?: string

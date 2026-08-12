@@ -79,6 +79,8 @@ type OpsErrorLog struct {
 type OpsErrorLogDetail struct {
 	OpsErrorLog
 
+	Diagnosis *NativeErrorDiagnosis `json:"diagnosis,omitempty"`
+
 	ErrorBody string `json:"error_body"`
 
 	// Upstream context (optional)

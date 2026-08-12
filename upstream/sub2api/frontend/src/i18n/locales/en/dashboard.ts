@@ -516,8 +516,8 @@ export default {
       detail: {
         title: 'Error Request Detail',
         requestId: 'Request ID',
-        responseBody: 'Response Body',
-        upstreamStatus: 'Upstream Status',
+        meaning: 'Meaning',
+        suggestion: 'Suggested action',
         loadFailed: 'Failed to load detail, please try again',
       },
     },

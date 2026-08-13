@@ -37,6 +37,7 @@ import auditAPI from './audit'
 import accountMonitorAPI from './accountMonitor'
 import reconciliationAPI from './reconciliation'
 import accountProfitabilityAPI from './accountProfitability'
+import accountFinancialAPI from './accountFinancial'
 
 /**
  * Unified admin API object for convenient access
@@ -75,7 +76,8 @@ export const adminAPI = {
   audit: auditAPI,
   accountMonitor: accountMonitorAPI,
   reconciliation: reconciliationAPI,
-  accountProfitability: accountProfitabilityAPI
+  accountProfitability: accountProfitabilityAPI,
+  accountFinancial: accountFinancialAPI
 }
 
 export {
@@ -112,7 +114,8 @@ export {
   auditAPI,
   accountMonitorAPI,
   reconciliationAPI,
-  accountProfitabilityAPI
+  accountProfitabilityAPI,
+  accountFinancialAPI
 }
 
 export default adminAPI

@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T03-R1 Task 6（2026-08-13）：** 状态：进行中。当前工作区 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，分支 `codex/t03-r1-upstream-cost-persistence`，基线 `2944a36d11fec648930ac0fef8321a44a66cd377`。Task 5 scoped re-review 已通过；本任务严格限定为把既有管理员账号盈利入口升级为本地财务首页：消费 Task 5 API，展示六项全站事实、统一 `generated_at`、60 秒自动/手动刷新、今日可编辑营收/成本/OAuth 成本、其他范围只读，以及携带范围/账号的异常流水跳转。不得修改后端、schema、migration、Task 7+、main、其他 worktree、生产或 GitHub Actions。
+
 **T03-R1 Task 5（2026-08-13）：** 状态：准备完成（fix round 3 已验证，等待独立复审；未合并、未推送、未部署、未线上验证）。当前工作区 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，范围为管理员财务/本地证据 API（handler、admin routes、wire、测试），不改 schema、usage_logs、frontend、生产；fix round 2 严格只修复 correlation fallback 与 `RequestLogger` 的有效 UTF-8/64 字节一致性，以及五个财务 mutation handler 经真实 service 到 audit recorder 的关联 ID 覆盖。复现发现原测试将带参数 handler 注册为具体静态路径，导致 `one/oauth/override` 在参数校验处提前返回；fix round 3 已将测试拆分为 Gin route template 与 request path，完整 admin handler、财务审计 service、RequestLogger 聚焦测试及 `git diff --check` 均通过。
 
 **本轮 T03-R1 Task 4 fix round 3（2026-08-13）：** 状态：准备完成（等待独立复审；未合并、未推送、未部署、未线上验证）。当前工作区为 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，分支 `codex/t03-r1-upstream-cost-persistence`，基线 `957d4c94d42e3dbb1b0341a0a046af1c55eb95ab`。范围严格限定为修复 `task-4-rereview-r2.md` 指出的 `ReviewSelected` 后续 `validateMoney` 失败路径：已通过 `CreateReview` 提交的前序 rows 必须逐行 audit，并单独记录失败行；仅修改 service implementation/test 与本轮报告，禁止触碰 Task 5/API/UI/schema、合并、推送、部署或生产。实现与专项验证见 `task-4-fix3-report.md`。

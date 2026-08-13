@@ -11,6 +11,7 @@ type AccountFinancialAuditEvent struct {
 	RequestID          string
 	AccountID          int64
 	BusinessDate       string
+	MutationKind       string
 	OldValue, NewValue *float64
 	Cutoff             int64
 	Result             map[string]int64
@@ -26,6 +27,12 @@ func NewAccountFinancialAudit(recorder financialAuditRecorder) *AccountFinancial
 	return NewAccountFinancialAuditWithClock(recorder, time.Now)
 }
 func NewAccountFinancialAuditWithClock(recorder financialAuditRecorder, now func() time.Time) *AccountFinancialAudit {
+	if recorder == nil {
+		return nil
+	}
+	if now == nil {
+		now = time.Now
+	}
 	return &AccountFinancialAudit{recorder: recorder, now: now}
 }
 func (a *AccountFinancialAudit) Record(_ context.Context, event AccountFinancialAuditEvent) {
@@ -33,6 +40,9 @@ func (a *AccountFinancialAudit) Record(_ context.Context, event AccountFinancial
 		return
 	}
 	extra := map[string]any{"account_id": event.AccountID, "business_date": event.BusinessDate, "cutoff": event.Cutoff}
+	if event.MutationKind != "" {
+		extra["mutation_kind"] = event.MutationKind
+	}
 	if event.OldValue != nil {
 		extra["old_value"] = *event.OldValue
 	}

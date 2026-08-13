@@ -526,9 +526,10 @@ func (s *AccountFinancialService) ReviewSelected(ctx context.Context, in []Usage
 		}
 		r, e := s.repo.CreateReview(ctx, x)
 		if e != nil {
-			if len(in) > 0 {
-				s.auditMutation(ctx, "admin.account_financial.review_selected", in[0].ReviewedBy, in[0].RequestID, 0, "", nil, nil, 0, map[string]int64{"matched": int64(len(in)), "updated": int64(len(out)), "failed": 1})
+			for _, committed := range out {
+				s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, committed.AccountID, committed.BusinessDate, committed.OldManualCostCNY, &committed.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(committed.Created), "skipped": boolInt64(!committed.Created)})
 			}
+			s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, 0, "", nil, x.ManualCostCNY, 0, map[string]int64{"failed": 1})
 			return nil, e
 		}
 		out = append(out, *r)
@@ -594,7 +595,7 @@ func (s *AccountFinancialService) SetTodayOverride(ctx context.Context, in Today
 	}
 	res, err := s.repo.SetTodayOverride(ctx, in)
 	if err == nil {
-		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, res.AccountID, res.BusinessDate, res.OldValue, res.NewValue, res.CutoffEvidenceID, map[string]int64{"review_cutoff": res.CutoffReviewID})
+		s.auditMutationWithKind(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, res.AccountID, res.BusinessDate, res.OldValue, res.NewValue, res.CutoffEvidenceID, res.MutationKind, map[string]int64{"review_cutoff": res.CutoffReviewID})
 	}
 	if err != nil {
 		value := in.RevenueCNY
@@ -612,8 +613,11 @@ func boolInt64(v bool) int64 {
 	return 0
 }
 func (s *AccountFinancialService) auditMutation(ctx context.Context, action string, actor int64, request string, account int64, day string, old, new *float64, cutoff int64, result map[string]int64) {
+	s.auditMutationWithKind(ctx, action, actor, request, account, day, old, new, cutoff, "", result)
+}
+func (s *AccountFinancialService) auditMutationWithKind(ctx context.Context, action string, actor int64, request string, account int64, day string, old, new *float64, cutoff int64, kind string, result map[string]int64) {
 	if s.audit != nil {
-		s.audit.Record(ctx, AccountFinancialAuditEvent{Action: action, ActorUserID: actor, RequestID: request, AccountID: account, BusinessDate: day, OldValue: old, NewValue: new, Cutoff: cutoff, Result: result})
+		s.audit.Record(ctx, AccountFinancialAuditEvent{Action: action, ActorUserID: actor, RequestID: request, AccountID: account, BusinessDate: day, OldValue: old, NewValue: new, Cutoff: cutoff, MutationKind: kind, Result: result})
 	}
 }
 func (s *AccountFinancialService) GetUsageEvidence(ctx context.Context, id int64) (*UsageFinancialEvidence, error) {

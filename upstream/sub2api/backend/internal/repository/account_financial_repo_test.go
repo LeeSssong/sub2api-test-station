@@ -12,6 +12,7 @@ import (
 	dbent "entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/usageupstreamcostevidence"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	_ "modernc.org/sqlite"
 )
@@ -152,6 +153,50 @@ func TestAccountFinancialRepositoryReviewEligibility(t *testing.T) {
 		if _, err := repo.CreateReview(ctx, service.UsageCostReviewInput{UsageLogID: id, ReviewedBy: 7, ReviewedAt: now}); !errors.Is(err, service.ErrFinancialReviewNotEligible) {
 			t.Fatalf("ineligible %d err=%v", id, err)
 		}
+	}
+}
+
+func TestAccountFinancialRepositoryConfirmedEvidenceRejectsExistingReview(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	now := time.Now()
+	client.AccountFinancialSetting.Create().SetKey("t03_r1_account_financial").SetEnabledAt(now.Add(-time.Hour)).SaveX(ctx)
+	user := client.User.Create().SetEmail("confirmed-after-review@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-confirmed-after-review").SetName("review").SaveX(ctx)
+	account := client.Account.Create().SetName("sub").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("confirmed-after-review").SetModel("m").SetActualCost(10).SetCreatedAt(now).SaveX(ctx)
+	client.UsageUpstreamCostEvidence.Create().SetUsageLogID(usage.ID).SetSource("sub").SetEvidenceStatus("unavailable").SaveX(ctx)
+	repo := NewAccountFinancialRepository(client)
+	if _, err := repo.CreateReview(ctx, service.UsageCostReviewInput{UsageLogID: usage.ID, ReviewedBy: 7, ReviewedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	client.UsageUpstreamCostEvidence.Update().Where(usageupstreamcostevidence.UsageLogIDEQ(usage.ID)).SetEvidenceStatus(usageupstreamcostevidence.EvidenceStatusConfirmed).SetNormalizedCostCny(2).SaveX(ctx)
+	if _, err := repo.CreateReview(ctx, service.UsageCostReviewInput{UsageLogID: usage.ID, ReviewedBy: 7, ReviewedAt: now}); !errors.Is(err, service.ErrFinancialReviewNotEligible) {
+		t.Fatalf("confirmed evidence must not be idempotently reviewable, err=%v", err)
+	}
+}
+
+func TestAccountFinancialRepositoryFilteredReviewIncludesIdempotentSkipResult(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	now := time.Now()
+	client.AccountFinancialSetting.Create().SetKey("t03_r1_account_financial").SetEnabledAt(now.Add(-time.Hour)).SaveX(ctx)
+	user := client.User.Create().SetEmail("filtered-skip@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-filtered-skip").SetName("review").SaveX(ctx)
+	account := client.Account.Create().SetName("sub").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("filtered-skip").SetModel("m").SetActualCost(10).SetCreatedAt(now).SaveX(ctx)
+	client.UsageUpstreamCostEvidence.Create().SetUsageLogID(usage.ID).SetSource("sub").SetEvidenceStatus("unavailable").SaveX(ctx)
+	repo := NewAccountFinancialRepository(client)
+	input := service.UsageCostReviewInput{UsageLogID: usage.ID, ReviewedBy: 7, ReviewedAt: now}
+	if _, err := repo.CreateReview(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	result, err := repo.ReviewFiltered(ctx, service.ReviewFilteredInput{Filter: service.ReviewFilter{AccountID: &account.ID}, ReviewedBy: 7, ReviewedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Skipped != 1 || len(result.Reviews) != 1 || result.Reviews[0].Created || result.Reviews[0].UsageLogID != usage.ID {
+		t.Fatalf("filtered idempotent result must remain auditable: %#v", result)
 	}
 }
 

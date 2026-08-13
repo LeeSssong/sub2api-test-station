@@ -162,16 +162,16 @@ func (r *accountFinancialRepository) createReview(ctx context.Context, c *ent.Cl
 	if err != nil || setting.EnabledAt == nil || u.CreatedAt.Before(*setting.EnabledAt) || a.Type == "oauth" {
 		return nil, service.ErrFinancialReviewNotEligible
 	}
+	ev, evErr := c.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(u.ID)).Only(ctx)
+	if evErr == nil && ev.EvidenceStatus == usageupstreamcostevidence.EvidenceStatusConfirmed {
+		return nil, service.ErrFinancialReviewNotEligible
+	}
+	if evErr != nil && !ent.IsNotFound(evErr) {
+		return nil, evErr
+	}
 	if x, err := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(in.UsageLogID)).Only(ctx); err == nil {
 		old := x.ManualCostCny
 		return &service.UsageCostReviewResult{UsageLogID: x.UsageLogID, AccountID: u.AccountID, BusinessDate: financialBusinessDate(u.CreatedAt), OldManualCostCNY: &old, ManualCostCNY: x.ManualCostCny, ManualProfitCNY: x.ManualProfitCny}, nil
-	}
-	ev, err := c.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(u.ID)).Only(ctx)
-	if err == nil && ev.EvidenceStatus == usageupstreamcostevidence.EvidenceStatusConfirmed {
-		return nil, service.ErrFinancialReviewNotEligible
-	}
-	if err != nil && !ent.IsNotFound(err) {
-		return nil, err
 	}
 	when := in.ReviewedAt
 	if when.IsZero() {
@@ -285,6 +285,12 @@ func (r *accountFinancialRepository) ReviewFiltered(ctx context.Context, in serv
 		res.Matched++
 		if _, e := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(u.ID)).Only(ctx); e == nil {
 			res.Skipped++
+			oldReview, e := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(u.ID)).Only(ctx)
+			if e != nil {
+				return nil, e
+			}
+			old := oldReview.ManualCostCny
+			res.Reviews = append(res.Reviews, service.UsageCostReviewResult{UsageLogID: oldReview.UsageLogID, AccountID: u.AccountID, BusinessDate: financialBusinessDate(u.CreatedAt), OldManualCostCNY: &old, ManualCostCNY: oldReview.ManualCostCny, ManualProfitCNY: oldReview.ManualProfitCny})
 			continue
 		}
 		if r.reviewBeforeCreate != nil {

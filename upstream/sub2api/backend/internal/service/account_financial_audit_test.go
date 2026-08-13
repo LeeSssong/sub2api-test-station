@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -43,6 +44,45 @@ func TestAccountFinancialAuditUsesFixedCreatedAt(t *testing.T) {
 	NewAccountFinancialAuditWithClock(recorder, func() time.Time { return when }).Record(context.Background(), AccountFinancialAuditEvent{Action: "test"})
 	if !recorder.entries[0].CreatedAt.Equal(when) {
 		t.Fatalf("created_at=%v", recorder.entries[0].CreatedAt)
+	}
+}
+
+func TestAccountFinancialAuditNilRecorderFailsClosed(t *testing.T) {
+	if audit := NewAccountFinancialAudit(nil); audit != nil {
+		t.Fatalf("nil recorder must not produce a usable audit dependency: %#v", audit)
+	}
+	if audit := NewAccountFinancialAuditWithClock(nil, time.Now); audit != nil {
+		t.Fatalf("nil recorder must fail closed: %#v", audit)
+	}
+}
+
+func TestAccountFinancialServiceReviewSelectedAuditsCommittedRowsBeforeLaterError(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	rec := &auditRecorder{}
+	repo := &partialReviewFinancialRepoStub{failUsageLogID: 2}
+	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	_, err := svc.ReviewSelected(ctx, []UsageCostReviewInput{{UsageLogID: 1, ReviewedBy: 9, RequestID: "selected-1"}, {UsageLogID: 2, ReviewedBy: 9, RequestID: "selected-2"}})
+	if err == nil || len(rec.entries) != 2 {
+		t.Fatalf("partial batch must audit committed row and failure row: err=%v audits=%d", err, len(rec.entries))
+	}
+	if rec.entries[0].Extra["updated"] != int64(1) || rec.entries[0].Extra["failed"] != nil {
+		t.Fatalf("first committed row audit missing: %#v", rec.entries[0])
+	}
+}
+
+func TestAccountFinancialServiceOverrideAuditPersistsMutationKind(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	rec := &auditRecorder{}
+	svc := NewAccountFinancialServiceWithAudit(&overrideKindFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	cost := 4.0
+	_, err := svc.SetTodayOverride(ctx, TodayOverrideInput{AccountID: 5, BusinessDate: "2026-08-13", CostCNY: &cost, ActorUserID: 9, RequestID: "override-kind"})
+	if err != nil || len(rec.entries) != 1 {
+		t.Fatalf("override audit missing: err=%v audits=%d", err, len(rec.entries))
+	}
+	if rec.entries[0].Extra["mutation_kind"] != "cost" {
+		t.Fatalf("audit must persist mutation kind: %#v", rec.entries[0].Extra)
 	}
 }
 
@@ -107,6 +147,24 @@ func TestAccountFinancialServiceAuditsValidationFailures(t *testing.T) {
 type mutationFinancialRepoStub struct{ financialRepoStub }
 
 type truthfulReviewFinancialRepoStub struct{ mutationFinancialRepoStub }
+
+type partialReviewFinancialRepoStub struct {
+	mutationFinancialRepoStub
+	failUsageLogID int64
+}
+
+func (r *partialReviewFinancialRepoStub) CreateReview(_ context.Context, in UsageCostReviewInput) (*UsageCostReviewResult, error) {
+	if in.UsageLogID == r.failUsageLogID {
+		return nil, errors.New("injected review failure")
+	}
+	return &UsageCostReviewResult{Created: true, UsageLogID: in.UsageLogID, AccountID: 11, ManualCostCNY: 0, ManualProfitCNY: 1, BusinessDate: "2026-08-13"}, nil
+}
+
+type overrideKindFinancialRepoStub struct{ mutationFinancialRepoStub }
+
+func (r *overrideKindFinancialRepoStub) SetTodayOverride(_ context.Context, in TodayOverrideInput) (*FinancialMutationResult, error) {
+	return &FinancialMutationResult{AccountID: in.AccountID, BusinessDate: in.BusinessDate, NewValue: in.CostCNY, MutationKind: "cost"}, nil
+}
 
 func (r *truthfulReviewFinancialRepoStub) CreateReview(_ context.Context, in UsageCostReviewInput) (*UsageCostReviewResult, error) {
 	old := 3.0

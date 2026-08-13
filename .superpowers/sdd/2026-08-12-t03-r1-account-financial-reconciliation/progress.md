@@ -43,3 +43,10 @@ Task 5: in progress
 - Fix round 2 commit: `89597a5c455e808825613964f45ff101d9381610`; fix round 3 route-aware test commit: `24e00a90486e915feefd0d0eb71acf51fe56351b`.
 - Scoped re-review round 3: `task-5-rereview-r3.md` — Spec Compliance APPROVE, Code Quality APPROVE, open findings 0; five mutation handlers traverse Gin params through service and durable audit correlation.
 - Task 5: complete (commits `1461c706f..24e00a904`, review clean; no merge, push, deployment or production verification).
+
+Task 6: complete
+- Implementation: `2aff29c6ef333bb17a14399e75848c1da68ee9ae`; fix round 1: `94063b3393eca9857625af1b68420bc7eb29b7f8`; fix round 2: `3d0d44630` with report `129cf29fb`.
+- Scope: administrator financial home, six summary cards, unified generated_at, 60s refresh, today revenue/cost/OAuth edits, readonly non-today/profit/margin, exception navigation, and removal of external/control-plane display.
+- Scoped re-review round 1 found two Important findings (missing cost/OAuth editors and UTC business date); fix round 2 restored account financial columns while retaining both fixes.
+- Scoped re-review round 2: `task-6-rereview-r2.md` — Spec Compliance APPROVE, Code Quality APPROVE, open findings 0; Vitest/typecheck/build/diff-check passed.
+- Task 6 complete; no merge, push, deployment or production verification.

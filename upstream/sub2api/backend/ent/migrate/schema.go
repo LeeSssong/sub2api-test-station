@@ -1713,6 +1713,11 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
+				Name:    "usage_cost_reviews_usage_log_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{UsageCostReviewsColumns[7]},
+			},
+			{
 				Name:    "idx_usage_cost_reviews_usage_log_id",
 				Unique:  false,
 				Columns: []*schema.Column{UsageCostReviewsColumns[7]},
@@ -1910,6 +1915,11 @@ var (
 			},
 		},
 		Indexes: []*schema.Index{
+			{
+				Name:    "usage_upstream_cost_evidence_usage_log_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{UsageUpstreamCostEvidenceColumns[15]},
+			},
 			{
 				Name:    "idx_usage_upstream_cost_evidence_status_usage_log_id",
 				Unique:  false,

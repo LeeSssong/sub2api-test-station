@@ -49,6 +49,9 @@ func (UsageCostReview) Edges() []ent.Edge {
 func (UsageCostReview) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("usage_log_id").
+			Unique().
+			StorageKey("usage_cost_reviews_usage_log_id_key"),
+		index.Fields("usage_log_id").
 			StorageKey("idx_usage_cost_reviews_usage_log_id"),
 	}
 }

@@ -56,6 +56,9 @@ func (UsageUpstreamCostEvidence) Edges() []ent.Edge {
 
 func (UsageUpstreamCostEvidence) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("usage_log_id").
+			Unique().
+			StorageKey("usage_upstream_cost_evidence_usage_log_id_key"),
 		index.Fields("evidence_status", "usage_log_id").
 			StorageKey("idx_usage_upstream_cost_evidence_status_usage_log_id"),
 	}

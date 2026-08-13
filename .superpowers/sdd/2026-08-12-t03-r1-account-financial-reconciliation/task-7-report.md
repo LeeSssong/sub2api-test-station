@@ -58,3 +58,11 @@
 
   Result: PASS — 5 files / 55 tests; typecheck and production build exit 0; diff check clean. The production build retains pre-existing Browserslist, dynamic-import/chunk-size warnings only.
 - Scope: only `frontend/src/types/index.ts`, `CostExceptionTable.vue`, and its test. No backend, schema, migration, local evidence detail guessing, upstream HTTP, main, production, deploy, push, or stash mutation.
+
+## Local detail source follow-up
+
+- The task contract also requires the persisted source to be consistent in local evidence detail. The backend local evidence DTO already contains `source`; no backend change was needed.
+- RED: the administrator detail fixture was changed to `source: 'newapi'`, `evidence_status: 'unavailable'`, empty normalized cost, then the focused detail test was run. Vitest failed with `missing detail label: admin.usageCostDetail.costSource`, proving the field was not projected/rendered.
+- GREEN: `UsageCostEvidenceDetail` now accepts optional `source`, and `UsageDetailDialog` renders that exact persisted value for administrators. It does not infer provenance from quota or cost fields.
+- Verification after both source fixes: target RED test 1/1 passed; the five Task 7 focused files passed 55/55; `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. Build output contained only the repository's pre-existing pnpm/localStorage/Browserslist/dynamic-import/chunk-size warnings.
+- Commit: `aa5c1ed2b` (`fix: show persisted cost evidence source`). No user-scope rendering, backend, schema, migration, main, production, deploy, push, or Task 8 change.

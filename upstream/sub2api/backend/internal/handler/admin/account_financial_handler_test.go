@@ -64,20 +64,20 @@ func TestFinancialMutationHandlersPersistCorrelationThroughService(t *testing.T)
 	const requestID = "handler-correlation-123"
 
 	tests := []struct {
-		name, method, path, body string
-		handler                  gin.HandlerFunc
+		name, method, route, path, body string
+		handler                         gin.HandlerFunc
 	}{
-		{"one", http.MethodPost, "/one/1/review", `{"manual_cost_cny":1}`, h.ReviewOne},
-		{"selected", http.MethodPost, "/selected", `{"usage_log_ids":[1],"manual_cost_cny":1}`, h.ReviewSelected},
-		{"filtered", http.MethodPost, "/filtered", `{"max_usage_log_id":9,"manual_cost_cny":1}`, h.ReviewFiltered},
-		{"oauth", http.MethodPut, "/oauth/4", `{"business_date":"2026-08-13","cost_cny":1}`, h.SetOAuthCost},
-		{"override", http.MethodPut, "/override/5", `{"business_date":"2026-08-13","cost_cny":1}`, h.SetTodayOverride},
+		{"one", http.MethodPost, "/one/:usageLogID/review", "/one/1/review", `{"manual_cost_cny":1}`, h.ReviewOne},
+		{"selected", http.MethodPost, "/selected", "/selected", `{"usage_log_ids":[1],"manual_cost_cny":1}`, h.ReviewSelected},
+		{"filtered", http.MethodPost, "/filtered", "/filtered", `{"max_usage_log_id":9,"manual_cost_cny":1}`, h.ReviewFiltered},
+		{"oauth", http.MethodPut, "/oauth/:id", "/oauth/4", `{"business_date":"2026-08-13","cost_cny":1}`, h.SetOAuthCost},
+		{"override", http.MethodPut, "/override/:id", "/override/5", `{"business_date":"2026-08-13","cost_cny":1}`, h.SetTodayOverride},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			before := len(recorder.entries)
 			r := gin.New()
-			r.Handle(tt.method, tt.path, func(c *gin.Context) {
+			r.Handle(tt.method, tt.route, func(c *gin.Context) {
 				ctx := context.WithValue(c.Request.Context(), ctxkey.RequestID, requestID)
 				c.Request = c.Request.WithContext(ctx)
 				tt.handler(c)

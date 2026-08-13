@@ -8,4 +8,10 @@
 - No schema, route, upstream HTTP, main, production, push, or deployment changes.
 - TDD evidence: the normalization regression initially failed with a valid-UTF-8 NUL fixture; the corrected invalid-byte fixture passes against the shared helper.
 - Validation: focused handler/service/middleware tests with `GOCACHE=/tmp/sub2api-go-build`; `git diff --check`.
-- Commit blocker: this session cannot create the shared Git metadata lock at `/Users/gongtengxinwen/Documents/sub2api搭建/.git/worktrees/sub2api搭建/index.lock` (`Operation not permitted`). Verified changes remain uncommitted in the named candidate worktree; no out-of-scope workaround was attempted.
+
+## Fix round 3: route-aware handler coverage
+
+- Review finding: the five-handler correlation test registered parameterized handlers under concrete paths (`/one/1/review`, `/oauth/4`, `/override/5`). Gin therefore left `c.Param(...)` empty and three cases returned HTTP 400 before reaching the service/audit recorder.
+- Fix: split each case into a Gin route template and request path, using `:usageLogID`/`:id` templates for the parameterized handlers.
+- RED evidence: `go test ./internal/handler/admin -run '^TestFinancialMutationHandlersPersistCorrelationThroughService$' -count=1` failed with HTTP 400 for `one`, `oauth`, and `override` before the fix.
+- Validation after fix: `go test ./internal/handler/admin -count=1`, `go test ./internal/service -run '^TestAccountFinancial(Service|Audit)' -count=1`, `go test ./internal/server/middleware -run '^TestRequestLogger' -count=1`, and `git diff --check` all pass.

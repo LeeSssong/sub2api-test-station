@@ -1,9 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { listCostExceptions, reviewOne, reviewSelected, reviewFiltered, saveAs } = vi.hoisted(() => ({
+const { listCostExceptions, reviewOne, reviewSelected, reviewFiltered, saveAs, blobParts } = vi.hoisted(() => ({
   listCostExceptions: vi.fn(), reviewOne: vi.fn(), reviewSelected: vi.fn(), reviewFiltered: vi.fn(),
   saveAs: vi.fn(),
+  blobParts: [] as BlobPart[][],
 }))
 vi.mock('@/api/admin/usage', () => ({ adminUsageAPI: { listCostExceptions, reviewOne, reviewSelected, reviewFiltered } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -14,23 +15,29 @@ import CostExceptionTable from '../CostExceptionTable.vue'
 const response = {
   generated_at: '2026-08-13T08:00:00Z', total: 2, page: 1, page_size: 20,
   items: [
-    { usage_log_id: 11, account_id: 42, request_id: 'req-11', model: 'gpt-5', created_at: '2026-08-13T07:00:00Z', revenue_cny: 3, evidence_status: 'unavailable', reason_code: 'record_not_found', review_status: 'pending', cost_trace: { sub_actual_cost: null, new_api_quota: null, new_api_quota_per_unit: null, normalized_cost_cny: null } },
-    { usage_log_id: 12, account_id: 42, request_id: 'req-12', model: 'gpt-5', created_at: '2026-08-13T07:01:00Z', revenue_cny: 4, evidence_status: 'confirmed_zero', reason_code: 'confirmed_zero', review_status: 'pending', cost_trace: { sub_actual_cost: 0, new_api_quota: null, new_api_quota_per_unit: null, normalized_cost_cny: 0 } },
+    { usage_log_id: 11, account_id: 42, request_id: 'req-11', model: 'gpt-5', created_at: '2026-08-13T07:00:00Z', revenue_cny: 3, source: 'newapi', evidence_status: 'unavailable', reason_code: 'record_not_found', review_status: 'pending', cost_trace: { sub_actual_cost: null, new_api_quota: null, new_api_quota_per_unit: null, normalized_cost_cny: null } },
+    { usage_log_id: 12, account_id: 42, request_id: 'req-12', model: 'gpt-5', created_at: '2026-08-13T07:01:00Z', revenue_cny: 4, source: 'sub', evidence_status: 'confirmed_zero', reason_code: 'confirmed_zero', review_status: 'pending', cost_trace: { sub_actual_cost: 0, new_api_quota: null, new_api_quota_per_unit: null, normalized_cost_cny: 0 } },
   ],
 }
 
 describe('CostExceptionTable', () => {
   beforeEach(() => {
-    vi.clearAllMocks(); listCostExceptions.mockResolvedValue(response)
+    vi.clearAllMocks(); blobParts.length = 0; listCostExceptions.mockResolvedValue(response)
+    vi.stubGlobal('Blob', class MockBlob {
+      constructor(parts: BlobPart[]) { blobParts.push(parts) }
+    })
     reviewSelected.mockResolvedValue([{ usage_log_id: 11 }, { usage_log_id: 12 }])
     reviewFiltered.mockResolvedValue({ cutoff: 12, matched: 2, updated: 1, skipped: 1 })
   })
+
+  afterEach(() => vi.unstubAllGlobals())
 
   it('shows provenance and reviews selected rows', async () => {
     const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42 } } })
     await flushPromises()
     expect(listCostExceptions).toHaveBeenCalledWith(expect.objectContaining({ account_id: 42 }))
     expect(wrapper.text()).toContain('record_not_found')
+    expect(wrapper.text()).toContain('newapi')
     await wrapper.get('[data-test="select-11"]').setValue(true)
     await wrapper.get('[data-test="select-12"]').setValue(true)
     await wrapper.get('[data-test="review-selected"]').trigger('click')
@@ -48,7 +55,7 @@ describe('CostExceptionTable', () => {
     expect(wrapper.text()).toContain('admin.costExceptions.matched: 2')
   })
 
-  it('exports all pages from the same exception filter without reading usage rows', async () => {
+  it('exports persisted source without inferring NewAPI from empty quota fields', async () => {
     listCostExceptions
       .mockResolvedValueOnce(response)
       .mockResolvedValueOnce({ ...response, page: 1, page_size: 100 })
@@ -59,6 +66,7 @@ describe('CostExceptionTable', () => {
     await flushPromises()
 
     expect(listCostExceptions).toHaveBeenLastCalledWith(expect.objectContaining({ account_id: 42, page: 1, page_size: 100 }))
-    expect(saveAs).toHaveBeenCalledWith(expect.any(Blob), 'cost-exceptions.csv')
+    expect(saveAs).toHaveBeenCalledWith(expect.anything(), 'cost-exceptions.csv')
+    expect(String(blobParts[0][0])).toContain('newapi')
   })
 })

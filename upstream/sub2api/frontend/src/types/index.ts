@@ -1736,6 +1736,7 @@ export interface AdminUsageCostException {
   model: string
   created_at: string
   revenue_cny: number
+  source: string
   evidence_status: UsageCostEvidenceStatus
   reason_code: string
   review_status: UsageCostReviewStatus

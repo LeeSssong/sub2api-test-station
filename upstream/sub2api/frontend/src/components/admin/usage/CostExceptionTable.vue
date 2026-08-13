@@ -29,7 +29,7 @@
             <td class="p-2 font-mono">{{ item.request_id || '-' }}</td>
             <td class="p-2">{{ item.model }}</td>
             <td class="p-2 font-mono">{{ item.revenue_cny }}</td>
-            <td class="p-2">{{ evidenceSource(item.cost_trace) }}</td>
+            <td class="p-2">{{ item.source }}</td>
             <td class="p-2">{{ item.evidence_status }}</td>
             <td class="p-2 font-mono">{{ item.reason_code }}</td>
             <td class="p-2 font-mono">{{ formatTrace(item.cost_trace) }}</td>
@@ -88,7 +88,7 @@ const exportCurrentFilter = async () => {
       for (const item of response.items) {
         rows.push([
           item.usage_log_id, item.account_id, item.created_at, item.request_id, item.model, item.revenue_cny,
-          evidenceSource(item.cost_trace), item.evidence_status, item.reason_code, item.review_status, formatTrace(item.cost_trace),
+          item.source, item.evidence_status, item.reason_code, item.review_status, formatTrace(item.cost_trace),
         ])
       }
       if (response.items.length < 100 || exportPage * response.page_size >= response.total) break
@@ -100,8 +100,6 @@ const exportCurrentFilter = async () => {
 const setPage = (value: number) => { page.value = value; void reload() }
 const setPageSize = (value: number) => { pageSize.value = value; page.value = 1; void reload() }
 const formatTrace = (trace: UsageCostTrace) => [trace.sub_actual_cost, trace.new_api_quota, trace.new_api_quota_per_unit, trace.normalized_cost_cny].map(v => v == null ? '-' : v).join(' / ')
-const evidenceSource = (trace: UsageCostTrace) => trace.new_api_quota != null || trace.new_api_quota_per_unit != null ? 'NewAPI' : 'Sub'
-
 watch(() => props.filters, () => { page.value = 1; void reload() }, { deep: true })
 onMounted(reload)
 defineExpose({ reload })

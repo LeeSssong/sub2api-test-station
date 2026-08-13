@@ -200,6 +200,24 @@ func TestAccountFinancialRepositoryFilteredReviewIncludesIdempotentSkipResult(t 
 	}
 }
 
+func TestAccountFinancialRepositoryUsageEvidenceIncludesReviewWhenEvidenceMissing(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	account := client.Account.Create().SetName("sub").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	user := client.User.Create().SetEmail("missing-evidence-review@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-missing-evidence-review").SetName("review").SaveX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("missing-evidence-review").SetModel("m").SetActualCost(10).SaveX(ctx)
+	review := client.UsageCostReview.Create().SetUsageLogID(usage.ID).SetReviewedBy(7).SetReviewedAt(time.Now()).SetManualCostCny(3).SetManualProfitCny(7).SaveX(ctx)
+
+	detail, err := NewAccountFinancialRepository(client).GetUsageEvidence(ctx, usage.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.EvidenceStatus != "unavailable" || detail.ReasonCode != "evidence_not_registered" || detail.ReviewID == nil || *detail.ReviewID != review.ID || detail.ReviewCostCNY == nil || *detail.ReviewCostCNY != 3 {
+		t.Fatalf("missing evidence detail must retain manual review: %#v", detail)
+	}
+}
+
 func TestAccountFinancialRepositoryCostOnlyOverrideReturnsTruthfulOldNew(t *testing.T) {
 	t.Skip("SQLite returns DATE as string; PostgreSQL-backed fix-round test covers old/new and unique concurrency")
 	ctx := context.Background()

@@ -425,31 +425,37 @@ func (r *accountFinancialRepository) SetTodayOverride(ctx context.Context, in se
 }
 func (r *accountFinancialRepository) GetUsageEvidence(ctx context.Context, id int64) (*service.UsageFinancialEvidence, error) {
 	e, err := r.client.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(id)).Only(ctx)
+	x := &service.UsageFinancialEvidence{UsageLogID: id}
 	if err != nil {
 		if !ent.IsNotFound(err) {
 			return nil, err
 		}
-		u, x := r.client.UsageLog.Get(ctx, id)
-		if x != nil {
-			return nil, x
+		u, usageErr := r.client.UsageLog.Get(ctx, id)
+		if usageErr != nil {
+			return nil, usageErr
 		}
-		a, x := r.client.Account.Get(ctx, u.AccountID)
-		if x != nil {
-			return nil, x
+		a, accountErr := r.client.Account.Get(ctx, u.AccountID)
+		if accountErr != nil {
+			return nil, accountErr
 		}
 		if a.Type == "oauth" {
-			return &service.UsageFinancialEvidence{UsageLogID: id}, nil
+			x.EvidenceStatus = ""
+		} else {
+			x.EvidenceStatus = "unavailable"
+			x.ReasonCode = "evidence_not_registered"
 		}
-		return &service.UsageFinancialEvidence{UsageLogID: id, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}, nil
+	} else {
+		x.EvidenceStatus = string(e.EvidenceStatus)
+		x.NormalizedCostCNY = e.NormalizedCostCny
+		if e.ReasonCode != nil {
+			x.ReasonCode = *e.ReasonCode
+		}
 	}
-	reason := ""
-	if e.ReasonCode != nil {
-		reason = *e.ReasonCode
-	}
-	x := &service.UsageFinancialEvidence{UsageLogID: id, EvidenceStatus: string(e.EvidenceStatus), ReasonCode: reason, NormalizedCostCNY: e.NormalizedCostCny}
 	if v, err := r.client.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(id)).Only(ctx); err == nil {
 		x.ReviewID = &v.ID
 		x.ReviewCostCNY = &v.ManualCostCny
+	} else if !ent.IsNotFound(err) {
+		return nil, err
 	}
 	return x, nil
 }

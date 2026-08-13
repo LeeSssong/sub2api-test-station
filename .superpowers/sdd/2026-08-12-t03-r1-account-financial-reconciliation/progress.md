@@ -59,3 +59,10 @@ Task 7: complete
 - Initial review found one Important provenance defect: NewAPI unavailable rows with empty quota were inferred as Sub. Fixes project the persisted `source` into list, CSV and administrator detail, with NewAPI empty-quota RED/GREEN coverage.
 - Scoped re-review `task-7-source-rereview.md`: finding ADDRESSED, Spec APPROVE, Quality APPROVE, open findings 0.
 - Focused Vitest 55/55, typecheck, production build and diff-check passed; no backend, schema, migration, main, push, deployment or production change.
+
+Task 8: validation complete; awaiting independent whole-branch review
+- Candidate before evidence commit: `32f8ec12572ad9d2e50eab054788d4ec0bf05454`; merge base `19492c57da24270eb2b3e9b5d9727c2865aebb9e`; tree `ab19d7807763e1fcd03d0d0cd3f8f49d335f9fbb`.
+- Backend migration/repository/service/admin-handler/handler matrix, vet and server build passed; frontend financial/usage matrix passed 53/53, typecheck and production build passed; diff-check clean.
+- Migration 222 SHA-256 `47f786d6b2b020d0211a17d4ccd2bc6bb3774a315f483fdc0ac45657c9ee738e`; existing migration files unchanged, no config or GitHub Actions delta.
+- Negative guard found one known whole-branch review item: `UsageHandler.GetUpstreamCost` still has a nil-financial-service fallback to `SubUpstreamCostService.GetByUsageID`, although normal Wire injection takes the local evidence branch. No functional fix was made in Task 8; final reviewer must APPROVE or REJECT this against the zero read-time upstream HTTP contract.
+- Reports: `2026-08-12-t03-r1-account-financial-reconciliation-{task-review,release-preflight,final-review}.md`. No merge, push, deployment, production or T05 action.

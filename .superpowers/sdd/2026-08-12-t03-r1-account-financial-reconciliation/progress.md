@@ -25,10 +25,13 @@ Task 3: in progress
 - Task 3: fix round 2/5 (2 addressed, 0 open; commit `70a6d89703bcbf664db3737aef40e8f67d9b9619`).
 - Task 3: complete (commits `ddeb78f1b99171482122b05a324519ee7d96ec3f..70a6d89703bcbf664db3737aef40e8f67d9b9619`, scoped re-review round 2 clean; residual non-blocking gap: no fresh concurrent PostgreSQL `CreateOnce` integration race test).
 
-Task 4: in progress
+Task 4: complete
 - Initial implementation commit: `5a8d830b2de8063e2b99876e13e044b0e1930cdb` (supersedes pre-review draft `f876fe725`).
 - Independent review: Spec ❌, Quality ❌. Critical: wrong activation key; review mutations admit confirmed/OAuth/pre-enable rows; mutation audit helper is disconnected. Important: Beijing today starts at 08:00; OAuth completed-day revenue/overrides wrong; exception interface loses filters/reasons; override old/new values wrong; filtered review is non-atomic with partial unreported commits.
 - Task 4: minor (deferred): usage-detail review lookup suppresses database errors.
 - Task 4: minor (deferred): snapshot supporting-table reads are unbounded and may hold a long repeatable-read transaction.
 - PostgreSQL transaction/concurrency behavior remains an explicit verification requirement for the fix/re-review; SQLite evidence alone is insufficient.
 - Fix round 2 implementation addresses the five remaining review findings: confirmed-after-existing-review eligibility ordering, nil audit recorder fail-closed, filtered idempotent skip per-row audit result, selected partial-success per-row audit, and override `MutationKind` persisted in audit `Extra`. RED regressions failed before implementation; focused/full Task 4 matrices, compile, vet and diff checks pass. Report: `task-4-fix2-report.md`. Awaiting independent scoped re-review. PostgreSQL integration remains blocked by exact `panic: rootless Docker not found`; no migration/container/production state changed.
+- Fix round 3 commit: `9601ab34e6a6a67cc0a1a247c87c68c3f6f0cbfa` fixed per-row audit emission when `ReviewSelected` hits a later validation error; targeted regression, vet and diff checks passed.
+- Scoped re-review round 3: `task-4-rereview-r3.md` — Spec Compliance ✅, Code Quality ✅, open code findings 0. PostgreSQL remains an environment-only warning (`rootless Docker not found`).
+- Task 4 complete; no merge, push, deployment or production verification.

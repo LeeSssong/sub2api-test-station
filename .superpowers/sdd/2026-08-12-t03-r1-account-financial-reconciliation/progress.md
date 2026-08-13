@@ -24,3 +24,11 @@ Task 3: in progress
 - Fix round 2 implementation is present in the working tree: positive native ledger identity gate plus real `ChatCompletions`/`Responses` success-path tests. Focused service/repository/handler/server/tagged-fallback matrices pass; awaiting commit and scoped re-review round 2.
 - Task 3: fix round 2/5 (2 addressed, 0 open; commit `70a6d89703bcbf664db3737aef40e8f67d9b9619`).
 - Task 3: complete (commits `ddeb78f1b99171482122b05a324519ee7d96ec3f..70a6d89703bcbf664db3737aef40e8f67d9b9619`, scoped re-review round 2 clean; residual non-blocking gap: no fresh concurrent PostgreSQL `CreateOnce` integration race test).
+
+Task 4: in progress
+- Initial implementation commit: `5a8d830b2de8063e2b99876e13e044b0e1930cdb` (supersedes pre-review draft `f876fe725`).
+- Independent review: Spec ❌, Quality ❌. Critical: wrong activation key; review mutations admit confirmed/OAuth/pre-enable rows; mutation audit helper is disconnected. Important: Beijing today starts at 08:00; OAuth completed-day revenue/overrides wrong; exception interface loses filters/reasons; override old/new values wrong; filtered review is non-atomic with partial unreported commits.
+- Task 4: minor (deferred): usage-detail review lookup suppresses database errors.
+- Task 4: minor (deferred): snapshot supporting-table reads are unbounded and may hold a long repeatable-read transaction.
+- PostgreSQL transaction/concurrency behavior remains an explicit verification requirement for the fix/re-review; SQLite evidence alone is insufficient.
+- Fix round 1 takeover commit: `962e468c7858bb753fb1a47ebdbeae45891211fa`. Closed all 3 Critical + 5 Important findings with canonical activation, eligibility rechecks, mutation audit wiring and truthful old/new, Beijing 00:00, OAuth day aggregation, exception filters/reasons, override result semantics, and atomic filtered review. Original GREEN, focused regressions, compile, vet and diff checks pass. Fresh PostgreSQL integration was attempted with `SUB2API_TEST_POSTGRES_TMPFS=1 SUB2API_TEST_POSTGRES_IMAGE=postgres:15-alpine`; blocked before migrations/tests by exact environment error `panic: rootless Docker not found` in testcontainers Docker host discovery. Awaiting independent fix re-review; not merged, pushed, deployed or online-verified.

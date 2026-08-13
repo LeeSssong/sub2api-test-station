@@ -274,6 +274,11 @@
           </p>
           <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             <DetailItem
+              v-if="adminCostDetail?.source"
+              :label="t('admin.usageCostDetail.costSource')"
+              :value="adminCostDetail.source"
+            />
+            <DetailItem
               :label="t('admin.usageCostDetail.upstreamRequestId')"
               :value="displayValue(adminUpstreamRequestId)"
               mono

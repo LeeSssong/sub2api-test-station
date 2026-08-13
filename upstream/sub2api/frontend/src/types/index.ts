@@ -1753,6 +1753,7 @@ export interface AdminUsageCostExceptionList {
 
 export interface UsageCostEvidenceDetail {
   usage_log_id: number
+  source?: string
   evidence_status: UsageCostEvidenceStatus | string
   reason_code: string
   normalized_cost_cny?: number | null

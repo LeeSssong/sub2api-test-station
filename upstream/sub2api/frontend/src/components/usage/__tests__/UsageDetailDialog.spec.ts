@@ -350,6 +350,7 @@ describe('UsageDetailDialog', () => {
     adminGetById.mockResolvedValue(adminRecord)
     adminGetCostEvidence.mockResolvedValue({
       usage_log_id: 42,
+      source: 'newapi',
       normalized_cost_cny: null,
       evidence_status: 'unavailable',
       reason_code: 'response_unavailable',
@@ -360,6 +361,7 @@ describe('UsageDetailDialog', () => {
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource')).toBe('newapi')
   })
 
   it('explains when the upstream does not expose a compatible usage ledger', async () => {

@@ -793,6 +793,20 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	costEvidenceRegistrar UsageCostEvidenceRegisterer
+}
+
+func (s *GatewayService) SetUsageCostEvidenceRegistrar(registrar UsageCostEvidenceRegisterer) {
+	if s != nil {
+		s.costEvidenceRegistrar = registrar
+	}
+}
+
+func (s *GatewayService) usageCostEvidenceRegistrarFor(account *Account) UsageCostEvidenceRegisterer {
+	if s == nil || account == nil || account.Type == AccountTypeOAuth {
+		return nil
+	}
+	return s.costEvidenceRegistrar
 }
 
 // NewGatewayService creates a new GatewayService

@@ -80,6 +80,18 @@ func (s *openAIRecordUsageBestEffortLogRepoStub) Create(ctx context.Context, log
 	return false, s.createErr
 }
 
+type usageCostEvidenceRegistrarStub struct {
+	calls      int
+	usageLogID int64
+	err        error
+}
+
+func (s *usageCostEvidenceRegistrarStub) RegisterOnce(_ context.Context, usageLogID int64) error {
+	s.calls++
+	s.usageLogID = usageLogID
+	return s.err
+}
+
 func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: context.DeadlineExceeded}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -605,6 +617,70 @@ func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testi
 	require.Equal(t, 1, usageRepo.createCalls)
 	// 兜底调用使用的 ctx 必须仍然存活，不能带着已死的 ctx 走过场。
 	require.NoError(t, usageRepo.lastCtxErr)
+}
+
+func TestGatewayServiceRecordUsage_RegistersEvidenceAfterInsert(t *testing.T) {
+	usageRepo := &evidenceUsageLogRepoStub{inserted: true, usageLogID: 812}
+	registrar := &usageCostEvidenceRegistrarStub{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.SetUsageCostEvidenceRegistrar(registrar)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result:  &ForwardResult{RequestID: "gateway-evidence-fallback", Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 6}, Model: "claude-sonnet-4", Duration: time.Second},
+		APIKey:  &APIKey{ID: 512},
+		User:    &User{ID: 612},
+		Account: &Account{ID: 712, Type: AccountTypeAPIKey},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, usageRepo.calls)
+	require.Equal(t, 1, registrar.calls)
+	require.Equal(t, int64(812), registrar.usageLogID)
+}
+
+func TestGatewayServiceRecordUsage_DoesNotRegisterEvidenceForConflictOrOAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		inserted    bool
+		accountType string
+	}{
+		{name: "conflict", inserted: false, accountType: AccountTypeAPIKey},
+		{name: "oauth", inserted: true, accountType: AccountTypeOAuth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usageRepo := &evidenceUsageLogRepoStub{inserted: tc.inserted, usageLogID: 813}
+			registrar := &usageCostEvidenceRegistrarStub{}
+			svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+			svc.SetUsageCostEvidenceRegistrar(registrar)
+
+			err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+				Result:  &ForwardResult{RequestID: "gateway-evidence-" + tc.name, Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 6}, Model: "claude-sonnet-4", Duration: time.Second},
+				APIKey:  &APIKey{ID: 513},
+				User:    &User{ID: 613},
+				Account: &Account{ID: 713, Type: tc.accountType},
+			})
+
+			require.NoError(t, err)
+			require.Zero(t, registrar.calls)
+		})
+	}
+}
+
+func TestGatewayServiceRecordUsage_RegistrationFailureDoesNotChangeSuccess(t *testing.T) {
+	usageRepo := &evidenceUsageLogRepoStub{inserted: true, usageLogID: 814}
+	registrar := &usageCostEvidenceRegistrarStub{err: errors.New("evidence unavailable")}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.SetUsageCostEvidenceRegistrar(registrar)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result:  &ForwardResult{RequestID: "gateway-evidence-isolated", Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 6}, Model: "claude-sonnet-4", Duration: time.Second},
+		APIKey:  &APIKey{ID: 514},
+		User:    &User{ID: 614},
+		Account: &Account{ID: 714, Type: AccountTypeAPIKey},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, registrar.calls)
 }
 
 func TestGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *testing.T) {

@@ -76,6 +76,10 @@ type usageLogBestEffortWriter interface {
 	CreateBestEffort(ctx context.Context, log *UsageLog) error
 }
 
+type UsageCostEvidenceRegisterer interface {
+	RegisterOnce(ctx context.Context, usageLogID int64) error
+}
+
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
 	Cost                   *CostBreakdown
@@ -622,11 +626,29 @@ func (s *GatewayService) billingDeps() *billingDeps {
 }
 
 func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) {
+	writeUsageLogBestEffortWithRegistrar(ctx, repo, usageLog, nil, logKey)
+}
+
+func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, registrar UsageCostEvidenceRegisterer, logKey string) {
 	if repo == nil || usageLog == nil {
 		return
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
+
+	if registrar != nil {
+		inserted, err := repo.Create(usageCtx, usageLog)
+		if err != nil {
+			logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
+			return
+		}
+		if inserted && usageLog.ID > 0 {
+			if err := registrar.RegisterOnce(usageCtx, usageLog.ID); err != nil {
+				logger.LegacyPrintf(logKey, "Register usage cost evidence failed: usage_log_id=%d error=%v", usageLog.ID, err)
+			}
+		}
+		return
+	}
 
 	if writer, ok := repo.(usageLogBestEffortWriter); ok {
 		if err := writer.CreateBestEffort(usageCtx, usageLog); err != nil {
@@ -992,7 +1014,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		writeUsageLogBestEffortWithRegistrar(ctx, s.usageLogRepo, usageLog, s.usageCostEvidenceRegistrarFor(account), "service.gateway")
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -1037,10 +1059,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	if billingErr != nil {
 		usageLog.ActualCost = 0
-		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		writeUsageLogBestEffortWithRegistrar(ctx, s.usageLogRepo, usageLog, s.usageCostEvidenceRegistrarFor(account), "service.gateway")
 		return billingErr
 	}
-	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	writeUsageLogBestEffortWithRegistrar(ctx, s.usageLogRepo, usageLog, s.usageCostEvidenceRegistrarFor(account), "service.gateway")
 
 	return nil
 }

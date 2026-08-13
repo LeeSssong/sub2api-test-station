@@ -12,3 +12,9 @@
 - Business dates now use `Asia/Shanghai` formatting rather than UTC ISO truncation.
 - Commit: `94063b3393eca9857625af1b68420bc7eb29b7f8`.
 - Validation: focused AccountProfitability Vitest (3 passed), `pnpm typecheck`, `pnpm build`, `git diff --check`.
+
+## Fix Round 2
+
+- Restored visible per-account revenue, expense, profit, margin, and exception fields while retaining today-only editors.
+- Added regression coverage for all four financial values and read-only 7d controls.
+- Validation: focused Vitest (4 passed), typecheck, build, and diff check passed.

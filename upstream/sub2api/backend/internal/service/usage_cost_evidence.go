@@ -121,7 +121,7 @@ func (r *UsageCostEvidenceRegistrar) RegisterOnce(ctx context.Context, usageLogI
 }
 
 func isUsageCostEvidenceEligibleAccount(account *Account) bool {
-	return account != nil && account.Type == AccountTypeAPIKey
+	return usageCostLedgerForAccount(account) != usageCostLedgerUnknown
 }
 
 func normalizeUsageCostEvidenceReason(reason string) string {
@@ -140,7 +140,7 @@ func normalizeUsageCostEvidenceReason(reason string) string {
 }
 
 func evidenceSourceForAccount(account *Account) UsageCostEvidenceSource {
-	if isNewAPIUsageLedger(account) {
+	if usageCostLedgerForAccount(account) == usageCostLedgerNewAPI {
 		return UsageCostEvidenceSourceNewAPI
 	}
 	return UsageCostEvidenceSourceSub

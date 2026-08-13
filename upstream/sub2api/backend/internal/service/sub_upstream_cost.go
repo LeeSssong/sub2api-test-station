@@ -56,6 +56,36 @@ type upstreamCostEvidenceLookup struct {
 	NewAPIQuotaPerUnit *float64
 }
 
+// usageCostLedgerIdentity is deliberately derived only from persisted native
+// observations. Account type and an unsupported billing probe are not ledger
+// identities: official provider API-key accounts share both characteristics.
+type usageCostLedgerIdentity string
+
+const (
+	usageCostLedgerUnknown usageCostLedgerIdentity = ""
+	usageCostLedgerSub     usageCostLedgerIdentity = "sub"
+	usageCostLedgerNewAPI  usageCostLedgerIdentity = "newapi"
+)
+
+func usageCostLedgerForAccount(account *Account) usageCostLedgerIdentity {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return usageCostLedgerUnknown
+	}
+	balance := decodeAccountMonitorBalance(account.Extra)
+	if balance != nil {
+		switch balance.Source {
+		case AccountMonitorBalanceSourceSub2API:
+			return usageCostLedgerSub
+		case AccountMonitorBalanceSourceNewAPI:
+			return usageCostLedgerNewAPI
+		}
+	}
+	if snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra); snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusOK {
+		return usageCostLedgerSub
+	}
+	return usageCostLedgerUnknown
+}
+
 func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *UsageLog) upstreamCostEvidenceLookup {
 	result := upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceSub}
 	baseURL, apiKey, ok := subCredentials(usage.Account)
@@ -63,7 +93,7 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 		result.ReasonCode = "credentials_unavailable"
 		return result
 	}
-	if isNewAPIUsageLedger(usage.Account) {
+	if usageCostLedgerForAccount(usage.Account) == usageCostLedgerNewAPI {
 		return s.lookupNewAPIEvidence(ctx, baseURL, apiKey, usage)
 	}
 	endpoint, err := subUsageRecordsURL(baseURL)
@@ -72,9 +102,6 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 		return result
 	}
 	matched, reasonCode, _ := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
-	if matched == nil && reasonCode == "endpoint_unsupported" {
-		return s.lookupNewAPIEvidence(ctx, baseURL, apiKey, usage)
-	}
 	if !subEvidenceRecordMatches(matched, usage) {
 		result.ReasonCode = firstNonEmpty(reasonCode, "record_not_found")
 		return result
@@ -221,7 +248,7 @@ func (s *SubUpstreamCostService) GetByUsageID(ctx context.Context, usageID int64
 }
 
 func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL, apiKey string, usage *UsageLog) (float64, bool, string, string) {
-	if isNewAPIUsageLedger(usage.Account) {
+	if isNewAPIUsageLedgerForDetail(usage.Account) {
 		return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 	}
 
@@ -247,7 +274,10 @@ func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL
 	return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 }
 
-func isNewAPIUsageLedger(account *Account) bool {
+// isNewAPIUsageLedgerForDetail preserves the existing administrator detail
+// lookup's bounded discovery behavior. It is intentionally not used by
+// evidence persistence, which must require a positive ledger identity.
+func isNewAPIUsageLedgerForDetail(account *Account) bool {
 	if account == nil {
 		return false
 	}

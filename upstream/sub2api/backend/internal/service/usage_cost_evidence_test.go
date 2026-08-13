@@ -32,6 +32,18 @@ func enabledUsageCostEvidenceRegistrar(usageRepo UsageLogRepository, evidenceRep
 	return NewUsageCostEvidenceRegistrar(usageRepo, evidenceRepo, usageCostEvidenceActivationStub{enabledAt: &enabledAt})
 }
 
+func subLedgerEvidenceExtra() map[string]any {
+	return map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK}}
+}
+
+func newAPILedgerEvidenceExtra() map[string]any {
+	return map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+		Version: AccountMonitorBalanceVersion,
+		Source:  AccountMonitorBalanceSourceNewAPI,
+		Status:  AccountMonitorBalanceStatusOK,
+	}}
+}
+
 func (s *usageCostEvidenceRepoStub) CreateOnce(_ context.Context, evidence *UsageCostEvidence) (bool, error) {
 	s.calls++
 	s.created = evidence
@@ -60,7 +72,7 @@ func TestUsageCostEvidenceRegistrarRegistersConfirmedAndConfirmedZero(t *testing
 
 			usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 				ID: 91, RequestID: "local-usage-1", UpstreamRequestID: &upstreamID, ActualCost: 0.006,
-				CreatedAt: time.Now(), Account: &Account{ID: 7, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}},
+				CreatedAt: time.Now(), Account: &Account{ID: 7, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()},
 			}}
 			evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 			registrar := enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo)
@@ -85,7 +97,7 @@ func TestUsageCostEvidenceRegistrarStoresUnavailableWithoutRetry(t *testing.T) {
 	upstreamID := "missing-provider-usage"
 	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 		ID: 92, RequestID: "local-usage-2", UpstreamRequestID: &upstreamID, ActualCost: 0.006,
-		CreatedAt: time.Now(), Account: &Account{ID: 8, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}},
+		CreatedAt: time.Now(), Account: &Account{ID: 8, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()},
 	}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
@@ -106,7 +118,7 @@ func TestUsageCostEvidenceRegistrarRejectsLocalRequestIDFallback(t *testing.T) {
 	upstreamID := "provider-usage-3"
 	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 		ID: 93, RequestID: "local-usage-3", UpstreamRequestID: &upstreamID, ActualCost: 0.006,
-		CreatedAt: time.Now(), Account: &Account{ID: 9, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}},
+		CreatedAt: time.Now(), Account: &Account{ID: 9, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()},
 	}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
@@ -123,7 +135,7 @@ func TestUsageCostEvidenceRegistrarStoresUnavailableWithoutRequestIDOrHTTP(t *te
 
 	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 		ID: 95, RequestID: "local-only", CreatedAt: time.Now(),
-		Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}},
+		Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()},
 	}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
@@ -151,9 +163,7 @@ func TestUsageCostEvidenceRegistrarRegistersNewAPIStructuredEvidence(t *testing.
 
 	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 		ID: 96, RequestID: "local-newapi-1", UpstreamRequestID: &upstreamID, ActualCost: 0.3, CreatedAt: time.Now(),
-		Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: map[string]any{
-			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
-		}},
+		Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: newAPILedgerEvidenceExtra()},
 	}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
@@ -179,7 +189,7 @@ func TestUsageCostEvidenceRegistrarBoundsSubPaginationToExactMatch(t *testing.T)
 	}))
 	defer server.Close()
 
-	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 97, RequestID: "local-page-2", UpstreamRequestID: &upstreamID, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}}}}
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 97, RequestID: "local-page-2", UpstreamRequestID: &upstreamID, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()}}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
 	require.NoError(t, enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo).RegisterOnce(context.Background(), 97))
@@ -187,16 +197,14 @@ func TestUsageCostEvidenceRegistrarBoundsSubPaginationToExactMatch(t *testing.T)
 	require.Equal(t, UsageCostEvidenceStatusConfirmed, evidenceRepo.created.Status)
 }
 
-func TestUsageCostEvidenceRegistrarBoundsSubFallbackToNewLedgerAndUnit(t *testing.T) {
-	upstreamID := "provider-fallback-new"
+func TestUsageCostEvidenceRegistrarBoundsKnownNewLedgerAndUnit(t *testing.T) {
+	upstreamID := "provider-known-new"
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		switch r.URL.Path {
-		case "/v1/usage/records":
-			http.NotFound(w, r)
 		case "/api/log/token":
-			_, _ = w.Write([]byte(`{"data":[{"type":2,"quota":1000,"request_id":"local-fallback-new","upstream_request_id":"provider-fallback-new"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"type":2,"quota":1000,"request_id":"local-known-new","upstream_request_id":"provider-known-new"}]}`))
 		case "/api/status":
 			_, _ = w.Write([]byte(`{"data":{"quota_per_unit":1000}}`))
 		default:
@@ -205,11 +213,11 @@ func TestUsageCostEvidenceRegistrarBoundsSubFallbackToNewLedgerAndUnit(t *testin
 	}))
 	defer server.Close()
 
-	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 98, RequestID: "local-fallback-new", UpstreamRequestID: &upstreamID, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}}}}
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 98, RequestID: "local-known-new", UpstreamRequestID: &upstreamID, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: newAPILedgerEvidenceExtra()}}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 
 	require.NoError(t, enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo).RegisterOnce(context.Background(), 98))
-	require.Equal(t, 3, requests)
+	require.Equal(t, 2, requests)
 	require.Equal(t, UsageCostEvidenceStatusConfirmed, evidenceRepo.created.Status)
 	require.InDelta(t, 1, *evidenceRepo.created.NormalizedCostCNY, 1e-9)
 }
@@ -233,7 +241,7 @@ func TestUsageCostEvidenceRegistrarReturnsRepositoryFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 94, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}}}}
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 94, CreatedAt: time.Now(), Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()}}}
 	wantErr := errors.New("evidence insert failed")
 	evidenceRepo := &usageCostEvidenceRepoStub{err: wantErr}
 
@@ -262,7 +270,7 @@ func TestUsageCostEvidenceRegistrarActivationBoundary(t *testing.T) {
 			}))
 			defer server.Close()
 			upstreamID := "provider-boundary"
-			usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 101, RequestID: "local-boundary", UpstreamRequestID: &upstreamID, CreatedAt: tc.createdAt, Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}}}}
+			usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 101, RequestID: "local-boundary", UpstreamRequestID: &upstreamID, CreatedAt: tc.createdAt, Account: &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: subLedgerEvidenceExtra()}}}
 			evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
 			registrar := NewUsageCostEvidenceRegistrar(usageRepo, evidenceRepo, usageCostEvidenceActivationStub{enabledAt: tc.enabledAt})
 
@@ -286,6 +294,60 @@ func TestUsageCostEvidenceRegistrarRejectsNonNativeAccountTypes(t *testing.T) {
 			require.NoError(t, enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo).RegisterOnce(context.Background(), 102))
 			require.Zero(t, requests)
 			require.Zero(t, evidenceRepo.calls)
+		})
+	}
+}
+
+func TestUsageCostEvidenceRegistrarRequiresKnownNativeLedger(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		platform string
+		extra    map[string]any
+	}{
+		{name: "official OpenAI", platform: PlatformOpenAI},
+		{name: "official Anthropic", platform: PlatformAnthropic},
+		{name: "official Gemini", platform: PlatformGemini},
+		{name: "official Grok", platform: PlatformGrok},
+		{name: "unsupported probe only", platform: PlatformOpenAI, extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}},
+		{name: "unknown metadata", platform: PlatformOpenAI, extra: map[string]any{"unrelated": "metadata"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+			defer server.Close()
+			upstreamID := "provider-excluded"
+			usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{ID: 103, UpstreamRequestID: &upstreamID, CreatedAt: time.Now(), Account: &Account{
+				Platform: tc.platform, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: tc.extra,
+			}}}
+			evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
+
+			require.NoError(t, enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo).RegisterOnce(context.Background(), 103))
+			require.Zero(t, requests)
+			require.Zero(t, evidenceRepo.calls)
+		})
+	}
+}
+
+func TestUsageCostLedgerForAccountUsesPositiveNativeEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra map[string]any
+		want  usageCostLedgerIdentity
+	}{
+		{name: "successful probe is Sub", extra: subLedgerEvidenceExtra(), want: usageCostLedgerSub},
+		{name: "Sub balance is Sub", extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK}}, want: usageCostLedgerSub},
+		{name: "New balance is New", extra: newAPILedgerEvidenceExtra(), want: usageCostLedgerNewAPI},
+		{name: "New balance wins over successful Sub probe", extra: map[string]any{
+			AccountMonitorBalanceExtraKey: AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK},
+			UpstreamBillingProbeExtraKey:  UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK},
+		}, want: usageCostLedgerNewAPI},
+		{name: "unsupported probe is unknown", extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}, want: usageCostLedgerUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			account := &Account{Type: AccountTypeAPIKey, Extra: tc.extra}
+			require.Equal(t, tc.want, usageCostLedgerForAccount(account))
+			require.Equal(t, tc.want != usageCostLedgerUnknown, isUsageCostEvidenceEligibleAccount(account))
+			require.Equal(t, tc.want == usageCostLedgerNewAPI, evidenceSourceForAccount(account) == UsageCostEvidenceSourceNewAPI)
 		})
 	}
 }

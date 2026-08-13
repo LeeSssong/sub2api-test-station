@@ -1,0 +1,24 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-08-12-t03-r1-account-financial-reconciliation.md
+
+Task 1: complete
+- Commits: `26da1cd72`, `48770ff65`, `c0e83454a`
+- Result: frozen direct `usage_logs` persistence implementation reverted; legacy-field guard added and reviewed.
+
+Task 2: complete
+- Commits: `bdf278ce6`, `125bdf814`
+- Result: expand-only evidence/review/daily-value/setting tables generated; explicit unique indexes fixed and scoped re-review approved.
+
+Main synchronization: complete
+- Root main/origin main: `19492c57da24270eb2b3e9b5d9727c2865aebb9e`
+- Candidate merge commit: `ddeb78f1b99171482122b05a324519ee7d96ec3f`
+- Conflict resolution authorized by user: retained T03-R1 records and adopted final official v0.1.175 production-complete ledger entry.
+
+Task 3: in progress
+- Pre-sync uncommitted implementation was preserved in stash and restored without conflict.
+- Restored scope: registrar/repository services, Sub/New parser reuse, response-after usage hooks, tests, Wire providers, and project ledger.
+- Initial implementation commit: `b8c5a7f8c0342a7176a5ad232170480c3af6c77b`.
+- Review round 1: Spec ❌, Quality ❌. Critical: replaced official `CreateBestEffort`; Important: missing persisted `enabled_at` gate; Minor: unstable reason codes.
+- Review warnings adjudication: missing handler stream/nonstream tests is a real brief gap and enters fix round 1; batch-image Vertex and OpenAI Live are structurally outside Sub/New but the exclusion must be locked/documented; raw-request maximum is bounded parser behavior, not a delayed retry, and must be covered where practical.
+- Fix round 1 commit: `f41f4682c575231f72a82ec3c98fa44a7a12b661`.
+- Scoped re-review round 1: original Critical/Important/Minor closed; bounded requests and Vertex/Live exclusions closed. Two open Important findings remain: tests do not traverse real handler stream/nonstream success branches, and `AccountTypeAPIKey` is not positive Sub/New ledger identity because official-provider API-key accounts share it.
+- Fix round 2 implementation is present in the working tree: positive native ledger identity gate plus real `ChatCompletions`/`Responses` success-path tests. Focused service/repository/handler/server/tagged-fallback matrices pass; awaiting commit and scoped re-review round 2.

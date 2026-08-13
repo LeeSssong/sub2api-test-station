@@ -21,11 +21,12 @@ import (
 
 // UsageHandler handles admin usage-related requests
 type UsageHandler struct {
-	usageService        *service.UsageService
-	apiKeyService       *service.APIKeyService
-	adminService        service.AdminService
-	cleanupService      *service.UsageCleanupService
-	upstreamCostService *service.SubUpstreamCostService
+	usageService            *service.UsageService
+	apiKeyService           *service.APIKeyService
+	adminService            service.AdminService
+	cleanupService          *service.UsageCleanupService
+	upstreamCostService     *service.SubUpstreamCostService
+	accountFinancialService *service.AccountFinancialService
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -45,6 +46,10 @@ func NewUsageHandler(
 	}
 }
 
+func (h *UsageHandler) SetAccountFinancialService(s *service.AccountFinancialService) {
+	h.accountFinancialService = s
+}
+
 // GetUpstreamCost compares the local actual charge with the exact upstream
 // Sub actual_cost for one administrator usage row.
 // GET /api/v1/admin/usage/:id/upstream-cost
@@ -52,6 +57,15 @@ func (h *UsageHandler) GetUpstreamCost(c *gin.Context) {
 	usageID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
 	if err != nil || usageID <= 0 {
 		response.BadRequest(c, "Invalid usage ID")
+		return
+	}
+	if h.accountFinancialService != nil {
+		detail, err := h.accountFinancialService.GetUsageEvidence(c.Request.Context(), usageID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, detail)
 		return
 	}
 	if h.upstreamCostService == nil {

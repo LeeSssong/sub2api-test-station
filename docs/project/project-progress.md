@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**本轮 T03-R1 Task 4 fix round 3（2026-08-13）：** 状态：准备完成（等待独立复审；未合并、未推送、未部署、未线上验证）。当前工作区为 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，分支 `codex/t03-r1-upstream-cost-persistence`，基线 `957d4c94d42e3dbb1b0341a0a046af1c55eb95ab`。范围严格限定为修复 `task-4-rereview-r2.md` 指出的 `ReviewSelected` 后续 `validateMoney` 失败路径：已通过 `CreateReview` 提交的前序 rows 必须逐行 audit，并单独记录失败行；仅修改 service implementation/test 与本轮报告，禁止触碰 Task 5/API/UI/schema、合并、推送、部署或生产。实现与专项验证见 `task-4-fix3-report.md`。
+
 **本轮 T03-R1 Task 4 fix round 1 接管（2026-08-13）：** 状态：进行中。当前工作区为 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，分支 `codex/t03-r1-upstream-cost-persistence`，接管基线 `5a8d830b2de8063e2b99876e13e044b0e1930cdb`。原 implementer 留下的未提交 Task 4 修复、`account_financial_repo_integration_test.go` 与 opt-in `SUB2API_TEST_POSTGRES_TMPFS` harness 支持必须原样保留、审查并在其上完成；禁止 reset、丢弃或重做。范围仅关闭独立复审列出的 3 个 Critical 和 5 个 Important：canonical activation、post-enable 非 OAuth pending-only review eligibility、所有 mutation 的真实 old/new 审计、北京 00:00、OAuth 今日/7/31 语义、异常列表过滤/持久化原因、override old/new，以及过滤核对的原子 freeze/recheck/count/无部分写入。不得修改 schema/migration/generated Ent/`usage_logs`/Task 5+，不得上游 HTTP、合并、推送、部署或触碰生产。
 
 Fix round 1 实现提交 `962e468c7858bb753fb1a47ebdbeae45891211fa`，SDD ledger 记录提交 `e0cb75a1c61cc671542bdd954636e3a73e0fc251`。原始 GREEN、focused 新测试、compile、`go vet`、`git diff --check` 均通过；fresh PostgreSQL integration 已按仓库 harness 尝试，但在 TestMain 启动阶段因 `panic: rootless Docker not found` 阻断，未进入迁移或测试。等待独立 fix re-review，仍未合并、推送、部署或线上验证。

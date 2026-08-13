@@ -519,24 +519,32 @@ func (s *AccountFinancialService) ReviewSelected(ctx context.Context, in []Usage
 		return nil, ErrFinancialAuditRequired
 	}
 	out := make([]UsageCostReviewResult, 0, len(in))
+	committedInputs := make([]UsageCostReviewInput, 0, len(in))
 	for _, x := range in {
 		if err := validateMoney(x.ManualCostCNY); err != nil {
-			s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, 0, "", nil, x.ManualCostCNY, 0, map[string]int64{"matched": int64(len(in)), "updated": int64(len(out)), "failed": 1})
+			for i, committed := range out {
+				input := committedInputs[i]
+				s.auditMutation(ctx, "admin.account_financial.review_selected", input.ReviewedBy, input.RequestID, committed.AccountID, committed.BusinessDate, committed.OldManualCostCNY, &committed.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(committed.Created), "skipped": boolInt64(!committed.Created)})
+			}
+			s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, 0, "", nil, x.ManualCostCNY, 0, map[string]int64{"failed": 1})
 			return nil, err
 		}
 		r, e := s.repo.CreateReview(ctx, x)
 		if e != nil {
-			for _, committed := range out {
-				s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, committed.AccountID, committed.BusinessDate, committed.OldManualCostCNY, &committed.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(committed.Created), "skipped": boolInt64(!committed.Created)})
+			for i, committed := range out {
+				input := committedInputs[i]
+				s.auditMutation(ctx, "admin.account_financial.review_selected", input.ReviewedBy, input.RequestID, committed.AccountID, committed.BusinessDate, committed.OldManualCostCNY, &committed.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(committed.Created), "skipped": boolInt64(!committed.Created)})
 			}
 			s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, 0, "", nil, x.ManualCostCNY, 0, map[string]int64{"failed": 1})
 			return nil, e
 		}
 		out = append(out, *r)
+		committedInputs = append(committedInputs, x)
 	}
 	if len(in) > 0 {
-		for _, r := range out {
-			s.auditMutation(ctx, "admin.account_financial.review_selected", in[0].ReviewedBy, in[0].RequestID, r.AccountID, r.BusinessDate, r.OldManualCostCNY, &r.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(r.Created), "skipped": boolInt64(!r.Created)})
+		for i, r := range out {
+			input := committedInputs[i]
+			s.auditMutation(ctx, "admin.account_financial.review_selected", input.ReviewedBy, input.RequestID, r.AccountID, r.BusinessDate, r.OldManualCostCNY, &r.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(r.Created), "skipped": boolInt64(!r.Created)})
 		}
 	}
 	return out, nil

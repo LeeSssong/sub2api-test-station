@@ -71,6 +71,31 @@ func TestAccountFinancialServiceReviewSelectedAuditsCommittedRowsBeforeLaterErro
 	}
 }
 
+func TestAccountFinancialServiceReviewSelectedAuditsCommittedRowsBeforeLaterValidationError(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	rec := &auditRecorder{}
+	repo := &mutationFinancialRepoStub{}
+	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	invalid := -1.0
+	_, err := svc.ReviewSelected(ctx, []UsageCostReviewInput{
+		{UsageLogID: 1, ReviewedBy: 9, RequestID: "selected-valid"},
+		{UsageLogID: 2, ManualCostCNY: &invalid, ReviewedBy: 9, RequestID: "selected-invalid"},
+	})
+	if !errors.Is(err, ErrFinancialInvalidAmount) {
+		t.Fatalf("err=%v, want validation failure", err)
+	}
+	if len(rec.entries) != 2 {
+		t.Fatalf("selected validation failure must audit committed row and failing row: audits=%d", len(rec.entries))
+	}
+	if rec.entries[0].RequestID != "selected-valid" || rec.entries[0].Extra["account_id"] != int64(11) || rec.entries[0].Extra["updated"] != int64(1) || rec.entries[0].Extra["failed"] != nil {
+		t.Fatalf("committed row audit missing or aggregate-only: %#v", rec.entries[0])
+	}
+	if rec.entries[1].RequestID != "selected-invalid" || rec.entries[1].Extra["failed"] != int64(1) {
+		t.Fatalf("failing row audit missing: %#v", rec.entries[1])
+	}
+}
+
 func TestAccountFinancialServiceOverrideAuditPersistsMutationKind(t *testing.T) {
 	ctx := context.Background()
 	now := beijingTime(t, "2026-08-13 12:00")

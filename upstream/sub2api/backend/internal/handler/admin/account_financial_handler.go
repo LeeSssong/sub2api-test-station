@@ -85,6 +85,27 @@ func (h *AccountFinancialHandler) ListExceptions(c *gin.Context) {
 		}
 		f.AccountID = &id
 	}
+	for _, item := range []struct {
+		raw string
+		set func(time.Time)
+	}{
+		{raw: strings.TrimSpace(c.Query("start_time")), set: func(v time.Time) { f.From = &v }},
+		{raw: strings.TrimSpace(c.Query("end_time")), set: func(v time.Time) { f.To = &v }},
+	} {
+		if item.raw == "" {
+			continue
+		}
+		v, err := time.Parse(time.RFC3339, item.raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid time range")
+			return
+		}
+		item.set(v)
+	}
+	if f.From != nil && f.To != nil && !f.From.Before(*f.To) {
+		response.BadRequest(c, "Invalid time range")
+		return
+	}
 	v, err := h.service.ListExceptions(c.Request.Context(), f)
 	if err != nil {
 		response.ErrorFrom(c, err)

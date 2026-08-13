@@ -218,6 +218,28 @@ func TestAccountFinancialRepositoryUsageEvidenceIncludesReviewWhenEvidenceMissin
 	}
 }
 
+func TestAccountFinancialRepositoryUsageEvidenceIncludesScopedTraceability(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	account := client.Account.Create().SetName("newapi-ledger").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	user := client.User.Create().SetEmail("evidence-trace@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-evidence-trace").SetName("trace").SaveX(ctx)
+	upstreamRequestID := "upstream-request-42"
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("local-request-42").SetUpstreamRequestID(upstreamRequestID).SetModel("m").SetActualCost(10).SaveX(ctx)
+	billingTime := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	upstreamModel := "upstream-model"
+	quota, perUnit, normalized := 2500.0, 500000.0, 0.005
+	client.UsageUpstreamCostEvidence.Create().SetUsageLogID(usage.ID).SetSource("newapi").SetUpstreamRequestID(upstreamRequestID).SetUpstreamBillingTime(billingTime).SetUpstreamModel(upstreamModel).SetNewapiQuota(quota).SetNewapiQuotaPerUnit(perUnit).SetNormalizedCostCny(normalized).SetEvidenceStatus("confirmed").SaveX(ctx)
+
+	detail, err := NewAccountFinancialRepository(client).GetUsageEvidence(ctx, usage.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.RequestID != "local-request-42" || detail.AccountID != account.ID || detail.AccountName != "newapi-ledger" || detail.AccountType != "api_key" || detail.Source != "newapi" || detail.UpstreamRequestID == nil || *detail.UpstreamRequestID != upstreamRequestID || detail.UpstreamBillingTime == nil || detail.UpstreamModel == nil || *detail.UpstreamModel != upstreamModel || detail.NewAPIQuota == nil || *detail.NewAPIQuota != quota || detail.NewAPIQuotaPerUnit == nil || *detail.NewAPIQuotaPerUnit != perUnit || detail.NormalizedCostCNY == nil || *detail.NormalizedCostCNY != normalized {
+		t.Fatalf("scoped evidence trace=%#v", detail)
+	}
+}
+
 func TestAccountFinancialRepositoryCostOnlyOverrideReturnsTruthfulOldNew(t *testing.T) {
 	t.Skip("SQLite returns DATE as string; PostgreSQL-backed fix-round test covers old/new and unique concurrency")
 	ctx := context.Background()

@@ -99,11 +99,15 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 		rm[v.UsageLogID] = v
 	}
 	for _, u := range logs {
-		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, RequestID: u.RequestID, Model: u.Model, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
+		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, RequestID: u.RequestID, Model: u.Model, UpstreamRequestID: u.UpstreamRequestID, UpstreamModel: u.UpstreamModel, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
 		if x := em[u.ID]; x != nil {
 			e.EvidenceID = &x.ID
 			e.EvidenceStatus = string(x.EvidenceStatus)
 			e.EvidenceCostCNY = x.NormalizedCostCny
+			e.Source = string(x.Source)
+			e.UpstreamRequestID = x.UpstreamRequestID
+			e.UpstreamBillingTime = x.UpstreamBillingTime
+			e.UpstreamModel = x.UpstreamModel
 			e.SubActualCost = x.SubActualCost
 			e.NewAPIQuota = x.NewapiQuota
 			e.NewAPIQuotaPerUnit = x.NewapiQuotaPerUnit
@@ -426,17 +430,23 @@ func (r *accountFinancialRepository) SetTodayOverride(ctx context.Context, in se
 func (r *accountFinancialRepository) GetUsageEvidence(ctx context.Context, id int64) (*service.UsageFinancialEvidence, error) {
 	e, err := r.client.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(id)).Only(ctx)
 	x := &service.UsageFinancialEvidence{UsageLogID: id}
+	u, usageErr := r.client.UsageLog.Get(ctx, id)
+	if usageErr != nil {
+		return nil, usageErr
+	}
+	a, accountErr := r.client.Account.Get(ctx, u.AccountID)
+	if accountErr != nil {
+		return nil, accountErr
+	}
+	x.AccountID = u.AccountID
+	x.AccountName = a.Name
+	x.AccountType = a.Type
+	x.RequestID = u.RequestID
+	x.UpstreamRequestID = u.UpstreamRequestID
+	x.UpstreamModel = u.UpstreamModel
 	if err != nil {
 		if !ent.IsNotFound(err) {
 			return nil, err
-		}
-		u, usageErr := r.client.UsageLog.Get(ctx, id)
-		if usageErr != nil {
-			return nil, usageErr
-		}
-		a, accountErr := r.client.Account.Get(ctx, u.AccountID)
-		if accountErr != nil {
-			return nil, accountErr
 		}
 		if a.Type == "oauth" {
 			x.EvidenceStatus = ""
@@ -445,6 +455,13 @@ func (r *accountFinancialRepository) GetUsageEvidence(ctx context.Context, id in
 			x.ReasonCode = "evidence_not_registered"
 		}
 	} else {
+		x.Source = string(e.Source)
+		x.UpstreamRequestID = e.UpstreamRequestID
+		x.UpstreamBillingTime = e.UpstreamBillingTime
+		x.UpstreamModel = e.UpstreamModel
+		x.SubActualCost = e.SubActualCost
+		x.NewAPIQuota = e.NewapiQuota
+		x.NewAPIQuotaPerUnit = e.NewapiQuotaPerUnit
 		x.EvidenceStatus = string(e.EvidenceStatus)
 		x.NormalizedCostCNY = e.NormalizedCostCny
 		if e.ReasonCode != nil {

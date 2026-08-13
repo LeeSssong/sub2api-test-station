@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type financialFilterCaptureRepo struct {
+	financialMutationRepo
+	query    service.AccountFinancialSnapshotQuery
+	snapshot *service.AccountFinancialSnapshot
+}
+
+func (r *financialFilterCaptureRepo) ReadSnapshot(_ context.Context, q service.AccountFinancialSnapshotQuery) (*service.AccountFinancialSnapshot, error) {
+	r.query = q
+	if r.snapshot != nil {
+		return r.snapshot, nil
+	}
+	return &service.AccountFinancialSnapshot{GeneratedAt: q.GeneratedAt}, nil
+}
 
 type financialMutationRepo struct{}
 
@@ -152,4 +167,80 @@ func TestAccountFinancialReviewRejectsInvalidAmount(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cost-exceptions/1/review", strings.NewReader(`{"manual_cost_cny":-1}`)))
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAccountFinancialListExceptionsPassesRFC3339HalfOpenRange(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &financialFilterCaptureRepo{}
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, time.Now))
+	r := gin.New()
+	r.GET("/exceptions", h.ListExceptions)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/exceptions?start_time=2026-08-13T00%3A00%3A00%2B08%3A00&end_time=2026-08-14T00%3A00%3A00%2B08%3A00", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, "2026-08-13T00:00:00+08:00", repo.query.From.Format(time.RFC3339))
+	require.Equal(t, "2026-08-14T00:00:00+08:00", repo.query.To.Format(time.RFC3339))
+}
+
+func TestAccountFinancialListExceptionsRejectsMalformedOrInvalidRange(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, query := range []string{
+		"start_time=2026-08-13",
+		"end_time=not-a-time",
+		"start_time=2026-08-14T00%3A00%3A00Z&end_time=2026-08-13T00%3A00%3A00Z",
+		"start_time=2026-08-13T00%3A00%3A00Z&end_time=2026-08-13T00%3A00%3A00Z",
+	} {
+		t.Run(query, func(t *testing.T) {
+			repo := &financialFilterCaptureRepo{}
+			h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, time.Now))
+			r := gin.New()
+			r.GET("/exceptions", h.ListExceptions)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/exceptions?"+query, nil))
+			require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+			require.True(t, repo.query.From.IsZero())
+			require.True(t, repo.query.To.IsZero())
+		})
+	}
+}
+
+func TestAccountFinancialListExceptionsReturnsScopedCostTrace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 8, 13, 4, 0, 0, 0, time.UTC)
+	upstreamRequestID := "upstream-request-42"
+	upstreamModel := "gpt-upstream"
+	billingTime := now.Add(-time.Minute)
+	quota := 2500.0
+	perUnit := 500000.0
+	repo := &financialFilterCaptureRepo{}
+	repo.snapshot = &service.AccountFinancialSnapshot{
+		GeneratedAt: now,
+		Accounts: []service.AccountFinancialSnapshotAccount{{ID: 7, Name: "newapi-ledger", Type: "api_key"}},
+		Entries: []service.AccountFinancialSnapshotEntry{{UsageLogID: 42, AccountID: 7, RequestID: "local-request", CreatedAt: now, EvidenceStatus: "unavailable", ReasonCode: "record_not_found", Source: "newapi", UpstreamRequestID: &upstreamRequestID, UpstreamBillingTime: &billingTime, UpstreamModel: &upstreamModel, NewAPIQuota: &quota, NewAPIQuotaPerUnit: &perUnit}},
+	}
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, func() time.Time { return now }))
+	r := gin.New()
+	r.GET("/exceptions", h.ListExceptions)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/exceptions", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body struct {
+		Data struct {
+			Items []service.AccountFinancialException
+		}
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data.Items, 1)
+	item := body.Data.Items[0]
+	require.Equal(t, int64(7), item.AccountID)
+	require.Equal(t, "newapi-ledger", item.AccountName)
+	require.Equal(t, "api_key", item.AccountType)
+	require.Equal(t, "newapi", item.Source)
+	require.Equal(t, &upstreamRequestID, item.UpstreamRequestID)
+	require.Equal(t, &upstreamModel, item.UpstreamModel)
+	require.NotNil(t, item.UpstreamBillingTime)
+	require.Equal(t, &quota, item.CostTrace.NewAPIQuota)
+	require.Equal(t, &perUnit, item.CostTrace.NewAPIQuotaPerUnit)
+	require.NotContains(t, w.Body.String(), "credentials")
+	require.NotContains(t, w.Body.String(), "raw_response")
 }

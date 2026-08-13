@@ -21,11 +21,11 @@ import (
 
 // UsageHandler handles admin usage-related requests
 type UsageHandler struct {
-	usageService        *service.UsageService
-	apiKeyService       *service.APIKeyService
-	adminService        service.AdminService
-	cleanupService      *service.UsageCleanupService
-	upstreamCostService *service.SubUpstreamCostService
+	usageService            *service.UsageService
+	apiKeyService           *service.APIKeyService
+	adminService            service.AdminService
+	cleanupService          *service.UsageCleanupService
+	accountFinancialService *service.AccountFinancialService
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -34,15 +34,18 @@ func NewUsageHandler(
 	apiKeyService *service.APIKeyService,
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
-	upstreamCostService *service.SubUpstreamCostService,
+	_legacyUpstreamCostService *service.SubUpstreamCostService,
 ) *UsageHandler {
 	return &UsageHandler{
-		usageService:        usageService,
-		apiKeyService:       apiKeyService,
-		adminService:        adminService,
-		cleanupService:      cleanupService,
-		upstreamCostService: upstreamCostService,
+		usageService:   usageService,
+		apiKeyService:  apiKeyService,
+		adminService:   adminService,
+		cleanupService: cleanupService,
 	}
+}
+
+func (h *UsageHandler) SetAccountFinancialService(s *service.AccountFinancialService) {
+	h.accountFinancialService = s
 }
 
 // GetUpstreamCost compares the local actual charge with the exact upstream
@@ -54,11 +57,11 @@ func (h *UsageHandler) GetUpstreamCost(c *gin.Context) {
 		response.BadRequest(c, "Invalid usage ID")
 		return
 	}
-	if h.upstreamCostService == nil {
+	if h.accountFinancialService == nil {
 		response.InternalError(c, "upstream cost service unavailable")
 		return
 	}
-	detail, err := h.upstreamCostService.GetByUsageID(c.Request.Context(), usageID)
+	detail, err := h.accountFinancialService.GetUsageEvidence(c.Request.Context(), usageID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

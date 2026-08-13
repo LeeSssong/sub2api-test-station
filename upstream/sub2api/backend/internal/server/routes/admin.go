@@ -134,6 +134,7 @@ func registerOperationsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	operations := admin.Group("/operations")
 	{
 		operations.GET("/account-profitability", h.Admin.Dashboard.GetAccountProfitability)
+		operations.GET("/account-financial", h.Admin.AccountFinancial.GetReport)
 	}
 }
 
@@ -361,6 +362,8 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	accounts := admin.Group("/accounts")
 	{
+		accounts.PUT("/:id/financial/oauth-cost", h.Admin.AccountFinancial.SetOAuthCost)
+		accounts.PUT("/:id/financial/today-override", h.Admin.AccountFinancial.SetTodayOverride)
 		accounts.GET("", h.Admin.Account.List)
 		accounts.GET("/upstream-billing-probe/settings", h.Admin.Account.GetUpstreamBillingProbeSettings)
 		accounts.PUT("/upstream-billing-probe/settings", h.Admin.Account.UpdateUpstreamBillingProbeSettings)
@@ -690,6 +693,10 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		usage.GET("/:id/upstream-cost", h.Admin.Usage.GetUpstreamCost)
 		usage.GET("/:id", h.Admin.Usage.GetByID)
 	}
+	admin.GET("/usage/cost-exceptions", h.Admin.AccountFinancial.ListExceptions)
+	admin.POST("/usage/cost-exceptions/:usageLogID/review", h.Admin.AccountFinancial.ReviewOne)
+	admin.POST("/usage/cost-exceptions/review-selected", h.Admin.AccountFinancial.ReviewSelected)
+	admin.POST("/usage/cost-exceptions/review-filtered", h.Admin.AccountFinancial.ReviewFiltered)
 }
 
 func registerUserAttributeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

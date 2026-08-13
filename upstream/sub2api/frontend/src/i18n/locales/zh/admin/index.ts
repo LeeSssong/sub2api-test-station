@@ -37,8 +37,9 @@ export default {
     pendingConversion: '待换算',
     empty: '当前筛选条件下暂无账号数据。',
     loadError: '账号盈利数据加载失败',
-    columns: { account: '账号', source: '来源', status: '成本状态', expense: '支出', expenseCurrency: '支出币种', revenue: '收入', profit: '盈利', margin: '利润率', requests: '请求数' },
-    summary: { revenue: '收入', expense: '支出', profit: '盈利', margin: '利润率', pending: '待配置账号' },
+    columns: { account: '账号', source: '来源', status: '成本状态', expense: '支出', expenseCurrency: '支出币种', revenue: '收入', profit: '盈利', margin: '利润率', requests: '请求数', exceptions: '异常', actions: '今日覆盖' },
+    summary: { revenue: '收入', expense: '支出', profit: '盈利', margin: '利润率', pending: '待配置账号', exceptions: '异常流水', unconsumedBalance: '用户未消费余额' },
+    oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',
   },
   usageCostDetail: {
     siteRequestId: '本站请求 ID',
@@ -75,6 +76,9 @@ export default {
       ownedAllocation: '自购账号成本分摊',
       pending: '待对账',
     },
+  },
+  costExceptions: {
+    search: '搜索请求 ID 或模型', allEvidence: '全部证据状态', pending: '待核对', reviewed: '已核对', allReviews: '全部核对状态', reviewSelected: '确认选中项', reviewFiltered: '确认当前筛选', reviewOne: '确认', time: '时间', account: '账号', requestId: '请求 ID', model: '模型', revenue: '营收', source: '来源', evidence: '证据状态', reason: '原因', trace: '账单溯源', reviewStatus: '核对状态', cutoff: '截止流水', matched: '匹配', updated: '已更新', skipped: '已跳过',
   },
   accountMonitor: {
     title: '账号监控',

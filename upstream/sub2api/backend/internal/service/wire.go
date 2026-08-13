@@ -585,6 +585,10 @@ func ProvideAuditLogService(repo AuditLogRepository, settingService *SettingServ
 	return svc
 }
 
+func ProvideAccountFinancialService(repo AccountFinancialRepository, audit *AuditLogService) *AccountFinancialService {
+	return NewAccountFinancialServiceWithAudit(repo, time.Now, NewAccountFinancialAudit(audit))
+}
+
 func buildIdempotencyConfig(cfg *config.Config) IdempotencyConfig {
 	idempotencyCfg := DefaultIdempotencyConfig()
 	if cfg != nil {
@@ -886,6 +890,7 @@ var ProviderSet = wire.NewSet(
 	NewSubUpstreamCostService,
 	NewDashboardService,
 	NewAccountProfitabilityService,
+	ProvideAccountFinancialService,
 	ProvidePricingService,
 	NewBillingService,
 	ProvideBillingCacheService,
@@ -893,6 +898,7 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
+	NewUsageCostEvidenceRegistrar,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

@@ -46,6 +46,157 @@ type SubUpstreamCostService struct {
 	httpClient   *http.Client
 }
 
+type upstreamCostEvidenceLookup struct {
+	Source             UsageCostEvidenceSource
+	Cost               float64
+	Found              bool
+	ReasonCode         string
+	SubActualCost      *float64
+	NewAPIQuota        *float64
+	NewAPIQuotaPerUnit *float64
+}
+
+// usageCostLedgerIdentity is deliberately derived only from persisted native
+// observations. Account type and an unsupported billing probe are not ledger
+// identities: official provider API-key accounts share both characteristics.
+type usageCostLedgerIdentity string
+
+const (
+	usageCostLedgerUnknown usageCostLedgerIdentity = ""
+	usageCostLedgerSub     usageCostLedgerIdentity = "sub"
+	usageCostLedgerNewAPI  usageCostLedgerIdentity = "newapi"
+)
+
+func usageCostLedgerForAccount(account *Account) usageCostLedgerIdentity {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return usageCostLedgerUnknown
+	}
+	balance := decodeAccountMonitorBalance(account.Extra)
+	if balance != nil {
+		switch balance.Source {
+		case AccountMonitorBalanceSourceSub2API:
+			return usageCostLedgerSub
+		case AccountMonitorBalanceSourceNewAPI:
+			return usageCostLedgerNewAPI
+		}
+	}
+	if snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra); snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusOK {
+		return usageCostLedgerSub
+	}
+	return usageCostLedgerUnknown
+}
+
+func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *UsageLog) upstreamCostEvidenceLookup {
+	result := upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceSub}
+	baseURL, apiKey, ok := subCredentials(usage.Account)
+	if !ok {
+		result.ReasonCode = "credentials_unavailable"
+		return result
+	}
+	if usageCostLedgerForAccount(usage.Account) == usageCostLedgerNewAPI {
+		return s.lookupNewAPIEvidence(ctx, baseURL, apiKey, usage)
+	}
+	endpoint, err := subUsageRecordsURL(baseURL)
+	if err != nil {
+		result.ReasonCode = "endpoint_unavailable"
+		return result
+	}
+	matched, reasonCode, _ := s.findUpstreamRecord(ctx, endpoint, apiKey, usage)
+	if !subEvidenceRecordMatches(matched, usage) {
+		result.ReasonCode = firstNonEmpty(reasonCode, "record_not_found")
+		return result
+	}
+	cost, err := matched.ActualCost.Float64()
+	if err != nil {
+		result.ReasonCode = "response_unavailable"
+		return result
+	}
+	result.Cost = cost
+	result.Found = true
+	result.SubActualCost = &cost
+	return result
+}
+
+func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseURL, apiKey string, usage *UsageLog) upstreamCostEvidenceLookup {
+	result := upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceNewAPI}
+	logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
+	if err != nil {
+		result.ReasonCode = "endpoint_unavailable"
+		return result
+	}
+	statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
+	if err != nil {
+		result.ReasonCode = "endpoint_unavailable"
+		return result
+	}
+	matched, reasonCode, _ := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	if !newAPIEvidenceRecordMatches(matched, usage) {
+		result.ReasonCode = firstNonEmpty(reasonCode, "record_not_found")
+		return result
+	}
+	quota, err := matched.Quota.Float64()
+	if err != nil {
+		result.ReasonCode = "response_unavailable"
+		return result
+	}
+	body, reasonCode, _ := s.fetchUpstreamJSON(ctx, statusEndpoint, apiKey)
+	if reasonCode != "" {
+		result.ReasonCode = reasonCode
+		return result
+	}
+	var payload struct {
+		Data struct {
+			QuotaPerUnit json.Number `json:"quota_per_unit"`
+		} `json:"data"`
+		QuotaPerUnit json.Number `json:"quota_per_unit"`
+	}
+	if err := decodeUpstreamJSON(body, &payload); err != nil {
+		result.ReasonCode = "response_unavailable"
+		return result
+	}
+	unit := payload.Data.QuotaPerUnit
+	if strings.TrimSpace(unit.String()) == "" {
+		unit = payload.QuotaPerUnit
+	}
+	unitValue, err := strconv.ParseFloat(unit.String(), 64)
+	if err != nil {
+		result.ReasonCode = "response_unavailable"
+		return result
+	}
+	cost, err := newAPIQuotaToCost(matched.Quota, unit)
+	if err != nil {
+		result.ReasonCode = "response_unavailable"
+		return result
+	}
+	if matched.Type == 6 {
+		cost = -cost
+	}
+	result.Cost = cost
+	result.Found = true
+	result.NewAPIQuota = &quota
+	result.NewAPIQuotaPerUnit = &unitValue
+	return result
+}
+
+// Evidence registration requires a provider request ID from the official
+// usage row. Local request IDs are operational correlation data, not cost
+// evidence, even when an upstream ledger happens to expose the same value.
+func subEvidenceRecordMatches(record *subUpstreamUsageRecord, usage *UsageLog) bool {
+	if record == nil || usage == nil {
+		return false
+	}
+	id := strings.TrimSpace(usage.UpstreamRequestIDOrEmpty())
+	return id != "" && (id == strings.TrimSpace(record.UpstreamRequestID) || id == strings.TrimSpace(record.RequestID))
+}
+
+func newAPIEvidenceRecordMatches(record *newAPIUpstreamUsageRecord, usage *UsageLog) bool {
+	if record == nil || usage == nil {
+		return false
+	}
+	id := strings.TrimSpace(usage.UpstreamRequestIDOrEmpty())
+	return id != "" && (id == strings.TrimSpace(record.UpstreamRequestID) || id == strings.TrimSpace(record.RequestID))
+}
+
 func NewSubUpstreamCostService(usageService *UsageService) *SubUpstreamCostService {
 	return &SubUpstreamCostService{
 		usageService: usageService,
@@ -97,7 +248,7 @@ func (s *SubUpstreamCostService) GetByUsageID(ctx context.Context, usageID int64
 }
 
 func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL, apiKey string, usage *UsageLog) (float64, bool, string, string) {
-	if isNewAPIUsageLedger(usage.Account) {
+	if isNewAPIUsageLedgerForDetail(usage.Account) {
 		return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 	}
 
@@ -123,7 +274,10 @@ func (s *SubUpstreamCostService) lookupUpstreamCost(ctx context.Context, baseURL
 	return s.lookupNewAPIUsageCost(ctx, baseURL, apiKey, usage)
 }
 
-func isNewAPIUsageLedger(account *Account) bool {
+// isNewAPIUsageLedgerForDetail preserves the existing administrator detail
+// lookup's bounded discovery behavior. It is intentionally not used by
+// evidence persistence, which must require a positive ledger identity.
+func isNewAPIUsageLedgerForDetail(account *Account) bool {
 	if account == nil {
 		return false
 	}

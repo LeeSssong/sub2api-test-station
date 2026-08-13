@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/testcontainers/testcontainers-go"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -61,13 +62,16 @@ func TestMain(m *testing.M) {
 	}
 
 	postgresImage := selectDockerImage(ctx, postgresImageTag)
+	postgresOpts := []testcontainers.ContainerCustomizer{
+		tcpostgres.WithDatabase("sub2api_test"), tcpostgres.WithUsername("postgres"), tcpostgres.WithPassword("postgres"), tcpostgres.BasicWaitStrategies(),
+	}
+	if os.Getenv("SUB2API_TEST_POSTGRES_TMPFS") == "1" {
+		postgresOpts = append(postgresOpts, testcontainers.WithTmpfs(map[string]string{"/var/lib/postgresql/data": "rw,size=1g"}))
+	}
 	pgContainer, err := tcpostgres.Run(
 		ctx,
 		postgresImage,
-		tcpostgres.WithDatabase("sub2api_test"),
-		tcpostgres.WithUsername("postgres"),
-		tcpostgres.WithPassword("postgres"),
-		tcpostgres.BasicWaitStrategies(),
+		postgresOpts...,
 	)
 	if err != nil {
 		log.Printf("failed to start postgres container: %v", err)

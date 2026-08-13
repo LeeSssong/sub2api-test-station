@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdailyfinancialvalue"
+	"github.com/Wei-Shaw/sub2api/ent/accountfinancialsetting"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -38,7 +40,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
+	"github.com/Wei-Shaw/sub2api/ent/usagecostreview"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usageupstreamcostevidence"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -256,6 +260,36 @@ func init() {
 	accountDescSessionWindowStatus := accountFields[28].Descriptor()
 	// account.SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	account.SessionWindowStatusValidator = accountDescSessionWindowStatus.Validators[0].(func(string) error)
+	accountdailyfinancialvalueFields := schema.AccountDailyFinancialValue{}.Fields()
+	_ = accountdailyfinancialvalueFields
+	// accountdailyfinancialvalueDescCreatedAt is the schema descriptor for created_at field.
+	accountdailyfinancialvalueDescCreatedAt := accountdailyfinancialvalueFields[12].Descriptor()
+	// accountdailyfinancialvalue.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountdailyfinancialvalue.DefaultCreatedAt = accountdailyfinancialvalueDescCreatedAt.Default.(func() time.Time)
+	// accountdailyfinancialvalueDescUpdatedAt is the schema descriptor for updated_at field.
+	accountdailyfinancialvalueDescUpdatedAt := accountdailyfinancialvalueFields[13].Descriptor()
+	// accountdailyfinancialvalue.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountdailyfinancialvalue.DefaultUpdatedAt = accountdailyfinancialvalueDescUpdatedAt.Default.(func() time.Time)
+	// accountdailyfinancialvalue.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountdailyfinancialvalue.UpdateDefaultUpdatedAt = accountdailyfinancialvalueDescUpdatedAt.UpdateDefault.(func() time.Time)
+	accountfinancialsettingFields := schema.AccountFinancialSetting{}.Fields()
+	_ = accountfinancialsettingFields
+	// accountfinancialsettingDescKey is the schema descriptor for key field.
+	accountfinancialsettingDescKey := accountfinancialsettingFields[0].Descriptor()
+	// accountfinancialsetting.DefaultKey holds the default value on creation for the key field.
+	accountfinancialsetting.DefaultKey = accountfinancialsettingDescKey.Default.(func() string)
+	// accountfinancialsetting.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	accountfinancialsetting.KeyValidator = accountfinancialsettingDescKey.Validators[0].(func(string) error)
+	// accountfinancialsettingDescCreatedAt is the schema descriptor for created_at field.
+	accountfinancialsettingDescCreatedAt := accountfinancialsettingFields[2].Descriptor()
+	// accountfinancialsetting.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountfinancialsetting.DefaultCreatedAt = accountfinancialsettingDescCreatedAt.Default.(func() time.Time)
+	// accountfinancialsettingDescUpdatedAt is the schema descriptor for updated_at field.
+	accountfinancialsettingDescUpdatedAt := accountfinancialsettingFields[3].Descriptor()
+	// accountfinancialsetting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountfinancialsetting.DefaultUpdatedAt = accountfinancialsettingDescUpdatedAt.Default.(func() time.Time)
+	// accountfinancialsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountfinancialsetting.UpdateDefaultUpdatedAt = accountfinancialsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
 	accountgroupFields := schema.AccountGroup{}.Fields()
 	_ = accountgroupFields
 	// accountgroupDescPriority is the schema descriptor for priority field.
@@ -1956,6 +1990,22 @@ func init() {
 	usagecleanuptaskDescDeletedRows := usagecleanuptaskFields[3].Descriptor()
 	// usagecleanuptask.DefaultDeletedRows holds the default value on creation for the deleted_rows field.
 	usagecleanuptask.DefaultDeletedRows = usagecleanuptaskDescDeletedRows.Default.(int64)
+	usagecostreviewFields := schema.UsageCostReview{}.Fields()
+	_ = usagecostreviewFields
+	// usagecostreviewDescManualCostCny is the schema descriptor for manual_cost_cny field.
+	usagecostreviewDescManualCostCny := usagecostreviewFields[2].Descriptor()
+	// usagecostreview.DefaultManualCostCny holds the default value on creation for the manual_cost_cny field.
+	usagecostreview.DefaultManualCostCny = usagecostreviewDescManualCostCny.Default.(float64)
+	// usagecostreviewDescReviewedAt is the schema descriptor for reviewed_at field.
+	usagecostreviewDescReviewedAt := usagecostreviewFields[5].Descriptor()
+	// usagecostreview.DefaultReviewedAt holds the default value on creation for the reviewed_at field.
+	usagecostreview.DefaultReviewedAt = usagecostreviewDescReviewedAt.Default.(func() time.Time)
+	// usagecostreviewDescUpdatedAt is the schema descriptor for updated_at field.
+	usagecostreviewDescUpdatedAt := usagecostreviewFields[6].Descriptor()
+	// usagecostreview.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	usagecostreview.DefaultUpdatedAt = usagecostreviewDescUpdatedAt.Default.(func() time.Time)
+	// usagecostreview.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	usagecostreview.UpdateDefaultUpdatedAt = usagecostreviewDescUpdatedAt.UpdateDefault.(func() time.Time)
 	usagelogFields := schema.UsageLog{}.Fields()
 	_ = usagelogFields
 	// usagelogDescRequestID is the schema descriptor for request_id field.
@@ -2156,6 +2206,34 @@ func init() {
 	usagelogDescCreatedAt := usagelogFields[53].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
+	usageupstreamcostevidenceFields := schema.UsageUpstreamCostEvidence{}.Fields()
+	_ = usageupstreamcostevidenceFields
+	// usageupstreamcostevidenceDescUpstreamRequestID is the schema descriptor for upstream_request_id field.
+	usageupstreamcostevidenceDescUpstreamRequestID := usageupstreamcostevidenceFields[2].Descriptor()
+	// usageupstreamcostevidence.UpstreamRequestIDValidator is a validator for the "upstream_request_id" field. It is called by the builders before save.
+	usageupstreamcostevidence.UpstreamRequestIDValidator = usageupstreamcostevidenceDescUpstreamRequestID.Validators[0].(func(string) error)
+	// usageupstreamcostevidenceDescUpstreamModel is the schema descriptor for upstream_model field.
+	usageupstreamcostevidenceDescUpstreamModel := usageupstreamcostevidenceFields[4].Descriptor()
+	// usageupstreamcostevidence.UpstreamModelValidator is a validator for the "upstream_model" field. It is called by the builders before save.
+	usageupstreamcostevidence.UpstreamModelValidator = usageupstreamcostevidenceDescUpstreamModel.Validators[0].(func(string) error)
+	// usageupstreamcostevidenceDescReasonCode is the schema descriptor for reason_code field.
+	usageupstreamcostevidenceDescReasonCode := usageupstreamcostevidenceFields[11].Descriptor()
+	// usageupstreamcostevidence.ReasonCodeValidator is a validator for the "reason_code" field. It is called by the builders before save.
+	usageupstreamcostevidence.ReasonCodeValidator = usageupstreamcostevidenceDescReasonCode.Validators[0].(func(string) error)
+	// usageupstreamcostevidenceDescRecordedAt is the schema descriptor for recorded_at field.
+	usageupstreamcostevidenceDescRecordedAt := usageupstreamcostevidenceFields[12].Descriptor()
+	// usageupstreamcostevidence.DefaultRecordedAt holds the default value on creation for the recorded_at field.
+	usageupstreamcostevidence.DefaultRecordedAt = usageupstreamcostevidenceDescRecordedAt.Default.(func() time.Time)
+	// usageupstreamcostevidenceDescCreatedAt is the schema descriptor for created_at field.
+	usageupstreamcostevidenceDescCreatedAt := usageupstreamcostevidenceFields[13].Descriptor()
+	// usageupstreamcostevidence.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usageupstreamcostevidence.DefaultCreatedAt = usageupstreamcostevidenceDescCreatedAt.Default.(func() time.Time)
+	// usageupstreamcostevidenceDescUpdatedAt is the schema descriptor for updated_at field.
+	usageupstreamcostevidenceDescUpdatedAt := usageupstreamcostevidenceFields[14].Descriptor()
+	// usageupstreamcostevidence.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	usageupstreamcostevidence.DefaultUpdatedAt = usageupstreamcostevidenceDescUpdatedAt.Default.(func() time.Time)
+	// usageupstreamcostevidence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	usageupstreamcostevidence.UpdateDefaultUpdatedAt = usageupstreamcostevidenceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	userMixin := schema.User{}.Mixin()
 	userMixinHooks1 := userMixin[1].Hooks()
 	user.Hooks[0] = userMixinHooks1[0]

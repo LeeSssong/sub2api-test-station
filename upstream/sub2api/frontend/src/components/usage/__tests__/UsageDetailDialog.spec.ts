@@ -3,9 +3,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminUsageLog, UserUsageDetail } from '@/types'
 
-const { adminGetById, adminGetUpstreamCost, copyToClipboard, userGetById } = vi.hoisted(() => ({
+const { adminGetById, adminGetCostEvidence, copyToClipboard, userGetById } = vi.hoisted(() => ({
   adminGetById: vi.fn(),
-  adminGetUpstreamCost: vi.fn(),
+  adminGetCostEvidence: vi.fn(),
   copyToClipboard: vi.fn().mockResolvedValue(true),
   userGetById: vi.fn(),
 }))
@@ -34,7 +34,7 @@ vi.mock('@/api/usage', () => ({
 vi.mock('@/api/admin/usage', () => ({
   adminUsageAPI: {
     getById: adminGetById,
-    getUpstreamCost: adminGetUpstreamCost,
+    getCostEvidence: adminGetCostEvidence,
   },
 }))
 
@@ -180,7 +180,7 @@ function usageDetailMessages(locale: unknown): Record<string, string> {
 describe('UsageDetailDialog', () => {
   beforeEach(() => {
     adminGetById.mockReset()
-    adminGetUpstreamCost.mockReset()
+    adminGetCostEvidence.mockReset()
     copyToClipboard.mockReset().mockResolvedValue(true)
     userGetById.mockReset()
   })
@@ -193,7 +193,7 @@ describe('UsageDetailDialog', () => {
 
     expect(userGetById).toHaveBeenCalledWith(42)
     expect(adminGetById).not.toHaveBeenCalled()
-    expect(adminGetUpstreamCost).not.toHaveBeenCalled()
+    expect(adminGetCostEvidence).not.toHaveBeenCalled()
   })
 
   it('uses only the administrator endpoint in admin scope', async () => {
@@ -305,20 +305,17 @@ describe('UsageDetailDialog', () => {
 
   it('renders confirmed native cost evidence and confirmed gross margin for administrators', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: 'upstream-req-42' })
-    adminGetUpstreamCost.mockResolvedValue({
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: 'upstream-req-42',
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: 0.004,
-      profit: 0.00288,
-      status: 'confirmed',
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      normalized_cost_cny: 0.004,
+      evidence_status: 'confirmed',
+      reason_code: '',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(adminGetUpstreamCost).toHaveBeenCalledWith(42)
+    expect(adminGetCostEvidence).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('upstream-req-42')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteActualCost')).toBe('$0.006880')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
@@ -335,14 +332,11 @@ describe('UsageDetailDialog', () => {
 
   it('labels price-table cost and gross margin as estimated', async () => {
     adminGetById.mockResolvedValue(adminRecord)
-    adminGetUpstreamCost.mockResolvedValue({
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: null,
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: null,
-      profit: null,
-      status: 'unavailable',
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      normalized_cost_cny: null,
+      evidence_status: 'unavailable',
+      reason_code: 'response_unavailable',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
@@ -354,14 +348,12 @@ describe('UsageDetailDialog', () => {
 
   it('keeps cost and margin pending when native evidence is unavailable', async () => {
     adminGetById.mockResolvedValue(adminRecord)
-    adminGetUpstreamCost.mockResolvedValue({
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: null,
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: null,
-      profit: null,
-      status: 'unavailable',
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      source: 'newapi',
+      normalized_cost_cny: null,
+      evidence_status: 'unavailable',
+      reason_code: 'response_unavailable',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
@@ -369,20 +361,16 @@ describe('UsageDetailDialog', () => {
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource')).toBe('newapi')
   })
 
   it('explains when the upstream does not expose a compatible usage ledger', async () => {
     adminGetById.mockResolvedValue(adminRecord)
-    adminGetUpstreamCost.mockResolvedValue({
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: 'upstream-req-42',
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: null,
-      profit: null,
-      status: 'unavailable',
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      normalized_cost_cny: null,
+      evidence_status: 'unavailable',
       reason_code: 'endpoint_unsupported',
-      reason: 'upstream usage endpoint unsupported',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
@@ -395,20 +383,17 @@ describe('UsageDetailDialog', () => {
 
   it('shows a placeholder for a missing upstream request ID while querying by local ID', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: null })
-    adminGetUpstreamCost.mockResolvedValue({
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: null,
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: null,
-      profit: null,
-      status: 'unavailable',
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      normalized_cost_cny: null,
+      evidence_status: 'unavailable',
+      reason_code: 'record_not_found',
     })
 
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(adminGetUpstreamCost).toHaveBeenCalledWith(42)
+    expect(adminGetCostEvidence).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('-')
   })
 

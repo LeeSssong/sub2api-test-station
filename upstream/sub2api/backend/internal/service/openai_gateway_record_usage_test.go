@@ -22,11 +22,59 @@ type openAIRecordUsageLogRepoStub struct {
 	lastCtxErr error
 }
 
+type openAIUsageCostEvidenceRegistrarStub struct {
+	calls      int
+	usageLogID int64
+}
+
+func (s *openAIUsageCostEvidenceRegistrarStub) RegisterOnce(_ context.Context, usageLogID int64) error {
+	s.calls++
+	s.usageLogID = usageLogID
+	return nil
+}
+
 func (s *openAIRecordUsageLogRepoStub) Create(ctx context.Context, log *UsageLog) (bool, error) {
 	s.calls++
 	s.lastLog = log
 	s.lastCtxErr = ctx.Err()
 	return s.inserted, s.err
+}
+
+type evidenceUsageLogRepoStub struct {
+	UsageLogRepository
+	inserted   bool
+	usageLogID int64
+	calls      int
+}
+
+func (s *evidenceUsageLogRepoStub) CreateBestEffortWithResult(_ context.Context, log *UsageLog) (UsageLogBestEffortResult, error) {
+	s.calls++
+	log.ID = s.usageLogID
+	return UsageLogBestEffortResult{Inserted: s.inserted, UsageLogID: s.usageLogID}, nil
+}
+
+func (s *evidenceUsageLogRepoStub) Create(_ context.Context, log *UsageLog) (bool, error) {
+	s.calls++
+	log.ID = s.usageLogID
+	return s.inserted, nil
+}
+
+func TestOpenAIGatewayServiceRecordUsage_RegistersEvidenceAfterInsert(t *testing.T) {
+	usageRepo := &evidenceUsageLogRepoStub{inserted: true, usageLogID: 815}
+	registrar := &openAIUsageCostEvidenceRegistrarStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.SetUsageCostEvidenceRegistrar(registrar)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result:  &OpenAIForwardResult{RequestID: "openai-evidence", Usage: OpenAIUsage{InputTokens: 8, OutputTokens: 4}, Model: "gpt-5.1"},
+		APIKey:  &APIKey{ID: 1001, Group: &Group{RateMultiplier: 1}},
+		User:    &User{ID: 2001},
+		Account: &Account{ID: 3001, Type: AccountTypeAPIKey},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, registrar.calls)
+	require.Equal(t, int64(815), registrar.usageLogID)
 }
 
 type openAIRecordUsageBillingRepoStub struct {

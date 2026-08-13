@@ -256,6 +256,42 @@ WHERE ns.nspname = 'public'
 	requireColumn(t, tx, "user_allowed_groups", "created_at", "timestamp with time zone", 0, false)
 }
 
+func TestMigrationsSchema(t *testing.T) {
+	tx := testTx(t)
+
+	for _, table := range []string{
+		"usage_upstream_cost_evidence",
+		"usage_cost_reviews",
+		"account_daily_financial_values",
+		"account_financial_settings",
+	} {
+		var regclass sql.NullString
+		require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.'||$1)", table).Scan(&regclass))
+		require.True(t, regclass.Valid, "expected %s table to exist", table)
+	}
+
+	requireColumn(t, tx, "usage_upstream_cost_evidence", "usage_log_id", "bigint", 0, false)
+	requireNumericColumn(t, tx, "usage_upstream_cost_evidence", "normalized_cost_cny", 20, 10, true)
+	requireNumericColumn(t, tx, "usage_upstream_cost_evidence", "profit_cny", 20, 10, true)
+	requireNumericColumn(t, tx, "usage_cost_reviews", "manual_cost_cny", 20, 10, false)
+	requireNumericColumn(t, tx, "usage_cost_reviews", "manual_profit_cny", 20, 10, false)
+	requireColumn(t, tx, "account_daily_financial_values", "business_date", "date", 0, false)
+	requireNumericColumn(t, tx, "account_daily_financial_values", "oauth_cost_cny", 20, 10, true)
+	requireNumericColumn(t, tx, "account_daily_financial_values", "revenue_override_cny", 20, 10, true)
+	requireNumericColumn(t, tx, "account_daily_financial_values", "cost_override_cny", 20, 10, true)
+	requireColumn(t, tx, "account_daily_financial_values", "revenue_evidence_cutoff_id", "bigint", 0, true)
+	requireColumn(t, tx, "account_daily_financial_values", "revenue_review_cutoff_id", "bigint", 0, true)
+	requireColumn(t, tx, "account_daily_financial_values", "cost_evidence_cutoff_id", "bigint", 0, true)
+	requireColumn(t, tx, "account_daily_financial_values", "cost_review_cutoff_id", "bigint", 0, true)
+	requireColumn(t, tx, "account_financial_settings", "enabled_at", "timestamp with time zone", 0, true)
+	requireIndex(t, tx, "usage_upstream_cost_evidence", "idx_usage_upstream_cost_evidence_status_usage_log_id")
+	requireIndex(t, tx, "usage_cost_reviews", "idx_usage_cost_reviews_usage_log_id")
+	requireIndex(t, tx, "account_daily_financial_values", "idx_account_daily_financial_values_account_id_business_date")
+	requireConstraintDefinitionContains(t, tx, "usage_upstream_cost_evidence", "usage_upstream_cost_evidence_usage_log_id_key", "UNIQUE", "usage_log_id")
+	requireConstraintDefinitionContains(t, tx, "usage_cost_reviews", "usage_cost_reviews_usage_log_id_key", "UNIQUE", "usage_log_id")
+	requireConstraintDefinitionContains(t, tx, "account_daily_financial_values", "account_daily_financial_values_account_date_key", "UNIQUE", "account_id", "business_date")
+}
+
 func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) {
 	tx := testTx(t)
 
@@ -441,6 +477,40 @@ WHERE table_schema = 'public'
 		require.Equal(t, int64(maxLen), row.MaxLen.Int64, "maxLen mismatch for %s.%s", table, column)
 	}
 
+	if nullable {
+		require.Equal(t, "YES", row.Nullable, "nullable mismatch for %s.%s", table, column)
+	} else {
+		require.Equal(t, "NO", row.Nullable, "nullable mismatch for %s.%s", table, column)
+	}
+}
+
+func requireNumericColumn(t *testing.T, tx *sql.Tx, table, column string, precision, scale int64, nullable bool) {
+	t.Helper()
+
+	var row struct {
+		DataType  string
+		Precision sql.NullInt64
+		Scale     sql.NullInt64
+		Nullable  string
+	}
+
+	err := tx.QueryRowContext(context.Background(), `
+SELECT
+  data_type,
+  numeric_precision,
+  numeric_scale,
+  is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name = $2
+`, table, column).Scan(&row.DataType, &row.Precision, &row.Scale, &row.Nullable)
+	require.NoError(t, err, "query numeric column for %s.%s", table, column)
+	require.Equal(t, "numeric", row.DataType, "data_type mismatch for %s.%s", table, column)
+	require.True(t, row.Precision.Valid, "expected precision for %s.%s", table, column)
+	require.Equal(t, precision, row.Precision.Int64, "precision mismatch for %s.%s", table, column)
+	require.True(t, row.Scale.Valid, "expected scale for %s.%s", table, column)
+	require.Equal(t, scale, row.Scale.Int64, "scale mismatch for %s.%s", table, column)
 	if nullable {
 		require.Equal(t, "YES", row.Nullable, "nullable mismatch for %s.%s", table, column)
 	} else {

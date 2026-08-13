@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUsageCostDetail, AdminUsageLog, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
+import type { AdminUsageCostExceptionList, AdminUsageLog, UsageCostEvidenceDetail, UsageCostFilteredReviewResult, UsageCostReviewResult, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
 import type { EndpointStat } from '@/types'
 
 // ==================== Types ====================
@@ -93,6 +93,17 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   status_code?: number | null
 }
 
+export interface CostExceptionQueryParams {
+  page?: number
+  page_size?: number
+  account_id?: number
+  start_time?: string
+  end_time?: string
+  search?: string
+  evidence_status?: string
+  review_status?: string
+}
+
 // ==================== API Functions ====================
 
 /**
@@ -121,9 +132,29 @@ export async function getById(id: number): Promise<AdminUsageLog> {
   return data
 }
 
-/** Read the matched upstream Sub charge for one administrator usage record. */
-export async function getUpstreamCost(usageId: number): Promise<AdminUsageCostDetail> {
-  const { data } = await apiClient.get<AdminUsageCostDetail>(`/admin/usage/${usageId}/upstream-cost`)
+/** Read persisted local evidence/review facts for one administrator usage row. */
+export async function getCostEvidence(usageId: number): Promise<UsageCostEvidenceDetail> {
+  const { data } = await apiClient.get<UsageCostEvidenceDetail>(`/admin/usage/${usageId}/upstream-cost`)
+  return data
+}
+
+export async function listCostExceptions(params: CostExceptionQueryParams, options?: { signal?: AbortSignal }): Promise<AdminUsageCostExceptionList> {
+  const { data } = await apiClient.get<AdminUsageCostExceptionList>('/admin/usage/cost-exceptions', { params, signal: options?.signal })
+  return data
+}
+
+export async function reviewOne(usageLogId: number, payload: { manual_cost_cny?: number }): Promise<UsageCostReviewResult> {
+  const { data } = await apiClient.post<UsageCostReviewResult>(`/admin/usage/cost-exceptions/${usageLogId}/review`, payload)
+  return data
+}
+
+export async function reviewSelected(payload: { usage_log_ids: number[]; manual_cost_cny?: number }): Promise<UsageCostReviewResult[]> {
+  const { data } = await apiClient.post<UsageCostReviewResult[]>('/admin/usage/cost-exceptions/review-selected', payload)
+  return data
+}
+
+export async function reviewFiltered(payload: { filter: Omit<CostExceptionQueryParams, 'page' | 'page_size'>; max_usage_log_id: number; manual_cost_cny?: number }): Promise<UsageCostFilteredReviewResult> {
+  const { data } = await apiClient.post<UsageCostFilteredReviewResult>('/admin/usage/cost-exceptions/review-filtered', payload)
   return data
 }
 
@@ -225,7 +256,11 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
 export const adminUsageAPI = {
   list,
   getById,
-  getUpstreamCost,
+  getCostEvidence,
+  listCostExceptions,
+  reviewOne,
+  reviewSelected,
+  reviewFiltered,
   getStats,
   searchUsers,
   searchApiKeys,

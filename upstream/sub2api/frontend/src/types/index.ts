@@ -1719,17 +1719,63 @@ export interface AdminUsageLog extends UsageLog {
   account?: UsageLogAccountSummary
 }
 
-/** Native upstream request-cost result returned by the administrator usage endpoint. */
-export interface AdminUsageCostDetail {
-  usage_id: number
-  local_request_id: string
-  upstream_request_id?: string | null
-  site_actual_cost: number
-  upstream_actual_cost: number | null
-  profit: number | null
-  status: 'confirmed' | 'unavailable' | string
-  reason_code?: string
-  reason?: string
+export type UsageCostEvidenceStatus = 'confirmed' | 'confirmed_zero' | 'unavailable'
+export type UsageCostReviewStatus = 'pending' | 'reviewed'
+
+export interface UsageCostTrace {
+  sub_actual_cost?: number | null
+  new_api_quota?: number | null
+  new_api_quota_per_unit?: number | null
+  normalized_cost_cny?: number | null
+}
+
+export interface AdminUsageCostException {
+  usage_log_id: number
+  account_id: number
+  request_id: string
+  model: string
+  created_at: string
+  revenue_cny: number
+  source: string
+  evidence_status: UsageCostEvidenceStatus
+  reason_code: string
+  review_status: UsageCostReviewStatus
+  cost_trace: UsageCostTrace
+}
+
+export interface AdminUsageCostExceptionList {
+  generated_at: string
+  items: AdminUsageCostException[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface UsageCostEvidenceDetail {
+  usage_log_id: number
+  source?: string
+  evidence_status: UsageCostEvidenceStatus | string
+  reason_code: string
+  normalized_cost_cny?: number | null
+  review_id?: number | null
+  review_cost_cny?: number | null
+}
+
+export interface UsageCostReviewResult {
+  created: boolean
+  usage_log_id: number
+  account_id: number
+  business_date: string
+  manual_cost_cny: number
+  manual_profit_cny: number
+}
+
+export interface UsageCostFilteredReviewResult {
+  cutoff: number
+  max_usage_log_id: number
+  matched: number
+  updated: number
+  skipped: number
 }
 
 export interface UsageCleanupFilters {

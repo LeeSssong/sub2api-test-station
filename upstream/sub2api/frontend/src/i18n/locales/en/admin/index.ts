@@ -37,8 +37,9 @@ export default {
     pendingConversion: 'FX rate needed',
     empty: 'No account data matches the current filters.',
     loadError: 'Failed to load account profitability data',
-    columns: { account: 'Account', source: 'Source', status: 'Cost status', expense: 'Expense', expenseCurrency: 'Expense currency', revenue: 'Revenue', profit: 'Profit', margin: 'Margin', requests: 'Requests' },
-    summary: { revenue: 'Revenue', expense: 'Expense', profit: 'Profit', margin: 'Margin', pending: 'Pending accounts' },
+    columns: { account: 'Account', source: 'Source', status: 'Cost status', expense: 'Expense', expenseCurrency: 'Expense currency', revenue: 'Revenue', profit: 'Profit', margin: 'Margin', requests: 'Requests', exceptions: 'Exceptions', actions: 'Today override' },
+    summary: { revenue: 'Revenue', expense: 'Expense', profit: 'Profit', margin: 'Margin', pending: 'Pending accounts', exceptions: 'Exceptions', unconsumedBalance: 'User unconsumed balance' },
+    oauthComplete: 'OAuth complete', oauthPending: 'OAuth pending',
   },
   usageCostDetail: {
     siteRequestId: 'Site Request ID',
@@ -75,6 +76,9 @@ export default {
       ownedAllocation: 'Owned-account Cost Allocation',
       pending: 'Pending Reconciliation',
     },
+  },
+  costExceptions: {
+    search: 'Search request ID or model', allEvidence: 'All evidence', pending: 'Pending', reviewed: 'Reviewed', allReviews: 'All reviews', reviewSelected: 'Review selected', reviewFiltered: 'Review current filter', reviewOne: 'Review', time: 'Time', account: 'Account', requestId: 'Request ID', model: 'Model', revenue: 'Revenue', source: 'Source', evidence: 'Evidence', reason: 'Reason', trace: 'Billing trace', reviewStatus: 'Review status', cutoff: 'Cutoff', matched: 'Matched', updated: 'Updated', skipped: 'Skipped',
   },
   accountMonitor: {
     title: 'Account Monitor',

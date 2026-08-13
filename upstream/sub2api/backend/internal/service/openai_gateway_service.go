@@ -459,6 +459,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	costEvidenceRegistrar UsageCostEvidenceRegisterer
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -494,6 +495,19 @@ type OpenAIGatewayService struct {
 	codexModelsManifestCache            codexModelsManifestCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+}
+
+func (s *OpenAIGatewayService) SetUsageCostEvidenceRegistrar(registrar UsageCostEvidenceRegisterer) {
+	if s != nil {
+		s.costEvidenceRegistrar = registrar
+	}
+}
+
+func (s *OpenAIGatewayService) usageCostEvidenceRegistrarFor(account *Account) UsageCostEvidenceRegisterer {
+	if s == nil || account == nil || account.Type == AccountTypeOAuth {
+		return nil
+	}
+	return s.costEvidenceRegistrar
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

@@ -13,6 +13,8 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdailyfinancialvalue"
+	"github.com/Wei-Shaw/sub2api/ent/accountfinancialsetting"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -45,7 +47,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
+	"github.com/Wei-Shaw/sub2api/ent/usagecostreview"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usageupstreamcostevidence"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -66,6 +70,8 @@ const (
 	// Node types.
 	TypeAPIKey                        = "APIKey"
 	TypeAccount                       = "Account"
+	TypeAccountDailyFinancialValue    = "AccountDailyFinancialValue"
+	TypeAccountFinancialSetting       = "AccountFinancialSetting"
 	TypeAccountGroup                  = "AccountGroup"
 	TypeAnnouncement                  = "Announcement"
 	TypeAnnouncementRead              = "AnnouncementRead"
@@ -96,7 +102,9 @@ const (
 	TypeSubscriptionPlan              = "SubscriptionPlan"
 	TypeTLSFingerprintProfile         = "TLSFingerprintProfile"
 	TypeUsageCleanupTask              = "UsageCleanupTask"
+	TypeUsageCostReview               = "UsageCostReview"
 	TypeUsageLog                      = "UsageLog"
+	TypeUsageUpstreamCostEvidence     = "UsageUpstreamCostEvidence"
 	TypeUser                          = "User"
 	TypeUserAllowedGroup              = "UserAllowedGroup"
 	TypeUserAttributeDefinition       = "UserAttributeDefinition"
@@ -5370,6 +5378,2046 @@ func (m *AccountMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountDailyFinancialValueMutation represents an operation that mutates the AccountDailyFinancialValue nodes in the graph.
+type AccountDailyFinancialValueMutation struct {
+	config
+	op                            Op
+	typ                           string
+	id                            *int64
+	business_date                 *time.Time
+	oauth_cost_cny                *float64
+	addoauth_cost_cny             *float64
+	revenue_override_cny          *float64
+	addrevenue_override_cny       *float64
+	revenue_override_at           *time.Time
+	revenue_evidence_cutoff_id    *int64
+	addrevenue_evidence_cutoff_id *int64
+	revenue_review_cutoff_id      *int64
+	addrevenue_review_cutoff_id   *int64
+	cost_override_cny             *float64
+	addcost_override_cny          *float64
+	cost_override_at              *time.Time
+	cost_evidence_cutoff_id       *int64
+	addcost_evidence_cutoff_id    *int64
+	cost_review_cutoff_id         *int64
+	addcost_review_cutoff_id      *int64
+	updated_by                    *int64
+	addupdated_by                 *int64
+	created_at                    *time.Time
+	updated_at                    *time.Time
+	clearedFields                 map[string]struct{}
+	account                       *int64
+	clearedaccount                bool
+	done                          bool
+	oldValue                      func(context.Context) (*AccountDailyFinancialValue, error)
+	predicates                    []predicate.AccountDailyFinancialValue
+}
+
+var _ ent.Mutation = (*AccountDailyFinancialValueMutation)(nil)
+
+// accountdailyfinancialvalueOption allows management of the mutation configuration using functional options.
+type accountdailyfinancialvalueOption func(*AccountDailyFinancialValueMutation)
+
+// newAccountDailyFinancialValueMutation creates new mutation for the AccountDailyFinancialValue entity.
+func newAccountDailyFinancialValueMutation(c config, op Op, opts ...accountdailyfinancialvalueOption) *AccountDailyFinancialValueMutation {
+	m := &AccountDailyFinancialValueMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountDailyFinancialValue,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountDailyFinancialValueID sets the ID field of the mutation.
+func withAccountDailyFinancialValueID(id int64) accountdailyfinancialvalueOption {
+	return func(m *AccountDailyFinancialValueMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountDailyFinancialValue
+		)
+		m.oldValue = func(ctx context.Context) (*AccountDailyFinancialValue, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountDailyFinancialValue.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountDailyFinancialValue sets the old AccountDailyFinancialValue of the mutation.
+func withAccountDailyFinancialValue(node *AccountDailyFinancialValue) accountdailyfinancialvalueOption {
+	return func(m *AccountDailyFinancialValueMutation) {
+		m.oldValue = func(context.Context) (*AccountDailyFinancialValue, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountDailyFinancialValueMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountDailyFinancialValueMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountDailyFinancialValueMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountDailyFinancialValueMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountDailyFinancialValue.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountDailyFinancialValueMutation) SetAccountID(i int64) {
+	m.account = &i
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) AccountID() (r int64, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountDailyFinancialValueMutation) ResetAccountID() {
+	m.account = nil
+}
+
+// SetBusinessDate sets the "business_date" field.
+func (m *AccountDailyFinancialValueMutation) SetBusinessDate(t time.Time) {
+	m.business_date = &t
+}
+
+// BusinessDate returns the value of the "business_date" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) BusinessDate() (r time.Time, exists bool) {
+	v := m.business_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBusinessDate returns the old "business_date" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldBusinessDate(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBusinessDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBusinessDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBusinessDate: %w", err)
+	}
+	return oldValue.BusinessDate, nil
+}
+
+// ResetBusinessDate resets all changes to the "business_date" field.
+func (m *AccountDailyFinancialValueMutation) ResetBusinessDate() {
+	m.business_date = nil
+}
+
+// SetOauthCostCny sets the "oauth_cost_cny" field.
+func (m *AccountDailyFinancialValueMutation) SetOauthCostCny(f float64) {
+	m.oauth_cost_cny = &f
+	m.addoauth_cost_cny = nil
+}
+
+// OauthCostCny returns the value of the "oauth_cost_cny" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) OauthCostCny() (r float64, exists bool) {
+	v := m.oauth_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOauthCostCny returns the old "oauth_cost_cny" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldOauthCostCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOauthCostCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOauthCostCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOauthCostCny: %w", err)
+	}
+	return oldValue.OauthCostCny, nil
+}
+
+// AddOauthCostCny adds f to the "oauth_cost_cny" field.
+func (m *AccountDailyFinancialValueMutation) AddOauthCostCny(f float64) {
+	if m.addoauth_cost_cny != nil {
+		*m.addoauth_cost_cny += f
+	} else {
+		m.addoauth_cost_cny = &f
+	}
+}
+
+// AddedOauthCostCny returns the value that was added to the "oauth_cost_cny" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedOauthCostCny() (r float64, exists bool) {
+	v := m.addoauth_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOauthCostCny clears the value of the "oauth_cost_cny" field.
+func (m *AccountDailyFinancialValueMutation) ClearOauthCostCny() {
+	m.oauth_cost_cny = nil
+	m.addoauth_cost_cny = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldOauthCostCny] = struct{}{}
+}
+
+// OauthCostCnyCleared returns if the "oauth_cost_cny" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) OauthCostCnyCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldOauthCostCny]
+	return ok
+}
+
+// ResetOauthCostCny resets all changes to the "oauth_cost_cny" field.
+func (m *AccountDailyFinancialValueMutation) ResetOauthCostCny() {
+	m.oauth_cost_cny = nil
+	m.addoauth_cost_cny = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldOauthCostCny)
+}
+
+// SetRevenueOverrideCny sets the "revenue_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) SetRevenueOverrideCny(f float64) {
+	m.revenue_override_cny = &f
+	m.addrevenue_override_cny = nil
+}
+
+// RevenueOverrideCny returns the value of the "revenue_override_cny" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueOverrideCny() (r float64, exists bool) {
+	v := m.revenue_override_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevenueOverrideCny returns the old "revenue_override_cny" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldRevenueOverrideCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevenueOverrideCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevenueOverrideCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevenueOverrideCny: %w", err)
+	}
+	return oldValue.RevenueOverrideCny, nil
+}
+
+// AddRevenueOverrideCny adds f to the "revenue_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) AddRevenueOverrideCny(f float64) {
+	if m.addrevenue_override_cny != nil {
+		*m.addrevenue_override_cny += f
+	} else {
+		m.addrevenue_override_cny = &f
+	}
+}
+
+// AddedRevenueOverrideCny returns the value that was added to the "revenue_override_cny" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedRevenueOverrideCny() (r float64, exists bool) {
+	v := m.addrevenue_override_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRevenueOverrideCny clears the value of the "revenue_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) ClearRevenueOverrideCny() {
+	m.revenue_override_cny = nil
+	m.addrevenue_override_cny = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldRevenueOverrideCny] = struct{}{}
+}
+
+// RevenueOverrideCnyCleared returns if the "revenue_override_cny" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueOverrideCnyCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldRevenueOverrideCny]
+	return ok
+}
+
+// ResetRevenueOverrideCny resets all changes to the "revenue_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) ResetRevenueOverrideCny() {
+	m.revenue_override_cny = nil
+	m.addrevenue_override_cny = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldRevenueOverrideCny)
+}
+
+// SetRevenueOverrideAt sets the "revenue_override_at" field.
+func (m *AccountDailyFinancialValueMutation) SetRevenueOverrideAt(t time.Time) {
+	m.revenue_override_at = &t
+}
+
+// RevenueOverrideAt returns the value of the "revenue_override_at" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueOverrideAt() (r time.Time, exists bool) {
+	v := m.revenue_override_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevenueOverrideAt returns the old "revenue_override_at" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldRevenueOverrideAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevenueOverrideAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevenueOverrideAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevenueOverrideAt: %w", err)
+	}
+	return oldValue.RevenueOverrideAt, nil
+}
+
+// ClearRevenueOverrideAt clears the value of the "revenue_override_at" field.
+func (m *AccountDailyFinancialValueMutation) ClearRevenueOverrideAt() {
+	m.revenue_override_at = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldRevenueOverrideAt] = struct{}{}
+}
+
+// RevenueOverrideAtCleared returns if the "revenue_override_at" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueOverrideAtCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldRevenueOverrideAt]
+	return ok
+}
+
+// ResetRevenueOverrideAt resets all changes to the "revenue_override_at" field.
+func (m *AccountDailyFinancialValueMutation) ResetRevenueOverrideAt() {
+	m.revenue_override_at = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldRevenueOverrideAt)
+}
+
+// SetRevenueEvidenceCutoffID sets the "revenue_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) SetRevenueEvidenceCutoffID(i int64) {
+	m.revenue_evidence_cutoff_id = &i
+	m.addrevenue_evidence_cutoff_id = nil
+}
+
+// RevenueEvidenceCutoffID returns the value of the "revenue_evidence_cutoff_id" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueEvidenceCutoffID() (r int64, exists bool) {
+	v := m.revenue_evidence_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevenueEvidenceCutoffID returns the old "revenue_evidence_cutoff_id" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldRevenueEvidenceCutoffID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevenueEvidenceCutoffID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevenueEvidenceCutoffID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevenueEvidenceCutoffID: %w", err)
+	}
+	return oldValue.RevenueEvidenceCutoffID, nil
+}
+
+// AddRevenueEvidenceCutoffID adds i to the "revenue_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) AddRevenueEvidenceCutoffID(i int64) {
+	if m.addrevenue_evidence_cutoff_id != nil {
+		*m.addrevenue_evidence_cutoff_id += i
+	} else {
+		m.addrevenue_evidence_cutoff_id = &i
+	}
+}
+
+// AddedRevenueEvidenceCutoffID returns the value that was added to the "revenue_evidence_cutoff_id" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedRevenueEvidenceCutoffID() (r int64, exists bool) {
+	v := m.addrevenue_evidence_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRevenueEvidenceCutoffID clears the value of the "revenue_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ClearRevenueEvidenceCutoffID() {
+	m.revenue_evidence_cutoff_id = nil
+	m.addrevenue_evidence_cutoff_id = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID] = struct{}{}
+}
+
+// RevenueEvidenceCutoffIDCleared returns if the "revenue_evidence_cutoff_id" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueEvidenceCutoffIDCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID]
+	return ok
+}
+
+// ResetRevenueEvidenceCutoffID resets all changes to the "revenue_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ResetRevenueEvidenceCutoffID() {
+	m.revenue_evidence_cutoff_id = nil
+	m.addrevenue_evidence_cutoff_id = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID)
+}
+
+// SetRevenueReviewCutoffID sets the "revenue_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) SetRevenueReviewCutoffID(i int64) {
+	m.revenue_review_cutoff_id = &i
+	m.addrevenue_review_cutoff_id = nil
+}
+
+// RevenueReviewCutoffID returns the value of the "revenue_review_cutoff_id" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueReviewCutoffID() (r int64, exists bool) {
+	v := m.revenue_review_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevenueReviewCutoffID returns the old "revenue_review_cutoff_id" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldRevenueReviewCutoffID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevenueReviewCutoffID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevenueReviewCutoffID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevenueReviewCutoffID: %w", err)
+	}
+	return oldValue.RevenueReviewCutoffID, nil
+}
+
+// AddRevenueReviewCutoffID adds i to the "revenue_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) AddRevenueReviewCutoffID(i int64) {
+	if m.addrevenue_review_cutoff_id != nil {
+		*m.addrevenue_review_cutoff_id += i
+	} else {
+		m.addrevenue_review_cutoff_id = &i
+	}
+}
+
+// AddedRevenueReviewCutoffID returns the value that was added to the "revenue_review_cutoff_id" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedRevenueReviewCutoffID() (r int64, exists bool) {
+	v := m.addrevenue_review_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRevenueReviewCutoffID clears the value of the "revenue_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ClearRevenueReviewCutoffID() {
+	m.revenue_review_cutoff_id = nil
+	m.addrevenue_review_cutoff_id = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldRevenueReviewCutoffID] = struct{}{}
+}
+
+// RevenueReviewCutoffIDCleared returns if the "revenue_review_cutoff_id" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) RevenueReviewCutoffIDCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldRevenueReviewCutoffID]
+	return ok
+}
+
+// ResetRevenueReviewCutoffID resets all changes to the "revenue_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ResetRevenueReviewCutoffID() {
+	m.revenue_review_cutoff_id = nil
+	m.addrevenue_review_cutoff_id = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldRevenueReviewCutoffID)
+}
+
+// SetCostOverrideCny sets the "cost_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) SetCostOverrideCny(f float64) {
+	m.cost_override_cny = &f
+	m.addcost_override_cny = nil
+}
+
+// CostOverrideCny returns the value of the "cost_override_cny" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) CostOverrideCny() (r float64, exists bool) {
+	v := m.cost_override_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCostOverrideCny returns the old "cost_override_cny" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldCostOverrideCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCostOverrideCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCostOverrideCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCostOverrideCny: %w", err)
+	}
+	return oldValue.CostOverrideCny, nil
+}
+
+// AddCostOverrideCny adds f to the "cost_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) AddCostOverrideCny(f float64) {
+	if m.addcost_override_cny != nil {
+		*m.addcost_override_cny += f
+	} else {
+		m.addcost_override_cny = &f
+	}
+}
+
+// AddedCostOverrideCny returns the value that was added to the "cost_override_cny" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedCostOverrideCny() (r float64, exists bool) {
+	v := m.addcost_override_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCostOverrideCny clears the value of the "cost_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) ClearCostOverrideCny() {
+	m.cost_override_cny = nil
+	m.addcost_override_cny = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldCostOverrideCny] = struct{}{}
+}
+
+// CostOverrideCnyCleared returns if the "cost_override_cny" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) CostOverrideCnyCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldCostOverrideCny]
+	return ok
+}
+
+// ResetCostOverrideCny resets all changes to the "cost_override_cny" field.
+func (m *AccountDailyFinancialValueMutation) ResetCostOverrideCny() {
+	m.cost_override_cny = nil
+	m.addcost_override_cny = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldCostOverrideCny)
+}
+
+// SetCostOverrideAt sets the "cost_override_at" field.
+func (m *AccountDailyFinancialValueMutation) SetCostOverrideAt(t time.Time) {
+	m.cost_override_at = &t
+}
+
+// CostOverrideAt returns the value of the "cost_override_at" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) CostOverrideAt() (r time.Time, exists bool) {
+	v := m.cost_override_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCostOverrideAt returns the old "cost_override_at" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldCostOverrideAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCostOverrideAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCostOverrideAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCostOverrideAt: %w", err)
+	}
+	return oldValue.CostOverrideAt, nil
+}
+
+// ClearCostOverrideAt clears the value of the "cost_override_at" field.
+func (m *AccountDailyFinancialValueMutation) ClearCostOverrideAt() {
+	m.cost_override_at = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldCostOverrideAt] = struct{}{}
+}
+
+// CostOverrideAtCleared returns if the "cost_override_at" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) CostOverrideAtCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldCostOverrideAt]
+	return ok
+}
+
+// ResetCostOverrideAt resets all changes to the "cost_override_at" field.
+func (m *AccountDailyFinancialValueMutation) ResetCostOverrideAt() {
+	m.cost_override_at = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldCostOverrideAt)
+}
+
+// SetCostEvidenceCutoffID sets the "cost_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) SetCostEvidenceCutoffID(i int64) {
+	m.cost_evidence_cutoff_id = &i
+	m.addcost_evidence_cutoff_id = nil
+}
+
+// CostEvidenceCutoffID returns the value of the "cost_evidence_cutoff_id" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) CostEvidenceCutoffID() (r int64, exists bool) {
+	v := m.cost_evidence_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCostEvidenceCutoffID returns the old "cost_evidence_cutoff_id" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldCostEvidenceCutoffID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCostEvidenceCutoffID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCostEvidenceCutoffID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCostEvidenceCutoffID: %w", err)
+	}
+	return oldValue.CostEvidenceCutoffID, nil
+}
+
+// AddCostEvidenceCutoffID adds i to the "cost_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) AddCostEvidenceCutoffID(i int64) {
+	if m.addcost_evidence_cutoff_id != nil {
+		*m.addcost_evidence_cutoff_id += i
+	} else {
+		m.addcost_evidence_cutoff_id = &i
+	}
+}
+
+// AddedCostEvidenceCutoffID returns the value that was added to the "cost_evidence_cutoff_id" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedCostEvidenceCutoffID() (r int64, exists bool) {
+	v := m.addcost_evidence_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCostEvidenceCutoffID clears the value of the "cost_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ClearCostEvidenceCutoffID() {
+	m.cost_evidence_cutoff_id = nil
+	m.addcost_evidence_cutoff_id = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldCostEvidenceCutoffID] = struct{}{}
+}
+
+// CostEvidenceCutoffIDCleared returns if the "cost_evidence_cutoff_id" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) CostEvidenceCutoffIDCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldCostEvidenceCutoffID]
+	return ok
+}
+
+// ResetCostEvidenceCutoffID resets all changes to the "cost_evidence_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ResetCostEvidenceCutoffID() {
+	m.cost_evidence_cutoff_id = nil
+	m.addcost_evidence_cutoff_id = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldCostEvidenceCutoffID)
+}
+
+// SetCostReviewCutoffID sets the "cost_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) SetCostReviewCutoffID(i int64) {
+	m.cost_review_cutoff_id = &i
+	m.addcost_review_cutoff_id = nil
+}
+
+// CostReviewCutoffID returns the value of the "cost_review_cutoff_id" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) CostReviewCutoffID() (r int64, exists bool) {
+	v := m.cost_review_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCostReviewCutoffID returns the old "cost_review_cutoff_id" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldCostReviewCutoffID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCostReviewCutoffID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCostReviewCutoffID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCostReviewCutoffID: %w", err)
+	}
+	return oldValue.CostReviewCutoffID, nil
+}
+
+// AddCostReviewCutoffID adds i to the "cost_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) AddCostReviewCutoffID(i int64) {
+	if m.addcost_review_cutoff_id != nil {
+		*m.addcost_review_cutoff_id += i
+	} else {
+		m.addcost_review_cutoff_id = &i
+	}
+}
+
+// AddedCostReviewCutoffID returns the value that was added to the "cost_review_cutoff_id" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedCostReviewCutoffID() (r int64, exists bool) {
+	v := m.addcost_review_cutoff_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCostReviewCutoffID clears the value of the "cost_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ClearCostReviewCutoffID() {
+	m.cost_review_cutoff_id = nil
+	m.addcost_review_cutoff_id = nil
+	m.clearedFields[accountdailyfinancialvalue.FieldCostReviewCutoffID] = struct{}{}
+}
+
+// CostReviewCutoffIDCleared returns if the "cost_review_cutoff_id" field was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) CostReviewCutoffIDCleared() bool {
+	_, ok := m.clearedFields[accountdailyfinancialvalue.FieldCostReviewCutoffID]
+	return ok
+}
+
+// ResetCostReviewCutoffID resets all changes to the "cost_review_cutoff_id" field.
+func (m *AccountDailyFinancialValueMutation) ResetCostReviewCutoffID() {
+	m.cost_review_cutoff_id = nil
+	m.addcost_review_cutoff_id = nil
+	delete(m.clearedFields, accountdailyfinancialvalue.FieldCostReviewCutoffID)
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *AccountDailyFinancialValueMutation) SetUpdatedBy(i int64) {
+	m.updated_by = &i
+	m.addupdated_by = nil
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) UpdatedBy() (r int64, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldUpdatedBy(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// AddUpdatedBy adds i to the "updated_by" field.
+func (m *AccountDailyFinancialValueMutation) AddUpdatedBy(i int64) {
+	if m.addupdated_by != nil {
+		*m.addupdated_by += i
+	} else {
+		m.addupdated_by = &i
+	}
+}
+
+// AddedUpdatedBy returns the value that was added to the "updated_by" field in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedUpdatedBy() (r int64, exists bool) {
+	v := m.addupdated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *AccountDailyFinancialValueMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountDailyFinancialValueMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountDailyFinancialValueMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountDailyFinancialValueMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountDailyFinancialValueMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountDailyFinancialValue entity.
+// If the AccountDailyFinancialValue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDailyFinancialValueMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountDailyFinancialValueMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountDailyFinancialValueMutation) ClearAccount() {
+	m.clearedaccount = true
+	m.clearedFields[accountdailyfinancialvalue.FieldAccountID] = struct{}{}
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountDailyFinancialValueMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountDailyFinancialValueMutation) AccountIDs() (ids []int64) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountDailyFinancialValueMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// Where appends a list predicates to the AccountDailyFinancialValueMutation builder.
+func (m *AccountDailyFinancialValueMutation) Where(ps ...predicate.AccountDailyFinancialValue) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountDailyFinancialValueMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountDailyFinancialValueMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountDailyFinancialValue, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountDailyFinancialValueMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountDailyFinancialValueMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountDailyFinancialValue).
+func (m *AccountDailyFinancialValueMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountDailyFinancialValueMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.account != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldAccountID)
+	}
+	if m.business_date != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldBusinessDate)
+	}
+	if m.oauth_cost_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldOauthCostCny)
+	}
+	if m.revenue_override_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueOverrideCny)
+	}
+	if m.revenue_override_at != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueOverrideAt)
+	}
+	if m.revenue_evidence_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID)
+	}
+	if m.revenue_review_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueReviewCutoffID)
+	}
+	if m.cost_override_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostOverrideCny)
+	}
+	if m.cost_override_at != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostOverrideAt)
+	}
+	if m.cost_evidence_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostEvidenceCutoffID)
+	}
+	if m.cost_review_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostReviewCutoffID)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldUpdatedBy)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountDailyFinancialValueMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountdailyfinancialvalue.FieldAccountID:
+		return m.AccountID()
+	case accountdailyfinancialvalue.FieldBusinessDate:
+		return m.BusinessDate()
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		return m.OauthCostCny()
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		return m.RevenueOverrideCny()
+	case accountdailyfinancialvalue.FieldRevenueOverrideAt:
+		return m.RevenueOverrideAt()
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		return m.RevenueEvidenceCutoffID()
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		return m.RevenueReviewCutoffID()
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		return m.CostOverrideCny()
+	case accountdailyfinancialvalue.FieldCostOverrideAt:
+		return m.CostOverrideAt()
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		return m.CostEvidenceCutoffID()
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		return m.CostReviewCutoffID()
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		return m.UpdatedBy()
+	case accountdailyfinancialvalue.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountdailyfinancialvalue.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountDailyFinancialValueMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountdailyfinancialvalue.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case accountdailyfinancialvalue.FieldBusinessDate:
+		return m.OldBusinessDate(ctx)
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		return m.OldOauthCostCny(ctx)
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		return m.OldRevenueOverrideCny(ctx)
+	case accountdailyfinancialvalue.FieldRevenueOverrideAt:
+		return m.OldRevenueOverrideAt(ctx)
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		return m.OldRevenueEvidenceCutoffID(ctx)
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		return m.OldRevenueReviewCutoffID(ctx)
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		return m.OldCostOverrideCny(ctx)
+	case accountdailyfinancialvalue.FieldCostOverrideAt:
+		return m.OldCostOverrideAt(ctx)
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		return m.OldCostEvidenceCutoffID(ctx)
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		return m.OldCostReviewCutoffID(ctx)
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	case accountdailyfinancialvalue.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountdailyfinancialvalue.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountDailyFinancialValue field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountDailyFinancialValueMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountdailyfinancialvalue.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldBusinessDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBusinessDate(v)
+		return nil
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOauthCostCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevenueOverrideCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevenueOverrideAt(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevenueEvidenceCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevenueReviewCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCostOverrideCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCostOverrideAt(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCostEvidenceCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCostReviewCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountdailyfinancialvalue.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedFields() []string {
+	var fields []string
+	if m.addoauth_cost_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldOauthCostCny)
+	}
+	if m.addrevenue_override_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueOverrideCny)
+	}
+	if m.addrevenue_evidence_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID)
+	}
+	if m.addrevenue_review_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueReviewCutoffID)
+	}
+	if m.addcost_override_cny != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostOverrideCny)
+	}
+	if m.addcost_evidence_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostEvidenceCutoffID)
+	}
+	if m.addcost_review_cutoff_id != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostReviewCutoffID)
+	}
+	if m.addupdated_by != nil {
+		fields = append(fields, accountdailyfinancialvalue.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountDailyFinancialValueMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		return m.AddedOauthCostCny()
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		return m.AddedRevenueOverrideCny()
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		return m.AddedRevenueEvidenceCutoffID()
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		return m.AddedRevenueReviewCutoffID()
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		return m.AddedCostOverrideCny()
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		return m.AddedCostEvidenceCutoffID()
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		return m.AddedCostReviewCutoffID()
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		return m.AddedUpdatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountDailyFinancialValueMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOauthCostCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevenueOverrideCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevenueEvidenceCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevenueReviewCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCostOverrideCny(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCostEvidenceCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCostReviewCutoffID(v)
+		return nil
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountDailyFinancialValueMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountdailyfinancialvalue.FieldOauthCostCny) {
+		fields = append(fields, accountdailyfinancialvalue.FieldOauthCostCny)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldRevenueOverrideCny) {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueOverrideCny)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldRevenueOverrideAt) {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueOverrideAt)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID) {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldRevenueReviewCutoffID) {
+		fields = append(fields, accountdailyfinancialvalue.FieldRevenueReviewCutoffID)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldCostOverrideCny) {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostOverrideCny)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldCostOverrideAt) {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostOverrideAt)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldCostEvidenceCutoffID) {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostEvidenceCutoffID)
+	}
+	if m.FieldCleared(accountdailyfinancialvalue.FieldCostReviewCutoffID) {
+		fields = append(fields, accountdailyfinancialvalue.FieldCostReviewCutoffID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountDailyFinancialValueMutation) ClearField(name string) error {
+	switch name {
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		m.ClearOauthCostCny()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		m.ClearRevenueOverrideCny()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideAt:
+		m.ClearRevenueOverrideAt()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		m.ClearRevenueEvidenceCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		m.ClearRevenueReviewCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		m.ClearCostOverrideCny()
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideAt:
+		m.ClearCostOverrideAt()
+		return nil
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		m.ClearCostEvidenceCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		m.ClearCostReviewCutoffID()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountDailyFinancialValueMutation) ResetField(name string) error {
+	switch name {
+	case accountdailyfinancialvalue.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accountdailyfinancialvalue.FieldBusinessDate:
+		m.ResetBusinessDate()
+		return nil
+	case accountdailyfinancialvalue.FieldOauthCostCny:
+		m.ResetOauthCostCny()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideCny:
+		m.ResetRevenueOverrideCny()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueOverrideAt:
+		m.ResetRevenueOverrideAt()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueEvidenceCutoffID:
+		m.ResetRevenueEvidenceCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldRevenueReviewCutoffID:
+		m.ResetRevenueReviewCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideCny:
+		m.ResetCostOverrideCny()
+		return nil
+	case accountdailyfinancialvalue.FieldCostOverrideAt:
+		m.ResetCostOverrideAt()
+		return nil
+	case accountdailyfinancialvalue.FieldCostEvidenceCutoffID:
+		m.ResetCostEvidenceCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldCostReviewCutoffID:
+		m.ResetCostReviewCutoffID()
+		return nil
+	case accountdailyfinancialvalue.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	case accountdailyfinancialvalue.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountdailyfinancialvalue.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.account != nil {
+		edges = append(edges, accountdailyfinancialvalue.EdgeAccount)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountDailyFinancialValueMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountdailyfinancialvalue.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountDailyFinancialValueMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountDailyFinancialValueMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedaccount {
+		edges = append(edges, accountdailyfinancialvalue.EdgeAccount)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountDailyFinancialValueMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountdailyfinancialvalue.EdgeAccount:
+		return m.clearedaccount
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountDailyFinancialValueMutation) ClearEdge(name string) error {
+	switch name {
+	case accountdailyfinancialvalue.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountDailyFinancialValueMutation) ResetEdge(name string) error {
+	switch name {
+	case accountdailyfinancialvalue.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDailyFinancialValue edge %s", name)
+}
+
+// AccountFinancialSettingMutation represents an operation that mutates the AccountFinancialSetting nodes in the graph.
+type AccountFinancialSettingMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int64
+	key           *string
+	enabled_at    *time.Time
+	created_at    *time.Time
+	updated_at    *time.Time
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*AccountFinancialSetting, error)
+	predicates    []predicate.AccountFinancialSetting
+}
+
+var _ ent.Mutation = (*AccountFinancialSettingMutation)(nil)
+
+// accountfinancialsettingOption allows management of the mutation configuration using functional options.
+type accountfinancialsettingOption func(*AccountFinancialSettingMutation)
+
+// newAccountFinancialSettingMutation creates new mutation for the AccountFinancialSetting entity.
+func newAccountFinancialSettingMutation(c config, op Op, opts ...accountfinancialsettingOption) *AccountFinancialSettingMutation {
+	m := &AccountFinancialSettingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountFinancialSetting,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountFinancialSettingID sets the ID field of the mutation.
+func withAccountFinancialSettingID(id int64) accountfinancialsettingOption {
+	return func(m *AccountFinancialSettingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountFinancialSetting
+		)
+		m.oldValue = func(ctx context.Context) (*AccountFinancialSetting, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountFinancialSetting.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountFinancialSetting sets the old AccountFinancialSetting of the mutation.
+func withAccountFinancialSetting(node *AccountFinancialSetting) accountfinancialsettingOption {
+	return func(m *AccountFinancialSettingMutation) {
+		m.oldValue = func(context.Context) (*AccountFinancialSetting, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountFinancialSettingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountFinancialSettingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountFinancialSettingMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountFinancialSettingMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountFinancialSetting.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetKey sets the "key" field.
+func (m *AccountFinancialSettingMutation) SetKey(s string) {
+	m.key = &s
+}
+
+// Key returns the value of the "key" field in the mutation.
+func (m *AccountFinancialSettingMutation) Key() (r string, exists bool) {
+	v := m.key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKey returns the old "key" field's value of the AccountFinancialSetting entity.
+// If the AccountFinancialSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFinancialSettingMutation) OldKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKey: %w", err)
+	}
+	return oldValue.Key, nil
+}
+
+// ResetKey resets all changes to the "key" field.
+func (m *AccountFinancialSettingMutation) ResetKey() {
+	m.key = nil
+}
+
+// SetEnabledAt sets the "enabled_at" field.
+func (m *AccountFinancialSettingMutation) SetEnabledAt(t time.Time) {
+	m.enabled_at = &t
+}
+
+// EnabledAt returns the value of the "enabled_at" field in the mutation.
+func (m *AccountFinancialSettingMutation) EnabledAt() (r time.Time, exists bool) {
+	v := m.enabled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabledAt returns the old "enabled_at" field's value of the AccountFinancialSetting entity.
+// If the AccountFinancialSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFinancialSettingMutation) OldEnabledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabledAt: %w", err)
+	}
+	return oldValue.EnabledAt, nil
+}
+
+// ClearEnabledAt clears the value of the "enabled_at" field.
+func (m *AccountFinancialSettingMutation) ClearEnabledAt() {
+	m.enabled_at = nil
+	m.clearedFields[accountfinancialsetting.FieldEnabledAt] = struct{}{}
+}
+
+// EnabledAtCleared returns if the "enabled_at" field was cleared in this mutation.
+func (m *AccountFinancialSettingMutation) EnabledAtCleared() bool {
+	_, ok := m.clearedFields[accountfinancialsetting.FieldEnabledAt]
+	return ok
+}
+
+// ResetEnabledAt resets all changes to the "enabled_at" field.
+func (m *AccountFinancialSettingMutation) ResetEnabledAt() {
+	m.enabled_at = nil
+	delete(m.clearedFields, accountfinancialsetting.FieldEnabledAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountFinancialSettingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountFinancialSettingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountFinancialSetting entity.
+// If the AccountFinancialSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFinancialSettingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountFinancialSettingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountFinancialSettingMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountFinancialSettingMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountFinancialSetting entity.
+// If the AccountFinancialSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFinancialSettingMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountFinancialSettingMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AccountFinancialSettingMutation builder.
+func (m *AccountFinancialSettingMutation) Where(ps ...predicate.AccountFinancialSetting) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountFinancialSettingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountFinancialSettingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountFinancialSetting, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountFinancialSettingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountFinancialSettingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountFinancialSetting).
+func (m *AccountFinancialSettingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountFinancialSettingMutation) Fields() []string {
+	fields := make([]string, 0, 4)
+	if m.key != nil {
+		fields = append(fields, accountfinancialsetting.FieldKey)
+	}
+	if m.enabled_at != nil {
+		fields = append(fields, accountfinancialsetting.FieldEnabledAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountfinancialsetting.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountfinancialsetting.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountFinancialSettingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountfinancialsetting.FieldKey:
+		return m.Key()
+	case accountfinancialsetting.FieldEnabledAt:
+		return m.EnabledAt()
+	case accountfinancialsetting.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountfinancialsetting.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountFinancialSettingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountfinancialsetting.FieldKey:
+		return m.OldKey(ctx)
+	case accountfinancialsetting.FieldEnabledAt:
+		return m.OldEnabledAt(ctx)
+	case accountfinancialsetting.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountfinancialsetting.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountFinancialSetting field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountFinancialSettingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountfinancialsetting.FieldKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKey(v)
+		return nil
+	case accountfinancialsetting.FieldEnabledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabledAt(v)
+		return nil
+	case accountfinancialsetting.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountfinancialsetting.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFinancialSetting field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountFinancialSettingMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountFinancialSettingMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountFinancialSettingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountFinancialSetting numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountFinancialSettingMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountfinancialsetting.FieldEnabledAt) {
+		fields = append(fields, accountfinancialsetting.FieldEnabledAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountFinancialSettingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountFinancialSettingMutation) ClearField(name string) error {
+	switch name {
+	case accountfinancialsetting.FieldEnabledAt:
+		m.ClearEnabledAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFinancialSetting nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountFinancialSettingMutation) ResetField(name string) error {
+	switch name {
+	case accountfinancialsetting.FieldKey:
+		m.ResetKey()
+		return nil
+	case accountfinancialsetting.FieldEnabledAt:
+		m.ResetEnabledAt()
+		return nil
+	case accountfinancialsetting.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountfinancialsetting.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFinancialSetting field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountFinancialSettingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountFinancialSettingMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountFinancialSettingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountFinancialSettingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountFinancialSettingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountFinancialSettingMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountFinancialSettingMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AccountFinancialSetting unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountFinancialSettingMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AccountFinancialSetting edge %s", name)
 }
 
 // AccountGroupMutation represents an operation that mutates the AccountGroup nodes in the graph.
@@ -44295,6 +46343,812 @@ func (m *UsageCleanupTaskMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown UsageCleanupTask edge %s", name)
 }
 
+// UsageCostReviewMutation represents an operation that mutates the UsageCostReview nodes in the graph.
+type UsageCostReviewMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	review_status        *usagecostreview.ReviewStatus
+	manual_cost_cny      *float64
+	addmanual_cost_cny   *float64
+	manual_profit_cny    *float64
+	addmanual_profit_cny *float64
+	reviewed_by          *int64
+	addreviewed_by       *int64
+	reviewed_at          *time.Time
+	updated_at           *time.Time
+	clearedFields        map[string]struct{}
+	usage_log            *int64
+	clearedusage_log     bool
+	done                 bool
+	oldValue             func(context.Context) (*UsageCostReview, error)
+	predicates           []predicate.UsageCostReview
+}
+
+var _ ent.Mutation = (*UsageCostReviewMutation)(nil)
+
+// usagecostreviewOption allows management of the mutation configuration using functional options.
+type usagecostreviewOption func(*UsageCostReviewMutation)
+
+// newUsageCostReviewMutation creates new mutation for the UsageCostReview entity.
+func newUsageCostReviewMutation(c config, op Op, opts ...usagecostreviewOption) *UsageCostReviewMutation {
+	m := &UsageCostReviewMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUsageCostReview,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUsageCostReviewID sets the ID field of the mutation.
+func withUsageCostReviewID(id int64) usagecostreviewOption {
+	return func(m *UsageCostReviewMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UsageCostReview
+		)
+		m.oldValue = func(ctx context.Context) (*UsageCostReview, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UsageCostReview.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUsageCostReview sets the old UsageCostReview of the mutation.
+func withUsageCostReview(node *UsageCostReview) usagecostreviewOption {
+	return func(m *UsageCostReviewMutation) {
+		m.oldValue = func(context.Context) (*UsageCostReview, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UsageCostReviewMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UsageCostReviewMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UsageCostReviewMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UsageCostReviewMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UsageCostReview.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *UsageCostReviewMutation) SetUsageLogID(i int64) {
+	m.usage_log = &i
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *UsageCostReviewMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldUsageLogID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *UsageCostReviewMutation) ResetUsageLogID() {
+	m.usage_log = nil
+}
+
+// SetReviewStatus sets the "review_status" field.
+func (m *UsageCostReviewMutation) SetReviewStatus(us usagecostreview.ReviewStatus) {
+	m.review_status = &us
+}
+
+// ReviewStatus returns the value of the "review_status" field in the mutation.
+func (m *UsageCostReviewMutation) ReviewStatus() (r usagecostreview.ReviewStatus, exists bool) {
+	v := m.review_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewStatus returns the old "review_status" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldReviewStatus(ctx context.Context) (v usagecostreview.ReviewStatus, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewStatus: %w", err)
+	}
+	return oldValue.ReviewStatus, nil
+}
+
+// ResetReviewStatus resets all changes to the "review_status" field.
+func (m *UsageCostReviewMutation) ResetReviewStatus() {
+	m.review_status = nil
+}
+
+// SetManualCostCny sets the "manual_cost_cny" field.
+func (m *UsageCostReviewMutation) SetManualCostCny(f float64) {
+	m.manual_cost_cny = &f
+	m.addmanual_cost_cny = nil
+}
+
+// ManualCostCny returns the value of the "manual_cost_cny" field in the mutation.
+func (m *UsageCostReviewMutation) ManualCostCny() (r float64, exists bool) {
+	v := m.manual_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldManualCostCny returns the old "manual_cost_cny" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldManualCostCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldManualCostCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldManualCostCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldManualCostCny: %w", err)
+	}
+	return oldValue.ManualCostCny, nil
+}
+
+// AddManualCostCny adds f to the "manual_cost_cny" field.
+func (m *UsageCostReviewMutation) AddManualCostCny(f float64) {
+	if m.addmanual_cost_cny != nil {
+		*m.addmanual_cost_cny += f
+	} else {
+		m.addmanual_cost_cny = &f
+	}
+}
+
+// AddedManualCostCny returns the value that was added to the "manual_cost_cny" field in this mutation.
+func (m *UsageCostReviewMutation) AddedManualCostCny() (r float64, exists bool) {
+	v := m.addmanual_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetManualCostCny resets all changes to the "manual_cost_cny" field.
+func (m *UsageCostReviewMutation) ResetManualCostCny() {
+	m.manual_cost_cny = nil
+	m.addmanual_cost_cny = nil
+}
+
+// SetManualProfitCny sets the "manual_profit_cny" field.
+func (m *UsageCostReviewMutation) SetManualProfitCny(f float64) {
+	m.manual_profit_cny = &f
+	m.addmanual_profit_cny = nil
+}
+
+// ManualProfitCny returns the value of the "manual_profit_cny" field in the mutation.
+func (m *UsageCostReviewMutation) ManualProfitCny() (r float64, exists bool) {
+	v := m.manual_profit_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldManualProfitCny returns the old "manual_profit_cny" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldManualProfitCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldManualProfitCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldManualProfitCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldManualProfitCny: %w", err)
+	}
+	return oldValue.ManualProfitCny, nil
+}
+
+// AddManualProfitCny adds f to the "manual_profit_cny" field.
+func (m *UsageCostReviewMutation) AddManualProfitCny(f float64) {
+	if m.addmanual_profit_cny != nil {
+		*m.addmanual_profit_cny += f
+	} else {
+		m.addmanual_profit_cny = &f
+	}
+}
+
+// AddedManualProfitCny returns the value that was added to the "manual_profit_cny" field in this mutation.
+func (m *UsageCostReviewMutation) AddedManualProfitCny() (r float64, exists bool) {
+	v := m.addmanual_profit_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetManualProfitCny resets all changes to the "manual_profit_cny" field.
+func (m *UsageCostReviewMutation) ResetManualProfitCny() {
+	m.manual_profit_cny = nil
+	m.addmanual_profit_cny = nil
+}
+
+// SetReviewedBy sets the "reviewed_by" field.
+func (m *UsageCostReviewMutation) SetReviewedBy(i int64) {
+	m.reviewed_by = &i
+	m.addreviewed_by = nil
+}
+
+// ReviewedBy returns the value of the "reviewed_by" field in the mutation.
+func (m *UsageCostReviewMutation) ReviewedBy() (r int64, exists bool) {
+	v := m.reviewed_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedBy returns the old "reviewed_by" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldReviewedBy(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedBy: %w", err)
+	}
+	return oldValue.ReviewedBy, nil
+}
+
+// AddReviewedBy adds i to the "reviewed_by" field.
+func (m *UsageCostReviewMutation) AddReviewedBy(i int64) {
+	if m.addreviewed_by != nil {
+		*m.addreviewed_by += i
+	} else {
+		m.addreviewed_by = &i
+	}
+}
+
+// AddedReviewedBy returns the value that was added to the "reviewed_by" field in this mutation.
+func (m *UsageCostReviewMutation) AddedReviewedBy() (r int64, exists bool) {
+	v := m.addreviewed_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetReviewedBy resets all changes to the "reviewed_by" field.
+func (m *UsageCostReviewMutation) ResetReviewedBy() {
+	m.reviewed_by = nil
+	m.addreviewed_by = nil
+}
+
+// SetReviewedAt sets the "reviewed_at" field.
+func (m *UsageCostReviewMutation) SetReviewedAt(t time.Time) {
+	m.reviewed_at = &t
+}
+
+// ReviewedAt returns the value of the "reviewed_at" field in the mutation.
+func (m *UsageCostReviewMutation) ReviewedAt() (r time.Time, exists bool) {
+	v := m.reviewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedAt returns the old "reviewed_at" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldReviewedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedAt: %w", err)
+	}
+	return oldValue.ReviewedAt, nil
+}
+
+// ResetReviewedAt resets all changes to the "reviewed_at" field.
+func (m *UsageCostReviewMutation) ResetReviewedAt() {
+	m.reviewed_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *UsageCostReviewMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *UsageCostReviewMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the UsageCostReview entity.
+// If the UsageCostReview object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageCostReviewMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *UsageCostReviewMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearUsageLog clears the "usage_log" edge to the UsageLog entity.
+func (m *UsageCostReviewMutation) ClearUsageLog() {
+	m.clearedusage_log = true
+	m.clearedFields[usagecostreview.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogCleared reports if the "usage_log" edge to the UsageLog entity was cleared.
+func (m *UsageCostReviewMutation) UsageLogCleared() bool {
+	return m.clearedusage_log
+}
+
+// UsageLogIDs returns the "usage_log" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UsageLogID instead. It exists only for internal usage by the builders.
+func (m *UsageCostReviewMutation) UsageLogIDs() (ids []int64) {
+	if id := m.usage_log; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUsageLog resets all changes to the "usage_log" edge.
+func (m *UsageCostReviewMutation) ResetUsageLog() {
+	m.usage_log = nil
+	m.clearedusage_log = false
+}
+
+// Where appends a list predicates to the UsageCostReviewMutation builder.
+func (m *UsageCostReviewMutation) Where(ps ...predicate.UsageCostReview) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UsageCostReviewMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UsageCostReviewMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UsageCostReview, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UsageCostReviewMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UsageCostReviewMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UsageCostReview).
+func (m *UsageCostReviewMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UsageCostReviewMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.usage_log != nil {
+		fields = append(fields, usagecostreview.FieldUsageLogID)
+	}
+	if m.review_status != nil {
+		fields = append(fields, usagecostreview.FieldReviewStatus)
+	}
+	if m.manual_cost_cny != nil {
+		fields = append(fields, usagecostreview.FieldManualCostCny)
+	}
+	if m.manual_profit_cny != nil {
+		fields = append(fields, usagecostreview.FieldManualProfitCny)
+	}
+	if m.reviewed_by != nil {
+		fields = append(fields, usagecostreview.FieldReviewedBy)
+	}
+	if m.reviewed_at != nil {
+		fields = append(fields, usagecostreview.FieldReviewedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, usagecostreview.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UsageCostReviewMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case usagecostreview.FieldUsageLogID:
+		return m.UsageLogID()
+	case usagecostreview.FieldReviewStatus:
+		return m.ReviewStatus()
+	case usagecostreview.FieldManualCostCny:
+		return m.ManualCostCny()
+	case usagecostreview.FieldManualProfitCny:
+		return m.ManualProfitCny()
+	case usagecostreview.FieldReviewedBy:
+		return m.ReviewedBy()
+	case usagecostreview.FieldReviewedAt:
+		return m.ReviewedAt()
+	case usagecostreview.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UsageCostReviewMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case usagecostreview.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case usagecostreview.FieldReviewStatus:
+		return m.OldReviewStatus(ctx)
+	case usagecostreview.FieldManualCostCny:
+		return m.OldManualCostCny(ctx)
+	case usagecostreview.FieldManualProfitCny:
+		return m.OldManualProfitCny(ctx)
+	case usagecostreview.FieldReviewedBy:
+		return m.OldReviewedBy(ctx)
+	case usagecostreview.FieldReviewedAt:
+		return m.OldReviewedAt(ctx)
+	case usagecostreview.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UsageCostReview field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageCostReviewMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case usagecostreview.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case usagecostreview.FieldReviewStatus:
+		v, ok := value.(usagecostreview.ReviewStatus)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewStatus(v)
+		return nil
+	case usagecostreview.FieldManualCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetManualCostCny(v)
+		return nil
+	case usagecostreview.FieldManualProfitCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetManualProfitCny(v)
+		return nil
+	case usagecostreview.FieldReviewedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedBy(v)
+		return nil
+	case usagecostreview.FieldReviewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedAt(v)
+		return nil
+	case usagecostreview.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageCostReview field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UsageCostReviewMutation) AddedFields() []string {
+	var fields []string
+	if m.addmanual_cost_cny != nil {
+		fields = append(fields, usagecostreview.FieldManualCostCny)
+	}
+	if m.addmanual_profit_cny != nil {
+		fields = append(fields, usagecostreview.FieldManualProfitCny)
+	}
+	if m.addreviewed_by != nil {
+		fields = append(fields, usagecostreview.FieldReviewedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UsageCostReviewMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usagecostreview.FieldManualCostCny:
+		return m.AddedManualCostCny()
+	case usagecostreview.FieldManualProfitCny:
+		return m.AddedManualProfitCny()
+	case usagecostreview.FieldReviewedBy:
+		return m.AddedReviewedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageCostReviewMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case usagecostreview.FieldManualCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddManualCostCny(v)
+		return nil
+	case usagecostreview.FieldManualProfitCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddManualProfitCny(v)
+		return nil
+	case usagecostreview.FieldReviewedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReviewedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageCostReview numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UsageCostReviewMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UsageCostReviewMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UsageCostReviewMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown UsageCostReview nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UsageCostReviewMutation) ResetField(name string) error {
+	switch name {
+	case usagecostreview.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case usagecostreview.FieldReviewStatus:
+		m.ResetReviewStatus()
+		return nil
+	case usagecostreview.FieldManualCostCny:
+		m.ResetManualCostCny()
+		return nil
+	case usagecostreview.FieldManualProfitCny:
+		m.ResetManualProfitCny()
+		return nil
+	case usagecostreview.FieldReviewedBy:
+		m.ResetReviewedBy()
+		return nil
+	case usagecostreview.FieldReviewedAt:
+		m.ResetReviewedAt()
+		return nil
+	case usagecostreview.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageCostReview field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UsageCostReviewMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.usage_log != nil {
+		edges = append(edges, usagecostreview.EdgeUsageLog)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UsageCostReviewMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case usagecostreview.EdgeUsageLog:
+		if id := m.usage_log; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UsageCostReviewMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UsageCostReviewMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UsageCostReviewMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedusage_log {
+		edges = append(edges, usagecostreview.EdgeUsageLog)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UsageCostReviewMutation) EdgeCleared(name string) bool {
+	switch name {
+	case usagecostreview.EdgeUsageLog:
+		return m.clearedusage_log
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UsageCostReviewMutation) ClearEdge(name string) error {
+	switch name {
+	case usagecostreview.EdgeUsageLog:
+		m.ClearUsageLog()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageCostReview unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UsageCostReviewMutation) ResetEdge(name string) error {
+	switch name {
+	case usagecostreview.EdgeUsageLog:
+		m.ResetUsageLog()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageCostReview edge %s", name)
+}
+
 // UsageLogMutation represents an operation that mutates the UsageLog nodes in the graph.
 type UsageLogMutation struct {
 	config
@@ -48917,6 +51771,1489 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog edge %s", name)
+}
+
+// UsageUpstreamCostEvidenceMutation represents an operation that mutates the UsageUpstreamCostEvidence nodes in the graph.
+type UsageUpstreamCostEvidenceMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int64
+	source                   *usageupstreamcostevidence.Source
+	upstream_request_id      *string
+	upstream_billing_time    *time.Time
+	upstream_model           *string
+	sub_actual_cost          *float64
+	addsub_actual_cost       *float64
+	newapi_quota             *float64
+	addnewapi_quota          *float64
+	newapi_quota_per_unit    *float64
+	addnewapi_quota_per_unit *float64
+	normalized_cost_cny      *float64
+	addnormalized_cost_cny   *float64
+	profit_cny               *float64
+	addprofit_cny            *float64
+	evidence_status          *usageupstreamcostevidence.EvidenceStatus
+	reason_code              *string
+	recorded_at              *time.Time
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	usage_log                *int64
+	clearedusage_log         bool
+	done                     bool
+	oldValue                 func(context.Context) (*UsageUpstreamCostEvidence, error)
+	predicates               []predicate.UsageUpstreamCostEvidence
+}
+
+var _ ent.Mutation = (*UsageUpstreamCostEvidenceMutation)(nil)
+
+// usageupstreamcostevidenceOption allows management of the mutation configuration using functional options.
+type usageupstreamcostevidenceOption func(*UsageUpstreamCostEvidenceMutation)
+
+// newUsageUpstreamCostEvidenceMutation creates new mutation for the UsageUpstreamCostEvidence entity.
+func newUsageUpstreamCostEvidenceMutation(c config, op Op, opts ...usageupstreamcostevidenceOption) *UsageUpstreamCostEvidenceMutation {
+	m := &UsageUpstreamCostEvidenceMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUsageUpstreamCostEvidence,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUsageUpstreamCostEvidenceID sets the ID field of the mutation.
+func withUsageUpstreamCostEvidenceID(id int64) usageupstreamcostevidenceOption {
+	return func(m *UsageUpstreamCostEvidenceMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UsageUpstreamCostEvidence
+		)
+		m.oldValue = func(ctx context.Context) (*UsageUpstreamCostEvidence, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UsageUpstreamCostEvidence.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUsageUpstreamCostEvidence sets the old UsageUpstreamCostEvidence of the mutation.
+func withUsageUpstreamCostEvidence(node *UsageUpstreamCostEvidence) usageupstreamcostevidenceOption {
+	return func(m *UsageUpstreamCostEvidenceMutation) {
+		m.oldValue = func(context.Context) (*UsageUpstreamCostEvidence, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UsageUpstreamCostEvidenceMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UsageUpstreamCostEvidenceMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UsageUpstreamCostEvidenceMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UsageUpstreamCostEvidence.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetUsageLogID(i int64) {
+	m.usage_log = &i
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldUsageLogID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUsageLogID() {
+	m.usage_log = nil
+}
+
+// SetSource sets the "source" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetSource(u usageupstreamcostevidence.Source) {
+	m.source = &u
+}
+
+// Source returns the value of the "source" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) Source() (r usageupstreamcostevidence.Source, exists bool) {
+	v := m.source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSource returns the old "source" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldSource(ctx context.Context) (v usageupstreamcostevidence.Source, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSource: %w", err)
+	}
+	return oldValue.Source, nil
+}
+
+// ResetSource resets all changes to the "source" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetSource() {
+	m.source = nil
+}
+
+// SetUpstreamRequestID sets the "upstream_request_id" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetUpstreamRequestID(s string) {
+	m.upstream_request_id = &s
+}
+
+// UpstreamRequestID returns the value of the "upstream_request_id" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamRequestID() (r string, exists bool) {
+	v := m.upstream_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamRequestID returns the old "upstream_request_id" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldUpstreamRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamRequestID: %w", err)
+	}
+	return oldValue.UpstreamRequestID, nil
+}
+
+// ClearUpstreamRequestID clears the value of the "upstream_request_id" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearUpstreamRequestID() {
+	m.upstream_request_id = nil
+	m.clearedFields[usageupstreamcostevidence.FieldUpstreamRequestID] = struct{}{}
+}
+
+// UpstreamRequestIDCleared returns if the "upstream_request_id" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamRequestIDCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldUpstreamRequestID]
+	return ok
+}
+
+// ResetUpstreamRequestID resets all changes to the "upstream_request_id" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUpstreamRequestID() {
+	m.upstream_request_id = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldUpstreamRequestID)
+}
+
+// SetUpstreamBillingTime sets the "upstream_billing_time" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetUpstreamBillingTime(t time.Time) {
+	m.upstream_billing_time = &t
+}
+
+// UpstreamBillingTime returns the value of the "upstream_billing_time" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamBillingTime() (r time.Time, exists bool) {
+	v := m.upstream_billing_time
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamBillingTime returns the old "upstream_billing_time" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldUpstreamBillingTime(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamBillingTime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamBillingTime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamBillingTime: %w", err)
+	}
+	return oldValue.UpstreamBillingTime, nil
+}
+
+// ClearUpstreamBillingTime clears the value of the "upstream_billing_time" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearUpstreamBillingTime() {
+	m.upstream_billing_time = nil
+	m.clearedFields[usageupstreamcostevidence.FieldUpstreamBillingTime] = struct{}{}
+}
+
+// UpstreamBillingTimeCleared returns if the "upstream_billing_time" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamBillingTimeCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldUpstreamBillingTime]
+	return ok
+}
+
+// ResetUpstreamBillingTime resets all changes to the "upstream_billing_time" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUpstreamBillingTime() {
+	m.upstream_billing_time = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldUpstreamBillingTime)
+}
+
+// SetUpstreamModel sets the "upstream_model" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetUpstreamModel(s string) {
+	m.upstream_model = &s
+}
+
+// UpstreamModel returns the value of the "upstream_model" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamModel() (r string, exists bool) {
+	v := m.upstream_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamModel returns the old "upstream_model" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldUpstreamModel(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamModel: %w", err)
+	}
+	return oldValue.UpstreamModel, nil
+}
+
+// ClearUpstreamModel clears the value of the "upstream_model" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearUpstreamModel() {
+	m.upstream_model = nil
+	m.clearedFields[usageupstreamcostevidence.FieldUpstreamModel] = struct{}{}
+}
+
+// UpstreamModelCleared returns if the "upstream_model" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpstreamModelCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldUpstreamModel]
+	return ok
+}
+
+// ResetUpstreamModel resets all changes to the "upstream_model" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUpstreamModel() {
+	m.upstream_model = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldUpstreamModel)
+}
+
+// SetSubActualCost sets the "sub_actual_cost" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetSubActualCost(f float64) {
+	m.sub_actual_cost = &f
+	m.addsub_actual_cost = nil
+}
+
+// SubActualCost returns the value of the "sub_actual_cost" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) SubActualCost() (r float64, exists bool) {
+	v := m.sub_actual_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubActualCost returns the old "sub_actual_cost" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldSubActualCost(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubActualCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubActualCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubActualCost: %w", err)
+	}
+	return oldValue.SubActualCost, nil
+}
+
+// AddSubActualCost adds f to the "sub_actual_cost" field.
+func (m *UsageUpstreamCostEvidenceMutation) AddSubActualCost(f float64) {
+	if m.addsub_actual_cost != nil {
+		*m.addsub_actual_cost += f
+	} else {
+		m.addsub_actual_cost = &f
+	}
+}
+
+// AddedSubActualCost returns the value that was added to the "sub_actual_cost" field in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedSubActualCost() (r float64, exists bool) {
+	v := m.addsub_actual_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSubActualCost clears the value of the "sub_actual_cost" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearSubActualCost() {
+	m.sub_actual_cost = nil
+	m.addsub_actual_cost = nil
+	m.clearedFields[usageupstreamcostevidence.FieldSubActualCost] = struct{}{}
+}
+
+// SubActualCostCleared returns if the "sub_actual_cost" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) SubActualCostCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldSubActualCost]
+	return ok
+}
+
+// ResetSubActualCost resets all changes to the "sub_actual_cost" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetSubActualCost() {
+	m.sub_actual_cost = nil
+	m.addsub_actual_cost = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldSubActualCost)
+}
+
+// SetNewapiQuota sets the "newapi_quota" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetNewapiQuota(f float64) {
+	m.newapi_quota = &f
+	m.addnewapi_quota = nil
+}
+
+// NewapiQuota returns the value of the "newapi_quota" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NewapiQuota() (r float64, exists bool) {
+	v := m.newapi_quota
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNewapiQuota returns the old "newapi_quota" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldNewapiQuota(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNewapiQuota is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNewapiQuota requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNewapiQuota: %w", err)
+	}
+	return oldValue.NewapiQuota, nil
+}
+
+// AddNewapiQuota adds f to the "newapi_quota" field.
+func (m *UsageUpstreamCostEvidenceMutation) AddNewapiQuota(f float64) {
+	if m.addnewapi_quota != nil {
+		*m.addnewapi_quota += f
+	} else {
+		m.addnewapi_quota = &f
+	}
+}
+
+// AddedNewapiQuota returns the value that was added to the "newapi_quota" field in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedNewapiQuota() (r float64, exists bool) {
+	v := m.addnewapi_quota
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearNewapiQuota clears the value of the "newapi_quota" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearNewapiQuota() {
+	m.newapi_quota = nil
+	m.addnewapi_quota = nil
+	m.clearedFields[usageupstreamcostevidence.FieldNewapiQuota] = struct{}{}
+}
+
+// NewapiQuotaCleared returns if the "newapi_quota" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NewapiQuotaCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldNewapiQuota]
+	return ok
+}
+
+// ResetNewapiQuota resets all changes to the "newapi_quota" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetNewapiQuota() {
+	m.newapi_quota = nil
+	m.addnewapi_quota = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldNewapiQuota)
+}
+
+// SetNewapiQuotaPerUnit sets the "newapi_quota_per_unit" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetNewapiQuotaPerUnit(f float64) {
+	m.newapi_quota_per_unit = &f
+	m.addnewapi_quota_per_unit = nil
+}
+
+// NewapiQuotaPerUnit returns the value of the "newapi_quota_per_unit" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NewapiQuotaPerUnit() (r float64, exists bool) {
+	v := m.newapi_quota_per_unit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNewapiQuotaPerUnit returns the old "newapi_quota_per_unit" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldNewapiQuotaPerUnit(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNewapiQuotaPerUnit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNewapiQuotaPerUnit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNewapiQuotaPerUnit: %w", err)
+	}
+	return oldValue.NewapiQuotaPerUnit, nil
+}
+
+// AddNewapiQuotaPerUnit adds f to the "newapi_quota_per_unit" field.
+func (m *UsageUpstreamCostEvidenceMutation) AddNewapiQuotaPerUnit(f float64) {
+	if m.addnewapi_quota_per_unit != nil {
+		*m.addnewapi_quota_per_unit += f
+	} else {
+		m.addnewapi_quota_per_unit = &f
+	}
+}
+
+// AddedNewapiQuotaPerUnit returns the value that was added to the "newapi_quota_per_unit" field in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedNewapiQuotaPerUnit() (r float64, exists bool) {
+	v := m.addnewapi_quota_per_unit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearNewapiQuotaPerUnit clears the value of the "newapi_quota_per_unit" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearNewapiQuotaPerUnit() {
+	m.newapi_quota_per_unit = nil
+	m.addnewapi_quota_per_unit = nil
+	m.clearedFields[usageupstreamcostevidence.FieldNewapiQuotaPerUnit] = struct{}{}
+}
+
+// NewapiQuotaPerUnitCleared returns if the "newapi_quota_per_unit" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NewapiQuotaPerUnitCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldNewapiQuotaPerUnit]
+	return ok
+}
+
+// ResetNewapiQuotaPerUnit resets all changes to the "newapi_quota_per_unit" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetNewapiQuotaPerUnit() {
+	m.newapi_quota_per_unit = nil
+	m.addnewapi_quota_per_unit = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldNewapiQuotaPerUnit)
+}
+
+// SetNormalizedCostCny sets the "normalized_cost_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetNormalizedCostCny(f float64) {
+	m.normalized_cost_cny = &f
+	m.addnormalized_cost_cny = nil
+}
+
+// NormalizedCostCny returns the value of the "normalized_cost_cny" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NormalizedCostCny() (r float64, exists bool) {
+	v := m.normalized_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNormalizedCostCny returns the old "normalized_cost_cny" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldNormalizedCostCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNormalizedCostCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNormalizedCostCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNormalizedCostCny: %w", err)
+	}
+	return oldValue.NormalizedCostCny, nil
+}
+
+// AddNormalizedCostCny adds f to the "normalized_cost_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) AddNormalizedCostCny(f float64) {
+	if m.addnormalized_cost_cny != nil {
+		*m.addnormalized_cost_cny += f
+	} else {
+		m.addnormalized_cost_cny = &f
+	}
+}
+
+// AddedNormalizedCostCny returns the value that was added to the "normalized_cost_cny" field in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedNormalizedCostCny() (r float64, exists bool) {
+	v := m.addnormalized_cost_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearNormalizedCostCny clears the value of the "normalized_cost_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearNormalizedCostCny() {
+	m.normalized_cost_cny = nil
+	m.addnormalized_cost_cny = nil
+	m.clearedFields[usageupstreamcostevidence.FieldNormalizedCostCny] = struct{}{}
+}
+
+// NormalizedCostCnyCleared returns if the "normalized_cost_cny" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) NormalizedCostCnyCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldNormalizedCostCny]
+	return ok
+}
+
+// ResetNormalizedCostCny resets all changes to the "normalized_cost_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetNormalizedCostCny() {
+	m.normalized_cost_cny = nil
+	m.addnormalized_cost_cny = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldNormalizedCostCny)
+}
+
+// SetProfitCny sets the "profit_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetProfitCny(f float64) {
+	m.profit_cny = &f
+	m.addprofit_cny = nil
+}
+
+// ProfitCny returns the value of the "profit_cny" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ProfitCny() (r float64, exists bool) {
+	v := m.profit_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfitCny returns the old "profit_cny" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldProfitCny(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfitCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfitCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfitCny: %w", err)
+	}
+	return oldValue.ProfitCny, nil
+}
+
+// AddProfitCny adds f to the "profit_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) AddProfitCny(f float64) {
+	if m.addprofit_cny != nil {
+		*m.addprofit_cny += f
+	} else {
+		m.addprofit_cny = &f
+	}
+}
+
+// AddedProfitCny returns the value that was added to the "profit_cny" field in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedProfitCny() (r float64, exists bool) {
+	v := m.addprofit_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProfitCny clears the value of the "profit_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearProfitCny() {
+	m.profit_cny = nil
+	m.addprofit_cny = nil
+	m.clearedFields[usageupstreamcostevidence.FieldProfitCny] = struct{}{}
+}
+
+// ProfitCnyCleared returns if the "profit_cny" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ProfitCnyCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldProfitCny]
+	return ok
+}
+
+// ResetProfitCny resets all changes to the "profit_cny" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetProfitCny() {
+	m.profit_cny = nil
+	m.addprofit_cny = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldProfitCny)
+}
+
+// SetEvidenceStatus sets the "evidence_status" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetEvidenceStatus(us usageupstreamcostevidence.EvidenceStatus) {
+	m.evidence_status = &us
+}
+
+// EvidenceStatus returns the value of the "evidence_status" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) EvidenceStatus() (r usageupstreamcostevidence.EvidenceStatus, exists bool) {
+	v := m.evidence_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEvidenceStatus returns the old "evidence_status" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldEvidenceStatus(ctx context.Context) (v usageupstreamcostevidence.EvidenceStatus, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEvidenceStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEvidenceStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEvidenceStatus: %w", err)
+	}
+	return oldValue.EvidenceStatus, nil
+}
+
+// ResetEvidenceStatus resets all changes to the "evidence_status" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetEvidenceStatus() {
+	m.evidence_status = nil
+}
+
+// SetReasonCode sets the "reason_code" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetReasonCode(s string) {
+	m.reason_code = &s
+}
+
+// ReasonCode returns the value of the "reason_code" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ReasonCode() (r string, exists bool) {
+	v := m.reason_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReasonCode returns the old "reason_code" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldReasonCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReasonCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReasonCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReasonCode: %w", err)
+	}
+	return oldValue.ReasonCode, nil
+}
+
+// ClearReasonCode clears the value of the "reason_code" field.
+func (m *UsageUpstreamCostEvidenceMutation) ClearReasonCode() {
+	m.reason_code = nil
+	m.clearedFields[usageupstreamcostevidence.FieldReasonCode] = struct{}{}
+}
+
+// ReasonCodeCleared returns if the "reason_code" field was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ReasonCodeCleared() bool {
+	_, ok := m.clearedFields[usageupstreamcostevidence.FieldReasonCode]
+	return ok
+}
+
+// ResetReasonCode resets all changes to the "reason_code" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetReasonCode() {
+	m.reason_code = nil
+	delete(m.clearedFields, usageupstreamcostevidence.FieldReasonCode)
+}
+
+// SetRecordedAt sets the "recorded_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetRecordedAt(t time.Time) {
+	m.recorded_at = &t
+}
+
+// RecordedAt returns the value of the "recorded_at" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) RecordedAt() (r time.Time, exists bool) {
+	v := m.recorded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecordedAt returns the old "recorded_at" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldRecordedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecordedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecordedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecordedAt: %w", err)
+	}
+	return oldValue.RecordedAt, nil
+}
+
+// ResetRecordedAt resets all changes to the "recorded_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetRecordedAt() {
+	m.recorded_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *UsageUpstreamCostEvidenceMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the UsageUpstreamCostEvidence entity.
+// If the UsageUpstreamCostEvidence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageUpstreamCostEvidenceMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearUsageLog clears the "usage_log" edge to the UsageLog entity.
+func (m *UsageUpstreamCostEvidenceMutation) ClearUsageLog() {
+	m.clearedusage_log = true
+	m.clearedFields[usageupstreamcostevidence.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogCleared reports if the "usage_log" edge to the UsageLog entity was cleared.
+func (m *UsageUpstreamCostEvidenceMutation) UsageLogCleared() bool {
+	return m.clearedusage_log
+}
+
+// UsageLogIDs returns the "usage_log" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UsageLogID instead. It exists only for internal usage by the builders.
+func (m *UsageUpstreamCostEvidenceMutation) UsageLogIDs() (ids []int64) {
+	if id := m.usage_log; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUsageLog resets all changes to the "usage_log" edge.
+func (m *UsageUpstreamCostEvidenceMutation) ResetUsageLog() {
+	m.usage_log = nil
+	m.clearedusage_log = false
+}
+
+// Where appends a list predicates to the UsageUpstreamCostEvidenceMutation builder.
+func (m *UsageUpstreamCostEvidenceMutation) Where(ps ...predicate.UsageUpstreamCostEvidence) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UsageUpstreamCostEvidenceMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UsageUpstreamCostEvidenceMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UsageUpstreamCostEvidence, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UsageUpstreamCostEvidenceMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UsageUpstreamCostEvidenceMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UsageUpstreamCostEvidence).
+func (m *UsageUpstreamCostEvidenceMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UsageUpstreamCostEvidenceMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.usage_log != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldUsageLogID)
+	}
+	if m.source != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldSource)
+	}
+	if m.upstream_request_id != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamRequestID)
+	}
+	if m.upstream_billing_time != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamBillingTime)
+	}
+	if m.upstream_model != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamModel)
+	}
+	if m.sub_actual_cost != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldSubActualCost)
+	}
+	if m.newapi_quota != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuota)
+	}
+	if m.newapi_quota_per_unit != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuotaPerUnit)
+	}
+	if m.normalized_cost_cny != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNormalizedCostCny)
+	}
+	if m.profit_cny != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldProfitCny)
+	}
+	if m.evidence_status != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldEvidenceStatus)
+	}
+	if m.reason_code != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldReasonCode)
+	}
+	if m.recorded_at != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldRecordedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UsageUpstreamCostEvidenceMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case usageupstreamcostevidence.FieldUsageLogID:
+		return m.UsageLogID()
+	case usageupstreamcostevidence.FieldSource:
+		return m.Source()
+	case usageupstreamcostevidence.FieldUpstreamRequestID:
+		return m.UpstreamRequestID()
+	case usageupstreamcostevidence.FieldUpstreamBillingTime:
+		return m.UpstreamBillingTime()
+	case usageupstreamcostevidence.FieldUpstreamModel:
+		return m.UpstreamModel()
+	case usageupstreamcostevidence.FieldSubActualCost:
+		return m.SubActualCost()
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		return m.NewapiQuota()
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		return m.NewapiQuotaPerUnit()
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		return m.NormalizedCostCny()
+	case usageupstreamcostevidence.FieldProfitCny:
+		return m.ProfitCny()
+	case usageupstreamcostevidence.FieldEvidenceStatus:
+		return m.EvidenceStatus()
+	case usageupstreamcostevidence.FieldReasonCode:
+		return m.ReasonCode()
+	case usageupstreamcostevidence.FieldRecordedAt:
+		return m.RecordedAt()
+	case usageupstreamcostevidence.FieldCreatedAt:
+		return m.CreatedAt()
+	case usageupstreamcostevidence.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UsageUpstreamCostEvidenceMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case usageupstreamcostevidence.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case usageupstreamcostevidence.FieldSource:
+		return m.OldSource(ctx)
+	case usageupstreamcostevidence.FieldUpstreamRequestID:
+		return m.OldUpstreamRequestID(ctx)
+	case usageupstreamcostevidence.FieldUpstreamBillingTime:
+		return m.OldUpstreamBillingTime(ctx)
+	case usageupstreamcostevidence.FieldUpstreamModel:
+		return m.OldUpstreamModel(ctx)
+	case usageupstreamcostevidence.FieldSubActualCost:
+		return m.OldSubActualCost(ctx)
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		return m.OldNewapiQuota(ctx)
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		return m.OldNewapiQuotaPerUnit(ctx)
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		return m.OldNormalizedCostCny(ctx)
+	case usageupstreamcostevidence.FieldProfitCny:
+		return m.OldProfitCny(ctx)
+	case usageupstreamcostevidence.FieldEvidenceStatus:
+		return m.OldEvidenceStatus(ctx)
+	case usageupstreamcostevidence.FieldReasonCode:
+		return m.OldReasonCode(ctx)
+	case usageupstreamcostevidence.FieldRecordedAt:
+		return m.OldRecordedAt(ctx)
+	case usageupstreamcostevidence.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case usageupstreamcostevidence.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UsageUpstreamCostEvidence field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageUpstreamCostEvidenceMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case usageupstreamcostevidence.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case usageupstreamcostevidence.FieldSource:
+		v, ok := value.(usageupstreamcostevidence.Source)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSource(v)
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamRequestID(v)
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamBillingTime:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamBillingTime(v)
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamModel(v)
+		return nil
+	case usageupstreamcostevidence.FieldSubActualCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubActualCost(v)
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNewapiQuota(v)
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNewapiQuotaPerUnit(v)
+		return nil
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNormalizedCostCny(v)
+		return nil
+	case usageupstreamcostevidence.FieldProfitCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfitCny(v)
+		return nil
+	case usageupstreamcostevidence.FieldEvidenceStatus:
+		v, ok := value.(usageupstreamcostevidence.EvidenceStatus)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEvidenceStatus(v)
+		return nil
+	case usageupstreamcostevidence.FieldReasonCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReasonCode(v)
+		return nil
+	case usageupstreamcostevidence.FieldRecordedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecordedAt(v)
+		return nil
+	case usageupstreamcostevidence.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case usageupstreamcostevidence.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedFields() []string {
+	var fields []string
+	if m.addsub_actual_cost != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldSubActualCost)
+	}
+	if m.addnewapi_quota != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuota)
+	}
+	if m.addnewapi_quota_per_unit != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuotaPerUnit)
+	}
+	if m.addnormalized_cost_cny != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldNormalizedCostCny)
+	}
+	if m.addprofit_cny != nil {
+		fields = append(fields, usageupstreamcostevidence.FieldProfitCny)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UsageUpstreamCostEvidenceMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usageupstreamcostevidence.FieldSubActualCost:
+		return m.AddedSubActualCost()
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		return m.AddedNewapiQuota()
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		return m.AddedNewapiQuotaPerUnit()
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		return m.AddedNormalizedCostCny()
+	case usageupstreamcostevidence.FieldProfitCny:
+		return m.AddedProfitCny()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageUpstreamCostEvidenceMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case usageupstreamcostevidence.FieldSubActualCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubActualCost(v)
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddNewapiQuota(v)
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddNewapiQuotaPerUnit(v)
+		return nil
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddNormalizedCostCny(v)
+		return nil
+	case usageupstreamcostevidence.FieldProfitCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProfitCny(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(usageupstreamcostevidence.FieldUpstreamRequestID) {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamRequestID)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldUpstreamBillingTime) {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamBillingTime)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldUpstreamModel) {
+		fields = append(fields, usageupstreamcostevidence.FieldUpstreamModel)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldSubActualCost) {
+		fields = append(fields, usageupstreamcostevidence.FieldSubActualCost)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldNewapiQuota) {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuota)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldNewapiQuotaPerUnit) {
+		fields = append(fields, usageupstreamcostevidence.FieldNewapiQuotaPerUnit)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldNormalizedCostCny) {
+		fields = append(fields, usageupstreamcostevidence.FieldNormalizedCostCny)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldProfitCny) {
+		fields = append(fields, usageupstreamcostevidence.FieldProfitCny)
+	}
+	if m.FieldCleared(usageupstreamcostevidence.FieldReasonCode) {
+		fields = append(fields, usageupstreamcostevidence.FieldReasonCode)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UsageUpstreamCostEvidenceMutation) ClearField(name string) error {
+	switch name {
+	case usageupstreamcostevidence.FieldUpstreamRequestID:
+		m.ClearUpstreamRequestID()
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamBillingTime:
+		m.ClearUpstreamBillingTime()
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamModel:
+		m.ClearUpstreamModel()
+		return nil
+	case usageupstreamcostevidence.FieldSubActualCost:
+		m.ClearSubActualCost()
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		m.ClearNewapiQuota()
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		m.ClearNewapiQuotaPerUnit()
+		return nil
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		m.ClearNormalizedCostCny()
+		return nil
+	case usageupstreamcostevidence.FieldProfitCny:
+		m.ClearProfitCny()
+		return nil
+	case usageupstreamcostevidence.FieldReasonCode:
+		m.ClearReasonCode()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UsageUpstreamCostEvidenceMutation) ResetField(name string) error {
+	switch name {
+	case usageupstreamcostevidence.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case usageupstreamcostevidence.FieldSource:
+		m.ResetSource()
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamRequestID:
+		m.ResetUpstreamRequestID()
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamBillingTime:
+		m.ResetUpstreamBillingTime()
+		return nil
+	case usageupstreamcostevidence.FieldUpstreamModel:
+		m.ResetUpstreamModel()
+		return nil
+	case usageupstreamcostevidence.FieldSubActualCost:
+		m.ResetSubActualCost()
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuota:
+		m.ResetNewapiQuota()
+		return nil
+	case usageupstreamcostevidence.FieldNewapiQuotaPerUnit:
+		m.ResetNewapiQuotaPerUnit()
+		return nil
+	case usageupstreamcostevidence.FieldNormalizedCostCny:
+		m.ResetNormalizedCostCny()
+		return nil
+	case usageupstreamcostevidence.FieldProfitCny:
+		m.ResetProfitCny()
+		return nil
+	case usageupstreamcostevidence.FieldEvidenceStatus:
+		m.ResetEvidenceStatus()
+		return nil
+	case usageupstreamcostevidence.FieldReasonCode:
+		m.ResetReasonCode()
+		return nil
+	case usageupstreamcostevidence.FieldRecordedAt:
+		m.ResetRecordedAt()
+		return nil
+	case usageupstreamcostevidence.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case usageupstreamcostevidence.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.usage_log != nil {
+		edges = append(edges, usageupstreamcostevidence.EdgeUsageLog)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case usageupstreamcostevidence.EdgeUsageLog:
+		if id := m.usage_log; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedusage_log {
+		edges = append(edges, usageupstreamcostevidence.EdgeUsageLog)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UsageUpstreamCostEvidenceMutation) EdgeCleared(name string) bool {
+	switch name {
+	case usageupstreamcostevidence.EdgeUsageLog:
+		return m.clearedusage_log
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UsageUpstreamCostEvidenceMutation) ClearEdge(name string) error {
+	switch name {
+	case usageupstreamcostevidence.EdgeUsageLog:
+		m.ClearUsageLog()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UsageUpstreamCostEvidenceMutation) ResetEdge(name string) error {
+	switch name {
+	case usageupstreamcostevidence.EdgeUsageLog:
+		m.ResetUsageLog()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageUpstreamCostEvidence edge %s", name)
 }
 
 // UserMutation represents an operation that mutates the User nodes in the graph.

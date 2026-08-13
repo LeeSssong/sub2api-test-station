@@ -9,6 +9,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdailyfinancialvalue"
+	"github.com/Wei-Shaw/sub2api/ent/accountfinancialsetting"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -41,7 +43,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
+	"github.com/Wei-Shaw/sub2api/ent/usagecostreview"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usageupstreamcostevidence"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -158,6 +162,60 @@ func (f TraverseAccount) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountQuery", q)
+}
+
+// The AccountDailyFinancialValueFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountDailyFinancialValueFunc func(context.Context, *ent.AccountDailyFinancialValueQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountDailyFinancialValueFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountDailyFinancialValueQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountDailyFinancialValueQuery", q)
+}
+
+// The TraverseAccountDailyFinancialValue type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountDailyFinancialValue func(context.Context, *ent.AccountDailyFinancialValueQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountDailyFinancialValue) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountDailyFinancialValue) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountDailyFinancialValueQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountDailyFinancialValueQuery", q)
+}
+
+// The AccountFinancialSettingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountFinancialSettingFunc func(context.Context, *ent.AccountFinancialSettingQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountFinancialSettingFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountFinancialSettingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountFinancialSettingQuery", q)
+}
+
+// The TraverseAccountFinancialSetting type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountFinancialSetting func(context.Context, *ent.AccountFinancialSettingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountFinancialSetting) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountFinancialSetting) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountFinancialSettingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountFinancialSettingQuery", q)
 }
 
 // The AccountGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -970,6 +1028,33 @@ func (f TraverseUsageCleanupTask) Traverse(ctx context.Context, q ent.Query) err
 	return fmt.Errorf("unexpected query type %T. expect *ent.UsageCleanupTaskQuery", q)
 }
 
+// The UsageCostReviewFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UsageCostReviewFunc func(context.Context, *ent.UsageCostReviewQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UsageCostReviewFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UsageCostReviewQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UsageCostReviewQuery", q)
+}
+
+// The TraverseUsageCostReview type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUsageCostReview func(context.Context, *ent.UsageCostReviewQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUsageCostReview) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUsageCostReview) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UsageCostReviewQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UsageCostReviewQuery", q)
+}
+
 // The UsageLogFunc type is an adapter to allow the use of ordinary function as a Querier.
 type UsageLogFunc func(context.Context, *ent.UsageLogQuery) (ent.Value, error)
 
@@ -995,6 +1080,33 @@ func (f TraverseUsageLog) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.UsageLogQuery", q)
+}
+
+// The UsageUpstreamCostEvidenceFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UsageUpstreamCostEvidenceFunc func(context.Context, *ent.UsageUpstreamCostEvidenceQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UsageUpstreamCostEvidenceFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UsageUpstreamCostEvidenceQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UsageUpstreamCostEvidenceQuery", q)
+}
+
+// The TraverseUsageUpstreamCostEvidence type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUsageUpstreamCostEvidence func(context.Context, *ent.UsageUpstreamCostEvidenceQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUsageUpstreamCostEvidence) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUsageUpstreamCostEvidence) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UsageUpstreamCostEvidenceQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UsageUpstreamCostEvidenceQuery", q)
 }
 
 // The UserFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1166,6 +1278,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.APIKeyQuery, predicate.APIKey, apikey.OrderOption]{typ: ent.TypeAPIKey, tq: q}, nil
 	case *ent.AccountQuery:
 		return &query[*ent.AccountQuery, predicate.Account, account.OrderOption]{typ: ent.TypeAccount, tq: q}, nil
+	case *ent.AccountDailyFinancialValueQuery:
+		return &query[*ent.AccountDailyFinancialValueQuery, predicate.AccountDailyFinancialValue, accountdailyfinancialvalue.OrderOption]{typ: ent.TypeAccountDailyFinancialValue, tq: q}, nil
+	case *ent.AccountFinancialSettingQuery:
+		return &query[*ent.AccountFinancialSettingQuery, predicate.AccountFinancialSetting, accountfinancialsetting.OrderOption]{typ: ent.TypeAccountFinancialSetting, tq: q}, nil
 	case *ent.AccountGroupQuery:
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
 	case *ent.AnnouncementQuery:
@@ -1226,8 +1342,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.TLSFingerprintProfileQuery, predicate.TLSFingerprintProfile, tlsfingerprintprofile.OrderOption]{typ: ent.TypeTLSFingerprintProfile, tq: q}, nil
 	case *ent.UsageCleanupTaskQuery:
 		return &query[*ent.UsageCleanupTaskQuery, predicate.UsageCleanupTask, usagecleanuptask.OrderOption]{typ: ent.TypeUsageCleanupTask, tq: q}, nil
+	case *ent.UsageCostReviewQuery:
+		return &query[*ent.UsageCostReviewQuery, predicate.UsageCostReview, usagecostreview.OrderOption]{typ: ent.TypeUsageCostReview, tq: q}, nil
 	case *ent.UsageLogQuery:
 		return &query[*ent.UsageLogQuery, predicate.UsageLog, usagelog.OrderOption]{typ: ent.TypeUsageLog, tq: q}, nil
+	case *ent.UsageUpstreamCostEvidenceQuery:
+		return &query[*ent.UsageUpstreamCostEvidenceQuery, predicate.UsageUpstreamCostEvidence, usageupstreamcostevidence.OrderOption]{typ: ent.TypeUsageUpstreamCostEvidence, tq: q}, nil
 	case *ent.UserQuery:
 		return &query[*ent.UserQuery, predicate.User, user.OrderOption]{typ: ent.TypeUser, tq: q}, nil
 	case *ent.UserAllowedGroupQuery:

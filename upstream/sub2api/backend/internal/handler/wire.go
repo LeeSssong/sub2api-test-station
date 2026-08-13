@@ -21,6 +21,18 @@ func ProvideDashboardHandler(
 	return h
 }
 
+func ProvideAdminUsageHandler(
+	usageService *service.UsageService,
+	apiKeyService *service.APIKeyService,
+	adminService service.AdminService,
+	cleanupService *service.UsageCleanupService,
+	accountFinancialService *service.AccountFinancialService,
+) *admin.UsageHandler {
+	h := admin.NewUsageHandler(usageService, apiKeyService, adminService, cleanupService, nil)
+	h.SetAccountFinancialService(accountFinancialService)
+	return h
+}
+
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
 	dashboardHandler *admin.DashboardHandler,
@@ -60,6 +72,7 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	accountFinancialHandler *admin.AccountFinancialHandler,
 ) *AdminHandlers {
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
@@ -99,12 +112,14 @@ func ProvideAdminHandlers(
 		Affiliate:              affiliateHandler,
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
+		AccountFinancial:       accountFinancialHandler,
 	}
 }
 
 func ProvideGatewayHandler(
 	gatewayService *service.GatewayService,
 	openAIGatewayService *service.OpenAIGatewayService,
+	usageCostEvidenceRegistrar *service.UsageCostEvidenceRegistrar,
 	geminiCompatService *service.GeminiMessagesCompatService,
 	antigravityGatewayService *service.AntigravityGatewayService,
 	userService *service.UserService,
@@ -120,6 +135,8 @@ func ProvideGatewayHandler(
 	settingService *service.SettingService,
 	coordinator *securityaudit.Coordinator,
 ) *GatewayHandler {
+	gatewayService.SetUsageCostEvidenceRegistrar(usageCostEvidenceRegistrar)
+	openAIGatewayService.SetUsageCostEvidenceRegistrar(usageCostEvidenceRegistrar)
 	h := NewGatewayHandler(gatewayService, openAIGatewayService, geminiCompatService, antigravityGatewayService,
 		userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool,
 		errorPassthroughService, contentModerationService, userMsgQueueService, cfg, settingService)
@@ -141,6 +158,7 @@ func ProvideAccountMonitorHandler(
 
 func ProvideOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
+	usageCostEvidenceRegistrar *service.UsageCostEvidenceRegistrar,
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
 	apiKeyService *service.APIKeyService,
@@ -152,6 +170,7 @@ func ProvideOpenAIGatewayHandler(
 	cfg *config.Config,
 	coordinator *securityaudit.Coordinator,
 ) *OpenAIGatewayHandler {
+	gatewayService.SetUsageCostEvidenceRegistrar(usageCostEvidenceRegistrar)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
 	h.securityAuditCoordinator = coordinator
@@ -293,7 +312,8 @@ var ProviderSet = wire.NewSet(
 	admin.NewOpsHandler,
 	ProvideSystemHandler,
 	admin.NewSubscriptionHandler,
-	admin.NewUsageHandler,
+	ProvideAdminUsageHandler,
+	admin.NewAccountFinancialHandler,
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,
 	admin.NewTLSFingerprintProfileHandler,

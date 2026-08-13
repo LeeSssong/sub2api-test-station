@@ -4,7 +4,7 @@ import { defineComponent, ref } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, controlPlaneDecision, aoaToSheet, sheetAddAoa, saveAs, xlsxWrite } = vi.hoisted(() => {
+const { list, exportList, listCostExceptions, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, controlPlaneDecision, aoaToSheet, sheetAddAoa, saveAs, xlsxWrite } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -13,7 +13,8 @@ const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listE
 
   return {
     list: vi.fn(),
-		exportList: vi.fn(),
+	 exportList: vi.fn(),
+    listCostExceptions: vi.fn(),
     getStats: vi.fn(),
     getSnapshotV2: vi.fn(),
     getById: vi.fn(),
@@ -74,7 +75,8 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/api/admin/usage', () => ({
   adminUsageAPI: {
-		list: exportList,
+	list: exportList,
+    listCostExceptions,
   },
 }))
 
@@ -158,6 +160,12 @@ const UsageDetailDialogStub = {
   emits: ['update:show'],
   template: '<div data-test="usage-detail-dialog" />',
 }
+const CostExceptionTableStub = {
+  name: 'CostExceptionTable',
+  props: ['filters'],
+  emits: ['detail', 'reviewed'],
+  template: '<div data-test="cost-exception-table"><button data-test="exception-detail" @click="$emit(\'detail\', 11)">exception details</button></div>',
+}
 const OpsErrorLogTableStub = {
   name: 'OpsErrorLogTable',
   emits: ['openErrorDetail'],
@@ -197,7 +205,7 @@ const GroupDistributionChartStub = {
 const mountRouteFilteredUsageView = () => mount(UsageView, {
   global: { stubs: {
     AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
-    UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+    UsageTable: true, CostExceptionTable: CostExceptionTableStub, UsageExportProgress: true, UsageCleanupDialog: true,
     UserBalanceHistoryModal: true, Pagination: true, Select: true,
     DateRangePicker: true, Icon: true, TokenUsageTrend: true,
     ModelDistributionChart: true, GroupDistributionChart: true,
@@ -245,6 +253,49 @@ describe('admin UsageView route filters', () => {
     expect(getById).toHaveBeenCalledWith(42, true)
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('route-user@test.com')
+  })
+
+  it('restores the cost exception tab and financial route filters', async () => {
+    routeQuery.tab = 'cost-exceptions'
+    routeQuery.range = 'today'
+    routeQuery.account_id = '42'
+    routeQuery.evidence = 'unavailable'
+    routeQuery.review = 'reviewed'
+
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    const tabs = wrapper.findAll('[data-testid="usage-detail-tab"]')
+    expect(tabs).toHaveLength(4)
+    expect(tabs[3].classes()).toContain('border-primary-500')
+    const exceptionTable = wrapper.getComponent(CostExceptionTableStub)
+    expect(exceptionTable.props('filters')).toEqual(expect.objectContaining({
+      account_id: 42,
+      evidence_status: 'unavailable',
+      review_status: 'reviewed',
+      start_time: expect.any(String),
+      end_time: expect.any(String),
+    }))
+  })
+
+  it('opens the existing administrator detail from an exception row', async () => {
+    routeQuery.tab = 'cost-exceptions'
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, CostExceptionTable: CostExceptionTableStub,
+        UsageDetailDialog: UsageDetailDialogStub, UsageExportProgress: true,
+        UsageCleanupDialog: true, UserBalanceHistoryModal: true, Pagination: true,
+        Select: true, DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="exception-detail"]').trigger('click')
+    const dialog = wrapper.getComponent(UsageDetailDialogStub)
+    expect(dialog.props()).toMatchObject({ usageId: 11, scope: 'admin', show: true })
   })
 
   it('keeps legacy usage pagination and rows in shadow mode while loading ledger freshness', async () => {
@@ -771,7 +822,7 @@ describe('admin UsageView ranking tab', () => {
     expect(wrapper.find('[data-test="ranking"]').exists()).toBe(false)
 
     const tabs = wrapper.findAll('[data-testid="usage-detail-tab"]')
-    expect(tabs).toHaveLength(3)
+    expect(tabs).toHaveLength(4)
     await tabs[2].trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="ranking"]').exists()).toBe(true)

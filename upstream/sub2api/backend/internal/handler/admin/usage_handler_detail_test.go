@@ -140,34 +140,27 @@ func TestAdminUsageGetByIDPreservesNotFound(t *testing.T) {
 	require.Equal(t, "USAGE_LOG_NOT_FOUND", body.Reason)
 }
 
-func TestAdminUsageGetUpstreamCostReturnsComparison(t *testing.T) {
+func TestAdminUsageGetUpstreamCostFailsClosedWithoutFinancialService(t *testing.T) {
 	repo := &adminUsageDetailRepo{record: &service.UsageLog{
 		ID: 42, RequestID: "local-req", ActualCost: 0.00688,
 		Account: &service.Account{Credentials: map[string]any{}},
 	}}
 	usageService := service.NewUsageService(repo, nil, nil, nil)
-	upstreamCostService := service.NewSubUpstreamCostService(usageService)
-	handler := NewUsageHandler(usageService, nil, nil, nil, upstreamCostService)
+	handler := NewUsageHandler(usageService, nil, nil, nil, service.NewSubUpstreamCostService(usageService))
 	router := gin.New()
 	router.GET("/admin/usage/:id/upstream-cost", handler.GetUpstreamCost)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/usage/42/upstream-cost", nil))
 
-	require.Equal(t, http.StatusOK, recorder.Code)
-	var body struct {
-		Code int                           `json:"code"`
-		Data service.SubUpstreamCostDetail `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
-	require.Equal(t, 0, body.Code)
-	require.Equal(t, int64(42), body.Data.UsageID)
-	require.Equal(t, "unavailable", body.Data.Status)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
-func TestAdminUsageGetUpstreamCostReturnsConfirmedZeroAndProfit(t *testing.T) {
+func TestAdminUsageGetUpstreamCostDoesNotCallUpstreamWhenFinancialServiceMissing(t *testing.T) {
 	upstreamID := "upstream-blank-cost"
+	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{
 			"request_id":          "local-blank-cost",
 			"upstream_request_id": upstreamID,
@@ -192,18 +185,8 @@ func TestAdminUsageGetUpstreamCostReturnsConfirmedZeroAndProfit(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/usage/42/upstream-cost", nil))
 
-	require.Equal(t, http.StatusOK, recorder.Code)
-	var body struct {
-		Code int                           `json:"code"`
-		Data service.SubUpstreamCostDetail `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
-	require.Equal(t, 0, body.Code)
-	require.Equal(t, "confirmed", body.Data.Status)
-	require.NotNil(t, body.Data.UpstreamActualCost)
-	require.Zero(t, *body.Data.UpstreamActualCost)
-	require.NotNil(t, body.Data.Profit)
-	require.InDelta(t, 0.00688, *body.Data.Profit, 1e-9)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Zero(t, calls)
 }
 
 func TestAdminUsageGetUpstreamCostRejectsInvalidID(t *testing.T) {

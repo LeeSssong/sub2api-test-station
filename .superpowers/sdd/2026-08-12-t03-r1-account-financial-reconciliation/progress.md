@@ -52,3 +52,10 @@ Task 6: complete
 - Scoped re-review round 1 found two Important findings (missing cost/OAuth editors and UTC business date); fix round 2 restored account financial columns while retaining both fixes.
 - Scoped re-review round 2: `task-6-rereview-r2.md` — Spec Compliance APPROVE, Code Quality APPROVE, open findings 0; Vitest/typecheck/build/diff-check passed.
 - Task 6 complete; no merge, push, deployment or production verification.
+
+Task 7: complete
+- Initial implementation: `32708e05ca102196492b00822d81ee8a7fe4bbf1`; source projection fixes: `9d6e21bd8c3d46c8953561e4305eb9cda59269cb`, `aa5c1ed2b`; evidence update: `8db318626d704373d06f8787d6152aadbaee20d6`.
+- Scope: administrator UsageView cost-exceptions tab, route query restoration, filtering/pagination/export, one/selected/filtered review, and persisted local evidence detail; no read-time upstream HTTP and no ordinary-user disclosure.
+- Initial review found one Important provenance defect: NewAPI unavailable rows with empty quota were inferred as Sub. Fixes project the persisted `source` into list, CSV and administrator detail, with NewAPI empty-quota RED/GREEN coverage.
+- Scoped re-review `task-7-source-rereview.md`: finding ADDRESSED, Spec APPROVE, Quality APPROVE, open findings 0.
+- Focused Vitest 55/55, typecheck, production build and diff-check passed; no backend, schema, migration, main, push, deployment or production change.

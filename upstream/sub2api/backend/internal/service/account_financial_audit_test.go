@@ -45,3 +45,83 @@ func TestAccountFinancialAuditUsesFixedCreatedAt(t *testing.T) {
 		t.Fatalf("created_at=%v", recorder.entries[0].CreatedAt)
 	}
 }
+
+func TestAccountFinancialServiceAuditsEveryMutation(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	repo := &mutationFinancialRepoStub{}
+	rec := &auditRecorder{}
+	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	cost := float64(3)
+	_, _ = svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ManualCostCNY: &cost, ReviewedBy: 9, RequestID: "one"})
+	_, _ = svc.ReviewSelected(ctx, []UsageCostReviewInput{{UsageLogID: 2, ReviewedBy: 9, RequestID: "selected"}})
+	_, _ = svc.ReviewFiltered(ctx, ReviewFilteredInput{MaxUsageLogID: 3, ReviewedBy: 9, RequestID: "filtered"})
+	_, _ = svc.SetOAuthDailyCost(ctx, OAuthDailyCostInput{AccountID: 4, BusinessDate: "2026-08-13", CostCNY: &cost, ActorUserID: 9, RequestID: "oauth"})
+	_, _ = svc.SetTodayOverride(ctx, TodayOverrideInput{AccountID: 5, BusinessDate: "2026-08-13", CostCNY: &cost, ActorUserID: 9, RequestID: "override"})
+	if len(rec.entries) != 5 {
+		t.Fatalf("audit entries=%d", len(rec.entries))
+	}
+	for _, e := range rec.entries {
+		if e.RequestID == "" || e.ActorUserID == nil || e.RequestBody != "" {
+			t.Fatalf("bad audit=%#v", e)
+		}
+	}
+}
+
+func TestAccountFinancialServiceReviewAuditUsesTruthfulOldAndNewValues(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	rec := &auditRecorder{}
+	svc := NewAccountFinancialServiceWithAudit(&truthfulReviewFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	_, err := svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ReviewedBy: 9, RequestID: "repeat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.entries) != 1 || rec.entries[0].Extra["old_value"] != float64(3) || rec.entries[0].Extra["new_value"] != float64(3) || rec.entries[0].Extra["skipped"] != int64(1) {
+		t.Fatalf("audit=%#v", rec.entries)
+	}
+}
+
+func TestAccountFinancialServiceAuditsValidationFailures(t *testing.T) {
+	ctx := context.Background()
+	now := beijingTime(t, "2026-08-13 12:00")
+	rec := &auditRecorder{}
+	svc := NewAccountFinancialServiceWithAudit(&mutationFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	invalid := -1.0
+	valid := 1.0
+	_, _ = svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ManualCostCNY: &invalid, ReviewedBy: 9, RequestID: "one-invalid"})
+	_, _ = svc.ReviewSelected(ctx, []UsageCostReviewInput{{UsageLogID: 2, ManualCostCNY: &invalid, ReviewedBy: 9, RequestID: "selected-invalid"}})
+	_, _ = svc.ReviewFiltered(ctx, ReviewFilteredInput{ManualCostCNY: &invalid, ReviewedBy: 9, RequestID: "filtered-invalid"})
+	_, _ = svc.SetOAuthDailyCost(ctx, OAuthDailyCostInput{AccountID: 4, BusinessDate: "2026-08-13", CostCNY: &invalid, ActorUserID: 9, RequestID: "oauth-invalid"})
+	_, _ = svc.SetTodayOverride(ctx, TodayOverrideInput{AccountID: 5, BusinessDate: "2026-08-13", RevenueCNY: &valid, CostCNY: &valid, ActorUserID: 9, RequestID: "override-invalid"})
+	if len(rec.entries) != 5 {
+		t.Fatalf("audit entries=%d", len(rec.entries))
+	}
+	for _, e := range rec.entries {
+		if e.Extra["failed"] != int64(1) || e.RequestID == "" {
+			t.Fatalf("bad failed audit=%#v", e)
+		}
+	}
+}
+
+type mutationFinancialRepoStub struct{ financialRepoStub }
+
+type truthfulReviewFinancialRepoStub struct{ mutationFinancialRepoStub }
+
+func (r *truthfulReviewFinancialRepoStub) CreateReview(_ context.Context, in UsageCostReviewInput) (*UsageCostReviewResult, error) {
+	old := 3.0
+	return &UsageCostReviewResult{UsageLogID: in.UsageLogID, AccountID: 11, ManualCostCNY: 3, ManualProfitCNY: 1, OldManualCostCNY: &old, BusinessDate: "2026-08-13"}, nil
+}
+
+func (r *mutationFinancialRepoStub) CreateReview(_ context.Context, in UsageCostReviewInput) (*UsageCostReviewResult, error) {
+	return &UsageCostReviewResult{Created: true, UsageLogID: in.UsageLogID, ManualCostCNY: 0, ManualProfitCNY: 1, AccountID: 11}, nil
+}
+func (r *mutationFinancialRepoStub) ReviewFiltered(_ context.Context, in ReviewFilteredInput) (*ReviewFilteredResult, error) {
+	return &ReviewFilteredResult{Cutoff: in.MaxUsageLogID, MaxUsageLogID: in.MaxUsageLogID, Matched: 1, Updated: 1, Reviews: []UsageCostReviewResult{{Created: true, UsageLogID: 3, AccountID: 11, BusinessDate: "2026-08-13"}}}, nil
+}
+func (r *mutationFinancialRepoStub) SetOAuthDailyCost(_ context.Context, in OAuthDailyCostInput) (*FinancialMutationResult, error) {
+	return &FinancialMutationResult{AccountID: in.AccountID, BusinessDate: in.BusinessDate, NewValue: in.CostCNY, MutationKind: "oauth_cost"}, nil
+}
+func (r *mutationFinancialRepoStub) SetTodayOverride(_ context.Context, in TodayOverrideInput) (*FinancialMutationResult, error) {
+	return &FinancialMutationResult{AccountID: in.AccountID, BusinessDate: in.BusinessDate, NewValue: in.CostCNY, MutationKind: "cost"}, nil
+}

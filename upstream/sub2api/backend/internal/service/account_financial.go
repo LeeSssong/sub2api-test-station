@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
 var (
-	ErrFinancialInvalidAmount = errors.New("financial amount must be finite and non-negative")
-	ErrFinancialNotToday      = errors.New("financial value may only be written for today")
-	ErrFinancialOAuthType     = errors.New("daily oauth cost requires literal oauth account type")
+	ErrFinancialInvalidAmount     = errors.New("financial amount must be finite and non-negative")
+	ErrFinancialNotToday          = errors.New("financial value may only be written for today")
+	ErrFinancialOAuthType         = errors.New("daily oauth cost requires literal oauth account type")
+	ErrFinancialReviewNotEligible = errors.New("usage is not a pending financial exception")
+	ErrFinancialAuditRequired     = errors.New("financial audit dependency is required")
 )
 
 type AccountFinancialRange string
@@ -68,23 +71,27 @@ type AccountFinancialSnapshotAccount struct {
 	Name, Type, Platform string
 }
 type AccountFinancialSnapshotEntry struct {
-	UsageLogID, AccountID int64
-	CreatedAt             time.Time
-	BusinessDate          string
-	RevenueCNY            float64
-	EvidenceID            *int64
-	EvidenceStatus        string
-	EvidenceCostCNY       *float64
-	ReviewID              *int64
-	ReviewCostCNY         *float64
+	UsageLogID, AccountID                          int64
+	CreatedAt                                      time.Time
+	BusinessDate                                   string
+	RevenueCNY                                     float64
+	EvidenceID                                     *int64
+	EvidenceStatus                                 string
+	EvidenceCostCNY                                *float64
+	ReviewID                                       *int64
+	ReviewCostCNY                                  *float64
+	RequestID, Model, ReasonCode                   string
+	SubActualCost, NewAPIQuota, NewAPIQuotaPerUnit *float64
 }
 type AccountFinancialDailyValue struct {
 	AccountID                                      int64
 	BusinessDate                                   string
 	OAuthCostCNY                                   *float64
 	RevenueOverrideCNY                             *float64
+	RevenueOverrideAt                              *time.Time
 	RevenueEvidenceCutoffID, RevenueReviewCutoffID *int64
 	CostOverrideCNY                                *float64
+	CostOverrideAt                                 *time.Time
 	CostEvidenceCutoffID, CostReviewCutoffID       *int64
 }
 type UsageFinancialEvidence struct {
@@ -95,15 +102,19 @@ type UsageFinancialEvidence struct {
 	ReviewCostCNY              *float64
 }
 type AccountFinancialException struct {
-	UsageLogID, AccountID      int64
-	CreatedAt                  time.Time
-	RevenueCNY                 float64
-	EvidenceStatus, ReasonCode string
+	UsageLogID, AccountID                    int64
+	RequestID, Model                         string
+	CreatedAt                                time.Time
+	RevenueCNY                               float64
+	EvidenceStatus, ReasonCode, ReviewStatus string
+	CostTrace                                AccountFinancialCostTrace
 }
+type AccountFinancialCostTrace struct{ SubActualCost, NewAPIQuota, NewAPIQuotaPerUnit, NormalizedCostCNY *float64 }
 type AccountFinancialExceptionList struct {
-	GeneratedAt time.Time
-	Items       []AccountFinancialException
-	Total       int
+	GeneratedAt    time.Time
+	Items          []AccountFinancialException
+	Total          int
+	Page, PageSize int
 }
 type UsageCostReviewInput struct {
 	UsageLogID    int64
@@ -115,11 +126,16 @@ type UsageCostReviewInput struct {
 type UsageCostReviewResult struct {
 	Created                        bool
 	UsageLogID                     int64
+	AccountID                      int64
+	BusinessDate                   string
+	OldManualCostCNY               *float64
 	ManualCostCNY, ManualProfitCNY float64
 }
 type ReviewFilter struct {
-	AccountID *int64
-	From, To  *time.Time
+	AccountID                            *int64
+	From, To                             *time.Time
+	Page, PageSize                       int
+	Search, EvidenceStatus, ReviewStatus string
 }
 type ReviewFilteredInput struct {
 	Filter                    ReviewFilter
@@ -131,6 +147,7 @@ type ReviewFilteredInput struct {
 type ReviewFilteredResult struct {
 	Cutoff, MaxUsageLogID     int64
 	Matched, Updated, Skipped int
+	Reviews                   []UsageCostReviewResult
 }
 type UsageCostReviewBatchResult = ReviewFilteredResult
 type OAuthDailyCostInput struct {
@@ -152,6 +169,7 @@ type FinancialMutationResult struct {
 	BusinessDate                     string
 	OldValue, NewValue               *float64
 	CutoffEvidenceID, CutoffReviewID int64
+	MutationKind                     string
 }
 type GetUsageEvidenceInput struct{ UsageLogID int64 }
 
@@ -166,8 +184,16 @@ type AccountFinancialRepository interface {
 }
 
 type AccountFinancialService struct {
-	repo AccountFinancialRepository
-	now  func() time.Time
+	repo  AccountFinancialRepository
+	now   func() time.Time
+	audit *AccountFinancialAudit
+}
+
+func NewAccountFinancialServiceWithAudit(repo AccountFinancialRepository, now func() time.Time, audit *AccountFinancialAudit) *AccountFinancialService {
+	if now == nil {
+		now = time.Now
+	}
+	return &AccountFinancialService{repo: repo, now: now, audit: audit}
 }
 
 func NewAccountFinancialService(repo AccountFinancialRepository, now func() time.Time) *AccountFinancialService {
@@ -182,7 +208,7 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	localNow := now.In(loc)
 	q := AccountFinancialSnapshotQuery{GeneratedAt: now}
-	start := localNow.Truncate(24 * time.Hour)
+	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, loc)
 	switch r {
 	case AccountFinancialRange24H:
 		q.From = now.Add(-24 * time.Hour)
@@ -251,35 +277,7 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 	}
 	for _, a := range report.Accounts {
 		if a.Type == "oauth" {
-			if r == AccountFinancialRangeToday {
-				d := dailyFor(snap.DailyValues, a.ID, localNow.Format("2006-01-02"))
-				if d == nil || d.OAuthCostCNY == nil {
-					a.Complete = false
-					a.Amounts = FinancialAmounts{}
-				} else {
-					a.Amounts.CostCNY = *d.OAuthCostCNY
-				}
-			} else if r == AccountFinancialRange7D || r == AccountFinancialRange31D {
-				a.Amounts = FinancialAmounts{}
-				seen := map[string]bool{}
-				for _, e := range snap.Entries {
-					if e.AccountID != a.ID || !entryInRange(e, r, now, localNow) {
-						continue
-					}
-					d := dailyFor(snap.DailyValues, a.ID, e.BusinessDate)
-					if d == nil || d.OAuthCostCNY == nil {
-						a.Complete = false
-						continue
-					}
-					a.Amounts.RevenueCNY += e.RevenueCNY
-					if !seen[e.BusinessDate] {
-						a.Amounts.CostCNY += *d.OAuthCostCNY
-						seen[e.BusinessDate] = true
-					}
-				}
-			} else if r == AccountFinancialRange24H {
-				a.Complete = false
-			}
+			a.Amounts, a.Complete = aggregateOAuthAccount(a.ID, r, now, localNow, snap)
 		}
 		a.Amounts.ProfitCNY = a.Amounts.RevenueCNY - a.Amounts.CostCNY
 		if a.Amounts.RevenueCNY != 0 {
@@ -295,6 +293,48 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		report.Summary.Margin = &v
 	}
 	return report, nil
+}
+func aggregateOAuthAccount(id int64, r AccountFinancialRange, now, localNow time.Time, snap *AccountFinancialSnapshot) (FinancialAmounts, bool) {
+	if r == AccountFinancialRange24H {
+		return FinancialAmounts{}, false
+	}
+	revenueByDay := map[string]float64{}
+	for _, e := range snap.Entries {
+		if e.AccountID == id && entryInRange(e, r, now, localNow) {
+			revenueByDay[e.BusinessDate] += e.RevenueCNY
+		}
+	}
+	out := FinancialAmounts{}
+	complete := true
+	for day, revenue := range revenueByDay {
+		d := dailyFor(snap.DailyValues, id, day)
+		if d == nil || d.OAuthCostCNY == nil {
+			complete = false
+			continue
+		}
+		cost := *d.OAuthCostCNY
+		if d.RevenueOverrideCNY != nil {
+			revenue = *d.RevenueOverrideCNY + sumOAuthRevenueAfter(snap.Entries, id, day, d.RevenueOverrideAt)
+		}
+		if d.CostOverrideCNY != nil {
+			cost = *d.CostOverrideCNY
+		}
+		out.RevenueCNY += revenue
+		out.CostCNY += cost
+	}
+	return out, complete
+}
+func sumOAuthRevenueAfter(entries []AccountFinancialSnapshotEntry, accountID int64, day string, cutoff *time.Time) float64 {
+	if cutoff == nil {
+		return 0
+	}
+	var total float64
+	for _, e := range entries {
+		if e.AccountID == accountID && e.BusinessDate == day && e.CreatedAt.After(*cutoff) {
+			total += e.RevenueCNY
+		}
+	}
+	return total
 }
 func dailyValueInRange(day string, r AccountFinancialRange, now time.Time) bool {
 	parsed, err := time.ParseInLocation("2006-01-02", day, now.Location())
@@ -395,10 +435,20 @@ func validateMoney(v *float64) error {
 }
 func ValidateFinancialAmount(v *float64) error { return validateMoney(v) }
 func (s *AccountFinancialService) ReviewOne(ctx context.Context, in UsageCostReviewInput) (*UsageCostReviewResult, error) {
+	if s.audit == nil {
+		return nil, ErrFinancialAuditRequired
+	}
 	if err := validateMoney(in.ManualCostCNY); err != nil {
+		s.auditMutation(ctx, "admin.account_financial.review", in.ReviewedBy, in.RequestID, 0, "", nil, in.ManualCostCNY, 0, map[string]int64{"failed": 1})
 		return nil, err
 	}
-	return s.repo.CreateReview(ctx, in)
+	res, err := s.repo.CreateReview(ctx, in)
+	if err == nil {
+		s.auditMutation(ctx, "admin.account_financial.review", in.ReviewedBy, in.RequestID, res.AccountID, res.BusinessDate, res.OldManualCostCNY, &res.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(res.Created), "skipped": boolInt64(!res.Created)})
+	} else {
+		s.auditMutation(ctx, "admin.account_financial.review", in.ReviewedBy, in.RequestID, 0, "", nil, in.ManualCostCNY, 0, map[string]int64{"failed": 1})
+	}
+	return res, err
 }
 func (s *AccountFinancialService) ListExceptions(ctx context.Context, filter ReviewFilter) (*AccountFinancialExceptionList, error) {
 	now := s.now()
@@ -417,61 +467,154 @@ func (s *AccountFinancialService) ListExceptions(ctx context.Context, filter Rev
 	for _, a := range snap.Accounts {
 		types[a.ID] = a.Type
 	}
-	out := &AccountFinancialExceptionList{GeneratedAt: snap.GeneratedAt}
+	page, pageSize := filter.Page, filter.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	out := &AccountFinancialExceptionList{GeneratedAt: snap.GeneratedAt, Page: page, PageSize: pageSize}
 	for _, e := range snap.Entries {
 		if filter.AccountID != nil && e.AccountID != *filter.AccountID {
 			continue
 		}
-		if types[e.AccountID] == "oauth" || e.ReviewID != nil || e.EvidenceStatus == "confirmed" {
+		if types[e.AccountID] == "oauth" || e.EvidenceStatus == "confirmed" {
 			continue
 		}
-		reason := ""
+		reason := e.ReasonCode
 		if e.EvidenceID == nil {
 			reason = "evidence_not_registered"
 		}
-		out.Items = append(out.Items, AccountFinancialException{UsageLogID: e.UsageLogID, AccountID: e.AccountID, CreatedAt: e.CreatedAt, RevenueCNY: e.RevenueCNY, EvidenceStatus: e.EvidenceStatus, ReasonCode: reason})
+		if filter.EvidenceStatus != "" && filter.EvidenceStatus != e.EvidenceStatus {
+			continue
+		}
+		reviewStatus := "pending"
+		if e.ReviewID != nil {
+			reviewStatus = "reviewed"
+		}
+		if filter.ReviewStatus != "" && filter.ReviewStatus != reviewStatus {
+			continue
+		}
+		if filter.Search != "" && !strings.Contains(strings.ToLower(e.RequestID+" "+e.Model), strings.ToLower(filter.Search)) {
+			continue
+		}
+		out.Items = append(out.Items, AccountFinancialException{UsageLogID: e.UsageLogID, AccountID: e.AccountID, RequestID: e.RequestID, Model: e.Model, CreatedAt: e.CreatedAt, RevenueCNY: e.RevenueCNY, EvidenceStatus: e.EvidenceStatus, ReasonCode: reason, ReviewStatus: reviewStatus, CostTrace: AccountFinancialCostTrace{SubActualCost: e.SubActualCost, NewAPIQuota: e.NewAPIQuota, NewAPIQuotaPerUnit: e.NewAPIQuotaPerUnit, NormalizedCostCNY: e.EvidenceCostCNY}})
 	}
 	out.Total = len(out.Items)
+	start := (page - 1) * pageSize
+	if start >= len(out.Items) {
+		out.Items = nil
+	} else {
+		end := start + pageSize
+		if end > len(out.Items) {
+			end = len(out.Items)
+		}
+		out.Items = out.Items[start:end]
+	}
 	return out, nil
 }
 func (s *AccountFinancialService) ReviewSelected(ctx context.Context, in []UsageCostReviewInput) ([]UsageCostReviewResult, error) {
+	if s.audit == nil {
+		return nil, ErrFinancialAuditRequired
+	}
 	out := make([]UsageCostReviewResult, 0, len(in))
 	for _, x := range in {
-		r, e := s.ReviewOne(ctx, x)
+		if err := validateMoney(x.ManualCostCNY); err != nil {
+			s.auditMutation(ctx, "admin.account_financial.review_selected", x.ReviewedBy, x.RequestID, 0, "", nil, x.ManualCostCNY, 0, map[string]int64{"matched": int64(len(in)), "updated": int64(len(out)), "failed": 1})
+			return nil, err
+		}
+		r, e := s.repo.CreateReview(ctx, x)
 		if e != nil {
+			if len(in) > 0 {
+				s.auditMutation(ctx, "admin.account_financial.review_selected", in[0].ReviewedBy, in[0].RequestID, 0, "", nil, nil, 0, map[string]int64{"matched": int64(len(in)), "updated": int64(len(out)), "failed": 1})
+			}
 			return nil, e
 		}
 		out = append(out, *r)
 	}
+	if len(in) > 0 {
+		for _, r := range out {
+			s.auditMutation(ctx, "admin.account_financial.review_selected", in[0].ReviewedBy, in[0].RequestID, r.AccountID, r.BusinessDate, r.OldManualCostCNY, &r.ManualCostCNY, 0, map[string]int64{"updated": boolInt64(r.Created), "skipped": boolInt64(!r.Created)})
+		}
+	}
 	return out, nil
 }
 func (s *AccountFinancialService) ReviewFiltered(ctx context.Context, in ReviewFilteredInput) (*ReviewFilteredResult, error) {
+	if s.audit == nil {
+		return nil, ErrFinancialAuditRequired
+	}
 	if err := validateMoney(in.ManualCostCNY); err != nil {
+		s.auditMutation(ctx, "admin.account_financial.review_filtered", in.ReviewedBy, in.RequestID, 0, "", nil, in.ManualCostCNY, in.MaxUsageLogID, map[string]int64{"failed": 1})
 		return nil, err
 	}
-	if in.MaxUsageLogID == 0 {
-		cutoff, err := s.repo.FreezeReviewFilter(ctx, in.Filter)
-		if err != nil {
-			return nil, err
+	res, err := s.repo.ReviewFiltered(ctx, in)
+	if err == nil {
+		for _, r := range res.Reviews {
+			s.auditMutation(ctx, "admin.account_financial.review_filtered", in.ReviewedBy, in.RequestID, r.AccountID, r.BusinessDate, r.OldManualCostCNY, &r.ManualCostCNY, res.Cutoff, map[string]int64{"updated": boolInt64(r.Created), "skipped": boolInt64(!r.Created)})
 		}
-		in.MaxUsageLogID = cutoff
 	}
-	return s.repo.ReviewFiltered(ctx, in)
+	if err != nil {
+		s.auditMutation(ctx, "admin.account_financial.review_filtered", in.ReviewedBy, in.RequestID, 0, "", nil, in.ManualCostCNY, in.MaxUsageLogID, map[string]int64{"failed": 1})
+	}
+	return res, err
 }
 func (s *AccountFinancialService) SetOAuthDailyCost(ctx context.Context, in OAuthDailyCostInput) (*FinancialMutationResult, error) {
+	if s.audit == nil {
+		return nil, ErrFinancialAuditRequired
+	}
 	if err := validateMoney(in.CostCNY); err != nil {
+		s.auditMutation(ctx, "admin.account_financial.oauth_cost", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, in.CostCNY, 0, map[string]int64{"failed": 1})
 		return nil, err
 	}
-	return s.repo.SetOAuthDailyCost(ctx, in)
+	res, err := s.repo.SetOAuthDailyCost(ctx, in)
+	if err == nil {
+		s.auditMutation(ctx, "admin.account_financial.oauth_cost", in.ActorUserID, in.RequestID, res.AccountID, res.BusinessDate, res.OldValue, res.NewValue, 0, nil)
+	}
+	if err != nil {
+		s.auditMutation(ctx, "admin.account_financial.oauth_cost", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, in.CostCNY, 0, map[string]int64{"failed": 1})
+	}
+	return res, err
 }
 func (s *AccountFinancialService) SetTodayOverride(ctx context.Context, in TodayOverrideInput) (*FinancialMutationResult, error) {
+	if s.audit == nil {
+		return nil, ErrFinancialAuditRequired
+	}
 	if err := validateMoney(in.RevenueCNY); err != nil {
+		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, in.RevenueCNY, 0, map[string]int64{"failed": 1})
 		return nil, err
 	}
 	if err := validateMoney(in.CostCNY); err != nil {
+		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, in.CostCNY, 0, map[string]int64{"failed": 1})
 		return nil, err
 	}
-	return s.repo.SetTodayOverride(ctx, in)
+	if in.RevenueCNY != nil && in.CostCNY != nil {
+		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, nil, 0, map[string]int64{"failed": 1})
+		return nil, errors.New("set one override dimension per mutation")
+	}
+	res, err := s.repo.SetTodayOverride(ctx, in)
+	if err == nil {
+		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, res.AccountID, res.BusinessDate, res.OldValue, res.NewValue, res.CutoffEvidenceID, map[string]int64{"review_cutoff": res.CutoffReviewID})
+	}
+	if err != nil {
+		value := in.RevenueCNY
+		if in.CostCNY != nil {
+			value = in.CostCNY
+		}
+		s.auditMutation(ctx, "admin.account_financial.override", in.ActorUserID, in.RequestID, in.AccountID, in.BusinessDate, nil, value, 0, map[string]int64{"failed": 1})
+	}
+	return res, err
+}
+func boolInt64(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+func (s *AccountFinancialService) auditMutation(ctx context.Context, action string, actor int64, request string, account int64, day string, old, new *float64, cutoff int64, result map[string]int64) {
+	if s.audit != nil {
+		s.audit.Record(ctx, AccountFinancialAuditEvent{Action: action, ActorUserID: actor, RequestID: request, AccountID: account, BusinessDate: day, OldValue: old, NewValue: new, Cutoff: cutoff, Result: result})
+	}
 }
 func (s *AccountFinancialService) GetUsageEvidence(ctx context.Context, id int64) (*UsageFinancialEvidence, error) {
 	return s.repo.GetUsageEvidence(ctx, id)

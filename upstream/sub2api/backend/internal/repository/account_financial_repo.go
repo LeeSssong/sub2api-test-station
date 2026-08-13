@@ -17,9 +17,12 @@ import (
 )
 
 type accountFinancialRepository struct {
-	client *ent.Client
-	now    func() time.Time
+	client             *ent.Client
+	now                func() time.Time
+	reviewBeforeCreate func(int64) error
 }
+
+const accountFinancialSettingKey = "t03_r1_account_financial"
 
 func NewAccountFinancialRepository(client *ent.Client) service.AccountFinancialRepository {
 	return &accountFinancialRepository{client: client, now: time.Now}
@@ -38,7 +41,7 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 	}
 	defer func() { _ = tx.Rollback() }()
 	client := tx.Client()
-	setting, err := client.AccountFinancialSetting.Query().Where(accountfinancialsetting.KeyEQ("account_financial")).Only(ctx)
+	setting, err := client.AccountFinancialSetting.Query().Where(accountfinancialsetting.KeyEQ(accountFinancialSettingKey)).Only(ctx)
 	if err != nil && !ent.IsNotFound(err) {
 		return nil, err
 	}
@@ -96,11 +99,17 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 		rm[v.UsageLogID] = v
 	}
 	for _, u := range logs {
-		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable"}
+		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, RequestID: u.RequestID, Model: u.Model, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
 		if x := em[u.ID]; x != nil {
 			e.EvidenceID = &x.ID
 			e.EvidenceStatus = string(x.EvidenceStatus)
 			e.EvidenceCostCNY = x.NormalizedCostCny
+			e.SubActualCost = x.SubActualCost
+			e.NewAPIQuota = x.NewapiQuota
+			e.NewAPIQuotaPerUnit = x.NewapiQuotaPerUnit
+			if x.ReasonCode != nil {
+				e.ReasonCode = *x.ReasonCode
+			}
 		}
 		if x := rm[u.ID]; x != nil {
 			e.ReviewID = &x.ID
@@ -113,7 +122,7 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 		return nil, err
 	}
 	for _, d := range days {
-		s.DailyValues = append(s.DailyValues, service.AccountFinancialDailyValue{AccountID: d.AccountID, BusinessDate: d.BusinessDate.Format("2006-01-02"), OAuthCostCNY: d.OauthCostCny, RevenueOverrideCNY: d.RevenueOverrideCny, RevenueEvidenceCutoffID: d.RevenueEvidenceCutoffID, RevenueReviewCutoffID: d.RevenueReviewCutoffID, CostOverrideCNY: d.CostOverrideCny, CostEvidenceCutoffID: d.CostEvidenceCutoffID, CostReviewCutoffID: d.CostReviewCutoffID})
+		s.DailyValues = append(s.DailyValues, service.AccountFinancialDailyValue{AccountID: d.AccountID, BusinessDate: d.BusinessDate.Format("2006-01-02"), OAuthCostCNY: d.OauthCostCny, RevenueOverrideCNY: d.RevenueOverrideCny, RevenueOverrideAt: d.RevenueOverrideAt, RevenueEvidenceCutoffID: d.RevenueEvidenceCutoffID, RevenueReviewCutoffID: d.RevenueReviewCutoffID, CostOverrideCNY: d.CostOverrideCny, CostOverrideAt: d.CostOverrideAt, CostEvidenceCutoffID: d.CostEvidenceCutoffID, CostReviewCutoffID: d.CostReviewCutoffID})
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -122,29 +131,61 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 }
 
 func (r *accountFinancialRepository) CreateReview(ctx context.Context, in service.UsageCostReviewInput) (*service.UsageCostReviewResult, error) {
+	tx, err := r.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := r.createReview(ctx, tx.Client(), in)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+func (r *accountFinancialRepository) createReview(ctx context.Context, c *ent.Client, in service.UsageCostReviewInput) (*service.UsageCostReviewResult, error) {
 	cost := 0.0
 	if in.ManualCostCNY != nil {
 		cost = *in.ManualCostCNY
 	}
-	u, err := r.client.UsageLog.Get(ctx, in.UsageLogID)
+	u, err := c.UsageLog.Get(ctx, in.UsageLogID)
 	if err != nil {
 		return nil, err
 	}
-	if x, err := r.client.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(in.UsageLogID)).Only(ctx); err == nil {
-		return &service.UsageCostReviewResult{UsageLogID: x.UsageLogID, ManualCostCNY: x.ManualCostCny, ManualProfitCNY: x.ManualProfitCny}, nil
+	a, err := c.Account.Get(ctx, u.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	setting, err := c.AccountFinancialSetting.Query().Where(accountfinancialsetting.KeyEQ(accountFinancialSettingKey)).Only(ctx)
+	if err != nil || setting.EnabledAt == nil || u.CreatedAt.Before(*setting.EnabledAt) || a.Type == "oauth" {
+		return nil, service.ErrFinancialReviewNotEligible
+	}
+	if x, err := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(in.UsageLogID)).Only(ctx); err == nil {
+		old := x.ManualCostCny
+		return &service.UsageCostReviewResult{UsageLogID: x.UsageLogID, AccountID: u.AccountID, BusinessDate: financialBusinessDate(u.CreatedAt), OldManualCostCNY: &old, ManualCostCNY: x.ManualCostCny, ManualProfitCNY: x.ManualProfitCny}, nil
+	}
+	ev, err := c.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(u.ID)).Only(ctx)
+	if err == nil && ev.EvidenceStatus == usageupstreamcostevidence.EvidenceStatusConfirmed {
+		return nil, service.ErrFinancialReviewNotEligible
+	}
+	if err != nil && !ent.IsNotFound(err) {
+		return nil, err
 	}
 	when := in.ReviewedAt
 	if when.IsZero() {
 		when = r.now()
 	}
-	x, err := r.client.UsageCostReview.Create().SetUsageLogID(in.UsageLogID).SetReviewStatus(usagecostreview.ReviewStatusReviewed).SetManualCostCny(cost).SetManualProfitCny(u.ActualCost - cost).SetReviewedBy(in.ReviewedBy).SetReviewedAt(when).SetUpdatedAt(when).Save(ctx)
+	x, err := c.UsageCostReview.Create().SetUsageLogID(in.UsageLogID).SetReviewStatus(usagecostreview.ReviewStatusReviewed).SetManualCostCny(cost).SetManualProfitCny(u.ActualCost - cost).SetReviewedBy(in.ReviewedBy).SetReviewedAt(when).SetUpdatedAt(when).Save(ctx)
 	if err != nil {
-		if y, e := r.client.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(in.UsageLogID)).Only(ctx); e == nil {
-			return &service.UsageCostReviewResult{UsageLogID: y.UsageLogID, ManualCostCNY: y.ManualCostCny, ManualProfitCNY: y.ManualProfitCny}, nil
+		if y, e := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(in.UsageLogID)).Only(ctx); e == nil {
+			old := y.ManualCostCny
+			return &service.UsageCostReviewResult{UsageLogID: y.UsageLogID, AccountID: u.AccountID, BusinessDate: financialBusinessDate(u.CreatedAt), OldManualCostCNY: &old, ManualCostCNY: y.ManualCostCny, ManualProfitCNY: y.ManualProfitCny}, nil
 		}
 		return nil, err
 	}
-	return &service.UsageCostReviewResult{Created: true, UsageLogID: x.UsageLogID, ManualCostCNY: cost, ManualProfitCNY: u.ActualCost - cost}, nil
+	return &service.UsageCostReviewResult{Created: true, UsageLogID: x.UsageLogID, AccountID: u.AccountID, BusinessDate: financialBusinessDate(u.CreatedAt), ManualCostCNY: cost, ManualProfitCNY: u.ActualCost - cost}, nil
 }
 
 func (r *accountFinancialRepository) FreezeReviewFilter(ctx context.Context, f service.ReviewFilter) (int64, error) {
@@ -178,31 +219,80 @@ func (r *accountFinancialRepository) FreezeReviewFilter(ctx context.Context, f s
 	return max, nil
 }
 func (r *accountFinancialRepository) ReviewFiltered(ctx context.Context, in service.ReviewFilteredInput) (*service.ReviewFilteredResult, error) {
-	q := r.client.UsageLog.Query().Where(usagelog.IDLTE(in.MaxUsageLogID)).Order(ent.Asc(usagelog.FieldID))
-	if in.Filter.AccountID != nil {
-		q = q.Where(usagelog.AccountIDEQ(*in.Filter.AccountID))
-	}
-	if in.Filter.From != nil {
-		q = q.Where(usagelog.CreatedAtGTE(*in.Filter.From))
-	}
-	if in.Filter.To != nil {
-		q = q.Where(usagelog.CreatedAtLT(*in.Filter.To))
-	}
-	logs, err := q.All(ctx)
+	tx, err := r.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = tx.Rollback() }()
+	c := tx.Client()
+	setting, err := c.AccountFinancialSetting.Query().Where(accountfinancialsetting.KeyEQ(accountFinancialSettingKey)).Only(ctx)
+	if err != nil || setting.EnabledAt == nil {
+		return nil, service.ErrFinancialReviewNotEligible
+	}
+	base := c.UsageLog.Query().Where(usagelog.CreatedAtGTE(*setting.EnabledAt)).Order(ent.Asc(usagelog.FieldID))
+	if in.Filter.AccountID != nil {
+		base = base.Where(usagelog.AccountIDEQ(*in.Filter.AccountID))
+	}
+	if in.Filter.From != nil {
+		base = base.Where(usagelog.CreatedAtGTE(*in.Filter.From))
+	}
+	if in.Filter.To != nil {
+		base = base.Where(usagelog.CreatedAtLT(*in.Filter.To))
+	}
+	if in.Filter.Search != "" {
+		base = base.Where(usagelog.Or(usagelog.RequestIDContainsFold(in.Filter.Search), usagelog.ModelContainsFold(in.Filter.Search)))
+	}
+	logs, err := base.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in.MaxUsageLogID == 0 {
+		for _, u := range logs {
+			if u.ID > in.MaxUsageLogID {
+				in.MaxUsageLogID = u.ID
+			}
+		}
+	}
 	res := &service.ReviewFilteredResult{Cutoff: in.MaxUsageLogID, MaxUsageLogID: in.MaxUsageLogID}
 	for _, u := range logs {
-		if ev, e := r.client.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(u.ID)).Only(ctx); e == nil && ev.EvidenceStatus == usageupstreamcostevidence.EvidenceStatusConfirmed {
+		if in.Filter.ReviewStatus != "" && in.Filter.ReviewStatus != "pending" {
+			continue
+		}
+		if u.ID > in.MaxUsageLogID {
+			continue
+		}
+		a, e := c.Account.Get(ctx, u.AccountID)
+		if e != nil {
+			return nil, e
+		}
+		if a.Type == "oauth" {
+			continue
+		}
+		ev, e := c.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(u.ID)).Only(ctx)
+		if e == nil && ev.EvidenceStatus == usageupstreamcostevidence.EvidenceStatusConfirmed {
+			continue
+		}
+		if e != nil && !ent.IsNotFound(e) {
+			return nil, e
+		}
+		projectedStatus := "unavailable"
+		if ev != nil {
+			projectedStatus = string(ev.EvidenceStatus)
+		}
+		if in.Filter.EvidenceStatus != "" && in.Filter.EvidenceStatus != projectedStatus {
 			continue
 		}
 		res.Matched++
-		if _, e := r.client.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(u.ID)).Only(ctx); e == nil {
+		if _, e := c.UsageCostReview.Query().Where(usagecostreview.UsageLogIDEQ(u.ID)).Only(ctx); e == nil {
 			res.Skipped++
 			continue
 		}
-		review, e := r.CreateReview(ctx, service.UsageCostReviewInput{UsageLogID: u.ID, ManualCostCNY: in.ManualCostCNY, ReviewedBy: in.ReviewedBy, ReviewedAt: in.ReviewedAt, RequestID: in.RequestID})
+		if r.reviewBeforeCreate != nil {
+			if err := r.reviewBeforeCreate(u.ID); err != nil {
+				return nil, err
+			}
+		}
+		review, e := r.createReview(ctx, c, service.UsageCostReviewInput{UsageLogID: u.ID, ManualCostCNY: in.ManualCostCNY, ReviewedBy: in.ReviewedBy, ReviewedAt: in.ReviewedAt, RequestID: in.RequestID})
 		if e != nil {
 			return nil, e
 		}
@@ -211,8 +301,16 @@ func (r *accountFinancialRepository) ReviewFiltered(ctx context.Context, in serv
 		} else {
 			res.Skipped++
 		}
+		res.Reviews = append(res.Reviews, *review)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return res, nil
+}
+
+func financialBusinessDate(t time.Time) string {
+	return t.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02")
 }
 
 func (r *accountFinancialRepository) SetOAuthDailyCost(ctx context.Context, in service.OAuthDailyCostInput) (*service.FinancialMutationResult, error) {
@@ -291,6 +389,18 @@ func (r *accountFinancialRepository) SetTodayOverride(ctx context.Context, in se
 	if err != nil {
 		return nil, err
 	}
+	var old, newValue *float64
+	kind := ""
+	if in.RevenueCNY != nil {
+		old = x.RevenueOverrideCny
+		newValue = in.RevenueCNY
+		kind = "revenue"
+	}
+	if in.CostCNY != nil {
+		old = x.CostOverrideCny
+		newValue = in.CostCNY
+		kind = "cost"
+	}
 	up := x.Update().SetUpdatedBy(in.ActorUserID)
 	if in.RevenueCNY != nil {
 		up = up.SetRevenueOverrideCny(*in.RevenueCNY).SetRevenueOverrideAt(r.now()).SetRevenueEvidenceCutoffID(maxEvidence).SetRevenueReviewCutoffID(maxReview)
@@ -305,7 +415,7 @@ func (r *accountFinancialRepository) SetTodayOverride(ctx context.Context, in se
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &service.FinancialMutationResult{AccountID: in.AccountID, BusinessDate: in.BusinessDate, NewValue: in.RevenueCNY, CutoffEvidenceID: maxEvidence, CutoffReviewID: maxReview}, nil
+	return &service.FinancialMutationResult{AccountID: in.AccountID, BusinessDate: in.BusinessDate, OldValue: old, NewValue: newValue, MutationKind: kind, CutoffEvidenceID: maxEvidence, CutoffReviewID: maxReview}, nil
 }
 func (r *accountFinancialRepository) GetUsageEvidence(ctx context.Context, id int64) (*service.UsageFinancialEvidence, error) {
 	e, err := r.client.UsageUpstreamCostEvidence.Query().Where(usageupstreamcostevidence.UsageLogIDEQ(id)).Only(ctx)

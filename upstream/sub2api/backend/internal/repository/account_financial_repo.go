@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountdailyfinancialvalue"
 	"github.com/Wei-Shaw/sub2api/ent/accountfinancialsetting"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/usagecostreview"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usageupstreamcostevidence"
@@ -61,12 +61,19 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 	for _, u := range users {
 		s.UserBalanceCNY += u.Balance
 	}
-	accounts, err := client.Account.Query().Where(account.DeletedAtIsNil()).All(ctx)
+	// Usage history can reference a soft-deleted account.  Keep those records
+	// out of financial account rows, but retain their immutable name/type in
+	// exception trace projections so the admin can reconcile the usage row.
+	accounts, err := client.Account.Query().All(mixins.SkipSoftDelete(ctx))
 	if err != nil {
 		return nil, err
 	}
+	accountTrace := make(map[int64]*ent.Account, len(accounts))
 	for _, a := range accounts {
-		s.Accounts = append(s.Accounts, service.AccountFinancialSnapshotAccount{ID: a.ID, Name: a.Name, Type: a.Type, Platform: a.Platform})
+		accountTrace[a.ID] = a
+		if a.DeletedAt == nil {
+			s.Accounts = append(s.Accounts, service.AccountFinancialSnapshotAccount{ID: a.ID, Name: a.Name, Type: a.Type, Platform: a.Platform})
+		}
 	}
 	usageQ := client.UsageLog.Query()
 	if !s.EnabledAt.IsZero() {
@@ -100,6 +107,10 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 	}
 	for _, u := range logs {
 		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, RequestID: u.RequestID, Model: u.Model, UpstreamRequestID: u.UpstreamRequestID, UpstreamModel: u.UpstreamModel, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
+		if a := accountTrace[u.AccountID]; a != nil {
+			e.AccountName = a.Name
+			e.AccountType = a.Type
+		}
 		if x := em[u.ID]; x != nil {
 			e.EvidenceID = &x.ID
 			e.EvidenceStatus = string(x.EvidenceStatus)

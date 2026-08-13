@@ -71,21 +71,21 @@ type AccountFinancialSnapshotAccount struct {
 	Name, Type, Platform string
 }
 type AccountFinancialSnapshotEntry struct {
-	UsageLogID, AccountID                          int64
-	CreatedAt                                      time.Time
-	BusinessDate                                   string
-	RevenueCNY                                     float64
-	EvidenceID                                     *int64
-	EvidenceStatus                                 string
-	EvidenceCostCNY                                *float64
-	ReviewID                                       *int64
-	ReviewCostCNY                                  *float64
-	RequestID, Model, ReasonCode                   string
-	Source                                         string
-	UpstreamRequestID                              *string
-	UpstreamBillingTime                            *time.Time
-	UpstreamModel                                  *string
-	SubActualCost, NewAPIQuota, NewAPIQuotaPerUnit *float64
+	UsageLogID, AccountID                                  int64
+	CreatedAt                                              time.Time
+	BusinessDate                                           string
+	RevenueCNY                                             float64
+	EvidenceID                                             *int64
+	EvidenceStatus                                         string
+	EvidenceCostCNY                                        *float64
+	ReviewID                                               *int64
+	ReviewCostCNY                                          *float64
+	RequestID, Model, AccountName, AccountType, ReasonCode string
+	Source                                                 string
+	UpstreamRequestID                                      *string
+	UpstreamBillingTime                                    *time.Time
+	UpstreamModel                                          *string
+	SubActualCost, NewAPIQuota, NewAPIQuotaPerUnit         *float64
 }
 type AccountFinancialDailyValue struct {
 	AccountID                                      int64
@@ -478,10 +478,8 @@ func (s *AccountFinancialService) ListExceptions(ctx context.Context, filter Rev
 	if err != nil {
 		return nil, err
 	}
-	types := map[int64]string{}
 	accounts := map[int64]AccountFinancialSnapshotAccount{}
 	for _, a := range snap.Accounts {
-		types[a.ID] = a.Type
 		accounts[a.ID] = a
 	}
 	page, pageSize := filter.Page, filter.PageSize
@@ -496,7 +494,11 @@ func (s *AccountFinancialService) ListExceptions(ctx context.Context, filter Rev
 		if filter.AccountID != nil && e.AccountID != *filter.AccountID {
 			continue
 		}
-		if types[e.AccountID] == "oauth" || e.EvidenceStatus == "confirmed" {
+		accountType := e.AccountType
+		if a, ok := accounts[e.AccountID]; ok {
+			accountType = a.Type
+		}
+		if accountType == "oauth" || e.EvidenceStatus == "confirmed" {
 			continue
 		}
 		reason := e.ReasonCode
@@ -516,8 +518,12 @@ func (s *AccountFinancialService) ListExceptions(ctx context.Context, filter Rev
 		if filter.Search != "" && !strings.Contains(strings.ToLower(e.RequestID+" "+e.Model), strings.ToLower(filter.Search)) {
 			continue
 		}
-		a := accounts[e.AccountID]
-		out.Items = append(out.Items, AccountFinancialException{UsageLogID: e.UsageLogID, AccountID: e.AccountID, AccountName: a.Name, AccountType: a.Type, RequestID: e.RequestID, Model: e.Model, Source: e.Source, UpstreamRequestID: e.UpstreamRequestID, UpstreamBillingTime: e.UpstreamBillingTime, UpstreamModel: e.UpstreamModel, CreatedAt: e.CreatedAt, RevenueCNY: e.RevenueCNY, EvidenceStatus: e.EvidenceStatus, ReasonCode: reason, ReviewStatus: reviewStatus, CostTrace: AccountFinancialCostTrace{SubActualCost: e.SubActualCost, NewAPIQuota: e.NewAPIQuota, NewAPIQuotaPerUnit: e.NewAPIQuotaPerUnit, NormalizedCostCNY: e.EvidenceCostCNY}})
+		accountName := e.AccountName
+		if a, ok := accounts[e.AccountID]; ok {
+			accountName = a.Name
+			accountType = a.Type
+		}
+		out.Items = append(out.Items, AccountFinancialException{UsageLogID: e.UsageLogID, AccountID: e.AccountID, AccountName: accountName, AccountType: accountType, RequestID: e.RequestID, Model: e.Model, Source: e.Source, UpstreamRequestID: e.UpstreamRequestID, UpstreamBillingTime: e.UpstreamBillingTime, UpstreamModel: e.UpstreamModel, CreatedAt: e.CreatedAt, RevenueCNY: e.RevenueCNY, EvidenceStatus: e.EvidenceStatus, ReasonCode: reason, ReviewStatus: reviewStatus, CostTrace: AccountFinancialCostTrace{SubActualCost: e.SubActualCost, NewAPIQuota: e.NewAPIQuota, NewAPIQuotaPerUnit: e.NewAPIQuotaPerUnit, NormalizedCostCNY: e.EvidenceCostCNY}})
 	}
 	out.Total = len(out.Items)
 	start := (page - 1) * pageSize

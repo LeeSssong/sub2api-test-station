@@ -240,6 +240,31 @@ func TestAccountFinancialRepositoryUsageEvidenceIncludesScopedTraceability(t *te
 	}
 }
 
+func TestAccountFinancialRepositorySnapshotRetainsSoftDeletedAccountTraceForExceptions(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	now := time.Now().UTC()
+	client.AccountFinancialSetting.Create().SetKey("t03_r1_account_financial").SetEnabledAt(now.Add(-time.Hour)).SaveX(ctx)
+	account := client.Account.Create().SetName("deleted-newapi-ledger").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	user := client.User.Create().SetEmail("deleted-account-trace@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-deleted-account-trace").SetName("trace").SaveX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("deleted-account-request").SetModel("m").SetActualCost(10).SetCreatedAt(now).SaveX(ctx)
+	client.UsageUpstreamCostEvidence.Create().SetUsageLogID(usage.ID).SetSource("newapi").SetEvidenceStatus("unavailable").SaveX(ctx)
+	client.Account.UpdateOne(account).SetDeletedAt(now).ExecX(ctx)
+
+	snapshot, err := NewAccountFinancialRepository(client).ReadSnapshot(ctx, service.AccountFinancialSnapshotQuery{GeneratedAt: now, From: now.Add(-time.Minute), To: now.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Accounts) != 0 || len(snapshot.Entries) != 1 {
+		t.Fatalf("soft-deleted account must remain excluded from reports but its usage retained: %#v", snapshot)
+	}
+	entry := snapshot.Entries[0]
+	if entry.AccountName != "deleted-newapi-ledger" || entry.AccountType != "api_key" {
+		t.Fatalf("exception snapshot must retain soft-deleted account trace: %#v", entry)
+	}
+}
+
 func TestAccountFinancialRepositoryCostOnlyOverrideReturnsTruthfulOldNew(t *testing.T) {
 	t.Skip("SQLite returns DATE as string; PostgreSQL-backed fix-round test covers old/new and unique concurrency")
 	ctx := context.Background()

@@ -22,3 +22,5 @@ Task 3: in progress
 - Fix round 1 commit: `f41f4682c575231f72a82ec3c98fa44a7a12b661`.
 - Scoped re-review round 1: original Critical/Important/Minor closed; bounded requests and Vertex/Live exclusions closed. Two open Important findings remain: tests do not traverse real handler stream/nonstream success branches, and `AccountTypeAPIKey` is not positive Sub/New ledger identity because official-provider API-key accounts share it.
 - Fix round 2 implementation is present in the working tree: positive native ledger identity gate plus real `ChatCompletions`/`Responses` success-path tests. Focused service/repository/handler/server/tagged-fallback matrices pass; awaiting commit and scoped re-review round 2.
+- Task 3: fix round 2/5 (2 addressed, 0 open; commit `70a6d89703bcbf664db3737aef40e8f67d9b9619`).
+- Task 3: complete (commits `ddeb78f1b99171482122b05a324519ee7d96ec3f..70a6d89703bcbf664db3737aef40e8f67d9b9619`, scoped re-review round 2 clean; residual non-blocking gap: no fresh concurrent PostgreSQL `CreateOnce` integration race test).

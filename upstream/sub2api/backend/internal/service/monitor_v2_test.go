@@ -39,6 +39,7 @@ func (s *monitorV2ProbeReaderStub) ListUserView(context.Context) ([]*UserMonitor
 
 type monitorV2OpsReaderStub struct {
 	overview        *OpsDashboardOverview
+	overviewFilters []*OpsDashboardFilter
 	throughputTrend *OpsThroughputTrendResponse
 	errorTrend      *OpsErrorTrendResponse
 	tokenStats      *OpsOpenAITokenStatsResponse
@@ -48,6 +49,10 @@ func (s *monitorV2OpsReaderStub) GetDashboardOverview(
 	_ context.Context,
 	filter *OpsDashboardFilter,
 ) (*OpsDashboardOverview, error) {
+	if filter != nil {
+		filterCopy := *filter
+		s.overviewFilters = append(s.overviewFilters, &filterCopy)
+	}
 	if s.overview != nil {
 		return s.overview, nil
 	}
@@ -200,6 +205,27 @@ func TestMonitorV2SnapshotShowsOnlyGroupsWithEnabledMonitors(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, configuredID, snapshot.Groups[0].ID)
+}
+
+func TestMonitorV2SnapshotUsesRawOpsMetricsForSevenDayWindow(t *testing.T) {
+	now := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
+	groupID := int64(20)
+	ops := &monitorV2OpsReaderStub{}
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{{
+			ID: groupID, Name: "GPT-特惠分组", Platform: PlatformOpenAI, Status: StatusActive,
+		}}},
+		nil,
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: &groupID}}},
+		ops,
+		nil,
+	)
+
+	_, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
+
+	require.NoError(t, err)
+	require.Len(t, ops.overviewFilters, 1)
+	require.Equal(t, OpsQueryModeRaw, ops.overviewFilters[0].QueryMode)
 }
 
 func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {

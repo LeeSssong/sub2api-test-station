@@ -331,7 +331,7 @@ func (s *MonitorV2Service) buildGroup(
 		EndTime:   end,
 		Platform:  group.Platform,
 		GroupID:   &groupID,
-		QueryMode: OpsQueryModeAuto,
+		QueryMode: OpsQueryModeRaw,
 	}
 	if overview, err := s.ops.GetDashboardOverview(ctx, filter); err == nil && overview != nil {
 		card.Availability = monitorV2AvailabilityFromOverview(overview)

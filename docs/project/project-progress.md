@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T03-R1 Task 5（2026-08-13）：** 状态：进行中。当前工作区 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，范围为管理员财务/本地证据 API（handler、admin routes、wire、测试），不改 schema、usage_logs、frontend、生产；严格 TDD RED→GREEN，待根任务复审、合并、部署和线上验证。
+**T03-R1 Task 5（2026-08-13）：** 状态：进行中（提交阻塞）。当前工作区 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，范围为管理员财务/本地证据 API（handler、admin routes、wire、测试），不改 schema、usage_logs、frontend、生产；fix round 2 严格只修复 correlation fallback 与 `RequestLogger` 的有效 UTF-8/64 字节一致性，以及五个财务 mutation handler 经真实 service 到 audit recorder 的关联 ID 覆盖。实现与聚焦测试已完成；当前会话因无权在共享 Git 元数据目录创建 `index.lock` 而无法提交，变更原样保留等待可写会话提交和独立复审；未合并、推送、部署或线上验证。
 
 **本轮 T03-R1 Task 4 fix round 3（2026-08-13）：** 状态：准备完成（等待独立复审；未合并、未推送、未部署、未线上验证）。当前工作区为 `/Users/gongtengxinwen/.codex/worktrees/7292/sub2api搭建`，分支 `codex/t03-r1-upstream-cost-persistence`，基线 `957d4c94d42e3dbb1b0341a0a046af1c55eb95ab`。范围严格限定为修复 `task-4-rereview-r2.md` 指出的 `ReviewSelected` 后续 `validateMoney` 失败路径：已通过 `CreateReview` 提交的前序 rows 必须逐行 audit，并单独记录失败行；仅修改 service implementation/test 与本轮报告，禁止触碰 Task 5/API/UI/schema、合并、推送、部署或生产。实现与专项验证见 `task-4-fix3-report.md`。
 

@@ -28,3 +28,10 @@ func normalizeCorrelationID(value string) (string, bool) {
 	value = strings.TrimSpace(strings.ToValidUTF8(value, ""))
 	return value, value != "" && len(value) <= maxPersistentRequestIDBytes
 }
+
+// NormalizeCorrelationID applies the same bounded, valid-UTF-8 semantics used
+// by RequestLogger to correlation IDs obtained outside the standard middleware
+// chain (for example, compatibility handlers and tests).
+func NormalizeCorrelationID(value string) (string, bool) {
+	return normalizeCorrelationID(value)
+}

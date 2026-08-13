@@ -35,3 +35,8 @@ Task 4: complete
 - Fix round 3 commit: `9601ab34e6a6a67cc0a1a247c87c68c3f6f0cbfa` fixed per-row audit emission when `ReviewSelected` hits a later validation error; targeted regression, vet and diff checks passed.
 - Scoped re-review round 3: `task-4-rereview-r3.md` — Spec Compliance ✅, Code Quality ✅, open code findings 0. PostgreSQL remains an environment-only warning (`rootless Docker not found`).
 - Task 4 complete; no merge, push, deployment or production verification.
+
+Task 5: in progress
+- Initial implementation: `1461c706f`; request-correlation fix round 1: `524e55be1384556f345e75f772c796dc5c950cee`.
+- Fix round 2 is limited to shared RequestLogger normalization for handler fallbacks and real handler-to-service-to-audit tests for all five financial mutations.
+- Implementation and focused verification complete locally. Commit is blocked because the session cannot create the shared Git worktree `index.lock` outside the writable root (`Operation not permitted`); awaiting a writable Git metadata session, then independent scoped re-review. No schema, migration, Task 6, main, push, deployment, or production changes.

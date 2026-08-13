@@ -54,13 +54,20 @@ func financialRequestID(c *gin.Context) string {
 		return ""
 	}
 	ctx := c.Request.Context()
-	if id, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(id) != "" {
-		return strings.TrimSpace(id)
+	if id, ok := ctx.Value(ctxkey.RequestID).(string); ok {
+		if normalized, valid := middleware.NormalizeCorrelationID(id); valid {
+			return normalized
+		}
 	}
-	if id, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(id) != "" {
-		return strings.TrimSpace(id)
+	if id, ok := ctx.Value(ctxkey.ClientRequestID).(string); ok {
+		if normalized, valid := middleware.NormalizeCorrelationID(id); valid {
+			return normalized
+		}
 	}
-	return strings.TrimSpace(c.GetHeader("X-Request-ID"))
+	if normalized, valid := middleware.NormalizeCorrelationID(c.GetHeader("X-Request-ID")); valid {
+		return normalized
+	}
+	return ""
 }
 
 func (h *AccountFinancialHandler) ListExceptions(c *gin.Context) {

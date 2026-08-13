@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -45,6 +46,23 @@ func actorID(c *gin.Context) int64 {
 	return 0
 }
 
+// financialRequestID returns the server correlation ID injected by the HTTP
+// middleware. The client ID is a fallback for tests or non-standard mounts;
+// the header fallback keeps the audit trail useful when middleware is omitted.
+func financialRequestID(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	ctx := c.Request.Context()
+	if id, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(id) != "" {
+		return strings.TrimSpace(id)
+	}
+	if id, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(id) != "" {
+		return strings.TrimSpace(id)
+	}
+	return strings.TrimSpace(c.GetHeader("X-Request-ID"))
+}
+
 func (h *AccountFinancialHandler) ListExceptions(c *gin.Context) {
 	if h.service == nil {
 		response.InternalError(c, "account financial service unavailable")
@@ -83,7 +101,7 @@ func (h *AccountFinancialHandler) ReviewOne(c *gin.Context) {
 		response.BadRequest(c, "Invalid manual_cost_cny")
 		return
 	}
-	v, err := h.service.ReviewOne(c.Request.Context(), service.UsageCostReviewInput{UsageLogID: id, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now()})
+	v, err := h.service.ReviewOne(c.Request.Context(), service.UsageCostReviewInput{UsageLogID: id, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now(), RequestID: financialRequestID(c)})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -108,7 +126,7 @@ func (h *AccountFinancialHandler) ReviewSelected(c *gin.Context) {
 			response.BadRequest(c, "Invalid usage log ID")
 			return
 		}
-		rows = append(rows, service.UsageCostReviewInput{UsageLogID: id, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now()})
+		rows = append(rows, service.UsageCostReviewInput{UsageLogID: id, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now(), RequestID: financialRequestID(c)})
 	}
 	v, err := h.service.ReviewSelected(c.Request.Context(), rows)
 	if err != nil {
@@ -130,7 +148,7 @@ func (h *AccountFinancialHandler) ReviewFiltered(c *gin.Context) {
 		response.BadRequest(c, "Invalid review request")
 		return
 	}
-	v, err := h.service.ReviewFiltered(c.Request.Context(), service.ReviewFilteredInput{Filter: in.Filter, MaxUsageLogID: in.MaxUsageLogID, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now()})
+	v, err := h.service.ReviewFiltered(c.Request.Context(), service.ReviewFilteredInput{Filter: in.Filter, MaxUsageLogID: in.MaxUsageLogID, ManualCostCNY: in.ManualCostCNY, ReviewedBy: actorID(c), ReviewedAt: time.Now(), RequestID: financialRequestID(c)})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -154,7 +172,7 @@ func (h *AccountFinancialHandler) SetOAuthCost(c *gin.Context) {
 		response.BadRequest(c, "Invalid OAuth cost")
 		return
 	}
-	v, err := h.service.SetOAuthDailyCost(c.Request.Context(), service.OAuthDailyCostInput{AccountID: id, BusinessDate: in.BusinessDate, CostCNY: in.CostCNY, ActorUserID: actorID(c)})
+	v, err := h.service.SetOAuthDailyCost(c.Request.Context(), service.OAuthDailyCostInput{AccountID: id, BusinessDate: in.BusinessDate, CostCNY: in.CostCNY, ActorUserID: actorID(c), RequestID: financialRequestID(c)})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -179,7 +197,7 @@ func (h *AccountFinancialHandler) SetTodayOverride(c *gin.Context) {
 		response.BadRequest(c, "Invalid today override")
 		return
 	}
-	v, err := h.service.SetTodayOverride(c.Request.Context(), service.TodayOverrideInput{AccountID: id, BusinessDate: in.BusinessDate, RevenueCNY: in.RevenueCNY, CostCNY: in.CostCNY, ActorUserID: actorID(c)})
+	v, err := h.service.SetTodayOverride(c.Request.Context(), service.TodayOverrideInput{AccountID: id, BusinessDate: in.BusinessDate, RevenueCNY: in.RevenueCNY, CostCNY: in.CostCNY, ActorUserID: actorID(c), RequestID: financialRequestID(c)})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

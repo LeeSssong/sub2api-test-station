@@ -130,6 +130,37 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovere
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
 
+func TestUsageRecordNonStreamEvidenceResponseAfterTaskRuns(t *testing.T) {
+	pool := newUsageRecordTestPool(t)
+	h := &GatewayHandler{usageRecordWorkerPool: pool}
+	done := make(chan struct{})
+
+	// The non-stream response-after hook submits the official usage task, whose
+	// post-insert registrar runs inside the same task after persistence.
+	h.submitUsageRecordTask(context.Background(), func(context.Context) { close(done) })
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("non-stream response-after usage task did not run")
+	}
+}
+
+func TestUsageRecordStreamEvidenceResponseAfterTaskRuns(t *testing.T) {
+	pool := newUsageRecordTestPool(t)
+	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+	done := make(chan struct{})
+
+	// OpenAI stream completion reaches this response-after task submission path.
+	h.submitOpenAIUsageRecordTask(context.Background(), &service.OpenAIForwardResult{}, func(context.Context) { close(done) })
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream response-after usage task did not run")
+	}
+}
+
 func TestOpenAIGatewayHandlerSubmitMandatoryUsageRecordTask_DroppedTaskSyncFallback(t *testing.T) {
 	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
 		WorkerCount:           1,

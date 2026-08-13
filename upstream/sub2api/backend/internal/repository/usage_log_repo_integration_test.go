@@ -413,7 +413,7 @@ func TestUsageLogRepositoryCreateBestEffort_QueueFullWaitsForDrain(t *testing.T)
 		time.Sleep(100 * time.Millisecond)
 		<-repo.bestEffortBatchCh // 排空占位请求，为阻塞中的入队腾出空间
 		req := <-repo.bestEffortBatchCh
-		sendUsageLogBestEffortResult(req.resultCh, nil)
+		sendUsageLogBestEffortResult(req.resultCh, usageLogCreateResult{})
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

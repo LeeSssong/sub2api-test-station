@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -14,6 +15,33 @@ type usageCostEvidenceRepository struct {
 
 func NewUsageCostEvidenceRepository(db *sql.DB) service.UsageCostEvidenceRepository {
 	return &usageCostEvidenceRepository{db: db}
+}
+
+type accountFinancialActivationRepository struct {
+	db *sql.DB
+}
+
+func NewAccountFinancialActivationRepository(db *sql.DB) service.AccountFinancialActivationReader {
+	return &accountFinancialActivationRepository{db: db}
+}
+
+func (r *accountFinancialActivationRepository) EnabledAt(ctx context.Context) (*time.Time, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("account financial activation repository unavailable")
+	}
+	var enabledAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, `SELECT enabled_at FROM account_financial_settings WHERE key = $1`, "t03_r1_account_financial").Scan(&enabledAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !enabledAt.Valid {
+		return nil, nil
+	}
+	value := enabledAt.Time
+	return &value, nil
 }
 
 func (r *usageCostEvidenceRepository) CreateOnce(ctx context.Context, evidence *service.UsageCostEvidence) (bool, error) {

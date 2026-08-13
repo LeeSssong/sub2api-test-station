@@ -81,6 +81,13 @@ type UsageLogRepository interface {
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
 }
 
+// UsageLogBestEffortResult observes the authoritative best-effort write. It
+// must retain the writer's batching and fresh-context fallback semantics.
+type UsageLogBestEffortResult struct {
+	Inserted   bool
+	UsageLogID int64
+}
+
 type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }

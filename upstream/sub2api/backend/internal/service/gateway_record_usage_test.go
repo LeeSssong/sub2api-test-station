@@ -92,6 +92,39 @@ func (s *usageCostEvidenceRegistrarStub) RegisterOnce(_ context.Context, usageLo
 	return s.err
 }
 
+type bestEffortFallbackUsageRepoStub struct {
+	UsageLogRepository
+	bestEffortCalls int
+	createCalls     int
+	createCtxErr    error
+}
+
+func (s *bestEffortFallbackUsageRepoStub) CreateBestEffortWithResult(context.Context, *UsageLog) (UsageLogBestEffortResult, error) {
+	s.bestEffortCalls++
+	return UsageLogBestEffortResult{}, MarkUsageLogCreateDropped(context.DeadlineExceeded)
+}
+
+func (s *bestEffortFallbackUsageRepoStub) Create(ctx context.Context, log *UsageLog) (bool, error) {
+	s.createCalls++
+	s.createCtxErr = ctx.Err()
+	log.ID = 901
+	return true, nil
+}
+
+func TestWriteUsageLogBestEffortWithRegistrar_UsesOfficialSyncFallbackBeforeRegistration(t *testing.T) {
+	repo := &bestEffortFallbackUsageRepoStub{}
+	registrar := &usageCostEvidenceRegistrarStub{}
+	usageLog := &UsageLog{RequestID: "best-effort-fallback", APIKeyID: 1}
+
+	writeUsageLogBestEffortWithRegistrar(context.Background(), repo, usageLog, registrar, "test")
+
+	require.Equal(t, 1, repo.bestEffortCalls)
+	require.Equal(t, 1, repo.createCalls)
+	require.NoError(t, repo.createCtxErr)
+	require.Equal(t, 1, registrar.calls)
+	require.Equal(t, int64(901), registrar.usageLogID)
+}
+
 func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: context.DeadlineExceeded}
 	userRepo := &openAIRecordUsageUserRepoStub{}

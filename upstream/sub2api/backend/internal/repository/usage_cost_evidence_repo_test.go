@@ -40,3 +40,27 @@ func TestUsageCostEvidenceRepositoryCreatesOnceAndIgnoresConflict(t *testing.T) 
 		})
 	}
 }
+
+func TestAccountFinancialActivationRepositoryEnabledAt(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rows *sqlmock.Rows
+		want bool
+	}{
+		{name: "setting absent", rows: sqlmock.NewRows([]string{"enabled_at"}), want: false},
+		{name: "enabled at absent", rows: sqlmock.NewRows([]string{"enabled_at"}).AddRow(nil), want: false},
+		{name: "enabled", rows: sqlmock.NewRows([]string{"enabled_at"}).AddRow(time.Now()), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+			mock.ExpectQuery("SELECT enabled_at FROM account_financial_settings").WithArgs("t03_r1_account_financial").WillReturnRows(tc.rows)
+
+			enabledAt, err := NewAccountFinancialActivationRepository(db).EnabledAt(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, enabledAt != nil)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}

@@ -76,6 +76,10 @@ type usageLogBestEffortWriter interface {
 	CreateBestEffort(ctx context.Context, log *UsageLog) error
 }
 
+type usageLogBestEffortResultWriter interface {
+	CreateBestEffortWithResult(ctx context.Context, log *UsageLog) (UsageLogBestEffortResult, error)
+}
+
 type UsageCostEvidenceRegisterer interface {
 	RegisterOnce(ctx context.Context, usageLogID int64) error
 }
@@ -636,15 +640,30 @@ func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepo
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
-	if registrar != nil {
-		inserted, err := repo.Create(usageCtx, usageLog)
+	if writer, ok := repo.(usageLogBestEffortResultWriter); ok {
+		result, err := writer.CreateBestEffortWithResult(usageCtx, usageLog)
+		registrationCtx := usageCtx
 		if err != nil {
 			logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
-			return
+			// Preserve the official fresh-context synchronous fallback when the
+			// best-effort queue exhausts its caller context.
+			fallbackCtx := usageCtx
+			if usageCtx.Err() != nil {
+				var fallbackCancel context.CancelFunc
+				fallbackCtx, fallbackCancel = detachedBillingContext(context.Background())
+				defer fallbackCancel()
+			}
+			inserted, syncErr := repo.Create(fallbackCtx, usageLog)
+			if syncErr != nil {
+				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
+				return
+			}
+			result = UsageLogBestEffortResult{Inserted: inserted, UsageLogID: usageLog.ID}
+			registrationCtx = fallbackCtx
 		}
-		if inserted && usageLog.ID > 0 {
-			if err := registrar.RegisterOnce(usageCtx, usageLog.ID); err != nil {
-				logger.LegacyPrintf(logKey, "Register usage cost evidence failed: usage_log_id=%d error=%v", usageLog.ID, err)
+		if registrar != nil && result.Inserted && result.UsageLogID > 0 {
+			if err := registrar.RegisterOnce(registrationCtx, result.UsageLogID); err != nil {
+				logger.LegacyPrintf(logKey, "Register usage cost evidence failed: usage_log_id=%d error=%v", result.UsageLogID, err)
 			}
 		}
 		return

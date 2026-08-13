@@ -47,6 +47,12 @@ type evidenceUsageLogRepoStub struct {
 	calls      int
 }
 
+func (s *evidenceUsageLogRepoStub) CreateBestEffortWithResult(_ context.Context, log *UsageLog) (UsageLogBestEffortResult, error) {
+	s.calls++
+	log.ID = s.usageLogID
+	return UsageLogBestEffortResult{Inserted: s.inserted, UsageLogID: s.usageLogID}, nil
+}
+
 func (s *evidenceUsageLogRepoStub) Create(_ context.Context, log *UsageLog) (bool, error) {
 	s.calls++
 	log.ID = s.usageLogID

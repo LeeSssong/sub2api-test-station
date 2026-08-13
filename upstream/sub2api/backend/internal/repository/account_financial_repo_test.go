@@ -265,6 +265,27 @@ func TestAccountFinancialRepositorySnapshotRetainsSoftDeletedAccountTraceForExce
 	}
 }
 
+func TestAccountFinancialRepositoryUsageEvidenceRetainsSoftDeletedAccountTrace(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	now := time.Now().UTC()
+	account := client.Account.Create().SetName("deleted-newapi-evidence").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	user := client.User.Create().SetEmail("deleted-account-evidence@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-deleted-account-evidence").SetName("evidence").SaveX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetRequestID("deleted-account-local-request").SetUpstreamRequestID("usage-upstream-request").SetModel("m").SetActualCost(10).SaveX(ctx)
+	billingTime := now.Add(-time.Minute).Truncate(time.Second)
+	client.UsageUpstreamCostEvidence.Create().SetUsageLogID(usage.ID).SetSource("newapi").SetUpstreamRequestID("evidence-upstream-request").SetUpstreamBillingTime(billingTime).SetUpstreamModel("evidence-model").SetEvidenceStatus("unavailable").SaveX(ctx)
+	client.Account.UpdateOne(account).SetDeletedAt(now).ExecX(ctx)
+
+	detail, err := NewAccountFinancialRepository(client).GetUsageEvidence(ctx, usage.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.AccountID != account.ID || detail.AccountName != "deleted-newapi-evidence" || detail.AccountType != "api_key" || detail.RequestID != "deleted-account-local-request" || detail.Source != "newapi" || detail.UpstreamRequestID == nil || *detail.UpstreamRequestID != "evidence-upstream-request" || detail.UpstreamBillingTime == nil || !detail.UpstreamBillingTime.Equal(billingTime) || detail.UpstreamModel == nil || *detail.UpstreamModel != "evidence-model" {
+		t.Fatalf("soft-deleted account evidence trace=%#v", detail)
+	}
+}
+
 func TestAccountFinancialRepositoryCostOnlyOverrideReturnsTruthfulOldNew(t *testing.T) {
 	t.Skip("SQLite returns DATE as string; PostgreSQL-backed fix-round test covers old/new and unique concurrency")
 	ctx := context.Background()

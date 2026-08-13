@@ -445,7 +445,7 @@ func (r *accountFinancialRepository) GetUsageEvidence(ctx context.Context, id in
 	if usageErr != nil {
 		return nil, usageErr
 	}
-	a, accountErr := r.client.Account.Get(ctx, u.AccountID)
+	a, accountErr := r.client.Account.Get(mixins.SkipSoftDelete(ctx), u.AccountID)
 	if accountErr != nil {
 		return nil, accountErr
 	}

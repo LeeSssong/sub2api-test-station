@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get } = vi.hoisted(() => ({
+const { get, post } = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
-  apiClient: { get },
+  apiClient: { get, post },
 }))
 
 import { adminUsageAPI } from '@/api/admin/usage'
@@ -14,6 +15,31 @@ import type { AdminUsageLog } from '@/types'
 describe('admin usage API', () => {
   beforeEach(() => {
     get.mockReset()
+    post.mockReset()
+  })
+
+  it('uses local cost exception endpoints for listing and reviews', async () => {
+    get.mockResolvedValueOnce({ data: { items: [], total: 0, page: 1, page_size: 20 } })
+    post
+      .mockResolvedValueOnce({ data: { usage_log_id: 11, created: true } })
+      .mockResolvedValueOnce({ data: [{ usage_log_id: 11, created: true }] })
+      .mockResolvedValueOnce({ data: { cutoff: 99, matched: 2, updated: 2, skipped: 0 } })
+
+    await adminUsageAPI.listCostExceptions({ account_id: 42, evidence_status: 'unavailable', page: 1 })
+    await adminUsageAPI.reviewOne(11, { manual_cost_cny: 1.25 })
+    await adminUsageAPI.reviewSelected({ usage_log_ids: [11, 12] })
+    await adminUsageAPI.reviewFiltered({ filter: { account_id: 42 }, max_usage_log_id: 99 })
+
+    expect(get).toHaveBeenCalledWith('/admin/usage/cost-exceptions', {
+      params: { account_id: 42, evidence_status: 'unavailable', page: 1 },
+      signal: undefined,
+    })
+    expect(post).toHaveBeenNthCalledWith(1, '/admin/usage/cost-exceptions/11/review', { manual_cost_cny: 1.25 })
+    expect(post).toHaveBeenNthCalledWith(2, '/admin/usage/cost-exceptions/review-selected', { usage_log_ids: [11, 12] })
+    expect(post).toHaveBeenNthCalledWith(3, '/admin/usage/cost-exceptions/review-filtered', {
+      filter: { account_id: 42 },
+      max_usage_log_id: 99,
+    })
   })
 
   it('fetches an administrator usage record by id and returns the record', async () => {
@@ -79,21 +105,21 @@ describe('admin usage API', () => {
     await expect(result).resolves.toEqual(record)
   })
 
-  it('queries upstream actual cost through the local administrator usage endpoint', async () => {
+  it('reads the local administrator evidence projection without retaining the legacy upstream client', async () => {
     const cost = {
-      usage_id: 42,
-      local_request_id: 'req-admin-42',
-      upstream_request_id: 'upstream-42',
-      site_actual_cost: 0.00688,
-      upstream_actual_cost: 0.004,
-      profit: 0.00288,
-      status: 'confirmed',
+      usage_log_id: 42,
+      evidence_status: 'confirmed',
+      reason_code: '',
+      normalized_cost_cny: 0.004,
+      review_id: null,
+      review_cost_cny: null,
     }
     get.mockResolvedValue({ data: cost })
 
-    const result = adminUsageAPI.getUpstreamCost(42)
+    const result = adminUsageAPI.getCostEvidence(42)
 
     expect(get).toHaveBeenCalledWith('/admin/usage/42/upstream-cost')
     await expect(result).resolves.toEqual(cost)
+    expect(adminUsageAPI).not.toHaveProperty('getUpstreamCost')
   })
 })

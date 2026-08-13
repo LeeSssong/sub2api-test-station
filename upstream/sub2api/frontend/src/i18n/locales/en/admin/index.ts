@@ -77,6 +77,9 @@ export default {
       pending: 'Pending Reconciliation',
     },
   },
+  costExceptions: {
+    search: 'Search request ID or model', allEvidence: 'All evidence', pending: 'Pending', reviewed: 'Reviewed', allReviews: 'All reviews', reviewSelected: 'Review selected', reviewFiltered: 'Review current filter', reviewOne: 'Review', time: 'Time', account: 'Account', requestId: 'Request ID', model: 'Model', revenue: 'Revenue', source: 'Source', evidence: 'Evidence', reason: 'Reason', trace: 'Billing trace', reviewStatus: 'Review status', cutoff: 'Cutoff', matched: 'Matched', updated: 'Updated', skipped: 'Skipped',
+  },
   accountMonitor: {
     title: 'Account Monitor',
     description: 'Compare account service quality, scores, and scheduling priority by group.',

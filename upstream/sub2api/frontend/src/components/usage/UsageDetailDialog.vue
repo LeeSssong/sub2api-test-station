@@ -327,7 +327,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { adminUsageAPI } from '@/api/admin/usage'
 import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
-import type { AdminUsageCostDetail, AdminUsageLog, UserUsageDetail } from '@/types'
+import type { AdminUsageLog, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatMultiplier } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
@@ -343,8 +343,6 @@ import {
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
-  confirmedUpstreamActualCost,
-  confirmedProfit,
   effectivePerMillion,
   hasAdminUsageFields,
   type UsageDetailScope,
@@ -397,7 +395,7 @@ const { copyToClipboard } = useClipboard()
 type UsageDetailRecord = UserUsageDetail | AdminUsageLog
 
 const detail = ref<UsageDetailRecord | null>(null)
-const adminCostDetail = ref<AdminUsageCostDetail | null>(null)
+const adminCostDetail = ref<UsageCostEvidenceDetail | null>(null)
 const loading = ref(false)
 const loadError = ref(false)
 let requestSequence = 0
@@ -409,10 +407,13 @@ const adminDetail = computed<AdminUsageLog | null>(() => {
   return detail.value
 })
 
-const confirmedActualCost = computed(() => confirmedUpstreamActualCost(adminCostDetail.value))
-const confirmedProfitValue = computed(() => confirmedProfit(adminCostDetail.value))
+const confirmedActualCost = computed(() => adminCostDetail.value?.normalized_cost_cny ?? null)
+const confirmedProfitValue = computed(() => {
+  if (confirmedActualCost.value == null || !adminDetail.value) return null
+  return adminDetail.value.actual_cost - confirmedActualCost.value
+})
 const adminUpstreamRequestId = computed(() => (
-  adminCostDetail.value?.upstream_request_id || adminDetail.value?.upstream_request_id || null
+  adminDetail.value?.upstream_request_id || null
 ))
 const upstreamActualCostValue = computed(() => (
   confirmedActualCost.value == null ? '-' : formatCost(confirmedActualCost.value)
@@ -421,7 +422,7 @@ const profitValue = computed(() => {
   return confirmedProfitValue.value == null ? '-' : formatCost(confirmedProfitValue.value)
 })
 const upstreamCostUnavailableMessage = computed(() => {
-  if (adminCostDetail.value?.status !== 'unavailable') return ''
+  if (adminCostDetail.value?.evidence_status !== 'unavailable') return ''
   const reasonKeyByCode: Record<string, string> = {
     credentials_unavailable: 'credentialsUnavailable',
     endpoint_unavailable: 'endpointUnavailable',
@@ -467,7 +468,7 @@ function clearState() {
 
 async function loadAdminCost(row: AdminUsageLog, sequence: number) {
   try {
-    const result = await adminUsageAPI.getUpstreamCost(row.id)
+    const result = await adminUsageAPI.getCostEvidence(row.id)
     if (sequence === requestSequence && props.show && props.scope === 'admin') {
       adminCostDetail.value = result ?? null
     }

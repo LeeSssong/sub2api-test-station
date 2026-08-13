@@ -159,6 +159,14 @@
             @update:pageSize="onErrPageSize"
             @ipGeoBatchFailed="handleIpGeoBatchFailed" />
         </div>
+        <div v-if="activeTab === 'cost-exceptions'" class="overflow-hidden rounded-b-2xl">
+          <CostExceptionTable
+            ref="costExceptionTableRef"
+            :filters="costExceptionFilters"
+            @detail="openUsageDetail"
+            @reviewed="refreshData"
+          />
+        </div>
         <!-- 懒挂载：首次切到该 tab 才请求排行数据，之后随筛选自动刷新 -->
         <div v-if="rankingMounted" v-show="activeTab === 'ranking'" class="overflow-hidden rounded-b-2xl">
           <UserTokenRanking
@@ -212,6 +220,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination fro
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import ReadModelStatus from '@/components/admin/ReadModelStatus.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
+import CostExceptionTable from '@/components/admin/usage/CostExceptionTable.vue'
 import UsageDetailDialog from '@/components/usage/UsageDetailDialog.vue'
 import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
@@ -273,6 +282,14 @@ const breakdownFilters = computed(() => {
   if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
   return f
 })
+
+const costExceptionFilters = computed(() => ({
+  account_id: filters.value.account_id,
+  start_time: toRFC3339(filters.value.start_date),
+  end_time: toRFC3339(filters.value.end_date, true),
+  evidence_status: getSingleQueryValue(route.query.evidence),
+  review_status: getSingleQueryValue(route.query.review),
+}))
 
 const modelNameOptions = computed(() =>
   Array.from(new Set(requestedModelStats.value.map((m) => m.model).filter(Boolean))).sort()
@@ -349,6 +366,19 @@ const applyRouteQueryFilters = () => {
   const queryStartDate = getSingleQueryValue(route.query.start_date)
   const queryEndDate = getSingleQueryValue(route.query.end_date)
   const queryUserId = getNumericQueryValue(route.query.user_id)
+  const queryAccountId = getNumericQueryValue(route.query.account_id)
+  const queryRange = getSingleQueryValue(route.query.range)
+
+  if (!queryStartDate && !queryEndDate && queryRange) {
+    const daysByRange: Record<string, number> = { today: 0, '7d': 6, '31d': 30 }
+    const days = daysByRange[queryRange]
+    if (days !== undefined) {
+      const start = new Date()
+      start.setDate(start.getDate() - days)
+      startDate.value = formatLD(start)
+      endDate.value = formatLD(new Date())
+    }
+  }
 
   if (queryStartDate) {
     startDate.value = queryStartDate
@@ -360,6 +390,7 @@ const applyRouteQueryFilters = () => {
   filters.value = {
     ...filters.value,
     user_id: queryUserId,
+    account_id: queryAccountId,
     start_date: startDate.value,
     end_date: endDate.value
   }
@@ -598,6 +629,8 @@ const applyFilters = () => {
   errPage.value = 1
   if (activeTab.value === 'errors') {
     loadAdminErrors()
+  } else if (activeTab.value === 'cost-exceptions') {
+    costExceptionTableRef.value?.reload()
   } else {
     errRows.value = []
   }
@@ -609,6 +642,7 @@ const refreshData = () => {
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
   if (activeTab.value === 'errors') loadAdminErrors()
+  if (activeTab.value === 'cost-exceptions') costExceptionTableRef.value?.reload()
   if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
@@ -854,20 +888,23 @@ const loadSavedColumns = () => {
 }
 
 // Detail tabs
-type DetailTab = 'usage' | 'errors' | 'ranking'
+type DetailTab = 'usage' | 'errors' | 'cost-exceptions' | 'ranking'
 const activeTab = ref<DetailTab>('usage')
 const detailTabs = computed(() => [
   { key: 'usage' as const, label: t('usage.tabs.usage'), icon: 'document' as const },
   { key: 'errors' as const, label: t('usage.tabs.errors'), icon: 'exclamationTriangle' as const },
   { key: 'ranking' as const, label: t('usage.tabs.ranking'), icon: 'chart' as const },
+  { key: 'cost-exceptions' as const, label: t('usage.tabs.costExceptions'), icon: 'dollar' as const },
 ])
 const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
 const rankingMounted = ref(false)
 const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
+const costExceptionTableRef = ref<InstanceType<typeof CostExceptionTable> | null>(null)
 
 const switchTab = (tab: DetailTab) => {
   activeTab.value = tab
   if (tab === 'errors' && errRows.value.length === 0) loadAdminErrors()
+  if (tab === 'cost-exceptions') costExceptionTableRef.value?.reload()
   if (tab === 'ranking') rankingMounted.value = true
 }
 
@@ -937,6 +974,10 @@ const handleColumnClickOutside = (event: MouseEvent) => {
 
 onMounted(() => {
   applyRouteQueryFilters()
+  const routeTab = getSingleQueryValue(route.query.tab)
+  if (routeTab === 'usage' || routeTab === 'errors' || routeTab === 'cost-exceptions' || routeTab === 'ranking') {
+    activeTab.value = routeTab
+  }
   void loadRouteUserFilterLabel()
   loadLogs()
   loadStats()

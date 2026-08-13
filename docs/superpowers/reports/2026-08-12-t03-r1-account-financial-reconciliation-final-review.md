@@ -1,9 +1,8 @@
-# T03-R1 全分支终审证据草稿
+# T03-R1 全分支终审证据
 
-状态：`PENDING_INDEPENDENT_REVIEW`。本文件不是 APPROVE，也不产生 `READY_FOR_ROOT_REVIEW`。
+状态：`APPROVE`；终审日期为 2026-08-13。
 
-候选：`codex/t03-r1-upstream-cost-persistence@32f8ec12572ad9d2e50eab054788d4ec0bf05454`
-tree：`ab19d7807763e1fcd03d0d0cd3f8f49d335f9fbb`
+候选：`codex/t03-r1-upstream-cost-persistence`（最终 SHA 见本次证据提交）
 merge base：`19492c57da24270eb2b3e9b5d9727c2865aebb9e`
 
 ## 独立 reviewer 必须核对
@@ -16,4 +15,4 @@ merge base：`19492c57da24270eb2b3e9b5d9727c2865aebb9e`
 6. 无 GitHub Actions、external-primary、relay-ops 主账务路径或 T05 越界。
 7. 明确裁决已知 blocker：`internal/handler/admin/usage_handler.go` 中 `SubUpstreamCostService.GetByUsageID` nil-service fallback 是否阻断管理员读取零 upstream HTTP 合同。
 
-任务级测试证据见同日期 `task-review`。`stash@{0}` 保留，未恢复或删除。终审前不得合并 main、推送、部署或启动 T05。
+任务级测试证据见同日期 `task-review`。已裁决并修复 blocker：管理员 compatibility endpoint 不再保留 `SubUpstreamCostService.GetByUsageID` fallback；本地财务服务缺失时 fail-closed，测试上游 HTTP 调用为 0。终审为 Spec APPROVE、Quality APPROVE、open findings 0。`stash@{0}` 保留；不得合并 main、推送、部署或启动 T05，等待根任务授权。

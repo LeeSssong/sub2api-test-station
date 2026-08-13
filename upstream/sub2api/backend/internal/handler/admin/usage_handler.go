@@ -25,7 +25,6 @@ type UsageHandler struct {
 	apiKeyService           *service.APIKeyService
 	adminService            service.AdminService
 	cleanupService          *service.UsageCleanupService
-	upstreamCostService     *service.SubUpstreamCostService
 	accountFinancialService *service.AccountFinancialService
 }
 
@@ -35,14 +34,13 @@ func NewUsageHandler(
 	apiKeyService *service.APIKeyService,
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
-	upstreamCostService *service.SubUpstreamCostService,
+	_legacyUpstreamCostService *service.SubUpstreamCostService,
 ) *UsageHandler {
 	return &UsageHandler{
-		usageService:        usageService,
-		apiKeyService:       apiKeyService,
-		adminService:        adminService,
-		cleanupService:      cleanupService,
-		upstreamCostService: upstreamCostService,
+		usageService:   usageService,
+		apiKeyService:  apiKeyService,
+		adminService:   adminService,
+		cleanupService: cleanupService,
 	}
 }
 
@@ -59,20 +57,11 @@ func (h *UsageHandler) GetUpstreamCost(c *gin.Context) {
 		response.BadRequest(c, "Invalid usage ID")
 		return
 	}
-	if h.accountFinancialService != nil {
-		detail, err := h.accountFinancialService.GetUsageEvidence(c.Request.Context(), usageID)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		response.Success(c, detail)
-		return
-	}
-	if h.upstreamCostService == nil {
+	if h.accountFinancialService == nil {
 		response.InternalError(c, "upstream cost service unavailable")
 		return
 	}
-	detail, err := h.upstreamCostService.GetByUsageID(c.Request.Context(), usageID)
+	detail, err := h.accountFinancialService.GetUsageEvidence(c.Request.Context(), usageID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

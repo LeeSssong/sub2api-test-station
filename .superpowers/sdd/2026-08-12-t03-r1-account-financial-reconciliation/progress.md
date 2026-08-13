@@ -40,3 +40,6 @@ Task 5: in progress
 - Initial implementation: `1461c706f`; request-correlation fix round 1: `524e55be1384556f345e75f772c796dc5c950cee`.
 - Fix round 2 is limited to shared RequestLogger normalization for handler fallbacks and real handler-to-service-to-audit tests for all five financial mutations.
 - Implementation and focused verification complete locally. Commit is blocked because the session cannot create the shared Git worktree `index.lock` outside the writable root (`Operation not permitted`); awaiting a writable Git metadata session, then independent scoped re-review. No schema, migration, Task 6, main, push, deployment, or production changes.
+- Fix round 2 commit: `89597a5c455e808825613964f45ff101d9381610`; fix round 3 route-aware test commit: `24e00a90486e915feefd0d0eb71acf51fe56351b`.
+- Scoped re-review round 3: `task-5-rereview-r3.md` — Spec Compliance APPROVE, Code Quality APPROVE, open findings 0; five mutation handlers traverse Gin params through service and durable audit correlation.
+- Task 5: complete (commits `1461c706f..24e00a904`, review clean; no merge, push, deployment or production verification).

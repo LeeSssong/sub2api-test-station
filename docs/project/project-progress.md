@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T06 利润页移除外部控制面状态（2026-08-14）：** 状态：进行中（`DESIGNING`，等待用户可见顶层任务完成完整 Superpowers brainstorming）。从最新干净 `main@1a4058e3d07c8c967bf423faf8e087ee52e87915` 创建独立 worktree；范围仅限原生利润页移除外部控制面状态/调用，保留原生利润数据和官方页面行为。未批准规格书前不得 writing-plans 或实施。
+**T06 利润页移除外部控制面状态（2026-08-14）：** 状态：进行中（`DESIGNING`，等待用户可见顶层任务完成完整 Superpowers brainstorming）。从最新干净 `main@032b3591e2df7408641b48ae584c10eee8e7a0be` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/5e6c/sub2api搭建`；范围仅限原生利润页移除外部控制面状态/调用，保留原生利润数据和官方页面行为。未批准规格书前不得 writing-plans 或实施。
 
 **T05 用量页移除外部控制面状态（2026-08-14）：** 状态：已完成。根合并提交 `3dd5539b3c7b4d1ba55b764b02ae91a0c0b9daf3` 之后的发布基线为 `main@da52b0b1b455077fabd002f66b56f49dea852c00`，已推送 `origin/main`。合并后 69 项专项测试、`pnpm typecheck`、`pnpm build`、`git diff --check` 和控制面 guard 均通过；无迁移/配置/GitHub Actions 变化，发布结果 `succeeded`、`downtime_required=false`、活动槽 `green`，镜像 manifest `a44f0b12d7d091bc2c8ede31701d16f73412a30d3ca291e2ea388d89dd13e28`，source commit `da52b0b1b455077fabd002f66b56f49dea852c00`。公网 `/healthz`、`/readyz`、`/health` 均返回 200。登录态 `/admin/usage` 已验证原生流水/统计/错误请求/成本异常入口正常；初载与 reload 请求仅命中原生 `/api/v1/admin/**`，外部 `/api/v1/xingqiao/**` 请求为 0，页面不再显示“控制面暂时不可用 / 完整性 unknown”。可恢复归档为 `/Users/gongtengxinwen/Documents/sub2api-archives/t05-usage-native-only-736999938-all.bundle`，`git bundle verify` 通过，SHA-256 `00c85150a3b2a88707d0977a97996a9351b54849d860e4bd5a08f36b16945d5e`；T05 worktree 和本地分支已删除。
 

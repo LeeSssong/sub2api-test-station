@@ -90,8 +90,9 @@ bash ops/release-sub2api-blue-green.sh \
   --maintenance-authorized
 ```
 
-The host executor enforces a bounded (default 300-second, maximum 600-second)
-unavailable window, stops only the API and worker services, starts the candidate
+The host executor enforces a bounded 300-second unavailable window: 300 seconds
+by default and 300 seconds maximum. This is the only authorized API/worker
+outage window. It stops only the API and worker services, starts the candidate
 worker to apply the additive migration, then restores the API route through the
 existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
 recreated. `222_account_financial_reconciliation.sql` is forward-compatible:
@@ -120,8 +121,11 @@ sudo -n env RELEASE_PRELOADED_IMAGE=true \
    --deadline-epoch "$(date -u +%s -d '+600 seconds')"
 ```
 
-Replace the migrations placeholder only with the exact previous migration hash
-recorded in the preserved partial/state checkpoint (for this release it is
+The `--deadline-epoch` in this manual recovery command is a separate
+recovery-control deadline; its `+600 seconds` value does not authorize or
+extend the 300-second API/worker outage window. Replace the migrations
+placeholder only with the exact previous migration hash recorded in the
+preserved partial/state checkpoint (for this release it is
 `f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc`). Do not
 guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
 shared services during recovery.

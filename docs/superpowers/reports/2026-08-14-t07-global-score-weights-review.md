@@ -9,6 +9,8 @@
 
 ## Commits
 
+- 1b9b28c63 fix: harden global score weight controls
+- 18c55ba9f docs: record T07 verification
 - 6b4f13d5a Merge remote-tracking branch 'origin/main' into codex/t07-global-score-weights
 - a59886002 feat: add global score weight controls
 - e7f06158d feat: expose global account monitor score weights
@@ -46,6 +48,15 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Backend GREEN: focused service, handler, routes, and repository score-weight suites all PASS.
 - `pnpm typecheck`: PASS.
 - Route success assertions now verify GET/PUT/DELETE status and payload in addition to step-up invocation counts.
+- Scoped post-fix re-review (Ampere, agent `01a00217-2b83-7d01-a0cd-d3dd2c28c45d`): all three final-review findings are addressed, with no new Critical/Important breakage.
+- Post scoped re-review verification:
+  - `git diff --check 18c55ba9f..HEAD`: PASS.
+  - `go test ./internal/service -run 'AccountMonitor.*(GlobalScoreWeights|ScoreWeights|ListWindowUsesPersistedGlobalScoreWeights|QualityScore)' -count=1`: PASS.
+  - `go test ./internal/handler/admin -run 'AccountMonitorHandler.*ScoreWeights' -count=1`: PASS.
+  - `go test ./internal/server/routes -run 'AccountMonitor.*Routes|TestAccountMonitorGlobalScoreWeightRoutesUseStepUpForWritesOnly' -count=1`: PASS.
+  - `go test ./internal/repository -run 'AccountMonitorRepository.*ScoreWeights' -count=1`: PASS.
+  - `pnpm vitest run src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`: PASS, 45 tests.
+  - `pnpm typecheck`: PASS.
 
 ## Scope Guards
 
@@ -71,7 +82,7 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Task 2 reviewer Kuhn: spec compliant, task quality approved. The deferred route-test strength note is resolved in the final fix wave.
 - Task 3 reviewer Laplace: spec compliant, task quality approved, no findings.
 - Final whole-branch reviewer found three blocking issues: global dialog scope/race, discarded reset response on projection reload failure, and overflow-prone global weight validation. All three have focused RED/GREEN regression coverage and implementation fixes in this wave.
-- Scoped post-fix re-review: pending.
+- Scoped post-fix re-review by Ampere: all three findings addressed; no new Critical/Important breakage.
 
 ## Release Precheck And Rollback Notes
 
@@ -82,4 +93,4 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 
 ## Status
 
-REVIEWING. Final reviewer findings are fixed and locally verified; pending scoped post-fix re-review before `READY_FOR_ROOT_REVIEW`.
+REVIEWING. Final reviewer findings are fixed, scoped re-reviewed, and locally verified; pending final whole-branch reviewer before `READY_FOR_ROOT_REVIEW`.

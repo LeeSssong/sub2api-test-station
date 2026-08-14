@@ -35,6 +35,18 @@
 
 Notes: frontend commands emit existing environment/build warnings for pnpm overrides, Node localStorage, Browserslist data age, Node child-process deprecation, and Vite dynamic/static import chunking. No warning was caused by a test failure.
 
+## Final Fix Wave Verification
+
+- Fix-wave base: `18c55ba9fc5431882bf60a3a3ffd3b3e39e479f0`.
+- Frontend RED: `pnpm vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts` failed 3 focused regressions: switching to a group after global GET resolution left mode global, switching before GET resolution allowed the stale request to reopen global mode, and reset plus projection reload failure retained old custom weights.
+- Backend service RED: `go test ./internal/service -run TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights -count=1` accepted overflow-sized weights and returned no error.
+- Backend handler RED: `go test ./internal/handler/admin -run TestAccountMonitorHandlerRejectsOverflowSizedGlobalScoreWeights -count=1` returned `200` and reached the repository save stub.
+- Backend repository RED: `go test ./internal/repository -run TestAccountMonitorRepositoryRejectsOverflowSizedGlobalScoreWeights -count=1` attempted the SQL insert instead of rejecting locally.
+- Frontend GREEN: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`: PASS, 45 tests.
+- Backend GREEN: focused service, handler, routes, and repository score-weight suites all PASS.
+- `pnpm typecheck`: PASS.
+- Route success assertions now verify GET/PUT/DELETE status and payload in addition to step-up invocation counts.
+
 ## Scope Guards
 
 - `git diff --check efa0ef54cb432e784796add380727bc5366d2d06..HEAD`: PASS.
@@ -56,9 +68,10 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 ## Review Findings
 
 - Task 1 reviewer Boole: spec compliant, task quality approved, no findings.
-- Task 2 reviewer Kuhn: spec compliant, task quality approved. One minor deferred test-strength note: the route test could assert success status/payloads in addition to step-up call counts.
+- Task 2 reviewer Kuhn: spec compliant, task quality approved. The deferred route-test strength note is resolved in the final fix wave.
 - Task 3 reviewer Laplace: spec compliant, task quality approved, no findings.
-- Final whole-branch reviewer: pending after this report commit.
+- Final whole-branch reviewer found three blocking issues: global dialog scope/race, discarded reset response on projection reload failure, and overflow-prone global weight validation. All three have focused RED/GREEN regression coverage and implementation fixes in this wave.
+- Scoped post-fix re-review: pending.
 
 ## Release Precheck And Rollback Notes
 
@@ -69,4 +82,4 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 
 ## Status
 
-READY_FOR_ROOT_REVIEW pending final whole-branch independent review.
+REVIEWING. Final reviewer findings are fixed and locally verified; pending scoped post-fix re-review before `READY_FOR_ROOT_REVIEW`.

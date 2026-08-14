@@ -664,6 +664,38 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(true)
   })
 
+  it('closes the global score dialog when switching to a group after its weights load', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('mode')).toBe('group')
+    expect(dialog.props('show')).toBe(false)
+  })
+
+  it('does not open a pending global score dialog after switching to a group', async () => {
+    let resolveWeights!: (weights: { cost: number; success: number; ttft: number; latency: number; is_default: boolean }) => void
+    getGlobalScoreWeights.mockImplementationOnce(() => new Promise((resolve) => { resolveWeights = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    resolveWeights({ cost: 25, success: 35, ttft: 20, latency: 20, is_default: false })
+    await flushPromises()
+
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('mode')).toBe('group')
+    expect(dialog.props('show')).toBe(false)
+  })
+
   it('saves and resets global score weights with four-field payloads and reloads active range', async () => {
     getGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
     updateGlobalScoreWeights.mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20, is_default: false })
@@ -721,6 +753,30 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
     expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
     expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('shows returned defaults after global reset when projection reload fails', async () => {
+    getGlobalScoreWeights.mockResolvedValue({ cost: 60, success: 20, ttft: 10, latency: 10, is_default: false })
+    resetGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('weights')).toMatchObject({
+      cost: 60,
+      success: 20,
+      ttft: 10,
+      latency: 10,
+    })
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
+    await flushPromises()
+
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('weights')).toMatchObject({ cost: 15, success: 45, ttft: 20, latency: 20 })
+    expect(dialog.props('error')).toContain('最新监控卡片加载失败')
   })
 
   it('keeps the score weight dialog open and skips success when save reload fails', async () => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,22 @@ func TestAccountMonitorRepositoryPersistsGlobalScoreWeights(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAccountMonitorRepositoryRejectsOverflowSizedGlobalScoreWeights(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	overflowWeight := int(^uint(0) >> 1)
+	_, err = NewAccountMonitorRepository(db).SaveGlobalScoreWeights(context.Background(), 9, service.AccountMonitorScoreWeights{
+		Cost: overflowWeight, Success: overflowWeight, TTFT: 101, Latency: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "between 0 and 100") {
+		t.Fatalf("SaveGlobalScoreWeights() error = %v, want local range validation", err)
 	}
 }
 

@@ -242,7 +242,8 @@ func TestAccountMonitorServiceGlobalSaveErrorDoesNotReread(t *testing.T) {
 }
 
 func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
-	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	repo := &accountMonitorRepoStub{}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
 	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{Cost: 30, Success: 30, TTFT: 20, Latency: 19}); err == nil {
 		t.Fatal("expected invalid sum error")
 	}
@@ -251,6 +252,15 @@ func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
 	}
 	if _, err := svc.ResetGlobalScoreWeights(context.Background(), 0); err == nil {
 		t.Fatal("expected invalid actor error")
+	}
+	overflowWeight := int(^uint(0) >> 1)
+	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{
+		Cost: overflowWeight, Success: overflowWeight, TTFT: 101, Latency: 1,
+	}); !errors.Is(err, ErrAccountMonitorInvalidScoreWeights) {
+		t.Fatalf("overflow-sized weights error = %v, want invalid score weights", err)
+	}
+	if len(repo.globalWeightsSaved) != 0 {
+		t.Fatalf("invalid weights reached repository save: %#v", repo.globalWeightsSaved)
 	}
 }
 

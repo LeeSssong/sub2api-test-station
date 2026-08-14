@@ -1700,8 +1700,11 @@ func fourAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) AccountM
 }
 
 func validateAccountMonitorFourScoreWeights(weights AccountMonitorScoreWeights) error {
-	if weights.Cost < 0 || weights.Success < 0 || weights.TTFT < 0 || weights.Latency < 0 {
-		return fmt.Errorf("%w: score weights must be non-negative", ErrAccountMonitorInvalidScoreWeights)
+	if weights.Cost < 0 || weights.Cost > 100 ||
+		weights.Success < 0 || weights.Success > 100 ||
+		weights.TTFT < 0 || weights.TTFT > 100 ||
+		weights.Latency < 0 || weights.Latency > 100 {
+		return fmt.Errorf("%w: score weights must be between 0 and 100", ErrAccountMonitorInvalidScoreWeights)
 	}
 	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
 		return fmt.Errorf("%w: score weights must sum to 100", ErrAccountMonitorInvalidScoreWeights)

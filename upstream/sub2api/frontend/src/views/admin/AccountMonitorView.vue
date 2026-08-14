@@ -387,6 +387,7 @@ let nativeEntryGeneration = 0
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
+let globalScoreDialogGeneration = 0
 let pollTimer: number | null = null
 let pollInFlight = false
 let pollQueued = false
@@ -491,11 +492,13 @@ function openScoreDialog(): void {
 }
 
 async function openGlobalScoreDialog(): Promise<void> {
-  if (savingScoreWeights.value) return
-  scoreDialogMode.value = 'global'
+  if (savingScoreWeights.value || activeGroupId.value !== null) return
+  const generation = ++globalScoreDialogGeneration
   scoreWeightsError.value = null
   try {
     const weights = await adminAPI.accountMonitor.getGlobalScoreWeights()
+    if (generation !== globalScoreDialogGeneration || activeGroupId.value !== null) return
+    scoreDialogMode.value = 'global'
     globalScoreWeights.value = {
       cost: weights.cost,
       success: weights.success,
@@ -504,12 +507,17 @@ async function openGlobalScoreDialog(): Promise<void> {
     }
     showScoreDialog.value = true
   } catch (reason: unknown) {
+    if (generation !== globalScoreDialogGeneration || activeGroupId.value !== null) return
     scoreWeightsError.value = extractApiErrorMessage(reason, '全局评分权重加载失败')
     appStore.showError(scoreWeightsError.value)
   }
 }
 
 function selectGroup(groupID: number | null, event: MouseEvent): void {
+  globalScoreDialogGeneration++
+  showScoreDialog.value = false
+  scoreDialogMode.value = 'group'
+  scoreWeightsError.value = null
   activeGroupId.value = groupID
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
@@ -795,7 +803,13 @@ async function resetScoreWeights() {
   scoreWeightsError.value = null
   try {
     if (scoreDialogMode.value === 'global') {
-      await adminAPI.accountMonitor.resetGlobalScoreWeights()
+      const weights = await adminAPI.accountMonitor.resetGlobalScoreWeights()
+      globalScoreWeights.value = {
+        cost: weights.cost,
+        success: weights.success,
+        ttft: weights.ttft,
+        latency: weights.latency,
+      }
     } else {
       const group = activeGroup.value
       if (!group) return

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -212,6 +213,30 @@ func TestAccountMonitorHandlerGlobalScoreWeightsStorageErrorsAreNotBadRequest(t 
 				t.Fatalf("storage error returned 400: %s", recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestAccountMonitorHandlerRejectsOverflowSizedGlobalScoreWeights(t *testing.T) {
+	repo := &accountMonitorHandlerRepoStub{}
+	h := NewAccountMonitorHandler(service.NewAccountMonitorService(repo, nil, nil, nil, nil), nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+	})
+	router.PUT("/global-score-weights", h.UpdateGlobalScoreWeights)
+
+	maxInt := strconv.Itoa(int(^uint(0) >> 1))
+	body := `{"cost":` + maxInt + `,"success":` + maxInt + `,"ttft":101,"latency":1}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/global-score-weights", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "INVALID_SCORE_WEIGHTS") {
+		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	if len(repo.savedGlobalWeights) != 0 {
+		t.Fatalf("invalid weights reached repository save: %#v", repo.savedGlobalWeights)
 	}
 }
 

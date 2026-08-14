@@ -159,7 +159,7 @@ func TestAccountMonitorGlobalScoreWeightRoutesUseStepUpForWritesOnly(t *testing.
 	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account-monitors/global-score-weights", nil)
 	getRequest.Header.Set("Authorization", "Bearer admin")
 	router.ServeHTTP(get, getRequest)
-	if get.Code == http.StatusNotFound || stepUpCalls != 0 {
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"is_default":true`) || stepUpCalls != 0 {
 		t.Fatalf("GET status=%d stepUpCalls=%d", get.Code, stepUpCalls)
 	}
 
@@ -168,16 +168,16 @@ func TestAccountMonitorGlobalScoreWeightRoutesUseStepUpForWritesOnly(t *testing.
 	putRequest.Header.Set("Authorization", "Bearer admin")
 	putRequest.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(put, putRequest)
-	if stepUpCalls != 1 {
-		t.Fatalf("PUT stepUpCalls=%d, want 1", stepUpCalls)
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"cost":15`) || stepUpCalls != 1 {
+		t.Fatalf("PUT status=%d body=%s stepUpCalls=%d", put.Code, put.Body.String(), stepUpCalls)
 	}
 
 	del := httptest.NewRecorder()
 	delRequest := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/account-monitors/global-score-weights", nil)
 	delRequest.Header.Set("Authorization", "Bearer admin")
 	router.ServeHTTP(del, delRequest)
-	if stepUpCalls != 2 {
-		t.Fatalf("DELETE stepUpCalls=%d, want 2", stepUpCalls)
+	if del.Code != http.StatusOK || !strings.Contains(del.Body.String(), `"is_default":true`) || stepUpCalls != 2 {
+		t.Fatalf("DELETE status=%d body=%s stepUpCalls=%d", del.Code, del.Body.String(), stepUpCalls)
 	}
 }
 

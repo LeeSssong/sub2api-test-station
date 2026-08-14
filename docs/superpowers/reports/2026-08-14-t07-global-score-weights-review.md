@@ -9,6 +9,8 @@
 
 ## Commits
 
+- f324e6801 fix: guard score reload result ownership
+- 59da965a7 docs: record T07 final review fixes
 - 079d3ec76 fix: isolate global score weight mutation sessions
 - 0ccce34e6 docs: record T07 migration schema re-review
 - 453a5fc20 test: assert global score weight schema
@@ -84,6 +86,16 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - M1 RED mutation proof: temporarily changed only `latency_weight CHECK (latency_weight >= 0)` to `>= 1`; the real PostgreSQL integration test failed with `expected non-negative CHECK constraint for latency_weight`. The migration was restored immediately and has no final diff.
 - M1 GREEN: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS; focused migration tests PASS.
 
+### Scoped Re-review Rejection And I1 Reload-Commit Fix
+
+- Scoped re-review of `59da965a7` closed M1 but rejected I1: the mutation checked ownership before starting `load()`, while the shared reload could remain pending and later commit after the user canceled, switched scope, and opened a group dialog.
+- Remaining root cause: stale reload success could replace `projection` and make the dialog prop watcher overwrite a later group draft; stale reload failure could write a visible `rangeError` even though the initiating global dialog no longer owned the result.
+- Fix commit: `f324e6801 fix: guard score reload result ownership`.
+- `load()` now accepts an optional result-commit predicate. The predicate is evaluated after the response settles but before range validation, projection/range mutation, or error publication. Score save/reset pass their immutable session-ownership check; ordinary loads keep the existing AbortController and generation behavior unchanged.
+- PUT RED: after the global update resolved and reload started, the test canceled global mode, opened a group dialog, entered draft cost `26`, then resolved the old reload with cost `5`; the draft was overwritten to `5`, proving the stale projection had been applied.
+- DELETE RED: after reset resolved and reload started, the test switched to a group dialog and then rejected the old reload; a visible `rangeError` appeared.
+- GREEN: both delayed-reload races preserve the later group dialog, draft, projection, range-error state, and toast state. `pnpm vitest run src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts` PASS, 49 tests; `pnpm typecheck` PASS.
+
 ## Scope Guards
 
 - `git diff --check efa0ef54cb432e784796add380727bc5366d2d06..HEAD`: PASS.
@@ -111,6 +123,7 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Scoped post-fix re-review by Ampere: all three findings addressed; no new Critical/Important breakage.
 - Final reviewer Carver found one additional Important issue: `TestMigrationsSchema` lacked PostgreSQL assertions for `account_monitor_global_score_weights`. Fix commit `453a5fc20` adds the schema coverage, and scoped re-review by Kant marked it addressed with no new Critical/Important breakage.
 - Root final review found Important I1 (stale global mutation completion could affect a later group dialog) and Minor M1 (per-weight non-negative PostgreSQL CHECK constraints were not individually asserted). Fix commit `079d3ec76` adds focused RED/GREEN race coverage, immutable mutation ownership, and real-PostgreSQL per-weight constraint coverage. A refreshed whole-branch reviewer is still required before handoff.
+- Scoped re-review of `59da965a7` marked M1 closed but kept I1 open because a reload already in flight could still commit after ownership changed. Fix commit `f324e6801` adds result-commit guarding and delayed-reload RED/GREEN coverage; another fresh whole-branch review is required.
 
 ## Release Precheck And Rollback Notes
 

@@ -116,6 +116,29 @@ describe('AccountMonitorCard', () => {
 		source: 'monitor_probe',
 	}
 
+	it('exposes native account entry points without changing the compact card projection', async () => {
+		const accountInfo = vi.fn()
+		const accountEdit = vi.fn()
+		const accountDelete = vi.fn()
+		const accountMore = vi.fn()
+		const wrapper = mountCard({ onAccountInfo: accountInfo, onAccountEdit: accountEdit, onAccountDelete: accountDelete, onAccountMore: accountMore })
+
+		expect(wrapper.get('[data-test="account-info"]').text()).toContain('账号信息')
+		expect(wrapper.get('[data-test="account-edit"]').text()).toContain('编辑')
+		expect(wrapper.get('[data-test="account-delete"]').text()).toContain('删除')
+		expect(wrapper.get('[data-test="account-more"]').text()).toContain('更多')
+
+		await wrapper.get('[data-test="account-info"]').trigger('click')
+		await wrapper.get('[data-test="account-edit"]').trigger('click')
+		await wrapper.get('[data-test="account-delete"]').trigger('click')
+		await wrapper.get('[data-test="account-more"]').trigger('click')
+
+		expect(accountInfo).toHaveBeenCalledWith(account)
+		expect(accountEdit).toHaveBeenCalledWith(account)
+		expect(accountDelete).toHaveBeenCalledWith(account)
+		expect(accountMore).toHaveBeenCalledWith(account, expect.any(MouseEvent))
+	})
+
 	it('keeps platform, current group, schedulable state, and recommendation in one compact metadata row', () => {
 		const wrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: recommendation } })
 		const metadata = wrapper.get('[data-test="account-metadata"]')

@@ -42,9 +42,43 @@
           </template>
         </div>
       </div>
-      <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass" data-test="status-badge">
-        {{ statusLabel }}
-      </span>
+      <div class="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        <button
+          class="rounded px-1.5 py-1 text-[11px] text-gray-500 transition-colors hover:bg-white/70 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-slate-100"
+          data-test="account-info"
+          type="button"
+          title="查看账号信息"
+          aria-label="查看账号信息"
+          @click="emit('accountInfo', account)"
+        >账号信息</button>
+        <button
+          class="rounded px-1.5 py-1 text-[11px] text-gray-500 transition-colors hover:bg-white/70 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-slate-100"
+          data-test="account-edit"
+          type="button"
+          title="编辑账号"
+          aria-label="编辑账号"
+          @click="emit('accountEdit', account)"
+        >编辑</button>
+        <button
+          class="rounded px-1.5 py-1 text-[11px] text-gray-500 transition-colors hover:bg-white/70 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-slate-100"
+          data-test="account-delete"
+          type="button"
+          title="删除账号"
+          aria-label="删除账号"
+          @click="emit('accountDelete', account)"
+        >删除</button>
+        <button
+          class="rounded px-1.5 py-1 text-[11px] text-gray-500 transition-colors hover:bg-white/70 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-slate-100"
+          data-test="account-more"
+          type="button"
+          title="更多账号操作"
+          aria-label="更多账号操作"
+          @click="emit('accountMore', account, $event)"
+        >更多</button>
+        <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass" data-test="status-badge">
+          {{ statusLabel }}
+        </span>
+      </div>
     </header>
 
     <div class="px-[18px] pb-0 pt-4 max-[430px]:px-[14px]">
@@ -204,6 +238,10 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: 'updatePriority', accountID: number, priority: number, completion: { resolve: () => void; reject: (reason?: unknown) => void }): void
   (event: 'editCost', account: AccountMonitorAccount): void
+  (event: 'accountInfo', account: AccountMonitorAccount): void
+  (event: 'accountEdit', account: AccountMonitorAccount): void
+  (event: 'accountDelete', account: AccountMonitorAccount): void
+  (event: 'accountMore', account: AccountMonitorAccount, triggerEvent?: MouseEvent): void
   (event: 'refresh', accountID: number): void
 }>()
 

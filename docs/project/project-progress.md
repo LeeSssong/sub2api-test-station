@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T07 全局评分设置（2026-08-15）：** 状态：进行中，`DESIGNING`。用户可见顶层任务 `01a0018d-65fa-7dd2-9393-31d9e1643adc` 已从最新推送的 `main@efa0ef54cb432e784796add380727bc5366d2d06` 建立独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0fe/sub2api搭建` 和分支 `codex/t07-global-score-weights`；已完成现状探索、方案比较、分段设计和正式规格，规格提交为 `2b3561689`，当前只含规格文件且工作树干净。根总控规格复审要求将弹窗读取固定为独立 GET、保持监控投影 DTO/Schema 不变并清理尾随空格；修订通过后由根总控依据用户 2026-08-15 代审授权书面批准，再进入 writing-plans。尚无实现、候选、合并、推送、部署或生产变更。
+**T07 全局评分设置（2026-08-15）：** 状态：进行中，`IMPLEMENTING`。用户可见顶层任务 `01a0018d-65fa-7dd2-9393-31d9e1643adc` 已从 `main@efa0ef54cb432e784796add380727bc5366d2d06` 建立独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0fe/sub2api搭建` 和分支 `codex/t07-global-score-weights`。正式规格 `ae8ae2000` 已固定为独立 GET 按需读取、保持账号监控投影 DTO/Schema 不变；修订计划 `3e860e2d1` 已补齐数据库错误与校验错误分流、PUT `RETURNING` 单次写入返回、PostgreSQL `TestMigrationsSchema` 和基线范围 diff-check。根总控已依据用户代审授权复审并批准规格与计划，现授权顶层任务按 TDD、fresh implementer、逐任务独立复审和最终全分支复审实施；终审前必须整合最新根 `main@fc44bde10` 或更新提交。尚无 READY 候选、合并、推送、部署或生产变更。
 
 **规格书/计划书代审授权（2026-08-15）：** 用户离席前明确授权唯一发布总控代为审核并批准后续规格书和计划书，并要求继续完成本轮工作。根总控可在既定任务队列和已批准产品边界内直接签署规格/计划批准并推进，不再逐份等待用户回复；完整 brainstorming、独立 worktree、TDD、任务复审、全分支终审、根授权合并和单车道发布仍保留。范围扩大、不可逆数据操作、数据删除/历史回填、凭据或安全风险、外部付费、无法按既定方案解决的冲突，以及 `downtime_required=true` 的生产变更不纳入代审，必须在动作前停下等待用户确认。
 

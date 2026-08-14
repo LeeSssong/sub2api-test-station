@@ -29,7 +29,7 @@ export default {
     source: '来源',
     status: '成本状态',
     accountCount: '{count} 个账号',
-    ranges: { today: '今日', '7d': '7 天', '30d': '30 天', month: '本月' },
+    ranges: { today: '今日', '24h': '24 小时', '7d': '7 天', '31d': '31 天', '30d': '30 天', month: '本月' },
     filters: { allSources: '全部来源', allStatuses: '全部状态' },
     sources: { sub2api: 'Sub2API', newapi: 'NewAPI', self_purchased: '自购账号', pending: '待配置' },
     statuses: { known: '成本已知', pending: '待配置' },

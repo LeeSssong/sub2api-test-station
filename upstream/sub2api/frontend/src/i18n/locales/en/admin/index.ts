@@ -29,7 +29,7 @@ export default {
     source: 'Source',
     status: 'Cost status',
     accountCount: '{count} accounts',
-    ranges: { today: 'Today', '7d': '7 days', '30d': '30 days', month: 'This month' },
+    ranges: { today: 'Today', '24h': '24 hours', '7d': '7 days', '31d': '31 days', '30d': '30 days', month: 'This month' },
     filters: { allSources: 'All sources', allStatuses: 'All statuses' },
     sources: { sub2api: 'Sub2API', newapi: 'NewAPI', self_purchased: 'Self-purchased', pending: 'Pending' },
     statuses: { known: 'Cost known', pending: 'Pending setup' },

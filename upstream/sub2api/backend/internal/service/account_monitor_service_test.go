@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -250,6 +251,37 @@ func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
 	}
 	if _, err := svc.ResetGlobalScoreWeights(context.Background(), 0); err == nil {
 		t.Fatal("expected invalid actor error")
+	}
+}
+
+func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
+	rate := 1.0
+	accounts := []Account{
+		{ID: 1, Name: "cheap", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
+		{ID: 2, Name: "fast", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
+	}
+	ttftCheap := 4000.0
+	ttftFast := 500.0
+	latency := 1000.0
+	repo := &accountMonitorRepoStub{
+		settings:         AccountMonitorSettings{IntervalSeconds: AccountMonitorDefaultIntervalSeconds},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{},
+		aggregates: map[int64]AccountMonitorAggregate{
+			1: {SampleCount: 5, SuccessSampleCount: 5, TTFTSampleCount: 5, LatencySampleCount: 5, SuccessRate: 1, TTFTP50MS: &ttftCheap, LatencyP95MS: &latency, LastCheckedAt: ptrTime(time.Now().UTC())},
+			2: {SampleCount: 5, SuccessSampleCount: 5, TTFTSampleCount: 5, LatencySampleCount: 5, SuccessRate: 1, TTFTP50MS: &ttftFast, LatencyP95MS: &latency, LastCheckedAt: ptrTime(time.Now().UTC())},
+		},
+		groups:        []AccountMonitorGroup{{ID: 7, Name: "Group", RateMultiplier: 1, ScoreWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20}}},
+		globalWeights: AccountMonitorScoreWeights{Cost: 0, Success: 0, TTFT: 100, Latency: 0},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatalf("ListWindow() error = %v", err)
+	}
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
+		t.Fatalf("global ranking account ids = %v", got)
+	}
+	if page.SchemaVersion != AccountMonitorSchemaVersion {
+		t.Fatalf("schema version changed: %d", page.SchemaVersion)
 	}
 }
 

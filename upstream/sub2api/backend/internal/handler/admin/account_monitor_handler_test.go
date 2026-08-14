@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,10 +20,15 @@ import (
 
 type accountMonitorHandlerRepoStub struct {
 	service.AccountMonitorRepository
-	weights          service.AccountMonitorScoreWeights
-	latest           map[int64]service.AccountMonitorLatest
-	timelines        map[int64][]service.AccountMonitorTimelinePoint
-	windowAggregates map[int64]service.AccountMonitorWindowAggregate
+	weights               service.AccountMonitorScoreWeights
+	globalWeights         service.AccountMonitorScoreWeights
+	globalWeightsErr      error
+	globalWeightsSaveErr  error
+	globalWeightsResetErr error
+	savedGlobalWeights    []service.AccountMonitorScoreWeights
+	latest                map[int64]service.AccountMonitorLatest
+	timelines             map[int64][]service.AccountMonitorTimelinePoint
+	windowAggregates      map[int64]service.AccountMonitorWindowAggregate
 }
 
 func (*accountMonitorHandlerRepoStub) LoadSettings(context.Context) (service.AccountMonitorSettings, error) {
@@ -56,6 +62,32 @@ func (s *accountMonitorHandlerRepoStub) LoadGroupScoreWeights(context.Context, i
 func (s *accountMonitorHandlerRepoStub) SaveGroupScoreWeights(_ context.Context, _, actorID int64, weights service.AccountMonitorScoreWeights) error {
 	weights.UpdatedBy = actorID
 	s.weights = weights
+	return nil
+}
+
+func (s *accountMonitorHandlerRepoStub) LoadGlobalScoreWeights(context.Context) (service.AccountMonitorScoreWeights, error) {
+	if s.globalWeightsErr != nil {
+		return service.AccountMonitorScoreWeights{}, s.globalWeightsErr
+	}
+	return s.globalWeights, nil
+}
+
+func (s *accountMonitorHandlerRepoStub) SaveGlobalScoreWeights(_ context.Context, actorID int64, weights service.AccountMonitorScoreWeights) (service.AccountMonitorScoreWeights, error) {
+	if s.globalWeightsSaveErr != nil {
+		return service.AccountMonitorScoreWeights{}, s.globalWeightsSaveErr
+	}
+	weights.UpdatedBy = actorID
+	s.savedGlobalWeights = append(s.savedGlobalWeights, weights)
+	s.globalWeights = weights
+	return weights, nil
+}
+
+func (s *accountMonitorHandlerRepoStub) ResetGlobalScoreWeights(context.Context) error {
+	if s.globalWeightsResetErr != nil {
+		return s.globalWeightsResetErr
+	}
+	s.globalWeights = service.AccountMonitorScoreWeights{}
+	s.globalWeightsErr = sql.ErrNoRows
 	return nil
 }
 
@@ -105,6 +137,81 @@ func TestAccountMonitorHandlerPreservesThresholdsForLegacyWeightOnlyRequest(t *t
 	}
 	if repo.weights.TTFTTargetMS != 1400 || repo.weights.TTFTLimitMS != 7000 || repo.weights.LatencyTargetMS != 18000 || repo.weights.LatencyLimitMS != 70000 {
 		t.Fatalf("legacy request overwrote thresholds: %#v", repo.weights)
+	}
+}
+
+func TestAccountMonitorHandlerGlobalScoreWeightsCRUD(t *testing.T) {
+	repo := &accountMonitorHandlerRepoStub{globalWeightsErr: sql.ErrNoRows}
+	h := NewAccountMonitorHandler(service.NewAccountMonitorService(repo, nil, nil, nil, nil), nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+	})
+	router.GET("/global-score-weights", h.GetGlobalScoreWeights)
+	router.PUT("/global-score-weights", h.UpdateGlobalScoreWeights)
+	router.DELETE("/global-score-weights", h.ResetGlobalScoreWeights)
+
+	get := httptest.NewRecorder()
+	router.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/global-score-weights", nil))
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"is_default":true`) {
+		t.Fatalf("GET response = %d %s", get.Code, get.Body.String())
+	}
+
+	body := strings.NewReader(`{"cost":25,"success":35,"ttft":20,"latency":20,"ttft_target_ms":1}`)
+	put := httptest.NewRecorder()
+	router.ServeHTTP(put, httptest.NewRequest(http.MethodPut, "/global-score-weights", body))
+	if put.Code != http.StatusOK {
+		t.Fatalf("PUT response = %d %s", put.Code, put.Body.String())
+	}
+	if saved := repo.savedGlobalWeights[len(repo.savedGlobalWeights)-1]; saved.TTFTTargetMS != 0 {
+		t.Fatalf("threshold field leaked into global save: %#v", saved)
+	}
+
+	del := httptest.NewRecorder()
+	router.ServeHTTP(del, httptest.NewRequest(http.MethodDelete, "/global-score-weights", nil))
+	if del.Code != http.StatusOK || !strings.Contains(del.Body.String(), `"is_default":true`) {
+		t.Fatalf("DELETE response = %d %s", del.Code, del.Body.String())
+	}
+}
+
+func TestAccountMonitorHandlerGlobalScoreWeightsStorageErrorsAreNotBadRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		errField string
+		method   string
+		body     string
+	}{
+		{name: "get load error", errField: "load", method: http.MethodGet},
+		{name: "put save error", errField: "save", method: http.MethodPut, body: `{"cost":25,"success":35,"ttft":20,"latency":20}`},
+		{name: "delete reset error", errField: "reset", method: http.MethodDelete},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &accountMonitorHandlerRepoStub{}
+			switch tt.errField {
+			case "load":
+				repo.globalWeightsErr = errors.New("database unavailable")
+			case "save":
+				repo.globalWeightsSaveErr = errors.New("database unavailable")
+			case "reset":
+				repo.globalWeightsResetErr = errors.New("database unavailable")
+			}
+			h := NewAccountMonitorHandler(service.NewAccountMonitorService(repo, nil, nil, nil, nil), nil, nil, nil)
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+			})
+			router.GET("/global-score-weights", h.GetGlobalScoreWeights)
+			router.PUT("/global-score-weights", h.UpdateGlobalScoreWeights)
+			router.DELETE("/global-score-weights", h.ResetGlobalScoreWeights)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(tt.method, "/global-score-weights", strings.NewReader(tt.body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(recorder, request)
+			if recorder.Code == http.StatusBadRequest {
+				t.Fatalf("storage error returned 400: %s", recorder.Body.String())
+			}
+		})
 	}
 }
 

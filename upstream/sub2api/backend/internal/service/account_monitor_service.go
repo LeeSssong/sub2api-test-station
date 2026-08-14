@@ -271,6 +271,14 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	if err != nil {
 		return AccountMonitorPage{}, err
 	}
+	globalWeightsResponse, err := s.GetGlobalScoreWeights(ctx)
+	if err != nil {
+		return AccountMonitorPage{}, err
+	}
+	globalWeights := normalizeAccountMonitorScoreWeights(AccountMonitorScoreWeights{
+		Cost: globalWeightsResponse.Cost, Success: globalWeightsResponse.Success,
+		TTFT: globalWeightsResponse.TTFT, Latency: globalWeightsResponse.Latency,
+	})
 	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
 		return AccountMonitorPage{}, err
@@ -358,7 +366,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		rows = append(rows, row)
 	}
 
-	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, latest, settings, observedAt)
+	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, latest, settings, observedAt, globalWeights)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
 	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, latest, settings, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
@@ -444,6 +452,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	now time.Time,
+	weights AccountMonitorScoreWeights,
 ) []AccountMonitorAccount {
 	accountsByID := make(map[int64]Account, len(accounts))
 	for _, account := range accounts {
@@ -473,7 +482,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 		row.Eligible = row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped
 		if row.Eligible {
-			breakdown, score := accountMonitorWindowScoreBreakdown(1, row.EffectiveMultiplier, DefaultAccountMonitorScoreWeights, evidence)
+			breakdown, score := accountMonitorWindowScoreBreakdown(1, row.EffectiveMultiplier, weights, evidence)
 			row.ScoreBreakdown = &breakdown
 			row.QualityScore = score
 			capAccountMonitorAbnormalScore(row)

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +42,19 @@ func (*accountMonitorRouteRepoStub) ListTimelines(context.Context, []int64, int)
 
 func (*accountMonitorRouteRepoStub) ListGroups(context.Context) ([]service.AccountMonitorGroup, error) {
 	return nil, nil
+}
+
+func (*accountMonitorRouteRepoStub) LoadGlobalScoreWeights(context.Context) (service.AccountMonitorScoreWeights, error) {
+	return service.AccountMonitorScoreWeights{}, sql.ErrNoRows
+}
+
+func (*accountMonitorRouteRepoStub) SaveGlobalScoreWeights(_ context.Context, actorID int64, weights service.AccountMonitorScoreWeights) (service.AccountMonitorScoreWeights, error) {
+	weights.UpdatedBy = actorID
+	return weights, nil
+}
+
+func (*accountMonitorRouteRepoStub) ResetGlobalScoreWeights(context.Context) error {
+	return nil
 }
 
 type accountMonitorRouteAccountRepoStub struct{}
@@ -113,6 +127,57 @@ func TestAccountMonitorRoutesRegisterWindowEndpointAndKeepLegacyEndpoint(t *test
 				t.Fatalf("body = %s, want %s", recorder.Body.String(), tt.wantContains)
 			}
 		})
+	}
+}
+
+func TestAccountMonitorGlobalScoreWeightRoutesUseStepUpForWritesOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &accountMonitorRouteRepoStub{}
+	monitorService := service.NewAccountMonitorService(repo, &accountMonitorRouteAccountRepoStub{}, nil, nil, nil)
+	handlers := &handler.Handlers{Admin: &handler.AdminHandlers{
+		AccountMonitor: adminhandler.NewAccountMonitorHandler(monitorService, nil, nil, nil),
+	}}
+	router := gin.New()
+	adminAuth := servermiddleware.AdminAuthMiddleware(func(c *gin.Context) {
+		if c.GetHeader("Authorization") != "Bearer admin" {
+			servermiddleware.AbortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Authorization required")
+			return
+		}
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+		c.Set(string(servermiddleware.ContextKeyUserRole), service.RoleAdmin)
+		c.Next()
+	})
+	auditLog := servermiddleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
+	var stepUpCalls int
+	stepUp := servermiddleware.StepUpAuthMiddleware(func(c *gin.Context) {
+		stepUpCalls++
+		c.Next()
+	})
+	RegisterAdminRoutes(router.Group("/api/v1"), handlers, adminAuth, auditLog, stepUp, nil, nil)
+
+	get := httptest.NewRecorder()
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account-monitors/global-score-weights", nil)
+	getRequest.Header.Set("Authorization", "Bearer admin")
+	router.ServeHTTP(get, getRequest)
+	if get.Code == http.StatusNotFound || stepUpCalls != 0 {
+		t.Fatalf("GET status=%d stepUpCalls=%d", get.Code, stepUpCalls)
+	}
+
+	put := httptest.NewRecorder()
+	putRequest := httptest.NewRequest(http.MethodPut, "/api/v1/admin/account-monitors/global-score-weights", strings.NewReader(`{"cost":15,"success":45,"ttft":20,"latency":20}`))
+	putRequest.Header.Set("Authorization", "Bearer admin")
+	putRequest.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(put, putRequest)
+	if stepUpCalls != 1 {
+		t.Fatalf("PUT stepUpCalls=%d, want 1", stepUpCalls)
+	}
+
+	del := httptest.NewRecorder()
+	delRequest := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/account-monitors/global-score-weights", nil)
+	delRequest.Header.Set("Authorization", "Bearer admin")
+	router.ServeHTTP(del, delRequest)
+	if stepUpCalls != 2 {
+		t.Fatalf("DELETE stepUpCalls=%d, want 2", stepUpCalls)
 	}
 }
 

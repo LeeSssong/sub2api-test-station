@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,6 +102,13 @@ type accountMonitorScoreWeightsRequest struct {
 	TTFTLimitMS     *int `json:"ttft_limit_ms"`
 	LatencyTargetMS *int `json:"latency_target_ms"`
 	LatencyLimitMS  *int `json:"latency_limit_ms"`
+}
+
+type accountMonitorGlobalScoreWeightsRequest struct {
+	Cost    int `json:"cost"`
+	Success int `json:"success"`
+	TTFT    int `json:"ttft"`
+	Latency int `json:"latency"`
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {
@@ -355,6 +363,46 @@ func (h *AccountMonitorHandler) History(c *gin.Context) {
 		})
 	}
 	response.Success(c, accountMonitorHistoryResponse{Items: items})
+}
+
+func (h *AccountMonitorHandler) GetGlobalScoreWeights(c *gin.Context) {
+	weights, err := h.monitorService.GetGlobalScoreWeights(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, weights)
+}
+
+func (h *AccountMonitorHandler) UpdateGlobalScoreWeights(c *gin.Context) {
+	var req accountMonitorGlobalScoreWeightsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	weights, err := h.monitorService.UpdateGlobalScoreWeights(c.Request.Context(), subject.UserID, service.AccountMonitorScoreWeights{
+		Cost: req.Cost, Success: req.Success, TTFT: req.TTFT, Latency: req.Latency,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrAccountMonitorInvalidScoreWeights) {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_SCORE_WEIGHTS", err.Error()))
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, weights)
+}
+
+func (h *AccountMonitorHandler) ResetGlobalScoreWeights(c *gin.Context) {
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	weights, err := h.monitorService.ResetGlobalScoreWeights(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, weights)
 }
 
 func (h *AccountMonitorHandler) GetGroupScoreWeights(c *gin.Context) {

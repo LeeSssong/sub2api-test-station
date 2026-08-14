@@ -57,6 +57,28 @@ describe('AccountProfitabilityView', () => {
     expect(wrapper.text()).not.toContain('admin.accountProfitability.ranges.31d')
     expect(headers).not.toEqual(['Account', 'Revenue', 'Expense', 'Profit', 'Margin', 'Exceptions', 'Today override'])
   })
+  it('uses native admin theme classes for summary cards and the account table', async () => {
+    const wrapper = mount(AccountProfitabilityView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } },
+    })
+    await flushPromises()
+
+    const cardKeys = ['revenue', 'expense', 'profit', 'margin', 'exceptions', 'unconsumed-balance']
+    for (const key of cardKeys) {
+      const classes = wrapper.get(`[data-test="summary-${key}"]`).classes()
+      expect(classes).toContain('card')
+      expect(classes).toContain('p-4')
+      expect(classes).not.toContain('bg-white')
+    }
+
+    const tableWrapper = wrapper.get('[data-test="account-financial-table"]')
+    expect(tableWrapper.classes()).toContain('table-container')
+    expect(tableWrapper.classes()).not.toContain('bg-white')
+
+    const table = tableWrapper.get('table')
+    expect(table.classes()).toContain('table')
+    expect(table.classes()).not.toContain('min-w-full')
+  })
   it('renders six cards, refreshes through getReport only, and keeps the timer', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); expect(getReport).toHaveBeenCalledWith({ range: 'today' }); expect(wrapper.get('[data-test="financial-generated-at"]').text()).toContain('2026'); for (const key of ['revenue','expense','profit','margin','exceptions','unconsumed-balance']) expect(wrapper.find(`[data-test="summary-${key}"]`).exists()).toBe(true); await wrapper.get('[data-test="financial-refresh"]').trigger('click'); await flushPromises(); expect(getReport).toHaveBeenNthCalledWith(2, { range: 'today' }); expect(setTodayOverride).not.toHaveBeenCalled(); expect(setOAuthCost).not.toHaveBeenCalled(); expect(setInterval).toHaveBeenCalledWith(expect.any(Function), 60_000); wrapper.unmount(); expect(clearInterval).toHaveBeenCalled() })
   it('supports read-only ranges and exception jump', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); await wrapper.get('[data-test="range-7d"]').trigger('click'); await flushPromises(); expect(getReport).toHaveBeenLastCalledWith({ range: '7d' }); expect(wrapper.find('[data-test="account-edit-revenue-7"]').exists()).toBe(false); await wrapper.get('[data-test="range-today"]').trigger('click'); await flushPromises(); await wrapper.get('[data-test="account-exceptions-7"]').trigger('click'); expect(push).toHaveBeenCalledWith(expect.objectContaining({ path: '/admin/usage', query: expect.objectContaining({ tab: 'cost-exceptions', range: 'today', account_id: '7' }) })) })
   it('edits today revenue, cost and oauth daily cost with Beijing business date', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); await wrapper.get('[data-test="account-edit-revenue-7"]').setValue('8'); await wrapper.get('[data-test="account-edit-revenue-7"]').trigger('change'); await wrapper.get('[data-test="account-edit-cost-7"]').setValue('5'); await wrapper.get('[data-test="account-edit-cost-7"]').trigger('change'); await wrapper.get('[data-test="account-edit-oauth-cost-7"]').setValue('4'); await wrapper.get('[data-test="account-edit-oauth-cost-7"]').trigger('change'); expect(setTodayOverride).toHaveBeenNthCalledWith(1, 7, expect.objectContaining({ revenue_cny: 8, business_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })); expect(setTodayOverride).toHaveBeenCalledWith(7, expect.objectContaining({ cost_cny: 5 })); expect(setOAuthCost).toHaveBeenCalledWith(7, expect.objectContaining({ cost_cny: 4 })) })

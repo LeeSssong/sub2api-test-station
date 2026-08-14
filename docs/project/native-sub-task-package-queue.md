@@ -50,7 +50,7 @@
 
 ### T03-R1 上游扣费缺失与异步持久化修复
 
-- 当前状态：已完成。最终 `main@210d0397e647b91be080f0c7252da39a6e61d71d` 已推送并从受审维护链部署；生产记录 `20260814T051143Z-production-2876774.json` 为 `succeeded/promoted`，活动槽 `green`，源 tree `4e2b7be29191894a8e7fac7e7af21cb0cf4adb21`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`。用户已授权停机，公网 `/healthz`、`/readyz`、`/health` 均通过，生产服务健康。维护任务 `019ffe60-c370-7290-a310-0f811e8d09ae` 因根 `main` 漂移并包含同范围旧候选而停止在 `BLOCKED_FOR_ROOT_RECONCILIATION`，未宣称为流程合规交付；不影响已审主线技术结果。T05 及后续任务包保持未启动。
+- 当前状态：已完成。最终 `main@210d0397e647b91be080f0c7252da39a6e61d71d` 已推送并从受审维护链部署；生产记录 `20260814T051143Z-production-2876774.json` 为 `succeeded/promoted`，活动槽 `green`，源 tree `4e2b7be29191894a8e7fac7e7af21cb0cf4adb21`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`。用户已授权停机，公网 `/healthz`、`/readyz`、`/health` 均通过，生产服务健康。功能启用后首个稳定窗口内 15 笔自然流水中，3 笔明确 NewAPI 身份流水已自动登记 `confirmed`，12 笔无明确 Sub/New 身份流水按合同进入 `evidence_not_registered`；管理员财务、异常、本地详情与未认证隔离均已在线验收。维护任务 `019ffe60-c370-7290-a310-0f811e8d09ae` 因根 `main` 漂移并包含同范围旧候选而停止在 `BLOCKED_FOR_ROOT_RECONCILIATION`，未宣称为流程合规交付；不影响已审主线技术结果。
 - 目标：保持官方 `usage_logs` 不变，以独立一对一证据登记功能启用后的 Sub/New 原生逐笔成本；升级现有账号盈利页为管理员财务首页，提供全站/账号人民币营收、本站支出、利润、利润率、异常数量、用户未消费余额，以及使用记录中的异常核对 Tab。
 - 事实语义：精确命中有效非零成本为 `confirmed` 并立即纳入；精确命中数值 0 或 blank/null/empty 为 `confirmed_zero`；无精确证据、端点/鉴权/网络/解析或登记失败为 `unavailable`。后两类待管理员核对前完全不进入财务汇总；不补查、不重试、不估算。
 - 人工与 OAuth：异常可逐笔、选中项批量或当前筛选范围批量确认；未输入成本时按 0 纳入并保留原始证据状态。字面 `oauth` 类型的自购账号不查询上游、不产生成本异常，由管理员按北京自然日填写人民币成本；未填写的账号日不进入全站四项财务汇总。

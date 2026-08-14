@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片均已部署并完成各自既定线上验证；账号监控卡片最新生产记录为 `20260814T102354Z-production-3093579.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：T06 `BLOCKED`（部署前置网络）。根授权合并提交为 `main@04cf031f54f23dd394c6189e091dc07410b44b10`；合并后定向/相邻 Vitest、typecheck、production build、diff-check 均通过。无运行时代码、API、数据库迁移、配置或 GitHub Actions 变化。两次蓝绿链均在本地 BuildKit 构建阶段因 Docker Hub `registry-1.docker.io:443` TLS/EOF 失败退出，未推送候选镜像、未连接宿主、未生成生产记录、未改变线上；网络恢复后重新生成绑定届时最新干净 main 的证据并继续，未启动 T07。
+- 当前唯一发布候选：T06 `VERIFYING`。网络恢复后，根任务从已验证的 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成无停机蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API/worker 镜像绑定 source tree `1c30f936e4a4d8c6338d18ace36d71860b58fc1c` 与迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网 `/healthz`、`/readyz`、`/health` 均为 200，核心容器健康。当前只缺管理员登录态利润页专项验收；两个可用浏览器会话均无登录态，未读取或代填凭据。T07 仍未启动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -71,7 +71,7 @@
 
 ### T06 利润页移除外部控制面状态
 
-- 当前状态：`BLOCKED`（部署前置网络）；根合并 `main@04cf031f54f23dd394c6189e091dc07410b44b10` 已完成合并后门禁。两次发布均在本地 BuildKit 拉取 Docker Hub 基础镜像阶段失败，生产未变更；网络恢复后继续发布和线上验收。
+- 当前状态：`VERIFYING`。已从 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成 `downtime_required=false` 蓝绿发布，宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`，活动槽 `blue`，公网三个健康端点和核心容器均健康。待管理员登录态完成利润页初载、reload、手动刷新、范围切换、无 `/api/v1/xingqiao/**` 请求及无控制面/完整性/unknown 状态专项验收后，方可转为 `DONE` 并清理候选。
 
 - 目标：从原生利润页删除外部控制面状态和调用，保留原生利润数据。
 - 范围：仅利润页面、原生 API 使用和测试。

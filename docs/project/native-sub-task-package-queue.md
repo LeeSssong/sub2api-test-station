@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1 均已部署并完成各自既定线上验证；最新生产记录为 `20260814T181009Z-production-3436954.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：无。T06-R1 已从最新干净 `main@005ec883f5a8504b8407f62699bb450a10c3e61a` 刷新后，以候选 `d50c47d744b405f54b8bf420de68a59ed70b9e0c` 经根授权合并为 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd`；合并后专项门禁通过，生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 为 `succeeded/promoted`、`rolled_back=false`、`state=promoted`、`downtime_required=false`，活动槽 `green`，source tree `48c97a63e5fffe9a7991bc7ce65eceb98a4d6b35`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网三个健康端点均 200。管理员登录态验收确认利润页深色主题可读、范围和表头中文、今日/24h/31d/刷新原生请求正常、`/api/v1/xingqiao/**` 为 0、无控制面/完整性/unknown 文案。T07 仅可在本任务收尾记录后按顶层任务门禁重新创建，当前仍未启动。
+- 当前唯一发布候选：无。T06-R1 已从最新干净 `main@005ec883f5a8504b8407f62699bb450a10c3e61a` 刷新后，以候选 `d50c47d744b405f54b8bf420de68a59ed70b9e0c` 经根授权合并为 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd`；合并后专项门禁通过，生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 为 `succeeded/promoted`、`rolled_back=false`、`state=promoted`、`downtime_required=false`，活动槽 `green`，source tree `48c97a63e5fffe9a7991bc7ce65eceb98a4d6b35`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网三个健康端点均 200。管理员登录态验收确认利润页深色主题可读、范围和表头中文、今日/24h/31d/刷新原生请求正常、`/api/v1/xingqiao/**` 为 0、无控制面/完整性/unknown 文案。当前 T07 进入 `DESIGNING`，尚无候选 SHA。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -88,6 +88,7 @@
 
 ### T07 全局评分设置
 
+- 当前状态：`DESIGNING`。根总控已在最新推送的 `main@a38fa7bc3e8986288abbf84be218d5683ab252a1` 登记任务，待创建用户可见独立顶层窗口和 worktree；尚无实现、候选、合并或生产变更。
 - 目标：在未进入具体分组时提供全局评分权重设置。
 - 范围：全局权重持久化/API、账号监控全局设置按钮、复用分组评分弹窗；默认权重保持成本 15、成功率 45、首字延迟 20、总延迟 20。
 - 不包含：分组权重迁移、评分指标增加或调度算法修改。

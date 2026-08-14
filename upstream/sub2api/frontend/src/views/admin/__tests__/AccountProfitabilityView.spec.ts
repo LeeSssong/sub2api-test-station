@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AccountProfitabilityView from '../AccountProfitabilityView.vue'
 import pageSource from '../AccountProfitabilityView.vue?raw'
+import enAdmin from '@/i18n/locales/en/admin'
+import zhAdmin from '@/i18n/locales/zh/admin'
 const { getReport, setTodayOverride, setOAuthCost, push } = vi.hoisted(() => ({ getReport: vi.fn(), setTodayOverride: vi.fn(), setOAuthCost: vi.fn(), push: vi.fn() }))
 vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport, setTodayOverride, setOAuthCost } } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
@@ -41,6 +43,10 @@ describe('AccountProfitabilityView', () => {
   })
 
   beforeEach(() => { getReport.mockReset().mockResolvedValue(report()); setTodayOverride.mockReset().mockResolvedValue({}); setOAuthCost.mockReset().mockResolvedValue({}); push.mockReset(); vi.spyOn(global, 'setInterval'); vi.spyOn(global, 'clearInterval') })
+  it('keeps the active range labels in the production Chinese and English admin locales', () => {
+    expect(zhAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 小时', '31d': '31 天' })
+    expect(enAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 hours', '31d': '31 days' })
+  })
   it('renders Chinese range labels and localized table headers without leaking i18n keys', async () => {
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
     await flushPromises()

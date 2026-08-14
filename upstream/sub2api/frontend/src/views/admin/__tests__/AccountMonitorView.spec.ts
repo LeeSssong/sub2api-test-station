@@ -13,6 +13,7 @@ const {
   updateAccount,
   getAccountById,
   deleteAccount,
+  setPrivacy,
   updateProcurementCost,
   updateGroupScoreWeights,
   resetGroupScoreWeights,
@@ -37,6 +38,7 @@ const {
   updateAccount: vi.fn(),
   getAccountById: vi.fn(),
   deleteAccount: vi.fn(),
+  setPrivacy: vi.fn(),
   updateProcurementCost: vi.fn(),
   updateGroupScoreWeights: vi.fn(),
   resetGroupScoreWeights: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock('@/api/controlPlane', () => ({
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accountMonitor: { list, getConcurrency, runAll, runOne, updateGroupScoreWeights, resetGroupScoreWeights },
-    accounts: { update: updateAccount, updateProcurementCost, getById: getAccountById, delete: deleteAccount },
+    accounts: { update: updateAccount, updateProcurementCost, getById: getAccountById, delete: deleteAccount, setPrivacy },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
       operations,
@@ -92,6 +94,7 @@ vi.mock('vue-i18n', async () => {
     'admin.accountMonitor.empty.pool': '当前没有启用且可调度的账号。',
     'admin.accountMonitor.messages.refreshAllSuccess': '全部账号刷新完成',
     'admin.accountMonitor.messages.refreshFailed': '账号刷新失败',
+    'admin.accounts.privacyCfBlocked': '被 Cloudflare 拦截，训练可能仍开启',
     'common.all': '全部',
     'common.refresh': '刷新',
   }
@@ -117,7 +120,7 @@ const AccountMonitorCardStub = defineComponent({
       <button data-test="account-info" type="button" @click="$emit('accountInfo', account)">info</button>
       <button data-test="account-edit" type="button" @click="$emit('accountEdit', account)">edit account</button>
       <button data-test="account-delete" type="button" @click="$emit('accountDelete', account)">delete account</button>
-      <button data-test="account-more" type="button" @click="$emit('accountMore', account)">more</button>
+      <button data-test="account-more" type="button" @click="$emit('accountMore', account, $event)">more</button>
     </article>
   `,
 })
@@ -152,9 +155,9 @@ const NativeDialogStub = defineComponent({
 
 const AccountActionMenuStub = defineComponent({
   name: 'AccountActionMenuStub',
-  props: { show: { type: Boolean, required: true }, account: { type: Object, default: null } },
+  props: { show: { type: Boolean, required: true }, account: { type: Object, default: null }, position: { type: Object, default: null } },
   emits: ['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'],
-  template: '<div v-if="show" data-test="account-action-menu"><button data-test="menu-test" @click="$emit(\'test\', account)">test</button></div>',
+  template: '<div v-if="show" data-test="account-action-menu"><button data-test="menu-test" @click="$emit(\'test\', account)">test</button><button data-test="menu-set-privacy" @click="$emit(\'set-privacy\', account)">privacy</button></div>',
 })
 
 const baseAccount = {
@@ -354,6 +357,7 @@ describe('admin account monitor view V3', () => {
       credentials_status: { has_api_key: true },
     })
     deleteAccount.mockReset().mockResolvedValue({ message: 'deleted' })
+    setPrivacy.mockReset().mockResolvedValue({ ...baseAccount, id: 10, type: 'oauth', extra: { privacy_mode: 'training_off' } })
     updateProcurementCost.mockReset().mockResolvedValue({
       id: 10,
       procurement_cost_cny: 125.5,
@@ -968,7 +972,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="native-dialog"]').text()).toContain('10')
   })
 
-  it('deduplicates concurrent same-id entry requests and reuses the native edit/delete/menu shells', async () => {
+  it('deduplicates concurrent same-id entry requests and keeps only the latest requested native shell', async () => {
     let resolveAccount!: (account: typeof baseAccount) => void
     getAccountById.mockImplementationOnce(() => new Promise((resolve) => { resolveAccount = resolve }))
     const wrapper = mountView()
@@ -983,8 +987,50 @@ describe('admin account monitor view V3', () => {
     await Promise.all([infoClick, editClick, moreClick])
     await flushPromises()
 
-    expect(wrapper.find('[data-test="native-dialog"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="native-dialog"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="account-action-menu"]').exists()).toBe(true)
+  })
+
+  it('ignores a stale different-account response instead of replacing the latest native action target', async () => {
+    let resolveFirst!: (account: unknown) => void
+    let resolveSecond!: (account: unknown) => void
+    getAccountById.mockImplementation((id: number) => new Promise((resolve) => {
+      if (id === 10) resolveFirst = resolve
+      else resolveSecond = resolve
+    }))
+    const wrapper = mountView()
+    await flushPromises()
+    const cards = wrapper.findAllComponents(AccountMonitorCardStub)
+
+    const staleDelete = cards[0].get('[data-test="account-delete"]').trigger('click')
+    const latestEdit = cards[1].get('[data-test="account-edit"]').trigger('click')
+    resolveSecond({ ...baseAccount, id: 11, name: 'Rank two', type: 'oauth' })
+    await latestEdit
+    await flushPromises()
+    resolveFirst({ ...baseAccount, id: 10, name: 'Rank one A', type: 'oauth' })
+    await staleDelete
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="native-dialog"]').text()).toContain('11')
+    expect(wrapper.find('[data-test="confirm-dialog"]').exists()).toBe(false)
+  })
+
+  it('anchors the more menu to the clicked card trigger and preserves native privacy result semantics', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const trigger = wrapper.findAllComponents(AccountMonitorCardStub)[0].get<HTMLElement>('[data-test="account-more"]')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({ top: 100, right: 700, bottom: 130 } as DOMRect)
+
+    await trigger.trigger('click')
+    await flushPromises()
+    const menu = wrapper.getComponent(AccountActionMenuStub)
+    expect(menu.props('position')).toEqual(expect.objectContaining({ left: expect.any(Number), top: expect.any(Number) }))
+
+    setPrivacy.mockResolvedValueOnce({ ...baseAccount, id: 10, type: 'oauth', extra: { privacy_mode: 'training_set_cf_blocked' } })
+    await wrapper.get('[data-test="menu-set-privacy"]').trigger('click')
+    await flushPromises()
+    expect(showError).toHaveBeenCalledWith('被 Cloudflare 拦截，训练可能仍开启')
+    expect(showSuccess).not.toHaveBeenCalledWith('被 Cloudflare 拦截，训练可能仍开启')
   })
 
   it('uses native delete confirmation and reloads the compact monitor projection after confirmation', async () => {

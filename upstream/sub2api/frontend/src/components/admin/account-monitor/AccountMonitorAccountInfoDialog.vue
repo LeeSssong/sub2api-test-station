@@ -24,10 +24,9 @@
         </div>
       </section>
 
-      <section v-if="account.notes || account.error_message" class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号备注">
-        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">备注与状态</h4>
-        <InfoField v-if="account.notes" label="备注" :value="account.notes" />
-        <InfoField v-if="account.error_message" label="错误信息" :value="account.error_message" />
+      <section v-if="account.notes" class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号备注">
+        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">账号备注</h4>
+        <InfoField label="备注" :value="account.notes" />
       </section>
 
       <p class="text-xs text-gray-500 dark:text-gray-400" data-test="account-info-security-note">

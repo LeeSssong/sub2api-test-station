@@ -73,7 +73,7 @@
           type="button"
           title="更多账号操作"
           aria-label="更多账号操作"
-          @click="emit('accountMore', account)"
+          @click="emit('accountMore', account, $event)"
         >更多</button>
         <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass" data-test="status-badge">
           {{ statusLabel }}
@@ -241,7 +241,7 @@ const emit = defineEmits<{
   (event: 'accountInfo', account: AccountMonitorAccount): void
   (event: 'accountEdit', account: AccountMonitorAccount): void
   (event: 'accountDelete', account: AccountMonitorAccount): void
-  (event: 'accountMore', account: AccountMonitorAccount): void
+  (event: 'accountMore', account: AccountMonitorAccount, triggerEvent?: MouseEvent): void
   (event: 'refresh', accountID: number): void
 }>()
 

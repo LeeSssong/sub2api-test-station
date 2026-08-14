@@ -26,11 +26,11 @@ describe('AccountMonitorAccountInfoDialog', () => {
           proxy: { id: 9, name: 'Primary proxy' },
           group_ids: [3],
           notes: 'internal note',
+          error_message: 'Bearer sk-secret-value from upstream',
           credentials: { api_key: 'sk-secret-value' },
           credentials_status: { has_api_key: true },
           rate_multiplier: 0.8,
           concurrency: 0,
-          error_message: null,
           last_used_at: null,
           expires_at: null,
           auto_pause_on_expired: false,
@@ -46,6 +46,7 @@ describe('AccountMonitorAccountInfoDialog', () => {
     expect(wrapper.text()).toContain('已配置（1 项）')
     expect(wrapper.text()).toContain('internal note')
     expect(wrapper.text()).not.toContain('sk-secret-value')
+    expect(wrapper.text()).not.toContain('Bearer')
     expect(wrapper.get('[data-test="account-info-security-note"]').text()).toContain('不展示任何凭据原文')
   })
 })

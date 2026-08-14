@@ -292,6 +292,7 @@ import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import type { Account, AdminGroup, Proxy as AccountProxy, ClaudeModel } from '@/types'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
@@ -356,6 +357,7 @@ const reAuthAccount = ref<Account | null>(null)
 const nativeAccountRequests = new Map<number, Promise<Account | null>>()
 const nativeAccountError = ref<string | null>(null)
 const nativeAccountLoading = ref(false)
+let nativeEntryGeneration = 0
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
@@ -761,10 +763,7 @@ async function fetchNativeAccount(accountID: number): Promise<Account | null> {
   nativeAccountError.value = null
   nativeAccountLoading.value = true
   const request = adminAPI.accounts.getById(accountID)
-    .then((account) => {
-      selectedNativeAccount.value = account
-      return account
-    })
+    .then((account) => account)
     .catch((reason: unknown) => {
       nativeAccountError.value = extractApiErrorMessage(reason, '账号信息加载失败')
       appStore.showError(nativeAccountError.value)
@@ -792,32 +791,47 @@ async function loadNativeEditOptions(): Promise<void> {
 }
 
 async function openAccountInfo(account: AccountMonitorAccount): Promise<void> {
+  const generation = ++nativeEntryGeneration
   const native = await fetchNativeAccount(account.account_id)
-  if (!native) return
+  if (!native || generation !== nativeEntryGeneration) return
+  selectedNativeAccount.value = native
   showAccountInfoDialog.value = true
 }
 
 async function openAccountEdit(account: AccountMonitorAccount): Promise<void> {
+  const generation = ++nativeEntryGeneration
   const native = await fetchNativeAccount(account.account_id)
-  if (!native) return
+  if (!native || generation !== nativeEntryGeneration) return
+  selectedNativeAccount.value = native
   void loadNativeEditOptions()
   showEditAccountDialog.value = true
 }
 
 async function openAccountDelete(account: AccountMonitorAccount): Promise<void> {
+  const generation = ++nativeEntryGeneration
   const native = await fetchNativeAccount(account.account_id)
-  if (!native) return
+  if (!native || generation !== nativeEntryGeneration) return
+  selectedNativeAccount.value = native
   showDeleteAccountDialog.value = true
 }
 
-async function openAccountMore(account: AccountMonitorAccount): Promise<void> {
+async function openAccountMore(account: AccountMonitorAccount, triggerEvent?: MouseEvent): Promise<void> {
+  const generation = ++nativeEntryGeneration
   const native = await fetchNativeAccount(account.account_id)
-  if (!native) return
+  if (!native || generation !== nativeEntryGeneration) return
+  selectedNativeAccount.value = native
+  const trigger = triggerEvent?.currentTarget instanceof HTMLElement ? triggerEvent.currentTarget : null
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+  const viewportHeight = window.innerHeight
+  const floatingPosition = trigger
+    ? getFloatingPanelPosition(trigger.getBoundingClientRect(), viewportWidth, viewportHeight, { maxWidth: 208, maxHeightRatio: 0.7 })
+    : null
+  const estimatedMenuHeight = Math.min(420, floatingPosition?.maxHeight || 420)
   accountActionMenu.value = {
     show: true,
     position: {
-      top: Math.max(12, Math.min(window.innerHeight - 420, 128)),
-      left: Math.max(12, window.innerWidth - 224),
+      top: floatingPosition?.top ?? Math.max(12, viewportHeight - (floatingPosition?.bottom ?? 12) - estimatedMenuHeight),
+      left: floatingPosition?.left ?? Math.max(12, viewportWidth - 224),
     },
   }
 }
@@ -850,9 +864,8 @@ async function confirmDeleteAccount(): Promise<void> {
     closeDeleteAccount()
     selectedNativeAccount.value = null
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess('账号已删除')
   } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '删除账号失败'))
+    console.error('Failed to delete account:', reason)
   }
 }
 
@@ -912,14 +925,21 @@ function handleReAuth(account: Account): void {
   showReAuthDialog.value = true
 }
 
+const duplicatingNativeAccountIDs = new Set<number>()
+
 async function handleDuplicateAccount(account: Account): Promise<void> {
   closeAccountMore()
+  if (duplicatingNativeAccountIDs.has(account.id)) return
+  duplicatingNativeAccountIDs.add(account.id)
   try {
     const duplicate = await adminAPI.accounts.duplicate(account.id)
+    appStore.showSuccess(t('admin.accounts.duplicateSuccess', { name: duplicate.name }))
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess(`账号“${duplicate.name}”已复制`)
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '复制账号失败'))
+  } catch (error: any) {
+    console.error('Failed to duplicate account:', error)
+    appStore.showError(error?.message || t('admin.accounts.duplicateFailed'))
+  } finally {
+    duplicatingNativeAccountIDs.delete(account.id)
   }
 }
 
@@ -928,8 +948,8 @@ async function handleRefresh(account: Account): Promise<void> {
   try {
     await adminAPI.accounts.refreshCredentials(account.id)
     await load(activeRange.value, { notifyError: false })
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '刷新凭据失败'))
+  } catch (error) {
+    console.error('Failed to refresh credentials:', error)
   }
 }
 
@@ -938,9 +958,10 @@ async function handleRecoverState(account: Account): Promise<void> {
   try {
     await adminAPI.accounts.recoverState(account.id)
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess('账号状态已恢复')
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '恢复账号状态失败'))
+    appStore.showSuccess(t('admin.accounts.recoverStateSuccess'))
+  } catch (error: any) {
+    console.error('Failed to recover account state:', error)
+    appStore.showError(error?.message || t('admin.accounts.recoverStateFailed'))
   }
 }
 
@@ -949,20 +970,38 @@ async function handleResetQuota(account: Account): Promise<void> {
   try {
     await adminAPI.accounts.resetAccountQuota(account.id)
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess('账号配额已重置')
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '重置账号配额失败'))
+    appStore.showSuccess(t('common.success'))
+  } catch (error) {
+    console.error('Failed to reset quota:', error)
   }
+}
+
+function privacyResultMessageKey(account: Account): { type: 'success' | 'error'; key: string } {
+  const mode = typeof account.extra?.privacy_mode === 'string' ? account.extra.privacy_mode : ''
+  if (account.platform === 'openai') {
+    if (mode === 'training_off') return { type: 'success', key: 'admin.accounts.privacyTrainingOff' }
+    if (mode === 'training_set_cf_blocked') return { type: 'error', key: 'admin.accounts.privacyCfBlocked' }
+    return { type: 'error', key: 'admin.accounts.privacyFailed' }
+  }
+  if (account.platform === 'antigravity') {
+    return mode === 'privacy_set'
+      ? { type: 'success', key: 'admin.accounts.privacyAntigravitySet' }
+      : { type: 'error', key: 'admin.accounts.privacyAntigravityFailed' }
+  }
+  return { type: 'error', key: 'admin.accounts.privacyFailed' }
 }
 
 async function handleSetPrivacy(account: Account): Promise<void> {
   closeAccountMore()
   try {
-    await adminAPI.accounts.setPrivacy(account.id)
+    const updated = await adminAPI.accounts.setPrivacy(account.id)
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess('账号隐私设置已更新')
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '更新账号隐私设置失败'))
+    const result = privacyResultMessageKey(updated)
+    if (result.type === 'success') appStore.showSuccess(t(result.key))
+    else appStore.showError(t(result.key))
+  } catch (error: any) {
+    console.error('Failed to set privacy:', error)
+    appStore.showError(error?.response?.data?.message || t('admin.accounts.privacyFailed'))
   }
 }
 
@@ -983,9 +1022,10 @@ async function confirmCreateSparkShadow(): Promise<void> {
     showSparkShadowDialog.value = false
     creatingSparkShadow.value = null
     await load(activeRange.value, { notifyError: false })
-    appStore.showSuccess('Spark 影子账号已创建')
-  } catch (reason: unknown) {
-    appStore.showError(extractApiErrorMessage(reason, '创建 Spark 影子账号失败'))
+    appStore.showSuccess(t('admin.accounts.createSparkShadowSuccess'))
+  } catch (error: any) {
+    console.error('Failed to create spark shadow:', error)
+    appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
   }
 }
 

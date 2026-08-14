@@ -136,7 +136,7 @@ describe('AccountMonitorCard', () => {
 		expect(accountInfo).toHaveBeenCalledWith(account)
 		expect(accountEdit).toHaveBeenCalledWith(account)
 		expect(accountDelete).toHaveBeenCalledWith(account)
-		expect(accountMore).toHaveBeenCalledWith(account)
+		expect(accountMore).toHaveBeenCalledWith(account, expect.any(MouseEvent))
 	})
 
 	it('keeps platform, current group, schedulable state, and recommendation in one compact metadata row', () => {

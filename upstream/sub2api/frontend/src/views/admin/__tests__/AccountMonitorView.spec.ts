@@ -1015,6 +1015,31 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.find('[data-test="confirm-dialog"]').exists()).toBe(false)
   })
 
+  it('does not surface a stale request error or loading state after a newer account entry succeeds', async () => {
+    let rejectFirst!: (reason?: unknown) => void
+    let resolveSecond!: (account: unknown) => void
+    getAccountById.mockImplementation((id: number) => new Promise((resolve, reject) => {
+      if (id === 10) rejectFirst = reject
+      else resolveSecond = resolve
+    }))
+    const wrapper = mountView()
+    await flushPromises()
+    const cards = wrapper.findAllComponents(AccountMonitorCardStub)
+
+    const staleInfo = cards[0].get('[data-test="account-info"]').trigger('click')
+    const latestEdit = cards[1].get('[data-test="account-edit"]').trigger('click')
+    resolveSecond({ ...baseAccount, id: 11, name: 'Rank two', type: 'oauth' })
+    await latestEdit
+    await flushPromises()
+    rejectFirst(new Error('stale account 10 failed'))
+    await staleInfo
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="native-dialog"]').text()).toContain('11')
+    expect(wrapper.find('[data-test="account-native-loading"]').exists()).toBe(false)
+    expect(showError).not.toHaveBeenCalledWith('stale account 10 failed')
+  })
+
   it('anchors the more menu to the clicked card trigger and preserves native privacy result semantics', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -1025,6 +1050,7 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
     const menu = wrapper.getComponent(AccountActionMenuStub)
     expect(menu.props('position')).toEqual(expect.objectContaining({ left: expect.any(Number), top: expect.any(Number) }))
+    expect((menu.props('position') as { left: number }).left).toBeLessThan(window.innerWidth - 224)
 
     setPrivacy.mockResolvedValueOnce({ ...baseAccount, id: 10, type: 'oauth', extra: { privacy_mode: 'training_set_cf_blocked' } })
     await wrapper.get('[data-test="menu-set-privacy"]').trigger('click')

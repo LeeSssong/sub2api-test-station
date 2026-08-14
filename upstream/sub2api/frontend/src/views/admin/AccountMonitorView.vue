@@ -354,7 +354,7 @@ const scheduleAccount = ref<Account | null>(null)
 const scheduleModelOptions = ref<{ value: string; label: string }[]>([])
 const showReAuthDialog = ref(false)
 const reAuthAccount = ref<Account | null>(null)
-const nativeAccountRequests = new Map<number, Promise<Account | null>>()
+const nativeAccountRequests = new Map<number, Promise<Account>>()
 const nativeAccountError = ref<string | null>(null)
 const nativeAccountLoading = ref(false)
 let nativeEntryGeneration = 0
@@ -757,24 +757,39 @@ async function resetScoreWeights() {
   }
 }
 
-async function fetchNativeAccount(accountID: number): Promise<Account | null> {
+async function fetchNativeAccount(accountID: number): Promise<Account> {
   const pending = nativeAccountRequests.get(accountID)
   if (pending) return pending
-  nativeAccountError.value = null
-  nativeAccountLoading.value = true
   const request = adminAPI.accounts.getById(accountID)
     .then((account) => account)
-    .catch((reason: unknown) => {
-      nativeAccountError.value = extractApiErrorMessage(reason, '账号信息加载失败')
-      appStore.showError(nativeAccountError.value)
-      return null
-    })
     .finally(() => {
       nativeAccountRequests.delete(accountID)
-      nativeAccountLoading.value = nativeAccountRequests.size > 0
     })
   nativeAccountRequests.set(accountID, request)
   return request
+}
+
+function beginNativeEntry(): number {
+  const generation = ++nativeEntryGeneration
+  nativeAccountError.value = null
+  nativeAccountLoading.value = true
+  return generation
+}
+
+async function loadNativeForEntry(accountID: number, generation: number): Promise<Account | null> {
+  try {
+    const native = await fetchNativeAccount(accountID)
+    if (generation !== nativeEntryGeneration) return null
+    return native
+  } catch (reason: unknown) {
+    if (generation === nativeEntryGeneration) {
+      nativeAccountError.value = extractApiErrorMessage(reason, '账号信息加载失败')
+      appStore.showError(nativeAccountError.value)
+    }
+    return null
+  } finally {
+    if (generation === nativeEntryGeneration) nativeAccountLoading.value = false
+  }
 }
 
 async function loadNativeEditOptions(): Promise<void> {
@@ -791,16 +806,16 @@ async function loadNativeEditOptions(): Promise<void> {
 }
 
 async function openAccountInfo(account: AccountMonitorAccount): Promise<void> {
-  const generation = ++nativeEntryGeneration
-  const native = await fetchNativeAccount(account.account_id)
+  const generation = beginNativeEntry()
+  const native = await loadNativeForEntry(account.account_id, generation)
   if (!native || generation !== nativeEntryGeneration) return
   selectedNativeAccount.value = native
   showAccountInfoDialog.value = true
 }
 
 async function openAccountEdit(account: AccountMonitorAccount): Promise<void> {
-  const generation = ++nativeEntryGeneration
-  const native = await fetchNativeAccount(account.account_id)
+  const generation = beginNativeEntry()
+  const native = await loadNativeForEntry(account.account_id, generation)
   if (!native || generation !== nativeEntryGeneration) return
   selectedNativeAccount.value = native
   void loadNativeEditOptions()
@@ -808,23 +823,25 @@ async function openAccountEdit(account: AccountMonitorAccount): Promise<void> {
 }
 
 async function openAccountDelete(account: AccountMonitorAccount): Promise<void> {
-  const generation = ++nativeEntryGeneration
-  const native = await fetchNativeAccount(account.account_id)
+  const generation = beginNativeEntry()
+  const native = await loadNativeForEntry(account.account_id, generation)
   if (!native || generation !== nativeEntryGeneration) return
   selectedNativeAccount.value = native
   showDeleteAccountDialog.value = true
 }
 
 async function openAccountMore(account: AccountMonitorAccount, triggerEvent?: MouseEvent): Promise<void> {
-  const generation = ++nativeEntryGeneration
-  const native = await fetchNativeAccount(account.account_id)
+  const triggerRect = triggerEvent?.currentTarget instanceof HTMLElement
+    ? triggerEvent.currentTarget.getBoundingClientRect()
+    : null
+  const generation = beginNativeEntry()
+  const native = await loadNativeForEntry(account.account_id, generation)
   if (!native || generation !== nativeEntryGeneration) return
   selectedNativeAccount.value = native
-  const trigger = triggerEvent?.currentTarget instanceof HTMLElement ? triggerEvent.currentTarget : null
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth
   const viewportHeight = window.innerHeight
-  const floatingPosition = trigger
-    ? getFloatingPanelPosition(trigger.getBoundingClientRect(), viewportWidth, viewportHeight, { maxWidth: 208, maxHeightRatio: 0.7 })
+  const floatingPosition = triggerRect
+    ? getFloatingPanelPosition(triggerRect, viewportWidth, viewportHeight, { maxWidth: 208, maxHeightRatio: 0.7 })
     : null
   const estimatedMenuHeight = Math.min(420, floatingPosition?.maxHeight || 420)
   accountActionMenu.value = {

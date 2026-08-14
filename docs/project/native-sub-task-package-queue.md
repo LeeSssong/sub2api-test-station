@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片均已部署并完成各自既定线上验证；账号监控卡片最新生产记录为 `20260814T102354Z-production-3093579.json`，活动槽 `blue`，不得重复部署同一 SHA。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1 均已部署并完成各自既定线上验证；最新生产记录为 `20260814T181009Z-production-3436954.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：T06-R1 `REFRESH_REQUIRED`。T06 已从已验证的 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成无停机蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API/worker 镜像绑定 source tree `1c30f936e4a4d8c6338d18ace36d71860b58fc1c` 与迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网 `/healthz`、`/readyz`、`/health` 均为 200，核心容器健康。管理员登录态专项验收确认利润页在深色主题下因页面白色背景与继承的浅色文字冲突而近乎全白，同时 `24h`/`31d` 缺少中文词条、表头直接硬编码英文。T06 保持未完成，修复、重新部署和登录态验收闭环前禁止启动 T07。 候选 `d79e9195a024957b05a1939b2685fb7da329fc39` 已通过任务级和最终复审，但落后根 `main@d27cd9e5cdc0de18fa983bc04e2c9f7ccf0886c5` 两个治理文档提交；已要求在同一独立 worktree 创建正式分支、吸收最新 main 并重新验证和终审。
+- 当前唯一发布候选：无。T06-R1 已从最新干净 `main@005ec883f5a8504b8407f62699bb450a10c3e61a` 刷新后，以候选 `d50c47d744b405f54b8bf420de68a59ed70b9e0c` 经根授权合并为 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd`；合并后专项门禁通过，生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 为 `succeeded/promoted`、`rolled_back=false`、`state=promoted`、`downtime_required=false`，活动槽 `green`，source tree `48c97a63e5fffe9a7991bc7ce65eceb98a4d6b35`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网三个健康端点均 200。管理员登录态验收确认利润页深色主题可读、范围和表头中文、今日/24h/31d/刷新原生请求正常、`/api/v1/xingqiao/**` 为 0、无控制面/完整性/unknown 文案。T07 仅可在本任务收尾记录后按顶层任务门禁重新创建，当前仍未启动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -71,7 +71,7 @@
 
 ### T06 利润页移除外部控制面状态
 
-- 当前状态：`VERIFYING`（线上验收失败，等待 T06-R1）。已从 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成 `downtime_required=false` 蓝绿发布，宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`，活动槽 `blue`，公网三个健康端点和核心容器均健康。管理员登录态验收确认页面深色主题可读性和中文本地化不合格；T06 不能转为 `DONE`，需由 T06-R1 修复后重新发布并完成同一专项验收。
+- 当前状态：`DONE`。原始 T06 生产发布记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 保留为历史验收失败证据；缺陷已由 T06-R1 修复并在新的生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 完成闭环。
 
 - 目标：从原生利润页删除外部控制面状态和调用，保留原生利润数据。
 - 范围：仅利润页面、原生 API 使用和测试。
@@ -80,7 +80,7 @@
 
 ### T06-R1 利润页深色主题与中文本地化修复
 
-- 当前状态：`REFRESH_REQUIRED`。用户可见独立顶层任务 `01a00117-6fae-75f0-bbc1-6f340342acdc` 已从最新干净 `main@651bc2fab27544a8cc131137ab351bf8f2f90f89` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e5e5/sub2api搭建`，使用 GPT-5.5、medium，按完整 brainstorming、规格书批准、计划、TDD、独立复审和全分支终审推进。 首轮候选 `d79e9195a024957b05a1939b2685fb7da329fc39` 已达到 READY_FOR_ROOT_REVIEW；根审查确认其相对 `main@d27cd9e5cdc0de18fa983bc04e2c9f7ccf0886c5` 为 main-only 2、candidate-only 6，`git merge-tree` 无冲突，须刷新后重新交付。
+- 当前状态：`DONE`。用户可见独立顶层任务 `01a00117-6fae-75f0-bbc1-6f340342acdc` 已完成 brainstorming、书面规格批准、计划、TDD、fresh implementer/独立 reviewer、最终全分支终审、刷新复核、根授权合并、推送、无停机蓝绿发布和管理员登录态线上验收。候选 `d50c47d744b405f54b8bf420de68a59ed70b9e0c` 已合入 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd`；8/8 页级测试、typecheck、build、diff-check、范围检查通过；无迁移/配置/依赖/GitHub Actions 变化；生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 成功、活动槽 `green`、`downtime_required=false`；线上页面显示中文范围和表头、深色主题可读、原生 API 正常、外部控制面请求为 0。T07 未启动。
 - 目标：修复利润页在深色主题下白底浅字导致内容近乎不可见的问题，并补齐中文范围名称和中文表头。
 - 范围：仅利润页主题样式、`24h`/`31d` 中文词条、表头本地化及相应页级测试。
 - 不包含：财务计算、接口字段、迁移、外部控制面、其他页面视觉重构或 T07。
@@ -122,6 +122,6 @@
 
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
-- 账号监控卡片已完成生产验收；T05 已从最新干净 `main@6b606c731faed504f9368730a910489d08ee8ab3` 进入新的用户可见顶层任务创建与 `DESIGNING` 门禁，旧 detached worktree 继续只作启动审计。
-- T05 在用户明确批准书面规格和实施计划前不得写实现代码；S1 旧候选保持冻结。
+- 账号监控卡片、T05、T06/T06-R1 均已完成生产验收；当前无发布候选。下一任务 T07 必须从最新干净 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd` 创建新的用户可见顶层任务，完成完整 brainstorming、规格书/计划批准和独立 worktree 门禁后才能实施。
+- T07 尚未启动；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

@@ -58,6 +58,14 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
   - `pnpm vitest run src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`: PASS, 45 tests.
   - `pnpm typecheck`: PASS.
 
+## Final Review Migration Schema Fix
+
+- Fix base: `780ef8d90f8221946ada8da085e8df06c6bfe383`.
+- Added PostgreSQL catalog assertions in `TestMigrationsSchema` for the `account_monitor_global_score_weights` table, singleton boolean/NOT NULL/default/primary-key/check contract, the exact four `SMALLINT NOT NULL` weight columns, audit columns/default, the four-weight sum check, and absence of all four threshold columns.
+- Untagged verification: `go test ./internal/repository -run TestMigrationsSchema -count=1` PASS with `[no tests to run]`, as the schema test is behind the `integration` build tag.
+- RED mutation proof: temporarily changed the migration sum check from `= 100` to `= 99`; the PostgreSQL-backed test failed at the new sum-contract assertion with `expected four-weight sum CHECK constraint`. The migration was restored before commit.
+- GREEN verification: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS after restoration.
+
 ## Scope Guards
 
 - `git diff --check efa0ef54cb432e784796add380727bc5366d2d06..HEAD`: PASS.

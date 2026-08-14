@@ -80,7 +80,7 @@
 
 ### T06-R1 利润页深色主题与中文本地化修复
 
-- 当前状态：`DESIGNING`。由用户可见独立顶层任务从本次故障登记后的最新干净 `main` 创建独立 worktree，按完整 brainstorming、规格书批准、计划、TDD、独立复审和全分支终审推进。
+- 当前状态：`DESIGNING`。用户可见独立顶层任务 `01a00117-6fae-75f0-bbc1-6f340342acdc` 已从最新干净 `main@651bc2fab27544a8cc131137ab351bf8f2f90f89` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e5e5/sub2api搭建`，使用 GPT-5.5、medium，按完整 brainstorming、规格书批准、计划、TDD、独立复审和全分支终审推进。
 - 目标：修复利润页在深色主题下白底浅字导致内容近乎不可见的问题，并补齐中文范围名称和中文表头。
 - 范围：仅利润页主题样式、`24h`/`31d` 中文词条、表头本地化及相应页级测试。
 - 不包含：财务计算、接口字段、迁移、外部控制面、其他页面视觉重构或 T07。

@@ -88,7 +88,7 @@
 
 ### T07 全局评分设置
 
-- 当前状态：`DESIGNING`。根总控已在最新推送的 `main@a38fa7bc3e8986288abbf84be218d5683ab252a1` 登记任务，待创建用户可见独立顶层窗口和 worktree；尚无实现、候选、合并或生产变更。
+- 当前状态：`IMPLEMENTING`。用户可见顶层任务 `01a0018d-65fa-7dd2-9393-31d9e1643adc` 已从 `main@efa0ef54cb432e784796add380727bc5366d2d06` 建立独立 worktree 和分支 `codex/t07-global-score-weights`；正式规格 `ae8ae2000` 与修订计划 `3e860e2d1` 已由根总控依据 2026-08-15 用户代审授权复审并批准。顶层任务已获准按 TDD、fresh implementer、逐任务独立复审和最终全分支复审实施；进入终审前必须整合最新根 `main@fc44bde10` 或更新提交。尚无 READY 候选、合并或生产变更。
 - 目标：在未进入具体分组时提供全局评分权重设置。
 - 范围：全局权重持久化/API、账号监控全局设置按钮、复用分组评分弹窗；默认权重保持成本 15、成功率 45、首字延迟 20、总延迟 20。
 - 不包含：分组权重迁移、评分指标增加或调度算法修改。
@@ -111,9 +111,11 @@
 
 ## 串行推进门禁
 
+- 用户已于 2026-08-15 授权唯一发布总控在其离席期间代审并批准既定队列任务的规格书和实施计划；该授权不包含范围扩大、不可逆数据操作、外部付费、安全例外或 `downtime_required=true` 的生产变更。
+
 每个任务包依次经过：
 
-`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 独立任务复审 -> 最终全分支终审 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`
+`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准或根总控依据离席代审授权批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 独立任务复审 -> 最终全分支终审 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`
 
 未经用户明确批准书面规格书，不得调用 writing-plans 或开始实施。任何一步出现范围漂移、冲突、`main` 漂移、验证失败、线上验收未闭环或 `downtime_required=true`，队列立即暂停，不启动下一任务包。
 

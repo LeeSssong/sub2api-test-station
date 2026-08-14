@@ -1,10 +1,10 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, ref } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, exportList, listCostExceptions, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, controlPlaneLedger, controlPlaneDecision, aoaToSheet, sheetAddAoa, saveAs, xlsxWrite } = vi.hoisted(() => {
+const { list, exportList, listCostExceptions, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, observedXingqiaoRequests, aoaToSheet, sheetAddAoa, saveAs, xlsxWrite } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -21,18 +21,13 @@ const { list, exportList, listCostExceptions, getStats, getSnapshotV2, getById, 
     getModelStats: vi.fn(),
     listErrorLogs: vi.fn(),
     routeQuery: {} as Record<string, string>,
-    controlPlaneLedger: vi.fn(),
-    controlPlaneDecision: vi.fn(),
+    observedXingqiaoRequests: [] as string[],
 		aoaToSheet: vi.fn(() => ({})),
 		sheetAddAoa: vi.fn(),
 		saveAs: vi.fn(),
 		xlsxWrite: vi.fn(() => new Uint8Array([1, 2, 3])),
   }
 })
-
-vi.mock('@/api/controlPlane', () => ({
-  controlPlaneAPI: { ledger: controlPlaneLedger, decision: controlPlaneDecision },
-}))
 
 const messages: Record<string, string> = {
   'admin.dashboard.timeRange': 'Time Range',
@@ -126,7 +121,26 @@ vi.mock('vue-router', () => ({
 }))
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
+
+let originalXhrOpen: typeof XMLHttpRequest.prototype.open
+
+beforeAll(() => {
+  originalXhrOpen = XMLHttpRequest.prototype.open
+  XMLHttpRequest.prototype.open = function (...args: Parameters<typeof XMLHttpRequest.prototype.open>) {
+    const url = String(args[1] ?? '')
+    if (url.includes('/xingqiao/')) {
+      observedXingqiaoRequests.push(url)
+    }
+    return originalXhrOpen.apply(this, args)
+  }
+})
+
+afterAll(() => {
+  XMLHttpRequest.prototype.open = originalXhrOpen
+})
+
 const UsageFiltersStub = defineComponent({
+  emits: ['refresh'],
   setup(_, { expose }) {
     const userKeyword = ref('')
     let userSearchRevision = 0
@@ -141,7 +155,7 @@ const UsageFiltersStub = defineComponent({
     })
     return { userKeyword }
   },
-  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><slot name="after-reset" /></div>',
+  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><button data-test="refresh-filter" @click="$emit(\'refresh\')">refresh</button><slot name="after-reset" /></div>',
 })
 const UsageTableStub = {
   name: 'UsageTable',
@@ -217,6 +231,7 @@ describe('admin UsageView route filters', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
+    observedXingqiaoRequests.length = 0
     list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
     getStats.mockReset().mockResolvedValue({
       total_requests: 0,
@@ -231,11 +246,6 @@ describe('admin UsageView route filters', () => {
     getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
     getModelStats.mockReset().mockResolvedValue({ models: [] })
     getById.mockReset()
-    controlPlaneLedger.mockReset().mockResolvedValue({
-      items: {},
-      freshness: { completeness: 'complete', calculation_version: 'accounting-v1' },
-    })
-    controlPlaneDecision.mockReset().mockResolvedValue({ page: 'accounting', requested_mode: 'legacy_only', effective_mode: 'legacy_only', use_external: false, degraded: false, reason: 'legacy_default' })
   })
 
   afterEach(() => {
@@ -298,43 +308,45 @@ describe('admin UsageView route filters', () => {
     expect(dialog.props()).toMatchObject({ usageId: 11, scope: 'admin', show: true })
   })
 
-  it('keeps legacy usage pagination and rows in shadow mode while loading ledger freshness', async () => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'shadow_building', effective_mode: 'shadow_building', use_external: false, degraded: false, reason: 'legacy_visible_during_comparison' })
-    const wrapper = mountRouteFilteredUsageView()
-    await flushPromises()
-
-    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
-    expect(controlPlaneLedger).toHaveBeenCalledWith(expect.objectContaining({ start_date: expect.any(String), end_date: expect.any(String) }))
-    expect(wrapper.text()).toContain('来源：现有系统')
-    expect(wrapper.text()).toContain('完整性：complete')
-  })
-
-  it.each([401, 403])('keeps usage local when the control plane returns %s', async (status) => {
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-accounting', run_id: 'run-accounting', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
-    controlPlaneLedger.mockRejectedValueOnce({ status, message: 'control plane rejected request' })
-    const wrapper = mountRouteFilteredUsageView()
-    await flushPromises()
-
-    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
-    expect(wrapper.text()).toContain('控制面暂时不可用')
-  })
-
-  it('applies trusted accounting totals while preserving legacy detail rows and filters', async () => {
+  it('uses native usage stats and rows without rendering control-plane status', async () => {
     getStats.mockResolvedValueOnce({
       total_requests: 7, total_input_tokens: 10, total_output_tokens: 20, total_cache_tokens: 0,
       total_cache_creation_tokens: 0, total_cache_read_tokens: 0, total_tokens: 30,
       total_cost: 2, total_actual_cost: 1, total_account_cost: 1, average_duration_ms: 100,
     })
-    controlPlaneDecision.mockResolvedValueOnce({ page: 'accounting', requested_mode: 'external_primary', effective_mode: 'external_primary', use_external: true, degraded: false, reason: 'comparison_gate_passed', report_set_id: 'set-accounting', run_id: 'run-accounting', operator: 'operator@example.com', compared_at: '2026-08-10T09:00:00Z' })
-    controlPlaneLedger.mockResolvedValueOnce({
-      items: { requests: 42, revenue: '9.50', cost: '4.25' },
-      freshness: { completeness: 'complete', calculation_version: 'accounting-v1' },
-    })
+
     const wrapper = mountRouteFilteredUsageView()
     await flushPromises()
 
-    expect((wrapper.vm as any).usageStats).toMatchObject({ total_requests: 42, total_cost: 9.5, total_actual_cost: 4.25, total_tokens: 30 })
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ start_date: expect.any(String), end_date: expect.any(String) }))
+    expect((wrapper.vm as any).usageStats).toMatchObject({
+      total_requests: 7,
+      total_cost: 2,
+      total_actual_cost: 1,
+      total_tokens: 30,
+    })
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
+    expect(wrapper.text()).not.toContain('完整性')
+    expect(wrapper.text()).not.toContain('来源：现有系统')
+    expect(wrapper.text()).not.toContain('来源：控制面')
+    expect(observedXingqiaoRequests).toEqual([])
+  })
+
+  it('refreshes usage data through native endpoints without control-plane status', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+    getStats.mockClear()
+    list.mockClear()
+
+    await wrapper.getComponent(UsageFiltersStub).vm.$emit('refresh')
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ start_date: expect.any(String), end_date: expect.any(String) }))
+    expect(wrapper.text()).not.toContain('控制面暂时不可用')
+    expect(wrapper.text()).not.toContain('完整性')
+    expect(observedXingqiaoRequests).toEqual([])
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {

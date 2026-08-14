@@ -11,6 +11,8 @@ const {
   runAll,
   runOne,
   updateAccount,
+  getAccountById,
+  deleteAccount,
   updateProcurementCost,
   updateGroupScoreWeights,
   resetGroupScoreWeights,
@@ -33,6 +35,8 @@ const {
   runAll: vi.fn(),
   runOne: vi.fn(),
   updateAccount: vi.fn(),
+  getAccountById: vi.fn(),
+  deleteAccount: vi.fn(),
   updateProcurementCost: vi.fn(),
   updateGroupScoreWeights: vi.fn(),
   resetGroupScoreWeights: vi.fn(),
@@ -57,7 +61,7 @@ vi.mock('@/api/controlPlane', () => ({
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accountMonitor: { list, getConcurrency, runAll, runOne, updateGroupScoreWeights, resetGroupScoreWeights },
-    accounts: { update: updateAccount, updateProcurementCost },
+    accounts: { update: updateAccount, updateProcurementCost, getById: getAccountById, delete: deleteAccount },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
       operations,
@@ -103,13 +107,17 @@ const AccountMonitorCardStub = defineComponent({
     account: { type: Object, required: true },
     concurrency: { type: Object, default: null },
   },
-  emits: ['updatePriority', 'editCost', 'refresh'],
+  emits: ['updatePriority', 'editCost', 'refresh', 'accountInfo', 'accountEdit', 'accountDelete', 'accountMore'],
   template: `
     <article data-test="monitor-card" :data-account-id="account.account_id">
       <span data-test="card-name">{{ account.name }}</span>
       <span data-test="card-concurrency">{{ concurrency ? concurrency.current + ' / ' + concurrency.limit : '-- / --' }}</span>
       <span v-if="concurrency?.delayed" data-test="card-delayed">数据延迟</span>
       <button data-test="edit-cost" type="button" @click="$emit('editCost', account)">edit</button>
+      <button data-test="account-info" type="button" @click="$emit('accountInfo', account)">info</button>
+      <button data-test="account-edit" type="button" @click="$emit('accountEdit', account)">edit account</button>
+      <button data-test="account-delete" type="button" @click="$emit('accountDelete', account)">delete account</button>
+      <button data-test="account-more" type="button" @click="$emit('accountMore', account)">more</button>
     </article>
   `,
 })
@@ -133,6 +141,20 @@ const AccountMonitorCostDialogStub = defineComponent({
       <button data-test="dialog-clear" @click="$emit('clear')">clear</button>
     </div>
   `,
+})
+
+const NativeDialogStub = defineComponent({
+  name: 'NativeDialogStub',
+  props: { show: { type: Boolean, required: true }, account: { type: Object, default: null } },
+  emits: ['close', 'updated', 'reauthorized'],
+  template: '<div v-if="show" data-test="native-dialog"><span v-if="account">{{ account.id }}</span></div>',
+})
+
+const AccountActionMenuStub = defineComponent({
+  name: 'AccountActionMenuStub',
+  props: { show: { type: Boolean, required: true }, account: { type: Object, default: null } },
+  emits: ['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'],
+  template: '<div v-if="show" data-test="account-action-menu"><button data-test="menu-test" @click="$emit(\'test\', account)">test</button></div>',
 })
 
 const baseAccount = {
@@ -263,6 +285,14 @@ function mountView(options: { useRealCard?: boolean } = {}) {
         AppLayout: { template: '<div><slot /></div>' },
         ...(options.useRealCard ? {} : { AccountMonitorCard: AccountMonitorCardStub }),
         AccountMonitorCostDialog: AccountMonitorCostDialogStub,
+        AccountMonitorAccountInfoDialog: NativeDialogStub,
+        EditAccountModal: NativeDialogStub,
+        ConfirmDialog: defineComponent({ name: 'ConfirmDialogStub', props: { show: Boolean }, emits: ['confirm', 'cancel'], template: '<div v-if="show" data-test="confirm-dialog"><button data-test="confirm" @click="$emit(\'confirm\')">confirm</button></div>' }),
+        AccountActionMenu: AccountActionMenuStub,
+        AccountTestModal: NativeDialogStub,
+        AccountStatsModal: NativeDialogStub,
+        ScheduledTestsPanel: NativeDialogStub,
+        ReAuthAccountModal: NativeDialogStub,
         Icon: true,
       },
     },
@@ -305,6 +335,25 @@ describe('admin account monitor view V3', () => {
     runAll.mockReset().mockResolvedValue({ completed: 4 })
     runOne.mockReset().mockResolvedValue({ account_id: 10, status: 'success' })
     updateAccount.mockReset().mockResolvedValue({ ...baseAccount, priority: 4 })
+    getAccountById.mockReset().mockResolvedValue({
+      id: 10,
+      name: 'Rank one A',
+      platform: 'openai',
+      type: 'oauth',
+      status: 'active',
+      schedulable: true,
+      priority: 1,
+      proxy_id: null,
+      concurrency: 0,
+      error_message: null,
+      last_used_at: null,
+      expires_at: null,
+      auto_pause_on_expired: false,
+      created_at: '2026-08-04T04:00:00Z',
+      updated_at: '2026-08-04T04:00:00Z',
+      credentials_status: { has_api_key: true },
+    })
+    deleteAccount.mockReset().mockResolvedValue({ message: 'deleted' })
     updateProcurementCost.mockReset().mockResolvedValue({
       id: 10,
       procurement_cost_cny: 125.5,
@@ -904,6 +953,53 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('监控数据刷新失败')
     expect(showError).toHaveBeenCalledWith(expectedError)
     expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('fetches the compact card account by id and opens the native account information entry', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+
+    await card.get('[data-test="account-info"]').trigger('click')
+    await flushPromises()
+
+    expect(getAccountById).toHaveBeenCalledTimes(1)
+    expect(getAccountById).toHaveBeenCalledWith(10)
+    expect(wrapper.get('[data-test="native-dialog"]').text()).toContain('10')
+  })
+
+  it('deduplicates concurrent same-id entry requests and reuses the native edit/delete/menu shells', async () => {
+    let resolveAccount!: (account: typeof baseAccount) => void
+    getAccountById.mockImplementationOnce(() => new Promise((resolve) => { resolveAccount = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+
+    const infoClick = card.get('[data-test="account-info"]').trigger('click')
+    const editClick = card.get('[data-test="account-edit"]').trigger('click')
+    const moreClick = card.get('[data-test="account-more"]').trigger('click')
+    expect(getAccountById).toHaveBeenCalledTimes(1)
+    resolveAccount({ ...baseAccount, id: 10, type: 'oauth' } as never)
+    await Promise.all([infoClick, editClick, moreClick])
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="native-dialog"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="account-action-menu"]').exists()).toBe(true)
+  })
+
+  it('uses native delete confirmation and reloads the compact monitor projection after confirmation', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+    await card.get('[data-test="account-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="confirm-dialog"]').exists()).toBe(true)
+    list.mockClear()
+    await wrapper.get('[data-test="confirm"]').trigger('click')
+    await flushPromises()
+    expect(deleteAccount).toHaveBeenCalledWith(10)
+    expect(list).toHaveBeenCalledWith('24h', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('invokes and renders no revenue, operations, profit, accounting, ledger, history, reconciliation, adjustment, or exception surface', async () => {

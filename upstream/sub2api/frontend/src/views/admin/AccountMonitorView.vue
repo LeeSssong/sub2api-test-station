@@ -155,7 +155,15 @@
         {{ scopedAccounts.length ? t('admin.accountMonitor.empty.filtered') : t('admin.accountMonitor.empty.pool') }}
       </div>
 
-      <section v-else class="grid grid-cols-1 gap-4 lg:grid-cols-2" data-test="account-card-grid" aria-label="账号排名卡片">
+      <div v-if="nativeAccountLoading" class="text-xs text-gray-500 dark:text-gray-400" data-test="account-native-loading" role="status">
+        正在加载账号详情…
+      </div>
+      <div v-if="nativeAccountError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300" data-test="account-native-error" role="alert">
+        <span>{{ nativeAccountError }}</span>
+        <button type="button" class="btn btn-secondary shrink-0 px-3 py-1.5 text-xs" @click="nativeAccountError = null">关闭</button>
+      </div>
+
+      <section v-if="projection && filteredAccounts.length" class="grid grid-cols-1 gap-4 lg:grid-cols-2" data-test="account-card-grid" aria-label="账号排名卡片">
         <AccountMonitorCard
           v-for="account in filteredAccounts"
           :key="account.account_id"
@@ -169,6 +177,10 @@
           @refresh="handleRunOne"
           @update-priority="updatePriority"
           @edit-cost="openCostDialog"
+          @account-info="openAccountInfo"
+          @account-edit="openAccountEdit"
+          @account-delete="openAccountDelete"
+          @account-more="openAccountMore"
         />
       </section>
       </div>
@@ -196,6 +208,58 @@
         @restore-auto="restoreAccountMultiplier"
         @clear="clearProcurementCost"
       />
+      <AccountMonitorAccountInfoDialog
+        :show="showAccountInfoDialog"
+        :account="selectedNativeAccount"
+        @close="closeAccountInfo"
+      />
+      <EditAccountModal
+        :show="showEditAccountDialog"
+        :account="selectedNativeAccount"
+        :proxies="editProxies"
+        :groups="editGroups"
+        @close="closeEditAccount"
+        @updated="handleNativeAccountUpdated"
+      />
+      <ConfirmDialog
+        :show="showDeleteAccountDialog"
+        title="删除账号"
+        :message="`确定要删除账号“${selectedNativeAccount?.name ?? ''}”吗？此操作不可撤销。`"
+        confirm-text="删除"
+        cancel-text="取消"
+        :danger="true"
+        @confirm="confirmDeleteAccount"
+        @cancel="closeDeleteAccount"
+      />
+      <ConfirmDialog
+        :show="showSparkShadowDialog"
+        title="创建 Spark 影子账号"
+        :message="`确定要为账号“${creatingSparkShadow?.name ?? ''}”创建 Spark 影子账号吗？`"
+        confirm-text="创建"
+        cancel-text="取消"
+        @confirm="confirmCreateSparkShadow"
+        @cancel="showSparkShadowDialog = false"
+      />
+      <AccountActionMenu
+        :show="accountActionMenu.show"
+        :account="selectedNativeAccount"
+        :position="accountActionMenu.position"
+        @close="closeAccountMore"
+        @test="handleTest"
+        @stats="handleViewStats"
+        @schedule="handleSchedule"
+        @duplicate="handleDuplicateAccount"
+        @reauth="handleReAuth"
+        @refresh-token="handleRefresh"
+        @recover-state="handleRecoverState"
+        @reset-quota="handleResetQuota"
+        @set-privacy="handleSetPrivacy"
+        @create-spark-shadow="handleCreateSparkShadow"
+      />
+      <AccountTestModal :show="showTestDialog" :account="testingAccount" @close="closeTestDialog" />
+      <AccountStatsModal :show="showStatsDialog" :account="statsAccount" @close="closeStatsDialog" />
+      <ScheduledTestsPanel :show="showScheduleDialog" :account-id="scheduleAccount?.id ?? null" :model-options="scheduleModelOptions" @close="closeScheduleDialog" />
+      <ReAuthAccountModal :show="showReAuthDialog" :account="reAuthAccount" @close="closeReAuthDialog" @reauthorized="handleNativeAccountUpdated" />
     </div>
   </AppLayout>
 </template>
@@ -214,12 +278,21 @@ import type {
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
+import AccountMonitorAccountInfoDialog from '@/components/admin/account-monitor/AccountMonitorAccountInfoDialog.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
 import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { EditAccountModal } from '@/components/account'
+import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
+import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
+import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
+import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
+import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import type { Account, AdminGroup, Proxy as AccountProxy, ClaudeModel } from '@/types'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type EditableWeights = Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>
@@ -264,6 +337,25 @@ const showCostDialog = ref(false)
 const savingCost = ref(false)
 const costDialogError = ref<string | null>(null)
 const selectedCostAccount = ref<AccountMonitorAccount | null>(null)
+const selectedNativeAccount = ref<Account | null>(null)
+const showAccountInfoDialog = ref(false)
+const showEditAccountDialog = ref(false)
+const showDeleteAccountDialog = ref(false)
+const editProxies = ref<AccountProxy[]>([])
+const editGroups = ref<AdminGroup[]>([])
+const accountActionMenu = ref<{ show: boolean; position: { top: number; left: number } | null }>({ show: false, position: null })
+const showTestDialog = ref(false)
+const testingAccount = ref<Account | null>(null)
+const showStatsDialog = ref(false)
+const statsAccount = ref<Account | null>(null)
+const showScheduleDialog = ref(false)
+const scheduleAccount = ref<Account | null>(null)
+const scheduleModelOptions = ref<{ value: string; label: string }[]>([])
+const showReAuthDialog = ref(false)
+const reAuthAccount = ref<Account | null>(null)
+const nativeAccountRequests = new Map<number, Promise<Account | null>>()
+const nativeAccountError = ref<string | null>(null)
+const nativeAccountLoading = ref(false)
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
@@ -660,6 +752,240 @@ async function resetScoreWeights() {
     appStore.showError(scoreWeightsError.value)
   } finally {
     savingScoreWeights.value = false
+  }
+}
+
+async function fetchNativeAccount(accountID: number): Promise<Account | null> {
+  const pending = nativeAccountRequests.get(accountID)
+  if (pending) return pending
+  nativeAccountError.value = null
+  nativeAccountLoading.value = true
+  const request = adminAPI.accounts.getById(accountID)
+    .then((account) => {
+      selectedNativeAccount.value = account
+      return account
+    })
+    .catch((reason: unknown) => {
+      nativeAccountError.value = extractApiErrorMessage(reason, '账号信息加载失败')
+      appStore.showError(nativeAccountError.value)
+      return null
+    })
+    .finally(() => {
+      nativeAccountRequests.delete(accountID)
+      nativeAccountLoading.value = nativeAccountRequests.size > 0
+    })
+  nativeAccountRequests.set(accountID, request)
+  return request
+}
+
+async function loadNativeEditOptions(): Promise<void> {
+  try {
+    const [groups, proxies] = await Promise.all([
+      adminAPI.groups.getAllIncludingInactive(),
+      adminAPI.proxies.getAll(),
+    ])
+    editGroups.value = groups
+    editProxies.value = proxies
+  } catch {
+    // Native editor remains usable for fields that do not need a proxy/group list.
+  }
+}
+
+async function openAccountInfo(account: AccountMonitorAccount): Promise<void> {
+  const native = await fetchNativeAccount(account.account_id)
+  if (!native) return
+  showAccountInfoDialog.value = true
+}
+
+async function openAccountEdit(account: AccountMonitorAccount): Promise<void> {
+  const native = await fetchNativeAccount(account.account_id)
+  if (!native) return
+  void loadNativeEditOptions()
+  showEditAccountDialog.value = true
+}
+
+async function openAccountDelete(account: AccountMonitorAccount): Promise<void> {
+  const native = await fetchNativeAccount(account.account_id)
+  if (!native) return
+  showDeleteAccountDialog.value = true
+}
+
+async function openAccountMore(account: AccountMonitorAccount): Promise<void> {
+  const native = await fetchNativeAccount(account.account_id)
+  if (!native) return
+  accountActionMenu.value = {
+    show: true,
+    position: {
+      top: Math.max(12, Math.min(window.innerHeight - 420, 128)),
+      left: Math.max(12, window.innerWidth - 224),
+    },
+  }
+}
+
+function closeAccountInfo(): void {
+  showAccountInfoDialog.value = false
+}
+
+function closeEditAccount(): void {
+  showEditAccountDialog.value = false
+}
+
+function closeDeleteAccount(): void {
+  if (!showDeleteAccountDialog.value) return
+  showDeleteAccountDialog.value = false
+}
+
+async function handleNativeAccountUpdated(): Promise<void> {
+  showEditAccountDialog.value = false
+  showReAuthDialog.value = false
+  reAuthAccount.value = null
+  await load(activeRange.value, { notifyError: false })
+}
+
+async function confirmDeleteAccount(): Promise<void> {
+  const account = selectedNativeAccount.value
+  if (!account) return
+  try {
+    await adminAPI.accounts.delete(account.id)
+    closeDeleteAccount()
+    selectedNativeAccount.value = null
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('账号已删除')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '删除账号失败'))
+  }
+}
+
+function closeAccountMore(): void {
+  accountActionMenu.value = { show: false, position: null }
+}
+
+function closeTestDialog(): void {
+  showTestDialog.value = false
+  testingAccount.value = null
+}
+
+function closeStatsDialog(): void {
+  showStatsDialog.value = false
+  statsAccount.value = null
+}
+
+function closeScheduleDialog(): void {
+  showScheduleDialog.value = false
+  scheduleAccount.value = null
+  scheduleModelOptions.value = []
+}
+
+function closeReAuthDialog(): void {
+  showReAuthDialog.value = false
+  reAuthAccount.value = null
+}
+
+function handleTest(account: Account): void {
+  closeAccountMore()
+  testingAccount.value = account
+  showTestDialog.value = true
+}
+
+function handleViewStats(account: Account): void {
+  closeAccountMore()
+  statsAccount.value = account
+  showStatsDialog.value = true
+}
+
+async function handleSchedule(account: Account): Promise<void> {
+  closeAccountMore()
+  scheduleAccount.value = account
+  scheduleModelOptions.value = []
+  showScheduleDialog.value = true
+  try {
+    const models = await adminAPI.accounts.getAvailableModels(account.id)
+    scheduleModelOptions.value = models.map((model: ClaudeModel) => ({ value: model.id, label: model.display_name || model.id }))
+  } catch {
+    scheduleModelOptions.value = []
+  }
+}
+
+function handleReAuth(account: Account): void {
+  closeAccountMore()
+  reAuthAccount.value = account
+  showReAuthDialog.value = true
+}
+
+async function handleDuplicateAccount(account: Account): Promise<void> {
+  closeAccountMore()
+  try {
+    const duplicate = await adminAPI.accounts.duplicate(account.id)
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess(`账号“${duplicate.name}”已复制`)
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '复制账号失败'))
+  }
+}
+
+async function handleRefresh(account: Account): Promise<void> {
+  closeAccountMore()
+  try {
+    await adminAPI.accounts.refreshCredentials(account.id)
+    await load(activeRange.value, { notifyError: false })
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '刷新凭据失败'))
+  }
+}
+
+async function handleRecoverState(account: Account): Promise<void> {
+  closeAccountMore()
+  try {
+    await adminAPI.accounts.recoverState(account.id)
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('账号状态已恢复')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '恢复账号状态失败'))
+  }
+}
+
+async function handleResetQuota(account: Account): Promise<void> {
+  closeAccountMore()
+  try {
+    await adminAPI.accounts.resetAccountQuota(account.id)
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('账号配额已重置')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '重置账号配额失败'))
+  }
+}
+
+async function handleSetPrivacy(account: Account): Promise<void> {
+  closeAccountMore()
+  try {
+    await adminAPI.accounts.setPrivacy(account.id)
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('账号隐私设置已更新')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '更新账号隐私设置失败'))
+  }
+}
+
+const creatingSparkShadow = ref<Account | null>(null)
+const showSparkShadowDialog = ref(false)
+
+function handleCreateSparkShadow(account: Account): void {
+  closeAccountMore()
+  creatingSparkShadow.value = account
+  showSparkShadowDialog.value = true
+}
+
+async function confirmCreateSparkShadow(): Promise<void> {
+  const account = creatingSparkShadow.value
+  if (!account) return
+  try {
+    await adminAPI.accounts.createSparkShadow(account.id, { name: `${account.name} (Spark)` })
+    showSparkShadowDialog.value = false
+    creatingSparkShadow.value = null
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('Spark 影子账号已创建')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '创建 Spark 影子账号失败'))
   }
 }
 

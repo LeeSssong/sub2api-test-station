@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片均已部署并完成各自既定线上验证；账号监控卡片最新生产记录为 `20260814T102354Z-production-3093579.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：T06 `VERIFYING`。网络恢复后，根任务从已验证的 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成无停机蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API/worker 镜像绑定 source tree `1c30f936e4a4d8c6338d18ace36d71860b58fc1c` 与迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网 `/healthz`、`/readyz`、`/health` 均为 200，核心容器健康。当前只缺管理员登录态利润页专项验收；两个可用浏览器会话均无登录态，未读取或代填凭据。T07 仍未启动。
+- 当前唯一发布候选：T06-R1 `DESIGNING`。T06 已从已验证的 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成无停机蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API/worker 镜像绑定 source tree `1c30f936e4a4d8c6338d18ace36d71860b58fc1c` 与迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网 `/healthz`、`/readyz`、`/health` 均为 200，核心容器健康。管理员登录态专项验收确认利润页在深色主题下因页面白色背景与继承的浅色文字冲突而近乎全白，同时 `24h`/`31d` 缺少中文词条、表头直接硬编码英文。T06 保持未完成，修复、重新部署和登录态验收闭环前禁止启动 T07。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -71,12 +71,20 @@
 
 ### T06 利润页移除外部控制面状态
 
-- 当前状态：`VERIFYING`。已从 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成 `downtime_required=false` 蓝绿发布，宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`，活动槽 `blue`，公网三个健康端点和核心容器均健康。待管理员登录态完成利润页初载、reload、手动刷新、范围切换、无 `/api/v1/xingqiao/**` 请求及无控制面/完整性/unknown 状态专项验收后，方可转为 `DONE` 并清理候选。
+- 当前状态：`VERIFYING`（线上验收失败，等待 T06-R1）。已从 `main@04349dda8f461f51aabb5f9fc0a3e2f6af251517` 完成 `downtime_required=false` 蓝绿发布，宿主记录 `/var/lib/sub2api/release-records/20260814T154749Z-production-3329818.json` 为 `succeeded/promoted`，活动槽 `blue`，公网三个健康端点和核心容器均健康。管理员登录态验收确认页面深色主题可读性和中文本地化不合格；T06 不能转为 `DONE`，需由 T06-R1 修复后重新发布并完成同一专项验收。
 
 - 目标：从原生利润页删除外部控制面状态和调用，保留原生利润数据。
 - 范围：仅利润页面、原生 API 使用和测试。
 - 不包含：成本公式修改或其他页面。
 - 验收：利润页正常加载原生数据；无外部控制面 banner、unknown 状态或网络调用。
+
+### T06-R1 利润页深色主题与中文本地化修复
+
+- 当前状态：`DESIGNING`。由用户可见独立顶层任务从本次故障登记后的最新干净 `main` 创建独立 worktree，按完整 brainstorming、规格书批准、计划、TDD、独立复审和全分支终审推进。
+- 目标：修复利润页在深色主题下白底浅字导致内容近乎不可见的问题，并补齐中文范围名称和中文表头。
+- 范围：仅利润页主题样式、`24h`/`31d` 中文词条、表头本地化及相应页级测试。
+- 不包含：财务计算、接口字段、迁移、外部控制面、其他页面视觉重构或 T07。
+- 验收：深色主题卡片和表格内容清晰可读；范围按钮为中文；表头为中文且无硬编码英文；原 T06 的刷新、范围切换、原生 API 和无外部控制面验收继续通过。
 
 ### T07 全局评分设置
 

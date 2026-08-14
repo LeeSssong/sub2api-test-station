@@ -33,3 +33,21 @@ PASS
 ## Handoff readiness
 
 READY_FOR_ROOT_REVIEW criteria are met for the T05 feature branch. No migration, configuration change, downtime, merge, push, deployment, or production write is included.
+
+## Refreshed final review after root main merge
+
+- Refresh main: `689153da88110923ec30406a830b377de2108eb9`
+- Refreshed candidate reviewed: `5d0ca4201372034150a38a14cf85c0915c436b9b`
+- Verdict: PASS
+
+### Checks
+
+- Diff scoped vs current main: PASS. `689153da8..5d0ca420` changes only five T05 spec/plan/report files plus `UsageView.vue` and `UsageView.spec.ts`.
+- Root global docs preserved: PASS. `docs/project/native-sub-task-package-queue.md` and `docs/project/project-progress.md` have no diff vs `main@689153da8`.
+- UsageView native-only: PASS. The page removes `ReadModelStatus`, control-plane imports/state, external decision/ledger calls, `accountingLedger()`, and external stats overwrite logic.
+- Tests/verification evidence sufficient: PASS. The spec removes control-plane mocks and adds native stats/refresh assertions with no control-plane status text and no observed `/xingqiao` request; controller evidence records targeted Vitest, typecheck, diff checks, forbidden guard, and merge-tree all passing.
+- Forbidden actions/scope drift: PASS. No backend, config, GitHub Actions, profit page, account monitor, scheduler, external-primary, relay-ops, deployment, production, or protected project-doc files are changed.
+
+### READY_FOR_ROOT_REVIEW suitability
+
+The refreshed T05 branch is suitable for `READY_FOR_ROOT_REVIEW` from `main@689153da8`.

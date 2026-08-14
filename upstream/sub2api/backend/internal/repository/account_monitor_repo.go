@@ -761,6 +761,56 @@ func (r *accountMonitorRepository) LoadGroupScoreWeights(ctx context.Context, gr
 	return weights, nil
 }
 
+func (r *accountMonitorRepository) LoadGlobalScoreWeights(ctx context.Context) (service.AccountMonitorScoreWeights, error) {
+	var weights service.AccountMonitorScoreWeights
+	err := r.db.QueryRowContext(ctx, `
+		SELECT cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at
+		FROM account_monitor_global_score_weights
+		WHERE singleton = TRUE
+	`).Scan(&weights.Cost, &weights.Success, &weights.TTFT, &weights.Latency, &weights.UpdatedBy, &weights.UpdatedAt)
+	if err != nil {
+		return service.AccountMonitorScoreWeights{}, err
+	}
+	return weights, nil
+}
+
+func (r *accountMonitorRepository) SaveGlobalScoreWeights(ctx context.Context, actorID int64, weights service.AccountMonitorScoreWeights) (service.AccountMonitorScoreWeights, error) {
+	if actorID <= 0 {
+		return service.AccountMonitorScoreWeights{}, errors.New("invalid actor id")
+	}
+	if err := validateFourScoreWeights(weights); err != nil {
+		return service.AccountMonitorScoreWeights{}, err
+	}
+	var saved service.AccountMonitorScoreWeights
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO account_monitor_global_score_weights (
+			singleton, cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at
+		) VALUES (TRUE, $1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (singleton) DO UPDATE SET
+			cost_weight = EXCLUDED.cost_weight,
+			success_weight = EXCLUDED.success_weight,
+			ttft_weight = EXCLUDED.ttft_weight,
+			latency_weight = EXCLUDED.latency_weight,
+			updated_by = EXCLUDED.updated_by,
+			updated_at = EXCLUDED.updated_at
+		RETURNING cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at
+	`, weights.Cost, weights.Success, weights.TTFT, weights.Latency, actorID).Scan(
+		&saved.Cost, &saved.Success, &saved.TTFT, &saved.Latency, &saved.UpdatedBy, &saved.UpdatedAt,
+	)
+	if err != nil {
+		return service.AccountMonitorScoreWeights{}, err
+	}
+	return saved, nil
+}
+
+func (r *accountMonitorRepository) ResetGlobalScoreWeights(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM account_monitor_global_score_weights
+		WHERE singleton = TRUE
+	`)
+	return err
+}
+
 func (r *accountMonitorRepository) SaveGroupScoreWeights(
 	ctx context.Context,
 	groupID, actorID int64,
@@ -817,6 +867,16 @@ func validateGroupScoreWeights(weights service.AccountMonitorScoreWeights) error
 	}
 	if weights.LatencyTargetMS < 0 || weights.LatencyLimitMS <= weights.LatencyTargetMS {
 		return errors.New("latency target must be non-negative and less than limit")
+	}
+	return nil
+}
+
+func validateFourScoreWeights(weights service.AccountMonitorScoreWeights) error {
+	if weights.Cost < 0 || weights.Success < 0 || weights.TTFT < 0 || weights.Latency < 0 {
+		return errors.New("score weights must be non-negative")
+	}
+	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
+		return errors.New("score weights must sum to 100")
 	}
 	return nil
 }

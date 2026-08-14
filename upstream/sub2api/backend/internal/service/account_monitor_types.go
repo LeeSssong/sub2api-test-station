@@ -48,6 +48,16 @@ type AccountMonitorScoreWeights struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type AccountMonitorGlobalScoreWeightsResponse struct {
+	Cost      int        `json:"cost"`
+	Success   int        `json:"success"`
+	TTFT      int        `json:"ttft"`
+	Latency   int        `json:"latency"`
+	UpdatedBy int64      `json:"updated_by"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	IsDefault bool       `json:"is_default"`
+}
+
 type AccountMonitorGroup struct {
 	ID                      int64                        `json:"id"`
 	Name                    string                       `json:"name"`
@@ -310,6 +320,9 @@ type AccountMonitorRepository interface {
 	ListHistory(ctx context.Context, accountID int64, limit int) ([]AccountMonitorProbeResult, error)
 	DeleteBefore(ctx context.Context, before time.Time) error
 	ListGroups(ctx context.Context) ([]AccountMonitorGroup, error)
+	LoadGlobalScoreWeights(ctx context.Context) (AccountMonitorScoreWeights, error)
+	SaveGlobalScoreWeights(ctx context.Context, actorID int64, weights AccountMonitorScoreWeights) (AccountMonitorScoreWeights, error)
+	ResetGlobalScoreWeights(ctx context.Context) error
 	LoadGroupScoreWeights(ctx context.Context, groupID int64) (AccountMonitorScoreWeights, error)
 	SaveGroupScoreWeights(ctx context.Context, groupID, actorID int64, weights AccountMonitorScoreWeights) error
 	ResetGroupScoreWeights(ctx context.Context, groupID int64) error

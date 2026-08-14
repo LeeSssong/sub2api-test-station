@@ -47,6 +47,8 @@ const (
 	accountMonitorAbnormalScoreCap             = 70.0
 )
 
+var ErrAccountMonitorInvalidScoreWeights = errors.New("invalid account monitor score weights")
+
 type accountMonitorProbeConnection func(
 	context.Context,
 	int64,
@@ -1626,6 +1628,76 @@ func (s *AccountMonitorService) UpdateSettings(
 		return AccountMonitorSettings{}, err
 	}
 	return s.loadSettings(ctx)
+}
+
+func (s *AccountMonitorService) GetGlobalScoreWeights(ctx context.Context) (AccountMonitorGlobalScoreWeightsResponse, error) {
+	weights, err := s.repo.LoadGlobalScoreWeights(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return defaultGlobalScoreWeightsResponse(), nil
+	}
+	if err != nil {
+		return AccountMonitorGlobalScoreWeightsResponse{}, fmt.Errorf("load global score weights: %w", err)
+	}
+	return globalScoreWeightsResponse(weights, false), nil
+}
+
+func (s *AccountMonitorService) UpdateGlobalScoreWeights(ctx context.Context, actorID int64, weights AccountMonitorScoreWeights) (AccountMonitorGlobalScoreWeightsResponse, error) {
+	if actorID <= 0 {
+		return AccountMonitorGlobalScoreWeightsResponse{}, errors.New("invalid actor id")
+	}
+	weights = fourAccountMonitorScoreWeights(weights)
+	if err := validateAccountMonitorFourScoreWeights(weights); err != nil {
+		return AccountMonitorGlobalScoreWeightsResponse{}, err
+	}
+	saved, err := s.repo.SaveGlobalScoreWeights(ctx, actorID, weights)
+	if err != nil {
+		return AccountMonitorGlobalScoreWeightsResponse{}, fmt.Errorf("save global score weights: %w", err)
+	}
+	return globalScoreWeightsResponse(saved, false), nil
+}
+
+func (s *AccountMonitorService) ResetGlobalScoreWeights(ctx context.Context, actorID int64) (AccountMonitorGlobalScoreWeightsResponse, error) {
+	if actorID <= 0 {
+		return AccountMonitorGlobalScoreWeightsResponse{}, errors.New("invalid actor id")
+	}
+	if err := s.repo.ResetGlobalScoreWeights(ctx); err != nil {
+		return AccountMonitorGlobalScoreWeightsResponse{}, fmt.Errorf("reset global score weights: %w", err)
+	}
+	return defaultGlobalScoreWeightsResponse(), nil
+}
+
+func defaultGlobalScoreWeightsResponse() AccountMonitorGlobalScoreWeightsResponse {
+	return globalScoreWeightsResponse(fourAccountMonitorScoreWeights(DefaultAccountMonitorScoreWeights), true)
+}
+
+func globalScoreWeightsResponse(weights AccountMonitorScoreWeights, isDefault bool) AccountMonitorGlobalScoreWeightsResponse {
+	response := AccountMonitorGlobalScoreWeightsResponse{
+		Cost:      weights.Cost,
+		Success:   weights.Success,
+		TTFT:      weights.TTFT,
+		Latency:   weights.Latency,
+		UpdatedBy: weights.UpdatedBy,
+		IsDefault: isDefault,
+	}
+	if !weights.UpdatedAt.IsZero() {
+		updatedAt := weights.UpdatedAt
+		response.UpdatedAt = &updatedAt
+	}
+	return response
+}
+
+func fourAccountMonitorScoreWeights(weights AccountMonitorScoreWeights) AccountMonitorScoreWeights {
+	return AccountMonitorScoreWeights{Cost: weights.Cost, Success: weights.Success, TTFT: weights.TTFT, Latency: weights.Latency}
+}
+
+func validateAccountMonitorFourScoreWeights(weights AccountMonitorScoreWeights) error {
+	if weights.Cost < 0 || weights.Success < 0 || weights.TTFT < 0 || weights.Latency < 0 {
+		return fmt.Errorf("%w: score weights must be non-negative", ErrAccountMonitorInvalidScoreWeights)
+	}
+	if weights.Cost+weights.Success+weights.TTFT+weights.Latency != 100 {
+		return fmt.Errorf("%w: score weights must sum to 100", ErrAccountMonitorInvalidScoreWeights)
+	}
+	return nil
 }
 
 func (s *AccountMonitorService) GetGroupScoreWeights(

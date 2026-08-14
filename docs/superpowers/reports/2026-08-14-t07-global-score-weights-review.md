@@ -124,6 +124,20 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Final reviewer Carver found one additional Important issue: `TestMigrationsSchema` lacked PostgreSQL assertions for `account_monitor_global_score_weights`. Fix commit `453a5fc20` adds the schema coverage, and scoped re-review by Kant marked it addressed with no new Critical/Important breakage.
 - Root final review found Important I1 (stale global mutation completion could affect a later group dialog) and Minor M1 (per-weight non-negative PostgreSQL CHECK constraints were not individually asserted). Fix commit `079d3ec76` adds focused RED/GREEN race coverage, immutable mutation ownership, and real-PostgreSQL per-weight constraint coverage. A refreshed whole-branch reviewer is still required before handoff.
 - Scoped re-review of `59da965a7` marked M1 closed but kept I1 open because a reload already in flight could still commit after ownership changed. Fix commit `f324e6801` adds result-commit guarding and delayed-reload RED/GREEN coverage; another fresh whole-branch review is required.
+- Second scoped re-review of `59da965a7..1b6ab72bf`: I1 ADDRESSED; Critical 0 / Important 0.
+- Root composite final approval on 2026-08-15: APPROVE, open Critical 0 / Important 0. Evidence combines the original independent whole-branch review of `d3a0cffac..0ccce34e6`, scoped re-review rejection of `0ccce34e6..59da965a7`, second scoped re-review approval of `59da965a7..1b6ab72bf`, and fresh root-run final gates against HEAD `1b6ab72bff7a5979ef8f94538eba246d9dc5eeb7`.
+
+## Final Root Gates
+
+- Final HEAD: `1b6ab72bff7a5979ef8f94538eba246d9dc5eeb7`.
+- Final tree: `b5d652e88c9ad85ae5d9cd27a32f39a68ffcd608`.
+- Backend final gates: migrations, repository, service, handler, and routes all PASS.
+- Real PostgreSQL schema gate: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS.
+- Frontend final gate: focused account monitor dialog/view tests PASS, 49/49.
+- `pnpm typecheck`: PASS.
+- `git diff --check d3a0cffac..HEAD`: PASS.
+- Worktree: clean.
+- Scope file list: T07-only, with root governance files present only from REFRESH_REQUIRED.
 
 ## Release Precheck And Rollback Notes
 
@@ -134,4 +148,4 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 
 ## Status
 
-REVIEWING. Final reviewer findings are fixed, scoped re-reviewed, and locally verified; pending refreshed final whole-branch reviewer before `READY_FOR_ROOT_REVIEW`.
+READY_FOR_ROOT_REVIEW. Root composite final approval recorded with open Critical 0 / Important 0. Candidate is awaiting explicit `AUTHORIZE_MERGE_TO_MAIN`; no merge, push, deployment, or production operation has been performed by T07.

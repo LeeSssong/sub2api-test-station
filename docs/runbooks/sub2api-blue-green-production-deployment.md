@@ -76,9 +76,9 @@ executor additionally requires `--maintenance-from-hash` to equal the active
 hash below. No other migration transition is accepted:
 
 ```text
-from ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
-to   0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
-files 197_account_estimated_usable_quota.sql and 198_account_rate_multiplier_native_convergence.sql — add estimated quota, migrate official native multiplier controls, and remove the obsolete policy/measurement JSON keys.
+from f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc
+to   6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71
+file 222_account_financial_reconciliation.sql (SHA-256 47f786d6b2b020d0211a17d4ccd2bc6bb3774a315f483fdc0ac45657c9ee738e) — expand-only independent upstream-cost evidence/review and account-day financial tables; it leaves `usage_logs` unchanged and performs no historical backfill.
 ```
 
 Invoke the same controller with the explicit maintenance flag:
@@ -90,14 +90,16 @@ bash ops/release-sub2api-blue-green.sh \
   --maintenance-authorized
 ```
 
-The host executor enforces a bounded (default 300-second, maximum 600-second)
-unavailable window, stops only the API and worker services, starts the candidate
+The host executor enforces a bounded 300-second unavailable window: 300 seconds
+by default and 300 seconds maximum. This is the only authorized API/worker
+outage window. It stops only the API and worker services, starts the candidate
 worker to apply the additive migration, then restores the API route through the
 existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
-recreated. `196_account_procurement_cost.sql` is forward-compatible: it only
-adds nullable columns and a non-negative constraint. An application rollback
-restores the previous API/worker images and Caddy upstream; it does not
-automatically remove those database fields or the constraint. Preserve the
+recreated. `222_account_financial_reconciliation.sql` is forward-compatible:
+it only creates new independent evidence, review, account-day, and settings
+tables plus indexes; it does not modify `usage_logs` or backfill history. An
+application rollback restores the previous API/worker images and Caddy
+upstream; it does not automatically remove the new tables or indexes. Preserve the
 `.partial` and failure record if rollback itself fails.
 
 Exact manual recovery command (only after reviewing the preserved partial record):
@@ -119,9 +121,12 @@ sudo -n env RELEASE_PRELOADED_IMAGE=true \
    --deadline-epoch "$(date -u +%s -d '+600 seconds')"
 ```
 
-Replace the migrations placeholder only with the exact previous migration hash
-recorded in the preserved partial/state checkpoint (for this release it is
-`ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39`). Do not
+The `--deadline-epoch` in this manual recovery command is a separate
+recovery-control deadline; its `+600 seconds` value does not authorize or
+extend the 300-second API/worker outage window. Replace the migrations
+placeholder only with the exact previous migration hash recorded in the
+preserved partial/state checkpoint (for this release it is
+`f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc`). Do not
 guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
 shared services during recovery.
 

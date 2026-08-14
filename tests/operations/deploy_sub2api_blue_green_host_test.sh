@@ -1139,6 +1139,52 @@ test_verified_production_maintenance_transition() {
     || fail 'verified production transition did not enter the bounded maintenance path'
 }
 
+test_t03_r1_maintenance_transition_allowlist() {
+  local production_hash=f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc
+  local t03_r1_hash=6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71
+  local mutated_t03_r1_hash=6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf70
+
+  setup_case t03_r1_maintenance_transition
+  write_meminfo
+  MIGRATIONS_HASH=$t03_r1_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "T03-R1 maintenance transition failed: $(cat "$CASE_DIR/stdout") $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'T03-R1 transition did not enter the bounded maintenance path'
+
+  setup_case t03_r1_mutated_candidate_rejected
+  write_meminfo
+  MIGRATIONS_HASH=$mutated_t03_r1_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    expect_failure t03_r1_mutated_candidate_rejected run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" \
+    || fail 'mutated T03-R1 candidate was not gated'
+  assert_no_mutation t03_r1_mutated_candidate_rejected
+
+  setup_case t03_r1_unknown_candidate_rejected
+  write_meminfo
+  MIGRATIONS_HASH=$(printf '8%.0s' {1..64})
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    expect_failure t03_r1_unknown_candidate_rejected run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" \
+    || fail 'unknown T03-R1 candidate was not gated'
+  assert_no_mutation t03_r1_unknown_candidate_rejected
+}
+
 test_maintenance_window_hard_maximum() {
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
@@ -1856,9 +1902,10 @@ case "${ONLY_TEST:-all}" in
   preloaded-partial) test_preloaded_partial_recovery_precedes_probe_image_check ;;
   success) test_success_order_and_atomic_records ;;
   worker-request-log) test_worker_request_failure_log_does_not_trigger_startup_failure ;;
-  maintenance)
+	maintenance)
 		test_authorized_maintenance_transition
 		test_verified_production_maintenance_transition
+		test_t03_r1_maintenance_transition_allowlist
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation
@@ -1876,6 +1923,7 @@ case "${ONLY_TEST:-all}" in
 	maintenance-readiness) test_maintenance_pre_cutover_readiness_is_truthful ;;
 	maintenance-rollback-proofs) test_maintenance_rollback_proof_gates ;;
 	maintenance-approved-transition) test_verified_production_maintenance_transition ;;
+	maintenance-t03-r1-transition) test_t03_r1_maintenance_transition_allowlist ;;
 	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;

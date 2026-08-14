@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片均已部署并完成各自既定线上验证；账号监控卡片最新生产记录为 `20260814T102354Z-production-3093579.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：T06 已进入 `DEPLOYING`。根授权合并提交为 `main@04cf031f54f23dd394c6189e091dc07410b44b10`；合并后定向/相邻 Vitest、typecheck、production build、diff-check 均通过。无运行时代码、API、数据库迁移、配置或 GitHub Actions 变化，预检目标 `downtime_required=false`；待推送、蓝绿发布、利润页登录态线上验收和归档清理。
+- 当前唯一发布候选：T06 `BLOCKED`（部署前置网络）。根授权合并提交为 `main@04cf031f54f23dd394c6189e091dc07410b44b10`；合并后定向/相邻 Vitest、typecheck、production build、diff-check 均通过。无运行时代码、API、数据库迁移、配置或 GitHub Actions 变化。两次蓝绿链均在本地 BuildKit 构建阶段因 Docker Hub `registry-1.docker.io:443` TLS/EOF 失败退出，未推送、未连接宿主、未生成生产记录、未改变线上；网络恢复后从同一 SHA 继续，未启动 T07。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -71,7 +71,7 @@
 
 ### T06 利润页移除外部控制面状态
 
-- 当前状态：`DEPLOYING`；根合并 `main@04cf031f54f23dd394c6189e091dc07410b44b10` 已完成合并后门禁，待生产发布和线上验收。
+- 当前状态：`BLOCKED`（部署前置网络）；根合并 `main@04cf031f54f23dd394c6189e091dc07410b44b10` 已完成合并后门禁。两次发布均在本地 BuildKit 拉取 Docker Hub 基础镜像阶段失败，生产未变更；网络恢复后继续发布和线上验收。
 
 - 目标：从原生利润页删除外部控制面状态和调用，保留原生利润数据。
 - 范围：仅利润页面、原生 API 使用和测试。

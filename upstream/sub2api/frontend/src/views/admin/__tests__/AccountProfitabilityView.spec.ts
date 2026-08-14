@@ -9,7 +9,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({ ...(await importOriginal<typeof
 const report = () => ({ generated_at: '2026-08-12T10:00:00Z', range: 'today', summary: { revenue: 120, cost: 70, profit: 50, margin: .4167, exception_count: 3, affected_revenue: 20 }, accounts: [{ id: 7, name: 'OAuth', type: 'oauth', platform: 'sub', complete: false, amounts: { revenue: 10, cost: 4, profit: 6, margin: .6, exception_count: 3, affected_revenue: 5 }, exception_count: 3, affected_revenue: 5 }], exception_count: 3, affected_revenue: 5, user_unconsumed_balance_cny: 90 })
 describe('AccountProfitabilityView', () => {
   it('keeps the page source free of control-plane symbols and xingqiao paths', () => {
-    expect(pageSource).not.toMatch(/controlPlaneAPI|ControlPlaneResponse|ReadModelStatus|useReadModelFreshness|resolveTrustedPageDecision|controlPlaneResponse|controlPlaneDegraded|renderSource|\/api\/v1\/xingqiao|\/xingqiao/)
+    expect(pageSource).not.toMatch(/controlPlaneAPI|ControlPlaneResponse|ReadModelStatus|useReadModelFreshness|resolveTrustedPageDecision|controlPlaneResponse|controlPlaneDegraded|renderSource|unknown|degraded|integrity|\/api\/v1\/xingqiao|\/xingqiao/)
   })
 
   beforeEach(() => { getReport.mockReset().mockResolvedValue(report()); setTodayOverride.mockReset().mockResolvedValue({}); setOAuthCost.mockReset().mockResolvedValue({}); push.mockReset(); vi.spyOn(global, 'setInterval'); vi.spyOn(global, 'clearInterval') })

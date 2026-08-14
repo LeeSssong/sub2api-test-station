@@ -32,6 +32,18 @@
   - `rg -n "controlPlaneAPI|ControlPlaneResponse|ReadModelStatus|useReadModelFreshness|resolveTrustedPageDecision|controlPlaneResponse|controlPlaneDegraded|renderSource|/api/v1/xingqiao|/xingqiao" upstream/sub2api/frontend/src/views/admin/AccountProfitabilityView.vue upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`
   - result: the only match was the new denylist assertion in the spec file; the runtime page file had no matches.
 
+## Fix note
+
+- Extended the page-source denylist to include the status-style resurfacing tokens `unknown`, `degraded`, and `integrity` alongside the existing control-plane and `/xingqiao/` symbols.
+- This keeps the guard aligned with the reviewer callout without touching runtime code.
+
+## Re-run after the fix
+
+- command: `pnpm exec vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts`
+- output: `Test Files 1 passed (1)`, `Tests 5 passed (5)`
+- command: `git diff --check`
+- output: clean, no whitespace or patch formatting issues
+
 ## Self-review
 
 - Runtime code was not modified.

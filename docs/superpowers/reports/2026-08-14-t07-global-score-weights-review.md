@@ -9,6 +9,10 @@
 
 ## Commits
 
+- 079d3ec76 fix: isolate global score weight mutation sessions
+- 0ccce34e6 docs: record T07 migration schema re-review
+- 453a5fc20 test: assert global score weight schema
+- 780ef8d90 docs: record T07 scoped re-review
 - 1b9b28c63 fix: harden global score weight controls
 - 18c55ba9f docs: record T07 verification
 - 6b4f13d5a Merge remote-tracking branch 'origin/main' into codex/t07-global-score-weights
@@ -68,6 +72,18 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - GREEN verification: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS after restoration.
 - Scoped re-review by Kant (agent `01a00239-d0c6-7482-9971-74d83433ab77`): `TestMigrationsSchema` global score weights schema coverage is ADDRESSED; no new Critical/Important breakage.
 
+## Root Final Review Fix Wave
+
+- Fix base: `0ccce34e620493a3734690901058fe4719b34094`.
+- Fix commit: `079d3ec76 fix: isolate global score weight mutation sessions`.
+- I1 root cause: global PUT/DELETE handlers read the live `scoreDialogMode` after awaited API/reload calls, so a canceled global dialog followed by a newly opened group dialog could be closed or receive the wrong completion label from the stale global mutation.
+- I1 fix: every opened dialog owns an immutable dialog generation, mode, group ID, and mutation generation. Save/reset use only that captured scope, and may update dialog state, success/error messages, returned reset weights, or saving state only while the exact session still owns the dialog. Cancel, scope switch, or opening another dialog invalidates the old mutation without canceling an already accepted API write.
+- Frontend RED: `pnpm vitest run src/views/admin/__tests__/AccountMonitorView.spec.ts` failed exactly two new race regressions; both stale global PUT and stale global DELETE completions closed the newly opened group dialog (`expected true, received false`).
+- Frontend GREEN: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorGroupScoreDialog.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts` PASS, 47 tests; `pnpm typecheck` PASS.
+- M1 fix: `TestMigrationsSchema` now asserts the PostgreSQL catalog contains a separate `>= 0` CHECK for each of `cost_weight`, `success_weight`, `ttft_weight`, and `latency_weight`.
+- M1 RED mutation proof: temporarily changed only `latency_weight CHECK (latency_weight >= 0)` to `>= 1`; the real PostgreSQL integration test failed with `expected non-negative CHECK constraint for latency_weight`. The migration was restored immediately and has no final diff.
+- M1 GREEN: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS; focused migration tests PASS.
+
 ## Scope Guards
 
 - `git diff --check efa0ef54cb432e784796add380727bc5366d2d06..HEAD`: PASS.
@@ -94,6 +110,7 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Final whole-branch reviewer found three blocking issues: global dialog scope/race, discarded reset response on projection reload failure, and overflow-prone global weight validation. All three have focused RED/GREEN regression coverage and implementation fixes in this wave.
 - Scoped post-fix re-review by Ampere: all three findings addressed; no new Critical/Important breakage.
 - Final reviewer Carver found one additional Important issue: `TestMigrationsSchema` lacked PostgreSQL assertions for `account_monitor_global_score_weights`. Fix commit `453a5fc20` adds the schema coverage, and scoped re-review by Kant marked it addressed with no new Critical/Important breakage.
+- Root final review found Important I1 (stale global mutation completion could affect a later group dialog) and Minor M1 (per-weight non-negative PostgreSQL CHECK constraints were not individually asserted). Fix commit `079d3ec76` adds focused RED/GREEN race coverage, immutable mutation ownership, and real-PostgreSQL per-weight constraint coverage. A refreshed whole-branch reviewer is still required before handoff.
 
 ## Release Precheck And Rollback Notes
 

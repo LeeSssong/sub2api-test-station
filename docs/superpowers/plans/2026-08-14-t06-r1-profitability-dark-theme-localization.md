@@ -12,7 +12,7 @@
 
 - Project date for this task is 2026-08-14.
 - Task package is T06-R1, a user-visible independent top-level task.
-- Baseline is `651bc2fab27544a8cc131137ab351bf8f2f90f89`; current spec commit is `7d2f5b2b7ca49875d77256873018de492a73cb12`.
+- Baseline is `651bc2fab27544a8cc131137ab351bf8f2f90f89`; current spec commit is `253676a9c97d22618c7db9ecbae8ebc53fbba610`.
 - Do not modify root `main`, `docs/project/project-progress.md`, `docs/project/native-sub-task-package-queue.md`, production state, release records, or deployment evidence.
 - Do not merge, push, deploy, or run production verification; final status may only be `READY_FOR_ROOT_REVIEW`.
 - Only fix profitability page dark-theme readability, `24h`/`31d` localization, table header localization, and page-level tests.

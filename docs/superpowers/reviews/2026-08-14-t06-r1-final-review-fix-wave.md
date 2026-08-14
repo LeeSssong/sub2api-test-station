@@ -3,7 +3,7 @@
 Date: 2026-08-14
 Task package: T06-R1
 Baseline: `651bc2fab27544a8cc131137ab351bf8f2f90f89`
-Pre-fix candidate: `c1ebfd88cfd8c06c1865758d000857321d2648a9`
+Pre-fix candidate after timestamp rewrite: `1622925381750bf0aea6b29eb1d7e5b588c9ee05`
 Status: final-review findings being addressed; not a root approval, merge authorization, production approval, deployment record, or online verification.
 
 ## Earlier Independent Reviews

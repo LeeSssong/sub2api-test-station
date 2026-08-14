@@ -792,6 +792,88 @@ describe('admin account monitor view V3', () => {
     expect(showSuccess).not.toHaveBeenCalled()
   })
 
+  it('does not apply a stale global save reload after a group dialog takes ownership', async () => {
+    let resolveReload!: (value: ReturnType<typeof projection>) => void
+    const wrapper = mountView()
+    await flushPromises()
+    list.mockImplementationOnce(() => new Promise((resolve) => { resolveReload = resolve }))
+
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
+      cost: 30,
+      success: 30,
+      ttft: 20,
+      latency: 20,
+    })
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(2)
+
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const groupCostInput = document.body.querySelector<HTMLInputElement>('.modal-overlay input')
+    expect(groupCostInput).not.toBeNull()
+    groupCostInput!.value = '26'
+    groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    showError.mockClear()
+    showSuccess.mockClear()
+
+    const staleProjection = projection('24h')
+    staleProjection.accounts[0].name = 'STALE GLOBAL SAVE RELOAD'
+    staleProjection.groups[0].accounts[0].name = 'STALE GLOBAL SAVE RELOAD'
+    staleProjection.groups[0].score_weights = { cost: 5, success: 55, ttft: 20, latency: 20 }
+    resolveReload(staleProjection)
+    await flushPromises()
+
+    const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(currentDialog.props('mode')).toBe('group')
+    expect(currentDialog.props('show')).toBe(true)
+    expect(document.body.querySelector<HTMLInputElement>('.modal-overlay input')?.value).toBe('26')
+    expect(wrapper.text()).not.toContain('STALE GLOBAL SAVE RELOAD')
+    expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
+    expect(currentDialog.props('error')).toBeNull()
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('does not surface a stale global reset reload failure after a group dialog takes ownership', async () => {
+    let rejectReload!: (reason: Error) => void
+    const wrapper = mountView()
+    await flushPromises()
+    list.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectReload = reject }))
+
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(2)
+
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
+    const groupCostInput = document.body.querySelector<HTMLInputElement>('.modal-overlay input')
+    expect(groupCostInput).not.toBeNull()
+    groupCostInput!.value = '26'
+    groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    showError.mockClear()
+    showSuccess.mockClear()
+
+    rejectReload(new Error('stale global reset reload failed'))
+    await flushPromises()
+
+    const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(currentDialog.props('mode')).toBe('group')
+    expect(currentDialog.props('show')).toBe(true)
+    expect(document.body.querySelector<HTMLInputElement>('.modal-overlay input')?.value).toBe('26')
+    expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
+    expect(currentDialog.props('error')).toBeNull()
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
   it('keeps the global score weight dialog open and skips success when save reload fails', async () => {
     const wrapper = mountView()
     await flushPromises()

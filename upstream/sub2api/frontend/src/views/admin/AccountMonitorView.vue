@@ -542,7 +542,7 @@ function selectGroup(groupID: number | null, event: MouseEvent): void {
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
 
-async function load(range: AccountMonitorRange, options: { notifyError?: boolean } = {}): Promise<boolean> {
+async function load(range: AccountMonitorRange, options: { notifyError?: boolean; commitIf?: () => boolean } = {}): Promise<boolean> {
   abortController?.abort()
   const controller = new AbortController()
   const generation = ++loadGeneration
@@ -553,6 +553,7 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   try {
     const result = await adminAPI.accountMonitor.list(range, { signal: controller.signal })
     if (controller.signal.aborted || generation !== loadGeneration) return false
+    if (options.commitIf && !options.commitIf()) return false
     if (result.range !== range) {
       throw new Error(`账号监控统计范围不匹配：请求 ${range}，返回 ${result.range ?? '缺失'}`)
     }
@@ -564,6 +565,7 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
     return true
   } catch (reason: unknown) {
     if (controller.signal.aborted || generation !== loadGeneration) return false
+    if (options.commitIf && !options.commitIf()) return false
     rangeError.value = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError'))
     if (options.notifyError !== false) appStore.showError(rangeError.value)
     return false
@@ -833,7 +835,7 @@ async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourSco
       await adminAPI.accountMonitor.updateGroupScoreWeights(session.groupID, weights)
     }
     if (!ownsScoreDialog(session)) return
-    const reloaded = await load(activeRange.value, { notifyError: false })
+    const reloaded = await load(activeRange.value, { notifyError: false, commitIf: () => ownsScoreDialog(session) })
     if (!ownsScoreDialog(session)) return
     if (!reloaded) {
       reportScoreWeightsReloadFailure(session.mode === 'global' ? '保存全局评分权重' : '保存分组评分权重')
@@ -867,7 +869,7 @@ async function resetScoreWeights() {
       await adminAPI.accountMonitor.resetGroupScoreWeights(session.groupID)
     }
     if (!ownsScoreDialog(session)) return
-    const reloaded = await load(activeRange.value, { notifyError: false })
+    const reloaded = await load(activeRange.value, { notifyError: false, commitIf: () => ownsScoreDialog(session) })
     if (!ownsScoreDialog(session)) return
     if (!reloaded) {
       reportScoreWeightsReloadFailure(session.mode === 'global' ? '恢复默认全局评分权重' : '恢复默认评分权重')

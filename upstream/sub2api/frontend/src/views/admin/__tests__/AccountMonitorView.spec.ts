@@ -17,6 +17,9 @@ const {
   updateProcurementCost,
   updateGroupScoreWeights,
   resetGroupScoreWeights,
+  getGlobalScoreWeights,
+  updateGlobalScoreWeights,
+  resetGlobalScoreWeights,
   operations,
   costGuard,
   refreshReconciliation,
@@ -42,6 +45,9 @@ const {
   updateProcurementCost: vi.fn(),
   updateGroupScoreWeights: vi.fn(),
   resetGroupScoreWeights: vi.fn(),
+  getGlobalScoreWeights: vi.fn(),
+  updateGlobalScoreWeights: vi.fn(),
+  resetGlobalScoreWeights: vi.fn(),
   operations: vi.fn(),
   costGuard: vi.fn(),
   refreshReconciliation: vi.fn(),
@@ -62,7 +68,17 @@ vi.mock('@/api/controlPlane', () => ({
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    accountMonitor: { list, getConcurrency, runAll, runOne, updateGroupScoreWeights, resetGroupScoreWeights },
+    accountMonitor: {
+      list,
+      getConcurrency,
+      runAll,
+      runOne,
+      updateGroupScoreWeights,
+      resetGroupScoreWeights,
+      getGlobalScoreWeights,
+      updateGlobalScoreWeights,
+      resetGlobalScoreWeights,
+    },
     accounts: { update: updateAccount, updateProcurementCost, getById: getAccountById, delete: deleteAccount, setPrivacy },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
     reconciliation: {
@@ -365,6 +381,9 @@ describe('admin account monitor view V3', () => {
     })
     updateGroupScoreWeights.mockReset().mockResolvedValue({ cost: 25, success: 35, ttft: 20, latency: 20 })
     resetGroupScoreWeights.mockReset().mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20 })
+    getGlobalScoreWeights.mockReset().mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
+    updateGlobalScoreWeights.mockReset().mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20, is_default: false })
+    resetGlobalScoreWeights.mockReset().mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
     for (const forbidden of [operations, costGuard, refreshReconciliation, reconciliationHistory, reconciliationExceptions, reconciliationAdjust, revenue, accounting]) {
       forbidden.mockReset().mockResolvedValue({})
     }
@@ -623,6 +642,85 @@ describe('admin account monitor view V3', () => {
     expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
     expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+  })
+
+  it('shows global score settings only on the all-site view and loads weights when opened', async () => {
+    getGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="edit-global-score-weights"]').exists()).toBe(true)
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+
+    expect(getGlobalScoreWeights).toHaveBeenCalledTimes(1)
+    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
+    expect(dialog.props('mode')).toBe('global')
+    expect(dialog.props('weights')).toMatchObject({ cost: 15, success: 45, ttft: 20, latency: 20 })
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="edit-global-score-weights"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(true)
+  })
+
+  it('saves and resets global score weights with four-field payloads and reloads active range', async () => {
+    getGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
+    updateGlobalScoreWeights.mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20, is_default: false })
+    resetGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+
+    list.mockClear()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
+      cost: 30,
+      success: 30,
+      ttft: 20,
+      latency: 20,
+      ttft_target_ms: 1,
+      ttft_limit_ms: 2,
+      latency_target_ms: 3,
+      latency_limit_ms: 4,
+    })
+    await flushPromises()
+
+    expect(updateGlobalScoreWeights).toHaveBeenCalledWith({ cost: 30, success: 30, ttft: 20, latency: 20 })
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
+
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+    list.mockClear()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
+    await flushPromises()
+
+    expect(resetGlobalScoreWeights).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+
+  it('keeps the global score weight dialog open and skips success when save reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await selectRange(wrapper, '7d')
+    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
+    await flushPromises()
+
+    list.mockRejectedValueOnce(new Error('reload failed'))
+    showSuccess.mockReset()
+    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
+      cost: 25,
+      success: 35,
+      ttft: 20,
+      latency: 20,
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
+    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('keeps the score weight dialog open and skips success when save reload fails', async () => {

@@ -82,6 +82,18 @@ export interface AccountMonitorScoreWeights {
   updated_at?: string
 }
 
+export interface AccountMonitorGlobalScoreWeights {
+  cost: number
+  success: number
+  ttft: number
+  latency: number
+  updated_by?: number
+  updated_at?: string | null
+  is_default?: boolean
+}
+
+export type AccountMonitorFourScoreWeights = Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency'>
+
 export interface AccountMonitorGroupRecommendation {
   status: AccountMonitorGroupRecommendationStatus
   target: AccountMonitorGroupRecommendationTarget
@@ -328,6 +340,21 @@ export async function resetGroupScoreWeights(groupID: number): Promise<AccountMo
   return data
 }
 
+export async function getGlobalScoreWeights(): Promise<AccountMonitorGlobalScoreWeights> {
+  const { data } = await apiClient.get<AccountMonitorGlobalScoreWeights>('/admin/account-monitors/global-score-weights')
+  return data
+}
+
+export async function updateGlobalScoreWeights(weights: AccountMonitorFourScoreWeights): Promise<AccountMonitorGlobalScoreWeights> {
+  const { data } = await apiClient.put<AccountMonitorGlobalScoreWeights>('/admin/account-monitors/global-score-weights', weights)
+  return data
+}
+
+export async function resetGlobalScoreWeights(): Promise<AccountMonitorGlobalScoreWeights> {
+  const { data } = await apiClient.delete<AccountMonitorGlobalScoreWeights>('/admin/account-monitors/global-score-weights')
+  return data
+}
+
 const accountMonitorAPI = {
   list,
   getConcurrency,
@@ -338,6 +365,9 @@ const accountMonitorAPI = {
   getGroupScoreWeights,
   updateGroupScoreWeights,
   resetGroupScoreWeights,
+  getGlobalScoreWeights,
+  updateGlobalScoreWeights,
+  resetGlobalScoreWeights,
 }
 
 export default accountMonitorAPI

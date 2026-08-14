@@ -84,6 +84,28 @@
         </div>
       </section>
 
+      <section
+        v-if="!activeGroup"
+        class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800"
+        aria-label="全局评分规则"
+      >
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-gray-900 dark:text-white">全局评分规则</div>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">仅影响全站账号监控排序，保存后立即重载当前统计范围。</div>
+        </div>
+        <button
+          type="button"
+          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
+          data-test="edit-global-score-weights"
+          title="编辑全局评分权重"
+          aria-label="编辑全局评分权重"
+          :disabled="savingScoreWeights"
+          @click="openGlobalScoreDialog"
+        >
+          <Icon name="edit" size="sm" />
+        </button>
+      </section>
+
       <div
         v-if="rangeError && projection"
         class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
@@ -185,11 +207,12 @@
       </section>
       </div>
       <AccountMonitorGroupScoreDialog
-        v-if="activeGroup"
+        v-if="scoreDialogMode === 'global' || activeGroup"
         :show="showScoreDialog"
-        :group-id="activeGroup.id"
-        :group-name="activeGroup.name"
-        :weights="activeGroup.score_weights"
+        :mode="scoreDialogMode"
+        :group-id="activeGroup?.id ?? 0"
+        :group-name="activeGroup?.name ?? ''"
+        :weights="scoreDialogMode === 'global' ? globalScoreWeights : activeGroup!.score_weights"
         :saving="savingScoreWeights"
         :error="scoreWeightsError"
         @close="showScoreDialog = false"
@@ -271,6 +294,7 @@ import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
   AccountMonitorConcurrencyItem,
+  AccountMonitorFourScoreWeights,
   AccountMonitorGroup,
   AccountMonitorProjection,
   AccountMonitorRange,
@@ -332,8 +356,10 @@ const runningAccountIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
 const showScoreDialog = ref(false)
+const scoreDialogMode = ref<'group' | 'global'>('group')
 const savingScoreWeights = ref(false)
 const scoreWeightsError = ref<string | null>(null)
+const globalScoreWeights = ref<AccountMonitorFourScoreWeights>({ cost: 15, success: 45, ttft: 20, latency: 20 })
 const showCostDialog = ref(false)
 const savingCost = ref(false)
 const costDialogError = ref<string | null>(null)
@@ -459,8 +485,28 @@ function groupAccountCount(group: AccountMonitorGroup): number {
 
 function openScoreDialog(): void {
   if (!activeGroup.value) return
+  scoreDialogMode.value = 'group'
   scoreWeightsError.value = null
   showScoreDialog.value = true
+}
+
+async function openGlobalScoreDialog(): Promise<void> {
+  if (savingScoreWeights.value) return
+  scoreDialogMode.value = 'global'
+  scoreWeightsError.value = null
+  try {
+    const weights = await adminAPI.accountMonitor.getGlobalScoreWeights()
+    globalScoreWeights.value = {
+      cost: weights.cost,
+      success: weights.success,
+      ttft: weights.ttft,
+      latency: weights.latency,
+    }
+    showScoreDialog.value = true
+  } catch (reason: unknown) {
+    scoreWeightsError.value = extractApiErrorMessage(reason, '全局评分权重加载失败')
+    appStore.showError(scoreWeightsError.value)
+  }
 }
 
 function selectGroup(groupID: number | null, event: MouseEvent): void {
@@ -713,22 +759,31 @@ function reportScoreWeightsReloadFailure(operation: string): void {
   appStore.showError(message)
 }
 
-async function saveScoreWeights(weights: EditableWeights) {
-  const group = activeGroup.value
-  if (!group) return
+async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourScoreWeights) {
   savingScoreWeights.value = true
   scoreWeightsError.value = null
   try {
-    await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
+    if (scoreDialogMode.value === 'global') {
+      await adminAPI.accountMonitor.updateGlobalScoreWeights({
+        cost: Number(weights.cost),
+        success: Number(weights.success),
+        ttft: Number(weights.ttft),
+        latency: Number(weights.latency),
+      })
+    } else {
+      const group = activeGroup.value
+      if (!group) return
+      await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
+    }
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {
-      reportScoreWeightsReloadFailure('保存分组评分权重')
+      reportScoreWeightsReloadFailure(scoreDialogMode.value === 'global' ? '保存全局评分权重' : '保存分组评分权重')
       return
     }
     showScoreDialog.value = false
-    appStore.showSuccess('分组评分权重已更新')
+    appStore.showSuccess(scoreDialogMode.value === 'global' ? '全局评分权重已更新' : '分组评分权重已更新')
   } catch (reason: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(reason, '保存分组评分权重失败')
+    scoreWeightsError.value = extractApiErrorMessage(reason, scoreDialogMode.value === 'global' ? '保存全局评分权重失败' : '保存分组评分权重失败')
     appStore.showError(scoreWeightsError.value)
   } finally {
     savingScoreWeights.value = false
@@ -736,21 +791,25 @@ async function saveScoreWeights(weights: EditableWeights) {
 }
 
 async function resetScoreWeights() {
-  const group = activeGroup.value
-  if (!group) return
   savingScoreWeights.value = true
   scoreWeightsError.value = null
   try {
-    await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
+    if (scoreDialogMode.value === 'global') {
+      await adminAPI.accountMonitor.resetGlobalScoreWeights()
+    } else {
+      const group = activeGroup.value
+      if (!group) return
+      await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
+    }
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {
-      reportScoreWeightsReloadFailure('恢复默认评分权重')
+      reportScoreWeightsReloadFailure(scoreDialogMode.value === 'global' ? '恢复默认全局评分权重' : '恢复默认评分权重')
       return
     }
     showScoreDialog.value = false
-    appStore.showSuccess('分组评分权重已恢复默认')
+    appStore.showSuccess(scoreDialogMode.value === 'global' ? '全局评分权重已恢复默认' : '分组评分权重已恢复默认')
   } catch (reason: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(reason, '恢复默认评分权重失败')
+    scoreWeightsError.value = extractApiErrorMessage(reason, scoreDialogMode.value === 'global' ? '恢复默认全局评分权重失败' : '恢复默认评分权重失败')
     appStore.showError(scoreWeightsError.value)
   } finally {
     savingScoreWeights.value = false

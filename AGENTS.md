@@ -11,6 +11,15 @@
   chain; do not add scheduled or manually dispatched release workflows under
   `.github/workflows/`.
 
+## 唯一发布总控与并发边界（强制）
+
+- 本项目同时只能有一个发布总控。只有发布总控可以修改根目录 `main`、`docs/project/project-progress.md`、`docs/project/native-sub-task-package-queue.md`、发布证据和生产状态记录。
+- 功能任务窗口只维护自己的规格、计划、实现、测试、复审报告和交接文件；不得在自己的 worktree 修改全局队列或项目进度总账。
+- 最多允许两个互不依赖的功能 worktree 同时处于 `DESIGNING`、`IMPLEMENTING` 或 `REVIEWING`；同一个 worktree 同时只能有一个实现写入者，reviewer 必须严格只读。
+- 状态机统一为：`BACKLOG -> DESIGNING -> IMPLEMENTING -> REVIEWING -> READY_FOR_ROOT_REVIEW -> REFRESH_REQUIRED -> INTEGRATING -> DEPLOYING -> VERIFYING -> DONE`，异常终态或暂停态为 `FROZEN` / `BLOCKED`。
+- 多任务可以并行准备，但同时只能有一个任务处于 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。只有发布总控可以发出 `AUTHORIZE_MERGE_TO_MAIN`、推送、部署和线上验收指令。
+- 已冻结的窗口、分支和 worktree 仅作只读证据；没有发布总控的明确解冻指令，不得恢复代理、继续写入、合并、推送、部署或清理。
+
 ## 工作区生命周期约束（强制）
 
 - 每次开启新任务，必须先在 `docs/project/project-progress.md` 登记任务、范围、当前工作区和状态“进行中”；实施过程中在设计确认、实现完成、合并、部署、验证或阻塞等实质状态变化时更新同一条记录。

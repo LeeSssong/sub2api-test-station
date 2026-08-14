@@ -258,6 +258,7 @@ WHERE ns.nspname = 'public'
 
 func TestMigrationsSchema(t *testing.T) {
 	tx := testTx(t)
+	ctx := context.Background()
 
 	for _, table := range []string{
 		"usage_upstream_cost_evidence",
@@ -290,6 +291,75 @@ func TestMigrationsSchema(t *testing.T) {
 	requireConstraintDefinitionContains(t, tx, "usage_upstream_cost_evidence", "usage_upstream_cost_evidence_usage_log_id_key", "UNIQUE", "usage_log_id")
 	requireConstraintDefinitionContains(t, tx, "usage_cost_reviews", "usage_cost_reviews_usage_log_id_key", "UNIQUE", "usage_log_id")
 	requireConstraintDefinitionContains(t, tx, "account_daily_financial_values", "account_daily_financial_values_account_date_key", "UNIQUE", "account_id", "business_date")
+
+	const globalWeightsTable = "account_monitor_global_score_weights"
+	var globalWeightsRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(ctx, "SELECT to_regclass('public.'||$1)", globalWeightsTable).Scan(&globalWeightsRegclass))
+	require.True(t, globalWeightsRegclass.Valid, "expected %s table to exist", globalWeightsTable)
+
+	requireColumn(t, tx, globalWeightsTable, "singleton", "boolean", 0, false)
+	requireColumnDefaultContains(t, tx, globalWeightsTable, "singleton", "true")
+	requireConstraintDefinitionContains(t, tx, globalWeightsTable, "account_monitor_global_score_weights_pkey", "PRIMARY KEY", "singleton")
+
+	weightRows, err := tx.QueryContext(ctx, `
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name LIKE '%\_weight' ESCAPE '\'
+ORDER BY ordinal_position
+`, globalWeightsTable)
+	require.NoError(t, err)
+	defer weightRows.Close()
+	var weightColumns []string
+	for weightRows.Next() {
+		var column string
+		require.NoError(t, weightRows.Scan(&column))
+		weightColumns = append(weightColumns, column)
+	}
+	require.NoError(t, weightRows.Err())
+	require.Equal(t, []string{"cost_weight", "success_weight", "ttft_weight", "latency_weight"}, weightColumns)
+	for _, column := range weightColumns {
+		requireColumn(t, tx, globalWeightsTable, column, "smallint", 0, false)
+	}
+
+	requireColumn(t, tx, globalWeightsTable, "updated_by", "bigint", 0, false)
+	requireColumn(t, tx, globalWeightsTable, "updated_at", "timestamp with time zone", 0, false)
+	requireColumnDefaultContains(t, tx, globalWeightsTable, "updated_at", "now()")
+
+	checkRows, err := tx.QueryContext(ctx, `
+SELECT pg_get_expr(c.conbin, c.conrelid)
+FROM pg_constraint c
+JOIN pg_class tbl ON tbl.oid = c.conrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = $1
+  AND c.contype = 'c'
+`, globalWeightsTable)
+	require.NoError(t, err)
+	defer checkRows.Close()
+	var normalizedChecks []string
+	for checkRows.Next() {
+		var definition string
+		require.NoError(t, checkRows.Scan(&definition))
+		normalizedChecks = append(normalizedChecks, strings.NewReplacer(" ", "", "(", "", ")", "").Replace(definition))
+	}
+	require.NoError(t, checkRows.Err())
+	require.Contains(t, normalizedChecks, "singleton", "expected CHECK constraint enforcing singleton true")
+	for _, column := range weightColumns {
+		require.Contains(t, normalizedChecks, column+">=0", "expected non-negative CHECK constraint for %s", column)
+	}
+	require.Contains(t, normalizedChecks, "cost_weight+success_weight+ttft_weight+latency_weight=100", "expected four-weight sum CHECK constraint")
+
+	var thresholdColumnCount int
+	require.NoError(t, tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name IN ('ttft_target_ms', 'ttft_limit_ms', 'latency_target_ms', 'latency_limit_ms')
+`, globalWeightsTable).Scan(&thresholdColumnCount))
+	require.Zero(t, thresholdColumnCount, "global score weights table must not contain threshold columns")
 }
 
 func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,67 @@ func TestAccountMonitorRepositoryLoadsAndSavesSingletonSettings(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryPersistsGlobalScoreWeights(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	ctx := context.Background()
+	updatedAt := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery("SELECT cost_weight, success_weight, ttft_weight, latency_weight, updated_by, updated_at").
+		WillReturnRows(sqlmock.NewRows([]string{"cost_weight", "success_weight", "ttft_weight", "latency_weight", "updated_by", "updated_at"}).
+			AddRow(25, 35, 20, 20, int64(9), updatedAt))
+	weights, err := repo.LoadGlobalScoreWeights(ctx)
+	if err != nil {
+		t.Fatalf("LoadGlobalScoreWeights() error = %v", err)
+	}
+	if weights.Cost != 25 || weights.Success != 35 || weights.TTFT != 20 || weights.Latency != 20 || weights.UpdatedBy != 9 || !weights.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("weights = %#v", weights)
+	}
+
+	returnedAt := time.Date(2026, 8, 14, 10, 5, 0, 0, time.UTC)
+	mock.ExpectQuery("INSERT INTO account_monitor_global_score_weights").
+		WithArgs(25, 35, 20, 20, int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"cost_weight", "success_weight", "ttft_weight", "latency_weight", "updated_by", "updated_at"}).
+			AddRow(25, 35, 20, 20, int64(9), returnedAt))
+	saved, err := repo.SaveGlobalScoreWeights(ctx, 9, service.AccountMonitorScoreWeights{Cost: 25, Success: 35, TTFT: 20, Latency: 20})
+	if err != nil {
+		t.Fatalf("SaveGlobalScoreWeights() error = %v", err)
+	}
+	if saved.Cost != 25 || saved.Success != 35 || saved.TTFT != 20 || saved.Latency != 20 || saved.UpdatedBy != 9 || !saved.UpdatedAt.Equal(returnedAt) {
+		t.Fatalf("saved weights = %#v", saved)
+	}
+
+	mock.ExpectExec("DELETE FROM account_monitor_global_score_weights").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := repo.ResetGlobalScoreWeights(ctx); err != nil {
+		t.Fatalf("ResetGlobalScoreWeights() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAccountMonitorRepositoryRejectsOverflowSizedGlobalScoreWeights(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	overflowWeight := int(^uint(0) >> 1)
+	_, err = NewAccountMonitorRepository(db).SaveGlobalScoreWeights(context.Background(), 9, service.AccountMonitorScoreWeights{
+		Cost: overflowWeight, Success: overflowWeight, TTFT: 101, Latency: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "between 0 and 100") {
+		t.Fatalf("SaveGlobalScoreWeights() error = %v, want local range validation", err)
 	}
 }
 

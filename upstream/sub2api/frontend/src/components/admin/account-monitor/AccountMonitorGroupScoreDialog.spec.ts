@@ -10,6 +10,30 @@ vi.mock('vue-i18n', () => ({
 describe('AccountMonitorGroupScoreDialog', () => {
   const weights = { cost: 15, success: 45, ttft: 20, latency: 20 }
 
+  it('renders only four weights and emits only four fields in global mode', async () => {
+    const wrapper = mount(AccountMonitorGroupScoreDialog, {
+      props: { show: true, mode: 'global', groupId: 0, weights },
+      global: { stubs: { BaseDialog: { template: '<div><h2>{{ title }}</h2><slot /><slot name="footer" /></div>', props: ['title'] } } },
+    })
+
+    expect(wrapper.text()).toContain('全局评分规则')
+    expect(wrapper.text()).not.toContain('服务指标评分范围')
+    expect(wrapper.findAll('input')).toHaveLength(4)
+
+    await wrapper.get('[data-test="save-score-weights"]').trigger('click')
+    expect(wrapper.emitted('save')?.[0]).toEqual([{ cost: 15, success: 45, ttft: 20, latency: 20 }])
+  })
+
+  it('keeps group mode thresholds and threshold validation unchanged', async () => {
+    const wrapper = mount(AccountMonitorGroupScoreDialog, {
+      props: { show: true, mode: 'group', groupId: 3, groupName: 'Production', weights },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+    })
+
+    expect(wrapper.text()).toContain('服务指标评分范围')
+    expect(wrapper.findAll('input')).toHaveLength(8)
+  })
+
   it('disables save until four weights sum to 100', async () => {
     const wrapper = mount(AccountMonitorGroupScoreDialog, {
       props: { show: true, groupId: 3, groupName: 'Production', weights },

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -29,29 +30,37 @@ type accountMonitorAccountRepoStub struct {
 
 type accountMonitorRepoStub struct {
 	AccountMonitorRepository
-	mu                 sync.Mutex
-	results            []AccountMonitorProbeResult
-	settings           AccountMonitorSettings
-	groups             []AccountMonitorGroup
-	weights            map[int64]AccountMonitorScoreWeights
-	aggregates         map[int64]AccountMonitorAggregate
-	windowAggregates   map[int64]AccountMonitorWindowAggregate
-	groupAggregates    map[int64]map[int64]AccountMonitorAggregate
-	aggregate          AccountMonitorAggregate
-	groupAggregate     map[int64]AccountMonitorAggregate
-	groupAggregateIDs  map[int64][]int64
-	groupAggregatesErr error
-	latest             map[int64]AccountMonitorLatest
-	timelines          map[int64][]AccountMonitorTimelinePoint
-	timelineIDs        []int64
-	timelineLimit      int
-	aggregateIDs       []int64
-	probeSince         time.Time
-	probeUntil         time.Time
-	windowSince        time.Time
-	windowUntil        time.Time
-	aggregateCalls     []time.Time
-	aggregateResults   []map[int64]AccountMonitorAggregate
+	mu                          sync.Mutex
+	results                     []AccountMonitorProbeResult
+	settings                    AccountMonitorSettings
+	groups                      []AccountMonitorGroup
+	weights                     map[int64]AccountMonitorScoreWeights
+	globalWeights               AccountMonitorScoreWeights
+	globalWeightsErr            error
+	globalWeightsSaveErr        error
+	globalWeightsResetErr       error
+	globalWeightsSaved          []AccountMonitorScoreWeights
+	globalWeightsSavedAt        time.Time
+	globalWeightsReset          bool
+	loadGlobalScoreWeightsCalls int
+	aggregates                  map[int64]AccountMonitorAggregate
+	windowAggregates            map[int64]AccountMonitorWindowAggregate
+	groupAggregates             map[int64]map[int64]AccountMonitorAggregate
+	aggregate                   AccountMonitorAggregate
+	groupAggregate              map[int64]AccountMonitorAggregate
+	groupAggregateIDs           map[int64][]int64
+	groupAggregatesErr          error
+	latest                      map[int64]AccountMonitorLatest
+	timelines                   map[int64][]AccountMonitorTimelinePoint
+	timelineIDs                 []int64
+	timelineLimit               int
+	aggregateIDs                []int64
+	probeSince                  time.Time
+	probeUntil                  time.Time
+	windowSince                 time.Time
+	windowUntil                 time.Time
+	aggregateCalls              []time.Time
+	aggregateResults            []map[int64]AccountMonitorAggregate
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -147,6 +156,143 @@ func (s *accountMonitorRepoStub) SaveGroupScoreWeights(_ context.Context, groupI
 func (s *accountMonitorRepoStub) ResetGroupScoreWeights(_ context.Context, groupID int64) error {
 	delete(s.weights, groupID)
 	return nil
+}
+
+func (s *accountMonitorRepoStub) LoadGlobalScoreWeights(context.Context) (AccountMonitorScoreWeights, error) {
+	s.loadGlobalScoreWeightsCalls++
+	if s.globalWeightsErr != nil {
+		return AccountMonitorScoreWeights{}, s.globalWeightsErr
+	}
+	return s.globalWeights, nil
+}
+
+func (s *accountMonitorRepoStub) SaveGlobalScoreWeights(_ context.Context, actorID int64, weights AccountMonitorScoreWeights) (AccountMonitorScoreWeights, error) {
+	if s.globalWeightsSaveErr != nil {
+		return AccountMonitorScoreWeights{}, s.globalWeightsSaveErr
+	}
+	weights.UpdatedBy = actorID
+	weights.UpdatedAt = s.globalWeightsSavedAt
+	s.globalWeightsSaved = append(s.globalWeightsSaved, weights)
+	s.globalWeights = weights
+	return weights, nil
+}
+
+func (s *accountMonitorRepoStub) ResetGlobalScoreWeights(context.Context) error {
+	if s.globalWeightsResetErr != nil {
+		return s.globalWeightsResetErr
+	}
+	s.globalWeightsReset = true
+	s.globalWeights = AccountMonitorScoreWeights{}
+	s.globalWeightsErr = sql.ErrNoRows
+	return nil
+}
+
+func TestAccountMonitorServiceGlobalScoreWeightsDefaultAndErrors(t *testing.T) {
+	repo := &accountMonitorRepoStub{globalWeightsErr: sql.ErrNoRows}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+
+	got, err := svc.GetGlobalScoreWeights(context.Background())
+	if err != nil {
+		t.Fatalf("GetGlobalScoreWeights() error = %v", err)
+	}
+	if !got.IsDefault || got.Cost != 15 || got.Success != 45 || got.TTFT != 20 || got.Latency != 20 || got.UpdatedAt != nil {
+		t.Fatalf("default response = %#v", got)
+	}
+
+	repo.globalWeightsErr = errors.New("database unavailable")
+	if _, err := svc.GetGlobalScoreWeights(context.Background()); err == nil {
+		t.Fatal("expected storage error to propagate")
+	}
+}
+
+func TestAccountMonitorServiceUpdatesGlobalScoreWeightsWithoutThresholdPersistence(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	savedAt := time.Date(2026, 8, 14, 11, 0, 0, 0, time.UTC)
+	repo.globalWeightsSavedAt = savedAt
+
+	got, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{
+		Cost: 30, Success: 30, TTFT: 20, Latency: 20,
+		TTFTTargetMS: 1, TTFTLimitMS: 2, LatencyTargetMS: 3, LatencyLimitMS: 4,
+	})
+	if err != nil {
+		t.Fatalf("UpdateGlobalScoreWeights() error = %v", err)
+	}
+	if got.IsDefault || got.Cost != 30 || got.Success != 30 || got.TTFT != 20 || got.Latency != 20 {
+		t.Fatalf("saved response = %#v", got)
+	}
+	if got.UpdatedBy != 12 || got.UpdatedAt == nil || !got.UpdatedAt.Equal(savedAt) {
+		t.Fatalf("audit fields = updated_by %d updated_at %#v", got.UpdatedBy, got.UpdatedAt)
+	}
+	saved := repo.globalWeightsSaved[len(repo.globalWeightsSaved)-1]
+	if saved.TTFTTargetMS != 0 || saved.TTFTLimitMS != 0 || saved.LatencyTargetMS != 0 || saved.LatencyLimitMS != 0 {
+		t.Fatalf("global save must not persist thresholds: %#v", saved)
+	}
+}
+
+func TestAccountMonitorServiceGlobalSaveErrorDoesNotReread(t *testing.T) {
+	repo := &accountMonitorRepoStub{globalWeightsSaveErr: errors.New("write failed")}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{Cost: 30, Success: 30, TTFT: 20, Latency: 20}); err == nil {
+		t.Fatal("expected save error")
+	}
+	if repo.loadGlobalScoreWeightsCalls != 0 {
+		t.Fatalf("UpdateGlobalScoreWeights reread after save error: %d", repo.loadGlobalScoreWeightsCalls)
+	}
+}
+
+func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{Cost: 30, Success: 30, TTFT: 20, Latency: 19}); err == nil {
+		t.Fatal("expected invalid sum error")
+	}
+	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{Cost: -1, Success: 61, TTFT: 20, Latency: 20}); err == nil {
+		t.Fatal("expected negative weight error")
+	}
+	if _, err := svc.ResetGlobalScoreWeights(context.Background(), 0); err == nil {
+		t.Fatal("expected invalid actor error")
+	}
+	overflowWeight := int(^uint(0) >> 1)
+	if _, err := svc.UpdateGlobalScoreWeights(context.Background(), 12, AccountMonitorScoreWeights{
+		Cost: overflowWeight, Success: overflowWeight, TTFT: 101, Latency: 1,
+	}); !errors.Is(err, ErrAccountMonitorInvalidScoreWeights) {
+		t.Fatalf("overflow-sized weights error = %v, want invalid score weights", err)
+	}
+	if len(repo.globalWeightsSaved) != 0 {
+		t.Fatalf("invalid weights reached repository save: %#v", repo.globalWeightsSaved)
+	}
+}
+
+func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
+	rate := 1.0
+	accounts := []Account{
+		{ID: 1, Name: "cheap", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
+		{ID: 2, Name: "fast", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
+	}
+	ttftCheap := 4000.0
+	ttftFast := 500.0
+	latency := 1000.0
+	repo := &accountMonitorRepoStub{
+		settings:         AccountMonitorSettings{IntervalSeconds: AccountMonitorDefaultIntervalSeconds},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{},
+		aggregates: map[int64]AccountMonitorAggregate{
+			1: {SampleCount: 5, SuccessSampleCount: 5, TTFTSampleCount: 5, LatencySampleCount: 5, SuccessRate: 1, TTFTP50MS: &ttftCheap, LatencyP95MS: &latency, LastCheckedAt: ptrTime(time.Now().UTC())},
+			2: {SampleCount: 5, SuccessSampleCount: 5, TTFTSampleCount: 5, LatencySampleCount: 5, SuccessRate: 1, TTFTP50MS: &ttftFast, LatencyP95MS: &latency, LastCheckedAt: ptrTime(time.Now().UTC())},
+		},
+		groups:        []AccountMonitorGroup{{ID: 7, Name: "Group", RateMultiplier: 1, ScoreWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20}}},
+		globalWeights: AccountMonitorScoreWeights{Cost: 0, Success: 0, TTFT: 100, Latency: 0},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatalf("ListWindow() error = %v", err)
+	}
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
+		t.Fatalf("global ranking account ids = %v", got)
+	}
+	if page.SchemaVersion != AccountMonitorSchemaVersion {
+		t.Fatalf("schema version changed: %d", page.SchemaVersion)
+	}
 }
 
 type accountMonitorMultiplierStub struct {

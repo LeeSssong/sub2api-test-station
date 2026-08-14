@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T05 用量页移除外部控制面状态重新启动（2026-08-14）：** 状态：进行中（`REFRESH_REQUIRED`）。T05 已完成生产只读审计、规格批准、实施计划、RED/GREEN 实现、任务复审和最终全分支复审；候选 `9dcdce210` 基于旧 `main@0c26c9afc`，而根 `main` 已更新到 `689153da8`，直接合并会回退根队列/总账内容。当前只允许在 T05 worktree 整合最新根 main、保留根文档版本，并重新完成 69 项专项测试、typecheck、diff-check、控制面禁用 guard 和最终独立复审；未重新 READY 前不得授权合并、推送或部署。
+**T05 用量页移除外部控制面状态重新启动（2026-08-14）：** 状态：进行中（`DEPLOYING`）。T05 已完成生产只读审计、规格批准、实施计划、RED/GREEN 实现、两轮 main 刷新、任务复审、最终全分支复审和根授权合并；最终根合并提交 `3dd5539b3c7b4d1ba55b764b02ae91a0c0b9daf3`，合并后 69 项专项测试、typecheck、production build、diff-check 和控制面 guard 均通过。无迁移/配置变化，预检目标 `downtime_required=false`；当前待推送、蓝绿发布、登录态用量页/错误详情/成本异常线上验收和恢复证据归档。
 
 **账号监控卡片原生账号复用生产收口（2026-08-14）：** 状态：已完成。候选 `codex/account-monitor-card@62eb1029f08cb6530d2e2b9fcdc2d8c197681a75` 经根授权无冲突合并为 `main@39520d2cfdc47760fad57613616aabe5c045afa0`，并已推送到 `origin/main`。合并后专项验收：账号监控相关 71 项 Vitest、原生账号操作回归 19 项、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；无后端/API、数据库迁移、配置或 GitHub Actions 变化，`downtime_required=false`。预加载蓝绿发布记录为 `/var/lib/sub2api/release-records/20260814T102354Z-production-3093579.json`，结果 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，运行镜像绑定 source commit `39520d2cfdc47760fad57613616aabe5c045afa0`、source tree `3b88529643b135d9bd39a1c343deb1a0e7615e3d`；公网 `/healthz`、`/readyz`、`/health` 均返回 200，API/worker/PostgreSQL/Redis/Caddy 健康。登录态账号监控页面已验证账号信息、原生更多菜单入口正常；账号信息弹窗不展示凭据原文、token 或 `error_message`；页面请求未出现 `/api/v1/xingqiao/*` 或其他控制面 API 调用。当前无发布候选；下一步仅可从最新干净 main 重建 T05 用户可见顶层任务。
 

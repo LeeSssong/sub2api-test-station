@@ -10,7 +10,7 @@ READY_FOR_ROOT_REVIEW
 
 ## Candidate
 
-- `HEAD@1d43387fc1966db29a9ce77f759824f84d449f48`
+- Final candidate SHA is provided in the root handoff after this report update is committed.
 
 ## Changed Files
 
@@ -40,6 +40,7 @@ READY_FOR_ROOT_REVIEW
 
 - The page is already runtime-clean, so this task is a regression guard rather than a runtime behavior change.
 - Build and vitest emitted environment warnings, but they did not affect the pass/fail result.
+- The last fix was an EOF whitespace cleanup in the review reports only.
 
 ## Rollback
 

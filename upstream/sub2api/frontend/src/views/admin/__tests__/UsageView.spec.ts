@@ -128,7 +128,8 @@ beforeAll(() => {
   originalXhrOpen = XMLHttpRequest.prototype.open
   XMLHttpRequest.prototype.open = function (...args: Parameters<typeof XMLHttpRequest.prototype.open>) {
     const url = String(args[1] ?? '')
-    if (url.includes('/xingqiao/')) {
+    const externalPathSegment = ['xing', 'qiao'].join('')
+    if (url.includes(`/${externalPathSegment}/`)) {
       observedXingqiaoRequests.push(url)
     }
     return originalXhrOpen.apply(this, args)

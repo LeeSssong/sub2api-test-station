@@ -2,6 +2,7 @@
 
 - Task: T06 Task 1, add page-level guard tests for the native profitability page.
 - Baseline: `main@032b3591e2df7408641b48ae584c10eee8e7a0be`
+- Candidate commit: `824338788`
 - Scope: only `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts` and this report file.
 
 ## What changed
@@ -43,4 +44,3 @@
 - The page is already runtime-clean, so this task is primarily a regression guard.
 - The denylist only protects the page source covered by this spec; it does not scan unrelated files.
 - Existing untracked design/planning docs in `.superpowers/sdd/2026-08-14-t06-profitability-native-only/` were left untouched.
-

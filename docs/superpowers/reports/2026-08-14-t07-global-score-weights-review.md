@@ -61,10 +61,12 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 ## Final Review Migration Schema Fix
 
 - Fix base: `780ef8d90f8221946ada8da085e8df06c6bfe383`.
+- Fix commit: `453a5fc20 test: assert global score weight schema`.
 - Added PostgreSQL catalog assertions in `TestMigrationsSchema` for the `account_monitor_global_score_weights` table, singleton boolean/NOT NULL/default/primary-key/check contract, the exact four `SMALLINT NOT NULL` weight columns, audit columns/default, the four-weight sum check, and absence of all four threshold columns.
 - Untagged verification: `go test ./internal/repository -run TestMigrationsSchema -count=1` PASS with `[no tests to run]`, as the schema test is behind the `integration` build tag.
 - RED mutation proof: temporarily changed the migration sum check from `= 100` to `= 99`; the PostgreSQL-backed test failed at the new sum-contract assertion with `expected four-weight sum CHECK constraint`. The migration was restored before commit.
 - GREEN verification: `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_RYUK_DISABLED=true go test -tags integration ./internal/repository -run TestMigrationsSchema -count=1` PASS after restoration.
+- Scoped re-review by Kant (agent `01a00239-d0c6-7482-9971-74d83433ab77`): `TestMigrationsSchema` global score weights schema coverage is ADDRESSED; no new Critical/Important breakage.
 
 ## Scope Guards
 
@@ -91,6 +93,7 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 - Task 3 reviewer Laplace: spec compliant, task quality approved, no findings.
 - Final whole-branch reviewer found three blocking issues: global dialog scope/race, discarded reset response on projection reload failure, and overflow-prone global weight validation. All three have focused RED/GREEN regression coverage and implementation fixes in this wave.
 - Scoped post-fix re-review by Ampere: all three findings addressed; no new Critical/Important breakage.
+- Final reviewer Carver found one additional Important issue: `TestMigrationsSchema` lacked PostgreSQL assertions for `account_monitor_global_score_weights`. Fix commit `453a5fc20` adds the schema coverage, and scoped re-review by Kant marked it addressed with no new Critical/Important breakage.
 
 ## Release Precheck And Rollback Notes
 
@@ -101,4 +104,4 @@ Notes: frontend commands emit existing environment/build warnings for pnpm overr
 
 ## Status
 
-REVIEWING. Final reviewer findings are fixed, scoped re-reviewed, and locally verified; pending final whole-branch reviewer before `READY_FOR_ROOT_REVIEW`.
+REVIEWING. Final reviewer findings are fixed, scoped re-reviewed, and locally verified; pending refreshed final whole-branch reviewer before `READY_FOR_ROOT_REVIEW`.

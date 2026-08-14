@@ -1,9 +1,9 @@
 # 账号监控卡片复用原生账号管理规格
 
-日期：2026-08-14  
-状态：待书面批准  
-基线：`main@263a2de748269b3c96057f500eda5426fe1c013e`  
-工作区：`/Users/gongtengxinwen/.codex/worktrees/account-monitor-card`  
+日期：2026-08-14
+状态：待书面批准
+基线：`main@263a2de748269b3c96057f500eda5426fe1c013e`
+工作区：`/Users/gongtengxinwen/.codex/worktrees/account-monitor-card`
 分支：`codex/account-monitor-card`
 
 ## 1. 目标

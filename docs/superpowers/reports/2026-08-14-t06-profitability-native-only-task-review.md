@@ -25,4 +25,3 @@ Partial, then addressed
 **Task quality:** Approved
 
 **Reasoning:** The guard now covers both control-plane identifiers and the status-style resurfacing tokens called out in the review.
-

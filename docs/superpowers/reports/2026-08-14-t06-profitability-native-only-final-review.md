@@ -44,4 +44,3 @@ READY_FOR_ROOT_REVIEW
 ## Rollback
 
 - Revert the documented candidate commit(s) through the reviewed local/host release chain; no database or config rollback is required.
-

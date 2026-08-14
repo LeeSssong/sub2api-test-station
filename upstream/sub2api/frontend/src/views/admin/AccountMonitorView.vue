@@ -215,7 +215,7 @@
         :weights="scoreDialogMode === 'global' ? globalScoreWeights : activeGroup!.score_weights"
         :saving="savingScoreWeights"
         :error="scoreWeightsError"
-        @close="showScoreDialog = false"
+        @close="closeScoreDialog"
         @save="saveScoreWeights"
         @reset="resetScoreWeights"
       />
@@ -388,6 +388,8 @@ let nativeEntryGeneration = 0
 let abortController: AbortController | null = null
 let loadGeneration = 0
 let globalScoreDialogGeneration = 0
+let scoreDialogSessionGeneration = 0
+let scoreWeightsMutationGeneration = 0
 let pollTimer: number | null = null
 let pollInFlight = false
 let pollQueued = false
@@ -486,6 +488,9 @@ function groupAccountCount(group: AccountMonitorGroup): number {
 
 function openScoreDialog(): void {
   if (!activeGroup.value) return
+  scoreDialogSessionGeneration++
+  scoreWeightsMutationGeneration++
+  savingScoreWeights.value = false
   scoreDialogMode.value = 'group'
   scoreWeightsError.value = null
   showScoreDialog.value = true
@@ -498,6 +503,9 @@ async function openGlobalScoreDialog(): Promise<void> {
   try {
     const weights = await adminAPI.accountMonitor.getGlobalScoreWeights()
     if (generation !== globalScoreDialogGeneration || activeGroupId.value !== null) return
+    scoreDialogSessionGeneration++
+    scoreWeightsMutationGeneration++
+    savingScoreWeights.value = false
     scoreDialogMode.value = 'global'
     globalScoreWeights.value = {
       cost: weights.cost,
@@ -513,8 +521,20 @@ async function openGlobalScoreDialog(): Promise<void> {
   }
 }
 
+function closeScoreDialog(): void {
+  globalScoreDialogGeneration++
+  scoreDialogSessionGeneration++
+  scoreWeightsMutationGeneration++
+  savingScoreWeights.value = false
+  showScoreDialog.value = false
+  scoreWeightsError.value = null
+}
+
 function selectGroup(groupID: number | null, event: MouseEvent): void {
   globalScoreDialogGeneration++
+  scoreDialogSessionGeneration++
+  scoreWeightsMutationGeneration++
+  savingScoreWeights.value = false
   showScoreDialog.value = false
   scoreDialogMode.value = 'group'
   scoreWeightsError.value = null
@@ -767,11 +787,41 @@ function reportScoreWeightsReloadFailure(operation: string): void {
   appStore.showError(message)
 }
 
-async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourScoreWeights) {
+type ScoreWeightsMutationSession = {
+  dialogGeneration: number
+  mutationGeneration: number
+  mode: 'group' | 'global'
+  groupID: number | null
+}
+
+function beginScoreWeightsMutation(): ScoreWeightsMutationSession {
+  const session = {
+    dialogGeneration: scoreDialogSessionGeneration,
+    mutationGeneration: ++scoreWeightsMutationGeneration,
+    mode: scoreDialogMode.value,
+    groupID: activeGroup.value?.id ?? null,
+  } satisfies ScoreWeightsMutationSession
   savingScoreWeights.value = true
   scoreWeightsError.value = null
+  return session
+}
+
+function isCurrentScoreWeightsMutation(session: ScoreWeightsMutationSession): boolean {
+  return session.dialogGeneration === scoreDialogSessionGeneration
+    && session.mutationGeneration === scoreWeightsMutationGeneration
+}
+
+function ownsScoreDialog(session: ScoreWeightsMutationSession): boolean {
+  return isCurrentScoreWeightsMutation(session)
+    && showScoreDialog.value
+    && scoreDialogMode.value === session.mode
+    && (activeGroup.value?.id ?? null) === session.groupID
+}
+
+async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourScoreWeights) {
+  const session = beginScoreWeightsMutation()
   try {
-    if (scoreDialogMode.value === 'global') {
+    if (session.mode === 'global') {
       await adminAPI.accountMonitor.updateGlobalScoreWeights({
         cost: Number(weights.cost),
         success: Number(weights.success),
@@ -779,31 +829,33 @@ async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourSco
         latency: Number(weights.latency),
       })
     } else {
-      const group = activeGroup.value
-      if (!group) return
-      await adminAPI.accountMonitor.updateGroupScoreWeights(group.id, weights)
+      if (session.groupID == null) return
+      await adminAPI.accountMonitor.updateGroupScoreWeights(session.groupID, weights)
     }
+    if (!ownsScoreDialog(session)) return
     const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!ownsScoreDialog(session)) return
     if (!reloaded) {
-      reportScoreWeightsReloadFailure(scoreDialogMode.value === 'global' ? '保存全局评分权重' : '保存分组评分权重')
+      reportScoreWeightsReloadFailure(session.mode === 'global' ? '保存全局评分权重' : '保存分组评分权重')
       return
     }
     showScoreDialog.value = false
-    appStore.showSuccess(scoreDialogMode.value === 'global' ? '全局评分权重已更新' : '分组评分权重已更新')
+    appStore.showSuccess(session.mode === 'global' ? '全局评分权重已更新' : '分组评分权重已更新')
   } catch (reason: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(reason, scoreDialogMode.value === 'global' ? '保存全局评分权重失败' : '保存分组评分权重失败')
+    if (!ownsScoreDialog(session)) return
+    scoreWeightsError.value = extractApiErrorMessage(reason, session.mode === 'global' ? '保存全局评分权重失败' : '保存分组评分权重失败')
     appStore.showError(scoreWeightsError.value)
   } finally {
-    savingScoreWeights.value = false
+    if (isCurrentScoreWeightsMutation(session)) savingScoreWeights.value = false
   }
 }
 
 async function resetScoreWeights() {
-  savingScoreWeights.value = true
-  scoreWeightsError.value = null
+  const session = beginScoreWeightsMutation()
   try {
-    if (scoreDialogMode.value === 'global') {
+    if (session.mode === 'global') {
       const weights = await adminAPI.accountMonitor.resetGlobalScoreWeights()
+      if (!ownsScoreDialog(session)) return
       globalScoreWeights.value = {
         cost: weights.cost,
         success: weights.success,
@@ -811,22 +863,24 @@ async function resetScoreWeights() {
         latency: weights.latency,
       }
     } else {
-      const group = activeGroup.value
-      if (!group) return
-      await adminAPI.accountMonitor.resetGroupScoreWeights(group.id)
+      if (session.groupID == null) return
+      await adminAPI.accountMonitor.resetGroupScoreWeights(session.groupID)
     }
+    if (!ownsScoreDialog(session)) return
     const reloaded = await load(activeRange.value, { notifyError: false })
+    if (!ownsScoreDialog(session)) return
     if (!reloaded) {
-      reportScoreWeightsReloadFailure(scoreDialogMode.value === 'global' ? '恢复默认全局评分权重' : '恢复默认评分权重')
+      reportScoreWeightsReloadFailure(session.mode === 'global' ? '恢复默认全局评分权重' : '恢复默认评分权重')
       return
     }
     showScoreDialog.value = false
-    appStore.showSuccess(scoreDialogMode.value === 'global' ? '全局评分权重已恢复默认' : '分组评分权重已恢复默认')
+    appStore.showSuccess(session.mode === 'global' ? '全局评分权重已恢复默认' : '分组评分权重已恢复默认')
   } catch (reason: unknown) {
-    scoreWeightsError.value = extractApiErrorMessage(reason, scoreDialogMode.value === 'global' ? '恢复默认全局评分权重失败' : '恢复默认评分权重失败')
+    if (!ownsScoreDialog(session)) return
+    scoreWeightsError.value = extractApiErrorMessage(reason, session.mode === 'global' ? '恢复默认全局评分权重失败' : '恢复默认评分权重失败')
     appStore.showError(scoreWeightsError.value)
   } finally {
-    savingScoreWeights.value = false
+    if (isCurrentScoreWeightsMutation(session)) savingScoreWeights.value = false
   }
 }
 

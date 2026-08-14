@@ -346,6 +346,9 @@ WHERE ns.nspname = 'public'
 	}
 	require.NoError(t, checkRows.Err())
 	require.Contains(t, normalizedChecks, "singleton", "expected CHECK constraint enforcing singleton true")
+	for _, column := range weightColumns {
+		require.Contains(t, normalizedChecks, column+">=0", "expected non-negative CHECK constraint for %s", column)
+	}
 	require.Contains(t, normalizedChecks, "cost_weight+success_weight+ttft_weight+latency_weight=100", "expected four-weight sum CHECK constraint")
 
 	var thresholdColumnCount int

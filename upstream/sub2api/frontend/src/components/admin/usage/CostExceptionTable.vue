@@ -64,6 +64,7 @@ const total = ref(0); const page = ref(1); const pageSize = ref(20)
 const search = ref(''); const evidenceStatus = ref(typeof props.filters.evidence_status === 'string' ? props.filters.evidence_status : ''); const reviewStatus = ref(typeof props.filters.review_status === 'string' ? props.filters.review_status : '')
 const selectedIds = ref<number[]>([]); const mutating = ref(false); const exporting = ref(false); const reviewSummary = ref('')
 const loading = ref(false); const loadError = ref('')
+let reloadSequence = 0
 
 const query = computed<CostExceptionQueryParams>(() => ({
   page: page.value, page_size: pageSize.value,
@@ -71,25 +72,28 @@ const query = computed<CostExceptionQueryParams>(() => ({
   start_time: typeof props.filters.start_time === 'string' ? props.filters.start_time : undefined,
   end_time: typeof props.filters.end_time === 'string' ? props.filters.end_time : undefined,
   search: search.value || undefined,
-  evidence_status: evidenceStatus.value || (typeof props.filters.evidence_status === 'string' ? props.filters.evidence_status : undefined),
-  review_status: reviewStatus.value || (typeof props.filters.review_status === 'string' ? props.filters.review_status : undefined),
+  evidence_status: evidenceStatus.value || undefined,
+  review_status: reviewStatus.value || undefined,
 }))
 const reviewFilter = () => { const { page: _p, page_size: _s, ...filter } = query.value; return filter }
 
 const reload = async () => {
+  const sequence = ++reloadSequence
   loading.value = true
   loadError.value = ''
   try {
     const res = await adminUsageAPI.listCostExceptions(query.value)
+    if (sequence !== reloadSequence) return
     items.value = res.items
     total.value = res.total
     page.value = res.page
     pageSize.value = res.page_size
     selectedIds.value = []
   } catch {
+    if (sequence !== reloadSequence) return
     loadError.value = t('admin.costExceptions.loadError')
   } finally {
-    loading.value = false
+    if (sequence === reloadSequence) loading.value = false
   }
 }
 const reviewItem = async (id: number) => { mutating.value = true; try { await adminUsageAPI.reviewOne(id, {}); await reload(); emit('reviewed') } finally { mutating.value = false } }
@@ -121,12 +125,12 @@ const exportCurrentFilter = async () => {
 const setPage = (value: number) => { page.value = value; void reload() }
 const setPageSize = (value: number) => { pageSize.value = value; page.value = 1; void reload() }
 const formatTrace = (trace: UsageCostTrace) => [trace.sub_actual_cost, trace.new_api_quota, trace.new_api_quota_per_unit, trace.normalized_cost_cny].map(v => v == null ? '-' : v).join(' / ')
-watch(() => props.filters, (filters) => {
-  evidenceStatus.value = typeof filters.evidence_status === 'string' ? filters.evidence_status : ''
-  reviewStatus.value = typeof filters.review_status === 'string' ? filters.review_status : ''
+watch(() => [props.filters.account_id, props.filters.start_time, props.filters.end_time, props.filters.evidence_status, props.filters.review_status] as const, (values, oldValues) => {
+  if (!oldValues || values[3] !== oldValues[3]) evidenceStatus.value = typeof values[3] === 'string' ? values[3] : ''
+  if (!oldValues || values[4] !== oldValues[4]) reviewStatus.value = typeof values[4] === 'string' ? values[4] : ''
   page.value = 1
   void reload()
-}, { deep: true })
+})
 onMounted(reload)
 defineExpose({ reload })
 </script>

@@ -116,6 +116,10 @@ func TestAccountFinancialReportFoldsNativePairsAndConservesTotals(t *testing.T) 
 	assertNativeAmounts(t, report.Groups[2].Amounts, 3, 200, 2, 4, .5)
 	assertNativeAmounts(t, report.Groups[3].Amounts, 4, 400, 4, 5, .2)
 	assertNativeAmounts(t, report.Groups[4].Amounts, 1, 50, .5, 1, .5)
+	assertNativeAmounts(t, report.Groups[0].Accounts[0].Amounts, 2, 100, 1, 3, 2.0/3.0)
+	assertNativeAmounts(t, report.Groups[2].Accounts[0].Amounts, 3, 200, 2, 4, .5)
+	assertNativeAmounts(t, report.Groups[3].Accounts[0].Amounts, 4, 400, 4, 5, .2)
+	assertNativeAmounts(t, report.Groups[4].Accounts[0].Amounts, 1, 50, .5, 1, .5)
 	if report.Groups[3].Name != "分组 #30" || report.Accounts[2].Name != "账号 #4" {
 		t.Fatalf("stable fallbacks group=%q account=%q", report.Groups[3].Name, report.Accounts[2].Name)
 	}

@@ -81,7 +81,7 @@ func (r *financialAuditRecorder) Record(entry *service.AuditLog) {
 	r.entries = append(r.entries, entry)
 }
 
-func TestFinancialMutationHandlersPersistCorrelationThroughService(t *testing.T) {
+func TestAccountFinancialMutationHandlersPersistCorrelationThroughService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := &financialAuditRecorder{}
 	svc := service.NewAccountFinancialServiceWithAudit(financialMutationRepo{}, nil, time.Now, service.NewAccountFinancialAudit(recorder))
@@ -203,11 +203,12 @@ func TestAccountFinancialReportReturnsNativeJSONContract(t *testing.T) {
 func TestAccountFinancialReportUnavailableServiceAndReaderErrorsAreNonSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
-		name    string
-		handler *AccountFinancialHandler
+		name       string
+		handler    *AccountFinancialHandler
+		wantStatus int
 	}{
-		{name: "nil service", handler: NewAccountFinancialHandler(nil)},
-		{name: "nil reader", handler: NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, nil, time.Now))},
+		{name: "nil service", handler: NewAccountFinancialHandler(nil), wantStatus: http.StatusInternalServerError},
+		{name: "nil reader", handler: NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, nil, time.Now)), wantStatus: http.StatusInternalServerError},
 		{name: "reader error", handler: NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, &financialUsageReader{err: errors.New("reader unavailable")}, time.Now))},
 	}
 	for _, tt := range tests {
@@ -216,6 +217,10 @@ func TestAccountFinancialReportUnavailableServiceAndReaderErrorsAreNonSuccess(t 
 			r.GET("/report", tt.handler.GetReport)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/report?range=today", nil))
+			if tt.wantStatus != 0 {
+				require.Equal(t, tt.wantStatus, w.Code, w.Body.String())
+				return
+			}
 			require.GreaterOrEqual(t, w.Code, http.StatusBadRequest, w.Body.String())
 		})
 	}

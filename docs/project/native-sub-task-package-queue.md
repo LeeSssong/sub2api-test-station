@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T004424Z-production-3723827.json`，活动槽 `blue`，不得重复部署同一 SHA。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T085054Z-production-4053846.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T07 已完成合并、推送、维护发布和线上验收。T08 已以 `main@9709abc51460161156d390ec47eb7c1296eea1ca`、tree `cfe7a17f965c9086a90ba8cb73d5a4a316080504` 合入根 `main`，合并后 64/64 定向测试、typecheck、build、diff-check 和范围门禁通过，`downtime_required=false`，当前待推送、蓝绿发布和管理员登录态线上验收。
+- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`；线上管理员页面验收报告见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。当前无部署中的任务，T09 保持 BACKLOG，待后续按顶层任务门禁另行派发。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -97,7 +97,7 @@
 
 ### T08 “暂不建议入组”轻提示
 
-- 当前状态：`DEPLOYING`。用户可见顶层任务 `01a00306-a473-73f3-9240-addaf11b119d` 已刷新到 `main@7514021056bfb241fc54e338195d8583ad12b379`，候选 `772c89d4127c16212cc4960c7ea06d655e677780` 完成 64/64 定向测试、typecheck、build、diff-check、独立 scoped review 与 fresh whole-branch review（P0-P3=0）；根授权后已无冲突合并为 `main@9709abc51460161156d390ec47eb7c1296eea1ca`、tree `cfe7a17f965c9086a90ba8cb73d5a4a316080504`，无迁移/配置/依赖/GitHub Actions 变化，`downtime_required=false`。当前只剩根总控推送、蓝绿发布和管理员登录态线上验收。
+- 当前状态：`DONE`。用户可见顶层任务 `01a00306-a473-73f3-9240-addaf11b119d` 已刷新、实现、独立复审、全分支终审并经根授权合并；最终文档提交 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`。生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 green；64/64 定向测试、typecheck、build、diff-check 和线上管理员验收通过。真实生产无 `not_recommended` 自然样本，未修改生产数据；线上页面的中文、资源身份、390x844 无横向溢出、账号操作和健康检查均通过。详细证据见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。
 
 - 目标：保留紧凑标签，把原因收进按需提示而不是常驻文本。
 - 范围：账号卡片标签、桌面悬浮/点击、移动端点击、可访问性和防溢出测试。
@@ -129,5 +129,5 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1 均已完成生产验收；T07 已合并并推送，但因 migration 223 改变生产迁移集合而停在 `downtime_required=true` 门禁，生产仍未改变。
-- T07 已完成生产验收；T08 已合并根 `main@9709abc51460161156d390ec47eb7c1296eea1ca` 并通过合并后门禁，当前唯一发布车道是 T08 的推送、蓝绿发布和线上验收；在此闭环前不得启动 T09 或 S1-R2。S1 旧候选继续冻结。
+- T07、T08 已完成生产验收；当前无 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 任务。T09 与 S1-R2 均保持排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

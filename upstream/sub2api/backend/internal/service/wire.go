@@ -585,8 +585,8 @@ func ProvideAuditLogService(repo AuditLogRepository, settingService *SettingServ
 	return svc
 }
 
-func ProvideAccountFinancialService(repo AccountFinancialRepository, audit *AuditLogService) *AccountFinancialService {
-	return NewAccountFinancialServiceWithAudit(repo, time.Now, NewAccountFinancialAudit(audit))
+func ProvideAccountFinancialService(repo AccountFinancialRepository, usageReader AccountFinancialUsageReader, audit *AuditLogService) *AccountFinancialService {
+	return NewAccountFinancialServiceWithAudit(repo, usageReader, time.Now, NewAccountFinancialAudit(audit))
 }
 
 func buildIdempotencyConfig(cfg *config.Config) IdempotencyConfig {

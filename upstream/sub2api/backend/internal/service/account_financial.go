@@ -15,6 +15,8 @@ var (
 	ErrFinancialOAuthType         = errors.New("daily oauth cost requires literal oauth account type")
 	ErrFinancialReviewNotEligible = errors.New("usage is not a pending financial exception")
 	ErrFinancialAuditRequired     = errors.New("financial audit dependency is required")
+	ErrFinancialUsageReader       = errors.New("account financial usage reader is required")
+	ErrFinancialUsageSnapshot     = errors.New("account financial usage snapshot is unavailable")
 )
 
 type AccountFinancialRange string
@@ -27,48 +29,42 @@ const (
 )
 
 type FinancialAmounts struct {
-	RevenueCNY         float64
-	CostCNY            float64
-	ProfitCNY          float64
-	Margin             *float64
-	ExceptionCount     int
-	AffectedRevenueCNY float64
+	Requests int64    `json:"requests"`
+	Tokens   int64    `json:"tokens"`
+	Cost     float64  `json:"cost"`
+	UserCost float64  `json:"user_cost"`
+	Profit   float64  `json:"profit"`
+	Margin   *float64 `json:"margin"`
+	Revenue  float64  `json:"revenue"`
+	Expense  float64  `json:"expense"`
 }
 
 type AccountFinancialReport struct {
-	GeneratedAt        time.Time
-	Range              AccountFinancialRange
-	Summary            FinancialAmounts
-	Accounts           []*AccountFinancialAccountReport
-	ExceptionCount     int
-	AffectedRevenueCNY float64
-	UserBalanceCNY     float64
-	Groups             []*AccountFinancialGroupReport
+	GeneratedAt    time.Time                        `json:"generated_at"`
+	Range          AccountFinancialRange            `json:"range"`
+	Currency       string                           `json:"currency"`
+	Summary        FinancialAmounts                 `json:"summary"`
+	Accounts       []*AccountFinancialAccountReport `json:"accounts"`
+	Groups         []*AccountFinancialGroupReport   `json:"groups"`
+	UserBalanceCNY float64                          `json:"user_unconsumed_balance_cny"`
 }
 
 type AccountFinancialAccountReport struct {
-	ID                        int64
-	Name                      string
-	Type                      string
-	Platform                  string
-	GeneratedAt               time.Time
-	Complete                  bool
-	Amounts                   FinancialAmounts
-	ExceptionCount            int
-	AffectedRevenueCNY        float64
-	HasUnallocatedAdjustments bool
+	ID         int64            `json:"id"`
+	Name       string           `json:"name"`
+	Type       string           `json:"type"`
+	Platform   string           `json:"platform"`
+	Historical bool             `json:"historical"`
+	Amounts    FinancialAmounts `json:"amounts"`
 }
 
 type AccountFinancialGroupReport struct {
-	ID                        int64
-	Name                      string
-	Unassigned                bool
-	Complete                  bool
-	HasUnallocatedAdjustments bool
-	Amounts                   FinancialAmounts
-	Accounts                  []*AccountFinancialAccountReport
-	ExceptionCount            int
-	AffectedRevenueCNY        float64
+	ID         int64                            `json:"id"`
+	Name       string                           `json:"name"`
+	Unassigned bool                             `json:"unassigned"`
+	Historical bool                             `json:"historical"`
+	Amounts    FinancialAmounts                 `json:"amounts"`
+	Accounts   []*AccountFinancialAccountReport `json:"accounts"`
 }
 
 type AccountFinancialSnapshotQuery struct{ GeneratedAt, From, To time.Time }
@@ -262,332 +258,178 @@ type AccountFinancialRepository interface {
 }
 
 type AccountFinancialService struct {
-	repo  AccountFinancialRepository
-	now   func() time.Time
-	audit *AccountFinancialAudit
+	repo        AccountFinancialRepository
+	usageReader AccountFinancialUsageReader
+	now         func() time.Time
+	audit       *AccountFinancialAudit
 }
 
-func NewAccountFinancialServiceWithAudit(repo AccountFinancialRepository, now func() time.Time, audit *AccountFinancialAudit) *AccountFinancialService {
+func NewAccountFinancialServiceWithAudit(repo AccountFinancialRepository, usageReader AccountFinancialUsageReader, now func() time.Time, audit *AccountFinancialAudit) *AccountFinancialService {
 	if now == nil {
 		now = time.Now
 	}
-	return &AccountFinancialService{repo: repo, now: now, audit: audit}
+	return &AccountFinancialService{repo: repo, usageReader: usageReader, now: now, audit: audit}
 }
 
-func NewAccountFinancialService(repo AccountFinancialRepository, now func() time.Time) *AccountFinancialService {
-	if now == nil {
-		now = time.Now
+func NewAccountFinancialService(repo AccountFinancialRepository, usageReader AccountFinancialUsageReader, now func() time.Time) *AccountFinancialService {
+	return NewAccountFinancialServiceWithAudit(repo, usageReader, now, nil)
+}
+
+func finalizeFinancialAmounts(v *FinancialAmounts) {
+	v.Profit = v.UserCost - v.Cost
+	v.Revenue = v.UserCost
+	v.Expense = v.Cost
+	if v.UserCost == 0 {
+		v.Margin = nil
+		return
 	}
-	return &AccountFinancialService{repo: repo, now: now}
+	margin := v.Profit / v.UserCost
+	v.Margin = &margin
 }
 
 func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinancialRange) (*AccountFinancialReport, error) {
+	if s.usageReader == nil {
+		return nil, ErrFinancialUsageReader
+	}
 	now := s.now()
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	localNow := now.In(loc)
-	q := AccountFinancialSnapshotQuery{GeneratedAt: now}
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, loc)
+	from := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, loc)
 	switch r {
 	case AccountFinancialRange24H:
-		q.From = now.Add(-24 * time.Hour)
-		q.To = now
+		from = now.Add(-24 * time.Hour)
 	case AccountFinancialRange7D:
-		start = time.Date(localNow.Year(), localNow.Month(), localNow.Day()-6, 0, 0, 0, 0, loc)
-		q.From, q.To = start, now
+		from = time.Date(localNow.Year(), localNow.Month(), localNow.Day()-6, 0, 0, 0, 0, loc)
 	case AccountFinancialRange31D:
-		start = time.Date(localNow.Year(), localNow.Month(), localNow.Day()-30, 0, 0, 0, 0, loc)
-		q.From, q.To = start, now
+		from = time.Date(localNow.Year(), localNow.Month(), localNow.Day()-30, 0, 0, 0, 0, loc)
 	default:
-		q.From, q.To = start, now
 		r = AccountFinancialRangeToday
 	}
-	snap, err := s.repo.ReadSnapshot(ctx, q)
+	snap, err := s.usageReader.ReadAccountFinancialUsage(ctx, from, now)
 	if err != nil {
 		return nil, err
 	}
-	report := &AccountFinancialReport{GeneratedAt: snap.GeneratedAt, Range: r, UserBalanceCNY: snap.UserBalanceCNY}
-	byID := make(map[int64]*AccountFinancialAccountReport, len(snap.Accounts))
-	for _, a := range snap.Accounts {
-		x := &AccountFinancialAccountReport{ID: a.ID, Name: a.Name, Type: a.Type, Platform: a.Platform, GeneratedAt: snap.GeneratedAt, Complete: true}
-		byID[a.ID] = x
-		report.Accounts = append(report.Accounts, x)
+	if snap == nil {
+		return nil, ErrFinancialUsageSnapshot
+	}
+	report := &AccountFinancialReport{GeneratedAt: now, Range: r, Currency: "USD", UserBalanceCNY: snap.UserBalanceCNY}
+	accountMeta := make(map[int64]AccountFinancialUsageAccount, len(snap.Accounts))
+	accountByID := make(map[int64]*AccountFinancialAccountReport, len(snap.Accounts))
+	for _, meta := range snap.Accounts {
+		accountMeta[meta.ID] = meta
+		if !meta.Active {
+			continue
+		}
+		account := &AccountFinancialAccountReport{ID: meta.ID, Name: financialAccountName(meta.Name, meta.ID), Type: meta.Type, Platform: meta.Platform}
+		accountByID[meta.ID] = account
+		report.Accounts = append(report.Accounts, account)
+	}
+	accountForRow := func(row AccountFinancialUsageRow) *AccountFinancialAccountReport {
+		if account := accountByID[row.AccountID]; account != nil {
+			return account
+		}
+		meta := accountMeta[row.AccountID]
+		account := &AccountFinancialAccountReport{
+			ID: row.AccountID, Name: financialAccountName(financialFirstNonEmpty(meta.Name, row.AccountName), row.AccountID),
+			Type: financialFirstNonEmpty(meta.Type, row.AccountType), Platform: financialFirstNonEmpty(meta.Platform, row.AccountPlatform), Historical: !meta.Active,
+		}
+		accountByID[row.AccountID] = account
+		report.Accounts = append(report.Accounts, account)
+		return account
 	}
 	type groupAccumulator struct {
 		report   *AccountFinancialGroupReport
 		accounts map[int64]*AccountFinancialAccountReport
 	}
-	groupByID := make(map[int64]*groupAccumulator, len(snap.Groups))
-	for _, group := range snap.Groups {
-		g := &AccountFinancialGroupReport{ID: group.ID, Name: group.Name, Complete: true}
-		groupByID[group.ID] = &groupAccumulator{report: g, accounts: make(map[int64]*AccountFinancialAccountReport)}
-		report.Groups = append(report.Groups, g)
+	groupMeta := make(map[int64]AccountFinancialUsageGroup, len(snap.Groups))
+	groupByID := make(map[int64]*groupAccumulator, len(snap.Groups)+1)
+	for _, meta := range snap.Groups {
+		groupMeta[meta.ID] = meta
+		if !meta.Active {
+			continue
+		}
+		group := &AccountFinancialGroupReport{ID: meta.ID, Name: financialGroupName(meta.Name, meta.ID)}
+		groupByID[meta.ID] = &groupAccumulator{report: group, accounts: make(map[int64]*AccountFinancialAccountReport)}
+		report.Groups = append(report.Groups, group)
 	}
 	var historicalGroups []*AccountFinancialGroupReport
-	var unassignedGroup *AccountFinancialGroupReport
-	ensureGroupAccount := func(e AccountFinancialSnapshotEntry, account *AccountFinancialAccountReport) (*AccountFinancialGroupReport, *AccountFinancialAccountReport) {
-		var accumulator *groupAccumulator
-		if e.GroupID == nil {
-			accumulator = groupByID[0]
-			if accumulator == nil {
-				unassignedGroup = &AccountFinancialGroupReport{Unassigned: true, Complete: true}
-				accumulator = &groupAccumulator{report: unassignedGroup, accounts: make(map[int64]*AccountFinancialAccountReport)}
-				groupByID[0] = accumulator
+	var unassigned *groupAccumulator
+	groupForRow := func(row AccountFinancialUsageRow) *groupAccumulator {
+		if row.GroupID == nil {
+			if unassigned == nil {
+				unassigned = &groupAccumulator{report: &AccountFinancialGroupReport{ID: 0, Name: "未归属", Unassigned: true}, accounts: make(map[int64]*AccountFinancialAccountReport)}
 			}
-		} else {
-			accumulator = groupByID[*e.GroupID]
-			if accumulator == nil {
-				group := &AccountFinancialGroupReport{ID: *e.GroupID, Name: e.GroupName, Complete: true}
-				accumulator = &groupAccumulator{report: group, accounts: make(map[int64]*AccountFinancialAccountReport)}
-				groupByID[*e.GroupID] = accumulator
-				historicalGroups = append(historicalGroups, group)
-			}
+			return unassigned
 		}
-		groupAccount := accumulator.accounts[account.ID]
+		id := *row.GroupID
+		if group := groupByID[id]; group != nil {
+			return group
+		}
+		meta := groupMeta[id]
+		group := &AccountFinancialGroupReport{ID: id, Name: financialGroupName(financialFirstNonEmpty(meta.Name, row.GroupName), id), Historical: !meta.Active}
+		accumulator := &groupAccumulator{report: group, accounts: make(map[int64]*AccountFinancialAccountReport)}
+		groupByID[id] = accumulator
+		historicalGroups = append(historicalGroups, group)
+		return accumulator
+	}
+	add := func(dst *FinancialAmounts, row AccountFinancialUsageRow) {
+		dst.Requests += row.Requests
+		dst.Tokens += row.Tokens
+		dst.Cost += row.Cost
+		dst.UserCost += row.UserCost
+	}
+	for _, row := range snap.Rows {
+		account := accountForRow(row)
+		group := groupForRow(row)
+		groupAccount := group.accounts[row.AccountID]
 		if groupAccount == nil {
-			groupAccount = &AccountFinancialAccountReport{ID: account.ID, Name: account.Name, Type: account.Type, Platform: account.Platform, GeneratedAt: snap.GeneratedAt, Complete: true}
-			accumulator.accounts[account.ID] = groupAccount
-			accumulator.report.Accounts = append(accumulator.report.Accounts, groupAccount)
+			groupAccount = &AccountFinancialAccountReport{ID: account.ID, Name: account.Name, Type: account.Type, Platform: account.Platform, Historical: account.Historical}
+			group.accounts[row.AccountID] = groupAccount
+			group.report.Accounts = append(group.report.Accounts, groupAccount)
 		}
-		return accumulator.report, groupAccount
+		add(&report.Summary, row)
+		add(&account.Amounts, row)
+		add(&group.report.Amounts, row)
+		add(&groupAccount.Amounts, row)
 	}
-	for _, e := range snap.Entries {
-		if !entryInRange(e, r, now, localNow) {
-			continue
-		}
-		a := byID[e.AccountID]
-		if a == nil {
-			continue
-		}
-		group, groupAccount := ensureGroupAccount(e, a)
-		if a.Type == "oauth" {
-			group.Complete = false
-			group.HasUnallocatedAdjustments = true
-			groupAccount.Complete = false
-			groupAccount.HasUnallocatedAdjustments = true
-			continue
-		}
-		include, cost := includeEntry(e)
-		if !include {
-			if e.EvidenceStatus != "" && e.ReviewID == nil {
-				a.Complete = false
-				a.ExceptionCount++
-				a.AffectedRevenueCNY += e.RevenueCNY
-				a.Amounts.ExceptionCount++
-				a.Amounts.AffectedRevenueCNY += e.RevenueCNY
-				report.ExceptionCount++
-				report.AffectedRevenueCNY += e.RevenueCNY
-				report.Summary.ExceptionCount++
-				report.Summary.AffectedRevenueCNY += e.RevenueCNY
-				group.Complete = false
-				group.ExceptionCount++
-				group.AffectedRevenueCNY += e.RevenueCNY
-				group.Amounts.ExceptionCount++
-				group.Amounts.AffectedRevenueCNY += e.RevenueCNY
-				groupAccount.Complete = false
-				groupAccount.ExceptionCount++
-				groupAccount.AffectedRevenueCNY += e.RevenueCNY
-				groupAccount.Amounts.ExceptionCount++
-				groupAccount.Amounts.AffectedRevenueCNY += e.RevenueCNY
-			}
-			continue
-		}
-		a.Amounts.RevenueCNY += e.RevenueCNY
-		a.Amounts.CostCNY += cost
-		group.Amounts.RevenueCNY += e.RevenueCNY
-		group.Amounts.CostCNY += cost
-		groupAccount.Amounts.RevenueCNY += e.RevenueCNY
-		groupAccount.Amounts.CostCNY += cost
-	}
-	if r != AccountFinancialRange24H {
-		for _, d := range snap.DailyValues {
-			if !dailyValueInRange(d.BusinessDate, r, localNow) {
-				continue
-			}
-			a := byID[d.AccountID]
-			if a == nil {
-				continue
-			}
-			applyDailyOverride(a, d, snap.Entries, r == AccountFinancialRangeToday)
-			if d.OAuthCostCNY == nil && d.RevenueOverrideCNY == nil && d.CostOverrideCNY == nil {
-				continue
-			}
-			for _, e := range snap.Entries {
-				if e.AccountID != d.AccountID || e.BusinessDate != d.BusinessDate || !entryInRange(e, r, now, localNow) {
-					continue
-				}
-				group, groupAccount := ensureGroupAccount(e, a)
-				group.Complete = false
-				group.HasUnallocatedAdjustments = true
-				groupAccount.Complete = false
-				groupAccount.HasUnallocatedAdjustments = true
-			}
-		}
-	}
-	for _, a := range report.Accounts {
-		if a.Type == "oauth" {
-			a.Amounts, a.Complete = aggregateOAuthAccount(a.ID, r, now, localNow, snap)
-		}
-		a.Amounts.ProfitCNY = a.Amounts.RevenueCNY - a.Amounts.CostCNY
-		if a.Amounts.RevenueCNY != 0 {
-			v := a.Amounts.ProfitCNY / a.Amounts.RevenueCNY
-			a.Amounts.Margin = &v
-		}
-		report.Summary.RevenueCNY += a.Amounts.RevenueCNY
-		report.Summary.CostCNY += a.Amounts.CostCNY
-		report.Summary.ProfitCNY += a.Amounts.ProfitCNY
+	for _, account := range report.Accounts {
+		finalizeFinancialAmounts(&account.Amounts)
 	}
 	report.Groups = append(report.Groups, historicalGroups...)
-	if unassignedGroup != nil {
-		report.Groups = append(report.Groups, unassignedGroup)
+	if unassigned != nil {
+		report.Groups = append(report.Groups, unassigned.report)
 	}
 	for _, group := range report.Groups {
 		for _, account := range group.Accounts {
-			account.Amounts.ProfitCNY = account.Amounts.RevenueCNY - account.Amounts.CostCNY
-			if account.Amounts.RevenueCNY != 0 {
-				margin := account.Amounts.ProfitCNY / account.Amounts.RevenueCNY
-				account.Amounts.Margin = &margin
-			}
+			finalizeFinancialAmounts(&account.Amounts)
 		}
-		group.Amounts.ProfitCNY = group.Amounts.RevenueCNY - group.Amounts.CostCNY
-		if group.Amounts.RevenueCNY != 0 {
-			margin := group.Amounts.ProfitCNY / group.Amounts.RevenueCNY
-			group.Amounts.Margin = &margin
-		}
+		finalizeFinancialAmounts(&group.Amounts)
 	}
-	if report.Summary.RevenueCNY != 0 {
-		v := report.Summary.ProfitCNY / report.Summary.RevenueCNY
-		report.Summary.Margin = &v
-	}
+	finalizeFinancialAmounts(&report.Summary)
 	return report, nil
 }
-func aggregateOAuthAccount(id int64, r AccountFinancialRange, now, localNow time.Time, snap *AccountFinancialSnapshot) (FinancialAmounts, bool) {
-	if r == AccountFinancialRange24H {
-		return FinancialAmounts{}, false
-	}
-	revenueByDay := map[string]float64{}
-	for _, e := range snap.Entries {
-		if e.AccountID == id && entryInRange(e, r, now, localNow) {
-			revenueByDay[e.BusinessDate] += e.RevenueCNY
+
+func financialFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
 		}
 	}
-	out := FinancialAmounts{}
-	complete := true
-	for day, revenue := range revenueByDay {
-		d := dailyFor(snap.DailyValues, id, day)
-		if d == nil || d.OAuthCostCNY == nil {
-			complete = false
-			continue
-		}
-		cost := *d.OAuthCostCNY
-		if d.RevenueOverrideCNY != nil {
-			revenue = *d.RevenueOverrideCNY + sumOAuthRevenueAfter(snap.Entries, id, day, d.RevenueOverrideAt)
-		}
-		if d.CostOverrideCNY != nil {
-			cost = *d.CostOverrideCNY
-		}
-		out.RevenueCNY += revenue
-		out.CostCNY += cost
-	}
-	return out, complete
+	return ""
 }
-func sumOAuthRevenueAfter(entries []AccountFinancialSnapshotEntry, accountID int64, day string, cutoff *time.Time) float64 {
-	if cutoff == nil {
-		return 0
+
+func financialAccountName(name string, id int64) string {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Sprintf("账号 #%d", id)
 	}
-	var total float64
-	for _, e := range entries {
-		if e.AccountID == accountID && e.BusinessDate == day && e.CreatedAt.After(*cutoff) {
-			total += e.RevenueCNY
-		}
-	}
-	return total
+	return name
 }
-func dailyValueInRange(day string, r AccountFinancialRange, now time.Time) bool {
-	parsed, err := time.ParseInLocation("2006-01-02", day, now.Location())
-	if err != nil {
-		return false
+
+func financialGroupName(name string, id int64) string {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Sprintf("分组 #%d", id)
 	}
-	switch r {
-	case AccountFinancialRangeToday:
-		return day == now.Format("2006-01-02")
-	case AccountFinancialRange7D:
-		return !parsed.Before(time.Date(now.Year(), now.Month(), now.Day()-6, 0, 0, 0, 0, now.Location())) && !parsed.After(now)
-	case AccountFinancialRange31D:
-		return !parsed.Before(time.Date(now.Year(), now.Month(), now.Day()-30, 0, 0, 0, 0, now.Location())) && !parsed.After(now)
-	default:
-		return true
-	}
-}
-func entryInRange(e AccountFinancialSnapshotEntry, r AccountFinancialRange, now time.Time, localNow time.Time) bool {
-	switch r {
-	case AccountFinancialRange24H:
-		return !e.CreatedAt.IsZero() && !e.CreatedAt.Before(now.Add(-24*time.Hour)) && !e.CreatedAt.After(now)
-	case AccountFinancialRangeToday:
-		return e.BusinessDate == localNow.Format("2006-01-02")
-	case AccountFinancialRange7D, AccountFinancialRange31D:
-		start := 6
-		if r == AccountFinancialRange31D {
-			start = 30
-		}
-		first := time.Date(localNow.Year(), localNow.Month(), localNow.Day()-start, 0, 0, 0, 0, localNow.Location())
-		day, err := time.ParseInLocation("2006-01-02", e.BusinessDate, localNow.Location())
-		return err == nil && !day.Before(first) && !day.After(localNow)
-	default:
-		return true
-	}
-}
-func includeEntry(e AccountFinancialSnapshotEntry) (bool, float64) {
-	if e.ReviewID != nil {
-		if e.ReviewCostCNY == nil {
-			return true, 0
-		}
-		return true, *e.ReviewCostCNY
-	}
-	if e.EvidenceStatus == "confirmed" && e.EvidenceCostCNY != nil {
-		return true, *e.EvidenceCostCNY
-	}
-	return false, 0
-}
-func applyDailyOverride(a *AccountFinancialAccountReport, d AccountFinancialDailyValue, entries []AccountFinancialSnapshotEntry, today bool) {
-	dayRevenue, dayCost := 0.0, 0.0
-	for _, e := range entries {
-		if e.AccountID != a.ID || e.BusinessDate != d.BusinessDate {
-			continue
-		}
-		include, cost := includeEntry(e)
-		if !include {
-			continue
-		}
-		if d.RevenueReviewCutoffID != nil && e.ReviewID != nil && *e.ReviewID <= *d.RevenueReviewCutoffID {
-			dayRevenue += e.RevenueCNY
-		} else if e.ReviewID == nil && d.RevenueEvidenceCutoffID != nil && e.EvidenceID != nil && *e.EvidenceID <= *d.RevenueEvidenceCutoffID {
-			dayRevenue += e.RevenueCNY
-		} else if d.RevenueOverrideCNY == nil {
-			dayRevenue += e.RevenueCNY
-		}
-		if d.CostReviewCutoffID != nil && e.ReviewID != nil && *e.ReviewID <= *d.CostReviewCutoffID {
-			dayCost += cost
-		} else if e.ReviewID == nil && d.CostEvidenceCutoffID != nil && e.EvidenceID != nil && *e.EvidenceID <= *d.CostEvidenceCutoffID {
-			dayCost += cost
-		} else if d.CostOverrideCNY == nil {
-			dayCost += cost
-		}
-	}
-	if d.RevenueOverrideCNY != nil {
-		a.Amounts.RevenueCNY += *d.RevenueOverrideCNY - dayRevenue
-	}
-	if d.CostOverrideCNY != nil {
-		a.Amounts.CostCNY += *d.CostOverrideCNY - dayCost
-	}
-	_ = today
-}
-func dailyFor(v []AccountFinancialDailyValue, id int64, day string) *AccountFinancialDailyValue {
-	for i := range v {
-		if v[i].AccountID == id && v[i].BusinessDate == day {
-			return &v[i]
-		}
-	}
-	return nil
+	return name
 }
 
 func validateMoney(v *float64) error {

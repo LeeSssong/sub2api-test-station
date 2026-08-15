@@ -16,6 +16,10 @@ describe('admin account financial API', () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { summary: { user_cost: 0, cost: 2 } } } as never)
     await expect(getReport({ range: '24h' })).resolves.toMatchObject({ summary: { profit: -2, margin: null } })
   })
+  it('preserves legacy ProfitCNY instead of deriving a different profit', async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { summary: { RevenueCNY: 10, CostCNY: 4, ProfitCNY: 99 } } } as never)
+    await expect(getReport({ range: 'today' })).resolves.toMatchObject({ summary: { user_cost: 10, cost: 4, profit: 99 } })
+  })
   it('writes only explicit administrator today values', async () => {
     vi.mocked(apiClient.put).mockResolvedValue({ data: {} } as never)
     await setOAuthCost(7, { business_date: '2026-08-13', cost_cny: 5 })

@@ -12,7 +12,7 @@ function amounts(value: unknown): FinancialAmounts {
   const r = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
   const user_cost = numberValue(read(r, 'user_cost', 'UserCost') ?? read(r, 'revenue', 'RevenueCNY'), 0)
   const cost = numberValue(read(r, 'cost', 'Cost') ?? read(r, 'expense', 'ExpenseCNY') ?? r.CostCNY)
-  const profitValue = read(r, 'profit', 'Profit')
+  const profitValue = read(r, 'profit', 'Profit') ?? r.ProfitCNY
   const marginValue = read(r, 'margin', 'Margin')
   const hasMargin = Object.prototype.hasOwnProperty.call(r, 'margin') || Object.prototype.hasOwnProperty.call(r, 'Margin')
   return { requests: numberValue(read(r, 'requests', 'Requests')), tokens: numberValue(read(r, 'tokens', 'Tokens')), cost, user_cost, profit: profitValue == null ? user_cost - cost : numberValue(profitValue), margin: hasMargin ? (marginValue == null ? null : numberValue(marginValue)) : (user_cost === 0 ? null : (user_cost - cost) / user_cost) }

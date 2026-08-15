@@ -52,11 +52,17 @@ const messages = {
 }
 
 const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: messages } })
+const expectedNonce = import.meta.env.VITE_BROWSER_TEST_NONCE
+const requestedNonce = new URLSearchParams(location.search).get('nonce')
+if (!expectedNonce || requestedNonce !== expectedNonce) {
+  const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify({ pass: false, nonce: requestedNonce, error: 'browser test nonce mismatch' }); document.body.append(output)
+  throw new Error('browser test nonce mismatch')
+}
 window.addEventListener('error', (event) => {
-  const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify({ pass: false, error: event.error?.stack ?? event.message }); document.body.append(output)
+  const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify({ pass: false, nonce: expectedNonce, error: event.error?.stack ?? event.message }); document.body.append(output)
 })
 window.addEventListener('unhandledrejection', (event) => {
-  const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify({ pass: false, error: String(event.reason) }); document.body.append(output)
+  const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify({ pass: false, nonce: expectedNonce, error: String(event.reason) }); document.body.append(output)
 })
 const AppLayout = { setup: (_props: unknown, context: { slots: { default?: () => unknown } }) => () => h('div', context.slots.default?.()) }
 const app = createApp(AccountProfitabilityView)
@@ -94,7 +100,7 @@ function finish() {
     const viewport = { width: 390, height: 844, browserInnerWidth: innerWidth, browserInnerHeight: innerHeight, clientWidth: document.documentElement.clientWidth, clientHeight: document.documentElement.clientHeight }
     const viewportExact = innerWidth === 390 && innerHeight === 844 && viewport.clientWidth === 390 && viewport.clientHeight === 844
     const externalTargets = performance.getEntriesByType('resource').map(entry => (entry as PerformanceResourceTiming).name).filter(url => !url.startsWith(location.origin) && !url.startsWith('data:') && !url.startsWith('blob:'))
-    const result = { viewport, viewportExact, externalTargets, all, cards, adjacentOverlap, completeText: all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')), ellipsisOrTruncate: all.some(item => /…/.test(item.text)) || valueNodes.some(node => getComputedStyle(node).textOverflow === 'ellipsis' || node.className.includes('truncate')), pass: viewportExact && externalTargets.length === 0 && all.every(item => !item.overflow && !item.outside) && !adjacentOverlap && all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')) && valueNodes.every(node => !getComputedStyle(node).textOverflow.includes('ellipsis') && !node.className.includes('truncate')) }
+    const result = { nonce: expectedNonce, viewport, viewportExact, externalTargets, all, cards, adjacentOverlap, completeText: all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')), ellipsisOrTruncate: all.some(item => /…/.test(item.text)) || valueNodes.some(node => getComputedStyle(node).textOverflow === 'ellipsis' || node.className.includes('truncate')), pass: viewportExact && externalTargets.length === 0 && all.every(item => !item.overflow && !item.outside) && !adjacentOverlap && all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')) && valueNodes.every(node => !getComputedStyle(node).textOverflow.includes('ellipsis') && !node.className.includes('truncate')) }
     const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify(result); document.body.append(output); window.stop()
   }, 50)
 }

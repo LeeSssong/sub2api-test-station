@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { randomBytes, randomInt } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -16,6 +17,26 @@ export async function findAvailablePort(host = '127.0.0.1') {
   await new Promise(resolve => listener.close(resolve))
   if (!address || typeof address === 'string') throw new Error('Unable to allocate loopback port')
   return address.port
+}
+
+export function createBrowserTestIdentity() {
+  return { nonce: randomBytes(24).toString('hex') }
+}
+
+export function buildBrowserTestUrl(portOrOrigin, identity) {
+  const origin = typeof portOrOrigin === 'number' ? `http://127.0.0.1:${portOrOrigin}` : String(portOrOrigin).replace(/\/$/, '')
+  return `${origin}/browser/account-profitability.html?nonce=${encodeURIComponent(identity.nonce)}`
+}
+
+export function isTrustedReadiness(html, identity) {
+  const escaped = identity.nonce.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`<meta\\s+name=["']browser-test-nonce["']\\s+content=["']${escaped}["']`, 'i').test(html)
+}
+
+export function parseBrowserResult(text, identity) {
+  const result = JSON.parse(text)
+  if (!result || result.nonce !== identity.nonce) throw new Error('Browser result nonce mismatch')
+  return result
 }
 
 export function isolatedEnv(env = process.env) {
@@ -59,7 +80,8 @@ async function stopProcess(child, timeoutMs = 3000) {
   if (child.exitCode === null) killTree(child, 'SIGKILL')
 }
 
-async function cdpSession(target, child) {
+async function cdpSession(target, chromeChild, viteChild) {
+  if (chromeChild.exitCode !== null || viteChild.exitCode !== null) throw new Error('Vite/Chrome process exited before CDP connection')
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await waitFor(() => socket.readyState === WebSocket.OPEN ? true : null, 5000, 'CDP websocket')
   let id = 0
@@ -79,19 +101,27 @@ async function cdpSession(target, child) {
   await command('Network.enable')
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false })
   await command('Runtime.evaluate', { expression: `location.href = ${JSON.stringify(target.url)}` })
-  await waitFor(async () => (await command('Runtime.evaluate', { expression: 'document.querySelector("#browser-result")?.textContent', returnByValue: true })).result.value, 10000, 'browser result')
+  await waitFor(async () => {
+    if (chromeChild.exitCode !== null || viteChild.exitCode !== null) throw new Error('Vite/Chrome process exited while waiting for browser result')
+    return (await command('Runtime.evaluate', { expression: 'document.querySelector("#browser-result")?.textContent', returnByValue: true })).result.value
+  }, 10000, 'browser result')
   const evaluation = await command('Runtime.evaluate', { expression: 'document.documentElement.outerHTML', returnByValue: true })
   socket.close()
-  killTree(child, 'SIGTERM')
+  killTree(chromeChild, 'SIGTERM')
   return evaluation.result.value
 }
 
 export async function runBrowserTest() {
   const root = fileURLToPath(new URL('..', import.meta.url))
-  const port = await findAvailablePort()
-  const testUrl = `http://127.0.0.1:${port}/browser/account-profitability.html`
+  const identity = createBrowserTestIdentity()
+  // Vite 5's CLI treats port 0 as its default port. Pick one ephemeral-range
+  // candidate without probing/retrying; strictPort makes any collision fail closed.
+  const port = randomInt(40000, 60000)
   const profile = await mkdtemp(join(tmpdir(), 'sub2api-account-profitability-'))
-  const server = spawn('pnpm', ['vite', '--mode', 'browser-test', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: root, env: isolatedEnv(), detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const serverEnv = isolatedEnv()
+  serverEnv.VITE_BROWSER_TEST_NONCE = identity.nonce
+  serverEnv.VITE_DEV_PORT = String(port)
+  const server = spawn('pnpm', ['vite', '--mode', 'browser-test', '--host', '127.0.0.1', '--strictPort'], { cwd: root, env: serverEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
   let serverOutput = ''
   server.stdout.on('data', chunk => { serverOutput += chunk })
   server.stderr.on('data', chunk => { serverOutput += chunk })
@@ -108,7 +138,18 @@ export async function runBrowserTest() {
   process.once('SIGINT', onSignal)
   process.once('SIGTERM', onSignal)
   try {
-    await waitFor(async () => { const response = await fetch(testUrl); return response.ok && (await response.text()).includes('account-profitability.ts') }, 10000, 'Vite readiness')
+    const origin = await waitFor(() => {
+      if (server.exitCode !== null) throw new Error(`Vite exited with code ${server.exitCode}: ${serverOutput.slice(-1000)}`)
+      const match = serverOutput.match(/Local:\s+(https?:\/\/127\.0\.0\.1:\d+)\//)
+      return match?.[1]
+    }, 10000, 'Vite URL')
+    const testUrl = buildBrowserTestUrl(origin, identity)
+    await waitFor(async () => {
+      if (server.exitCode !== null) throw new Error(`Vite exited while waiting for readiness: ${serverOutput.slice(-1000)}`)
+      const response = await fetch(testUrl)
+      if (!response.ok) return null
+      return isTrustedReadiness(await response.text(), identity) ? true : null
+    }, 10000, 'Vite readiness')
     const chrome = resolveChromeExecutable()
     const args = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--remote-allow-origins=*', testUrl]
     const childOutput = await new Promise((resolve, reject) => {
@@ -120,14 +161,17 @@ export async function runBrowserTest() {
       const timer = setTimeout(() => reject(new Error('Chrome startup timed out')), 15000)
       ;(async () => {
         const activePort = Number((await waitFor(async () => { try { return (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0] } catch { return null } }, 10000, 'Chrome DevToolsActivePort')))
-        const target = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${activePort}/json/list`)).json()).find(item => item.type === 'page' && item.url === testUrl), 10000, 'Chrome target')
-        stdout = await cdpSession(target, chromeChild)
+        const target = await waitFor(async () => {
+          if (chromeChild.exitCode !== null) throw new Error('Chrome exited before target discovery')
+          return (await (await fetch(`http://127.0.0.1:${activePort}/json/list`)).json()).find(item => item.type === 'page' && item.url === testUrl)
+        }, 10000, 'Chrome target')
+        stdout = await cdpSession(target, chromeChild, server)
         resolve({ stdout, stderr })
       })().catch(reject).finally(() => clearTimeout(timer))
     })
     const match = childOutput.stdout.match(/<pre id="browser-result">([^<]+)<\/pre>/)
     if (!match) throw new Error(`browser result missing\nstdout=${childOutput.stdout.slice(-2000)}\nstderr=${childOutput.stderr}\nserver=${serverOutput}`)
-    return JSON.parse(match[1])
+    return parseBrowserResult(match[1], identity)
   } finally {
     process.removeListener('SIGINT', onSignal)
     process.removeListener('SIGTERM', onSignal)

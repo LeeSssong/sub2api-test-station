@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { findAvailablePort, isolatedEnv, resolveChromeExecutable } from './account-profitability-browser.mjs'
+import {
+  buildBrowserTestUrl,
+  createBrowserTestIdentity,
+  findAvailablePort,
+  isolatedEnv,
+  isTrustedReadiness,
+  parseBrowserResult,
+  resolveChromeExecutable,
+} from './account-profitability-browser.mjs'
 
 test('allocates a non-fixed loopback port', async () => {
   const first = await findAvailablePort()
@@ -19,4 +27,18 @@ test('removes inherited Vite proxy configuration', () => {
 
 test('reports invalid explicit Chrome path as a controlled failure', () => {
   assert.throws(() => resolveChromeExecutable({ BROWSER_EXECUTABLE_PATH: '/definitely/missing/chrome' }, 'linux'), /Chrome executable not found/)
+})
+
+test('rejects a competitor response that only spoofs the static readiness marker', () => {
+  const identity = createBrowserTestIdentity()
+  assert.equal(isTrustedReadiness('<script src="./account-profitability.ts"></script>', identity), false)
+  assert.equal(isTrustedReadiness(`<meta name="browser-test-nonce" content="${identity.nonce}">`, identity), true)
+})
+
+test('binds the URL and browser result to one generated identity', () => {
+  const identity = createBrowserTestIdentity()
+  const url = buildBrowserTestUrl(43210, identity)
+  assert.equal(new URL(url).searchParams.get('nonce'), identity.nonce)
+  assert.deepEqual(parseBrowserResult(JSON.stringify({ pass: true, nonce: identity.nonce }), identity), { pass: true, nonce: identity.nonce })
+  assert.throws(() => parseBrowserResult(JSON.stringify({ pass: true, nonce: 'other' }), identity), /nonce/i)
 })

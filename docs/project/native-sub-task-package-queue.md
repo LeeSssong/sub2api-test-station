@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T085054Z-production-4053846.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`；线上管理员页面验收报告见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。当前无部署中的任务，T09 保持 BACKLOG，待后续按顶层任务门禁另行派发。
+- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`；线上管理员页面验收报告见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。下一优先级为周复盘 P0 的 T10 账号质量监控器可执行链路，当前处于 `DESIGNING`；T09 官方更新冲突处理保持排队，不与 T10 合并。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -103,6 +103,14 @@
 - 范围：账号卡片标签、桌面悬浮/点击、移动端点击、可访问性和防溢出测试。
 - 不包含：推荐算法、分组迁移或卡片其他布局重构。
 - 验收：默认只占一行标签空间；原因最多一到两行；桌面和移动端均可查看且不遮挡其他内容。
+
+### T10 账号质量监控器可执行链路
+
+- 当前状态：`DESIGNING`。周复盘 P0 与生产只读证据确认 `sub2api-account-quality-monitor.timer` 仍在等待，但 service 最近触发连续返回 `203/EXEC Permission denied`；unit 使用 `User=ubuntu`，ExecStart 位于 `/opt/sub2api/production/ops/account-quality/`，父目录为 `0700 root:root`。任务待创建用户可见顶层窗口，基线为 `main@cdb3eea42739fdc72e5f13b85d8096d617a58ab8`。
+- 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
+- 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
+- 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。
+- 验收：连续受控触发不再出现 `203/EXEC`；timer/service 真实运行并写入既有证据位置；采集失败仍可诊断且不会写路由、账号、余额或计费；部署属性和停机需求由顶层任务报告。
 
 ### T09 官方更新冲突停止与人工处理
 

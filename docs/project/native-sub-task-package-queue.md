@@ -4,11 +4,12 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T085054Z-production-4053846.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`；线上管理员页面验收报告见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。下一优先级为周复盘 P0 的 T10 账号质量监控器可执行链路，当前处于 `DESIGNING`；T09 官方更新冲突处理保持排队，不与 T10 合并。
+- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`，生产 `release-state` 仍绑定同一 commit/tree、活动槽 `green`；2026-08-15 接管复核时公网 `/healthz`、`/readyz`、`/health` 均为 200。当前无任务处于 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。用户新增最高优先级 T11 经营页三层视图与异常空态修复，作为下一发布候选；T10 账号质量监控器可执行链路在第二准备槽继续设计收口，不抢占 T11 发布车道。T09 官方更新冲突处理继续排队。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
+- 模型规则：所有用户可见顶层任务统一使用 `GPT-5.6 Sol / medium`；任务内部 implementer/reviewer 子代理继续使用既定设置，不随顶层模型统一调整。当前 T10 已收到纠正指令，保留既有取证并从后续回合按本规则继续。
 - 根任务职责：排队、创建顶层任务、读取交接、授权合并、合并后快速门禁、推送、部署和线上验收；不得用根任务内部 `spawn_agent` 代替整个任务包。
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与验证、独立任务复审、最终全分支终审，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`。
 
@@ -106,11 +107,19 @@
 
 ### T10 账号质量监控器可执行链路
 
-- 当前状态：`DESIGNING`。周复盘 P0 与生产只读证据确认 `sub2api-account-quality-monitor.timer` 仍在等待，但 service 最近触发连续返回 `203/EXEC Permission denied`；unit 使用 `User=ubuntu`，ExecStart 位于 `/opt/sub2api/production/ops/account-quality/`，父目录为 `0700 root:root`。任务待创建用户可见顶层窗口，基线为 `main@cdb3eea42739fdc72e5f13b85d8096d617a58ab8`。
+- 当前状态：`DESIGNING`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 和独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建` 已存在，创建基线为 `main@e400f99e498e036ae01cefe12d5f2e1468dfcfd0`，工作树干净。根总控已批准方案 A 及三段设计，顶层任务正在写正式规格并须停在 `SPEC_READY_FOR_ROOT_REVIEW`；尚未调用 writing-plans、实现、复审、合并、推送或部署。2026-08-15 生产只读复核确认 timer 为 `active/waiting`，service 仍为 `Result=exit-code`、`ExecMainStatus=203`、`User=ubuntu`；`/opt/sub2api/production` 仍为 `0700 root:root`。
 - 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
 - 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
 - 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。
 - 验收：连续受控触发不再出现 `203/EXEC`；timer/service 真实运行并写入既有证据位置；采集失败仍可诊断且不会写路由、账号、余额或计费；部署属性和停机需求由顶层任务报告。
+
+### T11 经营页三层视图与异常空态修复
+
+- 当前状态：`DESIGNING`，优先级 `P0/URGENT`。用户可见顶层任务 `01a004b9-67aa-7103-8a2c-5395208d77c9` 已完成完整 brainstorming、方案比较、分段设计批准、正式规格和实施计划；现有文档位于根 `main`，在实施前必须从最新干净 `main` 创建并切换到独立 `codex/account-financial-dimensions` worktree。尚未修改运行时代码、复审、合并、推送、部署或线上验证。
+- 目标：经营页提供全站固定摘要、分组 Tab 和当前分组账号列表；异常跳转后始终显示 loading、data、empty 或 error/retry，而不是空白内容区。
+- 范围：向后兼容扩展现有原生 `account-financial` 报告，按 `usage_logs.group_id` 聚合分组及 `(group_id, account_id)` 行；前端展示三层结构；异常跳转保留账号、范围和 `review=pending`。
+- 不包含：新账务源、平行经营 API、外部控制面、历史回填、延迟补查、上游重试、金额猜测分摊、数据库迁移、调度/计费写入、普通用户入口或 GitHub Actions。
+- 验收：全站流水不重复；跨分组和未归属口径正确；账号级今日覆盖/OAuth 日成本不猜测分摊；桌面/移动端三层视图可用；异常加载、空结果、失败重试均有可见状态；只调用原生管理员 API。
 
 ### T09 官方更新冲突停止与人工处理
 
@@ -137,5 +146,5 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08 已完成生产验收；当前无 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 任务。T09 与 S1-R2 均保持排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
+- T07、T08 已完成生产验收；当前无 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 任务。T11 是下一发布候选；T10 在第二准备槽完成规格/计划和实现，但在 T11 线上验收前不得进入发布车道。T09 与 S1-R2 继续排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

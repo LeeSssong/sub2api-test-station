@@ -1,7 +1,8 @@
 # 管理员经营页三层视图与异常状态设计
 
 **日期：** 2026-08-15（Asia/Shanghai）  
-**状态：** 设计已确认，待实施计划批准  
+**状态：** 书面规格已由用户批准，进入实施计划
+
 **任务性质：** 原生 Sub2API 管理员经营页的单一垂直体验修复
 
 ## 1. 问题证据与当前行为
@@ -40,6 +41,7 @@
 - 跨分组账号：账号可属于多个分组，但一条真实流水只按其 `usage_logs.group_id` 进入一个分组；全站按流水去重。
 - 无分组流水：保留在全站摘要，并在分组维度显示“未归属”投影，不伪造分组归属。
 - OAuth：不查询上游；仍由管理员按北京自然日填写成本，未填写时不进入可确认利润汇总。
+- 账号级调整：今日覆盖与 OAuth 日成本没有真实 `group_id`，不得按比例猜测分摊。全站和账号继续使用调整值；分组只汇总可由流水真实归属的金额，并以 `has_unallocated_adjustments` 标记差额原因。
 - 空数据：合法的零流水显示明确空状态；接口失败显示错误和重试动作，不静默清空旧内容。
 
 ## 4. 方案比较与选择
@@ -100,12 +102,15 @@ GET /api/v1/admin/operations/account-financial?range=<...>
 {
   "summary": { "revenue": 0, "cost": 0, "profit": 0, "margin": null, "exception_count": 0 },
   "groups": [{
-    "id": 1, "name": "GPT-Pro", "revenue": 0, "cost": 0,
-    "profit": 0, "margin": null, "exception_count": 0,
-    "account_count": 0, "unassigned": false
+    "id": 1, "name": "GPT-Pro",
+    "amounts": { "revenue": 0, "cost": 0, "profit": 0, "margin": null },
+    "exception_count": 0,
+    "account_count": 0, "unassigned": false,
+    "complete": true, "has_unallocated_adjustments": false,
+    "accounts": [{ "id": 1, "name": "account", "amounts": {} }]
   }],
   "accounts": [{
-    "id": 1, "name": "account", "group_ids": [1],
+    "id": 1, "name": "account",
     "amounts": { "revenue": 0, "cost": 0, "profit": 0, "margin": null },
     "exception_count": 0
   }]
@@ -113,7 +118,7 @@ GET /api/v1/admin/operations/account-financial?range=<...>
 ```
 
 字段命名可按现有 Go JSON 序列化约定落地；`groups` 缺失时旧客户端继续使用 `accounts`。
-分组金额必须来自后端快照，前端不得从账号金额反推。
+顶层 `accounts` 保持全站账号金额；每个 `groups[].accounts` 是按 `(group_id, account_id)` 聚合的分组内账号金额。分组金额必须来自后端快照，前端不得筛选顶层账号行或从账号金额反推。
 
 异常列表接口保持：
 
@@ -125,6 +130,7 @@ GET /api/v1/admin/operations/account-financial?range=<...>
 - 异常列表读取失败：保留筛选栏并显示错误行和“重试”，不得渲染空表误导用户。
 - 合法零结果：显示“当前筛选无待核对流水”，同时保留筛选条件和刷新能力。
 - 异常跳转默认 `review=pending`，与经营页异常计数语义一致；用户可在异常页切换为全部/已核对。
+- 分组涉及账号级今日覆盖或 OAuth 日成本时，保持 `has_unallocated_adjustments=true` 并显示说明；不得把该差额塞入任一真实分组或“未归属”伪装成流水成本。
 - 所有接口继续使用既有管理员认证；响应不得暴露凭据、完整 API Key 或敏感请求体。
 - 页面不得引入 `/xingqiao/**`、控制面状态、外部回退或联网补查。
 
@@ -140,9 +146,10 @@ GET /api/v1/admin/operations/account-financial?range=<...>
 | 场景 | 验收条件 |
 | --- | --- |
 | 首次进入经营页 | 全站摘要、全站 Tab 和账号列表可见；只调用原生财务接口 |
-| 切换分组 | 仅显示该分组后端返回的汇总和账号；不在前端二次累加 |
+| 切换分组 | 仅显示该分组后端返回的汇总和分组内账号行；不筛选顶层账号金额，不在前端二次累加 |
 | 跨分组账号 | 全站流水只计一次；分组按真实 `group_id` 展示 |
 | 未归属流水 | 只计入全站，并显示未归属提示/投影 |
+| 账号级覆盖/OAuth 日成本 | 只影响全站和账号；相关分组显示未分摊调整提示，不进行比例分摊 |
 | 点击异常 | URL 包含 `tab=cost-exceptions`、`review=pending`、账号和范围；列表请求发出 |
 | 异常加载中 | 表格区域显示加载状态，不显示空表 |
 | 异常无结果 | 显示明确空态和当前筛选仍可操作 |
@@ -158,14 +165,14 @@ GET /api/v1/admin/operations/account-financial?range=<...>
 - 前端异常表/用量页：路由恢复触发请求、loading、empty、error/retry、pending 默认筛选。
 - 运行 `vitest` 定向套件、相关 Go 测试、`pnpm typecheck`、`pnpm build`、`git diff --check`，并做源码范围门禁。
 
-## 11. 回滚与剩余决策
+## 11. 回滚与已决策边界
 
 - 回滚：恢复本任务候选的应用提交；无迁移时不需要数据库回滚；若根预检发现迁移/停机需求，发布停在门禁前。
-- 仍待决：实施计划中的具体 DTO 字段名、分组查询方式和页面视觉细节由实现前按现有代码模式确定，不改变本规格的三层结构和失败语义。
+- 产品级未决事项：无。实施中的内部辅助函数命名按现有代码模式确定，不改变本规格的接口字段、三层结构和失败语义。
 
 ## 12. 设计批准记录
 
 - 用户确认采用方案 2（扩展现有原生财务报告）。
 - 用户确认页面结构为“全站固定摘要 + 分组 Tab + 当前分组账号列表”。
 - 用户确认异常跳转需保留筛选并显示 loading、empty、error/retry 状态。
-- 书面规格书待用户审阅后进入实施计划阶段；在批准前不得写实现代码或派生实现代理。
+- 用户以“继续”明确批准本书面规格书并授权进入实施计划阶段。

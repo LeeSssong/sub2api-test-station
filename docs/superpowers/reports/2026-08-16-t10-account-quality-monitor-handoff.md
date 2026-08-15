@@ -1,7 +1,7 @@
 # T10 Account Quality Monitor Root Handoff
 
 Date: 2026-08-16
-Status: `READY_FOR_ROOT_REVIEW`
+Status: `DONE` (root production closure completed 2026-08-16)
 
 ## Identity
 
@@ -28,10 +28,11 @@ real UID 10002 Docker evidence preflight pass. No migration, dependency, UI,
 API, business-write, GitHub Actions, or parallel-control-plane change exists.
 
 A6 actual alert delivery and A10 time-based observation are explicitly waived
-by the user and remain unverified; neither is claimed PASS. The root must still
-run release preflight, stop if `downtime_required=true`, install the reviewed
-host unit/scripts, start the service once, and immediately verify successful
-systemd execution plus valid mode-0600 evidence and health endpoints.
+by the user and remain unverified; neither is claimed PASS. Before closure, the
+root still had to run release preflight, stop if `downtime_required=true`,
+install the reviewed host unit/scripts, start the service once, and immediately
+verify successful systemd execution plus valid mode-0600 evidence and health
+endpoints. Those non-waived checks are recorded in the root closure below.
 
 ## Rollback
 
@@ -45,3 +46,17 @@ The root release controller may authorize merge to the exact current main,
 run the focused merged-tree gates, push, execute no-downtime deployment, and
 perform immediate functional verification. The candidate must not deploy
 directly.
+
+## Root closure
+
+Root merged and pushed the active-upstream correction as
+`main@b1b92cf30a791d0573c212e865d3a52c43564d95`. Production host artifacts
+match that tree by SHA-256. The immediate real run succeeded, published
+`ACCOUNT-QUALITY-20260815T171407Z` for 50 eligible accounts, left the timer
+active, and preserved the required directory/file modes. Public `/healthz`,
+`/readyz`, and `/health` returned HTTP 200. See
+`docs/superpowers/reports/2026-08-16-t10-account-quality-monitor-production.md`.
+
+A6 actual alert delivery and A10 time-based observation remain explicitly
+user-waived/unverified. They were not reintroduced as release gates and are not
+claimed PASS.

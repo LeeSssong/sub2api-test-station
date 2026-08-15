@@ -55,3 +55,19 @@ fix and fresh functional validation.
 No database migration, application API, UI, scheduling, billing, account
 admission, account routing, GitHub Actions, new receiver, or parallel control
 plane is added.
+
+## Post-merge production finding and disposition
+
+The first host execution found one additional production topology defect: the
+wrapper's fixed `http://sub2api:8080` target does not exist in the blue-green
+network. The failure was contained at collector exit code `44`; no evidence or
+business data was partially published. Fix `d075da534` reads the protected
+active-upstream value, rejects anything outside the exact blue/green allowlist,
+and was merged as `main@b1b92cf30`.
+
+The latest root tree passed the focused functional matrix and a real production
+run. The service returned `Result=success`, `ExecMainStatus=0`; the timer is
+enabled and waiting; both evidence files are valid `0600`; the production root
+remains `0700 root:root`; and no new `203/EXEC` occurred. This closes the
+functional finding without changing the recorded independent-review process
+exception or claiming the waived A6/A10 checks as PASS.

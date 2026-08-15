@@ -14,7 +14,7 @@ hardening, and publishes the existing JSON evidence files atomically.
 ## Verification
 
 - `ruby -Itests tests/operations/account_quality_failure_signal_test.rb`: PASS (2 tests)
-- `ruby -Itests tests/operations/account_quality_monitor_test.rb`: PASS (4 tests)
+- `ruby -Itests tests/operations/account_quality_monitor_test.rb`: PASS (5 tests, 119 assertions)
 - `ruby -Itests tests/operations/collect_account_quality_pulse_test.rb`: PASS (12 tests)
 - `sh -n ops/account-quality-failure-signal.sh ops/run-account-quality-monitor.sh`: PASS
 - `ruby -c ops/collect-account-quality-pulse.rb`: PASS
@@ -43,3 +43,26 @@ controlled delivery receipt is separately user-waived.
   acceptance. This time-based item is not claimed as PASS.
 
 No deployment, production mutation, global ledger edit, or merge was performed.
+
+## Root production closure addendum (2026-08-16)
+
+The first merged release exposed a production-only topology defect: the host
+wrapper targeted the nonexistent Docker alias `sub2api:8080`, while production
+contains only `sub2api-blue:8080` and `sub2api-green:8080`. The systemd process
+therefore executed successfully but the collector stage exited with code `44`.
+
+Candidate fix `d075da534f9d319dc2a2169002361d2050f8e399` was merged as root
+`main@b1b92cf30a791d0573c212e865d3a52c43564d95`. The wrapper now reads the
+single `SUB2API_ACTIVE_UPSTREAM` value from protected
+`/opt/sub2api/production/release.env`, accepts only the blue/green allowlist,
+and passes the selected native URL to the collector. The latest merged-tree
+verification is 2 tests/75 assertions, 5 tests/119 assertions, and 13 tests/53
+assertions, with systemd, alert-boundary, relay-ops, syntax, and diff contracts
+passing. Canonical release evidence is:
+
+`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-16-main-b1b92cf30-t10-account-quality-monitor-v2.json`
+
+The fixed production service completed with `Result=success` and
+`ExecMainStatus=0`, published snapshot `ACCOUNT-QUALITY-20260815T171407Z` for
+50 eligible accounts, and left both evidence JSON files valid and mode `0600`.
+A6 and A10 remain user-waived and unverified; neither is claimed PASS.

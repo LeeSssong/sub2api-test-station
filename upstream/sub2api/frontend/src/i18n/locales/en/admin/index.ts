@@ -86,7 +86,7 @@ export default {
     },
   },
   costExceptions: {
-    search: 'Search request ID or model', allEvidence: 'All evidence', pending: 'Pending', reviewed: 'Reviewed', allReviews: 'All reviews', reviewSelected: 'Review selected', reviewFiltered: 'Review current filter', reviewOne: 'Review', loading: 'Loading cost exceptions…', empty: 'No pending usage matches the current filters.', loadError: 'Failed to load cost exceptions. Try again.', time: 'Time', account: 'Account', requestId: 'Request ID', model: 'Model', revenue: 'Revenue', source: 'Source', evidence: 'Evidence', reason: 'Reason', trace: 'Billing trace', reviewStatus: 'Review status', cutoff: 'Cutoff', matched: 'Matched', updated: 'Updated', skipped: 'Skipped',
+    search: 'Search request ID or model', allEvidence: 'All evidence', pending: 'Pending', reviewed: 'Reviewed', allReviews: 'All reviews', reviewSelected: 'Review selected', reviewFiltered: 'Review current filter', reviewOne: 'Review', loading: 'Loading cost exceptions…', empty: 'No pending usage matches the current filters.', loadError: 'Failed to load cost exceptions. Try again.', retry: 'Retry', time: 'Time', account: 'Account', requestId: 'Request ID', model: 'Model', revenue: 'Revenue', source: 'Source', evidence: 'Evidence', reason: 'Reason', trace: 'Billing trace', reviewStatus: 'Review status', cutoff: 'Cutoff', matched: 'Matched', updated: 'Updated', skipped: 'Skipped',
   },
   accountMonitor: {
     title: 'Account Monitor',

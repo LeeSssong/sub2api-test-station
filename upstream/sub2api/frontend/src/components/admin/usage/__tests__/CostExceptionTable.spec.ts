@@ -11,6 +11,8 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('file-saver', () => ({ saveAs }))
 
 import CostExceptionTable from '../CostExceptionTable.vue'
+import enAdmin from '@/i18n/locales/en/admin'
+import zhAdmin from '@/i18n/locales/zh/admin'
 
 const response = {
   generated_at: '2026-08-13T08:00:00Z', total: 2, page: 1, page_size: 20,
@@ -31,6 +33,11 @@ describe('CostExceptionTable', () => {
   })
 
   afterEach(() => vi.unstubAllGlobals())
+
+  it('provides localized loading, empty, error, and retry labels', () => {
+    expect(zhAdmin.costExceptions).toMatchObject({ loading: expect.any(String), empty: expect.any(String), loadError: expect.any(String), retry: '重试' })
+    expect(enAdmin.costExceptions).toMatchObject({ loading: expect.any(String), empty: expect.any(String), loadError: expect.any(String), retry: 'Retry' })
+  })
 
   it('shows loading while the list request is pending', async () => {
     let resolve!: (value: typeof response) => void

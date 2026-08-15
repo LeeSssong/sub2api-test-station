@@ -26,6 +26,7 @@ Implementation commits:
 - `1e9b9591e` `fix: harden not-recommended hint interactions`
 - `82eddab22` `fix: ignore hidden tooltip escape events`
 - `6bcf2180e` `fix: reset identical recommendation replacements`
+- `9ba1c8a8a` `fix: keep hover-click tooltip in viewport`
 
 Changed frontend files in the implementation slice:
 - `upstream/sub2api/frontend/src/components/common/HelpTooltip.vue`
@@ -54,10 +55,10 @@ pnpm vitest run \
   src/components/admin/account-monitor/AccountMonitorCard.spec.ts
 ```
 
-Result: `61 passed`
+Result: `64 passed`
 
 Underlying suite evidence:
-- `HelpTooltip.spec.ts`: `15/15` passed
+- `HelpTooltip.spec.ts`: `18/18` passed
 - `AccountMonitorCard.spec.ts`: `46/46` passed
 
 Follow-up TDD evidence for the scoped review finding:
@@ -70,6 +71,13 @@ Follow-up TDD evidence for the identical cloned-payload replacement finding:
 - RED: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts -t "identical recommendation object replaces"` failed because the tooltip stayed visible after a cloned `not_recommended` recommendation object replaced the previous payload with the same `reason_codes[0]` and `observed_at`.
 - GREEN: the same focused regression passed after `6bcf2180e`.
 - GREEN: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts` passed `46/46`.
+
+Follow-up TDD evidence for the viewport placement and resetKey close-button focus findings:
+- RED: `pnpm vitest run src/components/common/__tests__/HelpTooltip.spec.ts -t "extremely narrow|top-edge|restores focus on reset key"` failed because the tooltip had no `max-width`, top-edge triggers still produced an offscreen top value, and resetKey closure left focus on the hidden Teleported close button.
+- RED: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts -t "refreshed recommendation payload changes|identical recommendation object replaces"` failed before the resetKey focus fix once close-button focus restoration was asserted in the card replacements.
+- GREEN: the same HelpTooltip targeted run passed after `9ba1c8a8a`.
+- GREEN: the same AccountMonitorCard replacement run passed after `9ba1c8a8a`.
+- GREEN: `pnpm vitest run src/components/common/__tests__/HelpTooltip.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts` passed `64/64`.
 
 Required static checks already passed:
 
@@ -144,6 +152,16 @@ Second scoped fix package:
 - `6bcf2180e` added a RED/GREEN regression for identical cloned recommendation replacement and combined a card-local recommendation object identity revision with the existing reason/observed reset key.
 - This report now includes the full branch delta, including itself and `.superpowers/sdd/2026-08-15-t08-do-not-recommend-light-hint/progress.md`.
 - The browser validation classification is documented as a root acceptance override, with logged-in online desktop/mobile/narrow-screen acceptance deferred to root after merge/deploy.
+
+Root fresh whole-branch re-review over `751402105..935be31a3` returned CHANGES REQUIRED with P2 = 2:
+- P2: HelpTooltip viewport constraint was incomplete because it only clamped horizontal center, top-edge triggers could render above the viewport, and tooltip widths greater than `viewport - 24px` could fall back to an unclamped center.
+- P2: resetKey refresh while focus was on the Teleported close button closed the tooltip without restoring focus, leaving focus on a hidden `v-show` control.
+
+Third scoped fix package:
+- `9ba1c8a8a` added common HelpTooltip viewport max-width, measured width/height placement, above/below placement with 12px viewport padding, and top/left clamping without adding a card-specific floating layer.
+- `9ba1c8a8a` also changed resetKey handling to restore focus only when `document.activeElement` is inside the Teleported tooltip; outside focus is not stolen.
+- AccountMonitorCard changed-fields and identical-cloned replacement regressions now verify that when the close button is focused during refresh, focus returns to `[data-test="recommendation-reason-button"]`.
+- Root control remains responsible for fresh scoped/whole-branch re-review; this task window does not dispatch reviewers.
 
 ## 10. Remaining risks and independent review result
 

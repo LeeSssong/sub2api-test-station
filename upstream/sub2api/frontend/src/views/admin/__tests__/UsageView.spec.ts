@@ -247,6 +247,7 @@ describe('admin UsageView route filters', () => {
     getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
     getModelStats.mockReset().mockResolvedValue({ models: [] })
     getById.mockReset()
+    listCostExceptions.mockReset().mockResolvedValue({ generated_at: '2026-08-15T10:00:00Z', items: [], total: 0, page: 1, page_size: 20 })
   })
 
   afterEach(() => {
@@ -286,6 +287,33 @@ describe('admin UsageView route filters', () => {
       review_status: 'reviewed',
       start_time: expect.any(String),
       end_time: expect.any(String),
+    }))
+  })
+
+  it('mounts the routed exception table once with pending account and RFC3339 range filters', async () => {
+    routeQuery.tab = 'cost-exceptions'
+    routeQuery.range = 'today'
+    routeQuery.account_id = '42'
+    routeQuery.review = 'pending'
+
+    mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await flushPromises()
+
+    expect(listCostExceptions).toHaveBeenCalledTimes(1)
+    expect(listCostExceptions).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 42,
+      review_status: 'pending',
+      start_time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      end_time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     }))
   })
 

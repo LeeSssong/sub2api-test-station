@@ -828,6 +828,15 @@ const loadSavedColumns = () => {
 // Detail tabs
 type DetailTab = 'usage' | 'errors' | 'cost-exceptions' | 'ranking'
 const activeTab = ref<DetailTab>('usage')
+const normalizeDetailTab = (value: unknown): DetailTab => {
+  const tab = getSingleQueryValue(value as string | string[] | null | undefined)
+  return tab === 'errors' || tab === 'cost-exceptions' || tab === 'ranking' ? tab : 'usage'
+}
+const applyRouteState = () => {
+  applyRouteQueryFilters()
+  activeTab.value = normalizeDetailTab(route.query.tab)
+  if (activeTab.value === 'ranking') rankingMounted.value = true
+}
 const detailTabs = computed(() => [
   { key: 'usage' as const, label: t('usage.tabs.usage'), icon: 'document' as const },
   { key: 'errors' as const, label: t('usage.tabs.errors'), icon: 'exclamationTriangle' as const },
@@ -838,6 +847,12 @@ const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
 const rankingMounted = ref(false)
 const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
 const costExceptionTableRef = ref<InstanceType<typeof CostExceptionTable> | null>(null)
+
+watch(
+  () => [route.query.tab, route.query.range, route.query.account_id, route.query.evidence, route.query.review],
+  applyRouteState,
+  { immediate: true, flush: 'sync' },
+)
 
 const switchTab = (tab: DetailTab) => {
   activeTab.value = tab
@@ -911,11 +926,6 @@ const handleColumnClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(() => {
-  applyRouteQueryFilters()
-  const routeTab = getSingleQueryValue(route.query.tab)
-  if (routeTab === 'usage' || routeTab === 'errors' || routeTab === 'cost-exceptions' || routeTab === 'ranking') {
-    activeTab.value = routeTab
-  }
   void loadRouteUserFilterLabel()
   loadLogs()
   loadStats()

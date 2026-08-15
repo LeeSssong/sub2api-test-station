@@ -86,7 +86,7 @@ export default {
     },
   },
   costExceptions: {
-    search: '搜索请求 ID 或模型', allEvidence: '全部证据状态', pending: '待核对', reviewed: '已核对', allReviews: '全部核对状态', reviewSelected: '确认选中项', reviewFiltered: '确认当前筛选', reviewOne: '确认', time: '时间', account: '账号', requestId: '请求 ID', model: '模型', revenue: '营收', source: '来源', evidence: '证据状态', reason: '原因', trace: '账单溯源', reviewStatus: '核对状态', cutoff: '截止流水', matched: '匹配', updated: '已更新', skipped: '已跳过',
+    search: '搜索请求 ID 或模型', allEvidence: '全部证据状态', pending: '待核对', reviewed: '已核对', allReviews: '全部核对状态', reviewSelected: '确认选中项', reviewFiltered: '确认当前筛选', reviewOne: '确认', loading: '正在加载异常流水…', empty: '当前筛选无待核对流水。', loadError: '异常流水加载失败，请重试。', time: '时间', account: '账号', requestId: '请求 ID', model: '模型', revenue: '营收', source: '来源', evidence: '证据状态', reason: '原因', trace: '账单溯源', reviewStatus: '核对状态', cutoff: '截止流水', matched: '匹配', updated: '已更新', skipped: '已跳过',
   },
   accountMonitor: {
     title: '账号监控',

@@ -32,6 +32,37 @@ describe('CostExceptionTable', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it('shows loading while the list request is pending', async () => {
+    let resolve!: (value: typeof response) => void
+    listCostExceptions.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const wrapper = mount(CostExceptionTable, { props: { filters: { review_status: 'pending' } } })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="cost-exceptions-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="cost-exceptions-empty"]').exists()).toBe(false)
+    resolve(response)
+    await flushPromises()
+  })
+
+  it('shows an explicit empty state for zero matching rows', async () => {
+    listCostExceptions.mockResolvedValueOnce({ ...response, total: 0, items: [] })
+    const wrapper = mount(CostExceptionTable, { props: { filters: { review_status: 'pending' } } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-empty"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('admin.costExceptions.empty')
+  })
+
+  it('shows a retryable error and reloads with the routed filters', async () => {
+    listCostExceptions.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce(response)
+    const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42, review_status: 'pending' } } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-error"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="cost-exceptions-review"]').element).toHaveProperty('value', 'pending')
+    await wrapper.get('[data-test="cost-exceptions-retry"]').trigger('click')
+    await flushPromises()
+    expect(listCostExceptions).toHaveBeenLastCalledWith(expect.objectContaining({ account_id: 42, review_status: 'pending' }))
+    expect(wrapper.find('[data-test="select-11"]').exists()).toBe(true)
+  })
+
   it('shows provenance and reviews selected rows', async () => {
     const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42 } } })
     await flushPromises()

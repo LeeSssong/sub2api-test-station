@@ -221,11 +221,11 @@ describe('HelpTooltip', () => {
     wrapper.unmount()
   })
 
-	it('clamps hover-click details within the viewport on narrow screens', async () => {
-		const wrapper = mount(HelpTooltip, {
-			attachTo: document.body,
-			props: {
-				content: 'clamped hover-click details',
+		it('clamps hover-click details within the viewport on narrow screens', async () => {
+			const wrapper = mount(HelpTooltip, {
+				attachTo: document.body,
+				props: {
+					content: 'clamped hover-click details',
 				trigger: 'hover-click',
 			},
 			slots: {
@@ -251,10 +251,88 @@ describe('HelpTooltip', () => {
 		await nextTick()
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
-		expect(getTooltipElement().style.left).toBe('180px')
+			expect(getTooltipElement().style.left).toBe('180px')
 
-		wrapper.unmount()
-	})
+			wrapper.unmount()
+		})
+
+		it('keeps hover-click details within the viewport on extremely narrow screens', async () => {
+			const wrapper = mount(HelpTooltip, {
+				attachTo: document.body,
+				props: {
+					content: 'extremely narrow hover-click details',
+					trigger: 'hover-click',
+				},
+				slots: {
+					trigger: '<button type="button">!</button>',
+				},
+			})
+
+			vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(120)
+			vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(240)
+			vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(256)
+			vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(80)
+			vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+				top: 120,
+				left: 0,
+				width: 20,
+				height: 20,
+				right: 20,
+				bottom: 140,
+				x: 0,
+				y: 120,
+				toJSON: () => ({}),
+			})
+
+			await wrapper.get('.group').trigger('mouseenter')
+			await nextTick()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			const tooltip = getTooltipElement()
+			expect(tooltip.style.maxWidth).toBe('calc(100vw - 24px)')
+			expect(tooltip.style.left).toBe('60px')
+
+			wrapper.unmount()
+		})
+
+		it('places hover-click details below top-edge triggers with viewport padding', async () => {
+			const wrapper = mount(HelpTooltip, {
+				attachTo: document.body,
+				props: {
+					content: 'top edge hover-click details',
+					trigger: 'hover-click',
+				},
+				slots: {
+					trigger: '<button type="button">!</button>',
+				},
+			})
+
+			vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(320)
+			vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(200)
+			vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(180)
+			vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(80)
+			vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+				top: 6,
+				left: 120,
+				width: 40,
+				height: 20,
+				right: 160,
+				bottom: 26,
+				x: 120,
+				y: 6,
+				toJSON: () => ({}),
+			})
+
+			await wrapper.get('.group').trigger('mouseenter')
+			await nextTick()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			const tooltip = getTooltipElement()
+			expect(tooltip.style.top).toBe('34px')
+			expect(tooltip.className.split(/\s+/)).not.toContain('-translate-y-full')
+
+			wrapper.unmount()
+		})
 
 	it('closes hover-click details when focus leaves the close button for another control', async () => {
 		const wrapper = mount(HelpTooltip, {
@@ -368,11 +446,11 @@ describe('HelpTooltip', () => {
 		nextControl.remove()
 	})
 
-	it('resets hover-click pinning when the reset key changes', async () => {
-		const wrapper = mount(HelpTooltip, {
-			attachTo: document.body,
-			props: {
-				content: 'refreshable details',
+		it('resets hover-click pinning when the reset key changes', async () => {
+			const wrapper = mount(HelpTooltip, {
+				attachTo: document.body,
+				props: {
+					content: 'refreshable details',
 				trigger: 'hover-click',
 				resetKey: '2026-08-10T00:00:00Z',
 			},
@@ -390,8 +468,57 @@ describe('HelpTooltip', () => {
 
 		expect(tooltip.style.display).toBe('none')
 
-		wrapper.unmount()
-	})
+			wrapper.unmount()
+		})
+
+		it('restores focus on reset key changes only when focus is inside the tooltip', async () => {
+			const wrapper = mount(HelpTooltip, {
+				attachTo: document.body,
+				props: {
+					content: 'refresh focus details',
+					trigger: 'hover-click',
+					resetKey: 'initial',
+				},
+				slots: {
+					trigger: '<button type="button">!</button>',
+				},
+			})
+
+			const triggerButton = wrapper.get('button')
+			await wrapper.get('.group').trigger('click')
+			await nextTick()
+
+			const closeButton = getTooltipElement().querySelector('button[aria-label="Close"]')
+			if (!(closeButton instanceof HTMLButtonElement)) {
+				throw new Error('close button not found')
+			}
+
+			closeButton.focus()
+			await nextTick()
+			await wrapper.setProps({ resetKey: 'inside-tooltip' })
+			await nextTick()
+
+			expect(getTooltipElement().style.display).toBe('none')
+			expect(document.activeElement).toBe(triggerButton.element)
+
+			const nextControl = document.createElement('button')
+			nextControl.type = 'button'
+			nextControl.textContent = 'next'
+			document.body.append(nextControl)
+
+			await wrapper.get('.group').trigger('click')
+			await nextTick()
+			nextControl.focus()
+			await nextTick()
+			await wrapper.setProps({ resetKey: 'outside-tooltip' })
+			await nextTick()
+
+			expect(getTooltipElement().style.display).toBe('none')
+			expect(document.activeElement).toBe(nextControl)
+
+			wrapper.unmount()
+			nextControl.remove()
+		})
 
   it('resets hover-click pinning when switching to and from a legacy trigger', async () => {
     const wrapper = mount(HelpTooltip, {
@@ -463,7 +590,7 @@ describe('HelpTooltip', () => {
 		})
 		await wrapper.get('.group').trigger('mouseenter')
 		await nextTick()
-		expect(getTooltipElement().style.top).toBe('calc(112px)')
+		expect(getTooltipElement().style.top).toBe('112px')
 		expect(getTooltipElement().style.left).toBe('100px')
 		wrapper.unmount()
 	})

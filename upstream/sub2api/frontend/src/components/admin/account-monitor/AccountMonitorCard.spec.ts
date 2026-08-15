@@ -266,6 +266,12 @@ describe('AccountMonitorCard', () => {
 		await button.trigger('click')
 		await nextTick()
 		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+		const closeButton = document.body.querySelector('button[aria-label="Close"]')
+		if (!(closeButton instanceof HTMLButtonElement)) {
+			throw new Error('close button not found')
+		}
+		closeButton.focus()
+		await nextTick()
 
 		await wrapper.setProps({
 			account: {
@@ -281,6 +287,7 @@ describe('AccountMonitorCard', () => {
 		await nextTick()
 
 		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(document.activeElement).toBe(wrapper.get('[data-test="recommendation-reason-button"]').element)
 		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：主动探测样本不足')
 	})
 
@@ -293,6 +300,12 @@ describe('AccountMonitorCard', () => {
 		await button.trigger('click')
 		await nextTick()
 		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+		const closeButton = document.body.querySelector('button[aria-label="Close"]')
+		if (!(closeButton instanceof HTMLButtonElement)) {
+			throw new Error('close button not found')
+		}
+		closeButton.focus()
+		await nextTick()
 
 		await wrapper.setProps({
 			account: {
@@ -307,6 +320,7 @@ describe('AccountMonitorCard', () => {
 		await nextTick()
 
 		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(document.activeElement).toBe(wrapper.get('[data-test="recommendation-reason-button"]').element)
 		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
 	})
 

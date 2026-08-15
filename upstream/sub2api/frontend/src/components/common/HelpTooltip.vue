@@ -16,7 +16,8 @@ const clickPinned = ref(false)
 const suppressTriggerFocusOpen = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
-const tooltipStyle = ref({ top: '0px', left: '0px' })
+const tooltipStyle = ref({ top: '0px', left: '0px', maxWidth: 'calc(100vw - 24px)' })
+const tooltipPlacement = ref<'above' | 'below'>('above')
 
 watch(() => props.trigger, (trigger) => {
   if (trigger !== 'hover-click') {
@@ -26,7 +27,9 @@ watch(() => props.trigger, (trigger) => {
 
 watch(() => props.resetKey, () => {
   if (props.trigger === 'hover-click') {
-    closeTooltip({ clearPin: true })
+    const activeElement = document.activeElement
+    const restoreFocus = activeElement instanceof Node && (tooltipRef.value?.contains(activeElement) ?? false)
+    closeTooltip({ clearPin: true, restoreFocus })
   }
 })
 
@@ -137,15 +140,37 @@ function updatePosition() {
   const el = triggerRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
-  const tooltipWidth = tooltipRef.value?.offsetWidth ?? 0
-  const centerLeft = rect.left + rect.width / 2
   const edgePadding = 12
+  const gap = 8
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const maxTooltipWidth = Math.max(0, viewportWidth - edgePadding * 2)
+  const tooltipWidth = Math.min(tooltipRef.value?.offsetWidth ?? 0, maxTooltipWidth)
+  const tooltipHeight = tooltipRef.value?.offsetHeight ?? 0
+  const centerLeft = rect.left + rect.width / 2
   const minLeft = tooltipWidth ? (tooltipWidth / 2) + edgePadding : centerLeft
   const maxLeft = tooltipWidth ? window.innerWidth - (tooltipWidth / 2) - edgePadding : centerLeft
   const clampedLeft = tooltipWidth && minLeft <= maxLeft ? Math.min(Math.max(centerLeft, minLeft), maxLeft) : centerLeft
+  const aboveFits = tooltipHeight ? rect.top - gap - tooltipHeight >= edgePadding : rect.top - gap >= edgePadding
+  const belowFits = tooltipHeight ? rect.bottom + gap + tooltipHeight <= viewportHeight - edgePadding : rect.bottom + gap <= viewportHeight - edgePadding
+  const placeBelow = !aboveFits && (belowFits || (viewportHeight - rect.bottom >= rect.top))
+
+  let top: number
+  if (placeBelow) {
+    const maxTop = tooltipHeight ? Math.max(edgePadding, viewportHeight - tooltipHeight - edgePadding) : viewportHeight - edgePadding
+    top = Math.min(Math.max(rect.bottom + gap, edgePadding), maxTop)
+    tooltipPlacement.value = 'below'
+  } else {
+    const minAnchorTop = tooltipHeight ? tooltipHeight + edgePadding : edgePadding
+    const maxAnchorTop = viewportHeight - edgePadding
+    top = Math.min(Math.max(rect.top - gap, minAnchorTop), maxAnchorTop)
+    tooltipPlacement.value = 'above'
+  }
+
   tooltipStyle.value = {
-    top: `${rect.top}px`,
+    top: `${top}px`,
     left: `${clampedLeft}px`,
+    maxWidth: 'calc(100vw - 24px)',
   }
 }
 
@@ -199,10 +224,11 @@ onBeforeUnmount(() => {
         role="tooltip"
         @focusout="onTooltipFocusOut"
         :class="[
-          'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          'fixed z-[99999] -translate-x-1/2 rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          tooltipPlacement === 'above' ? '-translate-y-full' : '',
           props.widthClass,
         ]"
-        :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
+        :style="tooltipStyle"
       >
         <button
           v-if="props.trigger === 'click' || props.trigger === 'hover-click'"
@@ -216,7 +242,12 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         <slot>{{ content }}</slot>
-        <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800"></div>
+        <div
+          :class="[
+            'absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800',
+            tooltipPlacement === 'above' ? '-bottom-1' : '-top-1',
+          ]"
+        ></div>
       </div>
     </Teleport>
   </div>

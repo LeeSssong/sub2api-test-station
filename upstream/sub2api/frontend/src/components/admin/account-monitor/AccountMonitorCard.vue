@@ -38,6 +38,21 @@
               </template>
               <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
             </HelpTooltip>
+            <HelpTooltip v-else-if="isNotRecommended" class="!ml-0" trigger="hover-click" data-test="recommendation-reason-trigger">
+              <template #trigger>
+                <button
+                  class="inline-flex items-center gap-0.5 text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:text-red-200"
+                  data-test="recommendation-reason-button"
+                  type="button"
+                  :title="`${recommendationLabel}，${recommendationReasonHint}`"
+                  :aria-label="`${recommendationLabel}，${recommendationReasonHint}`"
+                >
+                  <span data-test="group-recommendation">{{ recommendationLabel }}</span>
+                  <Icon name="infoCircle" size="xs" />
+                </button>
+              </template>
+              <div data-test="group-recommendation-reason" class="max-w-[min(16rem,calc(100vw-1.5rem))] whitespace-normal break-words leading-5">{{ recommendationReasonHint }}</div>
+            </HelpTooltip>
             <span v-else data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
           </template>
         </div>
@@ -259,6 +274,7 @@ const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
+const isNotRecommended = computed(() => recommendation.value?.status === 'not_recommended')
 const recommendationTargetLabel = computed(() => recommendation.value?.target_name || ({ gpt_pro: 'GPT-Pro', gpt_plus: 'GPT-Plus', gpt_special: 'GPT-特惠' }[recommendation.value?.target ?? ''] ?? '目标分组'))
 const recommendationLabel = computed(() => {
   switch (recommendation.value?.status) {
@@ -291,6 +307,7 @@ const recommendationReason = computed(() => {
     latency_exceeds_limit: '完整响应耗时超过目标',
   }[code ?? ''] ?? '主动探测质量不满足目标')
 })
+const recommendationReasonHint = computed(() => isNotRecommended.value ? `原因：${recommendationReason.value}` : '')
 const recommendationTooltip = computed(() => {
   const item = recommendation.value
   if (!item) return ''

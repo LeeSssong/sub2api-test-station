@@ -107,7 +107,7 @@
 
 ### T10 账号质量监控器可执行链路
 
-- 当前状态：`DONE`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 的候选已完成实现、第一轮独立复审修复、根全差异复核、定向验证和 handoff；根修复生产蓝绿上游寻址后，最终 `main@b1b92cf30a791d0573c212e865d3a52c43564d95` 已推送。实现包含 root host orchestration、UID/GID 10002 真实证据预检、正确 `[Unit] OnFailure`、脱敏稳定 `t10.failure.v1`、分阶段退出码、双文件原子发布/恢复和活动蓝绿上游严格白名单。最新 2/75、5/119、13/53 测试及 systemd/alert/relay-ops/语法/diff 合同通过；宿主安装校验、真实 service、timer、证据文件和公网健康即时验收通过。fresh reviewer 调度失败作为流程例外，不倒称 PASS；用户豁免 A6 实际送达和 A10 按时间等待，两项保留未验证。生产报告见 `docs/superpowers/reports/2026-08-16-t10-account-quality-monitor-production.md`。
+- 当前状态：`DONE`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 的候选已完成实现、第一轮独立复审修复、根全差异复核、定向验证和 handoff；根修复生产蓝绿上游寻址后，最终 `main@b1b92cf30a791d0573c212e865d3a52c43564d95` 已推送。实现包含 root host orchestration、UID/GID 10002 真实证据预检、正确 `[Unit] OnFailure`、脱敏稳定 `t10.failure.v1`、分阶段退出码、双文件原子发布/恢复和活动蓝绿上游严格白名单。最新 2/75、5/119、13/53 测试及 systemd/alert/relay-ops/语法/diff 合同通过；宿主安装校验、真实 service、timer、证据文件和公网健康即时验收通过。fresh reviewer 调度失败作为流程例外，不倒称 PASS；用户豁免 A6 实际送达和 A10 按时间等待，两项保留未验证。候选已归档为已验证的 0600 完整历史 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t10-account-quality-monitor-d075da534.bundle`（SHA-256 `f02cc7907bd749c8f289716c2cb4b65a8d2554a4441d8b64d2823d45e478b471`），worktree 和本地分支已删除。生产报告见 `docs/superpowers/reports/2026-08-16-t10-account-quality-monitor-production.md`。
 - 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
 - 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
 - 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。

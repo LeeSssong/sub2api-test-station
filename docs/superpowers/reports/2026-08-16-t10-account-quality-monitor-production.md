@@ -52,3 +52,14 @@ No hourly or 24-hour observation was performed. T10 completion is based on the
 focused merged-tree tests, deployed artifact identity, one real successful
 production execution, valid evidence publication, timer state, and immediate
 health checks.
+
+## Archive and cleanup
+
+The completed candidate was archived as a verified, mode-`0600`, complete-history
+bundle at
+`/Users/gongtengxinwen/Documents/sub2api-archives/t10-account-quality-monitor-d075da534.bundle`
+with SHA-256
+`f02cc7907bd749c8f289716c2cb4b65a8d2554a4441d8b64d2823d45e478b471`.
+After bundle verification, the candidate worktree/local branch and the two T10
+detached release worktrees were removed. The production rollback backup,
+release evidence, systemd journal, and final JSON evidence remain available.

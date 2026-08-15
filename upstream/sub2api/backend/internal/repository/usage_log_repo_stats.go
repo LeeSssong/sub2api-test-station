@@ -17,6 +17,132 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	accountFinancialUsageAccountsQuery = `SELECT id, name, type, platform, deleted_at FROM accounts ORDER BY id`
+	accountFinancialUsageGroupsQuery   = `SELECT id, name, deleted_at FROM groups ORDER BY id`
+	accountFinancialUsageBalanceQuery  = `SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`
+)
+
+// ReadAccountFinancialUsage reads the native usage-log aggregate and its
+// identity metadata from one repeatable-read snapshot. It deliberately does
+// not consult historical financial state outside the native usage ledger.
+func (r *usageLogRepository) ReadAccountFinancialUsage(ctx context.Context, from, to time.Time) (*service.AccountFinancialUsageSnapshot, error) {
+	if r.db == nil {
+		return nil, errors.New("account financial usage reader requires *sql.DB")
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	snapshot := &service.AccountFinancialUsageSnapshot{}
+	accounts, err := tx.QueryContext(ctx, accountFinancialUsageAccountsQuery)
+	if err != nil {
+		return nil, err
+	}
+	accountByID := make(map[int64]service.AccountFinancialUsageAccount)
+	for accounts.Next() {
+		var account service.AccountFinancialUsageAccount
+		var deletedAt sql.NullTime
+		if err := accounts.Scan(&account.ID, &account.Name, &account.Type, &account.Platform, &deletedAt); err != nil {
+			_ = accounts.Close()
+			return nil, err
+		}
+		account.Active = !deletedAt.Valid
+		snapshot.Accounts = append(snapshot.Accounts, account)
+		accountByID[account.ID] = account
+	}
+	if err := accounts.Err(); err != nil {
+		_ = accounts.Close()
+		return nil, err
+	}
+	if err := accounts.Close(); err != nil {
+		return nil, err
+	}
+
+	groups, err := tx.QueryContext(ctx, accountFinancialUsageGroupsQuery)
+	if err != nil {
+		return nil, err
+	}
+	groupByID := make(map[int64]service.AccountFinancialUsageGroup)
+	for groups.Next() {
+		var group service.AccountFinancialUsageGroup
+		var deletedAt sql.NullTime
+		if err := groups.Scan(&group.ID, &group.Name, &deletedAt); err != nil {
+			_ = groups.Close()
+			return nil, err
+		}
+		group.Active = !deletedAt.Valid
+		snapshot.Groups = append(snapshot.Groups, group)
+		groupByID[group.ID] = group
+	}
+	if err := groups.Err(); err != nil {
+		_ = groups.Close()
+		return nil, err
+	}
+	if err := groups.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := tx.QueryRowContext(ctx, accountFinancialUsageBalanceQuery).Scan(&snapshot.UserBalanceCNY); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			ul.group_id,
+			ul.account_id,
+			COUNT(*),
+			COALESCE(SUM(
+				COALESCE(ul.input_tokens, 0)
+				+ COALESCE(ul.output_tokens, 0)
+				+ COALESCE(ul.cache_creation_tokens, 0)
+				+ COALESCE(ul.cache_read_tokens, 0)
+			), 0),
+			COALESCE(SUM(COALESCE(
+				ul.account_cost,
+				COALESCE(ul.account_stats_cost, ul.total_cost)
+					* COALESCE(ul.account_rate_multiplier, 1)
+			)), 0),
+			COALESCE(SUM(COALESCE(ul.actual_cost, 0)), 0)
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+		GROUP BY ul.group_id, ul.account_id
+		ORDER BY ul.group_id NULLS FIRST, ul.account_id
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var row service.AccountFinancialUsageRow
+		if err := rows.Scan(&row.GroupID, &row.AccountID, &row.Requests, &row.Tokens, &row.Cost, &row.UserCost); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if row.GroupID != nil {
+			row.GroupName = groupByID[*row.GroupID].Name
+		}
+		account := accountByID[row.AccountID]
+		row.AccountName = account.Name
+		row.AccountType = account.Type
+		row.AccountPlatform = account.Platform
+		snapshot.Rows = append(snapshot.Rows, row)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
 // GetUserStatsAggregated returns aggregated usage statistics for a user using database-level aggregation
 func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := `

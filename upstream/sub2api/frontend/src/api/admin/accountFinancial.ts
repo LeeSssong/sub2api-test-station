@@ -1,35 +1,28 @@
 import { apiClient } from '../client'
-
 export type FinancialRange = 'today' | '24h' | '7d' | '31d'
-export interface FinancialAmounts { revenue: number; cost: number; profit: number; margin: number | null; exception_count: number; affected_revenue: number }
-export interface FinancialAccount { id: number; name: string; type: string; platform: string; complete: boolean; has_unallocated_adjustments: boolean; amounts: FinancialAmounts; exception_count: number; affected_revenue: number }
-export interface FinancialGroup { id: number; name: string; unassigned: boolean; complete: boolean; has_unallocated_adjustments: boolean; amounts: FinancialAmounts; accounts: FinancialAccount[]; exception_count: number; affected_revenue: number }
-export interface AccountFinancialReport { generated_at: string; range: FinancialRange; summary: FinancialAmounts; accounts: FinancialAccount[]; groups: FinancialGroup[]; exception_count: number; affected_revenue: number; user_unconsumed_balance_cny: number }
+export interface FinancialAmounts { requests: number; tokens: number; cost: number; user_cost: number; profit: number; margin: number | null }
+export interface FinancialAccount { id: number; name: string; type: string; platform: string; historical: boolean; amounts: FinancialAmounts }
+export interface FinancialGroup { id: number; name: string; unassigned: boolean; historical: boolean; amounts: FinancialAmounts; accounts: FinancialAccount[] }
+export interface AccountFinancialReport { generated_at: string; range: FinancialRange; currency: 'USD'; summary: FinancialAmounts; accounts: FinancialAccount[]; groups: FinancialGroup[]; user_unconsumed_balance_cny: number }
 export interface TodayOverridePayload { business_date: string; revenue_cny?: number; cost_cny?: number }
 export interface OAuthCostPayload { business_date: string; cost_cny?: number }
-
-const numberValue = (value: unknown, fallback = 0) => typeof value === 'number' ? value : Number(value ?? fallback)
-const read = (record: Record<string, unknown>, snake: string, pascal: string) => record[snake] ?? record[pascal]
+const read = (r: Record<string, unknown>, snake: string, pascal: string) => r[snake] ?? r[pascal]
+const numberValue = (v: unknown, fallback = 0) => { const n = typeof v === 'number' ? v : Number(v); return Number.isFinite(n) ? n : fallback }
 function amounts(value: unknown): FinancialAmounts {
   const r = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
-  return { revenue: numberValue(read(r, 'revenue', 'RevenueCNY')), cost: numberValue(read(r, 'cost', 'CostCNY') ?? read(r, 'expense', 'ExpenseCNY')), profit: numberValue(read(r, 'profit', 'ProfitCNY')), margin: read(r, 'margin', 'Margin') == null ? null : numberValue(read(r, 'margin', 'Margin')), exception_count: numberValue(read(r, 'exception_count', 'ExceptionCount')), affected_revenue: numberValue(read(r, 'affected_revenue', 'AffectedRevenueCNY')) }
+  const user_cost = numberValue(read(r, 'user_cost', 'UserCost') ?? read(r, 'revenue', 'RevenueCNY'), 0)
+  const cost = numberValue(read(r, 'cost', 'Cost') ?? read(r, 'expense', 'ExpenseCNY') ?? r.CostCNY)
+  const profitValue = read(r, 'profit', 'Profit') ?? r.ProfitCNY
+  const marginValue = read(r, 'margin', 'Margin')
+  const hasMargin = Object.prototype.hasOwnProperty.call(r, 'margin') || Object.prototype.hasOwnProperty.call(r, 'Margin')
+  return { requests: numberValue(read(r, 'requests', 'Requests')), tokens: numberValue(read(r, 'tokens', 'Tokens')), cost, user_cost, profit: profitValue == null ? user_cost - cost : numberValue(profitValue), margin: hasMargin ? (marginValue == null ? null : numberValue(marginValue)) : (user_cost === 0 ? null : (user_cost - cost) / user_cost) }
 }
-function normalizeAccount(value: unknown): FinancialAccount {
-  const r = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
-  return { id: numberValue(read(r, 'id', 'ID')), name: String(read(r, 'name', 'Name') ?? ''), type: String(read(r, 'type', 'Type') ?? ''), platform: String(read(r, 'platform', 'Platform') ?? ''), complete: Boolean(read(r, 'complete', 'Complete') ?? true), has_unallocated_adjustments: Boolean(read(r, 'has_unallocated_adjustments', 'HasUnallocatedAdjustments') ?? false), amounts: amounts(read(r, 'amounts', 'Amounts')), exception_count: numberValue(read(r, 'exception_count', 'ExceptionCount')), affected_revenue: numberValue(read(r, 'affected_revenue', 'AffectedRevenueCNY')) }
-}
+function account(value: unknown): FinancialAccount { const r = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>; return { id: numberValue(read(r, 'id', 'ID')), name: String(read(r, 'name', 'Name') ?? ''), type: String(read(r, 'type', 'Type') ?? ''), platform: String(read(r, 'platform', 'Platform') ?? ''), historical: Boolean(read(r, 'historical', 'Historical') ?? false), amounts: amounts(read(r, 'amounts', 'Amounts')) } }
 function normalize(raw: unknown, requested: FinancialRange): AccountFinancialReport {
   const root = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const summary = amounts(read(root, 'summary', 'Summary'))
-  const rows = (read(root, 'accounts', 'Accounts') as unknown[] | undefined) ?? []
-  const accounts = Array.isArray(rows) ? rows.map(normalizeAccount) : []
-  const groupRows = (read(root, 'groups', 'Groups') as unknown[] | undefined) ?? []
-  const groups = Array.isArray(groupRows) ? groupRows.map((item): FinancialGroup => {
-    const r = item as Record<string, unknown>
-    const groupAccounts = (read(r, 'accounts', 'Accounts') as unknown[] | undefined) ?? []
-    return { id: numberValue(read(r, 'id', 'ID')), name: String(read(r, 'name', 'Name') ?? ''), unassigned: Boolean(read(r, 'unassigned', 'Unassigned') ?? false), complete: Boolean(read(r, 'complete', 'Complete') ?? true), has_unallocated_adjustments: Boolean(read(r, 'has_unallocated_adjustments', 'HasUnallocatedAdjustments') ?? false), amounts: amounts(read(r, 'amounts', 'Amounts')), accounts: Array.isArray(groupAccounts) ? groupAccounts.map(normalizeAccount) : [], exception_count: numberValue(read(r, 'exception_count', 'ExceptionCount')), affected_revenue: numberValue(read(r, 'affected_revenue', 'AffectedRevenueCNY')) }
-  }) : []
-  return { generated_at: String(read(root, 'generated_at', 'GeneratedAt') ?? ''), range: String(read(root, 'range', 'Range') ?? requested) as FinancialRange, summary, accounts, groups, exception_count: numberValue(read(root, 'exception_count', 'ExceptionCount') ?? summary.exception_count), affected_revenue: numberValue(read(root, 'affected_revenue', 'AffectedRevenueCNY') ?? summary.affected_revenue), user_unconsumed_balance_cny: numberValue(read(root, 'user_unconsumed_balance_cny', 'UserBalanceCNY')) }
+  const rows = (value: unknown) => Array.isArray(value) ? value : []
+  const groups = rows(read(root, 'groups', 'Groups')).map((item) => { const r = item as Record<string, unknown>; return { id: numberValue(read(r, 'id', 'ID')), name: String(read(r, 'name', 'Name') ?? ''), unassigned: Boolean(read(r, 'unassigned', 'Unassigned') ?? false), historical: Boolean(read(r, 'historical', 'Historical') ?? false), amounts: amounts(read(r, 'amounts', 'Amounts')), accounts: rows(read(r, 'accounts', 'Accounts')).map(account) } })
+  return { generated_at: String(read(root, 'generated_at', 'GeneratedAt') ?? ''), range: String(read(root, 'range', 'Range') ?? requested) as FinancialRange, currency: 'USD', summary: amounts(read(root, 'summary', 'Summary')), accounts: rows(read(root, 'accounts', 'Accounts')).map(account), groups, user_unconsumed_balance_cny: numberValue(read(root, 'user_unconsumed_balance_cny', 'UserBalanceCNY')) }
 }
 export async function getReport(params: { range: FinancialRange }): Promise<AccountFinancialReport> { const { data } = await apiClient.get('/admin/operations/account-financial', { params }); return normalize(data, params.range) }
 export async function setOAuthCost(accountId: number, payload: OAuthCostPayload) { const { data } = await apiClient.put(`/admin/accounts/${accountId}/financial/oauth-cost`, payload); return data }

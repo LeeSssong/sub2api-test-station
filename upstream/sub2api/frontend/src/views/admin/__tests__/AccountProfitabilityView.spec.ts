@@ -1,139 +1,31 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import AccountProfitabilityView from '../AccountProfitabilityView.vue'
 import pageSource from '../AccountProfitabilityView.vue?raw'
-import enAdmin from '@/i18n/locales/en/admin'
 import zhAdmin from '@/i18n/locales/zh/admin'
-const { getReport, setTodayOverride, setOAuthCost, push } = vi.hoisted(() => ({ getReport: vi.fn(), setTodayOverride: vi.fn(), setOAuthCost: vi.fn(), push: vi.fn() }))
-vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport, setTodayOverride, setOAuthCost } } }))
-vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
-const messages: Record<string, string> = {
-  'admin.accountProfitability.title': '账号盈利',
-  'admin.accountProfitability.description': '按时间范围查看每个账号的实际收入、支出、盈利与利润率。',
-  'admin.accountProfitability.ranges.today': '今日',
-  'admin.accountProfitability.ranges.24h': '24 小时',
-  'admin.accountProfitability.ranges.7d': '7 天',
-  'admin.accountProfitability.ranges.31d': '31 天',
-  'admin.accountProfitability.summary.revenue': '收入',
-  'admin.accountProfitability.summary.expense': '支出',
-  'admin.accountProfitability.summary.profit': '盈利',
-  'admin.accountProfitability.summary.margin': '利润率',
-  'admin.accountProfitability.summary.exceptions': '异常流水',
-  'admin.accountProfitability.summary.unconsumedBalance': '用户未消费余额',
-  'admin.accountProfitability.scope.label': '经营维度',
-  'admin.accountProfitability.scope.all': '全站',
-  'admin.accountProfitability.scope.unassigned': '未归属',
-  'admin.accountProfitability.scope.groupSummary': '分组摘要',
-  'admin.accountProfitability.scope.accountCount': '{count} 个账号',
-  'admin.accountProfitability.scope.incomplete': '分组数据不完整',
-  'admin.accountProfitability.scope.unallocatedAdjustments': '账号级覆盖或 OAuth 日成本未按比例分摊',
-  'admin.accountProfitability.columns.account': '账号',
-  'admin.accountProfitability.columns.revenue': '收入',
-  'admin.accountProfitability.columns.expense': '支出',
-  'admin.accountProfitability.columns.profit': '盈利',
-  'admin.accountProfitability.columns.margin': '利润率',
-  'admin.accountProfitability.columns.exceptions': '异常',
-  'admin.accountProfitability.columns.actions': '今日覆盖',
-  'admin.accountProfitability.loadError': '账号盈利数据加载失败，请重试。',
-  'admin.accountProfitability.retry': '重试',
-  'common.refresh': '刷新',
-}
-
-vi.mock('vue-i18n', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('vue-i18n')>()),
-  useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) => (messages[key] ?? key).replace('{count}', String(params?.count ?? '')),
-  }),
-}))
-const amounts = (revenue: number, cost: number, exceptionCount = 0) => ({ revenue, cost, profit: revenue - cost, margin: revenue ? (revenue - cost) / revenue : null, exception_count: exceptionCount, affected_revenue: 0 })
-const account = (id: number, name: string, revenue: number, cost: number, type = 'api_key') => ({ id, name, type, platform: 'sub', complete: true, has_unallocated_adjustments: false, amounts: amounts(revenue, cost), exception_count: id === 7 ? 3 : 0, affected_revenue: 0 })
-const report = () => ({ generated_at: '2026-08-12T10:00:00Z', range: 'today', summary: { revenue: 120, cost: 70, profit: 50, margin: .4167, exception_count: 3, affected_revenue: 20 }, accounts: [{ ...account(7, 'OAuth', 10, 4, 'oauth'), complete: false }, account(8, 'API', 20, 8)], groups: [
-  { id: 10, name: 'Pro', unassigned: false, complete: false, has_unallocated_adjustments: true, amounts: amounts(10, 4, 3), accounts: [account(7, 'OAuth', 10, 4, 'oauth')], exception_count: 3, affected_revenue: 5 },
-  { id: 20, name: 'Plus', unassigned: false, complete: true, has_unallocated_adjustments: false, amounts: amounts(20, 8), accounts: [account(8, 'API', 20, 8)], exception_count: 0, affected_revenue: 0 },
-  { id: 0, name: '', unassigned: true, complete: true, has_unallocated_adjustments: false, amounts: amounts(2, 1), accounts: [], exception_count: 0, affected_revenue: 0 },
-], exception_count: 3, affected_revenue: 5, user_unconsumed_balance_cny: 90 })
+import enAdmin from '@/i18n/locales/en/admin'
+const getReport = vi.hoisted(() => vi.fn())
+vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport } } }))
+const messages: Record<string, string> = { 'admin.accountProfitability.title': '账号盈利', 'admin.accountProfitability.description': '原生用量经营指标', 'admin.accountProfitability.ranges.today': '今日', 'admin.accountProfitability.ranges.24h': '24 小时', 'admin.accountProfitability.ranges.7d': '7 天', 'admin.accountProfitability.ranges.31d': '31 天', 'admin.accountProfitability.loading': '加载中', 'admin.accountProfitability.refreshing': '刷新中', 'admin.accountProfitability.empty': '暂无用量', 'admin.accountProfitability.loadError': '加载失败', 'admin.accountProfitability.retry': '重试', 'admin.accountProfitability.scope.label': '经营维度', 'admin.accountProfitability.scope.all': '全站', 'admin.accountProfitability.scope.unassigned': '未归属', 'admin.accountProfitability.scope.groupSummary': '分组摘要', 'admin.accountProfitability.scope.accountCount': '{count} 个账号', 'admin.accountProfitability.summary.requests': '请求数', 'admin.accountProfitability.summary.tokens': 'Token', 'admin.accountProfitability.summary.accountCost': '账号成本', 'admin.accountProfitability.summary.userCost': '用户扣费', 'admin.accountProfitability.summary.profit': '利润', 'admin.accountProfitability.summary.margin': '利润率', 'admin.accountProfitability.summary.unconsumedBalance': '用户未消费余额', 'admin.accountProfitability.columns.account': '账号', 'admin.accountProfitability.columns.requests': '请求数', 'admin.accountProfitability.columns.tokens': 'Token', 'admin.accountProfitability.columns.accountCost': '账号成本', 'admin.accountProfitability.columns.userCost': '用户扣费', 'admin.accountProfitability.columns.profit': '利润', 'admin.accountProfitability.columns.margin': '利润率', 'common.refresh': '刷新' }
+vi.mock('vue-i18n', async (importOriginal) => ({ ...(await importOriginal<typeof import('vue-i18n')>()), useI18n: () => ({ t: (key: string, params?: Record<string, unknown>) => (messages[key] ?? key).replace('{count}', String(params?.count ?? '')) }) }))
+const amounts = (requests = 2, tokens = 10) => ({ requests, tokens, cost: 0.000123, user_cost: 0.000456, profit: 0.000333, margin: null as number | null })
+const nativeReport = () => ({ generated_at: '2026-08-12T10:00:00Z', range: 'today' as const, currency: 'USD' as const, summary: amounts(), accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amounts() }], groups: [{ id: 10, name: 'Pro', unassigned: false, historical: false, amounts: amounts(), accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amounts() }] }], user_unconsumed_balance_cny: 90 })
+const mountPage = (options: Record<string, unknown> = {}) => mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } }, ...options } as never)
 describe('AccountProfitabilityView', () => {
-  it('keeps the page source free of control-plane symbols and xingqiao paths', () => {
-    expect(pageSource).not.toMatch(/controlPlaneAPI|ControlPlaneResponse|ReadModelStatus|useReadModelFreshness|resolveTrustedPageDecision|controlPlaneResponse|controlPlaneDegraded|renderSource|unknown|degraded|integrity|\/api\/v1\/xingqiao|\/xingqiao/)
-  })
-
-  beforeEach(() => { getReport.mockReset().mockResolvedValue(report()); setTodayOverride.mockReset().mockResolvedValue({}); setOAuthCost.mockReset().mockResolvedValue({}); push.mockReset(); vi.spyOn(global, 'setInterval'); vi.spyOn(global, 'clearInterval') })
-  it('keeps the active range labels in the production Chinese and English admin locales', () => {
-    expect(zhAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 小时', '31d': '31 天' })
-    expect(enAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 hours', '31d': '31 days' })
-    expect(zhAdmin.accountProfitability.retry).toBe('重试')
-    expect(enAdmin.accountProfitability.retry).toBe('Retry')
-  })
-  it('renders Chinese range labels and localized table headers without leaking i18n keys', async () => {
-    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="range-today"]').text()).toBe('今日')
-    expect(wrapper.get('[data-test="range-24h"]').text()).toBe('24 小时')
-    expect(wrapper.get('[data-test="range-7d"]').text()).toBe('7 天')
-    expect(wrapper.get('[data-test="range-31d"]').text()).toBe('31 天')
-
-    const headers = wrapper.findAll('th').map((header) => header.text())
-    expect(headers).toEqual(['账号', '收入', '支出', '盈利', '利润率', '异常', '今日覆盖'])
-
-    expect(wrapper.text()).not.toContain('admin.accountProfitability.ranges.24h')
-    expect(wrapper.text()).not.toContain('admin.accountProfitability.ranges.31d')
-    expect(headers).not.toEqual(['Account', 'Revenue', 'Expense', 'Profit', 'Margin', 'Exceptions', 'Today override'])
-  })
-  it('uses native admin theme classes for summary cards and the account table', async () => {
-    const wrapper = mount(AccountProfitabilityView, {
-      global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } },
-    })
-    await flushPromises()
-
-    const cardKeys = ['revenue', 'expense', 'profit', 'margin', 'exceptions', 'unconsumed-balance']
-    for (const key of cardKeys) {
-      const classes = wrapper.get(`[data-test="summary-${key}"]`).classes()
-      expect(classes).toContain('card')
-      expect(classes).toContain('p-4')
-      expect(classes).not.toContain('bg-white')
-    }
-
-    const tableWrapper = wrapper.get('[data-test="account-financial-table"]')
-    expect(tableWrapper.classes()).toContain('table-container')
-    expect(tableWrapper.classes()).not.toContain('bg-white')
-
-    const table = tableWrapper.get('table')
-    expect(table.classes()).toContain('table')
-    expect(table.classes()).not.toContain('min-w-full')
-  })
-  it('renders six cards, refreshes through getReport only, and keeps the timer', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); expect(getReport).toHaveBeenCalledWith({ range: 'today' }); expect(wrapper.get('[data-test="financial-generated-at"]').text()).toContain('2026'); for (const key of ['revenue','expense','profit','margin','exceptions','unconsumed-balance']) expect(wrapper.find(`[data-test="summary-${key}"]`).exists()).toBe(true); await wrapper.get('[data-test="financial-refresh"]').trigger('click'); await flushPromises(); expect(getReport).toHaveBeenNthCalledWith(2, { range: 'today' }); expect(setTodayOverride).not.toHaveBeenCalled(); expect(setOAuthCost).not.toHaveBeenCalled(); expect(setInterval).toHaveBeenCalledWith(expect.any(Function), 60_000); wrapper.unmount(); expect(clearInterval).toHaveBeenCalled() })
-  it('shows a visible report error and retries without presenting failure as success', async () => {
-    getReport.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce(report())
-    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
-    await flushPromises()
-    expect(wrapper.get('[data-test="financial-load-error"]').text()).toContain('账号盈利数据加载失败')
-    expect(wrapper.get('[data-test="financial-generated-at"]').text()).toBe('—')
-    await wrapper.get('[data-test="financial-retry"]').trigger('click')
-    await flushPromises()
-    expect(getReport).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('[data-test="financial-load-error"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="financial-generated-at"]').text()).toContain('2026')
-  })
-  it('supports read-only ranges and exception jump', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); await wrapper.get('[data-test="range-7d"]').trigger('click'); await flushPromises(); expect(getReport).toHaveBeenLastCalledWith({ range: '7d' }); expect(wrapper.find('[data-test="account-edit-revenue-7"]').exists()).toBe(false); await wrapper.get('[data-test="range-today"]').trigger('click'); await flushPromises(); await wrapper.get('[data-test="account-exceptions-7"]').trigger('click'); expect(push).toHaveBeenCalledWith({ path: '/admin/usage', query: { tab: 'cost-exceptions', review: 'pending', range: 'today', account_id: '7' } }) })
-  it('edits today revenue, cost and oauth daily cost with Beijing business date', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); await wrapper.get('[data-test="account-edit-revenue-7"]').setValue('8'); await wrapper.get('[data-test="account-edit-revenue-7"]').trigger('change'); await wrapper.get('[data-test="account-edit-cost-7"]').setValue('5'); await wrapper.get('[data-test="account-edit-cost-7"]').trigger('change'); await wrapper.get('[data-test="account-edit-oauth-cost-7"]').setValue('4'); await wrapper.get('[data-test="account-edit-oauth-cost-7"]').trigger('change'); expect(setTodayOverride).toHaveBeenNthCalledWith(1, 7, expect.objectContaining({ revenue_cny: 8, business_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })); expect(setTodayOverride).toHaveBeenCalledWith(7, expect.objectContaining({ cost_cny: 5 })); expect(setOAuthCost).toHaveBeenCalledWith(7, expect.objectContaining({ cost_cny: 4 })) })
-  it('shows account financial fields while edits stay today-only', async () => { const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); await flushPromises(); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('¥10.00'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('¥4.00'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('¥6.00'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('60.0%'); await wrapper.get('[data-test="range-7d"]').trigger('click'); await flushPromises(); expect(wrapper.find('[data-test="account-edit-cost-7"]').exists()).toBe(false) })
-  it('switches from whole-site rows to backend-provided group rows without hiding whole-site cards', async () => {
-    const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
-    await flushPromises()
-    expect(wrapper.get('[data-test="scope-all"]').text()).toContain('全站')
-    expect(wrapper.get('[data-test="scope-group-10"]').text()).toContain('Pro')
-    expect(wrapper.get('[data-test="scope-group-0"]').text()).toContain('未归属')
-    await wrapper.get('[data-test="scope-group-10"]').trigger('click')
-    expect(wrapper.find('[data-test="group-summary-10"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="account-financial-7"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="account-financial-8"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="unallocated-adjustments-notice"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="incomplete-group-notice"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="group-summary-10"]').text()).toContain('分组摘要')
-    expect(wrapper.find('[data-test="account-edit-revenue-7"]').exists()).toBe(false)
-    for (const key of ['revenue','expense','profit','margin','exceptions','unconsumed-balance']) expect(wrapper.find(`[data-test="summary-${key}"]`).exists()).toBe(true)
-    await wrapper.get('[data-test="scope-all"]').trigger('click')
-    expect(wrapper.find('[data-test="account-edit-revenue-7"]').exists()).toBe(true)
-  })
+  beforeEach(() => { getReport.mockReset().mockResolvedValue(nativeReport()) })
+  it('shows loading before first response and seven cards after native success', async () => { getReport.mockReturnValueOnce(new Promise(() => undefined)); const wrapper = mountPage(); await nextTick(); expect(wrapper.get('[data-test="financial-loading"]')).toBeTruthy(); wrapper.unmount(); const ready = mountPage(); await flushPromises(); expect(ready.findAll('[data-test^="summary-"]').length).toBe(7); expect(ready.get('[data-test="summary-unconsumed-balance"]').text()).toContain('90') })
+  it('renders native table columns, tiny USD values and null margin dash', async () => { const wrapper = mountPage(); await flushPromises(); expect(wrapper.findAll('th').map(h => h.text())).toEqual(['账号', '请求数', 'Token', '账号成本', '用户扣费', '利润', '利润率']); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('$0.000123'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('—') })
+  it('does not round sub-eight-decimal non-zero USD values to zero', async () => { const tiny = nativeReport(); tiny.summary = { ...tiny.summary, cost: 0.000000001, profit: -0.000000001 }; tiny.accounts[0].amounts = { ...tiny.accounts[0].amounts, cost: 0.000000001, profit: -0.000000001 }; getReport.mockResolvedValueOnce(tiny); const wrapper = mountPage(); await flushPromises(); const text = wrapper.get('[data-test="account-financial-7"]').text(); expect(text).toContain('$1.00e-9'); expect(text).toContain('-$1.00e-9') })
+  it('shows empty state for zero native usage despite CNY balance', async () => { getReport.mockResolvedValueOnce({ ...nativeReport(), summary: { requests: 0, tokens: 0, cost: 0, user_cost: 0, profit: 0, margin: null }, accounts: [], groups: [], user_unconsumed_balance_cny: 90 }); const wrapper = mountPage(); await flushPromises(); expect(wrapper.get('[data-test="financial-empty"]')).toBeTruthy(); expect(wrapper.get('[data-test="summary-unconsumed-balance"]').text()).toContain('90') })
+  it('shows error and retry without fabricated success cards', async () => { getReport.mockRejectedValueOnce(new Error('x')); const wrapper = mountPage(); await flushPromises(); expect(wrapper.get('[data-test="financial-load-error"]')).toBeTruthy(); expect(wrapper.get('[data-test="financial-retry"]')).toBeTruthy() })
+  it('does not render success cards during initial loading or error', async () => { getReport.mockReturnValueOnce(new Promise(() => undefined)); const loadingPage = mountPage(); await nextTick(); expect(loadingPage.find('[data-test="financial-loading"]').exists()).toBe(true); expect(loadingPage.find('[data-test="summary-cost"]').exists()).toBe(false); loadingPage.unmount(); getReport.mockRejectedValueOnce(new Error('x')); const errorPage = mountPage(); await flushPromises(); expect(errorPage.find('[data-test="financial-load-error"]').exists()).toBe(true); expect(errorPage.find('[data-test="summary-cost"]').exists()).toBe(false) })
+  it('keeps existing cards and rows visible while refreshing', async () => { let resolveRefresh!: (v: any) => void; const wrapper = mountPage(); await flushPromises(); getReport.mockReturnValueOnce(new Promise(r => { resolveRefresh = r })); await wrapper.get('[data-test="financial-refresh"]').trigger('click'); await nextTick(); expect(wrapper.find('[data-test="financial-refreshing"]').exists()).toBe(true); expect(wrapper.find('[data-test="summary-cost"]').exists()).toBe(true); expect(wrapper.find('[data-test="account-financial-7"]').exists()).toBe(true); resolveRefresh(nativeReport()); await flushPromises() })
+  it('interval refresh calls only getReport', async () => { const setIntervalSpy = vi.spyOn(global, 'setInterval'); const wrapper = mountPage(); await flushPromises(); const callback = setIntervalSpy.mock.calls.at(-1)?.[0] as (() => void); getReport.mockResolvedValueOnce(nativeReport()); callback(); await flushPromises(); expect(getReport).toHaveBeenCalledTimes(2); expect(getReport.mock.calls.every(call => call[0] && Object.keys(call[0]).length === 1 && 'range' in call[0])).toBe(true); wrapper.unmount() })
+  it('uses latest request response when ranges resolve out of order', async () => { let resolveOld!: (v: any) => void; let resolveNew!: (v: any) => void; getReport.mockReturnValueOnce(new Promise(r => { resolveOld = r })).mockReturnValueOnce(new Promise(r => { resolveNew = r })); const wrapper = mountPage(); await wrapper.get('[data-test="range-7d"]').trigger('click'); resolveNew({ ...nativeReport(), range: '7d', summary: { ...nativeReport().summary, requests: 77 }, accounts: [{ ...nativeReport().accounts[0], name: 'Newest row' }] }); await flushPromises(); expect(wrapper.get('[data-test="summary-requests"]').text()).toContain('77'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('Newest row'); resolveOld({ ...nativeReport(), range: 'today', summary: { ...nativeReport().summary, requests: 1 }, accounts: [{ ...nativeReport().accounts[0], name: 'Old row' }] }); await flushPromises(); expect(wrapper.get('[data-test="summary-requests"]').text()).toContain('77'); expect(wrapper.get('[data-test="account-financial-7"]').text()).toContain('Newest row') })
+  it('renders six group cards and only backend pair rows', async () => { const wrapper = mountPage(); await flushPromises(); await wrapper.get('[data-test="scope-group-10"]').trigger('click'); expect(wrapper.get('[data-test="group-summary-10"]').findAll('.card').length).toBe(6); expect(wrapper.find('[data-test="account-financial-7"]').exists()).toBe(true); expect(wrapper.find('[data-test="account-financial-8"]').exists()).toBe(false) })
+  it('mounts at 390px with a shrinkable page and an isolated horizontal table boundary', async () => { const host = document.createElement('div'); host.style.width = '390px'; document.body.appendChild(host); const wrapper = mountPage({ attachTo: host }); await flushPromises(); const main = wrapper.get('main'); const tableWrapper = wrapper.get('[data-test="account-financial-table"]'); expect(main.classes()).toContain('w-full'); expect(main.classes()).not.toContain('min-w-full'); expect(main.classes()).not.toContain('w-screen'); expect(main.element.getBoundingClientRect().width).toBeLessThanOrEqual(390); expect(tableWrapper.classes()).toContain('overflow-x-auto'); expect(tableWrapper.element.getBoundingClientRect().width).toBeLessThanOrEqual(390); expect(tableWrapper.get('table').classes()).toContain('min-w-max'); wrapper.unmount(); host.remove() })
+  it('keeps backend (group_id, account_id) rows isolated when selecting groups', async () => { const shared = (name: string, requests: number) => ({ id: 7, name, type: 'api_key', platform: 'sub', historical: false, amounts: amounts(requests, requests * 10) }); const pairReport = { ...nativeReport(), accounts: [shared('Whole account', 30)], groups: [{ id: 10, name: 'Group A', unassigned: false, historical: false, amounts: amounts(11, 110), accounts: [shared('Pair A', 11)] }, { id: 20, name: 'Group B', unassigned: false, historical: false, amounts: amounts(22, 220), accounts: [shared('Pair B', 22)] }] }; getReport.mockResolvedValueOnce(pairReport); const wrapper = mountPage(); await flushPromises(); await wrapper.get('[data-test="scope-group-10"]').trigger('click'); expect(wrapper.get('[data-pair="10:7"]').text()).toContain('Pair A'); expect(wrapper.get('[data-pair="10:7"]').text()).toContain('11'); expect(wrapper.find('[data-pair="20:7"]').exists()).toBe(false); await wrapper.get('[data-test="scope-group-20"]').trigger('click'); expect(wrapper.get('[data-pair="20:7"]').text()).toContain('Pair B'); expect(wrapper.get('[data-pair="20:7"]').text()).toContain('22'); expect(wrapper.find('[data-pair="10:7"]').exists()).toBe(false) })
+  it('resolves production locale keys and keeps mobile page unconstrained', () => { expect(zhAdmin.accountProfitability.summary.requests).toBe('请求数'); expect(enAdmin.accountProfitability.summary.requests).toBe('Requests'); expect(pageSource).not.toMatch(/\/xingqiao|control-plane|tab=cost-exceptions|setTodayOverride|setOAuthCost/); expect(pageSource).not.toMatch(/<main[^>]*min-w-|<main[^>]*w-screen/); expect(pageSource).toContain('overflow-x-auto') })
+  it('refreshes through getReport only and has no legacy controls or forbidden source strings', async () => { const wrapper = mountPage(); await flushPromises(); await wrapper.get('[data-test="financial-refresh"]').trigger('click'); expect(getReport).toHaveBeenCalledTimes(2); expect(wrapper.find('input').exists()).toBe(false); expect(wrapper.text()).not.toContain('异常流水'); expect(AccountProfitabilityView.__file ?? '').toBeTruthy() })
 })

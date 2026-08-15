@@ -19,7 +19,7 @@ export default {
   accountProfitability: {
     eyebrow: 'Operations',
     title: 'Account Profitability',
-    description: 'Review actual revenue, expense, profit, and margin for every account in a selected window. Unknown costs stay visible as pending.',
+    description: 'Review native usage, account cost, user charge, profit, and margin for a selected window.',
     export: 'Export CSV',
     dateRange: 'Reporting window',
     startDate: 'Start date',
@@ -45,10 +45,10 @@ export default {
     pendingCost: 'Pending',
     pendingConversion: 'FX rate needed',
     empty: 'No account data matches the current filters.',
-    loadError: 'Failed to load account profitability data. Try again.',
+    loading: 'Loading profitability data…', refreshing: 'Refreshing…', loadError: 'Failed to load account profitability data. Try again.',
     retry: 'Retry',
-    columns: { account: 'Account', source: 'Source', status: 'Cost status', expense: 'Expense', expenseCurrency: 'Expense currency', revenue: 'Revenue', profit: 'Profit', margin: 'Margin', requests: 'Requests', exceptions: 'Exceptions', actions: 'Today override' },
-    summary: { revenue: 'Revenue', expense: 'Expense', profit: 'Profit', margin: 'Margin', pending: 'Pending accounts', exceptions: 'Exceptions', unconsumedBalance: 'User unconsumed balance' },
+    columns: { account: 'Account', requests: 'Requests', tokens: 'Tokens', accountCost: 'Account cost', userCost: 'User charge', profit: 'Profit', margin: 'Margin' },
+    summary: { requests: 'Requests', tokens: 'Tokens', accountCost: 'Account cost', userCost: 'User charge', profit: 'Profit', margin: 'Margin', unconsumedBalance: 'User unconsumed balance' },
     oauthComplete: 'OAuth complete', oauthPending: 'OAuth pending',
   },
   usageCostDetail: {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,15 @@ type financialFilterCaptureRepo struct {
 	financialMutationRepo
 	query    service.AccountFinancialSnapshotQuery
 	snapshot *service.AccountFinancialSnapshot
+}
+
+type financialUsageReader struct {
+	snapshot *service.AccountFinancialUsageSnapshot
+	err      error
+}
+
+func (r *financialUsageReader) ReadAccountFinancialUsage(context.Context, time.Time, time.Time) (*service.AccountFinancialUsageSnapshot, error) {
+	return r.snapshot, r.err
 }
 
 func (r *financialFilterCaptureRepo) ReadSnapshot(_ context.Context, q service.AccountFinancialSnapshotQuery) (*service.AccountFinancialSnapshot, error) {
@@ -71,10 +81,10 @@ func (r *financialAuditRecorder) Record(entry *service.AuditLog) {
 	r.entries = append(r.entries, entry)
 }
 
-func TestFinancialMutationHandlersPersistCorrelationThroughService(t *testing.T) {
+func TestAccountFinancialMutationHandlersPersistCorrelationThroughService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := &financialAuditRecorder{}
-	svc := service.NewAccountFinancialServiceWithAudit(financialMutationRepo{}, time.Now, service.NewAccountFinancialAudit(recorder))
+	svc := service.NewAccountFinancialServiceWithAudit(financialMutationRepo{}, nil, time.Now, service.NewAccountFinancialAudit(recorder))
 	h := NewAccountFinancialHandler(svc)
 	const requestID = "handler-correlation-123"
 
@@ -159,6 +169,63 @@ func TestAccountFinancialReportRejectsUnknownRange(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestAccountFinancialReportReturnsNativeJSONContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 8, 13, 4, 0, 0, 0, time.UTC)
+	reader := &financialUsageReader{snapshot: &service.AccountFinancialUsageSnapshot{
+		UserBalanceCNY: 90,
+		Accounts:       []service.AccountFinancialUsageAccount{{ID: 7, Name: "native", Type: "api_key", Platform: "sub", Active: true}},
+		Rows:           []service.AccountFinancialUsageRow{{AccountID: 7, Requests: 2, Tokens: 10, Cost: 1.25, UserCost: 2}},
+	}}
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, reader, func() time.Time { return now }))
+	r := gin.New()
+	r.GET("/api/v1/admin/operations/account-financial", h.GetReport)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/admin/operations/account-financial?range=24h", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body struct {
+		Data struct {
+			Currency       string                   `json:"currency"`
+			UserBalanceCNY float64                  `json:"user_unconsumed_balance_cny"`
+			Summary        service.FinancialAmounts `json:"summary"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "USD", body.Data.Currency)
+	require.Equal(t, float64(90), body.Data.UserBalanceCNY)
+	require.Equal(t, service.FinancialAmounts{Requests: 2, Tokens: 10, Cost: 1.25, UserCost: 2, Profit: .75, Margin: body.Data.Summary.Margin, Revenue: 2, Expense: 1.25}, body.Data.Summary)
+	require.NotNil(t, body.Data.Summary.Margin)
+	require.Equal(t, .375, *body.Data.Summary.Margin)
+	require.NotContains(t, w.Body.String(), "exception_count")
+	require.NotContains(t, w.Body.String(), "complete")
+}
+
+func TestAccountFinancialReportUnavailableServiceAndReaderErrorsAreNonSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name       string
+		handler    *AccountFinancialHandler
+		wantStatus int
+	}{
+		{name: "nil service", handler: NewAccountFinancialHandler(nil), wantStatus: http.StatusInternalServerError},
+		{name: "nil reader", handler: NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, nil, time.Now)), wantStatus: http.StatusInternalServerError},
+		{name: "reader error", handler: NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, &financialUsageReader{err: errors.New("reader unavailable")}, time.Now))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			r.GET("/report", tt.handler.GetReport)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/report?range=today", nil))
+			if tt.wantStatus != 0 {
+				require.Equal(t, tt.wantStatus, w.Code, w.Body.String())
+				return
+			}
+			require.GreaterOrEqual(t, w.Code, http.StatusBadRequest, w.Body.String())
+		})
+	}
+}
+
 func TestAccountFinancialReviewRejectsInvalidAmount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -172,7 +239,7 @@ func TestAccountFinancialReviewRejectsInvalidAmount(t *testing.T) {
 func TestAccountFinancialListExceptionsPassesRFC3339HalfOpenRange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &financialFilterCaptureRepo{}
-	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, time.Now))
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, nil, time.Now))
 	r := gin.New()
 	r.GET("/exceptions", h.ListExceptions)
 	w := httptest.NewRecorder()
@@ -192,7 +259,7 @@ func TestAccountFinancialListExceptionsRejectsMalformedOrInvalidRange(t *testing
 	} {
 		t.Run(query, func(t *testing.T) {
 			repo := &financialFilterCaptureRepo{}
-			h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, time.Now))
+			h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, nil, time.Now))
 			r := gin.New()
 			r.GET("/exceptions", h.ListExceptions)
 			w := httptest.NewRecorder()
@@ -215,10 +282,10 @@ func TestAccountFinancialListExceptionsReturnsScopedCostTrace(t *testing.T) {
 	repo := &financialFilterCaptureRepo{}
 	repo.snapshot = &service.AccountFinancialSnapshot{
 		GeneratedAt: now,
-		Accounts: []service.AccountFinancialSnapshotAccount{{ID: 7, Name: "newapi-ledger", Type: "api_key"}},
-		Entries: []service.AccountFinancialSnapshotEntry{{UsageLogID: 42, AccountID: 7, RequestID: "local-request", CreatedAt: now, EvidenceStatus: "unavailable", ReasonCode: "record_not_found", Source: "newapi", UpstreamRequestID: &upstreamRequestID, UpstreamBillingTime: &billingTime, UpstreamModel: &upstreamModel, NewAPIQuota: &quota, NewAPIQuotaPerUnit: &perUnit}},
+		Accounts:    []service.AccountFinancialSnapshotAccount{{ID: 7, Name: "newapi-ledger", Type: "api_key"}},
+		Entries:     []service.AccountFinancialSnapshotEntry{{UsageLogID: 42, AccountID: 7, RequestID: "local-request", CreatedAt: now, EvidenceStatus: "unavailable", ReasonCode: "record_not_found", Source: "newapi", UpstreamRequestID: &upstreamRequestID, UpstreamBillingTime: &billingTime, UpstreamModel: &upstreamModel, NewAPIQuota: &quota, NewAPIQuotaPerUnit: &perUnit}},
 	}
-	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, func() time.Time { return now }))
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(repo, nil, func() time.Time { return now }))
 	r := gin.New()
 	r.GET("/exceptions", h.ListExceptions)
 	w := httptest.NewRecorder()

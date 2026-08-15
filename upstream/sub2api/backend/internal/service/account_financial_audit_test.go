@@ -61,7 +61,7 @@ func TestAccountFinancialServiceReviewSelectedAuditsCommittedRowsBeforeLaterErro
 	now := beijingTime(t, "2026-08-13 12:00")
 	rec := &auditRecorder{}
 	repo := &partialReviewFinancialRepoStub{failUsageLogID: 2}
-	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(repo, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	_, err := svc.ReviewSelected(ctx, []UsageCostReviewInput{{UsageLogID: 1, ReviewedBy: 9, RequestID: "selected-1"}, {UsageLogID: 2, ReviewedBy: 9, RequestID: "selected-2"}})
 	if err == nil || len(rec.entries) != 2 {
 		t.Fatalf("partial batch must audit committed row and failure row: err=%v audits=%d", err, len(rec.entries))
@@ -76,7 +76,7 @@ func TestAccountFinancialServiceReviewSelectedAuditsCommittedRowsBeforeLaterVali
 	now := beijingTime(t, "2026-08-13 12:00")
 	rec := &auditRecorder{}
 	repo := &mutationFinancialRepoStub{}
-	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(repo, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	invalid := -1.0
 	_, err := svc.ReviewSelected(ctx, []UsageCostReviewInput{
 		{UsageLogID: 1, ReviewedBy: 9, RequestID: "selected-valid"},
@@ -100,7 +100,7 @@ func TestAccountFinancialServiceOverrideAuditPersistsMutationKind(t *testing.T) 
 	ctx := context.Background()
 	now := beijingTime(t, "2026-08-13 12:00")
 	rec := &auditRecorder{}
-	svc := NewAccountFinancialServiceWithAudit(&overrideKindFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(&overrideKindFinancialRepoStub{}, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	cost := 4.0
 	_, err := svc.SetTodayOverride(ctx, TodayOverrideInput{AccountID: 5, BusinessDate: "2026-08-13", CostCNY: &cost, ActorUserID: 9, RequestID: "override-kind"})
 	if err != nil || len(rec.entries) != 1 {
@@ -116,7 +116,7 @@ func TestAccountFinancialServiceAuditsEveryMutation(t *testing.T) {
 	now := beijingTime(t, "2026-08-13 12:00")
 	repo := &mutationFinancialRepoStub{}
 	rec := &auditRecorder{}
-	svc := NewAccountFinancialServiceWithAudit(repo, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(repo, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	cost := float64(3)
 	_, _ = svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ManualCostCNY: &cost, ReviewedBy: 9, RequestID: "one"})
 	_, _ = svc.ReviewSelected(ctx, []UsageCostReviewInput{{UsageLogID: 2, ReviewedBy: 9, RequestID: "selected"}})
@@ -137,7 +137,7 @@ func TestAccountFinancialServiceReviewAuditUsesTruthfulOldAndNewValues(t *testin
 	ctx := context.Background()
 	now := beijingTime(t, "2026-08-13 12:00")
 	rec := &auditRecorder{}
-	svc := NewAccountFinancialServiceWithAudit(&truthfulReviewFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(&truthfulReviewFinancialRepoStub{}, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	_, err := svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ReviewedBy: 9, RequestID: "repeat"})
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestAccountFinancialServiceAuditsValidationFailures(t *testing.T) {
 	ctx := context.Background()
 	now := beijingTime(t, "2026-08-13 12:00")
 	rec := &auditRecorder{}
-	svc := NewAccountFinancialServiceWithAudit(&mutationFinancialRepoStub{}, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
+	svc := NewAccountFinancialServiceWithAudit(&mutationFinancialRepoStub{}, nil, func() time.Time { return now }, NewAccountFinancialAuditWithClock(rec, func() time.Time { return now }))
 	invalid := -1.0
 	valid := 1.0
 	_, _ = svc.ReviewOne(ctx, UsageCostReviewInput{UsageLogID: 1, ManualCostCNY: &invalid, ReviewedBy: 9, RequestID: "one-invalid"})

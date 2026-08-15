@@ -28,6 +28,7 @@ class AccountQualityMonitorTest < Minitest::Test
       assert_includes arguments, "collect-account-quality-pulse.rb collect"
       assert_includes arguments, "--entrypoint\n/usr/local/bin/ruby"
       assert_includes arguments, "uid10002-preflight"
+      assert_includes arguments, "ACCOUNT_QUALITY_BASE_URL=http://sub2api-blue:8080"
       refute_match(/upstream-benchmark|promote-model-release|sync-upstream|capacity|probe|curl|wget/, arguments)
       assert_equal "account_quality_monitor status=started\naccount_quality_monitor status=succeeded\n", output
       refute_includes output, fixture.fetch(:secret)
@@ -47,6 +48,16 @@ class AccountQualityMonitorTest < Minitest::Test
   def test_wrapper_rejects_missing_or_relative_sensitive_paths
     with_fixture do |fixture|
       status, output = run_wrapper(fixture.merge(key: "relative-key-file"))
+
+      refute status.success?
+      assert_equal "account_quality_monitor status=failed\n", output
+      refute_includes output, fixture.fetch(:secret)
+    end
+  end
+
+  def test_wrapper_rejects_unapproved_active_upstream
+    with_fixture(active_upstream: "sub2api:8080") do |fixture|
+      status, output = run_wrapper(fixture)
 
       refute status.success?
       assert_equal "account_quality_monitor status=failed\n", output
@@ -85,6 +96,7 @@ class AccountQualityMonitorTest < Minitest::Test
     assert_includes timer, "Unit=sub2api-account-quality-monitor.service"
     assert_includes environment, "ACCOUNT_QUALITY_ROOT=/opt/sub2api/production/ops/account-quality"
     assert_includes environment, "ACCOUNT_QUALITY_ADMIN_KEY_FILE=/opt/sub2api/production/secrets/sub2api-admin-api-key"
+    assert_includes environment, "ACCOUNT_QUALITY_RELEASE_ENV_FILE=/opt/sub2api/production/release.env"
     assert_includes environment, "ACCOUNT_QUALITY_EVIDENCE_DIR=/opt/sub2api/production/evidence/account-quality"
     assert_includes environment, "ACCOUNT_QUALITY_RUNNER_IMAGE=sub2api-relay-ops:account-quality-monitor-v1"
     assert_includes environment, "ACCOUNT_QUALITY_DOCKER_NETWORK=sub2api_default"
@@ -93,11 +105,12 @@ class AccountQualityMonitorTest < Minitest::Test
 
   private
 
-  def with_fixture(exit_code: 0)
+  def with_fixture(exit_code: 0, active_upstream: "sub2api-blue:8080")
     Dir.mktmpdir("account-quality-monitor") do |dir|
       root = File.join(dir, "tools")
       evidence = File.join(dir, "evidence")
       key = File.join(dir, "admin-key")
+      release_env = File.join(dir, "release.env")
       arguments = File.join(dir, "docker-arguments")
       docker = File.join(dir, "docker")
       secret = "fixture-secret-must-not-appear"
@@ -108,6 +121,8 @@ class AccountQualityMonitorTest < Minitest::Test
       File.write(File.join(root, "collect-account-quality-pulse.rb"), "# fixture\n")
       File.write(key, secret)
       File.chmod(0o600, key)
+      File.write(release_env, "SUB2API_ACTIVE_UPSTREAM=#{active_upstream}\n")
+      File.chmod(0o600, release_env)
       File.write(docker, <<~SH)
         #!/bin/sh
         printf '%s\n' "$@" >> "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
@@ -118,7 +133,8 @@ class AccountQualityMonitorTest < Minitest::Test
       File.chmod(0o755, docker)
 
       yield(
-        root: root, evidence: evidence, key: key, docker: docker, arguments: arguments,
+        root: root, evidence: evidence, key: key, release_env: release_env,
+        docker: docker, arguments: arguments,
         exit_code: exit_code, secret: secret
       )
     end
@@ -128,6 +144,7 @@ class AccountQualityMonitorTest < Minitest::Test
     env = {
       "ACCOUNT_QUALITY_ROOT" => fixture.fetch(:root),
       "ACCOUNT_QUALITY_ADMIN_KEY_FILE" => fixture.fetch(:key),
+      "ACCOUNT_QUALITY_RELEASE_ENV_FILE" => fixture.fetch(:release_env),
       "ACCOUNT_QUALITY_EVIDENCE_DIR" => fixture.fetch(:evidence),
       "ACCOUNT_QUALITY_RUNNER_IMAGE" => "sub2api-relay-ops:test",
       "ACCOUNT_QUALITY_DOCKER_NETWORK" => "sub2api_default",

@@ -65,10 +65,11 @@ sudo install -m 0755 run-account-quality-monitor.sh /opt/sub2api/production/ops/
 sudo install -m 0755 account-quality-failure-signal.sh /opt/sub2api/production/ops/account-quality/account-quality-failure-signal.sh
 sudo install -m 0644 collect-account-quality-pulse.rb /opt/sub2api/production/ops/account-quality/collect-account-quality-pulse.rb
 sudo install -m 0644 sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor.service
+sudo install -m 0644 sub2api-account-quality-monitor-failure.service /etc/systemd/system/sub2api-account-quality-monitor-failure.service
 sudo install -m 0644 sub2api-account-quality-monitor.timer /etc/systemd/system/sub2api-account-quality-monitor.timer
 sudo install -m 0600 account-quality-monitor.env.example /etc/sub2api/account-quality-monitor.env
 sudo systemctl daemon-reload
-sudo systemd-analyze verify /etc/systemd/system/sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor.timer
+sudo systemd-analyze verify /etc/systemd/system/sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor-failure.service /etc/systemd/system/sub2api-account-quality-monitor.timer
 sudo systemctl enable --now sub2api-account-quality-monitor.timer
 ```
 

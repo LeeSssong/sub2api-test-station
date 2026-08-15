@@ -26,6 +26,8 @@ class AccountQualityMonitorTest < Minitest::Test
         assert_includes arguments, token
       end
       assert_includes arguments, "collect-account-quality-pulse.rb collect"
+      assert_includes arguments, "--entrypoint\n/usr/local/bin/ruby"
+      assert_includes arguments, "uid10002-preflight"
       refute_match(/upstream-benchmark|promote-model-release|sync-upstream|capacity|probe|curl|wget/, arguments)
       assert_equal "account_quality_monitor status=started\naccount_quality_monitor status=succeeded\n", output
       refute_includes output, fixture.fetch(:secret)

@@ -49,7 +49,7 @@ if ! "$docker_bin" run --rm --user 10002:10002 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --pids-limit 64 --memory 128m --cpus 0.25 \
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m \
   -v "$evidence_dir:/var/lib/account-quality:rw" \
-  --entrypoint /bin/sh "$runner_image" -ec '
+  --entrypoint /usr/local/bin/ruby "$runner_image" -e '
     require "tempfile"
     dir = "/var/lib/account-quality"
     tmp = Tempfile.new([".uid10002-preflight-", ".tmp"], dir)

@@ -19,13 +19,15 @@ hardening, and publishes the existing JSON evidence files atomically.
 - `sh -n ops/account-quality-failure-signal.sh ops/run-account-quality-monitor.sh`: PASS
 - `git diff --check`: PASS
 
-The receiver contract continues to use the native
-`/api/v1/admin/ops/alert-events` projection and existing relay-ops/Feishu path;
-no receiver, API, table, or parallel control plane was added.
+The candidate preserves the intended native receiver boundary and adds no
+receiver, API, table, or parallel control plane. This worktree does not contain
+a verified `t10.failure.v1` projection consumer, so receiver integration is
+recorded as an actual evidence gap rather than claimed as implemented. The
+controlled delivery receipt is separately user-waived.
 
 ## Acceptance status
 
-- A1-A5: implementation/static evidence is present; host execution evidence remains for root review.
+- A1-A5: implementation/static evidence is present; host execution evidence remains for root review. The wrapper now enforces an evidence directory contract of `10002:10002` and `0700`, then performs the real UID 10002 bind-mount write/fsync/same-directory rename/readback/cleanup preflight.
 - A6: explicitly waived by the user. The controlled `203/EXEC` delivery drill was not run and no receipt is claimed. This is an unverified residual risk, not a release blocker for this candidate.
 - A7-A9: implementation/static contracts are present; runtime and read-only database evidence remain for root review.
 - A10: 24-hour natural timer window remains pending and cannot be claimed from this worktree.

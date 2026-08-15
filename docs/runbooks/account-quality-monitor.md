@@ -59,7 +59,7 @@ Use the fixed server paths and modes:
 
 ```sh
 sudo install -d -m 0755 /opt/sub2api/production/ops/account-quality
-sudo install -d -m 0700 /opt/sub2api/production/evidence/account-quality
+sudo install -d -o 10002 -g 10002 -m 0700 /opt/sub2api/production/evidence/account-quality
 sudo install -d -m 0755 /etc/sub2api
 sudo install -m 0755 run-account-quality-monitor.sh /opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
 sudo install -m 0755 account-quality-failure-signal.sh /opt/sub2api/production/ops/account-quality/account-quality-failure-signal.sh

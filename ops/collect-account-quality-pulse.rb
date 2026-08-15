@@ -409,7 +409,9 @@ module AccountQualityPulse
   end
 
   class Publisher
-    def self.publish(result_path:, history_path:, result:, history:)
+    class PublicationError < ValidationError; end
+
+    def self.publish(result_path:, history_path:, result:, history:, rename: File.method(:rename))
       [result_path, history_path].each do |path|
         raise ValidationError, "output path must be absolute" unless File.absolute_path(path) == path
       end
@@ -418,35 +420,47 @@ module AccountQualityPulse
       [result_path, history_path].each do |path|
         originals[path] = File.file?(path) ? [File.binread(path), File.stat(path).mode & 0o777] : nil
       end
-      write_atomic(result_path, JSON.pretty_generate(result))
-      write_atomic(history_path, JSON.pretty_generate(history))
-    rescue StandardError
-      originals&.each do |path, original|
-        if original
-          File.open(path, "wb", original[1]) { |file| file.write(original[0]); file.fsync }
-        else
-          File.delete(path) if File.exist?(path)
-        end
-      rescue SystemCallError
-        # Preserve the original publication error while leaving evidence for operator recovery.
+      staged = {
+        result_path => stage(result_path, JSON.pretty_generate(result)),
+        history_path => stage(history_path, JSON.pretty_generate(history))
+      }
+      backups = {}
+      originals.each do |path, original|
+        next unless original
+
+        backup = Tempfile.new([".account-quality-backup-", ".json"], File.dirname(path))
+        backup.close
+        File.unlink(backup.path)
+        rename.call(path, backup.path)
+        backups[path] = backup.path
       end
-      raise
+      staged.each { |path, temp| rename.call(temp, path) }
+      File.open(File.dirname(result_path), "r") { |directory| directory.fsync }
+      [result_path, history_path].each { |path| raise PublicationError, "published evidence readback failed" unless File.file?(path) && JSON.parse(File.read(path)) }
+      backups.each_value { |path| File.delete(path) if File.exist?(path) }
+    rescue StandardError => error
+      staged&.each_value { |path| File.delete(path) if path && File.exist?(path) }
+      backups&.each do |path, backup|
+        File.delete(path) if File.exist?(path)
+        rename.call(backup, path) if File.exist?(backup)
+      end
+      originals&.each { |path, original| File.delete(path) if original.nil? && File.exist?(path) }
+      raise(error.is_a?(PublicationError) ? error : PublicationError.new("evidence publication failed"))
     end
 
-    def self.write_atomic(path, content)
-      Tempfile.create([".account-quality-", ".json"], File.dirname(path)) do |file|
-        file.chmod(0o600)
-        file.write(content)
-        file.flush
-        file.fsync
-        File.rename(file.path, path)
-        raise ValidationError, "published evidence readback failed" unless File.read(path) == content
-      end
-      File.open(File.dirname(path), "r") { |directory| directory.fsync }
+    def self.stage(path, content)
+      file = Tempfile.new([".account-quality-", ".json"], File.dirname(path))
+      file.chmod(0o600)
+      file.write(content)
+      file.flush
+      file.fsync
+      file.close
+      file.path
     rescue SystemCallError
-      raise ValidationError, "evidence publication failed"
+      file&.close!
+      raise PublicationError, "evidence publication failed"
     end
-    private_class_method :write_atomic
+    private_class_method :stage
   end
 
   class CLI
@@ -469,6 +483,9 @@ module AccountQualityPulse
       Publisher.publish(result_path: options[:output], history_path: history_path, result: output.fetch("result"), history: output.fetch("history"))
       out.puts(JSON.generate("snapshot_id" => output.dig("result", "snapshot_id"), "account_set_sha256" => output.dig("result", "account_set_sha256")))
       0
+    rescue Publisher::PublicationError
+      err.puts("ERROR: account quality evidence publication rejected")
+      46
     rescue ValidationError, JSON::ParserError, OptionParser::ParseError, Errno::ENOENT, Errno::EACCES, ArgumentError
       err.puts("ERROR: account quality pulse collection rejected")
       2

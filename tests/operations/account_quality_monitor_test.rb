@@ -37,7 +37,7 @@ class AccountQualityMonitorTest < Minitest::Test
       status, output = run_wrapper(fixture)
 
       refute status.success?
-      assert_equal "account_quality_monitor status=started\naccount_quality_monitor status=failed\n", output
+      assert_equal "account_quality_monitor status=failed\n", output
       refute_includes output, fixture.fetch(:secret)
     end
   end
@@ -102,12 +102,13 @@ class AccountQualityMonitorTest < Minitest::Test
 
       FileUtils.mkdir_p(root)
       FileUtils.mkdir_p(evidence)
+      File.chmod(0o700, evidence)
       File.write(File.join(root, "collect-account-quality-pulse.rb"), "# fixture\n")
       File.write(key, secret)
       File.chmod(0o600, key)
       File.write(docker, <<~SH)
         #!/bin/sh
-        printf '%s\n' "$@" > "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
+        printf '%s\n' "$@" >> "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
         printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET"
         printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET" >&2
         exit "$ACCOUNT_QUALITY_TEST_EXIT"
@@ -131,7 +132,8 @@ class AccountQualityMonitorTest < Minitest::Test
       "ACCOUNT_QUALITY_DOCKER_BIN" => fixture.fetch(:docker),
       "ACCOUNT_QUALITY_TEST_ARGUMENTS" => fixture.fetch(:arguments),
       "ACCOUNT_QUALITY_TEST_EXIT" => fixture.fetch(:exit_code).to_s,
-      "ACCOUNT_QUALITY_TEST_SECRET" => fixture.fetch(:secret)
+      "ACCOUNT_QUALITY_TEST_SECRET" => fixture.fetch(:secret),
+      "ACCOUNT_QUALITY_EXPECTED_EVIDENCE_OWNER" => "#{Process.uid}:#{Process.gid} 700"
     }
     stdout, stderr, status = Open3.capture3(env, WRAPPER)
     [status, stdout + stderr]

@@ -4,8 +4,6 @@ Description=Emit redacted account quality monitor failure signal
 [Service]
 Type=oneshot
 User=root
-Environment=T10_FAILURE_PHASE=systemd
-Environment=T10_REASON_CODE=exec_failed
 Environment=T10_UNIT_NAME=sub2api-account-quality-monitor.service
 ExecStart=/opt/sub2api/production/ops/account-quality/account-quality-failure-signal.sh
 NoNewPrivileges=true

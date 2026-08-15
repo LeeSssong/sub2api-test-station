@@ -4,6 +4,7 @@ root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 service="$root/infra/systemd/sub2api-account-quality-monitor.service"
 failure="$root/infra/systemd/sub2api-account-quality-monitor-failure.service"
 timer="$root/infra/systemd/sub2api-account-quality-monitor.timer"
+awk 'BEGIN{s="Unit"} /^\[/ {s=substr($0,2,length($0)-2)} /^OnFailure=/ {if (s != "Unit") exit 1}' "$service"
 grep -q '^User=root$' "$service"
 grep -q '^Group=root$' "$service"
 grep -q '^OnFailure=sub2api-account-quality-monitor-failure.service$' "$service"

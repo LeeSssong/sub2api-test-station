@@ -6,7 +6,7 @@
       <div class="text-xs text-gray-500" data-test="financial-generated-at">{{ generatedAt }}</div>
       <div v-if="loadError" class="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300" data-test="financial-load-error" role="alert">
         <span>{{ loadError }}</span>
-        <button class="btn btn-secondary ml-3" data-test="financial-retry" @click="load">{{ t('common.retry') }}</button>
+        <button class="btn btn-secondary ml-3" data-test="financial-retry" @click="load">{{ t('admin.accountProfitability.retry') }}</button>
       </div>
       <section class="grid grid-cols-2 gap-3 lg:grid-cols-6"><article v-for="card in cards" :key="card.key" class="card p-4" :data-test="`summary-${card.key}`"><div class="text-xs text-gray-500">{{ card.label }}</div><div class="mt-2 text-xl font-semibold">{{ card.value }}</div></article></section>
       <nav class="flex max-w-full gap-2 overflow-x-auto pb-1" :aria-label="t('admin.accountProfitability.scope.label')">

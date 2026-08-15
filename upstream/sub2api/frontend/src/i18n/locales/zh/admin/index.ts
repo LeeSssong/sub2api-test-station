@@ -46,6 +46,7 @@ export default {
     pendingConversion: '待换算',
     empty: '当前筛选条件下暂无账号数据。',
     loadError: '账号盈利数据加载失败，请重试。',
+    retry: '重试',
     columns: { account: '账号', source: '来源', status: '成本状态', expense: '支出', expenseCurrency: '支出币种', revenue: '收入', profit: '盈利', margin: '利润率', requests: '请求数', exceptions: '异常', actions: '今日覆盖' },
     summary: { revenue: '收入', expense: '支出', profit: '盈利', margin: '利润率', pending: '待配置账号', exceptions: '异常流水', unconsumedBalance: '用户未消费余额' },
     oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',

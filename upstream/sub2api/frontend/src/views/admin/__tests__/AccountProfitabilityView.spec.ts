@@ -35,8 +35,8 @@ const messages: Record<string, string> = {
   'admin.accountProfitability.columns.exceptions': '异常',
   'admin.accountProfitability.columns.actions': '今日覆盖',
   'admin.accountProfitability.loadError': '账号盈利数据加载失败，请重试。',
+  'admin.accountProfitability.retry': '重试',
   'common.refresh': '刷新',
-  'common.retry': '重试',
 }
 
 vi.mock('vue-i18n', async (importOriginal) => ({
@@ -61,6 +61,8 @@ describe('AccountProfitabilityView', () => {
   it('keeps the active range labels in the production Chinese and English admin locales', () => {
     expect(zhAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 小时', '31d': '31 天' })
     expect(enAdmin.accountProfitability.ranges).toMatchObject({ '24h': '24 hours', '31d': '31 days' })
+    expect(zhAdmin.accountProfitability.retry).toBe('重试')
+    expect(enAdmin.accountProfitability.retry).toBe('Retry')
   })
   it('renders Chinese range labels and localized table headers without leaking i18n keys', async () => {
     const wrapper = mount(AccountProfitabilityView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })

@@ -27,6 +27,7 @@ Implementation commits:
 - `82eddab22` `fix: ignore hidden tooltip escape events`
 - `6bcf2180e` `fix: reset identical recommendation replacements`
 - `9ba1c8a8a` `fix: keep hover-click tooltip in viewport`
+- `42fa029bb` `fix: clamp recommendation reason hint`
 
 Changed frontend files in the implementation slice:
 - `upstream/sub2api/frontend/src/components/common/HelpTooltip.vue`
@@ -78,6 +79,11 @@ Follow-up TDD evidence for the viewport placement and resetKey close-button focu
 - GREEN: the same HelpTooltip targeted run passed after `9ba1c8a8a`.
 - GREEN: the same AccountMonitorCard replacement run passed after `9ba1c8a8a`.
 - GREEN: `pnpm vitest run src/components/common/__tests__/HelpTooltip.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts` passed `64/64`.
+
+Follow-up TDD evidence for the narrow-viewport reason-line clamp finding:
+- RED: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts -t "keeps the hint width and wrapping contract"` failed because `[data-test="group-recommendation-reason"]` did not include `line-clamp-2`.
+- GREEN: the same focused contract test passed after `42fa029bb`.
+- The contract also asserts the full reason remains available on the recommendation trigger through `title` and `aria-label`.
 
 Required static checks already passed:
 
@@ -161,6 +167,13 @@ Third scoped fix package:
 - `9ba1c8a8a` added common HelpTooltip viewport max-width, measured width/height placement, above/below placement with 12px viewport padding, and top/left clamping without adding a card-specific floating layer.
 - `9ba1c8a8a` also changed resetKey handling to restore focus only when `document.activeElement` is inside the Teleported tooltip; outside focus is not stolen.
 - AccountMonitorCard changed-fields and identical-cloned replacement regressions now verify that when the close button is focused during refresh, focus returns to `[data-test="recommendation-reason-button"]`.
+
+Root fresh whole-branch review over `751402105..8bd303d31` returned CHANGES REQUIRED with P2 = 1:
+- P2: on an extremely narrow viewport, the not-recommended reason body could exceed the approved one-to-two-line visible contract.
+
+Fourth scoped fix package:
+- `42fa029bb` added `line-clamp-2` to `[data-test="group-recommendation-reason"]` while keeping `max-w-[min(16rem,calc(100vw-1.5rem))]`, `whitespace-normal`, `break-words`, and `leading-5`.
+- `42fa029bb` extended the existing width/wrapping contract test to require `line-clamp-2` and confirm the complete reason remains available through the trigger `title` and `aria-label`.
 - Root control remains responsible for fresh scoped/whole-branch re-review; this task window does not dispatch reviewers.
 
 ## 10. Remaining risks and independent review result

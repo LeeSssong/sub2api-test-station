@@ -255,6 +255,32 @@ class CollectAccountQualityPulseTest < Minitest::Test
     end
   end
 
+  def test_publisher_restores_last_valid_pair_when_second_rename_fails
+    Dir.mktmpdir("account-quality-rollback") do |dir|
+      result_path = File.join(dir, "account-quality-result.json")
+      history_path = File.join(dir, "account-quality-history.json")
+      old_result = {"schema_version" => 1, "snapshot_id" => "old", "accounts" => []}
+      old_history = [{"account_id" => 1, "result" => "passed"}]
+      AccountQualityPulse::Publisher.publish(result_path: result_path, history_path: history_path,
+                                             result: old_result, history: old_history)
+      calls = 0
+      failing_rename = lambda do |source, destination|
+        calls += 1
+        raise Errno::EIO if calls == 4
+
+        File.rename(source, destination)
+      end
+      assert_raises(AccountQualityPulse::Publisher::PublicationError) do
+        AccountQualityPulse::Publisher.publish(result_path: result_path, history_path: history_path,
+                                               result: {"schema_version" => 1, "snapshot_id" => "new", "accounts" => []},
+                                               history: [{"account_id" => 1, "result" => "timeout"}], rename: failing_rename)
+      end
+      assert_equal old_result, JSON.parse(File.read(result_path))
+      assert_equal old_history, JSON.parse(File.read(history_path))
+      assert_empty Dir.children(dir).grep(/account-quality-(?:backup|result|history)/).reject { |name| name.end_with?(".json") }
+    end
+  end
+
   private
 
   class NativeFixture

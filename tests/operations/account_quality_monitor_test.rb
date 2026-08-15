@@ -8,6 +8,8 @@ require "tmpdir"
 ROOT = File.expand_path("../..", __dir__)
 WRAPPER = File.join(ROOT, "ops/run-account-quality-monitor.sh")
 SERVICE = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor.service")
+FAILURE_SERVICE = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor-failure.service")
+FAILURE_SIGNAL = File.join(ROOT, "ops/account-quality-failure-signal.sh")
 TIMER = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor.timer")
 ENVIRONMENT = File.join(ROOT, "infra/systemd/account-quality-monitor.env.example")
 
@@ -24,6 +26,8 @@ class AccountQualityMonitorTest < Minitest::Test
         assert_includes arguments, token
       end
       assert_includes arguments, "collect-account-quality-pulse.rb collect"
+      assert_includes arguments, "--entrypoint\n/usr/local/bin/ruby"
+      assert_includes arguments, "uid10002-preflight"
       refute_match(/upstream-benchmark|promote-model-release|sync-upstream|capacity|probe|curl|wget/, arguments)
       assert_equal "account_quality_monitor status=started\naccount_quality_monitor status=succeeded\n", output
       refute_includes output, fixture.fetch(:secret)
@@ -35,7 +39,7 @@ class AccountQualityMonitorTest < Minitest::Test
       status, output = run_wrapper(fixture)
 
       refute status.success?
-      assert_equal "account_quality_monitor status=started\naccount_quality_monitor status=failed\n", output
+      assert_equal "account_quality_monitor status=failed\n", output
       refute_includes output, fixture.fetch(:secret)
     end
   end
@@ -56,8 +60,11 @@ class AccountQualityMonitorTest < Minitest::Test
     timer = File.read(TIMER)
     environment = File.read(ENVIRONMENT)
 
-    assert_includes service, "User=ubuntu"
-    assert_includes service, "Group=ubuntu"
+    assert_includes service, "User=root"
+    assert_includes service, "Group=root"
+    assert_includes service, "OnFailure=sub2api-account-quality-monitor-failure.service"
+    assert File.file?(FAILURE_SERVICE)
+    assert File.executable?(FAILURE_SIGNAL)
     assert_includes service, "EnvironmentFile=/etc/sub2api/account-quality-monitor.env"
     assert_includes service, "ExecStart=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh"
     assert_includes service, "ConditionPathExists=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh"
@@ -97,12 +104,13 @@ class AccountQualityMonitorTest < Minitest::Test
 
       FileUtils.mkdir_p(root)
       FileUtils.mkdir_p(evidence)
+      File.chmod(0o700, evidence)
       File.write(File.join(root, "collect-account-quality-pulse.rb"), "# fixture\n")
       File.write(key, secret)
       File.chmod(0o600, key)
       File.write(docker, <<~SH)
         #!/bin/sh
-        printf '%s\n' "$@" > "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
+        printf '%s\n' "$@" >> "$ACCOUNT_QUALITY_TEST_ARGUMENTS"
         printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET"
         printf '%s\n' "$ACCOUNT_QUALITY_TEST_SECRET" >&2
         exit "$ACCOUNT_QUALITY_TEST_EXIT"
@@ -126,7 +134,8 @@ class AccountQualityMonitorTest < Minitest::Test
       "ACCOUNT_QUALITY_DOCKER_BIN" => fixture.fetch(:docker),
       "ACCOUNT_QUALITY_TEST_ARGUMENTS" => fixture.fetch(:arguments),
       "ACCOUNT_QUALITY_TEST_EXIT" => fixture.fetch(:exit_code).to_s,
-      "ACCOUNT_QUALITY_TEST_SECRET" => fixture.fetch(:secret)
+      "ACCOUNT_QUALITY_TEST_SECRET" => fixture.fetch(:secret),
+      "ACCOUNT_QUALITY_EXPECTED_EVIDENCE_OWNER" => "#{Process.uid}:#{Process.gid} 700"
     }
     stdout, stderr, status = Open3.capture3(env, WRAPPER)
     [status, stdout + stderr]

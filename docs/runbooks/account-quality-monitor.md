@@ -20,7 +20,7 @@ operator command or an LLM request.
 
 ## Runtime Boundary
 
-The service runs as `ubuntu` and starts one short-lived container on the
+The service runs as `root` for host orchestration and starts one short-lived container on the
 existing `sub2api_default` network. The worker is UID/GID `10002:10002`, has
 a read-only root filesystem, no Linux capabilities, no-new-privileges, a
 16 MiB noexec temporary filesystem, a 64 PID limit, 128 MiB memory limit,
@@ -47,8 +47,10 @@ the transfer command:
 
 ```text
 ops/run-account-quality-monitor.sh
+ops/account-quality-failure-signal.sh
 ops/collect-account-quality-pulse.rb
 infra/systemd/sub2api-account-quality-monitor.service
+infra/systemd/sub2api-account-quality-monitor-failure.service
 infra/systemd/sub2api-account-quality-monitor.timer
 infra/systemd/account-quality-monitor.env.example
 ```
@@ -57,17 +59,25 @@ Use the fixed server paths and modes:
 
 ```sh
 sudo install -d -m 0755 /opt/sub2api/production/ops/account-quality
-sudo install -d -m 0700 /opt/sub2api/production/evidence/account-quality
+sudo install -d -o 10002 -g 10002 -m 0700 /opt/sub2api/production/evidence/account-quality
 sudo install -d -m 0755 /etc/sub2api
 sudo install -m 0755 run-account-quality-monitor.sh /opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
+sudo install -m 0755 account-quality-failure-signal.sh /opt/sub2api/production/ops/account-quality/account-quality-failure-signal.sh
 sudo install -m 0644 collect-account-quality-pulse.rb /opt/sub2api/production/ops/account-quality/collect-account-quality-pulse.rb
 sudo install -m 0644 sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor.service
+sudo install -m 0644 sub2api-account-quality-monitor-failure.service /etc/systemd/system/sub2api-account-quality-monitor-failure.service
 sudo install -m 0644 sub2api-account-quality-monitor.timer /etc/systemd/system/sub2api-account-quality-monitor.timer
 sudo install -m 0600 account-quality-monitor.env.example /etc/sub2api/account-quality-monitor.env
 sudo systemctl daemon-reload
-sudo systemd-analyze verify /etc/systemd/system/sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor.timer
+sudo systemd-analyze verify /etc/systemd/system/sub2api-account-quality-monitor.service /etc/systemd/system/sub2api-account-quality-monitor-failure.service /etc/systemd/system/sub2api-account-quality-monitor.timer
 sudo systemctl enable --now sub2api-account-quality-monitor.timer
 ```
+
+The existing native alert-events projection and relay-ops/Feishu path remain
+the only failure-signal integration. The controlled `203/EXEC` delivery drill
+is explicitly waived for this release by the user; receiver health is not
+delivery evidence and no receipt is claimed. The missing drill remains an
+unverified residual operational risk for a later window.
 
 The environment file contains only paths, the image reference, and the
 Docker network. Do not add any credential value, upstream URL, model name, or

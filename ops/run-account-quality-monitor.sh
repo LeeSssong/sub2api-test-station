@@ -4,8 +4,9 @@ set -eu
 umask 077
 
 fail() {
+  code=${1:-40}
   printf '%s\n' "account_quality_monitor status=failed"
-  exit 1
+  exit "$code"
 }
 
 absolute_directory() {
@@ -29,18 +30,47 @@ runner_image=${ACCOUNT_QUALITY_RUNNER_IMAGE:-}
 docker_network=${ACCOUNT_QUALITY_DOCKER_NETWORK:-}
 docker_bin=${ACCOUNT_QUALITY_DOCKER_BIN:-/usr/bin/docker}
 
-absolute_directory "$root" || fail
-absolute_file "$admin_key_file" || fail
-absolute_directory "$evidence_dir" || fail
-[ -x "$docker_bin" ] || fail
-[ -f "$root/collect-account-quality-pulse.rb" ] || fail
+absolute_directory "$root" || fail 40
+absolute_file "$admin_key_file" || fail 42
+absolute_directory "$evidence_dir" || fail 40
+[ -x "$docker_bin" ] || fail 43
+[ -f "$root/collect-account-quality-pulse.rb" ] || fail 40
+evidence_owner=$(stat -c '%u:%g %a' "$evidence_dir" 2>/dev/null || stat -f '%u:%g %Lp' "$evidence_dir" 2>/dev/null || printf '%s' unknown)
+[ "$evidence_owner" = "${ACCOUNT_QUALITY_EXPECTED_EVIDENCE_OWNER:-10002:10002 700}" ] || fail 41
 
 case "$runner_image" in
   sub2api-relay-ops:*) ;;
-  *) fail ;;
+  *) fail 40 ;;
 esac
 
-[ "$docker_network" = "sub2api_default" ] || fail
+[ "$docker_network" = "sub2api_default" ] || fail 40
+
+if ! "$docker_bin" run --rm --user 10002:10002 --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --pids-limit 64 --memory 128m --cpus 0.25 \
+  --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m \
+  -v "$evidence_dir:/var/lib/account-quality:rw" \
+  --entrypoint /usr/local/bin/ruby "$runner_image" -e '
+    require "tempfile"
+    dir = "/var/lib/account-quality"
+    tmp = Tempfile.new([".uid10002-preflight-", ".tmp"], dir)
+    final = File.join(dir, ".uid10002-preflight-final")
+    begin
+      tmp.write("uid10002-preflight")
+      tmp.flush
+      tmp.fsync
+      tmp.close
+      File.rename(tmp.path, final)
+      raise "readback" unless File.binread(final) == "uid10002-preflight"
+      File.delete(final)
+      File.open(dir, "r") { |directory| directory.fsync }
+    ensure
+      tmp.close! rescue nil
+      File.delete(final) if File.exist?(final)
+    end
+  ' >/dev/null 2>&1
+then
+  fail 41
+fi
 
 printf '%s\n' "account_quality_monitor status=started"
 if "$docker_bin" run --rm --network "$docker_network" \
@@ -59,5 +89,11 @@ if "$docker_bin" run --rm --network "$docker_network" \
 then
   printf '%s\n' "account_quality_monitor status=succeeded"
 else
-  fail
+  status=$?
+  case "$status" in
+    46) fail 46 ;;
+    124|137) fail 45 ;;
+    125|126|127) fail 43 ;;
+    *) fail 44 ;;
+  esac
 fi

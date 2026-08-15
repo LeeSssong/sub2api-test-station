@@ -3,11 +3,12 @@ Description=Sub2API read-only account quality monitor
 Wants=docker.service
 After=docker.service network-online.target
 ConditionPathExists=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
+OnFailure=sub2api-account-quality-monitor-failure.service
 
 [Service]
 Type=oneshot
-User=ubuntu
-Group=ubuntu
+User=root
+Group=root
 EnvironmentFile=/etc/sub2api/account-quality-monitor.env
 Environment=DOCKER_CONFIG=/run/account-quality-monitor
 ExecStart=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh

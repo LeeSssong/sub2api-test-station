@@ -122,7 +122,7 @@ function onDocumentClick(event: MouseEvent) {
 }
 
 function onDocumentKeydown(event: KeyboardEvent) {
-  if (props.trigger !== 'click' && props.trigger !== 'hover-click') return
+  if ((props.trigger !== 'click' && props.trigger !== 'hover-click') || !show.value) return
   if (event.key === 'Escape') {
     closeTooltip({ clearPin: true, restoreFocus: true })
   }

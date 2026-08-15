@@ -320,8 +320,9 @@ describe('HelpTooltip', () => {
 		expect(document.activeElement).toBe(triggerButton.element)
 		expect(getTooltipElement().style.display).toBe('none')
 
-		triggerButton.element.focus()
+		await wrapper.get('.group').trigger('click')
 		await nextTick()
+		expect(getTooltipElement().style.display).not.toBe('none')
 		const reopenedCloseButton = getTooltipElement().querySelector('button[aria-label="Close"]')
 		if (!(reopenedCloseButton instanceof HTMLButtonElement)) {
 			throw new Error('close button not found')
@@ -336,6 +337,35 @@ describe('HelpTooltip', () => {
 		expect(getTooltipElement().style.display).toBe('none')
 
 		wrapper.unmount()
+	})
+
+	it('does not steal focus on Escape when hover-click details are hidden', async () => {
+		const wrapper = mount(HelpTooltip, {
+			attachTo: document.body,
+			props: {
+				content: 'hidden escape details',
+				trigger: 'hover-click',
+			},
+			slots: {
+				trigger: '<button type="button">!</button>',
+			},
+		})
+
+		const nextControl = document.createElement('button')
+		nextControl.type = 'button'
+		nextControl.textContent = 'next'
+		document.body.append(nextControl)
+		nextControl.focus()
+		await nextTick()
+
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+		await nextTick()
+
+		expect(document.activeElement).toBe(nextControl)
+		expect(getTooltipElement().style.display).toBe('none')
+
+		wrapper.unmount()
+		nextControl.remove()
 	})
 
 	it('resets hover-click pinning when the reset key changes', async () => {

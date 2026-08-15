@@ -107,7 +107,7 @@
 
 ### T10 账号质量监控器可执行链路
 
-- 当前状态：`DESIGNING`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 和独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建` 已存在，创建基线为 `main@e400f99e498e036ae01cefe12d5f2e1468dfcfd0`，工作树干净。根总控已批准方案 A 及三段设计，顶层任务正在写正式规格并须停在 `SPEC_READY_FOR_ROOT_REVIEW`；尚未调用 writing-plans、实现、复审、合并、推送或部署。2026-08-15 生产只读复核确认 timer 为 `active/waiting`，service 仍为 `Result=exit-code`、`ExecMainStatus=203`、`User=ubuntu`；`/opt/sub2api/production` 仍为 `0700 root:root`。
+- 当前状态：`SPEC_READY_FOR_ROOT_REVIEW`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 和独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建` 已存在，创建基线为 `main@e400f99e498e036ae01cefe12d5f2e1468dfcfd0`，规格已写入 `docs/superpowers/specs/2026-08-15-t10-account-quality-monitor-executable-chain.md`，但候选仍需刷新到最新 `main@b4a6513f1`。根总控已批准方案 A 及三段设计；根审查确认现成接收链为健康 `sub2api-relay-ops-1` 与原生 `/api/v1/admin/ops/alert-events` 投影/Feishu 投递链，但受控 `203/EXEC` 失败实际送达一次尚未证明，A6 为硬门禁。尚未调用 writing-plans、实现、复审、合并、推送或部署。2026-08-15 生产只读复核确认 timer 为 `active/waiting`，service 仍为 `Result=exit-code`、`ExecMainStatus=203`、`User=ubuntu`；`/opt/sub2api/production` 仍为 `0700 root:root`。
 - 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
 - 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
 - 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。

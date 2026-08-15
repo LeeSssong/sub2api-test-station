@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick } from 'vue'
 
 const props = withDefaults(defineProps<{
   content?: string
-  trigger?: 'hover' | 'click'
+  trigger?: 'hover' | 'click' | 'hover-click'
   widthClass?: string
 }>(), {
   trigger: 'hover',
@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
 })
 
 const show = ref(false)
+const clickPinned = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
 const tooltipStyle = ref({ top: '0px', left: '0px' })
@@ -20,35 +21,50 @@ function openTooltip() {
   nextTick(updatePosition)
 }
 
-function closeTooltip() {
+function closeTooltip(options?: { clearPin?: boolean }) {
   show.value = false
+  if (options?.clearPin) {
+    clickPinned.value = false
+  }
 }
 
 function onEnter() {
-  if (props.trigger !== 'hover') return
+  if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
   openTooltip()
 }
 
 function onLeave() {
-  if (props.trigger !== 'hover') return
+  if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
+  if (clickPinned.value) return
   closeTooltip()
 }
 
 function onFocusIn() {
-  if (props.trigger !== 'hover') return
+  if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
   openTooltip()
 }
 
 function onFocusOut(event: FocusEvent) {
-  if (props.trigger !== 'hover') return
+  if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
   const nextTarget = event.relatedTarget as Node | null
   if (nextTarget && triggerRef.value?.contains(nextTarget)) return
+  if (clickPinned.value) return
   closeTooltip()
 }
 
 function onClick(event: MouseEvent) {
-  if (props.trigger !== 'click') return
+  if (props.trigger !== 'click' && props.trigger !== 'hover-click') return
   event.stopPropagation()
+  if (props.trigger === 'hover-click') {
+    if (clickPinned.value) {
+      clickPinned.value = false
+      closeTooltip()
+    } else {
+      clickPinned.value = true
+      openTooltip()
+    }
+    return
+  }
   if (show.value) {
     closeTooltip()
     return
@@ -57,17 +73,17 @@ function onClick(event: MouseEvent) {
 }
 
 function onDocumentClick(event: MouseEvent) {
-  if (props.trigger !== 'click' || !show.value) return
+  if ((props.trigger !== 'click' && props.trigger !== 'hover-click') || !show.value) return
   const target = event.target as Node | null
   if (!target) return
   if (triggerRef.value?.contains(target) || tooltipRef.value?.contains(target)) return
-  closeTooltip()
+  closeTooltip({ clearPin: true })
 }
 
 function onDocumentKeydown(event: KeyboardEvent) {
-  if (props.trigger !== 'click') return
+  if (props.trigger !== 'click' && props.trigger !== 'hover-click') return
   if (event.key === 'Escape') {
-    closeTooltip()
+    closeTooltip({ clearPin: true })
   }
 }
 
@@ -141,11 +157,11 @@ onBeforeUnmount(() => {
         :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
       >
         <button
-          v-if="props.trigger === 'click'"
+          v-if="props.trigger === 'click' || props.trigger === 'hover-click'"
           type="button"
           class="absolute right-1.5 top-1.5 rounded p-1 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
           aria-label="Close"
-          @click.stop="closeTooltip"
+          @click.stop="closeTooltip({ clearPin: true })"
         >
           <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />

@@ -6,10 +6,11 @@ Candidate branch: `codex/account-financial-dimensions`
 
 Baseline: `bdfd05578`
 
-Current candidate: `aa224a764`
+Runtime candidate: `aa224a764`
 
-Status: task implementation verified; independent scoped re-review and final
-whole-branch review remain required before `READY_FOR_ROOT_REVIEW`.
+Status: `READY_FOR_ROOT_REVIEW` by explicit user waiver of the fresh
+whole-branch independent review on 2026-08-15. This is a documented process
+exception, not an independent-review PASS.
 
 ## Task 1
 
@@ -43,7 +44,8 @@ whole-branch review remain required before `READY_FOR_ROOT_REVIEW`.
   the English error message and literal `Retry` action; it did not render an
   unresolved locale key. Screenshot:
   `output/playwright/t11-account-financial-error-desktop.png`.
-- Final whole-branch independent confirmation remains required.
+- The user explicitly waived the remaining whole-branch independent review;
+  the release controller must still run all root merge and production gates.
 
 ## Task 3
 
@@ -101,5 +103,6 @@ After `2e756fe60`, attempted command-line read-only reviewers could not start
 because both installed external CLIs returned HTTP 401 for their configured
 credentials. These attempts are not counted as review passes. The desktop
 collaboration reviewer subsequently completed Task 3 and passed it. The
-candidate remains before the final review gate until a fresh whole-branch
-review confirms Task 2's final localization fix and the complete branch.
+The user subsequently instructed `跳过这个审核` on 2026-08-15. Therefore the
+candidate advances under an explicit review waiver. No report may describe the
+fresh whole-branch review as completed or passed.

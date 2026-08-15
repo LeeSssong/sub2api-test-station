@@ -186,6 +186,41 @@ describe('HelpTooltip', () => {
     wrapper.unmount()
   })
 
+	it('keeps hover-click details open when focus moves into the close button', async () => {
+		const wrapper = mount(HelpTooltip, {
+			attachTo: document.body,
+			props: {
+				content: 'keyboard close details',
+				trigger: 'hover-click',
+			},
+			slots: {
+				trigger: '<button type="button">!</button>',
+			},
+		})
+
+		const triggerButton = wrapper.get('button')
+		triggerButton.element.focus()
+		await nextTick()
+
+		const tooltip = getTooltipElement()
+		expect(tooltip.style.display).not.toBe('none')
+
+		const closeButton = tooltip.querySelector('button[aria-label="Close"]')
+		if (!(closeButton instanceof HTMLButtonElement)) {
+			throw new Error('close button not found')
+		}
+
+		closeButton.focus()
+		await nextTick()
+		expect(tooltip.style.display).not.toBe('none')
+
+		closeButton.click()
+		await nextTick()
+		expect(tooltip.style.display).toBe('none')
+
+		wrapper.unmount()
+	})
+
   it('resets hover-click pinning when switching to and from a legacy trigger', async () => {
     const wrapper = mount(HelpTooltip, {
       attachTo: document.body,

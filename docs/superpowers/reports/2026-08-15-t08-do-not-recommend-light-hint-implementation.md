@@ -43,10 +43,10 @@ pnpm vitest run \
   src/components/admin/account-monitor/AccountMonitorCard.spec.ts
 ```
 
-Result: `53 passed`
+Result: `54 passed`
 
 Underlying suite evidence:
-- `HelpTooltip.spec.ts`: `9/9` passed
+- `HelpTooltip.spec.ts`: `10/10` passed
 - `AccountMonitorCard.spec.ts`: `44/44` passed
 
 Required static checks already passed:
@@ -101,5 +101,7 @@ Remaining risks are limited to the final root integration surface:
 - responsive overflow or tooltip placement on the live page;
 - any unintended regression in the existing formal-migration tooltip branch;
 - real production auth/session state after deploy.
+
+The branch also received a follow-up accessibility fix after review: keyboard focus can now move into the Teleported close button without dismissing the hover-click tooltip first.
 
 Independent whole-branch review: requested separately after this handoff was prepared.

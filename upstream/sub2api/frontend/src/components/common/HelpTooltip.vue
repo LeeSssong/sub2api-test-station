@@ -53,7 +53,7 @@ function onFocusIn() {
 function onFocusOut(event: FocusEvent) {
   if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
   const nextTarget = event.relatedTarget as Node | null
-  if (nextTarget && triggerRef.value?.contains(nextTarget)) return
+  if (nextTarget && (triggerRef.value?.contains(nextTarget) || tooltipRef.value?.contains(nextTarget))) return
   if (props.trigger === 'hover-click' && clickPinned.value) return
   closeTooltip()
 }

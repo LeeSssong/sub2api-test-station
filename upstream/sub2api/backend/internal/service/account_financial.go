@@ -72,6 +72,48 @@ type AccountFinancialGroupReport struct {
 }
 
 type AccountFinancialSnapshotQuery struct{ GeneratedAt, From, To time.Time }
+
+// AccountFinancialUsageReader exposes the native usage aggregation used by the
+// account-financial report without coupling it to the historical evidence and
+// mutation repository contract.
+type AccountFinancialUsageReader interface {
+	ReadAccountFinancialUsage(ctx context.Context, from, to time.Time) (*AccountFinancialUsageSnapshot, error)
+}
+
+type AccountFinancialUsageSnapshot struct {
+	Accounts       []AccountFinancialUsageAccount
+	Groups         []AccountFinancialUsageGroup
+	Rows           []AccountFinancialUsageRow
+	UserBalanceCNY float64
+}
+
+type AccountFinancialUsageAccount struct {
+	ID       int64
+	Name     string
+	Type     string
+	Platform string
+	Active   bool
+}
+
+type AccountFinancialUsageGroup struct {
+	ID     int64
+	Name   string
+	Active bool
+}
+
+type AccountFinancialUsageRow struct {
+	GroupID         *int64
+	GroupName       string
+	AccountID       int64
+	AccountName     string
+	AccountType     string
+	AccountPlatform string
+	Requests        int64
+	Tokens          int64
+	Cost            float64
+	UserCost        float64
+}
+
 type AccountFinancialSnapshot struct {
 	GeneratedAt    time.Time
 	EnabledAt      time.Time

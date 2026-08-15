@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,115 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUsageLog_ReadAccountFinancialUsage_NativeContract(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
+	from := time.Date(2037, 8, 15, 0, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	suffix := time.Now().UTC().Format("20060102150405.000000000")
+
+	var balanceBefore float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`).Scan(&balanceBefore))
+	user := mustCreateUser(t, client, &service.User{Email: "native-financial-" + suffix + "@example.com", Balance: 12.5})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-native-financial-" + suffix, Name: "native-financial"})
+	deletedUser := mustCreateUser(t, client, &service.User{Email: "native-financial-deleted-" + suffix + "@example.com", Balance: 40})
+	require.NoError(t, client.User.UpdateOneID(deletedUser.ID).SetDeletedAt(from).Exec(ctx))
+
+	activeAccount := mustCreateAccount(t, client, &service.Account{Name: "native-active-account-" + suffix, Type: service.AccountTypeAPIKey, Platform: service.PlatformOpenAI})
+	historicalAccount := mustCreateAccount(t, client, &service.Account{Name: "native-historical-account-" + suffix, Type: service.AccountTypeOAuth, Platform: service.PlatformAnthropic})
+	zeroAccount := mustCreateAccount(t, client, &service.Account{Name: "native-zero-account-" + suffix, Type: service.AccountTypeAPIKey, Platform: service.PlatformOpenAI})
+	activeGroup := mustCreateGroup(t, client, &service.Group{Name: "native-active-group-" + suffix})
+	secondGroup := mustCreateGroup(t, client, &service.Group{Name: "native-second-group-" + suffix})
+	historicalGroup := mustCreateGroup(t, client, &service.Group{Name: "native-historical-group-" + suffix})
+	zeroGroup := mustCreateGroup(t, client, &service.Group{Name: "native-zero-group-" + suffix})
+
+	create := func(account *service.Account, groupID *int64, at time.Time, input, output, cacheCreation, cacheRead int, accountCost, accountStatsCost, accountRateMultiplier *float64, totalCost, actualCost float64) {
+		t.Helper()
+		inserted, err := repo.Create(ctx, &service.UsageLog{
+			UserID: user.ID, APIKeyID: apiKey.ID, AccountID: account.ID, GroupID: groupID,
+			RequestID: fmt.Sprintf("native-financial-%s-%d", suffix, time.Now().UnixNano()), Model: "native-financial",
+			InputTokens: input, OutputTokens: output, CacheCreationTokens: cacheCreation, CacheReadTokens: cacheRead,
+			AccountCost: accountCost, AccountStatsCost: accountStatsCost, AccountRateMultiplier: accountRateMultiplier,
+			TotalCost: totalCost, ActualCost: actualCost, CreatedAt: at,
+		})
+		require.NoError(t, err)
+		require.True(t, inserted)
+	}
+
+	accountCostA := 1.25
+	accountCostB := 0.75
+	create(activeAccount, &activeGroup.ID, from, 1, 2, 3, 4, &accountCostA, nil, nil, 9, 2)
+	create(activeAccount, &activeGroup.ID, from.Add(time.Minute), 2, 1, 0, 1, &accountCostB, nil, nil, 9, 1.5)
+	accountStatsCost := 2.0
+	rateMultiplier := 1.5
+	create(activeAccount, &secondGroup.ID, from.Add(2*time.Minute), 1, 1, 1, 1, nil, &accountStatsCost, &rateMultiplier, 9, 4)
+	fallbackMultiplier := 0.5
+	create(activeAccount, &secondGroup.ID, from.Add(3*time.Minute), 2, 0, 1, 1, nil, nil, &fallbackMultiplier, 4, 2.5)
+	unassignedCost := 0.5
+	create(activeAccount, nil, from.Add(4*time.Minute), 1, 1, 1, 1, &unassignedCost, nil, nil, 9, 1)
+	historicalCost := 7.0
+	create(historicalAccount, &historicalGroup.ID, from.Add(5*time.Minute), 0, 1, 1, 2, &historicalCost, nil, nil, 9, 8)
+	excludedCost := 99.0
+	create(activeAccount, &activeGroup.ID, to, 99, 99, 99, 99, &excludedCost, nil, nil, 99, 99)
+	require.NoError(t, client.Account.UpdateOneID(historicalAccount.ID).SetDeletedAt(from.Add(6*time.Minute)).Exec(ctx))
+	require.NoError(t, client.Group.UpdateOneID(historicalGroup.ID).SetDeletedAt(from.Add(6*time.Minute)).Exec(ctx))
+
+	snapshot, err := repo.ReadAccountFinancialUsage(ctx, from, to)
+	require.NoError(t, err)
+	require.InDelta(t, balanceBefore+12.5, snapshot.UserBalanceCNY, 1e-9)
+
+	accounts := make(map[int64]service.AccountFinancialUsageAccount, len(snapshot.Accounts))
+	for _, account := range snapshot.Accounts {
+		accounts[account.ID] = account
+	}
+	require.Equal(t, service.AccountFinancialUsageAccount{ID: activeAccount.ID, Name: activeAccount.Name, Type: service.AccountTypeAPIKey, Platform: service.PlatformOpenAI, Active: true}, accounts[activeAccount.ID])
+	require.Equal(t, service.AccountFinancialUsageAccount{ID: historicalAccount.ID, Name: historicalAccount.Name, Type: service.AccountTypeOAuth, Platform: service.PlatformAnthropic, Active: false}, accounts[historicalAccount.ID])
+	require.True(t, accounts[zeroAccount.ID].Active)
+
+	groups := make(map[int64]service.AccountFinancialUsageGroup, len(snapshot.Groups))
+	for _, group := range snapshot.Groups {
+		groups[group.ID] = group
+	}
+	require.Equal(t, service.AccountFinancialUsageGroup{ID: activeGroup.ID, Name: activeGroup.Name, Active: true}, groups[activeGroup.ID])
+	require.Equal(t, service.AccountFinancialUsageGroup{ID: historicalGroup.ID, Name: historicalGroup.Name, Active: false}, groups[historicalGroup.ID])
+	require.True(t, groups[zeroGroup.ID].Active)
+
+	pairs := make(map[string]service.AccountFinancialUsageRow, len(snapshot.Rows))
+	for _, row := range snapshot.Rows {
+		groupKey := "unassigned"
+		if row.GroupID != nil {
+			groupKey = fmt.Sprintf("%d", *row.GroupID)
+		}
+		pairs[groupKey+":"+fmt.Sprintf("%d", row.AccountID)] = row
+	}
+	require.Len(t, pairs, 4)
+	activePair := pairs[fmt.Sprintf("%d:%d", activeGroup.ID, activeAccount.ID)]
+	require.Equal(t, int64(2), activePair.Requests)
+	require.Equal(t, int64(14), activePair.Tokens)
+	require.InDelta(t, 2.0, activePair.Cost, 1e-9)
+	require.InDelta(t, 3.5, activePair.UserCost, 1e-9)
+	secondPair := pairs[fmt.Sprintf("%d:%d", secondGroup.ID, activeAccount.ID)]
+	require.Equal(t, int64(2), secondPair.Requests)
+	require.Equal(t, int64(8), secondPair.Tokens)
+	require.InDelta(t, 5.0, secondPair.Cost, 1e-9)
+	require.InDelta(t, 6.5, secondPair.UserCost, 1e-9)
+	unassignedPair := pairs[fmt.Sprintf("unassigned:%d", activeAccount.ID)]
+	require.Nil(t, unassignedPair.GroupID)
+	require.Equal(t, int64(1), unassignedPair.Requests)
+	require.Equal(t, int64(4), unassignedPair.Tokens)
+	require.InDelta(t, 0.5, unassignedPair.Cost, 1e-9)
+	historicalPair := pairs[fmt.Sprintf("%d:%d", historicalGroup.ID, historicalAccount.ID)]
+	require.Equal(t, historicalGroup.Name, historicalPair.GroupName)
+	require.Equal(t, historicalAccount.Name, historicalPair.AccountName)
+	require.Equal(t, service.AccountTypeOAuth, historicalPair.AccountType)
+	require.Equal(t, service.PlatformAnthropic, historicalPair.AccountPlatform)
+	require.Equal(t, int64(1), historicalPair.Requests)
+	require.Equal(t, int64(4), historicalPair.Tokens)
+	require.InDelta(t, 7.0, historicalPair.Cost, 1e-9)
+	require.InDelta(t, 8.0, historicalPair.UserCost, 1e-9)
+}
 
 func TestUsageLog_UpstreamModelMismatchFilterAndPartialIndex(t *testing.T) {
 	ctx := context.Background()

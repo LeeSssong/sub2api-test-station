@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T085054Z-production-4053846.json`，活动槽 `green`，不得重复部署同一 SHA。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T11 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T135236Z-production-75345.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T07、T08 均已完成合并、推送、蓝绿发布和线上验收。T08 最终 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`，生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`，生产 `release-state` 仍绑定同一 commit/tree、活动槽 `green`。T11 是当前唯一 `DEPLOYING` 任务：候选已合入根 `main@6806a7a1f` 并通过合并后专项矩阵和范围门禁；用户明确豁免因工具故障无法完成的 fresh 全分支独立终审，豁免记录不等同审查 PASS。当前准备最终树 evidence、推送与蓝绿预检；尚未部署或线上验证。T10 在第二准备槽，不抢占 T11 发布车道；T09 继续排队。
+- 当前发布状态：T11 已完成合并、推送、无停机蓝绿发布和管理员登录态线上验收。最终 `main@d17968ab95cb5f9db2a7374c59222b8b01c0e46f`、tested tree `05ce07aa4f58346ab25ae9db37baa2d95569662a`；生产记录 `/var/lib/sub2api/release-records/20260815T135236Z-production-75345.json` 为 `succeeded/promoted`、`rolled_back=false`，生产 `release-state` 绑定同一 commit/tree/迁移哈希，活动槽 `blue`。用户明确豁免 fresh 全分支独立终审，豁免不等同审查 PASS；其余合并后专项、发布和线上门禁均已完成。T10 现在是下一优先任务并继续 `DESIGNING`；T09 继续排队。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -115,7 +115,7 @@
 
 ### T11 经营页三层视图与异常空态修复
 
-- 当前状态：`DEPLOYING`，优先级 `P0/URGENT`。独立候选 `codex/account-financial-dimensions@d5df834e3` 已合入根 `main@6806a7a1f`，合并后后端专项、前端 42/42、typecheck、build、diff/conflict 和范围门禁通过；用户的 fresh 全分支独立终审豁免保留为流程例外，不宣称审查通过。无迁移、依赖、配置或 GitHub Actions 变化；当前准备 canonical evidence、推送和蓝绿生产预检，尚未部署或线上验证。
+- 当前状态：`DONE`，优先级 `P0/URGENT`。独立候选 `codex/account-financial-dimensions@d5df834e3` 已合入并推送为根 `main@d17968ab95cb5f9db2a7374c59222b8b01c0e46f`，生产记录 `/var/lib/sub2api/release-records/20260815T135236Z-production-75345.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`。合并后后端专项、前端 42/42、typecheck、build、范围门禁和管理员登录态线上验收通过；全站固定摘要、分组摘要/账号行、异常跳转与空态、原生 API、390x844 页面宽度均验证生效。用户的 fresh 全分支独立终审豁免保留为流程例外，不宣称审查通过。无迁移、依赖、配置或 GitHub Actions 变化；详见 `docs/superpowers/reports/2026-08-15-account-financial-dimensions-production.md`。
 - 目标：经营页提供全站固定摘要、分组 Tab 和当前分组账号列表；异常跳转后始终显示 loading、data、empty 或 error/retry，而不是空白内容区。
 - 范围：向后兼容扩展现有原生 `account-financial` 报告，按 `usage_logs.group_id` 聚合分组及 `(group_id, account_id)` 行；前端展示三层结构；异常跳转保留账号、范围和 `review=pending`。
 - 不包含：新账务源、平行经营 API、外部控制面、历史回填、延迟补查、上游重试、金额猜测分摊、数据库迁移、调度/计费写入、普通用户入口或 GitHub Actions。
@@ -146,5 +146,5 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08 已完成生产验收；T11 是当前唯一 `DEPLOYING` 任务。T10 在第二准备槽完成规格/计划和实现，但在 T11 线上验收前不得进入发布车道。T09 与 S1-R2 继续排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
+- T07、T08、T11 已完成生产验收；当前没有任务占用发布车道。T10 是下一优先任务，继续其正式规格、计划、实现和独立复审流程，完成后才能进入根发布车道。T09 与 S1-R2 继续排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

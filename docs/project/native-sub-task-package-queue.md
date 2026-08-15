@@ -97,7 +97,7 @@
 
 ### T08 “暂不建议入组”轻提示
 
-- 当前状态：`DONE`。用户可见顶层任务 `01a00306-a473-73f3-9240-addaf11b119d` 已刷新、实现、独立复审、全分支终审并经根授权合并；最终文档提交 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`。生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 green；64/64 定向测试、typecheck、build、diff-check 和线上管理员验收通过。真实生产无 `not_recommended` 自然样本，未修改生产数据；线上页面的中文、资源身份、390x844 无横向溢出、账号操作和健康检查均通过。详细证据见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。
+- 当前状态：`DONE`。用户可见顶层任务 `01a00306-a473-73f3-9240-addaf11b119d` 已刷新、实现、独立复审、全分支终审并经根授权合并；最终文档提交 `main@1bebe479257e39c9433782836788238399e76b0e`，tested tree `6b9eb0a7f79d65f47e82e944f5d467d1f83323b9`。生产记录 `/var/lib/sub2api/release-records/20260815T085054Z-production-4053846.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 green；64/64 定向测试、typecheck、build、diff-check 和线上管理员验收通过。真实生产无 `not_recommended` 自然样本，未修改生产数据；线上页面的中文、资源身份、390x844 无横向溢出、账号操作和健康检查均通过。详细证据见 `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-production.md`。候选归档 `/Users/gongtengxinwen/Documents/sub2api-archives/t08-do-not-recommend-light-hint-772c89d4.bundle` 已验证，worktree/本地分支已删除。
 
 - 目标：保留紧凑标签，把原因收进按需提示而不是常驻文本。
 - 范围：账号卡片标签、桌面悬浮/点击、移动端点击、可访问性和防溢出测试。

@@ -108,6 +108,31 @@ func TestAccountFinancialRepositorySnapshotBalanceIncludesDisabledExcludesDelete
 	}
 }
 
+func TestAccountFinancialRepositorySnapshotReadsUsageGroupIdentityAndGroupNames(t *testing.T) {
+	ctx := context.Background()
+	client := newAccountFinancialRepositoryTestClient(t)
+	now := time.Now().UTC()
+	client.AccountFinancialSetting.Create().SetKey("t03_r1_account_financial").SetEnabledAt(now.Add(-time.Hour)).SaveX(ctx)
+	user := client.User.Create().SetEmail("group-snapshot@example.com").SetPasswordHash("x").SaveX(ctx)
+	key := client.APIKey.Create().SetUserID(user.ID).SetKey("sk-group-snapshot").SetName("group").SaveX(ctx)
+	account := client.Account.Create().SetName("shared").SetPlatform("openai").SetType("api_key").SetStatus("active").SaveX(ctx)
+	active := client.Group.Create().SetName("active-group").SaveX(ctx)
+	historical := client.Group.Create().SetName("historical-group").SaveX(ctx)
+	client.Group.UpdateOne(historical).SetDeletedAt(now).ExecX(ctx)
+	usage := client.UsageLog.Create().SetUserID(user.ID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetGroupID(historical.ID).SetRequestID("historical-group-usage").SetModel("m").SetActualCost(10).SetCreatedAt(now).SaveX(ctx)
+
+	snapshot, err := NewAccountFinancialRepository(client).ReadSnapshot(ctx, service.AccountFinancialSnapshotQuery{GeneratedAt: now, From: now.Add(-time.Minute), To: now.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Groups) != 1 || snapshot.Groups[0].ID != active.ID || snapshot.Groups[0].Name != "active-group" {
+		t.Fatalf("configured groups=%#v", snapshot.Groups)
+	}
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0].UsageLogID != usage.ID || snapshot.Entries[0].GroupID == nil || *snapshot.Entries[0].GroupID != historical.ID || snapshot.Entries[0].GroupName != "historical-group" {
+		t.Fatalf("usage group identity=%#v", snapshot.Entries)
+	}
+}
+
 func TestAccountFinancialRepositoryCanonicalActivationKey(t *testing.T) {
 	ctx := context.Background()
 	client := newAccountFinancialRepositoryTestClient(t)

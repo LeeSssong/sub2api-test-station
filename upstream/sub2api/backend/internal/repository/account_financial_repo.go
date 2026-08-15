@@ -8,6 +8,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/accountdailyfinancialvalue"
 	"github.com/Wei-Shaw/sub2api/ent/accountfinancialsetting"
+	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/usagecostreview"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -75,6 +76,17 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 			s.Accounts = append(s.Accounts, service.AccountFinancialSnapshotAccount{ID: a.ID, Name: a.Name, Type: a.Type, Platform: a.Platform})
 		}
 	}
+	groups, err := client.Group.Query().Order(ent.Asc(group.FieldID)).All(mixins.SkipSoftDelete(ctx))
+	if err != nil {
+		return nil, err
+	}
+	groupNames := make(map[int64]string, len(groups))
+	for _, g := range groups {
+		groupNames[g.ID] = g.Name
+		if g.DeletedAt == nil {
+			s.Groups = append(s.Groups, service.AccountFinancialSnapshotGroup{ID: g.ID, Name: g.Name})
+		}
+	}
 	usageQ := client.UsageLog.Query()
 	if !s.EnabledAt.IsZero() {
 		usageQ = usageQ.Where(usagelog.CreatedAtGTE(s.EnabledAt))
@@ -106,7 +118,10 @@ func (r *accountFinancialRepository) ReadSnapshot(ctx context.Context, q service
 		rm[v.UsageLogID] = v
 	}
 	for _, u := range logs {
-		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, RequestID: u.RequestID, Model: u.Model, UpstreamRequestID: u.UpstreamRequestID, UpstreamModel: u.UpstreamModel, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
+		e := service.AccountFinancialSnapshotEntry{UsageLogID: u.ID, AccountID: u.AccountID, GroupID: u.GroupID, RequestID: u.RequestID, Model: u.Model, UpstreamRequestID: u.UpstreamRequestID, UpstreamModel: u.UpstreamModel, CreatedAt: u.CreatedAt, BusinessDate: u.CreatedAt.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02"), RevenueCNY: u.ActualCost, EvidenceStatus: "unavailable", ReasonCode: "evidence_not_registered"}
+		if u.GroupID != nil {
+			e.GroupName = groupNames[*u.GroupID]
+		}
 		if a := accountTrace[u.AccountID]; a != nil {
 			e.AccountName = a.Name
 			e.AccountType = a.Type

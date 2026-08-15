@@ -43,18 +43,32 @@ type AccountFinancialReport struct {
 	ExceptionCount     int
 	AffectedRevenueCNY float64
 	UserBalanceCNY     float64
+	Groups             []*AccountFinancialGroupReport
 }
 
 type AccountFinancialAccountReport struct {
-	ID                 int64
-	Name               string
-	Type               string
-	Platform           string
-	GeneratedAt        time.Time
-	Complete           bool
-	Amounts            FinancialAmounts
-	ExceptionCount     int
-	AffectedRevenueCNY float64
+	ID                        int64
+	Name                      string
+	Type                      string
+	Platform                  string
+	GeneratedAt               time.Time
+	Complete                  bool
+	Amounts                   FinancialAmounts
+	ExceptionCount            int
+	AffectedRevenueCNY        float64
+	HasUnallocatedAdjustments bool
+}
+
+type AccountFinancialGroupReport struct {
+	ID                        int64
+	Name                      string
+	Unassigned                bool
+	Complete                  bool
+	HasUnallocatedAdjustments bool
+	Amounts                   FinancialAmounts
+	Accounts                  []*AccountFinancialAccountReport
+	ExceptionCount            int
+	AffectedRevenueCNY        float64
 }
 
 type AccountFinancialSnapshotQuery struct{ GeneratedAt, From, To time.Time }
@@ -62,9 +76,14 @@ type AccountFinancialSnapshot struct {
 	GeneratedAt    time.Time
 	EnabledAt      time.Time
 	Accounts       []AccountFinancialSnapshotAccount
+	Groups         []AccountFinancialSnapshotGroup
 	Entries        []AccountFinancialSnapshotEntry
 	DailyValues    []AccountFinancialDailyValue
 	UserBalanceCNY float64
+}
+type AccountFinancialSnapshotGroup struct {
+	ID   int64
+	Name string
 }
 type AccountFinancialSnapshotAccount struct {
 	ID                   int64
@@ -72,6 +91,8 @@ type AccountFinancialSnapshotAccount struct {
 }
 type AccountFinancialSnapshotEntry struct {
 	UsageLogID, AccountID                                  int64
+	GroupID                                                *int64
+	GroupName                                              string
 	CreatedAt                                              time.Time
 	BusinessDate                                           string
 	RevenueCNY                                             float64
@@ -249,6 +270,44 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		byID[a.ID] = x
 		report.Accounts = append(report.Accounts, x)
 	}
+	type groupAccumulator struct {
+		report   *AccountFinancialGroupReport
+		accounts map[int64]*AccountFinancialAccountReport
+	}
+	groupByID := make(map[int64]*groupAccumulator, len(snap.Groups))
+	for _, group := range snap.Groups {
+		g := &AccountFinancialGroupReport{ID: group.ID, Name: group.Name, Complete: true}
+		groupByID[group.ID] = &groupAccumulator{report: g, accounts: make(map[int64]*AccountFinancialAccountReport)}
+		report.Groups = append(report.Groups, g)
+	}
+	var historicalGroups []*AccountFinancialGroupReport
+	var unassignedGroup *AccountFinancialGroupReport
+	ensureGroupAccount := func(e AccountFinancialSnapshotEntry, account *AccountFinancialAccountReport) (*AccountFinancialGroupReport, *AccountFinancialAccountReport) {
+		var accumulator *groupAccumulator
+		if e.GroupID == nil {
+			accumulator = groupByID[0]
+			if accumulator == nil {
+				unassignedGroup = &AccountFinancialGroupReport{Unassigned: true, Complete: true}
+				accumulator = &groupAccumulator{report: unassignedGroup, accounts: make(map[int64]*AccountFinancialAccountReport)}
+				groupByID[0] = accumulator
+			}
+		} else {
+			accumulator = groupByID[*e.GroupID]
+			if accumulator == nil {
+				group := &AccountFinancialGroupReport{ID: *e.GroupID, Name: e.GroupName, Complete: true}
+				accumulator = &groupAccumulator{report: group, accounts: make(map[int64]*AccountFinancialAccountReport)}
+				groupByID[*e.GroupID] = accumulator
+				historicalGroups = append(historicalGroups, group)
+			}
+		}
+		groupAccount := accumulator.accounts[account.ID]
+		if groupAccount == nil {
+			groupAccount = &AccountFinancialAccountReport{ID: account.ID, Name: account.Name, Type: account.Type, Platform: account.Platform, GeneratedAt: snap.GeneratedAt, Complete: true}
+			accumulator.accounts[account.ID] = groupAccount
+			accumulator.report.Accounts = append(accumulator.report.Accounts, groupAccount)
+		}
+		return accumulator.report, groupAccount
+	}
 	for _, e := range snap.Entries {
 		if !entryInRange(e, r, now, localNow) {
 			continue
@@ -257,7 +316,12 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		if a == nil {
 			continue
 		}
+		group, groupAccount := ensureGroupAccount(e, a)
 		if a.Type == "oauth" {
+			group.Complete = false
+			group.HasUnallocatedAdjustments = true
+			groupAccount.Complete = false
+			groupAccount.HasUnallocatedAdjustments = true
 			continue
 		}
 		include, cost := includeEntry(e)
@@ -272,11 +336,25 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 				report.AffectedRevenueCNY += e.RevenueCNY
 				report.Summary.ExceptionCount++
 				report.Summary.AffectedRevenueCNY += e.RevenueCNY
+				group.Complete = false
+				group.ExceptionCount++
+				group.AffectedRevenueCNY += e.RevenueCNY
+				group.Amounts.ExceptionCount++
+				group.Amounts.AffectedRevenueCNY += e.RevenueCNY
+				groupAccount.Complete = false
+				groupAccount.ExceptionCount++
+				groupAccount.AffectedRevenueCNY += e.RevenueCNY
+				groupAccount.Amounts.ExceptionCount++
+				groupAccount.Amounts.AffectedRevenueCNY += e.RevenueCNY
 			}
 			continue
 		}
 		a.Amounts.RevenueCNY += e.RevenueCNY
 		a.Amounts.CostCNY += cost
+		group.Amounts.RevenueCNY += e.RevenueCNY
+		group.Amounts.CostCNY += cost
+		groupAccount.Amounts.RevenueCNY += e.RevenueCNY
+		groupAccount.Amounts.CostCNY += cost
 	}
 	if r != AccountFinancialRange24H {
 		for _, d := range snap.DailyValues {
@@ -288,6 +366,19 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 				continue
 			}
 			applyDailyOverride(a, d, snap.Entries, r == AccountFinancialRangeToday)
+			if d.OAuthCostCNY == nil && d.RevenueOverrideCNY == nil && d.CostOverrideCNY == nil {
+				continue
+			}
+			for _, e := range snap.Entries {
+				if e.AccountID != d.AccountID || e.BusinessDate != d.BusinessDate || !entryInRange(e, r, now, localNow) {
+					continue
+				}
+				group, groupAccount := ensureGroupAccount(e, a)
+				group.Complete = false
+				group.HasUnallocatedAdjustments = true
+				groupAccount.Complete = false
+				groupAccount.HasUnallocatedAdjustments = true
+			}
 		}
 	}
 	for _, a := range report.Accounts {
@@ -302,6 +393,24 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		report.Summary.RevenueCNY += a.Amounts.RevenueCNY
 		report.Summary.CostCNY += a.Amounts.CostCNY
 		report.Summary.ProfitCNY += a.Amounts.ProfitCNY
+	}
+	report.Groups = append(report.Groups, historicalGroups...)
+	if unassignedGroup != nil {
+		report.Groups = append(report.Groups, unassignedGroup)
+	}
+	for _, group := range report.Groups {
+		for _, account := range group.Accounts {
+			account.Amounts.ProfitCNY = account.Amounts.RevenueCNY - account.Amounts.CostCNY
+			if account.Amounts.RevenueCNY != 0 {
+				margin := account.Amounts.ProfitCNY / account.Amounts.RevenueCNY
+				account.Amounts.Margin = &margin
+			}
+		}
+		group.Amounts.ProfitCNY = group.Amounts.RevenueCNY - group.Amounts.CostCNY
+		if group.Amounts.RevenueCNY != 0 {
+			margin := group.Amounts.ProfitCNY / group.Amounts.RevenueCNY
+			group.Amounts.Margin = &margin
+		}
 	}
 	if report.Summary.RevenueCNY != 0 {
 		v := report.Summary.ProfitCNY / report.Summary.RevenueCNY

@@ -1,7 +1,7 @@
 # T10 Account Quality Monitor Implementation Verification
 
-Date: 2026-08-15  
-Candidate worktree: `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建`  
+Date: 2026-08-15
+Candidate worktree: `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建`
 Baseline: `main@8f79f1330fa007761b2a82af9a845529fbc5b31d`
 
 ## Scope
@@ -30,6 +30,8 @@ controlled delivery receipt is separately user-waived.
 - A1-A5: implementation/static evidence is present; host execution evidence remains for root review. The wrapper now enforces an evidence directory contract of `10002:10002` and `0700`, then performs the real UID 10002 bind-mount write/fsync/same-directory rename/readback/cleanup preflight.
 - A6: explicitly waived by the user. The controlled `203/EXEC` delivery drill was not run and no receipt is claimed. This is an unverified residual risk, not a release blocker for this candidate.
 - A7-A9: implementation/static contracts are present; runtime and read-only database evidence remain for root review.
-- A10: 24-hour natural timer window remains pending and cannot be claimed from this worktree.
+- A10: explicitly waived by the user. No 24-hour or other time-based waiting is
+  required; immediate production execution and evidence checks are the release
+  acceptance. This time-based item is not claimed as PASS.
 
 No deployment, production mutation, global ledger edit, or merge was performed.

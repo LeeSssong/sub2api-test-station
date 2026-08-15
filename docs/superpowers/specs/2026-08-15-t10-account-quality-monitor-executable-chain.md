@@ -31,8 +31,8 @@ contract, and failure alert delivery unproven as one system.
    including a failure where `ExecStart` never runs (`203/EXEC`).
 4. Reuse the existing production alert receiver and verify one controlled
    failure reaches the existing on-call endpoint.
-5. Provide deterministic stage/reason classification, safe rollback, and a
-   24-hour timer acceptance window.
+5. Provide deterministic stage/reason classification, safe rollback, and
+   immediate functional verification after deployment.
 
 ### Non-goals
 
@@ -182,7 +182,7 @@ change, with a recorded pre-change snapshot.
 | A7 | Wrapper-stage failures | Inject preflight, Admin-Key, Docker, collector, timeout, and publish failures; verify unique mappings and no raw data | Required |
 | A8 | Security invariants | Container UID/options/limits and unchanged production-tree mode | Required |
 | A9 | No business writes | Before/after read-only database and account-operation evidence | Required |
-| A10 | Natural timer window | 24 hours with zero `203/EXEC` failures and normal evidence cadence | Required |
+| A10 | Natural timer window | 24 hours with zero `203/EXEC` failures and normal evidence cadence | User-waived; no time-based waiting |
 
 If the existing receiver is absent or actual delivery cannot be verified, record
 A6 as unverified under the user's explicit waiver. Do not fabricate receipt
@@ -198,12 +198,14 @@ systemd execution, each wrapper failure stage, and security invariants. The
 business write, preserves/restores timer state, and fails closed if restoration
 is incomplete. The success test verifies both JSON files and modes after the
 real service run. The natural-window check samples journal and timer state for
-24 hours.
+The user explicitly waived the time-based natural-window check. Immediate
+successful execution and evidence publication are the online functional
+acceptance for this release.
 
 ## 11. Release, Rollback, and Open Items
 
-Release is allowed only after A1-A5 and A7-A9 pass, A6 is explicitly recorded
-as user-waived/unverified, and the release controller confirms
+Release is allowed only after A1-A5 and A7-A9 pass, A6 and A10 are explicitly
+recorded as user-waived/unverified, and the release controller confirms
 `downtime_required=false`.
 Install/reload operations must be reversible and retain pre-change unit and
 timer snapshots. Rollback restores the prior unit/drop-in, disables the known

@@ -18,6 +18,9 @@
   the controlled delivery receipt; record it as unverified residual risk while
   preserving the existing receiver integration and redaction contract. This
   residual risk does not block implementation or deployment in this release.
+- A10 is explicitly waived by the user. Do not wait for a 24-hour observation
+  window; immediate functional execution, evidence publication, and health
+  checks are the production acceptance for this release.
 - No implementation task may modify `main`, project queue/progress ledgers, production state, or deploy from a candidate worktree.
 - No GitHub Actions; release and deployment remain in the reviewed local/host chain.
 
@@ -114,13 +117,13 @@
 - [ ] **Step 1: Run all focused tests**: `ruby -Itests tests/operations/account_quality_failure_signal_test.rb`, `ruby -Itests tests/operations/account_quality_monitor_test.rb`, `ruby -Itests tests/operations/collect_account_quality_pulse_test.rb`, `bash tests/relay_ops/validate_relay_ops_contract.sh`, and every runtime/systemd fixture.
 - [ ] **Step 2: Run repository guards**: `git diff --check`, shell syntax checks, relevant Go tests under `relay-ops-service`, migration/dependency/GitHub Actions guards, and the approved release qualification/preflight scripts. Do not deploy from this worktree.
 - [ ] **Step 3: Perform an independent task review** against the spec and acceptance matrix, explicitly checking no business writes, unchanged production-tree mode, redaction, timer restoration, and the recorded A6 waiver.
-- [ ] **Step 4: Perform the final whole-branch review** and fix all findings before handoff. The waived A6 item is reported as unverified residual risk; only failures in non-waived gates or the 24-hour window block handoff.
+- [ ] **Step 4: Perform the final whole-branch review** and fix all findings before handoff. The waived A6 and A10 items are reported as unverified residual risks; only failures in non-waived functional gates block handoff.
 - [ ] **Step 5: Write the handoff** with candidate branch/worktree, source and tested tree hashes, changed files, test results, unverified items, migrations/configuration, `downtime_required`, rollback, and the explicit root-only next action.
 - [ ] **Step 6: Stop at `READY_FOR_ROOT_REVIEW`** and wait for root's `AUTHORIZE_MERGE_TO_MAIN`; do not edit global ledgers, merge, push, deploy, or clean the worktree.
 
 ## Self-review checklist
 
-- Spec coverage: Tasks 1-3 cover all executable, atomic-write, security, and systemd contracts; Task 4 covers the existing receiver and records the user-waived A6 risk; Task 5 covers natural-window, review, release, rollback, and handoff evidence.
+- Spec coverage: Tasks 1-3 cover all executable, atomic-write, security, and systemd contracts; Task 4 covers the existing receiver and records the user-waived A6 risk; Task 5 covers immediate functional verification, review, release, rollback, and handoff evidence, with A10 recorded as user-waived.
 - Placeholder scan: no `TBD`, `TODO`, or unspecified implementation steps appear; each task names concrete files, commands, and expected gates.
 - Type/contract consistency: the `t10.failure.v1` fields and allowlisted phases originate in Task 1, are consumed by the Task 3 hook, and are asserted by Task 4; the existing evidence paths remain unchanged across Tasks 1-2.
 - Scope check: no account admission, scheduling, billing, UI, database migration, external-primary, or new receiver work is included.

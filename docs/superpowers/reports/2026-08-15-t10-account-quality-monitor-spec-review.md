@@ -1,8 +1,8 @@
 # T10 Account Quality Monitor Executable Chain: Specification Review
 
-Date: 2026-08-15  
-Candidate worktree: `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建`  
-Refreshed baseline: `main@8f79f1330fa007761b2a82af9a845529fbc5b31d`  
+Date: 2026-08-15
+Candidate worktree: `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建`
+Refreshed baseline: `main@8f79f1330fa007761b2a82af9a845529fbc5b31d`
 Specification: `docs/superpowers/specs/2026-08-15-t10-account-quality-monitor-executable-chain.md`
 
 ## Review result

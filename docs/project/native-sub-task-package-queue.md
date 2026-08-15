@@ -2,9 +2,10 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11 均已部署并完成各自既定线上验证；最新应用生产记录为 `20260815T165259Z-production-206174.json`，活动槽 `green`，不得重复部署同一 SHA。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11 均已部署并完成各自既定范围的线上验证；T11 仅完成三层结构与页面状态，不代表经营数据口径已正确。新的最高优先级任务为 `T11-R1 Sub 原生计费聚合经营页纠偏`。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T10 为 `DONE`，当前没有任务占用合并/部署/验收车道。根 `main@b1b92cf30a791d0573c212e865d3a52c43564d95` 已推送；应用发布 `081dc0a03` 经蓝绿链无停机完成，随后生产真实运行发现旧固定地址 `sub2api:8080` 不存在，修复 `d075da534` 改为读取并严格校验受保护的活动蓝绿上游。修正版宿主文件与根树 SHA-256 一致，真实 service 为 `Result=success` / `ExecMainStatus=0`，timer 为 `active/waiting`，快照 `ACCOUNT-QUALITY-20260815T171407Z` 覆盖 50 个合格账号，两份 JSON 有效且为 `0600`，三项公网健康检查均为 200。fresh reviewer 不可用仍作为流程例外，不倒称 PASS；A6 实际告警送达和 A10 时间观察仍按用户要求豁免且未验证。T09 继续排队。
+- 当前发布状态：T11-R1 候选 `86d5c4cd41245e1adf98cb1dc52200044de38036` 已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main@b1cb220b1d8280aaace9a617152dc48e75020786`；merged-main 后端 focused/neighboring、Colima 真 PostgreSQL integration、前端 18/18、typecheck/build、diff/范围/发布脚本语法门禁均通过，`downtime_required=false` 静态依据成立。当前仍处于唯一串行 `INTEGRATING`，等待根发布账本提交、clean release worktree 的 final-tree evidence、推送和蓝绿部署；T09 与 S1-R2 继续暂停。
+- 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。T11-R1 仍是唯一实施 `P0/URGENT`。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -29,8 +30,9 @@
 
 - 当前状态：技术交付已部署并完成线上验证；存在“未使用用户可见独立顶层任务”的流程偏差，不宣称顶层任务合规，不重做或回滚。
 
-- 目标：让用户和管理员分别理解四类首要错误：本站 RPM/并发限制、上游过载、通用上游失败、请求上传中断。
-- 范围：复用 Sub 原生错误透传规则；新增统一解释字典；用户安全文案；现有错误详情中的“管理员诊断”；HTTP/SSE 与用户错误记录口径一致。
+- 目标：在 Sub 原生错误透传/改写机制之外，为已持久化错误记录补充可读、脱敏的中文运营诊断。
+- 与原生能力的区别：Sub 原生 `ErrorPassthroughService` 在请求链路中按上游 HTTP 状态、平台和关键词匹配规则，可透传或改写客户端状态码/消息，并可能影响账号错误处理；T02 不替换、不重复该机制，只在读取错误记录时投影 `local_limit`、`upstream_overloaded`、`upstream_failed`、`upload_interrupted` 四类诊断。
+- 范围：优先复用 Sub 原生错误透传结果；用户显示脱敏中文含义与建议，管理员在既有错误详情查看阶段、归属、已选账号/分组、上游状态和二次脱敏证据；HTTP/SSE 传输、路由、重试、调度和计费行为保持不变。
 - 管理员入口：管理后台 -> 用量明细 -> 错误请求 -> 点击错误详情；运维总览详情复用同一字段。
 - 不包含：全尝试链、追踪系统、新错误表、自动根因推断或新的管理页面。
 - 验收：用户不再看到难懂原文；管理员能看到错误阶段、归属、是否选中账号、账号/分组及原始上游证据；请求上传失败明确显示“未选择上游”。
@@ -56,6 +58,7 @@
 ### T03-R1 上游扣费缺失与异步持久化修复
 
 - 当前状态：已完成。最终 `main@210d0397e647b91be080f0c7252da39a6e61d71d` 已推送并从受审维护链部署；生产记录 `20260814T051143Z-production-2876774.json` 为 `succeeded/promoted`，活动槽 `green`，源 tree `4e2b7be29191894a8e7fac7e7af21cb0cf4adb21`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`。用户已授权停机，公网 `/healthz`、`/readyz`、`/health` 均通过，生产服务健康。功能启用后首个稳定窗口内 15 笔自然流水中，3 笔明确 NewAPI 身份流水已自动登记 `confirmed`，12 笔无明确 Sub/New 身份流水按合同进入 `evidence_not_registered`；管理员财务、异常、本地详情与未认证隔离均已在线验收。维护任务 `019ffe60-c370-7290-a310-0f811e8d09ae` 因根 `main` 漂移并包含同范围旧候选而停止在 `BLOCKED_FOR_ROOT_RECONCILIATION`，未宣称为流程合规交付；不影响已审主线技术结果。
+- 历史边界：以下独立证据、人工复核、OAuth 日成本和覆盖语义作为已部署历史能力保留，但其作为经营/盈利页面取数权威的产品方向已被 T11-R1 取代；T11-R1 不破坏性删除历史数据，只停止页面依赖。
 - 目标：保持官方 `usage_logs` 不变，以独立一对一证据登记功能启用后的 Sub/New 原生逐笔成本；升级现有账号盈利页为管理员财务首页，提供全站/账号人民币营收、本站支出、利润、利润率、异常数量、用户未消费余额，以及使用记录中的异常核对 Tab。
 - 事实语义：精确命中有效非零成本为 `confirmed` 并立即纳入；精确命中数值 0 或 blank/null/empty 为 `confirmed_zero`；无精确证据、端点/鉴权/网络/解析或登记失败为 `unavailable`。后两类待管理员核对前完全不进入财务汇总；不补查、不重试、不估算。
 - 人工与 OAuth：异常可逐笔、选中项批量或当前筛选范围批量确认；未输入成本时按 0 纳入并保留原始证据状态。字面 `oauth` 类型的自购账号不查询上游、不产生成本异常，由管理员按北京自然日填写人民币成本；未填写的账号日不进入全站四项财务汇总。
@@ -108,21 +111,34 @@
 ### T10 账号质量监控器可执行链路
 
 - 当前状态：`DONE`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 的候选已完成实现、第一轮独立复审修复、根全差异复核、定向验证和 handoff；根修复生产蓝绿上游寻址后，最终 `main@b1b92cf30a791d0573c212e865d3a52c43564d95` 已推送。实现包含 root host orchestration、UID/GID 10002 真实证据预检、正确 `[Unit] OnFailure`、脱敏稳定 `t10.failure.v1`、分阶段退出码、双文件原子发布/恢复和活动蓝绿上游严格白名单。最新 2/75、5/119、13/53 测试及 systemd/alert/relay-ops/语法/diff 合同通过；宿主安装校验、真实 service、timer、证据文件和公网健康即时验收通过。fresh reviewer 调度失败作为流程例外，不倒称 PASS；用户豁免 A6 实际送达和 A10 按时间等待，两项保留未验证。候选已归档为已验证的 0600 完整历史 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t10-account-quality-monitor-d075da534.bundle`（SHA-256 `f02cc7907bd749c8f289716c2cb4b65a8d2554a4441d8b64d2823d45e478b471`），worktree 和本地分支已删除。生产报告见 `docs/superpowers/reports/2026-08-16-t10-account-quality-monitor-production.md`。
-- 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
-- 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
+- 定义：T10 不是新的账号质量算法、评分系统或用户页面；它修复的是既有宿主只读采集任务因 systemd `203/EXEC` 无法执行的问题。
+- 目标：让 systemd timer 定期调用采集器，读取 Sub 原生账号监控/账号测试 API，并把结果写成两份受保护 JSON 快照；失败时可产生脱敏诊断信号。
+- 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收；不写账号、路由、余额、计费、评分或调度状态。
 - 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。
 - 验收：连续受控触发不再出现 `203/EXEC`；timer/service 真实运行并写入既有证据位置；采集失败仍可诊断且不会写路由、账号、余额或计费；部署属性和停机需求由顶层任务报告。
 
 ### T11 经营页三层视图与异常空态修复
 
-- 当前状态：`DONE`，优先级 `P0/URGENT`。独立候选 `codex/account-financial-dimensions@d5df834e3` 已合入并推送为根 `main@d17968ab95cb5f9db2a7374c59222b8b01c0e46f`，生产记录 `/var/lib/sub2api/release-records/20260815T135236Z-production-75345.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`。合并后后端专项、前端 42/42、typecheck、build、范围门禁和管理员登录态线上验收通过；全站固定摘要、分组摘要/账号行、异常跳转与空态、原生 API、390x844 页面宽度均验证生效。用户的 fresh 全分支独立终审豁免保留为流程例外，不宣称审查通过。无迁移、依赖、配置或 GitHub Actions 变化；详见 `docs/superpowers/reports/2026-08-15-account-financial-dimensions-production.md`。
+- 当前状态：`DONE`，但只对“全站/分组/账号三层结构、时间范围和页面状态”这一历史范围成立。独立候选 `codex/account-financial-dimensions@d5df834e3` 已合入并推送为根 `main@d17968ab95cb5f9db2a7374c59222b8b01c0e46f`，生产记录 `/var/lib/sub2api/release-records/20260815T135236Z-production-75345.json` 为 `succeeded/promoted`。该任务沿用了 T03-R1 独立财务证据口径，因此不能视为经营/盈利页面的最终产品修复；数据口径由 T11-R1 纠偏。详见 `docs/superpowers/reports/2026-08-15-account-financial-dimensions-production.md`。
 - 目标：经营页提供全站固定摘要、分组 Tab 和当前分组账号列表；异常跳转后始终显示 loading、data、empty 或 error/retry，而不是空白内容区。
 - 范围：向后兼容扩展现有原生 `account-financial` 报告，按 `usage_logs.group_id` 聚合分组及 `(group_id, account_id)` 行；前端展示三层结构；异常跳转保留账号、范围和 `review=pending`。
 - 不包含：新账务源、平行经营 API、外部控制面、历史回填、延迟补查、上游重试、金额猜测分摊、数据库迁移、调度/计费写入、普通用户入口或 GitHub Actions。
 - 验收：全站流水不重复；跨分组和未归属口径正确；账号级今日覆盖/OAuth 日成本不猜测分摊；桌面/移动端三层视图可用；异常加载、空结果、失败重试均有可见状态；只调用原生管理员 API。
 
+### T11-R1 Sub 原生计费聚合经营页纠偏
+
+- 当前状态：`INTEGRATING`，优先级 `P0/URGENT`，当前唯一任务包；候选 `86d5c4cd41245e1adf98cb1dc52200044de38036`（implementation `c5df650cd4c1ab2f8dcd6982f31ffd842bf303a9`）已合入根 `main@b1cb220b1d8280aaace9a617152dc48e75020786`。merged-main 后端 4 组 focused、repository/service/admin/server neighboring 全包、Colima 真 PostgreSQL integration、前端 18/18、typecheck/build、diff/protected/forbidden/config/dependency/migration/workflow、发布脚本语法均通过；unexpected dirty 为 0，root 仅保留既有受保护内容。`downtime_required=false`；authenticated 390×844 与 31 天生产尺度 latency/query-plan 是部署后 `VERIFYING` 门禁。尚未推送或部署。
+- 目标：保留 T11 已上线的全站固定摘要、分组 Tab、账号行、今日/24 小时/7 天/31 天、刷新以及 loading/empty/error/retry 体验，但所有经营数值完全改用 Sub 原生 `usage_logs` 计费统计。
+- 官方字段：请求数 `requests`；Token 数 `tokens`；账号计费 `cost = SUM(COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)))`；用户扣费 `user_cost = SUM(actual_cost)`；利润可展示为 `user_cost - cost`，利润率由该利润除以 `user_cost` 派生。
+- 聚合维度：全站、`usage_logs.group_id` 分组、`(group_id, account_id)` 账号行；所有维度和时间范围必须来自同一官方流水与美元单位。
+- 范围：优先复用 `AccountUsageService.WindowStats`、今日/窗口批量统计、`usage_log_repo_stats.go` 的官方 SQL 口径和现有原生管理员 API；允许为全站/分组聚合做最小兼容扩展，但不得建立第二套计费模型。
+- 不包含：汇率换算、人民币经营口径、独立上游成本证据、人工成本/OAuth 日成本覆盖、估算、补查、重试、历史回填、计费写入、调度修改、生产数据修改、GitHub Actions，或破坏性删除历史 T03-R1 表与证据。
+- 页面纠偏：移除与官方唯一口径冲突的白色人工覆盖输入；删除摘要“异常流水”卡片、账号行异常数量/操作和跳转成本异常页的入口，不改造成失败请求数。历史 T03/T03-R1 异常流水页面和证据表继续保留，不作破坏性删除。
+- 验收：同一时间范围内，经营页全站/分组/账号的请求、Token、账号计费、用户扣费与 Sub 原生账号统计口径一致；聚合守恒且无重复；利润和利润率仅为透明派生；旧证据缺失不再导致官方流水被排除；桌面和移动端现有页面状态不回归。
+
 ### T09 官方更新冲突停止与人工处理
 
+- 当前状态：`BACKLOG`，暂停在 T11-R1 之后。
 - 目标：无冲突时快速准备官方更新；有冲突时可靠停止并交给管理员人工处理。
 - 范围：候选准备状态机、冲突日志持久化、管理员状态提示和手动更新边界。
 - 固定提示：`存在冲突，需要手动查看冲突日志并更新。`
@@ -146,5 +162,6 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08、T10、T11 已完成生产验收；当前发布车道空闲。T09 与 S1-R2 继续排队，必须从最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
+- T07、T08、T10 已完成生产验收；T11 的结构范围已完成，但经营数据口径待 T11-R1 纠偏。当前发布车道空闲，下一包只能是 T11-R1。
+- T09 与 S1-R2 继续排队，必须等待 T11-R1 完成推送、部署和即时功能验收后，才能从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

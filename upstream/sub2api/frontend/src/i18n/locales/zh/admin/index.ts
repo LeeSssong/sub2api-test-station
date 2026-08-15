@@ -19,7 +19,7 @@ export default {
   accountProfitability: {
     eyebrow: '经营分析',
     title: '账号盈利',
-    description: '按时间范围查看每个账号的实际收入、支出、盈利与利润率。未知成本会明确标记为待配置。',
+    description: '按时间范围查看原生用量、账号成本、用户扣费、利润与利润率。',
     export: '导出 CSV',
     dateRange: '统计时间范围',
     startDate: '开始日期',
@@ -45,10 +45,10 @@ export default {
     pendingCost: '待配置',
     pendingConversion: '待换算',
     empty: '当前筛选条件下暂无账号数据。',
-    loadError: '账号盈利数据加载失败，请重试。',
+    loading: '正在加载经营数据…', refreshing: '正在刷新…', loadError: '账号盈利数据加载失败，请重试。',
     retry: '重试',
-    columns: { account: '账号', source: '来源', status: '成本状态', expense: '支出', expenseCurrency: '支出币种', revenue: '收入', profit: '盈利', margin: '利润率', requests: '请求数', exceptions: '异常', actions: '今日覆盖' },
-    summary: { revenue: '收入', expense: '支出', profit: '盈利', margin: '利润率', pending: '待配置账号', exceptions: '异常流水', unconsumedBalance: '用户未消费余额' },
+    columns: { account: '账号', requests: '请求数', tokens: 'Token', accountCost: '账号成本', userCost: '用户扣费', profit: '利润', margin: '利润率' },
+    summary: { requests: '请求数', tokens: 'Token', accountCost: '账号成本', userCost: '用户扣费', profit: '利润', margin: '利润率', unconsumedBalance: '用户未消费余额' },
     oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',
   },
   usageCostDetail: {

@@ -84,6 +84,12 @@ Docker network. Do not add any credential value, upstream URL, model name, or
 account name. After enablement, wait for the timer to produce the first pulse;
 do not invoke the native account-test endpoint manually.
 
+The root wrapper reads only `SUB2API_ACTIVE_UPSTREAM` from the protected
+blue-green `release.env` and accepts exactly `sub2api-blue:8080` or
+`sub2api-green:8080`. The selected value is passed to the restricted collector
+as its native API base URL, so slot promotion does not leave the monitor on a
+stale or nonexistent Docker alias.
+
 ## Inspect
 
 The following inspection is read-only and does not trigger an account test:

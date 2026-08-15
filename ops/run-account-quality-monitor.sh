@@ -25,6 +25,7 @@ absolute_file() {
 
 root=${ACCOUNT_QUALITY_ROOT:-}
 admin_key_file=${ACCOUNT_QUALITY_ADMIN_KEY_FILE:-}
+release_env_file=${ACCOUNT_QUALITY_RELEASE_ENV_FILE:-/opt/sub2api/production/release.env}
 evidence_dir=${ACCOUNT_QUALITY_EVIDENCE_DIR:-}
 runner_image=${ACCOUNT_QUALITY_RUNNER_IMAGE:-}
 docker_network=${ACCOUNT_QUALITY_DOCKER_NETWORK:-}
@@ -32,6 +33,7 @@ docker_bin=${ACCOUNT_QUALITY_DOCKER_BIN:-/usr/bin/docker}
 
 absolute_directory "$root" || fail 40
 absolute_file "$admin_key_file" || fail 42
+absolute_file "$release_env_file" || fail 40
 absolute_directory "$evidence_dir" || fail 40
 [ -x "$docker_bin" ] || fail 43
 [ -f "$root/collect-account-quality-pulse.rb" ] || fail 40
@@ -44,6 +46,15 @@ case "$runner_image" in
 esac
 
 [ "$docker_network" = "sub2api_default" ] || fail 40
+
+active_upstream=$(awk -F= '
+  $1 == "SUB2API_ACTIVE_UPSTREAM" { count += 1; value = $2 }
+  END { if (count == 1) print value; else exit 1 }
+' "$release_env_file") || fail 40
+case "$active_upstream" in
+  sub2api-blue:8080|sub2api-green:8080) ;;
+  *) fail 40 ;;
+esac
 
 if ! "$docker_bin" run --rm --user 10002:10002 --read-only --cap-drop ALL \
   --security-opt no-new-privileges --pids-limit 64 --memory 128m --cpus 0.25 \
@@ -80,9 +91,10 @@ if "$docker_bin" run --rm --network "$docker_network" \
   -v "$root:/work:ro" \
   -v "$admin_key_file:/run/secrets/sub2api-admin-api-key:ro" \
   -v "$evidence_dir:/var/lib/account-quality:rw" \
+  -e "ACCOUNT_QUALITY_BASE_URL=http://$active_upstream" \
   --entrypoint /bin/sh "$runner_image" -ec '
     ruby /work/collect-account-quality-pulse.rb collect \
-      --base-url http://sub2api:8080 \
+      --base-url "$ACCOUNT_QUALITY_BASE_URL" \
       --admin-key-file /run/secrets/sub2api-admin-api-key \
       --output /var/lib/account-quality/account-quality-result.json
   ' >/dev/null 2>&1

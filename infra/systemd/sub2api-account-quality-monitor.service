@@ -6,11 +6,13 @@ ConditionPathExists=/opt/sub2api/production/ops/account-quality/run-account-qual
 
 [Service]
 Type=oneshot
-User=ubuntu
-Group=ubuntu
+User=root
+Group=root
 EnvironmentFile=/etc/sub2api/account-quality-monitor.env
 Environment=DOCKER_CONFIG=/run/account-quality-monitor
 ExecStart=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh
+OnFailure=sub2api-account-quality-monitor-failure.service
+Environment=T10_UNIT_NAME=sub2api-account-quality-monitor.service
 RuntimeDirectory=account-quality-monitor
 UMask=0077
 TimeoutStartSec=4min

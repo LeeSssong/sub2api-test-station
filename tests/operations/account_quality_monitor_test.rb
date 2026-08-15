@@ -8,6 +8,8 @@ require "tmpdir"
 ROOT = File.expand_path("../..", __dir__)
 WRAPPER = File.join(ROOT, "ops/run-account-quality-monitor.sh")
 SERVICE = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor.service")
+FAILURE_SERVICE = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor-failure.service")
+FAILURE_SIGNAL = File.join(ROOT, "ops/account-quality-failure-signal.sh")
 TIMER = File.join(ROOT, "infra/systemd/sub2api-account-quality-monitor.timer")
 ENVIRONMENT = File.join(ROOT, "infra/systemd/account-quality-monitor.env.example")
 
@@ -56,8 +58,11 @@ class AccountQualityMonitorTest < Minitest::Test
     timer = File.read(TIMER)
     environment = File.read(ENVIRONMENT)
 
-    assert_includes service, "User=ubuntu"
-    assert_includes service, "Group=ubuntu"
+    assert_includes service, "User=root"
+    assert_includes service, "Group=root"
+    assert_includes service, "OnFailure=sub2api-account-quality-monitor-failure.service"
+    assert File.file?(FAILURE_SERVICE)
+    assert File.executable?(FAILURE_SIGNAL)
     assert_includes service, "EnvironmentFile=/etc/sub2api/account-quality-monitor.env"
     assert_includes service, "ExecStart=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh"
     assert_includes service, "ConditionPathExists=/opt/sub2api/production/ops/account-quality/run-account-quality-monitor.sh"

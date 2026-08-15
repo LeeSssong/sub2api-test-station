@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore the native account-quality timer's executable chain, preserve the protected production tree and UID `10002` collector boundary, and prove redacted failure delivery through the existing native alert/Feishu path.
+**Goal:** Restore the native account-quality timer's executable chain, preserve the protected production tree and UID `10002` collector boundary, and preserve the redacted failure integration with the existing native alert/Feishu path. A6 delivery is explicitly user-waived for this release and remains unverified.
 
 **Architecture:** A root-owned host wrapper performs fixed path, mode, credential, Docker, and real bind-mount preflight, then launches the existing restricted collector. A systemd failure hook invokes one deterministic redacted signal helper even when `ExecStart` fails before execution. Existing `relay-ops` consumes the native `/api/v1/admin/ops/alert-events` projection and sends the signal through its existing Feishu path; no new receiver or control plane is introduced.
 
@@ -16,7 +16,8 @@
 - Preserve the existing timer name, cadence, evidence filenames, JSON shape, and read-only business boundary.
 - A6 is explicitly waived by the user for this release. Do not run or invent
   the controlled delivery receipt; record it as unverified residual risk while
-  preserving the existing receiver integration and redaction contract.
+  preserving the existing receiver integration and redaction contract. This
+  residual risk does not block implementation or deployment in this release.
 - No implementation task may modify `main`, project queue/progress ledgers, production state, or deploy from a candidate worktree.
 - No GitHub Actions; release and deployment remain in the reviewed local/host chain.
 
@@ -80,7 +81,7 @@
 - [ ] **Step 5: Run `systemd-analyze verify` against the rendered unit/timer where systemd is available, plus all static tests; record the host limitation otherwise without claiming A4.**
 - [ ] **Step 6: Commit** `fix: run account quality monitor through root host orchestration`.
 
-### Task 4: Existing receiver integration and controlled delivery evidence
+### Task 4: Existing receiver integration and waiver evidence
 
 **Files:**
 - Modify: `tests/relay_ops/validate_relay_ops_contract.sh`
@@ -90,14 +91,14 @@
 
 **Interfaces:**
 - Consumes: the Task 1 `t10.failure.v1` journal signal and the existing native alert-event projection.
-- Produces: read-only receiver evidence proving one controlled `203/EXEC` signal was projected by Sub2API and delivered once to the existing Feishu destination.
+- Produces: read-only receiver contract evidence and an explicit record that the controlled `203/EXEC` delivery drill is user-waived/unverified.
 
-- [ ] **Step 1: Add a delivery test fixture** that rejects any new receiver/API path and asserts the existing relay-ops client reads `/api/v1/admin/ops/alert-events`, preserves the redacted fields, and deduplicates the same signal.
+- [ ] **Step 1: Add a receiver contract fixture** that rejects any new receiver/API path and asserts the existing relay-ops client reads `/api/v1/admin/ops/alert-events`, preserves the redacted fields, and deduplicates the same signal without claiming external receipt.
 - [ ] **Step 2: Run the relay-ops contract tests** with `bash tests/relay_ops/validate_relay_ops_contract.sh`; expected result is failure until the fixture and documented event contract are wired.
 - [ ] **Step 3: Implement only the existing event projection/consumer wiring needed to recognize `t10.failure.v1`**, without adding a table or parallel endpoint. Keep the alert payload free of credentials, paths, commands, account identifiers, models, and raw stderr.
 - [ ] **Step 4: Record the user's A6 waiver in the implementation verification report**, inspect the existing native alert-event and relay-ops contracts read-only, and confirm no new receiver/API/table/control plane is introduced.
 - [ ] **Step 5: Record A1-A5 and A7-A9 evidence plus A6 as explicitly unverified under user waiver; update the runbook with reversible install, optional future drill, inspection, and rollback commands.**
-- [ ] **Step 6: Commit** `test: prove account quality monitor alert delivery chain`.
+- [ ] **Step 6: Commit** `test: record account quality monitor alert contract`.
 
 ### Task 5: Full candidate validation and root handoff
 

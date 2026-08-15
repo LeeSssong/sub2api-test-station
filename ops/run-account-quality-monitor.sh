@@ -3,7 +3,13 @@ set -eu
 
 umask 077
 
+signal_helper=${ACCOUNT_QUALITY_FAILURE_SIGNAL:-$(dirname "$0")/account-quality-failure-signal.sh}
+
 fail() {
+  phase=${1:-preflight}
+  reason=${2:-unknown}
+  T10_FAILURE_PHASE=$phase T10_REASON_CODE=$reason T10_UNIT_NAME=${T10_UNIT_NAME:-sub2api-account-quality-monitor.service} \
+    "$signal_helper" >/dev/null 2>&1 || true
   printf '%s\n' "account_quality_monitor status=failed"
   exit 1
 }
@@ -29,18 +35,19 @@ runner_image=${ACCOUNT_QUALITY_RUNNER_IMAGE:-}
 docker_network=${ACCOUNT_QUALITY_DOCKER_NETWORK:-}
 docker_bin=${ACCOUNT_QUALITY_DOCKER_BIN:-/usr/bin/docker}
 
-absolute_directory "$root" || fail
-absolute_file "$admin_key_file" || fail
-absolute_directory "$evidence_dir" || fail
-[ -x "$docker_bin" ] || fail
-[ -f "$root/collect-account-quality-pulse.rb" ] || fail
+absolute_directory "$root" || fail preflight path_missing
+absolute_file "$admin_key_file" || fail credentials credential_invalid
+absolute_directory "$evidence_dir" || fail evidence path_missing
+[ -x "$docker_bin" ] || fail runtime docker_unavailable
+[ -f "$root/collect-account-quality-pulse.rb" ] || fail preflight path_missing
+[ -w "$evidence_dir" ] || fail evidence mount_write
 
 case "$runner_image" in
   sub2api-relay-ops:*) ;;
-  *) fail ;;
+  *) fail preflight path_mode ;;
 esac
 
-[ "$docker_network" = "sub2api_default" ] || fail
+[ "$docker_network" = "sub2api_default" ] || fail preflight path_mode
 
 printf '%s\n' "account_quality_monitor status=started"
 if "$docker_bin" run --rm --network "$docker_network" \
@@ -59,5 +66,5 @@ if "$docker_bin" run --rm --network "$docker_network" \
 then
   printf '%s\n' "account_quality_monitor status=succeeded"
 else
-  fail
+  fail collector collector_failed
 fi

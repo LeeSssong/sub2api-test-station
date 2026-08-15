@@ -414,8 +414,23 @@ module AccountQualityPulse
         raise ValidationError, "output path must be absolute" unless File.absolute_path(path) == path
       end
 
+      originals = {}
+      [result_path, history_path].each do |path|
+        originals[path] = File.file?(path) ? [File.binread(path), File.stat(path).mode & 0o777] : nil
+      end
       write_atomic(result_path, JSON.pretty_generate(result))
       write_atomic(history_path, JSON.pretty_generate(history))
+    rescue StandardError
+      originals&.each do |path, original|
+        if original
+          File.open(path, "wb", original[1]) { |file| file.write(original[0]); file.fsync }
+        else
+          File.delete(path) if File.exist?(path)
+        end
+      rescue SystemCallError
+        # Preserve the original publication error while leaving evidence for operator recovery.
+      end
+      raise
     end
 
     def self.write_atomic(path, content)
@@ -425,7 +440,11 @@ module AccountQualityPulse
         file.flush
         file.fsync
         File.rename(file.path, path)
+        raise ValidationError, "published evidence readback failed" unless File.read(path) == content
       end
+      File.open(File.dirname(path), "r") { |directory| directory.fsync }
+    rescue SystemCallError
+      raise ValidationError, "evidence publication failed"
     end
     private_class_method :write_atomic
   end

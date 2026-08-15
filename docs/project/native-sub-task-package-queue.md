@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T004424Z-production-3723827.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T07 已完成合并、推送、维护发布和线上验收。最终 `main@44ec9ed2797e86ae6ad140dd85b9efa91d29756d`、tree `cb6c9fea78b406741fa5709b389ea5f45b57bc24` 已推送 `origin/main`；发布证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-15-main-44ec9ed-t07-global-score-weights-v2.json`（0600）。候选迁移哈希 `d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5` 通过新增 MAINTENANCE_8 白名单从生产 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71` 受控升级；宿主维护矩阵、控制器合同、bash 语法和 diff-check 通过。生产记录 `/var/lib/sub2api/release-records/20260815T004424Z-production-3723827.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，PostgreSQL/Redis/Caddy 保持既有身份；公网 `/healthz`、`/readyz`、`/health` 分别返回 alive/ready/ok；管理员全局评分权重 API 返回默认 `15/45/20/20`，账号监控接口返回 7 组/78 个账号。T07 已完成；T08 已登记为 `DESIGNING`，等待用户可见顶层任务完成 brainstorming 与规格门禁。
+- 当前发布状态：T07 已完成合并、推送、维护发布和线上验收。最终 `main@44ec9ed2797e86ae6ad140dd85b9efa91d29756d`、tree `cb6c9fea78b406741fa5709b389ea5f45b57bc24` 已推送 `origin/main`；发布证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-15-main-44ec9ed-t07-global-score-weights-v2.json`（0600）。候选迁移哈希 `d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5` 通过新增 MAINTENANCE_8 白名单从生产 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71` 受控升级；宿主维护矩阵、控制器合同、bash 语法和 diff-check 通过。生产记录 `/var/lib/sub2api/release-records/20260815T004424Z-production-3723827.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，PostgreSQL/Redis/Caddy 保持既有身份；公网 `/healthz`、`/readyz`、`/health` 分别返回 alive/ready/ok；管理员全局评分权重 API 返回默认 `15/45/20/20`，账号监控接口返回 7 组/78 个账号。T07 已完成；T08 候选 `0a514cb0f` 已完成实现、专项验证和最终全分支终审，但因根 `main` 已推进到 `3e44f599d`，当前处于 `REFRESH_REQUIRED`，等待同一顶层任务刷新、重验和再终审。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -96,6 +96,8 @@
 
 ### T08 “暂不建议入组”轻提示
 
+- 当前状态：`REFRESH_REQUIRED`。用户可见顶层任务 `01a00306-a473-73f3-9240-addaf11b119d` 已完成完整规格/计划门禁、TDD、逐任务复审和最终全分支终审；候选 `codex/t08-do-not-recommend-light-hint@0a514cb0fbc48be02dd4eae4fe58a4b632b2cd17` 基于 `main@5fa37dbfd`，54 项定向测试、typecheck、build、diff-check 均通过，worktree 干净，无迁移/配置/依赖/GitHub Actions 变化，`downtime_required=false`。根 `main` 已推进到 `3e44f599d3f626b7bef1d251cfd75eeb93ff038c`，因此必须先刷新最新主线并重新专项验证、最终独立复审，旧 SHA 不得直接合并。
+
 - 目标：保留紧凑标签，把原因收进按需提示而不是常驻文本。
 - 范围：账号卡片标签、桌面悬浮/点击、移动端点击、可访问性和防溢出测试。
 - 不包含：推荐算法、分组迁移或卡片其他布局重构。
@@ -126,5 +128,5 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1 均已完成生产验收；T07 已合并并推送，但因 migration 223 改变生产迁移集合而停在 `downtime_required=true` 门禁，生产仍未改变。
-- T07 已完成生产验收；T08 当前处于 `DESIGNING`，仅允许完成现状探索、方案比较、分段设计、规格书、自审与代审批准，不得实施代码、写计划或启动实现代理，直至规格门禁完成。S1 旧候选继续冻结。
+- T07 已完成生产验收；T08 已交付旧基线候选并处于 `REFRESH_REQUIRED`，只允许同一顶层任务刷新最新 `main`、解决 T08 范围冲突、重跑专项验证和最终独立复审；未经根总控后续精确授权不得合并、推送或部署。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

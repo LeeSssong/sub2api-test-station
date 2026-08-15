@@ -17,7 +17,15 @@ hardening, and publishes the existing JSON evidence files atomically.
 - `ruby -Itests tests/operations/account_quality_monitor_test.rb`: PASS (4 tests)
 - `ruby -Itests tests/operations/collect_account_quality_pulse_test.rb`: PASS (12 tests)
 - `sh -n ops/account-quality-failure-signal.sh ops/run-account-quality-monitor.sh`: PASS
+- `ruby -c ops/collect-account-quality-pulse.rb`: PASS
+- `sh tests/operations/account_quality_monitor_systemd_contract_test.sh`: PASS
+- `bash tests/operations/account_quality_monitor_alert_delivery_test.sh`: PASS with A6 explicitly waived/unverified
+- `bash tests/relay_ops/validate_relay_ops_contract.sh`: PASS
 - `git diff --check`: PASS
+- Local Docker image build from `infra/Dockerfile.relay-ops`: PASS
+- Real UID/GID `10002:10002` Docker volume preflight using the built image:
+  write, fsync, same-directory rename, readback, delete, directory fsync, and
+  zero remaining files: PASS
 
 The candidate preserves the intended native receiver boundary and adds no
 receiver, API, table, or parallel control plane. This worktree does not contain

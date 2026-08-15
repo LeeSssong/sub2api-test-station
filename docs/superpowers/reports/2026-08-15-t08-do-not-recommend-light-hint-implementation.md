@@ -104,4 +104,4 @@ Remaining risks are limited to the final root integration surface:
 
 The branch also received a follow-up accessibility fix after review: keyboard focus can now move into the Teleported close button without dismissing the hover-click tooltip first.
 
-Independent whole-branch review: requested separately after this handoff was prepared.
+Independent whole-branch review: clean; ready for root review.

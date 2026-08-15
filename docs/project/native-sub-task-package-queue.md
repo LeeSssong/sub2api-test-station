@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1 均已部署并完成各自既定线上验证；最新生产记录为 `20260814T181009Z-production-3436954.json`，活动槽 `green`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前唯一发布候选：无。T06-R1 已从最新干净 `main@005ec883f5a8504b8407f62699bb450a10c3e61a` 刷新后，以候选 `d50c47d744b405f54b8bf420de68a59ed70b9e0c` 经根授权合并为 `main@459a020fd99b605c3da50ead2cbc10121e57cbcd`；合并后专项门禁通过，生产记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json` 为 `succeeded/promoted`、`rolled_back=false`、`state=promoted`、`downtime_required=false`，活动槽 `green`，source tree `48c97a63e5fffe9a7991bc7ce65eceb98a4d6b35`，迁移哈希 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`；公网三个健康端点均 200。管理员登录态验收确认利润页深色主题可读、范围和表头中文、今日/24h/31d/刷新原生请求正常、`/api/v1/xingqiao/**` 为 0、无控制面/完整性/unknown 文案。当前 T07 进入 `DESIGNING`，尚无候选 SHA。
+- 当前唯一发布候选：T07 已由用户可见顶层任务完成设计、实施、独立复审和根最终闭环，候选 `f26892107ebe19af392c643dc5f60a7e194e4d57` 经根授权合并为 `main@8b04ae4733ac48616c77737d05c410dd64c39e45`，tree `a04a9bdaf2838ba5f5e4e017411507427b1dbdf9`，并已推送 `origin/main`。合并后 49 项前端专项、typecheck、production build、后端迁移/repository/service/admin-handler/routes、server build、真实 PostgreSQL `TestMigrationsSchema` 和 diff-check 均通过；`0600` 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-15-main-8b04ae473-t07-global-score-weights-v1.json`。候选迁移哈希 `d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5` 与生产 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71` 不同，发布状态为 `BLOCKED`：`downtime_required=true`、`reason_code=migration_set_changed`、预计不可用上限 300 秒；任何构建传输、停服、迁移、重启或切流均未开始，等待用户本次明确停机确认。生产仍为 T06-R1 记录 `/var/lib/sub2api/release-records/20260814T181009Z-production-3436954.json`，活动槽 `green`。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
@@ -88,7 +88,7 @@
 
 ### T07 全局评分设置
 
-- 当前状态：`IMPLEMENTING`。用户可见顶层任务 `01a0018d-65fa-7dd2-9393-31d9e1643adc` 已从 `main@efa0ef54cb432e784796add380727bc5366d2d06` 建立独立 worktree 和分支 `codex/t07-global-score-weights`；正式规格 `ae8ae2000` 与修订计划 `3e860e2d1` 已由根总控依据 2026-08-15 用户代审授权复审并批准。顶层任务已获准按 TDD、fresh implementer、逐任务独立复审和最终全分支复审实施；进入终审前必须整合最新根 `main@fc44bde10` 或更新提交。尚无 READY 候选、合并或生产变更。
+- 当前状态：`BLOCKED`（已合并、已推送、已验证发布前门禁，未部署）。用户可见顶层任务 `01a0018d-65fa-7dd2-9393-31d9e1643adc` 已完成完整规格/计划、TDD、逐任务复审、全分支审查与两轮竞态修复复审；候选 `f26892107ebe19af392c643dc5f60a7e194e4d57` 已合入并推送 `main@8b04ae4733ac48616c77737d05c410dd64c39e45`。运行时与迁移专项、真实 PostgreSQL schema、前端 49 项、typecheck/build 和 diff-check 均通过。migration 223 为 expand-only singleton 表，但完整迁移集合相对生产变化，预检结论为 `downtime_required=true / migration_set_changed / 300 秒`；按硬门禁停止在生产变更前，等待用户明确停机确认。T08 未启动。
 - 目标：在未进入具体分组时提供全局评分权重设置。
 - 范围：全局权重持久化/API、账号监控全局设置按钮、复用分组评分弹窗；默认权重保持成本 15、成功率 45、首字延迟 20、总延迟 20。
 - 不包含：分组权重迁移、评分指标增加或调度算法修改。
@@ -125,6 +125,6 @@
 
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
-- 账号监控卡片、T05、T06/T06-R1 均已完成生产验收；当前无发布候选。下一任务 T07 必须从 T06-R1 收尾治理提交之后的最新干净 `main` 创建新的用户可见顶层任务，完成完整 brainstorming、规格书/计划批准和独立 worktree 门禁后才能实施。
-- T07 尚未启动；S1 旧候选继续冻结。
+- 账号监控卡片、T05、T06/T06-R1 均已完成生产验收；T07 已合并并推送，但因 migration 223 改变生产迁移集合而停在 `downtime_required=true` 门禁，生产仍未改变。
+- T07 在用户本次明确停机确认前保持 `BLOCKED`；不得构建传输、停服、迁移、重启、切流、清理候选或启动 T08。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

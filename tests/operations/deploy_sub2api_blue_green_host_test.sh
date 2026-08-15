@@ -999,6 +999,10 @@ test_authorized_maintenance_transition() {
   local claim_token_old_hash=1f47135fedc31788d5ea690ec7f2dbb2dcac7b743a46bc50305143b621b5ee98
   local claim_token_new_hash=fadb98d43e3d8e8b41178203638912cc32592a1368091e4cb44399926daead5d
   local claim_token_mutated_candidate_hash=738ad63324d900283383a523ce82e821fe5d8bb19d56de3834a6c817fb6611a5
+  local maintenance_8_old_hash=6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71
+  local maintenance_8_new_hash=d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5
+  local maintenance_8_wrong_old_hash=6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf70
+  local maintenance_8_wrong_new_hash=d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b4
   local legacy_old_hash=c618fc284897bb24c662297ba6cb263064a1e04a024e5432f50f082ac7317408
   local legacy_new_hash=e95b3512ccfc5b5103b4547857c437338921fd6bb463b7f2078c9ee24da4f0fc
 
@@ -1105,6 +1109,46 @@ test_authorized_maintenance_transition() {
     || fail "claim-token maintenance transition failed: $(cat "$CASE_DIR/stderr")"
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
     || fail 'claim-token transition did not use the bounded maintenance path'
+
+  setup_case maintenance_8_unauthorized
+  write_meminfo
+  MIGRATIONS_HASH=$maintenance_8_new_hash
+  "$REAL_JQ" --arg hash "$maintenance_8_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  expect_failure maintenance_8_unauthorized run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'unauthorized maintenance-8 transition was not gated'
+  assert_no_mutation maintenance_8_unauthorized
+
+  setup_case maintenance_8_illegal_old_hash
+  write_meminfo
+  MIGRATIONS_HASH=$maintenance_8_new_hash
+  "$REAL_JQ" --arg hash "$maintenance_8_wrong_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$maintenance_8_wrong_old_hash \
+    expect_failure maintenance_8_illegal_old_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'maintenance-8 wrong old hash was not gated'
+  assert_no_mutation maintenance_8_illegal_old_hash
+
+  setup_case maintenance_8_illegal_new_hash
+  write_meminfo
+  MIGRATIONS_HASH=$maintenance_8_wrong_new_hash
+  "$REAL_JQ" --arg hash "$maintenance_8_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$maintenance_8_old_hash \
+    expect_failure maintenance_8_illegal_new_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'maintenance-8 wrong new hash was not gated'
+  assert_no_mutation maintenance_8_illegal_new_hash
+
+  setup_case maintenance_8_success
+  write_meminfo
+  MIGRATIONS_HASH=$maintenance_8_new_hash
+  "$REAL_JQ" --arg hash "$maintenance_8_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$maintenance_8_old_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "maintenance-8 transition failed: $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'maintenance-8 transition did not use the bounded maintenance path'
 
   setup_case maintenance_rollback
   write_meminfo

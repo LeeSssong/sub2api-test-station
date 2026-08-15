@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T11 均已部署并完成各自既定线上验证；最新生产记录为 `20260815T135236Z-production-75345.json`，活动槽 `blue`，不得重复部署同一 SHA。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T11 已完成合并、推送、无停机蓝绿发布和管理员登录态线上验收。最终 `main@d17968ab95cb5f9db2a7374c59222b8b01c0e46f`、tested tree `05ce07aa4f58346ab25ae9db37baa2d95569662a`；生产记录 `/var/lib/sub2api/release-records/20260815T135236Z-production-75345.json` 为 `succeeded/promoted`、`rolled_back=false`，生产 `release-state` 绑定同一 commit/tree/迁移哈希，活动槽 `blue`。用户明确豁免 fresh 全分支独立终审，豁免不等同审查 PASS；其余合并后专项、发布和线上门禁均已完成。T10 现在是下一优先任务并继续 `DESIGNING`；T09 继续排队。
+- 当前发布状态：T10 已经根授权合入 `main@c53eb3ab48dc3d7ae06b8b4d78d0e911bb8454b2`，状态 `INTEGRATING`，正在执行合并后快速门禁，尚未推送或部署。候选 `codex/t10-account-quality-monitor@16a8ec76d` 已刷新到 `main@f6ec86733`；根全差异复核发现并修复真实 UID 10002 预检入口缺陷，定向测试、静态合同、镜像构建和真实 Docker UID 10002 写/fsync/rename/readback/cleanup 均通过。fresh reviewer 调度和独立本地 Codex reviewer 分别因协调接口与本机失效 API 凭据不可用，作为流程例外记录，不倒称审查 PASS。用户明确豁免 A6 实际告警送达和 A10 所有按时间等待验证，两项保留为未验证风险、不阻塞发布；仍必须通过功能本身、`downtime_required=false` 预检、即时 systemd/evidence 和健康验收。T09 继续排队。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -107,7 +107,7 @@
 
 ### T10 账号质量监控器可执行链路
 
-- 当前状态：`SPEC_APPROVED_FOR_PLAN`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 和独立 worktree `/Users/gongtengxinwen/.codex/worktrees/e0ba/sub2api搭建` 已刷新到 `main@8f79f1330`，规格审查报告与 writing plan 已形成，尚未实现、合并、推送或部署。根审查确认复用健康 `sub2api-relay-ops-1` 与原生 `/api/v1/admin/ops/alert-events` 投影/Feishu 投递链，不新增 receiver/API/table/控制面。用户于 2026-08-15 明确豁免 A6 受控 `203/EXEC` 实际送达一次门禁；该项保留为未验证风险，不倒称 PASS。继续执行 A1-A5、A7-A10、专项复审、合并、部署和线上验收。2026-08-15 生产只读复核确认 timer 为 `active/waiting`，service 仍为 `Result=exit-code`、`ExecMainStatus=203`、`User=ubuntu`；`/opt/sub2api/production` 仍为 `0700 root:root`。
+- 当前状态：`INTEGRATING`。用户可见顶层任务 `01a004ce-6aee-76c1-8efb-7b915f43d290` 的候选 `codex/t10-account-quality-monitor@16a8ec76d` 已完成实现、第一轮独立复审修复、根全差异复核、定向验证和 handoff，并经根授权合入 `main@c53eb3ab4`。实现包含 root host orchestration、UID/GID 10002 真实证据预检、正确 `[Unit] OnFailure`、脱敏稳定 `t10.failure.v1`、分阶段退出码和双文件原子发布/恢复。合并前 2/75、4/111、13/53 测试、systemd/relay-ops 合同、语法/diff、镜像构建和真实 Docker UID 10002 预检通过。fresh reviewer 调度失败作为流程例外，不倒称 PASS；根复核发现的真实 Ruby entrypoint 缺陷已在 `0294cd97f` 修复并验证。用户豁免 A6 实际送达和 A10 按时间等待，两项保留未验证；当前执行合并后门禁、预检、推送、部署和即时功能验收。
 - 目标：让既有只读账号质量采集器在 systemd timer 下可稳定执行，并能被管理员/运维确认真实运行结果。
 - 范围：ExecStart 可执行路径/目录权限或等价的受控安装布局、systemd unit 合同、只读证据输出、失败告警和真实运行验收。
 - 不包含：调度器权重、账号准入算法、余额/利润、监控卡片双口径、用户页面、外部控制面、官方更新冲突处理。
@@ -146,5 +146,5 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08、T11 已完成生产验收；当前没有任务占用发布车道。T10 是下一优先任务，继续其正式规格、计划、实现和独立复审流程，完成后才能进入根发布车道。T09 与 S1-R2 继续排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
+- T07、T08、T11 已完成生产验收；T10 当前独占 `INTEGRATING` 发布车道，完成推送、无停机部署和即时线上功能验收前不得启动 T09。T09 与 S1-R2 继续排队，必须从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务后才能启动；S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

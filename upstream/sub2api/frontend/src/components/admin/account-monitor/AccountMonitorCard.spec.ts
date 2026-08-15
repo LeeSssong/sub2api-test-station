@@ -115,6 +115,16 @@ describe('AccountMonitorCard', () => {
 		observed_at: '2026-08-10T00:00:00Z',
 		source: 'monitor_probe',
 	}
+	const notRecommendedRecommendation = {
+		status: 'not_recommended',
+		target: '',
+		target_name: '',
+		action: 'none',
+		reason_codes: ['success_rate_below_special'],
+		sample_count: 72,
+		observed_at: '2026-08-10T00:00:00Z',
+		source: 'monitor_probe',
+	}
 
 	it('exposes native account entry points without changing the compact card projection', async () => {
 		const accountInfo = vi.fn()
@@ -162,6 +172,224 @@ describe('AccountMonitorCard', () => {
 		})
 		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain(label)
 		expect(wrapper.find('[data-test="recommendation-warning"]').exists()).toBe(false)
+	})
+
+	it('keeps the not-recommended label compact and hides its reason by default', () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const metadata = wrapper.get('[data-test="account-metadata"]')
+
+		expect(wrapper.get('[data-test="group-recommendation"]').text()).toContain('暂不建议入组')
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').exists()).toBe(true)
+		expect(metadata.text()).not.toContain('原因：')
+	})
+
+	it('uses the primary reason code and a stable fallback', () => {
+		const knownWrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const knownButton = knownWrapper.get('[data-test="recommendation-reason-button"]')
+		expect(knownButton.attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
+
+		const emptyWrapper = mountCard({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: { ...notRecommendedRecommendation, reason_codes: [] },
+			},
+		})
+		expect(emptyWrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：主动探测质量不满足目标')
+
+		const unknownWrapper = mountCard({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: { ...notRecommendedRecommendation, reason_codes: ['unknown_reason'] },
+			},
+		})
+		expect(unknownWrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：主动探测质量不满足目标')
+	})
+
+	it('opens the not-recommended reason on hover', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+
+		await wrapper.get('[data-test="recommendation-reason-trigger"]').trigger('mouseenter')
+		await nextTick()
+		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
+
+		expect(reason?.textContent).toContain('原因：探测成功率未达到特惠门槛')
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+	})
+
+	it('opens and closes the not-recommended reason on click', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		await button.trigger('click')
+		await nextTick()
+		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+
+		await button.trigger('click')
+		await nextTick()
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+	})
+
+	it('opens the reason from keyboard focus', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		button.element.focus()
+		await nextTick()
+		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
+
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+		expect(button.attributes('title')).toContain('暂不建议入组')
+		expect(button.attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
+		expect(button.attributes('aria-label')).toContain('暂不建议入组')
+		expect(button.attributes('aria-label')).toContain('原因：探测成功率未达到特惠门槛')
+	})
+
+	it('resets the open not-recommended reason when the refreshed recommendation payload changes', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		await button.trigger('click')
+		await nextTick()
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+		const closeButton = document.body.querySelector('button[aria-label="Close"]')
+		if (!(closeButton instanceof HTMLButtonElement)) {
+			throw new Error('close button not found')
+		}
+		closeButton.focus()
+		await nextTick()
+
+		await wrapper.setProps({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: {
+					...notRecommendedRecommendation,
+					reason_codes: ['sample_insufficient'],
+					observed_at: '2026-08-11T00:00:00Z',
+				},
+			},
+		})
+		await nextTick()
+
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(document.activeElement).toBe(wrapper.get('[data-test="recommendation-reason-button"]').element)
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：主动探测样本不足')
+	})
+
+	it('resets the open not-recommended reason when an identical recommendation object replaces the previous payload', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		await button.trigger('click')
+		await nextTick()
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+		const closeButton = document.body.querySelector('button[aria-label="Close"]')
+		if (!(closeButton instanceof HTMLButtonElement)) {
+			throw new Error('close button not found')
+		}
+		closeButton.focus()
+		await nextTick()
+
+		await wrapper.setProps({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: {
+					...notRecommendedRecommendation,
+					reason_codes: [...notRecommendedRecommendation.reason_codes],
+				},
+			},
+		})
+		await nextTick()
+
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(document.activeElement).toBe(wrapper.get('[data-test="recommendation-reason-button"]').element)
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
+	})
+
+	it('closes the reason without firing card actions', async () => {
+		const accountInfo = vi.fn()
+		const accountEdit = vi.fn()
+		const accountDelete = vi.fn()
+		const accountMore = vi.fn()
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+			onAccountInfo: accountInfo,
+			onAccountEdit: accountEdit,
+			onAccountDelete: accountDelete,
+			onAccountMore: accountMore,
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		await button.trigger('click')
+		await nextTick()
+		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+
+		document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+		await nextTick()
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+
+		await button.trigger('click')
+		await nextTick()
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+		await nextTick()
+		expect(reason?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(accountInfo).not.toHaveBeenCalled()
+		expect(accountEdit).not.toHaveBeenCalled()
+		expect(accountDelete).not.toHaveBeenCalled()
+		expect(accountMore).not.toHaveBeenCalled()
+	})
+
+	it('keeps the other recommendation states unchanged', () => {
+		const recommendedWrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: recommendation } })
+		const observeWrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: { ...recommendation, status: 'observe', action: 'keep' } } })
+		const blockedWrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: { ...recommendation, status: 'blocked', action: 'hold' } } })
+		const migrationWrapper = mountCard({ account: { ...account, group_names: ['GPT-Plus'], group_recommendation: recommendation } })
+		const notRecommendedWrapper = mountCard({ account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation } })
+
+		expect(recommendedWrapper.get('[data-test="group-recommendation"]').text()).toContain('推荐：GPT-Pro')
+		expect(observeWrapper.get('[data-test="group-recommendation"]').text()).toContain('继续观察')
+		expect(blockedWrapper.get('[data-test="group-recommendation"]').text()).toContain('暂缓迁入')
+		expect(migrationWrapper.get('[data-test="recommendation-tooltip-trigger"]').exists()).toBe(true)
+		expect(notRecommendedWrapper.get('[data-test="recommendation-reason-trigger"]').exists()).toBe(true)
+		expect(recommendedWrapper.find('[data-test="recommendation-reason-trigger"]').exists()).toBe(false)
+		expect(observeWrapper.find('[data-test="recommendation-reason-trigger"]').exists()).toBe(false)
+		expect(blockedWrapper.find('[data-test="recommendation-reason-trigger"]').exists()).toBe(false)
+		expect(migrationWrapper.find('[data-test="recommendation-reason-trigger"]').exists()).toBe(false)
+	})
+
+	it('keeps the hint width and wrapping contract', () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+
+		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
+		expect(reason?.className.split(/\s+/)).toEqual(expect.arrayContaining([
+			'max-w-[min(16rem,calc(100vw-1.5rem))]',
+			'line-clamp-2',
+			'break-words',
+			'whitespace-normal',
+		]))
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('aria-label')).toContain('原因：探测成功率未达到特惠门槛')
 	})
 
 	it('shows an accessible warning tooltip only for an explicit formal-group migration', async () => {

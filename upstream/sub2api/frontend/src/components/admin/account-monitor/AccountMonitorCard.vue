@@ -38,6 +38,21 @@
               </template>
               <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
             </HelpTooltip>
+            <HelpTooltip v-else-if="isNotRecommended" class="!ml-0" trigger="hover-click" :reset-key="recommendationResetKey" data-test="recommendation-reason-trigger">
+              <template #trigger>
+                <button
+                  class="inline-flex items-center gap-0.5 text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:text-red-200"
+                  data-test="recommendation-reason-button"
+                  type="button"
+                  :title="`${recommendationLabel}，${recommendationReasonHint}`"
+                  :aria-label="`${recommendationLabel}，${recommendationReasonHint}`"
+                >
+                  <span data-test="group-recommendation">{{ recommendationLabel }}</span>
+                  <Icon name="infoCircle" size="xs" />
+                </button>
+              </template>
+              <div data-test="group-recommendation-reason" class="line-clamp-2 max-w-[min(16rem,calc(100vw-1.5rem))] whitespace-normal break-words leading-5">{{ recommendationReasonHint }}</div>
+            </HelpTooltip>
             <span v-else data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
           </template>
         </div>
@@ -257,8 +272,10 @@ const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
+const recommendationIdentityRevision = ref(0)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
+const isNotRecommended = computed(() => recommendation.value?.status === 'not_recommended')
 const recommendationTargetLabel = computed(() => recommendation.value?.target_name || ({ gpt_pro: 'GPT-Pro', gpt_plus: 'GPT-Plus', gpt_special: 'GPT-特惠' }[recommendation.value?.target ?? ''] ?? '目标分组'))
 const recommendationLabel = computed(() => {
   switch (recommendation.value?.status) {
@@ -274,6 +291,13 @@ const recommendationTextClass = computed(() => ({
   'text-amber-600 dark:text-amber-300': recommendation.value?.status === 'observe' || recommendation.value?.status === 'blocked',
   'text-red-600 dark:text-red-300': recommendation.value?.status === 'not_recommended',
 }))
+watch(recommendation, (next, previous) => {
+  if (next === previous) return
+  if (next?.status === 'not_recommended' || previous?.status === 'not_recommended') {
+    recommendationIdentityRevision.value += 1
+  }
+})
+const recommendationResetKey = computed(() => isNotRecommended.value ? `${recommendationIdentityRevision.value}|${recommendation.value?.reason_codes?.[0] ?? ''}|${recommendation.value?.observed_at ?? ''}` : '')
 const recommendationReason = computed(() => {
   const code = recommendation.value?.reason_codes?.[0]
   return ({
@@ -291,6 +315,7 @@ const recommendationReason = computed(() => {
     latency_exceeds_limit: '完整响应耗时超过目标',
   }[code ?? ''] ?? '主动探测质量不满足目标')
 })
+const recommendationReasonHint = computed(() => isNotRecommended.value ? `原因：${recommendationReason.value}` : '')
 const recommendationTooltip = computed(() => {
   const item = recommendation.value
   if (!item) return ''

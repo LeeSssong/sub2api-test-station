@@ -64,9 +64,6 @@ app.use(createPinia())
 app.use(createRouter({ history: createMemoryHistory(), routes: [] }))
 app.use(i18n)
 app.component('AppLayout', AppLayout)
-document.documentElement.style.width = '390px'
-document.documentElement.style.minHeight = '844px'
-document.body.style.width = '390px'
 document.body.style.margin = '0'
 app.mount('#app')
 
@@ -94,7 +91,10 @@ function finish() {
     const all = [...summary, ...scoped]
     const expected = '$123,456,789,012,345.67'
     const valueNodes = [...document.querySelectorAll('[data-test="summary-cost"] > div:last-child, [data-test="summary-user-cost"] > div:last-child, [data-test="group-summary-10"] .card:nth-child(3) > div:last-child, [data-test="group-summary-10"] .card:nth-child(4) > div:last-child')] as HTMLElement[]
-    const result = { viewport: { width: 390, height: 844, browserInnerWidth: innerWidth, browserInnerHeight: innerHeight }, all, cards, adjacentOverlap, completeText: all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')), ellipsisOrTruncate: all.some(item => /…/.test(item.text)) || valueNodes.some(node => getComputedStyle(node).textOverflow === 'ellipsis' || node.className.includes('truncate')), pass: all.every(item => !item.overflow && !item.outside) && !adjacentOverlap && all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')) && valueNodes.every(node => !getComputedStyle(node).textOverflow.includes('ellipsis') && !node.className.includes('truncate')) }
+    const viewport = { width: 390, height: 844, browserInnerWidth: innerWidth, browserInnerHeight: innerHeight, clientWidth: document.documentElement.clientWidth, clientHeight: document.documentElement.clientHeight }
+    const viewportExact = innerWidth === 390 && innerHeight === 844 && viewport.clientWidth === 390 && viewport.clientHeight === 844
+    const externalTargets = performance.getEntriesByType('resource').map(entry => (entry as PerformanceResourceTiming).name).filter(url => !url.startsWith(location.origin) && !url.startsWith('data:') && !url.startsWith('blob:'))
+    const result = { viewport, viewportExact, externalTargets, all, cards, adjacentOverlap, completeText: all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')), ellipsisOrTruncate: all.some(item => /…/.test(item.text)) || valueNodes.some(node => getComputedStyle(node).textOverflow === 'ellipsis' || node.className.includes('truncate')), pass: viewportExact && externalTargets.length === 0 && all.every(item => !item.overflow && !item.outside) && !adjacentOverlap && all.every(item => item.text.includes(expected) || item.text.includes('-$123,456,789,012,345.67')) && valueNodes.every(node => !getComputedStyle(node).textOverflow.includes('ellipsis') && !node.className.includes('truncate')) }
     const output = document.createElement('pre'); output.id = 'browser-result'; output.textContent = JSON.stringify(result); document.body.append(output); window.stop()
   }, 50)
 }

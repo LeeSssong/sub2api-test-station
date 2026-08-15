@@ -35,7 +35,10 @@ All commands below were freshly run on 2026-08-15 in the stated candidate worktr
   - `go test ./internal/service -run 'TestAccountFinancial|TestAccountProfitability' -count=1`: PASS, service package `0.983s`, exit 0.
   - `go test ./internal/handler/admin -run 'TestAccountFinancial|TestDashboardHandlerAccountProfitability' -count=1`: PASS, handler package `0.617s`, exit 0.
   - `go test ./cmd/server -run '^$' -count=1`: PASS, `0.758s [no tests to run]`, exit 0.
-  - `go test -tags=integration ./internal/repository -run 'TestUsageLog_ReadAccountFinancialUsage_NativeContract' -count=1`: UNVERIFIED, exact failure `panic: rootless Docker not found`, testcontainers stack, exit 1. No substitute database was used.
+  - Real PostgreSQL qualification environment: active Docker context `colima`, Docker server `29.5.2`, socket mode `0600`; process environment names `DOCKER_HOST` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`.
+  - `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock go test -tags=integration ./internal/repository -run 'TestUsageLog_ReadAccountFinancialUsage_NativeContract' -count=1 -v`: PASS, test `0.04s`, package `4.642s`, exit 0.
+  - `DOCKER_HOST=unix:///Users/gongtengxinwen/.colima/default/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock go test -tags=integration ./internal/repository -run 'TestUsageLog_ReadAccountFinancialUsage_NativeContract' -count=1`: fresh confirmation PASS, package `3.272s`, exit 0.
+  - Testcontainers-created PostgreSQL, Redis, and Ryuk containers from this qualification were automatically removed by Ryuk; no manual cleanup or repository/config change was required.
 - Frontend working directory: `/Users/gongtengxinwen/.codex/worktrees/ec64/sub2api搭建/upstream/sub2api/frontend`
   - `pnpm exec vitest run src/api/__tests__/admin.accountFinancial.spec.ts src/views/admin/__tests__/AccountProfitabilityView.spec.ts`: PASS, 2 files and 18 tests passed, exit 0.
   - `pnpm typecheck`: PASS, `vue-tsc --noEmit`, exit 0.
@@ -57,9 +60,10 @@ All commands below were freshly run on 2026-08-15 in the stated candidate worktr
 - Configuration changes: none.
 - Dependency changes: none.
 - GitHub Actions changes: none.
+- Unverified: authenticated 390x844 evidence only; no safe local authenticated page, screenshot, or four width values were available.
 - `downtime_required`: false. The candidate contains no schema, migration, configuration, dependency, workflow, or data migration change; root controller may use the reviewed blue-green path subject to root gates.
 - Rollback: root controller switches the blue-green deployment back to the previous active application image; no database rollback or data cleanup is required.
-- Remaining risks: 31-day aggregation load and query plan have not been observed at production scale; historical missing names; floating-point display; real PostgreSQL numeric behavior and `[from,to)` execution remain unverified; authenticated responsive evidence remains unverified; build warnings remain.
+- Remaining risks: 31-day aggregation load and query plan have not been observed at production scale; historical missing names; floating-point display; authenticated responsive evidence remains unverified; build warnings remain.
 
 ## Final whole-branch review
 
@@ -67,6 +71,6 @@ All commands below were freshly run on 2026-08-15 in the stated candidate worktr
 - Important findings: none.
 - Deferred locale minor: NON-BLOCKING.
 - Reviewer conclusion: Ready to proceed to candidate handoff/root review: Yes.
-- Merge status: With fixes; root review must address the two environment UNVERIFIED gates and 31-day production-scale aggregation/query-plan observation before merge authorization.
+- Original merge status: With fixes. The PostgreSQL gate was subsequently closed on a real PostgreSQL testcontainer; merge assessment requires root re-review of the remaining authenticated 390x844 and 31-day production-scale aggregation/query-plan gates.
 
 Not performed: merge, push, deploy, production mutation, production verification, root ledger/queue update, or worktree deletion.

@@ -38,7 +38,7 @@
               </template>
               <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
             </HelpTooltip>
-            <HelpTooltip v-else-if="isNotRecommended" class="!ml-0" trigger="hover-click" data-test="recommendation-reason-trigger">
+            <HelpTooltip v-else-if="isNotRecommended" class="!ml-0" trigger="hover-click" :reset-key="recommendationResetKey" data-test="recommendation-reason-trigger">
               <template #trigger>
                 <button
                   class="inline-flex items-center gap-0.5 text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:text-red-200"
@@ -290,6 +290,7 @@ const recommendationTextClass = computed(() => ({
   'text-amber-600 dark:text-amber-300': recommendation.value?.status === 'observe' || recommendation.value?.status === 'blocked',
   'text-red-600 dark:text-red-300': recommendation.value?.status === 'not_recommended',
 }))
+const recommendationResetKey = computed(() => isNotRecommended.value ? `${recommendation.value?.reason_codes?.[0] ?? ''}|${recommendation.value?.observed_at ?? ''}` : '')
 const recommendationReason = computed(() => {
   const code = recommendation.value?.reason_codes?.[0]
   return ({

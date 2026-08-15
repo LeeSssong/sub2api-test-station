@@ -257,6 +257,33 @@ describe('AccountMonitorCard', () => {
 		expect(button.attributes('aria-label')).toContain('原因：探测成功率未达到特惠门槛')
 	})
 
+	it('resets the open not-recommended reason when the refreshed recommendation payload changes', async () => {
+		const wrapper = mountCard({
+			account: { ...account, group_names: ['GPT-测试分组'], group_recommendation: notRecommendedRecommendation },
+		})
+		const button = wrapper.get('[data-test="recommendation-reason-button"]')
+
+		await button.trigger('click')
+		await nextTick()
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).not.toContain('display: none')
+
+		await wrapper.setProps({
+			account: {
+				...account,
+				group_names: ['GPT-测试分组'],
+				group_recommendation: {
+					...notRecommendedRecommendation,
+					reason_codes: ['sample_insufficient'],
+					observed_at: '2026-08-11T00:00:00Z',
+				},
+			},
+		})
+		await nextTick()
+
+		expect(document.body.querySelector('[data-test="group-recommendation-reason"]')?.closest('[role="tooltip"]')?.getAttribute('style')).toContain('display: none')
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：主动探测样本不足')
+	})
+
 	it('closes the reason without firing card actions', async () => {
 		const accountInfo = vi.fn()
 		const accountEdit = vi.fn()

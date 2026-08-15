@@ -25,16 +25,23 @@ Implementation commits:
 - `d2fe007bb` `feat: add on-demand not-recommended reason`
 - `1e9b9591e` `fix: harden not-recommended hint interactions`
 - `82eddab22` `fix: ignore hidden tooltip escape events`
+- `6bcf2180e` `fix: reset identical recommendation replacements`
 
-Changed files in the implementation slice:
+Changed frontend files in the implementation slice:
 - `upstream/sub2api/frontend/src/components/common/HelpTooltip.vue`
 - `upstream/sub2api/frontend/src/components/common/__tests__/HelpTooltip.spec.ts`
 - `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.vue`
 - `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts`
 
-Branch-local planning/spec artifacts also exist from the approved prep phase:
+Complete branch delta against `main@751402105` is limited to:
+- `.superpowers/sdd/2026-08-15-t08-do-not-recommend-light-hint/progress.md`
 - `docs/superpowers/specs/2026-08-15-t08-do-not-recommend-light-hint-design.md`
 - `docs/superpowers/plans/2026-08-15-t08-do-not-recommend-light-hint.md`
+- `docs/superpowers/reports/2026-08-15-t08-do-not-recommend-light-hint-implementation.md`
+- `upstream/sub2api/frontend/src/components/common/HelpTooltip.vue`
+- `upstream/sub2api/frontend/src/components/common/__tests__/HelpTooltip.spec.ts`
+- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.vue`
+- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts`
 
 ## 3. TDD tests and exact command results
 
@@ -47,17 +54,22 @@ pnpm vitest run \
   src/components/admin/account-monitor/AccountMonitorCard.spec.ts
 ```
 
-Result: `60 passed`
+Result: `61 passed`
 
 Underlying suite evidence:
 - `HelpTooltip.spec.ts`: `15/15` passed
-- `AccountMonitorCard.spec.ts`: `45/45` passed
+- `AccountMonitorCard.spec.ts`: `46/46` passed
 
 Follow-up TDD evidence for the scoped review finding:
 - RED: `pnpm vitest run src/components/common/__tests__/HelpTooltip.spec.ts -t "does not steal focus on Escape when hover-click details are hidden"` failed because hidden Escape moved focus from the external next control to the tooltip trigger.
 - GREEN: the same focused test passed after `82eddab22`.
 - GREEN: `pnpm vitest run src/components/common/__tests__/HelpTooltip.spec.ts` passed `15/15`.
 - GREEN: the combined two-file run passed `60/60`.
+
+Follow-up TDD evidence for the identical cloned-payload replacement finding:
+- RED: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts -t "identical recommendation object replaces"` failed because the tooltip stayed visible after a cloned `not_recommended` recommendation object replaced the previous payload with the same `reason_codes[0]` and `observed_at`.
+- GREEN: the same focused regression passed after `6bcf2180e`.
+- GREEN: `pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts` passed `46/46`.
 
 Required static checks already passed:
 
@@ -79,6 +91,8 @@ Refresh audit note: the root-supplied diff evidence reported `git diff --exit-co
 Local browser capture was intentionally not expanded further in this turn.
 
 Evidence path: deferred to the root total's logged-in online verification after merge/deploy.
+
+Root acceptance override: the root controller explicitly rejected treating local mock/browser screenshots as a blocking candidate-gate requirement for this round. Real desktop, mobile, narrow-screen, and account-action interaction acceptance remains a root hard gate after merge/deploy using an administrator logged-in online session. This task window did not build local mocks, inspect login, modify auth data, or touch production.
 
 ## 5. Interface, migration, dependency, configuration, and GitHub Actions status
 
@@ -121,6 +135,16 @@ Scoped fix package:
 - `82eddab22` added RED/GREEN coverage for hidden Escape focus hijacking and guarded `onDocumentKeydown` with `!show.value`.
 - Root-control fresh read-only scoped re-review of `1e9b9591e..82eddab22` returned APPROVE: P0/P1/P2/P3 = 0, open findings = 0. Review scope was limited to `HelpTooltip.vue` and `HelpTooltip.spec.ts`; it confirmed the `!show.value` guard closes the hidden-state Escape focus hijack, the real reopen test remains valid, HelpTooltip `15/15` passed, `git diff --check` passed, and the reviewer did not write the worktree.
 
+Root fresh whole-branch review over `751402105..334951bef` returned CHANGES REQUIRED with P2 = 2 and P3 = 1:
+- P2: identical cloned `not_recommended` payload replacement did not reset open/pinned tooltip state when visible fields stayed the same.
+- P2: local mock/browser screenshot requirement was over-classified as blocking for the candidate; root acceptance override keeps real browser/device validation as a post-merge/deploy administrator-session gate.
+- P3: implementation report branch delta omitted the report itself and `.superpowers/sdd` progress.
+
+Second scoped fix package:
+- `6bcf2180e` added a RED/GREEN regression for identical cloned recommendation replacement and combined a card-local recommendation object identity revision with the existing reason/observed reset key.
+- This report now includes the full branch delta, including itself and `.superpowers/sdd/2026-08-15-t08-do-not-recommend-light-hint/progress.md`.
+- The browser validation classification is documented as a root acceptance override, with logged-in online desktop/mobile/narrow-screen acceptance deferred to root after merge/deploy.
+
 ## 10. Remaining risks and independent review result
 
 Remaining risks are limited to the final root integration surface:
@@ -128,4 +152,4 @@ Remaining risks are limited to the final root integration surface:
 - any unintended regression in the existing formal-migration tooltip branch;
 - real production auth/session state after deploy.
 
-Independent whole-branch review: pending after final validation and scoped re-review.
+Independent whole-branch review: pending; this controller must report `BLOCKED_ON_WHOLE_BRANCH_REVIEW` after final local verification because root control owns the fresh scoped/whole-branch re-review.

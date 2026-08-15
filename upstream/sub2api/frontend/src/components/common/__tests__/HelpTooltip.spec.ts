@@ -186,6 +186,39 @@ describe('HelpTooltip', () => {
     wrapper.unmount()
   })
 
+  it('resets hover-click pinning when switching to and from a legacy trigger', async () => {
+    const wrapper = mount(HelpTooltip, {
+      attachTo: document.body,
+      props: {
+        content: 'transition details',
+        trigger: 'hover-click',
+      },
+    })
+
+    const trigger = wrapper.get('.group')
+    const tooltip = getTooltipElement()
+
+    await trigger.trigger('click')
+    await nextTick()
+    expect(tooltip.style.display).not.toBe('none')
+
+    await wrapper.setProps({ trigger: 'hover' })
+    await trigger.trigger('mouseleave')
+    await nextTick()
+    expect(tooltip.style.display).toBe('none')
+
+    await wrapper.setProps({ trigger: 'hover-click' })
+    await trigger.trigger('mouseenter')
+    await nextTick()
+    expect(tooltip.style.display).not.toBe('none')
+
+    await trigger.trigger('mouseleave')
+    await nextTick()
+    expect(tooltip.style.display).toBe('none')
+
+    wrapper.unmount()
+  })
+
 	it('opens hover details when a keyboard-focusable trigger receives focus', async () => {
 		const wrapper = mount(HelpTooltip, {
 			attachTo: document.body,

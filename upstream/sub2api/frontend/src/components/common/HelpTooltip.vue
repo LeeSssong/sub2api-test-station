@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick } from 'vue'
+import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   content?: string
@@ -15,6 +15,12 @@ const clickPinned = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
 const tooltipStyle = ref({ top: '0px', left: '0px' })
+
+watch(() => props.trigger, (trigger) => {
+  if (trigger !== 'hover-click') {
+    clickPinned.value = false
+  }
+})
 
 function openTooltip() {
   show.value = true
@@ -35,7 +41,7 @@ function onEnter() {
 
 function onLeave() {
   if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
-  if (clickPinned.value) return
+  if (props.trigger === 'hover-click' && clickPinned.value) return
   closeTooltip()
 }
 
@@ -48,7 +54,7 @@ function onFocusOut(event: FocusEvent) {
   if (props.trigger !== 'hover' && props.trigger !== 'hover-click') return
   const nextTarget = event.relatedTarget as Node | null
   if (nextTarget && triggerRef.value?.contains(nextTarget)) return
-  if (clickPinned.value) return
+  if (props.trigger === 'hover-click' && clickPinned.value) return
   closeTooltip()
 }
 

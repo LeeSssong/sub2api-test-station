@@ -11,6 +11,8 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('file-saver', () => ({ saveAs }))
 
 import CostExceptionTable from '../CostExceptionTable.vue'
+import enAdmin from '@/i18n/locales/en/admin'
+import zhAdmin from '@/i18n/locales/zh/admin'
 
 const response = {
   generated_at: '2026-08-13T08:00:00Z', total: 2, page: 1, page_size: 20,
@@ -31,6 +33,77 @@ describe('CostExceptionTable', () => {
   })
 
   afterEach(() => vi.unstubAllGlobals())
+
+  it('provides localized loading, empty, error, and retry labels', () => {
+    expect(zhAdmin.costExceptions).toMatchObject({ loading: expect.any(String), empty: expect.any(String), loadError: expect.any(String), retry: '重试' })
+    expect(enAdmin.costExceptions).toMatchObject({ loading: expect.any(String), empty: expect.any(String), loadError: expect.any(String), retry: 'Retry' })
+  })
+
+  it('shows loading while the list request is pending', async () => {
+    let resolve!: (value: typeof response) => void
+    listCostExceptions.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const wrapper = mount(CostExceptionTable, { props: { filters: { review_status: 'pending' } } })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="cost-exceptions-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="cost-exceptions-empty"]').exists()).toBe(false)
+    resolve(response)
+    await flushPromises()
+  })
+
+  it('shows an explicit empty state for zero matching rows', async () => {
+    listCostExceptions.mockResolvedValueOnce({ ...response, total: 0, items: [] })
+    const wrapper = mount(CostExceptionTable, { props: { filters: { review_status: 'pending' } } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-empty"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('admin.costExceptions.empty')
+  })
+
+  it('shows a retryable error and reloads with the routed filters', async () => {
+    listCostExceptions.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce(response)
+    const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42, review_status: 'pending' } } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-error"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="cost-exceptions-review"]').element).toHaveProperty('value', 'pending')
+    await wrapper.get('[data-test="cost-exceptions-retry"]').trigger('click')
+    await flushPromises()
+    expect(listCostExceptions).toHaveBeenLastCalledWith(expect.objectContaining({ account_id: 42, review_status: 'pending' }))
+    expect(wrapper.find('[data-test="select-11"]').exists()).toBe(true)
+  })
+
+  it('lets an explicit all selection override routed filters across unrelated prop changes', async () => {
+    const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42, review_status: 'pending' } } })
+    await flushPromises()
+    await wrapper.get('[data-test="cost-exceptions-review"]').setValue('')
+    await flushPromises()
+    expect(listCostExceptions).toHaveBeenLastCalledWith(expect.objectContaining({ account_id: 42, review_status: undefined }))
+
+    await wrapper.setProps({ filters: { account_id: 43, review_status: 'pending' } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="cost-exceptions-review"]').element).toHaveProperty('value', '')
+    expect(listCostExceptions).toHaveBeenLastCalledWith(expect.objectContaining({ account_id: 43, review_status: undefined }))
+  })
+
+  it('keeps the latest reload authoritative while an older request is pending', async () => {
+    let resolveFirst!: (value: typeof response) => void
+    let resolveSecond!: (value: typeof response) => void
+    listCostExceptions
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+    const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42 } } })
+    await wrapper.vm.$nextTick()
+    await wrapper.setProps({ filters: { account_id: 43 } })
+    await wrapper.vm.$nextTick()
+
+    resolveFirst(response)
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-loading"]').exists()).toBe(true)
+
+    resolveSecond({ ...response, total: 1, items: [{ ...response.items[0], usage_log_id: 22, account_id: 43 }] })
+    await flushPromises()
+    expect(wrapper.find('[data-test="cost-exceptions-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="select-22"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="select-11"]').exists()).toBe(false)
+  })
 
   it('shows provenance and reviews selected rows', async () => {
     const wrapper = mount(CostExceptionTable, { props: { filters: { account_id: 42 } } })

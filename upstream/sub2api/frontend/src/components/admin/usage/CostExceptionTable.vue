@@ -2,12 +2,12 @@
   <div class="space-y-3 p-4">
     <div class="flex flex-wrap items-center gap-2">
       <input v-model.trim="search" class="input min-w-52" :placeholder="t('admin.costExceptions.search')" @keyup.enter="reload" />
-      <select v-model="evidenceStatus" class="input" @change="reload">
+      <select v-model="evidenceStatus" class="input" data-test="cost-exceptions-evidence" @change="reload">
         <option value="">{{ t('admin.costExceptions.allEvidence') }}</option>
         <option value="unavailable">unavailable</option>
         <option value="confirmed_zero">confirmed_zero</option>
       </select>
-      <select v-model="reviewStatus" class="input" @change="reload">
+      <select v-model="reviewStatus" class="input" data-test="cost-exceptions-review" @change="reload">
         <option value="pending">{{ t('admin.costExceptions.pending') }}</option>
         <option value="reviewed">{{ t('admin.costExceptions.reviewed') }}</option>
         <option value="">{{ t('admin.costExceptions.allReviews') }}</option>
@@ -21,6 +21,10 @@
       <table class="min-w-full text-sm">
         <thead><tr class="border-b text-left"><th class="p-2"></th><th class="p-2">ID</th><th class="p-2">{{ t('admin.costExceptions.time') }}</th><th class="p-2">{{ t('admin.costExceptions.account') }}</th><th class="p-2">{{ t('admin.costExceptions.requestId') }}</th><th class="p-2">{{ t('admin.costExceptions.model') }}</th><th class="p-2">{{ t('admin.costExceptions.revenue') }}</th><th class="p-2">{{ t('admin.costExceptions.source') }}</th><th class="p-2">{{ t('admin.costExceptions.evidence') }}</th><th class="p-2">{{ t('admin.costExceptions.reason') }}</th><th class="p-2">{{ t('admin.costExceptions.trace') }}</th><th class="p-2">{{ t('admin.costExceptions.reviewStatus') }}</th><th class="p-2">{{ t('common.actions') }}</th></tr></thead>
         <tbody>
+          <tr v-if="loading" data-test="cost-exceptions-loading"><td colspan="13" class="p-8 text-center text-gray-500">{{ t('admin.costExceptions.loading') }}</td></tr>
+          <tr v-else-if="loadError" data-test="cost-exceptions-error"><td colspan="13" class="p-8 text-center"><p class="text-red-600 dark:text-red-400">{{ loadError }}</p><button class="btn btn-secondary mt-3" data-test="cost-exceptions-retry" @click="reload">{{ t('admin.costExceptions.retry') }}</button></td></tr>
+          <tr v-else-if="items.length === 0" data-test="cost-exceptions-empty"><td colspan="13" class="p-8 text-center text-gray-500">{{ t('admin.costExceptions.empty') }}</td></tr>
+          <template v-else>
           <tr v-for="item in items" :key="item.usage_log_id" class="border-b border-gray-100 dark:border-dark-700">
             <td class="p-2"><input :data-test="`select-${item.usage_log_id}`" type="checkbox" :value="item.usage_log_id" v-model="selectedIds" /></td>
             <td class="p-2 font-mono">{{ item.usage_log_id }}</td>
@@ -36,6 +40,7 @@
             <td class="p-2">{{ item.review_status }}</td>
             <td class="p-2"><button class="btn btn-secondary btn-sm" :disabled="item.review_status === 'reviewed' || mutating" @click="reviewItem(item.usage_log_id)">{{ t('admin.costExceptions.reviewOne') }}</button><button class="btn btn-ghost btn-sm ml-1" @click="emit('detail', item.usage_log_id)">{{ t('usage.detail.action') }}</button></td>
           </tr>
+          </template>
         </tbody>
       </table>
     </div>
@@ -56,8 +61,10 @@ const emit = defineEmits<{ detail: [id: number]; reviewed: [] }>()
 const { t } = useI18n()
 const items = ref<AdminUsageCostException[]>([])
 const total = ref(0); const page = ref(1); const pageSize = ref(20)
-const search = ref(''); const evidenceStatus = ref(''); const reviewStatus = ref('')
+const search = ref(''); const evidenceStatus = ref(typeof props.filters.evidence_status === 'string' ? props.filters.evidence_status : ''); const reviewStatus = ref(typeof props.filters.review_status === 'string' ? props.filters.review_status : '')
 const selectedIds = ref<number[]>([]); const mutating = ref(false); const exporting = ref(false); const reviewSummary = ref('')
+const loading = ref(false); const loadError = ref('')
+let reloadSequence = 0
 
 const query = computed<CostExceptionQueryParams>(() => ({
   page: page.value, page_size: pageSize.value,
@@ -65,12 +72,30 @@ const query = computed<CostExceptionQueryParams>(() => ({
   start_time: typeof props.filters.start_time === 'string' ? props.filters.start_time : undefined,
   end_time: typeof props.filters.end_time === 'string' ? props.filters.end_time : undefined,
   search: search.value || undefined,
-  evidence_status: evidenceStatus.value || (typeof props.filters.evidence_status === 'string' ? props.filters.evidence_status : undefined),
-  review_status: reviewStatus.value || (typeof props.filters.review_status === 'string' ? props.filters.review_status : undefined),
+  evidence_status: evidenceStatus.value || undefined,
+  review_status: reviewStatus.value || undefined,
 }))
 const reviewFilter = () => { const { page: _p, page_size: _s, ...filter } = query.value; return filter }
 
-const reload = async () => { const res = await adminUsageAPI.listCostExceptions(query.value); items.value = res.items; total.value = res.total; page.value = res.page; pageSize.value = res.page_size; selectedIds.value = [] }
+const reload = async () => {
+  const sequence = ++reloadSequence
+  loading.value = true
+  loadError.value = ''
+  try {
+    const res = await adminUsageAPI.listCostExceptions(query.value)
+    if (sequence !== reloadSequence) return
+    items.value = res.items
+    total.value = res.total
+    page.value = res.page
+    pageSize.value = res.page_size
+    selectedIds.value = []
+  } catch {
+    if (sequence !== reloadSequence) return
+    loadError.value = t('admin.costExceptions.loadError')
+  } finally {
+    if (sequence === reloadSequence) loading.value = false
+  }
+}
 const reviewItem = async (id: number) => { mutating.value = true; try { await adminUsageAPI.reviewOne(id, {}); await reload(); emit('reviewed') } finally { mutating.value = false } }
 const reviewSelection = async () => { mutating.value = true; try { await adminUsageAPI.reviewSelected({ usage_log_ids: selectedIds.value }); await reload(); emit('reviewed') } finally { mutating.value = false } }
 const reviewCurrentFilter = async () => { mutating.value = true; try { const res = await adminUsageAPI.reviewFiltered({ filter: reviewFilter(), max_usage_log_id: 0 }); reviewSummary.value = `${t('admin.costExceptions.cutoff')}: ${res.cutoff}; ${t('admin.costExceptions.matched')}: ${res.matched}; ${t('admin.costExceptions.updated')}: ${res.updated}; ${t('admin.costExceptions.skipped')}: ${res.skipped}`; await reload(); emit('reviewed') } finally { mutating.value = false } }
@@ -100,7 +125,12 @@ const exportCurrentFilter = async () => {
 const setPage = (value: number) => { page.value = value; void reload() }
 const setPageSize = (value: number) => { pageSize.value = value; page.value = 1; void reload() }
 const formatTrace = (trace: UsageCostTrace) => [trace.sub_actual_cost, trace.new_api_quota, trace.new_api_quota_per_unit, trace.normalized_cost_cny].map(v => v == null ? '-' : v).join(' / ')
-watch(() => props.filters, () => { page.value = 1; void reload() }, { deep: true })
+watch(() => [props.filters.account_id, props.filters.start_time, props.filters.end_time, props.filters.evidence_status, props.filters.review_status] as const, (values, oldValues) => {
+  if (!oldValues || values[3] !== oldValues[3]) evidenceStatus.value = typeof values[3] === 'string' ? values[3] : ''
+  if (!oldValues || values[4] !== oldValues[4]) reviewStatus.value = typeof values[4] === 'string' ? values[4] : ''
+  page.value = 1
+  void reload()
+})
 onMounted(reload)
 defineExpose({ reload })
 </script>

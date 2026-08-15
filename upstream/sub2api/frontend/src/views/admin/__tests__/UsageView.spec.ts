@@ -247,6 +247,7 @@ describe('admin UsageView route filters', () => {
     getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
     getModelStats.mockReset().mockResolvedValue({ models: [] })
     getById.mockReset()
+    listCostExceptions.mockReset().mockResolvedValue({ generated_at: '2026-08-15T10:00:00Z', items: [], total: 0, page: 1, page_size: 20 })
   })
 
   afterEach(() => {
@@ -287,6 +288,59 @@ describe('admin UsageView route filters', () => {
       start_time: expect.any(String),
       end_time: expect.any(String),
     }))
+  })
+
+  it('mounts the routed exception table once with pending account and RFC3339 range filters', async () => {
+    routeQuery.tab = 'cost-exceptions'
+    routeQuery.range = 'today'
+    routeQuery.account_id = '42'
+    routeQuery.review = 'pending'
+
+    mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await flushPromises()
+
+    expect(listCostExceptions).toHaveBeenCalledTimes(1)
+    expect(listCostExceptions).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 42,
+      review_status: 'pending',
+      start_time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      end_time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    }))
+  })
+
+  it('preserves the financial rolling 24-hour range for the exception request', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'))
+    routeQuery.tab = 'cost-exceptions'
+    routeQuery.range = '24h'
+    routeQuery.account_id = '42'
+    routeQuery.review = 'pending'
+
+    mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await flushPromises()
+
+    const params = listCostExceptions.mock.calls[0][0]
+    expect(params).toMatchObject({ account_id: 42, review_status: 'pending' })
+    expect(new Date(params.end_time).getTime() - new Date(params.start_time).getTime()).toBe(24 * 60 * 60 * 1000)
+    expect(params.end_time).toBe('2026-08-15T12:00:00.000Z')
   })
 
   it('opens the existing administrator detail from an exception row', async () => {

@@ -266,10 +266,11 @@ const breakdownFilters = computed(() => {
   return f
 })
 
+const exactCostExceptionWindow = ref<{ start: string; end: string } | null>(null)
 const costExceptionFilters = computed(() => ({
   account_id: filters.value.account_id,
-  start_time: toRFC3339(filters.value.start_date),
-  end_time: toRFC3339(filters.value.end_date, true),
+  start_time: exactCostExceptionWindow.value?.start ?? toRFC3339(filters.value.start_date),
+  end_time: exactCostExceptionWindow.value?.end ?? toRFC3339(filters.value.end_date, true),
   evidence_status: getSingleQueryValue(route.query.evidence),
   review_status: getSingleQueryValue(route.query.review),
 }))
@@ -352,7 +353,13 @@ const applyRouteQueryFilters = () => {
   const queryAccountId = getNumericQueryValue(route.query.account_id)
   const queryRange = getSingleQueryValue(route.query.range)
 
+  exactCostExceptionWindow.value = null
   if (!queryStartDate && !queryEndDate && queryRange) {
+    if (queryRange === '24h') {
+      const end = new Date()
+      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+      exactCostExceptionWindow.value = { start: start.toISOString(), end: end.toISOString() }
+    }
     const daysByRange: Record<string, number> = { today: 0, '7d': 6, '31d': 30 }
     const days = daysByRange[queryRange]
     if (days !== undefined) {
@@ -401,6 +408,7 @@ const loadRouteUserFilterLabel = async () => {
 }
 
 const onDateRangeChange = (range: { startDate: string; endDate: string; preset: string | null }) => {
+  exactCostExceptionWindow.value = null
   startDate.value = range.startDate
   endDate.value = range.endDate
   filters.value = {
@@ -584,6 +592,7 @@ const refreshData = () => {
   if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
+  exactCostExceptionWindow.value = null
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
@@ -828,6 +837,15 @@ const loadSavedColumns = () => {
 // Detail tabs
 type DetailTab = 'usage' | 'errors' | 'cost-exceptions' | 'ranking'
 const activeTab = ref<DetailTab>('usage')
+const normalizeDetailTab = (value: unknown): DetailTab => {
+  const tab = getSingleQueryValue(value as string | string[] | null | undefined)
+  return tab === 'errors' || tab === 'cost-exceptions' || tab === 'ranking' ? tab : 'usage'
+}
+const applyRouteState = () => {
+  applyRouteQueryFilters()
+  activeTab.value = normalizeDetailTab(route.query.tab)
+  if (activeTab.value === 'ranking') rankingMounted.value = true
+}
 const detailTabs = computed(() => [
   { key: 'usage' as const, label: t('usage.tabs.usage'), icon: 'document' as const },
   { key: 'errors' as const, label: t('usage.tabs.errors'), icon: 'exclamationTriangle' as const },
@@ -838,6 +856,12 @@ const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
 const rankingMounted = ref(false)
 const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
 const costExceptionTableRef = ref<InstanceType<typeof CostExceptionTable> | null>(null)
+
+watch(
+  () => [route.query.tab, route.query.range, route.query.account_id, route.query.evidence, route.query.review],
+  applyRouteState,
+  { immediate: true, flush: 'sync' },
+)
 
 const switchTab = (tab: DetailTab) => {
   activeTab.value = tab
@@ -911,11 +935,6 @@ const handleColumnClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(() => {
-  applyRouteQueryFilters()
-  const routeTab = getSingleQueryValue(route.query.tab)
-  if (routeTab === 'usage' || routeTab === 'errors' || routeTab === 'cost-exceptions' || routeTab === 'ranking') {
-    activeTab.value = routeTab
-  }
   void loadRouteUserFilterLabel()
   loadLogs()
   loadStats()

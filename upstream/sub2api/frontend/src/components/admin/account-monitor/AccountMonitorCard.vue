@@ -51,7 +51,7 @@
                   <Icon name="infoCircle" size="xs" />
                 </button>
               </template>
-              <div data-test="group-recommendation-reason" class="max-w-[min(16rem,calc(100vw-1.5rem))] whitespace-normal break-words leading-5">{{ recommendationReasonHint }}</div>
+              <div data-test="group-recommendation-reason" class="line-clamp-2 max-w-[min(16rem,calc(100vw-1.5rem))] whitespace-normal break-words leading-5">{{ recommendationReasonHint }}</div>
             </HelpTooltip>
             <span v-else data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
           </template>

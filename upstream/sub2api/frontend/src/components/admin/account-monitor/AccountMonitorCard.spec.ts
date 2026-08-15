@@ -384,9 +384,12 @@ describe('AccountMonitorCard', () => {
 		const reason = document.body.querySelector('[data-test="group-recommendation-reason"]')
 		expect(reason?.className.split(/\s+/)).toEqual(expect.arrayContaining([
 			'max-w-[min(16rem,calc(100vw-1.5rem))]',
+			'line-clamp-2',
 			'break-words',
 			'whitespace-normal',
 		]))
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('title')).toContain('原因：探测成功率未达到特惠门槛')
+		expect(wrapper.get('[data-test="recommendation-reason-button"]').attributes('aria-label')).toContain('原因：探测成功率未达到特惠门槛')
 	})
 
 	it('shows an accessible warning tooltip only for an explicit formal-group migration', async () => {

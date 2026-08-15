@@ -12,6 +12,7 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:browser:account-profitability": "node scripts/account-profitability-browser.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "pnpm": {

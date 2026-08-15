@@ -272,6 +272,7 @@ const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
+const recommendationIdentityRevision = ref(0)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
 const isNotRecommended = computed(() => recommendation.value?.status === 'not_recommended')
@@ -290,7 +291,13 @@ const recommendationTextClass = computed(() => ({
   'text-amber-600 dark:text-amber-300': recommendation.value?.status === 'observe' || recommendation.value?.status === 'blocked',
   'text-red-600 dark:text-red-300': recommendation.value?.status === 'not_recommended',
 }))
-const recommendationResetKey = computed(() => isNotRecommended.value ? `${recommendation.value?.reason_codes?.[0] ?? ''}|${recommendation.value?.observed_at ?? ''}` : '')
+watch(recommendation, (next, previous) => {
+  if (next === previous) return
+  if (next?.status === 'not_recommended' || previous?.status === 'not_recommended') {
+    recommendationIdentityRevision.value += 1
+  }
+})
+const recommendationResetKey = computed(() => isNotRecommended.value ? `${recommendationIdentityRevision.value}|${recommendation.value?.reason_codes?.[0] ?? ''}|${recommendation.value?.observed_at ?? ''}` : '')
 const recommendationReason = computed(() => {
   const code = recommendation.value?.reason_codes?.[0]
   return ({

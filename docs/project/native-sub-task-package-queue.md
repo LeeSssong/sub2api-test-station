@@ -2,10 +2,10 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11 均已部署并完成各自既定范围的线上验证；T11 仅完成三层结构与页面状态，不代表经营数据口径已正确。新的最高优先级任务为 `T11-R1 Sub 原生计费聚合经营页纠偏`。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11、T11-R1 均已部署并完成各自既定范围的线上验证。新的最高优先级任务为 `OAuth 图片编辑上传 MIME 兼容热修`；T09 与 S1-R2 排在其后。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T11-R1 候选 `6e38e2f9d607361145dd183384824c32cc8c3a9c` 已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main@1043ac3a9f68002e48ebe4e7c9800a70575a7967`；merged-main 后端 focused/neighboring、Colima 真 PostgreSQL integration、前端 19/19、typecheck/build、diff/范围/发布脚本语法门禁均通过，390×844 runner `pass=true`、`viewportExact=true`、金额卡片 `overflow=false`、`adjacentOverlap=false` 且无外部目标，`downtime_required=false` 静态依据成立。当前仍处于唯一串行 `INTEGRATING`，等待根发布账本提交、clean release worktree 的 final-tree evidence、推送和蓝绿部署；T09、S1-R2 与 OAuth 图片编辑上传 MIME 兼容热修继续暂停。
-- 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。T11-R1 仍是唯一实施 `P0/URGENT`。
+- 当前发布状态：T11-R1 最终 `main@7a7c9abd70fb108af6a06b93ef67eea3c4b34dab`、tree `916aaf16ad6ac354b8981755b8072dedab4f6cf7` 已推送并完成无停机蓝绿发布；生产记录 `/var/lib/sub2api/release-records/20260816T025715Z-production-655862.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`。登录态全站/分组/账号三层结构、原生 USD 经营字段、独立 CNY 余额卡、31 天 API、精确 390×844 金额卡片和三项健康均通过；发布车道现已空闲。
+- 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施 `P0/URGENT` 为 OAuth 图片编辑上传 MIME 兼容热修。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -127,7 +127,7 @@
 
 ### T11-R1 Sub 原生计费聚合经营页纠偏
 
-- 当前状态：`INTEGRATING`，优先级 `P0/URGENT`，当前唯一任务包；候选 `86d5c4cd41245e1adf98cb1dc52200044de38036`（implementation `c5df650cd4c1ab2f8dcd6982f31ffd842bf303a9`）已合入根 `main@b1cb220b1d8280aaace9a617152dc48e75020786`。merged-main 后端 4 组 focused、repository/service/admin/server neighboring 全包、Colima 真 PostgreSQL integration、前端 18/18、typecheck/build、diff/protected/forbidden/config/dependency/migration/workflow、发布脚本语法均通过；unexpected dirty 为 0，root 仅保留既有受保护内容。`downtime_required=false`；authenticated 390×844 与 31 天生产尺度 latency/query-plan 是部署后 `VERIFYING` 门禁。尚未推送或部署。
+- 当前状态：`DONE`。最终候选 `6e38e2f9d607361145dd183384824c32cc8c3a9c` 已合入并随 `main@7a7c9abd70fb108af6a06b93ef67eea3c4b34dab` 推送、无停机部署和线上验收；生产活动槽 `green`，source tree `916aaf16ad6ac354b8981755b8072dedab4f6cf7`，迁移哈希保持 `d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5`。前端 19/19、必要 lint/typecheck/build、后端 focused、范围/发布门禁通过；31 天 API HTTP 200/0.153 秒，精确 390×844 页面无横向溢出，金额卡片不重叠。完整证据见 `docs/superpowers/reports/2026-08-16-t11-r1-native-accounting-profitability-production.md`。
 - 目标：保留 T11 已上线的全站固定摘要、分组 Tab、账号行、今日/24 小时/7 天/31 天、刷新以及 loading/empty/error/retry 体验，但所有经营数值完全改用 Sub 原生 `usage_logs` 计费统计。
 - 官方字段：请求数 `requests`；Token 数 `tokens`；账号计费 `cost = SUM(COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)))`；用户扣费 `user_cost = SUM(actual_cost)`；利润可展示为 `user_cost - cost`，利润率由该利润除以 `user_cost` 派生。
 - 聚合维度：全站、`usage_logs.group_id` 分组、`(group_id, account_id)` 账号行；所有维度和时间范围必须来自同一官方流水与美元单位。
@@ -148,7 +148,7 @@
 
 ### T09 官方更新冲突停止与人工处理
 
-- 当前状态：`BACKLOG`，暂停在 T11-R1 之后。
+- 当前状态：`BACKLOG`，暂停在 OAuth 图片编辑上传 MIME 兼容热修之后。
 - 目标：无冲突时快速准备官方更新；有冲突时可靠停止并交给管理员人工处理。
 - 范围：候选准备状态机、冲突日志持久化、管理员状态提示和手动更新边界。
 - 固定提示：`存在冲突，需要手动查看冲突日志并更新。`
@@ -172,6 +172,6 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08、T10 已完成生产验收；T11 的结构范围已完成，但经营数据口径待 T11-R1 纠偏。当前发布车道空闲，下一包只能是 T11-R1。
-- T09 与 S1-R2 继续排队，必须等待 T11-R1 完成推送、部署和即时功能验收后，才能从届时最新干净 `main` 创建符合顶层任务门禁的用户可见任务；S1 旧候选继续冻结。
+- T07、T08、T10、T11 与 T11-R1 已完成生产验收；当前发布车道空闲，下一包只能是 OAuth 图片编辑上传 MIME 兼容热修。
+- OAuth MIME 热修必须从 T11-R1 已部署后的最新干净 `main` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；T09 与 S1-R2 继续排队，必须等待该热修完成生产验收后再启动。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

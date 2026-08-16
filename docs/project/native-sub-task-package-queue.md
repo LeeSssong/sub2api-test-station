@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0“使用记录触发会话过期”热修已完成推送、宿主蓝绿发布与线上点击验收，状态为 `DONE`。T12、T13 及其他任务仍按用户指令保持暂停，等待用户后续排序。
+- 队列状态：P0 会话热修已 `DONE`，发布车道已释放。按“完成全部 handoff 任务”持续目标恢复 T13；T13 作为当前唯一 `IMPLEMENTING` 功能任务，T12 继续 `FROZEN` 并等待 T13 生产收口。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@527f2195cbec517a72fbc05ee898b6999324aced`，发布记录 `20260816T164033Z-production-1258100.json` 为 `succeeded/promoted`，`downtime_required=false`，新 `green` API 与 worker 均 healthy。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200，登录态从仪表盘点击管理员“使用记录”后保持 `/admin/usage` 且数据正常加载。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -187,7 +187,7 @@
 
 - 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修。已保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657`，以及唯一未提交文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；无生产代码改动、无新提交、无合并或发布。未获根总控明确解冻前不得继续。
 - 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
-- 当前状态：`IMPLEMENTING`（Task 1、Task 2 均已通过独立 scoped re-review，Task 3 已获授权；禁止自行合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd` 使用独立 worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建` 和分支 `codex/t12-native-probe-cost-design-recovery`；批准规格为 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`，批准计划为 `786d809cf0c366c03e7e75d3607c0b95c0c90553`，基线 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1`。Task 1 提交 `07ee44cd6` 与 `7ce562fb7` 已保留 add-only ledger、`ON DELETE RESTRICT`、DECIMAL 原始精度与 UTC 微秒幂等；Task 2 候选 `aff652b83` 经 P1 修复提交 `55ccfdeef` 与证据提交 `0f9451934`，已确认 monitor/scheduled/manual 显式来源、实际发送模型计价、recovery 不计量及 fail-open/用户账务隔离，最终 scoped re-review 为 PASS/PASS。Task 3 仅可读取独立 probe ledger 并向 account-financial 增加可空聚合与顶层错误合同；probe 查询失败必须由 `probe_data_error/probe_error_code` 显式表达并使所有 probe 聚合字段为 `null`。经营页所有外部金额必须 USD 两位展示，内部精度保持原样。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 冻结前详细进度：用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd`、worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建`、分支 `codex/t12-native-probe-cost-design-recovery`。批准规格 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`、计划 `786d809cf0c366c03e7e75d3607c0b95c0c90553`；Task 1/2 已完成，Task 3 候选 `a54222c5352889c0b48bff2a5824c8b6f214c657`，Task 4 未提交 RED 测试原样保留。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
@@ -196,9 +196,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修；保留现有候选分支/worktree 和未提交内容，不得继续实现、复审、合并、推送或部署。
-- 冻结前进度：规格与计划已批准，Task 1 已完成，Task 2 候选保留在 `codex/newapi-rate-multiplier-registration`。
-- 当前状态：`IMPLEMENTING`（规格与计划已批准，继续排队等待 T14 发布车道）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；Task 1 已通过 scoped re-review，Task 2 正在执行 CAS 与 post-usage 接线。候选分支为 `codex/newapi-rate-multiplier-registration`，当前未进入合并、推送、部署或线上验收车道。
+- 当前状态：`IMPLEMENTING`。P0 热修已生产收口，根总控恢复原用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00`。候选分支 `codex/newapi-rate-multiplier-registration@0730603c8` 保留 17 个未提交 Task 2/3 文件；当前仅收口 P0 中断前的窄身份修复，运行直接相关 focused tests，提交候选和最终 handoff。不再启动额外 reviewer 或扩大验证，不自行合并、推送、部署或访问生产。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。

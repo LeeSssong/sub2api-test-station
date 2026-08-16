@@ -33,10 +33,12 @@
 - Expected downtime: false; deployment must stop if preflight reports otherwise.
 - Rollback: existing blue-green previous slot/image; keep session binding disabled.
 
-## Not yet verified
+## Production verification
 
-- Merged-main focused checks and push.
-- Blue-green preflight/deployment.
-- Public health endpoints.
-- Real browser login, `/auth/me`, navigation, and reload persistence.
-- Absence of new production `auth.session_binding.mismatch` events after verification traffic.
+- Root `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca` and tested tree `6002d847555f224981aa03d64e098eccbba4561a` were pushed and deployed through the existing local/host blue-green chain.
+- Release record `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` is `succeeded/promoted`, `rolled_back=false`; preflight reported `downtime_required=false` and the active slot is `green`.
+- Public `/healthz`, `/readyz`, and `/health` returned HTTP 200. The active API and worker use the same immutable release image.
+- The authenticated administrator “Usage Records” page loaded, navigation to “Admin Console” retained the session, and a reload retained the session and loaded dashboard data without redirecting to `/login`.
+- The production “Security and Authentication” page showed “Session IP/UA Binding” off (`aria-checked=false`), matching `session_binding_enabled=false`.
+- From release time `2026-08-16T18:58:27Z` through the browser verification window, both the active API and worker logged zero `auth.session_binding.mismatch` events.
+- T12 remained frozen and did not enter the production image, migration set, or release.

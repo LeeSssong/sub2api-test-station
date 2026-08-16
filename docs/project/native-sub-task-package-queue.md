@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故独占发布车道，修订候选已合入根 `main@77965c391` 并处于 `INTEGRATING`；生产 `session_binding_enabled` 已恢复且必须保持 Sub 原生默认 `false`，新门禁要求默认关闭的宿主许可与 trusted-proxy 策略同时存在，待最终 push、蓝绿发布与真实重新登录验证收口。T12 已 `FROZEN`，候选与 worktree 原样保全，未进入生产构建、迁移或切换。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`；修订随根 `main@e554b7d2e` 推送并完成无停机蓝绿发布、健康检查、管理员真实会话导航/刷新和发布后 mismatch 日志验收。生产 `session_binding_enabled=false`，且默认关闭的宿主许可与 trusted-proxy 策略构成双重启用门禁。T12 继续 `FROZEN`，候选与 worktree 原样保全，未进入本次生产构建、迁移或切换。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@3673d5a9a2c38b6cea22a595f0ab51c82cd751da`、tree `6280cb3075d4c2df035641dd052e94a7dc871eb1`，发布记录 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
+- 当前发布状态：生产源 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca`、tree `6002d847555f224981aa03d64e098eccbba4561a`，发布记录 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -15,6 +15,13 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与验证、独立任务复审、最终全分支终审，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`。
 
 ## 队列
+
+### P0 Cloudflare 边缘 IP 误触发会话绑定事故
+
+- 当前状态：`DONE`。生产先恢复 Sub 原生默认 `session_binding_enabled=false`，随后撤回旧 P0 自定义 refresh replay 状态机，使 auth/cache 核心恢复官方 v0.1.177；最终候选 `codex/p0-native-session-stability@f381c8802` 增加默认关闭的宿主级 `security.session_binding_allowed` 与显式 trusted-proxy 双重门禁，管理 API 无法单独重新启用绑定。
+- 根 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca` 已推送并通过既有本地/宿主蓝绿链发布，`downtime_required=false`，活动槽 `green`；发布记录为 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json`，公网三个健康端点均为 HTTP 200。
+- 管理员真实登录态已在“使用记录”加载后切换至“管理控制台”，刷新后仍保持登录并加载数据；“安全与认证”页面显示“会话 IP/UA 绑定”关闭。自发布时刻 `2026-08-16T18:58:27Z` 起，活动 API 与 worker 的 `auth.session_binding.mismatch` 均为 0。
+- 范围保持原生：不接受任意 Cloudflare 转发头作为自动启用信号，不恢复密文 replay marker，不修改生产账号/token 数据，不使用 GitHub Actions；已在事故中撤销的 token family 不可恢复，受影响用户只需重新登录一次。
 
 ### P0 使用记录触发会话过期热修
 

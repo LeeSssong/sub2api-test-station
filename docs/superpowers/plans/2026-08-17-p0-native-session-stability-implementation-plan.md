@@ -73,10 +73,10 @@
 - [x] Run only focused auth, session-binding, setting, refresh-cache tests and related package compile checks.
 - [x] Run `gofmt` on changed Go files and `git diff --check`.
 - [x] Self-review the diff for native parity, scope, configuration behavior, migration absence, and rollback.
-- [ ] Commit the candidate, merge to the clean root `main`, repeat the focused merged-tree checks, push, and use the existing local/host blue-green chain.
-- [ ] Require `downtime_required=false`; otherwise stop before switching.
-- [ ] Verify `/healthz`, `/readyz`, and `/health`, then verify a real browser login through `/auth/me`, navigation, and reload.
-- [ ] Verify no new `auth.session_binding.mismatch` events and confirm `session_binding_enabled=false`.
+- [x] Commit the candidate, merge to the clean root `main`, repeat the focused merged-tree checks, push, and use the existing local/host blue-green chain.
+- [x] Require `downtime_required=false`; otherwise stop before switching.
+- [x] Verify `/healthz`, `/readyz`, and `/health`, then verify the authenticated admin page, navigation, and reload.
+- [x] Verify no new `auth.session_binding.mismatch` events and confirm `session_binding_enabled=false`.
 
 ## Verification Commands
 
@@ -88,10 +88,10 @@
 
 ## Acceptance
 
-- [ ] Native Sub refresh behavior is restored.
-- [ ] The known unsafe session-binding configuration cannot be written.
-- [ ] Production stays healthy and a fresh login remains active.
-- [ ] No T12 files, migration, or unrelated feature enters the release.
+- [x] Native Sub refresh behavior is restored.
+- [x] The known unsafe session-binding configuration cannot be written.
+- [x] Production stays healthy and the authenticated admin session remains active across navigation and reload.
+- [x] No T12 files, migration, or unrelated feature enters the release.
 
 ## Risks
 

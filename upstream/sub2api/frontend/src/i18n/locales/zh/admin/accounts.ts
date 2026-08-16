@@ -210,7 +210,12 @@ export default {
         noEligibleAccounts: '请选择 API Key 账号',
         batchLimit: '每次最多探测 20 个账号',
         batchCompleted: '已完成 {count} 个账号的倍率探测',
-        batchPartial: '倍率探测部分完成：成功 {success} 个，失败 {failed} 个'
+        batchPartial: '倍率探测部分完成：成功 {success} 个，失败 {failed} 个',
+        registered: '已登记',
+        registrationSource: '来源：NewAPI 请求日志自动登记',
+        registrationFirstAt: '首次登记：{value}',
+        registrationLastAt: '最近成功更新：{value}',
+        manualEditMayBeOverwritten: '该倍率由 NewAPI 请求日志自动登记；手动修改会在下一次每日成功刷新时被覆盖。'
       },
       allPrivacyModes: '全部Privacy状态',
       privacyUnset: '未设置',

@@ -51,6 +51,7 @@ type UsageCostEvidenceRegistrar struct {
 	evidenceRepo UsageCostEvidenceRepository
 	activation   AccountFinancialActivationReader
 	lookup       *SubUpstreamCostService
+	newAPIRate   *NewAPIRateMultiplierRegistrar
 }
 
 func NewUsageCostEvidenceRegistrar(usageRepo UsageLogRepository, evidenceRepo UsageCostEvidenceRepository, activation AccountFinancialActivationReader) *UsageCostEvidenceRegistrar {
@@ -62,13 +63,32 @@ func NewUsageCostEvidenceRegistrar(usageRepo UsageLogRepository, evidenceRepo Us
 	}
 }
 
+// SetNewAPIRateRefreshRepository wires the NewAPI registration flow into the
+// same post-usage registrar used by both gateway implementations.
+func (r *UsageCostEvidenceRegistrar) SetNewAPIRateRefreshRepository(repo NewAPIRateRefreshRepository) {
+	if r != nil {
+		r.newAPIRate = NewNewAPIRateMultiplierRegistrar(r.usageRepo, repo)
+	}
+}
+
 func (r *UsageCostEvidenceRegistrar) RegisterOnce(ctx context.Context, usageLogID int64) error {
-	if r == nil || r.usageRepo == nil || r.evidenceRepo == nil || r.activation == nil || r.lookup == nil {
+	if r == nil || r.usageRepo == nil {
+		return errors.New("usage cost evidence registrar unavailable")
+	}
+	if r.evidenceRepo == nil || r.activation == nil || r.lookup == nil {
 		return errors.New("usage cost evidence registrar unavailable")
 	}
 	usage, err := r.usageRepo.GetByID(ctx, usageLogID)
 	if err != nil {
 		return err
+	}
+	var matchedNewAPI *newAPIUpstreamUsageRecord
+	newAPIRecordLoaded := false
+	newAPIRecordReason := ""
+	if r.newAPIRate != nil && newAPIRateRegistrationUsageCandidate(usage) {
+		// Registration is best effort and independent from the historical
+		// evidence activation boundary.
+		matchedNewAPI, newAPIRecordLoaded, newAPIRecordReason, _ = r.newAPIRate.RegisterUsage(ctx, usage)
 	}
 	// Only native Sub/New API-key accounts have this upstream-ledger contract.
 	// Batch-image Vertex and OpenAI Live use different settlement protocols.
@@ -93,7 +113,17 @@ func (r *UsageCostEvidenceRegistrar) RegisterOnce(ctx context.Context, usageLogI
 		return err
 	}
 
-	result := r.lookup.lookupEvidence(ctx, usage)
+	var result upstreamCostEvidenceLookup
+	if usageCostLedgerForAccount(usage.Account) == usageCostLedgerNewAPI {
+		baseURL, apiKey, ok := subCredentials(usage.Account)
+		if ok {
+			result, matchedNewAPI = r.lookup.lookupNewAPIEvidenceWithRecord(ctx, baseURL, apiKey, usage, matchedNewAPI, newAPIRecordLoaded, newAPIRecordReason)
+		} else {
+			result = upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceNewAPI, ReasonCode: "credentials_unavailable"}
+		}
+	} else {
+		result = r.lookup.lookupEvidence(ctx, usage)
+	}
 	evidence := &UsageCostEvidence{
 		UsageLogID:         usage.ID,
 		Source:             result.Source,

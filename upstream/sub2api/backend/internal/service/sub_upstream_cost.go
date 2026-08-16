@@ -94,7 +94,8 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 		return result
 	}
 	if usageCostLedgerForAccount(usage.Account) == usageCostLedgerNewAPI {
-		return s.lookupNewAPIEvidence(ctx, baseURL, apiKey, usage)
+		result, _ := s.lookupNewAPIEvidenceWithRecord(ctx, baseURL, apiKey, usage, nil, false, "")
+		return result
 	}
 	endpoint, err := subUsageRecordsURL(baseURL)
 	if err != nil {
@@ -118,31 +119,39 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 }
 
 func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseURL, apiKey string, usage *UsageLog) upstreamCostEvidenceLookup {
+	result, _ := s.lookupNewAPIEvidenceWithRecord(ctx, baseURL, apiKey, usage, nil, false, "")
+	return result
+}
+
+func (s *SubUpstreamCostService) lookupNewAPIEvidenceWithRecord(ctx context.Context, baseURL, apiKey string, usage *UsageLog, matched *newAPIUpstreamUsageRecord, recordLoaded bool, cachedReason string) (upstreamCostEvidenceLookup, *newAPIUpstreamUsageRecord) {
 	result := upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceNewAPI}
 	logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
 	if err != nil {
 		result.ReasonCode = "endpoint_unavailable"
-		return result
+		return result, nil
 	}
 	statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
 	if err != nil {
 		result.ReasonCode = "endpoint_unavailable"
-		return result
+		return result, nil
 	}
-	matched, reasonCode, _ := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	reasonCode := ""
+	if !recordLoaded {
+		matched, reasonCode, _ = s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	}
 	if !newAPIEvidenceRecordMatches(matched, usage) {
-		result.ReasonCode = firstNonEmpty(reasonCode, "record_not_found")
-		return result
+		result.ReasonCode = firstNonEmpty(reasonCode, firstNonEmpty(cachedReason, "record_not_found"))
+		return result, matched
 	}
 	quota, err := matched.Quota.Float64()
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	body, reasonCode, _ := s.fetchUpstreamJSON(ctx, statusEndpoint, apiKey)
 	if reasonCode != "" {
 		result.ReasonCode = reasonCode
-		return result
+		return result, matched
 	}
 	var payload struct {
 		Data struct {
@@ -152,7 +161,7 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	}
 	if err := decodeUpstreamJSON(body, &payload); err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	unit := payload.Data.QuotaPerUnit
 	if strings.TrimSpace(unit.String()) == "" {
@@ -161,12 +170,12 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	unitValue, err := strconv.ParseFloat(unit.String(), 64)
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	cost, err := newAPIQuotaToCost(matched.Quota, unit)
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	if matched.Type == 6 {
 		cost = -cost
@@ -175,7 +184,7 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	result.Found = true
 	result.NewAPIQuota = &quota
 	result.NewAPIQuotaPerUnit = &unitValue
-	return result
+	return result, matched
 }
 
 // Evidence registration requires a provider request ID from the official
@@ -394,6 +403,97 @@ type newAPIUpstreamUsageRecord struct {
 	Quota             upstreamBillingNumber `json:"quota"`
 	RequestID         string                `json:"request_id"`
 	UpstreamRequestID string                `json:"upstream_request_id"`
+	GroupRatio        *float64              `json:"-"`
+	GroupRatioError   error                 `json:"-"`
+}
+
+func (r *newAPIUpstreamUsageRecord) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		Type              int                   `json:"type"`
+		Quota             upstreamBillingNumber `json:"quota"`
+		RequestID         string                `json:"request_id"`
+		UpstreamRequestID string                `json:"upstream_request_id"`
+		Other             json.RawMessage       `json:"other"`
+	}
+	if err := decodeUpstreamJSON(data, &payload); err != nil {
+		return err
+	}
+	r.Type = payload.Type
+	r.Quota = payload.Quota
+	r.RequestID = payload.RequestID
+	r.UpstreamRequestID = payload.UpstreamRequestID
+	r.GroupRatio, r.GroupRatioError = parseNewAPIGroupRatio(payload.Other)
+	return nil
+}
+
+func parseNewAPIGroupRatio(raw json.RawMessage) (*float64, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, errors.New("New API other.group_ratio is missing")
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return nil, errors.New("New API other is invalid")
+		}
+		raw = bytes.TrimSpace([]byte(encoded))
+	}
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil, errors.New("New API other is invalid")
+	}
+	var other map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &other); err != nil {
+		return nil, errors.New("New API other is invalid")
+	}
+	value, ok := other["group_ratio"]
+	if !ok {
+		return nil, errors.New("New API other.group_ratio is missing")
+	}
+	value = bytes.TrimSpace(value)
+	if len(value) == 0 || value[0] == '"' || value[0] == 't' || value[0] == 'f' || value[0] == 'n' {
+		return nil, errors.New("New API other.group_ratio is not a number")
+	}
+	var number json.Number
+	if err := json.Unmarshal(value, &number); err != nil || strings.TrimSpace(number.String()) == "" {
+		return nil, errors.New("New API other.group_ratio is not a number")
+	}
+	ratio, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 100 {
+		return nil, errors.New("New API other.group_ratio is out of range")
+	}
+	return &ratio, nil
+}
+
+func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUpstreamUsageRecord) bool {
+	if usage == nil || usage.ID <= 0 || usage.Account == nil || usage.Account.Type != AccountTypeAPIKey ||
+		record == nil || record.GroupRatio == nil || record.GroupRatioError != nil || record.Type == 6 {
+		return false
+	}
+	if snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra); snapshot != nil &&
+		snapshot.Status == UpstreamBillingProbeStatusOK {
+		return false
+	}
+	if !newAPIRateRegistrationIdentity(usage.Account) {
+		return false
+	}
+	return newAPIEvidenceRecordMatches(record, usage)
+}
+
+func newAPIRateRegistrationIdentity(account *Account) bool {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	balance := decodeAccountMonitorBalance(account.Extra)
+	if balance != nil {
+		if balance.Source == AccountMonitorBalanceSourceNewAPI {
+			return true
+		}
+		if balance.Source == AccountMonitorBalanceSourceSub2API {
+			return false
+		}
+	}
+	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	return snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported
 }
 
 type newAPIUpstreamUsageRecordsResponse struct {

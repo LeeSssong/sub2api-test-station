@@ -125,6 +125,25 @@ type AccountRepository interface {
 	ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error)
 }
 
+// NewAPIRateRefreshCompletion is the narrow, post-usage write contract for
+// automatically registering a NewAPI log group_ratio.
+type NewAPIRateRefreshCompletion struct {
+	AccountID   int64
+	ClaimToken  string
+	RefreshDate string
+	GroupRatio  float64
+	ObservedAt  time.Time
+	UsageLogID  int64
+}
+
+// NewAPIRateRefreshRepository owns the CAS lifecycle for automatic NewAPI
+// multiplier registration without widening the general account repository.
+type NewAPIRateRefreshRepository interface {
+	ClaimNewAPIRateRefresh(ctx context.Context, accountID int64, refreshDate, claimToken string, claimUntil time.Time) (bool, error)
+	CompleteNewAPIRateRefresh(ctx context.Context, input NewAPIRateRefreshCompletion) error
+	ReleaseNewAPIRateRefresh(ctx context.Context, accountID int64, claimToken string) error
+}
+
 type AccountDuplicateRepository interface {
 	// CreateWithAccountGroups atomically persists an account, its exact group priorities,
 	// and the scheduler outbox event for the new routing snapshot.

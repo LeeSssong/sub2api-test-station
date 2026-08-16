@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`；修订随根 `main@e554b7d2e` 推送并完成无停机蓝绿发布、健康检查、管理员真实会话导航/刷新和发布后 mismatch 日志验收。生产 `session_binding_enabled=false`，且默认关闭的宿主许可与 trusted-proxy 策略构成双重启用门禁。T12 继续 `FROZEN`，候选与 worktree 原样保全，未进入本次生产构建、迁移或切换。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。唯一发布总控现明确解除 T12 冻结并将其置为 `REFRESH_REQUIRED`：在原 T12 worktree 快进至最新 `main`，可追溯地重新应用因 P0 撤回的已审候选，保留全部 P0/T13/T14/官方更新行为，完成直接相关验证后再进入单一合并发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca`、tree `6002d847555f224981aa03d64e098eccbba4561a`，发布记录 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -192,10 +192,10 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`FROZEN`。候选 `codex/t12-native-probe-cost-cards@c7587599a7947e6103a915fdfc9f030d343bb198` 已完成功能与直接相关测试，曾合并为 `main@7ded6b219d0e87334c9db63c607ab27044c063ff`，但发布链未启动，生产未变更。P0 会话事故插队后，根总控已用 `408e7a1a3`/`9d9e2b758` 可追溯 revert 将 T12 从根 `main` 移出；当前 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`、分支、候选报告与旧 `a54222c535` 证据均原样保全。未经根总控明确解冻，不得继续写入、合并、推送、部署或清理。
-- 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
-- 恢复实施登记：本轮沿用批准规格 `docs/superpowers/specs/2026-08-16-t12-native-probe-cost-design.md` 与计划 `docs/superpowers/plans/2026-08-16-t12-native-probe-cost-design-implementation-plan.md`；Task 1-3 只移植尚缺提交，Task 4 按三层/一卡一账号/六项排序/USD 两位合同重写。T12 当前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`，直至候选直接相关测试与必要构建通过并进入 `READY_FOR_ROOT_REVIEW`。
-- 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。只读对账确认 Task 1-3 的隔离账本、原生定价、fail-open 和 probe 聚合合同仍兼容；旧 Task 4 RED 的独立 probe card/列布局假设必须废弃。恢复时从最新 main 新建干净候选，只移植仍缺失的 Task 1-3 提交并重写 Task 4，禁止把旧未提交 RED 带入。
+- 当前状态：`REFRESH_REQUIRED`。候选 `codex/t12-native-probe-cost-cards@c7587599a7947e6103a915fdfc9f030d343bb198` 已完成功能与直接相关测试，曾合并为 `main@7ded6b219d0e87334c9db63c607ab27044c063ff`，但发布链未启动，生产未变更。P0 会话事故插队后，根总控用 `408e7a1a3`/`9d9e2b758` 可追溯 revert 将 T12 从根 `main` 移出；P0 现已生产收口，唯一发布总控明确授权在原 worktree 恢复 T12 写入并刷新到最新 `main`。
+- 刷新方式：由于原候选已是 `main` 历史祖先，不能再次普通 merge；在干净 T12 worktree 快进最新 `main` 后，反向撤销两笔 T12 撤回提交以重新生成候选差异，仅解决与最新主线的真实冲突。完成 migration/repository/service/handler focused tests、前端两个直接 Vitest、typecheck/build 和 `git diff --check` 后进入 `READY_FOR_ROOT_REVIEW`。
+- 恢复实施登记：本轮沿用批准规格 `docs/superpowers/specs/2026-08-16-t12-native-probe-cost-design.md` 与计划 `docs/superpowers/plans/2026-08-16-t12-native-probe-cost-design-implementation-plan.md`；不新增产品范围，不恢复旧 Task 4 RED，不运行全仓测试或额外 reviewer。T12 是当前唯一允许进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选。
+- 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%；这些合同及 Task 1-3 的隔离账本、原生定价、fail-open、probe 聚合均已落实到最终候选 `c7587599a`。旧 Task 4 RED 已废弃且未带入；本轮不重做功能，只将该已验证候选刷新到最新主线并复跑直接相关门禁。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
@@ -216,3 +216,14 @@
 - 已确认根因：`/admin/usage/:id/upstream-cost` 返回 PascalCase 字段，例如 `NormalizedCostCNY`、`EvidenceStatus`；详情弹窗仅读取 snake_case 字段，例如 `normalized_cost_cny`、`evidence_status`，因此“上游实际扣费 / 利润”错误显示为 `-`，不是生产数据缺失。
 - 范围：仅对该详情弹窗/API 响应做向后兼容字段归一化，并保留 PascalCase 与 snake_case 两种响应兼容；只做直接相关页级/API 合同验证、必要类型检查/构建、diff/范围检查和发布后定向验收。
 - 非目标：不得并入 T12，不改变账号成本、用户扣费、利润/利润率口径或聚合，不做数据库迁移、历史回填、生产数据修改、账务重算、相邻页面重构或外部控制面。
+
+### T15 账号监控原生探测模型与异步模型检测
+
+- 当前状态：`BACKLOG`。brainstorming 与产品设计已完成并获用户批准；用户明确豁免再次确认正式规格。轮到时仍须由独立用户可见顶层任务/worktree产出正式规格与自审，再调用 writing-plans；本轮只登记队列/总账，不启动规格编写、计划、实现、合并或部署，也不占用 T12 当前车道。
+- 原生连接测试：继续复用 `AccountTestService.ProbeAccountConnection`；每账号持久化独立 `connection_probe_model`，默认优先 `gpt-5.6-sol`，不支持时回退 Sub 原生登记的首个文本模型，页面不显示“自动选择”。近期探测标题旁提供修改连接测试模型入口。
+- 异步检测模型：新增独立 `model_detection_model`；可选模型是 Sub 原生账号模型登记（`GET /admin/accounts/:id/models` 及 sync-upstream 结果）与检测器运行时基线目录的交集。原生模型可见但无基线时置灰并显示“检测器暂不支持”。
+- 执行架构：检测器为仅执行的独立 sidecar，Sub worker 负责调度、持久化和唯一事实。北京时间 `00:00/10:00/12:00/15:00/18:00/21:00` 检测所有未删除、API Key 且检测器支持的账号，不受可调度状态影响；OAuth 不执行，每个任务只跑一轮探针。单账号可立即异步检测，同账号已排队/运行则复用；固定时隙持久化去重，错过仅在 30 分钟内补触发。
+- 页面合同：每个 `AccountMonitorCard.vue` 卡片增加默认收缩的一行检测状态；点击弹窗查看最近结果、申报模型、Juice 摘要、行为指纹候选/相似度、检测器版本、时间/错误，并可修改检测模型或立即检测。无全局摘要，不改变 `AccountMonitorView.vue` 现有卡片主样式。
+- 状态与隔离：状态仅为未检测、排队中、检测中、正常、异常、证据不足、检测失败、不支持；检测结果不参与质量评分、调度权重、可调度状态或分组建议。异常只能表述“检测器观察到异常”，不得表述“上游确认替换”。
+- 安全与失败：不保存或记录 API Key、完整提示词、完整输出或上游地址；凭据只在私网内存中传给 sidecar。sidecar 故障仅记录检测失败，不影响原生连接测试或账号状态；账号删除、变 OAuth 或模型失效时，执行前跳过或回退。
+- 发布边界：继续使用本地/宿主发布链，不增加 GitHub Actions；发布预检若返回 `downtime_required=true`，必须停在用户授权门禁。原生证据入口为 `backend/internal/service/account_monitor_probe.go`、`account_monitor_service.go`、前端 `AccountMonitorCard.vue` 与 `AccountMonitorView.vue`。

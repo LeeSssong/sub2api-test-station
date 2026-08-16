@@ -4,7 +4,7 @@
 
 **T13 NewAPI 上游倍率自动登记（2026-08-16）：** 状态：进行中（`DESIGNING`，规格已获用户书面批准，继续排队）。用户已批准规格提交 `f2fc807d4fbca5f5917a00b3fadb890061cf3522`；范围仅限 NewAPI API-key 且没有原生 Sub 倍率声明的账号，以精确匹配日志 `other.group_ratio` 为权威倍率：首次真实成功请求后登记到 `accounts.rate_multiplier` 并在 `accounts.extra` 标记，已登记账号每个北京时间自然日仅首笔合格请求刷新一次；必须具备并发 CAS、失败不覆盖和管理员可见“已登记”。不做迁移、历史回填或生产修改。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 继续保持只读排队；官方 `v0.1.177` 发布链成功切换前不得调用 writing-plans、编写实现或进入合并发布车道。
 
-**T14 用量详情上游扣费/利润字段兼容热修（2026-08-16）：** 状态：待办（`BACKLOG`，官方 `v0.1.177` 发布并解除停机门禁后再创建独立 GPT-5.6 Sol/medium 顶层任务和 worktree）。已确认生产数据并未缺失：`/admin/usage/:id/upstream-cost` 返回 `NormalizedCostCNY`、`EvidenceStatus` 等 PascalCase 字段，详情弹窗仅读取 `normalized_cost_cny`、`evidence_status` 等 snake_case 字段，导致“上游实际扣费 / 利润”显示为 `-`。范围严格限定为该详情弹窗/API 响应字段的向后兼容归一化与最小相关验证；不得并入 T12，不改变账务口径、聚合、持久化或生产数据，不做迁移、历史回填或相邻页面重构。该热修当前不实现、不合并、不推送、不部署。
+**T14 用量详情上游扣费/利润字段兼容热修（2026-08-16）：** 状态：进行中（`DESIGNING`）。官方 `v0.1.177` 已发布后，已创建用户可见 GPT-5.6 Sol/medium 顶层任务“ T14 用量详情上游扣费字段兼容热修”，正在建立独立 worktree/分支 `codex/t14-usage-detail-field-compat`；当前只允许现状核对、brainstorming、正式规格和计划门禁。已确认生产数据并未缺失：`/admin/usage/:id/upstream-cost` 返回 `NormalizedCostCNY`、`EvidenceStatus` 等 PascalCase 字段，详情弹窗仅读取 `normalized_cost_cny`、`evidence_status` 等 snake_case 字段，导致“上游实际扣费 / 利润”显示为 `-`。范围严格限定为该详情弹窗/API 响应字段的向后兼容归一化与最小相关验证；不得并入 T12，不改变账务口径、聚合、持久化或生产数据，不做迁移、历史回填或相邻页面重构。
 
 **S1-R2 SSE 提前断连归类（2026-08-16）：** 状态：保持原队列等待。页面“正在重新连接 1/5”及 `stream disconnected before completion` 已归类为上游 SSE 在 `response.completed` 前断开，属于 S1-R2 的账号模型冷却与故障转移范围；当前不插队、不另立紧急实现任务、不解冻或启动旧 S1 候选。S1-R2 轮到时必须从届时最新干净 `main` 重建并按原门禁执行。
 

@@ -195,7 +195,7 @@
 
 ### T14 用量详情上游扣费/利润字段兼容热修
 
-- 当前状态：`BACKLOG`。官方 `v0.1.177` 发布成功并解除停机门禁后，作为独立、范围最小的前端/API 字段兼容热修创建用户可见 GPT-5.6 Sol/medium 顶层任务和独立 worktree；当前不实现、不合并、不推送、不部署。
+- 当前状态：`DESIGNING`。官方 `v0.1.177` 已发布，已创建用户可见 GPT-5.6 Sol/medium 顶层任务，正在建立独立 worktree/分支 `codex/t14-usage-detail-field-compat`；当前只进行现状核对、brainstorming、正式规格和计划门禁，不实现、不合并、不推送、不部署。
 - 已确认根因：`/admin/usage/:id/upstream-cost` 返回 PascalCase 字段，例如 `NormalizedCostCNY`、`EvidenceStatus`；详情弹窗仅读取 snake_case 字段，例如 `normalized_cost_cny`、`evidence_status`，因此“上游实际扣费 / 利润”错误显示为 `-`，不是生产数据缺失。
 - 范围：仅对该详情弹窗/API 响应做向后兼容字段归一化，并保留 PascalCase 与 snake_case 两种响应兼容；只做直接相关页级/API 合同验证、必要类型检查/构建、diff/范围检查和发布后定向验收。
 - 非目标：不得并入 T12，不改变账号成本、用户扣费、利润/利润率口径或聚合，不做数据库迁移、历史回填、生产数据修改、账务重算、相邻页面重构或外部控制面。

@@ -79,9 +79,10 @@ ok  github.com/Wei-Shaw/sub2api/internal/service  1.884s
 - Combined focused/regression command: PASS.
 - Compile-only service package check, `go test ./internal/service -run '^$'`: PASS (`[no tests to run]`).
 - Repository-root `gofmt`: completed for the two Go files.
-- `git diff --check`: clean before the implementation commit.
-- Forbidden-path diff from baseline: empty before the implementation commit.
-- Final scope, forbidden-path, email-content, exact-diff, and clean-worktree checks are rerun after this report is committed.
+- `git diff --check` from baseline through branch HEAD: clean.
+- Final changed paths are limited to the approved spec/plan/report, Responses service source, and focused test.
+- Forbidden-path diff and repository email-content scan: empty.
+- Exact diff was reviewed; final worktree status was clean.
 
 ## Release properties
 

@@ -2,7 +2,7 @@
 
 - 本轮原生 Sub 小步发布计划的所有根线程、派生线程和审查线程，开始任何工作前必须完整阅读 `docs/project/native-sub-incremental-delivery-constraints.md` 与 `docs/project/native-sub-task-package-queue.md`；两份文件是本轮任务边界、线程交接、串行合并和部署停机门禁的共同事实源。
 
-- Once an implementation plan has been approved, execute it with subagents by default: assign each plan task to a fresh implementer subagent, require an independent task review after each task, and run a final whole-branch review before completion.
+- 自 2026-08-16 用户最新指令起，计划内任务以“功能实现完成 + 直接相关功能测试通过”为完成门槛；不再强制逐任务独立复审、scoped re-review 或全分支终审，也不为形式扩大验证。仍可用 fresh implementer 隔离写入；只有发现真实功能失败、范围冲突或高风险问题时才追加针对性复核。
 - Continue through approved plan tasks without repeated approval prompts unless execution is genuinely blocked, the plan conflicts with itself, or a new decision would materially change the approved scope.
 - Explicit instructions in the current user request override these defaults.
 - Sub2API release preparation and production deployment must not use GitHub

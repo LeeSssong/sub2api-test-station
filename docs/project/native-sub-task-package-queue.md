@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：官方 Sub2API `v0.1.177` 已完成发布并收口为 `DONE`；根 `main@e91504e51` 已推送，宿主维护链已成功切换至 `green`，公网健康检查通过。下一包按顺序安排 T14；T12 与 T13 保持设计阶段，S1-R2 保持原队列位置。
+- 队列状态：P0 会话热修已 `DONE`，发布车道已释放。T13 已交付候选 `c8ec34498` 并进入 `REFRESH_REQUIRED`，当前只允许在原顶层任务整合最新 `main`、解决本任务冲突并重跑直接相关测试；T12 继续 `FROZEN` 并等待 T13 生产收口。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：官方 `v0.1.177` 已完成候选交接、根合并、push、宿主维护发布和即时健康验证；活动槽为 `green`，T09 发布车道已释放。T14 可按队列创建独立任务；T12、T13 仍不得越过各自设计门禁。
+- 当前发布状态：生产源 `main@527f2195cbec517a72fbc05ee898b6999324aced`，发布记录 `20260816T164033Z-production-1258100.json` 为 `succeeded/promoted`，`downtime_required=false`，新 `green` API 与 worker 均 healthy。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200，登录态从仪表盘点击管理员“使用记录”后保持 `/admin/usage` 且数据正常加载。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -15,6 +15,13 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与验证、独立任务复审、最终全分支终审，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`。
 
 ## 队列
+
+### P0 使用记录触发会话过期热修
+
+- 当前状态：`DONE`。独立顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`，候选 `c25fb9ad1` 已合并并随 `main@527f2195cbec517a72fbc05ee898b6999324aced` 推送、发布和线上验收。
+- 已确认根因：“使用记录”首屏并发请求在 access token 过期时同时发起 refresh；一个请求成功轮换并删除旧 refresh token 后，另一个请求使用旧 token 触发 `Refresh token not found, possible reuse attack`，全局 401 处理清除会话并跳转登录页。
+- 范围：仅修复同一会话的并发 refresh 竞态；保留真实撤销与恶意 reuse 的安全边界。禁止忽略所有 401、无条件接受旧 token、关闭 reuse 检查或直接修改生产 Redis/数据库掩盖问题。
+- 最小验收：先有能复现并发轮换的失败测试，再完成最小修复；仅运行直接相关功能测试、必要的编译/类型检查和 `git diff --check`。候选从根 `main` 合并后使用既有本地/宿主蓝绿链发布，不使用 GitHub Actions。
 
 ### T01 大上下文入站上传稳定性
 
@@ -160,7 +167,7 @@
 
 每个任务包依次经过：
 
-`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准或根总控依据离席代审授权批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 独立任务复审 -> 最终全分支终审 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`
+`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准或根总控依据离席代审授权批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 直接相关功能测试 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`。自 2026-08-16 用户最新指令起，额外 task review、scoped re-review 与 whole-branch review 不再是强制门槛。
 
 未经用户明确批准书面规格书，不得调用 writing-plans 或开始实施。任何一步出现范围漂移、冲突、`main` 漂移、验证失败、线上验收未闭环或 `downtime_required=true`，队列立即暂停，不启动下一任务包。
 
@@ -178,7 +185,9 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`DESIGNING`（仅登记/排队，禁止 writing-plans、实现、合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a0094a-190c-76a3-ab56-eed3ecc8d824` 已创建，独立 worktree 为 `/Users/gongtengxinwen/.codex/worktrees/16af/sub2api搭建`；当前只完成现状盘点、brainstorming、正式规格、自审和交接，规格尚未批准，不得调用 writing-plans。候选 docs-only 提交为 `6db469c7278d7518641d75b71714efe6d2c64a7f`。T09 未完成前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修。已保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657`，以及唯一未提交文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；无生产代码改动、无新提交、无合并或发布。未获根总控明确解冻前不得继续。
+- 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
+- 冻结前详细进度：用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd`、worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建`、分支 `codex/t12-native-probe-cost-design-recovery`。批准规格 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`、计划 `786d809cf0c366c03e7e75d3607c0b95c0c90553`；Task 1/2 已完成，Task 3 候选 `a54222c5352889c0b48bff2a5824c8b6f214c657`，Task 4 未提交 RED 测试原样保留。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
@@ -187,7 +196,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`DESIGNING`（规格已获用户书面批准，继续排队）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；已批准规格提交 `f2fc807d4fbca5f5917a00b3fadb890061cf3522` 保存在独立 worktree。官方 `v0.1.177` 发布链成功切换前不得调用 writing-plans、创建实现 worktree、写代码、合并、推送、部署或访问生产。
+- 当前状态：`REFRESH_REQUIRED`。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 已交付干净候选 `codex/newapi-rate-multiplier-registration@c8ec34498`，直接相关 service/repository 测试与编译通过。该候选相对根 `main@92db09644` 落后，现只允许在原 worktree 合入最新 `main`、解决本任务范围冲突并重跑同一组直接相关验证；不再启动额外 reviewer 或扩大验证，不自行推送、部署或访问生产。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。
@@ -195,7 +204,7 @@
 
 ### T14 用量详情上游扣费/利润字段兼容热修
 
-- 当前状态：`DESIGNING`。官方 `v0.1.177` 已发布，已创建用户可见 GPT-5.6 Sol/medium 顶层任务，正在建立独立 worktree/分支 `codex/t14-usage-detail-field-compat`；当前只进行现状核对、brainstorming、正式规格和计划门禁，不实现、不合并、不推送、不部署。
+- 当前状态：`DONE`。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00a15-a76c-7be1-b66f-7a34ddb2b749` 的候选已随 `main@200d4b1c9e4745a6a54e467630c68aba14fb4028` 推送并通过本地/宿主蓝绿链切换，脚本结果为 `succeeded`、活动槽 `blue`、`downtime_required=false`。`/healthz`、`/readyz`、`/health` 均为 HTTP 200；刷新到已发布前端包后，管理员详情对自然确认样本 `usage_log_id=120896` 正确显示上游实际扣费 `$0.001010` 和利润 `$0.000505`。无迁移、配置、依赖或生产数据改动；回滚依据为宿主上一 `green` 槽/镜像和 release record。
 - 已确认根因：`/admin/usage/:id/upstream-cost` 返回 PascalCase 字段，例如 `NormalizedCostCNY`、`EvidenceStatus`；详情弹窗仅读取 snake_case 字段，例如 `normalized_cost_cny`、`evidence_status`，因此“上游实际扣费 / 利润”错误显示为 `-`，不是生产数据缺失。
 - 范围：仅对该详情弹窗/API 响应做向后兼容字段归一化，并保留 PascalCase 与 snake_case 两种响应兼容；只做直接相关页级/API 合同验证、必要类型检查/构建、diff/范围检查和发布后定向验收。
 - 非目标：不得并入 T12，不改变账号成本、用户扣费、利润/利润率口径或聚合，不做数据库迁移、历史回填、生产数据修改、账务重算、相邻页面重构或外部控制面。

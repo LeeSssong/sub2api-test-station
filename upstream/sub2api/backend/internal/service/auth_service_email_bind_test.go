@@ -737,6 +737,8 @@ type emailBindRefreshTokenCacheStub struct {
 	tokens   map[string]*service.RefreshTokenData
 	userSets map[int64]map[string]struct{}
 	families map[string]map[string]struct{}
+	locks    map[string]string
+	ttls     map[string]time.Duration
 }
 
 func newEmailBindRefreshTokenCacheStub() *emailBindRefreshTokenCacheStub {
@@ -744,14 +746,17 @@ func newEmailBindRefreshTokenCacheStub() *emailBindRefreshTokenCacheStub {
 		tokens:   make(map[string]*service.RefreshTokenData),
 		userSets: make(map[int64]map[string]struct{}),
 		families: make(map[string]map[string]struct{}),
+		locks:    make(map[string]string),
+		ttls:     make(map[string]time.Duration),
 	}
 }
 
-func (s *emailBindRefreshTokenCacheStub) StoreRefreshToken(_ context.Context, tokenHash string, data *service.RefreshTokenData, _ time.Duration) error {
+func (s *emailBindRefreshTokenCacheStub) StoreRefreshToken(_ context.Context, tokenHash string, data *service.RefreshTokenData, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cloned := *data
 	s.tokens[tokenHash] = &cloned
+	s.ttls[tokenHash] = ttl
 	return nil
 }
 
@@ -766,10 +771,30 @@ func (s *emailBindRefreshTokenCacheStub) GetRefreshToken(_ context.Context, toke
 	return &cloned, nil
 }
 
+func (s *emailBindRefreshTokenCacheStub) AcquireRefreshTokenRotation(_ context.Context, tokenHash, owner string, _ time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locks[tokenHash] != "" {
+		return false, nil
+	}
+	s.locks[tokenHash] = owner
+	return true, nil
+}
+
+func (s *emailBindRefreshTokenCacheStub) ReleaseRefreshTokenRotation(_ context.Context, tokenHash, owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locks[tokenHash] == owner {
+		delete(s.locks, tokenHash)
+	}
+	return nil
+}
+
 func (s *emailBindRefreshTokenCacheStub) DeleteRefreshToken(_ context.Context, tokenHash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.tokens, tokenHash)
+	delete(s.ttls, tokenHash)
 	for _, tokenSet := range s.userSets {
 		delete(tokenSet, tokenHash)
 	}
@@ -784,6 +809,7 @@ func (s *emailBindRefreshTokenCacheStub) DeleteUserRefreshTokens(_ context.Conte
 	defer s.mu.Unlock()
 	for tokenHash := range s.userSets[userID] {
 		delete(s.tokens, tokenHash)
+		delete(s.ttls, tokenHash)
 		for _, tokenSet := range s.families {
 			delete(tokenSet, tokenHash)
 		}
@@ -797,6 +823,7 @@ func (s *emailBindRefreshTokenCacheStub) DeleteTokenFamily(_ context.Context, fa
 	defer s.mu.Unlock()
 	for tokenHash := range s.families[familyID] {
 		delete(s.tokens, tokenHash)
+		delete(s.ttls, tokenHash)
 		for _, tokenSet := range s.userSets {
 			delete(tokenSet, tokenHash)
 		}

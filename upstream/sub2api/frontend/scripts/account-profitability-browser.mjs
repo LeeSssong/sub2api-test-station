@@ -135,14 +135,16 @@ export class OwnedProcessTree {
     }
 
     const current = new Set(this.identities.keys())
-    const verifiedAncestors = new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
+    const rootIsTrusted = sameIdentity(this.identities.get(this.rootPid), root)
+    const verifiedAncestors = rootIsTrusted
+      ? new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
+      : new Set()
     let changed = true
     while (changed) {
       changed = false
       for (const row of rows) {
         if (current.has(row.pid)) continue
-        const identifiedMember = this.memberMarkers.every(marker => row.command.includes(marker))
-        if (identifiedMember || verifiedAncestors.has(row.ppid)) {
+        if (verifiedAncestors.has(row.ppid)) {
           current.add(row.pid)
           this.identities.set(row.pid, { pid: row.pid, startTime: row.startTime, command: row.command, profile: this.memberMarkers[0] || '', nonce: this.rootMarkers[0] || '', rootPid: this.rootPid })
           verifiedAncestors.add(row.pid)
@@ -158,12 +160,6 @@ export class OwnedProcessTree {
   async signal(signal) {
     await this.refresh()
     if (this.livePids.size === 0) return
-    const rows = await this.readTable()
-    const liveRows = [...this.livePids].map(pid => rows.find(row => row.pid === pid)).filter(Boolean)
-    const verifiedGroup = this.ownsGroup && liveRows.length === this.livePids.size && liveRows.every(row => row.pgid === this.pgid && sameIdentity(this.identities.get(row.pid), row))
-    if (verifiedGroup) {
-      try { process.kill(-this.pgid, signal); return } catch (error) { if (error?.code !== 'ESRCH') throw error }
-    }
     for (const pid of this.livePids) {
       const current = (await this.readTable()).find(row => row.pid === pid)
       if (!sameIdentity(this.identities.get(pid), current)) {

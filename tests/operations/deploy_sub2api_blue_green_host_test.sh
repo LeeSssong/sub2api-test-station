@@ -1930,6 +1930,7 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: downtime gates precede mutation\n'
     test_authorized_maintenance_transition
     test_verified_production_maintenance_transition
+    test_t09_r1_maintenance_transition_allowlist
     test_maintenance_window_hard_maximum
     test_maintenance_pre_worker_failure_restores_previous_api
     test_maintenance_deadline_bounds_post_stop_operation
@@ -2008,6 +2009,7 @@ case "${ONLY_TEST:-all}" in
 		test_authorized_maintenance_transition
 		test_verified_production_maintenance_transition
 		test_t03_r1_maintenance_transition_allowlist
+		test_t09_r1_maintenance_transition_allowlist
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation

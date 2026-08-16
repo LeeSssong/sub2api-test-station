@@ -21,7 +21,7 @@ Keep login sessions on the Sub2API v0.1.177 token and refresh design, and preven
 
 1. Keep the custom rotation replay logic and only turn binding off. Rejected because it retains an unnecessary divergence from Sub and does not prevent re-enabling the unsafe combination.
 2. Remove or permanently disable session binding. Rejected because it removes an official optional capability rather than preserving the native design.
-3. Restore official refresh rotation and require an explicit bootstrap trusted-proxy policy before session binding can be enabled. Selected because the auth state machine remains native while the deployment receives a fail-closed configuration gate.
+3. Restore official refresh rotation and require both an explicit deployment opt-in and a bootstrap trusted-proxy policy before session binding can be enabled. Selected because the auth state machine remains native while the deployment receives a fail-closed configuration gate.
 
 ## Design
 
@@ -31,11 +31,13 @@ Revert the runtime and test changes introduced by `c25fb9ad1`. `RefreshTokenPair
 
 ### Session-binding activation gate
 
-`SettingService` rejects a settings document with `session_binding_enabled=true` unless `config.Server.TrustedProxiesConfigured` is true. This flag is set only by explicit bootstrap configuration of `server.trusted_proxies` or `SERVER_TRUSTED_PROXIES`; it is not writable through the admin settings API.
+`SettingService` rejects an actual write of `session_binding_enabled=true` unless both `config.Security.SessionBindingAllowed` and `config.Server.TrustedProxiesConfigured` are true. `SessionBindingAllowed` is a deployment-only switch loaded from `security.session_binding_allowed` / `SECURITY_SESSION_BINDING_ALLOWED`; its default is false and it is not writable through the admin settings API. The production deployment intentionally leaves it unset.
+
+The trusted-proxy condition remains a second gate, not an activation signal. Production read-only preflight proved `SERVER_TRUSTED_PROXIES` was already present during the incident, so that setting alone is insufficient and must never permit activation.
 
 An explicit empty trusted-proxy list is valid for a directly exposed server and makes Gin ignore forwarding headers. A proxied deployment must explicitly configure the proxy CIDRs. Raw forwarded-client-IP headers and the API-key ACL forwarded-IP switch are not accepted as proof of a trustworthy session identity source.
 
-The gate returns HTTP 400 through the existing typed service-error path with code `SESSION_BINDING_TRUSTED_PROXIES_REQUIRED`. Disabling the feature remains allowed.
+The gate returns HTTP 400 through the existing typed service-error path with code `SESSION_BINDING_DEPLOYMENT_OPT_IN_REQUIRED` when the deployment opt-in is absent, or `SESSION_BINDING_TRUSTED_PROXIES_REQUIRED` when the opt-in is present but the proxy policy is absent. Disabling the feature remains allowed.
 
 ## Compatibility and failure semantics
 
@@ -48,9 +50,10 @@ The gate returns HTTP 400 through the existing typed service-error path with cod
 
 - With binding disabled, different proxy IPs between login and later requests do not trigger session-family revocation.
 - Reusing an already rotated refresh token is rejected according to official Sub behavior.
-- Enabling binding without explicit `server.trusted_proxies` configuration is rejected and not persisted.
+- Enabling binding without deployment opt-in is rejected even when `server.trusted_proxies` is configured.
+- With deployment opt-in enabled, missing `server.trusted_proxies` is still rejected.
 - Disabling binding without that configuration is accepted.
-- Enabling binding with an explicit trusted-proxy policy remains supported.
+- Enabling binding remains supported only when both deployment-level conditions are explicit.
 - Auth, session-binding, settings, and refresh-token focused tests pass.
 - Blue-green preflight reports `downtime_required=false`; health endpoints pass; a real browser login survives `/auth/me`, navigation, and reload; no new binding mismatch is observed; the setting remains false.
 

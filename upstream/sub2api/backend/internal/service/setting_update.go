@@ -552,13 +552,19 @@ func (s *SettingService) validateSessionBindingUpdate(updates map[string]string)
 	if updates[SettingKeySessionBindingEnabled] != "true" {
 		return nil
 	}
-	if s.cfg != nil && s.cfg.Server.TrustedProxiesConfigured {
-		return nil
+	if s.cfg == nil || !s.cfg.Security.SessionBindingAllowed {
+		return infraerrors.BadRequest(
+			"SESSION_BINDING_DEPLOYMENT_OPT_IN_REQUIRED",
+			"session binding requires deployment-level security.session_binding_allowed opt-in",
+		)
 	}
-	return infraerrors.BadRequest(
-		"SESSION_BINDING_TRUSTED_PROXIES_REQUIRED",
-		"session binding requires an explicit server.trusted_proxies policy",
-	)
+	if !s.cfg.Server.TrustedProxiesConfigured {
+		return infraerrors.BadRequest(
+			"SESSION_BINDING_TRUSTED_PROXIES_REQUIRED",
+			"session binding requires an explicit server.trusted_proxies policy",
+		)
+	}
+	return nil
 }
 
 func defaultAccountSchedulingThresholds() map[string]int {

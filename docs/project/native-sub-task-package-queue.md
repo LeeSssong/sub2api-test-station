@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：P0 会话热修已 `DONE`，发布车道由 T13 独占。T13 刷新候选 `8faf65547` 已无冲突合入根 `main@9c5d30d40`，合并树直接相关测试通过，当前进入 `INTEGRATING` 推送与发布预检；T12 继续 `FROZEN` 并等待 T13 生产收口。
+- 队列状态：T13 已完成推送、无停机蓝绿发布和线上定向验证，状态为 `DONE`，发布车道已释放。T12 仍按暂停指令保持 `FROZEN`；其 docs-only 规格修订 `50567e862` 仅登记为后续恢复输入，尚未解冻实现。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@527f2195cbec517a72fbc05ee898b6999324aced`，发布记录 `20260816T164033Z-production-1258100.json` 为 `succeeded/promoted`，`downtime_required=false`，新 `green` API 与 worker 均 healthy。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200，登录态从仪表盘点击管理员“使用记录”后保持 `/admin/usage` 且数据正常加载。
+- 当前发布状态：生产源 `main@3673d5a9a2c38b6cea22a595f0ab51c82cd751da`、tree `6280cb3075d4c2df035641dd052e94a7dc871eb1`，发布记录 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -188,6 +188,7 @@
 - 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修。已保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657`，以及唯一未提交文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；无生产代码改动、无新提交、无合并或发布。未获根总控明确解冻前不得继续。
 - 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
 - 冻结前详细进度：用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd`、worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建`、分支 `codex/t12-native-probe-cost-design-recovery`。批准规格 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`、计划 `786d809cf0c366c03e7e75d3607c0b95c0c90553`；Task 1/2 已完成，Task 3 候选 `a54222c5352889c0b48bff2a5824c8b6f214c657`，Task 4 未提交 RED 测试原样保留。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 后续恢复输入：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。该提交未触碰 main、T12 实现 worktree 或生产；只有根总控后续明确解冻 T12 后才可评估采用。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
@@ -196,7 +197,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`INTEGRATING`。刷新候选 `codex/newapi-rate-multiplier-registration@8faf65547` 已无冲突合入根 `main@9c5d30d40`；合并树上的 3 个 focused service 用例、2 个 repository CAS 用例、相关包 compile-only、gofmt 与运行时代码 diff-check 均通过。当前只执行根 `main` 推送和既有发布链预检，不增加额外 reviewer、全仓测试或无关验证。
+- 当前状态：`DONE`。刷新候选 `codex/newapi-rate-multiplier-registration@8faf65547` 已合入并随根 `main@3673d5a9a` 推送；既有预加载蓝绿链返回 `succeeded`、活动槽 `blue`、`downtime_required=false`，宿主记录为 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json`。公网三项健康检查均 200；管理员登录态账号页正常加载 92 个账号、显示“上游声明倍率”列，发布资源 `AccountsView-rMmhHhPy.js` 包含 `rate_registration/registered` 合同。当前无自然“已登记”样本，未为验收制造请求或修改生产账号；功能将在后续首笔合格真实请求后按合同登记。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。

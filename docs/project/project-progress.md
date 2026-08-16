@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**P0 使用记录触发会话过期热修（2026-08-16）：** 用户指令立即停止 T12、T13 及其他任务，仅处理点击“使用记录”后会话被清除并跳转登录页的严重问题。生产日志已确认根因为首屏多个 admin API 在 access token 失效时并发 refresh：首个请求轮换并删除旧 refresh token，后续请求使用旧 token 触发 `Refresh token not found, possible reuse attack` 和 401，前端全局拦截器遂清除会话。候选 `c25fb9ad1` 已作为 `main@91bce7fe4111cec65ee23b71f49c0550049d86cb` 合并：对同一旧 refresh token 实行 10 秒、AES-GCM 加密、可撤销清除的幂等轮换结果重放，未知、过期或已撤销 marker 仍然拒绝。直接服务测试与 Redis 锁所有权测试通过，无迁移或配置变更。**状态：进行中（DEPLOYING，尚未推送、部署或线上验收）。**
+**P0 使用记录触发会话过期热修（2026-08-16）：** 生产日志确认根因为 access token 失效后的并发 refresh 竞态：首个请求轮换并删除旧 refresh token，后续请求使用旧 token 触发 reuse 401 并清除前端会话。候选 `c25fb9ad1` 对同一旧 token 实行 10 秒、AES-GCM 加密、可撤销清除的幂等轮换结果重放，未知、过期或已撤销 marker 仍拒绝。直接服务测试与 Redis 锁测试通过，无迁移或配置变更。根 `main@527f2195cbec517a72fbc05ee898b6999324aced` 已推送；宿主记录 `20260816T164033Z-production-1258100.json` 返回 `succeeded/promoted`、`downtime_required=false`，活动 `green` API 和 worker healthy，公网三个健康端点均 HTTP 200。使用现有管理员登录态从仪表盘点击“使用记录”，页面保持 `/admin/usage`、数据正常加载，未跳转登录页。**状态：已完成（DONE；已推送、已部署、已验证生效）。**
 
 **T12/T13 紧急暂停记录（2026-08-16）：** T12 唯一 Task 4 写入者已中断，保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657` 与唯一未提交测试文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；没有运行测试、没有修改生产代码、没有提交或合并。T13 同步停止并保留现有候选和未提交内容。两者均不得在 P0 热修发布收口前恢复。**状态：FROZEN。**
 

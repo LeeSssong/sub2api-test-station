@@ -43,6 +43,9 @@ func (s *SettingService) UpdateSettingsOmitting(ctx context.Context, settings *S
 		return err
 	}
 	omitted.dropFrom(updates)
+	if err := s.validateSessionBindingUpdate(updates); err != nil {
+		return err
+	}
 
 	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
 		return err
@@ -73,6 +76,9 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 		updates[key] = value
 	}
 	omitted.dropFrom(updates)
+	if err := s.validateSessionBindingUpdate(updates); err != nil {
+		return err
+	}
 
 	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
 		return err
@@ -540,6 +546,19 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAllowUserViewErrorRequests] = strconv.FormatBool(settings.AllowUserViewErrorRequests)
 
 	return updates, nil
+}
+
+func (s *SettingService) validateSessionBindingUpdate(updates map[string]string) error {
+	if updates[SettingKeySessionBindingEnabled] != "true" {
+		return nil
+	}
+	if s.cfg != nil && s.cfg.Server.TrustedProxiesConfigured {
+		return nil
+	}
+	return infraerrors.BadRequest(
+		"SESSION_BINDING_TRUSTED_PROXIES_REQUIRED",
+		"session binding requires an explicit server.trusted_proxies policy",
+	)
 }
 
 func defaultAccountSchedulingThresholds() map[string]int {

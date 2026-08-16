@@ -3,6 +3,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,41 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type sessionBindingSettingRepo struct {
+	enabled string
+}
+
+func (r *sessionBindingSettingRepo) Get(context.Context, string) (*service.Setting, error) {
+	panic("unexpected Get call")
+}
+
+func (r *sessionBindingSettingRepo) GetValue(_ context.Context, key string) (string, error) {
+	if key == service.SettingKeySessionBindingEnabled {
+		return r.enabled, nil
+	}
+	return "", service.ErrSettingNotFound
+}
+
+func (r *sessionBindingSettingRepo) Set(context.Context, string, string) error {
+	panic("unexpected Set call")
+}
+
+func (r *sessionBindingSettingRepo) GetMultiple(context.Context, []string) (map[string]string, error) {
+	panic("unexpected GetMultiple call")
+}
+
+func (r *sessionBindingSettingRepo) SetMultiple(context.Context, map[string]string) error {
+	panic("unexpected SetMultiple call")
+}
+
+func (r *sessionBindingSettingRepo) GetAll(context.Context) (map[string]string, error) {
+	panic("unexpected GetAll call")
+}
+
+func (r *sessionBindingSettingRepo) Delete(context.Context, string) error {
+	panic("unexpected Delete call")
+}
 
 func TestSessionBindingContextFollowsForwardedIPSwitch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -150,4 +186,23 @@ func TestRequestSessionBindingPrefersInjectedBinding(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	require.Equal(t, 200, w.Code)
+}
+
+func TestEnforceSessionBindingAllowsProxyIPChangeWhenDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	settingService := service.NewSettingService(
+		&sessionBindingSettingRepo{enabled: "false"},
+		&config.Config{},
+	)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest("GET", "/api/v1/auth/me", nil)
+	requestBinding := &service.SessionBinding{IP: "172.71.1.20", UserAgent: "test-agent"}
+	c.Request = req.WithContext(service.WithSessionBinding(req.Context(), requestBinding))
+	issuedBinding := &service.SessionBinding{IP: "104.22.1.10", UserAgent: "test-agent"}
+	claims := &service.JWTClaims{BindingHash: issuedBinding.Hash()}
+
+	require.True(t, enforceSessionBinding(c, nil, settingService, nil, claims))
+	require.NotEqual(t, 401, recorder.Code)
 }

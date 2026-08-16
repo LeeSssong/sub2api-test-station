@@ -208,3 +208,13 @@ func TestUpdateSettingsRejectsInvalidForwardedClientIPHeader(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.JSONEq(t, `["X-Existing-IP"]`, repo.values[service.SettingKeyForwardedClientIPHeaders])
 }
+
+func TestUpdateSettingsRejectsSessionBindingWithoutExplicitTrustedProxies(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+
+	rec := doUpdateSettings(t, h, map[string]any{"session_binding_enabled": true}, nil)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "SESSION_BINDING_TRUSTED_PROXIES_REQUIRED")
+	require.NotEqual(t, "true", repo.values[service.SettingKeySessionBindingEnabled])
+}

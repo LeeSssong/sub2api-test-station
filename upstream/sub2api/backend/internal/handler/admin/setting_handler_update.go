@@ -494,6 +494,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	// Do not reinterpret an omitted, already-enabled binding as a new enable
+	// request. Explicit writes still pass through the activation safety gate.
+	if req.SessionBindingEnabled == nil && previousSettings.SessionBindingEnabled {
+		omitted[service.SettingKeySessionBindingEnabled] = struct{}{}
+	}
 	previousAuthSourceDefaults, err := h.settingService.GetAuthSourceDefaultSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)

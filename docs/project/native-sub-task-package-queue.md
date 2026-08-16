@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11、T11-R1 与 OAuth 图片编辑上传 MIME 兼容热修均已完成推送、部署和既定范围验收。新的最高优先级任务为 T09；S1-R2 排在其后。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11、T11-R1 与 OAuth 图片编辑上传 MIME 兼容热修均已完成推送、部署和既定范围验收。新的最高优先级任务为 T09；T12 已登记为后续独立设计任务；S1-R2 排在其后。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：OAuth MIME 热修已随 `main@3d4580c55f106193617865c59c42dbc603fee435`、tree `5e5e3cecdcdaa4a36573c423c2f29b003260f0c8` 推送并完成无停机蓝绿发布；生产记录 `/var/lib/sub2api/release-records/20260816T042531Z-production-727142.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`、上游 `sub2api-blue:8080`。当前发布车道空闲。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -175,3 +175,12 @@
 - T07、T08、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；T09 当前唯一处于 `IMPLEMENTING`，发布车道保持空闲。
 - T09 已从 OAuth MIME 热修收口后的最新干净 `main@f4de83cb583a03dd10ca7e462267d15a468c3079` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；S1-R2 继续排队。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。
+
+### T12 经营页本站探测花费与排序/美元字段优化
+
+- 当前状态：`DESIGNING`（仅登记/排队，禁止 writing-plans、实现、合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务待创建，必须从登记后的最新干净 `main` 创建独立 worktree；T09 未完成前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
+- 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
+- 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
+- 设计前置：必须先复用现有 Sub 原生 `usage_logs`、账号探测/测试链路和经营页；只有正式规格证明原生能力不足后才可做最小扩展。规格批准前不得写计划或代码。
+- 旧设计证据：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/account-probe-cost-design`、分支 `codex/account-probe-cost-design@893933924` 仅作冻结的 docs-only 设计证据，不作为 T12 顶层任务、不继续写入、不合并或部署。

@@ -39,7 +39,7 @@
 | 字段 | 约束/语义 |
 | --- | --- |
 | `id` | `BIGSERIAL` 主键，只追加 |
-| `account_id` | `BIGINT NOT NULL`，引用 `accounts(id)`；账号删除按既有策略阻止或保留历史，不写孤儿行 |
+| `account_id` | `BIGINT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT`；存在 probe 记录时禁止物理删除账号，不允许 `CASCADE`，确保 append-only 历史不丢失且无孤儿行 |
 | `group_id` | `BIGINT NULL`，探测时的真实分组快照；`NULL` 表示未归属，不按当前归属回推 |
 | `probe_kind` | `monitor` / `scheduled` / `manual`，由调用上下文显式传入 |
 | `probe_run_id` | `VARCHAR NOT NULL UNIQUE`，本站每次实际 probe attempt 的稳定幂等标识；重试同一落库动作不得重复计费，禁止伪造用户请求 ID |
@@ -66,9 +66,24 @@
 继续使用 `GET /api/v1/admin/operations/account-financial?range=today|24h|7d|31d`，在同一 repeatable-read 快照内分别读取：
 
 - 用户财务：现有 `usage_logs` 聚合，保持 `requests`、`tokens`、`cost`、`user_cost`、`profit=user_cost-cost`、`margin=profit/user_cost`；probe 表永不参与这些字段。
-- 探测财务：probe 表按 `(group_id, account_id)` 聚合，再折叠到分组和全站；字段为 `probe_requests`、`probe_tokens`、`probe_cost`、`probe_cost_status`。
+- 探测财务：probe 表按 `(group_id, account_id)` 聚合，再折叠到分组和全站；字段为 `probe_requests`、`probe_tokens`、`probe_cost`、`probe_cost_status`。报告顶层另有管理员专用 `probe_data_error` 与 `probe_error_code`，只表达 probe 聚合查询本身是否失败。
 
-`probe_cost_status`：`confirmed`（窗口内所有 probe 都有完整成本）、`incomplete`（存在 probe 但至少一笔成本缺失，金额对外显示 `—`）、`unavailable`（窗口无 probe 记录）。窗口有记录且总成本确为零时显示 `$0.00`；无记录同样显示 `$0.00` 并标注“暂无探测记录”，避免把零与未知混淆。
+`probe_cost_status`：`confirmed`（窗口内所有 probe 都有完整成本）、`incomplete`（存在 probe 但至少一笔成本缺失，金额对外显示 `—`）、`unavailable`（查询成功且该窗口/维度没有 probe 记录）。窗口有记录且总成本确为零时显示 `$0.00`；无记录同样显示 `$0.00` 并标注“暂无探测记录”。`unavailable` 不得表示查询失败。
+
+最小失败契约：正常查询时 `probe_data_error=false`、`probe_error_code=null`；probe 聚合查询失败时仍返回用户六项财务，报告顶层返回 `probe_data_error=true`、稳定脱敏码 `probe_error_code="probe_aggregate_unavailable"`。此时摘要、分组和账号上的 `probe_requests`、`probe_tokens`、`probe_cost`、`probe_cost_status` 均为 `null`，不得伪装成零或 `unavailable`。这些字段只存在于管理员 account-financial 响应，不暴露 SQL、凭据或内部错误文本。
+
+```json
+{
+  "probe_data_error": false,
+  "probe_error_code": null,
+  "summary": {
+    "probe_requests": 12,
+    "probe_tokens": 2400,
+    "probe_cost": 0.14,
+    "probe_cost_status": "confirmed"
+  }
+}
+```
 
 对外继续使用现有 account-financial 字段、接口名称与 DTO；不新增或弃用余额字段，也不增加兼容别名或迁移全局余额字段。经营页按响应的 `currency: "USD"` 将现有未消费金额显示为美元并保留两位小数，不做 CNY→USD 换算，不改其他余额页面。
 
@@ -80,10 +95,11 @@
 - 账号表新增“本站探测花费”列；现有“账号计费”明确表示用户 `usage_logs` 成本。分组视图沿用同一字段。
 - 六项排序只作用于请求、Token、账号计费、用户扣费、利润、利润率；探测花费不改变默认排序和不参与利润计算。刷新、窗口切换、分组切换后保留当前排序字段与方向。
 - 金额统一 `$0.00` 两位小数；`probe_cost_status=incomplete` 显示 `—` 和短管理员提示；移动端 390×844 保持横向滚动、稳定列宽和可读性。
+- `probe_data_error=true` 时，探测卡片和账号列显示“探测数据暂不可用”故障态及可重试入口，不显示 `$0.00` 或“暂无探测记录”；用户六项卡片、表格和排序继续正常工作。
 
 ## 7. 失败、安全、兼容
 
-- probe 表写入失败或读模型 probe 查询失败：用户六项财务仍可返回；探测卡片显示 `unavailable` 并提供管理员可诊断错误，不把整页伪装成用户账务失败。
+- probe 表写入失败：只记录稳定诊断并保留原有探测结果，不影响用户链路。读模型 probe 查询失败：用户六项财务仍返回，按 `probe_data_error/probe_error_code` 显示独立故障态；不得使用 `unavailable` 或 `$0.00` 掩盖系统故障。
 - 用户 `usage_logs` 写入/扣费链路保持原样；probe 不进入 `usage_logs`，因此既有用户余额、用户用量、普通管理员统计无需增加来源过滤，也不会混入探测。
 - 回滚只停止新 probe 写入/展示并保留空表及已写入记录；旧版本继续读取 `usage_logs` 用户口径。禁止删除表或改写历史数据作为回滚。
 
@@ -95,6 +111,9 @@
 | 三类完整 probe | probe 表有对应 `probe_kind` 行；账号→分组→全站探测成本守恒；用户六项不变 |
 | 缺 Token/价格 | `usage_completeness=partial/unknown`、成本 `NULL`、金额 `—`，不估算 |
 | probe 写入失败 | 原有探测结果和用户链路成功；管理员日志可定位 |
+| probe 聚合查询失败 | 六项财务正常；`probe_data_error=true`、稳定错误码；探测字段为 `null`，UI 显示故障/重试，不显示 `$0.00` 或“无记录” |
+| 查询成功但窗口无 probe | `probe_data_error=false`、`probe_cost_status=unavailable`，显示 `$0.00` 和“暂无探测记录” |
+| 账号有 probe 历史后尝试物理删除 | `ON DELETE RESTRICT` 拒绝删除；记录不丢失、不级联、无孤儿 |
 | 历史窗口 | 启用前无新 probe 行，不回填既有业务数据 |
 | 排序 | 六项可升降序，利润率空值置底；探测列不改变排序 |
 | USD 显示 | 现有未消费金额字段/接口名不变；经营页显示 USD、两位小数；无汇率计算或其他页面改造 |

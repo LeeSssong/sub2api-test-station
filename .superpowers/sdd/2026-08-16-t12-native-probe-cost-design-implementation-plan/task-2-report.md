@@ -47,3 +47,28 @@ PASS
 Candidate is ready for an independent Task 2 review only. Reviewer should
 verify the three source labels, the unclassified recovery path, failure-open
 append behavior, no user-billing side effects, and the generated Wire graph.
+
+## P1 resolved-model fix — 2026-08-16
+
+```text
+RED
+cd upstream/sub2api/backend && go test ./internal/service -run 'TestAccountProbeRecordsResolved(DefaultUpstreamModel|MappedUpstreamModel)$' -count=1
+FAIL as expected: TestAccountProbeRecordsResolvedDefaultUpstreamModel showed
+the upstream request model was gpt-5.4 while ProbeRecordInput.Model was empty.
+
+GREEN
+cd upstream/sub2api/backend && go test ./internal/service -run 'TestAccountProbeRecordsResolved(DefaultUpstreamModel|MappedUpstreamModel)$' -count=1
+PASS
+
+Focused service coverage
+cd upstream/sub2api/backend && go test ./internal/service -run 'TestAccountProbe' -count=1
+PASS
+
+Formatting / diff
+cd upstream/sub2api/backend && gofmt -d internal/service/account_probe_cost_service.go internal/service/account_test_service.go internal/service/account_probe_cost_test.go
+PASS (no output)
+cd upstream/sub2api/backend && git diff --check
+PASS
+```
+
+Implementation commit: `55ccfdeef98f1f48a2d63c7e4106f79fa5df8f3a`.

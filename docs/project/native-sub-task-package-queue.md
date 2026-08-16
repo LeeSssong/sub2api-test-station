@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。T12 最新刷新候选 `4029240f4` 已完成直接相关验证并快进合入根 `main`，当前独占 `INTEGRATING` 车道；待最终合并树最小门禁、迁移/停机预检与 push 后进入既有蓝绿发布链。T15 仅为 `BACKLOG`，不占用当前车道。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。T12 最新刷新候选 `4029240f4` 已完成直接相关验证、快进合入并随根 `main@59316b4a9` 推送；蓝绿链在候选启动前判定 `downtime_required=true`，当前为 `BLOCKED`，等待用户明确授权约 300 秒维护窗口。T15 仅为 `BACKLOG`，不得在 T12 收口前启动。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca`、tree `6002d847555f224981aa03d64e098eccbba4561a`，发布记录 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -192,8 +192,8 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`INTEGRATING`。原候选 `c7587599a` 因 P0 插队被根主线撤回；P0 收口后，T12 worktree 快进 `main@b16d45203`，仅反向撤销移除 T12 运行时/任务文档的 `9d9e2b758`，保留由根总控维护的当前全局文档，生成运行时候选 `35baf14ae` 和最终 handoff 候选 `4029240f4`。该候选已无冲突快进合入根 `main@4029240f4`。
-- 最新候选验证：migration/repository/service/handler 四组 focused Go 测试、前端两个直接 Vitest（19/19）、typecheck、build、`gofmt -d`、`git diff --check` 与 migration/范围安全扫描均通过；P0 auth/config/session 文件相对最新基线零差异。当前继续在最终根合并树重复最小门禁并执行迁移/停机预检。
+- 当前状态：`BLOCKED`。原候选 `c7587599a` 因 P0 插队被根主线撤回；P0 收口后，T12 worktree 快进 `main@b16d45203`，仅反向撤销移除 T12 运行时/任务文档的 `9d9e2b758`，保留由根总控维护的当前全局文档，生成运行时候选 `35baf14ae` 和最终 handoff 候选 `4029240f4`。该候选已无冲突快进合入并随根 `main@59316b4a9a296a264efc59b33c9e66f53ee3d90c` 推送。
+- 最新候选验证：migration/repository/service/handler 四组 focused Go 测试、前端两个直接 Vitest（19/19）、typecheck、build、`gofmt -d`、`git diff --check` 与 migration/范围安全扫描均通过；P0 auth/config/session 文件相对最新基线零差异。既有蓝绿链已构建不可变候选镜像，但因迁移集合变化返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用约 300 秒，并在候选启动、迁移和切换前停止；生产仍运行 P0 修复版本 `e554b7d2e` 的活动 `green` 槽。0600 门禁证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-59316b4a9-t12-probe-cost-v2.json`。不得复用历史停机授权或自行带维护参数重试，须等待用户明确授权本次维护窗口。
 - 实施边界：沿用批准规格与计划，不新增产品范围，不恢复旧 Task 4 RED，不运行全仓测试或额外 reviewer。T12 是当前唯一允许进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选，worktree/分支保留到生产验证成功。
 - 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%；这些合同及 Task 1-3 的隔离账本、原生定价、fail-open、probe 聚合均已落实到最终候选 `c7587599a`。旧 Task 4 RED 已废弃且未带入；本轮不重做功能，只将该已验证候选刷新到最新主线并复跑直接相关门禁。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。

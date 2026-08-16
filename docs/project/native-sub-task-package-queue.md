@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：T13 已完成推送、无停机蓝绿发布和线上定向验证，状态为 `DONE`，发布车道已释放。T12 仍按暂停指令保持 `FROZEN`；其 docs-only 规格修订 `50567e862` 仅登记为后续恢复输入，尚未解冻实现。
+- 队列状态：T13 已 `DONE`，发布车道已释放。T12 已从冻结态进入 `DESIGNING`：仅在原用户可见顶层任务完成新规格与旧 Task 1-3 的只读对账，并从最新 `main` 准备干净恢复方案；旧脏 worktree 继续只读保全。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@3673d5a9a2c38b6cea22a595f0ab51c82cd751da`、tree `6280cb3075d4c2df035641dd052e94a7dc871eb1`，发布记录 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -185,10 +185,10 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修。已保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657`，以及唯一未提交文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；无生产代码改动、无新提交、无合并或发布。未获根总控明确解冻前不得继续。
+- 当前状态：`DESIGNING`。T13 已生产收口，根总控已解除 T12 的只读对账门禁，但尚未授权恢复旧实现。旧 worktree `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657` 与唯一未提交 `AccountProfitabilityView.spec.ts` 继续原样保全，不得直接继续写入或带入新候选。
 - 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
 - 冻结前详细进度：用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd`、worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建`、分支 `codex/t12-native-probe-cost-design-recovery`。批准规格 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`、计划 `786d809cf0c366c03e7e75d3607c0b95c0c90553`；Task 1/2 已完成，Task 3 候选 `a54222c5352889c0b48bff2a5824c8b6f214c657`，Task 4 未提交 RED 测试原样保留。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
-- 后续恢复输入：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。该提交未触碰 main、T12 实现 worktree 或生产；只有根总控后续明确解冻 T12 后才可评估采用。
+- 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。只读对账确认 Task 1-3 的隔离账本、原生定价、fail-open 和 probe 聚合合同仍兼容；旧 Task 4 RED 的独立 probe card/列布局假设必须废弃。恢复时从最新 main 新建干净候选，只移植仍缺失的 Task 1-3 提交并重写 Task 4，禁止把旧未提交 RED 带入。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。

@@ -11,10 +11,18 @@ import (
 )
 
 const (
-	refreshTokenKeyPrefix   = "refresh_token:"
-	userRefreshTokensPrefix = "user_refresh_tokens:"
-	tokenFamilyPrefix       = "token_family:"
+	refreshTokenKeyPrefix     = "refresh_token:"
+	userRefreshTokensPrefix   = "user_refresh_tokens:"
+	tokenFamilyPrefix         = "token_family:"
+	refreshRotationLockPrefix = "refresh_token_rotation_lock:"
 )
+
+var releaseRefreshRotationLockScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
 
 // refreshTokenKey generates the Redis key for a refresh token.
 func refreshTokenKey(tokenHash string) string {
@@ -29,6 +37,10 @@ func userRefreshTokensKey(userID int64) string {
 // tokenFamilyKey generates the Redis key for token family set.
 func tokenFamilyKey(familyID string) string {
 	return tokenFamilyPrefix + familyID
+}
+
+func refreshRotationLockKey(tokenHash string) string {
+	return refreshRotationLockPrefix + tokenHash
 }
 
 type refreshTokenCache struct {
@@ -63,6 +75,14 @@ func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash strin
 		return nil, fmt.Errorf("unmarshal refresh token data: %w", err)
 	}
 	return &data, nil
+}
+
+func (c *refreshTokenCache) AcquireRefreshTokenRotation(ctx context.Context, tokenHash, owner string, ttl time.Duration) (bool, error) {
+	return c.rdb.SetNX(ctx, refreshRotationLockKey(tokenHash), owner, ttl).Result()
+}
+
+func (c *refreshTokenCache) ReleaseRefreshTokenRotation(ctx context.Context, tokenHash, owner string) error {
+	return releaseRefreshRotationLockScript.Run(ctx, c.rdb, []string{refreshRotationLockKey(tokenHash)}, owner).Err()
 }
 
 func (c *refreshTokenCache) DeleteRefreshToken(ctx context.Context, tokenHash string) error {

@@ -148,7 +148,7 @@
 
 ### T09 官方更新冲突停止与人工处理
 
-- 当前状态：`DESIGNING`。唯一发布总控已从最新干净 `main@a2b71d074c6508daccd4dadf9faedde866413e22` 登记本包，正在创建用户可见 GPT-5.6 Sol/medium 顶层任务和独立 worktree；当前仅允许上下文盘点、brainstorming、规格与计划，不得提前实现、合并或部署。
+- 当前状态：`DESIGNING`。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a008e1-55d1-74f1-a659-fac363dcfd28` 已从最新干净 `main@f4de83cb583a03dd10ca7e462267d15a468c3079` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/203d/sub2api搭建`；当前仅允许上下文盘点、brainstorming、规格与计划，不得提前实现、合并或部署。
 - 目标：无冲突时快速准备官方更新；有冲突时可靠停止并交给管理员人工处理。
 - 范围：候选准备状态机、冲突日志持久化、管理员状态提示和手动更新边界。
 - 固定提示：`存在冲突，需要手动查看冲突日志并更新。`
@@ -173,5 +173,5 @@
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；T09 当前唯一处于 `DESIGNING`，发布车道保持空闲。
-- T09 从 OAuth MIME 热修收口后的最新干净 `main@a2b71d074c6508daccd4dadf9faedde866413e22` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；S1-R2 继续排队。S1 旧候选继续冻结。
+- T09 已从 OAuth MIME 热修收口后的最新干净 `main@f4de83cb583a03dd10ca7e462267d15a468c3079` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；S1-R2 继续排队。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

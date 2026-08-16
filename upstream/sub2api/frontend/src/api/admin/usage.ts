@@ -156,7 +156,7 @@ function normalizeCostEvidence(data: unknown): UsageCostEvidenceDetail {
     }
   }
 
-  return normalized as UsageCostEvidenceDetail
+  return normalized as unknown as UsageCostEvidenceDetail
 }
 
 /** Read persisted local evidence/review facts for one administrator usage row. */

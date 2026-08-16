@@ -79,9 +79,11 @@ function injectPublicSettings(backendUrl: string): Plugin {
 
 export default defineConfig(({ mode }) => {
   // 加载环境变量
-  const env = loadEnv(mode, process.cwd(), '')
+  const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env }
   const backendUrl = env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080'
-  const devPort = Number(env.VITE_DEV_PORT || 3000)
+  const configuredPort = env.VITE_DEV_PORT ?? process.env.VITE_DEV_PORT
+  const devPort = configuredPort === undefined ? 3000 : Number(configuredPort)
+  const browserTest = mode === 'browser-test' || env.VITE_BROWSER_TEST === '1'
 
   return {
     plugins: [
@@ -89,7 +91,7 @@ export default defineConfig(({ mode }) => {
       checker({
         vueTsc: true
       }),
-      injectPublicSettings(backendUrl)
+      ...(browserTest ? [] : [injectPublicSettings(backendUrl)])
     ],
   resolve: {
     alias: {
@@ -155,9 +157,12 @@ export default defineConfig(({ mode }) => {
     }
   },
     server: {
-      host: '0.0.0.0',
+      host: browserTest ? '127.0.0.1' : '0.0.0.0',
       port: devPort,
+      strictPort: browserTest,
+      cors: false,
       proxy: {
+        ...(browserTest ? {} : {
         '/api': {
           target: backendUrl,
           changeOrigin: true
@@ -169,7 +174,7 @@ export default defineConfig(({ mode }) => {
         '/setup': {
           target: backendUrl,
           changeOrigin: true
-        }
+        }})
       }
     }
   }

@@ -146,6 +146,7 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	probeCostRecorder         AccountProbeCostRecorder
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
@@ -302,6 +303,60 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
+}
+
+// SetProbeCostRecorder attaches the isolated operational probe ledger. Keeping
+// it as a setter preserves existing lightweight account-test constructors.
+func (s *AccountTestService) SetProbeCostRecorder(recorder AccountProbeCostRecorder) {
+	if s != nil {
+		s.probeCostRecorder = recorder
+	}
+}
+
+// TestAccountConnectionWithProbeKind is the opt-in accounting boundary for
+// manual, monitor, and scheduled probes. The legacy entry point intentionally
+// remains unclassified so recovery-only callers cannot be metered by accident.
+func (s *AccountTestService) TestAccountConnectionWithProbeKind(c *gin.Context, accountID int64, modelID, prompt, mode string, kind ProbeKind, opts ...AccountTestOptions) error {
+	if s == nil || c == nil || c.Request == nil {
+		return s.TestAccountConnection(c, accountID, modelID, prompt, mode, opts...)
+	}
+	account, lookupErr := s.accountRepo.GetByID(c.Request.Context(), accountID)
+	if lookupErr != nil || account == nil {
+		return s.TestAccountConnection(c, accountID, modelID, prompt, mode, opts...)
+	}
+	observer := &accountProbeUsageObserver{}
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), accountProbeUsageObserverKey{}, observer))
+	testErr := s.TestAccountConnection(c, accountID, modelID, prompt, mode, opts...)
+	if s.probeCostRecorder == nil {
+		return testErr
+	}
+
+	groupID, group := accountProbeGroupSnapshot(account)
+	outcome := ProbeOutcomeSuccess
+	errorCode := ""
+	if testErr != nil {
+		outcome = ProbeOutcomeFailure
+		errorCode = classifyAccountMonitorProbeError(testErr)
+	}
+	observation := observer.observation(modelID, outcome, errorCode)
+	if err := s.probeCostRecorder.Record(c.Request.Context(), ProbeRecordInput{
+		AccountID: account.ID, GroupID: groupID, Group: group,
+		AccountRate: account.BillingRateMultiplier(), Kind: kind, RunID: uuid.NewString(),
+		Model: modelID, Tokens: observation.Tokens, Completeness: observation.Completeness,
+		Outcome: outcome, ErrorCode: errorCode,
+	}); err != nil {
+		log.Printf("account probe cost record failed: code=probe_cost_append_failed account=%d kind=%s err=%v", account.ID, kind, err)
+	}
+	return testErr
+}
+
+func accountProbeGroupSnapshot(account *Account) (*int64, *Group) {
+	if account == nil || len(account.Groups) == 0 || account.Groups[0] == nil {
+		return nil, nil
+	}
+	group := account.Groups[0]
+	groupID := group.ID
+	return &groupID, group
 }
 
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
@@ -2510,6 +2565,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			continue
 		}
+		observeAccountProbeUsage(c, []byte(jsonStr))
 
 		// Support two Gemini response formats:
 		// - AI Studio: {"candidates": [...]}
@@ -2638,6 +2694,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			continue
 		}
+		observeAccountProbeUsage(c, []byte(jsonStr))
 
 		eventType, _ := data["type"].(string)
 
@@ -2703,6 +2760,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
 		}
+		observeAccountProbeUsage(c, []byte(jsonStr))
 		seenJSON = true
 
 		if errData, ok := data["error"].(map[string]any); ok {
@@ -2775,6 +2833,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			continue
 		}
+		observeAccountProbeUsage(c, []byte(jsonStr))
 
 		eventType, _ := data["type"].(string)
 
@@ -3046,6 +3105,15 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 	c.Writer.Flush()
 }
 
+func observeAccountProbeUsage(c *gin.Context, raw []byte) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	if observer, ok := c.Request.Context().Value(accountProbeUsageObserverKey{}).(*accountProbeUsageObserver); ok {
+		observer.observeJSON(raw)
+	}
+}
+
 // sendErrorAndEnd sends an error event and ends the stream
 func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) error {
 	log.Printf("Account test error: %s", errorMsg)
@@ -3084,6 +3152,26 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
 	}, nil
+}
+
+// RunTestBackgroundWithProbeKind is used only by scheduled test plans. The
+// unclassified background method remains the recovery-safe default.
+func (s *AccountTestService) RunTestBackgroundWithProbeKind(ctx context.Context, accountID int64, modelID string, kind ProbeKind) (*ScheduledTestResult, error) {
+	startedAt := time.Now()
+	w := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(w)
+	ginCtx.Request = (&http.Request{}).WithContext(ctx)
+	testErr := s.TestAccountConnectionWithProbeKind(ginCtx, accountID, modelID, "", AccountTestModeDefault, kind)
+	finishedAt := time.Now()
+	responseText, errMsg := parseTestSSEOutput(w.Body.String())
+	status := "success"
+	if testErr != nil || errMsg != "" {
+		status = "failed"
+		if errMsg == "" && testErr != nil {
+			errMsg = testErr.Error()
+		}
+	}
+	return &ScheduledTestResult{Status: status, ResponseText: responseText, ErrorMessage: errMsg, LatencyMs: finishedAt.Sub(startedAt).Milliseconds(), StartedAt: startedAt, FinishedAt: finishedAt}, nil
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

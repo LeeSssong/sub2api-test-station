@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -328,6 +329,31 @@ func openAIImageUploadToDataURL(upload OpenAIImagesUpload) (string, error) {
 	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(upload.Data), nil
 }
 
+func openAIResponsesImageUploadToDataURL(upload OpenAIImagesUpload) (string, error) {
+	if len(upload.Data) == 0 {
+		return "", fmt.Errorf("upload %q is empty", strings.TrimSpace(upload.FileName))
+	}
+
+	contentType := strings.TrimSpace(upload.ContentType)
+	normalizedType := contentType
+	if parsedType, _, err := mime.ParseMediaType(contentType); err == nil {
+		normalizedType = parsedType
+	}
+
+	if contentType == "" || strings.EqualFold(normalizedType, "application/octet-stream") {
+		contentType = http.DetectContentType(upload.Data)
+		normalizedType = contentType
+		if parsedType, _, err := mime.ParseMediaType(contentType); err == nil {
+			normalizedType = parsedType
+		}
+	}
+
+	if !strings.HasPrefix(strings.ToLower(normalizedType), "image/") {
+		return "", fmt.Errorf("upload %q is not an image", strings.TrimSpace(upload.FileName))
+	}
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(upload.Data), nil
+}
+
 func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel string) ([]byte, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
@@ -344,7 +370,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 		}
 	}
 	for _, upload := range parsed.Uploads {
-		dataURL, err := openAIImageUploadToDataURL(upload)
+		dataURL, err := openAIResponsesImageUploadToDataURL(upload)
 		if err != nil {
 			return nil, err
 		}
@@ -401,7 +427,7 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 
 	maskImageURL := strings.TrimSpace(parsed.MaskImageURL)
 	if parsed.MaskUpload != nil {
-		dataURL, err := openAIImageUploadToDataURL(*parsed.MaskUpload)
+		dataURL, err := openAIResponsesImageUploadToDataURL(*parsed.MaskUpload)
 		if err != nil {
 			return nil, err
 		}

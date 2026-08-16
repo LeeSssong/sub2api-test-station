@@ -134,26 +134,28 @@ export class OwnedProcessTree {
       this.ownsGroup = false
     }
 
-    const current = new Set(this.identities.keys())
+    // Keep historically registered identities eligible for cleanup, but only
+    // discover new identities through the current, trusted root's live tree.
+    const liveKnown = new Set([...this.identities.keys()].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
     const rootIsTrusted = sameIdentity(this.identities.get(this.rootPid), root)
-    const verifiedAncestors = rootIsTrusted
-      ? new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
-      : new Set()
-    let changed = true
-    while (changed) {
-      changed = false
+    const reachableFromCurrentRoot = new Set(rootIsTrusted ? [this.rootPid] : [])
+    const queue = [...reachableFromCurrentRoot]
+    while (queue.length > 0) {
+      const parentPid = queue.shift()
       for (const row of rows) {
-        if (current.has(row.pid)) continue
-        if (verifiedAncestors.has(row.ppid)) {
-          current.add(row.pid)
+        if (row.ppid !== parentPid || reachableFromCurrentRoot.has(row.pid)) continue
+        const knownIdentity = this.identities.get(row.pid)
+        if (knownIdentity && !sameIdentity(knownIdentity, row)) continue
+        if (!knownIdentity) {
           this.identities.set(row.pid, { pid: row.pid, startTime: row.startTime, command: row.command, profile: this.memberMarkers[0] || '', nonce: this.rootMarkers[0] || '', rootPid: this.rootPid })
-          verifiedAncestors.add(row.pid)
-          changed = true
         }
+        reachableFromCurrentRoot.add(row.pid)
+        queue.push(row.pid)
       }
     }
-    for (const pid of current) this.pids.add(pid)
-    this.livePids = new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
+    const livePids = new Set([...liveKnown, ...reachableFromCurrentRoot].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
+    for (const pid of livePids) this.pids.add(pid)
+    this.livePids = livePids
     return this.livePids
   }
 

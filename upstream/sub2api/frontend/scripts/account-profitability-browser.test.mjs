@@ -280,6 +280,35 @@ test('keeps a registered helper after reparenting, PGID change, and root exit', 
   assert.deepEqual(calls, [{ pid: 54002, signal: 'SIGTERM' }])
 })
 
+test('does not let a registered reparented helper adopt a never-seen child', async () => {
+  const child = new EventEmitter()
+  child.pid = 54501
+  const profile = '--profile=owned-profile'
+  const nonce = '--nonce=owned-nonce'
+  let table = [
+    { pid: 54501, ppid: 1, pgid: 54501, state: 'S', startTime: 'root-start', command: `runner ${nonce}` },
+    { pid: 54502, ppid: 54501, pgid: 54501, state: 'S', startTime: 'helper-start', command: `helper ${profile}` },
+  ]
+  const tree = new OwnedProcessTree(child, [nonce], [profile], async () => table)
+  await tree.refresh()
+  table = [
+    { pid: 54501, ppid: 1, pgid: 54501, state: 'S', startTime: 'root-start', command: `runner ${nonce}` },
+    { pid: 54502, ppid: 999, pgid: 54502, state: 'S', startTime: 'helper-start', command: `helper ${profile}` },
+    { pid: 54503, ppid: 54502, pgid: 54502, state: 'S', startTime: 'child-start', command: 'never-seen child' },
+  ]
+  const originalKill = process.kill
+  const calls = []
+  process.kill = (pid, signal) => { calls.push({ pid, signal }); return true }
+  try {
+    await tree.signal('SIGTERM')
+  } finally {
+    process.kill = originalKill
+  }
+  assert.deepEqual([...tree.livePids].sort((a, b) => a - b), [54501, 54502])
+  assert.equal(tree.livePids.has(54503), false)
+  assert.deepEqual(calls, [{ pid: 54501, signal: 'SIGTERM' }, { pid: 54502, signal: 'SIGTERM' }])
+})
+
 test('does not signal a registered helper after its identity changes', async () => {
   const child = new EventEmitter()
   child.pid = 55001

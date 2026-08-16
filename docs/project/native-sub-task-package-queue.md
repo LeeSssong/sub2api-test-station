@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：官方 Sub2API `v0.1.177` 已完成发布并收口为 `DONE`；根 `main@e91504e51` 已推送，宿主维护链已成功切换至 `green`，公网健康检查通过。下一包按顺序安排 T14；T12 与 T13 保持设计阶段，S1-R2 保持原队列位置。
+- 队列状态：官方 Sub2API `v0.1.177` 已完成发布并收口为 `DONE`；其发布源 `main@e91504e51` 已推送，宿主维护链已成功切换至 `green`，公网健康检查通过。当前根 `main@4f31ec3dd010dc3d2b6c5caaacadddce1adb84a2` 仅含后续任务登记；T14 为唯一可进入合并车道的候选，T13 继续实现但不得并行进入发布车道，T12 保持设计阶段，S1-R2 保持原队列位置。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：官方 `v0.1.177` 已完成候选交接、根合并、push、宿主维护发布和即时健康验证；活动槽为 `green`，T09 发布车道已释放。T14 可按队列创建独立任务；T12、T13 仍不得越过各自设计门禁。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -187,7 +187,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`DESIGNING`（规格已获用户书面批准，继续排队）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；已批准规格提交 `f2fc807d4fbca5f5917a00b3fadb890061cf3522` 保存在独立 worktree。官方 `v0.1.177` 发布链成功切换前不得调用 writing-plans、创建实现 worktree、写代码、合并、推送、部署或访问生产。
+- 当前状态：`IMPLEMENTING`（规格与计划已批准，继续排队等待 T14 发布车道）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；Task 1 已通过 scoped re-review，Task 2 正在执行 CAS 与 post-usage 接线。候选分支为 `codex/newapi-rate-multiplier-registration`，当前未进入合并、推送、部署或线上验收车道。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。
@@ -195,7 +195,7 @@
 
 ### T14 用量详情上游扣费/利润字段兼容热修
 
-- 当前状态：`DESIGNING`。官方 `v0.1.177` 已发布，已创建用户可见 GPT-5.6 Sol/medium 顶层任务，正在建立独立 worktree/分支 `codex/t14-usage-detail-field-compat`；当前只进行现状核对、brainstorming、正式规格和计划门禁，不实现、不合并、不推送、不部署。
+- 当前状态：`READY_FOR_ROOT_REVIEW`，等待根总控授权合并。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00a15-a76c-7be1-b66f-7a34ddb2b749` 已完成实现与复审；候选分支 `codex/t14-usage-detail-field-compat`，HEAD `d7c7113293f36d9e9bd0b560f346be580806b82c`，基线 `main@4f31ec3dd010dc3d2b6c5caaacadddce1adb84a2`，工作区干净。fresh whole-branch reviewer 已明确 `SPEC: APPROVE`、`QUALITY: APPROVE`，无 Critical/P1/P2；未合并、未推送、未部署、未线上验收。
 - 已确认根因：`/admin/usage/:id/upstream-cost` 返回 PascalCase 字段，例如 `NormalizedCostCNY`、`EvidenceStatus`；详情弹窗仅读取 snake_case 字段，例如 `normalized_cost_cny`、`evidence_status`，因此“上游实际扣费 / 利润”错误显示为 `-`，不是生产数据缺失。
 - 范围：仅对该详情弹窗/API 响应做向后兼容字段归一化，并保留 PascalCase 与 snake_case 两种响应兼容；只做直接相关页级/API 合同验证、必要类型检查/构建、diff/范围检查和发布后定向验收。
 - 非目标：不得并入 T12，不改变账号成本、用户扣费、利润/利润率口径或聚合，不做数据库迁移、历史回填、生产数据修改、账务重算、相邻页面重构或外部控制面。

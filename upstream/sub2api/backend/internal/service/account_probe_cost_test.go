@@ -1,12 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +43,78 @@ func (r probeAccountRepositoryStub) GetByID(context.Context, int64) (*Account, e
 type probeRecorderStub struct {
 	inputs []ProbeRecordInput
 	err    error
+}
+
+type probeModelHTTPStub struct {
+	requests []*http.Request
+}
+
+func (s *probeModelHTTPStub) Do(*http.Request, string, int64, int) (*http.Response, error) {
+	return nil, nil
+}
+
+func (s *probeModelHTTPStub) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	s.requests = append(s.requests, req)
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: [DONE]\n\n")),
+	}, nil
+}
+
+func newProbeModelTestService(account *Account, upstream HTTPUpstream, recorder *probeRecorderStub) *AccountTestService {
+	svc := NewAccountTestService(probeAccountRepositoryStub{account: account}, nil, nil, nil, nil, upstream, &config.Config{}, nil)
+	svc.SetProbeCostRecorder(recorder)
+	return svc
+}
+
+func assertProbeRequestModel(t *testing.T, req *http.Request, want string) {
+	t.Helper()
+	body, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	require.Contains(t, string(body), `"model":"`+want+`"`)
+}
+
+func TestAccountProbeRecordsResolvedDefaultUpstreamModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	account := &Account{ID: 17, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key"}, Extra: map[string]any{"openai_responses_supported": false}}
+	upstream := &probeModelHTTPStub{}
+	recorder := &probeRecorderStub{}
+	svc := newProbeModelTestService(account, upstream, recorder)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/admin/accounts/17/test", nil)
+
+	err := svc.TestAccountConnectionWithProbeKind(c, 17, "", "", AccountTestModeDefault, ProbeKindManual)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Len(t, recorder.inputs, 1)
+	assertProbeRequestModel(t, upstream.requests[0], openai.DefaultTestModel)
+	require.Equal(t, openai.DefaultTestModel, recorder.inputs[0].Model)
+}
+
+func TestAccountProbeRecordsMappedUpstreamModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	account := &Account{ID: 17, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"api_key":       "key",
+		"model_mapping": map[string]any{"gpt-5": "gpt-5-upstream"},
+	}, Extra: map[string]any{"openai_responses_supported": false}}
+	upstream := &probeModelHTTPStub{}
+	recorder := &probeRecorderStub{}
+	svc := newProbeModelTestService(account, upstream, recorder)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/admin/accounts/17/test", nil)
+
+	err := svc.TestAccountConnectionWithProbeKind(c, 17, "gpt-5", "", AccountTestModeDefault, ProbeKindManual)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Len(t, recorder.inputs, 1)
+	assertProbeRequestModel(t, upstream.requests[0], "gpt-5-upstream")
+	require.Equal(t, "gpt-5-upstream", recorder.inputs[0].Model)
 }
 
 func (r *probeRecorderStub) Record(_ context.Context, input ProbeRecordInput) error {

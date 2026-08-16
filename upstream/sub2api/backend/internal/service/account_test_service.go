@@ -342,7 +342,7 @@ func (s *AccountTestService) TestAccountConnectionWithProbeKind(c *gin.Context, 
 	if err := s.probeCostRecorder.Record(c.Request.Context(), ProbeRecordInput{
 		AccountID: account.ID, GroupID: groupID, Group: group,
 		AccountRate: account.BillingRateMultiplier(), Kind: kind, RunID: uuid.NewString(),
-		Model: modelID, Tokens: observation.Tokens, Completeness: observation.Completeness,
+		Model: observation.Model, Tokens: observation.Tokens, Completeness: observation.Completeness,
 		Outcome: outcome, ErrorCode: errorCode,
 	}); err != nil {
 		log.Printf("account probe cost record failed: code=probe_cost_append_failed account=%d kind=%s err=%v", account.ID, kind, err)
@@ -428,6 +428,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
+	observeAccountProbeModel(c, testModelID)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create request")
@@ -756,6 +757,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	}
 
+	observeAccountProbeModel(c, upstreamTestModelID)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create request")
@@ -1118,6 +1120,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	}
 
+	observeAccountProbeModel(c, testModelID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok request")
@@ -1994,6 +1997,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 /v1/chat/completions 测试连接"})
 
+	observeAccountProbeModel(c, testModelID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Chat Completions request")
@@ -2260,6 +2264,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 
 	// Create test payload (Gemini format)
 	payload := createGeminiTestPayload(testModelID, prompt)
+	observeAccountProbeModel(c, testModelID)
 
 	// Build request based on account type
 	var req *http.Request
@@ -3111,6 +3116,15 @@ func observeAccountProbeUsage(c *gin.Context, raw []byte) {
 	}
 	if observer, ok := c.Request.Context().Value(accountProbeUsageObserverKey{}).(*accountProbeUsageObserver); ok {
 		observer.observeJSON(raw)
+	}
+}
+
+func observeAccountProbeModel(c *gin.Context, model string) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	if observer, ok := c.Request.Context().Value(accountProbeUsageObserverKey{}).(*accountProbeUsageObserver); ok {
+		observer.observeModel(model)
 	}
 }
 

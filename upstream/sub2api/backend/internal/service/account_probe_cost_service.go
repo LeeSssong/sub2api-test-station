@@ -33,13 +33,22 @@ type ProbeRecordInput struct {
 // ProbeObservation is kept request-local and is not added to the account-test
 // SSE contract. It records only provider usage supplied by a completed probe.
 type ProbeObservation struct {
+	Model        string
 	Tokens       UsageTokens
 	Completeness ProbeUsageCompleteness
 }
 
 type accountProbeUsageObserver struct {
+	model  string
 	tokens UsageTokens
 	seen   bool
+}
+
+func (o *accountProbeUsageObserver) observeModel(model string) {
+	if o == nil || o.model != "" {
+		return
+	}
+	o.model = strings.TrimSpace(model)
 }
 
 func (o *accountProbeUsageObserver) observeJSON(raw []byte) {
@@ -93,9 +102,9 @@ func (o *accountProbeUsageObserver) observeJSON(raw []byte) {
 
 func (o *accountProbeUsageObserver) observation(_ string, _ ProbeOutcome, _ string) ProbeObservation {
 	if o == nil || !o.seen {
-		return ProbeObservation{Completeness: ProbeUsageUnknown}
+		return ProbeObservation{Model: o.model, Completeness: ProbeUsageUnknown}
 	}
-	return ProbeObservation{Tokens: o.tokens, Completeness: ProbeUsageComplete}
+	return ProbeObservation{Model: o.model, Tokens: o.tokens, Completeness: ProbeUsageComplete}
 }
 
 type accountProbeUsageObserverKey struct{}

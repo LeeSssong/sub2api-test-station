@@ -261,7 +261,8 @@ func TestSettingService_UpdateSettings_PersistsCompactHomeEnabled(t *testing.T) 
 
 func TestSettingService_UpdateSettings_SessionBindingRequiresExplicitTrustedProxies(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
-	svc := NewSettingService(repo, &config.Config{})
+	cfg := &config.Config{Security: config.SecurityConfig{SessionBindingAllowed: true}}
+	svc := NewSettingService(repo, cfg)
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: true})
 
@@ -279,9 +280,23 @@ func TestSettingService_UpdateSettings_SessionBindingAllowsDisabledWithoutTruste
 	require.Equal(t, "false", repo.updates[SettingKeySessionBindingEnabled])
 }
 
-func TestSettingService_UpdateSettings_SessionBindingAllowsExplicitTrustedProxyPolicy(t *testing.T) {
+func TestSettingService_UpdateSettings_SessionBindingRejectsTrustedProxyPolicyWithoutDeploymentOptIn(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	cfg := &config.Config{Server: config.ServerConfig{TrustedProxiesConfigured: true}}
+	svc := NewSettingService(repo, cfg)
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: true})
+
+	require.ErrorContains(t, err, "SESSION_BINDING_DEPLOYMENT_OPT_IN_REQUIRED")
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_SessionBindingAllowsDeploymentOptInAndTrustedProxyPolicy(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	cfg := &config.Config{
+		Server:   config.ServerConfig{TrustedProxiesConfigured: true},
+		Security: config.SecurityConfig{SessionBindingAllowed: true},
+	}
 	svc := NewSettingService(repo, cfg)
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: true})

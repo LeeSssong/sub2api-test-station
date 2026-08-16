@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore Sub2API v0.1.177 native refresh rotation and prevent session binding from being enabled without an explicit trusted-proxy policy.
+**Goal:** Restore Sub2API v0.1.177 native refresh rotation and prevent session binding from being enabled without explicit deployment opt-in plus a trusted-proxy policy.
 
-**Architecture:** Remove the custom refresh lock/replay extension by reverting its isolated commit. Add one validation at the existing settings write boundary; leave token issuance, session binding enforcement, and frontend refresh coordination native.
+**Architecture:** Remove the custom refresh lock/replay extension by reverting its isolated commit. Add a default-off deployment permission and validate both deployment conditions at the existing settings write boundary; leave token issuance, session binding enforcement, and frontend refresh coordination native.
 
 **Tech Stack:** Go, Gin, Redis cache interface, existing typed service errors, focused Go tests.
 
@@ -13,7 +13,7 @@
 - T12 remains frozen and must not be included.
 - No migration, production credential/token mutation, GitHub Actions, full-repository test, or unrelated validation.
 - `session_binding_enabled` remains false in production.
-- Do not accept raw Cloudflare headers as a trust signal.
+- Do not accept raw Cloudflare headers or `SERVER_TRUSTED_PROXIES` alone as an activation signal.
 
 ---
 
@@ -38,15 +38,18 @@
 **Files:**
 - Modify: `upstream/sub2api/backend/internal/service/setting_update.go`
 - Modify: `upstream/sub2api/backend/internal/service/setting_service_update_test.go`
+- Modify: `upstream/sub2api/backend/internal/config/config.go`
+- Modify: `upstream/sub2api/backend/internal/config/config_test.go`
 
 **Interfaces:**
-- Consumes: `config.Config.Server.TrustedProxiesConfigured` and `SystemSettings.SessionBindingEnabled`
-- Produces: `SESSION_BINDING_TRUSTED_PROXIES_REQUIRED` typed bad-request error
+- Consumes: `config.Config.Security.SessionBindingAllowed`, `config.Config.Server.TrustedProxiesConfigured`, and `SystemSettings.SessionBindingEnabled`
+- Produces: default-off deployment permission plus typed activation errors
 
-- [x] Add tests showing enable without explicit trusted proxies is rejected and not persisted, disable remains accepted, and enable with `TrustedProxiesConfigured=true` is accepted.
+- [x] Add tests showing enable without explicit trusted proxies is rejected and not persisted and disable remains accepted.
 - [x] Run those tests and confirm the unsafe-enable case fails before implementation.
 - [x] Add the minimum validation at the settings persistence boundary after omission handling.
 - [x] Re-run the focused tests and confirm all cases pass.
+- [x] Use production read-only preflight to prove trusted proxies alone are insufficient, add a RED regression, then require default-off `security.session_binding_allowed` plus trusted proxies.
 
 ### Task 3: Preserve the disabled-binding proxy-IP behavior
 

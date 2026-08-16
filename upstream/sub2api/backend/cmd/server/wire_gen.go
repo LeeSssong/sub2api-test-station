@@ -294,6 +294,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageCostEvidenceRepository := repository.NewUsageCostEvidenceRepository(db)
 	accountFinancialActivationReader := repository.NewAccountFinancialActivationRepository(db)
 	usageCostEvidenceRegistrar := service.NewUsageCostEvidenceRegistrar(usageLogRepository, usageCostEvidenceRepository, accountFinancialActivationReader)
+	if newAPIRateRefreshRepository, ok := accountRepository.(service.NewAPIRateRefreshRepository); ok {
+		usageCostEvidenceRegistrar.SetNewAPIRateRefreshRepository(newAPIRateRefreshRepository)
+	}
 	usageRecordWorkerPool := service.ProvideUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)

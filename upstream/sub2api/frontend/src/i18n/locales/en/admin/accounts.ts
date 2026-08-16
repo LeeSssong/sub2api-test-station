@@ -264,7 +264,12 @@ export default {
         noEligibleAccounts: 'Select API key accounts',
         batchLimit: 'A batch can probe at most 20 accounts',
         batchCompleted: 'Probed {count} account(s)',
-        batchPartial: 'Probe partially completed: {success} succeeded, {failed} failed'
+        batchPartial: 'Probe partially completed: {success} succeeded, {failed} failed',
+        registered: 'Registered',
+        registrationSource: 'Source: automatically registered from NewAPI request logs',
+        registrationFirstAt: 'First registered: {value}',
+        registrationLastAt: 'Last successful update: {value}',
+        manualEditMayBeOverwritten: 'This rate was registered from NewAPI request logs; manual changes may be overwritten by the next successful daily refresh.'
       },
       allPrivacyModes: 'All Privacy States',
       privacyUnset: 'Unset',

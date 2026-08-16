@@ -1493,6 +1493,9 @@
               )
             }}
           </p>
+          <p v-if="account?.extra?.newapi_rate_registration?.status === 'registered'" class="mt-1 text-xs text-amber-600 dark:text-amber-400" data-testid="newapi-rate-manual-edit-hint">
+            {{ t('admin.accounts.upstreamBilling.manualEditMayBeOverwritten') }}
+          </p>
           <div
             v-if="account?.type === 'apikey'"
             class="mt-3 flex items-center justify-between gap-3"

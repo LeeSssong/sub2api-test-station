@@ -100,6 +100,37 @@ describe('UpstreamBillingRateCell', () => {
     )
   })
 
+  it('shows registered NewAPI state and safe registration metadata', async () => {
+    const wrapper = mount(UpstreamBillingRateCell, {
+      attachTo: document.body,
+      props: {
+        account: makeAccount({
+          rate_multiplier: 0.17,
+          extra: {
+            newapi_rate_registration: {
+              status: 'registered',
+              registered_at: '2026-08-16T01:00:00Z',
+              last_observed_at: '2026-08-16T02:00:00Z'
+            }
+          }
+        }),
+        now: Date.parse('2026-08-16T03:00:00Z')
+      }
+    })
+    expect(wrapper.get('[data-testid="newapi-rate-registered"]').text()).toContain('registered')
+    expect(wrapper.get('[data-testid="upstream-billing-rate"]').text()).toBe('0.17x')
+    await wrapper.get('[data-testid="upstream-billing-details"]').trigger('mouseenter')
+    await flushPromises()
+    const tooltips = document.body.querySelectorAll('[role="tooltip"]')
+    const text = tooltips[tooltips.length - 1]?.textContent || ''
+    expect(text).toContain('registrationSource')
+    expect(text).toContain('registrationFirstAt')
+    expect(text).toContain('registrationLastAt')
+    expect(text).not.toContain('claim_token')
+    expect(text).not.toContain('source_usage_log_id')
+    wrapper.unmount()
+  })
+
   it('uses retained failed data only while it is still fresh', async () => {
     const account = makeAccount({
       extra: {

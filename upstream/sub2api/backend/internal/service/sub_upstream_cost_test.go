@@ -295,10 +295,10 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 		want   bool
 	}{
 		{name: "eligible exact successful NewAPI usage", usage: baseUsage, record: baseRecord, want: true},
-		{name: "unsupported probe without NewAPI identity rejected", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+		{name: "unsupported probe identity accepted with exact log", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
 			Type:  AccountTypeAPIKey,
 			Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}},
-		}}, record: baseRecord, want: false},
+		}}, record: baseRecord, want: true},
 		{name: "usage not persisted", usage: &UsageLog{RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: baseAccount}, record: baseRecord},
 		{name: "missing upstream id", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, Account: baseAccount}, record: baseRecord},
 		{name: "fuzzy match rejected", usage: &UsageLog{ID: 101, RequestID: "different", UpstreamRequestID: newAPIStringPtr("different-upstream"), Account: baseAccount}, record: baseRecord},

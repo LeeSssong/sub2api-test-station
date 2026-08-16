@@ -23,6 +23,24 @@ type usageCostEvidenceActivationStub struct {
 	err       error
 }
 
+type newAPIRateRefreshRepoStub struct {
+	claimed   bool
+	completed []NewAPIRateRefreshCompletion
+}
+
+func (s *newAPIRateRefreshRepoStub) ClaimNewAPIRateRefresh(context.Context, int64, string, string, time.Time) (bool, error) {
+	return s.claimed, nil
+}
+
+func (s *newAPIRateRefreshRepoStub) CompleteNewAPIRateRefresh(_ context.Context, input NewAPIRateRefreshCompletion) error {
+	s.completed = append(s.completed, input)
+	return nil
+}
+
+func (s *newAPIRateRefreshRepoStub) ReleaseNewAPIRateRefresh(context.Context, int64, string) error {
+	return nil
+}
+
 func (s usageCostEvidenceActivationStub) EnabledAt(context.Context) (*time.Time, error) {
 	return s.enabledAt, s.err
 }
@@ -174,6 +192,78 @@ func TestUsageCostEvidenceRegistrarRegistersNewAPIStructuredEvidence(t *testing.
 	require.InDelta(t, 125000, *evidenceRepo.created.NewAPIQuota, 1e-9)
 	require.InDelta(t, 500000, *evidenceRepo.created.NewAPIQuotaPerUnit, 1e-9)
 	require.InDelta(t, 0.25, *evidenceRepo.created.NormalizedCostCNY, 1e-9)
+}
+
+func TestUsageCostEvidenceRegistrarReusesNewAPILogForRateRegistration(t *testing.T) {
+	upstreamID := "provider-newapi-rate-1"
+	logRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/log/token":
+			logRequests++
+			_, _ = w.Write([]byte(`{"data":[{"type":2,"quota":125000,"request_id":"local-newapi-rate-1","upstream_request_id":"provider-newapi-rate-1","other":"{\"group_ratio\":0.17}"}]}`))
+		case "/api/status":
+			_, _ = w.Write([]byte(`{"data":{"quota_per_unit":500000}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 196, RequestID: "local-newapi-rate-1", UpstreamRequestID: &upstreamID, ActualCost: 0.3, CreatedAt: time.Now(),
+		Account: &Account{ID: 196, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		}},
+	}}
+	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
+	rateRepo := &newAPIRateRefreshRepoStub{claimed: true}
+	registrar := enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo)
+	registrar.SetNewAPIRateRefreshRepository(rateRepo)
+
+	require.NoError(t, registrar.RegisterOnce(context.Background(), 196))
+	require.Equal(t, 1, logRequests)
+	require.Len(t, rateRepo.completed, 1)
+	require.InDelta(t, 0.17, rateRepo.completed[0].GroupRatio, 1e-9)
+}
+
+func TestUsageCostEvidenceRegistrarPreservesNewAPILookupFailureReasonWithoutSecondLookup(t *testing.T) {
+	upstreamID := "provider-newapi-failure"
+	logRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/log/token" {
+			http.NotFound(w, r)
+			return
+		}
+		logRequests++
+		if r.URL.Query().Get("cursor") == "next" {
+			_, _ = w.Write([]byte(`{"data":[],"next_cursor":"next-2"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[],"next_cursor":"next"}`))
+	}))
+	defer server.Close()
+
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 197, RequestID: "local-newapi-failure", UpstreamRequestID: &upstreamID, ActualCost: 0.3, CreatedAt: time.Now(),
+		Account: &Account{ID: 197, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: newAPILedgerEvidenceExtra()},
+	}}
+	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
+	rateRepo := &newAPIRateRefreshRepoStub{claimed: true}
+	registrar := enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo)
+	registrar.SetNewAPIRateRefreshRepository(rateRepo)
+
+	require.NoError(t, registrar.RegisterOnce(context.Background(), 197))
+	require.Equal(t, 10, logRequests)
+	require.Equal(t, UsageCostEvidenceStatusUnavailable, evidenceRepo.created.Status)
+	require.Equal(t, "response_unavailable", evidenceRepo.created.ReasonCode)
+	require.Empty(t, rateRepo.completed)
+}
+
+func TestBeijingRefreshDateUsesExplicitAsiaShanghaiLocation(t *testing.T) {
+	date, err := beijingRefreshDate(time.Date(2026, 8, 15, 16, 30, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, "2026-08-16", date)
 }
 
 func TestUsageCostEvidenceRegistrarBoundsSubPaginationToExactMatch(t *testing.T) {
@@ -341,7 +431,7 @@ func TestUsageCostLedgerForAccountUsesPositiveNativeEvidence(t *testing.T) {
 			AccountMonitorBalanceExtraKey: AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK},
 			UpstreamBillingProbeExtraKey:  UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK},
 		}, want: usageCostLedgerNewAPI},
-		{name: "unsupported probe is unknown", extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}, want: usageCostLedgerUnknown},
+		{name: "unsupported probe remains unknown generic ledger", extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}, want: usageCostLedgerUnknown},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			account := &Account{Type: AccountTypeAPIKey, Extra: tc.extra}

@@ -94,7 +94,8 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 		return result
 	}
 	if usageCostLedgerForAccount(usage.Account) == usageCostLedgerNewAPI {
-		return s.lookupNewAPIEvidence(ctx, baseURL, apiKey, usage)
+		result, _ := s.lookupNewAPIEvidenceWithRecord(ctx, baseURL, apiKey, usage, nil, false, "")
+		return result
 	}
 	endpoint, err := subUsageRecordsURL(baseURL)
 	if err != nil {
@@ -118,31 +119,39 @@ func (s *SubUpstreamCostService) lookupEvidence(ctx context.Context, usage *Usag
 }
 
 func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseURL, apiKey string, usage *UsageLog) upstreamCostEvidenceLookup {
+	result, _ := s.lookupNewAPIEvidenceWithRecord(ctx, baseURL, apiKey, usage, nil, false, "")
+	return result
+}
+
+func (s *SubUpstreamCostService) lookupNewAPIEvidenceWithRecord(ctx context.Context, baseURL, apiKey string, usage *UsageLog, matched *newAPIUpstreamUsageRecord, recordLoaded bool, cachedReason string) (upstreamCostEvidenceLookup, *newAPIUpstreamUsageRecord) {
 	result := upstreamCostEvidenceLookup{Source: UsageCostEvidenceSourceNewAPI}
 	logEndpoint, err := newAPIEndpointURL(baseURL, "/api/log/token")
 	if err != nil {
 		result.ReasonCode = "endpoint_unavailable"
-		return result
+		return result, nil
 	}
 	statusEndpoint, err := newAPIEndpointURL(baseURL, "/api/status")
 	if err != nil {
 		result.ReasonCode = "endpoint_unavailable"
-		return result
+		return result, nil
 	}
-	matched, reasonCode, _ := s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	reasonCode := ""
+	if !recordLoaded {
+		matched, reasonCode, _ = s.findNewAPIRecord(ctx, logEndpoint, apiKey, usage)
+	}
 	if !newAPIEvidenceRecordMatches(matched, usage) {
-		result.ReasonCode = firstNonEmpty(reasonCode, "record_not_found")
-		return result
+		result.ReasonCode = firstNonEmpty(reasonCode, firstNonEmpty(cachedReason, "record_not_found"))
+		return result, matched
 	}
 	quota, err := matched.Quota.Float64()
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	body, reasonCode, _ := s.fetchUpstreamJSON(ctx, statusEndpoint, apiKey)
 	if reasonCode != "" {
 		result.ReasonCode = reasonCode
-		return result
+		return result, matched
 	}
 	var payload struct {
 		Data struct {
@@ -152,7 +161,7 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	}
 	if err := decodeUpstreamJSON(body, &payload); err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	unit := payload.Data.QuotaPerUnit
 	if strings.TrimSpace(unit.String()) == "" {
@@ -161,12 +170,12 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	unitValue, err := strconv.ParseFloat(unit.String(), 64)
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	cost, err := newAPIQuotaToCost(matched.Quota, unit)
 	if err != nil {
 		result.ReasonCode = "response_unavailable"
-		return result
+		return result, matched
 	}
 	if matched.Type == 6 {
 		cost = -cost
@@ -175,7 +184,7 @@ func (s *SubUpstreamCostService) lookupNewAPIEvidence(ctx context.Context, baseU
 	result.Found = true
 	result.NewAPIQuota = &quota
 	result.NewAPIQuotaPerUnit = &unitValue
-	return result
+	return result, matched
 }
 
 // Evidence registration requires a provider request ID from the official
@@ -464,10 +473,27 @@ func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUps
 		snapshot.Status == UpstreamBillingProbeStatusOK {
 		return false
 	}
-	if usageCostLedgerForAccount(usage.Account) != usageCostLedgerNewAPI {
+	if !newAPIRateRegistrationIdentity(usage.Account) {
 		return false
 	}
 	return newAPIEvidenceRecordMatches(record, usage)
+}
+
+func newAPIRateRegistrationIdentity(account *Account) bool {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	balance := decodeAccountMonitorBalance(account.Extra)
+	if balance != nil {
+		if balance.Source == AccountMonitorBalanceSourceNewAPI {
+			return true
+		}
+		if balance.Source == AccountMonitorBalanceSourceSub2API {
+			return false
+		}
+	}
+	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	return snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported
 }
 
 type newAPIUpstreamUsageRecordsResponse struct {

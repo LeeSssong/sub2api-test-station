@@ -43,6 +43,11 @@
           </p>
         </template>
         <p v-else>{{ statusLabel || '-' }}</p>
+        <template v-if="isNewAPIRegistered">
+          <p data-testid="newapi-rate-registration-source">{{ t('admin.accounts.upstreamBilling.registrationSource') }}</p>
+          <p data-testid="newapi-rate-registration-first">{{ t('admin.accounts.upstreamBilling.registrationFirstAt', { value: formatDate(registration?.registered_at) }) }}</p>
+          <p data-testid="newapi-rate-registration-last">{{ t('admin.accounts.upstreamBilling.registrationLastAt', { value: formatDate(registration?.last_observed_at) }) }}</p>
+        </template>
         <p
           v-if="probeEnabled && globalProbeEnabled !== false && nextProbeAt"
           data-testid="upstream-billing-next-probe"
@@ -67,6 +72,9 @@
     </HelpTooltip>
     <span v-if="hasEffectiveRate && statusLabel" :class="statusClass" class="whitespace-nowrap text-[10px] font-medium">
       {{ statusLabel }}
+    </span>
+    <span v-if="isNewAPIRegistered" class="whitespace-nowrap text-[10px] font-medium text-emerald-600 dark:text-emerald-400" data-testid="newapi-rate-registered">
+      {{ t('admin.accounts.upstreamBilling.registered') }}
     </span>
     <button
       type="button"
@@ -109,6 +117,8 @@ const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000
 // 探测资格已放宽到全部 API-key 平台（上游是 sub2api 即可应答）。
 const eligible = computed(() => props.account.type === 'apikey')
 const snapshot = computed<UpstreamBillingProbeSnapshot | undefined>(() => props.account.extra?.upstream_billing_probe)
+const registration = computed(() => props.account.extra?.newapi_rate_registration)
+const isNewAPIRegistered = computed(() => registration.value?.status === 'registered')
 const data = computed(() => snapshot.value?.data)
 const probeEnabled = computed(() => props.account.extra?.upstream_billing_probe_enabled === true)
 const nextProbeAt = computed(() => {
@@ -209,7 +219,13 @@ const statusClass = computed(() => {
   return ''
 })
 const hasEffectiveRate = computed(() => effectiveRate.value !== '-')
-const primaryValue = computed(() => hasEffectiveRate.value ? effectiveRate.value : statusLabel.value || '-')
+const registeredAccountRate = computed(() => {
+  const value = props.account.rate_multiplier
+  return isNewAPIRegistered.value && typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? `${formatMultiplier(value)}x`
+    : null
+})
+const primaryValue = computed(() => hasEffectiveRate.value ? effectiveRate.value : registeredAccountRate.value || statusLabel.value || '-')
 const formatDate = (value?: string) => value
   ? new Date(value).toLocaleString(undefined, {
       month: '2-digit',

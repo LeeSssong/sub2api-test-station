@@ -1128,6 +1128,12 @@ export interface Account {
     upstream_billing_probe_enabled?: boolean
     upstream_billing_rate_sync_enabled?: boolean
     upstream_billing_probe?: UpstreamBillingProbeSnapshot
+    newapi_rate_registration?: {
+      status?: 'registered' | string
+      source?: string
+      registered_at?: string
+      last_observed_at?: string
+    }
     codex_reset_credit_snapshot?: {
       available_count?: number
       credits?: { expires_at?: string }[]

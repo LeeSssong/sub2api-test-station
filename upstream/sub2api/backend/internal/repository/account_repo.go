@@ -831,6 +831,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 					)
 				THEN COALESCE(extra, '{}'::jsonb)
 					- 'upstream_billing_probe'
+					- 'newapi_rate_registration'
 					- 'ollama_cloud_usage_session'
 					- 'ollama_cloud_usage_auto_refresh'
 					- 'ollama_cloud_usage_snapshot'
@@ -838,7 +839,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 				-- 身份变化，丢弃 stale 快照。
 				WHEN type = 'apikey'
 					AND credentials IS DISTINCT FROM $1::jsonb
-				THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
+				THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe' - 'newapi_rate_registration'
 				ELSE extra
 			END,
 			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
@@ -2839,9 +2840,13 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	if account.ProxyID != nil {
 		proxyID = *account.ProxyID
 	}
+	extraExpression := "COALESCE(extra, '{}'::jsonb) || $1::jsonb"
+	if snapshot.Status == service.UpstreamBillingProbeStatusOK {
+		extraExpression = "(" + extraExpression + ") - 'newapi_rate_registration'"
+	}
 	result, err := client.ExecContext(ctx, `
 		UPDATE accounts
-		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+		SET extra = `+extraExpression+`, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
 		WHERE id = $2
 			AND platform = $3
 			AND type = $4

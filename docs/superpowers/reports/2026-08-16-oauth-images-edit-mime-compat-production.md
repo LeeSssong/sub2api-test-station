@@ -27,5 +27,7 @@
 ## 回滚与后续
 
 - 回滚方式：切回发布前 green 应用/worker 镜像和 Caddy 上游；无数据库回滚或数据清理。
+- 可恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/oauth-images-edit-mime-compat-de462d348.bundle`，权限 0600，`git bundle verify` 通过，SHA-256 `fa1b990ff68bd79da09bfbeafce81c2638c194586fe9e7b69fe044c9b4c378c8`。
+- 已删除干净、已合并的 OAuth 候选 worktree、本地候选分支和本次临时 release worktree；历史、冻结 worktree 与根目录受保护内容均未修改。
 - 生产临时分组规避继续保留，后续是否恢复 OAuth 账号到生图组必须另行评估，不属于本热修。
 - 下一串行任务包为 T09“官方更新冲突停止与人工处理”；不得与本次收口并行进入发布车道。

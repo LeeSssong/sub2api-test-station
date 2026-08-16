@@ -47,7 +47,7 @@ func (s *AccountTestService) ProbeAccountConnection(
 	ginCtx, _ := gin.CreateTestContext(recorder)
 	ginCtx.Request = httptest.NewRequest(http.MethodPost, "/internal/account-monitor-probe", nil).WithContext(ctx)
 
-	testErr := s.TestAccountConnectionWithProbeKind(ginCtx, accountID, modelID, prompt, mode, ProbeKindMonitor)
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, mode)
 	finishedAt := time.Now()
 	return buildAccountMonitorProbeResult(accountID, modelID, startedAt, finishedAt, observer, testErr), nil
 }

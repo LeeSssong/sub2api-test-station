@@ -277,7 +277,6 @@ func ProvideAccountTestService(
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
-	probeCostRecorder *AccountProbeCostService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -291,12 +290,7 @@ func ProvideAccountTestService(
 	)
 	service.agentIdentityWS = openAIGatewayService
 	service.SetSettingService(settingService)
-	service.SetProbeCostRecorder(probeCostRecorder)
 	return service
-}
-
-func ProvideAccountProbeCostService(billingService *BillingService, repository AccountProbeCostRepository) *AccountProbeCostService {
-	return NewAccountProbeCostService(billingService, repository)
 }
 
 func ProvideGrokQuotaService(
@@ -937,7 +931,6 @@ var ProviderSet = wire.NewSet(
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
 	ProvideAccountUsageService,
-	ProvideAccountProbeCostService,
 	ProvideAccountTestService,
 	ProvideUpstreamBillingProbeService,
 	ProvideOllamaCloudUsageService,

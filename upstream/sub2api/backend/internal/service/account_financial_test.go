@@ -6,8 +6,6 @@ import (
 	"math"
 	"testing"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 type financialRepoStub struct {
@@ -171,98 +169,6 @@ func TestAccountFinancialReportUsesNullMarginForZeroUserCost(t *testing.T) {
 	}
 }
 
-func TestAccountFinancialReportProbeUnavailableForSuccessfulUserOnlySnapshot(t *testing.T) {
-	now := beijingTime(t, "2026-08-16 12:00")
-	groupID := int64(10)
-	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
-		Accounts: []AccountFinancialUsageAccount{{ID: 1, Active: true}},
-		Groups:   []AccountFinancialUsageGroup{{ID: groupID, Active: true}},
-		Rows:     []AccountFinancialUsageRow{{GroupID: &groupID, AccountID: 1, Requests: 2, Tokens: 3, Cost: 4, UserCost: 6}},
-	}}
-	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, amounts := range map[string]FinancialAmounts{
-		"summary": report.Summary, "account": report.Accounts[0].Amounts, "group": report.Groups[0].Amounts, "group account": report.Groups[0].Accounts[0].Amounts,
-	} {
-		assertProbeAmounts(t, name, amounts, 0, 0, "0", "unavailable")
-	}
-	assertNativeAmounts(t, report.Summary, 2, 3, 4, 6, 1.0/3.0)
-	if report.ProbeDataError || report.ProbeErrorCode != nil {
-		t.Fatalf("successful empty probe query marked failed: %#v", report)
-	}
-}
-
-func TestAccountFinancialReportProbeConservesImmutableGroupsAndExactDecimals(t *testing.T) {
-	now := beijingTime(t, "2026-08-16 12:00")
-	group10, group20 := int64(10), int64(20)
-	costA := decimal.RequireFromString("0.1000000001")
-	costB := decimal.RequireFromString("0.2000000002")
-	costC := decimal.RequireFromString("0.3000000003")
-	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
-		Accounts: []AccountFinancialUsageAccount{{ID: 1, Name: "shared", Active: true}},
-		Groups:   []AccountFinancialUsageGroup{{ID: group10, Name: "Current", Active: true}},
-		Rows:     []AccountFinancialUsageRow{{GroupID: &group10, AccountID: 1, Requests: 1, Tokens: 2, Cost: 3, UserCost: 5}},
-		ProbeRows: []AccountProbeCostAggregate{
-			{GroupID: &group10, AccountID: 1, ProbeRequests: 1, ProbeTokens: 10, ProbeCost: &costA},
-			{GroupID: &group20, AccountID: 1, ProbeRequests: 2, ProbeTokens: 20, ProbeCost: &costB},
-			{AccountID: 1, ProbeRequests: 3, ProbeTokens: 30, ProbeCost: &costC},
-		},
-	}}
-	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertProbeAmounts(t, "summary", report.Summary, 6, 60, "0.6000000006", "confirmed")
-	assertProbeAmounts(t, "account", report.Accounts[0].Amounts, 6, 60, "0.6000000006", "confirmed")
-	assertProbeAmounts(t, "current group", report.Groups[0].Amounts, 1, 10, "0.1000000001", "confirmed")
-	assertProbeAmounts(t, "historical group", report.Groups[1].Amounts, 2, 20, "0.2000000002", "confirmed")
-	assertProbeAmounts(t, "unassigned", report.Groups[2].Amounts, 3, 30, "0.3000000003", "confirmed")
-	if !report.Groups[1].Historical || !report.Groups[2].Unassigned {
-		t.Fatalf("probe snapshot dimensions lost: %#v", report.Groups)
-	}
-	assertNativeAmounts(t, report.Summary, 1, 2, 3, 5, .4)
-}
-
-func TestAccountFinancialReportProbePartialNullsCostWithoutChangingNativeAmounts(t *testing.T) {
-	now := beijingTime(t, "2026-08-16 12:00")
-	complete := decimal.RequireFromString("0.25")
-	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
-		Rows: []AccountFinancialUsageRow{{AccountID: 1, Requests: 4, Tokens: 8, Cost: 2, UserCost: 3}},
-		ProbeRows: []AccountProbeCostAggregate{
-			{AccountID: 1, ProbeRequests: 1, ProbeTokens: 10, ProbeCost: &complete},
-			{AccountID: 1, ProbeRequests: 2, ProbeTokens: 20, HasIncompleteCost: true},
-		},
-	}}
-	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertProbeAmounts(t, "summary", report.Summary, 3, 30, "", "incomplete")
-	assertNativeAmounts(t, report.Summary, 4, 8, 2, 3, 1.0/3.0)
-}
-
-func TestAccountFinancialReportProbeFailureReturnsNativeAmountsAndNullProbeFields(t *testing.T) {
-	now := beijingTime(t, "2026-08-16 12:00")
-	code := "probe_aggregate_unavailable"
-	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
-		Rows:           []AccountFinancialUsageRow{{AccountID: 1, Requests: 4, Tokens: 8, Cost: 2, UserCost: 3}},
-		ProbeDataError: true, ProbeErrorCode: &code,
-	}}
-	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !report.ProbeDataError || report.ProbeErrorCode == nil || *report.ProbeErrorCode != code {
-		t.Fatalf("probe failure metadata=%#v", report)
-	}
-	if report.Summary.ProbeRequests != nil || report.Summary.ProbeTokens != nil || report.Summary.ProbeCost != nil || report.Summary.ProbeCostStatus != nil {
-		t.Fatalf("probe failure was zero-masked: %#v", report.Summary)
-	}
-	assertNativeAmounts(t, report.Summary, 4, 8, 2, 3, 1.0/3.0)
-}
-
 func TestAccountFinancialReportBuildsToday24H7D31DHalfOpenWindows(t *testing.T) {
 	now := beijingTime(t, "2026-08-13 12:34")
 	wants := []struct {
@@ -330,22 +236,6 @@ func assertNativeAmounts(t *testing.T, got FinancialAmounts, requests, tokens in
 	}
 	if got.Margin == nil || math.Abs(*got.Margin-margin) > 1e-12 {
 		t.Fatalf("margin got=%v want=%v", got.Margin, margin)
-	}
-}
-
-func assertProbeAmounts(t *testing.T, name string, got FinancialAmounts, requests, tokens int64, cost, status string) {
-	t.Helper()
-	if got.ProbeRequests == nil || *got.ProbeRequests != requests || got.ProbeTokens == nil || *got.ProbeTokens != tokens || got.ProbeCostStatus == nil || *got.ProbeCostStatus != status {
-		t.Fatalf("%s probe amounts=%#v", name, got)
-	}
-	if cost == "" {
-		if got.ProbeCost != nil {
-			t.Fatalf("%s probe cost=%s want nil", name, got.ProbeCost.String())
-		}
-		return
-	}
-	if got.ProbeCost == nil || got.ProbeCost.String() != cost {
-		t.Fatalf("%s probe cost=%v want %s", name, got.ProbeCost, cost)
 	}
 }
 

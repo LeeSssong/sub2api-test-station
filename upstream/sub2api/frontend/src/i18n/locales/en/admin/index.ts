@@ -48,10 +48,7 @@ export default {
     loading: 'Loading profitability data…', refreshing: 'Refreshing…', loadError: 'Failed to load account profitability data. Try again.',
     retry: 'Retry',
     columns: { account: 'Account', requests: 'Requests', tokens: 'Tokens', accountCost: 'Account cost', userCost: 'User charge', profit: 'Profit', margin: 'Margin' },
-    summary: { requests: 'Requests', tokens: 'Tokens', accountCost: 'Account cost', userCost: 'User charge', profit: 'Profit', margin: 'Margin', probeCost: 'Site probe cost', unconsumedBalance: 'User unconsumed balance' },
-    sort: { label: 'Sort accounts', ascending: 'Ascending', descending: 'Descending' },
-    probe: { noRecords: 'No probe records', incomplete: 'Probe usage is incomplete', dataError: 'Probe data is temporarily unavailable', retry: 'Retry probe data' },
-    account: { meta: '{platform} · {type}' },
+    summary: { requests: 'Requests', tokens: 'Tokens', accountCost: 'Account cost', userCost: 'User charge', profit: 'Profit', margin: 'Margin', unconsumedBalance: 'User unconsumed balance' },
     oauthComplete: 'OAuth complete', oauthPending: 'OAuth pending',
   },
   usageCostDetail: {

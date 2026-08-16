@@ -57,3 +57,14 @@ The task must not be marked `DONE`, and T09/S1-R2 must not resume, until push, b
 - `downtime_required=false`: no migrations, schema, configuration, dependency, workflow, or data changes.
 - Release path: reviewed local/host blue-green scripts only; no GitHub Actions.
 - Rollback: restore the previous active application/worker image and Caddy upstream. No database rollback or data cleanup is required.
+
+## 2026-08-16 final candidate continuation
+
+- The responsive gate exposed a real mobile amount-card overflow and an unreliable local browser-runner lifecycle. The candidate remained in review and was not pushed or deployed while these findings were open.
+- Final reviewed candidate: `6e38e2f9d607361145dd183384824c32cc8c3a9c`; root merge commit: `1043ac3a9f68002e48ebe4e7c9800a70575a7967`.
+- The final candidate adds the narrow mobile card layout fix plus a repository-owned 390×844 runner whose server discovery, cleanup, process identity, PID reuse, and browser lineage are fail-closed. It does not change backend, migrations, configuration, dependencies, lockfiles, workflows, or production data.
+- Final focused frontend verification is 19/19: API 4, profitability view 15. `pnpm lint:check`, `pnpm typecheck`, `pnpm build`, and `git diff --check` pass.
+- A single real browser run at exactly 390×844 returned `pass=true`, `viewportExact=true`, `externalTargets=[]`, `completeText=true`, `ellipsisOrTruncate=false`, every measured amount `overflow=false` and `outside=false`, and `adjacentOverlap=false`.
+- The user Chrome sentinel on `127.0.0.1:9222` remained the same process and had no established connection from the runner. No unrelated browser, dev server, or repository was targeted.
+- Final independent reviewer conclusion: `Ready to merge: Yes`; Critical and Important findings: 0.
+- Per the 2026-08-16 small-step policy, no additional full-repository, mutation, repeated-browser, soak, or unrelated-module validation will be repeated before release. The remaining required gates are final-tree evidence, release preflight, push, blue-green deployment, authenticated production verification, 31-day API latency observation, and health checks.

@@ -4,7 +4,7 @@
 
 - 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11 均已部署并完成各自既定范围的线上验证；T11 仅完成三层结构与页面状态，不代表经营数据口径已正确。新的最高优先级任务为 `T11-R1 Sub 原生计费聚合经营页纠偏`。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T11-R1 候选 `86d5c4cd41245e1adf98cb1dc52200044de38036` 已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main@b1cb220b1d8280aaace9a617152dc48e75020786`；merged-main 后端 focused/neighboring、Colima 真 PostgreSQL integration、前端 18/18、typecheck/build、diff/范围/发布脚本语法门禁均通过，`downtime_required=false` 静态依据成立。当前仍处于唯一串行 `INTEGRATING`，等待根发布账本提交、clean release worktree 的 final-tree evidence、推送和蓝绿部署；T09 与 S1-R2 继续暂停。
+- 当前发布状态：T11-R1 候选 `6e38e2f9d607361145dd183384824c32cc8c3a9c` 已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main@1043ac3a9f68002e48ebe4e7c9800a70575a7967`；merged-main 后端 focused/neighboring、Colima 真 PostgreSQL integration、前端 19/19、typecheck/build、diff/范围/发布脚本语法门禁均通过，390×844 runner `pass=true`、`viewportExact=true`、金额卡片 `overflow=false`、`adjacentOverlap=false` 且无外部目标，`downtime_required=false` 静态依据成立。当前仍处于唯一串行 `INTEGRATING`，等待根发布账本提交、clean release worktree 的 final-tree evidence、推送和蓝绿部署；T09、S1-R2 与 OAuth 图片编辑上传 MIME 兼容热修继续暂停。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。T11-R1 仍是唯一实施 `P0/URGENT`。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -135,6 +135,16 @@
 - 不包含：汇率换算、人民币经营口径、独立上游成本证据、人工成本/OAuth 日成本覆盖、估算、补查、重试、历史回填、计费写入、调度修改、生产数据修改、GitHub Actions，或破坏性删除历史 T03-R1 表与证据。
 - 页面纠偏：移除与官方唯一口径冲突的白色人工覆盖输入；删除摘要“异常流水”卡片、账号行异常数量/操作和跳转成本异常页的入口，不改造成失败请求数。历史 T03/T03-R1 异常流水页面和证据表继续保留，不作破坏性删除。
 - 验收：同一时间范围内，经营页全站/分组/账号的请求、Token、账号计费、用户扣费与 Sub 原生账号统计口径一致；聚合守恒且无重复；利润和利润率仅为透明派生；旧证据缺失不再导致官方流水被排除；桌面和移动端现有页面状态不回归。
+
+### OAuth 图片编辑上传 MIME 兼容热修
+
+- 当前状态：`BACKLOG`，已排队在 T11-R1 之后；尚未创建顶层任务、worktree、规格/计划或实现链，不得与 T11-R1 并行进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 任务目标：修复 OAuth 账号 `/v1/images/edits` multipart 图片被转换为 Data URL 后仍保留 `application/octet-stream`，导致上游返回 400 `unsupported MIME type` 的兼容问题。
+- 已知事故：`user_id=34`、API key `50`、生图 `group_id=19` 的请求命中；API-key 账号链路正常。生产临时规避已于 2026-08-16 10:02 将 OAuth 账号 `222/223` 移出 `group_id=19`。用户邮箱仅保留在授权交接上下文，不写入仓库总账。
+- 最小范围：仅修改 `upstream/sub2api/backend/internal/service/openai_images_responses.go` 约 320 行附近；当 MIME 为空或为 `application/octet-stream` 时用文件字节识别真实 MIME，仅接受 `image/*`，无法识别则拒绝。
+- 明确非目标：不改错误码、错误文案/中文提示、`ErrorPassthroughRule`、客户端表现，不扩大到其他上传链路，不改生产数据或账号分组策略。
+- 最小验证：相关 service 单测、后端必要构建/类型检查、diff/范围检查、发布预检；上线后仅做 OAuth/API-key `/images/edits` 定向验收和健康检查。不得使用 GitHub Actions 或从旧 `origin/main`/独立产物直接覆盖生产。
+- 发布边界：必须从 T11-R1 已部署后的最新 `main` 创建用户可见 GPT-5.6 Sol/medium 顶层任务和独立 worktree；候选部署必须包含 T11-R1 与本热修，避免回滚任一前序功能。
 
 ### T09 官方更新冲突停止与人工处理
 

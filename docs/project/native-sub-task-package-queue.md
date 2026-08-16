@@ -178,7 +178,7 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`DESIGNING`（仅登记/排队，禁止 writing-plans、实现、合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务待创建，必须从登记后的最新干净 `main` 创建独立 worktree；T09 未完成前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 当前状态：`DESIGNING`（仅登记/排队，禁止 writing-plans、实现、合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a0094a-190c-76a3-ab56-eed3ecc8d824` 已创建，独立 worktree 为 `/Users/gongtengxinwen/.codex/worktrees/16af/sub2api搭建`；当前只完成现状盘点、brainstorming、正式规格、自审和交接，规格尚未批准，不得调用 writing-plans。候选 docs-only 提交为 `6db469c7278d7518641d75b71714efe6d2c64a7f`。T09 未完成前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。

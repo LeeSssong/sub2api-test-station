@@ -185,9 +185,9 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`DESIGNING`。T13 已生产收口，根总控已解除 T12 的只读对账门禁，但尚未授权恢复旧实现。旧 worktree `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657` 与唯一未提交 `AccountProfitabilityView.spec.ts` 继续原样保全，不得直接继续写入或带入新候选。
+- 当前状态：`IMPLEMENTING`。T13 已生产收口，根总控已依据修订规格、自审、实施计划和离席代审授权解除 T12 的只读对账门禁。干净候选基线为 `main@5fea0f665280b988aef927534a75be23934bae32`，当前 worktree 为 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`、分支 `codex/t12-native-probe-cost-cards`；旧 worktree `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657` 与唯一未提交 `AccountProfitabilityView.spec.ts` 继续原样保全，不得直接继续写入或带入新候选。
 - 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
-- 冻结前详细进度：用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd`、worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建`、分支 `codex/t12-native-probe-cost-design-recovery`。批准规格 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`、计划 `786d809cf0c366c03e7e75d3607c0b95c0c90553`；Task 1/2 已完成，Task 3 候选 `a54222c5352889c0b48bff2a5824c8b6f214c657`，Task 4 未提交 RED 测试原样保留。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 恢复实施登记：本轮沿用批准规格 `docs/superpowers/specs/2026-08-16-t12-native-probe-cost-design.md` 与计划 `docs/superpowers/plans/2026-08-16-t12-native-probe-cost-design-implementation-plan.md`；Task 1-3 只移植尚缺提交，Task 4 按三层/一卡一账号/六项排序/USD 两位合同重写。T12 当前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`，直至候选直接相关测试与必要构建通过并进入 `READY_FOR_ROOT_REVIEW`。
 - 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。只读对账确认 Task 1-3 的隔离账本、原生定价、fail-open 和 probe 聚合合同仍兼容；旧 Task 4 RED 的独立 probe card/列布局假设必须废弃。恢复时从最新 main 新建干净候选，只移植仍缺失的 Task 1-3 提交并重写 Task 4，禁止把旧未提交 RED 带入。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。

@@ -193,11 +193,69 @@ func TestAccountFinancialReportReturnsNativeJSONContract(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "USD", body.Data.Currency)
 	require.Equal(t, float64(90), body.Data.UserBalanceCNY)
-	require.Equal(t, service.FinancialAmounts{Requests: 2, Tokens: 10, Cost: 1.25, UserCost: 2, Profit: .75, Margin: body.Data.Summary.Margin, Revenue: 2, Expense: 1.25}, body.Data.Summary)
+	require.Equal(t, int64(2), body.Data.Summary.Requests)
+	require.Equal(t, int64(10), body.Data.Summary.Tokens)
+	require.Equal(t, 1.25, body.Data.Summary.Cost)
+	require.Equal(t, 2.0, body.Data.Summary.UserCost)
+	require.Equal(t, .75, body.Data.Summary.Profit)
+	require.Equal(t, 2.0, body.Data.Summary.Revenue)
+	require.Equal(t, 1.25, body.Data.Summary.Expense)
+	require.NotNil(t, body.Data.Summary.ProbeRequests)
+	require.Equal(t, int64(0), *body.Data.Summary.ProbeRequests)
+	require.NotNil(t, body.Data.Summary.ProbeTokens)
+	require.Equal(t, int64(0), *body.Data.Summary.ProbeTokens)
+	require.NotNil(t, body.Data.Summary.ProbeCost)
+	require.True(t, body.Data.Summary.ProbeCost.IsZero())
+	require.NotNil(t, body.Data.Summary.ProbeCostStatus)
+	require.Equal(t, "unavailable", *body.Data.Summary.ProbeCostStatus)
 	require.NotNil(t, body.Data.Summary.Margin)
 	require.Equal(t, .375, *body.Data.Summary.Margin)
 	require.NotContains(t, w.Body.String(), "exception_count")
 	require.NotContains(t, w.Body.String(), "complete")
+}
+
+func TestAccountFinancialReportProbeFailureSerializesNullsAndStableCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 8, 16, 4, 0, 0, 0, time.UTC)
+	code := "probe_aggregate_unavailable"
+	reader := &financialUsageReader{snapshot: &service.AccountFinancialUsageSnapshot{
+		Rows:           []service.AccountFinancialUsageRow{{AccountID: 7, Requests: 2, Tokens: 10, Cost: 1.25, UserCost: 2}},
+		ProbeDataError: true, ProbeErrorCode: &code,
+	}}
+	h := NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, reader, func() time.Time { return now }))
+	r := gin.New()
+	r.GET("/report", h.GetReport)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/report?range=today", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var body struct {
+		Data struct {
+			ProbeDataError bool    `json:"probe_data_error"`
+			ProbeErrorCode *string `json:"probe_error_code"`
+			Summary        struct {
+				Requests        int64   `json:"requests"`
+				Cost            float64 `json:"cost"`
+				UserCost        float64 `json:"user_cost"`
+				Profit          float64 `json:"profit"`
+				ProbeRequests   any     `json:"probe_requests"`
+				ProbeTokens     any     `json:"probe_tokens"`
+				ProbeCost       any     `json:"probe_cost"`
+				ProbeCostStatus any     `json:"probe_cost_status"`
+			} `json:"summary"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.True(t, body.Data.ProbeDataError)
+	require.Equal(t, code, *body.Data.ProbeErrorCode)
+	require.Equal(t, int64(2), body.Data.Summary.Requests)
+	require.Equal(t, 1.25, body.Data.Summary.Cost)
+	require.Equal(t, 2.0, body.Data.Summary.UserCost)
+	require.Equal(t, .75, body.Data.Summary.Profit)
+	require.Nil(t, body.Data.Summary.ProbeRequests)
+	require.Nil(t, body.Data.Summary.ProbeTokens)
+	require.Nil(t, body.Data.Summary.ProbeCost)
+	require.Nil(t, body.Data.Summary.ProbeCostStatus)
 }
 
 func TestAccountFinancialReportUnavailableServiceAndReaderErrorsAreNonSuccess(t *testing.T) {

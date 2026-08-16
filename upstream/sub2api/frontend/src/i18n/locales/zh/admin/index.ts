@@ -48,7 +48,10 @@ export default {
     loading: '正在加载经营数据…', refreshing: '正在刷新…', loadError: '账号盈利数据加载失败，请重试。',
     retry: '重试',
     columns: { account: '账号', requests: '请求数', tokens: 'Token', accountCost: '账号成本', userCost: '用户扣费', profit: '利润', margin: '利润率' },
-    summary: { requests: '请求数', tokens: 'Token', accountCost: '账号成本', userCost: '用户扣费', profit: '利润', margin: '利润率', unconsumedBalance: '用户未消费余额' },
+    summary: { requests: '请求数', tokens: 'Token', accountCost: '账号计费', userCost: '用户扣费', profit: '利润', margin: '利润率', probeCost: '本站探测花费', unconsumedBalance: '用户未消费余额' },
+    sort: { label: '账号排序', ascending: '升序', descending: '降序' },
+    probe: { noRecords: '暂无探测记录', incomplete: '探测用量不完整', dataError: '探测数据暂不可用', retry: '重试探测数据' },
+    account: { meta: '{platform} · {type}' },
     oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',
   },
   usageCostDetail: {

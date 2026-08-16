@@ -330,6 +330,26 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).not.toContain('admin.usageCostDetail.grossMarginStatus')
   })
 
+  it('renders confirmed cost and profit from a PascalCase API fixture after boundary normalization', async () => {
+    adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: 'upstream-pascal-42' })
+    const pascalCaseResponse = {
+      UsageLogID: 42,
+      EvidenceStatus: 'confirmed',
+      NormalizedCostCNY: 0.004,
+    }
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: pascalCaseResponse.UsageLogID,
+      evidence_status: pascalCaseResponse.EvidenceStatus,
+      normalized_cost_cny: pascalCaseResponse.NormalizedCostCNY,
+    })
+
+    const wrapper = mountDialog({ scope: 'admin' })
+    await flushPromises()
+
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.002880')
+  })
+
   it('labels price-table cost and gross margin as estimated', async () => {
     adminGetById.mockResolvedValue(adminRecord)
     adminGetCostEvidence.mockResolvedValue({

@@ -187,7 +187,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`DESIGNING`（仅登记/排队）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；规格草案提交 `f2fc807d4fbca5f5917a00b3fadb890061cf3522` 已保存在独立 worktree，官方 `v0.1.177` 发布完成前只允许正式规格草案，不创建实现 worktree、不写代码、不合并、不推送、不部署或访问生产。
+- 当前状态：`DESIGNING`（规格已获用户书面批准，继续排队）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；已批准规格提交 `f2fc807d4fbca5f5917a00b3fadb890061cf3522` 保存在独立 worktree。官方 `v0.1.177` 发布链成功切换前不得调用 writing-plans、创建实现 worktree、写代码、合并、推送、部署或访问生产。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。

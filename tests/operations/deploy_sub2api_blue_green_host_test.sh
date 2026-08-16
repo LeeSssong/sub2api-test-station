@@ -1229,6 +1229,64 @@ test_t03_r1_maintenance_transition_allowlist() {
   assert_no_mutation t03_r1_unknown_candidate_rejected
 }
 
+test_t09_r1_maintenance_transition_allowlist() {
+  local production_hash=d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b5
+  local candidate_hash=ef1213846cba597cbc5cd64238558a3c392585df3568acb321f3227776e88bc5
+  local wrong_old_hash=d3fe99bba69b0cf0cca8a7f5ec45499921f3496f58dd74c3a671d90a653589b4
+  local wrong_new_hash=ef1213846cba597cbc5cd64238558a3c392585df3568acb321f3227776e88bc4
+
+  setup_case t09_r1_unauthorized
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  expect_failure t09_r1_unauthorized run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" \
+    || fail 'unauthorized T09-R1 transition was not gated'
+  assert_no_mutation t09_r1_unauthorized
+
+  setup_case t09_r1_wrong_old_hash
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$wrong_old_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$wrong_old_hash \
+    expect_failure t09_r1_wrong_old_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" \
+    || fail 'T09-R1 wrong old hash was not gated'
+  assert_no_mutation t09_r1_wrong_old_hash
+
+  setup_case t09_r1_wrong_new_hash
+  write_meminfo
+  MIGRATIONS_HASH=$wrong_new_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    expect_failure t09_r1_wrong_new_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" \
+    || fail 'T09-R1 wrong new hash was not gated'
+  assert_no_mutation t09_r1_wrong_new_hash
+
+  setup_case t09_r1_success
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' \
+    "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash \
+    run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "T09-R1 transition failed: $(cat "$CASE_DIR/stdout") $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" \
+    || fail 'T09-R1 transition did not enter the bounded maintenance path'
+}
+
 test_maintenance_window_hard_maximum() {
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
@@ -1872,6 +1930,7 @@ case "${ONLY_TEST:-all}" in
     printf 'PASS: downtime gates precede mutation\n'
     test_authorized_maintenance_transition
     test_verified_production_maintenance_transition
+    test_t09_r1_maintenance_transition_allowlist
     test_maintenance_window_hard_maximum
     test_maintenance_pre_worker_failure_restores_previous_api
     test_maintenance_deadline_bounds_post_stop_operation
@@ -1950,6 +2009,7 @@ case "${ONLY_TEST:-all}" in
 		test_authorized_maintenance_transition
 		test_verified_production_maintenance_transition
 		test_t03_r1_maintenance_transition_allowlist
+		test_t09_r1_maintenance_transition_allowlist
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation
@@ -1968,6 +2028,7 @@ case "${ONLY_TEST:-all}" in
 	maintenance-rollback-proofs) test_maintenance_rollback_proof_gates ;;
 	maintenance-approved-transition) test_verified_production_maintenance_transition ;;
 	maintenance-t03-r1-transition) test_t03_r1_maintenance_transition_allowlist ;;
+	maintenance-t09-r1-transition) test_t09_r1_maintenance_transition_allowlist ;;
 	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;

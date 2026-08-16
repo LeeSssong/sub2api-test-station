@@ -8,7 +8,7 @@
 
 - 任务基线：`main@4f31ec3dd010dc3d2b6c5caaacadddce1adb84a2`
 - 分支：`codex/t14-usage-detail-field-compat`
-- 当前 HEAD：`dc67e73c2`（包含实现、定向测试、类型修复和文档空白修复）
+- 源码实现 tip：`11271c034`（包含实现、定向测试和类型修复）；随后仅追加文档证据修复。
 - 规格/计划：T14 approved spec 与 `8e3d0e17a` plan
 
 ## 变更

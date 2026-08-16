@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 type accountProbeCostRepository struct {
@@ -23,6 +24,7 @@ func (r *accountProbeCostRepository) Append(ctx context.Context, log service.Acc
 		return errors.New("account probe cost repository unavailable")
 	}
 
+	log.CreatedAt = postgresTimestamp(log.CreatedAt)
 	var insertedRunID string
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO account_probe_cost_logs (
@@ -44,7 +46,7 @@ func (r *accountProbeCostRepository) Append(ctx context.Context, log service.Acc
 
 	var stored service.AccountProbeCostLog
 	var storedGroupID sql.NullInt64
-	var storedCost sql.NullFloat64
+	var storedCost sql.NullString
 	var storedErrorCode sql.NullString
 	var probeKind, completeness, outcome string
 	err = r.db.QueryRowContext(ctx, `
@@ -64,7 +66,11 @@ func (r *accountProbeCostRepository) Append(ctx context.Context, log service.Acc
 		stored.GroupID = &storedGroupID.Int64
 	}
 	if storedCost.Valid {
-		stored.AccountCost = &storedCost.Float64
+		cost, parseErr := decimal.NewFromString(storedCost.String)
+		if parseErr != nil {
+			return fmt.Errorf("decode stored account cost: %w", parseErr)
+		}
+		stored.AccountCost = &cost
 	}
 	if storedErrorCode.Valid {
 		stored.ErrorCode = &storedErrorCode.String
@@ -105,7 +111,7 @@ func (r *accountProbeCostRepository) ReadWindow(ctx context.Context, from, to ti
 	for rows.Next() {
 		var row service.AccountProbeCostAggregate
 		var groupID sql.NullInt64
-		var cost sql.NullFloat64
+		var cost sql.NullString
 		if err := rows.Scan(&groupID, &row.AccountID, &row.ProbeRequests, &row.ProbeTokens, &cost, &row.HasIncompleteCost); err != nil {
 			return nil, err
 		}
@@ -113,7 +119,11 @@ func (r *accountProbeCostRepository) ReadWindow(ctx context.Context, from, to ti
 			row.GroupID = &groupID.Int64
 		}
 		if cost.Valid {
-			row.ProbeCost = &cost.Float64
+			value, parseErr := decimal.NewFromString(cost.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("decode aggregate account cost: %w", parseErr)
+			}
+			row.ProbeCost = &value
 		}
 		result = append(result, row)
 	}
@@ -123,13 +133,17 @@ func (r *accountProbeCostRepository) ReadWindow(ctx context.Context, from, to ti
 	return result, rows.Close()
 }
 
+func postgresTimestamp(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
+}
+
 func sameAccountProbeCostLog(a, b service.AccountProbeCostLog) bool {
 	return a.ProbeRunID == b.ProbeRunID && a.AccountID == b.AccountID &&
 		sameInt64Ptr(a.GroupID, b.GroupID) && a.ProbeKind == b.ProbeKind && a.Model == b.Model &&
 		a.InputTokens == b.InputTokens && a.OutputTokens == b.OutputTokens &&
 		a.CacheCreationTokens == b.CacheCreationTokens && a.CacheReadTokens == b.CacheReadTokens &&
-		sameFloat64Ptr(a.AccountCost, b.AccountCost) && a.UsageCompleteness == b.UsageCompleteness &&
-		a.ProbeOutcome == b.ProbeOutcome && sameStringPtr(a.ErrorCode, b.ErrorCode) && a.CreatedAt.Equal(b.CreatedAt)
+		sameDecimalPtr(a.AccountCost, b.AccountCost) && a.UsageCompleteness == b.UsageCompleteness &&
+		a.ProbeOutcome == b.ProbeOutcome && sameStringPtr(a.ErrorCode, b.ErrorCode) && postgresTimestamp(a.CreatedAt).Equal(postgresTimestamp(b.CreatedAt))
 }
 
 func sameInt64Ptr(a, b *int64) bool {
@@ -139,11 +153,11 @@ func sameInt64Ptr(a, b *int64) bool {
 	return *a == *b
 }
 
-func sameFloat64Ptr(a, b *float64) bool {
+func sameDecimalPtr(a, b *decimal.Decimal) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return *a == *b
+	return a.Equal(*b)
 }
 
 func sameStringPtr(a, b *string) bool {

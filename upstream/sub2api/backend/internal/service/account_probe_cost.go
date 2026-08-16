@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 type ProbeKind string
@@ -41,7 +43,7 @@ type AccountProbeCostLog struct {
 	OutputTokens        int64
 	CacheCreationTokens int64
 	CacheReadTokens     int64
-	AccountCost         *float64
+	AccountCost         *decimal.Decimal
 	UsageCompleteness   ProbeUsageCompleteness
 	ProbeOutcome        ProbeOutcome
 	ErrorCode           *string
@@ -53,7 +55,7 @@ type AccountProbeCostAggregate struct {
 	AccountID         int64
 	ProbeRequests     int64
 	ProbeTokens       int64
-	ProbeCost         *float64
+	ProbeCost         *decimal.Decimal
 	HasIncompleteCost bool
 }
 

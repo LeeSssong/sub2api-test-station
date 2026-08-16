@@ -30,3 +30,11 @@ Add-only migration; no historical rows or data rewrites. No configuration change
 
 - Aggregate cost is represented as `nil` if any grouped row has missing/non-complete cost; downstream tasks must map that to the specified incomplete status rather than `$0.00`.
 - Production migration precheck and deployment remain root-task responsibilities.
+
+## Review round 1 fixes
+
+- Canonicalized `CreatedAt` to UTC PostgreSQL microsecond precision before insert and during immutable duplicate comparison; the duplicate regression test supplies nanoseconds and mocks the microsecond database read-back.
+- Replaced nullable `float64` cost values with nullable `shopspring/decimal.Decimal`, including read-back comparison and aggregate output; added exact `1234567890.1234567890` round-trip/aggregation coverage.
+- Strengthened all window SQL mocks to require both `created_at >= $1` and `created_at < $2`.
+
+Fix verification: migration contract PASS; repository focused tests PASS (8); `git diff --check` PASS.

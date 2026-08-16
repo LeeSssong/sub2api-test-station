@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：官方 Sub2API `v0.1.177` 已完成发布并收口为 `DONE`；其发布源 `main@e91504e51` 已推送，宿主维护链已成功切换至 `green`，公网健康检查通过。当前根 `main@4f31ec3dd010dc3d2b6c5caaacadddce1adb84a2` 仅含后续任务登记；T14 为唯一可进入合并车道的候选，T13 继续实现但不得并行进入发布车道，T12 保持设计阶段，S1-R2 保持原队列位置。
+- 队列状态：官方 Sub2API `v0.1.177` 与 T14 均已完成发布并收口为 `DONE`；根 `main@200d4b1c9e4745a6a54e467630c68aba14fb4028` 已推送，T14 已通过宿主蓝绿链切换和定向线上验收。T13 可继续实现并在其完成根审后独占下一条合并发布车道；T12 保持设计阶段，S1-R2 保持原队列位置。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：官方 `v0.1.177` 已完成候选交接、根合并、push、宿主维护发布和即时健康验证；活动槽为 `green`，T09 发布车道已释放。T14 可按队列创建独立任务；T12、T13 仍不得越过各自设计门禁。
+- 当前发布状态：T14 已完成根合并、push、宿主蓝绿发布和管理员详情定向验收；活动槽为 `blue`，发布车道已释放。T13 仍不得越过其实现/复审门禁，T12 仍停在设计门禁。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -195,7 +195,7 @@
 
 ### T14 用量详情上游扣费/利润字段兼容热修
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`，等待根总控授权合并。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00a15-a76c-7be1-b66f-7a34ddb2b749` 已完成实现与复审；候选分支 `codex/t14-usage-detail-field-compat`，HEAD `d7c7113293f36d9e9bd0b560f346be580806b82c`，基线 `main@4f31ec3dd010dc3d2b6c5caaacadddce1adb84a2`，工作区干净。fresh whole-branch reviewer 已明确 `SPEC: APPROVE`、`QUALITY: APPROVE`，无 Critical/P1/P2；未合并、未推送、未部署、未线上验收。
+- 当前状态：`DONE`。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00a15-a76c-7be1-b66f-7a34ddb2b749` 的候选已随 `main@200d4b1c9e4745a6a54e467630c68aba14fb4028` 推送并通过本地/宿主蓝绿链切换，脚本结果为 `succeeded`、活动槽 `blue`、`downtime_required=false`。`/healthz`、`/readyz`、`/health` 均为 HTTP 200；刷新到已发布前端包后，管理员详情对自然确认样本 `usage_log_id=120896` 正确显示上游实际扣费 `$0.001010` 和利润 `$0.000505`。无迁移、配置、依赖或生产数据改动；回滚依据为宿主上一 `green` 槽/镜像和 release record。
 - 已确认根因：`/admin/usage/:id/upstream-cost` 返回 PascalCase 字段，例如 `NormalizedCostCNY`、`EvidenceStatus`；详情弹窗仅读取 snake_case 字段，例如 `normalized_cost_cny`、`evidence_status`，因此“上游实际扣费 / 利润”错误显示为 `-`，不是生产数据缺失。
 - 范围：仅对该详情弹窗/API 响应做向后兼容字段归一化，并保留 PascalCase 与 snake_case 两种响应兼容；只做直接相关页级/API 合同验证、必要类型检查/构建、diff/范围检查和发布后定向验收。
 - 非目标：不得并入 T12，不改变账号成本、用户扣费、利润/利润率口径或聚合，不做数据库迁移、历史回填、生产数据修改、账务重算、相邻页面重构或外部控制面。

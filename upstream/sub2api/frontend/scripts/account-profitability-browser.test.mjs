@@ -1,5 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { connect } from 'node:net'
+import { once } from 'node:events'
 import {
   buildBrowserTestUrl,
   createBrowserTestIdentity,
@@ -8,7 +12,67 @@ import {
   isTrustedReadiness,
   parseBrowserResult,
   resolveChromeExecutable,
+  runBrowserTest,
 } from './account-profitability-browser.mjs'
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false
+    throw error
+  }
+}
+
+async function assertPortClosed(port, label) {
+  await assert.rejects(new Promise((resolve, reject) => {
+    const socket = connect({ host: '127.0.0.1', port })
+    socket.once('connect', () => { socket.destroy(); resolve() })
+    socket.once('error', reject)
+  }), undefined, `${label} port ${port} is still accepting connections`)
+}
+
+async function assertCleanupEvidence(evidence) {
+  assert.ok(evidence, 'runner did not publish cleanup evidence')
+  assert.ok(evidence.chrome.pids.length > 1, 'test did not observe Chrome helper descendants')
+  assert.ok(evidence.vite.pids.length > 0, 'test did not observe the Vite process tree')
+  for (const pid of [...evidence.chrome.pids, ...evidence.vite.pids]) {
+    assert.equal(isProcessAlive(pid), false, `owned process ${pid} survived cleanup`)
+  }
+  assert.equal(existsSync(evidence.chrome.profile), false, `Chrome profile survived cleanup: ${evidence.chrome.profile}`)
+  await assertPortClosed(evidence.chrome.port, 'CDP')
+  await assertPortClosed(evidence.vite.port, 'Vite')
+}
+
+async function runSignaledRunner(signal, expectedExitCode) {
+  const runnerUrl = new URL('./account-profitability-browser.mjs', import.meta.url).href
+  const source = `
+    import { runBrowserTest } from ${JSON.stringify(runnerUrl)}
+    runBrowserTest({
+      onResources: evidence => console.log('RESOURCES:' + JSON.stringify(evidence)),
+      onCleanup: evidence => console.log('CLEANUP:' + JSON.stringify(evidence)),
+    }).catch(error => { console.error(error.stack || error); process.exitCode = 1 })
+  `
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', source], { stdio: ['ignore', 'pipe', 'pipe'] })
+  let stdout = ''
+  let stderr = ''
+  let sent = false
+  child.stdout.on('data', chunk => {
+    stdout += chunk
+    if (!sent && stdout.includes('RESOURCES:')) {
+      sent = true
+      try { process.kill(child.pid, signal) } catch (error) { if (error?.code !== 'ESRCH') throw error }
+    }
+  })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  const [code, exitSignal] = await once(child, 'close')
+  assert.equal(exitSignal, null, `${signal} runner was killed before its cleanup handler completed`)
+  assert.equal(code, expectedExitCode, `${signal} runner exited unexpectedly: ${stderr}`)
+  const cleanupLine = stdout.split('\n').find(line => line.startsWith('CLEANUP:'))
+  assert.ok(cleanupLine, `${signal} runner did not publish final cleanup evidence`)
+  await assertCleanupEvidence(JSON.parse(cleanupLine.slice('CLEANUP:'.length)))
+}
 
 test('allocates a non-fixed loopback port', async () => {
   const first = await findAvailablePort()
@@ -41,4 +105,56 @@ test('binds the URL and browser result to one generated identity', () => {
   assert.equal(new URL(url).searchParams.get('nonce'), identity.nonce)
   assert.deepEqual(parseBrowserResult(JSON.stringify({ pass: true, nonce: identity.nonce }), identity), { pass: true, nonce: identity.nonce })
   assert.throws(() => parseBrowserResult(JSON.stringify({ pass: true, nonce: 'other' }), identity), /nonce/i)
+})
+
+test('repeated real Chrome runs leave no owned processes, profiles, or listeners', { timeout: 120_000 }, async () => {
+  for (let round = 1; round <= 6; round += 1) {
+    let cleanupEvidence
+    const result = await runBrowserTest({ onCleanup: evidence => { cleanupEvidence = evidence } })
+    assert.equal(result.pass, true, `browser layout failed in cleanup round ${round}`)
+    await assertCleanupEvidence(cleanupEvidence)
+  }
+})
+
+test('an exception after Chrome startup still cleans every owned resource', { timeout: 30_000 }, async () => {
+  let cleanupEvidence
+  await assert.rejects(
+    runBrowserTest({
+      onResources: () => { throw new Error('injected post-start failure') },
+      onCleanup: evidence => { cleanupEvidence = evidence },
+    }),
+    /injected post-start failure/,
+  )
+  await assertCleanupEvidence(cleanupEvidence)
+})
+
+test('a stopped Chrome tree is escalated from graceful close and TERM to KILL', { timeout: 30_000 }, async () => {
+  let cleanupEvidence
+  const result = await runBrowserTest({
+    onResources: evidence => { process.kill(-evidence.chrome.pgid, 'SIGSTOP') },
+    onCleanup: evidence => { cleanupEvidence = evidence },
+  })
+  assert.equal(result.pass, true)
+  await assertCleanupEvidence(cleanupEvidence)
+})
+
+test('SIGINT and SIGTERM await the same idempotent cleanup', { timeout: 60_000 }, async () => {
+  await runSignaledRunner('SIGINT', 130)
+  await runSignaledRunner('SIGTERM', 143)
+})
+
+test('invalid Chrome startup still removes the Vite tree, profile, and listener', { timeout: 30_000 }, async () => {
+  const previous = process.env.BROWSER_EXECUTABLE_PATH
+  let cleanupEvidence
+  process.env.BROWSER_EXECUTABLE_PATH = '/definitely/missing/chrome'
+  try {
+    await assert.rejects(runBrowserTest({ onCleanup: evidence => { cleanupEvidence = evidence } }), /Chrome executable not found/)
+  } finally {
+    if (previous === undefined) delete process.env.BROWSER_EXECUTABLE_PATH
+    else process.env.BROWSER_EXECUTABLE_PATH = previous
+  }
+  assert.ok(cleanupEvidence.vite.pids.length > 0)
+  for (const pid of cleanupEvidence.vite.pids) assert.equal(isProcessAlive(pid), false, `Vite process ${pid} survived invalid Chrome cleanup`)
+  assert.equal(existsSync(cleanupEvidence.chrome.profile), false)
+  await assertPortClosed(cleanupEvidence.vite.port, 'Vite')
 })

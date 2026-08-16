@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：官方 Sub2API `v0.1.177` 与 T14 均已完成发布并收口为 `DONE`；根 `main@200d4b1c9e4745a6a54e467630c68aba14fb4028` 已推送，T14 已通过宿主蓝绿链切换和定向线上验收。T13 可继续实现并在其完成根审后独占下一条合并发布车道；T12 保持设计阶段，S1-R2 保持原队列位置。
+- 队列状态：P0“使用记录触发会话过期”热修独占当前实施与发布车道。T12、T13 及其他任务均已按用户指令暂停，不得继续实现、复审、合并或发布。当前根基线为 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1`。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T14 已完成根合并、push、宿主蓝绿发布和管理员详情定向验收；活动槽为 `blue`，发布车道已释放。T13 仍不得越过其实现/复审门禁，T12 仍停在设计门禁。
+- 当前发布状态：P0 热修处于 `IMPLEMENTING`，用户可见顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`、worktree `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建`。仅允许相关功能测试和发布链必要保护；不执行额外独立复审、scoped re-review 或 whole-branch review。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -15,6 +15,13 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与验证、独立任务复审、最终全分支终审，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`。
 
 ## 队列
+
+### P0 使用记录触发会话过期热修
+
+- 当前状态：`IMPLEMENTING`。独立顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`，GPT-5.6 Sol / medium，从 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1` 创建 worktree `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建`。
+- 已确认根因：“使用记录”首屏并发请求在 access token 过期时同时发起 refresh；一个请求成功轮换并删除旧 refresh token 后，另一个请求使用旧 token 触发 `Refresh token not found, possible reuse attack`，全局 401 处理清除会话并跳转登录页。
+- 范围：仅修复同一会话的并发 refresh 竞态；保留真实撤销与恶意 reuse 的安全边界。禁止忽略所有 401、无条件接受旧 token、关闭 reuse 检查或直接修改生产 Redis/数据库掩盖问题。
+- 最小验收：先有能复现并发轮换的失败测试，再完成最小修复；仅运行直接相关功能测试、必要的编译/类型检查和 `git diff --check`。候选从根 `main` 合并后使用既有本地/宿主蓝绿链发布，不使用 GitHub Actions。
 
 ### T01 大上下文入站上传稳定性
 
@@ -160,7 +167,7 @@
 
 每个任务包依次经过：
 
-`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准或根总控依据离席代审授权批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 独立任务复审 -> 最终全分支终审 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`
+`根任务创建用户可见顶层任务 -> 最新 main 独立 worktree -> 完整 brainstorming -> 2–3 方案比较与分段设计批准 -> 正式规格书 -> 规格书自审 -> 用户明确批准或根总控依据离席代审授权批准书面规格书 -> writing-plans -> 计划获批 -> fresh implementer subagent -> 直接相关功能测试 -> READY_FOR_ROOT_REVIEW -> 根任务 AUTHORIZE_MERGE_TO_MAIN -> 顶层任务合并 main -> 根任务快速门禁 -> 无停机部署或停机暂停 -> 线上专项验证 -> 清理 -> 下一任务包`。自 2026-08-16 用户最新指令起，额外 task review、scoped re-review 与 whole-branch review 不再是强制门槛。
 
 未经用户明确批准书面规格书，不得调用 writing-plans 或开始实施。任何一步出现范围漂移、冲突、`main` 漂移、验证失败、线上验收未闭环或 `downtime_required=true`，队列立即暂停，不启动下一任务包。
 
@@ -178,7 +185,9 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`DESIGNING`（仅登记/排队，禁止 writing-plans、实现、合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a0094a-190c-76a3-ab56-eed3ecc8d824` 已创建，独立 worktree 为 `/Users/gongtengxinwen/.codex/worktrees/16af/sub2api搭建`；当前只完成现状盘点、brainstorming、正式规格、自审和交接，规格尚未批准，不得调用 writing-plans。候选 docs-only 提交为 `6db469c7278d7518641d75b71714efe6d2c64a7f`。T09 未完成前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修。已保全 `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657`，以及唯一未提交文件 `upstream/sub2api/frontend/src/views/admin/__tests__/AccountProfitabilityView.spec.ts`；无生产代码改动、无新提交、无合并或发布。未获根总控明确解冻前不得继续。
+- 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
+- 当前状态：`IMPLEMENTING`（Task 1、Task 2 均已通过独立 scoped re-review，Task 3 已获授权；禁止自行合并、推送、部署或线上验收）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00aa3-a274-7270-a970-ec23472627dd` 使用独立 worktree `/Users/gongtengxinwen/.codex/worktrees/1475/sub2api搭建` 和分支 `codex/t12-native-probe-cost-design-recovery`；批准规格为 `3cb9817f3be2581ff1dc1e0dcd025680d275b205`，批准计划为 `786d809cf0c366c03e7e75d3607c0b95c0c90553`，基线 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1`。Task 1 提交 `07ee44cd6` 与 `7ce562fb7` 已保留 add-only ledger、`ON DELETE RESTRICT`、DECIMAL 原始精度与 UTC 微秒幂等；Task 2 候选 `aff652b83` 经 P1 修复提交 `55ccfdeef` 与证据提交 `0f9451934`，已确认 monitor/scheduled/manual 显式来源、实际发送模型计价、recovery 不计量及 fail-open/用户账务隔离，最终 scoped re-review 为 PASS/PASS。Task 3 仅可读取独立 probe ledger 并向 account-financial 增加可空聚合与顶层错误合同；probe 查询失败必须由 `probe_data_error/probe_error_code` 显式表达并使所有 probe 聚合字段为 `null`。经营页所有外部金额必须 USD 两位展示，内部精度保持原样。T13 完成并发布前，T12 不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。
 - 非目标：不改变用户消费、账号计费、利润/利润率、余额事实源、调度/路由、普通用户入口，不建设第二账务源或外部控制面。
@@ -187,6 +196,8 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
+- 当前状态：`FROZEN`。用户已要求立即停止以让位 P0 会话热修；保留现有候选分支/worktree 和未提交内容，不得继续实现、复审、合并、推送或部署。
+- 冻结前进度：规格与计划已批准，Task 1 已完成，Task 2 候选保留在 `codex/newapi-rate-multiplier-registration`。
 - 当前状态：`IMPLEMENTING`（规格与计划已批准，继续排队等待 T14 发布车道）。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 负责规格/计划/实现/复审/handoff；Task 1 已通过 scoped re-review，Task 2 正在执行 CAS 与 post-usage 接线。候选分支为 `codex/newapi-rate-multiplier-registration`，当前未进入合并、推送、部署或线上验收车道。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。

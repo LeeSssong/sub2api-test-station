@@ -199,6 +199,16 @@ describe('admin usage API', () => {
       response: {},
       expected: {},
     },
+    {
+      name: 'preserves missing fields for primitive responses',
+      response: 'unexpected',
+      expected: {},
+    },
+    {
+      name: 'preserves missing fields for array responses',
+      response: [],
+      expected: {},
+    },
   ])('$name', async ({ response, expected }) => {
     get.mockResolvedValue({ data: response })
 

@@ -4,7 +4,7 @@
 
 - 队列状态：P0“使用记录触发会话过期”热修独占当前实施与发布车道。T12、T13 及其他任务均已按用户指令暂停，不得继续实现、复审、合并或发布。当前根基线为 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1`。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：P0 热修处于 `IMPLEMENTING`，用户可见顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`、worktree `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建`。仅允许相关功能测试和发布链必要保护；不执行额外独立复审、scoped re-review 或 whole-branch review。
+- 当前发布状态：P0 热修已合并为 `main@91bce7fe4111cec65ee23b71f49c0550049d86cb`，正在进入推送和宿主蓝绿发布链。仅允许相关功能测试和发布链必要保护；不执行额外独立复审、scoped re-review 或 whole-branch review。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -18,7 +18,7 @@
 
 ### P0 使用记录触发会话过期热修
 
-- 当前状态：`IMPLEMENTING`。独立顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`，GPT-5.6 Sol / medium，从 `main@c42b5b8cca4b22b3974cda5500e8bd851fabd7b1` 创建 worktree `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建`。
+- 当前状态：`DEPLOYING`。独立顶层任务 `01a00b57-1365-7712-8c31-58e97d5d0941`，GPT-5.6 Sol / medium，候选 `c25fb9ad1` 已合并为 `main@91bce7fe4111cec65ee23b71f49c0550049d86cb`。
 - 已确认根因：“使用记录”首屏并发请求在 access token 过期时同时发起 refresh；一个请求成功轮换并删除旧 refresh token 后，另一个请求使用旧 token 触发 `Refresh token not found, possible reuse attack`，全局 401 处理清除会话并跳转登录页。
 - 范围：仅修复同一会话的并发 refresh 竞态；保留真实撤销与恶意 reuse 的安全边界。禁止忽略所有 401、无条件接受旧 token、关闭 reuse 检查或直接修改生产 Redis/数据库掩盖问题。
 - 最小验收：先有能复现并发轮换的失败测试，再完成最小修复；仅运行直接相关功能测试、必要的编译/类型检查和 `git diff --check`。候选从根 `main` 合并后使用既有本地/宿主蓝绿链发布，不使用 GitHub Actions。

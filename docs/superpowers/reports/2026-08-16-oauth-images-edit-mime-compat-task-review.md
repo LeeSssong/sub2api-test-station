@@ -32,7 +32,7 @@
 
 修复提交：
 
-- `ff19b6d9a`：移除多余 EOF 空行，并把范围/邮箱零匹配检查改为可执行的 fail-on-match 形式。
+- `ff19b6d9a`：移除多余 EOF 空行并修正邮箱扫描模式；whole-branch 终审随后指出计划中的范围/邮箱命令仍依赖人工检查输出，本报告后续提交将其收紧为真正的 fail-on-match 门禁。
 - `1a0ac0e36`：记录最终全任务范围验证结果。
 
 scoped re-review 结论：finding `ADDRESSED`；`git diff --check ba1350198..1a0ac0e36` 与 `git diff --check 37cdc9bce..1a0ac0e36` 均 exit 0、无输出；修复仅涉及任务文档，没有引入运行时代码、测试或禁区路径变化。
@@ -41,4 +41,3 @@ scoped re-review 结论：finding `ADDRESSED`；`git diff --check ba1350198..1a0
 
 - 生产 OAuth/API-key `/v1/images/edits` 验收未执行，留给根发布总控合并、发布后定向验证。
 - `http.DetectContentType` 不能识别的罕见图片格式会在 fallback MIME 路径 fail closed；显式 `image/*` 仍按既有合同信任并保留。
-

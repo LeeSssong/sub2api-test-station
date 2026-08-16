@@ -136,10 +136,13 @@ gofmt -w upstream/sub2api/backend/internal/service/openai_images_responses.go up
 cd upstream/sub2api/backend && go test ./internal/service -run 'TestOpenAIResponsesImageUploadToDataURL|TestBuildOpenAIImagesResponsesRequestRejectsNonImageFallbackMIME|TestOpenAIGatewayServiceForwardImages_(OAuthEditsMultipartUsesResponsesAPI|APIKeyEditUsesConfiguredV1BaseURL)|TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit' -count=1
 cd upstream/sub2api/backend && go test ./internal/service -run '^$'
 git diff --check
-git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46...HEAD
-git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46 -- .github upstream/sub2api/backend/go.mod upstream/sub2api/backend/go.sum upstream/sub2api/frontend upstream/sub2api/backend/migrations ops
+changed_paths=$(git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46...HEAD)
+unexpected_paths=$(printf '%s\n' "$changed_paths" | rg -v '^(upstream/sub2api/backend/internal/service/openai_images_responses\.go|upstream/sub2api/backend/internal/service/openai_images_responses_mime_test\.go|docs/superpowers/specs/2026-08-16-oauth-images-edit-mime-compat-design\.md|docs/superpowers/plans/2026-08-16-oauth-images-edit-mime-compat\.md|docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-(implementation|task-review|final-review)\.md)$' || true)
+test -z "$unexpected_paths"
+forbidden_paths=$(git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46 -- .github upstream/sub2api/backend/go.mod upstream/sub2api/backend/go.sum upstream/sub2api/frontend upstream/sub2api/backend/migrations ops)
+test -z "$forbidden_paths"
 email_scan_pattern='user_''email|用户''邮箱|@''[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-rg -n "$email_scan_pattern" docs/superpowers/specs/2026-08-16-oauth-images-edit-mime-compat-design.md docs/superpowers/plans/2026-08-16-oauth-images-edit-mime-compat.md docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-implementation.md
+if rg -n "$email_scan_pattern" docs/superpowers/specs/2026-08-16-oauth-images-edit-mime-compat-design.md docs/superpowers/plans/2026-08-16-oauth-images-edit-mime-compat.md docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-*.md; then exit 1; fi
 ```
 
 Expected: focused tests and compile-only package check PASS; diff check clean; changed paths limited to the declared service source/test and task-local docs; forbidden-path diff empty; email scan empty.

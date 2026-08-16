@@ -71,21 +71,42 @@ async function waitFor(check, timeoutMs, label, intervalMs = 50) {
   throw new Error(`${label} timed out${lastError ? `: ${lastError.message}` : ''}`)
 }
 
-async function processTable() {
-  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,command='], { maxBuffer: 10 * 1024 * 1024 })
-  return stdout.split('\n').flatMap(line => {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/)
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), state: match[4], command: match[5] }] : []
+export async function processTable() {
+  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,lstart=,command='], { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+  const rows = stdout.split('\n').flatMap(line => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+\s+\S+\s+\d+\s+\S+\s+\S+)\s+(.*)$/)
+    if (!match) return []
+    const parsedStart = Date.parse(match[5])
+    return [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), state: match[4], startTime: Number.isNaN(parsedStart) ? match[5].trim() : parsedStart, command: match[6] }]
   })
+  if (process.platform !== 'linux') return rows
+  return await Promise.all(rows.map(async row => {
+    try {
+      const stat = await readFile(`/proc/${row.pid}/stat`, 'utf8')
+      const endOfCommand = stat.lastIndexOf(')')
+      const fields = stat.slice(endOfCommand + 2).trim().split(/\s+/)
+      const linuxStartTime = fields[19]
+      if (linuxStartTime) return { ...row, startTime: `linux:${linuxStartTime}` }
+    } catch (error) {
+      void error
+    }
+    return row
+  }))
 }
 
-class OwnedProcessTree {
-  constructor(child, rootMarkers, memberMarkers = rootMarkers) {
+function sameIdentity(identity, row) {
+  return Boolean(row) && row.startTime === identity.startTime && row.command === identity.command
+}
+
+export class OwnedProcessTree {
+  constructor(child, rootMarkers, memberMarkers = rootMarkers, readTable = processTable) {
     this.child = child
     this.rootPid = child.pid
     this.pgid = child.pid
     this.rootMarkers = rootMarkers
     this.memberMarkers = memberMarkers
+    this.readTable = readTable
+    this.identities = new Map()
     this.pids = new Set(child.pid ? [child.pid] : [])
     this.livePids = new Set(child.pid ? [child.pid] : [])
     this.ownsGroup = false
@@ -97,36 +118,50 @@ class OwnedProcessTree {
   }
 
   async refresh() {
-    const rows = await processTable()
+    const rows = await this.readTable()
     const byPid = new Map(rows.map(row => [row.pid, row]))
     const root = byPid.get(this.rootPid)
-    if (root && root.pgid === this.pgid && this.rootMarkers.every(marker => root.command.includes(marker))) this.ownsGroup = true
+    if (root && this.rootMarkers.every(marker => root.command.includes(marker))) {
+      if (!this.identities.has(root.pid)) this.identities.set(root.pid, { pid: root.pid, startTime: root.startTime, command: root.command, profile: this.memberMarkers[0] || '', nonce: this.rootMarkers[0] || '', rootPid: this.rootPid })
+      this.ownsGroup = root.pgid === this.pgid && sameIdentity(this.identities.get(root.pid), root)
+    } else {
+      this.ownsGroup = false
+    }
 
-    const current = new Set(this.pids)
+    const current = new Set(this.identities.keys())
     let changed = true
     while (changed) {
       changed = false
       for (const row of rows) {
         if (current.has(row.pid)) continue
-        const identifiedGroupMember = row.pgid === this.pgid && this.memberMarkers.every(marker => row.command.includes(marker))
-        if ((this.ownsGroup && row.pgid === this.pgid) || identifiedGroupMember || current.has(row.ppid)) {
+        const identifiedMember = this.memberMarkers.every(marker => row.command.includes(marker))
+        if (identifiedMember || current.has(row.ppid)) {
           current.add(row.pid)
+          this.identities.set(row.pid, { pid: row.pid, startTime: row.startTime, command: row.command, profile: this.memberMarkers[0] || '', nonce: this.rootMarkers[0] || '', rootPid: this.rootPid })
           changed = true
         }
       }
     }
     for (const pid of current) this.pids.add(pid)
-    this.livePids = new Set([...current].filter(pid => byPid.get(pid)?.pgid === this.pgid))
+    this.livePids = new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
     return this.livePids
   }
 
   async signal(signal) {
     await this.refresh()
     if (this.livePids.size === 0) return
-    if (this.ownsGroup) {
+    const rows = await this.readTable()
+    const liveRows = [...this.livePids].map(pid => rows.find(row => row.pid === pid)).filter(Boolean)
+    const verifiedGroup = this.ownsGroup && liveRows.length === this.livePids.size && liveRows.every(row => row.pgid === this.pgid && sameIdentity(this.identities.get(row.pid), row))
+    if (verifiedGroup) {
       try { process.kill(-this.pgid, signal); return } catch (error) { if (error?.code !== 'ESRCH') throw error }
     }
     for (const pid of this.livePids) {
+      const current = (await this.readTable()).find(row => row.pid === pid)
+      if (!sameIdentity(this.identities.get(pid), current)) {
+        this.livePids.delete(pid)
+        continue
+      }
       try { process.kill(pid, signal) } catch (error) { if (error?.code !== 'ESRCH') throw error }
     }
   }

@@ -13,6 +13,8 @@ import {
   parseBrowserResult,
   resolveChromeExecutable,
   runBrowserTest,
+  OwnedProcessTree,
+  processTable,
 } from './account-profitability-browser.mjs'
 
 function isProcessAlive(pid) {
@@ -105,6 +107,54 @@ test('binds the URL and browser result to one generated identity', () => {
   assert.equal(new URL(url).searchParams.get('nonce'), identity.nonce)
   assert.deepEqual(parseBrowserResult(JSON.stringify({ pass: true, nonce: identity.nonce }), identity), { pass: true, nonce: identity.nonce })
   assert.throws(() => parseBrowserResult(JSON.stringify({ pass: true, nonce: 'other' }), identity), /nonce/i)
+})
+
+async function waitForValue(read, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const value = await read()
+    if (value) return value
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  throw new Error('timed out waiting for process fixture')
+}
+
+test('cleans a detached reparented helper after its process group changes', { timeout: 15_000 }, async () => {
+  const profile = `owned-profile-${Date.now()}-${process.pid}`
+  const nonce = `owned-nonce-${Date.now()}-${process.pid}`
+  const source = `
+    const { spawn } = require('node:child_process')
+    const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', '--', '--profile=${profile}', '--nonce=${nonce}'], { detached: true, stdio: 'ignore' })
+    console.log(helper.pid)
+    setTimeout(() => process.exit(0), 100)
+  `
+  const root = spawn(process.execPath, ['--eval', source, '--', `--profile=${profile}`, `--nonce=${nonce}`], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
+  const helperPid = Number((await once(root.stdout, 'data'))[0].toString().trim())
+  const tree = new OwnedProcessTree(root, [`--nonce=${nonce}`], [`--profile=${profile}`])
+  await waitForValue(async () => (await tree.refresh()).has(helperPid))
+  await once(root, 'close')
+  const before = (await processTable()).find(row => row.pid === helperPid)
+  assert.ok(before)
+  assert.notEqual(before.pgid, tree.pgid, 'fixture helper did not get a distinct process group')
+  await tree.signal('SIGTERM')
+  await tree.waitGone(3000, 'detached helper cleanup')
+  assert.equal(isProcessAlive(helperPid), false)
+})
+
+test('does not signal a PID after its stable identity changes', { timeout: 10_000 }, async () => {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: 'ignore' })
+  const realRows = await waitForValue(async () => {
+    const row = (await processTable()).find(candidate => candidate.pid === child.pid)
+    return row ? [row] : null
+  })
+  let table = realRows
+  const tree = new OwnedProcessTree(child, [], ['__never-owned-marker__'], async () => table)
+  await tree.refresh()
+  table = [{ ...realRows[0], startTime: 'different-start', command: 'unrelated-process' }]
+  await tree.signal('SIGTERM')
+  assert.equal(isProcessAlive(child.pid), true, 'identity mismatch must not signal the live PID')
+  process.kill(child.pid, 'SIGKILL')
+  await once(child, 'close')
 })
 
 test('repeated real Chrome runs leave no owned processes, profiles, or listeners', { timeout: 120_000 }, async () => {

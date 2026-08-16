@@ -14,7 +14,7 @@
 - 只修改 `upstream/sub2api/backend/internal/service/openai_images_responses.go`、最小相关 service 单测和本任务规格/计划/复审报告。
 - 不修改共享 helper 的 Grok 行为、multipart 解析、API-key 链路、其他上传链路、错误码、错误文案/中文提示、`ErrorPassthroughRule` 或客户端表现。
 - 不修改依赖、配置、迁移、前端、GitHub Actions、发布脚本、生产数据或账号分组策略。
-- 仓库文档不得写用户邮箱；必要事故上下文仅保留 `user_id=34`、API key id `50`、`group_id=19`。
+- 仓库文档不得写个人电子邮件地址；必要事故上下文仅保留 `user_id=34`、API key id `50`、`group_id=19`。
 - 仅运行相关 service 单测、后端必要构建/类型检查、`gofmt`、`git diff --check` 和范围检查；不运行无关全仓测试、mutation、压力、soak 或浏览器验证。
 - 候选完成后只进入 `READY_FOR_ROOT_REVIEW`；不得合并根 `main`、推送或部署。
 
@@ -138,7 +138,8 @@ cd upstream/sub2api/backend && go test ./internal/service -run '^$'
 git diff --check
 git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46...HEAD
 git diff --name-only 44095897d1bba3302c877431ba9bb5b6e356ab46 -- .github upstream/sub2api/backend/go.mod upstream/sub2api/backend/go.sum upstream/sub2api/frontend upstream/sub2api/backend/migrations ops
-rg -n 'user_email|用户邮箱|@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' docs/superpowers/specs/2026-08-16-oauth-images-edit-mime-compat-design.md docs/superpowers/plans/2026-08-16-oauth-images-edit-mime-compat.md docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-implementation.md
+email_scan_pattern='user_''email|用户''邮箱|@''[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+rg -n "$email_scan_pattern" docs/superpowers/specs/2026-08-16-oauth-images-edit-mime-compat-design.md docs/superpowers/plans/2026-08-16-oauth-images-edit-mime-compat.md docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-implementation.md
 ```
 
 Expected: focused tests and compile-only package check PASS; diff check clean; changed paths limited to the declared service source/test and task-local docs; forbidden-path diff empty; email scan empty.
@@ -167,4 +168,3 @@ git commit -m "fix: normalize OAuth image upload MIME"
 ```
 
 After the task commit, the controller must dispatch a fresh read-only task reviewer for specification compliance and code quality, then a separate most-capable read-only whole-branch reviewer. Findings must be fixed and re-reviewed before `READY_FOR_ROOT_REVIEW`.
-

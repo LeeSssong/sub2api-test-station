@@ -92,4 +92,3 @@ ok  github.com/Wei-Shaw/sub2api/internal/service  1.884s
 - Expected `downtime_required=false`; this is a service-code-only blue-green candidate with no schema or configuration transition.
 - Rollback: revert the implementation commit and the evidence commit before release, or revert their eventual merge commit from the reviewed root release flow.
 - Residual risk: `http.DetectContentType` inspects only the initial bytes and supports a bounded signature set; valid image formats it identifies as a non-image MIME will now be rejected on the OAuth Responses fallback path. Explicit `image/*` MIME values remain trusted and preserved by design.
-

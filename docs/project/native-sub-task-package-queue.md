@@ -2,10 +2,10 @@
 
 ## 当前状态
 
-- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11、T11-R1 均已部署并完成各自既定范围的线上验证。新的最高优先级任务为 `OAuth 图片编辑上传 MIME 兼容热修`；T09 与 S1-R2 排在其后。
+- 队列状态：T01、T02、T03、T04、T03-R1、账号监控卡片、T05、T06/T06-R1、T07、T08、T10、T11、T11-R1 与 OAuth 图片编辑上传 MIME 兼容热修均已完成推送、部署和既定范围验收。新的最高优先级任务为 T09；S1-R2 排在其后。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：T11-R1 最终 `main@7a7c9abd70fb108af6a06b93ef67eea3c4b34dab`、tree `916aaf16ad6ac354b8981755b8072dedab4f6cf7` 已推送并完成无停机蓝绿发布；生产记录 `/var/lib/sub2api/release-records/20260816T025715Z-production-655862.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`。OAuth MIME 热修刷新候选 `de462d34837a8d6ac4605e65f2f6193e1bfa867a` 已由发布总控授权并无冲突合入根 `main@788ca6aeb`，当前唯一处于 `INTEGRATING`；尚未推送或部署。
-- 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施 `P0/URGENT` 为 OAuth 图片编辑上传 MIME 兼容热修。
+- 当前发布状态：OAuth MIME 热修已随 `main@3d4580c55f106193617865c59c42dbc603fee435`、tree `5e5e3cecdcdaa4a36573c423c2f29b003260f0c8` 推送并完成无停机蓝绿发布；生产记录 `/var/lib/sub2api/release-records/20260816T042531Z-production-727142.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`、上游 `sub2api-blue:8080`。当前发布车道空闲。
+- 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
@@ -138,7 +138,7 @@
 
 ### OAuth 图片编辑上传 MIME 兼容热修
 
-- 当前状态：`INTEGRATING`。用户可见顶层任务 `01a00892-2294-7083-aa01-7aa6f94d1dc4` 在独立 worktree `/Users/gongtengxinwen/.codex/worktrees/d883/sub2api搭建` 完成规格/计划、fresh implementer、任务复审和 fresh whole-branch 终审；最终候选 `554e19dab9b63a2bf7beff9889efac52177396b1` 经一次非破坏性刷新为 `de462d34837a8d6ac4605e65f2f6193e1bfa867a`，tree `f856bcd3173baecb490136ba40b2b579bffdd3c0`，已由发布总控授权并无冲突合入根 `main@788ca6aeb`。当前执行 merged-main 最小门禁、发布证据、推送和蓝绿预检；T09 与 S1-R2 继续暂停。
+- 当前状态：`DONE`。用户可见顶层任务 `01a00892-2294-7083-aa01-7aa6f94d1dc4` 的刷新候选 `de462d34837a8d6ac4605e65f2f6193e1bfa867a` 已合入并随 `main@3d4580c55f106193617865c59c42dbc603fee435`、tree `5e5e3cecdcdaa4a36573c423c2f29b003260f0c8` 推送和无停机发布；生产记录 `/var/lib/sub2api/release-records/20260816T042531Z-production-727142.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`。公网健康均 200；事故 API key `50` 的 `gpt-image-2` octet-stream 编辑返回 200/1 张图片。OAuth 精确线上重放因既有规避移出唯一生图组而安全不可执行，未恢复分组或改生产数据；发布 tree 的 focused OAuth 测试保留为该子项证据。详见 `docs/superpowers/reports/2026-08-16-oauth-images-edit-mime-compat-production.md`。
 - 任务目标：修复 OAuth 账号 `/v1/images/edits` multipart 图片被转换为 Data URL 后仍保留 `application/octet-stream`，导致上游返回 400 `unsupported MIME type` 的兼容问题。
 - 已知事故：`user_id=34`、API key `50`、生图 `group_id=19` 的请求命中；API-key 账号链路正常。生产临时规避已于 2026-08-16 10:02 将 OAuth 账号 `222/223` 移出 `group_id=19`。用户邮箱仅保留在授权交接上下文，不写入仓库总账。
 - 最小范围：仅修改 `upstream/sub2api/backend/internal/service/openai_images_responses.go` 约 320 行附近；当 MIME 为空或为 `application/octet-stream` 时用文件字节识别真实 MIME，仅接受 `image/*`，无法识别则拒绝。
@@ -148,7 +148,7 @@
 
 ### T09 官方更新冲突停止与人工处理
 
-- 当前状态：`BACKLOG`，暂停在 OAuth 图片编辑上传 MIME 兼容热修之后。
+- 当前状态：`BACKLOG`，为下一串行任务包；必须创建用户可见 GPT-5.6 Sol/medium 顶层任务并从届时最新干净 `main` 开始。
 - 目标：无冲突时快速准备官方更新；有冲突时可靠停止并交给管理员人工处理。
 - 范围：候选准备状态机、冲突日志持久化、管理员状态提示和手动更新边界。
 - 固定提示：`存在冲突，需要手动查看冲突日志并更新。`
@@ -172,6 +172,6 @@
 - T04 已完成合并、推送、无停机部署、登录态线上验收、可恢复 bundle 归档及 worktree/分支清理。
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
-- T07、T08、T10、T11 与 T11-R1 已完成生产验收；当前发布车道空闲，下一包只能是 OAuth 图片编辑上传 MIME 兼容热修。
-- OAuth MIME 热修必须从 T11-R1 已部署后的最新干净 `main` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；T09 与 S1-R2 继续排队，必须等待该热修完成生产验收后再启动。S1 旧候选继续冻结。
+- T07、T08、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；当前发布车道空闲，下一包只能是 T09。
+- T09 必须从 OAuth MIME 热修收口提交推送后的最新干净 `main` 创建用户可见 GPT-5.6 Sol/medium 顶层任务；S1-R2 继续排队。S1 旧候选继续冻结。
 - S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。

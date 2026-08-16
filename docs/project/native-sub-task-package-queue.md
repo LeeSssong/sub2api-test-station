@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。唯一发布总控现明确解除 T12 冻结并将其置为 `REFRESH_REQUIRED`：在原 T12 worktree 快进至最新 `main`，可追溯地重新应用因 P0 撤回的已审候选，保留全部 P0/T13/T14/官方更新行为，完成直接相关验证后再进入单一合并发布车道。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。T12 最新刷新候选 `4029240f4` 已完成直接相关验证并快进合入根 `main`，当前独占 `INTEGRATING` 车道；待最终合并树最小门禁、迁移/停机预检与 push 后进入既有蓝绿发布链。T15 仅为 `BACKLOG`，不占用当前车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca`、tree `6002d847555f224981aa03d64e098eccbba4561a`，发布记录 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -192,9 +192,9 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`REFRESH_REQUIRED`。候选 `codex/t12-native-probe-cost-cards@c7587599a7947e6103a915fdfc9f030d343bb198` 已完成功能与直接相关测试，曾合并为 `main@7ded6b219d0e87334c9db63c607ab27044c063ff`，但发布链未启动，生产未变更。P0 会话事故插队后，根总控用 `408e7a1a3`/`9d9e2b758` 可追溯 revert 将 T12 从根 `main` 移出；P0 现已生产收口，唯一发布总控明确授权在原 worktree 恢复 T12 写入并刷新到最新 `main`。
-- 刷新方式：由于原候选已是 `main` 历史祖先，不能再次普通 merge；在干净 T12 worktree 快进最新 `main` 后，反向撤销两笔 T12 撤回提交以重新生成候选差异，仅解决与最新主线的真实冲突。完成 migration/repository/service/handler focused tests、前端两个直接 Vitest、typecheck/build 和 `git diff --check` 后进入 `READY_FOR_ROOT_REVIEW`。
-- 恢复实施登记：本轮沿用批准规格 `docs/superpowers/specs/2026-08-16-t12-native-probe-cost-design.md` 与计划 `docs/superpowers/plans/2026-08-16-t12-native-probe-cost-design-implementation-plan.md`；不新增产品范围，不恢复旧 Task 4 RED，不运行全仓测试或额外 reviewer。T12 是当前唯一允许进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选。
+- 当前状态：`INTEGRATING`。原候选 `c7587599a` 因 P0 插队被根主线撤回；P0 收口后，T12 worktree 快进 `main@b16d45203`，仅反向撤销移除 T12 运行时/任务文档的 `9d9e2b758`，保留由根总控维护的当前全局文档，生成运行时候选 `35baf14ae` 和最终 handoff 候选 `4029240f4`。该候选已无冲突快进合入根 `main@4029240f4`。
+- 最新候选验证：migration/repository/service/handler 四组 focused Go 测试、前端两个直接 Vitest（19/19）、typecheck、build、`gofmt -d`、`git diff --check` 与 migration/范围安全扫描均通过；P0 auth/config/session 文件相对最新基线零差异。当前继续在最终根合并树重复最小门禁并执行迁移/停机预检。
+- 实施边界：沿用批准规格与计划，不新增产品范围，不恢复旧 Task 4 RED，不运行全仓测试或额外 reviewer。T12 是当前唯一允许进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选，worktree/分支保留到生产验证成功。
 - 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%；这些合同及 Task 1-3 的隔离账本、原生定价、fail-open、probe 聚合均已落实到最终候选 `c7587599a`。旧 Task 4 RED 已废弃且未带入；本轮不重做功能，只将该已验证候选刷新到最新主线并复跑直接相关门禁。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
 - 范围：探测记录与用户消费隔离；探测花费不影响账号成本、用户成本、利润或利润率；外部金额两位小数、内部原始精度保留；不做历史迁移/回填，启用后重新记录。

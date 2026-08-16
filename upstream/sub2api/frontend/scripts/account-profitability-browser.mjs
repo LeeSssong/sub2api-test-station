@@ -71,31 +71,37 @@ async function waitFor(check, timeoutMs, label, intervalMs = 50) {
   throw new Error(`${label} timed out${lastError ? `: ${lastError.message}` : ''}`)
 }
 
-export async function processTable() {
-  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,lstart=,command='], { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+export async function parseProcessTableOutput(stdout, platform = process.platform, readLinuxStart = pid => readFile(`/proc/${pid}/stat`, 'utf8')) {
   const rows = stdout.split('\n').flatMap(line => {
     const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+\s+\S+\s+\d+\s+\S+\s+\S+)\s+(.*)$/)
     if (!match) return []
     const parsedStart = Date.parse(match[5])
-    return [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), state: match[4], startTime: Number.isNaN(parsedStart) ? match[5].trim() : parsedStart, command: match[6] }]
+    if (Number.isNaN(parsedStart)) return []
+    return [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), state: match[4], startTime: parsedStart, command: match[6] }]
   })
-  if (process.platform !== 'linux') return rows
+  if (platform !== 'linux') return rows
   return await Promise.all(rows.map(async row => {
     try {
-      const stat = await readFile(`/proc/${row.pid}/stat`, 'utf8')
+      const stat = await readLinuxStart(row.pid)
       const endOfCommand = stat.lastIndexOf(')')
+      if (endOfCommand < 0) return null
       const fields = stat.slice(endOfCommand + 2).trim().split(/\s+/)
       const linuxStartTime = fields[19]
-      if (linuxStartTime) return { ...row, startTime: `linux:${linuxStartTime}` }
+      if (/^\d+$/.test(linuxStartTime || '')) return { ...row, startTime: `linux:${linuxStartTime}` }
     } catch (error) {
       void error
     }
-    return row
-  }))
+    return null
+  })).then(parsed => parsed.filter(Boolean))
+}
+
+export async function processTable() {
+  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,lstart=,command='], { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+  return parseProcessTableOutput(stdout)
 }
 
 function sameIdentity(identity, row) {
-  return Boolean(row) && row.startTime === identity.startTime && row.command === identity.command
+  return Boolean(identity?.startTime && identity.command && row?.startTime && row.command) && row.startTime === identity.startTime && row.command === identity.command
 }
 
 export class OwnedProcessTree {
@@ -129,15 +135,17 @@ export class OwnedProcessTree {
     }
 
     const current = new Set(this.identities.keys())
+    const verifiedAncestors = new Set([...current].filter(pid => sameIdentity(this.identities.get(pid), byPid.get(pid))))
     let changed = true
     while (changed) {
       changed = false
       for (const row of rows) {
         if (current.has(row.pid)) continue
         const identifiedMember = this.memberMarkers.every(marker => row.command.includes(marker))
-        if (identifiedMember || current.has(row.ppid)) {
+        if (identifiedMember || verifiedAncestors.has(row.ppid)) {
           current.add(row.pid)
           this.identities.set(row.pid, { pid: row.pid, startTime: row.startTime, command: row.command, profile: this.memberMarkers[0] || '', nonce: this.rootMarkers[0] || '', rootPid: this.rootPid })
+          verifiedAncestors.add(row.pid)
           changed = true
         }
       }

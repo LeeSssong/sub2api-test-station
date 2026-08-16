@@ -7,11 +7,12 @@ import { adminAPI } from '../src/api/admin'
 import '../src/style.css'
 
 const amount = (value: number) => ({ requests: 2, tokens: 10, cost: value, user_cost: -value, profit: value * 2, margin: null })
+const longAmount = Number('123456789012345.6789')
 const report = {
   generated_at: '2026-08-15T10:00:00Z', range: 'today' as const, currency: 'USD' as const,
-  summary: amount(123456789012345.6789),
-  accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amount(123456789012345.6789) }],
-  groups: [{ id: 10, name: 'Pro', unassigned: false, historical: false, amounts: amount(123456789012345.6789), accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amount(123456789012345.6789) }] }],
+  summary: amount(longAmount),
+  accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amount(longAmount) }],
+  groups: [{ id: 10, name: 'Pro', unassigned: false, historical: false, amounts: amount(longAmount), accounts: [{ id: 7, name: 'Native', type: 'api_key', platform: 'sub', historical: false, amounts: amount(longAmount) }] }],
   user_unconsumed_balance_cny: 90,
 }
 

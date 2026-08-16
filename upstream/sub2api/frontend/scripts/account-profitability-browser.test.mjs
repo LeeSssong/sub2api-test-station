@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { connect } from 'node:net'
 import { once } from 'node:events'
@@ -15,6 +16,7 @@ import {
   runBrowserTest,
   OwnedProcessTree,
   processTable,
+  parseProcessTableOutput,
 } from './account-profitability-browser.mjs'
 
 function isProcessAlive(pid) {
@@ -155,6 +157,48 @@ test('does not signal a PID after its stable identity changes', { timeout: 10_00
   assert.equal(isProcessAlive(child.pid), true, 'identity mismatch must not signal the live PID')
   process.kill(child.pid, 'SIGKILL')
   await once(child, 'close')
+})
+
+test('does not adopt children of a reused root PID after root identity mismatch', async () => {
+  const child = new EventEmitter()
+  child.pid = 41001
+  const profile = '--profile=owned-profile'
+  const nonce = '--nonce=owned-nonce'
+  let table = [
+    { pid: 41001, ppid: 1, pgid: 41001, state: 'S', startTime: 'start-a', command: `runner ${nonce}` },
+    { pid: 41002, ppid: 41001, pgid: 41001, state: 'S', startTime: 'helper-a', command: `helper ${profile}` },
+  ]
+  const tree = new OwnedProcessTree(child, [nonce], [profile], async () => table)
+  await tree.refresh()
+  table = [
+    { pid: 41001, ppid: 1, pgid: 41001, state: 'S', startTime: 'start-b', command: 'unrelated-root' },
+    { pid: 41003, ppid: 41001, pgid: 41001, state: 'S', startTime: 'child-b', command: 'unrelated-child' },
+  ]
+  const originalKill = process.kill
+  const calls = []
+  process.kill = (pid, signal) => { calls.push({ pid, signal }); return true }
+  try {
+    await tree.signal('SIGTERM')
+  } finally {
+    process.kill = originalKill
+  }
+  assert.deepEqual([...tree.livePids], [])
+  assert.deepEqual(calls, [])
+})
+
+test('process table parser drops rows without a stable startup identity', async () => {
+  const stdout = [
+    '  1  0  1 S Mon Jan  1 00:00:00 2024 valid-command',
+    '  2  0  2 S not-a-date invalid-command',
+  ].join('\n')
+  const rows = await parseProcessTableOutput(stdout, 'darwin')
+  assert.deepEqual(rows.map(row => row.pid), [1])
+})
+
+test('linux process table parser fails closed when proc stat is unreadable', async () => {
+  const stdout = '  1  0  1 S Mon Jan  1 00:00:00 2024 valid-command'
+  const rows = await parseProcessTableOutput(stdout, 'linux', async () => { throw new Error('gone') })
+  assert.deepEqual(rows, [])
 })
 
 test('repeated real Chrome runs leave no owned processes, profiles, or listeners', { timeout: 120_000 }, async () => {

@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 var (
@@ -29,14 +31,18 @@ const (
 )
 
 type FinancialAmounts struct {
-	Requests int64    `json:"requests"`
-	Tokens   int64    `json:"tokens"`
-	Cost     float64  `json:"cost"`
-	UserCost float64  `json:"user_cost"`
-	Profit   float64  `json:"profit"`
-	Margin   *float64 `json:"margin"`
-	Revenue  float64  `json:"revenue"`
-	Expense  float64  `json:"expense"`
+	Requests        int64            `json:"requests"`
+	Tokens          int64            `json:"tokens"`
+	Cost            float64          `json:"cost"`
+	UserCost        float64          `json:"user_cost"`
+	Profit          float64          `json:"profit"`
+	Margin          *float64         `json:"margin"`
+	Revenue         float64          `json:"revenue"`
+	Expense         float64          `json:"expense"`
+	ProbeRequests   *int64           `json:"probe_requests"`
+	ProbeTokens     *int64           `json:"probe_tokens"`
+	ProbeCost       *decimal.Decimal `json:"probe_cost"`
+	ProbeCostStatus *string          `json:"probe_cost_status"`
 }
 
 type AccountFinancialReport struct {
@@ -47,6 +53,8 @@ type AccountFinancialReport struct {
 	Accounts       []*AccountFinancialAccountReport `json:"accounts"`
 	Groups         []*AccountFinancialGroupReport   `json:"groups"`
 	UserBalanceCNY float64                          `json:"user_unconsumed_balance_cny"`
+	ProbeDataError bool                             `json:"probe_data_error"`
+	ProbeErrorCode *string                          `json:"probe_error_code"`
 }
 
 type AccountFinancialAccountReport struct {
@@ -80,6 +88,9 @@ type AccountFinancialUsageSnapshot struct {
 	Accounts       []AccountFinancialUsageAccount
 	Groups         []AccountFinancialUsageGroup
 	Rows           []AccountFinancialUsageRow
+	ProbeRows      []AccountProbeCostAggregate
+	ProbeDataError bool
+	ProbeErrorCode *string
 	UserBalanceCNY float64
 }
 
@@ -312,7 +323,10 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 	if snap == nil {
 		return nil, ErrFinancialUsageSnapshot
 	}
-	report := &AccountFinancialReport{GeneratedAt: now, Range: r, Currency: "USD", UserBalanceCNY: snap.UserBalanceCNY}
+	report := &AccountFinancialReport{
+		GeneratedAt: now, Range: r, Currency: "USD", UserBalanceCNY: snap.UserBalanceCNY,
+		ProbeDataError: snap.ProbeDataError, ProbeErrorCode: snap.ProbeErrorCode,
+	}
 	accountMeta := make(map[int64]AccountFinancialUsageAccount, len(snap.Accounts))
 	accountByID := make(map[int64]*AccountFinancialAccountReport, len(snap.Accounts))
 	for _, meta := range snap.Accounts {
@@ -392,12 +406,53 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		add(&group.report.Amounts, row)
 		add(&groupAccount.Amounts, row)
 	}
+	if !snap.ProbeDataError {
+		initializeProbeAmounts(&report.Summary)
+		for _, account := range report.Accounts {
+			initializeProbeAmounts(&account.Amounts)
+		}
+		for _, group := range report.Groups {
+			initializeProbeAmounts(&group.Amounts)
+			for _, account := range group.Accounts {
+				initializeProbeAmounts(&account.Amounts)
+			}
+		}
+		for _, row := range snap.ProbeRows {
+			identityRow := AccountFinancialUsageRow{GroupID: row.GroupID, AccountID: row.AccountID}
+			account := accountForRow(identityRow)
+			group := groupForRow(identityRow)
+			groupAccount := group.accounts[row.AccountID]
+			if groupAccount == nil {
+				groupAccount = &AccountFinancialAccountReport{ID: account.ID, Name: account.Name, Type: account.Type, Platform: account.Platform, Historical: account.Historical}
+				initializeProbeAmounts(&groupAccount.Amounts)
+				group.accounts[row.AccountID] = groupAccount
+				group.report.Accounts = append(group.report.Accounts, groupAccount)
+			}
+			initializeProbeAmountsIfUnset(&account.Amounts)
+			initializeProbeAmountsIfUnset(&group.report.Amounts)
+			addProbeAmounts(&report.Summary, row)
+			addProbeAmounts(&account.Amounts, row)
+			addProbeAmounts(&group.report.Amounts, row)
+			addProbeAmounts(&groupAccount.Amounts, row)
+		}
+	}
 	for _, account := range report.Accounts {
 		finalizeFinancialAmounts(&account.Amounts)
 	}
 	report.Groups = append(report.Groups, historicalGroups...)
 	if unassigned != nil {
 		report.Groups = append(report.Groups, unassigned.report)
+	}
+	if !snap.ProbeDataError {
+		for _, account := range report.Accounts {
+			initializeProbeAmountsIfUnset(&account.Amounts)
+		}
+		for _, group := range report.Groups {
+			initializeProbeAmountsIfUnset(&group.Amounts)
+			for _, account := range group.Accounts {
+				initializeProbeAmountsIfUnset(&account.Amounts)
+			}
+		}
 	}
 	for _, group := range report.Groups {
 		for _, account := range group.Accounts {
@@ -407,6 +462,40 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 	}
 	finalizeFinancialAmounts(&report.Summary)
 	return report, nil
+}
+
+func initializeProbeAmounts(amounts *FinancialAmounts) {
+	zero := int64(0)
+	zeroCost := decimal.Zero
+	status := "unavailable"
+	amounts.ProbeRequests = &zero
+	amounts.ProbeTokens = &zero
+	amounts.ProbeCost = &zeroCost
+	amounts.ProbeCostStatus = &status
+}
+
+func initializeProbeAmountsIfUnset(amounts *FinancialAmounts) {
+	if amounts.ProbeCostStatus == nil {
+		initializeProbeAmounts(amounts)
+	}
+}
+
+func addProbeAmounts(amounts *FinancialAmounts, row AccountProbeCostAggregate) {
+	initializeProbeAmountsIfUnset(amounts)
+	requests := *amounts.ProbeRequests + row.ProbeRequests
+	tokens := *amounts.ProbeTokens + row.ProbeTokens
+	amounts.ProbeRequests = &requests
+	amounts.ProbeTokens = &tokens
+	if *amounts.ProbeCostStatus == "incomplete" || row.HasIncompleteCost || row.ProbeCost == nil {
+		status := "incomplete"
+		amounts.ProbeCost = nil
+		amounts.ProbeCostStatus = &status
+		return
+	}
+	cost := amounts.ProbeCost.Add(*row.ProbeCost)
+	status := "confirmed"
+	amounts.ProbeCost = &cost
+	amounts.ProbeCostStatus = &status
 }
 
 func financialFirstNonEmpty(values ...string) string {

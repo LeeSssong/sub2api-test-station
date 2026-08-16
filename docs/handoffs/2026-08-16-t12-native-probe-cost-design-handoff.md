@@ -2,7 +2,7 @@
 
 - 任务：T12 经营页本站探测花费与排序 / USD 字段优化
 - 状态：`READY_FOR_ROOT_REVIEW`（功能实现和直接相关验证通过；未合并、未推送、未部署）
-- 基线：`main@cef63dcc557f832d70acabcbc27ce60004b6ee4c`
+- 最新刷新基线：`main@b16d45203ff4789aa7adf1f1dcb92f7a0801ca74`
 - 当前 worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`
 - 分支：`codex/t12-native-probe-cost-cards`
 - 规格：[2026-08-16-t12-native-probe-cost-design.md](../superpowers/specs/2026-08-16-t12-native-probe-cost-design.md)
@@ -15,8 +15,8 @@
 - 迁移语义：需要 add-only 新表/索引/约束 migration；“不做历史迁移/回填”是不生成或改写历史业务数据。发布预检必须输出 `downtime_required`，若为 true 在动作前停下等待人工确认。
 - 范围：探测写入链路、account-financial 读模型/API、经营页 UI；页面按全站 -> 分组 -> 账号组织，一账号一卡，同卡区分用户流水账号成本与本站探测花费，桌面最多两列、390px 单列且无页面横向滚动。保留六项排序；所有外部金额统一普通 USD 两位、利润率 `0.00%`，余额不显示 CNY 语义，内部原始精度和现有字段/API/DTO 保持不变。
 - 明确隔离：用户余额、用户用量、普通管理员统计、账号计费、用户扣费、利润和利润率均继续只读 `usage_logs`；probe 表只提供独立探测字段，普通用户 DTO 永不返回。
-- 实现候选：刷新后运行时测试提交 `e0c067dcd058dc65c7b1cf73852c00ef993f7a2e`、tree `785b4678cf6e81491a867ac8c0f4b2f9f8f7f097`；最终 handoff 文档提交以本分支当前 `HEAD` 为准。
-- 验证：migration、repository、service、handler 四组 focused Go 测试通过；前端 API/页面 19/19、`pnpm typecheck`、`pnpm build`、`git diff --check` 和范围/迁移安全扫描通过。完整证据见 `docs/superpowers/reports/2026-08-16-t12-native-probe-cost-implementation-report.md`。
+- 实现候选：原候选因 P0 插队被根主线可追溯撤回；P0 收口后，本分支快进最新 `main` 并仅反向撤销运行时撤回提交 `9d9e2b758`，生成运行时测试提交 `35baf14ae1b9f9ce522e27b13336872f237cec8a`、tree `f84461ee2358d2a4a0a1fc3a48932c40fe5d9ee9`。最终 handoff 文档提交以本分支当前 `HEAD` 为准。
+- 验证：最新刷新 tree 上 migration、repository、service、handler 四组 focused Go 测试通过；前端 API/页面 19/19、`pnpm typecheck`、`pnpm build`、`gofmt -d`、`git diff --check` 和范围/迁移安全扫描通过。P0 auth/config/session 文件与最新 `main` 零差异，任务分支没有 `docs/project/*` 或 GitHub Actions 差异。完整证据见 `docs/superpowers/reports/2026-08-16-t12-native-probe-cost-implementation-report.md`。
 - 迁移：新增 add-only `224_account_probe_cost_logs.sql`，不回填；候选未运行发布预检，`downtime_required` 必须由根合并后的既有链判定。
 - 本轮未做：未修改任务侧 `docs/project/*`，未合并、push、部署、访问生产或修改生产账号；未运行全仓测试、广泛 vet、mutation、soak、重复浏览器矩阵或额外 reviewer。
 - 根总控下一步：以本分支最终 `HEAD` 为精确候选授权合并到当前 `main`；合并后只重复直接相关门禁并运行既有发布预检。若 `downtime_required=true`，必须在任何停服、迁移或切换前暂停等待用户确认。

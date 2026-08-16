@@ -3,9 +3,9 @@
 ## 候选身份
 
 - 任务：T12 经营页本站探测花费与排序 / USD 字段优化
-- 基线：`main@cef63dcc557f832d70acabcbc27ce60004b6ee4c`
-- 刷新后运行时测试提交：`e0c067dcd058dc65c7b1cf73852c00ef993f7a2e`
-- 测试 tree：`785b4678cf6e81491a867ac8c0f4b2f9f8f7f097`
+- 最新刷新基线：`main@b16d45203ff4789aa7adf1f1dcb92f7a0801ca74`
+- 最新主线刷新后运行时测试提交：`35baf14ae1b9f9ce522e27b13336872f237cec8a`
+- 测试 tree：`f84461ee2358d2a4a0a1fc3a48932c40fe5d9ee9`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`
 - 分支：`codex/t12-native-probe-cost-cards`
 - 状态：`READY_FOR_ROOT_REVIEW`；未合并、未推送、未部署、未访问生产
@@ -25,7 +25,7 @@
 
 ## 新鲜验证
 
-以下命令均在刷新后的候选 tree 上执行，退出码为 0：
+以下命令均在 P0 收口后的最新刷新候选 tree 上执行，退出码为 0：
 
 ```text
 go test ./migrations -run TestAccountProbeCostLogsMigration -count=1
@@ -41,6 +41,8 @@ git diff --check
 - 前端结果：2 个直接测试文件、19/19 用例通过。
 - 构建结果：1044 modules transformed，构建成功。
 - 构建保留既有警告：Browserslist 数据过期、动态/静态 import 混用、Node `DEP0190`；无新增构建错误。
+- `gofmt -d` 对全部 T12 Go 差异无输出；`git diff --check` 通过。
+- 最新 P0 的 auth、config、setting gate 与 session-binding 文件相对 `main` 零差异，T12 刷新未撤销或覆盖 P0 行为。
 
 ## 范围与安全扫描
 
@@ -49,6 +51,7 @@ git diff --check
 - migration 不包含 `CASCADE`、`user_id` 或 `api_key_id` 占位字段。
 - migration 明确包含 `accounts(id) ON DELETE RESTRICT`。
 - 没有 `.github/workflows/*` 变化，没有 GitHub Actions。
+- 没有任务侧 `docs/project/*` 变化；根队列与总账仍由唯一发布总控维护。
 - 没有历史 insert/update、生产访问、生产账号修改或数据回填。
 
 ## 迁移、发布与回滚

@@ -22,4 +22,3 @@
 
 - 生产 OAuth/API-key `/v1/images/edits` 定向验收与健康检查留给根发布总控合并后的发布窗口。
 - 罕见、无法由 `http.DetectContentType` 识别的 fallback 图片格式按设计 fail closed；显式 `image/*` 不受影响。
-

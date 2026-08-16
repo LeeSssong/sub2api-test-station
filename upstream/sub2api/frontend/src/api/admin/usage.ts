@@ -132,10 +132,37 @@ export async function getById(id: number): Promise<AdminUsageLog> {
   return data
 }
 
+function normalizeCostEvidence(data: unknown): UsageCostEvidenceDetail {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return {} as UsageCostEvidenceDetail
+  }
+
+  const response = data as Record<string, unknown>
+  const normalized: Record<string, unknown> = {}
+  const fields = [
+    ['usage_log_id', 'UsageLogID'],
+    ['source', 'Source'],
+    ['evidence_status', 'EvidenceStatus'],
+    ['reason_code', 'ReasonCode'],
+    ['normalized_cost_cny', 'NormalizedCostCNY'],
+    ['review_id', 'ReviewID'],
+    ['review_cost_cny', 'ReviewCostCNY']
+  ] as const
+
+  for (const [snakeCase, pascalCase] of fields) {
+    const value = response[snakeCase] !== undefined ? response[snakeCase] : response[pascalCase]
+    if (value !== undefined) {
+      normalized[snakeCase] = value
+    }
+  }
+
+  return normalized as UsageCostEvidenceDetail
+}
+
 /** Read persisted local evidence/review facts for one administrator usage row. */
 export async function getCostEvidence(usageId: number): Promise<UsageCostEvidenceDetail> {
-  const { data } = await apiClient.get<UsageCostEvidenceDetail>(`/admin/usage/${usageId}/upstream-cost`)
-  return data
+  const { data } = await apiClient.get<unknown>(`/admin/usage/${usageId}/upstream-cost`)
+  return normalizeCostEvidence(data)
 }
 
 export async function listCostExceptions(params: CostExceptionQueryParams, options?: { signal?: AbortSignal }): Promise<AdminUsageCostExceptionList> {

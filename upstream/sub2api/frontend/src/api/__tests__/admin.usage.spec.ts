@@ -122,4 +122,99 @@ describe('admin usage API', () => {
     await expect(result).resolves.toEqual(cost)
     expect(adminUsageAPI).not.toHaveProperty('getUpstreamCost')
   })
+
+  it.each([
+    {
+      name: 'normalizes PascalCase responses',
+      response: {
+        UsageLogID: 42,
+        Source: 'newapi',
+        EvidenceStatus: 'confirmed',
+        ReasonCode: 'matched',
+        NormalizedCostCNY: 0.004123456789,
+        ReviewID: 7,
+        ReviewCostCNY: 0.003,
+      },
+      expected: {
+        usage_log_id: 42,
+        source: 'newapi',
+        evidence_status: 'confirmed',
+        reason_code: 'matched',
+        normalized_cost_cny: 0.004123456789,
+        review_id: 7,
+        review_cost_cny: 0.003,
+      },
+    },
+    {
+      name: 'keeps snake_case responses unchanged',
+      response: {
+        usage_log_id: 43,
+        source: 'sub',
+        evidence_status: 'confirmed_zero',
+        reason_code: 'zero',
+        normalized_cost_cny: 0,
+        review_id: null,
+        review_cost_cny: null,
+      },
+      expected: {
+        usage_log_id: 43,
+        source: 'sub',
+        evidence_status: 'confirmed_zero',
+        reason_code: 'zero',
+        normalized_cost_cny: 0,
+        review_id: null,
+        review_cost_cny: null,
+      },
+    },
+    {
+      name: 'prefers snake_case when both names are present',
+      response: {
+        usage_log_id: 44,
+        UsageLogID: 999,
+        source: '',
+        Source: 'legacy-source',
+        evidence_status: null,
+        EvidenceStatus: 'legacy-status',
+        reason_code: 'snake-reason',
+        ReasonCode: 'legacy-reason',
+        normalized_cost_cny: null,
+        NormalizedCostCNY: 99,
+        review_id: null,
+        ReviewID: 999,
+        review_cost_cny: 0,
+        ReviewCostCNY: 99,
+      },
+      expected: {
+        usage_log_id: 44,
+        source: '',
+        evidence_status: null,
+        reason_code: 'snake-reason',
+        normalized_cost_cny: null,
+        review_id: null,
+        review_cost_cny: 0,
+      },
+    },
+    {
+      name: 'preserves missing fields for empty and non-object responses',
+      response: {},
+      expected: {},
+    },
+  ])('$name', async ({ response, expected }) => {
+    get.mockResolvedValue({ data: response })
+
+    await expect(adminUsageAPI.getCostEvidence(42)).resolves.toEqual(expected)
+  })
+
+  it('safely downgrades a non-object response without inventing fields', async () => {
+    get.mockResolvedValue({ data: null })
+
+    await expect(adminUsageAPI.getCostEvidence(42)).resolves.toEqual({})
+  })
+
+  it('rethrows network errors unchanged', async () => {
+    const error = new Error('upstream unavailable')
+    get.mockRejectedValue(error)
+
+    await expect(adminUsageAPI.getCostEvidence(42)).rejects.toBe(error)
+  })
 })

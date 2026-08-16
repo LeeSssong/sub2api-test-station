@@ -1,8 +1,8 @@
 # T12 设计交接（修订）
 
 - 任务：T12 经营页本站探测花费与排序 / USD 字段优化
-- 状态：`DESIGNING`（规格已批准；实施计划待根总控书面审阅/批准）
-- 基线：`main@5fea0f665280b988aef927534a75be23934bae32`
+- 状态：`READY_FOR_ROOT_REVIEW`（功能实现和直接相关验证通过；未合并、未推送、未部署）
+- 基线：`main@cef63dcc557f832d70acabcbc27ce60004b6ee4c`
 - 当前 worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`
 - 分支：`codex/t12-native-probe-cost-cards`
 - 规格：[2026-08-16-t12-native-probe-cost-design.md](../superpowers/specs/2026-08-16-t12-native-probe-cost-design.md)
@@ -15,6 +15,9 @@
 - 迁移语义：需要 add-only 新表/索引/约束 migration；“不做历史迁移/回填”是不生成或改写历史业务数据。发布预检必须输出 `downtime_required`，若为 true 在动作前停下等待人工确认。
 - 范围：探测写入链路、account-financial 读模型/API、经营页 UI；页面按全站 -> 分组 -> 账号组织，一账号一卡，同卡区分用户流水账号成本与本站探测花费，桌面最多两列、390px 单列且无页面横向滚动。保留六项排序；所有外部金额统一普通 USD 两位、利润率 `0.00%`，余额不显示 CNY 语义，内部原始精度和现有字段/API/DTO 保持不变。
 - 明确隔离：用户余额、用户用量、普通管理员统计、账号计费、用户扣费、利润和利润率均继续只读 `usage_logs`；probe 表只提供独立探测字段，普通用户 DTO 永不返回。
-- 本轮禁止：未写实现、迁移、测试；未修改 `docs/project/*`；未合并、push、部署或访问生产。已调用 `writing-plans` 仅产出书面实施计划，计划仍待根总控批准。
-- 根总控下一步：审阅并批准修订计划；批准前不得写实现/迁移/测试。计划获批后只运行直接相关功能测试与必要 typecheck/build，不增加 reviewer 链，最终回到 `READY_FOR_ROOT_REVIEW` 等待根授权合并。
-- 发布队列：T13 已完成；T12 仍须由根总控单独授权后才能进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`。
+- 实现候选：刷新后运行时测试提交 `e0c067dcd058dc65c7b1cf73852c00ef993f7a2e`、tree `785b4678cf6e81491a867ac8c0f4b2f9f8f7f097`；最终 handoff 文档提交以本分支当前 `HEAD` 为准。
+- 验证：migration、repository、service、handler 四组 focused Go 测试通过；前端 API/页面 19/19、`pnpm typecheck`、`pnpm build`、`git diff --check` 和范围/迁移安全扫描通过。完整证据见 `docs/superpowers/reports/2026-08-16-t12-native-probe-cost-implementation-report.md`。
+- 迁移：新增 add-only `224_account_probe_cost_logs.sql`，不回填；候选未运行发布预检，`downtime_required` 必须由根合并后的既有链判定。
+- 本轮未做：未修改任务侧 `docs/project/*`，未合并、push、部署、访问生产或修改生产账号；未运行全仓测试、广泛 vet、mutation、soak、重复浏览器矩阵或额外 reviewer。
+- 根总控下一步：以本分支最终 `HEAD` 为精确候选授权合并到当前 `main`；合并后只重复直接相关门禁并运行既有发布预检。若 `downtime_required=true`，必须在任何停服、迁移或切换前暂停等待用户确认。
+- 发布队列：T13 已完成；T12 是当前唯一可进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选。

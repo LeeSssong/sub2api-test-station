@@ -464,7 +464,7 @@ func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUps
 		snapshot.Status == UpstreamBillingProbeStatusOK {
 		return false
 	}
-	if !isNewAPIUsageLedgerForDetail(usage.Account) {
+	if usageCostLedgerForAccount(usage.Account) != usageCostLedgerNewAPI {
 		return false
 	}
 	return newAPIEvidenceRecordMatches(record, usage)

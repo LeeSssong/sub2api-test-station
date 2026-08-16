@@ -268,7 +268,11 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 	baseAccount := &Account{
 		Type: AccountTypeAPIKey,
 		Extra: map[string]any{
-			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+			AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+				Version: AccountMonitorBalanceVersion,
+				Source:  AccountMonitorBalanceSourceNewAPI,
+				Status:  AccountMonitorBalanceStatusOK,
+			},
 		},
 	}
 	baseUsage := &UsageLog{
@@ -290,7 +294,11 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 		record *newAPIUpstreamUsageRecord
 		want   bool
 	}{
-		{name: "eligible exact successful usage", usage: baseUsage, record: baseRecord, want: true},
+		{name: "eligible exact successful NewAPI usage", usage: baseUsage, record: baseRecord, want: true},
+		{name: "unsupported probe without NewAPI identity rejected", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+			Type:  AccountTypeAPIKey,
+			Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}},
+		}}, record: baseRecord, want: false},
 		{name: "usage not persisted", usage: &UsageLog{RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: baseAccount}, record: baseRecord},
 		{name: "missing upstream id", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, Account: baseAccount}, record: baseRecord},
 		{name: "fuzzy match rejected", usage: &UsageLog{ID: 101, RequestID: "different", UpstreamRequestID: newAPIStringPtr("different-upstream"), Account: baseAccount}, record: baseRecord},

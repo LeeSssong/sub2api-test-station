@@ -5,9 +5,13 @@
 - Branch: `codex/newapi-rate-multiplier-registration`.
 - Approved refreshed baseline: `45de05dffa560f8d2f92695258d4928e6d18ac34`.
 - Pre-Task-2/3 tip: `0730603c806779ebdedff9ed18ecac6be4134f4a`.
-- Implementation commit: recorded after the first candidate commit.
-- Final handoff commit: the branch tip containing this handoff update.
-- State: `READY_FOR_ROOT_REVIEW` after both candidate commits and a clean
+- Implementation commit:
+  `83e84a780452f337b075e378348d50a7f2cd86b9`.
+- Implementation tree: `faa8c12b595b85d6d2afaf961b60694740c833e4`.
+- Final handoff commit: the docs-only branch tip containing this update; its
+  exact SHA is reported to the root controller after commit because a commit
+  cannot embed its own SHA.
+- State: `READY_FOR_ROOT_REVIEW` once the docs-only handoff commit and clean
   worktree are confirmed.
 
 ## Scope Delivered

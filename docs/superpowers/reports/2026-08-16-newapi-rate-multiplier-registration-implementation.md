@@ -8,8 +8,12 @@
 - Root `main` at handoff time: `92db09644`; this dirty candidate was not
   refreshed with that main and must be reconciled by the root controller before
   integration.
-- Final candidate SHA is recorded in the task handoff after the implementation
-  commit is created.
+- Implementation commit:
+  `83e84a780452f337b075e378348d50a7f2cd86b9`.
+- Implementation tree: `faa8c12b595b85d6d2afaf961b60694740c833e4`.
+- Final candidate is the docs-only handoff commit whose parent is the
+  implementation commit above; its exact SHA is reported to the root controller
+  after that commit is created.
 
 ## Implemented Scope
 

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：T13 已 `DONE`，发布车道已释放。T12 已从冻结态进入 `DESIGNING`：仅在原用户可见顶层任务完成新规格与旧 Task 1-3 的只读对账，并从最新 `main` 准备干净恢复方案；旧脏 worktree 继续只读保全。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故独占发布车道；生产 `session_binding_enabled` 已恢复为 Sub 原生默认 `false`，待防复发门禁与真实重新登录验证收口。T12 已 `FROZEN`，候选与 worktree 原样保全，未进入生产构建、迁移或切换。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@3673d5a9a2c38b6cea22a595f0ab51c82cd751da`、tree `6280cb3075d4c2df035641dd052e94a7dc871eb1`，发布记录 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -185,7 +185,7 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`IMPLEMENTING`。T13 已生产收口，根总控已依据修订规格、自审、实施计划和离席代审授权解除 T12 的只读对账门禁。干净候选基线为 `main@5fea0f665280b988aef927534a75be23934bae32`，当前 worktree 为 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`、分支 `codex/t12-native-probe-cost-cards`；旧 worktree `HEAD a54222c5352889c0b48bff2a5824c8b6f214c657` 与唯一未提交 `AccountProfitabilityView.spec.ts` 继续原样保全，不得直接继续写入或带入新候选。
+- 当前状态：`FROZEN`。候选 `codex/t12-native-probe-cost-cards@c7587599a7947e6103a915fdfc9f030d343bb198` 已完成功能与直接相关测试，曾合并为 `main@7ded6b219d0e87334c9db63c607ab27044c063ff`，但发布链未启动，生产未变更。P0 会话事故插队后，根总控已用 `408e7a1a3`/`9d9e2b758` 可追溯 revert 将 T12 从根 `main` 移出；当前 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t12-native-probe-cost-cards`、分支、候选报告与旧 `a54222c535` 证据均原样保全。未经根总控明确解冻，不得继续写入、合并、推送、部署或清理。
 - 冻结前进度：Task 1、Task 2 已完成，Task 3 候选为 `a54222c5352889c0b48bff2a5824c8b6f214c657`；Task 4 仅开始编写 RED 测试且未运行。
 - 恢复实施登记：本轮沿用批准规格 `docs/superpowers/specs/2026-08-16-t12-native-probe-cost-design.md` 与计划 `docs/superpowers/plans/2026-08-16-t12-native-probe-cost-design-implementation-plan.md`；Task 1-3 只移植尚缺提交，Task 4 按三层/一卡一账号/六项排序/USD 两位合同重写。T12 当前不得进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING`，直至候选直接相关测试与必要构建通过并进入 `READY_FOR_ROOT_REVIEW`。
 - 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 已把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%。只读对账确认 Task 1-3 的隔离账本、原生定价、fail-open 和 probe 聚合合同仍兼容；旧 Task 4 RED 的独立 probe card/列布局假设必须废弃。恢复时从最新 main 新建干净候选，只移植仍缺失的 Task 1-3 提交并重写 Task 4，禁止把旧未提交 RED 带入。

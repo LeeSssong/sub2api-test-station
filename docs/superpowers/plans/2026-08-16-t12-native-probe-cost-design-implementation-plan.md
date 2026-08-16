@@ -15,7 +15,7 @@
 - Probe completeness uses `complete`, `partial`, and `unknown`; missing usage or pricing writes a nullable cost and never an estimate.
 - `probe_cost_status=unavailable` means a successful query found no rows in the requested window/dimension only. Query failures use `probe_data_error=true` and `probe_error_code="probe_aggregate_unavailable"`; probe values/status are null on that path.
 - Existing unconsumed-balance field, API name, and DTO remain unchanged. Only the operations page formats that existing value as USD with two displayed decimals; no alias, deprecation, global balance migration, or other balance page change.
-- Internal decimal precision is retained until presentation; all displayed USD amounts use the existing page formatter contract and two ordinary decimal places where the value is not a sub-eight-decimal non-zero amount.
+- Internal decimal precision is retained until presentation; every external amount on this page—including non-zero probe amounts smaller than `0.00000001`, unconsumed balance, and all six financial amounts—uses ordinary USD formatting with exactly two decimal places. Database values, API/DTO values, and aggregate calculations are never truncated or rounded early.
 - No historical probe backfill, usage-log rewrite, user-data rewrite, scheduling change, external control plane, GitHub Actions, production access, merge, push, or deployment occurs before root approval of the implementation plan and subsequent task gates.
 - T13 retains the next integration/deployment lane; T12 may implement and review after plan approval but cannot enter `INTEGRATING`, `DEPLOYING`, or `VERIFYING` ahead of T13.
 - Each task ends with focused tests, `git diff --check`, a scoped review, and a task commit. A fresh implementer and an independent read-only reviewer are required for each approved task; final whole-branch review happens before `READY_FOR_ROOT_REVIEW`.
@@ -227,7 +227,7 @@ type AccountFinancialUsageSnapshot struct {
 - Normalize nullable probe fields without coercing `null` to zero. The page consumes `probe_data_error` and `probe_error_code` as a separate status channel.
 - Sorting state is `{ key: 'requests'|'tokens'|'cost'|'user_cost'|'profit'|'margin'; direction: 'asc'|'desc' }`; probe cost is display-only and cannot be selected as a sort key.
 
-- [ ] **Step 1: Add red Vitest cases.** Cover probe card/column rendering, all six sortable headers with direction toggles and null-margin-last behavior, existing balance field shown with `$`/USD, successful no-row `unavailable` versus query-error `probe_data_error`, and 390px table containment.
+- [ ] **Step 1: Add red Vitest cases.** Cover probe card/column rendering, all six sortable headers with direction toggles and null-margin-last behavior, existing balance field shown with ordinary USD `$0.00`-style two-decimal formatting, a non-zero probe value smaller than `0.00000001` still rendered as ordinary two-decimal USD, every six financial amount rendered with the same two-decimal formatter, successful no-row `unavailable` versus query-error `probe_data_error`, and 390px table containment.
 - [ ] **Step 2: Run the red frontend tests.** Run `cd upstream/sub2api/frontend && pnpm vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts`; expected failures identify missing card, column, sort controls, and error state.
 - [ ] **Step 3: Extend API normalization.** Add typed nullable probe fields and report error fields; do not default probe `null` to zero. Keep the existing balance property name and all unrelated endpoint normalization untouched.
 - [ ] **Step 4: Add page state and sorting.** Add accessible sort buttons to the six existing financial headers, stable tie-breaking by account ID, and preserve sort key/direction across range, group, and refresh changes. Leave probe fields outside the comparator.
@@ -236,7 +236,7 @@ type AccountFinancialUsageSnapshot struct {
 type FinancialSortKey = 'requests' | 'tokens' | 'cost' | 'user_cost' | 'profit' | 'margin'
 type FinancialSort = { key: FinancialSortKey; direction: 'asc' | 'desc' }
 ```
-- [ ] **Step 5: Add visual states and localized copy.** Render the independent probe card and account column; show `$0.00` plus “暂无探测记录” only for successful `unavailable`, `—` for incomplete cost, and “探测数据暂不可用” with retry for `probe_data_error`. Keep the existing table’s isolated horizontal scrolling and avoid changing other pages.
+- [ ] **Step 5: Add visual states and localized copy.** Render the independent probe card and account column; show ordinary USD with exactly two decimals (including `$0.00` plus “暂无探测记录” only for successful `unavailable`), `—` for incomplete cost, and “探测数据暂不可用” with retry for `probe_data_error`. Apply the same two-decimal USD formatter to the unchanged unconsumed-balance field and all six financial amounts, while keeping raw precision in API/DTO/aggregation values. Keep the existing table’s isolated horizontal scrolling and avoid changing other pages.
 - [ ] **Step 6: Run green frontend checks and commit.** Run the focused Vitest file, `cd upstream/sub2api/frontend && pnpm typecheck`, `cd upstream/sub2api/frontend && pnpm build`, and `git diff --check`; commit `feat: add probe cost and financial sorting to operations page`.
 
 **Independent review gate:** reviewer checks no balance field rename, no probe value in six-field sorting, exact USD/error states, localized labels, null handling, and 390px layout containment.
@@ -259,7 +259,7 @@ type FinancialSort = { key: FinancialSortKey; direction: 'asc' | 'desc' }
 
 ## Plan Self-Review Checklist
 
-- Spec coverage: source isolation, three probe kinds, native pricing reuse, append-only/restrictive persistence, no backfill, USD formatting, six-field sorting, account/group/summary conservation, query failure separation, ordinary-user exclusion, rollback, migration precheck, and mobile layout each map to a task above.
+- Spec coverage: source isolation, three probe kinds, native pricing reuse, append-only/restrictive persistence, no backfill, ordinary two-decimal USD formatting for every page amount with raw internal precision preserved, six-field sorting, account/group/summary conservation, query failure separation, ordinary-user exclusion, rollback, migration precheck, and mobile layout each map to a task above.
 - Placeholder scan: no `TBD`, `TODO`, “implement later”, or unbounded “add tests” steps; each task names files, interfaces, commands, expected red/green behavior, and a commit.
 - Type consistency: `AccountProbeCostRepository`/ledger DTOs are introduced in Task 1; `AccountProbeCostRecorder`/`ProbeRecordInput` and its native-pricing implementation are introduced in Task 2; snapshot fields are consumed by Task 3; report-level error fields are introduced in Task 3 and normalized/rendered in Task 4; existing balance property remains unchanged throughout.
 - Scope check: no new user billing source, no account-cost formula change, no scheduler/routing change, no global balance migration, and no release action before root authorization.

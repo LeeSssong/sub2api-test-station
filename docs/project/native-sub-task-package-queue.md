@@ -138,7 +138,7 @@
 
 ### OAuth 图片编辑上传 MIME 兼容热修
 
-- 当前状态：`IMPLEMENTING`。用户可见顶层任务 `01a00892-2294-7083-aa01-7aa6f94d1dc4` 已从最新 `main@44095897d1bba3302c877431ba9bb5b6e356ab46` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/d883/sub2api搭建`；规格 `3a1d97d2a` 与计划 `37cdc9bce` 已由发布总控批准，fresh implementer 已按单一 TDD 任务启动。候选达到 `READY_FOR_ROOT_REVIEW` 前不得修改根 `main`、推送、部署或改生产。
+- 当前状态：`REVIEWING`。用户可见顶层任务 `01a00892-2294-7083-aa01-7aa6f94d1dc4` 已从最新 `main@44095897d1bba3302c877431ba9bb5b6e356ab46` 创建独立 worktree `/Users/gongtengxinwen/.codex/worktrees/d883/sub2api搭建`；规格 `3a1d97d2a` 与计划 `37cdc9bce` 已由发布总控批准，fresh implementer 已形成代码提交 `4adfe246b` 与证据提交 `ba1350198`，工作树干净，正在进行任务级独立复审与 fresh whole-branch 终审。候选达到 `READY_FOR_ROOT_REVIEW` 前不得修改根 `main`、推送、部署或改生产。
 - 任务目标：修复 OAuth 账号 `/v1/images/edits` multipart 图片被转换为 Data URL 后仍保留 `application/octet-stream`，导致上游返回 400 `unsupported MIME type` 的兼容问题。
 - 已知事故：`user_id=34`、API key `50`、生图 `group_id=19` 的请求命中；API-key 账号链路正常。生产临时规避已于 2026-08-16 10:02 将 OAuth 账号 `222/223` 移出 `group_id=19`。用户邮箱仅保留在授权交接上下文，不写入仓库总账。
 - 最小范围：仅修改 `upstream/sub2api/backend/internal/service/openai_images_responses.go` 约 320 行附近；当 MIME 为空或为 `application/octet-stream` 时用文件字节识别真实 MIME，仅接受 `image/*`，无法识别则拒绝。

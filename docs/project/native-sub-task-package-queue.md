@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故独占发布车道，候选已合入根 `main@21eba60bb` 并进入 `INTEGRATING`；生产 `session_binding_enabled` 已恢复且必须保持 Sub 原生默认 `false`，待 push、蓝绿发布与真实重新登录验证收口。T12 已 `FROZEN`，候选与 worktree 原样保全，未进入生产构建、迁移或切换。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故独占发布车道，修订候选已合入根 `main@77965c391` 并处于 `INTEGRATING`；生产 `session_binding_enabled` 已恢复且必须保持 Sub 原生默认 `false`，新门禁要求默认关闭的宿主许可与 trusted-proxy 策略同时存在，待最终 push、蓝绿发布与真实重新登录验证收口。T12 已 `FROZEN`，候选与 worktree 原样保全，未进入生产构建、迁移或切换。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@3673d5a9a2c38b6cea22a595f0ab51c82cd751da`、tree `6280cb3075d4c2df035641dd052e94a7dc871eb1`，发布记录 `/var/lib/sub2api/release-records/20260816T171553Z-production-1285992.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。

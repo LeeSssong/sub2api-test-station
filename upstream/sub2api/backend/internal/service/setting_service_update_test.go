@@ -259,6 +259,37 @@ func TestSettingService_UpdateSettings_PersistsCompactHomeEnabled(t *testing.T) 
 	require.Equal(t, "true", repo.updates[SettingKeyCompactHomeEnabled])
 }
 
+func TestSettingService_UpdateSettings_SessionBindingRequiresExplicitTrustedProxies(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: true})
+
+	require.ErrorContains(t, err, "SESSION_BINDING_TRUSTED_PROXIES_REQUIRED")
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_SessionBindingAllowsDisabledWithoutTrustedProxies(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: false})
+
+	require.NoError(t, err)
+	require.Equal(t, "false", repo.updates[SettingKeySessionBindingEnabled])
+}
+
+func TestSettingService_UpdateSettings_SessionBindingAllowsExplicitTrustedProxyPolicy(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	cfg := &config.Config{Server: config.ServerConfig{TrustedProxiesConfigured: true}}
+	svc := NewSettingService(repo, cfg)
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{SessionBindingEnabled: true})
+
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeySessionBindingEnabled])
+}
+
 func TestSettingService_UpdateSettings_DefaultSubscriptions_ValidGroup(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	groupReader := &defaultSubGroupReaderStub{

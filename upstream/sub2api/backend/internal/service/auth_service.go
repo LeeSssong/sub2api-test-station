@@ -2,14 +2,10 @@ package service
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -59,12 +55,6 @@ const maxTokenLength = 8192
 
 // refreshTokenPrefix is the prefix for refresh tokens to distinguish them from access tokens.
 const refreshTokenPrefix = "rt_"
-
-const (
-	refreshRotationLockTTL   = 30 * time.Second
-	refreshRotationReplayTTL = 10 * time.Second
-	refreshRotationPoll      = 25 * time.Millisecond
-)
 
 // JWTClaims JWT载荷数据
 type JWTClaims struct {
@@ -1743,11 +1733,6 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 	}
 
 	tokenHash := hashToken(refreshToken)
-	releaseRotation, err := s.acquireRefreshTokenRotation(ctx, tokenHash)
-	if err != nil {
-		return nil, err
-	}
-	defer releaseRotation()
 
 	// 获取Token数据
 	data, err := s.refreshTokenCache.GetRefreshToken(ctx, tokenHash)
@@ -1804,13 +1789,10 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 		}
 	}
 
-	if data.Rotation != nil {
-		result, err := s.decryptRefreshRotationResult(tokenHash, data.Rotation.EncryptedResult)
-		if err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Invalid refresh rotation replay marker: %v", err)
-			return nil, ErrRefreshTokenInvalid
-		}
-		return result, nil
+	// Token轮转：立即使旧Token失效
+	if err := s.refreshTokenCache.DeleteRefreshToken(ctx, tokenHash); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to delete old refresh token: %v", err)
+		// 继续处理，不影响主流程
 	}
 
 	// 生成新的Token对，保持同一个家族ID
@@ -1818,117 +1800,10 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 	if err != nil {
 		return nil, err
 	}
-	result := &TokenPairWithUser{
+	return &TokenPairWithUser{
 		TokenPair: *pair,
 		UserRole:  user.Role,
-	}
-
-	// Replace the old token with a short-lived consumed marker. Replays can only
-	// receive this exact result; they cannot create another refresh-token branch.
-	now := time.Now()
-	replayData := *data
-	replayData.CreatedAt = now
-	replayData.ExpiresAt = now.Add(refreshRotationReplayTTL)
-	encryptedResult, err := s.encryptRefreshRotationResult(tokenHash, result)
-	if err != nil {
-		_ = s.refreshTokenCache.DeleteRefreshToken(context.WithoutCancel(ctx), hashToken(pair.RefreshToken))
-		return nil, ErrServiceUnavailable
-	}
-	replayData.Rotation = &RefreshTokenRotationResult{
-		EncryptedResult: encryptedResult,
-	}
-	if err := s.refreshTokenCache.StoreRefreshToken(ctx, tokenHash, &replayData, refreshRotationReplayTTL); err != nil {
-		_ = s.refreshTokenCache.DeleteRefreshToken(context.WithoutCancel(ctx), hashToken(pair.RefreshToken))
-		return nil, ErrServiceUnavailable
-	}
-
-	return result, nil
-}
-
-func (s *AuthService) acquireRefreshTokenRotation(ctx context.Context, tokenHash string) (func(), error) {
-	locker, ok := s.refreshTokenCache.(RefreshTokenRotationLocker)
-	if !ok {
-		return nil, ErrServiceUnavailable
-	}
-	lockBytes := make([]byte, 16)
-	if _, err := rand.Read(lockBytes); err != nil {
-		return nil, ErrServiceUnavailable
-	}
-	lockOwner := hex.EncodeToString(lockBytes)
-	lockDeadline := time.Now().Add(refreshRotationLockTTL)
-	for {
-		acquired, err := locker.AcquireRefreshTokenRotation(ctx, tokenHash, lockOwner, refreshRotationLockTTL)
-		if err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Error acquiring refresh token rotation lock: %v", err)
-			return nil, ErrServiceUnavailable
-		}
-		if acquired {
-			break
-		}
-		if time.Now().After(lockDeadline) {
-			return nil, ErrServiceUnavailable
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ErrServiceUnavailable
-		case <-time.After(refreshRotationPoll):
-		}
-	}
-	return func() {
-		if err := locker.ReleaseRefreshTokenRotation(context.WithoutCancel(ctx), tokenHash, lockOwner); err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to release refresh token rotation lock: %v", err)
-		}
 	}, nil
-}
-
-func (s *AuthService) refreshRotationAEAD() (cipher.AEAD, error) {
-	key := sha256.Sum256([]byte("sub2api-refresh-rotation-replay:" + s.cfg.JWT.Secret))
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return nil, err
-	}
-	return cipher.NewGCM(block)
-}
-
-func (s *AuthService) encryptRefreshRotationResult(tokenHash string, result *TokenPairWithUser) (string, error) {
-	aead, err := s.refreshRotationAEAD()
-	if err != nil {
-		return "", err
-	}
-	plaintext, err := json.Marshal(result)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-	sealed := aead.Seal(nonce, nonce, plaintext, []byte(tokenHash))
-	return base64.RawURLEncoding.EncodeToString(sealed), nil
-}
-
-func (s *AuthService) decryptRefreshRotationResult(tokenHash, encrypted string) (*TokenPairWithUser, error) {
-	aead, err := s.refreshRotationAEAD()
-	if err != nil {
-		return nil, err
-	}
-	sealed, err := base64.RawURLEncoding.DecodeString(encrypted)
-	if err != nil || len(sealed) < aead.NonceSize() {
-		return nil, errors.New("invalid refresh rotation replay ciphertext")
-	}
-	nonce, ciphertext := sealed[:aead.NonceSize()], sealed[aead.NonceSize():]
-	plaintext, err := aead.Open(nil, nonce, ciphertext, []byte(tokenHash))
-	if err != nil {
-		return nil, err
-	}
-	var result TokenPairWithUser
-	if err := json.Unmarshal(plaintext, &result); err != nil {
-		return nil, err
-	}
-	if result.AccessToken == "" || result.RefreshToken == "" {
-		return nil, errors.New("incomplete refresh rotation replay result")
-	}
-	return &result, nil
 }
 
 // RevokeRefreshToken 撤销单个Refresh Token
@@ -1941,19 +1816,6 @@ func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshToken strin
 	}
 
 	tokenHash := hashToken(refreshToken)
-	releaseRotation, err := s.acquireRefreshTokenRotation(ctx, tokenHash)
-	if err != nil {
-		return err
-	}
-	defer releaseRotation()
-
-	data, err := s.refreshTokenCache.GetRefreshToken(ctx, tokenHash)
-	if err == nil && data.FamilyID != "" {
-		return s.refreshTokenCache.DeleteTokenFamily(ctx, data.FamilyID)
-	}
-	if err != nil && !errors.Is(err, ErrRefreshTokenNotFound) {
-		return err
-	}
 	return s.refreshTokenCache.DeleteRefreshToken(ctx, tokenHash)
 }
 

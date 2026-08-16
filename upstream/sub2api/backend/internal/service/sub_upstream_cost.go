@@ -394,6 +394,80 @@ type newAPIUpstreamUsageRecord struct {
 	Quota             upstreamBillingNumber `json:"quota"`
 	RequestID         string                `json:"request_id"`
 	UpstreamRequestID string                `json:"upstream_request_id"`
+	GroupRatio        *float64              `json:"-"`
+	GroupRatioError   error                 `json:"-"`
+}
+
+func (r *newAPIUpstreamUsageRecord) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		Type              int                   `json:"type"`
+		Quota             upstreamBillingNumber `json:"quota"`
+		RequestID         string                `json:"request_id"`
+		UpstreamRequestID string                `json:"upstream_request_id"`
+		Other             json.RawMessage       `json:"other"`
+	}
+	if err := decodeUpstreamJSON(data, &payload); err != nil {
+		return err
+	}
+	r.Type = payload.Type
+	r.Quota = payload.Quota
+	r.RequestID = payload.RequestID
+	r.UpstreamRequestID = payload.UpstreamRequestID
+	r.GroupRatio, r.GroupRatioError = parseNewAPIGroupRatio(payload.Other)
+	return nil
+}
+
+func parseNewAPIGroupRatio(raw json.RawMessage) (*float64, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, errors.New("New API other.group_ratio is missing")
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return nil, errors.New("New API other is invalid")
+		}
+		raw = bytes.TrimSpace([]byte(encoded))
+	}
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil, errors.New("New API other is invalid")
+	}
+	var other map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &other); err != nil {
+		return nil, errors.New("New API other is invalid")
+	}
+	value, ok := other["group_ratio"]
+	if !ok {
+		return nil, errors.New("New API other.group_ratio is missing")
+	}
+	value = bytes.TrimSpace(value)
+	if len(value) == 0 || value[0] == '"' || value[0] == 't' || value[0] == 'f' || value[0] == 'n' {
+		return nil, errors.New("New API other.group_ratio is not a number")
+	}
+	var number json.Number
+	if err := json.Unmarshal(value, &number); err != nil || strings.TrimSpace(number.String()) == "" {
+		return nil, errors.New("New API other.group_ratio is not a number")
+	}
+	ratio, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 100 {
+		return nil, errors.New("New API other.group_ratio is out of range")
+	}
+	return &ratio, nil
+}
+
+func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUpstreamUsageRecord) bool {
+	if usage == nil || usage.ID <= 0 || usage.Account == nil || usage.Account.Type != AccountTypeAPIKey ||
+		record == nil || record.GroupRatio == nil || record.GroupRatioError != nil || record.Type == 6 {
+		return false
+	}
+	if snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra); snapshot != nil &&
+		snapshot.Status == UpstreamBillingProbeStatusOK {
+		return false
+	}
+	if !isNewAPIUsageLedgerForDetail(usage.Account) {
+		return false
+	}
+	return newAPIEvidenceRecordMatches(record, usage)
 }
 
 type newAPIUpstreamUsageRecordsResponse struct {

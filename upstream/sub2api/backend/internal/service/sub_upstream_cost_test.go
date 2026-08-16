@@ -225,6 +225,100 @@ func TestSubUpstreamCostServiceConfirmsNewAPIQuotaCostForExactRequestMatch(t *te
 	require.Equal(t, []string{"/api/log/token", "/api/status"}, gotPaths)
 }
 
+func TestNewAPIUsageRecordParsesTopLevelGroupRatio(t *testing.T) {
+	tests := []struct {
+		name      string
+		other     string
+		wantRatio float64
+		wantValid bool
+	}{
+		{name: "json string", other: `"{\"group_ratio\":0.17,\"model_ratio\":99}"`, wantRatio: 0.17, wantValid: true},
+		{name: "json object", other: `{"group_ratio":0}`, wantValid: true},
+		{name: "decimal object", other: `{"group_ratio":12.5}`, wantRatio: 12.5, wantValid: true},
+		{name: "nested group ratio is ignored", other: `{"model":{"group_ratio":0.17}}`, wantValid: false},
+		{name: "missing", other: `{}`, wantValid: false},
+		{name: "null", other: `{"group_ratio":null}`, wantValid: false},
+		{name: "string", other: `{"group_ratio":"0.17"}`, wantValid: false},
+		{name: "boolean", other: `{"group_ratio":true}`, wantValid: false},
+		{name: "negative", other: `{"group_ratio":-0.1}`, wantValid: false},
+		{name: "over maximum", other: `{"group_ratio":100.1}`, wantValid: false},
+		{name: "non finite", other: `"{\"group_ratio\":NaN}"`, wantValid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"request_id":"upstream-1","other":` + tt.other + `}`)
+			var record newAPIUpstreamUsageRecord
+			err := json.Unmarshal(body, &record)
+			require.NoError(t, err)
+			if !tt.wantValid {
+				require.Nil(t, record.GroupRatio)
+				require.Error(t, record.GroupRatioError)
+				return
+			}
+			require.NoError(t, record.GroupRatioError)
+			require.NotNil(t, record.GroupRatio)
+			require.InDelta(t, tt.wantRatio, *record.GroupRatio, 1e-12)
+		})
+	}
+}
+
+func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testing.T) {
+	upstreamID := "upstream-eligible"
+	baseAccount := &Account{
+		Type: AccountTypeAPIKey,
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+		},
+	}
+	baseUsage := &UsageLog{
+		ID:                101,
+		RequestID:         "local-eligible",
+		UpstreamRequestID: &upstreamID,
+		Account:           baseAccount,
+	}
+	baseRecord := &newAPIUpstreamUsageRecord{
+		Type:              2,
+		RequestID:         "local-eligible",
+		UpstreamRequestID: upstreamID,
+		GroupRatio:        float64Ptr(0.17),
+	}
+
+	tests := []struct {
+		name   string
+		usage  *UsageLog
+		record *newAPIUpstreamUsageRecord
+		want   bool
+	}{
+		{name: "eligible exact successful usage", usage: baseUsage, record: baseRecord, want: true},
+		{name: "usage not persisted", usage: &UsageLog{RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: baseAccount}, record: baseRecord},
+		{name: "missing upstream id", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, Account: baseAccount}, record: baseRecord},
+		{name: "fuzzy match rejected", usage: &UsageLog{ID: 101, RequestID: "different", UpstreamRequestID: newAPIStringPtr("different-upstream"), Account: baseAccount}, record: baseRecord},
+		{name: "refund rejected", usage: baseUsage, record: &newAPIUpstreamUsageRecord{Type: 6, RequestID: baseRecord.RequestID, UpstreamRequestID: upstreamID, GroupRatio: baseRecord.GroupRatio}},
+		{name: "oauth rejected", usage: baseUsage, record: baseRecord, want: true},
+		{name: "native declaration wins", usage: baseUsage, record: baseRecord, want: true},
+	}
+	tests[5].usage = &UsageLog{ID: baseUsage.ID, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{Type: AccountTypeOAuth, Extra: baseAccount.Extra}}
+	tests[5].want = false
+	tests[6].usage = &UsageLog{ID: baseUsage.ID, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+		Type: AccountTypeAPIKey,
+		Extra: map[string]any{
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK},
+		},
+	}}
+	tests[6].want = false
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, newAPIRateMultiplierRegistrationEligible(tt.usage, tt.record))
+		})
+	}
+}
+
+func newAPIStringPtr(value string) *string {
+	return &value
+}
+
 func TestSubUpstreamCostServiceTreatsBlankMatchedNewAPIQuotaAsZero(t *testing.T) {
 	cases := []struct {
 		name  string

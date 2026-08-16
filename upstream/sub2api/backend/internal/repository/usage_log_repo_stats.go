@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,6 +22,21 @@ const (
 	accountFinancialUsageAccountsQuery = `SELECT id, name, type, platform, deleted_at FROM accounts ORDER BY id`
 	accountFinancialUsageGroupsQuery   = `SELECT id, name, deleted_at FROM groups ORDER BY id`
 	accountFinancialUsageBalanceQuery  = `SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`
+	accountFinancialProbeErrorCode     = "probe_aggregate_unavailable"
+	accountFinancialProbeQuery         = `
+		SELECT
+			group_id,
+			account_id,
+			COUNT(*)::BIGINT AS probe_requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::BIGINT AS probe_tokens,
+			CASE WHEN BOOL_AND(account_cost IS NOT NULL AND usage_completeness = 'complete')
+			     THEN SUM(account_cost) ELSE NULL END AS probe_cost,
+			BOOL_OR(account_cost IS NULL OR usage_completeness <> 'complete') AS has_incomplete_cost
+		FROM account_probe_cost_logs
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY group_id, account_id
+		ORDER BY group_id NULLS FIRST, account_id
+	`
 )
 
 // ReadAccountFinancialUsage reads the native usage-log aggregate and its
@@ -137,11 +153,54 @@ func (r *usageLogRepository) ReadAccountFinancialUsage(ctx context.Context, from
 		return nil, err
 	}
 
+	probeRows, err := tx.QueryContext(ctx, accountFinancialProbeQuery, from, to)
+	if err != nil {
+		return accountFinancialProbeFailureSnapshot(tx, snapshot), nil
+	}
+	for probeRows.Next() {
+		var row service.AccountProbeCostAggregate
+		var groupID sql.NullInt64
+		var cost sql.NullString
+		if err := probeRows.Scan(&groupID, &row.AccountID, &row.ProbeRequests, &row.ProbeTokens, &cost, &row.HasIncompleteCost); err != nil {
+			_ = probeRows.Close()
+			return accountFinancialProbeFailureSnapshot(tx, snapshot), nil
+		}
+		if groupID.Valid {
+			row.GroupID = &groupID.Int64
+		}
+		if cost.Valid {
+			value, parseErr := decimal.NewFromString(cost.String)
+			if parseErr != nil {
+				_ = probeRows.Close()
+				return accountFinancialProbeFailureSnapshot(tx, snapshot), nil
+			}
+			row.ProbeCost = &value
+		}
+		snapshot.ProbeRows = append(snapshot.ProbeRows, row)
+	}
+	if err := probeRows.Err(); err != nil {
+		_ = probeRows.Close()
+		return accountFinancialProbeFailureSnapshot(tx, snapshot), nil
+	}
+	if err := probeRows.Close(); err != nil {
+		return accountFinancialProbeFailureSnapshot(tx, snapshot), nil
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return snapshot, nil
 }
+
+func accountFinancialProbeFailureSnapshot(tx *sql.Tx, snapshot *service.AccountFinancialUsageSnapshot) *service.AccountFinancialUsageSnapshot {
+	_ = tx.Rollback()
+	snapshot.ProbeRows = nil
+	snapshot.ProbeDataError = true
+	snapshot.ProbeErrorCode = stringPtr(accountFinancialProbeErrorCode)
+	return snapshot
+}
+
+func stringPtr(value string) *string { return &value }
 
 // GetUserStatsAggregated returns aggregated usage statistics for a user using database-level aggregation
 func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {

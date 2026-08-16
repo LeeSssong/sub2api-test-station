@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 会话热修已 `DONE`，发布车道已释放。T13 已交付候选 `c8ec34498` 并进入 `REFRESH_REQUIRED`，当前只允许在原顶层任务整合最新 `main`、解决本任务冲突并重跑直接相关测试；T12 继续 `FROZEN` 并等待 T13 生产收口。
+- 队列状态：P0 会话热修已 `DONE`，发布车道由 T13 独占。T13 刷新候选 `8faf65547` 已无冲突合入根 `main@9c5d30d40`，合并树直接相关测试通过，当前进入 `INTEGRATING` 推送与发布预检；T12 继续 `FROZEN` 并等待 T13 生产收口。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@527f2195cbec517a72fbc05ee898b6999324aced`，发布记录 `20260816T164033Z-production-1258100.json` 为 `succeeded/promoted`，`downtime_required=false`，新 `green` API 与 worker 均 healthy。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200，登录态从仪表盘点击管理员“使用记录”后保持 `/admin/usage` 且数据正常加载。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -196,7 +196,7 @@
 
 ### T13 NewAPI 上游倍率自动登记
 
-- 当前状态：`REFRESH_REQUIRED`。用户可见 GPT-5.6 Sol/medium 顶层任务 `01a00969-b2ea-7ff0-9f49-d7af64438e00` 已交付干净候选 `codex/newapi-rate-multiplier-registration@c8ec34498`，直接相关 service/repository 测试与编译通过。该候选相对根 `main@92db09644` 落后，现只允许在原 worktree 合入最新 `main`、解决本任务范围冲突并重跑同一组直接相关验证；不再启动额外 reviewer 或扩大验证，不自行推送、部署或访问生产。
+- 当前状态：`INTEGRATING`。刷新候选 `codex/newapi-rate-multiplier-registration@8faf65547` 已无冲突合入根 `main@9c5d30d40`；合并树上的 3 个 focused service 用例、2 个 repository CAS 用例、相关包 compile-only、gofmt 与运行时代码 diff-check 均通过。当前只执行根 `main` 推送和既有发布链预检，不增加额外 reviewer、全仓测试或无关验证。
 - 权威输入：仅接受 NewAPI 精确匹配日志中的 `other.group_ratio`；仅适用于 NewAPI API-key 且没有原生 Sub 倍率声明的账号。
 - 写入语义：首次真实成功请求后登记 `accounts.rate_multiplier`，并在 `accounts.extra` 标记来源/登记状态；已登记账号按北京时间自然日仅首笔合格请求刷新一次。
 - 并发与失败：使用 CAS 防止并发覆盖；失败不得覆盖既有倍率或登记标记；管理员可见“已登记”。

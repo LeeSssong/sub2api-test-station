@@ -76,9 +76,9 @@ executor additionally requires `--maintenance-from-hash` to equal the active
 hash below. No other migration transition is accepted:
 
 ```text
-from f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc
-to   6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71
-file 222_account_financial_reconciliation.sql (SHA-256 47f786d6b2b020d0211a17d4ccd2bc6bb3774a315f483fdc0ac45657c9ee738e) — expand-only independent upstream-cost evidence/review and account-day financial tables; it leaves `usage_logs` unchanged and performs no historical backfill.
+from ef1213846cba597cbc5cd64238558a3c392585df3568acb321f3227776e88bc5
+to   aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604
+file 224_account_probe_cost_logs.sql (SHA-256 6f737666ba9a4ddd98642f7d6fa21a6356d93f9b93f5444f65156f61011dfd4d) — expand-only independent append-only probe-cost ledger with `ON DELETE RESTRICT`; it leaves `usage_logs` unchanged and performs no historical backfill.
 ```
 
 Invoke the same controller with the explicit maintenance flag:
@@ -95,9 +95,9 @@ by default and 300 seconds maximum. This is the only authorized API/worker
 outage window. It stops only the API and worker services, starts the candidate
 worker to apply the additive migration, then restores the API route through the
 existing Caddy container. PostgreSQL, Redis, and Caddy are never stopped or
-recreated. `222_account_financial_reconciliation.sql` is forward-compatible:
-it only creates new independent evidence, review, account-day, and settings
-tables plus indexes; it does not modify `usage_logs` or backfill history. An
+recreated. `224_account_probe_cost_logs.sql` is forward-compatible: it only
+creates the independent probe-cost table and indexes; it does not modify
+`usage_logs` or backfill history. An
 application rollback restores the previous API/worker images and Caddy
 upstream; it does not automatically remove the new tables or indexes. Preserve the
 `.partial` and failure record if rollback itself fails.

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 已合并并推送根 `main`，发布预检返回 `downtime_required=true`，当前停在 `DEPLOYING` 人工授权门禁，T16 保持 `FROZEN`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 已合并并推送根 `main`，发布预检返回 `downtime_required=true`，当前停在 `DEPLOYING` 人工授权门禁；T18 已登记为 `READY_FOR_ROOT_REVIEW` 排队候选，T19 已登记为 `BACKLOG`，均不得插入 T15 车道；T16 保持 `FROZEN`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@892db8cefb37bcab14b0aded8082811ac3935f48`、tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；T17 普通预加载蓝绿发布为 `succeeded/promoted`、等效 `downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -268,3 +268,18 @@
 - 目标：详情“上游扣费”读取 effective account cost，利润统一为 `actual_cost - effective_account_cost`；历史 `account_cost` 为空时使用上述 fallback。`usage_upstream_cost_evidence` 只作严格账单核验状态/原因，不得决定主金额是否显示或成为利润主事实源。同一流水在列表、详情和账号利润/经营页的成本数学值必须一致，允许展示精度不同。
 - 最小验收：增加直接相关前端/API/公式回归，覆盖 `account_cost`、历史 fallback 和 `evidence_status=unavailable` 三类；不改价格、倍率、`actual_cost/account_cost` 写入逻辑或经营页聚合公式。
 - 边界：无数据库迁移、历史回填、生产数据修改、账务重算或历史 evidence 表删除；不并入 S3，不使用 GitHub Actions。预检 `downtime_required=false` 时按全局规则直接发布，为 `true` 时暂停请求授权。
+
+### T18 渠道状态官方聚合/自建监控可切换
+
+- 当前状态：`READY_FOR_ROOT_REVIEW`（排队，不占用整合/部署车道）。用户可见顶层任务已在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`、分支 `codex/channel-status-official-toggle` 基于根 `main@78dc540e38d144bdac0c93e038690b6960b65fd5` 刷新；最终候选 `e99ebbe36a51b0388d552cd15582ebfe644c1e27`，tree `8050a637fdcaa109b67063dde54ed6b779743de2`，worktree 干净。功能提交为 `ee52dd5ea`；交接见 `docs/handoffs/2026-08-17-channel-status-official-toggle-handoff.md`。
+- 范围：仅改 `MonitorV2RouteView` 入口与专项测试；复用已有 `channel_monitor_mode=v1|v2`。`v2` 直接渲染官方 `ChannelStatusView` 并跳过 `/api/v1/monitor-v2`，`v1` 保留自建页及失败回退；无后端、迁移、配置 schema 或 GitHub Actions 变化。
+- 验证：`MonitorV2RouteView` 1 文件 3 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；预期 `downtime_required=false`，最终以根合并后的发布预检为准。上线参数为 `channel_monitor_enabled=true`、`channel_monitor_mode=v2`；回滚为 `channel_monitor_mode=v1`。
+- 车道约束：T15 当前仍停在 `downtime_required=true` 的停机授权门禁；T18 不自行插队、合并、推送、发布或改生产配置，待 T15 生产收口或明确冻结后再由根总控单独授权。
+
+### T19 Monitor V2 缓存命中率有效样本口径修正
+
+- 当前状态：`READY_FOR_ROOT_REVIEW`（不占用整合/部署车道）。用户于 2026-08-17 明确批准按既有方案修正并加入全局任务队列；候选已在 T19 独立 worktree 完成实现和直接相关门禁，排在 T15 发布车道完成后、T18 候选之后，遵守单车道规则，不打断 T15、不解冻 T16。用户最新指令为暂不发布，候选保持未合并、未推送、未部署。
+- 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@f43672775cc59852458cc734fb7cb99bc1bfe83c`，提交 `0f9ef38f2a0621d9afe5b5c965da025161dba399`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
+- 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
+- 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。
+- 验证与发布：TDD RED/GREEN、仓储/服务聚焦测试、后端 compile-only/build、gofmt、diff-check 已通过；发布后仍需进行 24 小时/7 天只读交叉验收。预检若返回 `downtime_required=false`，按全局约束直接继续蓝绿发布与线上验证；若返回 `true`，停在用户授权门禁。当前按用户指令暂停所有发布动作，不得使用 GitHub Actions。

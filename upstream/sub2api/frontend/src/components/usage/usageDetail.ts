@@ -15,14 +15,16 @@ export interface EffectiveAccountCostInput {
  * always a valid cost or multiplier and must not be treated as missing.
  */
 export function effectiveAccountCost(input: EffectiveAccountCostInput): number | null {
+  if (Number.isFinite(input.account_cost)) {
+    return input.account_cost as number
+  }
+
   const multiplier = Number.isFinite(input.account_rate_multiplier)
     ? input.account_rate_multiplier as number
     : 1
-  const source = Number.isFinite(input.account_cost)
-    ? input.account_cost
-    : Number.isFinite(input.account_stats_cost)
-      ? input.account_stats_cost
-      : input.total_cost
+  const source = Number.isFinite(input.account_stats_cost)
+    ? input.account_stats_cost
+    : input.total_cost
 
   return Number.isFinite(source) ? (source as number) * multiplier : null
 }

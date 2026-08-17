@@ -348,6 +348,7 @@ import {
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
+  effectiveAccountCost,
   effectivePerMillion,
   hasAdminUsageFields,
   type UsageDetailScope,
@@ -412,19 +413,18 @@ const adminDetail = computed<AdminUsageLog | null>(() => {
   return detail.value
 })
 
-const confirmedActualCost = computed(() => adminCostDetail.value?.normalized_cost_cny ?? null)
-const confirmedProfitValue = computed(() => {
-  if (confirmedActualCost.value == null || !adminDetail.value) return null
-  return adminDetail.value.actual_cost - confirmedActualCost.value
-})
+const effectiveAccountCostValue = computed(() => (
+  adminDetail.value ? effectiveAccountCost(adminDetail.value) : null
+))
 const adminUpstreamRequestId = computed(() => (
   adminDetail.value?.upstream_request_id || null
 ))
 const upstreamActualCostValue = computed(() => (
-  confirmedActualCost.value == null ? '-' : formatCost(confirmedActualCost.value)
+  effectiveAccountCostValue.value == null ? '-' : formatCost(effectiveAccountCostValue.value)
 ))
 const profitValue = computed(() => {
-  return confirmedProfitValue.value == null ? '-' : formatCost(confirmedProfitValue.value)
+  if (effectiveAccountCostValue.value == null || !adminDetail.value) return '-'
+  return formatCost(adminDetail.value.actual_cost - effectiveAccountCostValue.value)
 })
 const upstreamCostUnavailableMessage = computed(() => {
   if (adminCostDetail.value?.evidence_status !== 'unavailable') return ''

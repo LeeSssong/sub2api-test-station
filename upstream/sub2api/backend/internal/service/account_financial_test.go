@@ -133,6 +133,54 @@ func TestAccountFinancialReportFoldsNativePairsAndConservesTotals(t *testing.T) 
 	}
 }
 
+func TestAccountFinancialReportDerivesProfitabilityDimensionsAtEveryLevel(t *testing.T) {
+	now := beijingTime(t, "2026-08-17 12:00")
+	groupID := int64(10)
+	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
+		Accounts: []AccountFinancialUsageAccount{{ID: 1, Name: "mixed", Active: true}},
+		Groups:   []AccountFinancialUsageGroup{{ID: groupID, Name: "Pro", Active: true}},
+		Rows: []AccountFinancialUsageRow{{
+			GroupID: &groupID, AccountID: 1, Requests: 2, Tokens: 20,
+			OperationalCost: 2, BusinessCost: 3, BusinessRevenue: 8,
+		}},
+	}}
+	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, amounts := range map[string]FinancialAmounts{
+		"summary":       report.Summary,
+		"account":       report.Accounts[0].Amounts,
+		"group":         report.Groups[0].Amounts,
+		"group account": report.Groups[0].Accounts[0].Amounts,
+	} {
+		if amounts.OperationalCost != 2 || amounts.BusinessCost != 3 || amounts.BusinessRevenue != 8 || amounts.TotalCost != 5 || amounts.NetProfit != 3 {
+			t.Fatalf("%s profitability dimensions=%#v", name, amounts)
+		}
+		if amounts.ExternalMargin == nil || math.Abs(*amounts.ExternalMargin-0.375) > 1e-12 {
+			t.Fatalf("%s external margin=%v", name, amounts.ExternalMargin)
+		}
+		if amounts.Cost != amounts.TotalCost || amounts.UserCost != amounts.BusinessRevenue || amounts.Profit != amounts.NetProfit || amounts.Margin != amounts.ExternalMargin {
+			t.Fatalf("%s legacy fields diverged=%#v", name, amounts)
+		}
+	}
+}
+
+func TestAccountFinancialReportKeepsZeroRevenueMarginNullAndNegativeNetProfit(t *testing.T) {
+	now := beijingTime(t, "2026-08-17 12:00")
+	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{Rows: []AccountFinancialUsageRow{
+		{AccountID: 1, OperationalCost: 2, BusinessCost: 1},
+	}}}
+	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.TotalCost != 3 || report.Summary.NetProfit != -3 || report.Summary.ExternalMargin != nil || report.Summary.Margin != nil {
+		t.Fatalf("zero revenue profitability=%#v", report.Summary)
+	}
+}
+
 func TestAccountFinancialReportPreservesActiveZeroRowsAndHistoricalUsage(t *testing.T) {
 	now := beijingTime(t, "2026-08-13 12:00")
 	historicalAccount, historicalGroup := int64(9), int64(99)

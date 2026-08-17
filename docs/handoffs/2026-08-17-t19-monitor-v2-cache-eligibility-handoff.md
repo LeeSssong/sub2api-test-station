@@ -3,10 +3,10 @@
 ## Candidate
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 最新根主线基线：`main@8729884a113cf844a2850ba87463c2f7f711577c`
+- 最新根主线基线：`main@027c0c270c8e4eaa95bf2da4cc6377467ec5fa97`
 - 功能实现提交：`0f9ef38f2a0621d9afe5b5c965da025161dba399`
-- 刷新合并提交：`c4fc01c53802300bec61c5c8e5d55c58cff82a2a`
-- 刷新后候选 tree：`1484c609a9a4f4281eae6dcf0ce71b1f16d0c6a6`
+- 刷新合并提交：`cc291da0f481b0b2a1aefc9f1f370f70fb0ab109`
+- 刷新后候选 tree：`088850d44d2ddbd9e25dc0aa71b55be17dc0c843`
 - 分支：`codex/t19-monitor-v2-cache-eligibility`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`
 - 预期发布属性：`downtime_required=false`
@@ -27,7 +27,7 @@
 - `go test ./cmd/... -run '^$'`：通过。
 - `go build ./cmd/...`：通过。
 - `gofmt`、`git diff --check`：通过。
-- 刷新到 `main@8729884a1` 后重新通过上述直接相关测试、`go build ./cmd/...` 和 `git diff --check main...HEAD`。
+- 刷新到 `main@027c0c270` 后重新通过上述直接相关测试、`go build ./cmd/...` 和 `git diff --check main...HEAD`。
 
 ## Remaining Root Work
 

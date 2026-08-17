@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 依赖门禁已解除，现已启动并进入 `DESIGNING`，将从最新干净 `main` 创建独立 worktree。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 已进入 `IMPLEMENTING`，独立 worktree 正按已批准计划继续 TDD。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已登记为 `BACKLOG`，排在 S3 生产收口之后，不打断当前单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@aab79007fc90c842eaf9971b6f5304f4ab7b6503`、tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S2 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -199,7 +199,7 @@
 
 ### S3 自适应选择、粘性逃逸与调度体验观测
 
-- 当前状态：`DESIGNING`。S2 已完成生产验收；发布总控已完成非 `main` worktree 盘点，T15、T16 和历史候选的保护边界不变。S3 以根 `main@7c8ffe70d0217fcac90c35e2de3d7bdd3376c87f` 为启动基线，规划独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s3-adaptive-scheduling-experience` 与分支 `codex/s3-adaptive-scheduling-experience`。历史规格源为提交 `a00523845` 中的 `docs/superpowers/specs/2026-08-12-upstream-resilience-s3-adaptive-scheduling-experience-design.md`；必须先基于当前 S1/S2 代码事实刷新正式规格，不直接照搬历史实现。
+- 当前状态：`IMPLEMENTING`。S2 已完成生产验收；发布总控已完成非 `main` worktree 盘点，T15、T16 和历史候选的保护边界不变。S3 以根 `main@83c4554792d3424751a439f3fd1cc38a0542ed5e` 为实施基线，在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s3-adaptive-scheduling-experience` 和分支 `codex/s3-adaptive-scheduling-experience` 上完成正式规格、计划以及配置、动态 Top-K、sticky 解释、TTFT report-only 与 selection/outcome 事件的已提交实现；当前继续 Ops 派生指标与管理 API 的 TDD。
 - 目标：消费 S1/S2 的健康与预算决定，先健康门槛、再动态 Top-K/最低质量阈值、再可解释 sticky escape；仅对安全重放且尚未输出的请求做 TTFT report-only/受控预热；在现有原生监控/运维入口呈现自动恢复率、平均尝试数、坏账号重复命中率、缓存代价和预算耗尽率。
 - 独立边界：不重新定义错误状态、S2 重试上限、价格、账务或控制面；默认不启用并行竞速；S1/S2 veto 永远优先于分数和 sticky；目标发布属性 `downtime_required=false`。
 
@@ -259,3 +259,12 @@
 - 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。
 - 视觉合同：业务营收使用蓝色语义，真实上游消耗使用琥珀色，内部运营使用紫色，净利润使用绿色，真实亏损/内部补贴成本使用红色或警示语义；账号明细为紧凑表格。桌面层级清晰，390px 摘要两列且整页无横向溢出；若明细采用受控横向滚动，必须限制在表格容器内。
 - 发布边界：本项保持冻结，不执行原生盘点、brainstorming、planning、实现或测试。只有 S1-R2 完成生产验收、S2 完成生产验收且总控重新 GO 后，才可解冻并从届时最新干净 `main` 重新核对基线。
+
+### T17 用量详情“上游扣费/利润”统一 Sub 原生有效账号成本口径热修
+
+- 当前状态：`BACKLOG`。用户只要求登记排队，不打断当前 S3；按单车道排在 S3 生产收口之后。启动时必须从届时最新干净 `main` 创建独立用户可见顶层任务、worktree、正式规格和实施计划。
+- 已确认问题：使用记录列表与账号利润/经营页均使用 Sub 原生有效账号成本 `COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1))`；用量详情弹窗却以 `usage_upstream_cost_evidence.normalized_cost_cny` 决定主金额，严格 evidence 为 `unavailable` 时显示 `-`，造成同一流水口径不一致；T14 只修复了 PascalCase/snake_case 兼容，未修改事实源。
+- 生产证据：`usage_log_id=125444/125509/125512` 的 `account_cost` 分别为 `0.0033144600/0.0058255200/0.0060059400`，对应利润为 `0.0022096400/0.0038836800/0.0040039600`，详情当前均显示 `-`。账号 214 当日 518 笔均有 `account_cost`，账号成本合计与利润页成本均为 `4.9629669888`，用户扣费 `8.2716116480`，利润 `3.3086446592`，但 518 笔严格 evidence 均为 `unavailable`。两个详情 API 均 HTTP 200，证明为选错主事实源而非接口失败。
+- 目标：详情“上游扣费”读取 effective account cost，利润统一为 `actual_cost - effective_account_cost`；历史 `account_cost` 为空时使用上述 fallback。`usage_upstream_cost_evidence` 只作严格账单核验状态/原因，不得决定主金额是否显示或成为利润主事实源。同一流水在列表、详情和账号利润/经营页的成本数学值必须一致，允许展示精度不同。
+- 最小验收：增加直接相关前端/API/公式回归，覆盖 `account_cost`、历史 fallback 和 `evidence_status=unavailable` 三类；不改价格、倍率、`actual_cost/account_cost` 写入逻辑或经营页聚合公式。
+- 边界：无数据库迁移、历史回填、生产数据修改、账务重算或历史 evidence 表删除；不并入 S3，不使用 GitHub Actions。预检 `downtime_required=false` 时按全局规则直接发布，为 `true` 时暂停请求授权。

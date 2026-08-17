@@ -3,20 +3,35 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
+type accountModelDetectionRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f accountModelDetectionRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func accountModelDetectionJSONResponse(status int, payload any) *http.Response {
+	body, _ := json.Marshal(payload)
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(string(body))),
+	}
+}
+
 func TestHTTPAccountModelDetectionSidecarCatalogAndDetect(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "private-token", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Header.Get("Authorization") != "Bearer private-token" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		switch r.URL.Path {
 		case "/v1/catalog":
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": "4.1.1", "models": []map[string]any{{"id": "gpt-5.6-sol", "supported": true}, {"id": "legacy", "supported": false}}})
+			return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{"version": "4.1.1", "models": []map[string]any{{"id": "gpt-5.6-sol", "supported": true}, {"id": "legacy", "supported": false}}}), nil
 		case "/v1/detect":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -25,14 +40,11 @@ func TestHTTPAccountModelDetectionSidecarCatalogAndDetect(t *testing.T) {
 			if body["api_key"] != "sk-private" || body["base_url"] != "https://relay.example/v1" {
 				t.Fatalf("request body = %#v", body)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": "abnormal", "juice_status": "mismatch", "fingerprint_candidate": "gpt-5.6-luna", "fingerprint_similarity": map[string]any{"luna": 0.98}, "detector_version": "4.1.1"})
+			return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{"status": "abnormal", "juice_status": "mismatch", "fingerprint_candidate": "gpt-5.6-luna", "fingerprint_similarity": map[string]any{"luna": 0.98}, "detector_version": "4.1.1"}), nil
 		default:
-			http.NotFound(w, r)
+			return accountModelDetectionJSONResponse(http.StatusNotFound, map[string]any{"error": "not found"}), nil
 		}
-	}))
-	defer server.Close()
-
-	client := NewHTTPAccountModelDetectionSidecar(server.URL, "private-token", server.Client())
+	})})
 	catalog, err := client.Catalog(context.Background())
 	if err != nil || len(catalog.Models) != 1 || catalog.Models[0] != "gpt-5.6-sol" {
 		t.Fatalf("catalog = %#v err=%v", catalog, err)
@@ -44,12 +56,9 @@ func TestHTTPAccountModelDetectionSidecarCatalogAndDetect(t *testing.T) {
 }
 
 func TestHTTPAccountModelDetectionSidecarReturnsStableErrorsWithoutSecrets(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(`upstream rejected sk-leaked-secret at https://secret.example/v1`))
-	}))
-	defer server.Close()
-	client := NewHTTPAccountModelDetectionSidecar(server.URL, "", server.Client())
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return accountModelDetectionJSONResponse(http.StatusBadGateway, map[string]any{"error": "upstream rejected sk-leaked-secret at https://secret.example/v1"}), nil
+	})})
 	_, err := client.Detect(context.Background(), AccountModelDetectionRequest{APIKey: "sk-leaked-secret", BaseURL: "https://secret.example/v1"})
 	if err == nil {
 		t.Fatal("expected sidecar error")
@@ -60,19 +69,17 @@ func TestHTTPAccountModelDetectionSidecarReturnsStableErrorsWithoutSecrets(t *te
 }
 
 func TestHTTPAccountModelDetectionSidecarRejectsInvalidStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": "confirmed_replacement"})
-	}))
-	defer server.Close()
-	client := NewHTTPAccountModelDetectionSidecar(server.URL, "", server.Client())
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{"status": "confirmed_replacement"}), nil
+	})})
 	if _, err := client.Detect(context.Background(), AccountModelDetectionRequest{}); err == nil {
 		t.Fatal("expected invalid response error")
 	}
 }
 
 func TestHTTPAccountModelDetectionSidecarSanitizesSummaryFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{
 			"status": "normal",
 			"juice_summary": map[string]any{
 				"score":   0.9,
@@ -83,11 +90,8 @@ func TestHTTPAccountModelDetectionSidecarSanitizesSummaryFields(t *testing.T) {
 				"gpt-5.6-sol": 0.98,
 				"response":    "full upstream output",
 			},
-		})
-	}))
-	defer server.Close()
-
-	client := NewHTTPAccountModelDetectionSidecar(server.URL, "", server.Client())
+		}), nil
+	})})
 	response, err := client.Detect(context.Background(), AccountModelDetectionRequest{})
 	if err != nil {
 		t.Fatal(err)

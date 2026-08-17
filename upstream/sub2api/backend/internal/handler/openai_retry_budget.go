@@ -278,6 +278,15 @@ func openAITTFTReportEligible(enabled, outputStarted, hasSideEffects bool, eligi
 	return enabled && !outputStarted && !hasSideEffects && eligibleCount > 1 && budget.hasAdditionalSwitchAttemptCapacity()
 }
 
+func openAIRetryBudgetExhausted(reason string) bool {
+	switch reason {
+	case openAIRetryReasonAttemptLimit, openAIRetryReasonAccountSwitchLimit, openAIRetryReasonFailureDomainLimit, openAIRetryReasonRetryDeadline:
+		return true
+	default:
+		return false
+	}
+}
+
 func (b *openAIRetryBudget) RetryDelay(failure *service.UpstreamFailoverError, retryCount int) (time.Duration, bool) {
 	if b == nil {
 		return 0, false

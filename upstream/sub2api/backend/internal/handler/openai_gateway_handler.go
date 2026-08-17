@@ -655,6 +655,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	attemptCachePreservationMode := openAICachePreservationModeSticky
 	requestHasSideEffects := imageIntent || openAIRequestHasSideEffects(body)
 	retryBudget := newOpenAIRetryBudget(openAIRetryBudgetConfigFromConfig(h.cfg), time.Now)
+	schedulerFinalOutcome := "failure"
+	schedulerOutcomeCtx := service.WithOpenAIResilienceCorrelationID(c.Request.Context(), attemptSequence.logicalRequestID)
+	defer func() {
+		service.RecordOpenAISchedulerRequestOutcome(
+			schedulerOutcomeCtx, requestPlatform, apiKey.GroupID, schedulerFinalOutcome, openAIRetryBudgetExhausted(retryBudget.Reason()),
+		)
+	}()
 	var lastFailoverErr *service.UpstreamFailoverError
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -824,6 +831,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
+		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
 				Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventAccountModelPostFailureSelected,
@@ -1155,6 +1163,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
 		)
+		schedulerFinalOutcome = "success"
 		return
 	}
 }
@@ -1432,6 +1441,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	attemptCachePreservationMode := openAICachePreservationModeSticky
 	requestHasSideEffects := openAIRequestHasSideEffects(body)
 	retryBudget := newOpenAIRetryBudget(openAIRetryBudgetConfigFromConfig(h.cfg), time.Now)
+	schedulerFinalOutcome := "failure"
+	schedulerOutcomeCtx := service.WithOpenAIResilienceCorrelationID(c.Request.Context(), attemptSequence.logicalRequestID)
+	defer func() {
+		service.RecordOpenAISchedulerRequestOutcome(
+			schedulerOutcomeCtx, requestPlatform, apiKey.GroupID, schedulerFinalOutcome, openAIRetryBudgetExhausted(retryBudget.Reason()),
+		)
+	}()
 	var lastFailoverErr *service.UpstreamFailoverError
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -1577,6 +1593,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
+		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
 				Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventAccountModelPostFailureSelected,
@@ -1882,6 +1899,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
 		)
+		schedulerFinalOutcome = "success"
 		return
 	}
 }

@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T17 与 T18 均已完成推送、发布和线上验收，当前为 `DONE`；T19 因根 `main` 已推进到 T18 生产收口树而进入 `REFRESH_REQUIRED`，刷新并通过直接门禁后成为下一唯一发布候选；T16 继续排队。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T17、T18 与 T19 均已完成推送、发布和线上验收，当前为 `DONE`；T16 是剩余唯一候选，需先刷新到最新根 `main` 再进入发布车道。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@80e5fe2a66a5eef11ad220ff280c7e3796dbb2d7`、tree `ee5de8f58b2695e641b66b2a9ea83589b70d02a0`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T18 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T180044Z-production-2367549.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-80e5fe2a6-t18-channel-status-toggle-v1.json`。
+- 当前发布状态：生产源 `main@949f200f3ad6fc0455cef7788abdc941a756c65f`、tree `47df2074c89762182213254f6fae6f9d1210ed5e`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T19 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T181347Z-production-2379500.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-949f200f3-t19-cache-eligibility-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -253,7 +253,7 @@
 
 ### T16 经营页真实结果与视觉层级重设计
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`。用户已明确要求继续实施待实施任务；独立 worktree `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy` 基线为根 `main@483dde398`，候选 tip `818b119f7179ba4aec0274f518d78bd13ed68afa`，实现提交 `a9068dbb683c583ad3cefe01943899638b7abe1e`，tree `4f14ef0de02029ca4fd4cecbcb29efcdf9f0e8fa`，交接 `docs/handoffs/2026-08-17-t16-profitability-visual-hierarchy-handoff.md`。后端 repository/service/handler 直接相关测试、compile-only/build、前端 19 tests、typecheck、build 和 diff-check 通过；无迁移、依赖、配置、workflow 或生产数据变化。当前按用户指令暂不发布，未合并、未推送候选、未预检、未部署、未线上验收。
+- 当前状态：`REFRESH_REQUIRED`（剩余唯一候选）。T16 worktree `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy` 的候选已完成实现和此前直接门禁；根 `main` 已推进至 T19 生产收口，必须刷新到最新主线并重跑 T16 直接相关后端/前端门禁，再进入整合和发布车道。
 - 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
 - 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
 - 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。
@@ -278,7 +278,7 @@
 
 ### T19 Monitor V2 缓存命中率有效样本口径修正
 
-- 当前状态：`REFRESH_REQUIRED`（下一发布候选）。T19 独立 worktree 已完成实现和此前直接门禁；根 `main` 已因 T15/T18 生产收口推进，必须刷新到最新主线并重跑仓储/服务聚焦测试、compile-only/build、gofmt 和 diff-check，再进入整合/发布车道。
+- 当前状态：`DONE`。T19 刷新候选 `b2945a5d35fe05381f5095ae354144284a5a01a7` 已合入并随根 `main@949f200f3ad6fc0455cef7788abdc941a756c65f` 推送和无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260817T181347Z-production-2379500.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`。24h/7d API 与固定 `generated_at` SQL 交叉核对中，三组有效样本和命中数全部一致。报告：`docs/superpowers/reports/2026-08-17-t19-monitor-v2-cache-eligibility-production.md`。
 - 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@8729884a113cf844a2850ba87463c2f7f711577c`，候选 tip `1b8832461`，tree `1484c609a9a4f4281eae6dcf0ce71b1f16d0c6a6`，刷新合并提交 `c4fc01c53802300bec61c5c8e5d55c58cff82a2a`；功能提交 `0f9ef38f2a0621d9afe5b5c965da025161dba399`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
 - 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
 - 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。

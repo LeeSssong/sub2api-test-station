@@ -245,6 +245,46 @@ func (h *OpsHandler) GetDashboardOpenAITokenStats(c *gin.Context) {
 	response.Success(c, data)
 }
 
+// GetOpenAISchedulerExperience returns process-local OpenAI scheduler
+// experience metrics for the requested Ops window.
+// GET /api/v1/admin/ops/openai-scheduler-experience
+func (h *OpsHandler) GetOpenAISchedulerExperience(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	startTime, endTime, err := parseOpsTimeRange(c, "1h")
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	filter := &service.OpsDashboardFilter{
+		StartTime: startTime,
+		EndTime:   endTime,
+		Platform:  strings.TrimSpace(c.Query("platform")),
+	}
+	if rawGroupID := strings.TrimSpace(c.Query("group_id")); rawGroupID != "" {
+		groupID, err := strconv.ParseInt(rawGroupID, 10, 64)
+		if err != nil || groupID <= 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		filter.GroupID = &groupID
+	}
+
+	data, err := h.opsService.GetOpenAISchedulerExperience(c.Request.Context(), filter)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, data)
+}
+
 func parseOpsOpenAITokenStatsFilter(c *gin.Context) (*service.OpsOpenAITokenStatsFilter, error) {
 	if c == nil {
 		return nil, fmt.Errorf("invalid request")

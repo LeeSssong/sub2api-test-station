@@ -238,6 +238,16 @@ func TestIsModelRateLimited(t *testing.T) {
 	}
 }
 
+func TestIsModelRateLimited_ProbeRequiredDoesNotExpire(t *testing.T) {
+	account := &Account{Extra: map[string]any{"model_rate_limits": map[string]any{
+		"gpt-5.6-sol": map[string]any{
+			"rate_limit_reset_at": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+			"reason":              `{"source":"deterministic_failure_isolation","recovery_policy":"probe_required"}`,
+		},
+	}}}
+	require.True(t, account.isModelRateLimitedWithContext(context.Background(), "gpt-5.6-sol"))
+}
+
 func TestIsModelRateLimited_OpenAIImageGenerationIntentBlocksTextModelImageTool(t *testing.T) {
 	future := time.Now().Add(10 * time.Minute).Format(time.RFC3339)
 	account := &Account{

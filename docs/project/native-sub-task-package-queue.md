@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 因候选落后最新根 `main` 进入受保护的 `REFRESH_REQUIRED`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@892db8cefb37bcab14b0aded8082811ac3935f48`、tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；T17 普通预加载蓝绿发布为 `succeeded/promoted`、等效 `downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -232,7 +232,7 @@
 
 ### T15 账号监控原生探测模型与异步模型检测
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection` 已从根 `main@25310c2379ec10807f5dccd9dd5bf8997b491646` 完成正式规格、计划、实现、直接相关测试和候选交接；候选 SHA 为 `bc108251c044cd038ceaa54bca061ff28d2311dc`，worktree 干净。交接见 `docs/handoffs/2026-08-17-t15-native-probe-model-detection-handoff.md`。该候选是用户明确保护的未合并候选，且不属于当前 S2 串行车道；未经发布总控明确排期，不得合并、push、发布预检或触碰生产。
+- 当前状态：`REFRESH_REQUIRED`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection` 已从根 `main@25310c2379ec10807f5dccd9dd5bf8997b491646` 完成正式规格、计划、实现、直接相关测试和候选交接；旧候选 SHA 为 `bc108251c044cd038ceaa54bca061ff28d2311dc`，worktree 干净。根总控于 2026-08-17 审计确认其相对最新 `main@92e8489859ce8e150f0dba76c5af0360ef7a5620` 落后 81 个提交、仅保有 1 个独有提交；只读合并模拟确认 `upstream/sub2api/backend/cmd/server/wire_gen.go` 存在内容冲突，迁移 `225_account_model_detection.sql` 当前无编号冲突。必须由原 T15 用户可见顶层任务在该 worktree 整合最新 `main`、仅解决 T15 范围冲突并重跑直接相关门禁，再回到 `READY_FOR_ROOT_REVIEW`。刷新前不得合并根 `main`、push、发布预检或触碰生产。交接见 T15 worktree 内 `docs/handoffs/2026-08-17-t15-native-probe-model-detection-handoff.md`。
 - 原生连接测试：继续复用 `AccountTestService.ProbeAccountConnection`；每账号持久化独立 `connection_probe_model`，默认优先 `gpt-5.6-sol`，不支持时回退 Sub 原生登记的首个文本模型，页面不显示“自动选择”。近期探测标题旁提供修改连接测试模型入口。
 - 异步检测模型：新增独立 `model_detection_model`；可选模型是 Sub 原生账号模型登记（`GET /admin/accounts/:id/models` 及 sync-upstream 结果）与检测器运行时基线目录的交集。原生模型可见但无基线时置灰并显示“检测器暂不支持”。
 - 执行架构：检测器为仅执行的独立 sidecar，Sub worker 负责调度、持久化和唯一事实。北京时间 `00:00/10:00/12:00/15:00/18:00/21:00` 检测所有未删除、API Key 且检测器支持的账号，不受可调度状态影响；OAuth 不执行，每个任务只跑一轮探针。单账号可立即异步检测，同账号已排队/运行则复用；固定时隙持久化去重，错过仅在 30 分钟内补触发。

@@ -1,5 +1,7 @@
 <template>
-  <div v-if="fallback">
+  <ChannelStatusView v-if="officialMode" />
+
+  <div v-else-if="fallback">
     <div
       class="fixed right-4 top-4 z-50 max-w-sm rounded-lg bg-gray-950 px-4 py-3 text-sm text-white shadow-md dark:bg-white dark:text-gray-950"
       role="status"
@@ -37,15 +39,17 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ChannelStatusView from '@/views/user/ChannelStatusView.vue'
+import { isChannelMonitorV2Mode } from '@/utils/featureFlags'
 import { getMonitorV2Snapshot } from './api'
 import MonitorV2View from './MonitorV2View.vue'
 import type { MonitorV2Snapshot } from './types'
 
 const { t } = useI18n()
+const officialMode = computed(() => isChannelMonitorV2Mode())
 const snapshot = ref<MonitorV2Snapshot | null>(null)
 const fallback = ref(false)
 let abortController: AbortController | null = null
@@ -56,6 +60,8 @@ function activateFallback() {
 }
 
 onMounted(async () => {
+  if (officialMode.value) return
+
   const controller = new AbortController()
   abortController = controller
   try {

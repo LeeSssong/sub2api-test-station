@@ -54,10 +54,13 @@ type openAIAccountModelTransientDecision struct {
 
 // OpenAIAccountModelFailureEvent describes a failed account/model attempt.
 type OpenAIAccountModelFailureEvent struct {
+	EventID        string
 	AccountID      int64
 	CanonicalModel string
+	Domains        []OpenAIFailureDomain
 	StatusCode     int
 	ErrorType      string
+	TTFT           time.Duration
 	OutputStarted  bool
 	SafeToReplay   bool
 	HasSideEffect  bool
@@ -325,28 +328,37 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 	raw := state.recordFailure(event.AccountID, event.CanonicalModel, now)
 	state.setFailureDetails(event.AccountID, event.CanonicalModel, event.StatusCode, event.ErrorType, event.OutputStarted)
 	decision.FailureStreak, decision.Cooldown, decision.BlockUntil = raw.FailureStreak, raw.Cooldown, raw.BlockUntil
-	decision.CurrentRequestRetry = !event.OutputStarted && event.SafeToReplay && !event.HasSideEffect && raw.FailureStreak == 1
+	if shared, ok := s.recordOpenAISharedHealthFailure(ctx, event, now, raw); ok {
+		if shared.FailureStreak > decision.FailureStreak {
+			decision.FailureStreak = shared.FailureStreak
+		}
+		if shared.CooldownUntil.After(decision.BlockUntil) {
+			decision.BlockUntil = shared.CooldownUntil
+			decision.Cooldown = shared.CooldownUntil.Sub(now)
+		}
+	}
+	decision.CurrentRequestRetry = !event.OutputStarted && event.SafeToReplay && !event.HasSideEffect && decision.FailureStreak == 1
 	if !decision.BlockUntil.IsZero() && decision.BlockUntil.After(now) {
 		decision.RetryAfterSeconds = int((decision.BlockUntil.Sub(now) + time.Second - 1) / time.Second)
 	}
 	resilienceEvent := OpenAIResilienceEvent{
 		At: now, Platform: event.Platform, GroupID: event.GroupID, Name: OpenAIEventAccountModelSoftFailure,
 		AccountID: event.AccountID, CanonicalModel: event.CanonicalModel, StatusCode: event.StatusCode,
-		OutputStarted: event.OutputStarted, UsageProduced: event.UsageKnown, FailureStreak: raw.FailureStreak,
+		OutputStarted: event.OutputStarted, UsageProduced: event.UsageKnown, FailureStreak: decision.FailureStreak,
 		CacheMode: event.CacheMode, CooldownSeconds: int(decision.Cooldown.Seconds()), RetryAfterSeconds: decision.RetryAfterSeconds,
 		Outcome: "failure",
 	}
 	RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
 	slog.Info(OpenAIEventAccountModelSoftFailure,
 		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
-		"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
+		"attempt", decision.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
 		"usage_produced", event.UsageKnown, "cache_preservation_mode", event.CacheMode, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	if decision.Cooldown > 0 {
 		resilienceEvent.Name = OpenAIEventAccountModelCooldownStarted
 		RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
 		slog.Warn(OpenAIEventAccountModelCooldownStarted,
 			"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
-			"attempt", raw.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
+			"attempt", decision.FailureStreak, "status_code", event.StatusCode, "output_started", event.OutputStarted,
 			"usage_produced", event.UsageKnown, "cache_preservation_mode", event.CacheMode, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	}
 	return decision
@@ -433,6 +445,56 @@ func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID 
 	if now.IsZero() {
 		now = time.Now()
 	}
+	sharedKey, err := NewOpenAISharedHealthKey(accountID, canonicalModel)
+	if err != nil || !s.hasOpenAISharedHealthStore() {
+		return acquireLocalOpenAIAccountModelHalfOpenProbe(state, key, now)
+	}
+	shared, sharedKnown, readErr := s.readOpenAISharedHealthSnapshot(context.Background(), sharedKey, now, true)
+	if readErr != nil {
+		return false
+	}
+	sharedEligible := sharedKnown && shared.State == OpenAISharedHealthStateCooldown && !shared.CooldownUntil.IsZero() && !now.Before(shared.CooldownUntil)
+	if sharedKnown && (shared.State == OpenAISharedHealthStateHalfOpen || (shared.State == OpenAISharedHealthStateCooldown && now.Before(shared.CooldownUntil))) {
+		return false
+	}
+
+	state.mu.Lock()
+	entry, exists := state.entries[key]
+	if exists && !entry.lastFailure.IsZero() && (now.Before(entry.lastFailure) || (now.Sub(entry.lastFailure) > openAIModelTransientStreakTTL && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)))) {
+		delete(state.entries, key)
+		state.mu.Unlock()
+		return false
+	}
+	localEligible := exists && !entry.blockUntil.IsZero() && !now.Before(entry.blockUntil)
+	if (exists && (now.Before(entry.blockUntil) || entry.halfOpenInFlight)) || (!localEligible && !sharedEligible) {
+		state.mu.Unlock()
+		return false
+	}
+	if !exists {
+		entry.failureStreak = shared.FailureStreak
+		entry.lastFailure = shared.ObservedAt
+		entry.blockUntil = shared.CooldownUntil
+	}
+	entry.halfOpenInFlight = true
+	entry.lastTouched = now
+	state.entries[key] = entry
+	state.mu.Unlock()
+
+	lease, acquired, acquireErr := s.acquireOpenAISharedHalfOpenLease(context.Background(), sharedKey)
+	if acquireErr != nil || !acquired {
+		state.mu.Lock()
+		entry := state.entries[key]
+		entry.halfOpenInFlight = false
+		entry.lastTouched = now
+		state.entries[key] = entry
+		state.mu.Unlock()
+		return false
+	}
+	s.storeOpenAISharedHalfOpenLease(lease)
+	return true
+}
+
+func acquireLocalOpenAIAccountModelHalfOpenProbe(state *openAIAccountModelTransientState, key openAIAccountModelKey, now time.Time) bool {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	entry, exists := state.entries[key]
@@ -462,24 +524,31 @@ func (s *OpenAIGatewayService) ReleaseOpenAIAccountModelHalfOpenProbe(accountID 
 		now = time.Now()
 	}
 	state.mu.Lock()
-	defer state.mu.Unlock()
 	entry, exists := state.entries[key]
-	if !exists {
-		return
-	}
-	if success {
+	if exists && success {
 		delete(state.entries, key)
+	} else if exists {
+		entry.halfOpenInFlight = false
+		entry.lastTouched = now
+		entry.lastFailure = now
+		cooldown := openAIModelTransientShortCooldown
+		if entry.failureStreak >= 3 {
+			cooldown = openAIModelTransientLongCooldown
+		}
+		entry.blockUntil = now.Add(cooldown)
+		state.entries[key] = entry
+	}
+	state.mu.Unlock()
+
+	sharedKey, err := NewOpenAISharedHealthKey(accountID, canonicalModel)
+	if err != nil {
 		return
 	}
-	entry.halfOpenInFlight = false
-	entry.lastTouched = now
-	entry.lastFailure = now
-	cooldown := openAIModelTransientShortCooldown
-	if entry.failureStreak >= 3 {
-		cooldown = openAIModelTransientLongCooldown
+	lease, held := s.takeOpenAISharedHalfOpenLease(sharedKey)
+	if !held {
+		return
 	}
-	entry.blockUntil = now.Add(cooldown)
-	state.entries[key] = entry
+	s.completeOpenAISharedHalfOpenLease(context.Background(), lease, success, now)
 }
 
 func (s *OpenAIGatewayService) SnapshotOpenAIAccountModelRuntime(now time.Time) []OpenAIAccountModelRuntimeSnapshot {

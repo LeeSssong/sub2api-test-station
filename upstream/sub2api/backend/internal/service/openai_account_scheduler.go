@@ -32,6 +32,7 @@ const (
 	// ponytail: cap probes added when cost ordering expands configured Top-K;
 	// use bulk acquisition if a measured workload needs a higher ceiling.
 	openAIAccountSelectionProbeLimit = 64
+	openAISharedHealthReadLimit      = 128
 )
 
 const (
@@ -1562,6 +1563,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	filtered := make([]*Account, 0, len(accounts))
 	halfOpenCandidates := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
+	sharedHealthCtx, cancelSharedHealthReads := s.service.openAISharedHealthSelectionContext(ctx)
+	defer cancelSharedHealthReads()
+	sharedHealthReads := 0
 	for i := range accounts {
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
@@ -1598,7 +1602,11 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
-		if s.service.isOpenAIAccountModelRuntimeBlockedAt(account, req.RequestedModel, s.selectionNow()) {
+		allowSharedRead := sharedHealthReads < openAISharedHealthReadLimit
+		if allowSharedRead && s.service.hasOpenAISharedHealthStore() {
+			sharedHealthReads++
+		}
+		if s.service.isOpenAIAccountModelRuntimeBlockedAtContext(sharedHealthCtx, account, req.RequestedModel, s.selectionNow(), allowSharedRead) {
 			filterStats.exclude("runtime_blocked")
 			halfOpenCandidates = append(halfOpenCandidates, account)
 			continue

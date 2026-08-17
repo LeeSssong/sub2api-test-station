@@ -68,6 +68,23 @@ type OpenAIAccountModelFailureEvent struct {
 	Now            time.Time
 }
 
+// recordOpenAIIncompleteStreamFailure routes an SSE that ended before a
+// successful terminal event through the existing account-model transient
+// state. It deliberately preserves the no-replay boundary after downstream
+// output or side effects have started.
+func (s *OpenAIGatewayService) recordOpenAIIncompleteStreamFailure(ctx context.Context, accountID int64, canonicalModel string, outputStarted, safeToReplay, hasSideEffect, usageKnown bool) OpenAIAccountModelRuntimeDecision {
+	return s.RecordOpenAIAccountModelFailure(ctx, OpenAIAccountModelFailureEvent{
+		AccountID: accountID, CanonicalModel: canonicalModel, StatusCode: 0,
+		ErrorType: "transient_stream_disconnected_before_completion", OutputStarted: outputStarted,
+		SafeToReplay: safeToReplay, HasSideEffect: hasSideEffect, UsageKnown: usageKnown,
+		Platform: PlatformOpenAI, Now: time.Now(),
+	})
+}
+
+func usageHasAnyTokens(usage *OpenAIUsage) bool {
+	return usage != nil && (usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0 || usage.ImageInputTokens > 0 || usage.ImageOutputTokens > 0)
+}
+
 // OpenAIAccountModelRuntimeDecision is the scheduling decision after a failure.
 type OpenAIAccountModelRuntimeDecision struct {
 	FailureStreak       int

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 依赖门禁已解除并保持 `BACKLOG`，轮到时从最新干净 `main` 创建独立任务/worktree。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 依赖门禁已解除，现已启动并进入 `DESIGNING`，将从最新干净 `main` 创建独立 worktree。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@aab79007fc90c842eaf9971b6f5304f4ab7b6503`、tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S2 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -199,7 +199,7 @@
 
 ### S3 自适应选择、粘性逃逸与调度体验观测
 
-- 当前状态：`BACKLOG`。规格源为历史拆分提交 `a00523845` 中的 `docs/superpowers/specs/2026-08-12-upstream-resilience-s3-adaptive-scheduling-experience-design.md`；仅在 S2 完成生产验收后，从届时最新干净 `main` 创建独立用户可见任务和 worktree。
+- 当前状态：`DESIGNING`。S2 已完成生产验收；发布总控已完成非 `main` worktree 盘点，T15、T16 和历史候选的保护边界不变。S3 以根 `main@7c8ffe70d0217fcac90c35e2de3d7bdd3376c87f` 为启动基线，规划独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s3-adaptive-scheduling-experience` 与分支 `codex/s3-adaptive-scheduling-experience`。历史规格源为提交 `a00523845` 中的 `docs/superpowers/specs/2026-08-12-upstream-resilience-s3-adaptive-scheduling-experience-design.md`；必须先基于当前 S1/S2 代码事实刷新正式规格，不直接照搬历史实现。
 - 目标：消费 S1/S2 的健康与预算决定，先健康门槛、再动态 Top-K/最低质量阈值、再可解释 sticky escape；仅对安全重放且尚未输出的请求做 TTFT report-only/受控预热；在现有原生监控/运维入口呈现自动恢复率、平均尝试数、坏账号重复命中率、缓存代价和预算耗尽率。
 - 独立边界：不重新定义错误状态、S2 重试上限、价格、账务或控制面；默认不启用并行竞速；S1/S2 veto 永远优先于分数和 sticky；目标发布属性 `downtime_required=false`。
 

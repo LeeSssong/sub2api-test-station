@@ -8,11 +8,10 @@
 
 ## 候选身份
 
-- 最新根主线基线：`027c0c270c8e4eaa95bf2da4cc6377467ec5fa97`
+- 最新根主线基线：`95e363bc68a8482a2373adce9fd379c290f1f895`
 - 功能实现提交：`ee52dd5ea`
-- 刷新合并提交：`551f43122f514e5c604075e19c779f9060c5d48b`
-- 刷新后候选 tip：`551f43122f514e5c604075e19c779f9060c5d48b`
-- 刷新后候选 tree：`0a26230e1c306d402f493793c1171ee80a7a5dba`
+- 刷新合并提交：`e66bda5d813981f3019cbde01b3e089c9755f324`
+- 刷新后运行时 tree：`fb2b87a29dc669f90e030c1954a62aac5e4d6b4e`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`
 - 分支：`codex/channel-status-official-toggle`
 - 候选状态：`READY_FOR_ROOT_REVIEW`
@@ -36,7 +35,7 @@
 - `pnpm build`：exit 0，Vite 生产构建完成。
 - `git diff --check origin/main...HEAD`：通过。
 - 相对 `origin/main` 无迁移文件、无 `.github/workflows` 文件。
-- 刷新到 `main@027c0c270` 后再次通过同一专项测试、`pnpm typecheck`、`pnpm build` 和 `git diff --check main...HEAD`。
+- 刷新到 `main@95e363bc6` 后再次通过同一专项测试、`pnpm typecheck`、`pnpm build` 和 `git diff --check main...HEAD`。
 
 TDD 证据：新增官方模式测试先在旧实现上按预期失败（官方 stub 不出现），最小实现后 3/3 通过。
 
@@ -54,5 +53,5 @@ TDD 证据：新增官方模式测试先在旧实现上按预期失败（官方 
 ## 未验证项与剩余风险
 
 - 尚未合并根 `main`、推送、生产设置切换或线上验收。
-- T15 当前发布车道仍由唯一总控占用，且最新总账已记录停机门禁；用户最新指令为暂不发布，本候选不自行插队或执行生产动作。
+- T15 已完成生产收口并释放发布车道；本候选刷新后作为下一唯一候选等待根总控合并与发布。
 - 官方页面自身的被动聚合数据和官方 V2 配置保持现状，本任务不重定义其统计口径。

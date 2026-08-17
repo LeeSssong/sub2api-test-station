@@ -8,7 +8,10 @@
 - 初始基线：`main@1bc052d8e`
 - 最新刷新主线：`main@566fc52ba`（merge commit `ce48bef0b`）
 - 已验证运行时 tip：`e3d905412`
-- 候选状态：`READY_FOR_ROOT_REVIEW`；未合并根 `main`，未运行发布预检，未部署。
+- 最终候选：`33d9fdb6a`
+- 根合并提交：`d1f9bc06c`
+- 最终发布源：`main@aab79007f`、tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`
+- 状态：`DONE`；已推送、已无停机蓝绿发布、已线上验证生效。
 
 ## Delivered
 
@@ -49,20 +52,25 @@ Focused repository, service, handler, config, server compile and server build ch
 - GitHub Actions: none.
 - Configuration contract: additive `gateway.openai_shared_health` with defaults enabled, Redis timeout 75ms, stale snapshot 30s, attempts 4, switches 3, domains 2, total retry budget 5000ms, backoff 120–2000ms, half-open lease 15s.
 - Production configuration mutation: none.
-- `downtime_required`: not yet evaluated because release preflight occurs only after the candidate is merged into the verified root `main`; design target remains `false`.
-- Deployment: not yet started; no preflight, root merge, push of S2 code, blue-green switch, or production write has been performed. Global rule now authorizes direct continuation when preflight returns `downtime_required=false`; `true` still requires explicit user approval before any production-changing action.
+- `downtime_required`: `false`.
+- Deployment: existing preloaded blue-green controller returned `succeeded`; active slot is `blue`, API and worker use the same immutable `release-aab79007f-52f7b7…` image, and the previous `green` slot remains available for rollback.
+- Release record: `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json` (`succeeded/promoted`, `rolled_back=false`).
+- Test evidence: `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json` (`0600`).
+- Online acceptance: `/healthz`, `/readyz`, `/health` all HTTP 200; API/worker healthy with restart count 0; PostgreSQL/Redis/Caddy IDs unchanged. Natural traffic produced 8 healthy account-model projections, 2 domain projections, and 13 idempotency markers; shared-health warning/panic/fatal counts were zero in both API and worker for the inspected 15-minute window.
+- Recovery bundle: `/Users/gongtengxinwen/Documents/sub2api-archives/s2-shared-health-failure-domain-33d9fdb6a.bundle`, mode `0600`, SHA-256 `aea0bb53fa77a32976cb79219e36a94811175798b4299d58ecb4622ead2644f9`.
+- Cleanup: after confirming the candidate was clean, an ancestor of `main`, and fully deployed/verified, the S2 feature worktree, local branch, and temporary release worktree were removed. T15, T16, and historical protected worktrees were unchanged.
 
 ## Open Risks
 
 - `go test -tags=integration` for the real Redis concurrency case remains blocked by a pre-existing unrelated package collision: `user_profile_identity_repo_contract_test.go:577 stringPtr` conflicts with `usage_log_repo_stats.go:203 stringPtr`.
-- Mixed-version and production Redis behavior still require the existing root preflight and post-deployment online acceptance. No extra authorization is needed when preflight returns `downtime_required=false`; `true` remains an explicit authorization gate.
-- If rollback is required before deployment, revert the S2 commits. After deployment, use the existing immutable-image blue-green rollback chain; disabling shared health alone does not remove request-local retry caps, so a full code rollback is authoritative.
+- Real Redis natural traffic proves the v1 projections are being written and read without shared-health warnings, but failure/cooldown/half-open production paths were not deliberately induced.
+- If rollback is required, use the existing immutable-image blue-green chain to restore the preserved `green` image. Disabling shared health alone does not remove request-local retry caps, so a full code rollback is authoritative.
 
 ## Next Loop Brief
 
-Goal: 由唯一发布总控合入 S2 候选，验证并推送根 `main`，执行既有发布预检；无停机则直接蓝绿发布和线上验收。
-Context: S2 已刷新 `main@566fc52ba`；运行时 tip `e3d905412` 在刷新合并 `ce48bef0b` 上的直接相关测试、server compile/build、gofmt 和 diff-check已完成。
-Constraints: 根总控独占 `main`/总账/队列；不使用 GitHub Actions；不触碰 T15/T16/历史冻结 worktree；不启动 S3；`downtime_required=true` 时必须在生产变更前暂停请求用户授权。
-Plan: 核对候选范围并合入根 `main`，重跑本 report 的直接相关命令、迁移/工作流范围检查和构建；推送后执行既有发布预检。预检为 `false` 时直接完成蓝绿发布、健康检查和 S2 专项线上验收。
-Validate: `/healthz`、`/readyz`、`/health`，活动槽、API/worker 同一不可变镜像与 source SHA，以及不修改生产账号、不人为制造故障的 S2 运行证据。
-Done when: S2 已推送、已部署、已线上验证并由根总账标记 `DONE`。
+Goal: S2 已收口；下一独立循环可启动 S3 自适应选择、粘性逃逸与调度体验观测。
+Context: 生产运行 `main@aab79007f`，S2 自然流量投影健康，S3 依赖门禁已解除。
+Constraints: 从届时最新干净 `main` 创建独立任务/worktree；重新核对当前调度代码事实；不触碰 T15/T16/历史冻结 worktree；不改变 S1/S2 veto、价格、账务或外部控制面；不使用 GitHub Actions。
+Plan: 登记 S3 为 `DESIGNING`，刷新历史拆分规格，完成正式计划后按 TDD 实施直接相关功能与测试。
+Validate: 仅 S3 直接相关调度/handler/config 回归、必要构建与发布门禁；生产预检为 `false` 时直接无停机发布，为 `true` 时请求授权。
+Done when: S3 独立完成推送、部署和线上验证。

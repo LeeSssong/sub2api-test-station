@@ -42,7 +42,18 @@
 
 - Real Redis integration test did not compile because of a pre-existing unrelated integration harness collision: `internal/repository/user_profile_identity_repo_contract_test.go:577:6 stringPtr redeclared`, conflicting with `internal/repository/usage_log_repo_stats.go:203:6`. S2 did not modify either file and did not widen scope to repair it.
 - No full-repository, pressure, mutation, soak, race, or unrelated browser matrix was run.
-- No release preflight, root merge, deployment, production Redis inspection, production account mutation, or online functional acceptance was run in the candidate worktree; those actions belong to the root release-controller phase.
+- No deliberate production upstream failure, cooldown, half-open lease race, Redis outage, account mutation, or unsafe replay request was induced. Those destructive/synthetic cases remain covered by focused tests rather than production fault injection.
+
+## Production Closure
+
+- Final release source: pushed root `main@aab79007fc90c842eaf9971b6f5304f4ab7b6503`, tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`.
+- Canonical `0600` evidence: `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json`; migration hash remained `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`.
+- The first controller invocation safely stopped before host execution because the operator profile omitted the required immutable network curl image variables. The fixed historical digest was then verified locally and read-only on the production host before retrying the unchanged controller.
+- The reviewed preloaded blue-green chain returned `downtime_required=false`, `result=succeeded`, active slot `blue`; release record `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json` is `succeeded/promoted` with `rolled_back=false`.
+- Active API and worker use the same immutable image ID `sha256:52f7b7b9735b321cdb995bf79d6f52147b27b0f97683ef2880f911ec70ba0c89`, are healthy, and have restart count 0. PostgreSQL, Redis, and Caddy container IDs remained unchanged.
+- Public `/healthz`, `/readyz`, and `/health` returned HTTP 200.
+- Read-only Redis inspection after natural traffic found 8 account-model projections, 2 domain projections, and 13 event markers; all 8 account-model states were `healthy`, and Redis returned `PONG`.
+- API and worker logs for the inspected 15-minute window contained zero `openai.shared_health` warnings and zero panic/fatal matches. No production account was changed and no upstream failure was manufactured.
 
 ## Review
 
@@ -56,6 +67,6 @@
 
 ## Follow-ups
 
-- Root release controller may set the global S2 state to `READY_FOR_ROOT_REVIEW`; candidate code remains outside root `main` in this phase.
-- After root merge and merged-tree verification, run the existing release preflight. Continue directly through blue-green deployment and online acceptance when `downtime_required=false`; stop before production change and request explicit authorization only when it is `true`.
-- S3 remains blocked until S2 production deployment and online acceptance complete.
+- S2 is complete and the S3 dependency gate is now satisfied.
+- Keep the pre-existing unrelated integration-tag `stringPtr` collision out of S2 scope; address it only under a separately queued task if needed.
+- Preserve the previous green image, release state/record, canonical evidence, and recovery bundle through the normal rollback window.

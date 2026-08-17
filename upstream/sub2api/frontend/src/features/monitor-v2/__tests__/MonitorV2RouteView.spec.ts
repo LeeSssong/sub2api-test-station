@@ -1,8 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMonitorV2Snapshot } = vi.hoisted(() => ({
+const { getMonitorV2Snapshot, isChannelMonitorV2Mode } = vi.hoisted(() => ({
   getMonitorV2Snapshot: vi.fn(),
+  isChannelMonitorV2Mode: vi.fn(),
 }))
 
 vi.mock('../api', async () => {
@@ -10,6 +11,16 @@ vi.mock('../api', async () => {
   return {
     ...actual,
     getMonitorV2Snapshot,
+  }
+})
+
+vi.mock('@/utils/featureFlags', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/featureFlags')>(
+    '@/utils/featureFlags',
+  )
+  return {
+    ...actual,
+    isChannelMonitorV2Mode,
   }
 })
 
@@ -70,6 +81,18 @@ function mountRoute() {
 describe('MonitorV2RouteView', () => {
   beforeEach(() => {
     getMonitorV2Snapshot.mockReset()
+    isChannelMonitorV2Mode.mockReset()
+    isChannelMonitorV2Mode.mockReturnValue(false)
+  })
+
+  it('renders the official aggregated status page without requesting the custom snapshot in v2 mode', async () => {
+    isChannelMonitorV2Mode.mockReturnValue(true)
+
+    const wrapper = mountRoute()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="native-channel-status"]').exists()).toBe(true)
+    expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
   })
 
   it('renders Monitor V2 after the initial contract succeeds', async () => {

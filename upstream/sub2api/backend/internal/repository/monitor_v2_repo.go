@@ -41,9 +41,33 @@ func (r *monitorV2Repository) GetCacheStats(
 	SELECT
 	  g.id AS group_id,
 	  LOWER(g.platform) IN ('openai', 'anthropic') AS evidence_available,
-	  COUNT(ul.id) FILTER (WHERE LOWER(g.platform) IN ('openai', 'anthropic'))::bigint AS request_count,
 	  COUNT(ul.id) FILTER (
 	    WHERE LOWER(g.platform) IN ('openai', 'anthropic')
+	      AND ul.actual_cost > 0
+	      AND (
+	        ul.billing_mode = 'token'
+	        OR (
+	          (ul.billing_mode IS NULL OR ul.billing_mode = '')
+	          AND COALESCE(ul.image_count, 0) = 0
+	          AND COALESCE(ul.video_count, 0) = 0
+	          AND COALESCE(ul.image_input_tokens, 0) = 0
+	          AND COALESCE(ul.image_output_tokens, 0) = 0
+	        )
+	      )
+	  )::bigint AS request_count,
+	  COUNT(ul.id) FILTER (
+	    WHERE LOWER(g.platform) IN ('openai', 'anthropic')
+	      AND ul.actual_cost > 0
+	      AND (
+	        ul.billing_mode = 'token'
+	        OR (
+	          (ul.billing_mode IS NULL OR ul.billing_mode = '')
+	          AND COALESCE(ul.image_count, 0) = 0
+	          AND COALESCE(ul.video_count, 0) = 0
+	          AND COALESCE(ul.image_input_tokens, 0) = 0
+	          AND COALESCE(ul.image_output_tokens, 0) = 0
+	        )
+	      )
 	      AND ul.cache_read_tokens > 0
 	  )::bigint AS hit_count
 	FROM groups g

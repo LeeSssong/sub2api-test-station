@@ -262,7 +262,7 @@
 
 ### T17 用量详情“上游扣费/利润”统一 Sub 原生有效账号成本口径热修
 
-- 当前状态：`IMPLEMENTING`。S3 已完成生产收口；T17 从根 `main@d27ceba5` 创建独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t17-effective-account-cost-hotfix`、分支 `codex/t17-effective-account-cost-hotfix`，正式规格提交 `6a164393d`、实施计划提交 `14528991b` 已经代审批准，正在按 TDD 实施。不得并入 S3。
+- 当前状态：`IMPLEMENTING`。S3 已完成生产收口；T17 独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t17-effective-account-cost-hotfix`、分支 `codex/t17-effective-account-cost-hotfix` 已从最新根 `main@120562f95` 刷新，刷新合并提交 `e887bfe44`；正式规格提交 `6a164393d`、实施计划提交 `14528991b` 已经代审批准，正在按 TDD 实施。不得并入 S3。
 - 已确认问题：使用记录列表与账号利润/经营页均使用 Sub 原生有效账号成本 `COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1))`；用量详情弹窗却以 `usage_upstream_cost_evidence.normalized_cost_cny` 决定主金额，严格 evidence 为 `unavailable` 时显示 `-`，造成同一流水口径不一致；T14 只修复了 PascalCase/snake_case 兼容，未修改事实源。
 - 生产证据：`usage_log_id=125444/125509/125512` 的 `account_cost` 分别为 `0.0033144600/0.0058255200/0.0060059400`，对应利润为 `0.0022096400/0.0038836800/0.0040039600`，详情当前均显示 `-`。账号 214 当日 518 笔均有 `account_cost`，账号成本合计与利润页成本均为 `4.9629669888`，用户扣费 `8.2716116480`，利润 `3.3086446592`，但 518 笔严格 evidence 均为 `unavailable`。两个详情 API 均 HTTP 200，证明为选错主事实源而非接口失败。
 - 目标：详情“上游扣费”读取 effective account cost，利润统一为 `actual_cost - effective_account_cost`；历史 `account_cost` 为空时使用上述 fallback。`usage_upstream_cost_evidence` 只作严格账单核验状态/原因，不得决定主金额是否显示或成为利润主事实源。同一流水在列表、详情和账号利润/经营页的成本数学值必须一致，允许展示精度不同。

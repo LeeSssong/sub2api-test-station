@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故已 `DONE`。T12 最新刷新候选 `4029240f4` 已完成直接相关验证、快进合入；根总控补齐精确维护迁移白名单后，当前已随 `main@04d171e35` 推送并重新验证。蓝绿链在候选启动前判定 `downtime_required=true`，T12 当前为 `BLOCKED`，等待用户明确授权约 300 秒维护窗口。T15 仅为 `BACKLOG`，不得在 T12 收口前启动。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T12 已随 `main@04d171e35` 完成维护蓝绿切换和管理员页面验收；T15 现为 `DESIGNING`，独立 worktree 预定 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`。用户最新指令冻结所有后续部署，T15 只允许规格、计划、实现与直接相关测试，必须停在待发布状态等待下一次明确部署指令。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@e554b7d2ec02714ac2930eb54e3fd2ede460e3ca`、tree `6002d847555f224981aa03d64e098eccbba4561a`，发布记录 `/var/lib/sub2api/release-records/20260816T185827Z-production-1362380.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，`downtime_required=false`；API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
+- 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -192,8 +192,8 @@
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
-- 当前状态：`BLOCKED`。原候选 `c7587599a` 因 P0 插队被根主线撤回；P0 收口后，T12 worktree 快进 `main@b16d45203`，仅反向撤销移除 T12 运行时/任务文档的 `9d9e2b758`，保留由根总控维护的当前全局文档，生成运行时候选 `35baf14ae` 和最终 handoff 候选 `4029240f4`。该候选已无冲突快进合入；首次根发布树 `59316b4a9` 的预检暴露 T12 新迁移尚未加入宿主精确维护白名单，根总控随后以 `04d171e35` 仅补齐 `ef121384… -> aaebed88…` 的 maintenance-10 哈希对、fail-closed 测试和当前 runbook，并推送至 `origin/main`。
-- 最新候选验证：在干净发布 worktree `/private/tmp/sub2api-release-t12-04d171e35` 上，migration/repository/service/handler 四组 focused Go 测试、前端两个直接 Vitest（19/19）、typecheck、build、维护白名单精确允许/错误 old/new/未授权拒绝测试、bash 语法和 `git diff --check` 均通过；证据绑定 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`。首次蓝绿链因迁移集合变化返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用约 300 秒，并在候选启动、迁移和切换前停止；生产仍运行 P0 修复版本 `e554b7d2e` 的活动 `green` 槽。旧门禁证据和新的 0600 维护就绪证据分别为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-59316b4a9-t12-probe-cost-v2.json`、`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-04d171e35-t12-probe-cost-maintenance-ready-v1.json`。不得复用历史停机授权或自行带维护参数重试，须等待用户明确授权本次维护窗口。
+- 当前状态：`DONE`。原候选 `c7587599a` 因 P0 插队被根主线撤回；P0 收口后，T12 worktree 快进 `main@b16d45203`，仅反向撤销移除 T12 运行时/任务文档的 `9d9e2b758`，生成运行时候选 `35baf14ae` 和最终 handoff 候选 `4029240f4`。该候选已无冲突快进合入；首次根发布树 `59316b4a9` 的预检暴露 T12 新迁移尚未加入宿主精确维护白名单，根总控随后以 `04d171e35` 仅补齐 `ef121384… -> aaebed88…` 的 maintenance-10 哈希对、fail-closed 测试和当前 runbook，并推送至 `origin/main`。
+- 验证与生产收口：干净发布树的四组 focused Go、前端 19/19、typecheck/build、维护白名单精确允许/错误 old/new/未授权拒绝、bash 语法和 diff-check 均通过；0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-04d171e35-t12-probe-cost-maintenance-ready-v1.json`。用户明确授权本次维护发布后，链路返回 `succeeded`；宿主记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `promoted`、`rolled_back=false`，活动 `blue` 与 worker 使用同一 `04d171e35` 镜像。公网健康均 200；管理员页在线显示全站/7 分组/93 账号卡、六项排序、USD 两位、自然探测成本及不完整/暂无记录状态，390px 单列且页面无横向滚动。候选 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t12-native-probe-cost-4029240f4.bundle` 已验证，活动 worktree/分支和 T12 临时发布 worktree已清理。
 - 实施边界：沿用批准规格与计划，不新增产品范围，不恢复旧 Task 4 RED，不运行全仓测试或额外 reviewer。T12 是当前唯一允许进入 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 的候选，worktree/分支保留到生产验证成功。
 - 恢复设计结论：独立 docs-only 分支 `codex/account-probe-cost-design@50567e862` 把页面合同修订为“全站 -> 分组 -> 账号”三层、账号层独立卡片、桌面最多两列/390px 单列/无横向滚动，并统一外部金额为 USD 两位与利润率 0.00%；这些合同及 Task 1-3 的隔离账本、原生定价、fail-open、probe 聚合均已落实到最终候选 `c7587599a`。旧 Task 4 RED 已废弃且未带入；本轮不重做功能，只将该已验证候选刷新到最新主线并复跑直接相关门禁。
 - 目标：保持未消费金额为 USD；补充六项排序（请求、Token、账号计费、用户扣费、利润、利润率）；新增独立“本站探测花费”字段、卡片和账号列。
@@ -219,7 +219,7 @@
 
 ### T15 账号监控原生探测模型与异步模型检测
 
-- 当前状态：`BACKLOG`。brainstorming 与产品设计已完成并获用户批准；用户明确豁免再次确认正式规格。轮到时仍须由独立用户可见顶层任务/worktree产出正式规格与自审，再调用 writing-plans；本轮只登记队列/总账，不启动规格编写、计划、实现、合并或部署，也不占用 T12 当前车道。
+- 当前状态：`DESIGNING`。brainstorming 与产品设计已完成并获用户批准；用户明确豁免再次确认正式规格。当前预定独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection`，从最新根 `main` 创建后产出正式规格与自审，再调用 writing-plans 并进入实现。用户已明确“先不部署，等下一个指令再部署”，因此本任务可完成规格、计划、实现、直接相关测试和候选交接，但不得合并发布或触发生产部署。
 - 原生连接测试：继续复用 `AccountTestService.ProbeAccountConnection`；每账号持久化独立 `connection_probe_model`，默认优先 `gpt-5.6-sol`，不支持时回退 Sub 原生登记的首个文本模型，页面不显示“自动选择”。近期探测标题旁提供修改连接测试模型入口。
 - 异步检测模型：新增独立 `model_detection_model`；可选模型是 Sub 原生账号模型登记（`GET /admin/accounts/:id/models` 及 sync-upstream 结果）与检测器运行时基线目录的交集。原生模型可见但无基线时置灰并显示“检测器暂不支持”。
 - 执行架构：检测器为仅执行的独立 sidecar，Sub worker 负责调度、持久化和唯一事实。北京时间 `00:00/10:00/12:00/15:00/18:00/21:00` 检测所有未删除、API Key 且检测器支持的账号，不受可调度状态影响；OAuth 不执行，每个任务只跑一轮探针。单账号可立即异步检测，同账号已排队/运行则复用；固定时隙持久化去重，错过仅在 30 分钟内补触发。

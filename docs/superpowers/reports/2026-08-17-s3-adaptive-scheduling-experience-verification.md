@@ -43,14 +43,18 @@ The frontend commands retain existing repository warnings about the legacy `pnpm
 - Production account/data mutation: none.
 - GitHub Actions changes: none.
 - The event ledger is a bounded, reconstructible process-local projection. After API restart the card can legitimately show `no_data` until new natural traffic produces events; it is not persistent historical truth.
-- `downtime_required`: expected `false`, pending the root release precheck on the merged and pushed `main`.
+- `downtime_required=false`; the root precheck and host release returned `succeeded/promoted` without manual authorization.
+- Production source: `main@0720b8bf0b5e23486904e571f12b483e7329a9c0`, tested tree `dad5f6fc35046cead3f61f06191b523f6484a932`.
+- Release record: `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json`; active slot `green`; API/worker shared the immutable image digest.
+- Public `/healthz`, `/readyz`, and `/health` all returned HTTP 200.
+- Natural-traffic Ops acceptance: sample 22; average attempts 1.00/P95 1; sticky retained 20/20 and escaped 0/20; Top-K filtered 21/26 (80.8%); TTFT report-only eligible 2/22 (9.1%); auto-recovery, repeated bad-account, and budget-exhaustion metrics remained natural `no_data 0/0`.
 - Runtime rollback switches: set `gateway.openai_scheduler.adaptive_top_k_enabled=false` and `gateway.openai_scheduler.ttft_report_only_enabled=false` to return to S1/S2 filtering plus existing fixed Top-K/sticky behavior. Authoritative binary rollback is the previous immutable blue-green image.
 
 ## Not Verified
 
 - No full-repository, pressure, soak, mutation, race or unrelated browser matrix was run.
 - No synthetic production failure, account mutation, forced sticky escape, budget exhaustion or second-upstream request was induced.
-- Production natural-traffic metrics, API response and card rendering remain pending root merge, push, precheck and blue-green release.
+- No additional synthetic failure, account mutation, or unrelated browser matrix was performed; the production card was verified in the existing authenticated session with natural traffic.
 
 ## Remaining Risks
 

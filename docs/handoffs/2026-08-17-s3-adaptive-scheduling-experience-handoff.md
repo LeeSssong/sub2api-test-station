@@ -6,9 +6,9 @@
 - 分支：`codex/s3-adaptive-scheduling-experience`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s3-adaptive-scheduling-experience`
 - 初始基线：`main@83c4554792d3424751a439f3fd1cc38a0542ed5e`
-- 根主线当前刷新目标：`main@7beea73322e6dcc21c179bf444b8eb6cd46692b9`
+- 根主线发布源：`main@0720b8bf0b5e23486904e571f12b483e7329a9c0`
 - 已验证运行时 tip：`0f4506bca758377be204b4acea446d72edd74221`
-- 状态：`READY_FOR_ROOT_REVIEW`；尚未合并、推送、预检、部署或修改生产。
+- 状态：`DONE`；已合并、推送、预检、无停机蓝绿发布并完成线上验收。
 
 ## Delivered
 
@@ -41,17 +41,19 @@
 
 ## Root Integration
 
-1. Refresh this candidate with latest root `main@7beea7332`; expected overlap is only root-owned queue/progress documentation.
-2. Re-run S3 focused gates on the refreshed candidate.
-3. Root release controller merges to `main`, updates S3 to `INTEGRATING`, re-verifies the merged tree and pushes.
-4. Run the reviewed local/host release precheck. If `downtime_required=false`, continue directly through blue-green promotion and online acceptance; if `true`, stop before any stop/migration/restart/switch and request explicit authorization.
-5. Online acceptance uses health endpoints, immutable API/worker identity, the scheduler-experience admin API/card and natural traffic only. Do not mutate accounts or manufacture upstream failures.
+1. The candidate was refreshed from the then-current root and merged without conflicts.
+2. S3 focused gates passed on the merged tree; no migration or workflow changes were introduced.
+3. The root release controller pushed `main@0720b8bf0` and the host chain returned `succeeded/promoted` with `downtime_required=false`.
+4. Online acceptance used health endpoints, immutable API/worker identity, the scheduler-experience Ops card and natural traffic only; no account mutation or manufactured upstream failure was performed.
 
 ## Operations / Rollback
 
 - Database migration, backfill or production data mutation: none.
 - Configuration defaults: `adaptive_top_k_enabled=true`, `adaptive_top_k_max=7`, `adaptive_top_k_score_gap=0.15`, `ttft_report_only_enabled=true`.
-- `downtime_required`: expected `false`, pending root precheck.
+- `downtime_required=false`; no manual authorization was required under the global no-downtime rule.
+- Release record: `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json` (`succeeded/promoted`, `rolled_back=false`).
+- Active slot: `green`; active upstream: `sub2api-green:8080`; API and worker use the same immutable image digest.
+- Public health: `/healthz`, `/readyz`, `/health` all returned HTTP 200.
 - The metrics ledger is process-local and reconstructible; restart may temporarily return `no_data`.
 - Functional rollback: disable `adaptive_top_k_enabled` and `ttft_report_only_enabled`.
 - Binary rollback: restore the previous immutable blue-green image; no database rollback or cleanup is required.
@@ -65,8 +67,8 @@
 ## Next Loop Brief
 
 Goal: 由唯一发布总控刷新、合并、推送并发布 S3；无停机时直接完成线上验收。
-Context: S3 verified runtime tip `0f4506bca`; root `main@7beea7332` only advanced through global S3/T17 ledger changes.
+Context: S3 verified runtime tip `0f4506bca`; root `main@0720b8bf0` is promoted and online.
 Constraints: preserve T15/T16/historical worktrees and root untracked files; no GitHub Actions; no full-suite/pressure/soak/mutation; no production account mutation or manufactured failure.
-Plan: refresh main -> focused revalidation -> root merge -> push -> precheck -> no-downtime blue-green -> health/API/card/natural-event acceptance -> evidence/ledger/cleanup.
+Plan: completed: refresh -> focused revalidation -> root merge -> push -> precheck -> no-downtime blue-green -> health/API/card/natural-event acceptance -> evidence/ledger/cleanup.
 Validate: root merged-tree focused tests/build/diff/range checks plus release-controller and online evidence.
-Done when: pushed root `main`, successful production promotion, S3 online acceptance, evidence and ledgers closed.
+Done when: satisfied by pushed root `main`, successful production promotion, S3 online acceptance, evidence and ledgers closed.

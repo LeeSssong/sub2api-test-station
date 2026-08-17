@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 已合入并通过根 `main@4edd7b533` 的直接相关门禁，进入 `DEPLOYING`，等待推送后的既有本地/宿主发布预检。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已登记为 `BACKLOG`，排在 S3 生产收口之后，不打断当前单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2 与 S3 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已登记为 `BACKLOG`，排在 S3 生产收口之后，不打断当前单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@aab79007fc90c842eaf9971b6f5304f4ab7b6503`、tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S2 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json`。
+- 当前发布状态：生产源 `main@0720b8bf0b5e23486904e571f12b483e7329a9c0`、tree `dad5f6fc35046cead3f61f06191b523f6484a932`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S3 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-0720b8bf0-s3-adaptive-scheduling-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -199,7 +199,7 @@
 
 ### S3 自适应选择、粘性逃逸与调度体验观测
 
-- 当前状态：`DEPLOYING`。独立候选 `codex/s3-adaptive-scheduling-experience@026b7b26d` 已无冲突合入根 `main@4edd7b533`；合并树的 config/service/handler/admin/routes focused tests、server compile/build、前端 3 files / 9 tests、typecheck/build、diff-check、零迁移和零 GitHub Actions 范围检查均通过。发布总控将推送最终根 `main` 并运行既有本地/宿主发布预检；尚未切换生产或完成线上验收。
+- 当前状态：`DONE`。独立候选 `codex/s3-adaptive-scheduling-experience@026b7b26d` 已无冲突合入并推送根 `main@0720b8bf0b5e23486904e571f12b483e7329a9c0`；合并树的 config/service/handler/admin/routes focused tests、server compile/build、前端 3 files / 9 tests、typecheck/build、diff-check、零迁移和零 GitHub Actions 范围检查均通过。既有本地/宿主蓝绿链返回 `result=succeeded`、`state=promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；宿主记录为 `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json`，API/worker 使用同一不可变镜像，迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。登录态 Ops Dashboard 已显示自然流量样本（22）、平均尝试 1.00/P95 1、sticky 保留 20/20、sticky 逃逸 0/20、Top-K 过滤 21/26（80.8%）、TTFT report-only 合格 2/22（9.1%）；自动恢复、重复坏账号、预算耗尽均为自然 `no_data 0/0`，未制造失败或修改生产账号。0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-0720b8bf0-s3-adaptive-scheduling-v1.json`；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/s3-adaptive-scheduling-experience-026b7b26.bundle` 已验证，SHA-256 `b8f64d71e4659dab7bd01b499b3015c1c209d24b04de7b40cbd7b77c339823c4`，随后已清理 S3 worktree、分支和临时发布 worktree。
 - 目标：消费 S1/S2 的健康与预算决定，先健康门槛、再动态 Top-K/最低质量阈值、再可解释 sticky escape；仅对安全重放且尚未输出的请求做 TTFT report-only/受控预热；在现有原生监控/运维入口呈现自动恢复率、平均尝试数、坏账号重复命中率、缓存代价和预算耗尽率。
 - 独立边界：不重新定义错误状态、S2 重试上限、价格、账务或控制面；默认不启用并行竞速；S1/S2 veto 永远优先于分数和 sticky；目标发布属性 `downtime_required=false`。
 

@@ -3,7 +3,9 @@
 ## Candidate
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 基线：`main@f43672775cc59852458cc734fb7cb99bc1bfe83c`
+- 最新根主线基线：`main@40315c7651714a0ec86b3664efed0f325786fb6e`
+- 功能实现提交：`0f9ef38f2a0621d9afe5b5c965da025161dba399`
+- 刷新合并提交：`948974db28378e5a42fad97a7cfc41f59166d0f3`
 - 分支：`codex/t19-monitor-v2-cache-eligibility`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`
 - 预期发布属性：`downtime_required=false`
@@ -28,5 +30,5 @@
 ## Remaining Root Work
 
 - T15 发布暂停期间不得进入整合/发布车道；T18 仍排在 T19 前。
-- 轮到 T19 时，先刷新届时最新 `main`，重跑上述直接相关门禁，再由根总控合并、推送和运行既有本地/宿主预检。
+- 轮到 T19 时，若 `main` 再次漂移则先刷新并重跑上述直接相关门禁，再由根总控合并、推送和运行既有本地/宿主预检。
 - 发布后对 24 小时与 7 天窗口做只读 SQL/API 交叉核对；异常时回滚上一活动槽/镜像。

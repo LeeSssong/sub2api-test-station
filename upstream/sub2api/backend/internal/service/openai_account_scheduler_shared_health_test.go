@@ -21,6 +21,7 @@ type openAISharedHealthStoreStub struct {
 	nextFence     int64
 	recordCalls   int
 	completeCalls int
+	lastEvent     OpenAISharedHealthEvent
 }
 
 func newOpenAISharedHealthStoreStub() *openAISharedHealthStoreStub {
@@ -48,6 +49,7 @@ func (s *openAISharedHealthStoreStub) RecordAttempt(_ context.Context, event Ope
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.recordCalls++
+	s.lastEvent = event
 	if s.recordErr != nil {
 		return OpenAISharedHealthSnapshot{Key: event.Key, State: OpenAISharedHealthStateUnknown}, s.recordErr
 	}
@@ -194,4 +196,87 @@ func TestOpenAIAccountModelTransientSharedHalfOpenHasOneWinner(t *testing.T) {
 	services[0].ReleaseOpenAIAccountModelHalfOpenProbe(key.AccountID, key.CanonicalModel, true, now)
 	services[1].ReleaseOpenAIAccountModelHalfOpenProbe(key.AccountID, key.CanonicalModel, true, now)
 	require.Equal(t, 1, store.completeCalls)
+}
+
+func TestOpenAIAccountModelTransientSharedSuccessResetsRemoteState(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	writer := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	reader := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	writer.SetOpenAISharedHealthStore(store)
+	reader.SetOpenAISharedHealthStore(store)
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+
+	for index := 0; index < 2; index++ {
+		writer.RecordOpenAIAccountModelFailure(context.Background(), OpenAIAccountModelFailureEvent{
+			EventID: "failure-" + fmt.Sprint(index), AccountID: 153, CanonicalModel: "gpt-5.6-sol",
+			StatusCode: 503, ErrorType: "transient_upstream", SafeToReplay: true, Platform: PlatformOpenAI, Now: now.Add(time.Duration(index) * time.Second),
+		})
+	}
+	account := &Account{ID: 153, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+	require.True(t, reader.isOpenAIAccountModelRuntimeBlockedAt(account, "gpt-5.6-sol", now.Add(2*time.Second)))
+
+	writer.RecordOpenAIAccountModelSuccess(context.Background(), OpenAIAccountModelSuccessEvent{
+		EventID: "success-1", AccountID: 153, CanonicalModel: "gpt-5.6-sol", Platform: PlatformOpenAI, Now: now.Add(3 * time.Second),
+	})
+	require.True(t, store.lastEvent.Success)
+	require.False(t, reader.isOpenAIAccountModelRuntimeBlockedAt(account, "gpt-5.6-sol", now.Add(3*time.Second)))
+}
+
+func TestOpenAIAccountModelTransientSharedSuccessWriteFailureStillClearsLocalState(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	store.recordErr = errors.New("redis unavailable")
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	svc.SetOpenAISharedHealthStore(store)
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	svc.openaiModelTransient.recordFailure(153, "gpt-5.6-sol", now)
+
+	svc.RecordOpenAIAccountModelSuccess(context.Background(), OpenAIAccountModelSuccessEvent{
+		EventID: "success-write-fails", AccountID: 153, CanonicalModel: "gpt-5.6-sol", Now: now.Add(time.Second),
+	})
+
+	require.False(t, svc.openaiModelTransient.isBlocked(153, "gpt-5.6-sol", now.Add(time.Second)))
+	require.Equal(t, 1, store.recordCalls)
+}
+
+func TestOpenAISharedHealthStaleFallbackMarksRequestDegraded(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	svc.SetOpenAISharedHealthStore(store)
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	key, err := NewOpenAISharedHealthKey(153, "gpt-5.6-sol")
+	require.NoError(t, err)
+	svc.sharedHealthSnapshots[openAISharedHealthCacheKey(key)] = OpenAISharedHealthSnapshot{
+		SchemaVersion: 1, Key: key, State: OpenAISharedHealthStateCooldown,
+		FailureStreak: 2, CooldownUntil: now.Add(time.Minute), ObservedAt: now.Add(-31 * time.Second),
+	}
+	store.getErr = errors.New("redis unavailable")
+	ctx, tracker := WithOpenAISharedHealthReadTracking(context.Background())
+	account := &Account{ID: 153, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+
+	require.False(t, svc.isOpenAIAccountModelRuntimeBlockedAtContext(ctx, account, key.CanonicalModel, now, true))
+	require.True(t, tracker.Degraded())
+}
+
+func TestOpenAISharedHealthMissingProjectionDoesNotMarkRequestDegraded(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	svc.SetOpenAISharedHealthStore(store)
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	ctx, tracker := WithOpenAISharedHealthReadTracking(context.Background())
+	account := &Account{ID: 154, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+
+	require.False(t, svc.isOpenAIAccountModelRuntimeBlockedAtContext(ctx, account, "gpt-5.6-sol", now, true))
+	require.False(t, tracker.Degraded(), "a successful Redis miss is a known empty projection, not an outage")
+}
+
+func TestPreferOpenAIAccountsOutsideFailedDomainsPreservesOrderWithinBestBucket(t *testing.T) {
+	accounts := []*Account{
+		{ID: 1, Platform: PlatformOpenAI, Extra: map[string]any{"quota_pool_id": "shared"}},
+		{ID: 2, Platform: PlatformOpenAI, Extra: map[string]any{"quota_pool_id": "fresh"}},
+		{ID: 3, Platform: PlatformOpenAI, Extra: map[string]any{"quota_pool_id": "fresh"}},
+	}
+	failed := DeriveOpenAIFailureDomains(accounts[0], 9)
+
+	preferred := preferOpenAIAccountsOutsideFailureDomains(accounts, 9, failed)
+	require.Equal(t, []int64{2, 3}, []int64{preferred[0].ID, preferred[1].ID})
 }

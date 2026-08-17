@@ -204,6 +204,122 @@ const (
 
 var openAISharedHealthOwnerSequence atomic.Uint64
 
+type openAISharedHealthReadTrackerContextKey struct{}
+
+// OpenAISharedHealthReadTracker records that a logical request could no longer
+// rely on either Redis or a fresh local projection. Callers use this signal to
+// reduce cross-account retries without turning a Redis outage into a request
+// failure.
+type OpenAISharedHealthReadTracker struct {
+	degraded atomic.Bool
+}
+
+func WithOpenAISharedHealthReadTracking(ctx context.Context) (context.Context, *OpenAISharedHealthReadTracker) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	tracker := &OpenAISharedHealthReadTracker{}
+	return context.WithValue(ctx, openAISharedHealthReadTrackerContextKey{}, tracker), tracker
+}
+
+func (t *OpenAISharedHealthReadTracker) MarkDegraded() {
+	if t != nil {
+		t.degraded.Store(true)
+	}
+}
+
+func (t *OpenAISharedHealthReadTracker) Degraded() bool {
+	return t != nil && t.degraded.Load()
+}
+
+func markOpenAISharedHealthReadDegraded(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	if tracker, ok := ctx.Value(openAISharedHealthReadTrackerContextKey{}).(*OpenAISharedHealthReadTracker); ok {
+		tracker.MarkDegraded()
+	}
+}
+
+type openAIFailureDomainPreferenceContextKey struct{}
+
+type openAIFailureDomainPreference struct {
+	channelID int64
+	failed    []OpenAIFailureDomain
+}
+
+func WithOpenAIFailureDomainPreference(ctx context.Context, failed []OpenAIFailureDomain, channelID int64) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(failed) == 0 {
+		return ctx
+	}
+	preference := openAIFailureDomainPreference{channelID: channelID, failed: append([]OpenAIFailureDomain(nil), failed...)}
+	return context.WithValue(ctx, openAIFailureDomainPreferenceContextKey{}, preference)
+}
+
+func openAIFailureDomainPreferenceFromContext(ctx context.Context) (openAIFailureDomainPreference, bool) {
+	if ctx == nil {
+		return openAIFailureDomainPreference{}, false
+	}
+	preference, ok := ctx.Value(openAIFailureDomainPreferenceContextKey{}).(openAIFailureDomainPreference)
+	return preference, ok && len(preference.failed) > 0
+}
+
+func preferOpenAIAccountsOutsideFailureDomains(accounts []*Account, channelID int64, failed []OpenAIFailureDomain) []*Account {
+	if len(accounts) <= 1 || len(failed) == 0 {
+		return accounts
+	}
+	failedKeys := make(map[string]struct{}, len(failed))
+	for _, domain := range failed {
+		failedKeys[openAIFailureDomainKey(domain)] = struct{}{}
+	}
+	bestRank := int(^uint(0) >> 1)
+	preferred := make([]*Account, 0, len(accounts))
+	for _, account := range accounts {
+		providerFailed, quotaFailed, unknownFailed := false, false, false
+		for _, domain := range DeriveOpenAIFailureDomains(account, channelID) {
+			if _, failed := failedKeys[openAIFailureDomainKey(domain)]; !failed {
+				continue
+			}
+			switch domain.Type {
+			case OpenAIFailureDomainProviderChannel:
+				providerFailed = true
+			case OpenAIFailureDomainQuotaPool:
+				quotaFailed = true
+			default:
+				unknownFailed = true
+			}
+		}
+		rank := 0
+		if quotaFailed {
+			rank++
+		}
+		if providerFailed {
+			rank += 2
+		}
+		if unknownFailed {
+			rank = 3
+		}
+		if rank < bestRank {
+			bestRank = rank
+			preferred = preferred[:0]
+		}
+		if rank == bestRank {
+			preferred = append(preferred, account)
+		}
+	}
+	return preferred
+}
+
+func openAIFailureDomainKey(domain OpenAIFailureDomain) string {
+	if domain.Type == OpenAIFailureDomainUnknown || strings.TrimSpace(domain.ID) == "" {
+		return string(OpenAIFailureDomainUnknown) + ":unknown"
+	}
+	return string(domain.Type) + ":" + strings.TrimSpace(domain.ID)
+}
+
 func newOpenAISharedHealthOwner() string {
 	return fmt.Sprintf("gateway-%d-%d", time.Now().UnixNano(), openAISharedHealthOwnerSequence.Add(1))
 }
@@ -282,23 +398,29 @@ func (s *OpenAIGatewayService) readOpenAISharedHealthSnapshot(ctx context.Contex
 		if cachedOK && cached.Freshness(now, staleAfter) == OpenAISharedHealthFresh {
 			return cached, true, nil
 		}
+		markOpenAISharedHealthReadDegraded(ctx)
 		return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false, nil
 	}
 	readCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
 	defer cancel()
 	snapshot, err := store.GetAccountModel(readCtx, key)
 	if err == nil {
+		if snapshot.State == OpenAISharedHealthStateUnknown && snapshot.ObservedAt.IsZero() {
+			return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false, nil
+		}
 		if snapshot.Freshness(now, staleAfter) == OpenAISharedHealthFresh {
 			s.sharedHealthSnapshotMu.Lock()
 			s.sharedHealthSnapshots[cacheKey] = snapshot
 			s.sharedHealthSnapshotMu.Unlock()
 			return snapshot, true, nil
 		}
+		markOpenAISharedHealthReadDegraded(ctx)
 		return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false, nil
 	}
 	if cachedOK && cached.Freshness(now, staleAfter) == OpenAISharedHealthFresh {
 		return cached, true, err
 	}
+	markOpenAISharedHealthReadDegraded(ctx)
 	return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false, err
 }
 
@@ -352,6 +474,40 @@ func (s *OpenAIGatewayService) recordOpenAISharedHealthFailure(ctx context.Conte
 	s.sharedHealthSnapshots[openAISharedHealthCacheKey(key)] = snapshot
 	s.sharedHealthSnapshotMu.Unlock()
 	return snapshot, true
+}
+
+func (s *OpenAIGatewayService) recordOpenAISharedHealthSuccess(ctx context.Context, event OpenAIAccountModelSuccessEvent, now time.Time) {
+	key, err := NewOpenAISharedHealthKey(event.AccountID, event.CanonicalModel)
+	if s == nil || err != nil {
+		return
+	}
+	s.sharedHealthSnapshotMu.Lock()
+	store := s.sharedHealthStore
+	s.sharedHealthSnapshotMu.Unlock()
+	if store == nil {
+		return
+	}
+	domains := event.Domains
+	if len(domains) == 0 {
+		domains = []OpenAIFailureDomain{{Type: OpenAIFailureDomainUnknown, ID: "unknown"}}
+	}
+	eventID := strings.TrimSpace(event.EventID)
+	if eventID == "" {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("success|%d|%s|%d", event.AccountID, key.CanonicalModel, now.UnixNano())))
+		eventID = hex.EncodeToString(sum[:16])
+	}
+	writeCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
+	defer cancel()
+	snapshot, err := store.RecordAttempt(writeCtx, OpenAISharedHealthEvent{
+		ID: eventID, Key: key, Domains: domains, Success: true, TTFT: event.TTFT, ObservedAt: now,
+	})
+	if err != nil {
+		slog.Warn("openai.shared_health.record_success_failed", "account_id", event.AccountID, "model_hash", key.HashedSuffix(), "failure", "shared_health_store_unavailable")
+		return
+	}
+	s.sharedHealthSnapshotMu.Lock()
+	s.sharedHealthSnapshots[openAISharedHealthCacheKey(key)] = snapshot
+	s.sharedHealthSnapshotMu.Unlock()
 }
 
 func (s *OpenAIGatewayService) acquireOpenAISharedHalfOpenLease(ctx context.Context, key OpenAISharedHealthKey) (OpenAISharedHalfOpenLease, bool, error) {

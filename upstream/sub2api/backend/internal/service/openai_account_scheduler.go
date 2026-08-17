@@ -1612,10 +1612,6 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			continue
 		}
 		filtered = append(filtered, account)
-		loadReq = append(loadReq, AccountWithConcurrency{
-			ID:             account.ID,
-			MaxConcurrency: account.EffectiveLoadFactor(),
-		})
 	}
 	if len(filtered) == 0 {
 		if len(halfOpenCandidates) == 0 {
@@ -1623,8 +1619,11 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 		filtered = halfOpenCandidates
 		req.halfOpenProbe = true
-		loadReq = buildOpenAIAccountLoadRequest(filtered)
 	}
+	if preference, ok := openAIFailureDomainPreferenceFromContext(ctx); ok {
+		filtered = preferOpenAIAccountsOutsideFailureDomains(filtered, preference.channelID, preference.failed)
+	}
+	loadReq = buildOpenAIAccountLoadRequest(filtered)
 
 	loadMap := map[int64]*AccountLoadInfo{}
 	if s.service.concurrencyService != nil {

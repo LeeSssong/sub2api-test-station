@@ -71,6 +71,19 @@ type OpenAIAccountModelFailureEvent struct {
 	Now            time.Time
 }
 
+// OpenAIAccountModelSuccessEvent describes a successful account/model attempt
+// that should reset both the local breaker and the rebuildable shared health
+// projection.
+type OpenAIAccountModelSuccessEvent struct {
+	EventID        string
+	AccountID      int64
+	CanonicalModel string
+	Domains        []OpenAIFailureDomain
+	TTFT           time.Duration
+	Platform       string
+	Now            time.Time
+}
+
 // recordOpenAIIncompleteStreamFailure routes an SSE that ended before a
 // successful terminal event through the existing account-model transient
 // state. It deliberately preserves the no-replay boundary after downstream
@@ -362,6 +375,18 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 			"usage_produced", event.UsageKnown, "cache_preservation_mode", event.CacheMode, "cooldown_seconds", int(decision.Cooldown.Seconds()), "retry_after_seconds", decision.RetryAfterSeconds)
 	}
 	return decision
+}
+
+func (s *OpenAIGatewayService) RecordOpenAIAccountModelSuccess(ctx context.Context, event OpenAIAccountModelSuccessEvent) {
+	if s == nil || event.AccountID <= 0 || normalizeOpenAIAccountModelTransientModel(event.CanonicalModel) == "" {
+		return
+	}
+	now := event.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.clearOpenAIAccountModelTransientState(event.AccountID, event.CanonicalModel)
+	s.recordOpenAISharedHealthSuccess(ctx, event, now)
 }
 
 // ImmediatelyCooldownAccountModel records a transient-only operator cooldown.

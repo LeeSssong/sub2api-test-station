@@ -673,6 +673,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 生图意图只影响能力路由与图片计费，不关门：混合 /v1/responses 请求的
 	// token 计费部分仍受利润门保护，独立图片/视频端点才在门外。
 	pricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	pricingCtx, sharedHealthTracker := service.WithOpenAISharedHealthReadTracking(pricingCtx)
 	c.Request = c.Request.WithContext(pricingCtx)
 
 	for {
@@ -687,6 +688,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		selectionCtx := c.Request.Context()
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
+		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMapping.ChannelID)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -704,6 +706,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			!imageIntent,
 			requestPlatform,
 		)
+		if sharedHealthTracker.Degraded() {
+			retryBudget.NarrowForSharedHealthDegraded()
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai.account_select_aborted_client_disconnected", zap.Error(err))
@@ -976,6 +981,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -1095,6 +1104,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			if openAIForwardSucceededForScheduling(result) && !selection.HalfOpenProbe {
+				recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMapping.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
+			}
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
 		}
@@ -1416,6 +1428,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	msgPricingCtx, sharedHealthTracker := service.WithOpenAISharedHealthReadTracking(msgPricingCtx)
 	c.Request = c.Request.WithContext(msgPricingCtx)
 
 	for {
@@ -1430,6 +1443,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		selectionCtx := c.Request.Context()
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
+		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMappingMsg.ChannelID)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -1447,6 +1461,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			true,
 			requestPlatform,
 		)
+		if sharedHealthTracker.Degraded() {
+			retryBudget.NarrowForSharedHealthDegraded()
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai_messages.account_select_aborted_client_disconnected", zap.Error(err))
@@ -1695,6 +1712,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					if failure.OutputStarted {
 						failedMetadata := attemptMetadata
@@ -1800,6 +1821,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
+		}
+		if !selection.HalfOpenProbe {
+			recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMappingMsg.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
 		}
 
 		userAgent := c.GetHeader("User-Agent")

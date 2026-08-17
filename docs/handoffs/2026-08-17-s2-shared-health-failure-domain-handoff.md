@@ -6,7 +6,7 @@
 - 分支：`codex/s2-shared-health-failure-domain`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s2-shared-health-failure-domain`
 - 初始基线：`main@1bc052d8e`
-- 最新刷新主线：`main@b35d3f100`（merge commit `fbc79624a`）
+- 最新刷新主线：`main@566fc52ba`（merge commit `ce48bef0b`）
 - 已验证运行时 tip：`e3d905412`
 - 候选状态：`READY_FOR_ROOT_REVIEW`；未合并根 `main`，未运行发布预检，未部署。
 
@@ -34,6 +34,7 @@
 - `0e52328a9` refresh merge from `main@a533d84b0`.
 - `fbc79624a` refresh merge from `main@b35d3f100` after root audit reopened S2.
 - `e3d905412` close shared-success, degraded-budget, domain-preference, jitter/reason and Chat failure-event audit gaps.
+- `ce48bef0b` refresh merge from `main@566fc52ba`, including the global no-downtime release authorization rule.
 
 ## Verification
 
@@ -48,20 +49,20 @@ Focused repository, service, handler, config, server compile and server build ch
 - GitHub Actions: none.
 - Configuration contract: additive `gateway.openai_shared_health` with defaults enabled, Redis timeout 75ms, stale snapshot 30s, attempts 4, switches 3, domains 2, total retry budget 5000ms, backoff 120–2000ms, half-open lease 15s.
 - Production configuration mutation: none.
-- `downtime_required`: not evaluated because release preflight is frozen; design target remains `false`.
-- Deployment: frozen; no preflight, root merge, push of S2 code, blue-green switch, or production write performed.
+- `downtime_required`: not yet evaluated because release preflight occurs only after the candidate is merged into the verified root `main`; design target remains `false`.
+- Deployment: not yet started; no preflight, root merge, push of S2 code, blue-green switch, or production write has been performed. Global rule now authorizes direct continuation when preflight returns `downtime_required=false`; `true` still requires explicit user approval before any production-changing action.
 
 ## Open Risks
 
 - `go test -tags=integration` for the real Redis concurrency case remains blocked by a pre-existing unrelated package collision: `user_profile_identity_repo_contract_test.go:577 stringPtr` conflicts with `usage_log_repo_stats.go:203 stringPtr`.
-- Mixed-version and production Redis behavior still require the existing root preflight and post-deployment online acceptance after the user explicitly authorizes deployment.
+- Mixed-version and production Redis behavior still require the existing root preflight and post-deployment online acceptance. No extra authorization is needed when preflight returns `downtime_required=false`; `true` remains an explicit authorization gate.
 - If rollback is required before deployment, revert the S2 commits. After deployment, use the existing immutable-image blue-green rollback chain; disabling shared health alone does not remove request-local retry caps, so a full code rollback is authoritative.
 
 ## Next Loop Brief
 
-Goal: 由唯一发布总控只读复核 S2 候选，确认后合入根 `main`；继续停在部署冻结门禁前。
-Context: S2 已刷新 `main@b35d3f100`；运行时 tip `e3d905412` 的直接相关测试、server compile/build、gofmt 和 diff-check 已完成。
-Constraints: 根总控独占 `main`/总账/队列；不使用 GitHub Actions；不触碰 T15/T16/历史冻结 worktree；不启动 S3；没有用户新的明确部署指令时不做发布预检或生产写入。
-Plan: 核对候选范围、验证证据和未验证项，更新根队列/总账为 `READY_FOR_ROOT_REVIEW`；后续 merge 与部署等待相应门禁。
-Validate: 若后续合并根 `main`，仅重跑本 report 的直接相关命令和根范围检查；部署仍等用户新指令。
-Done when: 当前阶段以候选和根总账均标记 `READY_FOR_ROOT_REVIEW` 为止。
+Goal: 由唯一发布总控合入 S2 候选，验证并推送根 `main`，执行既有发布预检；无停机则直接蓝绿发布和线上验收。
+Context: S2 已刷新 `main@566fc52ba`；运行时 tip `e3d905412` 在刷新合并 `ce48bef0b` 上的直接相关测试、server compile/build、gofmt 和 diff-check已完成。
+Constraints: 根总控独占 `main`/总账/队列；不使用 GitHub Actions；不触碰 T15/T16/历史冻结 worktree；不启动 S3；`downtime_required=true` 时必须在生产变更前暂停请求用户授权。
+Plan: 核对候选范围并合入根 `main`，重跑本 report 的直接相关命令、迁移/工作流范围检查和构建；推送后执行既有发布预检。预检为 `false` 时直接完成蓝绿发布、健康检查和 S2 专项线上验收。
+Validate: `/healthz`、`/readyz`、`/health`，活动槽、API/worker 同一不可变镜像与 source SHA，以及不修改生产账号、不人为制造故障的 S2 运行证据。
+Done when: S2 已推送、已部署、已线上验证并由根总账标记 `DONE`。

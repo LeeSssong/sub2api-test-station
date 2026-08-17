@@ -3,7 +3,7 @@
 ## Scope
 
 - 初始基线：`main@1bc052d8e`
-- 最新刷新目标：`main@b35d3f100`
+- 最新刷新目标：`main@566fc52ba`（refresh merge `ce48bef0b`）
 - 已验证运行时 tip：`e3d905412`
 - 范围：Redis 共享 account-model health/EWMA/cooldown、failure-domain 投影、fencing half-open lease、本地 30 秒可信快照、Responses/Messages/Chat Completions 请求级重试硬上限、`Retry-After`、稳定 jitter 与明确 exhaustion reason。
 
@@ -42,7 +42,7 @@
 
 - Real Redis integration test did not compile because of a pre-existing unrelated integration harness collision: `internal/repository/user_profile_identity_repo_contract_test.go:577:6 stringPtr redeclared`, conflicting with `internal/repository/usage_log_repo_stats.go:203:6`. S2 did not modify either file and did not widen scope to repair it.
 - No full-repository, pressure, mutation, soak, race, or unrelated browser matrix was run.
-- No release preflight, root merge, deployment, production Redis inspection, production account mutation, or online functional acceptance was run because deployment remains frozen.
+- No release preflight, root merge, deployment, production Redis inspection, production account mutation, or online functional acceptance was run in the candidate worktree; those actions belong to the root release-controller phase.
 
 ## Review
 
@@ -57,5 +57,5 @@
 ## Follow-ups
 
 - Root release controller may set the global S2 state to `READY_FOR_ROOT_REVIEW`; candidate code remains outside root `main` in this phase.
-- Release preflight and blue-green deployment must wait for a new explicit user deployment instruction.
+- After root merge and merged-tree verification, run the existing release preflight. Continue directly through blue-green deployment and online acceptance when `downtime_required=false`; stop before production change and request explicit authorization only when it is `true`.
 - S3 remains blocked until S2 production deployment and online acceptance complete.

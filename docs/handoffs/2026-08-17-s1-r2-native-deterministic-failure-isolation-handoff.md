@@ -7,7 +7,7 @@
 ## 身份
 
 - 基线 `main`：`a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
-- 运行时/测试实现提交：`436aa8b870d65b8285780e0e4254060e1cec8d6d`
+- 运行时/测试实现提交：`4d49d2a2c71a0e8378a7321425e6c45d072e1864`
 - 最终候选 HEAD（根审目标）：包含本 handoff 的 docs-only 收口提交；精确 SHA 以提交后从仓库根目录 fresh 运行的 `git rev-parse HEAD` 与根审命令输出为准。
 - 分支：`codex/s1-r2-native-deterministic-failure-isolation`
 - 当前 worktree：`/Users/gongtengxinwen/.codex/worktrees/6195/sub2api搭建`
@@ -31,6 +31,12 @@
 - `gofmt`、`git diff --check`：通过。
 - 迁移集合无变化；`.github/workflows` 无变化。
 
+### 根审 follow-up
+
+- 发现并修正原分类器将所有 HTTP 402 直接视为余额耗尽的问题。
+- 新增 generic 402 回归用例；当前仅稳定机器码或明确余额/额度耗尽消息进入 `balance_exhausted`，明确余额 402 仍保留分类。
+- 修复提交：`4d49d2a2c71a0e8378a7321425e6c45d072e1864`；定向 service/unit/config/compile/build/diff 验证均通过。
+
 ## 迁移、配置与发布
 
 - 迁移变化：无；未使用 225，也未创建/预留 226 文件。
@@ -47,3 +53,4 @@
 - episode 元数据嵌在原生 reason/model-limit payload 中，未提供独立历史 episode 查询表。
 - `probe_required` 清理由受控成功探测/管理员原生恢复负责；旧宽恢复入口仍可能清除同账号其他模型限制，这是既有原生行为，本候选未改其范围。
 - 未在真实上游、生产或发布链验证余额/模型目录信号；SSE 计费 drain、proxy circuit、sticky 与幂等仅由本地直接相关测试覆盖。
+- generic 402 的既有通用 402 处理路径未在生产重放；本次修复仅收窄 S1 确定性分类，不改变该既有路径。

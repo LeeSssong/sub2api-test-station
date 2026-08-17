@@ -1,7 +1,7 @@
 # S1-R2 直接相关验证报告
 
 **基线：** `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
-**实现验证 HEAD：** `436aa8b870d65b8285780e0e4254060e1cec8d6d`
+**实现验证 HEAD：** `4d49d2a2c71a0e8378a7321425e6c45d072e1864`
 **范围：** 原生确定性故障分类、账号/模型原生状态投影、SSE 未完成终态 transient。
 
 ## 验证命令与结果
@@ -21,6 +21,12 @@
 7. `git diff --name-only a00fdb186..HEAD -- upstream/sub2api/backend/migrations .github/workflows`
    - 结果：无输出；无迁移、无 GitHub Actions 变化。
 
+## 根审 follow-up
+
+- 根审发现原分类器把所有 HTTP 402 都当作 `balance_exhausted`，与“稳定机器码/明确余额消息才可分类”的规格边界不一致。
+- 先补充 RED 用例 `generic payment required is not balance evidence`，确认旧实现错误分类；随后以 `4d49d2a2c71a0e8378a7321425e6c45d072e1864` 收窄为仅允许机器码/消息 allowlist，保留明确余额 402 的分类。
+- follow-up 直接相关 service、unit、config、compile-only、server build、gofmt 和 diff-check 均通过；generic 402 不再进入 S1 确定性余额分类，后续未命中仍由既有 402 处理合同接管。
+
 ## TDD 证据
 
 - 分类器 RED：缺少 classifier/reason/config symbols；GREEN：定向 service tests 通过。
@@ -32,7 +38,7 @@
 
 - 未运行全仓测试、压力/mutation/soak、重复浏览器矩阵或生产请求。
 - 未执行发布预检、迁移预检、推送、部署或线上验收；`downtime_required=unverified`。
-- 未验证真实上游余额/完整模型目录探测；本候选只接入现有错误与 transient 路径。
+- 未验证真实上游余额/完整模型目录探测；本候选只接入现有错误与 transient 路径。generic 402 的旧版通用 402 处理路径未在生产重放，仍需发布后按既有线上验收边界观察。
 
 ## 风险与后续
 

@@ -8,10 +8,11 @@
 
 ## 候选身份
 
-- 最新根主线基线：`8729884a113cf844a2850ba87463c2f7f711577c`
+- 最新根主线基线：`027c0c270c8e4eaa95bf2da4cc6377467ec5fa97`
 - 功能实现提交：`ee52dd5ea`
-- 刷新合并提交：`607909f12f3d1523cc5a6d09bf2087cff7973540`
-- 刷新后候选 tree：`d0300320714776a5f532233c6a601dcc4a4cf4cf`
+- 刷新合并提交：`551f43122f514e5c604075e19c779f9060c5d48b`
+- 刷新后候选 tip：`551f43122f514e5c604075e19c779f9060c5d48b`
+- 刷新后候选 tree：`0a26230e1c306d402f493793c1171ee80a7a5dba`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`
 - 分支：`codex/channel-status-official-toggle`
 - 候选状态：`READY_FOR_ROOT_REVIEW`
@@ -35,7 +36,7 @@
 - `pnpm build`：exit 0，Vite 生产构建完成。
 - `git diff --check origin/main...HEAD`：通过。
 - 相对 `origin/main` 无迁移文件、无 `.github/workflows` 文件。
-- 刷新到 `main@8729884a1` 后再次通过同一专项测试、`pnpm typecheck`、`pnpm build` 和 `git diff --check main...HEAD`。
+- 刷新到 `main@027c0c270` 后再次通过同一专项测试、`pnpm typecheck`、`pnpm build` 和 `git diff --check main...HEAD`。
 
 TDD 证据：新增官方模式测试先在旧实现上按预期失败（官方 stub 不出现），最小实现后 3/3 通过。
 

@@ -267,6 +267,17 @@ func (b *openAIRetryBudget) DeadlineReached() bool {
 	return b == nil || b.Remaining() <= 0
 }
 
+func (b *openAIRetryBudget) hasAdditionalSwitchAttemptCapacity() bool {
+	if b == nil || b.DeadlineReached() || b.attempts >= b.cfg.MaxAttempts {
+		return false
+	}
+	return b.lastAccountID == 0 || b.switches < b.maxSwitches
+}
+
+func openAITTFTReportEligible(enabled, outputStarted, hasSideEffects bool, eligibleCount int, budget *openAIRetryBudget) bool {
+	return enabled && !outputStarted && !hasSideEffects && eligibleCount > 1 && budget.hasAdditionalSwitchAttemptCapacity()
+}
+
 func (b *openAIRetryBudget) RetryDelay(failure *service.UpstreamFailoverError, retryCount int) (time.Duration, bool) {
 	if b == nil {
 		return 0, false

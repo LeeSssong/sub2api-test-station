@@ -755,12 +755,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if previousResponseID != "" && selection != nil && selection.Account != nil {
 			reqLog.Debug("openai.account_selected_with_previous_response_id", zap.Int64("account_id", selection.Account.ID))
 		}
+		ttftReportOnlyEnabled := h.cfg != nil && h.cfg.Gateway.OpenAIScheduler.TTFTReportOnlyEnabled
+		scheduleDecision.TTFTReportEligible = openAITTFTReportEligible(
+			ttftReportOnlyEnabled, streamStarted, requestHasSideEffects, scheduleDecision.EligibleCount, retryBudget,
+		)
 		reqLog.Debug("openai.account_schedule_decision",
 			zap.String("layer", scheduleDecision.Layer),
+			zap.String("selection_layer", scheduleDecision.SelectionLayer),
 			zap.Bool("sticky_previous_hit", scheduleDecision.StickyPreviousHit),
 			zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
+			zap.Bool("sticky_kept", scheduleDecision.StickyKept),
+			zap.String("sticky_escape_reason", scheduleDecision.StickyEscapeReason),
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
+			zap.Int("eligible_count", scheduleDecision.EligibleCount),
 			zap.Int("top_k", scheduleDecision.TopK),
+			zap.Int("effective_top_k", scheduleDecision.EffectiveTopK),
+			zap.Float64("minimum_score_threshold", scheduleDecision.MinimumScoreThreshold),
+			zap.Bool("ttft_report_eligible", scheduleDecision.TTFTReportEligible),
 			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
@@ -1509,7 +1520,21 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		recoveryScope = openAIRecoveryScope(apiKey, sessionHash)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
-		_ = scheduleDecision
+		ttftReportOnlyEnabled := h.cfg != nil && h.cfg.Gateway.OpenAIScheduler.TTFTReportOnlyEnabled
+		scheduleDecision.TTFTReportEligible = openAITTFTReportEligible(
+			ttftReportOnlyEnabled, streamStarted, requestHasSideEffects, scheduleDecision.EligibleCount, retryBudget,
+		)
+		reqLog.Debug("openai_messages.account_schedule_decision",
+			zap.String("layer", scheduleDecision.Layer),
+			zap.String("selection_layer", scheduleDecision.SelectionLayer),
+			zap.Bool("sticky_kept", scheduleDecision.StickyKept),
+			zap.String("sticky_escape_reason", scheduleDecision.StickyEscapeReason),
+			zap.Int("candidate_count", scheduleDecision.CandidateCount),
+			zap.Int("eligible_count", scheduleDecision.EligibleCount),
+			zap.Int("effective_top_k", scheduleDecision.EffectiveTopK),
+			zap.Float64("minimum_score_threshold", scheduleDecision.MinimumScoreThreshold),
+			zap.Bool("ttft_report_eligible", scheduleDecision.TTFTReportEligible),
+		)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)

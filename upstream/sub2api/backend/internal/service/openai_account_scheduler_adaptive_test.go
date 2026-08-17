@@ -154,3 +154,42 @@ func TestOpenAIAccountSchedulerAdaptiveTopKNeverReaddsExcludedBestAccount(t *tes
 		selection.ReleaseFunc()
 	}
 }
+
+func TestOpenAIAccountSchedulerAdaptiveTopKEscapesWeightedStickyBelowQualityFloor(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	accounts := []Account{
+		{ID: 4301, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 10},
+		{ID: 4302, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 7
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled = true
+	cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax = 7
+	cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = 0.1
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:session_hash_adaptive_quality": 4301}}
+	svc := &OpenAIGatewayService{
+		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:            cache,
+		cfg:              cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true", "true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+			loadMap:        map[int64]*AccountLoadInfo{4301: {AccountID: 4301}, 4302: {AccountID: 4302}},
+			acquireResults: map[int64]bool{4302: true},
+		}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "session_hash_adaptive_quality", "gpt-5.1", nil, OpenAIUpstreamTransportAny, false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, int64(4302), selection.Account.ID)
+	require.False(t, decision.StickyKept)
+	require.Equal(t, "quality_floor", decision.StickyEscapeReason)
+	require.Equal(t, int64(4301), cache.sessionBindings["openai:session_hash_adaptive_quality"])
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}

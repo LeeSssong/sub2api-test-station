@@ -48,7 +48,7 @@
       <template v-if="hasLoaded">
         <div class="text-xs text-gray-500" data-test="financial-generated-at">{{ generatedAt }}</div>
 
-        <section class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+        <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5" data-test="summary-grid">
           <article
             v-for="card in summaryCards"
             :key="card.key"
@@ -56,18 +56,13 @@
             :data-test="`summary-${card.key}`"
           >
             <div class="text-xs text-gray-500">{{ card.label }}</div>
-            <div class="mt-2 break-words text-xl font-semibold">{{ card.value }}</div>
+            <div class="mt-2 break-words text-xl font-semibold" :class="card.tone">{{ card.value }}</div>
             <div v-if="card.note" class="mt-1 text-xs text-gray-500">{{ card.note }}</div>
-            <button
-              v-if="card.key === 'probe-cost' && report.probe_data_error"
-              class="mt-2 text-xs font-medium text-primary-600 hover:underline"
-              data-test="financial-probe-retry"
-              @click="load"
-            >
-              {{ t('admin.accountProfitability.probe.retry') }}
-            </button>
           </article>
         </section>
+        <p class="text-xs text-gray-500" data-test="financial-role-history-note">
+          {{ t('admin.accountProfitability.roleHistoryNote') }}
+        </p>
 
         <nav
           class="flex max-w-full gap-2 overflow-x-auto pb-1"
@@ -107,14 +102,14 @@
               {{ t('admin.accountProfitability.scope.accountCount', { count: sortedAccounts.length }) }}
             </span>
           </div>
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <article
               v-for="card in scopedCards"
               :key="card.key"
               class="min-w-0 border-t border-gray-200 pt-3 dark:border-gray-700"
             >
               <div class="text-xs text-gray-500">{{ card.label }}</div>
-              <div class="mt-1 break-words text-base font-semibold">{{ card.value }}</div>
+              <div class="mt-1 break-words text-base font-semibold" :class="card.tone">{{ card.value }}</div>
               <div v-if="card.note" class="mt-1 text-xs text-gray-500">{{ card.note }}</div>
             </article>
           </div>
@@ -145,42 +140,43 @@
             {{ t('admin.accountProfitability.empty') }}
           </div>
 
-          <div
-            v-else
-            class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2"
-            data-test="account-card-grid"
-          >
-            <article
+          <div v-else class="min-w-0 overflow-x-auto" data-test="account-financial-table-wrap">
+            <table class="min-w-[760px] w-full border-collapse text-left" data-test="account-financial-table">
+              <thead>
+                <tr class="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-700">
+                  <th class="min-w-[220px] px-3 py-3 font-medium">{{ t('admin.accountProfitability.table.account') }}</th>
+                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.operationalCost') }}</th>
+                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.businessCost') }}</th>
+                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.businessRevenue') }}</th>
+                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.totalCost') }}</th>
+                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.netProfit') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
               v-for="account in sortedAccounts"
               :key="`${activePairPrefix}:${account.id}`"
-              class="card min-w-0 overflow-hidden p-4"
-              :data-test="`account-card-${account.id}`"
+              class="border-b border-gray-100 align-top dark:border-gray-800"
+              :data-test="`account-row-${account.id}`"
               :data-account-id="account.id"
               :data-pair="`${activePairPrefix}:${account.id}`"
-            >
-              <header class="flex min-w-0 items-start justify-between gap-3 border-b border-gray-200 pb-3 dark:border-gray-700">
-                <div class="min-w-0">
-                  <h3 class="break-words text-base font-semibold">{{ account.name }}</h3>
-                  <p class="mt-1 break-words text-xs text-gray-500">
-                    {{ t('admin.accountProfitability.account.meta', { platform: account.platform, type: account.type }) }}
-                  </p>
-                </div>
-                <span class="shrink-0 text-xs text-gray-400">#{{ account.id }}</span>
-              </header>
-
-              <dl class="mt-3 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3">
-                <div
-                  v-for="metric in accountMetrics(account.amounts)"
-                  :key="metric.key"
-                  class="min-w-0"
-                  :data-metric="metric.key"
                 >
-                  <dt class="text-xs text-gray-500">{{ metric.label }}</dt>
-                  <dd class="mt-1 break-words text-sm font-semibold">{{ metric.value }}</dd>
-                  <dd v-if="metric.note" class="mt-1 text-xs text-gray-500">{{ metric.note }}</dd>
-                </div>
-              </dl>
-            </article>
+                  <th scope="row" class="px-3 py-3 font-normal">
+                    <div class="min-w-0">
+                      <div class="break-words text-sm font-semibold">{{ account.name }}</div>
+                      <div class="mt-1 break-words text-xs text-gray-500">
+                        {{ t('admin.accountProfitability.account.meta', { platform: account.platform, type: account.type }) }} · #{{ account.id }}
+                      </div>
+                    </div>
+                  </th>
+                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="operational-cost" :class="toneFor('operational_cost')">{{ usd(account.amounts.operational_cost) }}</td>
+                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="business-cost" :class="toneFor('business_cost')">{{ usd(account.amounts.business_cost) }}</td>
+                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="business-revenue" :class="toneFor('business_revenue')">{{ usd(account.amounts.business_revenue) }}</td>
+                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="total-cost" :class="toneFor('total_cost')">{{ usd(account.amounts.total_cost) }}</td>
+                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="net-profit" :class="toneFor('net_profit', account.amounts.net_profit)">{{ usd(account.amounts.net_profit) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
       </template>
@@ -201,14 +197,14 @@ import type {
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 type FinancialScope = { kind: 'all' } | { kind: 'group'; id: number; unassigned: boolean }
-type FinancialSortKey = 'requests' | 'tokens' | 'cost' | 'user_cost' | 'profit' | 'margin'
+type FinancialSortKey = 'operational_cost' | 'business_cost' | 'business_revenue' | 'total_cost' | 'net_profit' | 'external_margin'
 type FinancialSort = { key: FinancialSortKey; direction: 'asc' | 'desc' }
-type DisplayMetric = { key: string; label: string; value: string; note?: string }
+type DisplayMetric = { key: string; label: string; value: string; note?: string; tone?: string }
 
 const { t } = useI18n()
 const activeRange = ref<FinancialRange>('today')
 const activeScope = ref<FinancialScope>({ kind: 'all' })
-const sort = ref<FinancialSort>({ key: 'requests', direction: 'desc' })
+const sort = ref<FinancialSort>({ key: 'net_profit', direction: 'desc' })
 const loading = ref(false)
 const refreshing = ref(false)
 const loadError = ref('')
@@ -223,6 +219,12 @@ const emptyAmounts = (): FinancialAmounts => ({
   user_cost: 0,
   profit: 0,
   margin: null,
+  operational_cost: 0,
+  business_cost: 0,
+  business_revenue: 0,
+  total_cost: 0,
+  net_profit: 0,
+  external_margin: null,
   probe_requests: 0,
   probe_tokens: 0,
   probe_cost: 0,
@@ -254,50 +256,24 @@ const usd = (value: number | null) => value == null || !Number.isFinite(value)
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value)
-const compact = (value: number) => new Intl.NumberFormat(undefined, {
-  notation: 'compact',
-  maximumFractionDigits: 2,
-}).format(value)
 const percent = (value: number | null) => value == null ? '—' : `${(value * 100).toFixed(2)}%`
 
-const probeMetric = (amounts: FinancialAmounts): DisplayMetric => {
-  if (report.value.probe_data_error) {
-    return {
-      key: 'probe-cost',
-      label: t('admin.accountProfitability.summary.probeCost'),
-      value: t('admin.accountProfitability.probe.dataError'),
-    }
+const toneFor = (key: FinancialSortKey, value?: number) => {
+  if (key === 'business_revenue') return 'text-blue-700 dark:text-blue-300'
+  if (key === 'operational_cost') return 'text-purple-700 dark:text-purple-300'
+  if (key === 'business_cost' || key === 'total_cost') return 'text-amber-700 dark:text-amber-300'
+  if (key === 'net_profit' || key === 'external_margin') {
+    return value != null && value < 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
   }
-  if (amounts.probe_cost_status === 'unavailable') {
-    return {
-      key: 'probe-cost',
-      label: t('admin.accountProfitability.summary.probeCost'),
-      value: usd(0),
-      note: t('admin.accountProfitability.probe.noRecords'),
-    }
-  }
-  if (amounts.probe_cost_status === 'incomplete') {
-    return {
-      key: 'probe-cost',
-      label: t('admin.accountProfitability.summary.probeCost'),
-      value: '—',
-      note: t('admin.accountProfitability.probe.incomplete'),
-    }
-  }
-  return {
-    key: 'probe-cost',
-    label: t('admin.accountProfitability.summary.probeCost'),
-    value: usd(amounts.probe_cost),
-  }
+  return ''
 }
 
-const financialMetrics = (amounts: FinancialAmounts): DisplayMetric[] => [
-  { key: 'requests', label: t('admin.accountProfitability.summary.requests'), value: compact(amounts.requests) },
-  { key: 'tokens', label: t('admin.accountProfitability.summary.tokens'), value: compact(amounts.tokens) },
-  { key: 'cost', label: t('admin.accountProfitability.summary.accountCost'), value: usd(amounts.cost) },
-  { key: 'user-cost', label: t('admin.accountProfitability.summary.userCost'), value: usd(amounts.user_cost) },
-  { key: 'profit', label: t('admin.accountProfitability.summary.profit'), value: usd(amounts.profit) },
-  { key: 'margin', label: t('admin.accountProfitability.summary.margin'), value: percent(amounts.margin) },
+const resultMetrics = (amounts: FinancialAmounts): DisplayMetric[] => [
+  { key: 'business-revenue', label: t('admin.accountProfitability.summary.businessRevenue'), value: usd(amounts.business_revenue), tone: toneFor('business_revenue') },
+  { key: 'total-cost', label: t('admin.accountProfitability.summary.totalCost'), value: usd(amounts.total_cost), tone: toneFor('total_cost') },
+  { key: 'net-profit', label: t('admin.accountProfitability.summary.netProfit'), value: usd(amounts.net_profit), tone: toneFor('net_profit', amounts.net_profit) },
+  { key: 'external-margin', label: t('admin.accountProfitability.summary.externalMargin'), value: percent(amounts.external_margin), tone: toneFor('external_margin', amounts.external_margin ?? undefined) },
+  { key: 'operational-cost', label: t('admin.accountProfitability.summary.operationalCost'), value: usd(amounts.operational_cost), note: t('admin.accountProfitability.summary.includedInTotal'), tone: toneFor('operational_cost') },
 ]
 
 const selectedGroup = computed(() => {
@@ -308,26 +284,15 @@ const selectedGroup = computed(() => {
 })
 const selectedAccounts = computed(() => selectedGroup.value?.accounts ?? report.value.accounts)
 const selectedAmounts = computed(() => selectedGroup.value?.amounts ?? report.value.summary)
-const summaryCards = computed<DisplayMetric[]>(() => [
-  ...financialMetrics(report.value.summary),
-  probeMetric(report.value.summary),
-  {
-    key: 'unconsumed-balance',
-    label: t('admin.accountProfitability.summary.unconsumedBalance'),
-    value: usd(report.value.user_unconsumed_balance_cny),
-  },
-])
-const scopedCards = computed<DisplayMetric[]>(() => [
-  ...financialMetrics(selectedAmounts.value),
-  probeMetric(selectedAmounts.value),
-])
+const summaryCards = computed<DisplayMetric[]>(() => resultMetrics(report.value.summary))
+const scopedCards = computed<DisplayMetric[]>(() => resultMetrics(selectedAmounts.value))
 const sortOptions = computed(() => ([
-  { key: 'requests' as const, label: t('admin.accountProfitability.summary.requests') },
-  { key: 'tokens' as const, label: t('admin.accountProfitability.summary.tokens') },
-  { key: 'cost' as const, label: t('admin.accountProfitability.summary.accountCost') },
-  { key: 'user_cost' as const, label: t('admin.accountProfitability.summary.userCost') },
-  { key: 'profit' as const, label: t('admin.accountProfitability.summary.profit') },
-  { key: 'margin' as const, label: t('admin.accountProfitability.summary.margin') },
+  { key: 'operational_cost' as const, label: t('admin.accountProfitability.summary.operationalCost') },
+  { key: 'business_cost' as const, label: t('admin.accountProfitability.summary.businessCost') },
+  { key: 'business_revenue' as const, label: t('admin.accountProfitability.summary.businessRevenue') },
+  { key: 'total_cost' as const, label: t('admin.accountProfitability.summary.totalCost') },
+  { key: 'net_profit' as const, label: t('admin.accountProfitability.summary.netProfit') },
+  { key: 'external_margin' as const, label: t('admin.accountProfitability.summary.externalMargin') },
 ]))
 const sortedAccounts = computed(() => [...selectedAccounts.value].sort(compareAccounts))
 const activePairPrefix = computed(() => activeScope.value.kind === 'group' ? activeScope.value.id : 'all')
@@ -343,10 +308,6 @@ function compareAccounts(a: FinancialAccount, b: FinancialAccount) {
   const difference = left - right
   if (difference === 0) return a.id - b.id
   return sort.value.direction === 'asc' ? difference : -difference
-}
-
-function accountMetrics(amounts: FinancialAmounts) {
-  return [...financialMetrics(amounts), probeMetric(amounts)]
 }
 
 function setSort(key: FinancialSortKey) {

@@ -271,7 +271,7 @@
 
 ### T18 渠道状态官方聚合/自建监控可切换
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`（排队，不占用整合/部署车道）。用户可见顶层任务已在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`、分支 `codex/channel-status-official-toggle` 基于根 `main@40315c7651714a0ec86b3664efed0f325786fb6e` 刷新；最终候选 `8c3c76a17b6f741655a3ee0577b762fed7b377ef`，tree `bdd2c1567f0334d607a44059a8c16ca51412f1c3`，worktree 干净。功能提交为 `ee52dd5ea`；刷新后专项测试、typecheck、build、diff-check 均通过；交接见 `docs/handoffs/2026-08-17-channel-status-official-toggle-handoff.md`。
+- 当前状态：`READY_FOR_ROOT_REVIEW`（排队，不占用整合/部署车道）。用户可见顶层任务已在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`、分支 `codex/channel-status-official-toggle` 刷新到根 `main@096f37f25688b72eca901173828965133051acf0`；候选 tip `6d38cabe33b15adcd2be234c04d4939e824e1da4`，tree `34f77c904caf09e2fff1a370c66ff0c6d7735d06`。功能提交为 `ee52dd5ea`；刷新后专项测试、typecheck、build、diff-check 均通过；交接见 `docs/handoffs/2026-08-17-channel-status-official-toggle-handoff.md`。
 - 范围：仅改 `MonitorV2RouteView` 入口与专项测试；复用已有 `channel_monitor_mode=v1|v2`。`v2` 直接渲染官方 `ChannelStatusView` 并跳过 `/api/v1/monitor-v2`，`v1` 保留自建页及失败回退；无后端、迁移、配置 schema 或 GitHub Actions 变化。
 - 验证：`MonitorV2RouteView` 1 文件 3 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；预期 `downtime_required=false`，最终以根合并后的发布预检为准。上线参数为 `channel_monitor_enabled=true`、`channel_monitor_mode=v2`；回滚为 `channel_monitor_mode=v1`。
 - 车道约束：T15 当前仍停在 `downtime_required=true` 的停机授权门禁；T18 不自行插队、合并、推送、发布或改生产配置，待 T15 生产收口或明确冻结后再由根总控单独授权。
@@ -279,7 +279,7 @@
 ### T19 Monitor V2 缓存命中率有效样本口径修正
 
 - 当前状态：`READY_FOR_ROOT_REVIEW`（不占用整合/部署车道）。用户于 2026-08-17 明确批准按既有方案修正并加入全局任务队列；候选已在 T19 独立 worktree 完成实现和直接相关门禁，排在 T15 发布车道完成后、T18 候选之后，遵守单车道规则，不打断 T15、不解冻 T16。用户最新指令为暂不发布，候选保持未合并、未推送、未部署。
-- 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@40315c7651714a0ec86b3664efed0f325786fb6e`，提交 `2658e868b4ca0cf8670a532212a2a0415e0a9074`，tree `9c96e3972f4c22e89d05ddaa404b18e028f56ab2`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
+- 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@096f37f25688b72eca901173828965133051acf0`，候选 tip `804c0db63c56483e43cfdf6ca1fd85bc1cf69da9`，tree `1f16c263ac59599b5b17e997ed4a148ba1cd27b7`；功能提交 `0f9ef38f2a0621d9afe5b5c965da025161dba399`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
 - 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
 - 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。
 - 验证与发布：TDD RED/GREEN、仓储/服务聚焦测试、后端 compile-only/build、gofmt、diff-check 已通过；发布后仍需进行 24 小时/7 天只读交叉验收。预检若返回 `downtime_required=false`，按全局约束直接继续蓝绿发布与线上验证；若返回 `true`，停在用户授权门禁。当前按用户指令暂停所有发布动作，不得使用 GitHub Actions。

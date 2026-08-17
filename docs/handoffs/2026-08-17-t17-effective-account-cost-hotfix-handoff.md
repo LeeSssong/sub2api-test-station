@@ -3,12 +3,12 @@
 ## Start Here
 
 - 任务包：T17
-- 状态：`READY_FOR_ROOT_REVIEW`
+- 状态：`DONE`
 - 分支：`codex/t17-effective-account-cost-hotfix`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t17-effective-account-cost-hotfix`
 - 候选实现 tip：`e6fde59ba`
-- 候选工作区：干净
-- 根总控下一步必须先刷新到最新 `main`；候选当前未包含根 docs-only 提交 `85454d883`。
+- 生产源：`main@892db8cefb37bcab14b0aded8082811ac3935f48`
+- 生产活动槽：`blue`
 
 ## Delivered
 
@@ -18,13 +18,14 @@
 - evidence unavailable、confirmed 与请求失败三类场景均有直接相关回归测试。
 - 后端管理员 DTO/API 未改动；focused contract tests、前端 typecheck/build 均通过。
 
-## Root Integration
+## Root Integration / Production
 
-1. 发布总控将候选刷新到最新根 `main`，如队列/总账状态要求先记录 `REFRESH_REQUIRED`，完成刷新后重新跑 T17 直接相关门禁。
-2. 在合并后的根 `main` 上执行 focused tests、typecheck/build、`git diff --check`、迁移与 `.github/workflows` 零差异检查。
-3. 由发布总控合并、推送并运行既有本地/宿主发布预检。
-4. 若预检返回 `downtime_required=false`，按全局约束直接蓝绿发布和线上验收；若返回 `true`，停在用户授权门禁。
-5. 线上验收需确认：详情、使用记录列表、账号利润/经营页对同一流水使用相同成本数学值；evidence unavailable 时详情仍显示有效账号成本与利润；健康端点正常。
+1. 候选刷新到最新根主线后以 `main@892db8cef` 推送并绑定 0600 测试证据。
+2. 普通预加载蓝绿链完成 `blue` 提升，迁移哈希未变，等效 `downtime_required=false`；未使用维护授权。
+3. 宿主记录 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json` 为 `succeeded/promoted`、`rolled_back=false`。
+4. API/worker 使用同一不可变镜像并保持 healthy/restart 0，公网三项健康端点均 200。
+5. 登录态页面确认 evidence unavailable 时详情仍显示有效账号成本和利润，且与列表成本数学值一致。
+6. 控制器在宿主成功 final record 后因 SSH 关闭产生本地假阴性；已只读确认 release-state/final record/容器/标签一致且无 partial，不需要重试发布。
 
 ## Constraints / Rollback
 

@@ -49,9 +49,21 @@
 
 - 未修改价格、倍率、成本写入、经营页聚合、账务幂等、数据库、生产数据或历史 evidence 表。
 - 未运行全仓测试、压力/soak/mutation、race 或无关浏览器矩阵；这些不属于 T17 直接相关门禁。
-- `downtime_required` 尚未由根发布预检确认；候选在根合并前不得宣称可直接部署。
+- 根发布链以普通预加载蓝绿模式完成，迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`，等效 `downtime_required=false`；未使用维护授权。
 - 功能回滚方式：恢复上一版已验证的不可变蓝绿镜像；本改动无数据库迁移、无历史回填、无运行时开关。
+
+## 生产发布与验收
+
+- 发布源：已推送的根 `main@892db8cefb37bcab14b0aded8082811ac3935f48`，tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`。
+- 0600 测试证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
+- 不可变镜像：`ghcr.io/leesssong/xingqiao-sub2api:release-892db8cefb37bcab14b0aded8082811ac3935f48-3e150376a8e786004b8df26ab10fa6ecac2fa9f991ada91eda31be38e4bfe28a`。
+- 宿主 final record：`/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`，`result=succeeded`、`state=promoted`、`rolled_back=false`。
+- 活动槽：`blue`；API 与 worker 使用同一不可变镜像，均为 `running/healthy/restart 0`；上一 `green` 槽保持 healthy 作为回滚依据。
+- 公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。
+- 控制器在宿主成功写入 final record 后遇到 SSH 连接关闭，因未收到最终 stdout JSON 本地返回失败；只读核对确认 release-state、final record、容器和镜像标签均已一致完成，且没有残留 `.partial`/`.failed` 文件。该故障属于成功落盘后的传输层假阴性，不改变生产发布结果。
+- 生产 API 对 `usage_log_id=125512` 的列表与详情均返回 `account_cost=0.00600594`、`actual_cost=0.0100099`；严格 evidence 为 `unavailable/endpoint_unsupported`。
+- 登录态页面验收：使用记录首行显示账号成本 `$0.012441`；对应详情显示“上游实际扣费 `$0.012441`”与“利润 `$0.012949`”，同时保留严格账单不可用提示，未再显示 `-`。
 
 ## 结论
 
-T17 候选实现和直接相关验证已完成，候选应停在 `READY_FOR_ROOT_REVIEW`。根总控仍需刷新到最新 `main`（当前根含 docs-only 提交 `85454d883`），再执行合并后的专项门禁、推送和发布预检。
+T17 已完成实现、直接相关验证、根合并、推送、无停机蓝绿发布和线上验收，可标记为 `DONE`。

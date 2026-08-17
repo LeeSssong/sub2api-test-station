@@ -3,9 +3,9 @@
 ## Candidate
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 最新根主线基线：`main@40315c7651714a0ec86b3664efed0f325786fb6e`
+- 最新根主线基线：`main@096f37f25688b72eca901173828965133051acf0`
 - 功能实现提交：`0f9ef38f2a0621d9afe5b5c965da025161dba399`
-- 刷新合并提交：`948974db28378e5a42fad97a7cfc41f59166d0f3`
+- 刷新合并提交：`ace57dea3b7fe61fb9bcffe48cf2480112d4409f`
 - 分支：`codex/t19-monitor-v2-cache-eligibility`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`
 - 预期发布属性：`downtime_required=false`
@@ -26,6 +26,7 @@
 - `go test ./cmd/... -run '^$'`：通过。
 - `go build ./cmd/...`：通过。
 - `gofmt`、`git diff --check`：通过。
+- 刷新到 `main@096f37f25` 后重新通过上述直接相关测试、`go build ./cmd/...` 和 `git diff --check main...HEAD`。
 
 ## Remaining Root Work
 

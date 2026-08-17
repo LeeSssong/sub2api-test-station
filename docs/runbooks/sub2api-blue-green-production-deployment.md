@@ -73,12 +73,23 @@ Use this path only after the host preflight has emitted `downtime_required=true`
 for `migration_set_changed` and the user has explicitly authorized
 `允许停机部署`. The controller requires `--maintenance-authorized`; the host
 executor additionally requires `--maintenance-from-hash` to equal the active
-hash below. No other migration transition is accepted:
+hash of one exact transition listed below. No other migration transition is
+accepted.
+
+Historical T12 transition:
 
 ```text
 from ef1213846cba597cbc5cd64238558a3c392585df3568acb321f3227776e88bc5
 to   aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604
 file 224_account_probe_cost_logs.sql (SHA-256 6f737666ba9a4ddd98642f7d6fa21a6356d93f9b93f5444f65156f61011dfd4d) — expand-only independent append-only probe-cost ledger with `ON DELETE RESTRICT`; it leaves `usage_logs` unchanged and performs no historical backfill.
+```
+
+Current T15 transition:
+
+```text
+from aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604
+to   bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951
+file 225_account_model_detection.sql (SHA-256 a5118869580363b2acbc0ee272c286233e880041c33ec4aec19badef00cb5210) — add-only account model-detection settings/runs tables and indexes; no historical backfill, no usage/accounting rewrite, and account deletion uses the reviewed `ON DELETE CASCADE` lifecycle.
 ```
 
 Invoke the same controller with the explicit maintenance flag:
@@ -100,7 +111,9 @@ creates the independent probe-cost table and indexes; it does not modify
 `usage_logs` or backfill history. An
 application rollback restores the previous API/worker images and Caddy
 upstream; it does not automatically remove the new tables or indexes. Preserve the
-`.partial` and failure record if rollback itself fails.
+`.partial` and failure record if rollback itself fails. For the T15 transition,
+the same bounded path applies migration `225_account_model_detection.sql` while
+the API and worker are stopped; PostgreSQL, Redis, and Caddy remain running.
 
 Exact manual recovery command (only after reviewing the preserved partial record):
 
@@ -125,8 +138,8 @@ The `--deadline-epoch` in this manual recovery command is a separate
 recovery-control deadline; its `+600 seconds` value does not authorize or
 extend the 300-second API/worker outage window. Replace the migrations
 placeholder only with the exact previous migration hash recorded in the
-preserved partial/state checkpoint (for this release it is
-`f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc`). Do not
+preserved partial/state checkpoint (for the T15 release it is
+`aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`). Do not
 guess a historical hash. Do not edit `RELEASE_STATE`, skip hash checks, or stop
 shared services during recovery.
 

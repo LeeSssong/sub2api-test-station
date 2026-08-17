@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2 与 S3 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 候选已完成直接相关实现与验证，当前为 `READY_FOR_ROOT_REVIEW`，排在 S3 生产收口之后且不打断已完成单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2 与 S3 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已完成根合并前门禁，当前进入 `INTEGRATING`，排在 S3 生产收口之后且不打断已完成单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@0720b8bf0b5e23486904e571f12b483e7329a9c0`、tree `dad5f6fc35046cead3f61f06191b523f6484a932`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S3 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-0720b8bf0-s3-adaptive-scheduling-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -262,7 +262,7 @@
 
 ### T17 用量详情“上游扣费/利润”统一 Sub 原生有效账号成本口径热修
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`。S3 已完成生产收口；T17 独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t17-effective-account-cost-hotfix`、分支 `codex/t17-effective-account-cost-hotfix` 已从根 `main@120562f95` 刷新，刷新合并提交 `e887bfe44`；正式规格提交 `6a164393d`、实施计划提交 `14528991b` 已经代审批准；候选实现 tip `e6fde59ba`，交接/验证文档提交 `de5da814e`，前端 38/38 focused tests、typecheck/build、后端管理员/DTO focused tests、server compile-only/build 和范围检查均通过。根当前另有 docs-only 提交 `85454d883`，合并前必须先刷新候选。不得并入 S3。
+- 当前状态：`INTEGRATING`。S3 已完成生产收口；T17 独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t17-effective-account-cost-hotfix`、分支 `codex/t17-effective-account-cost-hotfix` 已从根 `main@120562f95` 刷新并无冲突快进合入根 `main@9ffbdbc2a`；正式规格提交 `6a164393d`、实施计划提交 `14528991b` 已经代审批准；候选实现 tip `e6fde59ba`，交接/验证文档提交 `de5da814e`，前端 38/38 focused tests、typecheck/build、后端管理员/DTO focused tests、server compile-only/build 和范围检查均通过。根总控接下来推送该合并树并执行发布预检。不得并入 S3。
 - 已确认问题：使用记录列表与账号利润/经营页均使用 Sub 原生有效账号成本 `COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1))`；用量详情弹窗却以 `usage_upstream_cost_evidence.normalized_cost_cny` 决定主金额，严格 evidence 为 `unavailable` 时显示 `-`，造成同一流水口径不一致；T14 只修复了 PascalCase/snake_case 兼容，未修改事实源。
 - 生产证据：`usage_log_id=125444/125509/125512` 的 `account_cost` 分别为 `0.0033144600/0.0058255200/0.0060059400`，对应利润为 `0.0022096400/0.0038836800/0.0040039600`，详情当前均显示 `-`。账号 214 当日 518 笔均有 `account_cost`，账号成本合计与利润页成本均为 `4.9629669888`，用户扣费 `8.2716116480`，利润 `3.3086446592`，但 518 笔严格 evidence 均为 `unavailable`。两个详情 API 均 HTTP 200，证明为选错主事实源而非接口失败。
 - 目标：详情“上游扣费”读取 effective account cost，利润统一为 `actual_cost - effective_account_cost`；历史 `account_cost` 为空时使用上述 fallback。`usage_upstream_cost_evidence` 只作严格账单核验状态/原因，不得决定主金额是否显示或成为利润主事实源。同一流水在列表、详情和账号利润/经营页的成本数学值必须一致，允许展示精度不同。

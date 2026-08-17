@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -51,4 +52,32 @@ func TestOpenAIRetryBudgetStopsAtDeadlineAndUnsafeReplay(t *testing.T) {
 	require.True(t, budget.DeadlineReached())
 	require.Zero(t, budget.Remaining())
 	require.False(t, budget.ConsumeAttempt(12))
+}
+
+func TestOpenAIRetryBudgetHonorsRetryAfterDeltaAndHTTPDate(t *testing.T) {
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 3, MaxFailureDomains: 2, Total: 5 * time.Second, BackoffInitial: 120 * time.Millisecond, BackoffMax: 2 * time.Second}, func() time.Time { return now })
+
+	delay, ok := budget.RetryDelay(&service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, ResponseHeaders: http.Header{"Retry-After": []string{"3"}}}, 1)
+	require.True(t, ok)
+	require.Equal(t, 3*time.Second, delay)
+
+	delay, ok = budget.RetryDelay(&service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, ResponseHeaders: http.Header{"Retry-After": []string{now.Add(4 * time.Second).Format(http.TimeFormat)}}}, 1)
+	require.True(t, ok)
+	require.Equal(t, 4*time.Second, delay)
+
+	_, ok = budget.RetryDelay(&service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, ResponseHeaders: http.Header{"Retry-After": []string{"6"}}}, 1)
+	require.False(t, ok, "Retry-After beyond the total request budget must exhaust instead of sleeping past the deadline")
+}
+
+func TestOpenAIRetryBudgetBoundsExponentialBackoff(t *testing.T) {
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 3, MaxFailureDomains: 2, Total: 5 * time.Second, BackoffInitial: 120 * time.Millisecond, BackoffMax: 2 * time.Second}, func() time.Time { return now })
+	failure := &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}
+
+	for attempt, want := range []time.Duration{120 * time.Millisecond, 240 * time.Millisecond, 480 * time.Millisecond, 960 * time.Millisecond, 1920 * time.Millisecond, 2 * time.Second} {
+		delay, ok := budget.RetryDelay(failure, attempt+1)
+		require.True(t, ok)
+		require.Equal(t, want, delay)
+	}
 }

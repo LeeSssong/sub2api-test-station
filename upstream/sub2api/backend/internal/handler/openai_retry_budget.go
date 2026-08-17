@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +15,8 @@ type openAIRetryBudgetConfig struct {
 	MaxAccountSwitches int
 	MaxFailureDomains  int
 	Total              time.Duration
+	BackoffInitial     time.Duration
+	BackoffMax         time.Duration
 }
 
 type openAIRetryBudget struct {
@@ -43,6 +47,12 @@ func openAIRetryBudgetConfigFromConfig(cfg *config.Config) openAIRetryBudgetConf
 			if candidate.TotalRetryBudgetMS > 0 {
 				shared.TotalRetryBudgetMS = candidate.TotalRetryBudgetMS
 			}
+			if candidate.BackoffInitialMS >= 0 {
+				shared.BackoffInitialMS = candidate.BackoffInitialMS
+			}
+			if candidate.BackoffMaxMS > 0 {
+				shared.BackoffMaxMS = candidate.BackoffMaxMS
+			}
 		}
 	}
 	if shared.MaxAttempts > 4 {
@@ -57,9 +67,17 @@ func openAIRetryBudgetConfigFromConfig(cfg *config.Config) openAIRetryBudgetConf
 	if shared.TotalRetryBudgetMS > 5000 {
 		shared.TotalRetryBudgetMS = 5000
 	}
+	if shared.BackoffInitialMS < 0 {
+		shared.BackoffInitialMS = 0
+	}
+	if shared.BackoffMaxMS < shared.BackoffInitialMS || shared.BackoffMaxMS > 2000 {
+		shared.BackoffMaxMS = 2000
+	}
 	return openAIRetryBudgetConfig{
 		MaxAttempts: shared.MaxAttempts, MaxAccountSwitches: shared.MaxAccountSwitches,
 		MaxFailureDomains: shared.MaxFailureDomains, Total: time.Duration(shared.TotalRetryBudgetMS) * time.Millisecond,
+		BackoffInitial: time.Duration(shared.BackoffInitialMS) * time.Millisecond,
+		BackoffMax:     time.Duration(shared.BackoffMaxMS) * time.Millisecond,
 	}
 }
 
@@ -78,6 +96,15 @@ func newOpenAIRetryBudget(cfg openAIRetryBudgetConfig, now func() time.Time) *op
 	}
 	if cfg.Total <= 0 || cfg.Total > 5*time.Second {
 		cfg.Total = 5 * time.Second
+	}
+	if cfg.BackoffInitial < 0 {
+		cfg.BackoffInitial = 0
+	}
+	if cfg.BackoffInitial == 0 {
+		cfg.BackoffInitial = 120 * time.Millisecond
+	}
+	if cfg.BackoffMax < cfg.BackoffInitial || cfg.BackoffMax > 2*time.Second {
+		cfg.BackoffMax = 2 * time.Second
 	}
 	startedAt := now()
 	return &openAIRetryBudget{cfg: cfg, now: now, deadline: startedAt.Add(cfg.Total), domains: make(map[string]struct{})}
@@ -169,6 +196,50 @@ func (b *openAIRetryBudget) Remaining() time.Duration {
 
 func (b *openAIRetryBudget) DeadlineReached() bool {
 	return b == nil || b.Remaining() <= 0
+}
+
+func (b *openAIRetryBudget) RetryDelay(failure *service.UpstreamFailoverError, retryCount int) (time.Duration, bool) {
+	if b == nil || b.DeadlineReached() {
+		return 0, false
+	}
+	if failure != nil && failure.StatusCode == http.StatusTooManyRequests {
+		if delay, ok := parseOpenAIRetryAfter(failure.ResponseHeaders, b.now()); ok {
+			return delay, delay <= b.Remaining()
+		}
+	}
+	if retryCount < 1 {
+		retryCount = 1
+	}
+	delay := b.cfg.BackoffInitial
+	for attempt := 1; attempt < retryCount && delay < b.cfg.BackoffMax; attempt++ {
+		delay *= 2
+		if delay > b.cfg.BackoffMax {
+			delay = b.cfg.BackoffMax
+		}
+	}
+	return delay, delay <= b.Remaining()
+}
+
+func parseOpenAIRetryAfter(headers http.Header, now time.Time) (time.Duration, bool) {
+	if headers == nil {
+		return 0, false
+	}
+	raw := strings.TrimSpace(headers.Get("Retry-After"))
+	if raw == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.ParseUint(raw, 10, 31); err == nil {
+		return time.Duration(seconds) * time.Second, true
+	}
+	retryAt, err := http.ParseTime(raw)
+	if err != nil {
+		return 0, false
+	}
+	delay := retryAt.Sub(now)
+	if delay < 0 {
+		delay = 0
+	}
+	return delay, true
 }
 
 func boolIntHandler(value bool) int {

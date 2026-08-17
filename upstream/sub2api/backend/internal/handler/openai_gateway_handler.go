@@ -949,7 +949,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
 						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
+						if !withinBudget {
+							h.handleFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
 						reqLog.Warn("openai.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1664,7 +1668,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
 						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
+						if !withinBudget {
+							h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
 						reqLog.Warn("openai_messages.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),

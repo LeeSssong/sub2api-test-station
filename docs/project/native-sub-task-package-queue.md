@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 已进入 `IMPLEMENTING`，独立 worktree 正按已批准计划继续 TDD。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已登记为 `BACKLOG`，排在 S3 生产收口之后，不打断当前单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2 与 S2 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；S3 候选 `codex/s3-adaptive-scheduling-experience@026b7b26d` 已完成实现、直接相关验证和最新 `main` 刷新，进入 `INTEGRATING`。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`；T17 已登记为 `BACKLOG`，排在 S3 生产收口之后，不打断当前单车道。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@aab79007fc90c842eaf9971b6f5304f4ab7b6503`、tree `c33145f1fdac4bf4b28d4cdc516036d3d938f75e`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；S2 预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T072052Z-production-1893124.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-aab79007f-s2-shared-health-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -199,7 +199,7 @@
 
 ### S3 自适应选择、粘性逃逸与调度体验观测
 
-- 当前状态：`IMPLEMENTING`。S2 已完成生产验收；发布总控已完成非 `main` worktree 盘点，T15、T16 和历史候选的保护边界不变。S3 以根 `main@83c4554792d3424751a439f3fd1cc38a0542ed5e` 为实施基线，在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s3-adaptive-scheduling-experience` 和分支 `codex/s3-adaptive-scheduling-experience` 上完成正式规格、计划以及配置、动态 Top-K、sticky 解释、TTFT report-only 与 selection/outcome 事件的已提交实现；当前继续 Ops 派生指标与管理 API 的 TDD。
+- 当前状态：`INTEGRATING`。独立候选 `codex/s3-adaptive-scheduling-experience@026b7b26d` 已完成正式规格、计划、动态 Top-K、sticky 解释、TTFT report-only、selection/outcome 事件、Ops 指标/API/卡片及直接相关验证；已刷新根 `main@7beea7332`，刷新后 config/service/handler/admin/routes focused tests、server compile/build、前端 3 files / 9 tests、typecheck/build、diff-check、零迁移和零 GitHub Actions 范围检查均通过。发布总控正在串行合入根 `main`；尚未推送、预检、部署或线上验收。
 - 目标：消费 S1/S2 的健康与预算决定，先健康门槛、再动态 Top-K/最低质量阈值、再可解释 sticky escape；仅对安全重放且尚未输出的请求做 TTFT report-only/受控预热；在现有原生监控/运维入口呈现自动恢复率、平均尝试数、坏账号重复命中率、缓存代价和预算耗尽率。
 - 独立边界：不重新定义错误状态、S2 重试上限、价格、账务或控制面；默认不启用并行竞速；S1/S2 veto 永远优先于分数和 sticky；目标发布属性 `downtime_required=false`。
 

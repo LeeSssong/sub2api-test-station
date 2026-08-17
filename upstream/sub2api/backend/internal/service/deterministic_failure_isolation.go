@@ -50,10 +50,13 @@ func classifyDeterministicUpstreamFailure(account *Account, statusCode int, resp
 	if code == "" {
 		code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "code").String()))
 	}
+	if statusCode == 402 && strings.EqualFold(strings.TrimSpace(gjson.GetBytes(responseBody, "detail.code").String()), "deactivated_workspace") {
+		return DeterministicFailureDecision{}
+	}
 	if isDeterministicBalanceEvidence(statusCode, code, text) {
 		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicBalanceClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "insufficient_balance"), RecoveryPolicy: deterministicExpiresPolicy}
 	}
-	if statusCode == 401 && isCredentialFailureCode(code, text) {
+	if statusCode == 401 && (account.Type == AccountTypeAPIKey || isCredentialFailureCode(code, text)) {
 		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicCredentialClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "unauthorized"), RecoveryPolicy: deterministicProbePolicy}
 	}
 	model := strings.TrimSpace(requestedModel)

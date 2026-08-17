@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 已完成推送、蓝绿发布和线上健康验收，当前为 `DONE`；S2 刷新候选 `codex/s2-shared-health-failure-domain@33d9fdb6a` 已无冲突进入根 `main` 合并树，当前为 `INTEGRATING`，正在执行合并树直接相关验证。S3 保持 `BACKLOG`。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2 已完成推送、蓝绿发布和线上健康验收，当前为 `DONE`；S2 刷新候选 `codex/s2-shared-health-failure-domain@33d9fdb6a` 已合入根 `main@d1f9bc06c`，合并树直接相关验证、server 编译/构建、格式及迁移/工作流范围检查通过，当前为 `DEPLOYING`。S3 保持 `BACKLOG`。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@2271b81874d9dfc5eb0894bd02e0f30c2a1f085b`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；本次预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -188,14 +188,14 @@
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
 - T15 候选继续停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已完成根 `main@2271b818` 的推送、预加载蓝绿发布与线上健康验收，进入 `DONE`。
 - S1-R2 生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像绑定 `main@2271b818`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。未触发人为上游失败或修改生产账号；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
-- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 已进入 `DONE`；S2 刷新候选已进入根合并树验证，仍未推送功能代码/预检/部署，S3 仍不得在 S2 生产验收前启动。
+- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 已进入 `DONE`；S2 已合入并验证根 `main`，正在推送和执行发布预检，尚未部署，S3 仍不得在 S2 生产验收前启动。
 
 ### S2 共享健康、故障域与抗故障重试
 
-- 当前状态：`INTEGRATING`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s2-shared-health-failure-domain`、分支 `codex/s2-shared-health-failure-domain`，刷新候选 `33d9fdb6a` 已整合根 `main@566fc52ba`；运行时修复 tip `e3d905412` 已按 TDD 补齐普通成功 Redis success reset、Redis 无可信快照时最多一次剩余跨账号尝试、provider channel/quota pool 未失败域优先选号、稳定 0–20% jitter、五类预算耗尽 reason 和 Chat shared failure event。刷新候选上的 repository/service/handler/config 聚焦测试、server compile-only、server build、gofmt 与 diff-check 均通过；带 `integration` 标签的真实 Redis 用例仍被既有无关 `stringPtr` 重名编译冲突阻断。候选现已无冲突进入根 `main` 合并树，正在重跑同一直接相关验证与范围门禁。交接与验证见 `docs/handoffs/2026-08-17-s2-shared-health-failure-domain-handoff.md`、`docs/superpowers/reports/2026-08-17-s2-shared-health-failure-domain-verification.md`。
+- 当前状态：`DEPLOYING`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/s2-shared-health-failure-domain`、分支 `codex/s2-shared-health-failure-domain`，刷新候选 `33d9fdb6a` 已整合根 `main@566fc52ba`，并无冲突合入根 `main@d1f9bc06c`；运行时修复 tip `e3d905412` 已按 TDD 补齐普通成功 Redis success reset、Redis 无可信快照时最多一次剩余跨账号尝试、provider channel/quota pool 未失败域优先选号、稳定 0–20% jitter、五类预算耗尽 reason 和 Chat shared failure event。合并树 repository/service/handler/config 聚焦测试、server compile-only、server build、gofmt、diff-check、零迁移和零 GitHub Actions 范围检查均通过；带 `integration` 标签的真实 Redis 用例仍被既有无关 `stringPtr` 重名编译冲突阻断。下一步推送根 `main` 并执行既有发布预检。交接与验证见 `docs/handoffs/2026-08-17-s2-shared-health-failure-domain-handoff.md`、`docs/superpowers/reports/2026-08-17-s2-shared-health-failure-domain-verification.md`。
 - 目标：以 Redis 承载可重建的跨实例账号模型 transient/EWMA/half-open 与故障域运行时投影；保持 S1 数据库确定性隔离为唯一权威；为单一逻辑请求统一最大尝试数、账号切换数、故障域数和总重试预算；429 尊重 `Retry-After`，5xx/连接错误受有界指数退避；Redis 故障按本地 fail-safe 降级，不放行 S1 veto、不造成全站失败。
 - 独立边界：不改变 S1 分类/原生状态、不改变 Top-K/粘性体验、不迁移管理员审计到 Redis、不改变价格、倍率、账务或外部控制面；不开启默认 TTFT 并行竞速；目标发布属性 `downtime_required=false`。
-- 依赖与门禁：S1 已完成生产验收；S2 已满足候选完成门槛并进入根合并树验证。验证通过后由根总控提交并推送 `main`、执行发布预检；预检为 `downtime_required=false` 时直接继续蓝绿切换与线上验证，为 `true` 时在任何生产变更前暂停请求用户授权。S3 只能在 S2 完成生产验收后启动。
+- 依赖与门禁：S1 已完成生产验收；S2 已完成根合并树验证，由根总控推送 `main` 并执行发布预检。预检为 `downtime_required=false` 时直接继续蓝绿切换与线上验证，为 `true` 时在任何生产变更前暂停请求用户授权。S3 只能在 S2 完成生产验收后启动。
 
 ### S3 自适应选择、粘性逃逸与调度体验观测
 

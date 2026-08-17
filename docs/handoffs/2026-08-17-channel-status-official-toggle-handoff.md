@@ -8,9 +8,10 @@
 
 ## 候选身份
 
-- 最新根主线基线：`78dc540e38d144bdac0c93e038690b6960b65fd5`
+- 最新根主线基线：`40315c7651714a0ec86b3664efed0f325786fb6e`
 - 功能实现提交：`ee52dd5ea`
-- 刷新后运行时/规格/计划 tree：`1652f29dd5b795556b74b92280ef4542913cf101`
+- 刷新后候选提交：`d85ef471e6573d693ef5256c7b545383561245ec`
+- 刷新后运行时/规格/计划 tree：`a32d0f808ea4dd9a2e7551806eba6a8082f8ed26`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`
 - 分支：`codex/channel-status-official-toggle`
 - 候选状态：`READY_FOR_ROOT_REVIEW`
@@ -51,5 +52,5 @@ TDD 证据：新增官方模式测试先在旧实现上按预期失败（官方 
 ## 未验证项与剩余风险
 
 - 尚未合并根 `main`、推送、生产设置切换或线上验收。
-- T15 当前发布车道仍由唯一总控占用，且最新总账已记录停机门禁；本候选不自行插队或执行生产动作。
+- T15 当前发布车道仍由唯一总控占用，且最新总账已记录停机门禁；用户最新指令为暂不发布，本候选不自行插队或执行生产动作。
 - 官方页面自身的被动聚合数据和官方 V2 配置保持现状，本任务不重定义其统计口径。

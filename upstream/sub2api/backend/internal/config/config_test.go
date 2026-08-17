@@ -561,6 +561,18 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate != 0.5 {
 		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeErrorRate = %v, want 0.5", cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate)
 	}
+	if !cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKEnabled = false, want true")
+	}
+	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax != 7 {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKMax = %d, want 7", cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax)
+	}
+	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap != 0.15 {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = %v, want 0.15", cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap)
+	}
+	if !cfg.Gateway.OpenAIScheduler.TTFTReportOnlyEnabled {
+		t.Fatalf("Gateway.OpenAIScheduler.TTFTReportOnlyEnabled = false, want true")
+	}
 	if !cfg.Gateway.OpenAIWS.SessionHashReadOldFallback {
 		t.Fatalf("Gateway.OpenAIWS.SessionHashReadOldFallback = false, want true")
 	}
@@ -2452,6 +2464,26 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "sticky_escape_error_rate 不能大于 1",
 			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 1.1 },
 			wantErr: "gateway.openai_scheduler.sticky_escape_error_rate",
+		},
+		{
+			name:    "adaptive_top_k_max 必须为正数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKMax = 0 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_max",
+		},
+		{
+			name:    "adaptive_top_k_max 不能超过 32",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKMax = 33 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_max",
+		},
+		{
+			name:    "adaptive_top_k_score_gap 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = -0.01 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_score_gap",
+		},
+		{
+			name:    "adaptive_top_k_score_gap 不能超过 10",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = 10.01 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_score_gap",
 		},
 	}
 

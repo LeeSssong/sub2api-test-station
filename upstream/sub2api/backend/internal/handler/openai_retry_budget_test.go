@@ -130,6 +130,23 @@ func TestOpenAIRetryBudgetRetainsObservedFailureDomainsForSchedulerPreference(t 
 	require.Equal(t, want, budget.ObservedDomains())
 }
 
+func TestOpenAITTFTReportEligibleRequiresSafePreOutputCapacity(t *testing.T) {
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 3, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+
+	require.True(t, openAITTFTReportEligible(true, false, false, 2, budget))
+	require.False(t, openAITTFTReportEligible(false, false, false, 2, budget))
+	require.False(t, openAITTFTReportEligible(true, true, false, 2, budget))
+	require.False(t, openAITTFTReportEligible(true, false, true, 2, budget))
+	require.False(t, openAITTFTReportEligible(true, false, false, 1, budget))
+
+	require.True(t, budget.ConsumeAttempt(11))
+	require.True(t, budget.ConsumeAttempt(11))
+	require.True(t, budget.ConsumeAttempt(11))
+	require.True(t, budget.ConsumeAttempt(11))
+	require.False(t, openAITTFTReportEligible(true, false, false, 2, budget))
+}
+
 func minDuration(left, right time.Duration) time.Duration {
 	if left < right {
 		return left

@@ -173,6 +173,31 @@ export default {
           requestsWithFirstToken: 'Requests With First Token'
         }
       },
+      openaiSchedulerExperience: {
+        title: 'OpenAI Scheduler Experience',
+        failedToLoad: 'Failed to load OpenAI scheduler experience metrics',
+        retry: 'Retry',
+        empty: 'No OpenAI scheduler runtime records for the current filters',
+        ratio: '{numerator} / {denominator}',
+        sampleSize: '{count} samples',
+        p95: 'P95 {value}',
+        latestEvent: 'Latest event:',
+        runtimeWindow: 'Runtime window:',
+        status: {
+          insufficientData: 'Insufficient data',
+          noData: 'No data'
+        },
+        metrics: {
+          autoRecoveryRate: 'Auto-recovery rate',
+          averageAttempts: 'Average attempts',
+          repeatedBadAccountRate: 'Repeated bad-account rate',
+          retryBudgetExhaustedRate: 'Retry-budget exhausted rate',
+          stickyKeptRate: 'Sticky kept rate',
+          stickyEscapeRate: 'Sticky escape rate',
+          topKFilteredRate: 'Top-K filtered rate',
+          ttftReportEligibleRate: 'TTFT report-eligible rate'
+        }
+      },
       fullscreen: {
         enter: 'Enter Fullscreen'
       },

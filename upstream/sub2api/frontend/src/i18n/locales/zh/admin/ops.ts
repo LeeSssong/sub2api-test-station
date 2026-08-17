@@ -169,6 +169,31 @@ export default {
           requestsWithFirstToken: '首 Token 样本数'
         }
       },
+      openaiSchedulerExperience: {
+        title: 'OpenAI 调度体验',
+        failedToLoad: '加载 OpenAI 调度体验指标失败',
+        retry: '重试',
+        empty: '当前筛选条件下暂无 OpenAI 调度运行记录',
+        ratio: '{numerator} / {denominator}',
+        sampleSize: '样本 {count}',
+        p95: 'P95 {value}',
+        latestEvent: '最近事件：',
+        runtimeWindow: '运行窗口：',
+        status: {
+          insufficientData: '样本不足',
+          noData: '暂无数据'
+        },
+        metrics: {
+          autoRecoveryRate: '自动恢复率',
+          averageAttempts: '平均尝试次数',
+          repeatedBadAccountRate: '重复命中坏账号率',
+          retryBudgetExhaustedRate: '重试预算耗尽率',
+          stickyKeptRate: '粘性保留率',
+          stickyEscapeRate: '粘性逃逸率',
+          topKFilteredRate: 'Top-K 过滤率',
+          ttftReportEligibleRate: 'TTFT 报告合格率'
+        }
+      },
       customTimeRange: {
         startTime: '开始时间',
         endTime: '结束时间'

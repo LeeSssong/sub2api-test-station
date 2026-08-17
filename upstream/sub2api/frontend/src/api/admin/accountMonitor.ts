@@ -2,6 +2,7 @@ import { apiClient } from '../client'
 import type { WindowStats } from '@/types'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
+export type AccountModelDetectionStatus = 'untested' | 'queued' | 'running' | 'normal' | 'abnormal' | 'insufficient' | 'failed' | 'unsupported' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
 export type AccountMonitorAvailabilityStatus = 'normal' | 'abnormal' | 'unavailable' | 'disabled' | 'stale' | string
 export type AccountMonitorScoreStatus = 'eligible' | 'capped' | 'ineligible' | string
@@ -159,6 +160,8 @@ export interface AccountMonitorAccount {
   group_ids: number[]
   group_names: string[]
   model_id: string
+  connection_probe_model?: string
+  model_detection?: AccountModelDetectionProjection | null
   latest_status: AccountMonitorStatus
   error_code?: string
   probe_sample_count: number
@@ -203,6 +206,63 @@ export interface AccountMonitorAccount {
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence
   group_recommendation?: AccountMonitorGroupRecommendation | null
+}
+
+export interface AccountModelDetectionModelOption {
+  id: string
+  supported: boolean
+  selected: boolean
+  reason?: string
+}
+
+export interface AccountModelDetectionSettings {
+  account_id: number
+  connection_probe_model: string
+  model_detection_model: string
+  updated_by?: number
+  updated_at?: string
+}
+
+export interface AccountModelDetectionSummary {
+  status: AccountModelDetectionStatus
+  model_id?: string
+  claimed_model?: string
+  juice_status?: string
+  juice_summary?: Record<string, unknown>
+  fingerprint_candidate?: string
+  fingerprint_similarity?: Record<string, unknown>
+  detector_version?: string
+  error_code?: string
+  error_message?: string
+  queued_at?: string
+  started_at?: string
+  finished_at?: string
+  run_id?: string
+}
+
+export interface AccountModelDetectionProjection {
+  status: AccountModelDetectionStatus
+  settings: AccountModelDetectionSettings
+  model_options: AccountModelDetectionModelOption[]
+  recent?: AccountModelDetectionSummary | null
+}
+
+export interface AccountModelDetectionModelsResponse {
+  account_id: number
+  connection_probe_model: string
+  model_detection_model: string
+  connection_models: AccountModelDetectionModelOption[]
+  detection_models: AccountModelDetectionModelOption[]
+}
+
+export interface AccountModelDetectionRunResponse {
+  status: AccountModelDetectionStatus
+  run_id: string
+  reused: boolean
+}
+
+export interface AccountModelDetectionHistoryResponse {
+  items: AccountModelDetectionSummary[]
 }
 
 export interface AccountMonitorGroup {
@@ -315,6 +375,26 @@ export async function history(accountID: number, limit = 25): Promise<AccountMon
   return data
 }
 
+export async function getModelDetectionModels(accountID: number): Promise<AccountModelDetectionModelsResponse> {
+  const { data } = await apiClient.get<AccountModelDetectionModelsResponse>(`/admin/account-monitors/${accountID}/models`)
+  return data
+}
+
+export async function saveModelDetectionModels(accountID: number, payload: Pick<AccountModelDetectionModelsResponse, 'connection_probe_model' | 'model_detection_model'>): Promise<AccountModelDetectionModelsResponse> {
+  const { data } = await apiClient.put<AccountModelDetectionModelsResponse>(`/admin/account-monitors/${accountID}/models`, payload)
+  return data
+}
+
+export async function enqueueModelDetection(accountID: number): Promise<AccountModelDetectionRunResponse> {
+  const { data } = await apiClient.post<AccountModelDetectionRunResponse>(`/admin/account-monitors/${accountID}/detection`)
+  return data
+}
+
+export async function modelDetectionHistory(accountID: number): Promise<AccountModelDetectionHistoryResponse> {
+  const { data } = await apiClient.get<AccountModelDetectionHistoryResponse>(`/admin/account-monitors/${accountID}/detection`)
+  return data
+}
+
 export async function getGroupScoreWeights(groupID: number): Promise<AccountMonitorScoreWeights> {
   const { data } = await apiClient.get<AccountMonitorScoreWeights>(
     `/admin/account-monitors/groups/${groupID}/score-weights`,
@@ -362,6 +442,10 @@ const accountMonitorAPI = {
   runAll,
   runOne,
   history,
+  getModelDetectionModels,
+  saveModelDetectionModels,
+  enqueueModelDetection,
+  modelDetectionHistory,
   getGroupScoreWeights,
   updateGroupScoreWeights,
   resetGroupScoreWeights,

@@ -7,10 +7,16 @@ import (
 	"time"
 )
 
+var (
+	accountModelDetectionScheduleInterval = 30 * time.Second
+	accountModelDetectionQueueInterval    = time.Second
+)
+
 type AccountMonitorRunner struct {
-	svc    *AccountMonitorService
-	ctx    context.Context
-	cancel context.CancelFunc
+	svc      *AccountMonitorService
+	detector *AccountModelDetectionService
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	mu       sync.Mutex
 	interval time.Duration
@@ -20,6 +26,12 @@ type AccountMonitorRunner struct {
 	stopped  bool
 	wg       sync.WaitGroup
 	runMu    sync.Mutex
+}
+
+func (r *AccountMonitorRunner) SetModelDetectionService(detector *AccountModelDetectionService) {
+	if r != nil {
+		r.detector = detector
+	}
 }
 
 func NewAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {
@@ -54,8 +66,9 @@ func (r *AccountMonitorRunner) Start() {
 	r.interval = time.Duration(settings.IntervalSeconds) * time.Second
 	r.mu.Unlock()
 
-	r.wg.Add(1)
+	r.wg.Add(2)
 	go r.loop()
+	go r.detectionLoop()
 	r.TriggerNow()
 }
 
@@ -126,6 +139,42 @@ func (r *AccountMonitorRunner) loop() {
 		case <-timer.C:
 			r.runOnce()
 		}
+	}
+}
+
+func (r *AccountMonitorRunner) detectionLoop() {
+	defer r.wg.Done()
+	if r.detector == nil {
+		return
+	}
+	r.runDueDetectionSlots()
+	r.runQueuedDetections()
+	scheduleTicker := time.NewTicker(accountModelDetectionScheduleInterval)
+	defer scheduleTicker.Stop()
+	queueTicker := time.NewTicker(accountModelDetectionQueueInterval)
+	defer queueTicker.Stop()
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-scheduleTicker.C:
+			r.runDueDetectionSlots()
+			r.runQueuedDetections()
+		case <-queueTicker.C:
+			r.runQueuedDetections()
+		}
+	}
+}
+
+func (r *AccountMonitorRunner) runDueDetectionSlots() {
+	if _, err := r.detector.RunDueSlots(r.ctx); err != nil {
+		slog.Warn("account_model_detection: schedule failed", "error", err)
+	}
+}
+
+func (r *AccountMonitorRunner) runQueuedDetections() {
+	if _, err := r.detector.RunQueued(r.ctx); err != nil {
+		slog.Warn("account_model_detection: queue poll failed", "error", err)
 	}
 }
 

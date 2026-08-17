@@ -103,6 +103,20 @@ func TestAccountMonitorRoutesRegisterWindowEndpointAndKeepLegacyEndpoint(t *test
 	auditLog := servermiddleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
 	stepUp := servermiddleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() })
 	RegisterAdminRoutes(router.Group("/api/v1"), handlers, adminAuth, auditLog, stepUp, nil, nil)
+	routes := map[string]bool{}
+	for _, route := range router.Routes() {
+		routes[route.Method+" "+route.Path] = true
+	}
+	for _, route := range []string{
+		http.MethodGet + " /api/v1/admin/account-monitors/:account_id/models",
+		http.MethodPut + " /api/v1/admin/account-monitors/:account_id/models",
+		http.MethodPost + " /api/v1/admin/account-monitors/:account_id/detection",
+		http.MethodGet + " /api/v1/admin/account-monitors/:account_id/detection",
+	} {
+		if !routes[route] {
+			t.Fatalf("missing route %s", route)
+		}
+	}
 
 	for _, tt := range []struct {
 		name         string

@@ -196,7 +196,13 @@
           :running="runningAll || runningAccountIDs.includes(account.account_id)"
           :statistics-cutoff="projection?.observed_at ?? null"
           :selected-range="activeRange"
+          :model-detection-models="modelDetectionModelsByID[account.account_id] ?? null"
+          :saving-model-detection="savingModelDetectionIDs.includes(account.account_id)"
+          :detecting-model-detection="detectingModelDetectionIDs.includes(account.account_id)"
           @refresh="handleRunOne"
+          @edit-connection-probe-model="loadModelDetectionModels"
+          @save-model-detection-models="saveModelDetectionModels"
+          @detect-model-detection="enqueueModelDetection"
           @update-priority="updatePriority"
           @edit-cost="openCostDialog"
           @account-info="openAccountInfo"
@@ -299,6 +305,7 @@ import type {
   AccountMonitorProjection,
   AccountMonitorRange,
   AccountMonitorScoreWeights,
+  AccountModelDetectionModelsResponse,
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
@@ -353,6 +360,9 @@ const status = ref('')
 const loading = ref(false)
 const runningAll = ref(false)
 const runningAccountIDs = ref<number[]>([])
+const modelDetectionModelsByID = ref<Record<number, AccountModelDetectionModelsResponse>>({})
+const savingModelDetectionIDs = ref<number[]>([])
+const detectingModelDetectionIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
 const showScoreDialog = ref(false)
@@ -655,6 +665,47 @@ async function handleRunOne(accountID: number) {
     appStore.showError(extractApiErrorMessage(reason, t('admin.accountMonitor.messages.refreshFailed')))
   } finally {
     runningAccountIDs.value = runningAccountIDs.value.filter((id) => id !== accountID)
+  }
+}
+
+async function loadModelDetectionModels(account: AccountMonitorAccount) {
+  try {
+    const models = await adminAPI.accountMonitor.getModelDetectionModels(account.account_id)
+    modelDetectionModelsByID.value = { ...modelDetectionModelsByID.value, [account.account_id]: models }
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '加载账号检测模型失败'))
+  }
+}
+
+async function saveModelDetectionModels(accountID: number, payload: { connectionModel: string; detectionModel: string }) {
+  if (savingModelDetectionIDs.value.includes(accountID)) return
+  savingModelDetectionIDs.value = [...savingModelDetectionIDs.value, accountID]
+  try {
+    const models = await adminAPI.accountMonitor.saveModelDetectionModels(accountID, {
+      connection_probe_model: payload.connectionModel,
+      model_detection_model: payload.detectionModel,
+    })
+    modelDetectionModelsByID.value = { ...modelDetectionModelsByID.value, [accountID]: models }
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess('账号连接测试模型与检测模型已保存')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '保存账号检测模型失败'))
+  } finally {
+    savingModelDetectionIDs.value = savingModelDetectionIDs.value.filter((id) => id !== accountID)
+  }
+}
+
+async function enqueueModelDetection(accountID: number) {
+  if (detectingModelDetectionIDs.value.includes(accountID)) return
+  detectingModelDetectionIDs.value = [...detectingModelDetectionIDs.value, accountID]
+  try {
+    const result = await adminAPI.accountMonitor.enqueueModelDetection(accountID)
+    await load(activeRange.value, { notifyError: false })
+    appStore.showSuccess(result.reused ? '已复用该账号正在进行的检测' : '账号模型检测已排队')
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '账号模型检测排队失败'))
+  } finally {
+    detectingModelDetectionIDs.value = detectingModelDetectionIDs.value.filter((id) => id !== accountID)
   }
 }
 

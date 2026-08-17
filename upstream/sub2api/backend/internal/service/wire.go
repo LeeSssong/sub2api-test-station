@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"os"
 	"time"
 
@@ -1007,6 +1008,9 @@ var ProviderSet = wire.NewSet(
 	ProvideAccountMonitorAccountRepository,
 	ProvideAccountMonitorService,
 	ProvideAccountMonitorRunner,
+	ProvideAccountModelDetectionSidecar,
+	ProvideAccountModelDetectionAccountReader,
+	ProvideAccountModelDetectionService,
 	ProvideChannelMonitorV2Service,
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
@@ -1110,11 +1114,13 @@ func ProvideAccountMonitorService(
 	accountUsageService *AccountUsageService,
 	billingService *BillingService,
 	upstreamBillingProbeService *UpstreamBillingProbeService,
+	detectionService *AccountModelDetectionService,
 ) *AccountMonitorService {
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
 	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
 	service := NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
 	service.costPricing = billingService
+	service.SetModelDetectionService(detectionService)
 	return service
 }
 
@@ -1122,12 +1128,25 @@ func ProvideAccountMonitorAccountRepository(repo AccountRepository) AccountMonit
 	return repo
 }
 
-func ProvideAccountMonitorRunner(svc *AccountMonitorService, cfg *config.Config) *AccountMonitorRunner {
+func ProvideAccountMonitorRunner(svc *AccountMonitorService, detector *AccountModelDetectionService, cfg *config.Config) *AccountMonitorRunner {
 	runner := NewAccountMonitorRunner(svc)
+	runner.SetModelDetectionService(detector)
 	if shouldStartSingleton(cfg) {
 		runner.Start()
 	}
 	return runner
+}
+
+func ProvideAccountModelDetectionAccountReader(repo AccountRepository) AccountModelDetectionAccountReader {
+	return repo
+}
+
+func ProvideAccountModelDetectionSidecar() AccountModelDetectionSidecar {
+	return NewHTTPAccountModelDetectionSidecar(os.Getenv("SUB2API_MODEL_DETECTOR_URL"), os.Getenv("SUB2API_MODEL_DETECTOR_TOKEN"), &http.Client{Timeout: 45 * time.Second})
+}
+
+func ProvideAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar) *AccountModelDetectionService {
+	return NewAccountModelDetectionService(repo, accounts, sidecar)
 }
 
 // ProvideChannelMonitorV2Service wires settings for user-facing privacy flags

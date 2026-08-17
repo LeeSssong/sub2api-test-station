@@ -15,6 +15,29 @@ vi.mock('vue-i18n', async () => {
         'admin.accountMonitor.status.pending': '待确认',
         'admin.accountMonitor.status.paused': '暂停',
         'admin.accountMonitor.status.unavailable': '不可用',
+        'admin.accounts.modelDetection.editConnectionProbeModel': '修改连接测试模型',
+        'admin.accounts.modelDetection.section': '模型检测',
+        'admin.accounts.modelDetection.observedAbnormal': '检测器观察到异常',
+        'admin.accounts.modelDetection.viewRecent': '点击查看最近检测结果',
+        'admin.accounts.modelDetection.title': '账号模型检测',
+        'admin.accounts.modelDetection.close': '关闭',
+        'admin.accounts.modelDetection.connectionProbeModel': '连接测试模型',
+        'admin.accounts.modelDetection.detectionModel': '检测模型',
+        'admin.accounts.modelDetection.detectorUnsupported': '检测器暂不支持',
+        'admin.accounts.modelDetection.recentStatus': '最近状态',
+        'admin.accounts.modelDetection.declaredModel': '申报模型',
+        'admin.accounts.modelDetection.juice': 'Juice',
+        'admin.accounts.modelDetection.juiceSummary': 'Juice 摘要',
+        'admin.accounts.modelDetection.fingerprintCandidate': '行为指纹候选',
+        'admin.accounts.modelDetection.fingerprintSimilarity': '相似度',
+        'admin.accounts.modelDetection.detectorVersion': '检测器版本',
+        'admin.accounts.modelDetection.detectionTime': '检测时间',
+        'admin.accounts.modelDetection.error': '错误',
+        'admin.accounts.modelDetection.abnormalDisclaimer': '检测器观察到异常；该结果不代表上游确认替换。',
+        'admin.accounts.modelDetection.saveModels': '保存模型',
+        'admin.accounts.modelDetection.detecting': '已排队…',
+        'admin.accounts.modelDetection.detectNow': '立即检测',
+        'admin.accounts.modelDetection.status.abnormal': '异常',
       }[key] ?? key),
     }),
   }
@@ -815,5 +838,47 @@ describe('AccountMonitorCard', () => {
 
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('3 / 10')
     expect(wrapper.get('[data-test="concurrency-metric"]').text()).toContain('数据延迟')
+  })
+
+  it('keeps model detection details collapsed and uses cautious abnormal wording', async () => {
+    const detectorAccount = {
+      ...account,
+      connection_probe_model: 'gpt-5.6-sol',
+      model_detection: {
+        status: 'abnormal',
+        settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+        model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+        recent: {
+          status: 'abnormal',
+          claimed_model: 'gpt-5.6-sol',
+          juice_status: 'mismatch',
+          juice_summary: { score: 0.9 },
+          fingerprint_candidate: 'gpt-5.6-luna',
+          fingerprint_similarity: { 'gpt-5.6-luna': 0.98 },
+          detector_version: 'test',
+          error_code: 'fingerprint_mismatch',
+          error_message: '证据不一致',
+          finished_at: '2026-08-17T10:06:00+08:00',
+        },
+      },
+    }
+    const wrapper = mountCard({ account: detectorAccount })
+    expect(wrapper.find('[data-test="model-detection-dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).toContain('检测器观察到异常')
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.text()).toContain('不代表上游确认替换')
+    expect(dialog.get('[data-test="model-detection-juice-summary"]').text()).toContain('{"score":0.9}')
+    expect(dialog.get('[data-test="model-detection-fingerprint-similarity"]').text()).toContain('{"gpt-5.6-luna":0.98}')
+    expect(dialog.get('[data-test="model-detection-finished-at"]').text()).toContain('2026')
+    expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('fingerprint_mismatch')
+    expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('证据不一致')
+  })
+
+  it('exposes an explicit connection probe model entry next to recent probes', async () => {
+    const editConnectionProbeModel = vi.fn()
+    const wrapper = mountCard({ onEditConnectionProbeModel: editConnectionProbeModel })
+    await wrapper.get('[data-test="edit-connection-probe-model"]').trigger('click')
+    expect(editConnectionProbeModel).toHaveBeenCalledWith(account)
   })
 })

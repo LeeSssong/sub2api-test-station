@@ -20,6 +20,9 @@ const {
   getGlobalScoreWeights,
   updateGlobalScoreWeights,
   resetGlobalScoreWeights,
+  getModelDetectionModels,
+  saveModelDetectionModels,
+  enqueueModelDetection,
   operations,
   costGuard,
   refreshReconciliation,
@@ -48,6 +51,9 @@ const {
   getGlobalScoreWeights: vi.fn(),
   updateGlobalScoreWeights: vi.fn(),
   resetGlobalScoreWeights: vi.fn(),
+  getModelDetectionModels: vi.fn(),
+  saveModelDetectionModels: vi.fn(),
+  enqueueModelDetection: vi.fn(),
   operations: vi.fn(),
   costGuard: vi.fn(),
   refreshReconciliation: vi.fn(),
@@ -78,6 +84,9 @@ vi.mock('@/api/admin', () => ({
       getGlobalScoreWeights,
       updateGlobalScoreWeights,
       resetGlobalScoreWeights,
+      getModelDetectionModels,
+      saveModelDetectionModels,
+      enqueueModelDetection,
     },
     accounts: { update: updateAccount, updateProcurementCost, getById: getAccountById, delete: deleteAccount, setPrivacy },
     groups: { getAllIncludingInactive: groupsGetAllIncludingInactive },
@@ -126,7 +135,7 @@ const AccountMonitorCardStub = defineComponent({
     account: { type: Object, required: true },
     concurrency: { type: Object, default: null },
   },
-  emits: ['updatePriority', 'editCost', 'refresh', 'accountInfo', 'accountEdit', 'accountDelete', 'accountMore'],
+  emits: ['updatePriority', 'editCost', 'refresh', 'accountInfo', 'accountEdit', 'accountDelete', 'accountMore', 'editConnectionProbeModel', 'saveModelDetectionModels', 'detectModelDetection'],
   template: `
     <article data-test="monitor-card" :data-account-id="account.account_id">
       <span data-test="card-name">{{ account.name }}</span>
@@ -137,6 +146,9 @@ const AccountMonitorCardStub = defineComponent({
       <button data-test="account-edit" type="button" @click="$emit('accountEdit', account)">edit account</button>
       <button data-test="account-delete" type="button" @click="$emit('accountDelete', account)">delete account</button>
       <button data-test="account-more" type="button" @click="$emit('accountMore', account, $event)">more</button>
+      <button data-test="model-open" type="button" @click="$emit('editConnectionProbeModel', account)">models</button>
+      <button data-test="model-save" type="button" @click="$emit('saveModelDetectionModels', account.account_id, { connectionModel: 'gpt-5.6-sol', detectionModel: 'gpt-5.6-sol' })">save models</button>
+      <button data-test="model-detect" type="button" @click="$emit('detectModelDetection', account.account_id)">detect</button>
     </article>
   `,
 })
@@ -353,6 +365,9 @@ describe('admin account monitor view V3', () => {
     })
     runAll.mockReset().mockResolvedValue({ completed: 4 })
     runOne.mockReset().mockResolvedValue({ account_id: 10, status: 'success' })
+    getModelDetectionModels.mockReset().mockResolvedValue({ account_id: 10, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol', connection_models: [{ id: 'gpt-5.6-sol', supported: true, selected: true }], detection_models: [{ id: 'gpt-5.6-sol', supported: true, selected: true }] })
+    saveModelDetectionModels.mockReset().mockResolvedValue({ account_id: 10, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol', connection_models: [], detection_models: [] })
+    enqueueModelDetection.mockReset().mockResolvedValue({ status: 'queued', run_id: 'run-1', reused: false })
     updateAccount.mockReset().mockResolvedValue({ ...baseAccount, priority: 4 })
     getAccountById.mockReset().mockResolvedValue({
       id: 10,
@@ -1382,5 +1397,23 @@ describe('admin account monitor view V3', () => {
     ]
     const text = wrapper.text().toLowerCase()
     for (const label of forbiddenText) expect(text).not.toContain(label)
+  })
+
+  it('loads, saves, and asynchronously enqueues per-account detector models', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.findAllComponents(AccountMonitorCardStub)[0]
+
+    await card.get('[data-test="model-open"]').trigger('click')
+    await flushPromises()
+    expect(getModelDetectionModels).toHaveBeenCalledWith(10)
+
+    await card.get('[data-test="model-save"]').trigger('click')
+    await flushPromises()
+    expect(saveModelDetectionModels).toHaveBeenCalledWith(10, { connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' })
+
+    await card.get('[data-test="model-detect"]').trigger('click')
+    await flushPromises()
+    expect(enqueueModelDetection).toHaveBeenCalledWith(10)
   })
 })

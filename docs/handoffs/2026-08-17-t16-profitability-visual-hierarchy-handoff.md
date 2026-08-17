@@ -4,10 +4,12 @@
 
 - 任务：T16
 - 分支：`codex/t16-profitability-visual-hierarchy`
-- 基线：`main@483dde398`
+- 基线：`main@c4fede77a5f4754ba090876ba321bce0e1924eb8`
 - 实现候选提交：`a9068dbb683c583ad3cefe01943899638b7abe1e`
 - 实现候选 tree：`bc9a257f41589f6d20a6f4770cd7171a8e5d7326`
 - 当前分支 tip 另包含本 handoff 文档；根总控应以分支当前 `HEAD` 作为候选身份。
+- 刷新合并提交：`9b39df3ce129362919a4a6b16ef8d49d7becc7aa`
+- 刷新后运行时 tree：`6a9849dba0e660cffa27a3f89e074c2a31063d70`
 - worktree：`/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`
 - 状态：`READY_FOR_ROOT_REVIEW`
 
@@ -59,12 +61,13 @@ pnpm build
 
 ## 发布状态
 
-- 当前用户指令为暂不发布，未合并根 `main`、未推送候选、未运行发布预检、未部署、未访问生产。
-- `downtime_required=unverified`；后续只能由根总控在 T15 停机门禁处置、用户明确允许发布后再做合并和预检。
+- T15、T18、T19 已完成生产收口；本候选已刷新到最新根 `main`，未合并根 `main`、未推送候选、未运行发布预检、未部署、未访问生产。
+- `downtime_required=unverified`；根总控将在直接门禁通过后运行发布预检，若返回 `false` 直接蓝绿发布，若返回 `true` 按已有用户停机授权门禁处理。
 - 若根预检返回 `downtime_required=false`，按全局规则可继续蓝绿发布；若返回 `true`，停在人工门禁。
 - 回滚：蓝绿切回上一活动槽/镜像，无数据回滚步骤。
 
 ## 剩余风险
 
 - 当前角色 join 不是历史不可变 actor 事实；如产品要求历史精确分类，需另立最小数据契约任务。
+- 刷新后额外执行的全量 `go test ./internal/service -count=1` 仍有两个与 T16 无关的 scheduler/sticky 选择测试失败：`TestOpenAIGatewayService_SelectAccountWithScheduler_Enabled_EmbeddingsSkipsChatOnlyStickyBindings`（期望 37022、实际 37021）和 `TestOpenAIGatewayService_SelectAccountWithScheduler_ClearsStickyAccountOutsideGroup`（期望 2402、实际 0）。失败日志保留于 `/tmp/t16-internal-service-full.log`；T16 直接 repository/service/handler、compile-only/build 与前端 19/19/typecheck/build 均通过，未扩大范围修复无关调度测试。
 - 未运行全仓、压力、mutation、soak、无关浏览器矩阵或线上验收，均不属于本候选直接功能门禁。

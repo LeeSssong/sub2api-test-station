@@ -186,7 +186,10 @@
 
       <section class="mt-4 border-t border-gray-100 py-4 dark:border-slate-800" aria-label="近期探测" data-test="probe-section">
         <div class="flex items-center justify-between gap-3">
-          <h3 class="text-sm font-semibold text-gray-800 dark:text-slate-100">近期探测</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-gray-800 dark:text-slate-100">近期探测</h3>
+            <button type="button" class="text-[11px] text-primary-600 hover:underline dark:text-primary-300" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button>
+          </div>
           <span class="text-[11px] text-gray-500 dark:text-slate-400" data-test="probe-summary">{{ probeSummary }}</span>
         </div>
         <div class="mt-3 grid h-9 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="timelineAriaLabel">
@@ -202,6 +205,15 @@
           />
         </div>
         <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
+      </section>
+
+      <section class="border-t border-gray-100 py-3 dark:border-slate-800" data-test="model-detection-section">
+        <button type="button" class="flex min-h-10 w-full items-center gap-2 text-left text-xs" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionDialog">
+          <span class="font-semibold text-gray-700 dark:text-slate-200">{{ t('admin.accounts.modelDetection.section') }}</span>
+          <span class="rounded-full px-2 py-0.5" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span>
+          <span class="min-w-0 flex-1 truncate text-gray-500 dark:text-slate-400">{{ modelDetectionStatusHint }}</span>
+          <Icon name="chevronDown" size="xs" />
+        </button>
       </section>
 
       <section class="border-t border-gray-100 dark:border-slate-800" data-test="calls-disclosure">
@@ -227,15 +239,27 @@
         <span>检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span>
         <button class="icon-button shrink-0 max-[430px]:self-end" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /></button>
       </footer>
+      <AccountModelDetectionDialog
+        :show="modelDetectionDialogOpen"
+        :account="account"
+        :models="modelDetectionModels"
+        :saving="savingModelDetection"
+        :detecting="detectingModelDetection"
+        @close="modelDetectionDialogOpen = false"
+        @save="emit('saveModelDetectionModels', account.account_id, $event)"
+        @detect="emit('detectModelDetection', account.account_id)"
+      />
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
-import type { AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
+import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
+import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type ProbeBar = { colorClass: string, height: number, title: string }
@@ -248,7 +272,11 @@ const props = withDefaults(defineProps<{
   rankingScope?: 'group' | 'global'
   statisticsCutoff?: string | null
   selectedRange?: AccountMonitorRange
+  modelDetectionModels?: AccountModelDetectionModelsResponse | null
+  savingModelDetection?: boolean
+  detectingModelDetection?: boolean
 }>(), { concurrency: null, running: false, rankedAccountCount: 0, rankingScope: 'group', statisticsCutoff: null, selectedRange: '24h' })
+const { t } = useI18n()
 
 const emit = defineEmits<{
   (event: 'updatePriority', accountID: number, priority: number, completion: { resolve: () => void; reject: (reason?: unknown) => void }): void
@@ -258,6 +286,9 @@ const emit = defineEmits<{
   (event: 'accountDelete', account: AccountMonitorAccount): void
   (event: 'accountMore', account: AccountMonitorAccount, triggerEvent?: MouseEvent): void
   (event: 'refresh', accountID: number): void
+  (event: 'editConnectionProbeModel', account: AccountMonitorAccount): void
+  (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }): void
+  (event: 'detectModelDetection', accountID: number): void
 }>()
 
 const displayedPriority = ref(props.account.priority)
@@ -267,6 +298,11 @@ const draftPriority = ref(String(displayedPriority.value))
 const priorityError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
+const modelDetectionDialogOpen = ref(false)
+function openModelDetectionDialog() {
+  modelDetectionDialogOpen.value = true
+  emit('editConnectionProbeModel', props.account)
+}
 
 const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
@@ -421,6 +457,10 @@ const probeSummary = computed(() => {
   return `${formatNumber(probeSampleCount.value)} 次结果 · ${formatNumber(probeSuccessCount.value)} 成功 · ${formatNumber(probeFailureCount.value)} 失败`
 })
 const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
+const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
+const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
+const modelDetectionStatusHint = computed(() => modelDetectionStatus.value === 'abnormal' ? t('admin.accounts.modelDetection.observedAbnormal') : props.account.model_detection?.recent?.error_message ?? t('admin.accounts.modelDetection.viewRecent'))
+const modelDetectionStatusClass = computed(() => ({ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': modelDetectionStatus.value === 'normal', 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(modelDetectionStatus.value), 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': modelDetectionStatus.value === 'failed', 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': ['untested', 'unsupported'].includes(modelDetectionStatus.value) }))
 const multiplierAvailable = computed(() => {
   const multiplier = props.account.multiplier
   return multiplier.value != null

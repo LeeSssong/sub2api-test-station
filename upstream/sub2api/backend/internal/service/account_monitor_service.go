@@ -90,19 +90,28 @@ type accountMonitorRecommendationEvaluator func(
 ) *AccountMonitorGroupRecommendation
 
 type AccountMonitorService struct {
-	repo        AccountMonitorRepository
-	accountRepo AccountMonitorAccountRepository
-	testService *AccountTestService
-	usage       *AccountUsageService
-	multiplier  accountMonitorMultiplierResolver
-	costPricing accountMonitorModelPricingReader
-	recommend   accountMonitorRecommendationEvaluator
+	repo           AccountMonitorRepository
+	accountRepo    AccountMonitorAccountRepository
+	testService    *AccountTestService
+	usage          *AccountUsageService
+	multiplier     accountMonitorMultiplierResolver
+	costPricing    accountMonitorModelPricingReader
+	recommend      accountMonitorRecommendationEvaluator
+	modelDetection *AccountModelDetectionService
 
 	probeConnection accountMonitorProbeConnection
 	probeTimeout    time.Duration
 
 	runStateMu sync.Mutex
 	activeRun  *accountMonitorRun
+}
+
+// SetModelDetectionService attaches the optional detector projection and
+// per-account connection-model resolver without changing legacy constructors.
+func (s *AccountMonitorService) SetModelDetectionService(detector *AccountModelDetectionService) {
+	if s != nil {
+		s.modelDetection = detector
+	}
 }
 
 type AccountMonitorAccountRepository interface {
@@ -192,6 +201,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			GroupIDs:                   append([]int64{}, account.GroupIDs...),
 			GroupNames:                 accountGroupNames(account),
 			ModelID:                    modelID,
+			ConnectionProbeModel:       s.connectionProbeModel(ctx, &account),
 			LatestStatus:               "unavailable",
 			SuccessRate:                aggregate.SuccessRate,
 			SampleCount:                aggregate.SampleCount,
@@ -209,6 +219,11 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			ExpiresAt:                  account.ExpiresAt,
 			ErrorCount:                 int64(aggregate.ErrorCount),
 			Timeline:                   append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
+		}
+		if s.modelDetection != nil {
+			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
+				row.ModelDetection = &detection
+			}
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		if stats := today[account.ID]; stats != nil {
@@ -335,7 +350,8 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			Status: account.Status, Schedulable: account.Schedulable, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
 			GroupNames: accountGroupNames(account), ModelID: modelID,
-			LatestStatus: "unavailable", Multiplier: resolvedMultiplier,
+			ConnectionProbeModel: s.connectionProbeModel(ctx, &account),
+			LatestStatus:         "unavailable", Multiplier: resolvedMultiplier,
 			Balance:                    s.resolveBalance(&account, observedAt),
 			ProcurementCostCNY:         account.ProcurementCostCNY,
 			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
@@ -343,6 +359,11 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
+		}
+		if s.modelDetection != nil {
+			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
+				row.ModelDetection = &detection
+			}
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)
@@ -1851,7 +1872,7 @@ func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error)
 }
 
 func (s *AccountMonitorService) probeAccount(ctx context.Context, account Account) AccountMonitorProbeResult {
-	modelID := monitorModelForAccount(&account)
+	modelID := s.connectionProbeModel(ctx, &account)
 	probeConnection := s.probeConnection
 	if probeConnection == nil && s.testService != nil {
 		probeConnection = s.testService.ProbeAccountConnection
@@ -1882,6 +1903,20 @@ func (s *AccountMonitorService) probeAccount(ctx context.Context, account Accoun
 		result.CheckedAt = time.Now().UTC()
 	}
 	return result
+}
+
+func (s *AccountMonitorService) connectionProbeModel(ctx context.Context, account *Account) string {
+	models := nativeAccountTextModels(account)
+	saved := ""
+	if s != nil && s.modelDetection != nil && account != nil {
+		if settings, err := s.modelDetection.LoadSettings(ctx, account.ID); err == nil {
+			saved = settings.ConnectionProbeModel
+		}
+	}
+	if selected := selectConnectionProbeModel(models, saved); selected != "" {
+		return selected
+	}
+	return monitorModelForAccount(account)
 }
 
 func (s *AccountMonitorService) loadTodayStats(

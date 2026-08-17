@@ -22,6 +22,13 @@ type AccountMonitorHandler struct {
 	accountRepo        AccountMonitorConcurrencyAccountRepository
 	concurrencyService *service.ConcurrencyService
 	runtimeService     accountModelRuntimeService
+	detectionService   *service.AccountModelDetectionService
+}
+
+func (h *AccountMonitorHandler) SetModelDetectionService(detection *service.AccountModelDetectionService) {
+	if h != nil {
+		h.detectionService = detection
+	}
 }
 
 type accountModelRuntimeService interface {
@@ -109,6 +116,105 @@ type accountMonitorGlobalScoreWeightsRequest struct {
 	Success int `json:"success"`
 	TTFT    int `json:"ttft"`
 	Latency int `json:"latency"`
+}
+
+type accountModelDetectionModelsRequest struct {
+	ConnectionProbeModel string `json:"connection_probe_model"`
+	ModelDetectionModel  string `json:"model_detection_model"`
+}
+
+type accountModelDetectionRunResponse struct {
+	Status string `json:"status"`
+	RunID  string `json:"run_id"`
+	Reused bool   `json:"reused"`
+}
+
+type accountModelDetectionHistoryResponse struct {
+	Items []service.AccountModelDetectionSummary `json:"items"`
+}
+
+func (h *AccountMonitorHandler) AccountModelDetectionModels(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("account_id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_ID", "invalid account id"))
+		return
+	}
+	if h == nil || h.detectionService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_DETECTION_UNAVAILABLE", "account model detection is unavailable"))
+		return
+	}
+	models, err := h.detectionService.Models(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, models)
+}
+
+func (h *AccountMonitorHandler) SaveAccountModelDetectionModels(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("account_id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_ID", "invalid account id"))
+		return
+	}
+	var req accountModelDetectionModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_DETECTION_MODELS", err.Error()))
+		return
+	}
+	if h == nil || h.detectionService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_DETECTION_UNAVAILABLE", "account model detection is unavailable"))
+		return
+	}
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	models, err := h.detectionService.SaveModels(c.Request.Context(), subject.UserID, accountID, req.ConnectionProbeModel, req.ModelDetectionModel)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_DETECTION_MODELS", err.Error()))
+		return
+	}
+	response.Success(c, models)
+}
+
+func (h *AccountMonitorHandler) EnqueueAccountModelDetection(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("account_id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_ID", "invalid account id"))
+		return
+	}
+	if h == nil || h.detectionService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_DETECTION_UNAVAILABLE", "account model detection is unavailable"))
+		return
+	}
+	subject, _ := middleware.GetAuthSubjectFromContext(c)
+	run, reused, err := h.detectionService.EnqueueImmediate(c.Request.Context(), accountID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_MODEL_DETECTION_ENQUEUE_FAILED", err.Error()))
+		return
+	}
+	response.Success(c, accountModelDetectionRunResponse{Status: run.Status, RunID: run.ID, Reused: reused})
+}
+
+func (h *AccountMonitorHandler) AccountModelDetectionHistory(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("account_id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_ID", "invalid account id"))
+		return
+	}
+	if h == nil || h.detectionService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_DETECTION_UNAVAILABLE", "account model detection is unavailable"))
+		return
+	}
+	items, err := h.detectionService.Recent(c.Request.Context(), accountID, 25)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	result := make([]service.AccountModelDetectionSummary, 0, len(items))
+	for _, item := range items {
+		queued := item.QueuedAt
+		result = append(result, service.AccountModelDetectionSummary{Status: item.Status, ModelID: item.ModelID, ClaimedModel: item.ClaimedModel, JuiceStatus: item.JuiceStatus, JuiceSummary: item.JuiceSummary, FingerprintCandidate: item.FingerprintCandidate, FingerprintSimilarity: item.FingerprintSimilarity, DetectorVersion: item.DetectorVersion, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage, QueuedAt: &queued, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, RunID: item.ID})
+	}
+	response.Success(c, accountModelDetectionHistoryResponse{Items: result})
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {

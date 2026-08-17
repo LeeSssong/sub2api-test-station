@@ -150,9 +150,11 @@ func ProvideAccountMonitorHandler(
 	accountRepo service.AccountRepository,
 	concurrencyService *service.ConcurrencyService,
 	openAIGatewayService *service.OpenAIGatewayService,
+	detectionService *service.AccountModelDetectionService,
 ) *admin.AccountMonitorHandler {
 	h := admin.NewAccountMonitorHandler(monitorService, runner, accountRepo, concurrencyService)
 	h.SetOpenAIGatewayService(openAIGatewayService)
+	h.SetModelDetectionService(detectionService)
 	return h
 }
 

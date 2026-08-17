@@ -245,6 +245,8 @@ type AccountMonitorAccount struct {
 	GroupIDs                   []int64                            `json:"group_ids"`
 	GroupNames                 []string                           `json:"group_names"`
 	ModelID                    string                             `json:"model_id"`
+	ConnectionProbeModel       string                             `json:"connection_probe_model,omitempty"`
+	ModelDetection             *AccountModelDetectionProjection   `json:"model_detection,omitempty"`
 	LatestStatus               string                             `json:"latest_status"`
 	ErrorCode                  string                             `json:"error_code,omitempty"`
 	ProbeSampleCount           int                                `json:"probe_sample_count"`

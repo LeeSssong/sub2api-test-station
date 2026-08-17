@@ -8,10 +8,10 @@
 
 ## 候选身份
 
-- 最新根主线基线：`40315c7651714a0ec86b3664efed0f325786fb6e`
+- 最新根主线基线：`096f37f25688b72eca901173828965133051acf0`
 - 功能实现提交：`ee52dd5ea`
-- 刷新后候选提交：`d85ef471e6573d693ef5256c7b545383561245ec`
-- 刷新后运行时/规格/计划 tree：`a32d0f808ea4dd9a2e7551806eba6a8082f8ed26`
+- 刷新合并提交：`01cee0d5e197308e36a413a7790039c354522817`
+- 刷新后运行时/规格/计划 tree（合并前 handoff 更新）：`7dd034546a09ce32593d23f6824ce018fe83dd29`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`
 - 分支：`codex/channel-status-official-toggle`
 - 候选状态：`READY_FOR_ROOT_REVIEW`
@@ -35,6 +35,7 @@
 - `pnpm build`：exit 0，Vite 生产构建完成。
 - `git diff --check origin/main...HEAD`：通过。
 - 相对 `origin/main` 无迁移文件、无 `.github/workflows` 文件。
+- 刷新后再次通过同一专项测试、`pnpm typecheck`、`pnpm build` 和 `git diff --check main...HEAD`。
 
 TDD 证据：新增官方模式测试先在旧实现上按预期失败（官方 stub 不出现），最小实现后 3/3 通过。
 

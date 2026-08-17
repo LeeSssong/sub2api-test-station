@@ -5,8 +5,9 @@
 - 任务：T16
 - 分支：`codex/t16-profitability-visual-hierarchy`
 - 基线：`main@483dde398`
-- 候选提交：`462e6f89193f15ed3d9cb71c7842cf8199d42f8e`
-- 候选 tree：`72bf52f07e7912b09f12d779cac87c5e810991c5`
+- 实现候选提交：`a9068dbb683c583ad3cefe01943899638b7abe1e`
+- 实现候选 tree：`bc9a257f41589f6d20a6f4770cd7171a8e5d7326`
+- 当前分支 tip 另包含本 handoff 文档；根总控应以分支当前 `HEAD` 作为候选身份。
 - worktree：`/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`
 - 状态：`READY_FOR_ROOT_REVIEW`
 

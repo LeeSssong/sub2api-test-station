@@ -15,9 +15,25 @@ func TestMonitorV2RepositoryGetCacheStatsGroupsRows(t *testing.T) {
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 
-	mock.ExpectQuery(`SELECT\s+g\.id AS group_id,\s+LOWER\(g\.platform\) IN \('openai', 'anthropic'\) AS evidence_available,\s+COUNT\(ul\.id\) FILTER \(WHERE LOWER\(g\.platform\) IN \('openai', 'anthropic'\)\)::bigint AS request_count,\s+COUNT\(ul\.id\) FILTER \(\s+WHERE LOWER\(g\.platform\) IN \('openai', 'anthropic'\)\s+AND ul\.cache_read_tokens > 0\s+\)::bigint AS hit_count`).
+	eligibleSample := `\s+AND ul\.actual_cost > 0` +
+		`\s+AND \(\s+ul\.billing_mode = 'token'` +
+		`\s+OR \(\s+\(ul\.billing_mode IS NULL OR ul\.billing_mode = ''\)` +
+		`\s+AND COALESCE\(ul\.image_count, 0\) = 0` +
+		`\s+AND COALESCE\(ul\.video_count, 0\) = 0` +
+		`\s+AND COALESCE\(ul\.image_input_tokens, 0\) = 0` +
+		`\s+AND COALESCE\(ul\.image_output_tokens, 0\) = 0\s+\)\s+\)`
+	mock.ExpectQuery(
+		`SELECT\s+g\.id AS group_id,\s+LOWER\(g\.platform\) IN \('openai', 'anthropic'\) AS evidence_available,`+
+			`\s+COUNT\(ul\.id\) FILTER \(\s+WHERE LOWER\(g\.platform\) IN \('openai', 'anthropic'\)`+eligibleSample+
+			`\s+\)::bigint AS request_count,`+
+			`\s+COUNT\(ul\.id\) FILTER \(\s+WHERE LOWER\(g\.platform\) IN \('openai', 'anthropic'\)`+eligibleSample+
+			`\s+AND ul\.cache_read_tokens > 0\s+\)::bigint AS hit_count`,
+	).
 		WithArgs(start, end, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"group_id", "evidence_available", "request_count", "hit_count"}).
+			// Eligible rows include successful token requests and legacy token rows
+			// without image/video usage. Failed placeholders and non-token billing
+			// modes are excluded by the query contract above.
 			AddRow(int64(7), true, int64(20), int64(8)).
 			AddRow(int64(9), false, int64(0), int64(0)).
 			AddRow(int64(11), true, int64(5), int64(0)))

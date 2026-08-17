@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -124,10 +125,16 @@ func explicitOpenAIQuotaPoolID(extra map[string]any) string {
 type OpenAISharedHealthState string
 
 const (
+	OpenAISharedHealthStateUnknown    OpenAISharedHealthState = "unknown"
 	OpenAISharedHealthStateHealthy    OpenAISharedHealthState = "healthy"
 	OpenAISharedHealthStateSoftFailed OpenAISharedHealthState = "soft_failed"
 	OpenAISharedHealthStateCooldown   OpenAISharedHealthState = "cooldown"
 	OpenAISharedHealthStateHalfOpen   OpenAISharedHealthState = "half_open"
+)
+
+var (
+	ErrOpenAISharedHealthUnknownSchema = errors.New("unknown OpenAI shared health schema")
+	ErrOpenAISharedHealthLeaseLost     = errors.New("OpenAI shared health half-open lease lost")
 )
 
 type OpenAISharedHealthFreshness string

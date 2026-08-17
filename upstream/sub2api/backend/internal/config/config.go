@@ -1615,8 +1615,9 @@ type DefaultConfig struct {
 }
 
 type RateLimitConfig struct {
-	OverloadCooldownMinutes int `mapstructure:"overload_cooldown_minutes"`  // 529过载冷却时间(分钟)
-	OAuth401CooldownMinutes int `mapstructure:"oauth_401_cooldown_minutes"` // OAuth 401临时不可调度冷却(分钟)
+	OverloadCooldownMinutes          int `mapstructure:"overload_cooldown_minutes"`           // 529过载冷却时间(分钟)
+	OAuth401CooldownMinutes          int `mapstructure:"oauth_401_cooldown_minutes"`          // OAuth 401临时不可调度冷却(分钟)
+	BalanceExhaustedIsolationMinutes int `mapstructure:"balance_exhausted_isolation_minutes"` // 确认余额不足的账号级临时隔离(分钟)，仅允许60-120
 }
 
 // APIKeyAuthCacheConfig API Key 认证缓存配置
@@ -2234,6 +2235,7 @@ func setDefaults() {
 	// RateLimit
 	viper.SetDefault("rate_limit.overload_cooldown_minutes", 10)
 	viper.SetDefault("rate_limit.oauth_401_cooldown_minutes", 10)
+	viper.SetDefault("rate_limit.balance_exhausted_isolation_minutes", 90)
 
 	// Pricing - 从 model-price-repo 同步模型定价和上下文窗口数据（固定到 commit，避免分支漂移）
 	viper.SetDefault("pricing.remote_url", "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.json")

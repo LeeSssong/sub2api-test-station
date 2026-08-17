@@ -4,6 +4,7 @@
 
 - 自 2026-08-16 用户最新指令起，计划内任务以“功能实现完成 + 直接相关功能测试通过”为完成门槛；不再强制逐任务独立复审、scoped re-review 或全分支终审，也不为形式扩大验证。仍可用 fresh implementer 隔离写入；只有发现真实功能失败、范围冲突或高风险问题时才追加针对性复核。
 - Continue through approved plan tasks without repeated approval prompts unless execution is genuinely blocked, the plan conflicts with itself, or a new decision would materially change the approved scope.
+- 自 2026-08-17 用户最新全局指令起，发布预检明确返回 `downtime_required=false` 时，唯一发布总控无需再次请求部署授权，直接继续既有本地/宿主蓝绿发布和线上验证；只有返回 `downtime_required=true` 时，才必须在任何停服、迁移、重启或切换前暂停并取得用户明确授权。
 - Explicit instructions in the current user request override these defaults.
 - Sub2API release preparation and production deployment must not use GitHub
   Actions. Keep release discovery, qualification, publishing, staging, source

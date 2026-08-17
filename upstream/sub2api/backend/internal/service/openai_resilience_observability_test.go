@@ -67,6 +67,49 @@ func TestRecordOpenAIRetryBillingReconciledEmitsCompletedAttemptEvent(t *testing
 	require.Equal(t, 10, got.RetryAfterSeconds)
 }
 
+func TestRecordOpenAISchedulerSelectionAndOutcomeUseAttemptContext(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(812)
+	ctx := WithOpenAIRequestAttemptMetadata(context.Background(), OpenAIRequestAttemptMetadata{
+		LogicalRequestID: "scheduler-request-1", AttemptID: "scheduler-request-1:2", AttemptNumber: 2,
+		AccountID: 93, CanonicalModel: "gpt-5.6-sol", CachePreservationMode: "failover_after_failure",
+	})
+	decision := OpenAIAccountScheduleDecision{
+		SelectionLayer: "adaptive_top_k", CandidateCount: 7, EligibleCount: 5, EffectiveTopK: 3,
+		MinimumScoreThreshold: 2.75, StickyKept: false, StickyEscapeReason: "quality_floor", TTFTReportEligible: true,
+	}
+
+	RecordOpenAISchedulerSelection(ctx, PlatformOpenAI, &groupID, decision)
+	RecordOpenAISchedulerRequestOutcome(ctx, PlatformOpenAI, &groupID, "success", false)
+
+	events := openAIResilienceEventsForWindow(now.Add(-time.Second), now.Add(time.Second), PlatformOpenAI, &groupID)
+	var selection, outcome *OpenAIResilienceEvent
+	for i := range events {
+		if events[i].CorrelationID != "scheduler-request-1" {
+			continue
+		}
+		switch events[i].Name {
+		case OpenAIEventSchedulerSelection:
+			selection = &events[i]
+		case OpenAIEventSchedulerRequestOutcome:
+			outcome = &events[i]
+		}
+	}
+	require.NotNil(t, selection)
+	require.Equal(t, int64(93), selection.AccountID)
+	require.Equal(t, "gpt-5.6-sol", selection.CanonicalModel)
+	require.Equal(t, "adaptive_top_k", selection.SelectionLayer)
+	require.Equal(t, 7, selection.CandidateCount)
+	require.Equal(t, 5, selection.EligibleCount)
+	require.Equal(t, 3, selection.EffectiveTopK)
+	require.InDelta(t, 2.75, selection.MinimumScoreThreshold, 0.000001)
+	require.Equal(t, "quality_floor", selection.StickyEscapeReason)
+	require.True(t, selection.TTFTReportEligible)
+	require.NotNil(t, outcome)
+	require.Equal(t, "success", outcome.FinalOutcome)
+	require.False(t, outcome.RetryBudgetExhausted)
+}
+
 func TestRecordOpenAIAccountModelFailureRecordsDimensionedOutcome(t *testing.T) {
 	at := time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC)
 	groupID := int64(703)

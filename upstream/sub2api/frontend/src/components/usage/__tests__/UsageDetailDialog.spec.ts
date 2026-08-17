@@ -299,11 +299,32 @@ describe('UsageDetailDialog', () => {
     expect(valueForLabel(wrapper, 'usage.detail.modelMappingChain'))
       .toBe('sonnet-latest -> claude-sonnet-4-20250514')
     expect(valueForLabel(wrapper, 'usage.detail.billingTier')).toBe('premium')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
   })
 
-  it('renders confirmed native cost evidence and confirmed gross margin for administrators', async () => {
+  it('uses the explicit account cost when strict evidence is unavailable', async () => {
+    adminGetById.mockResolvedValue({
+      ...adminRecord,
+      account_cost: 0.00331446,
+      upstream_request_id: 'upstream-req-42',
+    })
+    adminGetCostEvidence.mockResolvedValue({
+      usage_log_id: 42,
+      normalized_cost_cny: null,
+      evidence_status: 'unavailable',
+      reason_code: 'endpoint_unavailable',
+    })
+
+    const wrapper = mountDialog({ scope: 'admin' })
+    await flushPromises()
+
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.003314')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.003566')
+    expect(wrapper.text()).toContain('admin.usageCostDetail.unavailableReasons.endpointUnavailable')
+  })
+
+  it('keeps the native fallback cost when strict evidence is confirmed', async () => {
     adminGetById.mockResolvedValue({ ...adminRecord, upstream_request_id: 'upstream-req-42' })
     adminGetCostEvidence.mockResolvedValue({
       usage_log_id: 42,
@@ -318,8 +339,8 @@ describe('UsageDetailDialog', () => {
     expect(adminGetCostEvidence).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('upstream-req-42')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteActualCost')).toBe('$0.006880')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.002880')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
     const administratorSection = wrapper.get('section[aria-labelledby="usage-detail-admin-heading"]')
     expect(administratorSection.text()).toContain('admin.usageCostDetail.siteActualCost')
     expect(administratorSection.text()).toContain('admin.usageCostDetail.upstreamActualCost')
@@ -346,11 +367,11 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.002880')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
   })
 
-  it('labels price-table cost and gross margin as estimated', async () => {
+  it('keeps the native cost and profit when strict evidence is unavailable', async () => {
     adminGetById.mockResolvedValue(adminRecord)
     adminGetCostEvidence.mockResolvedValue({
       usage_log_id: 42,
@@ -362,8 +383,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
   })
 
   it('keeps cost and margin pending when native evidence is unavailable', async () => {
@@ -379,8 +400,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource')).toBe('newapi')
   })
 
@@ -396,9 +417,20 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('-')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('-')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
     expect(wrapper.text()).toContain('admin.usageCostDetail.unavailableReasons.endpointUnsupported')
+  })
+
+  it('keeps native cost and profit when the evidence request fails', async () => {
+    adminGetById.mockResolvedValue(adminRecord)
+    adminGetCostEvidence.mockRejectedValue(new Error('evidence unavailable'))
+
+    const wrapper = mountDialog({ scope: 'admin' })
+    await flushPromises()
+
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
   })
 
   it('shows a placeholder for a missing upstream request ID while querying by local ID', async () => {

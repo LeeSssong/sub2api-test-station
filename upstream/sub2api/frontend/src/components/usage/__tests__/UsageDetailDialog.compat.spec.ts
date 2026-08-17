@@ -105,7 +105,7 @@ describe('UsageDetailDialog PascalCase compatibility', () => {
     copyToClipboard.mockReset().mockResolvedValue(true)
   })
 
-  it('normalizes a PascalCase upstream-cost response before rendering cost and profit', async () => {
+  it('normalizes PascalCase evidence without replacing the native cost and profit', async () => {
     apiGet.mockImplementation((path: string) => {
       if (path === '/admin/usage/42') return Promise.resolve({ data: adminRecord })
       if (path === '/admin/usage/42/upstream-cost') {
@@ -131,8 +131,8 @@ describe('UsageDetailDialog PascalCase compatibility', () => {
     })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.004000')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.002880')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
     expect(apiGet).toHaveBeenCalledWith('/admin/usage/42/upstream-cost')
   })
 })

@@ -17,6 +17,8 @@ const (
 	OpenAIEventFailoverAfterStreamFailure       = "openai.failover_after_stream_failure"
 	OpenAIEventAccountModelHalfOpenProbe        = "openai.account_model_half_open_probe"
 	OpenAIEventRetryBillingReconciled           = "openai.retry_billing_reconciled"
+	OpenAIEventSchedulerSelection               = "openai.scheduler_selection"
+	OpenAIEventSchedulerRequestOutcome          = "openai.scheduler_request_outcome"
 )
 
 // OpenAIResilienceAlertCounters are process-local inputs for existing Ops
@@ -33,23 +35,33 @@ type OpenAIResilienceAlertCounters struct {
 // evaluations. Unlike lifetime counters, callers can scope it by time and
 // scheduling dimensions.
 type OpenAIResilienceEvent struct {
-	At                time.Time
-	Platform          string
-	GroupID           *int64
-	CorrelationID     string
-	Name              string
-	AccountID         int64
-	CanonicalModel    string
-	AttemptID         string
-	AttemptNumber     int
-	StatusCode        int
-	OutputStarted     bool
-	UsageProduced     bool
-	FailureStreak     int
-	CacheMode         string
-	CooldownSeconds   int
-	RetryAfterSeconds int
-	Outcome           string // success, failure, selected, cache_hit, started
+	At                    time.Time
+	Platform              string
+	GroupID               *int64
+	CorrelationID         string
+	Name                  string
+	AccountID             int64
+	CanonicalModel        string
+	AttemptID             string
+	AttemptNumber         int
+	StatusCode            int
+	OutputStarted         bool
+	UsageProduced         bool
+	FailureStreak         int
+	CacheMode             string
+	CooldownSeconds       int
+	RetryAfterSeconds     int
+	Outcome               string // success, failure, selected, cache_hit, started
+	SelectionLayer        string
+	CandidateCount        int
+	EligibleCount         int
+	EffectiveTopK         int
+	MinimumScoreThreshold float64
+	StickyKept            bool
+	StickyEscapeReason    string
+	TTFTReportEligible    bool
+	RetryBudgetExhausted  bool
+	FinalOutcome          string
 }
 
 type openAIResilienceCacheModeContextKey struct{}
@@ -103,6 +115,9 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	event.AttemptID = strings.TrimSpace(event.AttemptID)
 	event.CacheMode = strings.TrimSpace(event.CacheMode)
 	event.Outcome = strings.TrimSpace(event.Outcome)
+	event.SelectionLayer = strings.TrimSpace(event.SelectionLayer)
+	event.StickyEscapeReason = strings.TrimSpace(event.StickyEscapeReason)
+	event.FinalOutcome = strings.TrimSpace(event.FinalOutcome)
 	if event.Name == "" {
 		return
 	}
@@ -112,6 +127,27 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	if len(openAIResilienceEventLedger.events) > openAIResilienceEventLedgerMax {
 		openAIResilienceEventLedger.events = append([]OpenAIResilienceEvent(nil), openAIResilienceEventLedger.events[len(openAIResilienceEventLedger.events)-openAIResilienceEventLedgerMax:]...)
 	}
+}
+
+func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupID *int64, decision OpenAIAccountScheduleDecision) {
+	RecordOpenAIResilienceOutcomeWithContext(ctx, OpenAIResilienceEvent{
+		Platform: platform, GroupID: groupID, Name: OpenAIEventSchedulerSelection, Outcome: "selected",
+		SelectionLayer: decision.SelectionLayer, CandidateCount: decision.CandidateCount,
+		EligibleCount: decision.EligibleCount, EffectiveTopK: decision.EffectiveTopK,
+		MinimumScoreThreshold: decision.MinimumScoreThreshold, StickyKept: decision.StickyKept,
+		StickyEscapeReason: decision.StickyEscapeReason, TTFTReportEligible: decision.TTFTReportEligible,
+	})
+}
+
+func RecordOpenAISchedulerRequestOutcome(ctx context.Context, platform string, groupID *int64, outcome string, retryBudgetExhausted bool) {
+	finalOutcome := strings.TrimSpace(outcome)
+	if finalOutcome == "" {
+		finalOutcome = "failure"
+	}
+	RecordOpenAIResilienceOutcomeWithContext(ctx, OpenAIResilienceEvent{
+		Platform: platform, GroupID: groupID, Name: OpenAIEventSchedulerRequestOutcome,
+		Outcome: finalOutcome, FinalOutcome: finalOutcome, RetryBudgetExhausted: retryBudgetExhausted,
+	})
 }
 
 // RecordOpenAIResilienceOutcomeWithContext is the common request-path emitter.

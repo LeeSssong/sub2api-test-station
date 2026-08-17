@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T12 已随 `main@04d171e35` 完成维护蓝绿切换和管理员页面验收；T15 现为 `DESIGNING`，独立 worktree 预定 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`。用户最新指令冻结所有后续部署，T15 只允许规格、计划、实现与直接相关测试，必须停在待发布状态等待下一次明确部署指令。
+- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 因候选落后最新根 `main` 进入受保护的 `REFRESH_REQUIRED`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
+- 当前发布状态：生产源 `main@892db8cefb37bcab14b0aded8082811ac3935f48`、tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；T17 普通预加载蓝绿发布为 `succeeded/promoted`、等效 `downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -12,7 +12,7 @@
 - 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
 - 模型规则：所有用户可见顶层任务统一使用 `GPT-5.6 Sol / medium`；任务内部 implementer/reviewer 子代理继续使用既定设置，不随顶层模型统一调整。
 - 根任务职责：排队、创建顶层任务、读取交接、授权合并、合并后快速门禁、推送、部署和线上验收；不得用根任务内部 `spawn_agent` 代替整个任务包。
-- 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与验证、独立任务复审、最终全分支终审，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`。
+- 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。
 
 ## 队列
 
@@ -186,9 +186,22 @@
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
-- T09 已完成官方候选刷新、根合并、push、精确维护放行、宿主切换和即时健康验证；T14 排在其后进入下一独立任务，S1-R2 继续原队列位置，S1 旧候选继续冻结。
-- S1 旧候选保持冻结；后续 S1-R2 必须从届时最新 `main` 重建并重新分配迁移编号，S2/S3 继续分别等待前一包生产验收。
-- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围；当前不插队、不另开紧急实现任务、不解冻旧 S1 候选。
+- T15 候选继续停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已完成根 `main@2271b818` 的推送、预加载蓝绿发布与线上健康验收，进入 `DONE`。
+- S1-R2 生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像绑定 `main@2271b818`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。未触发人为上游失败或修改生产账号；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
+- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 与 S2 均已进入 `DONE`；S3 的前置依赖已满足，但仍须按独立任务/worktree 门禁从最新干净 `main` 启动。
+
+### S2 共享健康、故障域与抗故障重试
+
+- 当前状态：`DONE`。独立候选 `codex/s2-shared-health-failure-domain@33d9fdb6a` 已整合根 `main@566fc52ba`，无冲突合入 `main@d1f9bc06c`，最终发布源为已推送的根 `main@aab79007f`。合并树及最终干净发布 worktree 的 repository/service/handler/config 聚焦测试、server compile-only/build、gofmt、diff-check、零迁移和零 GitHub Actions 范围检查均通过；真实 Redis integration-tag 用例仍被既有无关 `stringPtr` 重名编译冲突阻断。既有预加载蓝绿链返回 `succeeded`、`downtime_required=false`、活动槽 `blue`；API/worker 同镜像且 healthy/restart 0，PostgreSQL/Redis/Caddy 身份未变。公网三项健康端点均 200；自然流量已生成 8 个 healthy account-model 投影、2 个故障域投影和 13 个幂等事件标记，API/worker 15 分钟内 shared-health 告警、panic、fatal 均为 0。未修改生产账号或人为制造上游故障。恢复 bundle 已验证后，S2 功能 worktree、本地分支和临时发布 worktree均已安全删除；T15/T16/历史保护 worktree 未动。交接与验证见 `docs/handoffs/2026-08-17-s2-shared-health-failure-domain-handoff.md`、`docs/superpowers/reports/2026-08-17-s2-shared-health-failure-domain-verification.md`。
+- 目标：以 Redis 承载可重建的跨实例账号模型 transient/EWMA/half-open 与故障域运行时投影；保持 S1 数据库确定性隔离为唯一权威；为单一逻辑请求统一最大尝试数、账号切换数、故障域数和总重试预算；429 尊重 `Retry-After`，5xx/连接错误受有界指数退避；Redis 故障按本地 fail-safe 降级，不放行 S1 veto、不造成全站失败。
+- 独立边界：不改变 S1 分类/原生状态、不改变 Top-K/粘性体验、不迁移管理员审计到 Redis、不改变价格、倍率、账务或外部控制面；不开启默认 TTFT 并行竞速；目标发布属性 `downtime_required=false`。
+- 依赖与门禁：S1、S2 均已完成生产验收；S3 的依赖已满足，可按队列从最新干净 `main` 创建独立任务/worktree。T15/T16 与历史冻结候选的保护状态不变。
+
+### S3 自适应选择、粘性逃逸与调度体验观测
+
+- 当前状态：`DONE`。独立候选 `codex/s3-adaptive-scheduling-experience@026b7b26d` 已无冲突合入并推送根 `main@0720b8bf0b5e23486904e571f12b483e7329a9c0`；合并树的 config/service/handler/admin/routes focused tests、server compile/build、前端 3 files / 9 tests、typecheck/build、diff-check、零迁移和零 GitHub Actions 范围检查均通过。既有本地/宿主蓝绿链返回 `result=succeeded`、`state=promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；宿主记录为 `/var/lib/sub2api/release-records/20260817T093040Z-production-1990545.json`，API/worker 使用同一不可变镜像，迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。登录态 Ops Dashboard 已显示自然流量样本（22）、平均尝试 1.00/P95 1、sticky 保留 20/20、sticky 逃逸 0/20、Top-K 过滤 21/26（80.8%）、TTFT report-only 合格 2/22（9.1%）；自动恢复、重复坏账号、预算耗尽均为自然 `no_data 0/0`，未制造失败或修改生产账号。0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-0720b8bf0-s3-adaptive-scheduling-v1.json`；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/s3-adaptive-scheduling-experience-026b7b26.bundle` 已验证，SHA-256 `b8f64d71e4659dab7bd01b499b3015c1c209d24b04de7b40cbd7b77c339823c4`，随后已清理 S3 worktree、分支和临时发布 worktree。
+- 目标：消费 S1/S2 的健康与预算决定，先健康门槛、再动态 Top-K/最低质量阈值、再可解释 sticky escape；仅对安全重放且尚未输出的请求做 TTFT report-only/受控预热；在现有原生监控/运维入口呈现自动恢复率、平均尝试数、坏账号重复命中率、缓存代价和预算耗尽率。
+- 独立边界：不重新定义错误状态、S2 重试上限、价格、账务或控制面；默认不启用并行竞速；S1/S2 veto 永远优先于分数和 sticky；目标发布属性 `downtime_required=false`。
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
@@ -219,11 +232,39 @@
 
 ### T15 账号监控原生探测模型与异步模型检测
 
-- 当前状态：`DESIGNING`。brainstorming 与产品设计已完成并获用户批准；用户明确豁免再次确认正式规格。当前预定独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection`，从最新根 `main` 创建后产出正式规格与自审，再调用 writing-plans 并进入实现。用户已明确“先不部署，等下一个指令再部署”，因此本任务可完成规格、计划、实现、直接相关测试和候选交接，但不得合并发布或触发生产部署。
+- 当前状态：`REFRESH_REQUIRED`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection` 已从根 `main@25310c2379ec10807f5dccd9dd5bf8997b491646` 完成正式规格、计划、实现、直接相关测试和候选交接；旧候选 SHA 为 `bc108251c044cd038ceaa54bca061ff28d2311dc`，worktree 干净。根总控于 2026-08-17 审计确认其相对最新 `main@92e8489859ce8e150f0dba76c5af0360ef7a5620` 落后 81 个提交、仅保有 1 个独有提交；只读合并模拟确认 `upstream/sub2api/backend/cmd/server/wire_gen.go` 存在内容冲突，迁移 `225_account_model_detection.sql` 当前无编号冲突。必须由原 T15 用户可见顶层任务在该 worktree 整合最新 `main`、仅解决 T15 范围冲突并重跑直接相关门禁，再回到 `READY_FOR_ROOT_REVIEW`。刷新前不得合并根 `main`、push、发布预检或触碰生产。交接见 T15 worktree 内 `docs/handoffs/2026-08-17-t15-native-probe-model-detection-handoff.md`。
 - 原生连接测试：继续复用 `AccountTestService.ProbeAccountConnection`；每账号持久化独立 `connection_probe_model`，默认优先 `gpt-5.6-sol`，不支持时回退 Sub 原生登记的首个文本模型，页面不显示“自动选择”。近期探测标题旁提供修改连接测试模型入口。
 - 异步检测模型：新增独立 `model_detection_model`；可选模型是 Sub 原生账号模型登记（`GET /admin/accounts/:id/models` 及 sync-upstream 结果）与检测器运行时基线目录的交集。原生模型可见但无基线时置灰并显示“检测器暂不支持”。
 - 执行架构：检测器为仅执行的独立 sidecar，Sub worker 负责调度、持久化和唯一事实。北京时间 `00:00/10:00/12:00/15:00/18:00/21:00` 检测所有未删除、API Key 且检测器支持的账号，不受可调度状态影响；OAuth 不执行，每个任务只跑一轮探针。单账号可立即异步检测，同账号已排队/运行则复用；固定时隙持久化去重，错过仅在 30 分钟内补触发。
 - 页面合同：每个 `AccountMonitorCard.vue` 卡片增加默认收缩的一行检测状态；点击弹窗查看最近结果、申报模型、Juice 摘要、行为指纹候选/相似度、检测器版本、时间/错误，并可修改检测模型或立即检测。无全局摘要，不改变 `AccountMonitorView.vue` 现有卡片主样式。
 - 状态与隔离：状态仅为未检测、排队中、检测中、正常、异常、证据不足、检测失败、不支持；检测结果不参与质量评分、调度权重、可调度状态或分组建议。异常只能表述“检测器观察到异常”，不得表述“上游确认替换”。
 - 安全与失败：不保存或记录 API Key、完整提示词、完整输出或上游地址；凭据只在私网内存中传给 sidecar。sidecar 故障仅记录检测失败，不影响原生连接测试或账号状态；账号删除、变 OAuth 或模型失效时，执行前跳过或回退。
+- 验证：migration focused、service/repository/routes focused、backend compile-only、前端 2 files / 93 tests、`npm run typecheck`、`npm run build` 与 `git diff --check` 均通过；未运行全仓测试、额外 reviewer、压力/mutation/浏览器矩阵。
+- 许可证与配置门禁：参考检测器目录 `tools/gpt56_api_detector-git` 为 PolyForm Noncommercial 1.0.0；T15 未复制其核心实现或基线。未取得商业书面授权或合法独立实现前，生产不得配置 `SUB2API_MODEL_DETECTOR_URL` 或 `SUB2API_MODEL_DETECTOR_TOKEN`；未配置时页面显示“不支持”，不影响原生监控。
 - 发布边界：继续使用本地/宿主发布链，不增加 GitHub Actions；发布预检若返回 `downtime_required=true`，必须停在用户授权门禁。原生证据入口为 `backend/internal/service/account_monitor_probe.go`、`account_monitor_service.go`、前端 `AccountMonitorCard.vue` 与 `AccountMonitorView.vue`。
+
+### S1-R2 确定性故障原生隔离编排
+
+- 当前状态：`DONE`。用户可见顶层任务 `01a00da8-ed25-7b72-b9d9-cdcee5fa75c1` 已合入并推送根 `main@2271b81874d9dfc5eb0894bd02e0f30c2a1f085b`；合并后直接相关 service/unit/config/compile-only/build/gofmt/diff-check 全部通过。生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像为 `ghcr.io/leesssong/xingqiao-sub2api:release-2271b81874d9dfc5eb0894bd02e0f30c2a1f085b-93a0a891bcaf6acc2457fa37329cb86229199c6545bf67259e96b8cae5ca01ba`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200，未触发人为上游失败或修改生产账号；交接见 `docs/handoffs/2026-08-17-s1-r2-native-deterministic-failure-isolation-handoff.md`。
+- 目标：把明确且可确定归因的上游账号/模型故障映射到 Sub 原生隔离、冷却与恢复机制，包括页面“正在重新连接 1/5”、`stream disconnected before completion` 以及上游 SSE 在 `response.completed` 前断开的账号模型冷却/故障转移边界。
+- 已有合同：余额不足复用原生 `temp_unschedulable`（默认 90 分钟，允许范围 60–120 分钟）；确认凭据失效使用原生 `status=error/schedulable=false` 并要求受控探测或管理员恢复；明确模型不支持使用原生 `model_rate_limits`，作用域为账号 + canonical model；episode 仅作审计解释，不形成第二套 scheduler veto。
+- 实现与验证：余额不足统一落原生 90 分钟账号冷却（配置允许 60–120，越界回退 90）；明确模型不支持落账号 + canonical model 的原生 `model_rate_limits/probe_required`；API Key 明确凭据失效继续原生 error/不可调度；未收到成功终态的 SSE 进入既有账号模型 transient，同时保留输出后禁止重放。直接相关 service、unit 回归、config、受影响包 compile-only、server build、gofmt 与全候选 diff-check 通过；无迁移、未使用 225/226、无 GitHub Actions 变化。
+- 安全边界：泛化 403、网络失败、空/截断/不完整模型清单不得硬隔离；继续复用现有 transient cooldown、half-open、sticky、scheduler outbox、计费幂等和流式恢复。`downtime_required=unverified`；用户解除部署冻结前不得合并、push、预检、部署或触碰生产，S2/S3 不得启动。
+
+### T16 经营页真实结果与视觉层级重设计
+
+- 当前状态：`FROZEN`。视觉稿和产品方向虽已获用户明确批准，但总控已纠偏暂停本项，避免跳过 S1→S2→S3 串行链。用户可见顶层任务 `01a00dd1-d476-79b3-bdef-5e4d06103f50` 保留在 `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy`、基线 `main@3d0f5b374aa9f4fe6f57cb2810f4984660997904`；初始化后无文件变更，worktree 干净。未经总控重新 GO 不得继续。
+- 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
+- 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
+- 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。
+- 视觉合同：业务营收使用蓝色语义，真实上游消耗使用琥珀色，内部运营使用紫色，净利润使用绿色，真实亏损/内部补贴成本使用红色或警示语义；账号明细为紧凑表格。桌面层级清晰，390px 摘要两列且整页无横向溢出；若明细采用受控横向滚动，必须限制在表格容器内。
+- 发布边界：本项保持冻结，不执行原生盘点、brainstorming、planning、实现或测试。只有 S1-R2 完成生产验收、S2 完成生产验收且总控重新 GO 后，才可解冻并从届时最新干净 `main` 重新核对基线。
+
+### T17 用量详情“上游扣费/利润”统一 Sub 原生有效账号成本口径热修
+
+- 当前状态：`DONE`。T17 已无冲突合入并推送根 `main@892db8cefb37bcab14b0aded8082811ac3935f48`；前端 38/38 focused tests、typecheck/build、后端管理员/DTO focused tests、server compile-only/build 和范围检查均通过。普通预加载蓝绿链完成 `succeeded/promoted`，活动槽 `blue`，迁移哈希未变，API/worker 同镜像且 healthy/restart 0，公网三项健康端点均 200。登录态页面确认 evidence unavailable 时详情仍显示有效账号成本和利润并与列表一致；控制器在宿主成功 final record 后遇到 SSH 关闭产生本地假阴性，已通过 release-state、final record、容器和标签只读核对完成收口。宿主记录 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`，0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t17-effective-account-cost-hotfix-9ffbdbc2.bundle` 已验证，SHA-256 `c8aa71b345f74486e97cafdd2a6078afe22b8fa6da62c7c35386646c767c3879`；功能 worktree/分支和临时 release worktree 已清理，另一个既有用户可见 T17 worktree 未动。不得并入 S3。
+- 已确认问题：使用记录列表与账号利润/经营页均使用 Sub 原生有效账号成本 `COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1))`；用量详情弹窗却以 `usage_upstream_cost_evidence.normalized_cost_cny` 决定主金额，严格 evidence 为 `unavailable` 时显示 `-`，造成同一流水口径不一致；T14 只修复了 PascalCase/snake_case 兼容，未修改事实源。
+- 生产证据：`usage_log_id=125444/125509/125512` 的 `account_cost` 分别为 `0.0033144600/0.0058255200/0.0060059400`，对应利润为 `0.0022096400/0.0038836800/0.0040039600`，详情当前均显示 `-`。账号 214 当日 518 笔均有 `account_cost`，账号成本合计与利润页成本均为 `4.9629669888`，用户扣费 `8.2716116480`，利润 `3.3086446592`，但 518 笔严格 evidence 均为 `unavailable`。两个详情 API 均 HTTP 200，证明为选错主事实源而非接口失败。
+- 目标：详情“上游扣费”读取 effective account cost，利润统一为 `actual_cost - effective_account_cost`；历史 `account_cost` 为空时使用上述 fallback。`usage_upstream_cost_evidence` 只作严格账单核验状态/原因，不得决定主金额是否显示或成为利润主事实源。同一流水在列表、详情和账号利润/经营页的成本数学值必须一致，允许展示精度不同。
+- 最小验收：增加直接相关前端/API/公式回归，覆盖 `account_cost`、历史 fallback 和 `evidence_status=unavailable` 三类；不改价格、倍率、`actual_cost/account_cost` 写入逻辑或经营页聚合公式。
+- 边界：无数据库迁移、历史回填、生产数据修改、账务重算或历史 evidence 表删除；不并入 S3，不使用 GitHub Actions。预检 `downtime_required=false` 时按全局规则直接发布，为 `true` 时暂停请求授权。

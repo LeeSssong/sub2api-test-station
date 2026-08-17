@@ -65,7 +65,8 @@ func TestRateLimitService_HandleUpstreamError_ModelNotFoundUsesModelRateLimit(t 
 	call := repo.modelRateLimitCalls[0]
 	require.Equal(t, account.ID, call.accountID)
 	require.Equal(t, "gpt-5.4", call.scope)
-	require.Equal(t, upstreamModelNotFoundReason, call.reason)
+	require.Contains(t, call.reason, `"failure_class":"model_unsupported"`)
+	require.Contains(t, call.reason, `"recovery_policy":"probe_required"`)
 	require.WithinDuration(t, time.Now().Add(upstreamModelNotFoundCooldown), call.resetAt, 5*time.Second)
 }
 
@@ -523,5 +524,6 @@ func TestRateLimitService_HandleUpstreamError_ModelNotFoundImageModelStillCoolsD
 
 	require.True(t, handled)
 	require.Len(t, repo.modelRateLimitCalls, 1, "守卫只作用于 codex plan-gated 分支")
-	require.Equal(t, upstreamModelNotFoundReason, repo.modelRateLimitCalls[0].reason)
+	require.Contains(t, repo.modelRateLimitCalls[0].reason, `"failure_class":"model_unsupported"`)
+	require.Contains(t, repo.modelRateLimitCalls[0].reason, `"recovery_policy":"probe_required"`)
 }

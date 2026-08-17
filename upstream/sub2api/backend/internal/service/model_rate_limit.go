@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -19,8 +20,34 @@ const (
 
 // isRateLimitActiveForKey 检查指定 key 的限流是否生效
 func (a *Account) isRateLimitActiveForKey(key string) bool {
+	if a.modelRateLimitRequiresProbe(key) {
+		return true
+	}
 	resetAt := a.modelRateLimitResetAt(key)
 	return resetAt != nil && time.Now().Before(*resetAt)
+}
+
+func (a *Account) modelRateLimitRequiresProbe(scope string) bool {
+	if a == nil || a.Extra == nil || scope == "" {
+		return false
+	}
+	limits, ok := a.Extra[modelRateLimitsKey].(map[string]any)
+	if !ok {
+		return false
+	}
+	entry, ok := limits[scope].(map[string]any)
+	if !ok {
+		return false
+	}
+	reason, _ := entry["reason"].(string)
+	var payload struct {
+		Source         string `json:"source"`
+		RecoveryPolicy string `json:"recovery_policy"`
+	}
+	if json.Unmarshal([]byte(reason), &payload) != nil {
+		return false
+	}
+	return payload.Source == deterministicFailureSource && payload.RecoveryPolicy == deterministicProbePolicy
 }
 
 // getRateLimitRemainingForKey 获取指定 key 的限流剩余时间，0 表示未限流或已过期

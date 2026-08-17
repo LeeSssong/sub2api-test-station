@@ -23,6 +23,33 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestGatewayOpenAISharedHealthDefaultsAndHardLimits(t *testing.T) {
+	cfg := DefaultGatewayOpenAISharedHealthConfig()
+	require.True(t, cfg.Enabled)
+	require.Equal(t, 75, cfg.RedisTimeoutMS)
+	require.Equal(t, 30, cfg.StaleAfterSeconds)
+	require.Equal(t, 4, cfg.MaxAttempts)
+	require.Equal(t, 3, cfg.MaxAccountSwitches)
+	require.Equal(t, 2, cfg.MaxFailureDomains)
+	require.Equal(t, 5000, cfg.TotalRetryBudgetMS)
+	require.Equal(t, 120, cfg.BackoffInitialMS)
+	require.Equal(t, 2000, cfg.BackoffMaxMS)
+	require.Equal(t, 15, cfg.HalfOpenLeaseSeconds)
+	require.NoError(t, cfg.Validate())
+
+	cfg.MaxAttempts = 5
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.MaxAccountSwitches = 4
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.MaxFailureDomains = 3
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.TotalRetryBudgetMS = 5001
+	require.Error(t, cfg.Validate())
+}
+
 func TestLoadProcessRole(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -533,6 +560,18 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate != 0.5 {
 		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeErrorRate = %v, want 0.5", cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate)
+	}
+	if !cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKEnabled = false, want true")
+	}
+	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax != 7 {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKMax = %d, want 7", cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax)
+	}
+	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap != 0.15 {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = %v, want 0.15", cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap)
+	}
+	if !cfg.Gateway.OpenAIScheduler.TTFTReportOnlyEnabled {
+		t.Fatalf("Gateway.OpenAIScheduler.TTFTReportOnlyEnabled = false, want true")
 	}
 	if !cfg.Gateway.OpenAIWS.SessionHashReadOldFallback {
 		t.Fatalf("Gateway.OpenAIWS.SessionHashReadOldFallback = false, want true")
@@ -2425,6 +2464,26 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "sticky_escape_error_rate 不能大于 1",
 			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 1.1 },
 			wantErr: "gateway.openai_scheduler.sticky_escape_error_rate",
+		},
+		{
+			name:    "adaptive_top_k_max 必须为正数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKMax = 0 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_max",
+		},
+		{
+			name:    "adaptive_top_k_max 不能超过 32",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKMax = 33 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_max",
+		},
+		{
+			name:    "adaptive_top_k_score_gap 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = -0.01 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_score_gap",
+		},
+		{
+			name:    "adaptive_top_k_score_gap 不能超过 10",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap = 10.01 },
+			wantErr: "gateway.openai_scheduler.adaptive_top_k_score_gap",
 		},
 	}
 

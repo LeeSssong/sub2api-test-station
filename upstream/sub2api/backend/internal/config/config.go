@@ -974,6 +974,8 @@ type GatewayConfig struct {
 	Live GatewayLiveConfig `mapstructure:"live"`
 	// OpenAIScheduler: OpenAI 高级调度器粘性逃逸配置
 	OpenAIScheduler GatewayOpenAISchedulerConfig `mapstructure:"openai_scheduler"`
+	// OpenAISharedHealth: OpenAI 跨实例共享健康与请求重试硬上限。
+	OpenAISharedHealth GatewayOpenAISharedHealthConfig `mapstructure:"openai_shared_health"`
 	// OpenAIHTTP2: OpenAI HTTP 上游协议策略（默认启用 HTTP/2，可按代理能力回退 HTTP/1.1）
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// OpenAIProxyStreamCircuit: Responses SSE 代理断流熔断策略。
@@ -1319,6 +1321,73 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
+	// AdaptiveTopKEnabled: 是否在健康候选中按最佳分数差动态收窄 Top-K
+	AdaptiveTopKEnabled bool `mapstructure:"adaptive_top_k_enabled"`
+	// AdaptiveTopKMax: 动态候选池的绝对上限
+	AdaptiveTopKMax int `mapstructure:"adaptive_top_k_max"`
+	// AdaptiveTopKScoreGap: 最佳分数与有效候选最低分数的最大差值
+	AdaptiveTopKScoreGap float64 `mapstructure:"adaptive_top_k_score_gap"`
+	// TTFTReportOnlyEnabled: 是否只记录 TTFT 安全竞争资格，不发起第二请求
+	TTFTReportOnlyEnabled bool `mapstructure:"ttft_report_only_enabled"`
+}
+
+type GatewayOpenAISharedHealthConfig struct {
+	Enabled              bool `mapstructure:"enabled"`
+	RedisTimeoutMS       int  `mapstructure:"redis_timeout_ms"`
+	StaleAfterSeconds    int  `mapstructure:"stale_after_seconds"`
+	MaxAttempts          int  `mapstructure:"max_attempts"`
+	MaxAccountSwitches   int  `mapstructure:"max_account_switches"`
+	MaxFailureDomains    int  `mapstructure:"max_failure_domains"`
+	TotalRetryBudgetMS   int  `mapstructure:"total_retry_budget_ms"`
+	BackoffInitialMS     int  `mapstructure:"backoff_initial_ms"`
+	BackoffMaxMS         int  `mapstructure:"backoff_max_ms"`
+	HalfOpenLeaseSeconds int  `mapstructure:"half_open_lease_seconds"`
+}
+
+func DefaultGatewayOpenAISharedHealthConfig() GatewayOpenAISharedHealthConfig {
+	return GatewayOpenAISharedHealthConfig{
+		Enabled:              true,
+		RedisTimeoutMS:       75,
+		StaleAfterSeconds:    30,
+		MaxAttempts:          4,
+		MaxAccountSwitches:   3,
+		MaxFailureDomains:    2,
+		TotalRetryBudgetMS:   5000,
+		BackoffInitialMS:     120,
+		BackoffMaxMS:         2000,
+		HalfOpenLeaseSeconds: 15,
+	}
+}
+
+func (c GatewayOpenAISharedHealthConfig) Validate() error {
+	if c.RedisTimeoutMS <= 0 {
+		return fmt.Errorf("redis_timeout_ms must be positive")
+	}
+	if c.StaleAfterSeconds <= 0 || c.StaleAfterSeconds > 30 {
+		return fmt.Errorf("stale_after_seconds must be between 1 and 30")
+	}
+	if c.MaxAttempts <= 0 || c.MaxAttempts > 4 {
+		return fmt.Errorf("max_attempts must be between 1 and 4")
+	}
+	if c.MaxAccountSwitches < 0 || c.MaxAccountSwitches > 3 {
+		return fmt.Errorf("max_account_switches must be between 0 and 3")
+	}
+	if c.MaxFailureDomains <= 0 || c.MaxFailureDomains > 2 {
+		return fmt.Errorf("max_failure_domains must be between 1 and 2")
+	}
+	if c.TotalRetryBudgetMS <= 0 || c.TotalRetryBudgetMS > 5000 {
+		return fmt.Errorf("total_retry_budget_ms must be between 1 and 5000")
+	}
+	if c.BackoffInitialMS < 0 {
+		return fmt.Errorf("backoff_initial_ms must be non-negative")
+	}
+	if c.BackoffMaxMS < c.BackoffInitialMS || c.BackoffMaxMS > 2000 {
+		return fmt.Errorf("backoff_max_ms must be between backoff_initial_ms and 2000")
+	}
+	if c.HalfOpenLeaseSeconds <= 0 || c.HalfOpenLeaseSeconds > 15 {
+		return fmt.Errorf("half_open_lease_seconds must be between 1 and 15")
+	}
+	return nil
 }
 
 // GatewayUsageRecordConfig 使用量记录异步队列配置
@@ -1615,8 +1684,9 @@ type DefaultConfig struct {
 }
 
 type RateLimitConfig struct {
-	OverloadCooldownMinutes int `mapstructure:"overload_cooldown_minutes"`  // 529过载冷却时间(分钟)
-	OAuth401CooldownMinutes int `mapstructure:"oauth_401_cooldown_minutes"` // OAuth 401临时不可调度冷却(分钟)
+	OverloadCooldownMinutes          int `mapstructure:"overload_cooldown_minutes"`           // 529过载冷却时间(分钟)
+	OAuth401CooldownMinutes          int `mapstructure:"oauth_401_cooldown_minutes"`          // OAuth 401临时不可调度冷却(分钟)
+	BalanceExhaustedIsolationMinutes int `mapstructure:"balance_exhausted_isolation_minutes"` // 确认余额不足的账号级临时隔离(分钟)，仅允许60-120
 }
 
 // APIKeyAuthCacheConfig API Key 认证缓存配置
@@ -2234,6 +2304,7 @@ func setDefaults() {
 	// RateLimit
 	viper.SetDefault("rate_limit.overload_cooldown_minutes", 10)
 	viper.SetDefault("rate_limit.oauth_401_cooldown_minutes", 10)
+	viper.SetDefault("rate_limit.balance_exhausted_isolation_minutes", 90)
 
 	// Pricing - 从 model-price-repo 同步模型定价和上下文窗口数据（固定到 commit，避免分支漂移）
 	viper.SetDefault("pricing.remote_url", "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.json")
@@ -2318,6 +2389,17 @@ func setDefaults() {
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
+	sharedHealthDefaults := DefaultGatewayOpenAISharedHealthConfig()
+	viper.SetDefault("gateway.openai_shared_health.enabled", sharedHealthDefaults.Enabled)
+	viper.SetDefault("gateway.openai_shared_health.redis_timeout_ms", sharedHealthDefaults.RedisTimeoutMS)
+	viper.SetDefault("gateway.openai_shared_health.stale_after_seconds", sharedHealthDefaults.StaleAfterSeconds)
+	viper.SetDefault("gateway.openai_shared_health.max_attempts", sharedHealthDefaults.MaxAttempts)
+	viper.SetDefault("gateway.openai_shared_health.max_account_switches", sharedHealthDefaults.MaxAccountSwitches)
+	viper.SetDefault("gateway.openai_shared_health.max_failure_domains", sharedHealthDefaults.MaxFailureDomains)
+	viper.SetDefault("gateway.openai_shared_health.total_retry_budget_ms", sharedHealthDefaults.TotalRetryBudgetMS)
+	viper.SetDefault("gateway.openai_shared_health.backoff_initial_ms", sharedHealthDefaults.BackoffInitialMS)
+	viper.SetDefault("gateway.openai_shared_health.backoff_max_ms", sharedHealthDefaults.BackoffMaxMS)
+	viper.SetDefault("gateway.openai_shared_health.half_open_lease_seconds", sharedHealthDefaults.HalfOpenLeaseSeconds)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
@@ -2532,6 +2614,10 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_enabled", true)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_error_rate", 0.0)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_ttft_ms", 0)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_enabled", true)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_max", 7)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_score_gap", 0.15)
+	viper.SetDefault("gateway.openai_scheduler.ttft_report_only_enabled", true)
 
 	// server.trusted_proxies and security.forwarded_client_ip_headers are the
 	// other exception: load() distinguishes explicit configuration from absence
@@ -3223,6 +3309,11 @@ func (c *Config) Validate() error {
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
 	}
+	if c.Gateway.OpenAISharedHealth.Enabled || c.Gateway.OpenAISharedHealth != (GatewayOpenAISharedHealthConfig{}) {
+		if err := c.Gateway.OpenAISharedHealth.Validate(); err != nil {
+			return fmt.Errorf("gateway.openai_shared_health: %w", err)
+		}
+	}
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {
 		c.Gateway.Live.MaxSessionDurationSeconds = 3600
 	}
@@ -3468,6 +3559,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeErrorRate < 0 || c.Gateway.OpenAIScheduler.StickyEscapeErrorRate > 1 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_error_rate must be between 0 and 1")
+	}
+	if c.Gateway.OpenAIScheduler.AdaptiveTopKMax <= 0 || c.Gateway.OpenAIScheduler.AdaptiveTopKMax > 32 {
+		return fmt.Errorf("gateway.openai_scheduler.adaptive_top_k_max must be between 1 and 32")
+	}
+	if c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap < 0 || c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap > 10 {
+		return fmt.Errorf("gateway.openai_scheduler.adaptive_top_k_score_gap must be between 0 and 10")
 	}
 	if c.Gateway.MaxLineSize < 0 {
 		return fmt.Errorf("gateway.max_line_size must be non-negative")

@@ -61,6 +61,19 @@ func TestOpenAIModelTransient_BlockIsIsolatedByModel(t *testing.T) {
 	assert.False(t, state.isBlocked(47, "gpt-5.6-terra", now.Add(2*time.Second)))
 }
 
+func TestRecordOpenAIIncompleteStreamFailureUsesExistingTransientAndReplayBoundary(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+
+	preOutput := svc.recordOpenAIIncompleteStreamFailure(nil, 41, "gpt-5.6-sol", false, true, false, false)
+	require.True(t, preOutput.ExcludeFromRequest)
+	require.True(t, preOutput.CurrentRequestRetry)
+
+	postOutput := svc.recordOpenAIIncompleteStreamFailure(nil, 41, "gpt-5.6-sol", true, true, false, false)
+	require.True(t, postOutput.ExcludeFromRequest)
+	require.False(t, postOutput.CurrentRequestRetry)
+	require.Equal(t, 2, postOutput.FailureStreak)
+}
+
 func TestOpenAIModelTransient_SuccessClearsStreakAndBlock(t *testing.T) {
 	state := newOpenAIAccountModelTransientState(128)
 	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)

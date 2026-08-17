@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T17、T18 与 T19 均已完成推送、发布和线上验收，当前为 `DONE`；T16 是剩余唯一候选，需先刷新到最新根 `main` 再进入发布车道。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18 与 T19 均已完成推送、发布和线上验收，当前全部为 `DONE`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@949f200f3ad6fc0455cef7788abdc941a756c65f`、tree `47df2074c89762182213254f6fae6f9d1210ed5e`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T19 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T181347Z-production-2379500.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-949f200f3-t19-cache-eligibility-v1.json`。
+- 当前发布状态：生产源 `main@ad49f9004418d779dfb0d7967d3fc3681486fbbe`、tree `9ecfcfb5747bbf312900f615a20b16cf481dc370`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T16 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T184654Z-production-2406458.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-ad49f9004-t16-profitability-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -253,7 +253,7 @@
 
 ### T16 经营页真实结果与视觉层级重设计
 
-- 当前状态：`REFRESH_REQUIRED`（剩余唯一候选）。T16 worktree `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy` 的候选已完成实现和此前直接门禁；根 `main` 已推进至 T19 生产收口，必须刷新到最新主线并重跑 T16 直接相关后端/前端门禁，再进入整合和发布车道。
+- 当前状态：`DONE`。T16 刷新候选 `84b08ac9cbef6abeb4cb16b3cb2f36863f8f2164` 已合入并随根 `main@ad49f9004418d779dfb0d7967d3fc3681486fbbe` 推送和无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260817T184654Z-production-2406458.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`。登录态经营页与原生财务 API 均已验收。报告：`docs/superpowers/reports/2026-08-17-t16-profitability-visual-hierarchy-production.md`。
 - 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
 - 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
 - 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。

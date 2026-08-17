@@ -116,13 +116,20 @@ func (r *usageLogRepository) ReadAccountFinancialUsage(ctx context.Context, from
 				+ COALESCE(ul.cache_creation_tokens, 0)
 				+ COALESCE(ul.cache_read_tokens, 0)
 			), 0),
-			COALESCE(SUM(COALESCE(
+			COALESCE(SUM(CASE WHEN COALESCE(u.role, '') = 'admin' THEN COALESCE(
 				ul.account_cost,
 				COALESCE(ul.account_stats_cost, ul.total_cost)
 					* COALESCE(ul.account_rate_multiplier, 1)
-			)), 0),
-			COALESCE(SUM(COALESCE(ul.actual_cost, 0)), 0)
+			) ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(u.role, '') <> 'admin' THEN COALESCE(
+				ul.account_cost,
+				COALESCE(ul.account_stats_cost, ul.total_cost)
+					* COALESCE(ul.account_rate_multiplier, 1)
+			) ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(u.role, '') <> 'admin'
+				THEN COALESCE(ul.actual_cost, 0) ELSE 0 END), 0)
 		FROM usage_logs ul
+		LEFT JOIN users u ON u.id = ul.user_id
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
 		GROUP BY ul.group_id, ul.account_id
 		ORDER BY ul.group_id NULLS FIRST, ul.account_id
@@ -132,10 +139,20 @@ func (r *usageLogRepository) ReadAccountFinancialUsage(ctx context.Context, from
 	}
 	for rows.Next() {
 		var row service.AccountFinancialUsageRow
-		if err := rows.Scan(&row.GroupID, &row.AccountID, &row.Requests, &row.Tokens, &row.Cost, &row.UserCost); err != nil {
+		if err := rows.Scan(
+			&row.GroupID,
+			&row.AccountID,
+			&row.Requests,
+			&row.Tokens,
+			&row.OperationalCost,
+			&row.BusinessCost,
+			&row.BusinessRevenue,
+		); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
+		row.Cost = row.OperationalCost + row.BusinessCost
+		row.UserCost = row.BusinessRevenue
 		if row.GroupID != nil {
 			row.GroupName = groupByID[*row.GroupID].Name
 		}

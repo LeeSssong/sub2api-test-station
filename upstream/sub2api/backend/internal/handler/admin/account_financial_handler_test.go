@@ -175,7 +175,10 @@ func TestAccountFinancialReportReturnsNativeJSONContract(t *testing.T) {
 	reader := &financialUsageReader{snapshot: &service.AccountFinancialUsageSnapshot{
 		UserBalanceCNY: 90,
 		Accounts:       []service.AccountFinancialUsageAccount{{ID: 7, Name: "native", Type: "api_key", Platform: "sub", Active: true}},
-		Rows:           []service.AccountFinancialUsageRow{{AccountID: 7, Requests: 2, Tokens: 10, Cost: 1.25, UserCost: 2}},
+		Rows: []service.AccountFinancialUsageRow{{
+			AccountID: 7, Requests: 2, Tokens: 10,
+			OperationalCost: .25, BusinessCost: 1, BusinessRevenue: 2,
+		}},
 	}}
 	h := NewAccountFinancialHandler(service.NewAccountFinancialService(financialMutationRepo{}, reader, func() time.Time { return now }))
 	r := gin.New()
@@ -200,6 +203,13 @@ func TestAccountFinancialReportReturnsNativeJSONContract(t *testing.T) {
 	require.Equal(t, .75, body.Data.Summary.Profit)
 	require.Equal(t, 2.0, body.Data.Summary.Revenue)
 	require.Equal(t, 1.25, body.Data.Summary.Expense)
+	require.Equal(t, .25, body.Data.Summary.OperationalCost)
+	require.Equal(t, 1.0, body.Data.Summary.BusinessCost)
+	require.Equal(t, 2.0, body.Data.Summary.BusinessRevenue)
+	require.Equal(t, 1.25, body.Data.Summary.TotalCost)
+	require.Equal(t, .75, body.Data.Summary.NetProfit)
+	require.NotNil(t, body.Data.Summary.ExternalMargin)
+	require.Equal(t, .375, *body.Data.Summary.ExternalMargin)
 	require.NotNil(t, body.Data.Summary.ProbeRequests)
 	require.Equal(t, int64(0), *body.Data.Summary.ProbeRequests)
 	require.NotNil(t, body.Data.Summary.ProbeTokens)

@@ -37,6 +37,12 @@ type FinancialAmounts struct {
 	UserCost        float64          `json:"user_cost"`
 	Profit          float64          `json:"profit"`
 	Margin          *float64         `json:"margin"`
+	OperationalCost float64          `json:"operational_cost"`
+	BusinessCost    float64          `json:"business_cost"`
+	BusinessRevenue float64          `json:"business_revenue"`
+	TotalCost       float64          `json:"total_cost"`
+	NetProfit       float64          `json:"net_profit"`
+	ExternalMargin  *float64         `json:"external_margin"`
 	Revenue         float64          `json:"revenue"`
 	Expense         float64          `json:"expense"`
 	ProbeRequests   *int64           `json:"probe_requests"`
@@ -119,6 +125,9 @@ type AccountFinancialUsageRow struct {
 	Tokens          int64
 	Cost            float64
 	UserCost        float64
+	OperationalCost float64
+	BusinessCost    float64
+	BusinessRevenue float64
 }
 
 type AccountFinancialSnapshot struct {
@@ -287,15 +296,21 @@ func NewAccountFinancialService(repo AccountFinancialRepository, usageReader Acc
 }
 
 func finalizeFinancialAmounts(v *FinancialAmounts) {
-	v.Profit = v.UserCost - v.Cost
-	v.Revenue = v.UserCost
-	v.Expense = v.Cost
-	if v.UserCost == 0 {
+	v.TotalCost = v.OperationalCost + v.BusinessCost
+	v.NetProfit = v.BusinessRevenue - v.TotalCost
+	v.Cost = v.TotalCost
+	v.UserCost = v.BusinessRevenue
+	v.Profit = v.NetProfit
+	v.Revenue = v.BusinessRevenue
+	v.Expense = v.TotalCost
+	if v.BusinessRevenue == 0 {
 		v.Margin = nil
+		v.ExternalMargin = nil
 		return
 	}
-	margin := v.Profit / v.UserCost
+	margin := v.NetProfit / v.BusinessRevenue
 	v.Margin = &margin
+	v.ExternalMargin = &margin
 }
 
 func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinancialRange) (*AccountFinancialReport, error) {
@@ -389,8 +404,16 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 	add := func(dst *FinancialAmounts, row AccountFinancialUsageRow) {
 		dst.Requests += row.Requests
 		dst.Tokens += row.Tokens
-		dst.Cost += row.Cost
-		dst.UserCost += row.UserCost
+		operationalCost := row.OperationalCost
+		businessCost := row.BusinessCost
+		businessRevenue := row.BusinessRevenue
+		if operationalCost == 0 && businessCost == 0 && businessRevenue == 0 && (row.Cost != 0 || row.UserCost != 0) {
+			businessCost = row.Cost
+			businessRevenue = row.UserCost
+		}
+		dst.OperationalCost += operationalCost
+		dst.BusinessCost += businessCost
+		dst.BusinessRevenue += businessRevenue
 	}
 	for _, row := range snap.Rows {
 		account := accountForRow(row)

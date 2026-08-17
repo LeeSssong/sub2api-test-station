@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 已完成规格、计划、实现和直接相关验证，候选 `codex/t15-native-probe-model-detection@bc108251c044cd038ceaa54bca061ff28d2311dc` 现为 `READY_FOR_ROOT_REVIEW`；该未合并候选是用户明确保护项。用户最新指令继续冻结所有后续部署，因此不得合并 T15、推送发布内容、运行发布预检或触碰生产。下一独立准备任务为 S1-R2，但也只能推进到 `READY_FOR_ROOT_REVIEW`。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 已完成规格、计划、实现和直接相关验证，候选 `codex/t15-native-probe-model-detection@bc108251c044cd038ceaa54bca061ff28d2311dc` 现为 `READY_FOR_ROOT_REVIEW`；该未合并候选是用户明确保护项。用户最新指令继续冻结所有后续部署，因此不得合并 T15、推送发布内容、运行发布预检或触碰生产。下一独立准备任务为 S1-R2，但也只能推进到 `READY_FOR_ROOT_REVIEW`；已批准视觉方向的 T16 经营页真实结果与视觉层级重设计登记为后续 `BACKLOG`，不抢占当前车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -236,3 +236,12 @@
 - 目标：把明确且可确定归因的上游账号/模型故障映射到 Sub 原生隔离、冷却与恢复机制，包括页面“正在重新连接 1/5”、`stream disconnected before completion` 以及上游 SSE 在 `response.completed` 前断开的账号模型冷却/故障转移边界。
 - 已有合同：余额不足复用原生 `temp_unschedulable`（默认 90 分钟，允许范围 60–120 分钟）；确认凭据失效使用原生 `status=error/schedulable=false` 并要求受控探测或管理员恢复；明确模型不支持使用原生 `model_rate_limits`，作用域为账号 + canonical model；episode 仅作审计解释，不形成第二套 scheduler veto。
 - 安全边界：泛化 403、网络失败、空/截断/不完整模型清单不得硬隔离；继续复用现有 transient cooldown、half-open、sticky、scheduler outbox、计费幂等和流式恢复。S1-R2 候选最多停在 `READY_FOR_ROOT_REVIEW`；用户解除部署冻结前不得合并、push、预检、部署或触碰生产，S2/S3 不得启动。
+
+### T16 经营页真实结果与视觉层级重设计
+
+- 当前状态：`BACKLOG`。视觉稿和产品方向已获用户明确批准；本项是 T12 生产收口后的独立任务包，不回写或重开 T12。当前只登记队列，不创建 worktree、不调用 writing-plans、不实现、不合并或部署。
+- 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
+- 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
+- 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。
+- 视觉合同：业务营收使用蓝色语义，真实上游消耗使用琥珀色，内部运营使用紫色，净利润使用绿色，真实亏损/内部补贴成本使用红色或警示语义；账号明细为紧凑表格。桌面层级清晰，390px 摘要两列且整页无横向溢出；若明细采用受控横向滚动，必须限制在表格容器内。
+- 发布边界：轮到时从届时最新干净 `main` 创建独立用户可见顶层任务和 worktree，重新执行原生能力盘点、完整 brainstorming、正式规格/自审、writing-plans、实现与直接相关测试。当前部署冻结同样适用；未获新指令前最多停在 `READY_FOR_ROOT_REVIEW`，不得合并、push、预检、部署或触碰生产。

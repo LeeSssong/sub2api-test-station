@@ -14,7 +14,7 @@ import (
 
 var _ service.AccountFinancialUsageReader = (*usageLogRepository)(nil)
 
-const accountFinancialUsagePairQueryPattern = `(?s)SELECT.*ul\.group_id.*ul\.account_id.*COUNT\(\*\).*COALESCE\(SUM\(\s*COALESCE\(ul\.input_tokens, 0\)\s*\+ COALESCE\(ul\.output_tokens, 0\)\s*\+ COALESCE\(ul\.cache_creation_tokens, 0\)\s*\+ COALESCE\(ul\.cache_read_tokens, 0\)\s*\), 0\).*COALESCE\(SUM\(COALESCE\(\s*ul\.account_cost,\s*COALESCE\(ul\.account_stats_cost, ul\.total_cost\)\s*\* COALESCE\(ul\.account_rate_multiplier, 1\)\s*\)\), 0\).*COALESCE\(SUM\(COALESCE\(ul\.actual_cost, 0\)\), 0\).*FROM usage_logs ul.*WHERE ul\.created_at >= \$1 AND ul\.created_at < \$2.*GROUP BY ul\.group_id, ul\.account_id`
+const accountFinancialUsagePairQueryPattern = `(?s)SELECT.*ul\.group_id.*ul\.account_id.*COUNT\(\*\).*COALESCE\(SUM\(\s*COALESCE\(ul\.input_tokens, 0\)\s*\+ COALESCE\(ul\.output_tokens, 0\)\s*\+ COALESCE\(ul\.cache_creation_tokens, 0\)\s*\+ COALESCE\(ul\.cache_read_tokens, 0\)\s*\), 0\).*COALESCE\(SUM\(CASE WHEN COALESCE\(u\.role, ''\) = 'admin'.*COALESCE\(SUM\(CASE WHEN COALESCE\(u\.role, ''\) <> 'admin'.*FROM usage_logs ul\s+LEFT JOIN users u ON u\.id = ul\.user_id.*GROUP BY ul\.group_id, ul\.account_id`
 const accountFinancialProbeQueryPattern = `(?s)SELECT\s+group_id,\s+account_id,\s+COUNT\(\*\)::BIGINT.*FROM account_probe_cost_logs.*WHERE created_at >= \$1 AND created_at < \$2.*GROUP BY group_id, account_id`
 
 func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
@@ -38,9 +38,9 @@ func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(12.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).
 		WithArgs(from, to).
-		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "cost", "user_cost"}).
-			AddRow(int64(21), int64(11), int64(2), int64(14), 3.25, 5.5).
-			AddRow(nil, int64(12), int64(1), int64(4), 1.5, 2.0))
+		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}).
+			AddRow(int64(21), int64(11), int64(2), int64(14), 1.25, 2.0, 5.5).
+			AddRow(nil, int64(12), int64(1), int64(4), 0.0, 1.5, 2.0))
 	mock.ExpectQuery(accountFinancialProbeQueryPattern).WithArgs(from, to).
 		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "probe_requests", "probe_tokens", "probe_cost", "has_incomplete_cost"}))
 	mock.ExpectCommit()
@@ -61,7 +61,7 @@ func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 	require.Equal(t, service.AccountFinancialUsageRow{
 		GroupID: int64Ptr(21), GroupName: "active-group", AccountID: 11,
 		AccountName: "active-account", AccountType: "api_key", AccountPlatform: "openai",
-		Requests: 2, Tokens: 14, Cost: 3.25, UserCost: 5.5,
+		Requests: 2, Tokens: 14, Cost: 3.25, UserCost: 5.5, OperationalCost: 1.25, BusinessCost: 2.0, BusinessRevenue: 5.5,
 	}, snapshot.Rows[0])
 	require.Nil(t, snapshot.Rows[1].GroupID)
 	require.Equal(t, "historical-account", snapshot.Rows[1].AccountName)
@@ -69,6 +69,9 @@ func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 	require.Equal(t, int64(4), snapshot.Rows[1].Tokens)
 	require.InDelta(t, 1.5, snapshot.Rows[1].Cost, 1e-9)
 	require.InDelta(t, 2.0, snapshot.Rows[1].UserCost, 1e-9)
+	require.InDelta(t, 0.0, snapshot.Rows[1].OperationalCost, 1e-9)
+	require.InDelta(t, 1.5, snapshot.Rows[1].BusinessCost, 1e-9)
+	require.InDelta(t, 2.0, snapshot.Rows[1].BusinessRevenue, 1e-9)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -98,8 +101,8 @@ func TestReadAccountFinancialUsagePropagatesQueryScanAndCommitErrors(t *testing.
 				mock.ExpectQuery(groupsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
 				mock.ExpectQuery(balanceQuery).WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0))
 				mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
-					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "cost", "user_cost"}).
-						AddRow(nil, "not-an-account-id", int64(1), int64(1), 1.0, 1.0))
+					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}).
+						AddRow(nil, "not-an-account-id", int64(1), int64(1), 0.0, 1.0, 1.0))
 			},
 		},
 		{
@@ -110,7 +113,7 @@ func TestReadAccountFinancialUsagePropagatesQueryScanAndCommitErrors(t *testing.
 				mock.ExpectQuery(groupsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
 				mock.ExpectQuery(balanceQuery).WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0))
 				mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
-					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "cost", "user_cost"}))
+					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}))
 				mock.ExpectQuery(accountFinancialProbeQueryPattern).WithArgs(from, to).
 					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "probe_requests", "probe_tokens", "probe_cost", "has_incomplete_cost"}))
 				mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
@@ -145,8 +148,8 @@ func TestReadAccountFinancialUsageProbeFailurePreservesNativeSnapshot(t *testing
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageBalanceQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(88.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
-		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "cost", "user_cost"}).
-			AddRow(int64(21), int64(11), int64(2), int64(14), 3.25, 5.5))
+		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}).
+			AddRow(int64(21), int64(11), int64(2), int64(14), 1.25, 2.0, 5.5))
 	mock.ExpectQuery(accountFinancialProbeQueryPattern).WithArgs(from, to).WillReturnError(errors.New("probe aggregate unavailable"))
 	mock.ExpectRollback()
 
@@ -159,7 +162,7 @@ func TestReadAccountFinancialUsageProbeFailurePreservesNativeSnapshot(t *testing
 	require.Equal(t, 88.5, snapshot.UserBalanceCNY)
 	require.Equal(t, []service.AccountFinancialUsageRow{{
 		GroupID: int64Ptr(21), GroupName: "Pro", AccountID: 11, AccountName: "native", AccountType: "api_key", AccountPlatform: "sub",
-		Requests: 2, Tokens: 14, Cost: 3.25, UserCost: 5.5,
+		Requests: 2, Tokens: 14, Cost: 3.25, UserCost: 5.5, OperationalCost: 1.25, BusinessCost: 2.0, BusinessRevenue: 5.5,
 	}}, snapshot.Rows)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -179,8 +182,8 @@ func TestReadAccountFinancialUsageProbeScanFailureReturnsStableProbeError(t *tes
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageBalanceQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(12.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
-		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "cost", "user_cost"}).
-			AddRow(nil, int64(7), int64(1), int64(2), 3.0, 5.0))
+		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}).
+			AddRow(nil, int64(7), int64(1), int64(2), 0.0, 3.0, 5.0))
 	mock.ExpectQuery(accountFinancialProbeQueryPattern).WithArgs(from, to).
 		WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "probe_requests", "probe_tokens", "probe_cost", "has_incomplete_cost"}).
 			AddRow(nil, "invalid-account", int64(1), int64(2), "0.1", false))

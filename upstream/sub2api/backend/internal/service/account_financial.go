@@ -119,6 +119,9 @@ type AccountFinancialUsageRow struct {
 	Tokens          int64
 	Cost            float64
 	UserCost        float64
+	OperationalCost float64
+	BusinessCost    float64
+	BusinessRevenue float64
 }
 
 type AccountFinancialSnapshot struct {

@@ -6,9 +6,10 @@
 
 ## 身份
 
-- 基线 `main`：`a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
+- 原始实现基线 `main`：`a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
+- 根审刷新基线：`main@774d3ae4e84051462709764b9eef7812db6a333e`
 - 运行时/测试实现提交：`4d49d2a2c71a0e8378a7321425e6c45d072e1864`
-- 最终候选 HEAD（根审目标）：包含本 handoff 的 docs-only 收口提交；精确 SHA 以提交后从仓库根目录 fresh 运行的 `git rev-parse HEAD` 与根审命令输出为准。
+- 最终候选 HEAD（刷新后根审目标）：`8d05a7fc5f39f385b14639bd91f60afc96db93e1`（包含根 `main` 刷新合并；本 handoff 更新后会产生新的 docs-only 收口 SHA）。
 - 分支：`codex/s1-r2-native-deterministic-failure-isolation`
 - 当前 worktree：`/Users/gongtengxinwen/.codex/worktrees/6195/sub2api搭建`
 
@@ -36,6 +37,7 @@
 - 发现并修正原分类器将所有 HTTP 402 直接视为余额耗尽的问题。
 - 新增 generic 402 回归用例；当前仅稳定机器码或明确余额/额度耗尽消息进入 `balance_exhausted`，明确余额 402 仍保留分类。
 - 修复提交：`4d49d2a2c71a0e8378a7321425e6c45d072e1864`；定向 service/unit/config/compile/build/diff 验证均通过。
+- 候选随后已合入当前根 `main@774d3ae4e84051462709764b9eef7812db6a333e` 完成基线刷新，刷新合并无代码冲突；刷新后的同一组直接相关验证再次通过。
 
 ## 迁移、配置与发布
 

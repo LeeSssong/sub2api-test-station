@@ -1,7 +1,8 @@
 # S1-R2 直接相关验证报告
 
-**基线：** `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
-**实现验证 HEAD：** `4d49d2a2c71a0e8378a7321425e6c45d072e1864`
+**原始实现基线：** `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
+**刷新验证基线：** `main@774d3ae4e84051462709764b9eef7812db6a333e`
+**候选验证 HEAD：** `8d05a7fc5f39f385b14639bd91f60afc96db93e1`
 **范围：** 原生确定性故障分类、账号/模型原生状态投影、SSE 未完成终态 transient。
 
 ## 验证命令与结果
@@ -20,6 +21,8 @@
    - 结果：通过。
 7. `git diff --name-only a00fdb186..HEAD -- upstream/sub2api/backend/migrations .github/workflows`
    - 结果：无输出；无迁移、无 GitHub Actions 变化。
+8. 基线刷新：`git merge --no-edit main`
+   - 结果：无代码冲突；刷新后的候选重新通过上述 service/unit/config/compile-only/build/gofmt/diff-check 门禁。
 
 ## 根审 follow-up
 

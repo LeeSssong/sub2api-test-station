@@ -63,6 +63,8 @@
 - 控制器在宿主成功写入 final record 后遇到 SSH 连接关闭，因未收到最终 stdout JSON 本地返回失败；只读核对确认 release-state、final record、容器和镜像标签均已一致完成，且没有残留 `.partial`/`.failed` 文件。该故障属于成功落盘后的传输层假阴性，不改变生产发布结果。
 - 生产 API 对 `usage_log_id=125512` 的列表与详情均返回 `account_cost=0.00600594`、`actual_cost=0.0100099`；严格 evidence 为 `unavailable/endpoint_unsupported`。
 - 登录态页面验收：使用记录首行显示账号成本 `$0.012441`；对应详情显示“上游实际扣费 `$0.012441`”与“利润 `$0.012949`”，同时保留严格账单不可用提示，未再显示 `-`。
+- 恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t17-effective-account-cost-hotfix-9ffbdbc2.bundle`，`git bundle verify` 通过，SHA-256 `c8aa71b345f74486e97cafdd2a6078afe22b8fa6da62c7c35386646c767c3879`。
+- 在确认候选干净、已为根 `main` 祖先、远端和生产闭环后，T17 功能 worktree/分支及本次临时 release worktree 已安全清理；另一个既有用户可见 T17 worktree `codex/t17-usage-detail-effective-cost` 未修改、未清理。
 
 ## 结论
 

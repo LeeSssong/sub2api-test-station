@@ -9,7 +9,7 @@
 - 原始实现基线 `main`：`a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
 - 根审刷新基线：`main@774d3ae4e84051462709764b9eef7812db6a333e`
 - 运行时/测试实现提交：`4d49d2a2c71a0e8378a7321425e6c45d072e1864`
-- 最终候选 HEAD（刷新后根审目标）：`8d05a7fc5f39f385b14639bd91f60afc96db93e1`（包含根 `main` 刷新合并；本 handoff 更新后会产生新的 docs-only 收口 SHA）。
+- 最近一次刷新合并提交：`8d05a7fc5f39f385b14639bd91f60afc96db93e1`（包含根 `main` 刷新合并）；最终候选 SHA 以当前 worktree fresh 执行 `git rev-parse HEAD` 为准。
 - 分支：`codex/s1-r2-native-deterministic-failure-isolation`
 - 当前 worktree：`/Users/gongtengxinwen/.codex/worktrees/6195/sub2api搭建`
 

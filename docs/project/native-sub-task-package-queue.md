@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 已合并并推送根 `main`，发布预检返回 `downtime_required=true`，当前停在 `DEPLOYING` 人工授权门禁；T18、T19 均已登记为 `READY_FOR_ROOT_REVIEW` 排队候选，均不得插入 T15 车道；T16 保持 `FROZEN`。当前按用户指令暂不发布。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 已合并并推送根 `main`，发布预检返回 `downtime_required=true`，当前停在 `DEPLOYING` 人工授权门禁；T18、T19 均已登记为 `READY_FOR_ROOT_REVIEW` 排队候选，均不得插入 T15 车道；T16 已按用户“有待实施任务就接着实施”指令恢复为 `DESIGNING`，仅继续本地规格/实现/测试，不发布。当前按用户指令暂不发布。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@892db8cefb37bcab14b0aded8082811ac3935f48`、tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；T17 普通预加载蓝绿发布为 `succeeded/promoted`、等效 `downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -253,7 +253,7 @@
 
 ### T16 经营页真实结果与视觉层级重设计
 
-- 当前状态：`FROZEN`。视觉稿和产品方向虽已获用户明确批准，但总控已纠偏暂停本项，避免跳过 S1→S2→S3 串行链。用户可见顶层任务 `01a00dd1-d476-79b3-bdef-5e4d06103f50` 保留在 `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy`、基线 `main@3d0f5b374aa9f4fe6f57cb2810f4984660997904`；初始化后无文件变更，worktree 干净。未经总控重新 GO 不得继续。
+- 当前状态：`DESIGNING`。用户已明确要求继续实施待实施任务；独立 worktree `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy` 已刷新到根 `main@5171c62243ab037a2dd7eac4b4c361b2118e6f4b4`，当前仅进行正式规格、计划、实现和直接相关测试，不合并、推送、预检、部署或线上验收。
 - 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
 - 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
 - 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。

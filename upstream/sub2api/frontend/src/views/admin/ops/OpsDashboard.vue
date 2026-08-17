@@ -93,6 +93,16 @@
         />
       </div>
 
+      <!-- Row: OpenAI Scheduler Experience -->
+      <div v-if="opsEnabled && !(loading && !hasLoadedOnce)" class="grid grid-cols-1 gap-6">
+        <OpsOpenAISchedulerExperienceCard
+          :time-range="timeRange === 'custom' ? '1h' : timeRange"
+          :platform-filter="platform"
+          :group-id-filter="groupId"
+          :refresh-token="dashboardRefreshToken"
+        />
+      </div>
+
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="opsEnabled && showAlertEvents && !(loading && !hasLoadedOnce)" />
 
@@ -166,6 +176,7 @@ import OpsLatencyChart from './components/OpsLatencyChart.vue'
 import OpsThroughputTrendChart from './components/OpsThroughputTrendChart.vue'
 import OpsSwitchRateTrendChart from './components/OpsSwitchRateTrendChart.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
+import OpsOpenAISchedulerExperienceCard from './components/OpsOpenAISchedulerExperienceCard.vue'
 import OpsOpenAITokenStatsCard from './components/OpsOpenAITokenStatsCard.vue'
 import OpsSystemLogTable from './components/OpsSystemLogTable.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'

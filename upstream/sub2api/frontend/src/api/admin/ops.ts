@@ -244,6 +244,49 @@ export interface OpsOpenAITokenStatsParams {
   top_n?: number
 }
 
+export type OpsOpenAISchedulerExperienceTimeRange = '5m' | '30m' | '1h' | '6h' | '24h'
+export type OpsOpenAISchedulerMetricStatus = 'ok' | 'no_data' | 'insufficient_data'
+
+export interface OpsOpenAISchedulerRateMetric {
+  numerator: number
+  denominator: number
+  value?: number | null
+  status: OpsOpenAISchedulerMetricStatus
+}
+
+export interface OpsOpenAISchedulerAttemptsMetric {
+  sample_size: number
+  value?: number | null
+  p95?: number | null
+  status: OpsOpenAISchedulerMetricStatus
+}
+
+export interface OpsOpenAISchedulerExperienceMetrics {
+  auto_recovery_rate: OpsOpenAISchedulerRateMetric
+  average_attempts: OpsOpenAISchedulerAttemptsMetric
+  repeated_bad_account_rate: OpsOpenAISchedulerRateMetric
+  retry_budget_exhausted_rate: OpsOpenAISchedulerRateMetric
+  sticky_kept_rate: OpsOpenAISchedulerRateMetric
+  sticky_escape_rate: OpsOpenAISchedulerRateMetric
+  top_k_filtered_rate: OpsOpenAISchedulerRateMetric
+  ttft_report_eligible_rate: OpsOpenAISchedulerRateMetric
+}
+
+export interface OpsOpenAISchedulerExperienceResponse {
+  start_time: string
+  end_time: string
+  generated_at: string
+  latest_event_at?: string | null
+  sample_size: number
+  metrics: OpsOpenAISchedulerExperienceMetrics
+}
+
+export interface OpsOpenAISchedulerExperienceParams {
+  time_range?: OpsOpenAISchedulerExperienceTimeRange
+  platform?: string
+  group_id?: number | null
+}
+
 export interface OpsSystemMetricsSnapshot {
   id: number
   created_at: string
@@ -1094,6 +1137,17 @@ export async function getOpenAITokenStats(
   return data
 }
 
+export async function getOpenAISchedulerExperience(
+  params: OpsOpenAISchedulerExperienceParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsOpenAISchedulerExperienceResponse> {
+  const { data } = await apiClient.get<OpsOpenAISchedulerExperienceResponse>('/admin/ops/openai-scheduler-experience', {
+    params,
+    signal: options.signal
+  })
+  return data
+}
+
 export type OpsErrorListView = 'errors' | 'excluded' | 'all'
 
 export type OpsErrorListQueryParams = {
@@ -1328,6 +1382,7 @@ export const opsAPI = {
   getErrorTrend,
   getErrorDistribution,
   getOpenAITokenStats,
+  getOpenAISchedulerExperience,
   getConcurrencyStats,
   getUserConcurrencyStats,
   getAccountAvailabilityStats,

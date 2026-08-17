@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 因候选落后最新根 `main` 进入受保护的 `REFRESH_REQUIRED`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3 与 T17 均已完成推送、蓝绿发布和线上验收，当前为 `DONE`；T15 已在同一 worktree 整合最新根 `main`、完成直接相关门禁并回到受保护的 `READY_FOR_ROOT_REVIEW`，T16 保持 `FROZEN`。预检为 `downtime_required=false` 时发布总控直接继续蓝绿发布和线上验证；为 `true` 时才暂停请求用户授权。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@892db8cefb37bcab14b0aded8082811ac3935f48`、tree `ff44ca32ccbb79c64e1dfecfa9e1484ad9ff24b8`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；T17 普通预加载蓝绿发布为 `succeeded/promoted`、等效 `downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T102828Z-production-2034943.json`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-892db8cef-t17-effective-account-cost-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -186,7 +186,7 @@
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
-- T15 候选继续停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已完成根 `main@2271b818` 的推送、预加载蓝绿发布与线上健康验收，进入 `DONE`。
+- T15 已完成刷新并回到 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已完成根 `main@2271b818` 的推送、预加载蓝绿发布与线上健康验收，进入 `DONE`。
 - S1-R2 生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像绑定 `main@2271b818`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。未触发人为上游失败或修改生产账号；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
 - “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 与 S2 均已进入 `DONE`；S3 的前置依赖已满足，但仍须按独立任务/worktree 门禁从最新干净 `main` 启动。
 
@@ -232,7 +232,7 @@
 
 ### T15 账号监控原生探测模型与异步模型检测
 
-- 当前状态：`REFRESH_REQUIRED`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection` 已从根 `main@25310c2379ec10807f5dccd9dd5bf8997b491646` 完成正式规格、计划、实现、直接相关测试和候选交接；旧候选 SHA 为 `bc108251c044cd038ceaa54bca061ff28d2311dc`，worktree 干净。根总控于 2026-08-17 审计确认其相对最新 `main@92e8489859ce8e150f0dba76c5af0360ef7a5620` 落后 81 个提交、仅保有 1 个独有提交；只读合并模拟确认 `upstream/sub2api/backend/cmd/server/wire_gen.go` 存在内容冲突，迁移 `225_account_model_detection.sql` 当前无编号冲突。必须由原 T15 用户可见顶层任务在该 worktree 整合最新 `main`、仅解决 T15 范围冲突并重跑直接相关门禁，再回到 `READY_FOR_ROOT_REVIEW`。刷新前不得合并根 `main`、push、发布预检或触碰生产。交接见 T15 worktree 内 `docs/handoffs/2026-08-17-t15-native-probe-model-detection-handoff.md`。
+- 当前状态：`READY_FOR_ROOT_REVIEW`。独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t15-native-probe-model-detection`、分支 `codex/t15-native-probe-model-detection` 已将根 `main@b59baac1434f54024c5d5ea15e1d6f804d511aae` 整合进候选；刷新后最终候选为 `fcefd06f86bc2aa43de6ce33737ac3f6fda285e7`，tree `8cf5d21f0b8536497517124c3c8daa4758522fa3`，worktree 已由根总控导入并核对干净。唯一冲突为 `upstream/sub2api/backend/cmd/server/wire_gen.go`，已按合并后的 provider 依赖成功重生成，同时保留 T15 detector 与主线 shared-health/ops provider；迁移 `225_account_model_detection.sql` 无编号冲突。migration/service/repository/routes focused、受影响后端 compile-only、前端 AccountMonitorCard/AccountMonitorView 两文件 93 tests、`vue-tsc --noEmit`、`vite build`、gofmt 与 diff-check 均通过。交接见 T15 worktree 内 `docs/handoffs/2026-08-17-t15-native-probe-model-detection-handoff.md`。
 - 原生连接测试：继续复用 `AccountTestService.ProbeAccountConnection`；每账号持久化独立 `connection_probe_model`，默认优先 `gpt-5.6-sol`，不支持时回退 Sub 原生登记的首个文本模型，页面不显示“自动选择”。近期探测标题旁提供修改连接测试模型入口。
 - 异步检测模型：新增独立 `model_detection_model`；可选模型是 Sub 原生账号模型登记（`GET /admin/accounts/:id/models` 及 sync-upstream 结果）与检测器运行时基线目录的交集。原生模型可见但无基线时置灰并显示“检测器暂不支持”。
 - 执行架构：检测器为仅执行的独立 sidecar，Sub worker 负责调度、持久化和唯一事实。北京时间 `00:00/10:00/12:00/15:00/18:00/21:00` 检测所有未删除、API Key 且检测器支持的账号，不受可调度状态影响；OAuth 不执行，每个任务只跑一轮探针。单账号可立即异步检测，同账号已排队/运行则复用；固定时隙持久化去重，错过仅在 30 分钟内补触发。
@@ -241,7 +241,7 @@
 - 安全与失败：不保存或记录 API Key、完整提示词、完整输出或上游地址；凭据只在私网内存中传给 sidecar。sidecar 故障仅记录检测失败，不影响原生连接测试或账号状态；账号删除、变 OAuth 或模型失效时，执行前跳过或回退。
 - 验证：migration focused、service/repository/routes focused、backend compile-only、前端 2 files / 93 tests、`npm run typecheck`、`npm run build` 与 `git diff --check` 均通过；未运行全仓测试、额外 reviewer、压力/mutation/浏览器矩阵。
 - 许可证与配置门禁：参考检测器目录 `tools/gpt56_api_detector-git` 为 PolyForm Noncommercial 1.0.0；T15 未复制其核心实现或基线。未取得商业书面授权或合法独立实现前，生产不得配置 `SUB2API_MODEL_DETECTOR_URL` 或 `SUB2API_MODEL_DETECTOR_TOKEN`；未配置时页面显示“不支持”，不影响原生监控。
-- 发布边界：继续使用本地/宿主发布链，不增加 GitHub Actions；发布预检若返回 `downtime_required=true`，必须停在用户授权门禁。原生证据入口为 `backend/internal/service/account_monitor_probe.go`、`account_monitor_service.go`、前端 `AccountMonitorCard.vue` 与 `AccountMonitorView.vue`。
+- 发布边界：候选阶段尚未运行发布预检、未合并根 `main`、未推送、未部署或线上验收；继续使用本地/宿主发布链，不增加 GitHub Actions。发布预检若返回 `downtime_required=false`，按全局约束无需再次询问即可继续；若返回 `true`，必须停在用户授权门禁。原生证据入口为 `backend/internal/service/account_monitor_probe.go`、`account_monitor_service.go`、前端 `AccountMonitorCard.vue` 与 `AccountMonitorView.vue`。
 
 ### S1-R2 确定性故障原生隔离编排
 

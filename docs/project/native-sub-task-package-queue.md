@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2 已完成合并后专项门禁，当前进入 `INTEGRATING` -> `DEPLOYING`。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`；S2/S3 尚未启动；T16 保持 `FROZEN`。用户已于 2026-08-17 明确授权本次停机部署，发布总控仅推进 S1-R2，不合并其他候选、不使用 GitHub Actions，并在发布链返回 `downtime_required`/运行就绪结果前保留门禁。
+- 队列状态：S1-R2 已完成推送、蓝绿发布和线上健康验收，当前为 `DONE`。T15 仍为受保护的 `READY_FOR_ROOT_REVIEW`；S2/S3 尚未启动；T16 保持 `FROZEN`。本次发布总控仅推进 S1-R2，不合并其他候选、不使用 GitHub Actions；发布链返回 `downtime_required=false`，因此未实际停机。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
+- 当前发布状态：生产源 `main@2271b81874d9dfc5eb0894bd02e0f30c2a1f085b`、迁移哈希保持 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；本次预加载蓝绿发布返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -186,9 +186,9 @@
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
-- T15 候选继续停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已合入根 `main@39b1bfe973999455f693fa074dc31c99d3e19102`，合并后专项门禁通过，正在进入发布链。
-- S1-R2 已合入 `main@39b1bfe9`，尚未完成推送、部署或线上验证；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
-- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 候选已停在 `READY_FOR_ROOT_REVIEW`；S2/S3 尚未启动，继续等待 S1-R2 生产验收，不得启动。
+- T15 候选继续停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；S1-R2 已完成根 `main@2271b818` 的推送、预加载蓝绿发布与线上健康验收，进入 `DONE`。
+- S1-R2 生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像绑定 `main@2271b818`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。未触发人为上游失败或修改生产账号；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
+- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 已进入 `DONE`；S2/S3 尚未启动，仍不得在未获总控 GO 前启动。
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
@@ -232,7 +232,7 @@
 
 ### S1-R2 确定性故障原生隔离编排
 
-- 当前状态：`INTEGRATING` -> `DEPLOYING`。用户可见顶层任务 `01a00da8-ed25-7b72-b9d9-cdcee5fa75c1` 已合入根 `main@39b1bfe973999455f693fa074dc31c99d3e19102`；合并后直接相关 service/unit/config/compile-only/build/gofmt/diff-check 全部通过。用户已授权 2026-08-17 停机部署，尚未推送、预检、部署或线上验收；交接见 `docs/handoffs/2026-08-17-s1-r2-native-deterministic-failure-isolation-handoff.md`。
+- 当前状态：`DONE`。用户可见顶层任务 `01a00da8-ed25-7b72-b9d9-cdcee5fa75c1` 已合入并推送根 `main@2271b81874d9dfc5eb0894bd02e0f30c2a1f085b`；合并后直接相关 service/unit/config/compile-only/build/gofmt/diff-check 全部通过。生产发布结果为 `succeeded/promoted`、活动槽 `green`、`downtime_required=false`，不可变镜像为 `ghcr.io/leesssong/xingqiao-sub2api:release-2271b81874d9dfc5eb0894bd02e0f30c2a1f085b-93a0a891bcaf6acc2457fa37329cb86229199c6545bf67259e96b8cae5ca01ba`；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-2271b818-s1-r2-maintenance-ready-v1.json`。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200，未触发人为上游失败或修改生产账号；交接见 `docs/handoffs/2026-08-17-s1-r2-native-deterministic-failure-isolation-handoff.md`。
 - 目标：把明确且可确定归因的上游账号/模型故障映射到 Sub 原生隔离、冷却与恢复机制，包括页面“正在重新连接 1/5”、`stream disconnected before completion` 以及上游 SSE 在 `response.completed` 前断开的账号模型冷却/故障转移边界。
 - 已有合同：余额不足复用原生 `temp_unschedulable`（默认 90 分钟，允许范围 60–120 分钟）；确认凭据失效使用原生 `status=error/schedulable=false` 并要求受控探测或管理员恢复；明确模型不支持使用原生 `model_rate_limits`，作用域为账号 + canonical model；episode 仅作审计解释，不形成第二套 scheduler veto。
 - 实现与验证：余额不足统一落原生 90 分钟账号冷却（配置允许 60–120，越界回退 90）；明确模型不支持落账号 + canonical model 的原生 `model_rate_limits/probe_required`；API Key 明确凭据失效继续原生 error/不可调度；未收到成功终态的 SSE 进入既有账号模型 transient，同时保留输出后禁止重放。直接相关 service、unit 回归、config、受影响包 compile-only、server build、gofmt 与全候选 diff-check 通过；无迁移、未使用 225/226、无 GitHub Actions 变化。

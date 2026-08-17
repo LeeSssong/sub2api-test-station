@@ -24,6 +24,7 @@ func TestClassifyDeterministicUpstreamFailure(t *testing.T) {
 		classified bool
 	}{
 		{name: "explicit balance code", statusCode: 402, body: `{"error":{"code":"insufficient_balance"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "generic payment required is not balance evidence", statusCode: 402, body: `{"error":{"message":"request rejected"}}`},
 		{name: "explicit model not found", statusCode: 404, body: `{"error":{"code":"model_not_found"}}`, model: "gpt-5.6-sol", class: "model_unsupported", scope: "account_model", canonical: "gpt-5.6-sol", classified: true},
 		{name: "api key unauthorized", statusCode: 401, body: `{"error":{"code":"invalid_api_key"}}`, class: "credential_invalid", scope: "account", classified: true},
 		{name: "api key bare unauthorized", statusCode: 401, body: `{"detail":"Unauthorized"}`, class: "credential_invalid", scope: "account", classified: true},

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 候选 `bc108251c` 与 S1-R2 候选 `9f4b7d9a4` 均已完成规格、计划、实现和直接相关验证，现为受保护的 `READY_FOR_ROOT_REVIEW`。用户最新指令继续冻结所有后续部署，因此不得合并任一候选、推送发布内容、运行发布预检或触碰生产。已批准视觉方向的 T16 经营页真实结果与视觉层级重设计现进入独立 `DESIGNING`，同样最多推进到 `READY_FOR_ROOT_REVIEW`。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 候选 `bc108251c` 与 S1-R2 候选 `9f4b7d9a4` 均已完成规格、计划、实现和直接相关验证，现为受保护的 `READY_FOR_ROOT_REVIEW`。用户最新指令继续冻结所有后续部署，因此不得合并任一候选、推送发布内容、运行发布预检或触碰生产。T16 已按总控纠偏立即暂停并回到 `FROZEN`；在 S1-R2 生产收口、随后 S2、S3 严格串行完成前，不得恢复 T16。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -187,8 +187,8 @@
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
 - T15 候选 `bc108251c` 与 S1-R2 候选 `9f4b7d9a4` 已停在 `READY_FOR_ROOT_REVIEW`，保持各自独立 worktree/分支并受保护；部署冻结期间不得合并、push、预检、部署或访问生产。
-- S1 旧候选保持冻结；S1-R2 必须从当前更新后的干净本地 `main` 创建新的用户可见顶层任务和独立 worktree，不得从旧 S1 分支派生、恢复、rebase、合并或继续写入。T15 已保留迁移编号 225，S1-R2 不得复用；设计阶段暂预留 226，并在未来刷新/整合前重新检查最新迁移集合。
-- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 现在只进入独立设计/实现准备，必须重新检查最新主线原生能力、执行完整 brainstorming、比较 2–3 个方案、完成正式规格与自审后再计划和实现；候选最多停在 `READY_FOR_ROOT_REVIEW`。S2/S3 继续等待 S1-R2 生产验收，不得启动。
+- S1-R2 已完成候选准备但尚未合并、部署或线上验证；旧 S1 候选保持冻结。T15 已保留迁移编号 225，S1-R2 未使用 225/226。S1-R2 生产收口后，才允许按队列启动 S2，再完成 S2 生产验收后才允许启动 S3；三者严格串行，不得被 T16 或其他独立任务插队。
+- “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 候选已停在 `READY_FOR_ROOT_REVIEW`；S2/S3 尚未启动，继续等待 S1-R2 生产验收，不得启动。
 
 ### T12 经营页本站探测花费与排序/美元字段优化
 
@@ -240,9 +240,9 @@
 
 ### T16 经营页真实结果与视觉层级重设计
 
-- 当前状态：`DESIGNING`。视觉稿和产品方向已获用户明确批准；本项是 T12 生产收口后的独立任务包，不回写或重开 T12。用户可见顶层任务 `01a00dd1-d476-79b3-bdef-5e4d06103f50` 已在 `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建` 建立分支 `codex/t16-profitability-visual-hierarchy`，精确基线为本地 `main@3d0f5b374aa9f4fe6f57cb2810f4984660997904`。下一步先完成原生能力与不可变身份口径盘点、完整 brainstorming、正式规格/自审/批准，再进入 writing-plans 和实现。
+- 当前状态：`FROZEN`。视觉稿和产品方向虽已获用户明确批准，但总控已纠偏暂停本项，避免跳过 S1→S2→S3 串行链。用户可见顶层任务 `01a00dd1-d476-79b3-bdef-5e4d06103f50` 保留在 `/Users/gongtengxinwen/.codex/worktrees/026c/sub2api搭建`、分支 `codex/t16-profitability-visual-hierarchy`、基线 `main@3d0f5b374aa9f4fe6f57cb2810f4984660997904`；初始化后无文件变更，worktree 干净。未经总控重新 GO 不得继续。
 - 默认视图与字段：默认打开“全部真实结果”；账号明细只显示运营消耗、业务消耗、业务营收、总消耗、净利润五项。摘要强调业务营收、总消耗、净利润和对外毛利率，并单独显示“内部运营消耗”且说明已包含在总消耗中。
 - 原生事实源与公式：继续复用同一 Sub 原生 `usage_logs`，不建立第二套账务源，不改变 `cost`/`user_cost` 基础公式。运营消耗为管理员/内部使用的上游 `cost`；业务消耗为对外业务上游 `cost`；业务营收为对外用户 `user_cost`；总消耗为运营消耗加业务消耗；净利润为业务营收减总消耗。管理员免费使用仍保留真实上游成本，归为内部运营消耗，不能从总成本删除。
 - 身份边界：禁止用 `user_cost=0` 猜管理员身份。正式规格必须先核查当前 `usage_logs` 与用户角色事实，说明用 `user_id/role` 查询时的历史角色变化风险；若需要不可变 actor type，必须作为最小数据契约变化单独论证，不得无声回填或猜测历史。
 - 视觉合同：业务营收使用蓝色语义，真实上游消耗使用琥珀色，内部运营使用紫色，净利润使用绿色，真实亏损/内部补贴成本使用红色或警示语义；账号明细为紧凑表格。桌面层级清晰，390px 摘要两列且整页无横向溢出；若明细采用受控横向滚动，必须限制在表格容器内。
-- 发布边界：当前独立任务只执行原生能力盘点、完整 brainstorming、正式规格/自审、writing-plans、实现与直接相关测试。部署冻结同样适用；未获新指令前最多停在 `READY_FOR_ROOT_REVIEW`，不得合并、push、预检、部署或触碰生产。
+- 发布边界：本项保持冻结，不执行原生盘点、brainstorming、planning、实现或测试。只有 S1-R2 完成生产验收、S2 完成生产验收且总控重新 GO 后，才可解冻并从届时最新干净 `main` 重新核对基线。

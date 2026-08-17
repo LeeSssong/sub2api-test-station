@@ -7,7 +7,8 @@
 ## 身份
 
 - 基线 `main`：`a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
-- 候选实现提交：`436aa8b870d65b8285780e0e4254060e1cec8d6d`
+- 运行时/测试实现提交：`436aa8b870d65b8285780e0e4254060e1cec8d6d`
+- 最终候选 HEAD（根审目标）：包含本 handoff 的 docs-only 收口提交；精确 SHA 以提交后从仓库根目录 fresh 运行的 `git rev-parse HEAD` 与根审命令输出为准。
 - 分支：`codex/s1-r2-native-deterministic-failure-isolation`
 - 当前 worktree：`/Users/gongtengxinwen/.codex/worktrees/6195/sub2api搭建`
 

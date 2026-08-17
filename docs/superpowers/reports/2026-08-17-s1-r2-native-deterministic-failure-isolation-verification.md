@@ -1,7 +1,7 @@
 # S1-R2 直接相关验证报告
 
-**基线：** `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`  
-**实现验证 HEAD：** `436aa8b870d65b8285780e0e4254060e1cec8d6d`  
+**基线：** `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2`
+**实现验证 HEAD：** `436aa8b870d65b8285780e0e4254060e1cec8d6d`
 **范围：** 原生确定性故障分类、账号/模型原生状态投影、SSE 未完成终态 transient。
 
 ## 验证命令与结果

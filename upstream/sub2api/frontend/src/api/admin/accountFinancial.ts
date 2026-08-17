@@ -8,6 +8,12 @@ export interface FinancialAmounts {
   user_cost: number
   profit: number
   margin: number | null
+  operational_cost: number
+  business_cost: number
+  business_revenue: number
+  total_cost: number
+  net_profit: number
+  external_margin: number | null
   probe_requests: number | null
   probe_tokens: number | null
   probe_cost: number | null
@@ -38,6 +44,19 @@ function amounts(value: unknown): FinancialAmounts {
   const profitValue = read(r, 'profit', 'Profit') ?? r.ProfitCNY
   const marginValue = read(r, 'margin', 'Margin')
   const hasMargin = Object.prototype.hasOwnProperty.call(r, 'margin') || Object.prototype.hasOwnProperty.call(r, 'Margin')
+  const operationalCost = numberValue(read(r, 'operational_cost', 'OperationalCost'), 0)
+  const totalCost = numberValue(read(r, 'total_cost', 'TotalCost'), cost)
+  const businessCostValue = read(r, 'business_cost', 'BusinessCost')
+  const businessRevenueValue = read(r, 'business_revenue', 'BusinessRevenue')
+  const netProfitValue = read(r, 'net_profit', 'NetProfit')
+  const externalMarginValue = read(r, 'external_margin', 'ExternalMargin')
+  const hasExternalMargin = Object.prototype.hasOwnProperty.call(r, 'external_margin') || Object.prototype.hasOwnProperty.call(r, 'ExternalMargin')
+  const businessCost = businessCostValue == null ? totalCost - operationalCost : numberValue(businessCostValue)
+  const businessRevenue = businessRevenueValue == null ? user_cost : numberValue(businessRevenueValue)
+  const netProfit = netProfitValue == null ? businessRevenue - totalCost : numberValue(netProfitValue)
+  const externalMargin = hasExternalMargin
+    ? (externalMarginValue == null ? null : numberValue(externalMarginValue))
+    : (businessRevenue === 0 ? null : netProfit / businessRevenue)
   const probeCostStatus = read(r, 'probe_cost_status', 'ProbeCostStatus')
   return {
     requests: numberValue(read(r, 'requests', 'Requests')),
@@ -46,6 +65,12 @@ function amounts(value: unknown): FinancialAmounts {
     user_cost,
     profit: profitValue == null ? user_cost - cost : numberValue(profitValue),
     margin: hasMargin ? (marginValue == null ? null : numberValue(marginValue)) : (user_cost === 0 ? null : (user_cost - cost) / user_cost),
+    operational_cost: operationalCost,
+    business_cost: businessCost,
+    business_revenue: businessRevenue,
+    total_cost: totalCost,
+    net_profit: netProfit,
+    external_margin: externalMargin,
     probe_requests: nullableNumber(read(r, 'probe_requests', 'ProbeRequests')),
     probe_tokens: nullableNumber(read(r, 'probe_tokens', 'ProbeTokens')),
     probe_cost: nullableNumber(read(r, 'probe_cost', 'ProbeCost')),

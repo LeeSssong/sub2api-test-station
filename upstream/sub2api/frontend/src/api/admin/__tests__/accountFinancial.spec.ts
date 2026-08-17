@@ -50,6 +50,12 @@ describe('accountFinancial normalization', () => {
       user_cost: 0.2,
       profit: 0.1,
       margin: 0.5,
+      operational_cost: 0.02,
+      business_cost: 0.08,
+      business_revenue: 0.2,
+      total_cost: 0.1,
+      net_profit: 0.1,
+      external_margin: 0.5,
       probe_requests: 3,
       probe_tokens: 4,
       probe_cost: '0.0300000000',
@@ -73,5 +79,55 @@ describe('accountFinancial normalization', () => {
     expect(report.summary.probe_cost).toBe(0.03)
     expect(report.groups[0].amounts.probe_requests).toBe(3)
     expect(report.groups[0].accounts[0].amounts.probe_cost_status).toBe('confirmed')
+    expect(report.summary.operational_cost).toBe(0.02)
+    expect(report.summary.business_cost).toBe(0.08)
+    expect(report.summary.business_revenue).toBe(0.2)
+    expect(report.summary.total_cost).toBe(0.1)
+    expect(report.summary.net_profit).toBe(0.1)
+    expect(report.summary.external_margin).toBe(0.5)
+  })
+
+  it('normalizes PascalCase dimensions and falls back for legacy amounts', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        Summary: {
+          Cost: 5,
+          UserCost: 8,
+          Profit: 3,
+          Margin: 0.375,
+        },
+        Accounts: [{ id: 1, amounts: { Cost: 5, UserCost: 8, Profit: 3, Margin: 0.375 } }],
+        Groups: [],
+      },
+    })
+    const legacy = await getReport({ range: 'today' })
+    expect(legacy.summary.operational_cost).toBe(0)
+    expect(legacy.summary.business_cost).toBe(5)
+    expect(legacy.summary.business_revenue).toBe(8)
+    expect(legacy.summary.total_cost).toBe(5)
+    expect(legacy.summary.net_profit).toBe(3)
+    expect(legacy.summary.external_margin).toBe(0.375)
+
+    get.mockResolvedValueOnce({
+      data: {
+        Summary: {
+          OperationalCost: 2,
+          BusinessCost: 3,
+          BusinessRevenue: 8,
+          TotalCost: 5,
+          NetProfit: 3,
+          ExternalMargin: 0.375,
+        },
+        Accounts: [],
+        Groups: [],
+      },
+    })
+    const pascal = await getReport({ range: 'today' })
+    expect(pascal.summary.operational_cost).toBe(2)
+    expect(pascal.summary.business_cost).toBe(3)
+    expect(pascal.summary.business_revenue).toBe(8)
+    expect(pascal.summary.total_cost).toBe(5)
+    expect(pascal.summary.net_profit).toBe(3)
+    expect(pascal.summary.external_margin).toBe(0.375)
   })
 })

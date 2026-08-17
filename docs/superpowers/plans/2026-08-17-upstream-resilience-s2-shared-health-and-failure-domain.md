@@ -254,4 +254,3 @@ Record baseline `ed48df777`, final candidate SHA, changed files, direct test com
 - [ ] **Step 4: Stop at `READY_FOR_ROOT_REVIEW`**
 
 Do not alter root progress/queue from this worktree. Report the handoff to the root release controller; root alone may authorize merge, push, preflight, deployment, and online verification.
-

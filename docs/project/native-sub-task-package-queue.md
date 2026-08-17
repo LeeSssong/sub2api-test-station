@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 已完成规格、计划、实现和直接相关验证，候选 `codex/t15-native-probe-model-detection@bc108251c044cd038ceaa54bca061ff28d2311dc` 现为 `READY_FOR_ROOT_REVIEW`；该未合并候选是用户明确保护项。用户最新指令继续冻结所有后续部署，因此不得合并 T15、推送发布内容、运行发布预检或触碰生产。下一独立准备任务为 S1-R2，但也只能推进到 `READY_FOR_ROOT_REVIEW`；已批准视觉方向的 T16 经营页真实结果与视觉层级重设计登记为后续 `BACKLOG`，不抢占当前车道。
+- 队列状态：P0 Cloudflare 边缘 IP 误触发会话绑定事故与 T12 均已 `DONE`。T15 候选 `bc108251c` 与 S1-R2 候选 `9f4b7d9a4` 均已完成规格、计划、实现和直接相关验证，现为受保护的 `READY_FOR_ROOT_REVIEW`。用户最新指令继续冻结所有后续部署，因此不得合并任一候选、推送发布内容、运行发布预检或触碰生产。已批准视觉方向的 T16 经营页真实结果与视觉层级重设计登记为后续 `BACKLOG`，可在独立工作区继续准备但同样只能到 `READY_FOR_ROOT_REVIEW`。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@04d171e357b2e30fe7408f855a48999c07647250`、tree `f704a242e041061deadccec06d966e16158e8741`、迁移哈希 `aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604`；发布记录 `/var/lib/sub2api/release-records/20260817T005154Z-production-1618298.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
@@ -186,7 +186,7 @@
 - T03-R1 已完成推送、停机维护发布和线上验收；生产活动槽为 `green`，不得重复发布同一 SHA。
 - 账号监控卡片、T05、T06/T06-R1、T07、T08 均已完成生产验收；当前没有待处理的迁移 223 停机门禁。
 - T07、T08、T09、T10、T11、T11-R1 与 OAuth MIME 热修已完成生产收口；官方 `v0.1.177` 发布车道已释放。
-- T15 候选 `bc108251c` 已停在 `READY_FOR_ROOT_REVIEW`，保持独立 worktree/分支并受保护；部署冻结期间不得合并、push、预检、部署或访问生产。
+- T15 候选 `bc108251c` 与 S1-R2 候选 `9f4b7d9a4` 已停在 `READY_FOR_ROOT_REVIEW`，保持各自独立 worktree/分支并受保护；部署冻结期间不得合并、push、预检、部署或访问生产。
 - S1 旧候选保持冻结；S1-R2 必须从当前更新后的干净本地 `main` 创建新的用户可见顶层任务和独立 worktree，不得从旧 S1 分支派生、恢复、rebase、合并或继续写入。T15 已保留迁移编号 225，S1-R2 不得复用；设计阶段暂预留 226，并在未来刷新/整合前重新检查最新迁移集合。
 - “正在重新连接 1/5”与 `stream disconnected before completion` 已确认属于上游 SSE 在 `response.completed` 前断开的 S1-R2 冷却/故障转移范围。S1-R2 现在只进入独立设计/实现准备，必须重新检查最新主线原生能力、执行完整 brainstorming、比较 2–3 个方案、完成正式规格与自审后再计划和实现；候选最多停在 `READY_FOR_ROOT_REVIEW`。S2/S3 继续等待 S1-R2 生产验收，不得启动。
 
@@ -232,10 +232,11 @@
 
 ### S1-R2 确定性故障原生隔离编排
 
-- 当前状态：`DESIGNING` 启动准备。下一步从更新后的干净本地 `main` 创建用户可见 GPT-5.6 Sol/medium 顶层任务和独立 worktree，重新完成原生能力盘点、完整 brainstorming、2–3 方案比较、正式规格与自审、writing-plans、实现和直接相关测试；不得从冻结旧 S1 候选派生或继续写入。
+- 当前状态：`READY_FOR_ROOT_REVIEW`。用户可见顶层任务 `01a00da8-ed25-7b72-b9d9-cdcee5fa75c1` 在独立 worktree `/Users/gongtengxinwen/.codex/worktrees/6195/sub2api搭建`、分支 `codex/s1-r2-native-deterministic-failure-isolation` 从本地 `main@a00fdb186b9598c0ab0ca747d9dff1a5cea04ae2` 完成规格、计划、实现、直接相关测试和 handoff；最终根审候选为 `9f4b7d9a4aace8377b8b51fdfa796689ed3ec313`，worktree 干净。根 fresh `git diff --check main...HEAD`、基线和状态核对通过。交接见 `docs/handoffs/2026-08-17-s1-r2-native-deterministic-failure-isolation-handoff.md`。
 - 目标：把明确且可确定归因的上游账号/模型故障映射到 Sub 原生隔离、冷却与恢复机制，包括页面“正在重新连接 1/5”、`stream disconnected before completion` 以及上游 SSE 在 `response.completed` 前断开的账号模型冷却/故障转移边界。
 - 已有合同：余额不足复用原生 `temp_unschedulable`（默认 90 分钟，允许范围 60–120 分钟）；确认凭据失效使用原生 `status=error/schedulable=false` 并要求受控探测或管理员恢复；明确模型不支持使用原生 `model_rate_limits`，作用域为账号 + canonical model；episode 仅作审计解释，不形成第二套 scheduler veto。
-- 安全边界：泛化 403、网络失败、空/截断/不完整模型清单不得硬隔离；继续复用现有 transient cooldown、half-open、sticky、scheduler outbox、计费幂等和流式恢复。S1-R2 候选最多停在 `READY_FOR_ROOT_REVIEW`；用户解除部署冻结前不得合并、push、预检、部署或触碰生产，S2/S3 不得启动。
+- 实现与验证：余额不足统一落原生 90 分钟账号冷却（配置允许 60–120，越界回退 90）；明确模型不支持落账号 + canonical model 的原生 `model_rate_limits/probe_required`；API Key 明确凭据失效继续原生 error/不可调度；未收到成功终态的 SSE 进入既有账号模型 transient，同时保留输出后禁止重放。直接相关 service、unit 回归、config、受影响包 compile-only、server build、gofmt 与全候选 diff-check 通过；无迁移、未使用 225/226、无 GitHub Actions 变化。
+- 安全边界：泛化 403、网络失败、空/截断/不完整模型清单不得硬隔离；继续复用现有 transient cooldown、half-open、sticky、scheduler outbox、计费幂等和流式恢复。`downtime_required=unverified`；用户解除部署冻结前不得合并、push、预检、部署或触碰生产，S2/S3 不得启动。
 
 ### T16 经营页真实结果与视觉层级重设计
 

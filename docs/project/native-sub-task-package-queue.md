@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15 与 T17 均已完成推送、发布和线上验收，当前为 `DONE`；T18 因根 `main` 已推进到 T15 生产收口树而进入 `REFRESH_REQUIRED`，刷新并通过直接门禁后成为下一唯一发布候选；T19 与 T16 继续排队。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T17 与 T18 均已完成推送、发布和线上验收，当前为 `DONE`；T19 因根 `main` 已推进到 T18 生产收口树而进入 `REFRESH_REQUIRED`，刷新并通过直接门禁后成为下一唯一发布候选；T16 继续排队。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@3e5f9393d948603019fdde212957efdbbad0d715`、tree `deadf8ec212b05c4555a108ba0b627bb12030112`、迁移哈希 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T15 维护链为 `succeeded/promoted`、`rolled_back=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像且 healthy/restart 0。宿主记录为 `/var/lib/sub2api/release-records/20260817T174502Z-production-2353131.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-3e5f9393d-t15-maintenance-ready-v1.json`。
+- 当前发布状态：生产源 `main@80e5fe2a66a5eef11ad220ff280c7e3796dbb2d7`、tree `ee5de8f58b2695e641b66b2a9ea83589b70d02a0`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T18 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T180044Z-production-2367549.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-80e5fe2a6-t18-channel-status-toggle-v1.json`。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
@@ -271,14 +271,14 @@
 
 ### T18 渠道状态官方聚合/自建监控可切换
 
-- 当前状态：`REFRESH_REQUIRED`（下一发布候选）。T18 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/channel-status-official-toggle`、分支 `codex/channel-status-official-toggle` 的现候选 `fd7417037c6093c770a94795201d5ed61f9966d8` 已完成实现和此前直接门禁；根 `main` 已因 T15 维护门禁与生产收口推进，必须先刷新到最新主线并重跑专项测试、typecheck、build、diff-check，再进入整合/发布车道。
+- 当前状态：`DONE`。T18 刷新候选 `99f7d5f7cde8926d57bd095c331483afb8040f8a` 已合入并随根 `main@80e5fe2a66a5eef11ad220ff280c7e3796dbb2d7` 推送和无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260817T180044Z-production-2367549.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`。生产公开设置为 `channel_monitor_enabled=true`、`channel_monitor_mode=v2`；登录态 `/monitor` 显示官方渠道监控聚合页，资源记录中 `/api/v1/monitor-v2` 请求为 0。公网三项健康均 200，API/worker 同镜像，共享服务身份不变。报告：`docs/superpowers/reports/2026-08-17-t18-channel-status-official-toggle-production.md`。
 - 范围：仅改 `MonitorV2RouteView` 入口与专项测试；复用已有 `channel_monitor_mode=v1|v2`。`v2` 直接渲染官方 `ChannelStatusView` 并跳过 `/api/v1/monitor-v2`，`v1` 保留自建页及失败回退；无后端、迁移、配置 schema 或 GitHub Actions 变化。
 - 验证：`MonitorV2RouteView` 1 文件 3 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；预期 `downtime_required=false`，最终以根合并后的发布预检为准。上线参数为 `channel_monitor_enabled=true`、`channel_monitor_mode=v2`；回滚为 `channel_monitor_mode=v1`。
 - 车道约束：T15 当前仍停在 `downtime_required=true` 的停机授权门禁；T18 不自行插队、合并、推送、发布或改生产配置，待 T15 生产收口或明确冻结后再由根总控单独授权。
 
 ### T19 Monitor V2 缓存命中率有效样本口径修正
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`（不占用整合/部署车道）。用户于 2026-08-17 明确批准按既有方案修正并加入全局任务队列；候选已在 T19 独立 worktree 完成实现和直接相关门禁，排在 T15 发布车道完成后、T18 候选之后，遵守单车道规则，不打断 T15、不解冻 T16。用户最新指令为暂不发布，候选保持未合并、未推送、未部署。
+- 当前状态：`REFRESH_REQUIRED`（下一发布候选）。T19 独立 worktree 已完成实现和此前直接门禁；根 `main` 已因 T15/T18 生产收口推进，必须刷新到最新主线并重跑仓储/服务聚焦测试、compile-only/build、gofmt 和 diff-check，再进入整合/发布车道。
 - 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@8729884a113cf844a2850ba87463c2f7f711577c`，候选 tip `1b8832461`，tree `1484c609a9a4f4281eae6dcf0ce71b1f16d0c6a6`，刷新合并提交 `c4fc01c53802300bec61c5c8e5d55c58cff82a2a`；功能提交 `0f9ef38f2a0621d9afe5b5c965da025161dba399`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
 - 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
 - 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。

@@ -1321,6 +1321,14 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
+	// AdaptiveTopKEnabled: 是否在健康候选中按最佳分数差动态收窄 Top-K
+	AdaptiveTopKEnabled bool `mapstructure:"adaptive_top_k_enabled"`
+	// AdaptiveTopKMax: 动态候选池的绝对上限
+	AdaptiveTopKMax int `mapstructure:"adaptive_top_k_max"`
+	// AdaptiveTopKScoreGap: 最佳分数与有效候选最低分数的最大差值
+	AdaptiveTopKScoreGap float64 `mapstructure:"adaptive_top_k_score_gap"`
+	// TTFTReportOnlyEnabled: 是否只记录 TTFT 安全竞争资格，不发起第二请求
+	TTFTReportOnlyEnabled bool `mapstructure:"ttft_report_only_enabled"`
 }
 
 type GatewayOpenAISharedHealthConfig struct {
@@ -2606,6 +2614,10 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_enabled", true)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_error_rate", 0.0)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_ttft_ms", 0)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_enabled", true)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_max", 7)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_score_gap", 0.15)
+	viper.SetDefault("gateway.openai_scheduler.ttft_report_only_enabled", true)
 
 	// server.trusted_proxies and security.forwarded_client_ip_headers are the
 	// other exception: load() distinguishes explicit configuration from absence
@@ -3547,6 +3559,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeErrorRate < 0 || c.Gateway.OpenAIScheduler.StickyEscapeErrorRate > 1 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_error_rate must be between 0 and 1")
+	}
+	if c.Gateway.OpenAIScheduler.AdaptiveTopKMax <= 0 || c.Gateway.OpenAIScheduler.AdaptiveTopKMax > 32 {
+		return fmt.Errorf("gateway.openai_scheduler.adaptive_top_k_max must be between 1 and 32")
+	}
+	if c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap < 0 || c.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap > 10 {
+		return fmt.Errorf("gateway.openai_scheduler.adaptive_top_k_score_gap must be between 0 and 10")
 	}
 	if c.Gateway.MaxLineSize < 0 {
 		return fmt.Errorf("gateway.max_line_size must be non-negative")

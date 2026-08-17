@@ -102,6 +102,9 @@ describe('OpsOpenAISchedulerExperienceCard', () => {
     expect(wrapper.text()).toContain('8 / 10')
     expect(wrapper.text()).toContain('sample 10')
     expect(wrapper.text()).toContain('2026')
+    const runtimeWindow = wrapper.get('[data-test="scheduler-runtime-window"]').text()
+    expect(runtimeWindow).toContain(new Date(sampleResponse.start_time).toLocaleString())
+    expect(runtimeWindow).toContain(new Date(sampleResponse.end_time).toLocaleString())
   })
 
   it('keeps numerator and denominator visible for insufficient data without showing a misleading rate', async () => {

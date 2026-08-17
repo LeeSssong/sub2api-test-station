@@ -283,6 +283,8 @@ export interface OpsOpenAISchedulerExperienceResponse {
 
 export interface OpsOpenAISchedulerExperienceParams {
   time_range?: OpsOpenAISchedulerExperienceTimeRange
+  start_time?: string
+  end_time?: string
   platform?: string
   group_id?: number | null
 }

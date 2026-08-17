@@ -182,6 +182,7 @@ export default {
         sampleSize: '{count} samples',
         p95: 'P95 {value}',
         latestEvent: 'Latest event:',
+        runtimeWindow: 'Runtime window:',
         status: {
           insufficientData: 'Insufficient data',
           noData: 'No data'

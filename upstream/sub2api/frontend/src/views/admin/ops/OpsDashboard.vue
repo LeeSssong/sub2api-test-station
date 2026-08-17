@@ -96,7 +96,9 @@
       <!-- Row: OpenAI Scheduler Experience -->
       <div v-if="opsEnabled && !(loading && !hasLoadedOnce)" class="grid grid-cols-1 gap-6">
         <OpsOpenAISchedulerExperienceCard
-          :time-range="timeRange === 'custom' ? '1h' : timeRange"
+          :time-range="timeRange"
+          :custom-start-time="customStartTime"
+          :custom-end-time="customEndTime"
           :platform-filter="platform"
           :group-id-filter="groupId"
           :refresh-token="dashboardRefreshToken"

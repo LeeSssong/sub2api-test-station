@@ -178,6 +178,7 @@ export default {
         sampleSize: '样本 {count}',
         p95: 'P95 {value}',
         latestEvent: '最近事件：',
+        runtimeWindow: '运行窗口：',
         status: {
           insufficientData: '样本不足',
           noData: '暂无数据'

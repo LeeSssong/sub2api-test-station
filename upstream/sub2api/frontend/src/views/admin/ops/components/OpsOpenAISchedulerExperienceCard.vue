@@ -12,13 +12,17 @@ import {
 } from '@/api/admin/ops'
 
 interface Props {
-  timeRange: OpsOpenAISchedulerExperienceTimeRange
+  timeRange: OpsOpenAISchedulerExperienceTimeRange | 'custom'
+  customStartTime?: string | null
+  customEndTime?: string | null
   platformFilter?: string
   groupIdFilter?: number | null
   refreshToken: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  customStartTime: null,
+  customEndTime: null,
   platformFilter: '',
   groupIdFilter: null
 })
@@ -56,7 +60,19 @@ function abortRequest() {
 }
 
 function buildParams(): OpsOpenAISchedulerExperienceParams {
-  const params: OpsOpenAISchedulerExperienceParams = { time_range: props.timeRange }
+  const params: OpsOpenAISchedulerExperienceParams = {}
+  if (props.timeRange === 'custom') {
+    const startTime = props.customStartTime?.trim()
+    const endTime = props.customEndTime?.trim()
+    if (startTime && endTime) {
+      params.start_time = startTime
+      params.end_time = endTime
+    } else {
+      params.time_range = '1h'
+    }
+  } else {
+    params.time_range = props.timeRange
+  }
   const platform = props.platformFilter.trim()
   if (platform) params.platform = platform
   if (typeof props.groupIdFilter === 'number' && props.groupIdFilter > 0) params.group_id = props.groupIdFilter
@@ -108,7 +124,7 @@ async function loadData() {
 }
 
 watch(
-  () => [props.timeRange, props.platformFilter, props.groupIdFilter, props.refreshToken] as const,
+  () => [props.timeRange, props.customStartTime, props.customEndTime, props.platformFilter, props.groupIdFilter, props.refreshToken] as const,
   () => {
     void loadData()
   },
@@ -130,6 +146,9 @@ onUnmounted(abortRequest)
           <template v-if="response?.latest_event_at">
             · {{ t('admin.ops.openaiSchedulerExperience.latestEvent') }} {{ formatTime(response.latest_event_at) }}
           </template>
+        </p>
+        <p v-if="response" data-test="scheduler-runtime-window" class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.ops.openaiSchedulerExperience.runtimeWindow') }} {{ formatTime(response.start_time) }} – {{ formatTime(response.end_time) }}
         </p>
       </div>
       <span v-if="loading" class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.loadingText') }}</span>

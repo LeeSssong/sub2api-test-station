@@ -278,7 +278,8 @@
 
 ### T19 Monitor V2 缓存命中率有效样本口径修正
 
-- 当前状态：`BACKLOG`。用户于 2026-08-17 明确批准按既有方案修正并加入全局任务队列；排在 T15 发布车道完成后、T18 候选之后，遵守单车道规则，不打断 T15、不解冻 T16，当前未创建实现 worktree、未修改运行时代码、未部署。
-- 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。两份文件作为登记依据保留在根目录，后续启动时须从届时最新干净 `main` 创建独立顶层任务/worktree，并完成正式规格/计划门禁。
+- 当前状态：`READY_FOR_ROOT_REVIEW`（不占用整合/部署车道）。用户于 2026-08-17 明确批准按既有方案修正并加入全局任务队列；候选已在 T19 独立 worktree 完成实现和直接相关门禁，排在 T15 发布车道完成后、T18 候选之后，遵守单车道规则，不打断 T15、不解冻 T16。用户最新指令为暂不发布，候选保持未合并、未推送、未部署。
+- 候选：worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t19-monitor-v2-cache-eligibility`，分支 `codex/t19-monitor-v2-cache-eligibility`，基线 `main@f43672775cc59852458cc734fb7cb99bc1bfe83c`，提交 `0f9ef38f2a0621d9afe5b5c965da025161dba399`；交接 `docs/handoffs/2026-08-17-t19-monitor-v2-cache-eligibility-handoff.md`。
+- 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
 - 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。
-- 验证与发布：实施计划要求 TDD RED/GREEN、仓储/服务聚焦测试、后端 compile-only/build、gofmt、diff-check，并在发布后进行 24 小时/7 天只读交叉验收。预检若返回 `downtime_required=false`，按全局约束直接继续蓝绿发布与线上验证；若返回 `true`，停在用户授权门禁。不得使用 GitHub Actions。
+- 验证与发布：TDD RED/GREEN、仓储/服务聚焦测试、后端 compile-only/build、gofmt、diff-check 已通过；发布后仍需进行 24 小时/7 天只读交叉验收。预检若返回 `downtime_required=false`，按全局约束直接继续蓝绿发布与线上验证；若返回 `true`，停在用户授权门禁。当前按用户指令暂停所有发布动作，不得使用 GitHub Actions。

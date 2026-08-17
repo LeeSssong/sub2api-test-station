@@ -654,6 +654,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	attemptSequence := newOpenAIRequestAttemptSequence(c)
 	attemptCachePreservationMode := openAICachePreservationModeSticky
 	requestHasSideEffects := imageIntent || openAIRequestHasSideEffects(body)
+	retryBudget := newOpenAIRetryBudget(openAIRetryBudgetConfigFromConfig(h.cfg), time.Now)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -672,6 +673,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 生图意图只影响能力路由与图片计费，不关门：混合 /v1/responses 请求的
 	// token 计费部分仍受利润门保护，独立图片/视频端点才在门外。
 	pricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	pricingCtx, sharedHealthTracker := service.WithOpenAISharedHealthReadTracking(pricingCtx)
 	c.Request = c.Request.WithContext(pricingCtx)
 
 	for {
@@ -686,6 +688,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		selectionCtx := c.Request.Context()
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
+		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMapping.ChannelID)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -703,6 +706,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			!imageIntent,
 			requestPlatform,
 		)
+		if sharedHealthTracker.Degraded() {
+			retryBudget.NarrowForSharedHealthDegraded()
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai.account_select_aborted_client_disconnected", zap.Error(err))
@@ -775,6 +781,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			return
+		}
+		if !retryBudget.consumeAccountAttempt(account) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			if lastFailoverErr != nil {
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+			} else {
+				h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
+			}
 			return
 		}
 
@@ -859,6 +876,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			runtimeDecision := h.gatewayService.RecordOpenAIAccountModelFailure(attemptCtx, service.OpenAIAccountModelFailureEvent{
 				AccountID: account.ID, CanonicalModel: canonicalSchedulingModel, StatusCode: failure.StatusCode,
+				EventID: attemptMetadata.AttemptID, Domains: service.DeriveOpenAIFailureDomains(account, channelMapping.ChannelID),
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
@@ -890,6 +908,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if !retryBudget.ObserveDomain(openAIRetryFailureDomains(account, channelMapping.ChannelID)) {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if retryDecision.TerminalRecovery {
 						if !failure.OutputStarted {
 							h.gatewayService.RecordOpenAIRecoveryFailedAccount(recoveryScope, account.ID, canonicalSchedulingModel, time.Now())
@@ -932,7 +954,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
 						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
+						if !withinBudget {
+							h.handleFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
 						reqLog.Warn("openai.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -952,6 +978,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
+					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1074,6 +1104,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			if openAIForwardSucceededForScheduling(result) && !selection.HalfOpenProbe {
+				recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMapping.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
+			}
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
 		}
@@ -1387,6 +1420,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	attemptSequence := newOpenAIRequestAttemptSequence(c)
 	attemptCachePreservationMode := openAICachePreservationModeSticky
 	requestHasSideEffects := openAIRequestHasSideEffects(body)
+	retryBudget := newOpenAIRetryBudget(openAIRetryBudgetConfigFromConfig(h.cfg), time.Now)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -1394,6 +1428,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	msgPricingCtx, sharedHealthTracker := service.WithOpenAISharedHealthReadTracking(msgPricingCtx)
 	c.Request = c.Request.WithContext(msgPricingCtx)
 
 	for {
@@ -1408,6 +1443,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		selectionCtx := c.Request.Context()
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
+		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMappingMsg.ChannelID)
 		if forcedRetryAccountID > 0 {
 			selectionCtx = service.WithOpenAIForcedAccount(selectionCtx, forcedRetryAccountID)
 		}
@@ -1425,6 +1461,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			true,
 			requestPlatform,
 		)
+		if sharedHealthTracker.Degraded() {
+			retryBudget.NarrowForSharedHealthDegraded()
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai_messages.account_select_aborted_client_disconnected", zap.Error(err))
@@ -1484,6 +1523,17 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			return
+		}
+		if !retryBudget.consumeAccountAttempt(account) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			if lastFailoverErr != nil {
+				h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
+			} else {
+				h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+			}
 			return
 		}
 
@@ -1562,6 +1612,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 			runtimeDecision := h.gatewayService.RecordOpenAIAccountModelFailure(attemptCtx, service.OpenAIAccountModelFailureEvent{
 				AccountID: account.ID, CanonicalModel: canonicalSchedulingModel, StatusCode: failure.StatusCode,
+				EventID: attemptMetadata.AttemptID, Domains: service.DeriveOpenAIFailureDomains(account, channelMappingMsg.ChannelID),
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
@@ -1593,6 +1644,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if !retryBudget.ObserveDomain(openAIRetryFailureDomains(account, channelMappingMsg.ChannelID)) {
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if retryDecision.TerminalRecovery {
 						if !failure.OutputStarted {
 							h.gatewayService.RecordOpenAIRecoveryFailedAccount(recoveryScope, account.ID, canonicalSchedulingModel, time.Now())
@@ -1630,7 +1685,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						sameAccountRetryCount[account.ID]++
 						forcedRetryAccountID = account.ID
 						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
-						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
+						if !withinBudget {
+							h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
 						reqLog.Warn("openai_messages.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1650,6 +1709,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
+					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1758,6 +1821,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
+		}
+		if !selection.HalfOpenProbe {
+			recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMappingMsg.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
 		}
 
 		userAgent := c.GetHeader("User-Agent")

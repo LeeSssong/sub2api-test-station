@@ -302,6 +302,10 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlocked(account *Accou
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAt(account *Account, requestedModel string, now time.Time) bool {
+	return s.isOpenAIAccountModelRuntimeBlockedAtContext(context.Background(), account, requestedModel, now, true)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtContext(ctx context.Context, account *Account, requestedModel string, now time.Time, allowSharedRead bool) bool {
 	if s == nil || account == nil {
 		return false
 	}
@@ -310,7 +314,15 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAt(account *Acc
 		return false
 	}
 	canonicalModel := canonicalOpenAIAccountSchedulingModel(account, requestedModel)
-	return state.isBlocked(account.ID, openAIAccountModelTransientModel(canonicalModel), now)
+	if state.isBlocked(account.ID, openAIAccountModelTransientModel(canonicalModel), now) {
+		return true
+	}
+	key, err := NewOpenAISharedHealthKey(account.ID, canonicalModel)
+	if err != nil {
+		return false
+	}
+	snapshot, known, _ := s.readOpenAISharedHealthSnapshot(ctx, key, now, allowSharedRead)
+	return known && openAISharedHealthSnapshotBlocks(snapshot)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {

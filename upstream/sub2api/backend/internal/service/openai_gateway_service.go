@@ -480,6 +480,11 @@ type OpenAIGatewayService struct {
 	openaiRecoveryExclusions       *openAIRecoveryExclusionState
 	openaiProxyStreamCircuit       *openAIProxyStreamCircuit
 	openaiProxyStreamFailOpenLogAt atomic.Int64
+	sharedHealthStore              OpenAISharedHealthStore
+	sharedHealthSnapshotMu         sync.Mutex
+	sharedHealthSnapshots          map[string]OpenAISharedHealthSnapshot
+	sharedHealthLeases             map[string]OpenAISharedHalfOpenLease
+	sharedHealthOwner              string
 
 	openaiWSFallbackUntil               sync.Map // key: int64(accountID), value: time.Time
 	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
@@ -582,6 +587,9 @@ func NewOpenAIGatewayService(
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 		openaiModelTransient:  newOpenAIAccountModelTransientState(openAIModelTransientDefaultMax),
+		sharedHealthSnapshots: make(map[string]OpenAISharedHealthSnapshot),
+		sharedHealthLeases:    make(map[string]OpenAISharedHalfOpenLease),
+		sharedHealthOwner:     newOpenAISharedHealthOwner(),
 	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)

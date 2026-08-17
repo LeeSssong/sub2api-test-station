@@ -23,6 +23,33 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestGatewayOpenAISharedHealthDefaultsAndHardLimits(t *testing.T) {
+	cfg := DefaultGatewayOpenAISharedHealthConfig()
+	require.True(t, cfg.Enabled)
+	require.Equal(t, 75, cfg.RedisTimeoutMS)
+	require.Equal(t, 30, cfg.StaleAfterSeconds)
+	require.Equal(t, 4, cfg.MaxAttempts)
+	require.Equal(t, 3, cfg.MaxAccountSwitches)
+	require.Equal(t, 2, cfg.MaxFailureDomains)
+	require.Equal(t, 5000, cfg.TotalRetryBudgetMS)
+	require.Equal(t, 120, cfg.BackoffInitialMS)
+	require.Equal(t, 2000, cfg.BackoffMaxMS)
+	require.Equal(t, 15, cfg.HalfOpenLeaseSeconds)
+	require.NoError(t, cfg.Validate())
+
+	cfg.MaxAttempts = 5
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.MaxAccountSwitches = 4
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.MaxFailureDomains = 3
+	require.Error(t, cfg.Validate())
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.TotalRetryBudgetMS = 5001
+	require.Error(t, cfg.Validate())
+}
+
 func TestLoadProcessRole(t *testing.T) {
 	tests := []struct {
 		name    string

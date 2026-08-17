@@ -880,6 +880,74 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideOpenAIGatewayService(
+	accountRepo AccountRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	openAITokenProvider *OpenAITokenProvider,
+	grokTokenProvider *GrokTokenProvider,
+	resolver *ModelPricingResolver,
+	channelService *ChannelService,
+	balanceNotifyService *BalanceNotifyService,
+	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	sharedHealthStore OpenAISharedHealthStore,
+) *OpenAIGatewayService {
+	svc := NewOpenAIGatewayService(
+		accountRepo,
+		usageLogRepo,
+		usageBillingRepo,
+		userRepo,
+		userSubRepo,
+		userGroupRateRepo,
+		cache,
+		cfg,
+		schedulerSnapshot,
+		concurrencyService,
+		billingService,
+		rateLimitService,
+		billingCacheService,
+		httpUpstream,
+		deferredService,
+		openAITokenProvider,
+		grokTokenProvider,
+		resolver,
+		channelService,
+		balanceNotifyService,
+		settingService,
+		userPlatformQuotaRepo,
+	)
+	if cfg != nil && cfg.Gateway.OpenAISharedHealth.Enabled {
+		svc.SetOpenAISharedHealthStore(sharedHealthStore)
+	}
+	return svc
+}
+
+func ProvideUsageCostEvidenceRegistrar(
+	usageRepo UsageLogRepository,
+	evidenceRepo UsageCostEvidenceRepository,
+	activation AccountFinancialActivationReader,
+	accountRepo AccountRepository,
+) *UsageCostEvidenceRegistrar {
+	registrar := NewUsageCostEvidenceRegistrar(usageRepo, evidenceRepo, activation)
+	if rateRepo, ok := accountRepo.(NewAPIRateRefreshRepository); ok {
+		registrar.SetNewAPIRateRefreshRepository(rateRepo)
+	}
+	return registrar
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
@@ -906,8 +974,8 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementService,
 	NewAdminService,
 	NewGatewayService,
-	NewOpenAIGatewayService,
-	NewUsageCostEvidenceRegistrar,
+	ProvideOpenAIGatewayService,
+	ProvideUsageCostEvidenceRegistrar,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

@@ -19,6 +19,28 @@ type lifecyclePricingRemoteClient struct {
 	pricing      []byte
 }
 
+type usageCostEvidenceWireAccountRepo struct {
+	AccountRepository
+}
+
+func (usageCostEvidenceWireAccountRepo) ClaimNewAPIRateRefresh(context.Context, int64, string, string, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (usageCostEvidenceWireAccountRepo) CompleteNewAPIRateRefresh(context.Context, NewAPIRateRefreshCompletion) error {
+	return nil
+}
+
+func (usageCostEvidenceWireAccountRepo) ReleaseNewAPIRateRefresh(context.Context, int64, string) error {
+	return nil
+}
+
+func TestProvideUsageCostEvidenceRegistrarPreservesNewAPIRateRefreshInjection(t *testing.T) {
+	registrar := ProvideUsageCostEvidenceRegistrar(nil, nil, nil, usageCostEvidenceWireAccountRepo{})
+	require.NotNil(t, registrar)
+	require.NotNil(t, registrar.newAPIRate)
+}
+
 func (c *lifecyclePricingRemoteClient) FetchPricingJSON(context.Context, string) ([]byte, error) {
 	c.pricingCalls.Add(1)
 	if c.pricing == nil {

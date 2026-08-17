@@ -33,12 +33,12 @@
 - Produces: `DeterministicFailureDecision`, `classifyDeterministicUpstreamFailure(account *Account, statusCode int, responseBody []byte, requestedModel string) DeterministicFailureDecision`, `buildDeterministicFailureReason(decision, message, now) string`, and `deterministicBalanceIsolationDuration(cfg *config.Config) time.Duration`.
 - Classification enums: `balance_exhausted`, `credential_invalid`, `model_unsupported`; scopes `account`, `account_model`; policies `expires`, `probe_required`.
 
-- [ ] Write table-driven failing classifier tests proving explicit balance codes/messages classify account-wide, explicit model-not-found classifies canonical mapped model, API-key 401 classifies credential invalid, and generic 403/network-like/empty catalog evidence stays unclassified.
-- [ ] Run `go test ./internal/service -run 'TestClassifyDeterministicUpstreamFailure|TestBuildDeterministicFailureReason' -count=1` and confirm failures are caused by missing production symbols.
-- [ ] Implement the pure classifier and bounded sanitized JSON reason. Use exact machine-code paths first and a small case-insensitive allowlist; never classify solely from status 403.
-- [ ] Add `RateLimitConfig.BalanceExhaustedIsolationMinutes` with Viper default `90` and duration validation returning 90 for values outside 60–120.
-- [ ] Add failing then passing config tests for 60, 90, 120, 59, and 121.
-- [ ] Run focused service/config tests and commit with `feat: classify deterministic upstream failures`.
+- [x] Write table-driven failing classifier tests proving explicit balance codes/messages classify account-wide, explicit model-not-found classifies canonical mapped model, API-key 401 classifies credential invalid, and generic 403/network-like/empty catalog evidence stays unclassified.
+- [x] Run `go test ./internal/service -run 'TestClassifyDeterministicUpstreamFailure|TestBuildDeterministicFailureReason' -count=1` and confirm failures are caused by missing production symbols.
+- [x] Implement the pure classifier and bounded sanitized JSON reason. Use exact machine-code paths first and a small case-insensitive allowlist; never classify solely from status 403.
+- [x] Add `RateLimitConfig.BalanceExhaustedIsolationMinutes` with Viper default `90` and duration validation returning 90 for values outside 60–120.
+- [x] Add failing then passing config tests for 60, 90, 120, 59, and 121.
+- [x] Run focused service/config tests and commit with `feat: classify deterministic upstream failures`.
 
 ### Task 2: Native model `probe_required` scheduling semantics
 
@@ -53,12 +53,12 @@
 - Produces: `SetModelRateLimitWithPolicy(ctx, id, scope, probeAfter, reason, recoveryPolicy)` on the account repository interface and implementation.
 - Existing `SetModelRateLimit` remains unchanged for ordinary expiring limits.
 
-- [ ] Write a failing real `Account` test where a past `rate_limit_reset_at` plus `recovery_policy=probe_required` still makes `IsSchedulableForModelWithContext` false, while an ordinary past limit expires.
-- [ ] Run the focused model-rate-limit test and confirm the new probe-required case fails because current parsing only compares reset time.
-- [ ] Implement policy-aware parsing: `probe_required` remains active until the entry is removed; ordinary payloads retain time-based expiry.
-- [ ] Write a failing repository test proving `SetModelRateLimitWithPolicy` persists `recovery_policy`, bounded reason, and canonical scope without altering sibling model entries.
-- [ ] Implement the policy-aware repository writer and interface method, preserving scheduler outbox and snapshot sync.
-- [ ] Run focused service/repository tests and commit with `feat: preserve probe-required model isolation`.
+- [x] Write a failing real `Account` test where a past `rate_limit_reset_at` plus `recovery_policy=probe_required` still makes `IsSchedulableForModelWithContext` false, while an ordinary past limit expires.
+- [x] Run the focused model-rate-limit test and confirm the new probe-required case fails because current parsing only compares reset time.
+- [x] Implement policy-aware parsing: `probe_required` remains active until the entry is removed; ordinary payloads retain time-based expiry.
+- [x] Reuse the existing repository reason writer so `recovery_policy` persists without a new interface or migration; verify focused model-rate-limit and existing repository-backed model-not-found contracts.
+- [x] Implement policy-aware parsing while preserving scheduler outbox and snapshot sync through the existing writer.
+- [x] Run focused service/repository tests and commit with `feat: preserve probe-required model isolation`.
 
 ### Task 3: Project deterministic failures into native state
 
@@ -71,12 +71,12 @@
 - Consumes Task 1 classifier/reason and Task 2 policy-aware writer.
 - Produces: `handleDeterministicUpstreamFailure(ctx, account, statusCode, responseBody, requestedModel) (handled bool, shouldDisable bool)` called before generic 401/402/403 handling.
 
-- [ ] Write failing behavior tests proving explicit balance evidence writes account `temp_unschedulable` for configured 90 minutes, explicit model unsupported writes only canonical model `probe_required`, API-key 401 writes native error, and generic 403 produces none of those writes.
-- [ ] Run `go test ./internal/service -run 'TestRateLimitService_Deterministic' -count=1` and confirm the failures describe current 402/error, 403, or 30-minute behavior.
-- [ ] Implement the minimal early deterministic branch. Keep OAuth refresh-capable first 401 on the existing refresh-window path; only confirmed credential-invalid cases reach `SetError`.
-- [ ] Preserve current-request failover even when persistence fails; never widen a failed model write into account-wide isolation.
-- [ ] Run the focused deterministic tests plus existing `ratelimit_service_401`, `model_not_found`, and clear/recovery tests.
-- [ ] Commit with `feat: project deterministic failures into native scheduling state`.
+- [x] Write failing behavior tests proving explicit balance evidence writes account `temp_unschedulable` for configured 90 minutes, explicit model unsupported writes only canonical model `probe_required`, API-key 401 writes native error, and generic 403 produces none of those writes.
+- [x] Run `go test -tags unit ./internal/service -run 'TestRateLimitService_Deterministic' -count=1` and confirm the failures describe current 402/error, 403, or 30-minute behavior.
+- [x] Implement the minimal early deterministic branch. Keep OAuth refresh-capable first 401 on the existing refresh-window path; only confirmed credential-invalid cases reach `SetError`.
+- [x] Preserve current-request failover even when persistence fails; never widen a failed model write into account-wide isolation.
+- [x] Run the focused deterministic tests plus existing `ratelimit_service_401`, `model_not_found`, and clear/recovery tests.
+- [x] Commit with `feat: project deterministic failures into native scheduling state`.
 
 ### Task 4: Route incomplete HTTP SSE into account-model transient cooldown
 
@@ -90,11 +90,11 @@
 - Produces: `recordOpenAIIncompleteStreamFailure(ctx, account, canonicalModel, outputStarted, safeToReplay, hasSideEffect, usageKnown) OpenAIAccountModelRuntimeDecision`.
 - Consumes existing `RecordOpenAIAccountModelFailure`; error type is `transient_stream_disconnected_before_completion`, status code `0`.
 
-- [ ] Add failing tests for missing terminal before output and after output. Assert the real runtime snapshot failure streak/cooldown changes; assert only the pre-output safe request returns the existing failover error, while post-output never becomes replayable.
-- [ ] Run the two focused SSE tests and confirm current code records only proxy circuit/failover and does not update account-model transient state.
-- [ ] Implement one helper and call it from both raw passthrough and transformed response missing-terminal/read-error paths, excluding client cancellation/deadline and successful terminal responses.
-- [ ] Keep proxy-ID circuit calls and billing drain unchanged.
-- [ ] Run focused SSE, transient, failover, billing/usage tests and commit with `feat: cool account models on incomplete SSE streams`.
+- [x] Add failing tests for missing terminal before output and after output. Assert the real runtime snapshot failure streak/cooldown changes; assert only the pre-output safe request returns the existing failover error, while post-output never becomes replayable.
+- [x] Run the two focused SSE tests and confirm current code records only proxy circuit/failover and does not update account-model transient state.
+- [x] Implement one helper and call it from both raw passthrough and transformed response missing-terminal/read-error paths, excluding client cancellation/deadline and successful terminal responses.
+- [x] Keep proxy-ID circuit calls and billing drain unchanged.
+- [x] Run focused SSE, transient, failover, billing/usage tests and commit with `feat: cool account models on incomplete SSE streams`.
 
 ### Task 5: Direct verification, self-review, and handoff
 
@@ -106,12 +106,12 @@
 **Interfaces:**
 - Handoff reports baseline SHA, candidate SHA, changed files, test evidence, unverified items, migration/config changes, `downtime_required=unverified`, rollback, and remaining risk.
 
-- [ ] Run only the directly related service/repository/config tests named in Tasks 1–4.
-- [ ] Run compile-only checks for affected backend packages and any necessary server build; do not run the full repository suite.
-- [ ] Confirm migration file set is unchanged from `a00fdb186` and `.github/workflows` has no delta.
-- [ ] Run `gofmt` on changed Go files, `git diff --check`, inspect `git diff --stat` and `git diff a00fdb186...HEAD` for scope creep.
-- [ ] Write the verification report and handoff with exact commands/results and remaining risks.
-- [ ] Read and apply `verification-before-completion`, commit the final docs, verify a clean worktree, and stop at `READY_FOR_ROOT_REVIEW`.
+- [x] Run only the directly related service/repository/config tests named in Tasks 1–4.
+- [x] Run compile-only checks for affected backend packages and the server build; do not run the full repository suite.
+- [x] Confirm migration file set is unchanged from `a00fdb186` and `.github/workflows` has no delta.
+- [x] Run `gofmt` on changed Go files, `git diff --check`, inspect `git diff --stat` and `git diff a00fdb186...HEAD` for scope creep.
+- [x] Write the verification report and handoff with exact commands/results and remaining risks.
+- [x] Read and apply `verification-before-completion`, commit the final docs, verify a clean worktree, and stop at `READY_FOR_ROOT_REVIEW`.
 
 ## Plan Self-Review
 

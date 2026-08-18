@@ -2,8 +2,8 @@
 
 - Worktree: `/Users/gongtengxinwen/.codex/worktrees/1dc8/sub2api搭建`
 - Branch: `codex/t23-procurement-profitability-refresh`
-- Baseline main: `22cf4981dcad47e7998cd638fd55685e52e3f3e8`
-- Refreshed commits: `9f2402df4`, `8e4a42662`, `272c28db8`, plus the final refresh commit containing the partial legacy projection fix
+- Baseline main: `cbfe9ab7d10b071373afecb9b427a103f1df72cc`
+- Refreshed commits: `1678f4479`, `768b731c6`, `f966be4d4`, `533ded8d0`
 - State: `READY_FOR_ROOT_REVIEW` (not merged/pushed/deployed)
 
 ## Delivered

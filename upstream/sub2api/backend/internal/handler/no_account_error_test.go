@@ -57,7 +57,8 @@ func TestClassifyNoAccountError_NilDiagnoser_Falls503(t *testing.T) {
 	cls := classifyNoAccountErrorFromGin(c, nil, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
-	require.Equal(t, "api_error", cls.ErrType)
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.Equal(t, "当前服务资源暂时不可用，请稍后重试", cls.Message)
 	require.False(t, cls.ModelNotFound)
 }
 
@@ -150,7 +151,8 @@ func TestClassifyNoAccountError_HasModelSupport_KeepsRoutingMessageGenerationToC
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "model exists somewhere — caller stays on 503")
-	require.Equal(t, "api_error", cls.ErrType)
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.Equal(t, "当前服务资源暂时不可用，请稍后重试", cls.Message)
 	require.False(t, cls.ModelNotFound)
 }
 
@@ -164,7 +166,8 @@ func TestClassifyNoAccountError_ModelSupportedOnlyByRateLimitedAccount_Returns50
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "claude-opus-4-8", "claude-opus-4-8", service.PlatformAnthropic)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
-	require.Equal(t, "api_error", cls.ErrType)
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.Equal(t, "当前服务资源暂时不可用，请稍后重试", cls.Message)
 	require.False(t, cls.ModelNotFound, "temporary account cooldown must remain retryable")
 }
 
@@ -176,7 +179,63 @@ func TestClassifyNoAccountError_NoAccountsInPool_Stays503(t *testing.T) {
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "empty pool is a service-availability issue, not a model issue")
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.Equal(t, "当前服务资源暂时不可用，请稍后重试", cls.Message)
 	require.False(t, cls.ModelNotFound)
+}
+
+func TestLocalCapacityExhaustedProtocolContract(t *testing.T) {
+	cls := classifyNoAccountError(
+		context.Background(),
+		&fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}},
+		&service.APIKey{GroupID: ptrInt64(7)},
+		"gpt-5.6-sol",
+		"gpt-5.6-sol",
+		service.PlatformOpenAI,
+	)
+
+	t.Run("responses json", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointResponses)
+		(&GatewayHandler{}).responsesErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code)
+		require.JSONEq(t, `{"error":{"code":"local_capacity_exhausted","message":"当前服务资源暂时不可用，请稍后重试"}}`, w.Body.String())
+	})
+
+	t.Run("openai responses json", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointResponses)
+		(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, false)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code)
+		require.JSONEq(t, `{"error":{"code":"local_capacity_exhausted","message":"当前服务资源暂时不可用，请稍后重试"}}`, w.Body.String())
+	})
+
+	t.Run("chat completions json", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointChatCompletions)
+		(&GatewayHandler{}).chatCompletionsErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code)
+		require.JSONEq(t, `{"error":{"type":"local_capacity_exhausted","message":"当前服务资源暂时不可用，请稍后重试"}}`, w.Body.String())
+	})
+
+	t.Run("openai chat completions json", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointChatCompletions)
+		(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, false)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code)
+		require.JSONEq(t, `{"error":{"type":"local_capacity_exhausted","code":"local_capacity_exhausted","message":"当前服务资源暂时不可用，请稍后重试"}}`, w.Body.String())
+	})
+
+	t.Run("responses started stream", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointResponses)
+		(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, true)
+		_, errObj := parseResponsesFailedSSE(t, w.Body.String())
+		require.Equal(t, "local_capacity_exhausted", errObj["code"])
+		require.Equal(t, "当前服务资源暂时不可用，请稍后重试", errObj["message"])
+	})
+
+	t.Run("chat completions started stream", func(t *testing.T) {
+		c, w := newGinContextForEndpoint(t, EndpointChatCompletions)
+		(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, true)
+		require.Contains(t, w.Body.String(), `"type":"local_capacity_exhausted"`)
+		require.Contains(t, w.Body.String(), `"message":"当前服务资源暂时不可用，请稍后重试"`)
+	})
 }
 
 func TestClassifyNoAccountError_DisplayModelOverridesRoutingForMessage(t *testing.T) {

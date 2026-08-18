@@ -1972,6 +1972,15 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 	}
 
 	// Normal case: return JSON response with proper status code
+	if inboundIsResponses(c) && errType == localCapacityExhaustedErrorCode {
+		c.JSON(status, gin.H{
+			"error": gin.H{
+				"code":    errType,
+				"message": message,
+			},
+		})
+		return
+	}
 	h.errorResponse(c, status, errType, message)
 }
 

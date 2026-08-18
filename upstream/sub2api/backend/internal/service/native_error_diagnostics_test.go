@@ -84,6 +84,45 @@ func TestProjectNativeErrorDiagnosisFourClasses(t *testing.T) {
 	}
 }
 
+func TestProjectNativeErrorDiagnosisLocalCapacityExhausted(t *testing.T) {
+	groupID := int64(19)
+	detail := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+		Phase: "routing", Type: "api_error", Owner: "platform", Source: "gateway",
+		StatusCode: 503, Message: "当前服务资源暂时不可用，请稍后重试",
+		GroupID: &groupID, GroupName: "GPT-特惠分组", IsBusinessLimited: true,
+	}}
+
+	got := ProjectNativeErrorDiagnosis(detail)
+	require.NotNil(t, got)
+	require.Equal(t, "local_capacity_exhausted", got.Class)
+	require.Equal(t, "LOCAL_CAPACITY_EXHAUSTED", got.Code)
+	require.Equal(t, "routing", got.Stage)
+	require.Equal(t, "platform", got.Ownership)
+	require.False(t, got.UpstreamAccountSelected)
+	require.Nil(t, got.SelectedAccountID)
+	require.Nil(t, got.OriginalUpstreamStatus)
+	require.Empty(t, got.OriginalUpstreamMessage)
+	require.Empty(t, got.OriginalUpstreamDetail)
+	require.Equal(t, "当前分组暂无可用服务资源", got.UserMeaning)
+	require.Equal(t, "请稍后重试；持续失败请联系管理员并提供请求 ID", got.UserSuggestion)
+}
+
+func TestProjectNativeErrorDiagnosisRealUpstream503RemainsUpstream(t *testing.T) {
+	accountID := int64(23)
+	status := 503
+	detail := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+		Phase: "upstream", Type: "upstream_error", Owner: "provider", StatusCode: status,
+		AccountID: &accountID, AccountName: "provider-a", Message: "upstream request failed",
+	}, UpstreamStatusCode: &status, UpstreamErrorMessage: "provider unavailable"}
+
+	got := ProjectNativeErrorDiagnosis(detail)
+	require.NotNil(t, got)
+	require.Equal(t, NativeErrorClassUpstreamFailed, got.Class)
+	require.Equal(t, "UPSTREAM_FAILED", got.Code)
+	require.True(t, got.UpstreamAccountSelected)
+	require.Equal(t, &status, got.OriginalUpstreamStatus)
+}
+
 func TestProjectNativeErrorDiagnosisSanitizesAdminEvidence(t *testing.T) {
 	accountID := int64(7)
 	status := 503

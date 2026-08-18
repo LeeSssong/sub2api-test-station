@@ -11,6 +11,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+const (
+	localCapacityExhaustedErrorCode = "local_capacity_exhausted"
+	localCapacityExhaustedMessage   = "当前服务资源暂时不可用，请稍后重试"
+)
+
 // noAccountErrorClassification describes the HTTP response to emit when
 // account selection failed with ErrNoAvailableAccounts. Handlers obtain it
 // via classifyNoAccountError and choose between:
@@ -20,7 +25,7 @@ import (
 //     model). Returning 503 here misleads operators and trips reverse-proxy
 //     health checks; 404 lets the client surface the real problem.
 //
-//   - 503 api_error — accounts that could serve the model exist but are
+//   - 503 local_capacity_exhausted — accounts that could serve the model exist but are
 //     temporarily exhausted (rate limit, quota auto-pause, runtime block) OR
 //     the group has no accounts at all. Both stay on 503 because retrying
 //     after a backoff can plausibly succeed (or, in the empty-pool case, the
@@ -66,8 +71,8 @@ func classifyNoAccountError(
 ) noAccountErrorClassification {
 	fallback := noAccountErrorClassification{
 		Status:  http.StatusServiceUnavailable,
-		ErrType: "api_error",
-		Message: "Service temporarily unavailable",
+		ErrType: localCapacityExhaustedErrorCode,
+		Message: localCapacityExhaustedMessage,
 	}
 
 	routingModel = strings.TrimSpace(routingModel)

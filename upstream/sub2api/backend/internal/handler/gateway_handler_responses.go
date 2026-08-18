@@ -178,11 +178,11 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
-				message := cls.Message
-				if !cls.ModelNotFound {
-					message = "No available accounts: " + err.Error()
+				if streamStarted {
+					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, true)
+				} else {
+					h.responsesErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
 				}
-				h.responsesErrorResponse(c, cls.Status, cls.ErrType, message)
 				return
 			}
 			action := fs.HandleSelectionExhausted(requestCtx)
@@ -209,7 +209,11 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				markOpsRoutingCapacityLimited(c)
-				h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
+				if streamStarted {
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, localCapacityExhaustedErrorCode, localCapacityExhaustedMessage, true)
+				} else {
+					h.responsesErrorResponse(c, http.StatusServiceUnavailable, localCapacityExhaustedErrorCode, localCapacityExhaustedMessage)
+				}
 				return
 			}
 			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(

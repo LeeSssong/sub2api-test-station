@@ -497,6 +497,30 @@ func TestClassifyOpsRoutingCapacityMarkerExcludesMaskedSelectionFailureFromSLA(t
 	require.Equal(t, "gateway", errorSource)
 }
 
+func TestClassifyOpsLocalCapacityContractPreservesRoutingOwnership(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	markOpsRoutingCapacityLimited(c)
+
+	parsed := parseOpsErrorResponse([]byte(`{"error":{"code":"local_capacity_exhausted","message":"当前服务资源暂时不可用，请稍后重试"}}`))
+	errType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
+	phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(
+		c,
+		errType,
+		parsed.Message,
+		parsed.Code,
+		http.StatusServiceUnavailable,
+	)
+
+	require.Equal(t, "local_capacity_exhausted", parsed.Code)
+	require.Equal(t, "api_error", errType)
+	require.Equal(t, "routing", phase)
+	require.True(t, isBusinessLimited)
+	require.Equal(t, "platform", errorOwner)
+	require.Equal(t, "gateway", errorSource)
+}
+
 func TestClassifyOpsAuthClientErrorsExcludedFromSLA(t *testing.T) {
 	tests := []struct {
 		name    string

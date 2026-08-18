@@ -2108,7 +2108,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 ) (func(), openAISlotAcquireResult) {
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
-		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, localCapacityExhaustedErrorCode, localCapacityExhaustedMessage, *streamStarted)
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -2138,7 +2138,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
-		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, localCapacityExhaustedErrorCode, localCapacityExhaustedMessage, *streamStarted)
 		return nil, openAISlotAcquireFailed
 	}
 
@@ -3304,6 +3304,16 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if errType == localCapacityExhaustedErrorCode {
+		if !streamStarted && inboundIsResponses(c) {
+			c.JSON(status, gin.H{"error": gin.H{
+				"code": errType, "message": message,
+			}})
+			return
+		}
+		h.handleStreamingAwareErrorWithCode(c, status, errType, errType, message, streamStarted, false)
+		return
+	}
 	h.handleStreamingAwareErrorWithCode(c, status, errType, "", message, streamStarted, false)
 }
 

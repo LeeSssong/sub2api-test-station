@@ -7,6 +7,7 @@ import (
 
 const (
 	NativeErrorClassLocalLimit         = "local_limit"
+	NativeErrorClassLocalCapacity      = "local_capacity_exhausted"
 	NativeErrorClassUpstreamOverloaded = "upstream_overloaded"
 	NativeErrorClassUpstreamFailed     = "upstream_failed"
 	NativeErrorClassUploadInterrupted  = "upload_interrupted"
@@ -92,6 +93,12 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 			strings.Contains(text, "unexpected eof") ||
 			strings.Contains(text, "upload interrupted")) {
 		return NativeErrorClassUploadInterrupted
+	}
+	if !accountSelected && strings.EqualFold(strings.TrimSpace(detail.Phase), "routing") &&
+		strings.EqualFold(strings.TrimSpace(detail.Owner), "platform") && detail.StatusCode == 503 &&
+		(detail.IsBusinessLimited || containsAnyNativeErrorMarker(text,
+			"no available account", "当前服务资源暂时不可用", "local_capacity_exhausted")) {
+		return NativeErrorClassLocalCapacity
 	}
 	localLimitEvidence := (detail.Phase == "request" && (detail.Type == "rate_limit_error" ||
 		detail.Type == "billing_error" || detail.Type == "subscription_error" || detail.Type == "cyber_policy")) ||
@@ -186,6 +193,8 @@ func nativeErrorExplanation(detail *OpsErrorLogDetail, class string) (code, mean
 	switch class {
 	case NativeErrorClassLocalLimit:
 		return nativeLocalLimitExplanation(detail)
+	case NativeErrorClassLocalCapacity:
+		return "LOCAL_CAPACITY_EXHAUSTED", "当前分组暂无可用服务资源", "请稍后重试；持续失败请联系管理员并提供请求 ID"
 	case NativeErrorClassUpstreamOverloaded:
 		return "UPSTREAM_OVERLOADED", "上游服务繁忙", "请稍后重试"
 	case NativeErrorClassUploadInterrupted:
@@ -230,6 +239,9 @@ func normalizedNativeErrorStage(detail *OpsErrorLogDetail, class string) string 
 	if class == NativeErrorClassLocalLimit || class == NativeErrorClassUploadInterrupted {
 		return "request"
 	}
+	if class == NativeErrorClassLocalCapacity {
+		return "routing"
+	}
 	return "upstream"
 }
 
@@ -239,6 +251,9 @@ func normalizedNativeErrorOwner(detail *OpsErrorLogDetail, class string) string 
 	}
 	if class == NativeErrorClassLocalLimit || class == NativeErrorClassUploadInterrupted {
 		return "client"
+	}
+	if class == NativeErrorClassLocalCapacity {
+		return "platform"
 	}
 	return "provider"
 }

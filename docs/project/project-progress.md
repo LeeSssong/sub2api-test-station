@@ -1,6 +1,8 @@
 # 项目全局进度总账
 
-**本轮批量设置账号模型检测/连接模型（2026-08-18）：** 状态：进行中（`DESIGNING`）。用户请求在账号监控页一键将所有账号的连接测试模型与检测模型设为 `gpt-5.6-sol`。已确认原生单账号读取/保存接口与模型校验能力存在；拟在原生管理页面增加批量动作，并由后端逐账号复用现有 `SaveModels` 校验与 actor 审计，暂不修改账号映射、不触发检测。当前工作区为根目录 `/Users/gongtengxinwen/Documents/sub2api搭建`、分支 `main`；已扫描已注册非 `main` worktree，均为历史/保护证据，无可直接并入的已完成候选。等待确认批量范围和不支持账号的处理语义后实施。
+**T25 自建渠道监控最终视觉与主动探测重试收口（2026-08-19）：** 状态：进行中（`DESIGNING`）。用户已在历史真实页面上确认恢复旧版自建 Monitor V2 卡片，并批准最终收口：保留 TTFT/总延迟 P50 与 P95、TPS、缓存率及各指标样本数；删除模型数量/展开行、模型列表、P95 解释和页面底部说明；有效调用改为“基于 N 次真实请求。”；倍率强化；趋势柱体统一青绿色、固定高度与宽度，不再以耗时或结果改变颜色/高低；主动探测首次失败后再重试 5 次，任一次成功即本轮成功，六次均失败才记失败。继续复用 T19 的 `actual_cost > 0` 有效服务响应口径和现有 Monitor V2/主动探测链，不新增事实源、迁移或生产数据修改。正式候选将从最新 `main@7ed24d491` 创建独立 worktree；历史预览 `/private/tmp/sub2api-monitor-v3-preview` 仅作只读视觉证据，确认相对 `main` 无领先提交，不进入候选。预期 `downtime_required=false`，以根合并后发布预检为准。
+
+**本轮批量设置账号模型检测/连接模型（2026-08-19）：** 状态：已完成（配置数据已生效）。用户明确要求跳过新增页面，直接修改现有数据。生产数据库事务已为全部 89 个未删除账号 upsert 连接测试模型与检测模型 `gpt-5.6-sol`；回读确认配置表 89 条、目标值 89 条、非目标值 0 条、已删除账号配置 0 条、活动账号缺失 0 条。87 个账号显式包含该模型，另 2 个 OpenAI OAuth 账号无账号级模型映射；本次不改账号映射、不触发检测、不改已删除账号。变更前快照保存在 `/tmp/sub2api-model-detection-backups/20260819-before.tsv`。无代码、迁移、构建或部署变更。
 
 **非 `main` worktree 归档清理（2026-08-18）：** 已完成 24 个非 `main` worktree 的归档与移除，当前 `git worktree list` 仅保留根 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。完整 refs bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-worktrees-2026-08-18-bdb07d354/non-main-refs.bundle`，SHA-256 `0ea027c4dcd0ae9a243bb2f669ee23119b2e85e9e3dfc2f7d07a848760868a8a`，`git bundle verify` 与归档校验均通过；归档清单为 `manifest.tsv`。原 dirty 的 `codex/upstream-resilience-hardening` 工作区已另存二进制 diff `upstream-resilience-hardening.worktree.diff`，未提交索引 diff 为空。为保留可恢复性，非 `main` 本地分支引用暂未删除；根目录未跟踪资料保持不变。**状态：清理完成。**
 

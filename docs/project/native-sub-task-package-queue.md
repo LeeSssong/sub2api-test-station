@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23 与 T24 均已完成推送、发布和线上验收，当前全部为 `DONE`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23 与 T24 均为 `DONE`；T25“自建渠道监控最终视觉与主动探测重试收口”已登记为 `DESIGNING`，当前没有任务占用整合、部署或验收车道。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@a76dff256d53b7e3b9f0d3df8aa8d1699edcd39b`、tree `b67d198f4f7a7fd1dbc72cc881d30cfa3103a53a`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T24 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T150106Z-production-3302557.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-a76dff256-t24-local-exhaustion-v1.json`。
 - 非 `main` worktree 清理（2026-08-18）：24 个非 `main` worktree 已完成归档并移除，当前仅保留根 `main` worktree。恢复归档 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-worktrees-2026-08-18-bdb07d354/non-main-refs.bundle`，SHA-256 `0ea027c4dcd0ae9a243bb2f669ee23119b2e85e9e3dfc2f7d07a848760868a8a`，bundle/manifest 校验通过；`upstream-resilience-hardening` 的 dirty diff 已单独保存。非 `main` 分支引用暂保留，不触碰生产，不使用 GitHub Actions。
@@ -18,6 +18,14 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。
 
 ## 队列
+
+### T25 自建渠道监控最终视觉与主动探测重试收口
+
+- 当前状态：`DESIGNING`。用户已查看历史真实页面并批准最终设计；候选从最新 `main@7ed24d491` 创建独立 worktree。临时历史预览 `/private/tmp/sub2api-monitor-v3-preview` 为 detached 只读视觉证据，相对 `main` 无领先提交，不得进入正式候选。
+- 原生盘点：复用现有 `MonitorV2View`、`MonitorV2GroupCard`、`MonitorV2Timeline`、Monitor V2 API/统计合同和 `channel_monitor_service` 主动探测链；T19 已实现的 `actual_cost > 0` 有效服务响应统计继续作为真实请求口径，不新增监控事实源或平行探测器。
+- 页面范围：保留旧版卡片结构、TTFT/总延迟 P50 与 P95、TPS、缓存率及各指标样本数；删除模型数量/展开行、模型列表、P95 解释和底部两条说明；将有效调用文案统一为“基于 N 次真实请求。”；倍率显著强化；趋势柱体统一青绿色、固定高度与宽度，耗时和探测结果不改变颜色或高低。
+- 探测范围：每轮首次主动探测失败后再重试 5 次，任一次成功即记录本轮成功，只有总计 6 次均失败才记录本轮失败；成功不继续重试。保持既有调度、账号隔离、计费和错误分类语义不变。
+- 验收与发布：TDD 覆盖文案/删项/倍率/统一柱体，以及第 1 至第 6 次成功、六次全失败和成功后停止重试；执行直接相关前后端测试、必要 typecheck/build、gofmt 与 diff-check。无迁移、无生产数据写入，预期 `downtime_required=false`；根合并后按既有本地/宿主蓝绿链发布并完成登录态页面、主动探测与公网健康专项验收。
 
 ### P0 Cloudflare 边缘 IP 误触发会话绑定事故
 

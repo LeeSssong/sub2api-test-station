@@ -90,6 +90,14 @@ Current T15 transition:
 from aaebed88f7fb712e1f518e73cc89bd44eb214f365f3b49f003598c93883a4604
 to   bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951
 file 225_account_model_detection.sql (SHA-256 a5118869580363b2acbc0ee272c286233e880041c33ec4aec19badef00cb5210) — add-only account model-detection settings/runs tables and indexes; no historical backfill, no usage/accounting rewrite, and account deletion uses the reviewed `ON DELETE CASCADE` lifecycle.
+
+Current T23 transition:
+
+```text
+from bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951
+to   18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f
+file 226_account_procurement_cost_versions.sql — expand-only versioned procurement ledger; no historical backfill, usage_logs mutation, or accounting rewrite.
+```
 ```
 
 Invoke the same controller with the explicit maintenance flag:

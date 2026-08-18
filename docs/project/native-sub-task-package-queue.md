@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22 与 T23 均已完成推送、发布和线上验收，当前全部为 `DONE`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22 与 T23 均已完成推送、发布和线上验收，当前为 `DONE`；T24 特惠分组本地调度耗尽 503 纠正进入 `DESIGNING`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@d295e73050750c58edd040b6c6d517aad31358db`、tree `33b0053bc3dd3b743d74e7f64e71f59bb9cfe12f`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T23 维护蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T140601Z-production-3259304.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-d295e7305-t23-procurement-v2.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -320,3 +320,9 @@
 - 页面与验收：经营页新增独立“自购账号”人民币视图，展示采购成本、预计额度、标准额度消耗、利用率、已确认成本、待摊成本、采购损失、人民币营收、净利润、利润率和成本状态；提供明确的“确认失效并结算”二次确认；桌面及 390px 移动端无横向溢出。覆盖首次录入历史生效、后续版本生效、额度变更剩余摊销、失效结算、超额封顶、未配置和渠道 USD 汇总隔离。
 - 发布属性：宿主最终记录为 `downtime_required=false`；迁移 226 按用户已给出的停机授权走受控维护切换，PostgreSQL/Redis/Caddy 身份保持不变。不得使用 GitHub Actions。
 - 线上专项验收：登录态经营页确认独立“自购账号 · 人民币”视图与渠道 USD 汇总分离，成本待录入、采购成本/预计额度、利用率、确认/待摊/损失/营收/净利润字段均按规则展示；账号监控真实入口显示“采购成本（CNY）”“预计可用额度（USD）”及派生倍率。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。宿主数据库确认 `226_account_procurement_cost_versions.sql` 已应用，版本台账当前 0 行，未发生历史回填；成本封顶、失效结算采购损失、幂等与 actor 审计由 T23 直接相关测试覆盖，本次未为制造样本修改生产数据。
+
+### T24 特惠分组本地调度耗尽 503 纠正
+
+- 当前状态：`DESIGNING`。总账只读排查已确认本地账号调度耗尽路径直接生成 503、不携带上游响应体，因此不会命中全局 `ErrorPassthroughRule`；上游真实 503 仍走既有透传规则。目标是复用 Sub 原生错误响应/中文解释能力，纠正本地路径的状态码、错误码与管理员诊断语义，不扩大到账号、分组、计费、重试或外部控制面。
+- 依赖与窗口：T23 已完成 `DONE`；T24 占用一个独立设计/实现窗口，未进入合并、部署或线上验收车道；T16 等冻结/保护 worktree 不解冻。
+- 验收边界：覆盖特惠分组仅允许自购账号且全部不可调度时的 `/responses`、Chat Completions 与流式/非流式本地拒绝；保留上游真实 503 透传；用户侧中文泛化提示与管理员诊断阶段/归属可区分；无迁移、无生产数据修改，预期 `downtime_required=false`。

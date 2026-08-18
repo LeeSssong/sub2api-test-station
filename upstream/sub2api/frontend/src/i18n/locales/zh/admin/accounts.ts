@@ -3,10 +3,10 @@ export default {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       modelDetection: {
-        title: '账号模型检测', close: '关闭', connectionProbeModel: '连接测试模型', detectionModel: '检测模型', detectorUnsupported: '检测器暂不支持',
+        title: '账号模型检测', close: '关闭', connectionProbeModel: '连接测试模型', detectionModel: '检测模型', detectorUnsupported: '检测器暂不支持', detectorUnconfigured: '检测服务未接入', detectorUnavailable: '检测服务暂不可用',
         recentStatus: '最近状态', declaredModel: '申报模型', juice: 'Juice', juiceSummary: 'Juice 摘要', fingerprintCandidate: '行为指纹候选', fingerprintSimilarity: '相似度', detectorVersion: '检测器版本', detectionTime: '检测时间', error: '错误',
         abnormalDisclaimer: '检测器观察到异常；该结果不代表上游确认替换。', saveModels: '保存模型', detecting: '已排队…', detectNow: '立即检测', section: '模型检测', editConnectionProbeModel: '修改连接测试模型', viewRecent: '点击查看最近检测结果', observedAbnormal: '检测器观察到异常',
-        status: { untested: '未检测', queued: '排队中', running: '检测中', normal: '正常', abnormal: '异常', insufficient: '证据不足', failed: '检测失败', unsupported: '不支持' }
+        status: { untested: '未检测', queued: '排队中', running: '检测中', normal: '正常', abnormal: '异常', insufficient: '证据不足', failed: '检测失败', unsupported: '不支持', service_unconfigured: '检测服务未接入', service_unavailable: '检测服务暂不可用' }
       },
       createAccount: '添加账号',
       autoRefresh: '自动刷新',

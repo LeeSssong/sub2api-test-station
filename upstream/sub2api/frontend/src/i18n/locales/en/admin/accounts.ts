@@ -3,10 +3,10 @@ export default {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       modelDetection: {
-        title: 'Account model detection', close: 'Close', connectionProbeModel: 'Connection test model', detectionModel: 'Detection model', detectorUnsupported: 'Detector not supported',
+        title: 'Account model detection', close: 'Close', connectionProbeModel: 'Connection test model', detectionModel: 'Detection model', detectorUnsupported: 'Detector not supported', detectorUnconfigured: 'Detection service not connected', detectorUnavailable: 'Detection service temporarily unavailable',
         recentStatus: 'Latest status', declaredModel: 'Declared model', juice: 'Juice', juiceSummary: 'Juice summary', fingerprintCandidate: 'Behavior fingerprint candidate', fingerprintSimilarity: 'Similarity', detectorVersion: 'Detector version', detectionTime: 'Detection time', error: 'Error',
         abnormalDisclaimer: 'The detector observed an anomaly; this does not mean the upstream confirmed a replacement.', saveModels: 'Save models', detecting: 'Queued…', detectNow: 'Detect now', section: 'Model detection', editConnectionProbeModel: 'Change connection test model', viewRecent: 'View the latest detection result', observedAbnormal: 'Detector observed an anomaly',
-        status: { untested: 'Not tested', queued: 'Queued', running: 'Running', normal: 'Normal', abnormal: 'Anomaly', insufficient: 'Insufficient evidence', failed: 'Detection failed', unsupported: 'Unsupported' }
+        status: { untested: 'Not tested', queued: 'Queued', running: 'Running', normal: 'Normal', abnormal: 'Anomaly', insufficient: 'Insufficient evidence', failed: 'Detection failed', unsupported: 'Unsupported', service_unconfigured: 'Detection service not connected', service_unavailable: 'Detection service temporarily unavailable' }
       },
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',

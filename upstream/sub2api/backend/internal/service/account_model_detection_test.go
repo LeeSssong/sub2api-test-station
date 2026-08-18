@@ -45,6 +45,53 @@ func TestModelsFallBackWhenSavedDetectionModelLosesCatalogSupport(t *testing.T) 
 	}
 }
 
+func TestModelDetectorAvailabilityStates(t *testing.T) {
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
+	tests := []struct {
+		name          string
+		sidecar       *detectionSidecarStub
+		wantState     AccountModelDetectorState
+		wantStatus    string
+		wantReason    string
+		wantModel     string
+		wantSupported bool
+	}{
+		{name: "unconfigured", sidecar: &detectionSidecarStub{catalogErr: ErrAccountModelDetectorNotConfigured}, wantState: AccountModelDetectorStateUnconfigured, wantStatus: AccountModelDetectionStatusServiceUnconfigured, wantReason: "detector_unconfigured"},
+		{name: "unavailable", sidecar: &detectionSidecarStub{catalogErr: errors.New("offline")}, wantState: AccountModelDetectorStateUnavailable, wantStatus: AccountModelDetectionStatusServiceUnavailable, wantReason: "detector_unavailable"},
+		{name: "ready", sidecar: &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}}, wantState: AccountModelDetectorStateReady, wantStatus: AccountModelDetectionStatusUntested, wantModel: "gpt-5.6-sol", wantSupported: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewAccountModelDetectionService(&detectionRepoStub{}, &detectionAccountReaderStub{account: account}, tt.sidecar)
+			models, err := svc.Models(context.Background(), account.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if models.DetectorState != tt.wantState || models.ModelDetectionModel != tt.wantModel {
+				t.Fatalf("models = %#v", models)
+			}
+			if len(models.DetectionModels) != 1 || models.DetectionModels[0].Supported != tt.wantSupported || models.DetectionModels[0].Reason != tt.wantReason {
+				t.Fatalf("options = %#v", models.DetectionModels)
+			}
+			projection, err := svc.ProjectionForAccount(context.Background(), account)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if projection.DetectorState != tt.wantState || projection.Status != tt.wantStatus {
+				t.Fatalf("projection = %#v", projection)
+			}
+		})
+	}
+}
+
+func TestEnqueueRejectsOfflineDetector(t *testing.T) {
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
+	svc := NewAccountModelDetectionService(&detectionRepoStub{}, &detectionAccountReaderStub{account: account}, &detectionSidecarStub{catalogErr: ErrAccountModelDetectorNotConfigured})
+	if _, _, err := svc.EnqueueImmediate(context.Background(), account.ID, 1); !errors.Is(err, ErrAccountModelDetectionUnavailable) {
+		t.Fatalf("EnqueueImmediate error = %v, want detector unavailable", err)
+	}
+}
+
 func TestEnqueueImmediateReusesQueuedRunAndRejectsOAuth(t *testing.T) {
 	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Credentials: map[string]any{"api_key": "secret", "model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
 	repo := &detectionRepoStub{}

@@ -3,14 +3,24 @@ package service
 import "time"
 
 const (
-	AccountModelDetectionStatusUntested     = "untested"
-	AccountModelDetectionStatusQueued       = "queued"
-	AccountModelDetectionStatusRunning      = "running"
-	AccountModelDetectionStatusNormal       = "normal"
-	AccountModelDetectionStatusAbnormal     = "abnormal"
-	AccountModelDetectionStatusInsufficient = "insufficient"
-	AccountModelDetectionStatusFailed       = "failed"
-	AccountModelDetectionStatusUnsupported  = "unsupported"
+	AccountModelDetectionStatusUntested            = "untested"
+	AccountModelDetectionStatusQueued              = "queued"
+	AccountModelDetectionStatusRunning             = "running"
+	AccountModelDetectionStatusNormal              = "normal"
+	AccountModelDetectionStatusAbnormal            = "abnormal"
+	AccountModelDetectionStatusInsufficient        = "insufficient"
+	AccountModelDetectionStatusFailed              = "failed"
+	AccountModelDetectionStatusUnsupported         = "unsupported"
+	AccountModelDetectionStatusServiceUnconfigured = "service_unconfigured"
+	AccountModelDetectionStatusServiceUnavailable  = "service_unavailable"
+)
+
+type AccountModelDetectorState string
+
+const (
+	AccountModelDetectorStateReady        AccountModelDetectorState = "ready"
+	AccountModelDetectorStateUnconfigured AccountModelDetectorState = "unconfigured"
+	AccountModelDetectorStateUnavailable  AccountModelDetectorState = "unavailable"
 )
 
 type AccountModelDetectionModelOption struct {
@@ -46,10 +56,11 @@ type AccountModelDetectionSummary struct {
 }
 
 type AccountModelDetectionProjection struct {
-	Status       string                             `json:"status"`
-	Settings     AccountModelDetectionSettings      `json:"settings"`
-	ModelOptions []AccountModelDetectionModelOption `json:"model_options"`
-	Recent       *AccountModelDetectionSummary      `json:"recent,omitempty"`
+	Status        string                             `json:"status"`
+	DetectorState AccountModelDetectorState          `json:"detector_state"`
+	Settings      AccountModelDetectionSettings      `json:"settings"`
+	ModelOptions  []AccountModelDetectionModelOption `json:"model_options"`
+	Recent        *AccountModelDetectionSummary      `json:"recent,omitempty"`
 }
 
 type AccountModelDetectionRun struct {
@@ -76,6 +87,7 @@ type AccountModelDetectionRun struct {
 type AccountModelDetectionSidecarCatalog struct {
 	Version string
 	Models  []string
+	State   AccountModelDetectorState
 }
 
 type AccountModelDetectionRequest struct {

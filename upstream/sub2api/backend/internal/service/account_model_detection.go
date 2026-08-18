@@ -13,6 +13,7 @@ import (
 )
 
 var ErrAccountModelDetectionUnsupported = errors.New("account model detection unsupported")
+var ErrAccountModelDetectionUnavailable = errors.New("account model detection unavailable")
 
 type AccountModelDetectionAccountReader interface {
 	GetByID(context.Context, int64) (*Account, error)
@@ -36,6 +37,7 @@ type AccountModelDetectionSidecar interface {
 
 type AccountModelDetectionModelsResponse struct {
 	AccountID            int64                              `json:"account_id"`
+	DetectorState        AccountModelDetectorState          `json:"detector_state"`
 	ConnectionProbeModel string                             `json:"connection_probe_model"`
 	ModelDetectionModel  string                             `json:"model_detection_model"`
 	ConnectionModels     []AccountModelDetectionModelOption `json:"connection_models"`
@@ -52,6 +54,7 @@ type AccountModelDetectionService struct {
 	catalogMu      sync.Mutex
 	catalogAt      time.Time
 	catalog        []string
+	catalogState   AccountModelDetectorState
 }
 
 func NewAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar) *AccountModelDetectionService {
@@ -93,7 +96,13 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 		return AccountModelDetectionProjection{}, err
 	}
 	status := AccountModelDetectionStatusUntested
-	if len(models.DetectionModels) == 0 || models.ModelDetectionModel == "" {
+	if account.Type != AccountTypeAPIKey {
+		status = AccountModelDetectionStatusUnsupported
+	} else if models.DetectorState == AccountModelDetectorStateUnconfigured {
+		status = AccountModelDetectionStatusServiceUnconfigured
+	} else if models.DetectorState == AccountModelDetectorStateUnavailable {
+		status = AccountModelDetectionStatusServiceUnavailable
+	} else if len(models.DetectionModels) == 0 || models.ModelDetectionModel == "" {
 		status = AccountModelDetectionStatusUnsupported
 	}
 	var summary *AccountModelDetectionSummary
@@ -113,7 +122,14 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 	if loaded, loadErr := s.LoadSettings(ctx, account.ID); loadErr == nil {
 		settings = loaded
 	}
-	return AccountModelDetectionProjection{Status: status, Settings: settings, ModelOptions: models.DetectionModels, Recent: summary}, nil
+	if account.Type == AccountTypeAPIKey {
+		if models.DetectorState == AccountModelDetectorStateUnconfigured {
+			status = AccountModelDetectionStatusServiceUnconfigured
+		} else if models.DetectorState == AccountModelDetectorStateUnavailable {
+			status = AccountModelDetectionStatusServiceUnavailable
+		}
+	}
+	return AccountModelDetectionProjection{Status: status, DetectorState: models.DetectorState, Settings: settings, ModelOptions: models.DetectionModels, Recent: summary}, nil
 }
 
 func (s *AccountModelDetectionService) modelsForAccount(ctx context.Context, account *Account) (AccountModelDetectionModelsResponse, error) {
@@ -131,10 +147,22 @@ func (s *AccountModelDetectionService) modelsForAccount(ctx context.Context, acc
 		connectionOptions = append(connectionOptions, AccountModelDetectionModelOption{ID: model, Supported: true, Selected: model == connection})
 	}
 	catalogModels := []string(nil)
+	detectorState := AccountModelDetectorStateReady
 	if account.Type == AccountTypeAPIKey {
-		catalogModels = s.catalogModels(ctx)
+		detectorState, catalogModels = s.catalogSnapshot(ctx, false)
 	}
 	detectionOptions := buildDetectionModelOptions(registered, catalogModels, settings.ModelDetectionModel)
+	for i := range detectionOptions {
+		if detectorState == AccountModelDetectorStateUnconfigured {
+			detectionOptions[i].Reason = "detector_unconfigured"
+			detectionOptions[i].Supported = false
+			detectionOptions[i].Selected = false
+		} else if detectorState == AccountModelDetectorStateUnavailable {
+			detectionOptions[i].Reason = "detector_unavailable"
+			detectionOptions[i].Supported = false
+			detectionOptions[i].Selected = false
+		}
+	}
 	selectedDetection := settings.ModelDetectionModel
 	for _, option := range detectionOptions {
 		if option.Selected && option.Supported {
@@ -150,45 +178,69 @@ func (s *AccountModelDetectionService) modelsForAccount(ctx context.Context, acc
 			}
 		}
 	}
+	if detectorState != AccountModelDetectorStateReady {
+		selectedDetection = ""
+	}
 	return AccountModelDetectionModelsResponse{
-		AccountID: account.ID, ConnectionProbeModel: connection, ModelDetectionModel: selectedDetection,
+		AccountID: account.ID, DetectorState: detectorState, ConnectionProbeModel: connection, ModelDetectionModel: selectedDetection,
 		ConnectionModels: connectionOptions, DetectionModels: detectionOptions,
 	}, nil
 }
 
 func (s *AccountModelDetectionService) catalogModels(ctx context.Context) []string {
-	return s.loadCatalogModels(ctx, false)
+	_, models := s.catalogSnapshot(ctx, false)
+	return models
 }
 
 func (s *AccountModelDetectionService) catalogModelsFresh(ctx context.Context) []string {
-	return s.loadCatalogModels(ctx, true)
+	_, models := s.catalogSnapshot(ctx, true)
+	return models
 }
 
-func (s *AccountModelDetectionService) loadCatalogModels(ctx context.Context, force bool) []string {
+func (s *AccountModelDetectionService) catalogSnapshot(ctx context.Context, force bool) (AccountModelDetectorState, []string) {
 	if s == nil || s.sidecar == nil {
-		return nil
+		return AccountModelDetectorStateUnconfigured, nil
 	}
 	now := s.now()
 	s.catalogMu.Lock()
 	if !force && !s.catalogAt.IsZero() && now.Sub(s.catalogAt) < 5*time.Minute {
 		models := append([]string(nil), s.catalog...)
+		state := s.catalogState
 		s.catalogMu.Unlock()
-		return models
+		if state == "" {
+			state = AccountModelDetectorStateReady
+		}
+		return state, models
 	}
 	s.catalogMu.Unlock()
 	catalog, err := s.sidecar.Catalog(ctx)
 	if err != nil {
+		state := AccountModelDetectorStateUnavailable
+		if errors.Is(err, ErrAccountModelDetectorNotConfigured) {
+			state = AccountModelDetectorStateUnconfigured
+		}
 		s.catalogMu.Lock()
 		s.catalogAt = now
 		s.catalog = nil
+		s.catalogState = state
 		s.catalogMu.Unlock()
-		return nil
+		return state, nil
+	}
+	state := catalog.State
+	if state == "" {
+		state = AccountModelDetectorStateReady
 	}
 	s.catalogMu.Lock()
 	s.catalogAt = now
 	s.catalog = append([]string(nil), catalog.Models...)
+	s.catalogState = state
 	models := append([]string(nil), s.catalog...)
 	s.catalogMu.Unlock()
+	return state, models
+}
+
+func (s *AccountModelDetectionService) loadCatalogModels(ctx context.Context, force bool) []string {
+	_, models := s.catalogSnapshot(ctx, force)
 	return models
 }
 
@@ -247,6 +299,9 @@ func (s *AccountModelDetectionService) EnqueueImmediate(ctx context.Context, acc
 	models, err := s.modelsForAccount(ctx, account)
 	if err != nil {
 		return AccountModelDetectionRun{}, false, err
+	}
+	if models.DetectorState != AccountModelDetectorStateReady {
+		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnavailable
 	}
 	if models.ModelDetectionModel == "" {
 		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnsupported
@@ -339,7 +394,15 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 		return
 	}
 	registered := nativeAccountTextModels(account)
-	freshCatalog := s.catalogModelsFresh(ctx)
+	freshState, freshCatalog := s.catalogSnapshot(ctx, true)
+	if freshState != AccountModelDetectorStateReady {
+		errorCode := "detector_unavailable"
+		if freshState == AccountModelDetectorStateUnconfigured {
+			errorCode = "detector_unconfigured"
+		}
+		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, errorCode, "检测服务不可用")
+		return
+	}
 	if !containsString(registered, run.ModelID) || !containsString(freshCatalog, run.ModelID) {
 		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "model_unavailable", "检测模型已失效")
 		return

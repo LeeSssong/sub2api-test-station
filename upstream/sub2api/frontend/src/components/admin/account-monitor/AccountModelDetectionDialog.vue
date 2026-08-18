@@ -15,9 +15,10 @@
             <option v-for="option in models?.connection_models ?? []" :key="option.id" :value="option.id">{{ option.id }}</option>
           </select>
         </label>
+        <p v-if="detectorOffline" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200" data-test="detector-availability">{{ detectorAvailabilityLabel }}</p>
         <label class="block text-xs font-medium text-gray-600 dark:text-slate-300">{{ t('admin.accounts.modelDetection.detectionModel') }}
-          <select v-model="detectionModel" class="input mt-1 w-full" data-test="detection-model-select">
-            <option v-for="option in models?.detection_models ?? []" :key="option.id" :value="option.id" :disabled="!option.supported">{{ option.id }}{{ option.supported ? '' : ` (${t('admin.accounts.modelDetection.detectorUnsupported')})` }}</option>
+          <select v-model="detectionModel" class="input mt-1 w-full" data-test="detection-model-select" :disabled="detectorOffline">
+            <option v-for="option in models?.detection_models ?? []" :key="option.id" :value="option.id" :disabled="detectorOffline || !option.supported">{{ option.id }}{{ option.supported ? '' : ` (${optionHint(option)})` }}</option>
           </select>
         </label>
       </div>
@@ -37,7 +38,7 @@
 
       <footer class="mt-5 flex flex-wrap justify-end gap-2">
         <button type="button" class="btn btn-secondary" data-test="model-detection-save" :disabled="saving" @click="emit('save', { connectionModel, detectionModel })">{{ t('admin.accounts.modelDetection.saveModels') }}</button>
-        <button type="button" class="btn btn-primary" data-test="model-detection-run" :disabled="detecting || status === 'unsupported'" @click="emit('detect')">{{ detecting ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
+        <button type="button" class="btn btn-primary" data-test="model-detection-run" :disabled="detecting || detectorOffline || status === 'unsupported'" @click="emit('detect')">{{ detecting ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
       </footer>
     </section>
   </div>
@@ -46,7 +47,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountModelDetectionModelsResponse, AccountModelDetectionStatus, AccountModelDetectionSummary, AccountMonitorAccount } from '@/api/admin/accountMonitor'
+import type { AccountModelDetectionModelOption, AccountModelDetectionModelsResponse, AccountModelDetectionStatus, AccountModelDetectionSummary, AccountMonitorAccount } from '@/api/admin/accountMonitor'
 
 const props = withDefaults(defineProps<{
   show: boolean
@@ -72,8 +73,11 @@ watch(() => props.models, (value) => {
 
 const recent = computed<AccountModelDetectionSummary | null>(() => props.account?.model_detection?.recent ?? null)
 const status = computed<AccountModelDetectionStatus>(() => props.account?.model_detection?.status ?? 'untested')
+const detectorOffline = computed(() => modelsState.value === 'unconfigured' || modelsState.value === 'unavailable')
+const modelsState = computed(() => props.models?.detector_state ?? 'unconfigured')
+const detectorAvailabilityLabel = computed(() => modelsState.value === 'unconfigured' ? t('admin.accounts.modelDetection.detectorUnconfigured') : t('admin.accounts.modelDetection.detectorUnavailable'))
 const statusLabel = computed(() => t(`admin.accounts.modelDetection.status.${status.value}`))
-const statusClass = computed(() => ({ 'text-emerald-600 dark:text-emerald-300': status.value === 'normal', 'text-amber-600 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(status.value), 'text-red-600 dark:text-red-300': status.value === 'failed', 'text-gray-500 dark:text-slate-400': ['untested', 'unsupported'].includes(status.value) }))
+const statusClass = computed(() => ({ 'text-emerald-600 dark:text-emerald-300': status.value === 'normal', 'text-amber-600 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(status.value), 'text-red-600 dark:text-red-300': ['failed', 'service_unavailable'].includes(status.value), 'text-gray-500 dark:text-slate-400': ['untested', 'unsupported', 'service_unconfigured'].includes(status.value) }))
 const recentTime = computed(() => formatDetectionTime(recent.value?.finished_at ?? recent.value?.started_at ?? recent.value?.queued_at))
 
 function formatSummary(value: Record<string, unknown>): string {
@@ -82,6 +86,12 @@ function formatSummary(value: Record<string, unknown>): string {
   } catch {
     return '--'
   }
+}
+
+function optionHint(option: AccountModelDetectionModelOption): string {
+  if (modelsState.value === 'unconfigured') return t('admin.accounts.modelDetection.detectorUnconfigured')
+  if (modelsState.value === 'unavailable') return t('admin.accounts.modelDetection.detectorUnavailable')
+  return option.reason === 'detector_unsupported' ? t('admin.accounts.modelDetection.detectorUnsupported') : t('admin.accounts.modelDetection.detectorUnsupported')
 }
 
 function formatDetectionTime(value?: string): string {

@@ -62,9 +62,9 @@ type MonitorReadiness = 'no_traffic' | 'observing' | 'scored'
 function monitorReadiness(metrics: MonitorMetric, health: MonitorHealth): MonitorReadiness
 ```
 
-- `request_count <= 0`：`no_traffic`。
-- `health.score == null` 或 `request_count < health.minimum_sample`：`observing`。
-- 其他：`scored`。
+- `health.score != null`：`scored`。该条件优先，以兼容普通用户绝对计数脱敏为 0、但后端仍返回已计算分数的 payload。
+- `health.score == null` 且 `request_count <= 0`：`no_traffic`。
+- `health.score == null` 且 `request_count > 0`：`observing`；通常对应低于 `minimum_sample`，也覆盖缺少可评分指标的中性情况。
 
 该 helper 只解释现有响应，不产生新健康分，也不把未知映射为健康。
 
@@ -83,7 +83,7 @@ function monitorReadiness(metrics: MonitorMetric, health: MonitorHealth): Monito
 
 | 状态 | 成功率 | 首 Token | 缓存率 | 颜色 |
 |---|---|---|---|---|
-| `request_count=0` | 已就绪·暂无流量 | `-` | `-` | 中性 |
+| `request_count=0` 且 `score=null` | 已就绪·暂无流量 | `-` | `-` | 中性 |
 | `0<request_count<minimum_sample` 或 `score=null` | 待观察 | 可展示已有值 | 可展示有效样本值或 `-` | 中性 |
 | 样本充足 | 真实百分比 | 真实 P50 | T19 有效样本率 | 后端健康色 |
 
@@ -94,6 +94,7 @@ function monitorReadiness(metrics: MonitorMetric, health: MonitorHealth): Monito
 - 样本充足行显示真实成功率、首 Token、缓存率和后端健康色。
 - 无 bucket 的时间格显示“无流量”；有 bucket 但分数为空显示“待观察”，不绘制绿色健康色。
 - 真实 `warning/critical` 不被中性状态覆盖。
+- 普通用户为隐私保护而将绝对计数归零、但后端仍返回 `score` 的已评分 payload 保留真实评分；该场景不能凭计数推导“暂无流量”。
 
 ## 7. 失败、安全与兼容语义
 

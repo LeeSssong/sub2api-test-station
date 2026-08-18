@@ -49,7 +49,7 @@
 - Consumes: `MonitorMetric.request_count`、`MonitorHealth.minimum_sample`、`MonitorHealth.score` 和既有 `healthScoreClass`。
 - Produces: `MonitorReadiness = 'no_traffic' | 'observing' | 'scored'`、`monitorReadiness(metrics, health)`，供矩阵和页面共同使用。
 
-- [ ] **Step 1: 在 `monitorFormat.spec.ts` 写 RED。**
+- [x] **Step 1: 在 `monitorFormat.spec.ts` 写 RED。**
 
 新增断言：
 
@@ -59,7 +59,7 @@ expect(monitorReadiness(metrics(3), { ...health, minimum_sample: 20, score: null
 expect(monitorReadiness(metrics(20), { ...health, minimum_sample: 20, score: 42 })).toBe('scored')
 ```
 
-- [ ] **Step 2: 运行 helper RED。**
+- [x] **Step 2: 运行 helper RED。**
 
 Run:
 
@@ -70,39 +70,39 @@ pnpm test:run src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts
 
 Expected: FAIL，提示 `monitorReadiness` 尚未导出。
 
-- [ ] **Step 3: 在 `monitorFormat.ts` 写最小实现。**
+- [x] **Step 3: 在 `monitorFormat.ts` 写最小实现。**
 
 ```ts
 export type MonitorReadiness = 'no_traffic' | 'observing' | 'scored'
 
 export function monitorReadiness(metrics: MonitorMetric, health: MonitorHealth): MonitorReadiness {
+  if (health.score != null) return 'scored'
   if (metrics.request_count <= 0) return 'no_traffic'
-  if (health.score == null || metrics.request_count < health.minimum_sample) return 'observing'
-  return 'scored'
+  return 'observing'
 }
 ```
 
-- [ ] **Step 4: 运行 helper GREEN。**
+- [x] **Step 4: 运行 helper GREEN。**
 
 Run: `pnpm test:run src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts`
 
 Expected: PASS。
 
-- [ ] **Step 5: 在 `RelayPulseMatrix.spec.ts` 写分组状态 RED。**
+- [x] **Step 5: 在 `RelayPulseMatrix.spec.ts` 写分组状态 RED。**
 
 构造三行：零请求、3/20 低样本、20/20 且 `overall='critical'`。断言：前两行分别包含“已就绪·暂无流量”“待观察”且使用 `health-unknown`；第三行保留 `health-score*`/critical 色，不含中性文案。bucket tooltip 对零流量和低样本分别显示对应文案。
 
-- [ ] **Step 6: 运行矩阵 RED。**
+- [x] **Step 6: 运行矩阵 RED。**
 
 Run: `pnpm test:run src/features/channel-monitor-v2/__tests__/RelayPulseMatrix.spec.ts`
 
 Expected: FAIL，因为矩阵尚未渲染 readiness 文案。
 
-- [ ] **Step 7: 最小修改 `RelayPulseMatrix.vue`。**
+- [x] **Step 7: 最小修改 `RelayPulseMatrix.vue`。**
 
 在分组名称下方增加仅中性状态可见的状态文本；成功率、TTFT、缓存率在 `no_traffic` 时显示 `-`，低样本已有值可显示但状态文本为“待观察”。bucket class 继续通过 `healthScoreClass` 保证空分数为中性，tooltip 增加 readiness 行。不得将 `unknown` 改为绿色。
 
-- [ ] **Step 8: 运行 Task 1 GREEN。**
+- [x] **Step 8: 运行 Task 1 GREEN。**
 
 Run:
 
@@ -126,7 +126,7 @@ Expected: 两个文件全部 PASS。
 - Consumes: Task 1 的 `monitorReadiness`；现有 `getDimensions/getSnapshot/getMatrix/getModels/getErrors/getUsers`。
 - Produces: 缺省 range 24h；`detailsOpen` 控制详细分析；初载只请求 dimensions/snapshot/matrix。
 
-- [ ] **Step 1: 创建页面级 RED 测试夹具。**
+- [x] **Step 1: 创建页面级 RED 测试夹具。**
 
 mock Router query、Pinia stores、官方 API 和重量组件，返回可控 snapshot/matrix。测试至少覆盖：
 
@@ -139,7 +139,7 @@ expect(wrapper.get('[data-test="monitor-details-toggle"]').attributes('aria-expa
 
 再展开并断言 `getModels` 被调用，切换错误 tab 后 `getErrors` 被调用；合法 `range=7d` 保留；零流量摘要不出现 `100.0%`，低样本显示“待观察”，充足 critical 样本仍给 MetricCell 传 `critical`。
 
-- [ ] **Step 2: 运行页面 RED。**
+- [x] **Step 2: 运行页面 RED。**
 
 Run:
 
@@ -149,7 +149,7 @@ pnpm test:run src/views/user/__tests__/ChannelStatusV2View.ops.spec.ts
 
 Expected: FAIL，默认仍为 90m、初载会请求 models 且没有详细分析 toggle。
 
-- [ ] **Step 3: 添加中英文文案。**
+- [x] **Step 3: 添加中英文文案。**
 
 新增键：
 
@@ -168,11 +168,11 @@ details: {
 
 英文使用 `Ready · no traffic`、`Observing`、`Detailed analysis` 等价文案。
 
-- [ ] **Step 4: 修改默认 range 与整体摘要。**
+- [x] **Step 4: 修改默认 range 与整体摘要。**
 
 `parseRange` 非法/缺失值返回 `'24h'`。计算整体 readiness；`no_traffic` 时成功率为“已就绪·暂无流量”、TTFT/缓存为 `-` 且不传健康色，`observing` 时成功率为“待观察”且不传健康色，`scored` 时保留现有值与后端状态。
 
-- [ ] **Step 5: 将三类明细移入可访问折叠区。**
+- [x] **Step 5: 将三类明细移入可访问折叠区。**
 
 新增 `detailsOpen = ref(false)` 和 toggle button：
 
@@ -187,7 +187,7 @@ details: {
 
 明细 body 用 `v-if="detailsOpen"`。删除 `loadMetrics()` 中无条件 `await loadTab()`；仅 `detailsOpen` 时刷新明细。`toggleDetails` 首次打开调用 `loadTab()`；tab watcher 仅在打开时请求。
 
-- [ ] **Step 6: 运行页面 GREEN 与 mode 回归。**
+- [x] **Step 6: 运行页面 GREEN 与 mode 回归。**
 
 Run:
 
@@ -210,7 +210,7 @@ Expected: 全部 PASS，v1/v2 路由行为不变。
 - Consumes: Task 1/2 的完成实现与测试。
 - Produces: 可由根总控审查的候选提交和本地验证证据。
 
-- [ ] **Step 1: 运行全部直接相关 Vitest。**
+- [x] **Step 1: 运行全部直接相关 Vitest。**
 
 ```bash
 cd upstream/sub2api/frontend
@@ -225,7 +225,7 @@ pnpm test:run \
 
 Expected: 0 failed。
 
-- [ ] **Step 2: 运行必要类型与构建门禁。**
+- [x] **Step 2: 运行必要类型与构建门禁。**
 
 ```bash
 pnpm typecheck
@@ -234,11 +234,11 @@ pnpm build
 
 Expected: exit 0。
 
-- [ ] **Step 3: 本地浏览器验证。**
+- [x] **Step 3: 本地浏览器验证。**
 
 启动本地 Vite（若 API mock 需要，使用浏览器路由拦截提供官方响应），在 1440x900 和 390x844 检查：默认 24h、首屏 KPI/分组趋势、详细分析展开、`document.documentElement.scrollWidth <= clientWidth`。保存截图到不入库的临时目录，并检查页面非空、无控件重叠。
 
-- [ ] **Step 4: 范围和静态检查。**
+- [x] **Step 4: 范围和静态检查。**
 
 ```bash
 git diff --check
@@ -248,11 +248,11 @@ git status --short
 
 Expected: 仅规格、计划、T22 前端文件、审查和交接；无 backend/migrations/config/workflows/global ledger。
 
-- [ ] **Step 5: 写实现自审与交接。**
+- [x] **Step 5: 写实现自审与交接。**
 
 实现自审逐项核对：默认/深链 range、首屏请求、详细分析懒加载、零/低样本中性、真实异常黄红、390px 溢出、v1 回滚、无迁移/配置。交接记录基线、HEAD/tree、变更文件、每条命令、未验证生产项、`downtime_required=false` 预期和回滚。
 
-- [ ] **Step 6: 提交并停在 READY_FOR_ROOT_REVIEW。**
+- [x] **Step 6: 提交并停在 READY_FOR_ROOT_REVIEW。**
 
 ```bash
 git add upstream/sub2api/frontend/src docs/superpowers docs/handoffs

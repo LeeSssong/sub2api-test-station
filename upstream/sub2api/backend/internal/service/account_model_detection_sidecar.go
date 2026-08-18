@@ -24,6 +24,11 @@ type HTTPAccountModelDetectionSidecar struct {
 	client  *http.Client
 }
 
+var (
+	ErrAccountModelDetectorNotConfigured = errors.New("detector_not_configured")
+	ErrAccountModelDetectorUnavailable   = errors.New("detector_unavailable")
+)
+
 func NewHTTPAccountModelDetectionSidecar(baseURL, token string, client *http.Client) *HTTPAccountModelDetectionSidecar {
 	if client == nil {
 		client = &http.Client{Timeout: 45 * time.Second}
@@ -32,6 +37,9 @@ func NewHTTPAccountModelDetectionSidecar(baseURL, token string, client *http.Cli
 }
 
 func (s *HTTPAccountModelDetectionSidecar) Catalog(ctx context.Context) (AccountModelDetectionSidecarCatalog, error) {
+	if s == nil || s.baseURL == "" {
+		return AccountModelDetectionSidecarCatalog{}, ErrAccountModelDetectorNotConfigured
+	}
 	var payload struct {
 		Version string `json:"version"`
 		Models  []struct {
@@ -52,10 +60,13 @@ func (s *HTTPAccountModelDetectionSidecar) Catalog(ctx context.Context) (Account
 		seen[id] = true
 		models = append(models, id)
 	}
-	return AccountModelDetectionSidecarCatalog{Version: boundedString(payload.Version, 64), Models: models}, nil
+	return AccountModelDetectionSidecarCatalog{Version: boundedString(payload.Version, 64), Models: models, State: AccountModelDetectorStateReady}, nil
 }
 
 func (s *HTTPAccountModelDetectionSidecar) Detect(ctx context.Context, request AccountModelDetectionRequest) (AccountModelDetectionResponse, error) {
+	if s == nil || s.baseURL == "" {
+		return AccountModelDetectionResponse{}, ErrAccountModelDetectorNotConfigured
+	}
 	var payload AccountModelDetectionResponse
 	if err := s.doJSON(ctx, http.MethodPost, "/v1/detect", request, &payload); err != nil {
 		return AccountModelDetectionResponse{}, err
@@ -74,7 +85,7 @@ func (s *HTTPAccountModelDetectionSidecar) Detect(ctx context.Context, request A
 
 func (s *HTTPAccountModelDetectionSidecar) doJSON(ctx context.Context, method, path string, request any, response any) error {
 	if s == nil || s.baseURL == "" {
-		return errors.New("detector_unavailable")
+		return ErrAccountModelDetectorNotConfigured
 	}
 	var body io.Reader
 	if request != nil {
@@ -97,12 +108,12 @@ func (s *HTTPAccountModelDetectionSidecar) doJSON(ctx context.Context, method, p
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return errors.New("detector_unavailable")
+		return ErrAccountModelDetectorUnavailable
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, accountModelDetectionSidecarBodyLimit+1))
 	if err != nil || len(data) > accountModelDetectionSidecarBodyLimit {
-		return errors.New("detector_invalid_response")
+		return ErrAccountModelDetectorUnavailable
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("detector_http_%d", resp.StatusCode)

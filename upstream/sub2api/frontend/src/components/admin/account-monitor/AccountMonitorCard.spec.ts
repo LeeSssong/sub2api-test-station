@@ -24,6 +24,8 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.connectionProbeModel': '连接测试模型',
         'admin.accounts.modelDetection.detectionModel': '检测模型',
         'admin.accounts.modelDetection.detectorUnsupported': '检测器暂不支持',
+        'admin.accounts.modelDetection.detectorUnconfigured': '检测服务未接入',
+        'admin.accounts.modelDetection.detectorUnavailable': '检测服务暂不可用',
         'admin.accounts.modelDetection.recentStatus': '最近状态',
         'admin.accounts.modelDetection.declaredModel': '申报模型',
         'admin.accounts.modelDetection.juice': 'Juice',
@@ -38,6 +40,8 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.detecting': '已排队…',
         'admin.accounts.modelDetection.detectNow': '立即检测',
         'admin.accounts.modelDetection.status.abnormal': '异常',
+        'admin.accounts.modelDetection.status.service_unconfigured': '检测服务未接入',
+        'admin.accounts.modelDetection.status.service_unavailable': '检测服务暂不可用',
       }[key] ?? key),
     }),
   }
@@ -880,5 +884,32 @@ describe('AccountMonitorCard', () => {
     const wrapper = mountCard({ onEditConnectionProbeModel: editConnectionProbeModel })
     await wrapper.get('[data-test="edit-connection-probe-model"]').trigger('click')
     expect(editConnectionProbeModel).toHaveBeenCalledWith(account)
+  })
+
+  it.each([
+    ['unconfigured', '检测服务未接入'],
+    ['unavailable', '检测服务暂不可用'],
+  ])('does not mislabel %s detector state as unsupported', async (state, label) => {
+    const wrapper = mountCard({
+      account: { ...account, model_detection: { status: state === 'unconfigured' ? 'service_unconfigured' : 'service_unavailable', settings: { account_id: 113, connection_probe_model: 'gpt-4o', model_detection_model: '' }, model_options: [] } },
+      modelDetectionModels: { account_id: 113, detector_state: state, connection_probe_model: 'gpt-4o', model_detection_model: '', connection_models: [{ id: 'gpt-4o', supported: true, selected: true }], detection_models: [{ id: 'gpt-4o', supported: false, selected: false, reason: `detector_${state}` }] },
+    })
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.get('[data-test="detector-availability"]').text()).toContain(label)
+    expect(dialog.text()).not.toContain('检测器暂不支持')
+    expect(dialog.get('[data-test="connection-model-select"]').attributes('disabled')).toBeUndefined()
+    expect(dialog.get('[data-test="model-detection-run"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('uses unsupported copy only for a ready catalog that omits the native model', async () => {
+    const wrapper = mountCard({
+      account: { ...account, model_detection: { status: 'unsupported', settings: { account_id: 113, connection_probe_model: 'gpt-4o', model_detection_model: '' }, model_options: [] } },
+      modelDetectionModels: { account_id: 113, detector_state: 'ready', connection_probe_model: 'gpt-4o', model_detection_model: '', connection_models: [{ id: 'gpt-4o', supported: true, selected: true }], detection_models: [{ id: 'gpt-4o', supported: false, selected: false, reason: 'detector_unsupported' }] },
+    })
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.text()).toContain('检测器暂不支持')
+    expect(dialog.find('[data-test="detector-availability"]').exists()).toBe(false)
   })
 })

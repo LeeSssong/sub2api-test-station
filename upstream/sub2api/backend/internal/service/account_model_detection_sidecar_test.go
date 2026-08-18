@@ -3,11 +3,22 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestHTTPAccountModelDetectionSidecarReportsUnconfigured(t *testing.T) {
+	client := NewHTTPAccountModelDetectionSidecar("", "", nil)
+	if _, err := client.Catalog(context.Background()); !errors.Is(err, ErrAccountModelDetectorNotConfigured) {
+		t.Fatalf("Catalog error = %v, want detector not configured", err)
+	}
+	if _, err := client.Detect(context.Background(), AccountModelDetectionRequest{}); !errors.Is(err, ErrAccountModelDetectorNotConfigured) {
+		t.Fatalf("Detect error = %v, want detector not configured", err)
+	}
+}
 
 type accountModelDetectionRoundTripFunc func(*http.Request) (*http.Response, error)
 

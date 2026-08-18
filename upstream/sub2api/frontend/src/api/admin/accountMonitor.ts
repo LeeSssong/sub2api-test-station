@@ -3,6 +3,7 @@ import type { WindowStats } from '@/types'
 
 export type AccountMonitorStatus = 'success' | 'failed' | 'unavailable' | string
 export type AccountModelDetectionStatus = 'untested' | 'queued' | 'running' | 'normal' | 'abnormal' | 'insufficient' | 'failed' | 'unsupported' | string
+export type AccountModelDetectorState = 'ready' | 'unconfigured' | 'unavailable' | string
 export type AccountMonitorRange = '24h' | '7d' | '30d'
 export type AccountMonitorAvailabilityStatus = 'normal' | 'abnormal' | 'unavailable' | 'disabled' | 'stale' | string
 export type AccountMonitorScoreStatus = 'eligible' | 'capped' | 'ineligible' | string
@@ -242,6 +243,7 @@ export interface AccountModelDetectionSummary {
 
 export interface AccountModelDetectionProjection {
   status: AccountModelDetectionStatus
+  detector_state?: AccountModelDetectorState
   settings: AccountModelDetectionSettings
   model_options: AccountModelDetectionModelOption[]
   recent?: AccountModelDetectionSummary | null
@@ -249,6 +251,7 @@ export interface AccountModelDetectionProjection {
 
 export interface AccountModelDetectionModelsResponse {
   account_id: number
+  detector_state: AccountModelDetectorState
   connection_probe_model: string
   model_detection_model: string
   connection_models: AccountModelDetectionModelOption[]

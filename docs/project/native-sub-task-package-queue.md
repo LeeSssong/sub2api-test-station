@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19 与 T20 均已完成推送、发布和线上验收，当前全部为 `DONE`；T21 进入 `INTEGRATING`，T22 保持 `BACKLOG`，T23 保持 `IMPLEMENTING`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20 与 T21 均已完成推送、发布和线上验收，当前全部为 `DONE`；T22 进入 `DESIGNING`，T23 保持 `IMPLEMENTING`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@c2a1429623b22d0e5c3d4746a508d0f34e0a93e9`、tree `e41c1460b05ad1b040c2700fb54227b2dad0f947`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T20 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T051214Z-production-2858199.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-c2a142962-t20-zero-flow-v1.json`。
+- 当前发布状态：生产源 `main@aee203ac4983c56e961525cbb9f587d16b5aa74d`、tree `cf5a5f8d46951701cb235b37dd3041551288e1e5`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T21 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T110720Z-production-3118657.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-aee203ac4-t21-sidecar-ready-v2.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -296,16 +296,17 @@
 
 ### T21 生产模型检测 sidecar 接入与离线状态纠正
 
-- 当前状态：`INTEGRATING`。sidecar 收口候选已刷新并合入根 `main@57c6c6159`；正在执行合并后直接相关门禁、发布预检、推送和生产验收。此前离线语义线上验收保持有效，当前目标是完成真实 sidecar 检测闭环。
+- 当前状态：`DONE`。sidecar 收口候选合入后，首次发布在生产变更前由镜像构建门禁发现 detector Go module cache 未指定 target；根以 TDD 增加 Dockerfile 合同并修复，最终 `main@aee203ac4` 已推送、无停机蓝绿发布和线上验收。
 - 候选：`codex/t21-model-detector-sidecar@7120593f2db99757b4cf0d7de664d40e18391320`，基线 `main@74aa0d0126e7097cecb4d6d6df33b767da65a494`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t21-model-detector-sidecar`，交接 `docs/handoffs/2026-08-18-t21-model-detector-sidecar-handoff.md`。
 - 范围：后端显式区分 `ready`、`unconfigured`、`unavailable` detector 状态并通过现有 admin API/projection 暴露；前端显示“检测服务未接入/暂不可用”，仅在 `ready` catalog 中对未收录模型显示“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变；Compose 向 blue、green、worker 透传既有 URL/token 配置。
 - 验证：后端检测器 focused tests、前端账号监控 `51/51`、typecheck/build、Compose 合同、compile-only、gofmt 与 diff-check 均通过；无迁移、无业务数据写入，预期 `downtime_required=false`，以根预检为准。
 - 生产验收边界：宿主当前未配置 `SUB2API_MODEL_DETECTOR_URL/TOKEN`，也没有合规 sidecar 制品；本次发布可验收离线语义（显示未接入、不误报模型不支持、连接测试正常），至少一个模型真实检测需在提供符合 T15 许可/合同门禁的 sidecar 后补验收。禁止复制 `tools/gpt56_api_detector-git` 核心/基线/报告，禁止使用 GitHub Actions。
 - 生产结果：根 `main@65d70601a024e4f9b8c4c23e4756b6ae67ec8df8`、tree `61670b6394de7b58c6aeb79eb94f861875c767a4` 已推送；宿主记录 `/var/lib/sub2api/release-records/20260818T054645Z-production-2885531.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API/worker 同一不可变镜像 `...ffc6c25deac5b2327e1f769c256046140c7d7d01c4ab615d077c548c604b2369`。公网三项健康均 200；登录态 admin API 显示 90 个账号，API Key 账号 `detector_state=unconfigured`、状态 `service_unconfigured`、原因 `detector_unconfigured`，连接测试模型仍存在；未配置 sidecar，T22 继续等待 T21 完整验收。
+- 最终验收：宿主记录 `/var/lib/sub2api/release-records/20260818T110720Z-production-3118657.json` 为 `succeeded/promoted`，活动槽 `blue`；detector/API/worker 同镜像且 healthy。catalog 在线返回 `gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-5.4`；账号 `#23` 真实检测运行 `9dc7b02a-f5f2-4ea1-a25f-2f2f6ab2c6dd` 进入 `normal`，模型 `gpt-5.6-terra`、detector `native-1`。最近日志精确扫描未出现 API Key 值、base URL、Authorization/Bearer 或 detector token。
 
 ### T22 官方 Channel Monitor V2 简洁运营视图
 
-- 当前状态：`BACKLOG`。仅在 T20、T21 依赖完成并生产验收后启动，保留 T18 的官方 V2 单一事实源与 `channel_monitor_mode=v1` 回滚开关。
+- 当前状态：`DESIGNING`。T20/T21 依赖已完成生产验收；现启动独立用户可见执行会话和 worktree，保留 T18 的官方 V2 单一事实源与 `channel_monitor_mode=v1` 回滚开关。
 - 范围：默认时间窗改为 24h，保留 90m/7d/30d；首屏保留分组状态、成功率、首 Token、缓存率和最近趋势，模型明细/错误分类/用户排行移入“详细分析”。低流量/样本不足显示“已就绪·暂无流量”或“待观察”，不计入整体异常和健康评分且不伪造健康；真实错误、低成功率、高延迟仍黄/红显示。
 - 口径与验收：复用 T19 有效样本分母，排除本地拒绝、禁用模型、参数校验失败等未获上游响应请求；确认不重复实现已完成能力。桌面/移动端无溢出，v1 可回滚，预期无迁移且 `downtime_required=false`。
 

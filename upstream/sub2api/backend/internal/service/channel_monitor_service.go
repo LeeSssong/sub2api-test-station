@@ -565,7 +565,9 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	for i, model := range models {
 		i, model := i, model
 		eg.Go(func() error {
-			r := runCheckForModel(ctx, m.Provider, m.Endpoint, m.APIKey, model, opts)
+			r := runChannelMonitorCheckWithRetry(ctx, func(attemptCtx context.Context) *CheckResult {
+				return runCheckForModel(attemptCtx, m.Provider, m.Endpoint, m.APIKey, model, opts)
+			})
 			r.PingLatencyMs = pingMs
 			mu.Lock()
 			results[i] = r
@@ -575,6 +577,23 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	}
 	_ = eg.Wait()
 	return results
+}
+
+func runChannelMonitorCheckWithRetry(
+	ctx context.Context,
+	check func(context.Context) *CheckResult,
+) *CheckResult {
+	var result *CheckResult
+	for attempt := 0; attempt < monitorChannelCheckMaxAttempts; attempt++ {
+		result = check(ctx)
+		if result.Status == MonitorStatusOperational || result.Status == MonitorStatusDegraded {
+			return result
+		}
+		if ctx.Err() != nil {
+			return result
+		}
+	}
+	return result
 }
 
 // ---------- 调度器协作 ----------

@@ -24,7 +24,10 @@
         </p>
       </div>
       <div class="flex flex-shrink-0 items-center gap-2">
-        <span class="font-mono text-sm font-semibold tabular-nums text-primary-700 dark:text-primary-300">
+        <span
+          data-test="monitor-rate-multiplier"
+          class="rounded-md border border-primary-200 bg-primary-50 px-2 py-1 font-mono text-base font-bold tabular-nums text-primary-800 dark:border-primary-500/30 dark:bg-primary-500/15 dark:text-primary-200"
+        >
           {{ formatRate(group.rate_multiplier) }}×
           <span class="sr-only">{{ t('monitorV2.baseRate') }}</span>
         </span>
@@ -113,7 +116,6 @@ const callEvidence = computed(() => {
     return t(`monitorV2.metric.${props.group.availability.state}`)
   }
   return t('monitorV2.callEvidence', {
-    success: numberFormat.format(props.group.availability.success_count),
     eligible: numberFormat.format(props.group.availability.eligible_count),
   })
 })

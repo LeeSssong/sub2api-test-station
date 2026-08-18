@@ -101,7 +101,7 @@ export default {
     baseRate: '基础倍率',
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
     availability: '有效调用',
-    callEvidence: '{success} / {eligible} 次有效调用成功',
+    callEvidence: '基于 {eligible} 次真实请求。',
     timeline: {
       noData: '该时段暂无探测记录',
       probeUnavailable: '探测完成（当前无可用模型）',

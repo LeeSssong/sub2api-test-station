@@ -296,9 +296,12 @@
 
 ### T21 生产模型检测 sidecar 接入与离线状态纠正
 
-- 当前状态：`DESIGNING`。T20 已完成生产验收，根总控开始盘点 T15 原生模型检测接线、现有 sidecar 样本、宿主配置与许可边界；尚未修改运行时代码或生产配置。
-- 范围：接入并验证现有模型检测 sidecar，使 catalog 返回实际支持模型；sidecar 未接入、不可达或 catalog 获取失败时，前端显示“检测服务未接入/暂不可用”，不把全部模型误报为“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变。
-- 验收边界：至少一个受支持模型可选择并完成检测；离线语义准确；不改计费、调度、账号原生探测或外部控制面。沿用 T15 的许可证、凭据和配置门禁，禁止使用 GitHub Actions。
+- 当前状态：`VERIFYING`。候选已合入、推送并完成无停机蓝绿发布；离线语义线上验收完成，真实 sidecar 检测验收等待外部制品与宿主配置。
+- 候选：`codex/t21-model-detector-sidecar@7120593f2db99757b4cf0d7de664d40e18391320`，基线 `main@74aa0d0126e7097cecb4d6d6df33b767da65a494`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t21-model-detector-sidecar`，交接 `docs/handoffs/2026-08-18-t21-model-detector-sidecar-handoff.md`。
+- 范围：后端显式区分 `ready`、`unconfigured`、`unavailable` detector 状态并通过现有 admin API/projection 暴露；前端显示“检测服务未接入/暂不可用”，仅在 `ready` catalog 中对未收录模型显示“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变；Compose 向 blue、green、worker 透传既有 URL/token 配置。
+- 验证：后端检测器 focused tests、前端账号监控 `51/51`、typecheck/build、Compose 合同、compile-only、gofmt 与 diff-check 均通过；无迁移、无业务数据写入，预期 `downtime_required=false`，以根预检为准。
+- 生产验收边界：宿主当前未配置 `SUB2API_MODEL_DETECTOR_URL/TOKEN`，也没有合规 sidecar 制品；本次发布可验收离线语义（显示未接入、不误报模型不支持、连接测试正常），至少一个模型真实检测需在提供符合 T15 许可/合同门禁的 sidecar 后补验收。禁止复制 `tools/gpt56_api_detector-git` 核心/基线/报告，禁止使用 GitHub Actions。
+- 生产结果：根 `main@65d70601a024e4f9b8c4c23e4756b6ae67ec8df8`、tree `61670b6394de7b58c6aeb79eb94f861875c767a4` 已推送；宿主记录 `/var/lib/sub2api/release-records/20260818T054645Z-production-2885531.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API/worker 同一不可变镜像 `...ffc6c25deac5b2327e1f769c256046140c7d7d01c4ab615d077c548c604b2369`。公网三项健康均 200；登录态 admin API 显示 90 个账号，API Key 账号 `detector_state=unconfigured`、状态 `service_unconfigured`、原因 `detector_unconfigured`，连接测试模型仍存在；未配置 sidecar，T22 继续等待 T21 完整验收。
 
 ### T22 官方 Channel Monitor V2 简洁运营视图
 

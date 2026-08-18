@@ -287,7 +287,7 @@
 
 ### T20 用量详情过时提示清理与盈利页零流水账号补齐
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`。用户于 2026-08-18 明确批准方案并要求立即登记、按 T15/T16/T17/T18/T19 之后的单车道开始；候选已完成实现与直接相关门禁，禁止插队发布。
+- 当前状态：`INTEGRATING`。根总控已确认 T20 为当前唯一整合候选，候选已完成实现与直接相关门禁，禁止插队发布。
 - 候选：隔离 checkout `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t20-usage-detail-zero-flow`，分支 `codex/t20-usage-detail-zero-flow`，基线 `main@d579e6f99f4f281227578676dff060df92e3f870`，提交 `3b120046e328535ce587db60a5ef750586d652d0`，bundle `/private/tmp/t20-usage-detail-zero-flow-ready.bundle`（SHA-256 `09f352f1c19c14336c280f24342d4366735933377578a7a2678214a4c0800c82`），交接 `docs/handoffs/2026-08-18-t20-usage-detail-zero-flow-handoff.md`。
 - 范围：删除 `UsageDetailDialog` 中过时的严格上游账单提示及对应前端断言；保留后端 evidence 接口、`evidence_status` 与 `reason_code`，不改变 T17 已上线的有效账号成本主口径。`account-financial` 分组读模型先从 `account_groups` 加载全部有效账号并初始化零值，再叠加 `usage_logs` 与探测成本聚合，使时间窗内无流水的有效账号仍显示且金额均为零。
 - 原生事实与边界：复用 Sub 原生有效账号、`usage_logs`、现有财务字段和聚合公式；保持 API 响应、字段结构、成本/收入/利润数学、探测成本语义及账号绑定状态不变。不做迁移、回填、生产数据写入、账务重算、evidence 表删除、S3/T22 顺带实现或 GitHub Actions。

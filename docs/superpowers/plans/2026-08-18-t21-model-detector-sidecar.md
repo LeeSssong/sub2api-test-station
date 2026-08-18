@@ -4,7 +4,7 @@
 
 **Goal:** Distinguish detector service availability from model support, pass the existing sidecar configuration into Sub API/worker processes, and verify a configured sidecar through the existing T15 contract.
 
-**Architecture:** Extend the existing T15 catalog cache with an explicit `ready/unconfigured/unavailable` state and project it through the current admin API. The Vue dialog and card render that state while preserving native connection tests. Compose only passes operator-controlled URL/token values; the detector remains an external replaceable service.
+**Architecture:** Extend the existing T15 catalog cache with an explicit `ready/unconfigured/unavailable` state and project it through the current admin API. The Vue dialog and card render that state while preserving native connection tests. A separately built `/app/model-detector` binary runs as a private Compose service from the same qualified immutable image; API and worker access it only through the existing replaceable HTTP contract.
 
 **Tech Stack:** Go, Gin service DTOs, Vue 3, TypeScript, Vitest, Docker Compose, shell contract checks.
 
@@ -57,22 +57,36 @@
 - [ ] **Step 3: Add typed states, translations, status copy, and button/select guards** without changing card layout or native connection-test actions.
 - [ ] **Step 4: Run GREEN focused Vitest**, then `pnpm exec vue-tsc --noEmit` and `pnpm build`.
 
-### Task 3: Pass sidecar configuration through Compose
+### Task 3: Implement the independent sidecar contract
+
+**Files:**
+- Create: `upstream/sub2api/backend/cmd/model-detector/main.go`
+- Create: `upstream/sub2api/backend/cmd/model-detector/main_test.go`
+- Modify: `upstream/sub2api/Dockerfile`
+
+- [x] **Step 1: Write direct tests** for models endpoint normalization, bearer authentication, catalog output, matching model and unavailable/unauthorized upstream outcomes.
+- [x] **Step 2: Implement a standard-library HTTP service** with bounded bodies/timeouts and no credential logging or persistence.
+- [x] **Step 3: Build the binary in the existing backend builder** and copy it into the qualified runtime image.
+- [x] **Step 4: Run focused Go test/build and gofmt.**
+
+### Task 4: Pass sidecar configuration through Compose and the host release chain
 
 **Files:**
 - Modify: `infra/compose.yaml`
+- Modify: `infra/compose.sub2api-rehearsal.yaml`
+- Modify: `ops/deploy-sub2api-blue-green-host.sh`
 - Create: `tests/operations/model_detector_compose_contract_test.sh`
 
 **Interfaces:**
-- Passes `SUB2API_MODEL_DETECTOR_URL` and `SUB2API_MODEL_DETECTOR_TOKEN` from the operator `.env` to blue, green, and worker through the existing shared environment anchor.
-- Exposes no sidecar port and writes no secret value into the repository.
+- Declares a private `model-detector` service from the same candidate image and passes its URL/token to blue, green, and worker.
+- Upgrades legacy rendered production Compose only after read-only release gates and restores Compose/secret files on failure.
 
-- [ ] **Step 1: Write a failing shell contract test** that renders Compose with sentinel URL/token values and asserts all three Sub services receive both values while no published detector port or literal token appears in `infra/compose.yaml`.
-- [ ] **Step 2: Run RED test:** `bash tests/operations/model_detector_compose_contract_test.sh`.
-- [ ] **Step 3: Add the two interpolated environment entries** to `x-sub2api-environment`.
-- [ ] **Step 4: Run GREEN contract test** and `git diff --check`.
+- [x] **Step 1: Extend the shell contract test** to require the private service, command, URL/token wiring and no published detector port.
+- [x] **Step 2: Add production/rehearsal Compose services** and current production model catalog defaults.
+- [x] **Step 3: Extend the reviewed host executor** with atomic legacy JSON Compose patching, token generation, detector health startup, and failure restoration.
+- [x] **Step 4: Run Compose rendering, controller/host release contracts, shell syntax and diff-check.**
 
-### Task 4: Candidate verification and handoff
+### Task 5: Candidate verification and handoff
 
 **Files:**
 - Create: `docs/handoffs/2026-08-18-t21-model-detector-sidecar-handoff.md`

@@ -62,7 +62,7 @@ setup_case() {
   printf 'secret=value\n' >"$CASE_DIR/secret.env"
   printf 'admin-test-key\n' >"$CASE_DIR/admin.key"
   printf 'gateway-test-key\n' >"$CASE_DIR/gateway.key"
-  printf 'services: {}\n' >"$CASE_DIR/compose.yaml"
+  printf '%s\n' '{"services":{"sub2api-blue":{"environment":{},"depends_on":{}},"sub2api-green":{"environment":{},"depends_on":{}},"sub2api-worker":{"environment":{},"depends_on":{}}}}' >"$CASE_DIR/compose.yaml"
   cat >"$CASE_DIR/release.env" <<EOF
 UNRELATED_SETTING=preserved
 SUB2API_BLUE_IMAGE=$PREVIOUS_IMAGE
@@ -290,6 +290,7 @@ JSON
 	*' ps -q sub2api-worker')
 		if [[ "$scenario" == multiple_workers ]]; then printf 'worker-id\nworker-id-2\n'; else printf 'worker-id\n'; fi
 		;;
+	*' ps -q model-detector') printf 'detector-id\n' ;;
 	'ps -q --filter label=com.docker.compose.project=sub2api --filter label=com.docker.compose.service=sub2api')
 		[[ "$scenario" != legacy_all_role ]] || printf 'legacy-id\n'
 		;;
@@ -414,7 +415,7 @@ JSON
       [[ "$count" -lt 2 ]] || exit 1
     fi
     ;;
-  'inspect worker-id --format {{.State.Health.Status}}')
+	'inspect worker-id --format {{.State.Health.Status}}')
     if [[ "$scenario" == worker_starting_then_healthy ]]; then
       count_file="${FAKE_EVENT_LOG}.worker-health-count"
       count=0
@@ -426,6 +427,7 @@ JSON
     [[ "$scenario" != worker_health_failure && "$scenario" != worker_health_timeout && "$scenario" != worker_rollback_failure ]] || { printf 'unhealthy\n'; exit 0; }
     printf 'healthy\n'
     ;;
+	'inspect detector-id --format {{.State.Health.Status}}') printf 'healthy\n' ;;
 	'inspect green-id --format {{.State.Health.Status}}')
 		if [[ "$scenario" == candidate_starting_then_healthy ]]; then
 			count_file="${FAKE_EVENT_LOG}.candidate-health-count"
@@ -1690,6 +1692,14 @@ test_success_order_and_atomic_records() {
     || fail 'success path used a prohibited destructive operation'
   grep -q '^UNRELATED_SETTING=preserved$' "$CASE_DIR/release.env" || fail 'release env lost unrelated settings'
   grep -q '^SUB2API_ACTIVE_SLOT=green$' "$CASE_DIR/release.env" || fail 'release env did not persist green'
+  "$REAL_JQ" -e --arg image "$IMAGE" '
+    .services["model-detector"].image == $image and
+    .services["model-detector"].command == ["/app/model-detector"] and
+    .services["sub2api-blue"].environment.SUB2API_MODEL_DETECTOR_URL == "http://model-detector:8090" and
+    .services["sub2api-worker"].depends_on["model-detector"].condition == "service_healthy"
+  ' "$CASE_DIR/compose.yaml" >/dev/null || fail 'success path did not persist detector topology'
+  grep -Eq '^SUB2API_MODEL_DETECTOR_TOKEN=[a-f0-9]{64}$' "$CASE_DIR/secret.env" \
+    || fail 'success path did not persist a generated detector token'
   "$REAL_JQ" -e '.active_slot == "green" and .active_upstream == "sub2api-green:8080" and .worker_image == $image' \
     --arg image "$IMAGE" "$CASE_DIR/state.json" >/dev/null || fail 'state was not promoted atomically'
   "$REAL_JQ" -e '.schema_version == 2 and .blue_image_id == $previous_id and .green_image_id == $requested_id and .worker_image_id == $requested_id' \

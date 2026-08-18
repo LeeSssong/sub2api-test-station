@@ -8,14 +8,17 @@
 ## Delivered
 - Expand-only migration `226_account_procurement_cost_versions.sql` with version, effective/ended/settled timestamps, loss, actor/request id, active/request uniqueness.
 - Independent CNY report service/API: `GET /admin/operations/self-purchased-profitability`.
-- Atomic procurement config endpoint: `PUT /admin/operations/accounts/:id/procurement`; first version effective at account.created_at, later versions at update time; projection update in same transaction; audit row appended.
-- Idempotent settlement endpoint: `POST /admin/operations/accounts/:id/procurement/settle`; settlement computes loss_cny capped by standard `usage_logs.total_cost` (never account_cost) and appends audit.
-- Frontend self-purchased CNY panel with cost pending state, metrics, table, and confirmation settlement action; channel USD view unchanged.
+- Procurement ownership comes only from the ledger/current procurement projection; ordinary OAuth accounts are not inferred as self-purchased.
+- Atomic procurement config endpoint: `PUT /admin/operations/accounts/:id/procurement`; first version effective at `account.created_at`, later versions store remaining cost/quota at update time; projection and audit update in the same SQL transaction. The existing account-monitor edit route delegates procurement changes to this service with auth actor and idempotency key.
+- Idempotent settlement endpoint: `POST /admin/operations/accounts/:id/procurement/settle`; only disabled/error/expired accounts can settle, the operation persists fixed `loss_cny`, serializes on the latest version, and appends actor audit.
+- Report SQL scans timestamps into native time values, applies each version's own effective interval and cap, reads settled loss from the ledger, and limits standard cost to complete successful positive-token rows while excluding media, per-request and Cyber rows.
+- Frontend self-purchased CNY panel renders every required field separately, preserves zero pending cost, contains wide tables within their scroll wrapper, and requires explicit confirmation before settlement; channel USD view unchanged.
 - Formal spec/plan under `docs/superpowers/specs/2026-08-18-t23-procurement-profitability-design.md` and `docs/superpowers/plans/2026-08-18-t23-procurement-profitability-plan.md`.
 
 ## Verification
-- `go test ./internal/service ./internal/handler/admin ./migrations -run 'Procurement|SelfPurchased|AccountProfitability' -count=1` — pass.
-- `pnpm vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts` — 16/16 pass.
+- `go test ./internal/service ./internal/handler/admin ./internal/server/routes ./migrations -run 'Procurement|SelfPurchased|AccountProfitability' -count=1` — pass.
+- `go test ./internal/handler ./cmd/server -run '^$' -count=1` — pass.
+- `pnpm vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts` — 18/18 pass.
 - `pnpm run typecheck` — pass.
 - `pnpm run build` — pass.
 - `git diff --check` — pass.
@@ -26,7 +29,6 @@
 
 ## Remaining risks / unverified
 - No fresh PostgreSQL concurrent integration test in this candidate; SQL transactions/unique indexes are covered structurally and by sqlmock-free unit paths only.
-- Existing legacy account update endpoint does not call the new procurement endpoint automatically; UI can use the dedicated endpoint when wired by root integration.
 - Browser screenshot/390px visual smoke not run; layout uses responsive grid and overflow wrapper.
 - Production deployment/online verification intentionally not performed.
 

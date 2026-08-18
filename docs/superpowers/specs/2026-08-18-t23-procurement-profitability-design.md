@@ -17,7 +17,7 @@
 ## 数据模型与流转
 新增 `account_procurement_cost_versions`：account_id、cost_cny、estimated_quota_usd、effective_at、ended_at、settled_at、loss_cny、status、actor_user_id、request_id、created_at、updated_at、version_no；唯一 `(account_id, version_no)` 与活动版本部分唯一索引。新增 `account_procurement_settlements` 以 request_id 唯一保证确认失效幂等（或同表状态转换）。管理员账号更新在事务中关闭活动版本、追加新版本并更新 accounts 投影；首次版本 effective_at 使用 account.created_at。
 
-自购识别：`type='oauth'` 或已有采购投影且非 API key 的账号。标准消耗=usage_logs token 总量折算为 USD 的原生 `total_cost`（不使用 account_cost）；已确认成本=min(标准消耗*cost/quota, 采购成本)；待摊=max(采购成本-已确认成本,0)；失效损失=待摊（仅 confirmed_expired/administrator_confirmed_expired）；临时错误、暂停、可恢复禁用不结算。人民币营收=sum(actual_cost)。净利润=营收-已确认成本-损失；利润率=净利润/营收（营收为 0 显示 null）。未配置状态为 `cost_pending`，不按 0 成本。
+自购识别只来自采购版本台账或既有采购投影，账号 `type` 不推断采购归属。标准消耗仅聚合成功、完整、正 Token 的 token billing `usage_logs.total_cost`，排除图片、视频、按请求、Cyber 与零 Token 流水（不使用 account_cost）；已确认成本=min(标准消耗*cost/quota, 采购成本)；待摊=max(采购成本-已确认成本,0)；失效损失读取结算时持久化的 `loss_cny`（仅 confirmed_expired/administrator_confirmed_expired）；临时错误、暂停、可恢复禁用不结算。人民币营收=sum(actual_cost)。净利润=营收-已确认采购成本-采购损失；利润率=净利润/营收（营收为 0 显示 null）。未配置状态为 `cost_pending`，不按 0 成本。
 
 额度变更：新版本记录剩余成本/剩余额度；已结算成本不回溯。版本结束时间作为旧版本 usage 截止；新版本从修改时间生效。
 

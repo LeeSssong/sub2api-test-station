@@ -7,7 +7,9 @@ import zhAdmin from '@/i18n/locales/zh/admin'
 import enAdmin from '@/i18n/locales/en/admin'
 
 const getReport = vi.hoisted(() => vi.fn())
-vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport } } }))
+const getSelfPurchased = vi.hoisted(() => vi.fn())
+const settleSelfPurchased = vi.hoisted(() => vi.fn())
+vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport }, selfPurchasedProfitability: { get: getSelfPurchased, settle: settleSelfPurchased } } }))
 
 const messages: Record<string, string> = {
   'admin.accountProfitability.title': '账号盈利',
@@ -157,7 +159,39 @@ const cardIds = (wrapper: ReturnType<typeof mountPage>) => wrapper
   .map((node) => Number(node.attributes('data-account-id')))
 
 describe('AccountProfitabilityView', () => {
-  beforeEach(() => { getReport.mockReset().mockResolvedValue(nativeReport()) })
+  beforeEach(() => {
+    getReport.mockReset().mockResolvedValue(nativeReport())
+    settleSelfPurchased.mockReset().mockResolvedValue({ settled: true })
+    getSelfPurchased.mockReset().mockResolvedValue({
+      start_date: '2026-08-01', end_date: '2026-08-18', generated_at: '2026-08-18T00:00:00Z', currency: 'CNY',
+      summary: { procurement_cost_cny: 120, standard_consumed_usd: 30, confirmed_cost_cny: 60, pending_cost_cny: 0, procurement_loss_cny: 60, revenue_cny: 100, net_profit_cny: -20, margin: -0.2, account_count: 1 },
+      rows: [{ account_id: 21, name: 'Purchased', platform: 'openai', account_type: 'oauth', status: 'disabled', procurement_cost_cny: 120, estimated_quota_usd: 60, standard_consumed_usd: 30, utilization: 0.5, confirmed_cost_cny: 60, pending_cost_cny: 0, procurement_loss_cny: 60, revenue_cny: 100, net_profit_cny: -20, margin: -0.2, cost_status: 'settled' }],
+    })
+  })
+
+  it('renders every CNY field and does not replace zero pending cost with loss', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const table = wrapper.get('[data-test="self-purchased-table"]')
+    expect(table.text()).toContain('采购成本')
+    expect(table.text()).toContain('利用率')
+    expect(table.text()).toContain('采购损失')
+    const cells = table.findAll('tbody td').map((cell) => cell.text())
+    expect(cells.some((cell) => /CN¥0\.00|¥0\.00/.test(cell))).toBe(true)
+    expect(table.text()).toContain('50.00%')
+    expect(table.text()).toContain('-20.00%')
+  })
+
+  it('offers settlement for an expired active procurement version', async () => {
+    getSelfPurchased.mockResolvedValueOnce({
+      start_date: '2026-08-01', end_date: '2026-08-18', generated_at: '2026-08-18T00:00:00Z', currency: 'CNY',
+      summary: { procurement_cost_cny: 120, standard_consumed_usd: 30, confirmed_cost_cny: 60, pending_cost_cny: 60, procurement_loss_cny: 0, revenue_cny: 100, net_profit_cny: 40, margin: 0.4, account_count: 1 },
+      rows: [{ account_id: 21, name: 'Expired purchase', platform: 'openai', account_type: 'oauth', status: 'expired', procurement_cost_cny: 120, estimated_quota_usd: 60, standard_consumed_usd: 30, utilization: 0.5, confirmed_cost_cny: 60, pending_cost_cny: 60, procurement_loss_cny: 0, revenue_cny: 100, net_profit_cny: 40, margin: 0.4, cost_status: 'active' }],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="settle-21"]').text()).toBe('确认失效')
+  })
 
   it('shows loading before the first response and all-site summary after success', async () => {
     getReport.mockReturnValueOnce(new Promise(() => undefined))

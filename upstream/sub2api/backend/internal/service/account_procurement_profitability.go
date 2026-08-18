@@ -58,8 +58,9 @@ type SelfPurchasedProfitabilityReport struct {
 }
 
 type procurementAggregate struct {
-	row SelfPurchasedProfitabilityRow
-	cap float64
+	row        SelfPurchasedProfitabilityRow
+	hasPending bool
+	quotaBasis float64
 }
 
 func calculateProcurementMetrics(cost, quota, standard, revenue float64, settled bool) (confirmed, pending, loss float64, utilization, profit, margin *float64) {
@@ -96,7 +97,48 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 	if !end.After(start) {
 		return nil, ErrInvalidAccountProfitabilityRange
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.name,a.platform,a.type,a.status,a.created_at,a.procurement_cost_cny,a.estimated_usable_quota_usd,a.procurement_cost_effective_at, COALESCE(ul.total_cost,0),COALESCE(ul.actual_cost,0),COALESCE(v.cost_cny, a.procurement_cost_cny),COALESCE(v.estimated_usable_quota_usd,a.estimated_usable_quota_usd),COALESCE(v.status,'active'),COALESCE(v.settled_at IS NOT NULL,false) FROM accounts a LEFT JOIN usage_logs ul ON ul.account_id=a.id AND ul.created_at >= $1 AND ul.created_at < $2 LEFT JOIN account_procurement_cost_versions v ON v.account_id=a.id AND ul.created_at >= v.effective_at AND (v.ended_at IS NULL OR ul.created_at < v.ended_at) WHERE a.deleted_at IS NULL AND (a.type='oauth' OR a.procurement_cost_cny IS NOT NULL) ORDER BY a.id`, start, end)
+	rows, err := s.db.QueryContext(ctx, `
+WITH versions AS (
+    SELECT v.account_id, v.version_no, v.cost_cny, v.estimated_usable_quota_usd,
+           v.effective_at, v.ended_at, v.status, v.settled_at, v.loss_cny
+      FROM account_procurement_cost_versions v
+    UNION ALL
+    SELECT a.id, 0, a.procurement_cost_cny, a.estimated_usable_quota_usd,
+           COALESCE(a.procurement_cost_effective_at, a.created_at), NULL, 'active', NULL, 0
+      FROM accounts a
+     WHERE a.procurement_cost_cny IS NOT NULL
+       AND a.estimated_usable_quota_usd IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM account_procurement_cost_versions v WHERE v.account_id = a.id)
+), scoped AS (
+    SELECT a.id, a.name, a.platform, a.type,
+           CASE WHEN a.expires_at IS NOT NULL AND a.expires_at <= NOW() THEN 'expired' ELSE a.status END AS status,
+           v.version_no, v.cost_cny, v.estimated_usable_quota_usd,
+           v.effective_at, v.ended_at, v.status AS version_status,
+           v.settled_at, v.loss_cny,
+           COALESCE(SUM(CASE
+             WHEN COALESCE(ul.billing_mode, 'token') = 'token'
+              AND COALESCE(ul.image_count, 0) = 0
+              AND COALESCE(ul.video_count, 0) = 0
+              AND COALESCE(ul.usage_completeness, 'complete') = 'complete'
+              AND COALESCE(ul.request_type, 0) <> 4
+              AND (COALESCE(ul.input_tokens,0) + COALESCE(ul.output_tokens,0) + COALESCE(ul.cache_creation_tokens,0) + COALESCE(ul.cache_read_tokens,0)) > 0
+             THEN ul.total_cost ELSE 0 END), 0)::double precision AS standard_consumed,
+           COALESCE(SUM(ul.actual_cost), 0)::double precision AS revenue
+      FROM accounts a
+      JOIN versions v ON v.account_id = a.id
+ LEFT JOIN usage_logs ul ON ul.account_id = a.id
+       AND ul.created_at >= GREATEST(v.effective_at, $1)
+       AND ul.created_at < LEAST(COALESCE(v.ended_at, $2), $2)
+     WHERE a.deleted_at IS NULL
+       AND ((v.effective_at < $2 AND COALESCE(v.ended_at, $2) > $1)
+         OR (v.settled_at >= $1 AND v.settled_at < $2))
+  GROUP BY a.id, a.name, a.platform, a.type, a.status, a.expires_at,
+           v.version_no, v.cost_cny, v.estimated_usable_quota_usd,
+           v.effective_at, v.ended_at, v.status, v.settled_at, v.loss_cny
+)
+SELECT id,name,platform,type,status,version_no,cost_cny,estimated_usable_quota_usd,
+       effective_at,ended_at,version_status,settled_at,loss_cny,standard_consumed,revenue
+  FROM scoped ORDER BY id,version_no`, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -104,13 +146,14 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 	aggs := map[int64]*procurementAggregate{}
 	for rows.Next() {
 		var id int64
-		var name, platform, typ, status string
-		var created time.Time
-		var cost, quota, effective sql.NullFloat64
-		var standard, revenue, vc, vq float64
-		var vstatus string
-		var settled bool
-		if err := rows.Scan(&id, &name, &platform, &typ, &status, &created, &cost, &quota, &effective, &standard, &revenue, &vc, &vq, &vstatus, &settled); err != nil {
+		var version int
+		var name, platform, typ, status, versionStatus string
+		var effective time.Time
+		var ended, settled sql.NullTime
+		var cost, quota sql.NullFloat64
+		var loss, standard, revenue float64
+		if err := rows.Scan(&id, &name, &platform, &typ, &status, &version, &cost, &quota,
+			&effective, &ended, &versionStatus, &settled, &loss, &standard, &revenue); err != nil {
 			return nil, err
 		}
 		a := aggs[id]
@@ -118,24 +161,26 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 			a = &procurementAggregate{row: SelfPurchasedProfitabilityRow{AccountID: id, Name: name, Platform: platform, AccountType: typ, Status: status, CostStatus: ProcurementStatusCostPending}}
 			aggs[id] = a
 		}
-		if cost.Valid {
-			x := cost.Float64
-			a.row.ProcurementCostCNY = &x
-		}
-		if quota.Valid {
-			x := quota.Float64
-			a.row.EstimatedQuotaUSD = &x
-		}
 		a.row.StandardConsumedUSD += standard
 		a.row.RevenueCNY += revenue
-		if vc >= 0 && vq > 0 {
-			a.cap = vc
-			a.row.ProcurementCostCNY = &a.cap
-			a.row.EstimatedQuotaUSD = &vq
-			if vstatus != "" {
-				a.row.CostStatus = ProcurementStatus(vstatus)
+		if cost.Valid && quota.Valid {
+			confirmed, pending, _, _, _, _ := calculateProcurementMetrics(cost.Float64, quota.Float64, standard, revenue, false)
+			a.row.ConfirmedCostCNY += confirmed
+			if settled.Valid || versionStatus == "settled" {
+				a.row.LossCNY += loss
+				if cost.Float64 > 0 {
+					a.quotaBasis += math.Min(math.Max(standard, 0), quota.Float64) + loss/(cost.Float64/quota.Float64)
+				}
+			} else if versionStatus == string(ProcurementStatusActive) {
+				a.row.PendingCostCNY += pending
+				a.quotaBasis += quota.Float64
+			} else {
+				a.quotaBasis += math.Min(math.Max(standard, 0), quota.Float64)
 			}
+		} else {
+			a.hasPending = true
 		}
+		a.row.CostStatus = ProcurementStatus(versionStatus)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -143,27 +188,37 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 	out := &SelfPurchasedProfitabilityReport{StartDate: start.Format("2006-01-02"), EndDate: end.Add(-time.Nanosecond).Format("2006-01-02"), GeneratedAt: s.now().UTC(), Currency: "CNY", Rows: make([]SelfPurchasedProfitabilityRow, 0, len(aggs))}
 	for _, a := range aggs {
 		r := a.row
-		if r.ProcurementCostCNY == nil || r.EstimatedQuotaUSD == nil {
+		if a.hasPending {
+			r.ProcurementCostCNY = nil
+			r.EstimatedQuotaUSD = nil
 			r.CostStatus = ProcurementStatusCostPending
 			out.Rows = append(out.Rows, r)
 			continue
 		}
-		settled := r.CostStatus == ProcurementStatusSettled || r.CostStatus == ProcurementStatusExpired
-		c, p, l, u, profit, margin := calculateProcurementMetrics(*r.ProcurementCostCNY, *r.EstimatedQuotaUSD, r.StandardConsumedUSD, r.RevenueCNY, settled)
-		r.ConfirmedCostCNY = c
-		r.PendingCostCNY = p
-		r.LossCNY = l
-		r.Utilization = u
-		r.NetProfitCNY = profit
-		r.Margin = margin
+		procurementCost := r.ConfirmedCostCNY + r.PendingCostCNY + r.LossCNY
+		r.ProcurementCostCNY = procurementFloat64Ptr(procurementCost)
+		r.EstimatedQuotaUSD = procurementFloat64Ptr(a.quotaBasis)
+		if *r.EstimatedQuotaUSD > 0 {
+			u := r.StandardConsumedUSD / *r.EstimatedQuotaUSD
+			if u > 1 {
+				u = 1
+			}
+			r.Utilization = &u
+		}
+		profit := r.RevenueCNY - r.ConfirmedCostCNY - r.LossCNY
+		r.NetProfitCNY = &profit
+		if r.RevenueCNY != 0 {
+			margin := profit / r.RevenueCNY
+			r.Margin = &margin
+		}
 		if r.CostStatus == "" || r.CostStatus == ProcurementStatusActive {
 			r.CostStatus = ProcurementStatusActive
 		}
 		out.Summary.ProcurementCostCNY += *r.ProcurementCostCNY
 		out.Summary.StandardConsumedUSD += r.StandardConsumedUSD
-		out.Summary.ConfirmedCostCNY += c
-		out.Summary.PendingCostCNY += p
-		out.Summary.LossCNY += l
+		out.Summary.ConfirmedCostCNY += r.ConfirmedCostCNY
+		out.Summary.PendingCostCNY += r.PendingCostCNY
+		out.Summary.LossCNY += r.LossCNY
 		out.Summary.RevenueCNY += r.RevenueCNY
 		out.Rows = append(out.Rows, r)
 	}
@@ -176,6 +231,8 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 	}
 	return out, nil
 }
+
+func procurementFloat64Ptr(v float64) *float64 { return &v }
 
 type ProcurementSettlementInput struct {
 	AccountID         int64
@@ -198,9 +255,12 @@ func (s *AccountProfitabilityService) SettleProcurement(ctx context.Context, in 
 		return false, err
 	}
 	defer tx.Rollback()
-	var existing int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM account_procurement_cost_versions WHERE request_id=$1`, in.RequestID).Scan(&existing)
+	var existing, existingAccountID int64
+	err = tx.QueryRowContext(ctx, `SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id=$1`, in.RequestID).Scan(&existing, &existingAccountID)
 	if err == nil {
+		if existingAccountID != in.AccountID {
+			return false, errors.New("settlement idempotency key conflict")
+		}
 		return true, tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -209,15 +269,34 @@ func (s *AccountProfitabilityService) SettleProcurement(ctx context.Context, in 
 	var id int64
 	var cost, quota float64
 	var effective time.Time
-	var status string
-	err = tx.QueryRowContext(ctx, `SELECT id,cost_cny,estimated_usable_quota_usd,effective_at,status FROM account_procurement_cost_versions WHERE account_id=$1 AND ended_at IS NULL FOR UPDATE`, in.AccountID).Scan(&id, &cost, &quota, &effective, &status)
+	var versionStatus, accountStatus string
+	var expiresAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at
+        FROM account_procurement_cost_versions v
+        JOIN accounts a ON a.id=v.account_id AND a.deleted_at IS NULL
+       WHERE v.account_id=$1 ORDER BY v.version_no DESC LIMIT 1 FOR UPDATE`, in.AccountID).Scan(&id, &cost, &quota, &effective, &versionStatus, &accountStatus, &expiresAt)
 	if err != nil {
 		return false, err
 	}
-	if status == "settled" || status == "expired" {
+	if versionStatus == "settled" || versionStatus == "expired" {
 		return true, tx.Commit()
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE account_procurement_cost_versions v SET status='settled',settled_at=NOW(),ended_at=NOW(),request_id=$2,loss_cny=GREATEST(v.cost_cny-LEAST(v.cost_cny,COALESCE((SELECT SUM(COALESCE(ul.total_cost,0)) FROM usage_logs ul WHERE ul.account_id=v.account_id AND ul.created_at>=v.effective_at)*v.cost_cny/v.estimated_usable_quota_usd,0)),0),updated_at=NOW() WHERE v.id=$1`, id, in.RequestID)
+	if versionStatus != string(ProcurementStatusActive) {
+		return false, errors.New("procurement version is not active")
+	}
+	permanentlyUnavailable := accountStatus == StatusDisabled || accountStatus == StatusError || (expiresAt.Valid && !expiresAt.Time.After(s.now()))
+	if !permanentlyUnavailable {
+		return false, errors.New("account is not permanently unavailable")
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE account_procurement_cost_versions v SET status='settled',settled_at=NOW(),ended_at=NOW(),settlement_request_id=$2,
+        loss_cny=GREATEST(v.cost_cny-LEAST(v.cost_cny,COALESCE((SELECT SUM(CASE
+          WHEN COALESCE(ul.billing_mode,'token')='token' AND COALESCE(ul.image_count,0)=0
+           AND COALESCE(ul.video_count,0)=0 AND COALESCE(ul.usage_completeness,'complete')='complete'
+           AND COALESCE(ul.request_type,0)<>4
+           AND (COALESCE(ul.input_tokens,0)+COALESCE(ul.output_tokens,0)+COALESCE(ul.cache_creation_tokens,0)+COALESCE(ul.cache_read_tokens,0))>0
+          THEN COALESCE(ul.total_cost,0) ELSE 0 END)
+          FROM usage_logs ul WHERE ul.account_id=v.account_id AND ul.created_at>=v.effective_at)*v.cost_cny/v.estimated_usable_quota_usd,0)),0),
+        updated_at=NOW() WHERE v.id=$1`, id, in.RequestID)
 	if err != nil {
 		return false, err
 	}
@@ -253,12 +332,16 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		return err
 	}
 	defer tx.Rollback()
-	var replay int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM account_procurement_cost_versions WHERE request_id=$1`, in.RequestID).Scan(&replay); err == nil {
+	var replayAccountID int64
+	replayErr := tx.QueryRowContext(ctx, `SELECT account_id FROM account_procurement_cost_versions WHERE request_id=$1`, in.RequestID).Scan(&replayAccountID)
+	if replayErr == nil {
+		if replayAccountID != in.AccountID {
+			return errors.New("procurement idempotency key conflict")
+		}
 		return tx.Commit()
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
+	if !errors.Is(replayErr, sql.ErrNoRows) {
+		return replayErr
 	}
 	var created time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT created_at FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, in.AccountID).Scan(&created); err != nil {
@@ -270,14 +353,45 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	if err := tx.QueryRowContext(ctx, `SELECT id,cost_cny,estimated_usable_quota_usd,effective_at FROM account_procurement_cost_versions WHERE account_id=$1 AND ended_at IS NULL FOR UPDATE`, in.AccountID).Scan(&oldID, &oldCost, &oldQuota, &oldEffective); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	now := time.Now().UTC()
+	now := s.now().UTC()
+	nextCost, nextQuota := 0.0, 0.0
+	if in.CostCNY != nil {
+		nextCost, nextQuota = *in.CostCNY, *in.QuotaUSD
+	}
 	if oldID > 0 {
+		if in.CostCNY != nil {
+			var consumed float64
+			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE
+            WHEN COALESCE(billing_mode,'token')='token' AND COALESCE(image_count,0)=0
+             AND COALESCE(video_count,0)=0 AND COALESCE(usage_completeness,'complete')='complete'
+             AND COALESCE(request_type,0)<>4
+             AND (COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_creation_tokens,0)+COALESCE(cache_read_tokens,0))>0
+            THEN total_cost ELSE 0 END),0)::double precision
+	          FROM usage_logs WHERE account_id=$1 AND created_at >= $2 AND created_at < $3`, in.AccountID, oldEffective, now).Scan(&consumed); err != nil {
+				return err
+			}
+			confirmed := math.Min(oldCost, consumed*(oldCost/oldQuota))
+			remainingCost := math.Max(*in.CostCNY-confirmed, 0)
+			remainingQuota := math.Max(*in.QuotaUSD-consumed, 0)
+			nextCost = remainingCost
+			nextQuota = remainingQuota
+			if nextQuota <= 0 {
+				return errors.New("remaining estimated quota must be > 0")
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE account_procurement_cost_versions SET ended_at=$2,status='ended',updated_at=$2 WHERE id=$1`, oldID, now); err != nil {
 			return err
 		}
 	}
+	var next int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version_no),0)+1 FROM account_procurement_cost_versions WHERE account_id=$1`, in.AccountID).Scan(&next); err != nil {
+		return err
+	}
 	if in.CostCNY == nil {
 		if _, err := tx.ExecContext(ctx, `UPDATE accounts SET procurement_cost_cny=NULL,estimated_usable_quota_usd=NULL,procurement_cost_effective_at=NULL,updated_at=$2 WHERE id=$1`, in.AccountID, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO account_procurement_cost_versions(account_id,version_no,effective_at,status,actor_user_id,request_id,created_at,updated_at) VALUES($1,$2,$3,'cost_pending',$4,$5,$6,$6)`, in.AccountID, next, now, in.ActorUserID, in.RequestID, now); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,$3,200,jsonb_build_object('account_id',$4,'cleared',true))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID); err != nil {
@@ -285,19 +399,17 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		}
 		return tx.Commit()
 	}
-	var next int
-	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version_no),0)+1 FROM account_procurement_cost_versions WHERE account_id=$1`, in.AccountID).Scan(&next)
 	effective := now
 	if oldID == 0 {
 		effective = created
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO account_procurement_cost_versions(account_id,version_no,cost_cny,estimated_usable_quota_usd,effective_at,status,actor_user_id,request_id,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8,$8)`, in.AccountID, next, *in.CostCNY, *in.QuotaUSD, effective, in.ActorUserID, in.RequestID, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO account_procurement_cost_versions(account_id,version_no,cost_cny,estimated_usable_quota_usd,effective_at,status,actor_user_id,request_id,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8,$8)`, in.AccountID, next, nextCost, nextQuota, effective, in.ActorUserID, in.RequestID, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET procurement_cost_cny=$2,estimated_usable_quota_usd=$3,procurement_cost_effective_at=$4,updated_at=$5 WHERE id=$1`, in.AccountID, *in.CostCNY, *in.QuotaUSD, effective, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET procurement_cost_cny=$2,estimated_usable_quota_usd=$3,procurement_cost_effective_at=$4,updated_at=$5 WHERE id=$1`, in.AccountID, nextCost, nextQuota, effective, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,$3,200,jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, *in.CostCNY, *in.QuotaUSD); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,$3,200,jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, nextCost, nextQuota); err != nil {
 		return err
 	}
 	return tx.Commit()

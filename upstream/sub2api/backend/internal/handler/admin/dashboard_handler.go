@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -84,7 +85,12 @@ func (h *DashboardHandler) UpdateSelfPurchasedConfig(c *gin.Context) {
 		response.BadRequest(c, "request_id is required")
 		return
 	}
-	if err := h.accountProfitabilityService.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: id, CostCNY: req.CostCNY, QuotaUSD: req.QuotaUSD, RequestID: strings.TrimSpace(req.RequestID)}); err != nil {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "administrator identity required")
+		return
+	}
+	if err := h.accountProfitabilityService.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: id, CostCNY: req.CostCNY, QuotaUSD: req.QuotaUSD, RequestID: strings.TrimSpace(req.RequestID), ActorUserID: subject.UserID}); err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -110,7 +116,12 @@ func (h *DashboardHandler) SettleSelfPurchasedAccount(c *gin.Context) {
 		response.BadRequest(c, "request_id is required")
 		return
 	}
-	ok, err := h.accountProfitabilityService.SettleProcurement(c.Request.Context(), service.ProcurementSettlementInput{AccountID: accountID, RequestID: strings.TrimSpace(req.RequestID), Reason: strings.TrimSpace(req.Reason)})
+	subject, okSubject := middleware.GetAuthSubjectFromContext(c)
+	if !okSubject || subject.UserID <= 0 {
+		response.Unauthorized(c, "administrator identity required")
+		return
+	}
+	ok, err := h.accountProfitabilityService.SettleProcurement(c.Request.Context(), service.ProcurementSettlementInput{AccountID: accountID, RequestID: strings.TrimSpace(req.RequestID), Reason: strings.TrimSpace(req.Reason), ActorUserID: subject.UserID})
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return

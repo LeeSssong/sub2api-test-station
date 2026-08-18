@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18 与 T19 均已完成推送、发布和线上验收，当前全部为 `DONE`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19 与 T20 均已完成推送、发布和线上验收，当前全部为 `DONE`；T21 进入 `DESIGNING`，T22 保持 `BACKLOG`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@ad49f9004418d779dfb0d7967d3fc3681486fbbe`、tree `9ecfcfb5747bbf312900f615a20b16cf481dc370`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T16 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260817T184654Z-production-2406458.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-17-main-ad49f9004-t16-profitability-v1.json`。
+- 当前发布状态：生产源 `main@c2a1429623b22d0e5c3d4746a508d0f34e0a93e9`、tree `e41c1460b05ad1b040c2700fb54227b2dad0f947`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T20 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T051214Z-production-2858199.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-c2a142962-t20-zero-flow-v1.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -287,16 +287,16 @@
 
 ### T20 用量详情过时提示清理与盈利页零流水账号补齐
 
-- 当前状态：`INTEGRATING`。根总控已确认 T20 为当前唯一整合候选，候选已完成实现与直接相关门禁，禁止插队发布。
+- 当前状态：`DONE`。候选 `3b120046e328535ce587db60a5ef750586d652d0` 已合入并推送根 `main@c2a1429623b22d0e5c3d4746a508d0f34e0a93e9`，tree `e41c1460b05ad1b040c2700fb54227b2dad0f947`。
 - 候选：隔离 checkout `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t20-usage-detail-zero-flow`，分支 `codex/t20-usage-detail-zero-flow`，基线 `main@d579e6f99f4f281227578676dff060df92e3f870`，提交 `3b120046e328535ce587db60a5ef750586d652d0`，bundle `/private/tmp/t20-usage-detail-zero-flow-ready.bundle`（SHA-256 `09f352f1c19c14336c280f24342d4366735933377578a7a2678214a4c0800c82`），交接 `docs/handoffs/2026-08-18-t20-usage-detail-zero-flow-handoff.md`。
 - 范围：删除 `UsageDetailDialog` 中过时的严格上游账单提示及对应前端断言；保留后端 evidence 接口、`evidence_status` 与 `reason_code`，不改变 T17 已上线的有效账号成本主口径。`account-financial` 分组读模型先从 `account_groups` 加载全部有效账号并初始化零值，再叠加 `usage_logs` 与探测成本聚合，使时间窗内无流水的有效账号仍显示且金额均为零。
 - 原生事实与边界：复用 Sub 原生有效账号、`usage_logs`、现有财务字段和聚合公式；保持 API 响应、字段结构、成本/收入/利润数学、探测成本语义及账号绑定状态不变。不做迁移、回填、生产数据写入、账务重算、evidence 表删除、S3/T22 顺带实现或 GitHub Actions。
-- 验收与验证：详情过时提示消失；分组账号数与当前有效绑定一致；零流水账号金额为零；有流水账号与现有结果一致。新增直接相关前端/API/读模型回归，执行后端仓储/服务聚焦、受影响包 compile-only/build、前端聚焦测试、typecheck/build、gofmt 与 diff-check。候选停在 `READY_FOR_ROOT_REVIEW`，待根合并后预检；`downtime_required=false` 直接蓝绿发布，`true` 停在停机授权门禁。
-- 生产与回滚：T20 未合并、未推送、未预检、未部署；发布只能从根 `main` 执行。回滚使用上一已验证根提交/活动槽，不改生产数据。当前沙箱禁止根 `.git` index/object/ref 锁，根授权合并与登记提交待发布环境恢复后执行。
+- 验收与验证：详情过时提示消失；分组账号数与当前有效绑定一致；零流水账号金额为零；有流水账号与现有结果一致。新增直接相关前端/API/读模型回归，执行后端仓储/服务聚焦、受影响包 compile-only/build、前端聚焦测试、typecheck/build、gofmt 与 diff-check。候选已完成根合并、推送、发布和线上验收；`downtime_required=false` 按全局规约直接蓝绿发布，`true` 停在停机授权门禁。
+- 生产与验收：既有本地/宿主链返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，宿主记录 `/var/lib/sub2api/release-records/20260818T051214Z-production-2858199.json`。三项公网健康均 200；生产用量样本 125444/125509/125512 的 `actual_cost` 与 `account_cost` 继续按 T17 口径返回，evidence 仍为 `unavailable` 但不再决定主金额；24h 财务读模型中零流水有效绑定账号仍出现且金额全为零。回滚使用宿主保留槽与上一已验证镜像，不改生产数据。
 
 ### T21 生产模型检测 sidecar 接入与离线状态纠正
 
-- 当前状态：`BACKLOG`。排在 T20 生产验收之后，不打断当前设计/实现车道。
+- 当前状态：`DESIGNING`。T20 已完成生产验收，根总控开始盘点 T15 原生模型检测接线、现有 sidecar 样本、宿主配置与许可边界；尚未修改运行时代码或生产配置。
 - 范围：接入并验证现有模型检测 sidecar，使 catalog 返回实际支持模型；sidecar 未接入、不可达或 catalog 获取失败时，前端显示“检测服务未接入/暂不可用”，不把全部模型误报为“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变。
 - 验收边界：至少一个受支持模型可选择并完成检测；离线语义准确；不改计费、调度、账号原生探测或外部控制面。沿用 T15 的许可证、凭据和配置门禁，禁止使用 GitHub Actions。
 

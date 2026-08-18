@@ -101,7 +101,7 @@ export default {
     baseRate: 'Base multiplier',
     peakRate: '{start}-{end} peak multiplier {rate}×',
     availability: 'Eligible calls',
-    callEvidence: '{success} / {eligible} eligible calls succeeded',
+    callEvidence: 'Based on {eligible} real requests.',
     timeline: {
       noData: 'No probes in this period',
       probeUnavailable: 'Probe completed (no model available)',

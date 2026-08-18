@@ -8,9 +8,8 @@
       <span
         v-for="(point, index) in points"
         :key="`${point.bucket_start}-${index}`"
-        class="min-w-1 flex-1 rounded-sm transition-[height,background-color] duration-200 motion-reduce:transition-none"
-        :class="toneClass(point)"
-        :style="{ height: barHeight(point) }"
+        class="min-w-1 basis-0 flex-1 rounded-sm bg-teal-500 dark:bg-teal-400"
+        style="height: 75%"
         :title="pointTitle(point)"
       />
       <span
@@ -44,21 +43,6 @@ const ariaLabel = computed(() => {
     .map((point) => pointTitle(point))
     .join('；')
 })
-
-function barHeight(point: MonitorV2TimelinePoint): string {
-  if (point.state !== 'available' || point.value === null) return '20%'
-  if (point.success_count === 0) return '32%'
-  if (point.latency_ms === null) return '40%'
-  return `${Math.max(28, Math.min(100, 100 - point.latency_ms / 200))}%`
-}
-
-function toneClass(point: MonitorV2TimelinePoint): string {
-  // A completed unavailable probe is encoded by the backend as available with
-  // a successful zero-latency result. Empty buckets must remain neutral.
-  if (point.state !== 'available' || point.value === null) return 'bg-gray-300 dark:bg-dark-600'
-  if (point.success_count > 0) return 'bg-emerald-500 dark:bg-emerald-400'
-  return 'bg-red-500 dark:bg-red-400'
-}
 
 function pointTitle(point: MonitorV2TimelinePoint): string {
   const time = new Intl.DateTimeFormat(undefined, {

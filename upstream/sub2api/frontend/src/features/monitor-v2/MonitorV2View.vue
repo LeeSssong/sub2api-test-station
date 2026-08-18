@@ -79,10 +79,6 @@
         </p>
       </section>
 
-      <footer class="mt-6 grid gap-2 border-t border-gray-200 pt-4 text-xs text-gray-600 dark:border-dark-700 dark:text-gray-300 md:grid-cols-2">
-        <p>{{ t('monitorV2.notes.metrics') }}</p>
-        <p class="md:text-right">{{ t('monitorV2.notes.privacy') }}</p>
-      </footer>
     </section>
   </AppLayout>
 </template>

@@ -13,7 +13,7 @@
 
 ## 实现
 
-- `MonitorV2GroupCard` 保留 TTFT/总延迟 P50/P95、TPS、缓存率及样本数；有效调用改为“基于 N 次真实请求。”；删除旧模型展开相关内容已保持不回归；倍率增加对比背景、边框和字重。
+- `MonitorV2GroupCard` 保留 TTFT/总延迟 P50、TPS、缓存率及样本数，移除 P95 展示但保留后端字段兼容；有效调用改为“基于 N 次真实请求。”；删除旧模型展开相关内容已保持不回归；倍率增加对比背景、边框和字重。
 - `MonitorV2Timeline` 所有已有点统一青绿色和 75% 固定高度，结果/耗时只保留在 title/aria 文本。
 - `MonitorV2View` 删除页面底部说明。
 - `ChannelMonitorService` 每模型最多执行 6 次（首次 + 5 次重试），`operational/degraded` 立即停止；六次均失败只持久化最后一次结果；runner context 上限同步扩大。
@@ -34,7 +34,7 @@
 
 - 桌面：`output/playwright/t25/channel-monitor-desktop.png`
 - 移动端 390×844：`output/playwright/t25/channel-monitor-mobile.png`
-- 移动端 DOM 检查：`scrollWidth=clientWidth=382`；柱体均为 `bg-teal-500`、`height: 75%`；倍率类包含 `text-base font-bold bg-primary-50`；底部说明不存在。
+- 移动端 DOM 检查：`scrollWidth=clientWidth=382`；柱体均为 `bg-teal-500`、`height: 75%`；倍率类包含 `text-base font-bold bg-primary-50`；底部说明和 P95 展示不存在。此前英文截图来自无 `sub2api_locale` 的 `en-US` 浏览器预览，不代表全站默认必须改成英文；中文验收使用 `sub2api_locale=zh`。
 
 ## 发布
 

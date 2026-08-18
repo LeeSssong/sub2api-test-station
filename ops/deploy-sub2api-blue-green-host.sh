@@ -133,7 +133,7 @@ if [[ "$preloaded_image" == true ]]; then
     || fail 'preloaded release tag does not match source commit and image ID'
 fi
 
-for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename sleep perl; do
+for required_command in docker curl jq df awk date stat mktemp find sort uniq chmod mv mkdir cp tr grep rm dirname basename sleep perl head od; do
   command -v "$required_command" >/dev/null 2>&1 || fail "$required_command is required"
 done
 if [[ "$preloaded_image" == true ]]; then
@@ -476,6 +476,81 @@ attempt_id="$(date -u +%Y%m%dT%H%M%SZ)-$mode-$$"
 started_epoch=$(date -u +%s)
 record_path="$record_root/$attempt_id.json"
 
+detector_compose_backup=''
+detector_secret_backup=''
+detector_topology_changed=false
+detector_enabled=false
+[[ "$mode" == rehearsal ]] && detector_enabled=true
+
+restore_detector_topology() {
+  [[ "$detector_topology_changed" == true ]] || return 0
+  if [[ -n "$detector_compose_backup" && -f "$detector_compose_backup" ]]; then
+    cp "$detector_compose_backup" "$base_compose" && chmod 0600 "$base_compose"
+  fi
+  if [[ -n "$detector_secret_backup" && -f "$detector_secret_backup" ]]; then
+    cp "$detector_secret_backup" "$secret_env" && chmod 0600 "$secret_env"
+  fi
+  rm -f -- "$detector_compose_backup" "$detector_secret_backup"
+  detector_compose_backup=''
+  detector_secret_backup=''
+  detector_topology_changed=false
+}
+
+configure_detector_topology() {
+  [[ "$mode" == production ]] || return 0
+  if ! jq -e 'type == "object" and (.services | type == "object")' "$base_compose" >/dev/null 2>&1; then
+    grep -Eq '^[[:space:]]+model-detector:' "$base_compose" && detector_enabled=true
+    return 0
+  fi
+  detector_compose_backup="$record_root/.$attempt_id.compose.backup"
+  detector_secret_backup="$record_root/.$attempt_id.secret.backup"
+  cp "$base_compose" "$detector_compose_backup" && chmod 0600 "$detector_compose_backup"
+  cp "$secret_env" "$detector_secret_backup" && chmod 0600 "$detector_secret_backup"
+  detector_topology_changed=true
+  detector_token_count=$(awk -F= '$1 == "SUB2API_MODEL_DETECTOR_TOKEN" { count++ } END { print count + 0 }' "$secret_env")
+  [[ "$detector_token_count" -le 1 ]] || fail 'secret environment contains duplicate detector tokens'
+  detector_token=$(awk -F= '$1 == "SUB2API_MODEL_DETECTOR_TOKEN" { value=$0; sub(/^[^=]*=/, "", value); print value; exit }' "$secret_env")
+  if [[ -z "$detector_token" ]]; then
+    [[ "$detector_token_count" -eq 0 ]] || fail 'configured detector token is empty'
+    detector_token=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d '[:space:]')
+    [[ "$detector_token" =~ ^[a-f0-9]{64}$ ]] || fail 'could not generate detector token'
+    printf '\nSUB2API_MODEL_DETECTOR_TOKEN=%s\n' "$detector_token" >>"$secret_env"
+    chmod 0600 "$secret_env"
+  fi
+  [[ "$detector_token" =~ ^[a-f0-9]{64}$ ]] || fail 'configured detector token must be 64 lowercase hex'
+  detector_models=${MODEL_DETECTOR_MODELS:-gpt-5.6-terra,gpt-5.6-sol,gpt-5.4,gpt-5.6,gpt-5.6-codex,claude-3-7-sonnet}
+  detector_version=${MODEL_DETECTOR_VERSION:-native-1}
+  temporary="$base_compose.tmp.$attempt_id"
+  jq --arg image "$requested_image" --arg token "$detector_token" \
+    --arg models "$detector_models" --arg version "$detector_version" '
+    .services["model-detector"] = {
+      "command": ["/app/model-detector"],
+      "depends_on": {"postgres": {"condition": "service_healthy"}, "redis": {"condition": "service_healthy"}},
+      "environment": {
+        "MODEL_DETECTOR_LISTEN_ADDRESS": ":8090",
+        "MODEL_DETECTOR_MODELS": $models,
+        "MODEL_DETECTOR_VERSION": $version,
+        "SUB2API_MODEL_DETECTOR_TOKEN": $token
+      },
+      "expose": ["8090"],
+      "healthcheck": {"test": ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"], "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "10s"},
+      "image": $image,
+      "logging": {"driver": "json-file", "options": {"max-file": "5", "max-size": "20m"}},
+      "networks": {"default": null},
+      "restart": "unless-stopped"
+    } |
+    .services |= with_entries(
+      if (.key == "sub2api-blue" or .key == "sub2api-green" or .key == "sub2api-worker") then
+        .value.environment.SUB2API_MODEL_DETECTOR_URL = "http://model-detector:8090" |
+        .value.environment.SUB2API_MODEL_DETECTOR_TOKEN = $token |
+        .value.depends_on["model-detector"] = {"condition": "service_healthy"}
+      else . end
+    )
+  ' "$base_compose" >"$temporary" || fail 'detector Compose patch failed'
+  chmod 0600 "$temporary" && mv "$temporary" "$base_compose"
+  detector_enabled=true
+}
+
 compose_current=(docker compose --project-name "$compose_project" --project-directory "$deploy_root"
   --env-file "$secret_env" --env-file "$release_env" -f "$base_compose")
 compose_pull_args=()
@@ -704,6 +779,26 @@ wait_for_worker_healthy() {
   done
 }
 
+wait_for_detector_healthy() {
+  local timeout=${DETECTOR_HEALTH_TIMEOUT_SECONDS:-90} poll=${DETECTOR_HEALTH_POLL_SECONDS:-1}
+  local deadline now remaining attempts=0 max_attempts status id
+  [[ "$timeout" =~ ^[1-9][0-9]*$ && "$poll" =~ ^[1-9][0-9]*$ ]] || return 1
+  deadline=$(( $(date -u +%s) + timeout ))
+  max_attempts=$((timeout / poll + 1))
+  while true; do
+    id=$(resolve_container_id model-detector) || return 1
+    status=$(run_post_stop_command docker inspect "$id" --format '{{.State.Health.Status}}') || return 1
+    [[ "$status" == healthy ]] && return 0
+    [[ "$status" != unhealthy ]] || return 1
+    attempts=$((attempts + 1))
+    [[ "$attempts" -lt "$max_attempts" ]] || return 1
+    now=$(date -u +%s)
+    [[ "$now" -lt "$deadline" ]] || return 1
+    remaining=$((deadline - now))
+    if [[ "$poll" -lt "$remaining" ]]; then run_post_stop_command sleep "$poll"; else run_post_stop_command sleep "$remaining"; fi
+  done
+}
+
 wait_for_api_healthy() {
   local service=$1 timeout=${API_HEALTH_TIMEOUT_SECONDS:-90} poll=${API_HEALTH_POLL_SECONDS:-1}
   local deadline now remaining attempts=0 max_attempts api_status api_id
@@ -874,6 +969,9 @@ on_exit() {
       [[ -z "$path" ]] || rm -f -- "$path" || exit $?
     done
   ' "$candidate_env" "$rollback_env" "$admin_header" "$gateway_header" || true
+  if [[ "$status" -ne 0 ]]; then
+    restore_detector_topology || true
+  fi
   if [[ "$status" -ne 0 && "$record_finalized" == false && -n "$partial_path" && -e "$partial_path" ]]; then
     if [[ "$maintenance_stopped" == true && -n "${maintenance_deadline_epoch:-}" ]]; then
       now=$(date -u +%s)
@@ -895,6 +993,11 @@ on_exit() {
     if [[ "$rollback_completed" == true && "$record_finalized" == true ]]; then
       run_post_stop_command rm -f -- "$partial_path" || true
     fi
+  fi
+  if [[ "$status" -eq 0 && "$record_finalized" == true ]]; then
+    rm -f -- "$detector_compose_backup" "$detector_secret_backup"
+  elif [[ "$status" -ne 0 && "$record_finalized" == true && "$rollback_completed" == true ]]; then
+    rm -f -- "$detector_compose_backup" "$detector_secret_backup"
   fi
   cleanup_lock
   exit "$status"
@@ -1318,6 +1421,7 @@ db_headroom=$(printf '%s' "$db_headroom" | tr -d '[:space:]')
 [[ "$db_headroom" =~ ^[0-9]+$ && "$db_headroom" -ge "${MIN_DB_CONNECTION_HEADROOM:-10}" ]] \
   || gate insufficient_db_connection_headroom 'fewer than 10 PostgreSQL connections remain available' 300
 
+configure_detector_topology
 candidate_env="$record_root/.$attempt_id.candidate.env"
 cp "$release_env" "$candidate_env"
 chmod 0600 "$candidate_env"
@@ -1461,6 +1565,10 @@ fi
 
 failure_reason=candidate_start_failed
 check_maintenance_deadline
+if [[ "$detector_enabled" == true ]]; then
+  run_post_stop_command "${compose_candidate[@]}" up -d --force-recreate model-detector >/dev/null
+  wait_for_detector_healthy || fail 'model detector did not become healthy before timeout'
+fi
 run_post_stop_command "${compose_candidate[@]}" up --no-deps -d "${compose_pull_args[@]+${compose_pull_args[@]}}" "sub2api-$candidate_slot" >/dev/null
 write_partial candidate_started
 	wait_for_candidate_healthy "sub2api-$candidate_slot" || fail 'candidate did not become healthy before timeout'

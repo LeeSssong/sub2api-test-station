@@ -21,6 +21,8 @@ func TestAccountFinancialProbeReadsExactRowsInFinancialSnapshot(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}).AddRow(int64(17), "probe", "api_key", "sub", nil))
 	mock.ExpectQuery("SELECT id, name, deleted_at FROM groups").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}).AddRow(int64(9), "Pro", nil))
+	mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}).AddRow(int64(17), int64(9)))
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(balance\\), 0\\) FROM users").
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(7.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).

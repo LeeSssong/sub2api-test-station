@@ -284,3 +284,24 @@
 - 规格与计划：`docs/superpowers/specs/2026-08-17-monitor-v2-cache-hit-rate-eligibility-design.md`；`docs/superpowers/plans/2026-08-17-monitor-v2-cache-hit-rate-eligibility.md`。候选已携带正式规格、计划和交接文件；待发布前须刷新到届时最新干净 `main` 并重跑直接相关门禁。
 - 范围：仅修正 `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go` 的 Monitor V2 缓存统计 SQL 及直接相关 sqlmock 测试。分子/分母统一限定为 `actual_cost > 0`、成功流水且具备文本 Token Prompt Cache 语义：`billing_mode='token'`，或历史 `billing_mode` 为空且图片/视频字段全零；排除 `billing_mode=image|video|per_request` 及 `actual_cost=0` 的失败占位。保持 API 响应、前端、账务/价格/倍率、缓存策略不变；无迁移、无生产数据写入，预期 `downtime_required=false`。
 - 验证与发布：TDD RED/GREEN、仓储/服务聚焦测试、后端 compile-only/build、gofmt、diff-check 已通过；发布后仍需进行 24 小时/7 天只读交叉验收。预检若返回 `downtime_required=false`，按全局约束直接继续蓝绿发布与线上验证；若返回 `true`，停在用户授权门禁。当前按用户指令暂停所有发布动作，不得使用 GitHub Actions。
+
+### T20 用量详情过时提示清理与盈利页零流水账号补齐
+
+- 当前状态：`READY_FOR_ROOT_REVIEW`。用户于 2026-08-18 明确批准方案并要求立即登记、按 T15/T16/T17/T18/T19 之后的单车道开始；候选已完成实现与直接相关门禁，禁止插队发布。
+- 候选：隔离 checkout `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t20-usage-detail-zero-flow`，分支 `codex/t20-usage-detail-zero-flow`，基线 `main@d579e6f99f4f281227578676dff060df92e3f870`，提交 `3b120046e328535ce587db60a5ef750586d652d0`，bundle `/private/tmp/t20-usage-detail-zero-flow-ready.bundle`（SHA-256 `09f352f1c19c14336c280f24342d4366735933377578a7a2678214a4c0800c82`），交接 `docs/handoffs/2026-08-18-t20-usage-detail-zero-flow-handoff.md`。
+- 范围：删除 `UsageDetailDialog` 中过时的严格上游账单提示及对应前端断言；保留后端 evidence 接口、`evidence_status` 与 `reason_code`，不改变 T17 已上线的有效账号成本主口径。`account-financial` 分组读模型先从 `account_groups` 加载全部有效账号并初始化零值，再叠加 `usage_logs` 与探测成本聚合，使时间窗内无流水的有效账号仍显示且金额均为零。
+- 原生事实与边界：复用 Sub 原生有效账号、`usage_logs`、现有财务字段和聚合公式；保持 API 响应、字段结构、成本/收入/利润数学、探测成本语义及账号绑定状态不变。不做迁移、回填、生产数据写入、账务重算、evidence 表删除、S3/T22 顺带实现或 GitHub Actions。
+- 验收与验证：详情过时提示消失；分组账号数与当前有效绑定一致；零流水账号金额为零；有流水账号与现有结果一致。新增直接相关前端/API/读模型回归，执行后端仓储/服务聚焦、受影响包 compile-only/build、前端聚焦测试、typecheck/build、gofmt 与 diff-check。候选停在 `READY_FOR_ROOT_REVIEW`，待根合并后预检；`downtime_required=false` 直接蓝绿发布，`true` 停在停机授权门禁。
+- 生产与回滚：T20 未合并、未推送、未预检、未部署；发布只能从根 `main` 执行。回滚使用上一已验证根提交/活动槽，不改生产数据。当前沙箱禁止根 `.git` index/object/ref 锁，根授权合并与登记提交待发布环境恢复后执行。
+
+### T21 生产模型检测 sidecar 接入与离线状态纠正
+
+- 当前状态：`BACKLOG`。排在 T20 生产验收之后，不打断当前设计/实现车道。
+- 范围：接入并验证现有模型检测 sidecar，使 catalog 返回实际支持模型；sidecar 未接入、不可达或 catalog 获取失败时，前端显示“检测服务未接入/暂不可用”，不把全部模型误报为“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变。
+- 验收边界：至少一个受支持模型可选择并完成检测；离线语义准确；不改计费、调度、账号原生探测或外部控制面。沿用 T15 的许可证、凭据和配置门禁，禁止使用 GitHub Actions。
+
+### T22 官方 Channel Monitor V2 简洁运营视图
+
+- 当前状态：`BACKLOG`。仅在 T20、T21 依赖完成并生产验收后启动，保留 T18 的官方 V2 单一事实源与 `channel_monitor_mode=v1` 回滚开关。
+- 范围：默认时间窗改为 24h，保留 90m/7d/30d；首屏保留分组状态、成功率、首 Token、缓存率和最近趋势，模型明细/错误分类/用户排行移入“详细分析”。低流量/样本不足显示“已就绪·暂无流量”或“待观察”，不计入整体异常和健康评分且不伪造健康；真实错误、低成功率、高延迟仍黄/红显示。
+- 口径与验收：复用 T19 有效样本分母，排除本地拒绝、禁用模型、参数校验失败等未获上游响应请求；确认不重复实现已完成能力。桌面/移动端无溢出，v1 可回滚，预期无迁移且 `downtime_required=false`。

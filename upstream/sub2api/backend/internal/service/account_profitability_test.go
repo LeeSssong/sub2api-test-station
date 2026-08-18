@@ -241,6 +241,25 @@ func TestSelfPurchasedReportKeepsCurrentCostPendingAccountUnpriced(t *testing.T)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestSelfPurchasedReportIncludesPartialLegacyProjectionAsCostPending(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	db, mock := newAccountProfitabilityDB(t)
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	mock.ExpectQuery("WITH versions AS").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(8), "partial legacy purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 0, 40.0, nil, start, nil, "active", nil, 0.0, 12.0, 18.0))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, ProcurementStatusCostPending, report.Rows[0].CostStatus)
+	require.Nil(t, report.Rows[0].ProcurementCostCNY)
+	require.Nil(t, report.Rows[0].NetProfitCNY)
+	require.Equal(t, 12.0, report.Rows[0].StandardConsumedUSD)
+	require.Equal(t, 18.0, report.Rows[0].RevenueCNY)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestSelfPurchasedReportDoesNotReturnNaNUtilizationForZeroCostSettlement(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)

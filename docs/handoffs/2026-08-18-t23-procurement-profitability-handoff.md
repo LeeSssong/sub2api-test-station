@@ -1,8 +1,9 @@
 # T23 handoff — self-purchased procurement profitability
 
-- Worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t23-procurement-profitability`
-- Branch: `codex/t23-procurement-profitability`
-- Baseline main: `7b8367942ca9e6efccb706ca623c186103cd1c13`
+- Worktree: `/Users/gongtengxinwen/.codex/worktrees/1dc8/sub2api搭建`
+- Branch: `codex/t23-procurement-profitability-refresh`
+- Baseline main: `22cf4981dcad47e7998cd638fd55685e52e3f3e8`
+- Refreshed commits: `9f2402df4`, `8e4a42662`, `272c28db8`, plus the final refresh commit containing the partial legacy projection fix
 - State: `READY_FOR_ROOT_REVIEW` (not merged/pushed/deployed)
 
 ## Delivered
@@ -12,16 +13,18 @@
 - Atomic procurement config endpoint: `PUT /admin/operations/accounts/:id/procurement`; first version effective at `account.created_at`, later versions store remaining cost/quota at update time; projection and audit update in the same SQL transaction. The existing account-monitor edit route delegates procurement changes to this service with auth actor and idempotency key.
 - Idempotent settlement endpoint: `POST /admin/operations/accounts/:id/procurement/settle`; only disabled/error/expired accounts can settle, the operation persists fixed `loss_cny`, serializes on the latest version, and appends actor audit.
 - Report SQL scans timestamps into native time values, applies each version's own effective interval and cap, reads settled loss from the ledger, and limits standard cost to complete successful positive-token rows while excluding media, per-request and Cyber rows.
+- Legacy projection fallback treats either populated procurement field as explicit ownership; a partial legacy projection is returned as `cost_pending` instead of being silently omitted.
 - Frontend self-purchased CNY panel renders every required field separately, preserves zero pending cost, contains wide tables within their scroll wrapper, and requires explicit confirmation before settlement; channel USD view unchanged.
 - Formal spec/plan under `docs/superpowers/specs/2026-08-18-t23-procurement-profitability-design.md` and `docs/superpowers/plans/2026-08-18-t23-procurement-profitability-plan.md`.
 
 ## Verification
 - `go test ./internal/service ./internal/handler/admin ./internal/server/routes ./migrations -run 'Procurement|SelfPurchased|AccountProfitability' -count=1` — pass.
 - `go test ./internal/handler ./cmd/server -run '^$' -count=1` — pass.
-- `pnpm vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts` — 18/18 pass.
+- `pnpm vitest run src/views/admin/__tests__/AccountProfitabilityView.spec.ts` — 18/18 pass, including desktop/390px layout contract assertions.
 - `pnpm run typecheck` — pass.
 - `pnpm run build` — pass.
-- `git diff --check` — pass.
+- `git diff --check 22cf4981d...HEAD` — pass.
+- Migration 226 expand-only guard — pass; no existing migration changed.
 
 ## Migration/config/downtime
 - Migration-only schema addition; no historical backfill or usage_logs mutation.
@@ -29,7 +32,7 @@
 
 ## Remaining risks / unverified
 - No fresh PostgreSQL concurrent integration test in this candidate; SQL transactions/unique indexes are covered structurally and by sqlmock-free unit paths only.
-- Browser screenshot/390px visual smoke not run; layout uses responsive grid and overflow wrapper.
+- Browser screenshot/390px visual smoke not run because this isolated worktree has no authenticated backend session; jsdom layout contract coverage is present, but it is not a substitute for a real screenshot.
 - Production deployment/online verification intentionally not performed.
 
 ## Rollback

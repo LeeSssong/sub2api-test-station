@@ -106,8 +106,8 @@ WITH versions AS (
     SELECT a.id, 0, a.procurement_cost_cny, a.estimated_usable_quota_usd,
            COALESCE(a.procurement_cost_effective_at, a.created_at), NULL, 'active', NULL, 0
       FROM accounts a
-     WHERE a.procurement_cost_cny IS NOT NULL
-       AND a.estimated_usable_quota_usd IS NOT NULL
+     WHERE (a.procurement_cost_cny IS NOT NULL
+        OR a.estimated_usable_quota_usd IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM account_procurement_cost_versions v WHERE v.account_id = a.id)
 ), scoped AS (
     SELECT a.id, a.name, a.platform, a.type,

@@ -178,3 +178,17 @@ func accountProfitabilityQueryPattern() string {
 func balanceEvidenceJSON(source string) string {
 	return `{"account_monitor_balance":{"version":1,"source":"` + source + `","status":"ok"}}`
 }
+
+func TestCalculateProcurementMetricsCapsAndSettlesLoss(t *testing.T) {
+	c, p, l, u, profit, margin := calculateProcurementMetrics(120, 60, 90, 100, false)
+	require.Equal(t, 120.0, c)
+	require.Zero(t, p)
+	require.Zero(t, l)
+	require.Equal(t, 1.0, *u)
+	require.Equal(t, -20.0, *profit)
+	require.Equal(t, -.2, *margin)
+	c, p, l, _, _, _ = calculateProcurementMetrics(120, 60, 30, 100, true)
+	require.Equal(t, 60.0, c)
+	require.Zero(t, p)
+	require.Equal(t, 60.0, l)
+}

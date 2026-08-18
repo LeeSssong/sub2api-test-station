@@ -45,6 +45,23 @@
         </button>
       </div>
 
+      <section class="card min-w-0 space-y-3" data-test="self-purchased-panel">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div><h2 class="text-lg font-semibold">自购账号 · 人民币</h2><p class="text-xs text-gray-500">独立于渠道 USD 汇总；按标准额度消耗确认采购成本。</p></div>
+          <button class="btn btn-secondary shrink-0" data-test="self-purchased-refresh" @click="loadSelfPurchased">刷新</button>
+        </div>
+        <div v-if="selfPurchasedError" class="text-sm text-red-600" role="alert">{{ selfPurchasedError }}</div>
+        <div v-if="selfPurchasedLoaded" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div class="min-w-0"><div class="text-xs text-gray-500">采购成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.procurement_cost_cny) }}</div></div>
+          <div class="min-w-0"><div class="text-xs text-gray-500">人民币营收</div><div class="font-semibold">{{ cny(selfPurchased.summary.revenue_cny) }}</div></div>
+          <div class="min-w-0"><div class="text-xs text-gray-500">净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
+          <div class="min-w-0"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
+        </div>
+        <div v-if="selfPurchasedLoaded && selfPurchased.rows.length" class="overflow-x-auto">
+          <table class="min-w-[900px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊/损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '成本待录入' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny || row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status === 'expired' || row.cost_status === 'active'" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
+        </div>
+      </section>
+
       <template v-if="hasLoaded">
         <div class="text-xs text-gray-500" data-test="financial-generated-at">{{ generatedAt }}</div>
 
@@ -195,6 +212,7 @@ import type {
   FinancialRange,
 } from '@/api/admin/accountFinancial'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import type { SelfPurchasedReport } from '@/api/admin/selfPurchasedProfitability'
 
 type FinancialScope = { kind: 'all' } | { kind: 'group'; id: number; unassigned: boolean }
 type FinancialSortKey = 'operational_cost' | 'business_cost' | 'business_revenue' | 'total_cost' | 'net_profit' | 'external_margin'
@@ -209,6 +227,9 @@ const loading = ref(false)
 const refreshing = ref(false)
 const loadError = ref('')
 const hasLoaded = ref(false)
+const selfPurchased = ref<SelfPurchasedReport>({ start_date:'', end_date:'', generated_at:'', currency:'CNY', summary:{procurement_cost_cny:0,standard_consumed_usd:0,confirmed_cost_cny:0,pending_cost_cny:0,procurement_loss_cny:0,revenue_cny:0,net_profit_cny:null,margin:null,account_count:0}, rows:[] })
+const selfPurchasedLoaded = ref(false)
+const selfPurchasedError = ref('')
 let requestSequence = 0
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -257,6 +278,7 @@ const usd = (value: number | null) => value == null || !Number.isFinite(value)
       maximumFractionDigits: 2,
     }).format(value)
 const percent = (value: number | null) => value == null ? '—' : `${(value * 100).toFixed(2)}%`
+const cny = (value: number | null) => value == null || !Number.isFinite(value) ? '—' : new Intl.NumberFormat(undefined,{style:'currency',currency:'CNY',minimumFractionDigits:2,maximumFractionDigits:2}).format(value)
 
 const toneFor = (key: FinancialSortKey, value?: number) => {
   if (key === 'business_revenue') return 'text-blue-700 dark:text-blue-300'
@@ -329,6 +351,16 @@ function isSelectedGroup(id: number, unassigned: boolean) {
     && activeScope.value.unassigned === unassigned
 }
 
+async function settleSelfPurchased(accountId: number) {
+  if (!window.confirm('确认账号失效并结算剩余采购成本？')) return
+  try { await adminAPI.selfPurchasedProfitability.settle(accountId, { request_id: `ui-${Date.now()}-${accountId}`, reason: 'administrator_confirmed_expired' }); await loadSelfPurchased() } catch { selfPurchasedError.value = '结算失败' }
+}
+
+async function loadSelfPurchased() {
+  selfPurchasedError.value = ''
+  try { selfPurchased.value = await adminAPI.selfPurchasedProfitability.get({}); selfPurchasedLoaded.value = true } catch { selfPurchasedError.value = '自购账号数据加载失败' }
+}
+
 async function load() {
   const sequence = ++requestSequence
   if (hasLoaded.value) refreshing.value = true
@@ -359,6 +391,7 @@ function selectRange(range: FinancialRange) {
 
 onMounted(() => {
   void load()
+  void loadSelfPurchased()
   timer = setInterval(() => void load(), 60_000)
 })
 onUnmounted(() => {

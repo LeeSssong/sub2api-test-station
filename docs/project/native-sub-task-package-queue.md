@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20 与 T21 均已完成推送、发布和线上验收，当前全部为 `DONE`；T22 进入 `DESIGNING`，T23 保持 `IMPLEMENTING`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21 与 T22 均已完成推送、发布和线上验收，当前全部为 `DONE`；T23 进入 `READY_FOR_ROOT_REVIEW`，等待唯一发布总控串行整合。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@aee203ac4983c56e961525cbb9f587d16b5aa74d`、tree `cf5a5f8d46951701cb235b37dd3041551288e1e5`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T21 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T110720Z-production-3118657.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-aee203ac4-t21-sidecar-ready-v2.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -306,14 +306,14 @@
 
 ### T22 官方 Channel Monitor V2 简洁运营视图
 
-- 当前状态：`DESIGNING`。T20/T21 依赖已完成生产验收；独立执行会话按 `docs/handoffs/2026-08-18-t22-channel-monitor-ops-dispatch.md` 开始工作，保留 T18 的官方 V2 单一事实源与 `channel_monitor_mode=v1` 回滚开关。
+- 当前状态：`DONE`。候选已在根 `main@cbfe9ab7d10b071373afecb9b427a103f1df72cc` 合入并推送；宿主预加载蓝绿链返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`。发布证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-cbfe9ab7d-t22-channel-monitor-v1.json`；线上专项验收由登录态页面完成，默认 24h、90m/7d/30d 四窗口、详细分析按需加载、自然零流量状态和真实 critical/warning 评分均确认，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200，1440/390 视口无整页横向溢出。截图证据目录：`/Users/gongtengxinwen/.codex/visualizations/2026/08/18/01a0149d-b946-78e1-b0f3-200fed647f00/`。
 - 范围：默认时间窗改为 24h，保留 90m/7d/30d；首屏保留分组状态、成功率、首 Token、缓存率和最近趋势，模型明细/错误分类/用户排行移入“详细分析”。低流量/样本不足显示“已就绪·暂无流量”或“待观察”，不计入整体异常和健康评分且不伪造健康；真实错误、低成功率、高延迟仍黄/红显示。
 - 口径与验收：复用 T19 有效样本分母，排除本地拒绝、禁用模型、参数校验失败等未获上游响应请求；确认不重复实现已完成能力。桌面/移动端无溢出，v1 可回滚，预期无迁移且 `downtime_required=false`。
 
 ### T23 自购账号独立采购成本与人民币利润模型
 
-- 当前状态：`IMPLEMENTING`。首轮候选 `0eff548b5` 经根审查发现时间字段扫描、多版本摊销、固定损失读取、自购归属、既有录入链和审计主体等真实缺陷，已退回同一独立 worktree 按 TDD 修复；该候选不进入根合并。T23 继续排在 T22 之后，不打断 T21 的整合/部署车道，也不解冻 T16。
-- 依赖与窗口：T21 当前 `VERIFYING`，T22 `BACKLOG`；T23 仅占用第二个设计/实现窗口。独立 worktree 已创建：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t23-procurement-profitability`，分支 `codex/t23-procurement-profitability`，基线为登记后的 `main@7b8367942`。必须继续保持该任务从最新干净 `main` 演进，不得从现有自购账号历史 worktree 或其他候选派生。
+- 当前状态：`READY_FOR_ROOT_REVIEW`。T22 已完成线上验收，T23 候选已刷新至最新已推送 `main@cbfe9ab7d10b071373afecb9b427a103f1df72cc`，最终提交 `62f61de60623adba534532cc6e93b6caa7fc9a04`、tree `b19e45551f878b47d174a899a9cbc6c2b7c490b7`，工作区干净，分支 `codex/t23-procurement-profitability-refresh`，交接 `docs/handoffs/2026-08-18-t23-procurement-profitability-handoff.md`。未推送、未合并、未部署，等待根总控授权。
+- 依赖与窗口：T21/T22 已完成 `DONE`；T23 进入唯一 `INTEGRATING` 前的根审查车道，不启动其他任务，不解冻 T16。
 - 目标：为明确归属的自购账号建立独立、可审计的人民币采购成本与利润模型，不与渠道账号 USD 上游成本混加，不修改用户扣费规则、原始 `usage_logs` 成本事实或渠道经营口径。采购成本、预计可用标准 Token 额度、版本化台账、历史生效、剩余成本/额度、采购损失、失效结算、审计、幂等与并发保护均按已批准业务规则实施。
 - 核心公式：采购成本倍率 = 采购成本 CNY / 预计可用额度 USD；已确认采购成本基于倍率前的标准 Token 消耗额度并以采购周期真实采购价封顶；人民币营收按已实际消耗的站内 USD 额度 1:1 计入；净利润 = CNY 营收 - 已确认采购成本 - 采购损失，内部运营消耗单列进入总成本。未录入成本显示“成本待录入”，不按零成本计算。
 - 数据边界：保留 `accounts.procurement_cost_cny`、`estimated_usable_quota_usd`、`procurement_cost_effective_at` 作为当前投影；新增 expand-only、版本化、可审计采购成本台账，记录账号、成本、额度、生效/结束/结算、损失、状态、操作者和时间戳。不得迁移删除、历史回填、生产数据修改或重算账务。

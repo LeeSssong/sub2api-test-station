@@ -58,16 +58,22 @@
           >
             <div class="dimension-cell flex min-w-0 items-center gap-2 bg-white dark:bg-dark-800" :title="rowLabel(entry.row)">
               <span :class="['status-dot', cellClass(entry.row.health, entry.row.metrics.request_count)]"></span>
-              <strong class="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{{ rowLabel(entry.row) }}</strong>
+              <span class="min-w-0">
+                <strong class="block truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{{ rowLabel(entry.row) }}</strong>
+                <small
+                  v-if="rowReadiness(entry.row) !== 'scored'"
+                  class="block truncate text-[10px] font-medium text-gray-500 dark:text-gray-400"
+                >{{ readinessLabel(rowReadiness(entry.row)) }}</small>
+              </span>
             </div>
             <strong class="summary-value bg-white text-xs font-medium tabular-nums text-gray-600 dark:bg-dark-800 dark:text-gray-300">
-              {{ successRate(entry.row.metrics) }}
+              {{ rowReadiness(entry.row) === 'no_traffic' ? '-' : successRate(entry.row.metrics) }}
             </strong>
             <strong
               class="summary-value bg-white text-xs font-medium tabular-nums text-gray-600 dark:bg-dark-800 dark:text-gray-300"
               :title="latencyPrivacy(entry.row.metrics.ttft)"
             >
-              {{ formatMs(entry.row.metrics.ttft.p50_ms) }}
+              {{ rowReadiness(entry.row) === 'no_traffic' ? '-' : formatMs(entry.row.metrics.ttft.p50_ms) }}
             </strong>
             <strong
               v-if="showThroughput"
@@ -79,7 +85,7 @@
             <strong
               class="summary-value bg-white text-xs font-medium tabular-nums text-gray-600 dark:bg-dark-800 dark:text-gray-300"
             >
-              {{ formatPercent(entry.row.metrics.cache_rate) }}
+              {{ rowReadiness(entry.row) === 'no_traffic' ? '-' : formatPercent(entry.row.metrics.cache_rate) }}
             </strong>
             <div class="pulse-track grid items-stretch" :style="pulseStyle">
               <span
@@ -103,8 +109,12 @@
                 <span class="pulse-tooltip" role="tooltip">
                   <template v-if="slot.bucket">
                     <span class="pulse-tooltip-line pulse-tooltip-title">{{ formatBucketRange(slot.start) }}</span>
+                    <span
+                      v-if="bucketReadiness(slot.bucket) !== 'scored'"
+                      class="pulse-tooltip-line"
+                    >{{ readinessLabel(bucketReadiness(slot.bucket)) }}</span>
                     <span class="pulse-tooltip-line">{{ t('channelMonitorV2.matrix.scoreLine', { score: formatScore(slot.bucket.health) }) }}</span>
-                    <span class="pulse-tooltip-line">{{ t('channelMonitorV2.metrics.successRateValue', { value: successRate(slot.bucket.metrics) }) }}</span>
+                    <span class="pulse-tooltip-line">{{ t('channelMonitorV2.metrics.successRateValue', { value: bucketSuccessRate(slot.bucket) }) }}</span>
                     <span class="pulse-tooltip-line">{{ t('channelMonitorV2.metrics.ttftValue', { value: latencyPrivacy(slot.bucket.metrics.ttft) }) }}</span>
                     <span v-if="showThroughput" class="pulse-tooltip-line">{{ t('channelMonitorV2.metrics.tpsValue', { value: formatTps(slot.bucket.metrics.tpm) }) }}</span>
                     <span class="pulse-tooltip-line">{{ t('channelMonitorV2.metrics.cacheRateValue', { value: formatPercent(slot.bucket.metrics.cache_rate) }) }}</span>
@@ -187,6 +197,8 @@ import {
   tokensPerSecondFromTpm,
   healthModeScore,
   healthScoreClass,
+  monitorReadiness,
+  type MonitorReadiness,
 } from '@/features/channel-monitor-v2/monitorFormat'
 import {
   applyWheelZoom,
@@ -347,6 +359,24 @@ function cellClass(health: MonitorHealth, requestCount: number): string {
   return healthScoreClass(health, props.healthMode, requestCount)
 }
 
+function rowReadiness(row: MonitorMatrixRow): MonitorReadiness {
+  return monitorReadiness(row.metrics, row.health)
+}
+
+function bucketReadiness(bucket: MonitorMatrixBucket): MonitorReadiness {
+  return monitorReadiness(bucket.metrics, bucket.health)
+}
+
+function bucketSuccessRate(bucket: MonitorMatrixBucket): string {
+  return bucketReadiness(bucket) === 'no_traffic' ? '-' : successRate(bucket.metrics)
+}
+
+function readinessLabel(readiness: MonitorReadiness): string {
+  return readiness === 'no_traffic'
+    ? t('channelMonitorV2.readiness.noTraffic')
+    : t('channelMonitorV2.readiness.observing')
+}
+
 function rowLabel(row: MonitorMatrixRow): string {
   const parts = [row.platform]
   if (row.group_name || row.group_id) parts.push(row.group_name || `#${row.group_id}`)
@@ -379,10 +409,12 @@ function bucketTooltip(bucket: MonitorMatrixBucket): string {
 
 function bucketTooltipLines(bucket: MonitorMatrixBucket): string[] {
   const metrics = bucket.metrics
+  const readiness = monitorReadiness(metrics, bucket.health)
   const lines = [
     formatBucketRange(bucket.bucket_start),
+    ...(readiness === 'scored' ? [] : [readinessLabel(readiness)]),
     t('channelMonitorV2.matrix.scoreLine', { score: formatScore(bucket.health) }),
-    t('channelMonitorV2.metrics.successRateValue', { value: successRate(metrics) }),
+    t('channelMonitorV2.metrics.successRateValue', { value: bucketSuccessRate(bucket) }),
     t('channelMonitorV2.metrics.ttftValue', { value: latencyPrivacy(metrics.ttft) }),
   ]
   if (props.showThroughput) {

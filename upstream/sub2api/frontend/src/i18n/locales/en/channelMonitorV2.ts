@@ -22,6 +22,8 @@ export default {
     otherModels: 'Other models',
     ignored: 'Ignored',
     currentUser: 'Current user',
+    readiness: { noTraffic: 'Ready · no traffic', observing: 'Observing' },
+    details: { title: 'Detailed analysis', description: 'Models, error categories, and user ranking', expand: 'Expand detailed analysis', collapse: 'Collapse detailed analysis' },
     ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
     filters: {
       platform: 'Platform', allPlatforms: 'All', group: 'Group', allGroups: 'All', model: 'Model', allModels: 'All',

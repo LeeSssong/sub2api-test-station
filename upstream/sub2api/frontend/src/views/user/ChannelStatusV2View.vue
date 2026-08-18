@@ -202,16 +202,16 @@
       >
         <MetricCell
           :label="t('channelMonitorV2.metrics.successRate')"
-          :value="formatPercent(1 - snapshot.metrics.error_rate)"
+          :value="summarySuccessRate"
           :detail="t('channelMonitorV2.metrics.errorRateValue', { value: formatPercent(snapshot.metrics.error_rate) })"
-          :state="snapshot.health.error_rate"
+          :state="summaryMetricState(snapshot.health.error_rate)"
         />
         <MetricCell
           :label="t('channelMonitorV2.metrics.ttftP50')"
-          :value="formatMs(snapshot.metrics.ttft.p50_ms)"
+          :value="summaryMetricValue(snapshot.metrics.ttft.p50_ms)"
           :detail="latencyKpiSecondary(snapshot.metrics.ttft)"
           :title="latencyDetail(snapshot.metrics.ttft)"
-          :state="snapshot.health.ttft"
+          :state="summaryMetricState(snapshot.health.ttft)"
         />
         <MetricCell
           v-if="showThroughput"
@@ -222,9 +222,9 @@
         />
         <MetricCell
           :label="t('channelMonitorV2.metrics.cacheRate')"
-          :value="formatPercent(snapshot.metrics.cache_rate)"
+          :value="summaryCacheRate"
           :detail="t('channelMonitorV2.metrics.cacheDetail')"
-          :state="snapshot.health.cache || snapshot.health.overall"
+          :state="summaryMetricState(snapshot.health.cache || snapshot.health.overall)"
         />
         <MetricCell
           v-if="showThroughput"
@@ -269,7 +269,24 @@
         </div>
       </div>
 
-      <section class="card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
+      <section class="card flex items-center justify-between gap-3 !rounded-3xl !border-0 px-5 py-4 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700 sm:px-6">
+        <div class="min-w-0">
+          <h2 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('channelMonitorV2.details.title') }}</h2>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('channelMonitorV2.details.description') }}</p>
+        </div>
+        <button
+          data-test="monitor-details-toggle"
+          type="button"
+          class="btn btn-secondary shrink-0 !px-3 !py-1.5 text-xs"
+          :aria-expanded="detailsOpen"
+          aria-controls="monitor-detailed-analysis"
+          @click="toggleDetails"
+        >
+          {{ detailsOpen ? t('channelMonitorV2.details.collapse') : t('channelMonitorV2.details.expand') }}
+        </button>
+      </section>
+
+      <section v-if="detailsOpen" id="monitor-detailed-analysis" class="card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
         <div class="border-b border-gray-100 px-5 pt-4 dark:border-dark-700 sm:px-6">
           <nav class="tabs w-full max-w-md sm:w-auto" role="tablist" :aria-label="t('channelMonitorV2.tabs.aria')">
             <button
@@ -278,6 +295,7 @@
               type="button"
               role="tab"
               class="tab flex-1 sm:flex-none"
+              :data-test="`monitor-details-tab-${item.value}`"
               :aria-selected="activeTab === item.value"
               :class="activeTab === item.value ? 'tab-active' : ''"
               @click="activeTab = item.value"
@@ -497,6 +515,8 @@ import {
   formatMonitorTokensPerSecond,
   tokensPerSecondFromTpm,
   healthScoreClass,
+  monitorReadiness,
+  type MonitorReadiness,
   monitorErrorCategoryLabel,
 } from '@/features/channel-monitor-v2/monitorFormat'
 
@@ -559,6 +579,7 @@ const loading = ref(false)
 const tabLoading = ref(false)
 const refreshing = ref(false)
 const expandedErrors = ref(new Set<string>())
+const detailsOpen = ref(['models', 'errors', 'users'].includes(String(route.query.tab)))
 let controller: AbortController | null = null
 let sequence = 0
 let autoRefreshTimer: number | null = null
@@ -659,7 +680,7 @@ function csv(value: unknown) {
   return typeof value === 'string' ? value.split(',').filter(Boolean) : []
 }
 function parseRange(value: unknown): MonitorRange {
-  return ['90m', '24h', '7d', '30d'].includes(String(value)) ? (value as MonitorRange) : '90m'
+  return ['90m', '24h', '7d', '30d'].includes(String(value)) ? (value as MonitorRange) : '24h'
 }
 function parseMatrixGroupBy(value: unknown): MonitorMatrixGroupBy {
   const allowed: MonitorMatrixGroupBy[] = [
@@ -715,7 +736,7 @@ async function loadMetrics(signal?: AbortSignal, id = sequence) {
   snapshot.value = nextSnapshot
   matrix.value = nextMatrix
   scheduleAutoRefresh()
-  await loadTab(signal, id)
+  if (detailsOpen.value) await loadTab(signal, id)
 }
 
 async function reload(silent = true) {
@@ -787,6 +808,10 @@ async function loadTab(signal?: AbortSignal, id = sequence) {
 function setRange(value: MonitorRange) {
   filter.value.range = value
 }
+async function toggleDetails() {
+  detailsOpen.value = !detailsOpen.value
+  if (detailsOpen.value) await loadTab(controller?.signal)
+}
 function clearDimensions() {
   // Replace arrays so deep watch always fires and metrics reload full window.
   filter.value = {
@@ -831,6 +856,24 @@ function exactTps(tpm: number | null | undefined) {
 }
 function formatPercent(value: number) {
   return formatMonitorPercent(value)
+}
+const overallReadiness = computed<MonitorReadiness>(() =>
+  snapshot.value ? monitorReadiness(snapshot.value.metrics, snapshot.value.health) : 'observing',
+)
+const summarySuccessRate = computed(() => {
+  if (overallReadiness.value === 'no_traffic') return t('channelMonitorV2.readiness.noTraffic')
+  if (overallReadiness.value === 'observing') return t('channelMonitorV2.readiness.observing')
+  return formatPercent(1 - (snapshot.value?.metrics.error_rate || 0))
+})
+const summaryCacheRate = computed(() => {
+  if (overallReadiness.value === 'no_traffic') return '-'
+  return formatPercent(snapshot.value?.metrics.cache_rate || 0)
+})
+function summaryMetricValue(value: number | null) {
+  return overallReadiness.value === 'no_traffic' ? '-' : formatMs(value)
+}
+function summaryMetricState(state: HealthState): HealthState | undefined {
+  return overallReadiness.value === 'scored' ? state : undefined
 }
 function formatMs(value: number | null) {
   return formatMonitorMs(value)
@@ -902,7 +945,7 @@ watch(healthMode, syncQuery)
 watch(trendView, syncQuery)
 watch(activeTab, () => {
   syncQuery()
-  void loadTab()
+  if (detailsOpen.value) void loadTab()
 })
 onMounted(() => void reload(false))
 onBeforeUnmount(() => {

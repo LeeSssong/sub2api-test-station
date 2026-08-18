@@ -28,6 +28,8 @@ const i18nT = (key: string, params?: Record<string, unknown>) => {
     'channelMonitorV2.matrix.warningLegend': '警告',
     'channelMonitorV2.matrix.criticalLegend': '异常',
     'channelMonitorV2.matrix.unknownLegend': '未知',
+    'channelMonitorV2.readiness.noTraffic': '已就绪·暂无流量',
+    'channelMonitorV2.readiness.observing': '待观察',
   }
   const template = map[key] || key
   return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
@@ -82,6 +84,86 @@ function metrics(requestCount: number): MonitorMetric {
 }
 
 describe('RelayPulseMatrix', () => {
+  it('labels no-traffic and low-sample groups neutrally while preserving scored failures', () => {
+    const unknownHealth: MonitorHealth = {
+      ...health,
+      overall: 'unknown',
+      error_rate: 'unknown',
+      ttft: 'unknown',
+      cache: 'unknown',
+      score: null,
+      error_rate_score: null,
+      ttft_score: null,
+      cache_score: null,
+    }
+    const criticalHealth: MonitorHealth = {
+      ...health,
+      overall: 'critical',
+      error_rate: 'critical',
+      score: 20,
+      error_rate_score: 0,
+    }
+    const wrapper = mount(RelayPulseMatrix, {
+      props: {
+        rows: [
+          {
+            platform: 'openai',
+            group_id: 1,
+            group_name: '无流量组',
+            metrics: metrics(0),
+            health: unknownHealth,
+            buckets: [
+              { bucket_start: '2026-08-01T00:00:00Z', metrics: metrics(0), health: unknownHealth },
+            ],
+          },
+          {
+            platform: 'openai',
+            group_id: 2,
+            group_name: '观察组',
+            metrics: metrics(3),
+            health: unknownHealth,
+            buckets: [
+              { bucket_start: '2026-08-01T00:01:00Z', metrics: metrics(3), health: unknownHealth },
+            ],
+          },
+          {
+            platform: 'openai',
+            group_id: 3,
+            group_name: '异常组',
+            metrics: metrics(20),
+            health: criticalHealth,
+            buckets: [],
+          },
+        ],
+        coverage: {
+          requested_start: '2026-08-01T00:00:00Z',
+          requested_end: '2026-08-01T00:02:00Z',
+          coverage_start: '2026-08-01T00:00:00Z',
+          data_through: '2026-08-01T00:02:00Z',
+          computed_at: '2026-08-01T00:02:00Z',
+          aggregation_lag_seconds: 0,
+          coverage_complete: true,
+          bucket_seconds: 60,
+        },
+        healthMode: 'overall',
+      },
+    })
+
+    const rows = wrapper.findAll('.matrix-row').slice(1)
+    expect(rows[0].text()).toContain('已就绪·暂无流量')
+    expect(rows[0].find('.status-dot').classes()).toContain('health-unknown')
+    expect(rows[0].findAll('.pulse-cell')[0].text()).toContain('成功率 -')
+    expect(rows[0].findAll('.pulse-cell')[0].text()).not.toContain('成功率 100.0%')
+    expect(rows[1].text()).toContain('待观察')
+    expect(rows[1].find('.status-dot').classes()).toContain('health-unknown')
+    expect(rows[2].text()).not.toContain('待观察')
+    expect(rows[2].find('.status-dot').classes()).toContain('health-score2')
+
+    const bucketTips = wrapper.findAll('.pulse-cell').map((cell) => cell.text())
+    expect(bucketTips.some((text) => text.includes('已就绪·暂无流量'))).toBe(true)
+    expect(bucketTips.some((text) => text.includes('待观察'))).toBe(true)
+  })
+
   it('shows privacy-safe hover tooltips and multi-band colors without click modal', async () => {
     const wrapper = mount(RelayPulseMatrix, {
       props: {

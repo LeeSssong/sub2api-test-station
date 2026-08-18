@@ -6,7 +6,7 @@
  * request/error/token counts in user-facing surfaces.
  */
 
-import type { HealthScoreBand, MonitorHealth } from '@/api/channelMonitorV2'
+import type { HealthScoreBand, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 import { formatCompactNumber } from '@/utils/format'
 
 export function monitorIntlLocale(): string {
@@ -90,6 +90,16 @@ export function scoreToBand(score: number | null | undefined): HealthScoreBand {
 }
 
 export type HealthDisplayMode = 'overall' | 'success' | 'ttft' | 'cache'
+export type MonitorReadiness = 'no_traffic' | 'observing' | 'scored'
+
+export function monitorReadiness(
+  metrics: MonitorMetric,
+  health: MonitorHealth,
+): MonitorReadiness {
+  if (health.score != null) return 'scored'
+  if (metrics.request_count <= 0) return 'no_traffic'
+  return 'observing'
+}
 
 /** Resolve the score used for a health mode. */
 export function healthModeScore(

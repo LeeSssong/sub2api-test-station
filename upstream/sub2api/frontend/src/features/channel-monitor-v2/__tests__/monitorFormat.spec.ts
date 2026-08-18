@@ -12,10 +12,28 @@ import {
   formatMonitorTokensPerSecond,
   healthScoreClass,
   healthStateClass,
+  monitorReadiness,
   scoreToBand,
   tokensPerSecondFromTpm,
 } from '../monitorFormat'
-import type { MonitorHealth } from '@/api/channelMonitorV2'
+import type { MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
+
+function readinessMetrics(requestCount: number): MonitorMetric {
+  return {
+    success_requests: requestCount,
+    error_requests: 0,
+    request_count: requestCount,
+    token_count: 0,
+    rpm: 0,
+    tpm: 0,
+    error_rate: 0,
+    cache_rate: 0,
+    cache_rate_numerator: 0,
+    cache_rate_denominator: 0,
+    ttft: { sample_count: requestCount, p50_ms: null, p95_ms: null, avg_ms: null },
+    duration: { sample_count: requestCount, p50_ms: null, p95_ms: null, avg_ms: null },
+  }
+}
 
 describe('monitorFormat accuracy', () => {
   it('converts backend TPM (per minute) to tokens/sec for display', () => {
@@ -109,6 +127,28 @@ describe('monitorFormat accuracy', () => {
   it('maps health states for status dots', () => {
     expect(healthStateClass('healthy')).toBe('health-healthy')
     expect(healthStateClass(undefined)).toBe('health-unknown')
+  })
+
+  it('classifies no traffic, insufficient samples, and scored metrics without inventing health', () => {
+    const base: MonitorHealth = {
+      overall: 'unknown',
+      error_rate: 'unknown',
+      ttft: 'unknown',
+      cache: 'unknown',
+      score: null,
+      minimum_sample: 20,
+    }
+
+    expect(monitorReadiness(readinessMetrics(0), base)).toBe('no_traffic')
+    expect(monitorReadiness(readinessMetrics(3), base)).toBe('observing')
+    expect(
+      monitorReadiness(readinessMetrics(20), {
+        ...base,
+        overall: 'critical',
+        error_rate: 'critical',
+        score: 42,
+      }),
+    ).toBe('scored')
   })
 
   it('formats privacy-safe latency lines with avg/p50/p90', () => {

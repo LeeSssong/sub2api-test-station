@@ -3,9 +3,11 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 COMPOSE="$ROOT/infra/compose.yaml"
+DOCKERFILE="$ROOT/upstream/sub2api/Dockerfile"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 [[ -f "$COMPOSE" ]] || fail "compose file missing"
+[[ -f "$DOCKERFILE" ]] || fail "Dockerfile missing"
 grep -Fq 'SUB2API_MODEL_DETECTOR_URL:' "$COMPOSE" || fail "detector URL is not wired"
 grep -Fq 'SUB2API_MODEL_DETECTOR_TOKEN:' "$COMPOSE" || fail "detector token is not wired"
 grep -Fq 'model-detector:' "$COMPOSE" || fail "detector service is not declared"
@@ -18,4 +20,8 @@ fi
 if grep -Fq 'MODEL_DETECTOR_TOKEN: ' "$COMPOSE" && grep -Eq 'MODEL_DETECTOR_TOKEN: [^$]' "$COMPOSE"; then
   fail "detector token must come from operator environment"
 fi
+[[ $(grep -Fc -- '--mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod' "$DOCKERFILE") -eq 3 ]] \
+  || fail "module download and both backend binaries must use the explicit Go module cache target"
+[[ $(grep -Fc -- '--mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build' "$DOCKERFILE") -eq 2 ]] \
+  || fail "both backend binaries must use the explicit Go build cache target"
 printf 'model detector compose contract passed\n'

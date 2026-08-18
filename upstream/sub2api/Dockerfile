@@ -99,7 +99,7 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     -o /app/sub2api \
     ./cmd/server
 
-RUN --mount=type=cache,id=sub2api-gomod \
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w" -trimpath \

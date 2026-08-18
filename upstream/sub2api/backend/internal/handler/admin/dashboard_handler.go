@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +46,89 @@ func (h *DashboardHandler) SetAccountProfitabilityService(svc *service.AccountPr
 // GetAccountProfitability returns per-account revenue, expense, profit, and
 // margin for an inclusive calendar-date range.
 // GET /api/v1/admin/operations/account-profitability
+// GetSelfPurchasedProfitability returns the independent CNY view for self-purchased accounts.
+func (h *DashboardHandler) GetSelfPurchasedProfitability(c *gin.Context) {
+	if h == nil || h.accountProfitabilityService == nil {
+		response.InternalError(c, "Account profitability service not available")
+		return
+	}
+	start, end, err := parseAccountProfitabilityRange(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	report, err := h.accountProfitabilityService.GetSelfPurchasedReport(c.Request.Context(), start, end)
+	if err != nil {
+		response.InternalError(c, "Failed to get self-purchased profitability")
+		return
+	}
+	response.Success(c, report)
+}
+
+// UpdateSelfPurchasedConfig versions procurement configuration and updates the native projection.
+func (h *DashboardHandler) UpdateSelfPurchasedConfig(c *gin.Context) {
+	if h == nil || h.accountProfitabilityService == nil {
+		response.InternalError(c, "Account profitability service not available")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "invalid account id")
+		return
+	}
+	var req struct {
+		CostCNY   *float64 `json:"procurement_cost_cny"`
+		QuotaUSD  *float64 `json:"estimated_usable_quota_usd"`
+		RequestID string   `json:"request_id"`
+	}
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.RequestID) == "" {
+		response.BadRequest(c, "request_id is required")
+		return
+	}
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "administrator identity required")
+		return
+	}
+	if err := h.accountProfitabilityService.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: id, CostCNY: req.CostCNY, QuotaUSD: req.QuotaUSD, RequestID: strings.TrimSpace(req.RequestID), ActorUserID: subject.UserID}); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"account_id": id, "request_id": req.RequestID})
+}
+
+// SettleSelfPurchasedAccount closes the active procurement version exactly once.
+func (h *DashboardHandler) SettleSelfPurchasedAccount(c *gin.Context) {
+	if h == nil || h.accountProfitabilityService == nil {
+		response.InternalError(c, "Account profitability service not available")
+		return
+	}
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "invalid account id")
+		return
+	}
+	var req struct {
+		RequestID string `json:"request_id"`
+		Reason    string `json:"reason"`
+	}
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.RequestID) == "" {
+		response.BadRequest(c, "request_id is required")
+		return
+	}
+	subject, okSubject := middleware.GetAuthSubjectFromContext(c)
+	if !okSubject || subject.UserID <= 0 {
+		response.Unauthorized(c, "administrator identity required")
+		return
+	}
+	ok, err := h.accountProfitabilityService.SettleProcurement(c.Request.Context(), service.ProcurementSettlementInput{AccountID: accountID, RequestID: strings.TrimSpace(req.RequestID), Reason: strings.TrimSpace(req.Reason), ActorUserID: subject.UserID})
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"settled": ok, "request_id": req.RequestID})
+}
+
 func (h *DashboardHandler) GetAccountProfitability(c *gin.Context) {
 	if h == nil || h.accountProfitabilityService == nil {
 		response.InternalError(c, "Account profitability service not available")

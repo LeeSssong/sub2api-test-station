@@ -57,23 +57,24 @@ type upstreamBillingProber interface {
 
 // AccountHandler handles admin account management
 type AccountHandler struct {
-	adminService            service.AdminService
-	oauthService            *service.OAuthService
-	openaiOAuthService      *service.OpenAIOAuthService
-	geminiOAuthService      *service.GeminiOAuthService
-	antigravityOAuthService *service.AntigravityOAuthService
-	grokOAuthService        service.GrokOAuthTokenService
-	rateLimitService        *service.RateLimitService
-	accountUsageService     *service.AccountUsageService
-	accountTestService      *service.AccountTestService
-	concurrencyService      *service.ConcurrencyService
-	crsSyncService          *service.CRSSyncService
-	sessionLimitCache       service.SessionLimitCache
-	rpmCache                service.RPMCache
-	tokenCacheInvalidator   service.TokenCacheInvalidator
-	grokImportProber        grokImportProber
-	upstreamBillingProbe    upstreamBillingProber
-	ollamaCloudUsage        *service.OllamaCloudUsageService
+	adminService             service.AdminService
+	oauthService             *service.OAuthService
+	openaiOAuthService       *service.OpenAIOAuthService
+	geminiOAuthService       *service.GeminiOAuthService
+	antigravityOAuthService  *service.AntigravityOAuthService
+	grokOAuthService         service.GrokOAuthTokenService
+	rateLimitService         *service.RateLimitService
+	accountUsageService      *service.AccountUsageService
+	accountTestService       *service.AccountTestService
+	concurrencyService       *service.ConcurrencyService
+	crsSyncService           *service.CRSSyncService
+	sessionLimitCache        service.SessionLimitCache
+	rpmCache                 service.RPMCache
+	tokenCacheInvalidator    service.TokenCacheInvalidator
+	grokImportProber         grokImportProber
+	upstreamBillingProbe     upstreamBillingProber
+	ollamaCloudUsage         *service.OllamaCloudUsageService
+	procurementProfitability *service.AccountProfitabilityService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -83,6 +84,10 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
+}
+
+func (h *AccountHandler) SetProcurementProfitabilityService(svc *service.AccountProfitabilityService) {
+	h.procurementProfitability = svc
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -1095,17 +1100,37 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 确定是否跳过混合渠道检查
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
+	procurementUpdate := toServiceProcurementCostUpdate(req.ProcurementCostCNY, req.EstimatedUsableQuotaUSD)
+	procurementRequestID := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if procurementRequestID == "" {
+		procurementRequestID = financialRequestID(c)
+	}
+	if procurementUpdate != nil && h.procurementProfitability != nil {
+		if actorID(c) <= 0 {
+			response.Unauthorized(c, "administrator identity required")
+			return
+		}
+		if procurementRequestID == "" {
+			response.BadRequest(c, "Idempotency-Key or X-Request-ID is required for procurement updates")
+			return
+		}
+	}
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
-		Name:                  req.Name,
-		Notes:                 req.Notes,
-		Type:                  req.Type,
-		Credentials:           req.Credentials,
-		Extra:                 req.Extra,
-		ProxyID:               req.ProxyID,
-		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
-		Priority:              req.Priority,    // 指针类型，nil 表示未提供
-		RateMultiplier:        req.RateMultiplier,
-		ProcurementCost:       toServiceProcurementCostUpdate(req.ProcurementCostCNY, req.EstimatedUsableQuotaUSD),
+		Name:           req.Name,
+		Notes:          req.Notes,
+		Type:           req.Type,
+		Credentials:    req.Credentials,
+		Extra:          req.Extra,
+		ProxyID:        req.ProxyID,
+		Concurrency:    req.Concurrency, // 指针类型，nil 表示未提供
+		Priority:       req.Priority,    // 指针类型，nil 表示未提供
+		RateMultiplier: req.RateMultiplier,
+		ProcurementCost: func() *service.ProcurementCostUpdate {
+			if h.procurementProfitability == nil {
+				return procurementUpdate
+			}
+			return nil
+		}(),
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		GroupIDs:              req.GroupIDs,
@@ -1129,6 +1154,15 @@ func (h *AccountHandler) Update(c *gin.Context) {
 
 		response.ErrorFrom(c, err)
 		return
+	}
+	if procurementUpdate != nil && h.procurementProfitability != nil {
+		if err := h.procurementProfitability.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: accountID, CostCNY: procurementUpdate.Value, QuotaUSD: procurementUpdate.EstimatedUsableQuotaUSD, ActorUserID: actorID(c), RequestID: procurementRequestID}); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if refreshed, refreshErr := h.adminService.GetAccount(c.Request.Context(), accountID); refreshErr == nil {
+			account = refreshed
+		}
 	}
 
 	// OpenAI APIKey: credentials 修改后重新探测上游能力（base_url/api_key 可能变更）。

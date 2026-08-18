@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -20,6 +23,40 @@ func setupAccountProcurementCostRouter(stub *stubAdminService) *gin.Engine {
 	handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/accounts/:id", handler.Update)
 	return router
+}
+
+func TestExistingAccountUpdateRoutesProcurementThroughVersionLedger(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions").WithArgs("legacy-edit-1").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(3)).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(3), 1, 4.0, 120.0, createdAt, int64(42), "legacy-edit-1", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(3), 4.0, 120.0, createdAt, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(42), "/admin/accounts/3/procurement", "legacy-edit-1", int64(3), 4.0, 120.0).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	stub := newStubAdminService()
+	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.PUT("/accounts/:id", h.Update)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/accounts/3", bytes.NewBufferString(`{"procurement_cost_cny":4,"estimated_usable_quota_usd":120}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "legacy-edit-1")
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Nil(t, stub.lastUpdateAccountInput.ProcurementCost, "legacy projection write must be replaced by the ledger transaction")
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestAccountHandlerUpdateProcurementCostDistinguishesOmittedNumberAndNull(t *testing.T) {

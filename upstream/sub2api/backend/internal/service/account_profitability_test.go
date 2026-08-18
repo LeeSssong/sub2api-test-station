@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"math"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,4 +180,264 @@ func accountProfitabilityQueryPattern() string {
 
 func balanceEvidenceJSON(source string) string {
 	return `{"account_monitor_balance":{"version":1,"source":"` + source + `","status":"ok"}}`
+}
+
+func TestCalculateProcurementMetricsCapsAndSettlesLoss(t *testing.T) {
+	c, p, l, u, profit, margin := calculateProcurementMetrics(120, 60, 90, 100, false)
+	require.Equal(t, 120.0, c)
+	require.Zero(t, p)
+	require.Zero(t, l)
+	require.Equal(t, 1.0, *u)
+	require.Equal(t, -20.0, *profit)
+	require.Equal(t, -.2, *margin)
+	c, p, l, _, _, _ = calculateProcurementMetrics(120, 60, 30, 100, true)
+	require.Equal(t, 60.0, c)
+	require.Zero(t, p)
+	require.Equal(t, 60.0, l)
+}
+
+func TestSelfPurchasedReportScansTimestampsAndAggregatesVersions(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
+	db, mock := newAccountProfitabilityDB(t)
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	ended := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	settled := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("WITH versions AS").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(7), "purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 1, 100.0, 50.0, start, ended, "ended", nil, 0.0, 25.0, 60.0).
+		AddRow(int64(7), "purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 2, 50.0, 25.0, ended, settled, "settled", settled, 20.0, 10.0, 30.0))
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	row := report.Rows[0]
+	require.Equal(t, 70.0, row.ConfirmedCostCNY)
+	require.Zero(t, row.PendingCostCNY, "ended versions must not retain cost that rolled into a later version")
+	require.Equal(t, 20.0, row.LossCNY)
+	require.Equal(t, 90.0, row.RevenueCNY)
+	require.Equal(t, -0.0, *row.NetProfitCNY)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSelfPurchasedReportKeepsCurrentCostPendingAccountUnpriced(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	db, mock := newAccountProfitabilityDB(t)
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	changedAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("WITH versions AS").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(7), "purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 1, 100.0, 50.0, start, changedAt, "ended", nil, 0.0, 10.0, 20.0).
+		AddRow(int64(7), "purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 2, nil, nil, changedAt, nil, "cost_pending", nil, 0.0, 0.0, 15.0))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, ProcurementStatusCostPending, report.Rows[0].CostStatus)
+	require.Nil(t, report.Rows[0].ProcurementCostCNY)
+	require.Nil(t, report.Rows[0].EstimatedQuotaUSD)
+	require.Nil(t, report.Rows[0].NetProfitCNY)
+	require.Nil(t, report.Rows[0].Margin)
+	require.Equal(t, 1, report.Summary.AccountCount)
+	require.Nil(t, report.Summary.NetProfitCNY)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSelfPurchasedReportIncludesPartialLegacyProjectionAsCostPending(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	db, mock := newAccountProfitabilityDB(t)
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	mock.ExpectQuery("WITH versions AS").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(8), "partial legacy purchase", PlatformOpenAI, AccountTypeOAuth, StatusActive, 0, 40.0, nil, start, nil, "active", nil, 0.0, 12.0, 18.0))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, ProcurementStatusCostPending, report.Rows[0].CostStatus)
+	require.Nil(t, report.Rows[0].ProcurementCostCNY)
+	require.Nil(t, report.Rows[0].NetProfitCNY)
+	require.Equal(t, 12.0, report.Rows[0].StandardConsumedUSD)
+	require.Equal(t, 18.0, report.Rows[0].RevenueCNY)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSelfPurchasedReportDoesNotReturnNaNUtilizationForZeroCostSettlement(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	db, mock := newAccountProfitabilityDB(t)
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	settledAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("WITH versions AS").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(7), "free purchase", PlatformOpenAI, AccountTypeOAuth, StatusError, 1, 0.0, 50.0, start, settledAt, "settled", settledAt, 0.0, 0.0, 0.0))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Nil(t, report.Rows[0].Utilization)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSelfPurchasedReportOwnershipComesOnlyFromLedgerOrProjection(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	matcher := sqlmock.QueryMatcherFunc(func(expected, actual string) error {
+		if strings.Contains(strings.ToLower(actual), "a.type='oauth'") || strings.Contains(strings.ToLower(actual), "a.type = 'oauth'") {
+			return errors.New("oauth account type must not imply procurement ownership")
+		}
+		for _, required := range []string{"account_procurement_cost_versions", "billing_mode", "usage_completeness", "image_count", "video_count", "request_type"} {
+			if !strings.Contains(actual, required) {
+				return fmt.Errorf("missing procurement report filter %s", required)
+			}
+		}
+		return nil
+	})
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(matcher))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectQuery("").WithArgs(start, end).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Empty(t, report.Rows)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigFirstVersionUsesCreatedAtAndAuditsActor(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	cost, quota := 120.0, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-first").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 1, cost, quota, createdAt, int64(77), "req-first", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(9), cost, quota, createdAt, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-first", int64(9), cost, quota).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	err := NewAccountProfitabilityService(db).UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-first"})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigIdempotentReplayDoesNotWriteAgain(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	cost, quota := 120.0, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-replay").WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(int64(9)))
+	mock.ExpectCommit()
+	err := NewAccountProfitabilityService(db).UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-replay"})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigSubsequentVersionStoresRemainingValues(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	effectiveAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 18, 8, 0, 0, 0, time.UTC)
+	cost, quota := 120.0, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-next").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at"}).AddRow(int64(3), 100.0, 50.0, effectiveAt))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(CASE").WithArgs(int64(9), effectiveAt, now).WillReturnRows(sqlmock.NewRows([]string{"consumed"}).AddRow(10.0))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions SET ended_at").WithArgs(int64(3), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(2))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 2, 100.0, 50.0, now, int64(77), "req-next", now).WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(9), 100.0, 50.0, now, now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-next", int64(9), 100.0, 50.0).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	svc := NewAccountProfitabilityService(db)
+	svc.now = func() time.Time { return now }
+	err := svc.UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-next"})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigClearCreatesCostPendingVersion(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	effectiveAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 18, 8, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-clear").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at"}).AddRow(int64(3), 100.0, 50.0, effectiveAt))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions SET ended_at").WithArgs(int64(3), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(2))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny=NULL").WithArgs(int64(9), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 2, now, int64(77), "req-clear", now).WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-clear", int64(9)).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	svc := NewAccountProfitabilityService(db)
+	svc.now = func() time.Time { return now }
+	err := svc.UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, ActorUserID: 77, RequestID: "req-clear"})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigRejectsRequestIDReusedByAnotherAccount(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	cost, quota := 120.0, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-conflict").WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(int64(8)))
+	mock.ExpectRollback()
+	err := NewAccountProfitabilityService(db).UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-conflict"})
+	require.ErrorContains(t, err, "idempotency key conflict")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleProcurementUsesPermanentLossAndSettlementIdempotency(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	effective := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id").WithArgs("settle-1").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at", "version_status", "account_status", "expires_at"}).AddRow(int64(3), 100.0, 50.0, effective, "active", StatusError, nil))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions v SET status='settled'").WithArgs(int64(3), "settle-1").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement/settle", "settle-1", int64(9), "administrator_confirmed_expired").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	ok, err := NewAccountProfitabilityService(db).SettleProcurement(context.Background(), ProcurementSettlementInput{AccountID: 9, RequestID: "settle-1", Reason: "administrator_confirmed_expired", ActorUserID: 77})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleProcurementRepeatAfterSettlementIsIdempotent(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	effective := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id").WithArgs("settle-2").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at.*ORDER BY v.version_no DESC").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at", "version_status", "account_status", "expires_at"}).AddRow(int64(3), 100.0, 50.0, effective, "settled", StatusError, nil))
+	mock.ExpectCommit()
+	ok, err := NewAccountProfitabilityService(db).SettleProcurement(context.Background(), ProcurementSettlementInput{AccountID: 9, RequestID: "settle-2", Reason: "administrator_confirmed_expired", ActorUserID: 77})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleProcurementRejectsHealthyUnexpiredAccount(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	effective := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 18, 8, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id").WithArgs("settle-active").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at", "version_status", "account_status", "expires_at"}).AddRow(int64(3), 100.0, 50.0, effective, "active", StatusActive, now.Add(time.Hour)))
+	mock.ExpectRollback()
+	svc := NewAccountProfitabilityService(db)
+	svc.now = func() time.Time { return now }
+	ok, err := svc.SettleProcurement(context.Background(), ProcurementSettlementInput{AccountID: 9, RequestID: "settle-active", Reason: "administrator_confirmed_expired", ActorUserID: 77})
+	require.False(t, ok)
+	require.ErrorContains(t, err, "not permanently unavailable")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleProcurementRejectsRequestIDReusedByAnotherAccount(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id").WithArgs("settle-conflict").WillReturnRows(sqlmock.NewRows([]string{"id", "account_id"}).AddRow(int64(3), int64(8)))
+	mock.ExpectRollback()
+	ok, err := NewAccountProfitabilityService(db).SettleProcurement(context.Background(), ProcurementSettlementInput{AccountID: 9, RequestID: "settle-conflict", Reason: "expired", ActorUserID: 77})
+	require.False(t, ok)
+	require.ErrorContains(t, err, "idempotency key conflict")
+	require.NoError(t, mock.ExpectationsWereMet())
 }

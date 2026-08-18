@@ -1,8 +1,15 @@
 # T22 Channel Monitor Ops View 交接
 
-状态：`READY_FOR_ROOT_REVIEW`  
-基线：`main@9d5f658d039ae6f076e558c9d60f01d8de7993f7`  
-分支：`codex/t22-channel-monitor-ops-implementation`  
+状态：`READY_FOR_ROOT_REVIEW`
+
+原始基线：`main@9d5f658d039ae6f076e558c9d60f01d8de7993f7`
+
+刷新主线：`main@22cf4981dcad47e7998cd638fd55685e52e3f3e8`
+
+刷新合并提交：`f45c2b38b`
+
+分支：`codex/t22-channel-monitor-ops-implementation`
+
 工作区：`/Users/gongtengxinwen/.codex/worktrees/1181/sub2api搭建`
 
 ## 交付内容
@@ -24,10 +31,17 @@
 ## 验证
 
 - `pnpm vitest run src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts src/features/channel-monitor-v2/__tests__/MetricCell.spec.ts src/features/channel-monitor-v2/__tests__/RelayPulseMatrix.spec.ts src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts src/views/user/__tests__/ChannelStatusV2View.ops.spec.ts src/views/user/__tests__/ChannelStatusView.mode.spec.ts`
+- 刷新主线后复验：6 个测试文件、32 个测试全部通过。
 - `pnpm typecheck`
 - `pnpm build`
 - `git diff --check`
 - Playwright 本地 fixture：1440x900、390x844；两者页面宽度无溢出，24h 激活，详细分析可展开。
+
+## 主线刷新核对
+
+- 已在同一独立 worktree 将 `main@22cf4981d` 合入，合并过程无冲突。
+- `docs/project/project-progress.md` 与 `docs/project/native-sub-task-package-queue.md` 和刷新后的 main 完全一致，T23 登记未被候选覆盖。
+- 候选相对刷新后的 main 仅包含 T22 规格、计划、审查、交接、前端实现与直接测试。
 
 ## 发布与回滚
 

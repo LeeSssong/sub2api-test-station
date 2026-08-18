@@ -1,7 +1,11 @@
 # T22 Channel Monitor Ops View 实现自审
 
-日期：2026-08-18  
-基线：`main@9d5f658d039ae6f076e558c9d60f01d8de7993f7`  
+日期：2026-08-18
+
+原始基线：`main@9d5f658d039ae6f076e558c9d60f01d8de7993f7`
+
+刷新主线：`main@22cf4981dcad47e7998cd638fd55685e52e3f3e8`
+
 范围：官方 Channel Monitor V2 前端视图，当前 worktree `codex/t22-channel-monitor-ops-implementation`
 
 ## 结论
@@ -27,6 +31,7 @@
 - `pnpm build`：通过；仅保留既有 Vite chunk 警告。
 - `git diff --check`：通过。
 - 浏览器：本地 Vite `http://127.0.0.1:3000/monitor`，桌面截图 `.playwright-cli/page-2026-08-18T12-49-35-731Z.png`，移动截图 `.playwright-cli/page-2026-08-18T12-53-00-656Z.png`；截图目录不纳入提交。
+- 根审查刷新：合入 `main@22cf4981d` 后再次运行 6 文件/32 测试、typecheck、build 和 diff-check；T23 登记文档与 main 一致。
 
 ## 剩余风险
 

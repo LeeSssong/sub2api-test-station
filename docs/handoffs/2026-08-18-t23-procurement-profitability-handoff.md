@@ -2,8 +2,8 @@
 
 - Worktree: `/Users/gongtengxinwen/.codex/worktrees/1dc8/sub2api搭建`
 - Branch: `codex/t23-procurement-profitability-refresh`
-- Baseline main: `cbfe9ab7d10b071373afecb9b427a103f1df72cc`
-- Refreshed commits: `1678f4479`, `768b731c6`, `f966be4d4`, `533ded8d0`
+- Baseline main: `ff1f3434d422321a1bb3d140a9ee2f2696d66de7`
+- Refreshed commits: `85832074d`, `6cdad5080`, `ea02997d2`, `eed016632`, `78a29c1f0`
 - State: `READY_FOR_ROOT_REVIEW` (not merged/pushed/deployed)
 
 ## Delivered

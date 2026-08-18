@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19 与 T20 均已完成推送、发布和线上验收，当前全部为 `DONE`；T21 保持 `VERIFYING`，T22 保持 `BACKLOG`，T23 进入 `DESIGNING`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19 与 T20 均已完成推送、发布和线上验收，当前全部为 `DONE`；T21 进入 `INTEGRATING`，T22 保持 `BACKLOG`，T23 保持 `IMPLEMENTING`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@c2a1429623b22d0e5c3d4746a508d0f34e0a93e9`、tree `e41c1460b05ad1b040c2700fb54227b2dad0f947`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T20 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T051214Z-production-2858199.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-c2a142962-t20-zero-flow-v1.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -296,7 +296,7 @@
 
 ### T21 生产模型检测 sidecar 接入与离线状态纠正
 
-- 当前状态：`VERIFYING`。候选已合入、推送并完成无停机蓝绿发布；离线语义线上验收完成，真实 sidecar 检测验收等待外部制品与宿主配置。
+- 当前状态：`INTEGRATING`。sidecar 收口候选已刷新并合入根 `main@57c6c6159`；正在执行合并后直接相关门禁、发布预检、推送和生产验收。此前离线语义线上验收保持有效，当前目标是完成真实 sidecar 检测闭环。
 - 候选：`codex/t21-model-detector-sidecar@7120593f2db99757b4cf0d7de664d40e18391320`，基线 `main@74aa0d0126e7097cecb4d6d6df33b767da65a494`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t21-model-detector-sidecar`，交接 `docs/handoffs/2026-08-18-t21-model-detector-sidecar-handoff.md`。
 - 范围：后端显式区分 `ready`、`unconfigured`、`unavailable` detector 状态并通过现有 admin API/projection 暴露；前端显示“检测服务未接入/暂不可用”，仅在 `ready` catalog 中对未收录模型显示“检测器暂不支持”；原生连接测试和账号卡片原生探测保持不变；Compose 向 blue、green、worker 透传既有 URL/token 配置。
 - 验证：后端检测器 focused tests、前端账号监控 `51/51`、typecheck/build、Compose 合同、compile-only、gofmt 与 diff-check 均通过；无迁移、无业务数据写入，预期 `downtime_required=false`，以根预检为准。
@@ -311,7 +311,7 @@
 
 ### T23 自购账号独立采购成本与人民币利润模型
 
-- 当前状态：`IMPLEMENTING`。用户已明确批准最终业务设计（2026-08-18）；排在 T22 之后登记，不打断 T21 的生产验证、不解冻 T16，也不进入合并/部署车道，直到前序任务按单车道完成或由根总控明确处置。正式规格与实施计划已在独立 worktree 完成，执行会话已开始迁移与公式测试实现。
+- 当前状态：`IMPLEMENTING`。首轮候选 `0eff548b5` 经根审查发现时间字段扫描、多版本摊销、固定损失读取、自购归属、既有录入链和审计主体等真实缺陷，已退回同一独立 worktree 按 TDD 修复；该候选不进入根合并。T23 继续排在 T22 之后，不打断 T21 的整合/部署车道，也不解冻 T16。
 - 依赖与窗口：T21 当前 `VERIFYING`，T22 `BACKLOG`；T23 仅占用第二个设计/实现窗口。独立 worktree 已创建：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t23-procurement-profitability`，分支 `codex/t23-procurement-profitability`，基线为登记后的 `main@7b8367942`。必须继续保持该任务从最新干净 `main` 演进，不得从现有自购账号历史 worktree 或其他候选派生。
 - 目标：为明确归属的自购账号建立独立、可审计的人民币采购成本与利润模型，不与渠道账号 USD 上游成本混加，不修改用户扣费规则、原始 `usage_logs` 成本事实或渠道经营口径。采购成本、预计可用标准 Token 额度、版本化台账、历史生效、剩余成本/额度、采购损失、失效结算、审计、幂等与并发保护均按已批准业务规则实施。
 - 核心公式：采购成本倍率 = 采购成本 CNY / 预计可用额度 USD；已确认采购成本基于倍率前的标准 Token 消耗额度并以采购周期真实采购价封顶；人民币营收按已实际消耗的站内 USD 额度 1:1 计入；净利润 = CNY 营收 - 已确认采购成本 - 采购损失，内部运营消耗单列进入总成本。未录入成本显示“成本待录入”，不按零成本计算。

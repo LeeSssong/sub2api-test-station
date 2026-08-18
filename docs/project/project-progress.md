@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T21 sidecar 收口整合与 T23 候选退回（2026-08-18）：** T21 sidecar 收口候选 `dfa84dd6a` 已刷新至根最新总账并以 `main@57c6c6159` 合入；合并后 model-detector Go 测试、Compose 合同、宿主 success/maintenance 聚焦合同、shell 语法与 diff-check 通过，当前进入 `INTEGRATING`，下一步执行发布预检。T23 首轮候选 `0eff548b5` 未进入根合并：根审查确认真实 PostgreSQL 时间扫描类型、多版本摊销、结算固定损失、自购归属事实、既有采购录入链、actor 审计和 UI 数值展示仍不满足批准规则，已退回独立 worktree 继续 `IMPLEMENTING`。
+
 **T23 自购账号独立采购成本与人民币利润模型登记（2026-08-18）：** 用户已明确批准最终业务设计并要求立即登记、按现有单车道约束开始实施。T23 状态为 `IMPLEMENTING`，排在 T22 之后，不打断 T21 生产验证、不解冻 T16。独立 worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t23-procurement-profitability`，分支 `codex/t23-procurement-profitability`，基线为 `main@7b8367942`；正式规格与实施计划已形成，执行会话已开始迁移与公式测试实现。目标是为明确归属的自购账号建立独立、版本化、可审计的人民币采购成本与利润模型：收入按已实际消耗的站内额度 1:1 计入 CNY；成本按倍率前标准 Token 消耗额度确认并以真实采购价封顶；失效结算将剩余待摊成本记为采购损失；未录入成本显示“成本待录入”；渠道账号 USD 成本、用户扣费、原始 `usage_logs` 成本事实和既有账务公式保持不变。保留现有账号快速投影，新增 expand-only 采购成本台账、审计、幂等和并发保护，并在经营页提供独立自购账号人民币视图。预期 `downtime_required=false`，最终以根合并后预检为准。
 
 **本轮特惠分组 503 调度诊断（2026-08-18）：** 状态：进行中（只读排查）。用户反馈特惠分组仅开放三个自购账号且允许调度时，`/responses` 仍返回 503，客户端显示英文 `Service temporarily unavailable`。已确认当前代码存在两条不同 503 路径：本地账号调度耗尽直接生成 503，不带上游响应体，因此不会命中全局 `ErrorPassthroughRule`；上游真实 503 才会进入透传规则。当前只追踪三账号的调度筛选/冷却/能力门禁与本地错误文案，未修改账号、分组、生产配置、代码、迁移或发布状态。

@@ -6,7 +6,7 @@
 
 ## 1. 前端 RED
 
-- 修改 `MonitorV2View.spec.ts`，断言真实请求文案、P50/P95 保留、圈选项消失、倍率强化标记存在。
+- 修改 `MonitorV2View.spec.ts`，断言真实请求文案、P50 保留、P95 展示消失、圈选项消失、倍率强化标记存在。
 - 修改 `MonitorV2Timeline.spec.ts`，断言成功、失败、空桶全部为同一颜色和高度。
 - 运行两个 focused tests，确认因当前实现而失败。
 

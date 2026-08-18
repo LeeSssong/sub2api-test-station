@@ -51,16 +51,6 @@
       </div>
     </dl>
 
-    <dl class="mt-4 grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
-      <div v-for="metric in detailMetrics" :key="metric.key" class="min-w-0">
-        <dt class="text-xs text-gray-600 dark:text-gray-300">{{ metric.label }}</dt>
-        <dd class="mt-1 font-mono text-sm font-semibold tabular-nums text-gray-950 dark:text-white">
-          {{ metric.value }}
-        </dd>
-        <dd class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{{ metric.samples }}</dd>
-      </div>
-    </dl>
-
     <section class="mt-5 border-t border-gray-100 pt-4 dark:border-dark-700">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div>
@@ -99,16 +89,6 @@ const metrics = computed(() => [
   metricRow('tps', t('monitorV2.metric.tps'), props.group.tps, formatTPS),
   metricRow('latency', t('monitorV2.metric.latency'), props.group.latency, formatDuration),
   metricRow('cache', t('monitorV2.metric.cache'), props.group.cache_hit, formatPercent),
-])
-
-const detailMetrics = computed(() => [
-  metricRow('ttft-p95', t('monitorV2.metric.ttftP95'), props.group.ttft_p95, formatDuration),
-  metricRow(
-    'latency-p95',
-    t('monitorV2.metric.latencyP95'),
-    props.group.latency_p95,
-    formatDuration
-  ),
 ])
 
 const callEvidence = computed(() => {

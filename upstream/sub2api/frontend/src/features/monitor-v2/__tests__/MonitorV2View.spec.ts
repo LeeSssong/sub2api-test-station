@@ -192,16 +192,16 @@ describe('MonitorV2View', () => {
     expect(wrapper.text()).toContain('未配置监控')
     expect(wrapper.text()).toContain('样本不足')
     expect(wrapper.text()).toContain('未提供')
-    expect(wrapper.text()).toContain('TTFT P95')
-    expect(wrapper.text()).toContain('880 ms')
-    expect(wrapper.text()).toContain('总延迟 P95')
-    expect(wrapper.text()).toContain('2.4 s')
     for (const forbidden of [
       '9,842 / 9,910',
       '个模型',
       '查看模型',
       '收起模型',
       'gpt-5.4',
+      'TTFT P95',
+      '总延迟 P95',
+      '880 ms',
+      '2.4 s',
       'P95 表示',
       '指标按所选时间范围汇总',
       '普通用户仅展示公开分组',

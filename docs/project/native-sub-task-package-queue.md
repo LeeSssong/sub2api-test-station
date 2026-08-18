@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21 与 T22 均已完成推送、发布和线上验收，当前全部为 `DONE`；T23 进入 `READY_FOR_ROOT_REVIEW`，等待唯一发布总控串行整合。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22 与 T23 均已完成推送、发布和线上验收，当前全部为 `DONE`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@aee203ac4983c56e961525cbb9f587d16b5aa74d`、tree `cf5a5f8d46951701cb235b37dd3041551288e1e5`、迁移哈希保持 `bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951`；T21 普通蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T110720Z-production-3118657.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-aee203ac4-t21-sidecar-ready-v2.json`。
+- 当前发布状态：生产源 `main@d295e73050750c58edd040b6c6d517aad31358db`、tree `33b0053bc3dd3b743d74e7f64e71f59bb9cfe12f`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T23 维护蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T140601Z-production-3259304.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-d295e7305-t23-procurement-v2.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -312,10 +312,11 @@
 
 ### T23 自购账号独立采购成本与人民币利润模型
 
-- 当前状态：`READY_FOR_ROOT_REVIEW`。T22 已完成线上验收，T23 候选已刷新至最新已推送 `main@cbfe9ab7d10b071373afecb9b427a103f1df72cc`，最终提交 `62f61de60623adba534532cc6e93b6caa7fc9a04`、tree `b19e45551f878b47d174a899a9cbc6c2b7c490b7`，工作区干净，分支 `codex/t23-procurement-profitability-refresh`，交接 `docs/handoffs/2026-08-18-t23-procurement-profitability-handoff.md`。未推送、未合并、未部署，等待根总控授权。
-- 依赖与窗口：T21/T22 已完成 `DONE`；T23 进入唯一 `INTEGRATING` 前的根审查车道，不启动其他任务，不解冻 T16。
+- 当前状态：`DONE`。根 `main@d295e73050750c58edd040b6c6d517aad31358db`、tree `33b0053bc3dd3b743d74e7f64e71f59bb9cfe12f` 已推送 `origin/main`，包含 T23 合并提交 `95ef3c713` 与 migration 226 宿主 allowlist 提交 `d295e7305`。发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-d295e7305-t23-procurement-v2.json`（0600）；宿主记录 `/var/lib/sub2api/release-records/20260818T140601Z-production-3259304.json` 返回 `succeeded/promoted`、`rolled_back=false`、活动槽 `blue`，`release-state` 绑定 source/tree 与迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`。首次缺少网络探针 allowlist 的发布尝试在宿主变更前 fail-closed，补齐精确 allowlist 后同一车道重试成功。
+- 依赖与窗口：T21/T22/T23 均已完成 `DONE`；T16 等冻结/保护 worktree 未解冻，未启动后续任务。
 - 目标：为明确归属的自购账号建立独立、可审计的人民币采购成本与利润模型，不与渠道账号 USD 上游成本混加，不修改用户扣费规则、原始 `usage_logs` 成本事实或渠道经营口径。采购成本、预计可用标准 Token 额度、版本化台账、历史生效、剩余成本/额度、采购损失、失效结算、审计、幂等与并发保护均按已批准业务规则实施。
 - 核心公式：采购成本倍率 = 采购成本 CNY / 预计可用额度 USD；已确认采购成本基于倍率前的标准 Token 消耗额度并以采购周期真实采购价封顶；人民币营收按已实际消耗的站内 USD 额度 1:1 计入；净利润 = CNY 营收 - 已确认采购成本 - 采购损失，内部运营消耗单列进入总成本。未录入成本显示“成本待录入”，不按零成本计算。
 - 数据边界：保留 `accounts.procurement_cost_cny`、`estimated_usable_quota_usd`、`procurement_cost_effective_at` 作为当前投影；新增 expand-only、版本化、可审计采购成本台账，记录账号、成本、额度、生效/结束/结算、损失、状态、操作者和时间戳。不得迁移删除、历史回填、生产数据修改或重算账务。
 - 页面与验收：经营页新增独立“自购账号”人民币视图，展示采购成本、预计额度、标准额度消耗、利用率、已确认成本、待摊成本、采购损失、人民币营收、净利润、利润率和成本状态；提供明确的“确认失效并结算”二次确认；桌面及 390px 移动端无横向溢出。覆盖首次录入历史生效、后续版本生效、额度变更剩余摊销、失效结算、超额封顶、未配置和渠道 USD 汇总隔离。
-- 发布属性：预期 `downtime_required=false`，最终以根合并后的发布预检为准；若为 `true`，停在停机授权门禁。不得使用 GitHub Actions；T23 生产验收完成前不得启动依赖其结果的后续任务。
+- 发布属性：宿主最终记录为 `downtime_required=false`；迁移 226 按用户已给出的停机授权走受控维护切换，PostgreSQL/Redis/Caddy 身份保持不变。不得使用 GitHub Actions。
+- 线上专项验收：登录态经营页确认独立“自购账号 · 人民币”视图与渠道 USD 汇总分离，成本待录入、采购成本/预计额度、利用率、确认/待摊/损失/营收/净利润字段均按规则展示；账号监控真实入口显示“采购成本（CNY）”“预计可用额度（USD）”及派生倍率。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。宿主数据库确认 `226_account_procurement_cost_versions.sql` 已应用，版本台账当前 0 行，未发生历史回填；成本封顶、失效结算采购损失、幂等与 actor 审计由 T23 直接相关测试覆盖，本次未为制造样本修改生产数据。

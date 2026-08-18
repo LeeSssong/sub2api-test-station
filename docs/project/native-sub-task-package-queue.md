@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22 与 T23 均已完成推送、发布和线上验收，当前为 `DONE`；T24 候选已合入根 `main@6871ddaac`，当前为 `INTEGRATING`。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22 与 T23 均已完成推送、发布和线上验收，当前为 `DONE`；T24 根合并后直接相关门禁已通过，当前为 `DEPLOYING`。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@d295e73050750c58edd040b6c6d517aad31358db`、tree `33b0053bc3dd3b743d74e7f64e71f59bb9cfe12f`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T23 维护蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T140601Z-production-3259304.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-d295e7305-t23-procurement-v2.json`。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -323,6 +323,6 @@
 
 ### T24 特惠分组本地调度耗尽 503 纠正
 
-- 当前状态：`INTEGRATING`。独立候选 `codex/t24-local-scheduling-exhaustion@6871ddaac` 已经根审查并快进合入 `main`。实现保留 HTTP 503，为本地调度耗尽统一 `local_capacity_exhausted` 与中文泛化提示，管理员诊断为 `routing/platform/未选择上游账号`，真实上游 503 透传与诊断保持不变。
-- 依赖与窗口：T23 已完成 `DONE`；T24 是当前唯一进入整合/发布/验收车道的任务，正在根合并后直接相关门禁；T16 等冻结/保护 worktree 不解冻。
+- 当前状态：`DEPLOYING`。独立候选 `codex/t24-local-scheduling-exhaustion@6871ddaac` 已经根审查并快进合入 `main`。实现保留 HTTP 503，为本地调度耗尽统一 `local_capacity_exhausted` 与中文泛化提示，管理员诊断为 `routing/platform/未选择上游账号`，真实上游 503 透传与诊断保持不变。根合并后直接相关门禁均通过，正在推送发布身份并进入权威预检。
+- 依赖与窗口：T23 已完成 `DONE`；T24 是当前唯一进入整合/发布/验收车道的任务；T16 等冻结/保护 worktree 不解冻。
 - 验收边界：覆盖特惠分组仅允许自购账号且全部不可调度时的 `/responses`、Chat Completions 与流式/非流式本地拒绝；保留上游真实 503 透传；用户侧中文泛化提示与管理员诊断阶段/归属可区分；无迁移、无生产数据修改，预期 `downtime_required=false`。

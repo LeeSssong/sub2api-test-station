@@ -321,7 +321,7 @@ describe('UsageDetailDialog', () => {
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.003314')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.003566')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.unavailableReasons.endpointUnavailable')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.unavailableReasons.endpointUnavailable')
   })
 
   it('keeps the native fallback cost when strict evidence is confirmed', async () => {
@@ -419,7 +419,7 @@ describe('UsageDetailDialog', () => {
 
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
-    expect(wrapper.text()).toContain('admin.usageCostDetail.unavailableReasons.endpointUnsupported')
+    expect(wrapper.text()).not.toContain('admin.usageCostDetail.unavailableReasons.endpointUnsupported')
   })
 
   it('keeps native cost and profit when the evidence request fails', async () => {

@@ -185,9 +185,10 @@ func TestAccountFinancialReportPreservesActiveZeroRowsAndHistoricalUsage(t *test
 	now := beijingTime(t, "2026-08-13 12:00")
 	historicalAccount, historicalGroup := int64(9), int64(99)
 	reader := &financialUsageReaderStub{snapshot: &AccountFinancialUsageSnapshot{
-		Accounts: []AccountFinancialUsageAccount{{ID: 1, Active: true}, {ID: historicalAccount, Active: false}},
-		Groups:   []AccountFinancialUsageGroup{{ID: 10, Active: true}, {ID: historicalGroup, Active: false}},
-		Rows:     []AccountFinancialUsageRow{{GroupID: &historicalGroup, AccountID: historicalAccount, Requests: 1, Tokens: 2, UserCost: 3}},
+		Accounts:    []AccountFinancialUsageAccount{{ID: 1, Active: true}, {ID: historicalAccount, Active: false}},
+		Groups:      []AccountFinancialUsageGroup{{ID: 10, Active: true}, {ID: historicalGroup, Active: false}},
+		Memberships: []AccountFinancialUsageMembership{{AccountID: 1, GroupID: 10}},
+		Rows:        []AccountFinancialUsageRow{{GroupID: &historicalGroup, AccountID: historicalAccount, Requests: 1, Tokens: 2, UserCost: 3}},
 	}}
 	report, err := NewAccountFinancialService(&financialRepoStub{}, reader, func() time.Time { return now }).GetReport(context.Background(), AccountFinancialRange7D)
 	if err != nil {
@@ -201,6 +202,9 @@ func TestAccountFinancialReportPreservesActiveZeroRowsAndHistoricalUsage(t *test
 	}
 	if len(report.Groups) != 2 || report.Groups[0].ID != 10 || report.Groups[0].Historical || report.Groups[1].ID != historicalGroup || !report.Groups[1].Historical {
 		t.Fatalf("active zero/historical groups=%#v", report.Groups)
+	}
+	if len(report.Groups[0].Accounts) != 1 || report.Groups[0].Accounts[0].ID != 1 || report.Groups[0].Accounts[0].Amounts.Requests != 0 {
+		t.Fatalf("active bound zero account must be present in group=%#v", report.Groups[0])
 	}
 	if len(report.Groups[1].Accounts) != 1 || report.Groups[1].Accounts[0].ID != historicalAccount {
 		t.Fatalf("historical pair must retain scoped account=%#v", report.Groups[1])

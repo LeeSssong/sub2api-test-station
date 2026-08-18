@@ -16,6 +16,7 @@ var _ service.AccountFinancialUsageReader = (*usageLogRepository)(nil)
 
 const accountFinancialUsagePairQueryPattern = `(?s)SELECT.*ul\.group_id.*ul\.account_id.*COUNT\(\*\).*COALESCE\(SUM\(\s*COALESCE\(ul\.input_tokens, 0\)\s*\+ COALESCE\(ul\.output_tokens, 0\)\s*\+ COALESCE\(ul\.cache_creation_tokens, 0\)\s*\+ COALESCE\(ul\.cache_read_tokens, 0\)\s*\), 0\).*COALESCE\(SUM\(CASE WHEN COALESCE\(u\.role, ''\) = 'admin'.*COALESCE\(SUM\(CASE WHEN COALESCE\(u\.role, ''\) <> 'admin'.*FROM usage_logs ul\s+LEFT JOIN users u ON u\.id = ul\.user_id.*GROUP BY ul\.group_id, ul\.account_id`
 const accountFinancialProbeQueryPattern = `(?s)SELECT\s+group_id,\s+account_id,\s+COUNT\(\*\)::BIGINT.*FROM account_probe_cost_logs.*WHERE created_at >= \$1 AND created_at < \$2.*GROUP BY group_id, account_id`
+const accountFinancialUsageMembershipQueryPattern = `(?s)SELECT\s+ag\.account_id,\s+ag\.group_id\s+FROM account_groups ag\s+JOIN accounts a ON a\.id = ag\.account_id\s+JOIN groups g ON g\.id = ag\.group_id\s+WHERE a\.deleted_at IS NULL AND g\.deleted_at IS NULL.*ORDER BY ag\.group_id, ag\.account_id`
 
 func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 	ctx := context.Background()
@@ -34,6 +35,8 @@ func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}).
 			AddRow(int64(21), "active-group", nil).
 			AddRow(int64(22), "historical-group", from))
+	mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}).AddRow(int64(11), int64(21)))
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(12.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).
@@ -56,6 +59,7 @@ func TestReadAccountFinancialUsageUsesHalfOpenNativeAggregation(t *testing.T) {
 		{ID: 21, Name: "active-group", Active: true},
 		{ID: 22, Name: "historical-group", Active: false},
 	}, snapshot.Groups)
+	require.Equal(t, []service.AccountFinancialUsageMembership{{AccountID: 11, GroupID: 21}}, snapshot.Memberships)
 	require.Len(t, snapshot.Rows, 2)
 	require.Equal(t, int64(21), *snapshot.Rows[0].GroupID)
 	require.Equal(t, service.AccountFinancialUsageRow{
@@ -99,10 +103,20 @@ func TestReadAccountFinancialUsagePropagatesQueryScanAndCommitErrors(t *testing.
 				mock.ExpectBegin()
 				mock.ExpectQuery(accountsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}))
 				mock.ExpectQuery(groupsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
+				mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}))
 				mock.ExpectQuery(balanceQuery).WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0))
 				mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
 					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}).
 						AddRow(nil, "not-an-account-id", int64(1), int64(1), 0.0, 1.0, 1.0))
+			},
+		},
+		{
+			name: "membership query",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectQuery(accountsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}))
+				mock.ExpectQuery(groupsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
+				mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).WillReturnError(errors.New("membership query failed"))
 			},
 		},
 		{
@@ -111,6 +125,7 @@ func TestReadAccountFinancialUsagePropagatesQueryScanAndCommitErrors(t *testing.
 				mock.ExpectBegin()
 				mock.ExpectQuery(accountsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}))
 				mock.ExpectQuery(groupsQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
+				mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}))
 				mock.ExpectQuery(balanceQuery).WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0))
 				mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
 					WillReturnRows(sqlmock.NewRows([]string{"group_id", "account_id", "requests", "tokens", "operational_cost", "business_cost", "business_revenue"}))
@@ -145,6 +160,8 @@ func TestReadAccountFinancialUsageProbeFailurePreservesNativeSnapshot(t *testing
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}).AddRow(int64(11), "native", "api_key", "sub", nil))
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageGroupsQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}).AddRow(int64(21), "Pro", nil))
+	mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}).AddRow(int64(11), int64(21)))
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageBalanceQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(88.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).
@@ -179,6 +196,8 @@ func TestReadAccountFinancialUsageProbeScanFailureReturnsStableProbeError(t *tes
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "platform", "deleted_at"}))
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageGroupsQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "deleted_at"}))
+	mock.ExpectQuery(accountFinancialUsageMembershipQueryPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "group_id"}))
 	mock.ExpectQuery(regexp.QuoteMeta(accountFinancialUsageBalanceQuery)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(12.5))
 	mock.ExpectQuery(accountFinancialUsagePairQueryPattern).WithArgs(from, to).

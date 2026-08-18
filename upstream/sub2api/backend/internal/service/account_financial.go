@@ -93,6 +93,7 @@ type AccountFinancialUsageReader interface {
 type AccountFinancialUsageSnapshot struct {
 	Accounts       []AccountFinancialUsageAccount
 	Groups         []AccountFinancialUsageGroup
+	Memberships    []AccountFinancialUsageMembership
 	Rows           []AccountFinancialUsageRow
 	ProbeRows      []AccountProbeCostAggregate
 	ProbeDataError bool
@@ -112,6 +113,11 @@ type AccountFinancialUsageGroup struct {
 	ID     int64
 	Name   string
 	Active bool
+}
+
+type AccountFinancialUsageMembership struct {
+	AccountID int64
+	GroupID   int64
 }
 
 type AccountFinancialUsageRow struct {
@@ -380,6 +386,21 @@ func (s *AccountFinancialService) GetReport(ctx context.Context, r AccountFinanc
 		group := &AccountFinancialGroupReport{ID: meta.ID, Name: financialGroupName(meta.Name, meta.ID)}
 		groupByID[meta.ID] = &groupAccumulator{report: group, accounts: make(map[int64]*AccountFinancialAccountReport)}
 		report.Groups = append(report.Groups, group)
+	}
+	for _, membership := range snap.Memberships {
+		group := groupByID[membership.GroupID]
+		account := accountByID[membership.AccountID]
+		if group == nil || account == nil {
+			continue
+		}
+		if _, exists := group.accounts[membership.AccountID]; exists {
+			continue
+		}
+		groupAccount := &AccountFinancialAccountReport{
+			ID: account.ID, Name: account.Name, Type: account.Type, Platform: account.Platform, Historical: account.Historical,
+		}
+		group.accounts[membership.AccountID] = groupAccount
+		group.report.Accounts = append(group.report.Accounts, groupAccount)
 	}
 	var historicalGroups []*AccountFinancialGroupReport
 	var unassigned *groupAccumulator

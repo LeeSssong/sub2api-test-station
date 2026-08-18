@@ -19,11 +19,19 @@ import (
 )
 
 const (
-	accountFinancialUsageAccountsQuery = `SELECT id, name, type, platform, deleted_at FROM accounts ORDER BY id`
-	accountFinancialUsageGroupsQuery   = `SELECT id, name, deleted_at FROM groups ORDER BY id`
-	accountFinancialUsageBalanceQuery  = `SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`
-	accountFinancialProbeErrorCode     = "probe_aggregate_unavailable"
-	accountFinancialProbeQuery         = `
+	accountFinancialUsageAccountsQuery   = `SELECT id, name, type, platform, deleted_at FROM accounts ORDER BY id`
+	accountFinancialUsageGroupsQuery     = `SELECT id, name, deleted_at FROM groups ORDER BY id`
+	accountFinancialUsageMembershipQuery = `
+		SELECT ag.account_id, ag.group_id
+		FROM account_groups ag
+		JOIN accounts a ON a.id = ag.account_id
+		JOIN groups g ON g.id = ag.group_id
+		WHERE a.deleted_at IS NULL AND g.deleted_at IS NULL
+		ORDER BY ag.group_id, ag.account_id
+	`
+	accountFinancialUsageBalanceQuery = `SELECT COALESCE(SUM(balance), 0) FROM users WHERE deleted_at IS NULL`
+	accountFinancialProbeErrorCode    = "probe_aggregate_unavailable"
+	accountFinancialProbeQuery        = `
 		SELECT
 			group_id,
 			account_id,
@@ -98,6 +106,26 @@ func (r *usageLogRepository) ReadAccountFinancialUsage(ctx context.Context, from
 		return nil, err
 	}
 	if err := groups.Close(); err != nil {
+		return nil, err
+	}
+
+	memberships, err := tx.QueryContext(ctx, accountFinancialUsageMembershipQuery)
+	if err != nil {
+		return nil, err
+	}
+	for memberships.Next() {
+		var membership service.AccountFinancialUsageMembership
+		if err := memberships.Scan(&membership.AccountID, &membership.GroupID); err != nil {
+			_ = memberships.Close()
+			return nil, err
+		}
+		snapshot.Memberships = append(snapshot.Memberships, membership)
+	}
+	if err := memberships.Err(); err != nil {
+		_ = memberships.Close()
+		return nil, err
+	}
+	if err := memberships.Close(); err != nil {
 		return nil, err
 	}
 

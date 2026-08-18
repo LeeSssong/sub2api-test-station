@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23 与 T24 均为 `DONE`；T25“自建渠道监控最终视觉与主动探测重试收口”已获用户明确部署授权，当前进入 `DEPLOYING`，发布源以本次合并后预检确认的 `main` 为准。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24 与 T25 均为 `DONE`；T25 已从 `main@20c563345fe802b9662faf9189ca8cc7ecb3d3aa` 完成推送、无停机蓝绿发布和线上验收。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@a76dff256d53b7e3b9f0d3df8aa8d1699edcd39b`、tree `b67d198f4f7a7fd1dbc72cc881d30cfa3103a53a`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T24 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T150106Z-production-3302557.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-a76dff256-t24-local-exhaustion-v1.json`。
 - 非 `main` worktree 清理（2026-08-18）：24 个非 `main` worktree 已完成归档并移除，当前仅保留根 `main` worktree。恢复归档 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-worktrees-2026-08-18-bdb07d354/non-main-refs.bundle`，SHA-256 `0ea027c4dcd0ae9a243bb2f669ee23119b2e85e9e3dfc2f7d07a848760868a8a`，bundle/manifest 校验通过；`upstream-resilience-hardening` 的 dirty diff 已单独保存。非 `main` 分支引用暂保留，不触碰生产，不使用 GitHub Actions。
@@ -21,7 +21,7 @@
 
 ### T25 自建渠道监控最终视觉与主动探测重试收口
 
-- 当前状态：`DEPLOYING`。候选 `codex/t25-channel-monitor-final@3e49fb8e7` 已完成规格、计划、TDD、直接相关测试、构建和视觉核对，并无冲突合入根 `main@953ff10300f9e0740782928f94ef949da2b21fca`，P95 删除修正已合入后续根提交。用户已查看历史真实页面并批准最终设计，现已明确授权部署；临时历史预览 `/private/tmp/sub2api-monitor-v3-preview` 为 detached 只读视觉证据，相对 `main` 无领先提交，不得进入正式候选。
+- 当前状态：`DONE`。候选 `codex/t25-channel-monitor-final@3e49fb8e7` 已完成规格、计划、TDD、直接相关测试、构建和视觉核对，并无冲突合入根 `main@20c563345fe802b9662faf9189ca8cc7ecb3d3aa`；最终源已推送并通过无停机蓝绿发布。宿主记录 `/var/lib/sub2api/release-records/20260818T181312Z-production-3451615.json`，结果 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；源 tree `e62afb7f22a9519ec985416a4994fb2fa216d4da`，迁移哈希保持 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`。线上通过原生管理员设置将 `channel_monitor_enabled=true`、`channel_monitor_mode=v1` 生效；`/monitor` 已渲染自建 Monitor V2，中文卡片保留 P50/TPS/缓存率/倍率，P95 不展示，有效调用文案为“基于 N 次真实请求。”。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-20c563345-t25-channel-monitor-v1.json`。临时历史预览 `/private/tmp/sub2api-monitor-v3-preview` 为 detached 只读视觉证据，不进入候选。
 - 原生盘点：复用现有 `MonitorV2View`、`MonitorV2GroupCard`、`MonitorV2Timeline`、Monitor V2 API/统计合同和 `channel_monitor_service` 主动探测链；T19 已实现的 `actual_cost > 0` 有效服务响应统计继续作为真实请求口径，不新增监控事实源或平行探测器。
 - 页面范围：保留旧版卡片结构、TTFT/总延迟 P50、TPS、缓存率及各指标样本数，不展示 P95；删除模型数量/展开行、模型列表、P95 解释和底部两条说明；将有效调用文案统一为“基于 N 次真实请求。”；倍率显著强化；趋势柱体统一青绿色、固定高度与宽度，耗时和探测结果不改变颜色或高低。中文预览通过既有 `sub2api_locale=zh` 验证，不修改全站语言默认或旧版布局。
 - 探测范围：每轮首次主动探测失败后再重试 5 次，任一次成功即记录本轮成功，只有总计 6 次均失败才记录本轮失败；成功不继续重试。保持既有调度、账号隔离、计费和错误分类语义不变。

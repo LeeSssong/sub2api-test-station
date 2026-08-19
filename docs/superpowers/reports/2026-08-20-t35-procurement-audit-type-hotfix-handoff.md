@@ -4,10 +4,10 @@
 
 - 状态：`READY_FOR_ROOT_REVIEW`。
 - 分支：`codex/t35-procurement-audit-type-hotfix`。
-- 精确基线：刷新后 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`。
+- 精确基线：刷新后 `main@db7d557886b104ea9eae6c88b5a3a9c76fbc21a1`（tree `79d903503e89a6e32d514133d1991099c294e9a7`）。
 - 刷新后已验证实现合并 HEAD：`d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。
 - 刷新后已验证实现 tree：`a23ff0f9764a307347b0aa3693023cfee319db16`。
-- 当前分支 tip：以交接时 `git rev-parse HEAD` 与 `git rev-parse HEAD^{tree}` 为准；后续仅文档提交不改变上述已验证实现内容。
+- 当前分支 tip：`3c468dbf5b1bf2ab65d6b5b6a5a12ddb9965c4f4`；tree：`90ca87d4a9dd484669f9e06cac27d3437eb2e8a7`。
 - 工作区：干净；未合并、未推送、未部署、未触碰生产。
 - 根总控仍拥有合并、推送、发布预检、部署和线上验收权限。
 
@@ -80,7 +80,7 @@ go build ./cmd/server
 
 ## 刷新后验证
 
-候选已在同一 worktree 无冲突整合最新 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`，刷新合并提交为 `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。刷新后重新执行并通过：
+候选先在同一 worktree 无冲突整合 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`（刷新合并提交 `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`），随后再次整合 `main@db7d557886b104ea9eae6c88b5a3a9c76fbc21a1`（当前合并提交 `3c468dbf5b1bf2ab65d6b5b6a5a12ddb9965c4f4`）。后一次刷新后重新执行并通过：
 
 ```text
 go test ./internal/service -run 'Test(UpdateProcurementConfig|SettleProcurement|ProcurementAudit)' -count=1
@@ -89,6 +89,8 @@ go build ./cmd/server
 gofmt -d ...
 git diff --check
 ```
+
+本次 `db7d55788` 刷新后的实际输出：service `ok ... 0.986s`，admin handler `ok ... 0.584s`，`go build ./cmd/server` 成功，`gofmt -d` 无输出，`git diff --check` 成功；相对 `main@db7d55788` 的禁止目录（migrations、schema/Ent、frontend、`.github/workflows`）差异为零。真实 PostgreSQL/Redis testcontainers 集成命令以 `CI=1` fail-closed 执行，三个审计子测试均 `PASS`（`ok .../internal/repository 9.718s`）。
 
 本机 Docker/testcontainers 实际可用，使用 PostgreSQL 18.1、Redis 8.4 容器并以 `CI=1` fail-closed 重跑真实 integration；录入、清空、结算三个子测试均 `PASS`。刷新后相对新基线的范围仍仅为 T35 规格、计划、交接、service/repository 直接测试和测试 helper 修正；迁移、配置、schema、frontend 与 GitHub Actions 无变化。
 
@@ -115,4 +117,4 @@ git diff --check
 
 - 未执行合并后 `main` 重测、推送、发布预检、部署或线上验收，按任务边界留给根总控。
 - 全量 Go suite 的既有文案失败未在 T35 范围内修复。
-- 根总控可在刷新后已验证实现 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`；当前分支 tip 仅包含后续文档封装提交。
+- 根总控可在刷新后已验证实现 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`；当前分支 tip `3c468dbf5b1bf2ab65d6b5b6a5a12ddb9965c4f4` 仅包含后续文档整合提交。

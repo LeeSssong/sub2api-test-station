@@ -132,7 +132,7 @@ func TestAccountProcurementAuditParametersUsePostgreSQLTypes(t *testing.T) {
 		require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT status, settlement_request_id, loss_cny::double precision FROM account_procurement_cost_versions WHERE account_id=$1 AND version_no=1`, account.ID).Scan(&status, &settlementRequest, &loss))
 		require.Equal(t, "settled", status)
 		require.Equal(t, requestID, settlementRequest)
-		require.Zero(t, loss)
+		require.Equal(t, 100.0, loss)
 		var accountType, reasonType, reason string
 		var savedAccountID int64
 		require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT jsonb_typeof(extra->'account_id'), (extra->>'account_id')::bigint, jsonb_typeof(extra->'reason'), extra->>'reason' FROM audit_logs WHERE request_id=$1 ORDER BY id DESC LIMIT 1`, requestID).Scan(&accountType, &savedAccountID, &reasonType, &reason))

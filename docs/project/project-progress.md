@@ -2,7 +2,7 @@
 
 **T32 账号评分回归修复（2026-08-19）：** 状态：已完成（`DONE`）。候选已从根登记提交刷新，合入并推送为 `main@584b37bba6ed05d86a5a152160d37a9f92fefc9c`，source/tested tree `6b595b29a2ae8754f267541fafaff07fe4702840`；T32 账号监控 focused 测试、`go vet`、构建和 diff-check 通过。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-584b37bba-t32.json`。宿主记录 `/var/lib/sub2api/release-records/20260819T153809Z-production-245313.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `green`；公网三项健康检查均 200。管理员线上专项验收实测 91 张账号卡，其中 56 个暂停账号全部保留原生探测评分和全站排名，91/91 有评分卡、0 张暂无评分卡。评分、当前状态和排名继续只读 Sub 原生主动探测，不改评分公式、权重、计费、调度策略或数据库事实源。
 
-**T33 经营页账号卡片与搜索（2026-08-19）：** 状态：进行中（`DESIGNING`）。目标：经营页 USD/CNY 统一为每账号一张独立卡片并支持搜索；本站经营展示按 CNY 口径，底层账号扣费额度仍为 USD，按 1 USD = 1 CNY 的产品换算关系展示，不新增汇率或第二账务源。范围限定为 `AccountProfitabilityView`、现有原生经营 API 字段、搜索/排序/响应式布局和直接相关测试；保留现有原生财务公式、采购台账和保存链路，不改账务写入。计划从最新干净 `main` 创建独立用户可见任务和 worktree，完成后由根总控单独合并、部署和线上验收。
+**T33 经营页账号卡片与搜索（2026-08-20）：** 状态：进行中（`VERIFYING`，等待用户真机验收）。候选已合入并推送为 `main@0839c7878d8d0c1f59fd11a3f0d3970de784ca1a`，tested tree `9d71116de98949f965c905d8a5fb4f66ce637ce5`；直接相关前端 33/33、typecheck、production build、diff-check 通过。0600 evidence `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-0839c7878-t33.json`；宿主发布记录由发布链生成，`downtime_required=false`、`result=succeeded`、活动槽 `blue`，API/worker/model-detector healthy，公网 `/healthz`、`/readyz`、`/health` 均 200。真机页面验收由用户本人完成，根总控不代验收；T33 候选 worktree 在用户确认前保留。
 
 **T34 渠道状态原生探测重构（2026-08-19）：** 状态：待启动（`BACKLOG`）。依赖 T32/T33 发布后的最新 `main`。目标：渠道状态完全读取 Sub 原生账号主动探测，不再使用真实请求统计或自建渠道探测；可用性、首字速度、平均耗时和时间线均来自官方账号探测数据；分组内任一可调度账号在时间桶内探测成功即记为可用。范围限定为 Monitor V2 原生数据投影、分组聚合、文案和样式；分组倍率靠近分组名称显示，移除“旗舰”，页面宽度保持当前尺度，不做额外放大。由根总控在 T32/T33 收口后创建独立用户可见任务、合并、部署和线上验收。
 

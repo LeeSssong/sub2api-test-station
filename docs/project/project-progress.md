@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T36 CNY/USD 额度关系明示文案（2026-08-20）：** 状态：`DESIGNING`。独立任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已从最新 `main` 创建独立 worktree。只读审计确认 T33 总账要求“本站 CNY 与 USD 额度按 1:1 理解”尚未在 `AccountProfitabilityView` 源码和生产懒加载包中形成可见文案。已登记极窄修复：补中英文文案与直接组件合同测试，不改变账务公式、金额、API、查询、采购链路、迁移或生产数据；根总控单车道发布，预期 `downtime_required=false`。真机验收按用户指令不阻塞。
+**T36 CNY/USD 额度关系明示文案（2026-08-20）：** 状态：`DEPLOYING`。独立任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现和根合并；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`、合并树 `62e55842aaff92fe6c9614841480a55c7712144d`。只读审计确认 T33 总账要求“本站 CNY 与 USD 额度按 1:1 理解”尚未在页面形成可见文案，现已补齐中英文 i18n 节点与直接组件合同测试。合并后页面+locale 32/32、typecheck、production build、范围和 diff 检查通过；不改变账务公式、金额、API、查询、采购链路、迁移或生产数据；根总控正在执行推送、预检、蓝绿部署和线上健康验证，预期 `downtime_required=false`。真机验收按用户指令不阻塞。
 
 **T34 渠道状态原生探测重构生产收口（2026-08-20）：** 状态：`DONE`。发布源 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`、tested tree `a84f38f5ffe32e58d020d0b719171714f278b02e`；证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-c1f10231-t34.json`。蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `blue`、`rolled_back=false`；宿主记录 `/var/lib/sub2api/release-records/20260819T184343Z-production-394397.json`，迁移哈希保持 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`。后端 Monitor V2/Account Monitor 聚焦测试、`go build ./cmd/server`、前端 8 files/36 tests、typecheck、production build、精确 source guard 与 diff-check 均通过；公网 `/healthz`、`/readyz`、`/health` 均 200。无迁移、无配置变更、无生产数据写入；登录态桌面/390px视觉截图未执行，按用户指令不阻塞真机验收和后续任务。
 

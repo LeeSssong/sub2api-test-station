@@ -280,8 +280,9 @@ func TestSelfPurchasedReportOwnershipComesOnlyFromLedgerOrProjection(t *testing.
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	matcher := sqlmock.QueryMatcherFunc(func(expected, actual string) error {
-		if strings.Contains(strings.ToLower(actual), "a.type='oauth'") || strings.Contains(strings.ToLower(actual), "a.type = 'oauth'") {
-			return errors.New("oauth account type must not imply procurement ownership")
+		lower := strings.ToLower(actual)
+		if strings.Count(lower, "a.type = 'oauth'")+strings.Count(lower, "a.type='oauth'") < 2 {
+			return errors.New("self-purchased report must restrict accounts to oauth")
 		}
 		for _, required := range []string{"account_procurement_cost_versions", "billing_mode", "usage_completeness", "image_count", "video_count", "request_type"} {
 			if !strings.Contains(actual, required) {
@@ -298,6 +299,27 @@ func TestSelfPurchasedReportOwnershipComesOnlyFromLedgerOrProjection(t *testing.
 	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
 	require.NoError(t, err)
 	require.Empty(t, report.Rows)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigRepricesCostPendingVersionWithoutScanningNulls(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 19, 8, 0, 0, 0, time.UTC)
+	cost, quota := 7.7, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-pending-reprice").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at"}).AddRow(int64(3), nil, nil, now.Add(-time.Hour)))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions SET ended_at").WithArgs(int64(3), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(2))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 2, cost, quota, now, int64(77), "req-pending-reprice", now).WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(9), cost, quota, now, now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-pending-reprice", int64(9), cost, quota).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	svc := NewAccountProfitabilityService(db)
+	svc.now = func() time.Time { return now }
+	require.NoError(t, svc.UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-pending-reprice"}))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

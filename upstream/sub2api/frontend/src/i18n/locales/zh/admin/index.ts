@@ -48,7 +48,7 @@ export default {
     loading: '正在加载经营数据…', refreshing: '正在刷新…', loadError: '账号盈利数据加载失败，请重试。',
     retry: '重试',
     columns: { account: '账号', requests: '请求数', tokens: 'Token', accountCost: '账号成本', userCost: '用户扣费', profit: '利润', margin: '利润率' },
-    summary: { requests: '请求数', tokens: 'Token', accountCost: '账号计费', userCost: '用户扣费', profit: '利润', margin: '利润率', probeCost: '本站探测花费', unconsumedBalance: '用户未消费余额', operationalCost: '内部运营消耗', businessCost: '业务消耗', businessRevenue: '业务营收', totalCost: '总消耗', netProfit: '净利润', externalMargin: '对外毛利率', includedInTotal: '已包含在总消耗中' },
+    summary: { requests: '请求数', tokens: 'Token', accountCost: '账号计费', userCost: '用户扣费', profit: '利润', margin: '利润率', probeCost: '本站探测花费', unconsumedBalance: '用户未消费余额', operationalCost: '内部运营消耗', businessCost: '业务消耗', businessRevenue: '业务营收', totalCost: '总消耗', netProfit: '经营利润', externalMargin: '对外毛利率', includedInTotal: '已包含在总消耗中' },
     table: { account: '账号' },
     roleHistoryNote: '内部运营按当前管理员角色识别，历史角色变化可能影响历史区间分类',
     sort: { label: '账号排序', ascending: '升序', descending: '降序' },

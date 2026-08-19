@@ -9,7 +9,7 @@
           <h1 class="text-2xl font-semibold">{{ t('admin.accountProfitability.title') }}</h1>
           <p class="text-sm text-gray-500">{{ t('admin.accountProfitability.description') }}</p>
         </div>
-        <button class="btn btn-secondary shrink-0" data-test="financial-refresh" @click="load">
+        <button class="btn btn-secondary shrink-0" data-test="financial-refresh" @click="refreshCurrentView">
           {{ t('common.refresh') }}
         </button>
       </header>
@@ -27,42 +27,42 @@
         </button>
       </nav>
 
-      <div v-if="loading" data-test="financial-loading" class="text-sm text-gray-500">
+      <div class="inline-flex max-w-full rounded border border-gray-200 p-1 dark:border-gray-700" role="group" aria-label="经营视图">
+        <button
+          class="min-h-9 px-3 py-1.5 text-sm"
+          :class="activeView === 'usd' ? 'bg-primary-600 text-white' : 'text-gray-600 dark:text-gray-300'"
+          data-test="view-usd"
+          :aria-pressed="activeView === 'usd'"
+          @click="selectView('usd')"
+        >经营结果 · USD</button>
+        <button
+          class="min-h-9 px-3 py-1.5 text-sm"
+          :class="activeView === 'cny' ? 'bg-primary-600 text-white' : 'text-gray-600 dark:text-gray-300'"
+          data-test="view-cny"
+          :aria-pressed="activeView === 'cny'"
+          @click="selectView('cny')"
+        >自购专题 · CNY</button>
+      </div>
+
+      <div v-if="activeView === 'usd' && loading" data-test="financial-loading" class="text-sm text-gray-500">
         {{ t('admin.accountProfitability.loading') }}
       </div>
-      <div v-if="refreshing" data-test="financial-refreshing" class="text-xs text-gray-500">
+      <div v-if="activeView === 'usd' && refreshing" data-test="financial-refreshing" class="text-xs text-gray-500">
         {{ t('admin.accountProfitability.refreshing') }}
       </div>
       <div
-        v-if="loadError"
+        v-if="activeView === 'usd' && loadError"
         class="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700"
         data-test="financial-load-error"
         role="alert"
       >
         <span>{{ loadError }}</span>
-        <button class="btn btn-secondary ml-3" data-test="financial-retry" @click="load">
+        <button class="btn btn-secondary ml-3" data-test="financial-retry" @click="loadUSD">
           {{ t('admin.accountProfitability.retry') }}
         </button>
       </div>
 
-      <section class="card min-w-0 space-y-3" data-test="self-purchased-panel">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div><h2 class="text-lg font-semibold">自购账号 · 人民币</h2><p class="text-xs text-gray-500">独立于渠道 USD 汇总；按标准额度消耗确认采购成本。</p></div>
-          <button class="btn btn-secondary shrink-0" data-test="self-purchased-refresh" @click="loadSelfPurchased">刷新</button>
-        </div>
-        <div v-if="selfPurchasedError" class="text-sm text-red-600" role="alert">{{ selfPurchasedError }}</div>
-        <div v-if="selfPurchasedLoaded" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div class="min-w-0"><div class="text-xs text-gray-500">采购成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.procurement_cost_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">人民币营收</div><div class="font-semibold">{{ cny(selfPurchased.summary.revenue_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
-        </div>
-        <div v-if="selfPurchasedLoaded && selfPurchased.rows.length" class="overflow-x-auto">
-          <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
-        </div>
-      </section>
-
-      <template v-if="hasLoaded">
+      <template v-if="activeView === 'usd' && hasLoaded">
         <div class="text-xs text-gray-500" data-test="financial-generated-at">{{ generatedAt }}</div>
 
         <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5" data-test="summary-grid">
@@ -77,6 +77,9 @@
             <div v-if="card.note" class="mt-1 text-xs text-gray-500">{{ card.note }}</div>
           </article>
         </section>
+        <p class="text-xs text-gray-500" data-test="usd-cny-exclusion-note">
+          USD 经营结果未含自购账号 CNY 采购成本；自购实际采购利润请查看自购专题。
+        </p>
         <p class="text-xs text-gray-500" data-test="financial-role-history-note">
           {{ t('admin.accountProfitability.roleHistoryNote') }}
         </p>
@@ -197,6 +200,33 @@
           </div>
         </section>
       </template>
+
+      <section v-if="activeView === 'cny'" class="card min-w-0 space-y-4" data-test="self-purchased-panel">
+        <div>
+          <h2 class="text-lg font-semibold">自购账号 · 人民币</h2>
+          <p class="text-xs text-gray-500">独立于渠道 USD 汇总；按标准额度消耗确认采购成本。</p>
+        </div>
+        <div v-if="selfPurchasedLoading" data-test="self-purchased-loading" class="text-sm text-gray-500">加载中</div>
+        <div v-if="selfPurchasedRefreshing" data-test="self-purchased-refreshing" class="text-xs text-gray-500">刷新中</div>
+        <div v-if="selfPurchasedError" class="text-sm text-red-600" data-test="self-purchased-error" role="alert">
+          {{ selfPurchasedError }}
+          <button class="btn btn-secondary ml-3" data-test="self-purchased-retry" @click="loadSelfPurchased">重试</button>
+        </div>
+        <template v-if="selfPurchasedLoaded">
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7" data-test="self-purchased-summary-grid">
+            <div class="min-w-0" data-test="self-summary-account-count"><div class="text-xs text-gray-500">自购账号数</div><div class="font-semibold">{{ selfPurchased.summary.account_count }}</div></div>
+            <div class="min-w-0" data-test="self-summary-revenue"><div class="text-xs text-gray-500">人民币营收</div><div class="font-semibold">{{ cny(selfPurchased.summary.revenue_cny) }}</div></div>
+            <div class="min-w-0" data-test="self-summary-confirmed-cost"><div class="text-xs text-gray-500">已确认采购成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.confirmed_cost_cny) }}</div></div>
+            <div class="min-w-0" data-test="self-summary-pending-cost"><div class="text-xs text-gray-500">待摊成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.pending_cost_cny) }}</div></div>
+            <div class="min-w-0" data-test="self-summary-loss"><div class="text-xs text-gray-500">采购损失</div><div class="font-semibold">{{ cny(selfPurchased.summary.procurement_loss_cny) }}</div></div>
+            <div class="min-w-0" data-test="self-summary-net-profit"><div class="text-xs text-gray-500">人民币净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
+            <div class="min-w-0" data-test="self-summary-margin"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
+          </div>
+          <div v-if="selfPurchased.rows.length" class="min-w-0 overflow-x-auto" data-test="self-purchased-table-wrap">
+            <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
+          </div>
+        </template>
+      </section>
     </main>
   </AppLayout>
 </template>
@@ -215,11 +245,13 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import type { SelfPurchasedReport } from '@/api/admin/selfPurchasedProfitability'
 
 type FinancialScope = { kind: 'all' } | { kind: 'group'; id: number; unassigned: boolean }
+type FinancialView = 'usd' | 'cny'
 type FinancialSortKey = 'operational_cost' | 'business_cost' | 'business_revenue' | 'total_cost' | 'net_profit' | 'external_margin'
 type FinancialSort = { key: FinancialSortKey; direction: 'asc' | 'desc' }
 type DisplayMetric = { key: string; label: string; value: string; note?: string; tone?: string }
 
 const { t } = useI18n()
+const activeView = ref<FinancialView>('usd')
 const activeRange = ref<FinancialRange>('today')
 const activeScope = ref<FinancialScope>({ kind: 'all' })
 const sort = ref<FinancialSort>({ key: 'net_profit', direction: 'desc' })
@@ -229,8 +261,12 @@ const loadError = ref('')
 const hasLoaded = ref(false)
 const selfPurchased = ref<SelfPurchasedReport>({ start_date:'', end_date:'', generated_at:'', currency:'CNY', summary:{procurement_cost_cny:0,standard_consumed_usd:0,confirmed_cost_cny:0,pending_cost_cny:0,procurement_loss_cny:0,revenue_cny:0,net_profit_cny:null,margin:null,account_count:0}, rows:[] })
 const selfPurchasedLoaded = ref(false)
+const selfPurchasedLoadedRange = ref<FinancialRange | null>(null)
+const selfPurchasedLoading = ref(false)
+const selfPurchasedRefreshing = ref(false)
 const selfPurchasedError = ref('')
 let requestSequence = 0
+let selfPurchasedRequestSequence = 0
 let timer: ReturnType<typeof setInterval> | undefined
 
 const emptyAmounts = (): FinancialAmounts => ({
@@ -357,11 +393,27 @@ async function settleSelfPurchased(accountId: number) {
 }
 
 async function loadSelfPurchased() {
+	const sequence = ++selfPurchasedRequestSequence
+	if (selfPurchasedLoaded.value) selfPurchasedRefreshing.value = true
+	else selfPurchasedLoading.value = true
   selfPurchasedError.value = ''
-  try { selfPurchased.value = await adminAPI.selfPurchasedProfitability.get({}); selfPurchasedLoaded.value = true } catch { selfPurchasedError.value = '自购账号数据加载失败' }
+  try {
+    const next = await adminAPI.selfPurchasedProfitability.get({ range: activeRange.value })
+    if (sequence !== selfPurchasedRequestSequence) return
+    selfPurchased.value = next
+    selfPurchasedLoaded.value = true
+    selfPurchasedLoadedRange.value = activeRange.value
+  } catch {
+    if (sequence === selfPurchasedRequestSequence) selfPurchasedError.value = '自购账号数据加载失败'
+  } finally {
+    if (sequence === selfPurchasedRequestSequence) {
+      selfPurchasedLoading.value = false
+      selfPurchasedRefreshing.value = false
+    }
+  }
 }
 
-async function load() {
+async function loadUSD() {
   const sequence = ++requestSequence
   if (hasLoaded.value) refreshing.value = true
   else loading.value = true
@@ -386,13 +438,23 @@ async function load() {
 
 function selectRange(range: FinancialRange) {
   activeRange.value = range
-  void load()
+  void refreshCurrentView()
+}
+
+function selectView(view: FinancialView) {
+  activeView.value = view
+  if (view === 'usd' && !hasLoaded.value) void loadUSD()
+  if (view === 'cny' && selfPurchasedLoadedRange.value !== activeRange.value) void loadSelfPurchased()
+}
+
+function refreshCurrentView() {
+  if (activeView.value === 'cny') return loadSelfPurchased()
+  return loadUSD()
 }
 
 onMounted(() => {
-  void load()
-  void loadSelfPurchased()
-  timer = setInterval(() => void load(), 60_000)
+  void loadUSD()
+  timer = setInterval(() => void refreshCurrentView(), 60_000)
 })
 onUnmounted(() => {
   if (timer) clearInterval(timer)

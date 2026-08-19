@@ -25,6 +25,8 @@ type DashboardHandler struct {
 	startTime                   time.Time // Server start time for uptime calculation
 }
 
+var accountProfitabilityNow = time.Now
+
 // NewDashboardHandler creates a new admin dashboard handler
 func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService) *DashboardHandler {
 	return &DashboardHandler{
@@ -148,6 +150,33 @@ func (h *DashboardHandler) GetAccountProfitability(c *gin.Context) {
 }
 
 func parseAccountProfitabilityRange(c *gin.Context) (time.Time, time.Time, error) {
+	startDate := strings.TrimSpace(c.Query("start_date"))
+	endDate := strings.TrimSpace(c.Query("end_date"))
+	if startDate == "" && endDate == "" {
+		if requestedRange := strings.TrimSpace(c.Query("range")); requestedRange != "" {
+			beijing, err := time.LoadLocation("Asia/Shanghai")
+			if err != nil {
+				return time.Time{}, time.Time{}, err
+			}
+			now := accountProfitabilityNow()
+			localNow := now.In(beijing)
+			startOfToday := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, beijing)
+			var start time.Time
+			switch requestedRange {
+			case string(service.AccountFinancialRangeToday):
+				start = startOfToday
+			case string(service.AccountFinancialRange24H):
+				start = now.Add(-24 * time.Hour)
+			case string(service.AccountFinancialRange7D):
+				start = startOfToday.AddDate(0, 0, -6)
+			case string(service.AccountFinancialRange31D):
+				start = startOfToday.AddDate(0, 0, -30)
+			default:
+				return time.Time{}, time.Time{}, errors.New("invalid range")
+			}
+			return start, now, nil
+		}
+	}
 	userTZ := strings.TrimSpace(c.Query("timezone"))
 	loc := timezone.Location()
 	if userTZ != "" {
@@ -157,9 +186,7 @@ func parseAccountProfitabilityRange(c *gin.Context) (time.Time, time.Time, error
 		}
 		loc = loaded
 	}
-	now := time.Now().In(loc)
-	startDate := strings.TrimSpace(c.Query("start_date"))
-	endDate := strings.TrimSpace(c.Query("end_date"))
+	now := accountProfitabilityNow().In(loc)
 	if startDate == "" {
 		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc).Format("2006-01-02")
 	}

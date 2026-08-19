@@ -5,8 +5,9 @@
 - 状态：`READY_FOR_ROOT_REVIEW`。
 - 分支：`codex/t35-procurement-audit-type-hotfix`。
 - 精确基线：刷新后 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`。
-- 最终候选 HEAD：`105b047e3a47eb7566486c78bb6dc7e02a75a54a`。
-- 最终 tree：`90db897da007aefcb647f553f652bc0ccfe4a437`。
+- 刷新后已验证实现合并 HEAD：`d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。
+- 刷新后已验证实现 tree：`a23ff0f9764a307347b0aa3693023cfee319db16`。
+- 当前分支 tip：以交接时 `git rev-parse HEAD` 与 `git rev-parse HEAD^{tree}` 为准；后续仅文档提交不改变上述已验证实现内容。
 - 工作区：干净；未合并、未推送、未部署、未触碰生产。
 - 根总控仍拥有合并、推送、发布预检、部署和线上验收权限。
 
@@ -114,4 +115,4 @@ git diff --check
 
 - 未执行合并后 `main` 重测、推送、发布预检、部署或线上验收，按任务边界留给根总控。
 - 全量 Go suite 的既有文案失败未在 T35 范围内修复。
-- 根总控可在候选 HEAD `105b047e3a47eb7566486c78bb6dc7e02a75a54a` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`。
+- 根总控可在刷新后已验证实现 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`；当前分支 tip 仅包含后续文档封装提交。

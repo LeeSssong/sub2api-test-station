@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T35 采购保存 PostgreSQL 参数类型热修收口（2026-08-20）：** 状态：`DONE`。根 `main@f96297c631548c56d89da3b7162d9007dd2c7a36` 已推送；发布证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-f96297c6-t35.json` 绑定 tested tree `23113e823a2752268b332c9b3539f5367c961d71`。蓝绿链返回 `downtime_required=false`、`result=succeeded`、活动槽 `green`，新镜像为 `ghcr.io/leesssong/xingqiao-sub2api:release-f96297c631548c56d89da3b7162d9007dd2c7a36-5a583d1a25fc1a2b2a94d6af3e160901222dd5468e5885b29cd77e57f0175bab`。公网 `/healthz`、`/readyz`、`/health` 均 200；登录态“账号盈利”页的 USD 卡片与“自购专题 · CNY”17 个账号视图正常，采购成本待录入/编辑入口可见，无内部错误。三条 PostgreSQL 审计参数类型热修及原子事务验证已生效，未新增迁移、配置或生产数据写入；回滚为恢复上一已验证蓝绿槽/镜像。
+
 **T35 根总控整合状态（2026-08-20）：** T35 已无冲突合入根 `main@c4202ca598baaaa6cae9e146e7cd04827d0c6097`，合并 tree `bbf2e23db7eae569d83dc05c08914083931d8e5d`。合并后采购 service/handler focused、真实 PostgreSQL integration、server build、gofmt、diff-check 和零迁移范围门禁通过，当前进入 `INTEGRATING`，待生成最终证据、推送、发布预检、蓝绿部署和线上采购保存专项验证。
 
 **T35 根总控状态覆盖（2026-08-20）：** T35 已完成 `REFRESH_REQUIRED`，当前为 `READY_FOR_ROOT_REVIEW`。候选分支 `codex/t35-procurement-audit-type-hotfix` 已刷新到 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`，实现验证提交 `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`，当前 tip `251f1c4fc439c28598b9ae28b5843d702416bd4b`，工作树干净。真实 PostgreSQL 录入、清空、结算 RED/GREEN、采购 service/handler、server build、范围与零迁移门禁通过；全量 Go 的既有中文文案断言失败未触及 T35。待根总控授权合并、合并后门禁、发布预检、部署和线上专项验收。

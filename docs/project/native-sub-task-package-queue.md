@@ -21,7 +21,7 @@
 
 ### T26-R1 CodexRadar 三标签社区测试矩阵补齐
 
-- 当前状态：`DESIGNING`。用户指出此前已批准的 CodexRadar 截图中，“综合智能 / 软件工程能力 / 视觉空间推理”三标签社区测试矩阵未进入 T26 实现。根总控复核确认：T26 仅代理 `/api/radar-insights`，该接口只覆盖四类站长推荐；原页面矩阵还使用 `/api/intelligence-efficiency-metrics` 与 `/api/visual-spatial-reasoning`，因此属于已批准视觉范围的实现遗漏，而非线上加载故障。
+- 当前状态：`DESIGNING`。独立用户可见顶层任务 `01a01859-d512-7cd1-88c8-0c1dc18ab023` 已从最新 `main@3c85451ae120017cdd53d5540963a989ff680b50` 创建独立 worktree，正在完成修复规格、计划、TDD 实现和直接相关验证。用户指出此前已批准的 CodexRadar 截图中，“综合智能 / 软件工程能力 / 视觉空间推理”三标签社区测试矩阵未进入 T26 实现。根总控复核确认：T26 仅代理 `/api/radar-insights`，该接口只覆盖四类站长推荐；原页面矩阵还使用 `/api/intelligence-efficiency-metrics` 与 `/api/visual-spatial-reasoning`，因此属于已批准视觉范围的实现遗漏，而非线上加载故障。
 - 目标：继续在既有“站长推荐”下方按原站视觉补齐三标签矩阵；直接使用 CodexRadar 公开只读数据，显示更新时间、社区说明、全量模型/档位、样本数、IQ、费用和耗时。综合智能按 CodexRadar 当前原站组合口径展示，软件工程与视觉空间分别使用对应原始接口；不混入本站监控、计费、评分或推荐逻辑。
 - 实现边界：沿用 T26 固定目标、GET-only、短超时、响应大小限制、严格字段校验、内存缓存与最近成功快照；允许扩展现有 T26 DTO/endpoint 或增加同命名空间只读 endpoint。前端复用 `CodexRadarRecommendations` 区域并新增矩阵子组件/数据解析；桌面贴近截图，390px 不产生整页横向溢出。
 - 最小验证：相关 Go service/handler/routes、前端 DTO/组件测试、typecheck、build、gofmt、diff-check，以及线上登录态桌面/390 专项。无迁移、无生产数据写入、无 GitHub Actions；预期 `downtime_required=false`。

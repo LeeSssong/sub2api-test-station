@@ -51,11 +51,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import type { AccountMonitorAccount } from '@/api/admin/accountMonitor'
+import type { AccountMonitorMultiplier } from '@/api/admin/accountMonitor'
+
+type AccountMonitorCostAccount = {
+  account_id: number
+  name: string
+  platform: string
+  account_type: string
+  procurement_cost_cny?: number | null
+  estimated_usable_quota_usd?: number | null
+  multiplier?: AccountMonitorMultiplier | null
+}
 
 const props = withDefaults(defineProps<{
   show: boolean
-  account: AccountMonitorAccount
+  account: AccountMonitorCostAccount
   saving?: boolean
   error?: string | null
 }>(), { saving: false, error: null })
@@ -69,9 +79,8 @@ const emit = defineEmits<{
 }>()
 
 const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type))
-const usesProcurement = computed(() => props.account.platform.toLowerCase() === 'openai'
-  ? !isOpenAIAPIKey.value
-  : props.account.procurement_cost_cny != null)
+const usesProcurement = computed(() => isOAuthAccountType(props.account.account_type)
+  || (props.account.platform.toLowerCase() === 'openai' ? !isOpenAIAPIKey.value : props.account.procurement_cost_cny != null))
 const usesMultiplier = computed(() => !usesProcurement.value)
 const hasProcurement = computed(() => props.account.procurement_cost_cny != null || props.account.estimated_usable_quota_usd != null)
 const draftCost = ref('')
@@ -79,6 +88,10 @@ const draftQuota = ref('60')
 const draftMultiplier = ref('')
 const costError = ref('')
 const multiplierError = ref('')
+
+function isOAuthAccountType(value?: string | null): boolean {
+  return value?.toLowerCase().replace(/[-_]/g, '') === 'oauth'
+}
 
 function isAPIKeyAccountType(value?: string | null): boolean {
   return value?.toLowerCase().replace(/[-_]/g, '') === 'apikey'

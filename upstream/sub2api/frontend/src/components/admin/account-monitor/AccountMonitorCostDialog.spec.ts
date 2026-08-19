@@ -64,10 +64,10 @@ describe('AccountMonitorCostDialog', () => {
     expect(wrapper.emitted('saveMultiplier')).toEqual([[0.11]])
   })
 
-  it('keeps non-OpenAI accounts in their compatible existing multiplier mode', () => {
+  it('uses procurement mode for OAuth accounts on every platform', () => {
     const wrapper = mountDialog(openAIAccount({ platform: 'anthropic', account_type: 'oauth', procurement_cost_cny: null }))
-    expect(wrapper.find('[data-test="multiplier-input"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="procurement-cost-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="multiplier-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="procurement-cost-input"]').exists()).toBe(true)
   })
 
   it('emits restoreAuto and clear actions', async () => {

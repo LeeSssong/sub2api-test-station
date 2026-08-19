@@ -9,7 +9,8 @@ import enAdmin from '@/i18n/locales/en/admin'
 const getReport = vi.hoisted(() => vi.fn())
 const getSelfPurchased = vi.hoisted(() => vi.fn())
 const settleSelfPurchased = vi.hoisted(() => vi.fn())
-vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport }, selfPurchasedProfitability: { get: getSelfPurchased, settle: settleSelfPurchased } } }))
+const updateProcurementCost = vi.hoisted(() => vi.fn())
+vi.mock('@/api/admin', () => ({ adminAPI: { accountFinancial: { getReport }, accounts: { updateProcurementCost }, selfPurchasedProfitability: { get: getSelfPurchased, settle: settleSelfPurchased } } }))
 
 const messages: Record<string, string> = {
   'admin.accountProfitability.title': '账号盈利',
@@ -162,6 +163,7 @@ describe('AccountProfitabilityView', () => {
   beforeEach(() => {
     getReport.mockReset().mockResolvedValue(nativeReport())
     settleSelfPurchased.mockReset().mockResolvedValue({ settled: true })
+    updateProcurementCost.mockReset().mockResolvedValue({ procurement_cost_cny: 88, estimated_usable_quota_usd: 60 })
     getSelfPurchased.mockReset().mockResolvedValue({
       start_date: '2026-08-01', end_date: '2026-08-18', generated_at: '2026-08-18T00:00:00Z', currency: 'CNY',
       summary: { procurement_cost_cny: 120, standard_consumed_usd: 30, confirmed_cost_cny: 60, pending_cost_cny: 0, procurement_loss_cny: 60, revenue_cny: 100, net_profit_cny: -20, margin: -0.2, account_count: 1 },
@@ -434,4 +436,64 @@ describe('AccountProfitabilityView', () => {
     expect(pageSource).not.toMatch(/\/xingqiao|control-plane|tab=cost-exceptions|setTodayOverride|setOAuthCost/)
     expect(pageSource).not.toMatch(/<main[^>]*min-w-|<main[^>]*w-screen/)
   })
+
+  it('opens the shared procurement form for every CNY OAuth row and refreshes after save', async () => {
+    getSelfPurchased.mockResolvedValue({
+      start_date: '2026-08-01', end_date: '2026-08-19', generated_at: '2026-08-19T00:00:00Z', currency: 'CNY',
+      summary: { procurement_cost_cny: 0, standard_consumed_usd: 0, confirmed_cost_cny: 0, pending_cost_cny: 0, procurement_loss_cny: 0, revenue_cny: 0, net_profit_cny: null, margin: null, account_count: 1 },
+      rows: [{ account_id: 31, name: 'OAuth Pending', platform: 'anthropic', account_type: 'oauth', status: 'active', procurement_cost_cny: null, estimated_quota_usd: null, standard_consumed_usd: 0, utilization: null, confirmed_cost_cny: 0, pending_cost_cny: 0, procurement_loss_cny: 0, revenue_cny: 0, net_profit_cny: null, margin: null, cost_status: 'cost_pending' }],
+    })
+    const wrapper = mountPage({ global: { stubs: {
+      AppLayout: { template: '<div><slot /></div>' },
+      AccountMonitorCostDialog: { props: ['account'], emits: ['saveProcurement'], template: `<button data-test="shared-cost-save" @click="$emit('saveProcurement', 88, 60)">{{ account.estimated_usable_quota_usd ?? 60 }}</button>` },
+    } } })
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('成本待录入')
+    expect(wrapper.get('[data-test="edit-procurement-31"]').text()).toBe('录入成本')
+    await wrapper.get('[data-test="edit-procurement-31"]').trigger('click')
+    expect(wrapper.get('[data-test="shared-cost-save"]').text()).toBe('60')
+    getSelfPurchased.mockClear()
+    await wrapper.get('[data-test="shared-cost-save"]').trigger('click')
+    await flushPromises()
+    expect(updateProcurementCost).toHaveBeenCalledWith(31, 88, 60, expect.stringContaining('account-procurement-31-'))
+    expect(getSelfPurchased).toHaveBeenCalledWith({ range: 'today' })
+  })
+
+
+  it('edits and clears an existing procurement value through the shared API and keeps the dialog on reload failure', async () => {
+    const current = {
+      start_date: '2026-08-01', end_date: '2026-08-19', generated_at: '2026-08-19T00:00:00Z', currency: 'CNY',
+      summary: { procurement_cost_cny: 88, standard_consumed_usd: 0, confirmed_cost_cny: 0, pending_cost_cny: 88, procurement_loss_cny: 0, revenue_cny: 0, net_profit_cny: 0, margin: null, account_count: 1 },
+      rows: [{ account_id: 32, name: 'OAuth Configured', platform: 'openai', account_type: 'oauth', status: 'active', procurement_cost_cny: 88, estimated_quota_usd: 60, standard_consumed_usd: 0, utilization: 0, confirmed_cost_cny: 0, pending_cost_cny: 88, procurement_loss_cny: 0, revenue_cny: 0, net_profit_cny: 0, margin: null, cost_status: 'active' }],
+    }
+    getSelfPurchased.mockResolvedValue(current)
+    updateProcurementCost.mockResolvedValue({ procurement_cost_cny: null, estimated_usable_quota_usd: null })
+    const wrapper = mountPage({ global: { stubs: {
+      AppLayout: { template: '<div><slot /></div>' },
+      AccountMonitorCostDialog: { props: ['error'], emits: ['clear'], template: `<div><button data-test="shared-cost-clear" @click="$emit('clear')">clear</button><p data-test="shared-error">{{ error }}</p></div>` },
+    } } })
+    await flushPromises(); await wrapper.get('[data-test="view-cny"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="edit-procurement-32"]').text()).toBe('编辑成本')
+    await wrapper.get('[data-test="edit-procurement-32"]').trigger('click')
+    getSelfPurchased.mockRejectedValueOnce(new Error('reload unavailable'))
+    await wrapper.get('[data-test="shared-cost-clear"]').trigger('click'); await flushPromises()
+    expect(updateProcurementCost).toHaveBeenCalledWith(32, null, null, expect.stringContaining('account-procurement-32-'))
+    expect(wrapper.get('[data-test="shared-error"]').text()).toContain('已保存')
+  })
+
+  it('shows the interceptor partial-success message instead of a generic save error', async () => {
+    const wrapper = mountPage({ global: { stubs: {
+      AppLayout: { template: '<div><slot /></div>' },
+      AccountMonitorCostDialog: { props: ['error'], emits: ['saveProcurement'], template: `<div><button data-test="partial-save" @click="$emit('saveProcurement', 90, 60)">save</button><p data-test="partial-error">{{ error }}</p></div>` },
+    } } })
+    await flushPromises(); await wrapper.get('[data-test="view-cny"]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-test="edit-procurement-21"]').trigger('click')
+    updateProcurementCost.mockResolvedValueOnce({ procurement_cost_cny: 90, estimated_usable_quota_usd: 60, procurement_readback_status: 'failed', procurement_message: '采购成本已保存，但账号刷新失败，请刷新页面确认' })
+    await wrapper.get('[data-test="partial-save"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="partial-error"]').text()).toContain('已保存')
+    expect(wrapper.get('[data-test="partial-error"]').text()).not.toContain('internal')
+  })
+
 })

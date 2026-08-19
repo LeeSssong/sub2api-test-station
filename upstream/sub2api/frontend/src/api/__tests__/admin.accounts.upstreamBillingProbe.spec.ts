@@ -60,4 +60,14 @@ describe('admin account upstream billing probe API', () => {
       estimated_usable_quota_usd: 60,
     }, { headers: { 'Idempotency-Key': 'procurement-session-1' } })
   })
+
+  it('normalizes the interceptor partial-success rejection into a typed procurement result', async () => {
+    put.mockRejectedValueOnce({ status: 202, code: 202, message: '采购成本已保存，但账号刷新失败，请刷新页面确认', reason: 'procurement_saved_readback_failed', metadata: { request_id: 'procurement-session-2' }, data: { id: 7, procurement_cost_cny: 4, estimated_usable_quota_usd: 60 } })
+    await expect(updateProcurementCost(7, 4, 60, 'procurement-session-2')).resolves.toMatchObject({
+      id: 7, procurement_cost_cny: 4, estimated_usable_quota_usd: 60,
+      procurement_readback_status: 'failed', procurement_reason: 'procurement_saved_readback_failed',
+      procurement_request_id: 'procurement-session-2',
+    })
+  })
+
 })

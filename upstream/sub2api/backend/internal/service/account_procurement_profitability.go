@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 type ProcurementStatus string
@@ -99,15 +101,20 @@ func (s *AccountProfitabilityService) GetSelfPurchasedReport(ctx context.Context
 	}
 	rows, err := s.db.QueryContext(ctx, `
 WITH versions AS (
-    SELECT v.account_id, v.version_no, v.cost_cny, v.estimated_usable_quota_usd,
+    SELECT a.id AS account_id, v.version_no, v.cost_cny, v.estimated_usable_quota_usd,
            v.effective_at, v.ended_at, v.status, v.settled_at, v.loss_cny
-      FROM account_procurement_cost_versions v
+      FROM accounts a
+      LEFT JOIN account_procurement_cost_versions v ON v.account_id = a.id
+     WHERE a.deleted_at IS NULL
+       AND a.type = 'oauth'
+       AND v.account_id IS NOT NULL
     UNION ALL
     SELECT a.id, 0, a.procurement_cost_cny, a.estimated_usable_quota_usd,
-           COALESCE(a.procurement_cost_effective_at, a.created_at), NULL, 'active', NULL, 0
+           COALESCE(a.procurement_cost_effective_at, a.created_at), NULL,
+           CASE WHEN a.procurement_cost_cny IS NULL OR a.estimated_usable_quota_usd IS NULL THEN 'cost_pending' ELSE 'active' END,
+           NULL, 0
       FROM accounts a
-     WHERE (a.procurement_cost_cny IS NOT NULL
-        OR a.estimated_usable_quota_usd IS NOT NULL)
+     WHERE a.deleted_at IS NULL
        AND a.type = 'oauth'
        AND NOT EXISTS (SELECT 1 FROM account_procurement_cost_versions v WHERE v.account_id = a.id)
 ), scoped AS (
@@ -302,7 +309,7 @@ func (s *AccountProfitabilityService) SettleProcurement(ctx context.Context, in 
 	if err != nil {
 		return false, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.settle','POST',$2,$3,200,jsonb_build_object('account_id',$4,'reason',$5))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement/settle", in.RequestID, in.AccountID, in.Reason)
+	_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.settle','POST',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'reason',$5))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement/settle", in.RequestID, in.AccountID, in.Reason)
 	if err != nil {
 		return false, err
 	}
@@ -321,13 +328,13 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		return errors.New("account profitability database is unavailable")
 	}
 	if in.AccountID <= 0 || in.RequestID == "" {
-		return errors.New("account_id and request_id are required")
+		return infraerrors.BadRequest("procurement_input_invalid", "account_id and request_id are required")
 	}
 	if (in.CostCNY == nil) != (in.QuotaUSD == nil) {
-		return errors.New("cost and quota must be provided together")
+		return infraerrors.BadRequest("procurement_input_invalid", "cost and quota must be provided together")
 	}
 	if in.CostCNY != nil && (*in.CostCNY < 0 || *in.QuotaUSD <= 0 || math.IsNaN(*in.CostCNY) || math.IsNaN(*in.QuotaUSD) || math.IsInf(*in.CostCNY, 0) || math.IsInf(*in.QuotaUSD, 0)) {
-		return errors.New("invalid procurement values")
+		return infraerrors.BadRequest("procurement_input_invalid", "invalid procurement values")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -338,7 +345,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	replayErr := tx.QueryRowContext(ctx, `SELECT account_id FROM account_procurement_cost_versions WHERE request_id=$1`, in.RequestID).Scan(&replayAccountID)
 	if replayErr == nil {
 		if replayAccountID != in.AccountID {
-			return errors.New("procurement idempotency key conflict")
+			return infraerrors.Conflict("procurement_idempotency_conflict", "procurement idempotency key conflict")
 		}
 		return tx.Commit()
 	}
@@ -347,6 +354,9 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	}
 	var created time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT created_at FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, in.AccountID).Scan(&created); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return infraerrors.NotFound("procurement_account_not_found", "account not found")
+		}
 		return err
 	}
 	var oldID int64
@@ -379,7 +389,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 				nextCost = remainingCost
 				nextQuota = remainingQuota
 				if nextQuota <= 0 {
-					return errors.New("remaining estimated quota must be > 0")
+					return infraerrors.Conflict("procurement_quota_consumed", "remaining estimated quota must be > 0")
 				}
 			}
 		}
@@ -398,7 +408,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		if _, err := tx.ExecContext(ctx, `INSERT INTO account_procurement_cost_versions(account_id,version_no,effective_at,status,actor_user_id,request_id,created_at,updated_at) VALUES($1,$2,$3,'cost_pending',$4,$5,$6,$6)`, in.AccountID, next, now, in.ActorUserID, in.RequestID, now); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,$3,200,jsonb_build_object('account_id',$4,'cleared',true))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'cleared',true))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -413,7 +423,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET procurement_cost_cny=$2,estimated_usable_quota_usd=$3,procurement_cost_effective_at=$4,updated_at=$5 WHERE id=$1`, in.AccountID, nextCost, nextQuota, effective, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,$3,200,jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, nextCost, nextQuota); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, nextCost, nextQuota); err != nil {
 		return err
 	}
 	return tx.Commit()

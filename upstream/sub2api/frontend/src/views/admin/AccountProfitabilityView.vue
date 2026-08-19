@@ -223,10 +223,20 @@
             <div class="min-w-0" data-test="self-summary-margin"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
           </div>
           <div v-if="selfPurchased.rows.length" class="min-w-0 overflow-x-auto" data-test="self-purchased-table-wrap">
-            <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
+            <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button type="button" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`edit-procurement-${row.account_id}`" @click="openProcurementDialog(row)">{{ row.procurement_cost_cny == null ? '录入成本' : '编辑成本' }}</button><button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
           </div>
         </template>
       </section>
+      <AccountMonitorCostDialog
+        v-if="selectedProcurementAccount"
+        :show="true"
+        :account="selectedProcurementAccount"
+        :saving="procurementSaving"
+        :error="procurementDialogError"
+        @close="closeProcurementDialog"
+        @save-procurement="saveProcurement"
+        @clear="clearProcurement"
+      />
     </main>
   </AppLayout>
 </template>
@@ -242,7 +252,8 @@ import type {
   FinancialRange,
 } from '@/api/admin/accountFinancial'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import type { SelfPurchasedReport } from '@/api/admin/selfPurchasedProfitability'
+import type { SelfPurchasedReport, SelfPurchasedRow } from '@/api/admin/selfPurchasedProfitability'
+import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
 
 type FinancialScope = { kind: 'all' } | { kind: 'group'; id: number; unassigned: boolean }
 type FinancialView = 'usd' | 'cny'
@@ -265,6 +276,10 @@ const selfPurchasedLoadedRange = ref<FinancialRange | null>(null)
 const selfPurchasedLoading = ref(false)
 const selfPurchasedRefreshing = ref(false)
 const selfPurchasedError = ref('')
+const selectedProcurementAccount = ref<{ account_id:number; name:string; platform:string; account_type:string; procurement_cost_cny:number|null; estimated_usable_quota_usd:number|null } | null>(null)
+const procurementSaving = ref(false)
+const procurementDialogError = ref('')
+let procurementMutationKey: { payload: string; key: string } | null = null
 let requestSequence = 0
 let selfPurchasedRequestSequence = 0
 let timer: ReturnType<typeof setInterval> | undefined
@@ -387,6 +402,46 @@ function isSelectedGroup(id: number, unassigned: boolean) {
     && activeScope.value.unassigned === unassigned
 }
 
+function openProcurementDialog(row: SelfPurchasedRow) {
+  procurementMutationKey = null
+  procurementDialogError.value = ''
+  selectedProcurementAccount.value = {
+    account_id: row.account_id, name: row.name, platform: row.platform, account_type: row.account_type,
+    procurement_cost_cny: row.procurement_cost_cny, estimated_usable_quota_usd: row.estimated_quota_usd,
+  }
+}
+function closeProcurementDialog() { if (!procurementSaving.value) selectedProcurementAccount.value = null }
+function procurementKey(accountId: number, cost: number | null, quota: number | null) {
+  const payload = JSON.stringify([accountId, cost, quota])
+  if (procurementMutationKey?.payload === payload) return procurementMutationKey.key
+  const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const key = `account-procurement-${accountId}-${requestId}`
+  procurementMutationKey = { payload, key }
+  return key
+}
+async function mutateProcurement(cost: number | null, quota: number | null) {
+  const account = selectedProcurementAccount.value
+  if (!account || procurementSaving.value) return
+  procurementSaving.value = true
+  procurementDialogError.value = ''
+  try {
+    const updated = await adminAPI.accounts.updateProcurementCost(account.account_id, cost, quota, procurementKey(account.account_id, cost, quota))
+    account.procurement_cost_cny = updated.procurement_cost_cny ?? null
+    account.estimated_usable_quota_usd = updated.estimated_usable_quota_usd ?? null
+    const partial = updated.procurement_readback_status === 'failed'
+    procurementMutationKey = null
+    const refreshed = await loadSelfPurchased()
+    if (partial) procurementDialogError.value = updated.procurement_message || '采购成本已保存，但账号刷新失败，请刷新页面确认'
+    else if (refreshed) selectedProcurementAccount.value = null
+    else procurementDialogError.value = '采购成本已保存，但最新 CNY 数据刷新失败，请重试刷新'
+    window.dispatchEvent(new CustomEvent('account-procurement-updated', { detail: { accountId: account.account_id } }))
+  } catch (reason: any) {
+    procurementDialogError.value = reason?.message || reason?.response?.data?.message || '采购成本保存失败，请稍后重试'
+  } finally { procurementSaving.value = false }
+}
+function saveProcurement(cost: number, quota: number) { return mutateProcurement(cost, quota) }
+function clearProcurement() { return mutateProcurement(null, null) }
+
 async function settleSelfPurchased(accountId: number) {
   if (!window.confirm('确认账号失效并结算剩余采购成本？')) return
   try { await adminAPI.selfPurchasedProfitability.settle(accountId, { request_id: `ui-${Date.now()}-${accountId}`, reason: 'administrator_confirmed_expired' }); await loadSelfPurchased() } catch { selfPurchasedError.value = '结算失败' }
@@ -399,12 +454,14 @@ async function loadSelfPurchased() {
   selfPurchasedError.value = ''
   try {
     const next = await adminAPI.selfPurchasedProfitability.get({ range: activeRange.value })
-    if (sequence !== selfPurchasedRequestSequence) return
+    if (sequence !== selfPurchasedRequestSequence) return false
     selfPurchased.value = next
     selfPurchasedLoaded.value = true
     selfPurchasedLoadedRange.value = activeRange.value
+    return true
   } catch {
     if (sequence === selfPurchasedRequestSequence) selfPurchasedError.value = '自购账号数据加载失败'
+    return false
   } finally {
     if (sequence === selfPurchasedRequestSequence) {
       selfPurchasedLoading.value = false

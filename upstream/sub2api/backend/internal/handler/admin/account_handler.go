@@ -1119,7 +1119,14 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// general account update so ledger failures cannot leave a prior projection write behind.
 	if procurementUpdate != nil && h.procurementProfitability != nil {
 		if err := h.procurementProfitability.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: accountID, CostCNY: procurementUpdate.Value, QuotaUSD: procurementUpdate.EstimatedUsableQuotaUSD, ActorUserID: actorID(c), RequestID: procurementRequestID}); err != nil {
-			response.ErrorFrom(c, err)
+			if infraerrors.Reason(err) != "" {
+				response.ErrorFrom(c, err)
+				return
+			}
+			log.Printf("[ERROR] procurement update failed account_id=%d request_id=%s: %s", accountID, procurementRequestID, err)
+			response.ErrorWithDetails(c, http.StatusInternalServerError, "采购成本保存失败，请稍后重试", "procurement_update_failed", map[string]string{
+				"account_id": strconv.FormatInt(accountID, 10), "request_id": procurementRequestID,
+			})
 			return
 		}
 	}
@@ -1156,6 +1163,11 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		account, updateErr = h.adminService.UpdateAccount(c.Request.Context(), accountID, accountMutation)
 	}
 	if updateErr != nil {
+		if procurementUpdate != nil && h.procurementProfitability != nil && !hasNonProcurementAccountUpdate(req) {
+			log.Printf("[ERROR] procurement persisted but account readback failed account_id=%d request_id=%s: %s", accountID, procurementRequestID, updateErr)
+			c.JSON(http.StatusAccepted, response.Response{Code: http.StatusAccepted, Message: "采购成本已保存，但账号刷新失败，请刷新页面确认", Reason: "procurement_saved_readback_failed", Metadata: map[string]string{"account_id": strconv.FormatInt(accountID, 10), "request_id": procurementRequestID}, Data: gin.H{"id": accountID, "procurement_cost_cny": procurementUpdate.Value, "estimated_usable_quota_usd": procurementUpdate.EstimatedUsableQuotaUSD}})
+			return
+		}
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError
 		if errors.As(updateErr, &mixedErr) {

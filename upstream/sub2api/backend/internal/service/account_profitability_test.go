@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -462,4 +463,41 @@ func TestSettleProcurementRejectsRequestIDReusedByAnotherAccount(t *testing.T) {
 	require.False(t, ok)
 	require.ErrorContains(t, err, "idempotency key conflict")
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSelfPurchasedReportUsesAllUndeletedOAuthAccountsAsCandidates(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	matcher := sqlmock.QueryMatcherFunc(func(expected, actual string) error {
+		lower := strings.ToLower(actual)
+		for _, required := range []string{"from accounts a", "left join", "a.deleted_at is null", "a.type = 'oauth'"} {
+			if !strings.Contains(lower, required) {
+				return fmt.Errorf("missing all-oauth candidate contract %q", required)
+			}
+		}
+		return nil
+	})
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(matcher))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	columns := []string{"id", "name", "platform", "type", "status", "version_no", "cost_cny", "estimated_usable_quota_usd", "effective_at", "ended_at", "version_status", "settled_at", "loss_cny", "standard_consumed", "revenue"}
+	mock.ExpectQuery("").WithArgs(start, end).WillReturnRows(sqlmock.NewRows(columns).
+		AddRow(int64(41), "No cost", PlatformOpenAI, AccountTypeOAuth, StatusActive, 0, nil, nil, start, nil, string(ProcurementStatusCostPending), nil, 0.0, 0.0, 0.0))
+
+	report, err := NewAccountProfitabilityService(db).GetSelfPurchasedReport(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, int64(41), report.Rows[0].AccountID)
+	require.Equal(t, ProcurementStatusCostPending, report.Rows[0].CostStatus)
+	require.Nil(t, report.Rows[0].ProcurementCostCNY)
+	require.Nil(t, report.Rows[0].EstimatedQuotaUSD)
+	require.Zero(t, report.Rows[0].StandardConsumedUSD)
+	require.Zero(t, report.Rows[0].RevenueCNY)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProcurementAuditBoundsRequestIDToAuditSchema(t *testing.T) {
+	source, err := os.ReadFile("account_procurement_profitability.go")
+	require.NoError(t, err)
+	require.Contains(t, string(source), "LEFT($3,64)", "audit_logs.request_id is VARCHAR(64) while ledger request ids allow 128 bytes")
 }

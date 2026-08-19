@@ -36,6 +36,10 @@ export interface AccountWithProcurementCost extends Account {
   procurement_cost_cny?: number | null
   estimated_usable_quota_usd?: number | null
   procurement_cost_effective_at?: string | null
+  procurement_readback_status?: 'fresh' | 'failed'
+  procurement_message?: string
+  procurement_reason?: string
+  procurement_request_id?: string
 }
 
 /**
@@ -218,8 +222,21 @@ export async function updateProcurementCost(
     procurement_cost_cny: cost,
     estimated_usable_quota_usd: estimatedQuotaUSD,
   }
-  const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload, { headers: { 'Idempotency-Key': idempotencyKey } })
-  return data
+  try {
+    const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload, { headers: { 'Idempotency-Key': idempotencyKey } })
+    return data
+  } catch (reason: any) {
+    if (reason?.reason === 'procurement_saved_readback_failed') {
+      return {
+        ...(reason.data ?? {}), id,
+        procurement_cost_cny: reason.data?.procurement_cost_cny ?? cost,
+        estimated_usable_quota_usd: reason.data?.estimated_usable_quota_usd ?? estimatedQuotaUSD,
+        procurement_readback_status: 'failed', procurement_message: reason.message,
+        procurement_reason: reason.reason, procurement_request_id: reason.metadata?.request_id,
+      } as AccountWithProcurementCost
+    }
+    throw reason
+  }
 }
 
 /**

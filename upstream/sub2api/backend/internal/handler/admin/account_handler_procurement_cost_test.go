@@ -278,3 +278,86 @@ func TestAccountHandlerBulkUpdateRejectsPriorityBelowOneBeforeServiceWrite(t *te
 		})
 	}
 }
+
+func TestAccountHandlerProcurementFailureReturnsDiagnosticContract(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions").WithArgs("diagnostic-1").WillReturnError(errors.New("ledger unavailable"))
+
+	stub := newStubAdminService()
+	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.PUT("/accounts/:id", h.Update)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/accounts/3", bytes.NewBufferString(`{"procurement_cost_cny":4,"estimated_usable_quota_usd":120}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "diagnostic-1")
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	var body struct {
+		Message, Reason string
+		Metadata        map[string]string
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Equal(t, "采购成本保存失败，请稍后重试", body.Message)
+	require.Equal(t, "procurement_update_failed", body.Reason)
+	require.Equal(t, "diagnostic-1", body.Metadata["request_id"])
+	require.Equal(t, "3", body.Metadata["account_id"])
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountHandlerProcurementSavedReadbackFailureIsRecognizableAndReplayWritesOnce(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	for attempt := 0; attempt < 2; attempt++ {
+		mock.ExpectBegin()
+		if attempt == 0 {
+			mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions").WithArgs("readback-1").WillReturnError(sql.ErrNoRows)
+			mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+			mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(3)).WillReturnError(sql.ErrNoRows)
+			mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
+			mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(3), 1, 4.0, 120.0, createdAt, int64(42), "readback-1", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(3), 4.0, 120.0, createdAt, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(42), "/admin/accounts/3/procurement", "readback-1", int64(3), 4.0, 120.0).WillReturnResult(sqlmock.NewResult(1, 1))
+		} else {
+			mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions").WithArgs("readback-1").WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(int64(3)))
+		}
+		mock.ExpectCommit()
+	}
+	stub := newStubAdminService()
+	stub.getAccountErr = errors.New("read replica unavailable")
+	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.PUT("/accounts/:id", h.Update)
+	for attempt := 0; attempt < 2; attempt++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPut, "/accounts/3", bytes.NewBufferString(`{"procurement_cost_cny":4,"estimated_usable_quota_usd":120}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "readback-1")
+		router.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusAccepted, recorder.Code, recorder.Body.String())
+		var body struct {
+			Message, Reason string
+			Metadata        map[string]string
+		}
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+		require.Equal(t, "procurement_saved_readback_failed", body.Reason)
+		require.Equal(t, "readback-1", body.Metadata["request_id"])
+	}
+	require.NoError(t, mock.ExpectationsWereMet())
+}

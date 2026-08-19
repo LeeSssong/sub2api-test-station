@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,7 @@ func TestOpenAIHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(t
 	id, _ := resp["id"].(string)
 	assert.True(t, strings.HasPrefix(id, "resp_"), "id should start with resp_, got %q", id)
 	assert.Equal(t, "rate_limit_exceeded", errObj["code"])
-	assert.Equal(t, "Concurrency limit exceeded for user, please retry later", errObj["message"])
+	assert.Equal(t, "请求过于频繁，请稍后重试或降低并发。", errObj["message"])
 }
 
 // 当 setOpsRequestContext 写过 model，合成事件应回填该字段（与 codebase 已有 makeResponsesCompletedEvent 对齐）。
@@ -137,7 +138,7 @@ func TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping(t *testi
 			h.handleStreamingAwareError(c, http.StatusBadGateway, tc.errType, tc.message, true)
 
 			_, errObj := parseResponsesFailedSSE(t, w.Body.String())
-			assert.Equal(t, tc.message, errObj["message"], "message 必须被原样还原")
+			assert.Equal(t, service.ProjectNativeUserError(service.NativeUserErrorInput{Status: http.StatusBadGateway, Type: tc.errType, Message: tc.message}).Message, errObj["message"])
 		})
 	}
 }

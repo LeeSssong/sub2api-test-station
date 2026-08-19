@@ -22,8 +22,8 @@
 
 ### T31 Monitor V2 视觉放大、时间线交互与 CodexRadar 列对齐
 
-- 当前状态：`IMPLEMENTING`。用户已确认本任务负责渠道监控页面优化：时间线固定柱宽/柱高，悬停显示具体时间点与状态、整行绿色高亮和动态效果；恢复真实可用率展示并强化倍率；按截图比例放大渠道状态、站长推荐和降智雷达；推理强度从左到右高到低，缺档不补空位，不同模型相同强度必须落在同一列（Sol `ultra → max → xhigh → high → medium → low`）。不得修改 T30 的采购保存、OAuth 自购报表或成本录入范围。
-- 工作区：`/Users/gongtengxinwen/.codex/worktrees/5d0f/sub2api搭建`，分支 `codex/t31-monitor-v2-visual-polish`，基线 `main@c85f749ef`。用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读保留。
+- 当前状态：`REVIEWING`。用户已确认本任务负责渠道监控页面优化：时间线固定柱宽/柱高，悬停显示具体时间点与状态、整行绿色高亮和动态效果；恢复真实可用率展示并强化倍率；按截图比例放大渠道状态、站长推荐和降智雷达；推理强度从左到右高到低，缺档不补空位，不同模型相同强度必须落在同一列（Sol `ultra → max → xhigh → high → medium → low`）。不得修改 T30 的采购保存、OAuth 自购报表或成本录入范围。候选正在刷新到已投产 T30 的最新 `main@5758e91ad` 并复跑直接相关门禁。
+- 工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t31-monitor-v2-visual-polish`，分支 `codex/t31-monitor-v2-visual-polish-main`；用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读保留。
 - 范围：仅 Monitor V2 前端组件、可用率最小数据合同、CodexRadar 排序/布局及直接相关测试；不改计费、调度、外部 Radar 数据源、生产数据或 GitHub Actions。完成 RED→GREEN、focused tests、typecheck/build、diff-check 和桌面/390px 视觉核对后交回根总控。
 
 ### T26-R1 CodexRadar 三标签社区测试矩阵补齐
@@ -62,12 +62,11 @@
 
 ### T30 真实采购保存与全量 OAuth 自购账号
 
-- 当前状态：`DESIGNING`。独立用户可见顶层任务已创建（客户端任务 ID `client-new-thread:d5e3b278-338b-4413-a0fb-33dab252b387`，GPT-5.6 Sol / medium），使用独立 worktree；根总控只负责登记、审查、合并、发布和线上验收。
-- 范围收敛：用户已明确 T30 不负责渠道监控/雷达视觉；T31 负责该页面优化。T30 仅处理截图1保存错误与截图2全量 OAuth 自购账号及成本录入，不得覆盖 T31 的视觉实现。
-- 首要问题：T28 已投产，但生产专项保持只读；T30 必须用一个指定的非敏感 OAuth 测试账号完成一次真实采购成本保存、刷新读取和页面 reload 验证，记录 request id、HTTP 状态、响应体、后端日志及数据库前后快照，完成后恢复/清理测试值。台账成功但读取失败、服务故障、重复提交均需可诊断响应，不得泛化为 `internal error`。
-- 自购报告：`GetSelfPurchasedReport` 以 `accounts.deleted_at IS NULL AND accounts.type='oauth'` 的全部账号为候选；无采购版本账号生成 `cost_pending` 投影，成本/额度为空但账号仍显示，0 流水也显示。
-- 页面入口：CNY 自购表每个账号行提供“录入成本/编辑成本”，复用账号监控的 `accounts.procurement_cost_cny`、`accounts.estimated_usable_quota_usd`、`account_procurement_cost_versions`、同一保存 API 和共享成本表单；默认预计额度 60 USD，保存/清空后两个页面同步刷新。
-- 验收与边界：Go/Vitest、typecheck/build、DOM/截图、真实登录态专项；无迁移、无生产数据扩散、无 GitHub Actions，预期 `downtime_required=false`。候选先完成 brainstorming、正式规格和计划，完成后停 `READY_FOR_ROOT_REVIEW`。
+- 当前状态：`DONE`。独立顶层任务 `01a019e7-34cb-7002-a91f-0a3211bdde7b` 候选 `5758e91adcd1deb30ad8b0d5c7f63f4e2c29c2e0`、tree `3d59e838fc3b458f0087f83bbfd5a59aa100a5b8` 已完成根审查、合并、推送、直接相关门禁、0600 evidence、无停机蓝绿发布和登录态专项验收。T30 未修改渠道监控、Monitor V2 或 CodexRadar；相关视觉优化继续由 T31 独立处理。
+- 保存链：真实失败根因是超长幂等键写入 `audit_logs.request_id VARCHAR(64)` 使采购事务失败；审计写入现已按 schema 边界截断。输入错误、账号不存在和幂等冲突继续保留 4xx/409；真正内部错误返回中文 `message/reason/request_id`。台账提交后账号回读失败使用可识别的 HTTP 202 partial-success 契约，前端能展示“采购成本已保存，但账号刷新失败”，重复同键只重放、不重复创建版本。
+- 自购报告与入口：`GetSelfPurchasedReport` 以全部未删除且 `type='oauth'` 的 Sub 原生账号为候选；无采购版本账号生成 `cost_pending` 投影，0 流水仍显示。CNY 自购表逐行提供“录入成本/编辑成本”，复用 `accounts.procurement_cost_cny`、`accounts.estimated_usable_quota_usd`、`account_procurement_cost_versions`、既有保存 API 和共享表单，默认预计额度 60 USD。
+- 验证与发布：合并前后 Go focused、Go build、前端 37/37、typecheck、production build、gofmt 和 diff-check 通过；无迁移/配置变化。0600 evidence `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-5758e91ad-t30.json`。宿主记录 `/var/lib/sub2api/release-records/20260819T130153Z-production-122858.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；API、worker、model-detector 使用同一 T30 镜像且 healthy，共享 PostgreSQL/Redis/Caddy 身份保持不变，公网 `/healthz`、`/readyz`、`/health` 均 200。
+- 线上验收：生产数据库只读统计全部未删除 OAuth 账号为 17；登录态 CNY 自购表同样显示 17 行，其中 14 行“成本待录入”、3 行“编辑成本”，每行均有成本入口，页面未出现 `internal error`。窄视口下页面 `scrollWidth=clientWidth`，未出现整页横向溢出。用户最终收敛范围不再要求额外制造真实生产采购写入，因此本次验收保持只读。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
 

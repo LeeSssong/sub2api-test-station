@@ -11,8 +11,7 @@
           :class="availabilityClass"
         >
           <span class="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
-          {{ availabilityText }}
-          <span class="sr-only">{{ t(`monitorV2.status.${group.status}`) }}</span>
+          <span data-test="monitor-group-status">{{ t(`monitorV2.status.${group.status}`) }}</span>
         </span>
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -52,12 +51,6 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const availabilityText = computed(() => {
-  const metric = props.group.availability
-  if (metric.state !== 'available' || metric.value === null) return t('monitorV2.availabilityNoData')
-  return t('monitorV2.availability', { value: formatAvailability(metric.value) })
-})
-
 const availabilityClass = computed(() => {
   return props.group.status === 'operational'
     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'

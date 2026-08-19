@@ -19,7 +19,9 @@ See `docs/superpowers/reports/2026-08-20-t34-monitor-v2-native-probe-verificatio
 - TTFT now renders as `首字速度：` / `First token speed: `.
 - Metric states are strictly `available` or `insufficient_data`; `not_provided` and its locale/test fixtures are removed.
 - Unused legacy locale keys `ttftP95`, `tps`, `latency`, `latencyP95`, and `baseRate` are removed after consumer search.
-- Revalidation passed the Monitor V2 Vitest suite (8 files, 35 tests), `pnpm typecheck`, `pnpm build`, and `git diff --check`.
+- Revalidation passed the Monitor V2 Vitest suite (8 files, 36 tests), `pnpm typecheck`, `pnpm build`, and `git diff --check`.
+- Root-review fixes included microsecond timeline normalization with a non-zero-nanosecond regression, exact 24/28/30 window timeline validation, and visible current-status badge text without duplicate availability text.
+- Authenticated desktop/390px screenshot and overflow acceptance remains explicitly **UNVERIFIED** because no authenticated fixture/session was available; login redirect evidence is excluded from acceptance.
 
 ## Root Action
 

@@ -76,6 +76,32 @@ func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	require.Equal(t, time.Hour, native.bucketSize)
 }
 
+func TestMonitorV2SnapshotMatchesMicrosecondNativeBucketsWithNanosecondNow(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 123456789, time.UTC)
+	start := now.Add(-24 * time.Hour).Truncate(time.Microsecond)
+	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{
+		7: {
+			Status:                 MonitorV2StatusOperational,
+			OperationalBucketCount: 1,
+			TotalBucketCount:       24,
+			Timeline: []MonitorV2NativeTimelinePoint{{
+				BucketStart: start,
+				Status:      MonitorV2StatusOperational,
+			}},
+		},
+	}}
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Microsecond bucket", Status: StatusActive}}},
+		native,
+		nil,
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+
+	require.NoError(t, err)
+	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Timeline[0].Status)
+}
+
 func TestMonitorV2SnapshotReturnsFixedUnavailableBucketsForMissingNativeScope(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	svc := NewMonitorV2Service(

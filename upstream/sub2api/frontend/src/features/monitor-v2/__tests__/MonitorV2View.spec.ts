@@ -184,6 +184,8 @@ describe('MonitorV2View', () => {
       expect(wrapper.text()).not.toContain(forbidden)
     }
     const flagshipCard = wrapper.get('[data-test="monitor-group-7"]')
+    expect(flagshipCard.get('[data-test="monitor-group-status"]').text()).toBe('运行中')
+    expect(flagshipCard.get('[data-test="monitor-group-status"]').text()).not.toContain('可用性')
     expect(flagshipCard.classes()).toContain('transition-all')
     expect(flagshipCard.classes()).toContain('hover:bg-emerald-500/10')
     expect(flagshipCard.classes()).toContain('hover:-translate-y-0.5')

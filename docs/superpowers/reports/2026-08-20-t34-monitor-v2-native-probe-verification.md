@@ -22,14 +22,14 @@ Branch: `codex/t34-native-probe-monitor-v2`
 ## Frontend Evidence
 
 - Existing `frontend/src/features/monitor-v2/__tests__/api.spec.ts` updated in place for v7; no duplicate API contract file added.
-- `pnpm vitest run src/features/monitor-v2/__tests__` passed: 8 files, 35 tests.
+- `pnpm vitest run src/features/monitor-v2/__tests__` passed: 8 files, 36 tests.
 - `pnpm typecheck` passed.
 - `pnpm build` passed.
 - Correction pass RED: Monitor V2 API tests rejected the newly specified `not_provided` fixture only after the RED assertion was added; the pre-fix parser accepted it.
 - Correction pass GREEN: TTFT label is now `首字速度：` (English `First token speed: `); metric state is limited to `available | insufficient_data`; old TTFT P95/TPS/latency/P95/not_provided/baseRate locale keys were removed.
-- Correction pass: `pnpm vitest run src/features/monitor-v2/__tests__` passed (8 files, 35 tests), `pnpm typecheck` passed, and `pnpm build` passed again.
+- Correction pass: `pnpm vitest run src/features/monitor-v2/__tests__` passed (8 files, 36 tests), `pnpm typecheck` passed, and `pnpm build` passed again.
 - Source guard confirmed no Monitor V2 consumer references the removed locale keys.
-- Desktop and 390px viewport checks were exercised against the local Vite route; the route correctly redirects to login without an authenticated fixture. Component-level Monitor V2 view tests cover the v7 card layout and fixed-width behavior.
+- The local Vite route redirected to login because no authenticated fixture/session was available. Authenticated desktop and 390px screenshots, overflow checks, and pixel-level visual acceptance remain **UNVERIFIED**; login redirect is not counted as page acceptance. Component-level Monitor V2 view tests cover the v7 card layout and fixed-width behavior.
 
 ## Source Guards
 
@@ -38,6 +38,12 @@ Branch: `codex/t34-native-probe-monitor-v2`
 - `internal/repository/wire.go` removes `NewMonitorV2Repository` while preserving legacy Channel Monitor and Channel Monitor V2 providers.
 - `cmd/server/wire_gen.go` constructs Monitor V2 after `AccountMonitorService` and keeps legacy channel monitor wiring intact.
 - `git diff --check` passed.
+
+## Root Review Fixes
+
+- Timeline bucket matching now truncates both native points and service bounds to microseconds; regression uses non-zero nanosecond `now` and a microsecond native point.
+- Frontend validation now requires exactly 24/28/30 timeline points for 24h/7d/30d; rejection coverage is in the existing API contract test.
+- Group card status is visible in the first-line badge, while the second line retains the three metrics without repeating the availability badge text.
 
 ## Refresh Verification
 

@@ -7,6 +7,11 @@ vi.mock('@/api/client', () => ({ apiClient: { get } }))
 import { MonitorV2ContractError, getMonitorV2Snapshot, validateMonitorV2Snapshot } from '../api'
 
 const metric = { state: 'available', value: 420, sample_count: 20 }
+const timeline = Array.from({ length: 28 }, (_, index) => ({
+  bucket_start: new Date(Date.UTC(2026, 6, 29, 6 + index * 6)).toISOString(),
+  status: 'operational',
+  latency_ms: 1320,
+}))
 const validPayload = {
   contract_version: '7',
   refresh_interval_seconds: 300,
@@ -25,11 +30,7 @@ const validPayload = {
     availability: { ...metric, value: 99 },
     ttft: metric,
     average_latency: { ...metric, value: 10000 },
-    timeline: [{
-      bucket_start: '2026-07-29T06:00:00Z',
-      status: 'operational',
-      latency_ms: 1320,
-    }],
+    timeline,
   }],
 }
 
@@ -127,6 +128,20 @@ describe('Monitor V2 API contract', () => {
         })),
       }],
     })).toThrow('timeline')
+  })
+
+  it('requires the fixed timeline length for each window', () => {
+    for (const [window, expectedLength] of [['24h', 24], ['7d', 28], ['30d', 30] ] as const) {
+      const timeline = Array.from({ length: expectedLength - 1 }, (_, index) => ({
+        ...validPayload.groups[0].timeline[0],
+        bucket_start: new Date(Date.UTC(2026, 6, 1, index)).toISOString(),
+      }))
+      expect(() => validateMonitorV2Snapshot({
+        ...validPayload,
+        window,
+        groups: [{ ...validPayload.groups[0], timeline }],
+      })).toThrow(`timeline must contain exactly ${expectedLength} points`)
+    }
   })
 
   it('requires native availability and average latency metrics', () => {

@@ -150,11 +150,11 @@ func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, in
 	now = now.UTC()
 	switch window {
 	case MonitorV2Window24H:
-		return now.Add(-24 * time.Hour), 24, time.Hour, nil
+		return now.Add(-24 * time.Hour).Truncate(time.Microsecond), 24, time.Hour, nil
 	case MonitorV2Window7D:
-		return now.Add(-7 * 24 * time.Hour), 28, 6 * time.Hour, nil
+		return now.Add(-7 * 24 * time.Hour).Truncate(time.Microsecond), 28, 6 * time.Hour, nil
 	case MonitorV2Window30D:
-		return now.Add(-30 * 24 * time.Hour), 30, 24 * time.Hour, nil
+		return now.Add(-30 * 24 * time.Hour).Truncate(time.Microsecond), 30, 24 * time.Hour, nil
 	default:
 		return time.Time{}, 0, 0, fmt.Errorf("unsupported monitor window %q", window)
 	}
@@ -209,8 +209,10 @@ func monitorV2Metric(value *float64, sampleCount int) MonitorV2Metric {
 func monitorV2Timeline(points []MonitorV2NativeTimelinePoint, start time.Time, bucketCount int, bucketSize time.Duration) []MonitorV2TimelinePoint {
 	byBucket := make(map[time.Time]MonitorV2NativeTimelinePoint, len(points))
 	for _, point := range points {
-		byBucket[point.BucketStart.UTC()] = point
+		point.BucketStart = point.BucketStart.UTC().Truncate(time.Microsecond)
+		byBucket[point.BucketStart] = point
 	}
+	start = start.UTC().Truncate(time.Microsecond)
 	result := make([]MonitorV2TimelinePoint, 0, bucketCount)
 	for index := 0; index < bucketCount; index++ {
 		bucketStart := start.Add(time.Duration(index) * bucketSize).UTC()

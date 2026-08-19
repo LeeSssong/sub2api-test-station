@@ -32,6 +32,11 @@ const MAX_GROUPS = 100
 const MAX_TIMELINE_POINTS = 64
 const MAX_TEXT_LENGTH = 256
 const PEAK_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+const WINDOW_TIMELINE_LENGTHS: Record<MonitorV2Window, number> = {
+  '24h': 24,
+  '7d': 28,
+  '30d': 30,
+}
 
 function record(value: unknown, path: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -209,6 +214,14 @@ export function validateMonitorV2Snapshot(value: unknown): MonitorV2Snapshot {
     throw new MonitorV2ContractError(`groups must contain at most ${MAX_GROUPS} items`)
   }
   const groups = source.groups.map((entry, index) => group(entry, `groups[${index}]`))
+  const expectedTimelineLength = WINDOW_TIMELINE_LENGTHS[window]
+  groups.forEach((item, index) => {
+    if (item.timeline.length !== expectedTimelineLength) {
+      throw new MonitorV2ContractError(
+        `groups[${index}].timeline must contain exactly ${expectedTimelineLength} points for ${window}`
+      )
+    }
+  })
   const ids = new Set<number>()
   for (const item of groups) {
     if (ids.has(item.id)) {

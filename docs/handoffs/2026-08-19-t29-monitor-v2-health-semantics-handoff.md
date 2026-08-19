@@ -8,9 +8,9 @@
 
 刷新主线：`main@25eb6a63c99e3bb87d4e62acc8fce69f0089186e`
 
-刷新合并提交：`b09c88d4b2baaeacc54b9612698123815963ed7e`
+刷新合并提交（候选功能 tip）：`b09c88d4b2baaeacc54b9612698123815963ed7e`
 
-刷新后候选 tree：`13dc9cf5bd2d06c27707a8e727a93fb4c1da0ac3`
+刷新后候选功能 tree：`13dc9cf5bd2d06c27707a8e727a93fb4c1da0ac3`
 
 分支：`codex/t29-monitor-v2-health-semantics`
 
@@ -30,7 +30,7 @@
 - 后端 Monitor V2 repository、service、handler、Wire 及直接测试。
 - 前端 Monitor V2 types、API 校验、卡片、时间线、页面、i18n 及直接测试。
 - T29 规格、实施计划与本交接。
-- 未修改根 `main`、全局队列/总账、发布脚本或 GitHub Actions。
+- 未修改根 `main`、全局队列/总账、发布脚本或 GitHub Actions；候选仅将根 `main@25eb6a63c99e3bb87d4e62acc8fce69f0089186e` 合入当前 worktree 用于刷新，未在根 `main` 上写入。
 
 ## 验证
 
@@ -54,8 +54,8 @@
 
 ## 剩余风险与根总控后续
 
-- T29 已在 T28 生产验收后的最新干净 `main@25eb6a63c99e3bb87d4e62acc8fce69f0089186e` 上完成刷新；刷新合并无冲突，根总控仍应以该刷新后候选身份进入后续合并门禁。
+- T29 已在 T28 生产验收后的最新干净 `main@25eb6a63c99e3bb87d4e62acc8fce69f0089186e` 上完成刷新；刷新合并无冲突，`git diff main..HEAD` 仅包含 T29 文件。根总控应以刷新后的候选功能 tip/tree 进入后续合并门禁，并一并携带本次 T29-only handoff 元数据提交。
 - 统一主模型统计依赖主动监控记录中的最新非空 `PrimaryModel`；缺少该模型或少于 5 个合格样本时页面显示破折号，不猜测数值。
 - 生产合并后重点验收：无任何百分比/成功率/缓存率，所有状态严格二态，Pro 第一且带旗舰徽标，TTFT/TPS/总延迟/倍率仍为真实值，桌面与 390px 无溢出。
 
-候选提交 SHA：`b09c88d4b2baaeacc54b9612698123815963ed7e`；本任务不推送、不部署、不清理 worktree。根总控合并前仍需确认 `main` 未漂移。
+候选功能提交 SHA/tree：`b09c88d4b2baaeacc54b9612698123815963ed7e` / `13dc9cf5bd2d06c27707a8e727a93fb4c1da0ac3`。本次 handoff 更新作为 T29-only 提交落地，最终 tip/tree 以当前 worktree 的 `git rev-parse HEAD` 与 `git rev-parse HEAD^{tree}` 为准；本任务不推送、不部署、不清理 worktree。根总控合并前仍需确认 `main` 未漂移。

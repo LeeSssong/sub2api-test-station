@@ -66,4 +66,24 @@ describe('MonitorV2Timeline', () => {
       expect(bar.attributes('style')).toContain('height: 75%')
     }
   })
+
+  it('keeps dense timelines inside the card on narrow screens', () => {
+    const wrapper = mount(MonitorV2Timeline, {
+      props: {
+        points: Array.from({ length: 64 }, (_, index) => ({
+          bucket_start: `2026-07-30T${String(index % 24).padStart(2, '0')}:00:00Z`,
+          state: 'available' as const,
+          value: 100,
+          success_count: 1,
+          eligible_count: 1,
+          latency_ms: null,
+        })),
+      },
+    })
+
+    const timeline = wrapper.find('[role="img"] > div')
+    expect(timeline.classes()).toContain('min-w-0')
+    expect(timeline.classes()).toContain('overflow-hidden')
+    expect(wrapper.find('[role="img"] span').classes()).not.toContain('min-w-1')
+  })
 })

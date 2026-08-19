@@ -4,11 +4,11 @@
     role="img"
     :aria-label="ariaLabel"
   >
-    <div class="flex h-8 items-end gap-1" aria-hidden="true">
+    <div class="flex h-8 min-w-0 items-end gap-1 overflow-hidden" aria-hidden="true">
       <span
         v-for="(point, index) in points"
         :key="`${point.bucket_start}-${index}`"
-        class="min-w-1 basis-0 flex-1 rounded-sm bg-teal-500 dark:bg-teal-400"
+        class="min-w-0 basis-0 flex-1 rounded-sm bg-teal-500 dark:bg-teal-400"
         style="height: 75%"
         :title="pointTitle(point)"
       />

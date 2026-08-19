@@ -2,12 +2,12 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1 与 T27 均为 `DONE`；T28“评分方向、采购成本事实源与保存链路修复”和 T29“Monitor V2 二态健康展示与统一指标口径”处于 `DESIGNING`。禁止使用 GitHub Actions。
-- 当前实施：T27 已从根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064` 完成推送、0600 证据、预检、蓝绿发布和线上验收；T28、T29 使用互相独立的功能 worktree 并行准备，均不占用整合/部署/验收车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1 与 T27 均为 `DONE`；T28“评分方向、采购成本事实源与保存链路修复”处于 `REFRESH_REQUIRED`，T29“Monitor V2 二态健康展示与统一指标口径”处于 `DESIGNING`。禁止使用 GitHub Actions。
+- 当前实施：T27 已从根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064` 完成推送、0600 证据、预检、蓝绿发布和线上验收；T28 根复核发现评分最终 DOM 验收、采购专用 PUT 半成功窗口和编辑会话幂等键仍需修订，并且候选落后最新 `main`；T29 在独立 worktree 继续设计。两项均不占用整合/部署/验收车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@3bc16ee2682e6e978f73a71099c010a8353f2064`、tree `d7261631300e725c5f958b5406bd3781e006cc8e`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T27 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T071706Z-production-4050553.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-3bc16ee26-t27-oauth-dual-view-v1.json`。
 - 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26/T26-R1 候选与临时发布 worktree 均已在生产验收后归档移除。T27 生产验收后同样已归档移除，恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t27-final-3bc16ee26/t27-refs.bundle`，SHA-256 `3dc2f5b131aefa7863a861cb5d2687f1217e2bbed50d836f8951ed006d2d4b04`，`git bundle verify` 通过。当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
-- 全局审计（2026-08-19）：根 `main`/`origin/main` 已同步到总账收口提交 `eaf59c5d6cd8a7b3581a37d61d1694cf1558ca0b`；生产 release-state 绑定已验证业务源 `3bc16ee2682e6e978f73a71099c010a8353f2064`（根最新提交仅更新总账）。T27 已完成部署验收；T28 顶层任务已创建并处于 `DESIGNING`，尚未占用整合/部署/验收车道；非 `main` 仅保留 T28 初始化 worktree（待任务交接）与用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`，根目录既有未跟踪资料继续保留。
+- 全局审计（2026-08-19）：根 `main` 已登记 T29，生产 release-state 仍绑定已验证业务源 `3bc16ee2682e6e978f73a71099c010a8353f2064`（根新增提交仅更新总账）。T28 候选 `f421ca0a0` 经根复核退回修订并标记 `REFRESH_REQUIRED`；T29 处于 `DESIGNING`。非 `main` 保留 T28/T29 两个活动功能 worktree 与用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`，根目录既有未跟踪资料继续保留。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -39,7 +39,7 @@
 
 ### T28 评分方向、采购成本事实源与保存链路修复
 
-- 当前状态：`DESIGNING`。独立用户可见顶层任务已创建（客户端任务 ID `client-new-thread:bf40d41b-e681-43ea-b234-687defdfc947`，GPT-5.6 Sol / medium），待初始化完成后使用独立 worktree；根总控不在本协调线程修改业务代码。
+- 当前状态：`REFRESH_REQUIRED`。独立用户可见顶层任务 `01a0191a-9b73-7f72-9adb-13aa48e863e6` 已提交候选 `codex/t28-procurement-put-score-dom@f421ca0a0`；根复核未放行：候选只调整单卡内部指标格顺序，尚未证明账号卡片按 `group_rank` 强到弱进入最终 DOM；采购专用 PUT 在台账成功后仍无条件调用通用更新，保留“返回错误但采购已落账”窗口；前端失败幂等键跨弹窗会话和变更后的 payload 长期复用。候选还需整合最新 `main`，修订并重跑直接相关门禁后重新交接。
 - 范围：只修复目标评分组件最终 DOM 的强到弱顺序（左到右、上到下），保留评分算法与数值语义；采购成本继续复用 `accounts.procurement_cost_cny`、`accounts.estimated_usable_quota_usd` 与 `account_procurement_cost_versions`，不新增事实源或第二入口；查明并修复采购成本 PUT 保存 `internal error`，覆盖幂等键、handler/service 事务、NULL `cost_pending`、错误映射、成功 PUT+reload 反馈和重复提交幂等。
 - 验收：桌面/390px 顺序稳定且无整页横溢出；账号监控与自购 CNY 页读取同一采购字段；新录入、修改、清空、重复提交、旧 NULL 版本、服务错误和 reload 保持均有直接测试；Go/前端聚焦测试、typecheck/build、gofmt、diff-check。无迁移、无生产写入、无 GitHub Actions，预期 `downtime_required=false`。
 - 非目标：不调整评分权重或算法，不改账号监控其他卡片样式，不改变盈利口径，不扩展到其他页面或发布链。

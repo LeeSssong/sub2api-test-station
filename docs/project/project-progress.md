@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**T29 Monitor V2 二态健康展示与统一指标口径（2026-08-19）：** 状态：进行中（`DESIGNING`）。用户最终确认监控页删除全部百分比展示及真实请求成功率，不在卡片、时间线、悬浮提示、明细或无障碍文案中保留；服务状态只保留“运行中 / 服务不可用”，运行中统一使用乐观绿色时间线，服务不可用使用故障色，状态与时间线共用同一二态口径。非百分比性能事实继续真实展示；Monitor V2 的时间窗、分组、有效计费文本请求及可比模型范围统一，Pro 固定置顶并标记为旗舰，不伪造或覆盖真实指标。当前根总控先完成 worktree 审计与任务登记，随后从最新 `main` 创建独立 worktree `codex/t29-monitor-v2-health-semantics`；T28 与 `/private/tmp/sub2api-monitor-v3-preview` 保持隔离保护。无迁移、无生产数据写入、无 GitHub Actions，预期 `downtime_required=false`。
+
+**T28 评分方向、采购成本事实源与保存链路修复登记（2026-08-19）：** 状态：进行中（`REFRESH_REQUIRED`）。独立用户可见顶层任务 `01a0191a-9b73-7f72-9adb-13aa48e863e6` 已交付 `codex/t28-procurement-put-score-dom@f421ca0a0`，但根复核未放行：实现仅重排单卡内“评分/优先级/排名”，没有闭合账号卡片按 `group_rank` 从强到弱进入最终 DOM 的桌面/390px 验收；采购专用 PUT 在台账提交后仍无条件运行通用账号更新，后一步失败会形成已落账却返回错误；前端 API 级幂等键在任意失败后跨关闭/重开弹窗及 payload 变化继续复用，和“每次编辑会话”合同不一致。候选需整合最新 `main`，在原任务 worktree 修订上述三项并重跑直接相关 Go/Vitest、typecheck/build、gofmt 与 diff-check，重新交接后再进入根合并车道。无迁移、无生产写入、无 GitHub Actions，预期 `downtime_required=false`。
+
 **T27 自购账号保存、口径与双视图经营页重设计（2026-08-19）：** 状态：已完成（`DONE`）。T26/T26-R1 已完成生产收口；“定位无法保持问题”的 `cost_pending` NULL 扫描修复已并入 T27。用户批准的 A 方案保持一级“经营结果 · USD / 自购专题 · CNY”切换，CNY 只统计 `accounts.type='oauth'` 且存在采购台账/投影的自购账号，两种币种分开展示；用户同时明确不追加“CNY -> USD -> 改范围 -> 再回 CNY”的复杂回切竞态设计。候选已合入并推送根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064`、tree `d7261631300e725c5f958b5406bd3781e006cc8e`；Go service/handler、前端 23/23、typecheck、production build、Go build、gofmt 与 diff-check 全部通过。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-3bc16ee26-t27-oauth-dual-view-v1.json`，宿主记录 `/var/lib/sub2api/release-records/20260819T071706Z-production-4050553.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `blue`；公网健康三项均 200。线上登录态确认默认 USD、切换 CNY 后 7 项摘要与 3 个 OAuth 自购账号长表，未出现 API Key 账号；480px 窄视口 `scrollWidth=clientWidth=480` 无整页横向溢出。无迁移、无生产数据写入；账号成本保存回归采用候选直接测试，未对生产台账执行写入。
 
 

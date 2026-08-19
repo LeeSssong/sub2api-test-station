@@ -3,6 +3,7 @@
 ## 当前状态
 
 - 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25 与 T26 均为 `DONE`；T26-R1 已登记为 `DESIGNING`，修复 T26 遗漏的 CodexRadar 三标签社区测试矩阵。禁止使用 GitHub Actions。
+- 新增任务登记：T27“自购账号口径、保存失败与财务页位置修复”进入 `DESIGNING`，等待指挥线程按独立顶层任务/worktree 承接；不占用 T26-R1 的实现 worktree。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@9de147ad673ab23f92a59a36e9f075d8bbeb8897`、tree `be3d53d052dfb4fcb35f9c9e6e8661b1825be38c`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T26 最终蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T040727Z-production-3903052.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-9de147ad6-t26-mobile-overflow-v2.json`。
 - 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26 发布验收后又将候选、移动端修复和临时发布三个干净 worktree 归档并移除，同时删除两条已合并的本地 T26 分支。T26 恢复 bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/t26-final-9de147ad6/t26-refs.bundle`，SHA-256 `d08aa5b66ecdc404ce40ef06fd16c40ebfba46d868206493797a6472e32baf12`，`git bundle verify` 通过。当前除根 `main` 外仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读视觉证据，其 dirty 预览文件未修改、未清理。
@@ -26,6 +27,15 @@
 - 实现边界：沿用 T26 固定目标、GET-only、短超时、响应大小限制、严格字段校验、内存缓存与最近成功快照；允许扩展现有 T26 DTO/endpoint 或增加同命名空间只读 endpoint。前端复用 `CodexRadarRecommendations` 区域并新增矩阵子组件/数据解析；桌面贴近截图，390px 不产生整页横向溢出。
 - 最小验证：相关 Go service/handler/routes、前端 DTO/组件测试、typecheck、build、gofmt、diff-check，以及线上登录态桌面/390 专项。无迁移、无生产数据写入、无 GitHub Actions；预期 `downtime_required=false`。
 - 工作区边界：实现由独立用户可见顶层任务和独立 worktree 承担；根线程只登记、审查、合并、推送、发布与线上验收。`/private/tmp/sub2api-monitor-v3-preview` 继续作为用户指定的 dirty detached 视觉证据只读保护。
+
+### T27 自购账号口径、保存失败与财务页位置修复
+
+- 当前状态：`DESIGNING`。用户确认修复账号成本保存失败，并指出“自购账号”只应包含界面 `auth` 对应的原生账号类型 `oauth`；截图中的 `Pro-SHUAI-0.17 #21`、`Pro20x-SHUAI-0.2 #23` 等非 `oauth` 账号不应出现在自购账号列表。用户同时要求把“自购账号 · 人民币”栏位移动到截图圈定的财务总览卡片下方、分组 Tab 上方。
+- 根因证据：`AccountProfitabilityService.UpdateProcurementConfig` 读取 `cost_pending` 活动版本时，把允许为 `NULL` 的成本/额度扫描到非空 `float64`，数据库驱动错误被前端归一化成 `internal error`；`GetSelfPurchasedReport` 当前只按采购投影/台账识别账号，未限制 `accounts.type='oauth'`；`AccountProfitabilityView.vue` 当前把自购面板渲染在财务摘要卡片之前。
+- 目标：1) `cost_pending -> active` 重新录入采购成本时事务成功、幂等与审计保持不变；2) 自购报告 SQL、历史投影兼容分支和 UI 均只纳入 `oauth`/auth 类型，其他类型不进入统计、汇总或结算；3) 自购面板移动到总览 summary-grid 之后、scope/group tabs 之前，保持现有字段和横向滚动容器。
+- 非目标：不修改用户扣费、渠道 USD 经营口径、采购成本公式、账号调度、账号类型数据、历史 usage_logs 或生产数据；不新增迁移，不使用 GitHub Actions。
+- 最小验证：后端 service/sqlmock 覆盖 `cost_pending` 重录和非 oauth 排除；handler/API 报告契约回归；前端 AccountProfitabilityView 位置与过滤展示测试；账号监控采购成本保存回归；typecheck/build/diff-check；预期 `downtime_required=false`，由指挥线程决定后续发布。
+- 工作区边界：由指挥线程派生独立用户可见顶层任务和 worktree；当前根线程仅登记方案并把任务推送至指挥（8），不修改 T26-R1 worktree。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
 

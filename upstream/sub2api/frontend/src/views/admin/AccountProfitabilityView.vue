@@ -44,6 +44,10 @@
         >自购专题 · CNY</button>
       </div>
 
+      <p class="text-xs text-gray-500" data-test="quota-parity-note">
+        {{ t('admin.accountProfitability.quotaParityNote') }}
+      </p>
+
       <label class="block max-w-xl" data-test="account-search-label">
         <span class="sr-only">搜索账号</span>
         <input

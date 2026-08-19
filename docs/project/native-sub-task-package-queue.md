@@ -2,12 +2,12 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25 与 T26 均为 `DONE`；T26-R1 已登记为 `DESIGNING`，修复 T26 遗漏的 CodexRadar 三标签社区测试矩阵。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26 与 T26-R1 均为 `DONE`；T27 已登记为 `DESIGNING`。禁止使用 GitHub Actions。
 - 新增任务登记：T27“自购账号口径、保存失败与财务页位置修复”进入 `DESIGNING`，等待指挥线程按独立顶层任务/worktree 承接；不占用 T26-R1 的实现 worktree。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@9de147ad673ab23f92a59a36e9f075d8bbeb8897`、tree `be3d53d052dfb4fcb35f9c9e6e8661b1825be38c`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T26 最终蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T040727Z-production-3903052.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-9de147ad6-t26-mobile-overflow-v2.json`。
-- 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26 发布验收后又将候选、移动端修复和临时发布三个干净 worktree 归档并移除，同时删除两条已合并的本地 T26 分支。T26 恢复 bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/t26-final-9de147ad6/t26-refs.bundle`，SHA-256 `d08aa5b66ecdc404ce40ef06fd16c40ebfba46d868206493797a6472e32baf12`，`git bundle verify` 通过。当前除根 `main` 外仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读视觉证据，其 dirty 预览文件未修改、未清理。
-- 全局审计（2026-08-19）：根 `main`/`origin/main` 已同步，生产 release-state 绑定已验证发布源 `9de147ad673ab23f92a59a36e9f075d8bbeb8897`、tree `be3d53d052dfb4fcb35f9c9e6e8661b1825be38c`；队列登记任务均为 `DONE`，没有任务占用整合、部署或验收车道。非 `main` 仅剩用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`，不合并、不修改、不清理；根目录既有未跟踪资料继续保留。若无新任务登记，发布总控进入收口待命。
+- 当前发布状态：生产源 `main@92610b809588939b0c27f3fa831e9b24ef086de4`、tree `1a11bc8532935207b20430f4df6ad48986880ae9`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T26-R1 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T052951Z-production-3967901.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-92610b809-t26-r1-community-matrix-v1.json`。
+- 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26 发布验收后又将候选、移动端修复和临时发布三个干净 worktree 归档并移除，同时删除两条已合并的本地 T26 分支。T26-R1 候选 worktree/分支已在发布成功后归档移除，恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t26-r1-final-92610b809/t26-r1-refs.bundle`，SHA-256 `713e38c858b2ca336eab7a09bf8e856011836aaee6b4f5e66d055aba48d99817`，`git bundle verify` 通过。当前仅保留正在实施的 T27 worktree 与用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
+- 全局审计（2026-08-19）：根 `main`/`origin/main` 已同步到 `92610b809588939b0c27f3fa831e9b24ef086de4`，生产 release-state 同步绑定该源/tree；T26-R1 已完成部署验收，T27 处于 `DESIGNING`/独立实现阶段，没有任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 车道。非 `main` 仅保留 T27 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建` 与用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`，均不合并、不清理；根目录既有未跟踪资料继续保留。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -22,15 +22,14 @@
 
 ### T26-R1 CodexRadar 三标签社区测试矩阵补齐
 
-- 当前状态：`DESIGNING`。独立用户可见顶层任务 `01a01859-d512-7cd1-88c8-0c1dc18ab023` 已从最新 `main@3c85451ae120017cdd53d5540963a989ff680b50` 创建独立 worktree，正在完成修复规格、计划、TDD 实现和直接相关验证。用户指出此前已批准的 CodexRadar 截图中，“综合智能 / 软件工程能力 / 视觉空间推理”三标签社区测试矩阵未进入 T26 实现。根总控复核确认：T26 仅代理 `/api/radar-insights`，该接口只覆盖四类站长推荐；原页面矩阵还使用 `/api/intelligence-efficiency-metrics` 与 `/api/visual-spatial-reasoning`，因此属于已批准视觉范围的实现遗漏，而非线上加载故障。
-- 目标：继续在既有“站长推荐”下方按原站视觉补齐三标签矩阵；直接使用 CodexRadar 公开只读数据，显示更新时间、社区说明、全量模型/档位、样本数、IQ、费用和耗时。综合智能按 CodexRadar 当前原站组合口径展示，软件工程与视觉空间分别使用对应原始接口；不混入本站监控、计费、评分或推荐逻辑。
-- 实现边界：沿用 T26 固定目标、GET-only、短超时、响应大小限制、严格字段校验、内存缓存与最近成功快照；允许扩展现有 T26 DTO/endpoint 或增加同命名空间只读 endpoint。前端复用 `CodexRadarRecommendations` 区域并新增矩阵子组件/数据解析；桌面贴近截图，390px 不产生整页横向溢出。
-- 最小验证：相关 Go service/handler/routes、前端 DTO/组件测试、typecheck、build、gofmt、diff-check，以及线上登录态桌面/390 专项。无迁移、无生产数据写入、无 GitHub Actions；预期 `downtime_required=false`。
-- 工作区边界：实现由独立用户可见顶层任务和独立 worktree 承担；根线程只登记、审查、合并、推送、发布与线上验收。`/private/tmp/sub2api-monitor-v3-preview` 继续作为用户指定的 dirty detached 视觉证据只读保护。
+- 当前状态：`DONE`。独立用户可见顶层任务 `01a01859-d512-7cd1-88c8-0c1dc18ab023` 候选 `da80eb11aeda7bc5bc4981d862623f49172a9591` 已根审查、合并并推送为 `main@92610b809588939b0c27f3fa831e9b24ef086de4`、tree `1a11bc8532935207b20430f4df6ad48986880ae9`；新增登录态 GET-only `/api/v1/monitor-v2/codexradar-community`，补齐综合智能、软件工程能力、视觉空间推理三标签、原站综合口径、全量模型档位和社区指标。
+- 根合并后直接相关 service/handler/routes 测试、8 项前端 Vitest、typecheck、production build、Go build、gofmt 与 diff-check 均通过；无迁移、配置、生产数据写入或 GitHub Actions。0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-92610b809-t26-r1-community-matrix-v1.json`。
+- 既有蓝绿链返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，宿主记录 `/var/lib/sub2api/release-records/20260819T052951Z-production-3967901.json`；线上登录态 `/monitor` 已确认三标签、社区众测说明、样本/IQ/平均费用/分钟字段和模型卡存在，390px `scrollWidth=clientWidth=480` 无整页横向溢出，三标签切换生效；公网健康三项均 200。
+- 候选 worktree `/Users/gongtengxinwen/.codex/worktrees/5c03/sub2api搭建` 与分支 `codex/t26-r1-codexradar-community-matrix` 已在发布成功后归档删除；`/private/tmp/sub2api-monitor-v3-preview` 继续作为用户指定的 dirty detached 视觉证据只读保护。
 
 ### T27 自购账号口径、保存失败与财务页位置修复
 
-- 当前状态：`DESIGNING`。用户确认修复账号成本保存失败，并指出“自购账号”只应包含界面 `auth` 对应的原生账号类型 `oauth`；截图中的 `Pro-SHUAI-0.17 #21`、`Pro20x-SHUAI-0.2 #23` 等非 `oauth` 账号不应出现在自购账号列表。用户同时要求把“自购账号 · 人民币”栏位移动到截图圈定的财务总览卡片下方、分组 Tab 上方。
+- 当前状态：`DESIGNING`。独立用户可见顶层任务 `01a0187a-5c80-74f1-ad03-d658f01b9a52` 已从最新 `main@92610b809588939b0c27f3fa831e9b24ef086de4` 创建 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建`、分支 `codex/t27-procurement-oauth-position-fix`，正在执行正式规格、TDD 实现与直接相关验证。用户确认修复账号成本保存失败，并指出“自购账号”只应包含界面 `auth` 对应的原生账号类型 `oauth`；截图中的 `Pro-SHUAI-0.17 #21`、`Pro20x-SHUAI-0.2 #23` 等非 `oauth` 账号不应出现在自购账号列表。用户同时要求把“自购账号 · 人民币”栏位移动到截图圈定的财务总览卡片下方、分组 Tab 上方。
 - 根因证据：`AccountProfitabilityService.UpdateProcurementConfig` 读取 `cost_pending` 活动版本时，把允许为 `NULL` 的成本/额度扫描到非空 `float64`，数据库驱动错误被前端归一化成 `internal error`；`GetSelfPurchasedReport` 当前只按采购投影/台账识别账号，未限制 `accounts.type='oauth'`；`AccountProfitabilityView.vue` 当前把自购面板渲染在财务摘要卡片之前。
 - 目标：1) `cost_pending -> active` 重新录入采购成本时事务成功、幂等与审计保持不变；2) 自购报告 SQL、历史投影兼容分支和 UI 均只纳入 `oauth`/auth 类型，其他类型不进入统计、汇总或结算；3) 自购面板移动到总览 summary-grid 之后、scope/group tabs 之前，保持现有字段和横向滚动容器。
 - 非目标：不修改用户扣费、渠道 USD 经营口径、采购成本公式、账号调度、账号类型数据、历史 usage_logs 或生产数据；不新增迁移，不使用 GitHub Actions。

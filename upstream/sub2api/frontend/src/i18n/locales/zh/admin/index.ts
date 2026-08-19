@@ -54,6 +54,7 @@ export default {
     sort: { label: '账号排序', ascending: '升序', descending: '降序' },
     probe: { noRecords: '暂无探测记录', incomplete: '探测用量不完整', dataError: '探测数据暂不可用', retry: '重试探测数据' },
     account: { meta: '{platform} · {type}' },
+    quotaParityNote: '额度口径：1 USD 额度 = 1 CNY 额度（仅用于额度关系理解，不是汇率换算）',
     oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',
   },
   usageCostDetail: {

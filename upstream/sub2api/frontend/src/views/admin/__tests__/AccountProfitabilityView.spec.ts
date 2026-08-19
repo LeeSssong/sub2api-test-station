@@ -53,6 +53,7 @@ const messages: Record<string, string> = {
   'admin.accountProfitability.probe.dataError': '探测数据暂不可用',
   'admin.accountProfitability.probe.retry': '重试探测数据',
   'admin.accountProfitability.account.meta': '{platform} · {type}',
+  'admin.accountProfitability.quotaParityNote': '额度口径：1 USD 额度 = 1 CNY 额度（仅用于额度关系理解，不是汇率换算）',
   'common.refresh': '刷新',
 }
 
@@ -536,6 +537,22 @@ describe('AccountProfitabilityView', () => {
     expect(enAdmin.accountProfitability.summary.probeCost).toBe('Site probe cost')
     expect(pageSource).not.toMatch(/\/xingqiao|control-plane|tab=cost-exceptions|setTodayOverride|setOAuthCost/)
     expect(pageSource).not.toMatch(/<main[^>]*min-w-|<main[^>]*w-screen/)
+  })
+
+  it('keeps the CNY/USD quota relationship visible in both locale bundles and the lazy page', async () => {
+    const zhCopy = '额度口径：1 USD 额度 = 1 CNY 额度（仅用于额度关系理解，不是汇率换算）'
+    const enCopy = 'Quota basis: 1 USD quota = 1 CNY quota (for understanding the quota relationship only; not an exchange-rate conversion)'
+
+    expect(pageSource).toContain("t('admin.accountProfitability.quotaParityNote')")
+    expect(zhAdmin.accountProfitability.quotaParityNote).toBe(zhCopy)
+    expect(enAdmin.accountProfitability.quotaParityNote).toBe(enCopy)
+
+    const wrapper = mountPage()
+    await flushPromises()
+    const note = wrapper.get('[data-test="quota-parity-note"]')
+    expect(note.text()).toBe(zhCopy)
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    expect(wrapper.get('[data-test="quota-parity-note"]').text()).toBe(zhCopy)
   })
 
   it('opens the shared procurement form for every CNY OAuth row and refreshes after save', async () => {

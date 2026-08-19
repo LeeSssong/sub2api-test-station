@@ -54,6 +54,7 @@ export default {
     sort: { label: 'Sort accounts', ascending: 'Ascending', descending: 'Descending' },
     probe: { noRecords: 'No probe records', incomplete: 'Probe usage is incomplete', dataError: 'Probe data is temporarily unavailable', retry: 'Retry probe data' },
     account: { meta: '{platform} · {type}' },
+    quotaParityNote: 'Quota basis: 1 USD quota = 1 CNY quota (for understanding the quota relationship only; not an exchange-rate conversion)',
     oauthComplete: 'OAuth complete', oauthPending: 'OAuth pending',
   },
   usageCostDetail: {

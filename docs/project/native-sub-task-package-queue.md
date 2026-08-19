@@ -22,9 +22,10 @@
 
 ### T31 Monitor V2 视觉放大、时间线交互与 CodexRadar 列对齐
 
-- 当前状态：`REVIEWING`。用户已确认本任务负责渠道监控页面优化：时间线固定柱宽/柱高，悬停显示具体时间点与状态、整行绿色高亮和动态效果；恢复真实可用率展示并强化倍率；按截图比例放大渠道状态、站长推荐和降智雷达；推理强度从左到右高到低，缺档不补空位，不同模型相同强度必须落在同一列（Sol `ultra → max → xhigh → high → medium → low`）。不得修改 T30 的采购保存、OAuth 自购报表或成本录入范围。候选正在刷新到已投产 T30 的最新 `main@5758e91ad` 并复跑直接相关门禁。
-- 工作区：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t31-monitor-v2-visual-polish`，分支 `codex/t31-monitor-v2-visual-polish-main`；用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读保留。
-- 范围：仅 Monitor V2 前端组件、可用率最小数据合同、CodexRadar 排序/布局及直接相关测试；不改计费、调度、外部 Radar 数据源、生产数据或 GitHub Actions。完成 RED→GREEN、focused tests、typecheck/build、diff-check 和桌面/390px 视觉核对后交回根总控。
+- 当前状态：`DONE`。候选 `a742997a284719897eebcb6f6c5c82a2c60d2ed0`（功能提交 `8f846c962602af4238c71c817f9c701e798e9937`，刷新基线 `main@3097968e5`）已根审查、合并并推送为 `main@3a02d78833f245576478516ca9d395817f4d93c2`、tree `90111984d134101b76ac0b2e20827ee4e8dfd584`；T31 仅修改 Monitor V2 前端/i18n/直接测试，不含 T30 或后端改动。
+- 交付：时间线固定 5px×16px 柱体与 4px 间距；悬停/键盘聚焦显示精确秒级时间、UP/DOWN、中文状态和延迟；滚动后 tooltip 夹在可视区域；整组 hover/focus 绿色底色、动画和强化倍率；可用率严格由真实 timeline 点计算，空样本显示无数据；页面最大宽度 1500px；站长推荐/社区矩阵放大；Radar 按 `ultra → max → xhigh → high → medium → low` 排列，同 effort 跨模型同列，缺档不渲染 placeholder，390px 仅组件内滚动。
+- 验证：合并后 `pnpm vitest run src/features/monitor-v2/__tests__` 为 8 files/35 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 全部通过。0600 evidence `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-3a02d78833-t31.json`；宿主记录 `/var/lib/sub2api/release-records/20260819T133045Z-production-147673.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `blue`；API/worker/model-detector 同镜像且 healthy，共享 PostgreSQL/Redis/Caddy 身份未变，公网 `/healthz`、`/readyz`、`/health` 均 200。
+- 线上验收：登录态 `/monitor` 中文页面显示真实可用率（如 95%）、3 组时间线共 180 个探测点、每点带秒级 `aria-label`，Radar 社区卡 19 个且 placeholder 为 0；hover tooltip 显示 UP/DOWN、时间、状态和延迟；390px 页面 `scrollWidth=clientWidth`，时间线/社区矩阵横向滚动仅发生在自身容器。候选与发布 worktree 已生成恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t31-final-3a02d7883/t31-refs.bundle`，SHA-256 `174b762c003a5a964603c568745ba3caf81bc8d0e81d303d6d1c2cd1989124ab` 并通过 `git bundle verify`；用户指定的 `/private/tmp/sub2api-monitor-v3-preview` 继续只读保护。
 
 ### T26-R1 CodexRadar 三标签社区测试矩阵补齐
 

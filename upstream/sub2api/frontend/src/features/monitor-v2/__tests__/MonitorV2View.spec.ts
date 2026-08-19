@@ -26,14 +26,12 @@ const messages: Record<string, string> = {
   'monitorV2.window.30d': '30 天',
   'monitorV2.status.operational': '运行中',
   'monitorV2.status.unavailable': '服务不可用',
-  'monitorV2.flagship': '旗舰',
-  'monitorV2.availability': '{value}% 可用',
+  'monitorV2.availability': '可用性：{value}%',
   'monitorV2.availabilityNoData': '暂无可用率数据',
   'monitorV2.metric.ttft': 'TTFT P50',
   'monitorV2.metric.ttftP95': 'TTFT P95',
-  'monitorV2.metric.tps': '输出 TPS',
-  'monitorV2.metric.latency': '总延迟 P50',
-  'monitorV2.metric.latencyP95': '总延迟 P95',
+  'monitorV2.metric.availability': '可用性：',
+  'monitorV2.metric.averageLatency': '平均耗时：',
   'monitorV2.metric.samples': '基于 {count} 次调用',
   'monitorV2.metric.noSamples': '暂无调用样本',
   'monitorV2.metric.insufficient_data': '样本不足',
@@ -66,27 +64,24 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '6',
+  contract_version: '7',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',
   groups: [
     {
       id: 7,
-      name: 'OpenAI 旗舰组',
+      name: 'OpenAI 组',
       platform: 'openai',
       rate_multiplier: 0.2,
       peak_rate_enabled: false,
       peak_start: '',
       peak_end: '',
       peak_rate_multiplier: 1,
-      is_flagship: true,
       status: 'operational',
+      availability: { state: 'available', value: 100, sample_count: 28 },
       ttft: { state: 'available', value: 420, sample_count: 9842 },
-      ttft_p95: { state: 'available', value: 880, sample_count: 9842 },
-      tps: { state: 'available', value: 46.5, sample_count: 220 },
-      latency: { state: 'available', value: 1320, sample_count: 9842 },
-      latency_p95: { state: 'available', value: 2400, sample_count: 9842 },
+      average_latency: { state: 'available', value: 10000, sample_count: 9842 },
       timeline: [
         {
           bucket_start: '2026-07-29T06:00:00Z',
@@ -104,13 +99,10 @@ const snapshot: MonitorV2Snapshot = {
       peak_start: '',
       peak_end: '',
       peak_rate_multiplier: 1,
-      is_flagship: false,
       status: 'unavailable',
+      availability: { state: 'available', value: 0, sample_count: 28 },
       ttft: { state: 'insufficient_data', value: null, sample_count: 0 },
-      ttft_p95: { state: 'insufficient_data', value: null, sample_count: 0 },
-      tps: { state: 'not_provided', value: null, sample_count: 0 },
-      latency: { state: 'insufficient_data', value: null, sample_count: 0 },
-      latency_p95: { state: 'insufficient_data', value: null, sample_count: 0 },
+      average_latency: { state: 'insufficient_data', value: null, sample_count: 0 },
       timeline: [],
     },
   ],
@@ -159,17 +151,15 @@ describe('MonitorV2View', () => {
     document.dispatchEvent(new Event('visibilitychange'))
   }
 
-  it('renders enlarged interactive cards with real probe availability and a strong multiplier', () => {
+  it('renders native availability, latency metrics and the group multiplier', () => {
     const wrapper = mountView()
 
     expect(wrapper.get('[data-test="monitor-v2-page"]').classes()).toContain('max-w-[1500px]')
-    expect(wrapper.text()).toContain('OpenAI 旗舰组')
-    expect(wrapper.text()).toContain('100% 可用')
+    expect(wrapper.text()).toContain('OpenAI 组')
+    expect(wrapper.text()).toContain('可用性：100%')
     expect(wrapper.text()).toContain('0.2×')
     expect(wrapper.text()).toContain('420 ms')
-    expect(wrapper.text()).toContain('46.5 tok/s')
-    expect(wrapper.text()).toContain('1.32 s')
-    expect(wrapper.get('[data-test="monitor-flagship"]').text()).toBe('旗舰')
+    expect(wrapper.text()).toContain('平均耗时：10 s')
     expect(wrapper.text()).toContain('运行中')
     expect(wrapper.text()).toContain('服务不可用')
     for (const forbidden of [
@@ -182,6 +172,7 @@ describe('MonitorV2View', () => {
       '总延迟 P95',
       '880 ms',
       '2.4 s',
+      '旗舰',
       'P95 表示',
       '指标按所选时间范围汇总',
       '普通用户仅展示公开分组',
@@ -200,7 +191,7 @@ describe('MonitorV2View', () => {
     expect(flagshipCard.classes()).toContain('hover:bg-emerald-500/10')
     expect(flagshipCard.classes()).toContain('hover:-translate-y-0.5')
     expect(flagshipCard.classes()).toContain('focus-within:bg-emerald-500/10')
-    expect(wrapper.text()).toContain('暂无可用率数据')
+    expect(wrapper.text()).toContain('可用性：0%')
     const multiplier = wrapper.get('[data-test="monitor-rate-multiplier"]')
     expect(multiplier.text()).toContain('0.2×')
     expect(multiplier.classes()).toContain('bg-emerald-500/15')

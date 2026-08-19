@@ -80,20 +80,21 @@ export default {
       unavailable: 'Unavailable'
     },
     metric: {
+      availability: 'Availability: ',
       ttft: 'TTFT P50',
       ttftP95: 'TTFT P95',
       tps: 'Output TPS',
       latency: 'Total latency P50',
       latencyP95: 'Total latency P95',
+      averageLatency: 'Average latency: ',
       samples: 'Based on {count} calls',
       noSamples: 'No call samples',
       insufficient_data: 'Insufficient data',
       not_provided: 'Not provided'
     },
     baseRate: 'Base multiplier',
-    availability: '{value}% available',
+    availability: 'Availability: {value}%',
     availabilityNoData: 'No availability data',
-    flagship: 'Flagship',
     peakRate: '{start}-{end} peak multiplier {rate}×',
     timeline: {
       label: 'Availability timeline, {count} probe points',

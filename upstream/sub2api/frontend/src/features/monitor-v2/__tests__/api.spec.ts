@@ -8,7 +8,7 @@ import { MonitorV2ContractError, getMonitorV2Snapshot, validateMonitorV2Snapshot
 
 const metric = { state: 'available', value: 420, sample_count: 20 }
 const validPayload = {
-  contract_version: '6',
+  contract_version: '7',
   refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',
@@ -21,13 +21,10 @@ const validPayload = {
     peak_start: '',
     peak_end: '',
     peak_rate_multiplier: 1,
-    is_flagship: true,
     status: 'operational',
+    availability: { ...metric, value: 99 },
     ttft: metric,
-    ttft_p95: { ...metric, value: 880 },
-    tps: { ...metric, value: 46.5 },
-    latency: { ...metric, value: 1320 },
-    latency_p95: { ...metric, value: 2400 },
+    average_latency: { ...metric, value: 10000 },
     timeline: [{
       bucket_start: '2026-07-29T06:00:00Z',
       status: 'operational',
@@ -39,7 +36,7 @@ const validPayload = {
 describe('Monitor V2 API contract', () => {
   beforeEach(() => get.mockReset())
 
-  it('returns a validated version 6 snapshot without percentage fields', async () => {
+  it('returns a validated version 7 snapshot with native metrics', async () => {
     get.mockResolvedValue({ data: validPayload })
 
     const snapshot = await getMonitorV2Snapshot('7d')
@@ -48,9 +45,8 @@ describe('Monitor V2 API contract', () => {
       params: { window: '7d' },
       signal: undefined,
     })
-    expect(snapshot.groups[0]).toMatchObject({ name: 'GPT-Pro', is_flagship: true })
+    expect(snapshot.groups[0]).toMatchObject({ name: 'GPT-Pro', availability: { value: 99 } })
     expect(snapshot.groups[0].timeline[0].status).toBe('operational')
-    expect(snapshot.groups[0]).not.toHaveProperty('availability')
     expect(snapshot.groups[0]).not.toHaveProperty('cache_hit')
     expect(snapshot.groups[0].timeline[0]).not.toHaveProperty('success_count')
   })
@@ -68,6 +64,8 @@ describe('Monitor V2 API contract', () => {
     for (const legacy of [
       { availability: { state: 'available', value: 99, sample_count: 10, success_count: 9, eligible_count: 10 } },
       { cache_hit: { state: 'available', value: 40, sample_count: 10 } },
+      { is_flagship: true },
+      { ttft_p95: { ...metric, value: 880 } },
       { timeline: [{ ...validPayload.groups[0].timeline[0], success_count: 10 }] },
     ]) {
       expect(() => validateMonitorV2Snapshot({
@@ -127,13 +125,19 @@ describe('Monitor V2 API contract', () => {
     })).toThrow('timeline')
   })
 
-  it('requires P95 detail metrics', () => {
-    const { ttft_p95: _ttftP95, ...groupWithoutTTFTP95 } = validPayload.groups[0]
+  it('requires native availability and average latency metrics', () => {
+    const { availability: _availability, ...groupWithoutAvailability } = validPayload.groups[0]
 
     expect(() => validateMonitorV2Snapshot({
       ...validPayload,
-      groups: [groupWithoutTTFTP95],
-    })).toThrow('ttft_p95')
+      groups: [groupWithoutAvailability],
+    })).toThrow('availability')
+
+    const { average_latency: _averageLatency, ...groupWithoutAverageLatency } = validPayload.groups[0]
+    expect(() => validateMonitorV2Snapshot({
+      ...validPayload,
+      groups: [groupWithoutAverageLatency],
+    })).toThrow('average_latency')
   })
 
   it('rejects incomplete enabled peak pricing rules', () => {

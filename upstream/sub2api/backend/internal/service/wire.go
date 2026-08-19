@@ -1142,16 +1142,10 @@ func ProvideChannelMonitorService(
 
 func ProvideMonitorV2Service(
 	groupRepo GroupRepository,
-	channelMonitorService *ChannelMonitorService,
-	repo MonitorV2Repository,
+	native *AccountMonitorService,
 	settingService *SettingService,
 ) *MonitorV2Service {
-	return NewMonitorV2Service(
-		groupRepo,
-		channelMonitorService,
-		repo,
-		settingService,
-	)
+	return NewMonitorV2Service(groupRepo, native, settingService)
 }
 
 // ProvideChannelMonitorRunner 创建并启动渠道监控调度器。

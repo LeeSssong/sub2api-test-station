@@ -80,20 +80,21 @@ export default {
       unavailable: '服务不可用'
     },
     metric: {
+      availability: '可用性：',
       ttft: 'TTFT P50',
       ttftP95: 'TTFT P95',
       tps: '输出 TPS',
       latency: '总延迟 P50',
       latencyP95: '总延迟 P95',
+      averageLatency: '平均耗时：',
       samples: '基于 {count} 次调用',
       noSamples: '暂无调用样本',
       insufficient_data: '样本不足',
       not_provided: '未提供'
     },
     baseRate: '基础倍率',
-    availability: '{value}% 可用',
+    availability: '可用性：{value}%',
     availabilityNoData: '暂无可用率数据',
-    flagship: '旗舰',
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
     timeline: {
       label: '可用性时间线，共 {count} 个探测点',

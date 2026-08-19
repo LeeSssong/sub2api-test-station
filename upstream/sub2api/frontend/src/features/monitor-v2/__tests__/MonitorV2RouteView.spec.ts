@@ -57,7 +57,7 @@ vi.mock('vue-i18n', async () => {
 import MonitorV2RouteView from '../MonitorV2RouteView.vue'
 
 const emptySnapshot = {
-  contract_version: '6' as const,
+  contract_version: '7' as const,
   window: '7d' as const,
   refresh_interval_seconds: 60 as const,
   generated_at: '2026-07-29T12:00:00Z',

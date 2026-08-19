@@ -78,6 +78,11 @@ function metric(
   path: string
 ): MonitorV2Metric {
   const source = record(value, path)
+  for (const legacy of ['success_count', 'eligible_count', 'request_count']) {
+    if (Object.prototype.hasOwnProperty.call(source, legacy)) {
+      throw new MonitorV2ContractError(`${path}.${legacy} is not supported`)
+    }
+  }
   const state = text(source.state, `${path}.state`) as MonitorV2MetricState
   if (!METRIC_STATES.has(state)) {
     throw new MonitorV2ContractError(`${path}.state is unsupported`)
@@ -140,7 +145,7 @@ function group(value: unknown, path: string): MonitorV2Group {
       `${path}.timeline must contain at most ${MAX_TIMELINE_POINTS} points`
     )
   }
-  for (const legacy of ['models', 'availability', 'cache_hit']) {
+  for (const legacy of ['models', 'cache_hit', 'is_flagship', 'ttft_p95', 'tps', 'latency', 'latency_p95']) {
     if (Object.prototype.hasOwnProperty.call(source, legacy)) {
       throw new MonitorV2ContractError(`${path}.${legacy} is not supported`)
     }
@@ -174,13 +179,10 @@ function group(value: unknown, path: string): MonitorV2Group {
     peak_start: peakStart,
     peak_end: peakEnd,
     peak_rate_multiplier: peakRateMultiplier,
-    is_flagship: boolean(source.is_flagship, `${path}.is_flagship`),
     status,
+    availability: metric(source.availability, `${path}.availability`),
     ttft: metric(source.ttft, `${path}.ttft`),
-    ttft_p95: metric(source.ttft_p95, `${path}.ttft_p95`),
-    tps: metric(source.tps, `${path}.tps`),
-    latency: metric(source.latency, `${path}.latency`),
-    latency_p95: metric(source.latency_p95, `${path}.latency_p95`),
+    average_latency: metric(source.average_latency, `${path}.average_latency`),
     timeline: source.timeline.map((point, index) =>
       timelinePoint(point, `${path}.timeline[${index}]`)
     ),

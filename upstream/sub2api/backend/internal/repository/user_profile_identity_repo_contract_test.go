@@ -92,7 +92,7 @@ func (s *UserProfileIdentityRepoSuite) TestCreateAndLookupCanonicalAndChannelIde
 			ChannelAppID:   "wx-app",
 			ChannelSubject: "openid-123",
 		},
-		Issuer:          stringPtr("https://issuer.example"),
+		Issuer:          identityStringPtr("https://issuer.example"),
 		VerifiedAt:      &verifiedAt,
 		Metadata:        map[string]any{"unionid": "union-123"},
 		ChannelMetadata: map[string]any{"openid": "openid-123"},
@@ -574,6 +574,6 @@ func (t *sqlNullTime) Scan(value any) error {
 	}
 }
 
-func stringPtr(v string) *string {
+func identityStringPtr(v string) *string {
 	return &v
 }

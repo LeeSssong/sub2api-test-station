@@ -49,7 +49,7 @@ Branch: `codex/t34-native-probe-monitor-v2`
 
 - Pre-refresh candidate: `2e4ac36bc118b27c4c40a554284e09cfd90e207d`; branch and worktree were clean.
 - Final refresh baseline/target: `main@9d2fed6ebae4163fca546cc54f31a1018ceeb488`.
-- Final refresh merge: `dc9150e8ad7107aec05c78c3825e06bdf6c6e901`, parents `4e6780378e72441517924afce9170d95c74989b3` and `9d2fed6ebae4163fca546cc54f31a1018ceeb488`.
+- Final refresh merge: `ff12adaf082587b583c5374c6428d6ff17a16086`, parents `dc9150e8ad7107aec05c78c3825e06bdf6c6e901` and `9d2fed6ebae4163fca546cc54f31a1018ceeb488`.
 - Merge completed without conflicts. Relative to the prior `f96297c631548c56d89da3b7162d9007dd2c7a36` target, latest main added only the T35 production-close progress entry; no task-authored edit was made to the global ledger.
 - Backend refresh test passed: `go test ./internal/service ./internal/repository ./internal/handler ./cmd/server -run 'TestMonitorV2|TestAccountMonitor' -count=1`; `go build ./cmd/server` passed.
 - Frontend refresh test passed: `pnpm vitest run src/features/monitor-v2/__tests__` (8 files, 36 tests).

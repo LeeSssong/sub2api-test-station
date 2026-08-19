@@ -262,6 +262,82 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	}}, nil
 }
 
+// ProjectMonitorV2Groups returns a read-only native probe projection for the
+// requested groups. Eligibility is evaluated at snapshot time so Monitor V2
+// shares the scheduler's Account.IsSchedulable semantics.
+func (s *AccountMonitorService) ProjectMonitorV2Groups(
+	ctx context.Context,
+	groupIDs []int64,
+	start, end time.Time,
+	bucketSize time.Duration,
+) (map[int64]MonitorV2NativeGroupProjection, error) {
+	result := make(map[int64]MonitorV2NativeGroupProjection)
+	if s == nil || s.repo == nil || s.accountRepo == nil {
+		return nil, errors.New("account monitor native projection unavailable")
+	}
+	if len(groupIDs) == 0 || !end.After(start) || bucketSize <= 0 {
+		return result, nil
+	}
+	nativeRepo, ok := s.repo.(AccountMonitorGroupProbeRepository)
+	if !ok {
+		return nil, errors.New("account monitor native projection repository unavailable")
+	}
+	settings, err := s.loadSettings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load account monitor settings for monitor v2: %w", err)
+	}
+	accounts, err := s.listMonitorAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requestedGroups := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID > 0 {
+			requestedGroups[groupID] = struct{}{}
+		}
+	}
+	scopes := make([]MonitorV2GroupAccountScope, 0, len(accounts))
+	seen := make(map[MonitorV2GroupAccountScope]struct{})
+	for i := range accounts {
+		account := &accounts[i]
+		if !account.IsSchedulable() {
+			continue
+		}
+		accountGroups := make(map[int64]struct{}, len(account.GroupIDs)+len(account.Groups))
+		for _, groupID := range account.GroupIDs {
+			accountGroups[groupID] = struct{}{}
+		}
+		for _, group := range account.Groups {
+			if group != nil {
+				accountGroups[group.ID] = struct{}{}
+			}
+		}
+		for groupID := range accountGroups {
+			if _, requested := requestedGroups[groupID]; !requested {
+				continue
+			}
+			scope := MonitorV2GroupAccountScope{GroupID: groupID, AccountID: account.ID}
+			if _, exists := seen[scope]; exists {
+				continue
+			}
+			seen[scope] = struct{}{}
+			scopes = append(scopes, scope)
+		}
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].GroupID == scopes[j].GroupID {
+			return scopes[i].AccountID < scopes[j].AccountID
+		}
+		return scopes[i].GroupID < scopes[j].GroupID
+	})
+	freshSince := end.Add(-2 * time.Duration(settings.IntervalSeconds) * time.Second)
+	projection, err := nativeRepo.ProjectMonitorV2Groups(ctx, scopes, start, end, freshSince, bucketSize)
+	if err != nil {
+		return nil, fmt.Errorf("project native monitor v2 groups: %w", err)
+	}
+	return projection, nil
+}
+
 func ParseAccountMonitorRange(raw string) (AccountMonitorRange, time.Duration, error) {
 	switch AccountMonitorRange(raw) {
 	case "", AccountMonitorRange24Hours:
@@ -1525,7 +1601,7 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 	if err := g.Wait(); err != nil {
 		return completed, err
 	}
-	if err := s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour)); err != nil {
+	if err := s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour)); err != nil {
 		return completed, fmt.Errorf("delete account monitor history: %w", err)
 	}
 	_ = actorID
@@ -1581,7 +1657,7 @@ func (s *AccountMonitorService) RunOne(
 	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
 		RefreshDeclaration: true, RefreshBalance: true,
 	})
-	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
+	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour))
 	_ = actorID
 	return result, nil
 }

@@ -49,13 +49,10 @@ type monitorV2GroupResponse struct {
 	PeakStart          string                           `json:"peak_start,omitempty"`
 	PeakEnd            string                           `json:"peak_end,omitempty"`
 	PeakRateMultiplier float64                          `json:"peak_rate_multiplier,omitempty"`
-	IsFlagship         bool                             `json:"is_flagship"`
 	Status             string                           `json:"status"`
+	Availability       monitorV2MetricResponse          `json:"availability"`
 	TTFT               monitorV2MetricResponse          `json:"ttft"`
-	TTFTP95            monitorV2MetricResponse          `json:"ttft_p95"`
-	TPS                monitorV2MetricResponse          `json:"tps"`
-	Latency            monitorV2MetricResponse          `json:"latency"`
-	LatencyP95         monitorV2MetricResponse          `json:"latency_p95"`
+	AverageLatency     monitorV2MetricResponse          `json:"average_latency"`
 	Timeline           []monitorV2TimelinePointResponse `json:"timeline"`
 }
 
@@ -139,13 +136,10 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 			PeakStart:          group.PeakStart,
 			PeakEnd:            group.PeakEnd,
 			PeakRateMultiplier: group.PeakRateMultiplier,
-			IsFlagship:         group.IsFlagship,
 			Status:             group.Status,
+			Availability:       monitorV2MetricFromService(group.Availability),
 			TTFT:               monitorV2MetricFromService(group.TTFT),
-			TTFTP95:            monitorV2MetricFromService(group.TTFTP95),
-			TPS:                monitorV2MetricFromService(group.TPS),
-			Latency:            monitorV2MetricFromService(group.Latency),
-			LatencyP95:         monitorV2MetricFromService(group.LatencyP95),
+			AverageLatency:     monitorV2MetricFromService(group.AverageLatency),
 			Timeline:           timeline,
 		})
 	}

@@ -36,8 +36,8 @@ func (s *monitorV2SnapshotterStub) Snapshot(
 
 func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	ttftP95 := 880.0
-	latencyP95 := 2400.0
+	ttft := 880.0
+	averageLatency := 2400.0
 	stub := &monitorV2SnapshotterStub{
 		snapshot: &service.MonitorV2Snapshot{
 			ContractVersion:        service.MonitorV2ContractVersion,
@@ -50,16 +50,15 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 					Name:           "公开组",
 					Platform:       service.PlatformOpenAI,
 					RateMultiplier: 0.2,
-					IsFlagship:     true,
 					Status:         service.MonitorV2StatusOperational,
-					TTFTP95: service.MonitorV2Metric{
+					TTFT: service.MonitorV2Metric{
 						State:       service.MonitorV2MetricAvailable,
-						Value:       &ttftP95,
+						Value:       &ttft,
 						SampleCount: 180,
 					},
-					LatencyP95: service.MonitorV2Metric{
+					AverageLatency: service.MonitorV2Metric{
 						State:       service.MonitorV2MetricAvailable,
-						Value:       &latencyP95,
+						Value:       &averageLatency,
 						SampleCount: 199,
 					},
 				},
@@ -82,24 +81,25 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-	require.Equal(t, "6", envelope.Data["contract_version"])
+	require.Equal(t, service.MonitorV2ContractVersion, envelope.Data["contract_version"])
 	require.Equal(t, float64(300), envelope.Data["refresh_interval_seconds"])
 	require.Equal(t, "7d", envelope.Data["window"])
 	groups, ok := envelope.Data["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 1)
 	group := groups[0].(map[string]any)
-	require.Equal(t, true, group["is_flagship"])
+	_, hasFlagship := group["is_flagship"]
+	require.False(t, hasFlagship)
 	_, hasModels := group["models"]
 	require.False(t, hasModels)
 	_, hasAvailability := group["availability"]
-	require.False(t, hasAvailability)
+	require.True(t, hasAvailability)
 	_, hasCacheHit := group["cache_hit"]
 	require.False(t, hasCacheHit)
-	require.Equal(t, float64(880), group["ttft_p95"].(map[string]any)["value"])
-	require.Equal(t, float64(180), group["ttft_p95"].(map[string]any)["sample_count"])
-	require.Equal(t, float64(2400), group["latency_p95"].(map[string]any)["value"])
-	require.Equal(t, float64(199), group["latency_p95"].(map[string]any)["sample_count"])
+	require.Equal(t, float64(880), group["ttft"].(map[string]any)["value"])
+	require.Equal(t, float64(180), group["ttft"].(map[string]any)["sample_count"])
+	require.Equal(t, float64(2400), group["average_latency"].(map[string]any)["value"])
+	require.Equal(t, float64(199), group["average_latency"].(map[string]any)["sample_count"])
 
 	serialized := strings.ToLower(recorder.Body.String())
 	for _, forbidden := range []string{

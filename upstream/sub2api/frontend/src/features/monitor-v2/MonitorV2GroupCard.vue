@@ -11,8 +11,7 @@
           :class="availabilityClass"
         >
           <span class="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
-          {{ availabilityText }}
-          <span class="sr-only">{{ t(`monitorV2.status.${group.status}`) }}</span>
+          <span data-test="monitor-group-status">{{ t(`monitorV2.status.${group.status}`) }}</span>
         </span>
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -22,22 +21,17 @@
             >
               {{ group.name }}
             </h2>
-            <span v-if="group.is_flagship" data-test="monitor-flagship" class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
-              {{ t('monitorV2.flagship') }}
-            </span>
-            <span class="text-xl font-bold tabular-nums text-gray-700 dark:text-gray-200">
-              {{ primaryDuration }}
+            <span
+              data-test="monitor-rate-multiplier"
+              class="inline-flex items-center rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-2.5 py-1 text-base font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
+            >
+              {{ formatRate(group.rate_multiplier) }}×
             </span>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
-            <span>{{ t('monitorV2.metric.ttft') }} {{ metricValue(group.ttft, formatDuration) }}</span>
-            <span>{{ t('monitorV2.metric.tps') }} {{ metricValue(group.tps, formatTPS) }}</span>
-            <span
-              data-test="monitor-rate-multiplier"
-              class="inline-flex items-center rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-2.5 py-1 text-base font-black tabular-nums text-emerald-700 shadow-sm transition-transform duration-300 group-hover/monitor:scale-105 dark:text-emerald-300"
-            >
-              {{ t('monitorV2.baseRate') }} {{ formatRate(group.rate_multiplier) }}×
-            </span>
+            <span>{{ t('monitorV2.metric.availability') }}{{ metricValue(group.availability, formatAvailability) }}%</span>
+            <span>{{ t('monitorV2.metric.ttft') }}{{ metricValue(group.ttft, formatDuration) }}</span>
+            <span>{{ t('monitorV2.metric.averageLatency') }}{{ metricValue(group.average_latency, formatDuration) }}</span>
           </div>
         </div>
       </div>
@@ -57,31 +51,10 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const primaryDuration = computed(() => {
-  const metric = props.group.latency
-  return metric.state === 'available' && metric.value !== null ? formatDuration(metric.value) : '—'
-})
-
-const availability = computed(() => {
-  if (props.group.timeline.length === 0) return null
-  const operational = props.group.timeline.filter((point) => point.status === 'operational').length
-  return operational / props.group.timeline.length * 100
-})
-
-const availabilityText = computed(() => {
-  if (availability.value === null) return t('monitorV2.availabilityNoData')
-  return t('monitorV2.availability', { value: formatAvailability(availability.value) })
-})
-
 const availabilityClass = computed(() => {
-  if (availability.value === null) {
-    return props.group.status === 'operational'
-      ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
-      : 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
-  }
-  if (availability.value >= 99) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
-  if (availability.value >= 95) return 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200'
-  return 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
+  return props.group.status === 'operational'
+    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
+    : 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
 })
 
 function formatAvailability(value: number): string {
@@ -92,10 +65,6 @@ function formatAvailability(value: number): string {
 function formatDuration(value: number): string {
   if (value < 1000) return `${Math.round(value)} ms`
   return `${Number((value / 1000).toFixed(2))} s`
-}
-
-function formatTPS(value: number): string {
-  return `${Number(value.toFixed(1))} tok/s`
 }
 
 function formatRate(value: number): string {

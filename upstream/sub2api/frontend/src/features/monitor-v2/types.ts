@@ -1,9 +1,9 @@
-export const MONITOR_V2_CONTRACT_VERSION = '6' as const
+export const MONITOR_V2_CONTRACT_VERSION = '7' as const
 
 export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
 export type MonitorV2Window = '24h' | '7d' | '30d'
-export type MonitorV2MetricState = 'available' | 'insufficient_data' | 'not_provided'
+export type MonitorV2MetricState = 'available' | 'insufficient_data'
 export type MonitorV2GroupStatus =
   | 'operational'
   | 'unavailable'
@@ -28,13 +28,10 @@ export interface MonitorV2Group {
   peak_start: string
   peak_end: string
   peak_rate_multiplier: number
-  is_flagship: boolean
   status: MonitorV2GroupStatus
+  availability: MonitorV2Metric
   ttft: MonitorV2Metric
-  ttft_p95: MonitorV2Metric
-  tps: MonitorV2Metric
-  latency: MonitorV2Metric
-  latency_p95: MonitorV2Metric
+  average_latency: MonitorV2Metric
   timeline: MonitorV2TimelinePoint[]
 }
 

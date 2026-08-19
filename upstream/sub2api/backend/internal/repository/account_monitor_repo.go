@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	coreevents "github.com/Wei-Shaw/sub2api/internal/events"
@@ -100,6 +101,181 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 		}
 	}
 	return tx.Commit()
+}
+
+func (r *accountMonitorRepository) ProjectMonitorV2Groups(
+	ctx context.Context,
+	scopes []service.MonitorV2GroupAccountScope,
+	start, end, freshSince time.Time,
+	bucketSize time.Duration,
+) (map[int64]service.MonitorV2NativeGroupProjection, error) {
+	out := make(map[int64]service.MonitorV2NativeGroupProjection)
+	if len(scopes) == 0 {
+		return out, nil
+	}
+	if r == nil || r.db == nil {
+		return nil, errors.New("nil account monitor repository")
+	}
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return nil, errors.New("monitor v2 native projection requires a valid time range")
+	}
+	if freshSince.IsZero() || bucketSize <= 0 || end.Sub(start) < bucketSize {
+		return nil, errors.New("monitor v2 native projection requires valid freshness and bucket bounds")
+	}
+	seen := make(map[service.MonitorV2GroupAccountScope]struct{}, len(scopes))
+	groupIDs := make([]int64, 0, len(scopes))
+	accountIDs := make([]int64, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope.GroupID <= 0 || scope.AccountID <= 0 {
+			return nil, errors.New("monitor v2 native projection scope ids must be positive")
+		}
+		if _, exists := seen[scope]; exists {
+			return nil, fmt.Errorf("duplicate monitor v2 native projection scope %d/%d", scope.GroupID, scope.AccountID)
+		}
+		seen[scope] = struct{}{}
+		groupIDs = append(groupIDs, scope.GroupID)
+		accountIDs = append(accountIDs, scope.AccountID)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+	WITH scopes AS (
+		SELECT group_id, account_id
+		FROM unnest($4::bigint[], $5::bigint[]) AS scope(group_id, account_id)
+	), buckets AS (
+		SELECT bucket_start
+		FROM generate_series($1::timestamptz, $2::timestamptz - $6::interval, $6::interval) AS series(bucket_start)
+	), scoped_results AS (
+		SELECT
+			s.group_id,
+			r.id,
+			r.account_id,
+			r.status,
+			r.ttft_ms,
+			r.latency_ms,
+			date_bin($6::interval, r.checked_at, $1::timestamptz) AS bucket_start
+		FROM scopes s
+		JOIN account_monitor_results r ON r.account_id = s.account_id
+		WHERE r.checked_at >= $1
+		  AND r.checked_at < $2
+	), latest AS (
+		SELECT DISTINCT ON (r.account_id)
+			r.account_id,
+			r.status,
+			r.checked_at
+		FROM account_monitor_results r
+		WHERE r.account_id = ANY($5)
+		  AND r.checked_at <= $2
+		ORDER BY r.account_id, r.checked_at DESC, r.id DESC
+	), current_by_group AS (
+		SELECT
+			s.group_id,
+			BOOL_OR(l.status = 'success' AND l.checked_at >= $3) AS has_fresh_success
+		FROM scopes s
+		LEFT JOIN latest l ON l.account_id = s.account_id
+		GROUP BY s.group_id
+	), metrics AS (
+		SELECT
+			s.group_id,
+			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY sr.ttft_ms)
+				FILTER (WHERE sr.status = 'success' AND sr.ttft_ms IS NOT NULL) AS ttft_p50_ms,
+			AVG(sr.latency_ms) FILTER (WHERE sr.status = 'success' AND sr.latency_ms IS NOT NULL) AS average_latency_ms,
+			COUNT(sr.ttft_ms) FILTER (WHERE sr.status = 'success' AND sr.ttft_ms IS NOT NULL)::int AS ttft_sample_count,
+			COUNT(sr.latency_ms) FILTER (WHERE sr.status = 'success' AND sr.latency_ms IS NOT NULL)::int AS latency_sample_count
+		FROM (SELECT DISTINCT group_id FROM scopes) s
+		LEFT JOIN scoped_results sr ON sr.group_id = s.group_id
+		GROUP BY s.group_id
+	), bucket_metrics AS (
+		SELECT
+			s.group_id,
+			b.bucket_start,
+			CASE WHEN COUNT(sr.id) FILTER (WHERE sr.status = 'success') > 0
+				THEN 'operational' ELSE 'unavailable' END AS bucket_status,
+			AVG(sr.latency_ms) FILTER (WHERE sr.status = 'success' AND sr.latency_ms IS NOT NULL) AS bucket_latency_ms
+		FROM (SELECT DISTINCT group_id FROM scopes) s
+		CROSS JOIN buckets b
+		LEFT JOIN scoped_results sr
+			ON sr.group_id = s.group_id AND sr.bucket_start = b.bucket_start
+		GROUP BY s.group_id, b.bucket_start
+	), bucket_summary AS (
+		SELECT
+			group_id,
+			COUNT(*) FILTER (WHERE bucket_status = 'operational')::int AS operational_bucket_count,
+			COUNT(*)::int AS total_bucket_count
+		FROM bucket_metrics
+		GROUP BY group_id
+	)
+	SELECT
+		bm.group_id,
+		bm.bucket_start,
+		bm.bucket_status,
+		bm.bucket_latency_ms,
+		bs.operational_bucket_count,
+		bs.total_bucket_count,
+		m.ttft_p50_ms,
+		m.average_latency_ms,
+		m.ttft_sample_count,
+		m.latency_sample_count,
+		CASE WHEN COALESCE(c.has_fresh_success, FALSE) THEN 'operational' ELSE 'unavailable' END AS current_status
+	FROM bucket_metrics bm
+	JOIN bucket_summary bs ON bs.group_id = bm.group_id
+	JOIN metrics m ON m.group_id = bm.group_id
+	LEFT JOIN current_by_group c ON c.group_id = bm.group_id
+	ORDER BY bm.group_id, bm.bucket_start
+	`, start.UTC(), end.UTC(), freshSince.UTC(), pq.Array(groupIDs), pq.Array(accountIDs), bucketSize.String())
+	if err != nil {
+		return nil, fmt.Errorf("query native monitor v2 groups: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	seenGroups := make(map[int64]struct{})
+	for rows.Next() {
+		var (
+			groupID                                                       int64
+			operationalBuckets, totalBuckets, ttftSamples, latencySamples int
+			bucketStart                                                   time.Time
+			bucketStatus, currentStatus                                   string
+			bucketLatency, ttftP50, averageLatency                        sql.NullFloat64
+		)
+		if err := rows.Scan(
+			&groupID, &bucketStart, &bucketStatus, &bucketLatency,
+			&operationalBuckets, &totalBuckets, &ttftP50, &averageLatency,
+			&ttftSamples, &latencySamples, &currentStatus,
+		); err != nil {
+			return nil, fmt.Errorf("scan native monitor v2 groups: %w", err)
+		}
+		if _, exists := seenGroups[groupID]; !exists {
+			out[groupID] = service.MonitorV2NativeGroupProjection{
+				Status:                 currentStatus,
+				OperationalBucketCount: operationalBuckets,
+				TotalBucketCount:       totalBuckets,
+				TTFTP50MS:              accountMonitorRoundedFloat(ttftP50),
+				AverageLatencyMS:       accountMonitorRoundedFloat(averageLatency),
+				TTFTSampleCount:        ttftSamples,
+				LatencySampleCount:     latencySamples,
+			}
+			seenGroups[groupID] = struct{}{}
+		}
+		point := service.MonitorV2NativeTimelinePoint{
+			BucketStart: bucketStart.UTC(),
+			Status:      bucketStatus,
+			LatencyMS:   accountMonitorRoundedFloat(bucketLatency),
+		}
+		projection := out[groupID]
+		projection.Timeline = append(projection.Timeline, point)
+		out[groupID] = projection
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate native monitor v2 groups: %w", err)
+	}
+	return out, nil
+}
+
+func accountMonitorRoundedFloat(value sql.NullFloat64) *float64 {
+	if !value.Valid {
+		return nil
+	}
+	rounded := math.Round(value.Float64)
+	return &rounded
 }
 
 func (r *accountMonitorRepository) ListAggregates(

@@ -11,6 +11,7 @@ const (
 	AccountMonitorMinIntervalSeconds      = 15
 	AccountMonitorMaxIntervalSeconds      = 3600
 	AccountMonitorHistoryDays             = 7
+	AccountMonitorResultRetentionDays     = 30
 	AccountMonitorDefaultHistoryLimit     = 50
 	AccountMonitorGroupEvidenceWindow     = 5 * time.Minute
 	AccountMonitorGroupEvidenceMinSamples = 3
@@ -217,6 +218,39 @@ type AccountMonitorTimelinePoint struct {
 	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
 	LatencyMS  *float64  `json:"latency_ms,omitempty"`
 	CheckedAt  time.Time `json:"checked_at"`
+}
+
+type MonitorV2GroupAccountScope struct {
+	GroupID   int64
+	AccountID int64
+}
+
+type MonitorV2NativeTimelinePoint struct {
+	BucketStart time.Time
+	Status      string
+	LatencyMS   *float64
+}
+
+type MonitorV2NativeGroupProjection struct {
+	Status                 string
+	OperationalBucketCount int
+	TotalBucketCount       int
+	TTFTP50MS              *float64
+	AverageLatencyMS       *float64
+	TTFTSampleCount        int
+	LatencySampleCount     int
+	Timeline               []MonitorV2NativeTimelinePoint
+}
+
+// AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.
+// It is optional so existing Account Monitor repository adapters remain source-compatible.
+type AccountMonitorGroupProbeRepository interface {
+	ProjectMonitorV2Groups(
+		ctx context.Context,
+		scopes []MonitorV2GroupAccountScope,
+		start, end, freshSince time.Time,
+		bucketSize time.Duration,
+	) (map[int64]MonitorV2NativeGroupProjection, error)
 }
 
 type AccountMonitorMultiplier struct {

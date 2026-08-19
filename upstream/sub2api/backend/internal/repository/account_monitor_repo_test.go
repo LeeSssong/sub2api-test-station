@@ -62,6 +62,79 @@ func TestAccountMonitorRepositoryLoadsAndSavesSingletonSettings(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	projector, ok := repo.(service.AccountMonitorGroupProbeRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement native Monitor V2 projection")
+	}
+	start := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	freshSince := end.Add(-2 * time.Minute)
+	latency := 1000.4
+	ttft := 420.5
+	bucketLatency := 900.5
+	mock.ExpectQuery(`(?s)WITH scopes AS.*generate_series.*account_monitor_results.*checked_at >= \$.*checked_at < \$.*status = 'success'.*PERCENTILE_CONT\(0\.50\).*AVG\(.*latency_ms.*`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "bucket_start", "bucket_status", "bucket_latency_ms",
+			"operational_bucket_count", "total_bucket_count", "ttft_p50_ms", "average_latency_ms",
+			"ttft_sample_count", "latency_sample_count", "current_status",
+		}).
+			AddRow(int64(7), start, "operational", bucketLatency, 1, 1, ttft, latency, 3, 2, "operational").
+			AddRow(int64(8), start, "unavailable", nil, 0, 1, nil, nil, 0, 0, "unavailable"))
+
+	projection, err := projector.ProjectMonitorV2Groups(
+		context.Background(),
+		[]service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}, {GroupID: 8, AccountID: 2}},
+		start, end, freshSince, time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("ProjectMonitorV2Groups() error = %v", err)
+	}
+	if len(projection) != 2 || projection[7].Status != "operational" || projection[8].Status != "unavailable" {
+		t.Fatalf("projection = %#v", projection)
+	}
+	if projection[7].TTFTP50MS == nil || *projection[7].TTFTP50MS != 421 || projection[7].AverageLatencyMS == nil || *projection[7].AverageLatencyMS != 1000 {
+		t.Fatalf("group 7 metrics = %#v", projection[7])
+	}
+	if len(projection[7].Timeline) != 1 || projection[7].Timeline[0].LatencyMS == nil || *projection[7].Timeline[0].LatencyMS != 901 {
+		t.Fatalf("group 7 timeline = %#v", projection[7].Timeline)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryProjectMonitorV2GroupsRejectsInvalidInputWithoutQuery(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	projector, ok := repo.(service.AccountMonitorGroupProbeRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement native Monitor V2 projection")
+	}
+	start := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	if _, err := projector.ProjectMonitorV2Groups(context.Background(), nil, start, end, end, time.Hour); err != nil {
+		t.Fatalf("empty scopes should be a no-op: %v", err)
+	}
+	if _, err := projector.ProjectMonitorV2Groups(context.Background(), []service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}}, end, start, start, time.Hour); err == nil {
+		t.Fatal("expected invalid range error")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryPersistsGlobalScoreWeights(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T34 根总控整合启动（2026-08-20）：** 状态：`INTEGRATING`。T34 原生探测 Monitor V2 已合入根 `main@afffcad28bacdc167ce9918e362222d9b84a0d96`；合并树包含最新 T35 已发布主线与 T34 修复。根总控将从该 `main` 重新生成直接相关测试、类型检查、构建、source guard、diff-check 证据，再执行 `ops/release-sub2api-blue-green.sh --mode production`。用户已明确真机验收不阻塞后续；仅当发布预检返回 `downtime_required=true` 才暂停切换。
+**T34 渠道状态原生探测重构生产收口（2026-08-20）：** 状态：`DONE`。发布源 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`、tested tree `a84f38f5ffe32e58d020d0b719171714f278b02e`；证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-c1f10231-t34.json`。蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `blue`、`rolled_back=false`；宿主记录 `/var/lib/sub2api/release-records/20260819T184343Z-production-394397.json`，迁移哈希保持 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`。后端 Monitor V2/Account Monitor 聚焦测试、`go build ./cmd/server`、前端 8 files/36 tests、typecheck、production build、精确 source guard 与 diff-check 均通过；公网 `/healthz`、`/readyz`、`/health` 均 200。无迁移、无配置变更、无生产数据写入；登录态桌面/390px视觉截图未执行，按用户指令不阻塞真机验收和后续任务。
 
 **T35 采购保存 PostgreSQL 参数类型热修收口（2026-08-20）：** 状态：`DONE`。根 `main@f96297c631548c56d89da3b7162d9007dd2c7a36` 已推送；发布证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-f96297c6-t35.json` 绑定 tested tree `23113e823a2752268b332c9b3539f5367c961d71`。蓝绿链返回 `downtime_required=false`、`result=succeeded`、活动槽 `green`，新镜像为 `ghcr.io/leesssong/xingqiao-sub2api:release-f96297c631548c56d89da3b7162d9007dd2c7a36-5a583d1a25fc1a2b2a94d6af3e160901222dd5468e5885b29cd77e57f0175bab`。公网 `/healthz`、`/readyz`、`/health` 均 200；登录态“账号盈利”页的 USD 卡片与“自购专题 · CNY”17 个账号视图正常，采购成本待录入/编辑入口可见，无内部错误。三条 PostgreSQL 审计参数类型热修及原子事务验证已生效，未新增迁移、配置或生产数据写入；回滚为恢复上一已验证蓝绿槽/镜像。
 
@@ -12,7 +12,7 @@
 
 **T33 经营页账号卡片与搜索（2026-08-20）：** 状态：已完成（`DONE`）。候选已合入并推送为 `main@0839c7878d8d0c1f59fd11a3f0d3970de784ca1a`，tested tree `9d71116de98949f965c905d8a5fb4f66ce637ce5`；直接相关前端 33/33、typecheck、production build、diff-check 通过。0600 evidence `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-0839c7878-t33.json`；宿主发布记录返回 `downtime_required=false`、`result=succeeded`、活动槽 `blue`，API/worker/model-detector healthy，公网 `/healthz`、`/readyz`、`/health` 均 200。经营页已按账号独立卡片展示并支持搜索，明确本站 CNY 与 USD 额度按 1:1 理解。用户于 2026-08-20 明确要求后续任务不再等待真机验收，真机发现问题时自行反馈；现有部署和线上验证证据据此完成收口。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t33-profitability-cards-90cee9bf4.bundle` 已通过校验，SHA-256 `a86b71a39c38a6e0749331e7f22f1f87c4c1c801d94986f313abf3e604f05670`；候选 worktree、临时发布 worktree和本地分支已安全删除。
 
-**T34 渠道状态原生探测重构（2026-08-20）：** 状态：`INTEGRATING`。独立任务 `01a01ad3-774a-7e80-a0b7-9bc9bcde54ed` 的刷新候选已按批准规格完成并合入根 `main@afffcad28bacdc167ce9918e362222d9b84a0d96`。实现继续只读 Sub 原生 `account_monitor_results`，按 `Account.IsSchedulable()`、`2 x interval` 新鲜度和固定 24/28/30 桶投影 v7；页面显示“可用性 / 首字速度 / 平均耗时”，倍率紧邻分组名并移除“旗舰”。根总控正在执行合并树直接验证与生产发布，真机验收不作为本任务门禁。
+**T34 任务交接记录（2026-08-20）：** 独立任务 `01a01ad3-774a-7e80-a0b7-9bc9bcde54ed` 的刷新候选已按批准规格完成并进入上述生产收口。实现继续只读 Sub 原生 `account_monitor_results`，按 `Account.IsSchedulable()`、`2 x interval` 新鲜度和固定 24/28/30 桶投影 v7；页面显示“可用性 / 首字速度 / 平均耗时”，倍率紧邻分组名并移除“旗舰”。
 
 **T35 采购保存 PostgreSQL 参数类型热修（2026-08-20）：** 状态：`DONE`。独立任务 `01a01b11-3613-7ce0-811e-93d986e5cf16` 已完成真实 PostgreSQL 录入、清空、结算验证和三条 `jsonb_build_object` 精确类型修复；版本台账、事务、幂等、审计、成本公式和前端合同不变。无迁移、无生产数据写入；发布源、蓝绿结果和线上采购页面验收见上方 T35 收口记录。
 

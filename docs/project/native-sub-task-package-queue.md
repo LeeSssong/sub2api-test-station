@@ -2,11 +2,11 @@
 
 ## 当前新增任务（2026-08-19）
 
-- **根总控当前车道（2026-08-20）**：T34 已进入 `INTEGRATING`，唯一发布源为根 `main@afffcad28bacdc167ce9918e362222d9b84a0d96`；T35 已完成无停机部署并保持 `DONE`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。
+- **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。
 
 - **T32 账号评分回归修复**：状态 `DONE`。已合入并推送 `main@584b37bba6ed05d86a5a152160d37a9f92fefc9c`，完成 focused 测试、根发布预检、无停机蓝绿发布和线上专项验收。评分、当前状态与排名只使用 Sub 原生主动探测证据；暂停账号仍可参与评分和排名；只有主动探测返回 4xx/5xx 且调度关闭时停止探测并退出排名；调度关闭但主动探测成功时继续探测、评分和排名。生产记录 `/var/lib/sub2api/release-records/20260819T153809Z-production-245313.json`，0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-584b37bba-t32.json`。
 - **T33 经营页账号卡片与搜索**：状态 `DONE`。已合入并推送 `main@0839c7878d8d0c1f59fd11a3f0d3970de784ca1a`，tested tree `9d71116de98949f965c905d8a5fb4f66ce637ce5`；前端 33/33、typecheck、production build、diff-check 通过；发布链 `downtime_required=false`、`result=succeeded`、活动槽 `blue`，公网三项健康检查 200。USD/CNY 经营视图均为每账号独立卡片并支持搜索；页面明确解释本站 CNY 与 USD 额度按 1:1 理解，不改账务公式、采购保存或生产数据。用户于 2026-08-20 明确要求后续发布不再等待真机验收，真机发现问题时另行反馈，因此现有部署与线上验证证据完成收口并释放发布单车道。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t33-profitability-cards-90cee9bf4.bundle` 已通过 `git bundle verify`，SHA-256 `a86b71a39c38a6e0749331e7f22f1f87c4c1c801d94986f313abf3e604f05670`；候选 worktree、临时发布 worktree和本地分支已清理。
-- **T34 渠道状态原生探测重构**：状态 `INTEGRATING`。独立用户可见任务 `01a01ad3-774a-7e80-a0b7-9bc9bcde54ed` 的刷新候选已合入根 `main@afffcad28bacdc167ce9918e362222d9b84a0d96`；根总控将在该主线上重跑后端 targeted tests、Monitor V2 直接前端测试、typecheck、production build、source guard 与 diff-check，随后执行单车道蓝绿部署。Monitor V2 继续只读 `account_monitor_results` 原生主动探测，不使用真实请求或旧 Channel Monitor 主路径；固定 24/28/30 桶、倍率紧邻名称、移除“旗舰”和页面宽度合同保持不变。
+- **T34 渠道状态原生探测重构**：状态 `DONE`。独立用户可见任务 `01a01ad3-774a-7e80-a0b7-9bc9bcde54ed` 已合入并从 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b` 发布；证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-c1f10231-t34.json`，宿主记录 `/var/lib/sub2api/release-records/20260819T184343Z-production-394397.json`。Monitor V2 继续只读 `account_monitor_results` 原生主动探测；固定 24/28/30 桶、倍率紧邻名称、移除“旗舰”，线上三项健康端点均 200。无迁移、无配置、无生产数据写入；登录态视觉截图按用户指令留作未验证项，不阻塞任务完成。
 - **T35 采购保存 PostgreSQL 参数类型热修**：状态 `DONE`。独立用户可见任务 `01a01b11-3613-7ce0-811e-93d986e5cf16` 已完成真实 PostgreSQL 录入、清空、结算验证和三条 `jsonb_build_object` 精确类型修复；版本台账、事务、幂等、审计、成本公式和前端合同不变。无迁移、无生产数据写入；发布源、蓝绿结果和线上采购页面验收见项目进度总账。
 
 发布顺序：T32、T33 已完成；T34 与 T35 可并行刷新/设计实施，但合并、部署和线上验收仍严格单车道，一个任务包一次发布。根总控按候选就绪与故障优先级选择唯一发布候选，不再等待用户真机反馈；真机问题作为后续独立反馈处理。

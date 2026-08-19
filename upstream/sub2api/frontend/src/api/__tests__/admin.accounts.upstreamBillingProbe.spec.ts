@@ -15,7 +15,8 @@ import {
   probeUpstreamBilling,
   probeUpstreamBillingBatch,
   setUpstreamBillingProbeEnabled,
-  updateUpstreamBillingProbeSettings
+  updateProcurementCost,
+  updateUpstreamBillingProbeSettings,
 } from '@/api/admin/accounts'
 
 describe('admin account upstream billing probe API', () => {
@@ -49,5 +50,14 @@ describe('admin account upstream billing probe API', () => {
     expect(put).toHaveBeenCalledWith('/admin/accounts/7/upstream-billing-probe', { enabled: true })
     expect(post).toHaveBeenNthCalledWith(1, '/admin/accounts/7/upstream-billing-probe')
     expect(post).toHaveBeenNthCalledWith(2, '/admin/accounts/upstream-billing-probe/batch', { account_ids: [7] })
+  })
+
+  it('uses the explicit cost-dialog session idempotency key', async () => {
+    put.mockResolvedValueOnce({ data: { account_id: 7 } })
+    await expect(updateProcurementCost(7, 4, 60, 'procurement-session-1')).resolves.toEqual({ account_id: 7 })
+    expect(put).toHaveBeenCalledWith('/admin/accounts/7', {
+      procurement_cost_cny: 4,
+      estimated_usable_quota_usd: 60,
+    }, { headers: { 'Idempotency-Key': 'procurement-session-1' } })
   })
 })

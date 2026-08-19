@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -41,6 +42,9 @@ func TestExistingAccountUpdateRoutesProcurementThroughVersionLedger(t *testing.T
 	mock.ExpectCommit()
 
 	stub := newStubAdminService()
+	amount := 4.0
+	quota := 120.0
+	stub.getAccountResult = &service.Account{ID: 3, Status: service.StatusActive, ProcurementCostCNY: &amount, EstimatedUsableQuotaUSD: &quota}
 	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
 	router := gin.New()
@@ -55,7 +59,43 @@ func TestExistingAccountUpdateRoutesProcurementThroughVersionLedger(t *testing.T
 	request.Header.Set("Idempotency-Key", "legacy-edit-1")
 	router.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Nil(t, stub.lastUpdateAccountInput.ProcurementCost, "legacy projection write must be replaced by the ledger transaction")
+	require.Zero(t, stub.updateAccountCalls, "procurement-only PUT must not run the general account update")
+	var responseBody struct {
+		Data struct {
+			ProcurementCostCNY      *float64 `json:"procurement_cost_cny"`
+			EstimatedUsableQuotaUSD *float64 `json:"estimated_usable_quota_usd"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
+	require.Equal(t, 4.0, *responseBody.Data.ProcurementCostCNY)
+	require.Equal(t, 120.0, *responseBody.Data.EstimatedUsableQuotaUSD)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountHandlerProcurementFailureDoesNotRunGeneralAccountUpdate(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions").WithArgs("procurement-failure-1").WillReturnError(errors.New("ledger unavailable"))
+
+	stub := newStubAdminService()
+	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.PUT("/accounts/:id", h.Update)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/accounts/3", bytes.NewBufferString(`{"procurement_cost_cny":4,"estimated_usable_quota_usd":120}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "procurement-failure-1")
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Zero(t, stub.updateAccountCalls)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

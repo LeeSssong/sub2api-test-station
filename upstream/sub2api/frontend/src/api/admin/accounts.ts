@@ -212,12 +212,13 @@ export async function updateProcurementCost(
   id: number,
   cost: number | null,
   estimatedQuotaUSD: number | null,
+  idempotencyKey: string,
 ): Promise<AccountWithProcurementCost> {
   const payload: AccountProcurementCostUpdate = {
     procurement_cost_cny: cost,
     estimated_usable_quota_usd: estimatedQuotaUSD,
   }
-  const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload)
+  const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload, { headers: { 'Idempotency-Key': idempotencyKey } })
   return data
 }
 

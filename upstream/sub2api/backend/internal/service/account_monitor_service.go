@@ -692,10 +692,6 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			managementState := accountMonitorManagementState(account, now)
 			groupAggregate := groupAggregates[accountID]
 			globalAggregate := globalAggregates[accountID]
-			if managementState == accountMonitorManagementPaused {
-				groupAggregate = AccountMonitorAggregate{}
-				globalAggregate = AccountMonitorAggregate{}
-			}
 			evidence, _ := accountMonitorEvidence(groupAggregate, globalAggregate, groupEvidenceAvailable, latest[accountID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			row.SampleCount = evidence.SampleCount
@@ -713,9 +709,9 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			row.ServiceState = accountMonitorGroupServiceState(row, evidence, row.ManagementState)
 			row.GroupEligibility = accountMonitorGroupEligibility(row, group.RateMultiplier)
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
-			row.Eligible = row.ManagementState == accountMonitorManagementEnabled &&
-				row.ServiceState == accountMonitorServiceAvailable &&
-				row.GroupEligibility == accountMonitorEligibilityEligible
+			row.Eligible = (row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped) &&
+				row.GroupEligibility == accountMonitorEligibilityEligible &&
+				(row.ManagementState == accountMonitorManagementPaused || row.ServiceState == accountMonitorServiceAvailable)
 			if row.Eligible {
 				row.QualityScore = CalculateAccountMonitorQualityScore(group.RateMultiplier, *row.Multiplier.Value, group.ScoreWeights, evidence)
 			}
@@ -1011,19 +1007,31 @@ func projectAccountMonitorProbe(
 }
 
 func accountMonitorAvailabilityStatus(managementState string, stale bool, sampleCount, consecutiveFailed int, latest AccountMonitorLatest) string {
-	if managementState == accountMonitorManagementPaused {
-		return accountMonitorAvailabilityDisabled
-	}
 	if sampleCount == 0 || stale {
 		return accountMonitorAvailabilityStale
 	}
-	if consecutiveFailed >= 3 || accountMonitorFatalProbeError(latest) {
+	if managementState == accountMonitorManagementPaused {
+		if accountMonitorHTTPFailure(latest) {
+			return accountMonitorAvailabilityUnavailable
+		}
+	} else if consecutiveFailed >= 3 || accountMonitorFatalProbeError(latest) {
 		return accountMonitorAvailabilityUnavailable
 	}
 	if latest.Status == "success" {
 		return accountMonitorAvailabilityNormal
 	}
 	return accountMonitorAvailabilityAbnormal
+}
+
+func accountMonitorHTTPFailure(latest AccountMonitorLatest) bool {
+	return latest.Status == "failed" && latest.HTTPStatus != nil && *latest.HTTPStatus >= http.StatusBadRequest && *latest.HTTPStatus <= 599
+}
+
+func accountMonitorProbeShouldStop(account Account, latest AccountMonitorLatest) bool {
+	if !accountMonitorAccountPaused(account, time.Now().UTC()) {
+		return false
+	}
+	return accountMonitorHTTPFailure(latest)
 }
 
 func accountMonitorScoreStatus(availabilityStatus string) string {
@@ -1120,9 +1128,6 @@ func accountMonitorGroupServiceState(
 }
 
 func accountMonitorGroupEligibility(row AccountMonitorGroupAccount, groupMultiplier float64) string {
-	if row.ManagementState == accountMonitorManagementPaused {
-		return accountMonitorEligibilityNotApplicable
-	}
 	if row.Multiplier.Status != AccountMonitorMultiplierStatusOK || row.Multiplier.Value == nil {
 		return accountMonitorEligibilityMultiplierPending
 	}
@@ -1486,12 +1491,23 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 		return 0, err
 	}
 	runID := uuid.NewString()
+	ids := make([]int64, 0, len(accounts))
+	for _, account := range accounts {
+		ids = append(ids, account.ID)
+	}
+	latest, err := s.repo.ListLatest(ctx, ids)
+	if err != nil {
+		return 0, fmt.Errorf("list latest account monitor results: %w", err)
+	}
 	var mu sync.Mutex
 	var completed int
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(8)
 	for _, account := range accounts {
 		account := account
+		if accountMonitorProbeShouldStop(account, latest[account.ID]) {
+			continue
+		}
 		g.Go(func() error {
 			result := s.probeAccount(gctx, account)
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
@@ -1544,7 +1560,16 @@ func (s *AccountMonitorService) RunOne(
 		}
 	}
 	if target == nil {
-		runErr = fmt.Errorf("account %d is not active and schedulable", accountID)
+		runErr = fmt.Errorf("account %d is not active", accountID)
+		return AccountMonitorProbeResult{}, runErr
+	}
+	latest, err := s.repo.ListLatest(ctx, []int64{target.ID})
+	if err != nil {
+		runErr = fmt.Errorf("list latest account monitor results: %w", err)
+		return AccountMonitorProbeResult{}, runErr
+	}
+	if accountMonitorProbeShouldStop(*target, latest[target.ID]) {
+		runErr = fmt.Errorf("account %d monitor probe stopped after closed-scheduling HTTP error", accountID)
 		return AccountMonitorProbeResult{}, runErr
 	}
 	result := s.probeAccount(ctx, *target)
@@ -1859,11 +1884,11 @@ func (s *AccountMonitorService) loadSettings(ctx context.Context) (AccountMonito
 func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error) {
 	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
 	if err != nil {
-		return nil, fmt.Errorf("list active schedulable accounts: %w", err)
+		return nil, fmt.Errorf("list active monitor accounts: %w", err)
 	}
 	filtered := accounts[:0]
 	for _, account := range accounts {
-		if account.Status == StatusActive && account.Schedulable {
+		if account.Status == StatusActive {
 			filtered = append(filtered, account)
 		}
 	}

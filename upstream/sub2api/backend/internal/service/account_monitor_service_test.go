@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -371,11 +372,11 @@ func TestAccountMonitorProbeProjectionUsesOnlyFreshProbeEvidence(t *testing.T) {
 			availability: accountMonitorAvailabilityStale, scoreStatus: accountMonitorScoreIneligible,
 		},
 		{
-			name:         "disabled account cannot score",
+			name:         "paused account with fresh success still scores",
 			management:   accountMonitorManagementPaused,
 			aggregate:    AccountMonitorAggregate{SampleCount: 24, SuccessCount: 24, SuccessRate: 1, LastCheckedAt: timePtr(now.Add(-time.Minute))},
 			latest:       AccountMonitorLatest{Status: "success", CheckedAt: now.Add(-time.Minute)},
-			availability: accountMonitorAvailabilityDisabled, scoreStatus: accountMonitorScoreIneligible,
+			availability: accountMonitorAvailabilityNormal, scoreStatus: accountMonitorScoreEligible, eligible: true,
 		},
 	}
 	for _, tt := range tests {
@@ -460,7 +461,7 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
+	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
 	if !repo.listAllCalled || repo.listAllStatus != "" {
@@ -519,7 +520,7 @@ func TestAccountMonitorModelFallsBackToNativePlatformDefaults(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) {
+func TestAccountMonitorListPoolKeepsActiveAccountsIncludingPaused(t *testing.T) {
 	service := NewAccountMonitorService(nil, &accountMonitorAccountRepoStub{accounts: []Account{
 		{ID: 9, Status: StatusActive, Schedulable: true},
 		{ID: 2, Status: StatusActive, Schedulable: true},
@@ -531,7 +532,7 @@ func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
+	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
 }
@@ -695,7 +696,7 @@ func TestAccountMonitorProjectionSeparatesManagementServiceAndGroupEligibility(t
 	}
 
 	global := accountMonitorRowsByID(page.Accounts)
-	if global[1].ManagementState != "paused" || global[1].ServiceState != "not_monitored" || global[1].GroupEligibility != "not_applicable" || global[1].MonitorBucket != "paused" {
+	if global[1].ManagementState != "paused" || global[1].ServiceState != "available" || global[1].AvailabilityStatus != accountMonitorAvailabilityNormal || global[1].GroupEligibility != "not_applicable" || global[1].MonitorBucket != "paused" || !global[1].Eligible {
 		t.Fatalf("paused global state = %#v", global[1])
 	}
 	if global[3].ManagementState != "enabled" || global[3].ServiceState != "available" || global[3].GroupEligibility != "not_applicable" || global[3].MonitorBucket != "available" {
@@ -1194,7 +1195,7 @@ func TestAccountMonitorGroupQualityEvidenceExcludesExpiredAutoPausedAccount(t *t
 		t.Fatal(err)
 	}
 	if page.Groups[0].Accounts[0].Eligible {
-		t.Fatalf("expired auto-paused account unexpectedly eligible: %#v", page.Groups[0].Accounts[0])
+		t.Fatalf("expired auto-paused account without cost evidence must remain ineligible: %#v", page.Groups[0].Accounts[0])
 	}
 }
 
@@ -2548,6 +2549,106 @@ func TestAccountMonitorServiceRunOneWaitsForInFlightRunAll(t *testing.T) {
 	defer probeMu.Unlock()
 	if probeCalls != 2 {
 		t.Fatalf("physical probe calls = %d", probeCalls)
+	}
+}
+
+func TestAccountMonitorProbeShouldStopOnlyForClosedAccountHTTP4xxOr5xx(t *testing.T) {
+	now := time.Now().UTC()
+	tests := []struct {
+		name     string
+		account  Account
+		latest   AccountMonitorLatest
+		wantStop bool
+	}{
+		{name: "paused success continues", account: Account{Status: StatusActive, Schedulable: false}, latest: AccountMonitorLatest{Status: "success", CheckedAt: now}},
+		{name: "paused 401 stops", account: Account{Status: StatusActive, Schedulable: false}, latest: AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusUnauthorized), CheckedAt: now}, wantStop: true},
+		{name: "paused 500 stops", account: Account{Status: StatusActive, Schedulable: false}, latest: AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusInternalServerError), CheckedAt: now}, wantStop: true},
+		{name: "schedulable 500 continues", account: Account{Status: StatusActive, Schedulable: true}, latest: AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusInternalServerError), CheckedAt: now}},
+		{name: "paused timeout continues", account: Account{Status: StatusActive, Schedulable: false}, latest: AccountMonitorLatest{Status: "failed", ErrorCode: "timeout", CheckedAt: now}},
+		{name: "paused without evidence continues", account: Account{Status: StatusActive, Schedulable: false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := accountMonitorProbeShouldStop(tt.account, tt.latest); got != tt.wantStop {
+				t.Fatalf("stop=%v, want %v", got, tt.wantStop)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorPausedProbeProjectionScoresRanksAndKeepsNoEvidencePending(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	pausedSuccess := Account{ID: 401, Name: "paused-success", Status: StatusActive, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	pausedHTTPError := Account{ID: 402, Name: "paused-http-error", Status: StatusActive, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	pausedMissing := Account{ID: 403, Name: "paused-missing", Status: StatusActive, Schedulable: false, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	activeSuccess := Account{ID: 404, Name: "active-success", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			401: {SampleCount: 8, SuccessCount: 8, SuccessSampleCount: 8, SuccessRate: 1, LastCheckedAt: &now},
+			402: {SampleCount: 8, ErrorCount: 8, LastCheckedAt: &now},
+			404: {SampleCount: 8, SuccessCount: 8, SuccessSampleCount: 8, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			401: {Status: "success", CheckedAt: now},
+			402: {Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: now},
+			404: {Status: "success", CheckedAt: now},
+		},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{pausedSuccess, pausedHTTPError, pausedMissing, activeSuccess}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[int64]AccountMonitorAccount, len(page.Accounts))
+	for _, row := range page.Accounts {
+		byID[row.AccountID] = row
+	}
+	if row := byID[401]; row.AvailabilityStatus != accountMonitorAvailabilityNormal || row.QualityScore == nil || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("paused successful probe projection = %#v, want normal/scored/ranked", row)
+	}
+	if row := byID[402]; row.GroupRank != nil || row.QualityScore != nil || row.AvailabilityStatus != accountMonitorAvailabilityUnavailable {
+		t.Fatalf("paused HTTP error projection = %#v, want unavailable/unranked", row)
+	}
+	if row := byID[403]; row.GroupRank != nil || row.QualityScore != nil || row.ServiceState != accountMonitorServicePending {
+		t.Fatalf("paused missing probe projection = %#v, want pending/unranked", row)
+	}
+	if row := byID[404]; row.QualityScore == nil || row.GroupRank == nil {
+		t.Fatalf("active successful probe projection = %#v, want scored/ranked", row)
+	}
+}
+
+func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *testing.T) {
+	makeService := func(latest AccountMonitorLatest) (*AccountMonitorService, *accountMonitorRepoStub, *int) {
+		repo := &accountMonitorRepoStub{
+			latest:   map[int64]AccountMonitorLatest{405: latest},
+			settings: AccountMonitorSettings{IntervalSeconds: 300},
+		}
+		accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 405, Status: StatusActive, Schedulable: false}}}
+		service := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+		calls := 0
+		service.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+			calls++
+			return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+		}
+		return service, repo, &calls
+	}
+
+	service, repo, calls := makeService(AccountMonitorLatest{Status: "success", CheckedAt: time.Now().UTC()})
+	if _, err := service.RunAll(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 || len(repo.results) != 1 {
+		t.Fatalf("closed success run = calls %d results %d, want one physical probe", *calls, len(repo.results))
+	}
+
+	service, repo, calls = makeService(AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: time.Now().UTC()})
+	if _, err := service.RunAll(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 0 || len(repo.results) != 0 {
+		t.Fatalf("closed HTTP error run = calls %d results %d, want stopped", *calls, len(repo.results))
 	}
 }
 func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.T) {

@@ -332,6 +332,11 @@ type SaveCompletion = {
   resolve: () => void
   reject: (reason?: unknown) => void
 }
+type ProcurementMutationSession = {
+  accountID: number
+  payload: string
+  idempotencyKey: string
+}
 
 const ranges: { value: AccountMonitorRange; label: string }[] = [
   { value: '24h', label: '24 小时' },
@@ -374,6 +379,7 @@ const showCostDialog = ref(false)
 const savingCost = ref(false)
 const costDialogError = ref<string | null>(null)
 const selectedCostAccount = ref<AccountMonitorAccount | null>(null)
+let procurementMutationSession: ProcurementMutationSession | null = null
 const selectedNativeAccount = ref<Account | null>(null)
 const showAccountInfoDialog = ref(false)
 const showEditAccountDialog = ref(false)
@@ -722,6 +728,7 @@ async function updatePriority(accountID: number, priority: number, completion: S
 }
 
 function openCostDialog(account: AccountMonitorAccount): void {
+  procurementMutationSession = null
   selectedCostAccount.value = account
   costDialogError.value = null
   showCostDialog.value = true
@@ -730,7 +737,19 @@ function openCostDialog(account: AccountMonitorAccount): void {
 function closeCostDialog(): void {
   if (savingCost.value) return
   showCostDialog.value = false
+  procurementMutationSession = null
   costDialogError.value = null
+}
+
+function procurementIdempotencyKey(accountID: number, cost: number | null, estimatedQuotaUSD: number | null): string {
+  const payload = JSON.stringify([cost, estimatedQuotaUSD])
+  if (procurementMutationSession?.accountID === accountID && procurementMutationSession.payload === payload) {
+    return procurementMutationSession.idempotencyKey
+  }
+  const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const idempotencyKey = `account-procurement-${accountID}-${requestID}`
+  procurementMutationSession = { accountID, payload, idempotencyKey }
+  return idempotencyKey
 }
 
 function reportCostReloadFailure(operation: string): void {
@@ -745,13 +764,15 @@ async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
   savingCost.value = true
   costDialogError.value = null
   try {
-    await adminAPI.accounts.updateProcurementCost(account.account_id, cost, estimatedQuotaUSD)
+    await adminAPI.accounts.updateProcurementCost(account.account_id, cost, estimatedQuotaUSD, procurementIdempotencyKey(account.account_id, cost, estimatedQuotaUSD))
+    procurementMutationSession = null
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {
       reportCostReloadFailure('保存采购成本')
       return
     }
     showCostDialog.value = false
+    procurementMutationSession = null
     appStore.showSuccess('采购成本与预计额度已更新')
   } catch (reason: unknown) {
     costDialogError.value = extractApiErrorMessage(reason, '保存采购成本失败')
@@ -818,13 +839,15 @@ async function clearProcurementCost() {
   savingCost.value = true
   costDialogError.value = null
   try {
-    await adminAPI.accounts.updateProcurementCost(account.account_id, null, null)
+    await adminAPI.accounts.updateProcurementCost(account.account_id, null, null, procurementIdempotencyKey(account.account_id, null, null))
+    procurementMutationSession = null
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {
       reportCostReloadFailure('清空采购成本')
       return
     }
     showCostDialog.value = false
+    procurementMutationSession = null
     appStore.showSuccess('采购成本已清空')
   } catch (reason: unknown) {
     costDialogError.value = extractApiErrorMessage(reason, '清空采购成本失败')

@@ -1,9 +1,9 @@
 # T28 Handoff
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 基线：`main@eaf59c5d6cd8a7b3581a37d61d1694cf1558ca0b`
+- 基线：`main@f27fc4d65ce41f9e32ea2ea5ddcb5b7b22bb676d`
 - 候选分支：`codex/t28-procurement-put-score-dom`
-- 范围：采购 PUT 事务顺序/错误隔离、前端采购幂等键与 PUT+reload 反馈、评分 DOM 左到右评分/优先级/排名。
+- 范围：采购-only PUT 原子边界、成本弹窗会话级幂等键与 PUT+reload 反馈、账号卡片按评分排名进入最终 DOM。
 - 规格：`docs/superpowers/specs/2026-08-19-t28-procurement-put-score-dom-design.md`
 - 计划：`docs/superpowers/plans/2026-08-19-t28-procurement-put-score-dom.md`
 
@@ -13,17 +13,17 @@
 - `upstream/sub2api/backend/internal/handler/admin/account_handler_procurement_cost_test.go`
 - `upstream/sub2api/frontend/src/api/admin/accounts.ts`
 - `upstream/sub2api/frontend/src/api/__tests__/admin.accounts.upstreamBillingProbe.spec.ts`
-- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.vue`
-- `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts`
+- `upstream/sub2api/frontend/src/views/admin/AccountMonitorView.vue`
+- `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
 
 ## 实现摘要
 
-采购字段存在且服务可用时，handler 先调用既有 `UpdateProcurementConfig`（单事务、版本台账、审计、幂等），失败立即映射并返回，不再先执行通用账号更新；随后通用更新传入 nil 采购字段，保留原有账号更新响应契约。前端采购编辑请求生成并复用 `Idempotency-Key`，成功后清除，失败重试继续复用；现有保存后 reload 成功/失败反馈保持不变。评分卡 DOM 顺序固定为评分、优先级、排名。
+采购字段存在且服务可用时，handler 先调用既有 `UpdateProcurementConfig`（单事务、版本台账、审计、幂等），失败立即映射并返回；采购-only 成功后直接 `GetAccount` 返回刷新采购值，不调用通用更新，混合 PUT 才调用通用更新且采购字段为 nil。前端由成本弹窗会话按账号和 payload 生成并显式传递 `Idempotency-Key`：同会话同 payload 的未知结果重试复用，关闭重开、成功、payload 改变、保存/清空切换均换键。页面保留既有 `group_rank` 升序与普通 Grid，新增乱序输入的最终 DOM 顺序和无 reverse/order 保护测试；与目标无关的单卡三格重排已撤回。
 
 ## 验证
 
 - `go test ./internal/handler/admin ./internal/service -run 'Test(AccountHandler|ExistingAccountUpdateRoutesProcurement|UpdateAccountProcurementCost|Procurement)' -count=1`：通过。
-- `pnpm vitest run src/api/__tests__/admin.accounts.upstreamBillingProbe.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`：100 tests 通过。
+- `pnpm vitest run src/api/__tests__/admin.accounts.upstreamBillingProbe.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`：101 tests 通过。
 - `pnpm typecheck`：通过。
 - `pnpm build`：通过。
 - `git diff --check`：通过。

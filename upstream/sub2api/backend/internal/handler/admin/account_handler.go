@@ -1150,7 +1150,11 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 	var account *service.Account
 	var updateErr error
-	account, updateErr = h.adminService.UpdateAccount(c.Request.Context(), accountID, accountMutation)
+	if procurementUpdate != nil && h.procurementProfitability != nil && !hasNonProcurementAccountUpdate(req) {
+		account, updateErr = h.adminService.GetAccount(c.Request.Context(), accountID)
+	} else {
+		account, updateErr = h.adminService.UpdateAccount(c.Request.Context(), accountID, accountMutation)
+	}
 	if updateErr != nil {
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError

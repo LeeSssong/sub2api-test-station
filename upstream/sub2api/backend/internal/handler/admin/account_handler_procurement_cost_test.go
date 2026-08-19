@@ -42,6 +42,9 @@ func TestExistingAccountUpdateRoutesProcurementThroughVersionLedger(t *testing.T
 	mock.ExpectCommit()
 
 	stub := newStubAdminService()
+	amount := 4.0
+	quota := 120.0
+	stub.getAccountResult = &service.Account{ID: 3, Status: service.StatusActive, ProcurementCostCNY: &amount, EstimatedUsableQuotaUSD: &quota}
 	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	h.SetProcurementProfitabilityService(service.NewAccountProfitabilityService(db))
 	router := gin.New()
@@ -56,7 +59,16 @@ func TestExistingAccountUpdateRoutesProcurementThroughVersionLedger(t *testing.T
 	request.Header.Set("Idempotency-Key", "legacy-edit-1")
 	router.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Nil(t, stub.lastUpdateAccountInput.ProcurementCost, "legacy projection write must be replaced by the ledger transaction")
+	require.Zero(t, stub.updateAccountCalls, "procurement-only PUT must not run the general account update")
+	var responseBody struct {
+		Data struct {
+			ProcurementCostCNY      *float64 `json:"procurement_cost_cny"`
+			EstimatedUsableQuotaUSD *float64 `json:"estimated_usable_quota_usd"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
+	require.Equal(t, 4.0, *responseBody.Data.ProcurementCostCNY)
+	require.Equal(t, 120.0, *responseBody.Data.EstimatedUsableQuotaUSD)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -166,6 +166,7 @@ const AccountMonitorCostDialogStub = defineComponent({
     <div v-if="show" data-test="cost-dialog">
       <span data-test="dialog-account">{{ account.account_id }}</span>
       <span v-if="error" data-test="dialog-error">{{ error }}</span>
+      <button data-test="dialog-close" @click="$emit('close')">close</button>
       <button data-test="dialog-save-procurement" @click="$emit('saveProcurement', 4, 60)">save procurement</button>
       <button data-test="dialog-save-multiplier" @click="$emit('saveMultiplier', 0.08)">save multiplier</button>
       <button data-test="dialog-restore-auto" @click="$emit('restoreAuto')">restore</button>
@@ -572,6 +573,10 @@ describe('admin account monitor view V3', () => {
   })
 
   it('renders the constrained V3 shell, one status selector, eight selected-group summary fields, deterministic card order, and responsive columns', async () => {
+    const scrambled = projection()
+    scrambled.accounts = [scrambled.accounts[2], scrambled.accounts[3], scrambled.accounts[0], scrambled.accounts[1]]
+    scrambled.groups[0].accounts = [...scrambled.accounts]
+    list.mockResolvedValueOnce(scrambled)
     const wrapper = mountView()
     await flushPromises()
 
@@ -602,7 +607,10 @@ describe('admin account monitor view V3', () => {
     const cards = wrapper.findAll('[data-test="monitor-card"]')
     expect(cards).toHaveLength(4)
     expect(cards.map((card) => Number(card.attributes('data-account-id')))).toEqual([10, 11, 20, 30])
-    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid-cols-1', 'lg:grid-cols-2']))
+    const gridClasses = wrapper.get('[data-test="account-card-grid"]').classes()
+    expect(gridClasses).toEqual(expect.arrayContaining(['grid', 'grid-cols-1', 'lg:grid-cols-2']))
+    expect(gridClasses.some((name) => name.includes('reverse') || name.startsWith('order-'))).toBe(false)
+    expect(cards.every((card) => card.classes().every((name) => !name.startsWith('order-')))).toBe(true)
   })
 
   it('restores selected-group score weight editing and reloads the active range after save and reset', async () => {
@@ -1205,7 +1213,7 @@ describe('admin account monitor view V3', () => {
     list.mockClear()
     await wrapper.get('[data-test="dialog-save-procurement"]').trigger('click')
     await flushPromises()
-    expect(updateProcurementCost).toHaveBeenCalledWith(10, 4, 60)
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, 4, 60, expect.any(String))
     expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
 
     await card.get('[data-test="edit-cost"]').trigger('click')
@@ -1231,7 +1239,7 @@ describe('admin account monitor view V3', () => {
     list.mockClear()
     await wrapper.get('[data-test="dialog-clear"]').trigger('click')
     await flushPromises()
-    expect(updateProcurementCost).toHaveBeenCalledWith(10, null, null)
+    expect(updateProcurementCost).toHaveBeenCalledWith(10, null, null, expect.any(String))
   })
 
   it('keeps the cost dialog open and exposes the API error when a save fails', async () => {
@@ -1245,6 +1253,39 @@ describe('admin account monitor view V3', () => {
 
     expect(wrapper.get('[data-test="cost-dialog"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="dialog-error"]').text()).toContain('采购成本保存失败')
+  })
+
+  it('scopes procurement idempotency keys to one dialog session and one payload', async () => {
+    updateProcurementCost.mockRejectedValue(new Error('unknown result'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const open = async () => {
+      await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+    }
+    await open()
+    const dialog = () => wrapper.getComponent(AccountMonitorCostDialogStub)
+
+    dialog().vm.$emit('saveProcurement', 4, 60)
+    await flushPromises()
+    dialog().vm.$emit('saveProcurement', 4, 60)
+    await flushPromises()
+    const retryKey = updateProcurementCost.mock.calls[0][3]
+    expect(updateProcurementCost.mock.calls[1][3]).toBe(retryKey)
+
+    dialog().vm.$emit('saveProcurement', 5, 60)
+    await flushPromises()
+    expect(updateProcurementCost.mock.calls[2][3]).not.toBe(retryKey)
+
+    dialog().vm.$emit('clear')
+    await flushPromises()
+    expect(updateProcurementCost.mock.calls[3][3]).not.toBe(updateProcurementCost.mock.calls[2][3])
+
+    await dialog().get('[data-test="dialog-close"]').trigger('click')
+    await open()
+    dialog().vm.$emit('saveProcurement', 4, 60)
+    await flushPromises()
+    expect(updateProcurementCost.mock.calls[4][3]).not.toBe(retryKey)
   })
 
   it.each([
@@ -1267,6 +1308,22 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="range-error"]').text()).toContain('监控数据刷新失败')
     expect(showError).toHaveBeenCalledWith(expectedError)
     expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('rotates the procurement key after a successful PUT even when reload fails', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAllComponents(AccountMonitorCardStub)[0].get('[data-test="edit-cost"]').trigger('click')
+
+    list.mockRejectedValueOnce(new Error('reload failed')).mockResolvedValueOnce(projection())
+    const dialog = wrapper.getComponent(AccountMonitorCostDialogStub)
+    dialog.vm.$emit('saveProcurement', 4, 60)
+    await flushPromises()
+    const successfulPutKey = updateProcurementCost.mock.calls[0][3]
+
+    dialog.vm.$emit('saveProcurement', 4, 60)
+    await flushPromises()
+    expect(updateProcurementCost.mock.calls[1][3]).not.toBe(successfulPutKey)
   })
 
   it('fetches the compact card account by id and opens the native account information entry', async () => {

@@ -5,8 +5,8 @@
 - 状态：`READY_FOR_ROOT_REVIEW`。
 - 分支：`codex/t35-procurement-audit-type-hotfix`。
 - 精确基线：`main@101357776e1af9dbf83df282afd96cdb284ffcf4`。
-- 最终候选 HEAD：`b3e3259b671ed65252bafa6d6bb6916971565c07`。
-- 最终 tree：`f583b4ecfb64032c13615e40e8e123c5a1b8f97d`。
+- 最终候选 HEAD：`84273244ac74429b5ded57934db555547e9aa41e`。
+- 最终 tree：`74c14a5e452a21705bd3ed44510aedec07dcfb17`。
 - 工作区：干净；未合并、未推送、未部署、未触碰生产。
 - 根总控仍拥有合并、推送、发布预检、部署和线上验收权限。
 
@@ -100,4 +100,4 @@ go build ./cmd/server
 
 - 未执行合并后 `main` 重测、推送、发布预检、部署或线上验收，按任务边界留给根总控。
 - 全量 Go suite 的既有文案失败未在 T35 范围内修复。
-- 根总控可在候选 HEAD `b3e3259b671ed65252bafa6d6bb6916971565c07` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`。
+- 根总控可在候选 HEAD `84273244ac74429b5ded57934db555547e9aa41e` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`。

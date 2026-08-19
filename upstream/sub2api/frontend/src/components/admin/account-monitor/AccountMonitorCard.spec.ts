@@ -912,4 +912,10 @@ describe('AccountMonitorCard', () => {
     expect(dialog.text()).toContain('检测器暂不支持')
     expect(dialog.find('[data-test="detector-availability"]').exists()).toBe(false)
   })
+
+  it('renders score, priority, then rank from left to right', () => {
+    const wrapper = mountCard()
+    const cells = wrapper.get('[aria-label="评分排名与优先级"]').element.children
+    expect(Array.from(cells).map((cell) => cell.getAttribute('data-test'))).toEqual(['score-metric', 'priority-control', 'rank-metric'])
+  })
 })

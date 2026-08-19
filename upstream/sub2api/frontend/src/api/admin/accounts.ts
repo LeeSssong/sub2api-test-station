@@ -159,6 +159,7 @@ export async function create(accountData: CreateAccountRequest): Promise<Account
  * @returns Newly created account
  */
 const duplicateOperationKeys = new Map<number, string>()
+const procurementOperationKeys = new Map<number, string>()
 
 function duplicateOperationStorageKey(id: number): string {
   return `sub2api:admin:account-duplicate:${id}`
@@ -217,8 +218,20 @@ export async function updateProcurementCost(
     procurement_cost_cny: cost,
     estimated_usable_quota_usd: estimatedQuotaUSD,
   }
-  const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload)
-  return data
+  let idempotencyKey = procurementOperationKeys.get(id)
+  if (!idempotencyKey) {
+    const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    idempotencyKey = `account-procurement-${id}-${requestID}`
+    procurementOperationKeys.set(id, idempotencyKey)
+  }
+  try {
+    const { data } = await apiClient.put<AccountWithProcurementCost>(`/admin/accounts/${id}`, payload, { headers: { 'Idempotency-Key': idempotencyKey } })
+    procurementOperationKeys.delete(id)
+    return data
+  } catch (error) {
+    // Keep the key for a retry in the same edit session.
+    throw error
+  }
 }
 
 /**

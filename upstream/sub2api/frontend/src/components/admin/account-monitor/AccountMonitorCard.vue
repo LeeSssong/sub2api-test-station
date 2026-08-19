@@ -110,11 +110,6 @@
             <div data-test="score-breakdown-tooltip">{{ scoreTooltip }}</div>
           </HelpTooltip>
         </div>
-        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
-          <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
-          <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="ranked" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
-          <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号继续参与排名</p>
-        </div>
         <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="priority-control">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">全局优先级</div>
           <template v-if="editingPriority">
@@ -146,6 +141,11 @@
             </div>
             <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">数值越小，调度优先级越高</p>
           </template>
+        </div>
+        <div class="min-h-[121px] min-w-0 p-[14px] max-[430px]:min-h-[114px] max-[430px]:px-2 max-[430px]:py-[11px]" data-test="rank-metric">
+          <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ rankTitle }}</div>
+          <div class="mt-1 flex min-h-8 items-baseline gap-1.5"><strong class="truncate font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ rankLabel }}</strong><span v-if="ranked" class="shrink-0 text-xs font-semibold text-gray-500 dark:text-slate-400">/ {{ rankedAccountCount }}</span></div>
+          <p class="mt-1 text-[10px] text-gray-400 dark:text-slate-500">正常可用账号继续参与排名</p>
         </div>
       </section>
 

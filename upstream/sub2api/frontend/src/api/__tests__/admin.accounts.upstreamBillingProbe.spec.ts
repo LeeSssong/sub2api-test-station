@@ -16,6 +16,7 @@ import {
   probeUpstreamBillingBatch,
   setUpstreamBillingProbeEnabled,
   updateUpstreamBillingProbeSettings
+  ,updateProcurementCost
 } from '@/api/admin/accounts'
 
 describe('admin account upstream billing probe API', () => {
@@ -49,5 +50,15 @@ describe('admin account upstream billing probe API', () => {
     expect(put).toHaveBeenCalledWith('/admin/accounts/7/upstream-billing-probe', { enabled: true })
     expect(post).toHaveBeenNthCalledWith(1, '/admin/accounts/7/upstream-billing-probe')
     expect(post).toHaveBeenNthCalledWith(2, '/admin/accounts/upstream-billing-probe/batch', { account_ids: [7] })
+  })
+
+  it('reuses an idempotency key while a procurement request is retried', async () => {
+    put.mockRejectedValueOnce(new Error('temporary')).mockResolvedValueOnce({ data: { account_id: 7 } })
+    await expect(updateProcurementCost(7, 4, 60)).rejects.toThrow('temporary')
+    await expect(updateProcurementCost(7, 4, 60)).resolves.toEqual({ account_id: 7 })
+    const first = put.mock.calls[1]
+    expect(first[0]).toBe('/admin/accounts/7')
+    expect(first[2].headers['Idempotency-Key']).toBeTruthy()
+    expect(put.mock.calls[0][2].headers['Idempotency-Key']).toBe(first[2].headers['Idempotency-Key'])
   })
 })

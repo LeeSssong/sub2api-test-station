@@ -1115,7 +1115,15 @@ func (h *AccountHandler) Update(c *gin.Context) {
 			return
 		}
 	}
-	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+	// Procurement writes are ledger-owned. Run that transaction before the
+	// general account update so ledger failures cannot leave a prior projection write behind.
+	if procurementUpdate != nil && h.procurementProfitability != nil {
+		if err := h.procurementProfitability.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: accountID, CostCNY: procurementUpdate.Value, QuotaUSD: procurementUpdate.EstimatedUsableQuotaUSD, ActorUserID: actorID(c), RequestID: procurementRequestID}); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+	accountMutation := &service.UpdateAccountInput{
 		Name:           req.Name,
 		Notes:          req.Notes,
 		Type:           req.Type,
@@ -1139,11 +1147,14 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		ProbeEnabled:          req.ProbeEnabled,
 		RateSyncEnabled:       req.RateSyncEnabled,
 		SkipMixedChannelCheck: skipCheck,
-	})
-	if err != nil {
+	}
+	var account *service.Account
+	var updateErr error
+	account, updateErr = h.adminService.UpdateAccount(c.Request.Context(), accountID, accountMutation)
+	if updateErr != nil {
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError
-		if errors.As(err, &mixedErr) {
+		if errors.As(updateErr, &mixedErr) {
 			// 更新接口仅返回最小必要字段，详细信息由专门检查接口提供
 			c.JSON(409, gin.H{
 				"error":   "mixed_channel_warning",
@@ -1152,14 +1163,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 			return
 		}
 
-		response.ErrorFrom(c, err)
+		response.ErrorFrom(c, updateErr)
 		return
 	}
-	if procurementUpdate != nil && h.procurementProfitability != nil {
-		if err := h.procurementProfitability.UpdateProcurementConfig(c.Request.Context(), service.ProcurementConfigInput{AccountID: accountID, CostCNY: procurementUpdate.Value, QuotaUSD: procurementUpdate.EstimatedUsableQuotaUSD, ActorUserID: actorID(c), RequestID: procurementRequestID}); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
+	if procurementUpdate != nil && h.procurementProfitability != nil && hasNonProcurementAccountUpdate(req) {
 		if refreshed, refreshErr := h.adminService.GetAccount(c.Request.Context(), accountID); refreshErr == nil {
 			account = refreshed
 		}
@@ -1173,6 +1180,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	h.scheduleUpstreamBillingLifecycleProbe(account)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func hasNonProcurementAccountUpdate(req UpdateAccountRequest) bool {
+	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ConfirmMixedChannelRisk != nil
 }
 
 func toServiceProcurementCostUpdate(cost, quota procurementCostRequest) *service.ProcurementCostUpdate {

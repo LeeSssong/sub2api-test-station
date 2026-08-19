@@ -309,7 +309,7 @@ func (s *AccountProfitabilityService) SettleProcurement(ctx context.Context, in 
 	if err != nil {
 		return false, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.settle','POST',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'reason',$5))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement/settle", in.RequestID, in.AccountID, in.Reason)
+	_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.settle','POST',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4::bigint,'reason',$5::text))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement/settle", in.RequestID, in.AccountID, in.Reason)
 	if err != nil {
 		return false, err
 	}
@@ -408,7 +408,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		if _, err := tx.ExecContext(ctx, `INSERT INTO account_procurement_cost_versions(account_id,version_no,effective_at,status,actor_user_id,request_id,created_at,updated_at) VALUES($1,$2,$3,'cost_pending',$4,$5,$6,$6)`, in.AccountID, next, now, in.ActorUserID, in.RequestID, now); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'cleared',true))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4::bigint,'cleared',true))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -423,7 +423,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET procurement_cost_cny=$2,estimated_usable_quota_usd=$3,procurement_cost_effective_at=$4,updated_at=$5 WHERE id=$1`, in.AccountID, nextCost, nextQuota, effective, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, nextCost, nextQuota); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,action,method,path,request_id,status_code,extra) VALUES(NULLIF($1,0),'account.procurement.update','PUT',$2,LEFT($3,64),200,jsonb_build_object('account_id',$4::bigint,'cost_cny',$5::double precision,'quota_usd',$6::double precision))`, in.ActorUserID, "/admin/accounts/"+fmt.Sprint(in.AccountID)+"/procurement", in.RequestID, in.AccountID, nextCost, nextQuota); err != nil {
 		return err
 	}
 	return tx.Commit()

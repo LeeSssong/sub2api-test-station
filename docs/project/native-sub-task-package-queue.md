@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-19）
 
-- **根总控当前车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现和根合并，当前进入 `DEPLOYING`。合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`、合并树 `62e55842aaff92fe6c9614841480a55c7712144d`；范围仅补充中英文界面文案、组件直接测试和无停机发布验证；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞 T36。
+- **根总控最近车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现、根合并、推送、无停机蓝绿发布和线上验收，当前为 `DONE`。生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`。范围仅补充中英文界面文案、组件直接测试和发布验收；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞后续任务。
 - **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。
 
 - **T32 账号评分回归修复**：状态 `DONE`。已合入并推送 `main@584b37bba6ed05d86a5a152160d37a9f92fefc9c`，完成 focused 测试、根发布预检、无停机蓝绿发布和线上专项验收。评分、当前状态与排名只使用 Sub 原生主动探测证据；暂停账号仍可参与评分和排名；只有主动探测返回 4xx/5xx 且调度关闭时停止探测并退出排名；调度关闭但主动探测成功时继续探测、评分和排名。生产记录 `/var/lib/sub2api/release-records/20260819T153809Z-production-245313.json`，0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-584b37bba-t32.json`。
@@ -14,10 +14,10 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34 与 T35 为 `DONE`；T36 当前为 `DEPLOYING`。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T36 已完成根复核与合并，正在执行唯一发布车道的推送、预检、蓝绿部署和线上健康验证；T34 与 T35 已完成根复核、合并、推送、0600 证据、无停机蓝绿发布和生产专项健康验证；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35 与 T36 均为 `DONE`。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T36 已完成唯一发布车道的推送、预检、蓝绿部署和线上健康验证；T34 与 T35 已完成根复核、合并、推送、0600 证据、无停机蓝绿发布和生产专项健康验证；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@e0b2d99b91dcbaa20b1cb4d859cd58182795c60f`、tree `34ace5c193dd1c647215ed6894c7ec1945dd69b4`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T29 蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像 `sha256:70f02ffa0ef8e555c28a3eee10a6de442bce0e9cd72457a5bcf9b9fca1f46310` 且均 healthy、重启计数 0。宿主记录为 `/var/lib/sub2api/release-records/20260819T102718Z-production-3917.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-e0b2d99b9-t29.json`。
+- 当前发布状态：生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T36 蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `green`，API、worker 与 model-detector 使用同一不可变镜像 `sha256:57c4f8f1118887a77ede635debe96878f3758cc4e520acb0015f7d34ae2f6f35` 且健康。宿主记录为 `/var/lib/sub2api/release-records/20260819T194230Z-production-443041.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-12641c328-t36.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
 - 全局审计（2026-08-19）：T28/T29 均已完成根复核、合并、推送、发布与生产验证并转为 `DONE`。T28 的生产专项保存保持只读，真实账号保存闭环、全量 OAuth 自购表和 CNY 行内录入入口登记为 T30；T30 顶层任务已创建并处于 `DESIGNING`，尚未占用整合/部署/验收车道。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle` 已通过校验；用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview` 与根目录既有未跟踪资料继续保留。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -34,9 +34,9 @@
 
 ### T36 经营页 CNY/USD 额度关系明示文案
 
-- 当前状态：`DEPLOYING`。独立任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已从 `main@b02d538a0ac8d90b01ef92c45e55e72e11e9ee6b` 完成规格/计划/实现，刷新后合入根 `main`；根合并提交为 `808be1901fb4fcb65869336041b777c76d9ee5e8`，合并树为 `62e55842aaff92fe6c9614841480a55c7712144d`。
+- 当前状态：`DONE`。独立任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已从 `main@b02d538a0ac8d90b01ef92c45e55e72e11e9ee6b` 完成规格/计划/实现，刷新后合入根 `main`；实现合并提交为 `808be1901fb4fcb65869336041b777c76d9ee5e8`，生产源为 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`。
 - 交付：在 USD/CNY 切换控件旁显示现有 i18n 驱动的中英文额度关系说明，并由直接页面合同测试锁定 `1 USD = 1 CNY` 的额度理解和“不是汇率换算”语义；不改账务、API、采购保存或数据。
-- 合并后门禁：页面+locale 32/32、`pnpm typecheck`、`pnpm build`、范围扫描和 `git diff --check` 通过。无迁移、配置或生产数据变化，预期 `downtime_required=false`；根总控正在生成发布证据并执行既有本地/宿主蓝绿链。
+- 合并后与发布门禁：页面+locale 32/32、`pnpm typecheck`、`pnpm build`、范围扫描和 `git diff --check` 通过；蓝绿链 `downtime_required=false`、`result=succeeded`、活动槽 `green`，公网三健康端点 200，未认证管理接口 401。无迁移、配置或生产数据变化。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-12641c328-t36.json`，宿主记录 `/var/lib/sub2api/release-records/20260819T194230Z-production-443041.json`；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t36-profitability-quota-parity-12641c328.bundle`，SHA-256 `f3f9a44db9c164a02aea88b24b55f96d62eb47146b57861fe412ccf88a6cc417`。真机视觉验收由用户自行完成，不阻塞后续。
 
 ### T31 Monitor V2 视觉放大、时间线交互与 CodexRadar 列对齐
 

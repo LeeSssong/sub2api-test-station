@@ -34,6 +34,7 @@
 - `upstream/sub2api/backend/internal/service/monitor_v2.go`: v7 contract model and native projection mapping.
 - `upstream/sub2api/backend/internal/service/monitor_v2_test.go`: RED tests for fixed buckets, v7 metrics, visibility, and native-reader errors.
 - `upstream/sub2api/backend/internal/service/wire.go`: provider signature accepting `MonitorV2NativeProbeReader`.
+- `upstream/sub2api/backend/internal/repository/wire.go`: remove `NewMonitorV2Repository` from the repository `ProviderSet` while retaining Channel Monitor and Channel Monitor V2 providers.
 - `upstream/sub2api/backend/cmd/server/wire_gen.go`: minimal construction-order/provider update.
 - `upstream/sub2api/backend/internal/handler/monitor_v2_handler_test.go`: v7 JSON contract and no-account-data assertions.
 - `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go`: delete obsolete `usage_logs` repository.
@@ -41,13 +42,13 @@
 - `upstream/sub2api/frontend/src/features/monitor-v2/types.ts`: v7 TypeScript types.
 - `upstream/sub2api/frontend/src/features/monitor-v2/api.ts`: v7 runtime validator and removed-field rejection.
 - `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2GroupCard.vue`: backend availability/metrics, multiplier placement, and direct labels.
-- `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue`: fixed native bucket rendering and labels if required by the new tests.
+- `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue`: fixed native bucket rendering and timeline labels.
 - `upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts`: Chinese v7 labels and removal of flagship/P95/TPS strings.
 - `upstream/sub2api/frontend/src/i18n/locales/en/dashboard.ts`: English counterparts for the same contract.
 - `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`: v7 card and copy tests.
 - `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts`: v7 route fixture.
 - `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts`: 24/28/30-point timeline and status tests.
-- `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Api.spec.ts`: v7 validator tests (new file).
+- `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/api.spec.ts`: update the existing v6 fixture and validator tests to v7; do not create a second API contract test file.
 
 ## Implementation Tasks
 
@@ -104,7 +105,7 @@ Run: `git add upstream/sub2api/backend/internal/service/account_monitor_types.go
 - Implement the optional repository capability from Task 1 on `accountMonitorRepository`.
 - The SQL receives the deduplicated `[]MonitorV2GroupAccountScope`, expands it into a `scope(group_id, account_id)` CTE, generates the exact fixed bucket series, selects latest result per eligible account, and returns all group rows/timeline points in one `QueryContext` call.
 
-- [ ] **Step 1: Write RED sqlmock tests.** Add tests asserting one query contains `account_monitor_results`, `generate_series`/equivalent fixed buckets, `[start,end)` predicates, latest-per-account ordering by `checked_at DESC, id DESC`, `status = 'success'`, `percentile_cont(0.50)` for TTFT, `AVG(latency_ms)`, bucket-level operational aggregation, and the freshness cutoff. Add tests that fail if `usage_logs` appears or if a second query is expected. Add empty scope, duplicate scope, invalid window/bucket, and multi-group scan fixtures.
+- [ ] **Step 1: Write RED sqlmock tests.** Add tests asserting one query contains `account_monitor_results`, `generate_series` fixed buckets, `[start,end)` predicates, latest-per-account ordering by `checked_at DESC, id DESC`, `status = 'success'`, `percentile_cont(0.50)` for TTFT, `AVG(latency_ms)`, bucket-level operational aggregation, and the freshness cutoff. Add tests that fail if `usage_logs` appears or if a second query is expected. Add empty scope, duplicate scope, invalid window/bucket, and multi-group scan fixtures.
 
 ```go
 func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *testing.T) {
@@ -169,6 +170,8 @@ Run: `git add upstream/sub2api/backend/internal/service/monitor_v2.go upstream/s
 
 **Files:**
 - Modify: `upstream/sub2api/backend/internal/service/wire.go`
+- Modify: `upstream/sub2api/backend/internal/repository/wire.go`
+- Modify: `upstream/sub2api/backend/cmd/server/wire_gen_test.go`
 - Modify: `upstream/sub2api/backend/cmd/server/wire_gen.go`
 - Delete: `upstream/sub2api/backend/internal/repository/monitor_v2_repo.go`
 - Delete: `upstream/sub2api/backend/internal/repository/monitor_v2_repo_test.go`
@@ -177,7 +180,7 @@ Run: `git add upstream/sub2api/backend/internal/service/monitor_v2.go upstream/s
 - `ProvideMonitorV2Service(groupRepo GroupRepository, nativeProbeReader MonitorV2NativeProbeReader, settingService *SettingService) *MonitorV2Service`.
 - Construct Account Monitor before Monitor V2 in `wire_gen.go`, then pass `accountMonitorService` as the native reader. Keep `channelMonitorService` available for the legacy Channel Monitor handlers/runner.
 
-- [ ] **Step 1: Write a RED provider/build check.** Update the provider-level compile test or add a focused test that constructs `ProvideMonitorV2Service` with an `AccountMonitorService` native reader and confirms the resulting service is non-nil. Add a repository grep assertion in the task review command that Monitor V2 source no longer references `usage_logs`.
+- [ ] **Step 1: Write a RED provider/build check.** Add a focused test in `cmd/server/wire_gen_test.go` that constructs `ProvideMonitorV2Service` with an `AccountMonitorService` native reader and confirms the resulting service is non-nil. Add a repository grep assertion in the task review command that Monitor V2 source no longer references `usage_logs`.
 
 - [ ] **Step 2: Run the provider RED check.**
 
@@ -185,11 +188,11 @@ Run: `cd upstream/sub2api/backend && go test ./cmd/server ./internal/service -ru
 
 Expected: FAIL until provider signatures and generated construction order are changed.
 
-- [ ] **Step 3: Implement the minimal wire change.** Update `ProvideMonitorV2Service`, move the existing Account Monitor construction block ahead of Monitor V2 in `wire_gen.go`, pass `accountMonitorService`, and remove only `monitorV2Repository` construction. Do not remove the legacy `channelMonitorService` construction used elsewhere.
+- [ ] **Step 3: Implement the minimal wire change.** Update `ProvideMonitorV2Service`, remove `NewMonitorV2Repository` from `internal/repository/wire.go`'s `ProviderSet`, move the existing Account Monitor construction block ahead of Monitor V2 in `wire_gen.go`, pass `accountMonitorService`, and remove only `monitorV2Repository` construction. Do not remove `NewChannelMonitorRepository`, `NewChannelMonitorV2Repository`, or the legacy `channelMonitorService` construction used elsewhere.
 
 - [ ] **Step 4: Delete obsolete repository code and run build checks.** Remove both old Monitor V2 repository files, run `gofmt` on touched Go files, and verify no production Monitor V2 path references `usage_logs` or `ChannelMonitorService`.
 
-Run: `! rg -n "usage_logs|MonitorV2Repository|monitorV2Repository|ProvideMonitorV2Service\([^\n]*channelMonitorService" upstream/sub2api/backend/internal/service/monitor_v2.go upstream/sub2api/backend/cmd/server/wire_gen.go && test ! -e upstream/sub2api/backend/internal/repository/monitor_v2_repo.go && test ! -e upstream/sub2api/backend/internal/repository/monitor_v2_repo_test.go` (Expected: exit 0; legacy Channel Monitor references outside the Monitor V2 provider remain valid.)
+Run: `! rg -n "usage_logs|MonitorV2Repository|monitorV2Repository|ProvideMonitorV2Service\([^\n]*channelMonitorService" upstream/sub2api/backend/internal/service/monitor_v2.go upstream/sub2api/backend/cmd/server/wire_gen.go upstream/sub2api/backend/internal/repository/wire.go && ! rg -n "NewMonitorV2Repository" upstream/sub2api/backend/internal/repository/wire.go && rg -n "NewChannelMonitorRepository|NewChannelMonitorV2Repository" upstream/sub2api/backend/internal/repository/wire.go && test ! -e upstream/sub2api/backend/internal/repository/monitor_v2_repo.go && test ! -e upstream/sub2api/backend/internal/repository/monitor_v2_repo_test.go` (Expected: exit 0; legacy Channel Monitor providers remain present.)
 
 Run: `cd upstream/sub2api/backend && go test ./cmd/server ./internal/service ./internal/handler ./internal/server/routes -run 'TestMonitorV2|TestProvideMonitorV2Service' -count=1 && go build ./cmd/server`
 
@@ -197,16 +200,16 @@ Expected: PASS and a successful server build.
 
 - [ ] **Step 5: Commit the provider slice.**
 
-Run: `git add upstream/sub2api/backend/internal/service/wire.go upstream/sub2api/backend/cmd/server/wire_gen.go upstream/sub2api/backend/cmd/server/wire_gen_test.go upstream/sub2api/backend/internal/repository/monitor_v2_repo.go upstream/sub2api/backend/internal/repository/monitor_v2_repo_test.go && git commit -m "refactor: wire monitor v2 to account monitor service"`
+Run: `git add upstream/sub2api/backend/internal/service/wire.go upstream/sub2api/backend/internal/repository/wire.go upstream/sub2api/backend/cmd/server/wire_gen.go upstream/sub2api/backend/cmd/server/wire_gen_test.go upstream/sub2api/backend/internal/repository/monitor_v2_repo.go upstream/sub2api/backend/internal/repository/monitor_v2_repo_test.go && git commit -m "refactor: wire monitor v2 to account monitor service"`
 
 ### Task 5: Lock the v7 frontend contract and localized labels with RED tests
 
 **Files:**
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/types.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/api.ts`
+- Modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/api.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
-- Create or modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Api.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts`
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/en/dashboard.ts`
 
@@ -215,33 +218,33 @@ Run: `git add upstream/sub2api/backend/internal/service/wire.go upstream/sub2api
 - Define `MonitorV2Group` with `availability`, `ttft`, `average_latency`, and native timeline; remove `is_flagship`, `ttft_p95`, `tps`, `latency_p95`, and old `latency`.
 - Validator rejects v6 and every deleted field, accepts only `available | insufficient_data`, and enforces fixed timeline lengths at the view boundary where the selected window is known.
 
-- [ ] **Step 1: Write RED Vitest fixtures/assertions.** Change fixtures to v7 and add validator cases for v6 rejection, deleted-field rejection, `average_latency` acceptance, missing required native fields, null insufficient metrics, and fixed 24/28/30 timeline lengths. Update locale test stubs to include exact Chinese labels `可用性：` / `首字速度：` / `平均耗时：`.
+- [ ] **Step 1: Write RED Vitest fixtures/assertions in the existing `api.spec.ts`.** Replace its complete v6 fixture with v7 and add validator cases for v6 rejection, deleted-field rejection, `average_latency` acceptance, missing required native fields, null insufficient metrics, and fixed 24/28/30 timeline lengths. Update locale test stubs to include exact Chinese labels `可用性：` / `首字速度：` / `平均耗时：`.
 
 - [ ] **Step 2: Run frontend RED tests.**
 
-Run: `cd upstream/sub2api/frontend && npm run test:run -- src/features/monitor-v2/__tests__/MonitorV2Api.spec.ts src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
+Run: `cd upstream/sub2api/frontend && pnpm vitest run src/features/monitor-v2/__tests__/api.spec.ts src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
 
 Expected: FAIL because TypeScript types, validator, fixtures, and locale keys still target v6.
 
-- [ ] **Step 3: Implement v7 types and validation.** Change the contract constant and interfaces, parse `average_latency`, remove old fields and flagship parsing, and retain strict numeric/date/bounds validation. Make the validator reject deleted keys before constructing the normalized object.
+- [ ] **Step 3: Implement v7 types and validation.** Change the contract constant and interfaces, parse `average_latency`, remove old fields and flagship parsing, and retain strict numeric/date/bounds validation. Make the validator reject deleted keys before constructing the normalized object; update the existing `api.spec.ts` imports and fixtures without adding another API test file.
 
 - [ ] **Step 4: Update zh/en locale contracts.** Add direct metric labels and remove obsolete flagship, availability-derived, P95, TPS, and “call samples” keys that no longer have consumers. Keep status/window/peak/timeline keys used by the existing shell.
 
 - [ ] **Step 5: Run contract tests to green.**
 
-Run: `cd upstream/sub2api/frontend && npm run test:run -- src/features/monitor-v2/__tests__/MonitorV2Api.spec.ts src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
+Run: `cd upstream/sub2api/frontend && pnpm vitest run src/features/monitor-v2/__tests__/api.spec.ts src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
 
 Expected: PASS with v7-only normalized snapshots.
 
 - [ ] **Step 6: Commit the contract slice.**
 
-Run: `git add upstream/sub2api/frontend/src/features/monitor-v2/types.ts upstream/sub2api/frontend/src/features/monitor-v2/api.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Api.spec.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts upstream/sub2api/frontend/src/i18n/locales/en/dashboard.ts && git commit -m "feat: adopt monitor v2 native probe contract"`
+Run: `git add upstream/sub2api/frontend/src/features/monitor-v2/types.ts upstream/sub2api/frontend/src/features/monitor-v2/api.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/api.spec.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2RouteView.spec.ts upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts upstream/sub2api/frontend/src/i18n/locales/en/dashboard.ts && git commit -m "feat: adopt monitor v2 native probe contract"`
 
 ### Task 6: Render backend metrics directly and verify desktop/390px layouts
 
 **Files:**
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2GroupCard.vue`
-- Modify: `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue` only where fixed bucket/label tests require it.
+- Modify: `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue` for fixed native bucket rendering and labels.
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts`
 
@@ -253,7 +256,7 @@ Run: `git add upstream/sub2api/frontend/src/features/monitor-v2/types.ts upstrea
 
 - [ ] **Step 2: Run component RED tests.**
 
-Run: `cd upstream/sub2api/frontend && npm run test:run -- src/features/monitor-v2/__tests__/MonitorV2View.spec.ts src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts`
+Run: `cd upstream/sub2api/frontend && pnpm vitest run src/features/monitor-v2/__tests__/MonitorV2View.spec.ts src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts`
 
 Expected: FAIL because the card still computes percentage availability and renders old metric keys/flagship.
 
@@ -263,7 +266,7 @@ Expected: FAIL because the card still computes percentage availability and rende
 
 - [ ] **Step 5: Run component tests and typecheck.**
 
-Run: `cd upstream/sub2api/frontend && npm run test:run -- src/features/monitor-v2/__tests__/MonitorV2View.spec.ts src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts && npm run typecheck`
+Run: `cd upstream/sub2api/frontend && pnpm vitest run src/features/monitor-v2/__tests__/MonitorV2View.spec.ts src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts && pnpm typecheck`
 
 Expected: PASS with no TypeScript errors.
 
@@ -276,7 +279,7 @@ Run: `git add upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2GroupCa
 ### Task 7: Run the bounded T34 verification set and prepare handoff
 
 **Files:**
-- Modify only files already listed above if a directly related test, format, or generated-wire correction is required.
+- Modify only files already listed above for directly related tests, formatting, or generated-wire corrections.
 - Create: `docs/superpowers/reports/2026-08-20-t34-native-probe-verification.md`
 
 - [ ] **Step 1: Run focused backend verification.**
@@ -287,13 +290,13 @@ Expected: no `gofmt -l` output, all selected tests pass, and the server build su
 
 - [ ] **Step 2: Run focused frontend verification.**
 
-Run: `cd upstream/sub2api/frontend && npm run test:run -- src/features/monitor-v2 && npm run typecheck && npm run build`
+Run: `cd upstream/sub2api/frontend && pnpm vitest run src/features/monitor-v2 && pnpm typecheck && pnpm build`
 
 Expected: all Monitor V2 Vitest suites pass, `vue-tsc` passes, and Vite build succeeds.
 
 - [ ] **Step 3: Run source and diff guards.**
 
-Run: `! rg -n "usage_logs|MonitorV2Repository|monitorV2Repository|ProvideMonitorV2Service\([^\n]*channelMonitorService" upstream/sub2api/backend/internal/service/monitor_v2.go upstream/sub2api/backend/cmd/server/wire_gen.go && ! rg -n "is_flagship|ttft_p95|latency_p95|\btps\b" upstream/sub2api/frontend/src/features/monitor-v2 upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts && git diff --check && git status --short --branch`
+Run: `! rg -n "usage_logs|MonitorV2Repository|monitorV2Repository|ProvideMonitorV2Service\([^\n]*channelMonitorService" upstream/sub2api/backend/internal/service/monitor_v2.go upstream/sub2api/backend/cmd/server/wire_gen.go upstream/sub2api/backend/internal/repository/wire.go && ! rg -n "NewMonitorV2Repository" upstream/sub2api/backend/internal/repository/wire.go && rg -n "NewChannelMonitorRepository|NewChannelMonitorV2Repository" upstream/sub2api/backend/internal/repository/wire.go && ! rg -n "is_flagship|ttft_p95|latency_p95|\btps\b" upstream/sub2api/frontend/src/features/monitor-v2 upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts && git diff --check && git status --short --branch`
 
 Expected: no forbidden Monitor V2 source matches, clean diff check, and only T34 branch files changed.
 

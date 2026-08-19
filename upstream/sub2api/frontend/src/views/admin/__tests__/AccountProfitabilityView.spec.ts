@@ -229,14 +229,14 @@ describe('AccountProfitabilityView', () => {
     await flushPromises()
     await wrapper.get('[data-test="view-cny"]').trigger('click')
     await flushPromises()
-    const table = wrapper.get('[data-test="self-purchased-table"]')
-    expect(table.text()).toContain('采购成本')
-    expect(table.text()).toContain('利用率')
-    expect(table.text()).toContain('采购损失')
-    const cells = table.findAll('tbody td').map((cell) => cell.text())
+    const cards = wrapper.get('[data-test="self-purchased-card-grid"]')
+    expect(cards.text()).toContain('采购成本')
+    expect(cards.text()).toContain('利用率')
+    expect(cards.text()).toContain('采购损失')
+    const cells = cards.findAll('[data-metric]').map((cell) => cell.text())
     expect(cells.some((cell) => /CN¥0\.00|¥0\.00/.test(cell))).toBe(true)
-    expect(table.text()).toContain('50.00%')
-    expect(table.text()).toContain('-20.00%')
+    expect(cards.text()).toContain('50.00%')
+    expect(cards.text()).toContain('-20.00%')
   })
 
   it('offers settlement for an expired active procurement version', async () => {
@@ -272,7 +272,7 @@ describe('AccountProfitabilityView', () => {
 
     expect(wrapper.get('[data-test="scope-all"]')).toBeTruthy()
     expect(cardIds(wrapper)).toEqual([7, 8, 9])
-    expect(wrapper.get('[data-test="account-financial-table"]')).toBeTruthy()
+    expect(wrapper.get('[data-test="account-card-grid"]')).toBeTruthy()
 
     await wrapper.get('[data-test="scope-group-10"]').trigger('click')
     expect(wrapper.get('[data-test="group-summary-10"]')).toBeTruthy()
@@ -280,6 +280,106 @@ describe('AccountProfitabilityView', () => {
 
     await wrapper.get('[data-test="scope-group-0"]').trigger('click')
     expect(cardIds(wrapper)).toEqual([9])
+  })
+
+  it('renders one USD card per account with a fixed metric grid', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const grid = wrapper.get('[data-test="account-card-grid"]')
+    expect(grid.classes()).toContain('lg:grid-cols-2')
+    expect(grid.findAll('[data-test^="account-card-"]')).toHaveLength(3)
+    const card = wrapper.get('[data-test="account-card-7"]')
+    expect(card.get('[data-metric="operational-cost"]').text()).toContain('$0.25')
+    expect(card.get('[data-metric="business-cost"]').text()).toContain('$1.00')
+    expect(card.get('[data-metric="business-revenue"]').text()).toContain('$2.50')
+    expect(card.get('[data-metric="total-cost"]').text()).toContain('$1.25')
+    expect(card.get('[data-metric="net-profit"]').text()).toContain('$1.25')
+    expect(card.get('[data-metric="margin"]').text()).toContain('50.00%')
+    expect(wrapper.find('[data-test="account-financial-table"]').exists()).toBe(false)
+  })
+
+  it('filters USD cards locally by account identity and status without reloading', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    getReport.mockClear()
+
+    await wrapper.get('[data-test="account-search"]').setValue('native b')
+    expect(wrapper.findAll('article[data-test^="account-card-"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="account-card-8"]').text()).toContain('Native B')
+
+    await wrapper.get('[data-test="account-search"]').setValue('8')
+    expect(wrapper.findAll('article[data-test^="account-card-"]')).toHaveLength(1)
+    await wrapper.get('[data-test="account-search"]').setValue('sub')
+    expect(wrapper.findAll('article[data-test^="account-card-"]')).toHaveLength(3)
+    await wrapper.get('[data-test="account-search"]').setValue('active')
+    expect(wrapper.findAll('article[data-test^="account-card-"]')).toHaveLength(3)
+    expect(getReport).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-test="account-search"]').setValue('does-not-exist')
+    expect(wrapper.find('[data-test="financial-empty"]').exists()).toBe(true)
+
+    await wrapper.get('[data-test="account-search"]').setValue('')
+    expect(wrapper.findAll('article[data-test^="account-card-"]')).toHaveLength(3)
+  })
+
+  it('renders CNY cards with procurement fields and filters cost status locally', async () => {
+    getSelfPurchased.mockResolvedValueOnce({
+      start_date: '2026-08-01', end_date: '2026-08-18', generated_at: '2026-08-18T00:00:00Z', currency: 'CNY',
+      summary: { procurement_cost_cny: 120, standard_consumed_usd: 30, confirmed_cost_cny: 60, pending_cost_cny: 60, procurement_loss_cny: 0, revenue_cny: 100, net_profit_cny: 40, margin: 0.4, account_count: 2 },
+      rows: [
+        { account_id: 21, name: 'Purchased', platform: 'openai', account_type: 'oauth', status: 'disabled', procurement_cost_cny: 120, estimated_quota_usd: 60, standard_consumed_usd: 30, utilization: 0.5, confirmed_cost_cny: 60, pending_cost_cny: 60, procurement_loss_cny: 0, revenue_cny: 100, net_profit_cny: 40, margin: 0.4, cost_status: 'active' },
+        { account_id: 22, name: 'Pending', platform: 'anthropic', account_type: 'oauth', status: 'active', procurement_cost_cny: null, estimated_quota_usd: null, standard_consumed_usd: 0, utilization: null, confirmed_cost_cny: 0, pending_cost_cny: 0, procurement_loss_cny: 0, revenue_cny: 0, net_profit_cny: null, margin: null, cost_status: 'cost_pending' },
+      ],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+
+    const grid = wrapper.get('[data-test="self-purchased-card-grid"]')
+    expect(grid.classes()).toContain('lg:grid-cols-2')
+    expect(grid.findAll('[data-test^="self-purchased-card-"]')).toHaveLength(2)
+    const card = wrapper.get('[data-test="self-purchased-card-21"]')
+    expect(card.get('[data-metric="procurement-cost"]').text()).toContain('120.00')
+    expect(card.get('[data-metric="estimated-quota"]').text()).toContain('60.00 USD')
+    expect(card.get('[data-metric="standard-consumed"]').text()).toContain('30.00 USD')
+    expect(card.get('[data-metric="utilization"]').text()).toContain('50.00%')
+    expect(card.get('[data-metric="confirmed-cost"]').text()).toContain('60.00')
+    expect(card.get('[data-metric="pending-cost"]').text()).toContain('60.00')
+    expect(card.get('[data-metric="procurement-loss"]').text()).toContain('0.00')
+    expect(card.get('[data-metric="revenue"]').text()).toContain('100.00')
+    expect(card.get('[data-metric="net-profit"]').text()).toContain('40.00')
+    expect(card.get('[data-metric="margin"]').text()).toContain('40.00%')
+    expect(card.get('[data-metric="cost-status"]').text()).toContain('active')
+    expect(card.get('[data-test="edit-procurement-21"]')).toBeTruthy()
+    const zeroFlowCard = wrapper.get('[data-test="self-purchased-card-22"]')
+    expect(zeroFlowCard.get('[data-metric="procurement-cost"]').text()).toContain('成本待录入')
+    expect(zeroFlowCard.get('[data-metric="standard-consumed"]').text()).toContain('0.00 USD')
+
+    getSelfPurchased.mockClear()
+    await wrapper.get('[data-test="account-search"]').setValue('cost_pending')
+    expect(wrapper.findAll('article[data-test^="self-purchased-card-"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="self-purchased-card-22"]').text()).toContain('Pending')
+    expect(getSelfPurchased).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="account-search"]').setValue('does-not-exist')
+    expect(wrapper.get('[data-test="self-purchased-empty"]')).toBeTruthy()
+  })
+
+  it('uses a single-column contained card grid on a 390px viewport and wraps long names', async () => {
+    const host = document.createElement('div')
+    host.style.width = '390px'
+    document.body.appendChild(host)
+    const report = nativeReport()
+    report.accounts[0].name = 'A very long account name that must wrap without widening the page'
+    getReport.mockResolvedValueOnce(report)
+    const wrapper = mountPage({ attachTo: host })
+    await flushPromises()
+    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toContain('grid-cols-1')
+    expect(wrapper.get('[data-test="account-card-7"] [data-test="account-name"]').classes()).toContain('break-words')
+    expect(wrapper.get('main').classes()).toContain('overflow-x-hidden')
+    wrapper.unmount()
+    host.remove()
   })
 
   it('shows the five approved native result metrics in each account row', async () => {
@@ -302,16 +402,16 @@ describe('AccountProfitabilityView', () => {
     await flushPromises()
 
     const main = wrapper.get('main')
-    const grid = wrapper.get('[data-test="account-financial-table-wrap"]')
+    const grid = wrapper.get('[data-test="account-card-grid"]')
     expect(main.classes()).toContain('overflow-x-hidden')
-    expect(grid.classes()).toContain('overflow-x-auto')
-    expect(wrapper.get('[data-test="summary-grid"]').classes()).toContain('grid-cols-2')
+    expect(grid.classes()).toContain('grid-cols-1')
+    expect(grid.classes()).toContain('lg:grid-cols-2')
     expect(main.element.getBoundingClientRect().width).toBeLessThanOrEqual(390)
     wrapper.unmount()
     host.remove()
   })
 
-  it('shows seven CNY summary metrics and contains the long table scroll', async () => {
+  it('shows seven CNY summary metrics and uses a contained card grid', async () => {
     const wrapper = mountPage()
     await flushPromises()
     await wrapper.get('[data-test="view-cny"]').trigger('click')
@@ -320,7 +420,8 @@ describe('AccountProfitabilityView', () => {
     expect(wrapper.get('[data-test="self-summary-account-count"]').text()).toContain('1')
     expect(wrapper.get('[data-test="self-summary-confirmed-cost"]').text()).toMatch(/60\.00/)
     expect(wrapper.get('[data-test="self-summary-pending-cost"]').text()).toMatch(/0\.00/)
-    expect(wrapper.get('[data-test="self-purchased-table-wrap"]').classes()).toContain('overflow-x-auto')
+    expect(wrapper.get('[data-test="self-purchased-card-grid"]').classes()).toContain('grid-cols-1')
+    expect(wrapper.get('[data-test="self-purchased-card-grid"]').classes()).toContain('lg:grid-cols-2')
     expect(wrapper.find('[data-test="scope-all"]').exists()).toBe(false)
   })
 

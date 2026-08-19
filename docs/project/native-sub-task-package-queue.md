@@ -46,7 +46,7 @@
 
 ### T29 Monitor V2 二态健康展示与统一指标口径
 
-- 当前状态：`DESIGNING`。根总控已完成全部非 `main` worktree 盘点；从最新 `main` 创建独立 worktree `codex/t29-monitor-v2-health-semantics`。T28 与用户指定的 detached 视觉预览均不修改、不合并、不清理。
+- 当前状态：`DESIGNING`。已正式纳入本根任务发布队列；用户可见顶层任务 `01a0191f-0386-7053-9cc1-9d01857dc92d`，独立 worktree `codex/t29-monitor-v2-health-semantics`。T28 优先进入整合/部署/验收车道，T29 在 T28 线上验收后串行推进；T28 与用户指定的 detached 视觉预览均不修改、不合并、不清理。
 - 展示合同：页面删除全部百分比型值，包括服务可用率、真实请求成功率、有效调用占比和缓存命中率；真实请求成功率也不进入明细、悬浮提示或无障碍文案。用户可见状态仅为“运行中 / 服务不可用”；运行中时间线统一绿色，服务不可用时间线使用故障色，卡片状态、整体状态和时间线使用同一二态投影。
 - 指标合同：毫秒、TPS、倍率等非百分比性能事实继续来自真实数据；Monitor V2 的所有性能查询统一时间窗、`group_id`、有效计费文本请求资格及可比主模型范围，避免 TTFT、总延迟、TPS、缓存因分母和模型构成不同而不可比。Pro 固定置顶并标记“旗舰”，不复制 Plus 数值、不人工覆盖统计结果。
 - 验收：TDD 覆盖百分号/成功率文案彻底消失、二态状态、时间线配色、Pro 置顶/旗舰和统一查询谓词；运行直接相关 Go service/repository tests、Monitor V2 Vitest、typecheck、frontend build、必要 Go build、gofmt 与 diff-check，并做桌面/390px 视觉核对。无迁移、无生产数据写入、无 GitHub Actions，预期 `downtime_required=false`。

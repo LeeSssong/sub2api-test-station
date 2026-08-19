@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T35 根总控整合状态（2026-08-20）：** T35 已无冲突合入根 `main@c4202ca598baaaa6cae9e146e7cd04827d0c6097`，合并 tree `bbf2e23db7eae569d83dc05c08914083931d8e5d`。合并后采购 service/handler focused、真实 PostgreSQL integration、server build、gofmt、diff-check 和零迁移范围门禁通过，当前进入 `INTEGRATING`，待生成最终证据、推送、发布预检、蓝绿部署和线上采购保存专项验证。
+
 **T35 根总控状态覆盖（2026-08-20）：** T35 已完成 `REFRESH_REQUIRED`，当前为 `READY_FOR_ROOT_REVIEW`。候选分支 `codex/t35-procurement-audit-type-hotfix` 已刷新到 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`，实现验证提交 `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`，当前 tip `251f1c4fc439c28598b9ae28b5843d702416bd4b`，工作树干净。真实 PostgreSQL 录入、清空、结算 RED/GREEN、采购 service/handler、server build、范围与零迁移门禁通过；全量 Go 的既有中文文案断言失败未触及 T35。待根总控授权合并、合并后门禁、发布预检、部署和线上专项验收。
 
 **T32 账号评分回归修复（2026-08-19）：** 状态：已完成（`DONE`）。候选已从根登记提交刷新，合入并推送为 `main@584b37bba6ed05d86a5a152160d37a9f92fefc9c`，source/tested tree `6b595b29a2ae8754f267541fafaff07fe4702840`；T32 账号监控 focused 测试、`go vet`、构建和 diff-check 通过。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-584b37bba-t32.json`。宿主记录 `/var/lib/sub2api/release-records/20260819T153809Z-production-245313.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `green`；公网三项健康检查均 200。管理员线上专项验收实测 91 张账号卡，其中 56 个暂停账号全部保留原生探测评分和全站排名，91/91 有评分卡、0 张暂无评分卡。评分、当前状态和排名继续只读 Sub 原生主动探测，不改评分公式、权重、计费、调度策略或数据库事实源。

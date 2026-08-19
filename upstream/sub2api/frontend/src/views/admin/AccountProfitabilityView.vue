@@ -44,6 +44,17 @@
         >自购专题 · CNY</button>
       </div>
 
+      <label class="block max-w-xl" data-test="account-search-label">
+        <span class="sr-only">搜索账号</span>
+        <input
+          v-model="searchQuery"
+          class="input w-full min-w-0"
+          data-test="account-search"
+          type="search"
+          placeholder="按账号名、ID、平台、类型或状态搜索"
+        />
+      </label>
+
       <div v-if="activeView === 'usd' && loading" data-test="financial-loading" class="text-sm text-gray-500">
         {{ t('admin.accountProfitability.loading') }}
       </div>
@@ -160,43 +171,53 @@
             {{ t('admin.accountProfitability.empty') }}
           </div>
 
-          <div v-else class="min-w-0 overflow-x-auto" data-test="account-financial-table-wrap">
-            <table class="min-w-[760px] w-full border-collapse text-left" data-test="account-financial-table">
-              <thead>
-                <tr class="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-700">
-                  <th class="min-w-[220px] px-3 py-3 font-medium">{{ t('admin.accountProfitability.table.account') }}</th>
-                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.operationalCost') }}</th>
-                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.businessCost') }}</th>
-                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.businessRevenue') }}</th>
-                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.totalCost') }}</th>
-                  <th class="min-w-[120px] px-3 py-3 text-right font-medium">{{ t('admin.accountProfitability.summary.netProfit') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
+          <div v-else class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2" data-test="account-card-grid">
+            <article
               v-for="account in sortedAccounts"
               :key="`${activePairPrefix}:${account.id}`"
-              class="border-b border-gray-100 align-top dark:border-gray-800"
-              :data-test="`account-row-${account.id}`"
+              class="card min-w-0 p-4"
+              :data-test="`account-card-${account.id}`"
               :data-account-id="account.id"
               :data-pair="`${activePairPrefix}:${account.id}`"
-                >
-                  <th scope="row" class="px-3 py-3 font-normal">
-                    <div class="min-w-0">
-                      <div class="break-words text-sm font-semibold">{{ account.name }}</div>
-                      <div class="mt-1 break-words text-xs text-gray-500">
-                        {{ t('admin.accountProfitability.account.meta', { platform: account.platform, type: account.type }) }} · #{{ account.id }}
-                      </div>
-                    </div>
-                  </th>
-                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="operational-cost" :class="toneFor('operational_cost')">{{ usd(account.amounts.operational_cost) }}</td>
-                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="business-cost" :class="toneFor('business_cost')">{{ usd(account.amounts.business_cost) }}</td>
-                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="business-revenue" :class="toneFor('business_revenue')">{{ usd(account.amounts.business_revenue) }}</td>
-                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="total-cost" :class="toneFor('total_cost')">{{ usd(account.amounts.total_cost) }}</td>
-                  <td class="px-3 py-3 text-right text-sm font-semibold" data-metric="net-profit" :class="toneFor('net_profit', account.amounts.net_profit)">{{ usd(account.amounts.net_profit) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            >
+              <div :data-test="`account-row-${account.id}`" class="min-w-0">
+                <div class="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <h3 class="break-words text-sm font-semibold" data-test="account-name">{{ account.name }}</h3>
+                    <p class="mt-1 break-words text-xs text-gray-500">
+                      {{ t('admin.accountProfitability.account.meta', { platform: account.platform, type: account.type }) }} · #{{ account.id }}
+                    </p>
+                  </div>
+                  <span class="shrink-0 text-xs text-gray-500">{{ account.historical ? 'historical' : 'active' }}</span>
+                </div>
+                <div class="mt-4 grid min-w-0 grid-cols-2 gap-3" aria-label="USD 经营字段">
+                  <div class="min-w-0" data-metric="operational-cost">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.operationalCost') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('operational_cost')">{{ usd(account.amounts.operational_cost) }}</div>
+                  </div>
+                  <div class="min-w-0" data-metric="business-cost">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.businessCost') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('business_cost')">{{ usd(account.amounts.business_cost) }}</div>
+                  </div>
+                  <div class="min-w-0" data-metric="business-revenue">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.businessRevenue') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('business_revenue')">{{ usd(account.amounts.business_revenue) }}</div>
+                  </div>
+                  <div class="min-w-0" data-metric="total-cost">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.totalCost') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('total_cost')">{{ usd(account.amounts.total_cost) }}</div>
+                  </div>
+                  <div class="min-w-0" data-metric="net-profit">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.netProfit') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('net_profit', account.amounts.net_profit)">{{ usd(account.amounts.net_profit) }}</div>
+                  </div>
+                  <div class="min-w-0" data-metric="margin">
+                    <div class="text-xs text-gray-500">{{ t('admin.accountProfitability.summary.externalMargin') }}</div>
+                    <div class="mt-1 break-words text-sm font-semibold" :class="toneFor('external_margin', account.amounts.external_margin ?? undefined)">{{ percent(account.amounts.external_margin) }}</div>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
       </template>
@@ -222,9 +243,43 @@
             <div class="min-w-0" data-test="self-summary-net-profit"><div class="text-xs text-gray-500">人民币净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
             <div class="min-w-0" data-test="self-summary-margin"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
           </div>
-          <div v-if="selfPurchased.rows.length" class="min-w-0 overflow-x-auto" data-test="self-purchased-table-wrap">
-            <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button type="button" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`edit-procurement-${row.account_id}`" @click="openProcurementDialog(row)">{{ row.procurement_cost_cny == null ? '录入成本' : '编辑成本' }}</button><button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
+          <div v-if="filteredSelfPurchasedRows.length" class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2" data-test="self-purchased-card-grid">
+            <article
+              v-for="row in filteredSelfPurchasedRows"
+              :key="row.account_id"
+              class="card min-w-0 p-4"
+              :data-test="`self-purchased-card-${row.account_id}`"
+              :data-account-id="row.account_id"
+            >
+              <div class="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <h3 class="break-words text-sm font-semibold" data-test="account-name">{{ row.name }}</h3>
+                  <p class="mt-1 break-words text-xs text-gray-500">{{ row.platform }} · {{ row.account_type }} · #{{ row.account_id }}</p>
+                </div>
+                <div class="shrink-0 text-right text-xs text-gray-500">
+                  <div>{{ row.status }}</div>
+                  <div class="mt-1" data-metric="cost-status">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}</div>
+                </div>
+              </div>
+              <div class="mt-4 grid min-w-0 grid-cols-2 gap-3" aria-label="CNY 自购经营字段">
+                <div class="min-w-0" data-metric="procurement-cost"><div class="text-xs text-gray-500">采购成本</div><div class="mt-1 break-words text-sm font-semibold">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</div></div>
+                <div class="min-w-0" data-metric="estimated-quota"><div class="text-xs text-gray-500">预计额度</div><div class="mt-1 break-words text-sm font-semibold">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</div></div>
+                <div class="min-w-0" data-metric="standard-consumed"><div class="text-xs text-gray-500">标准消耗</div><div class="mt-1 break-words text-sm font-semibold">{{ row.standard_consumed_usd.toFixed(2) }} USD</div></div>
+                <div class="min-w-0" data-metric="utilization"><div class="text-xs text-gray-500">利用率</div><div class="mt-1 break-words text-sm font-semibold">{{ percent(row.utilization) }}</div></div>
+                <div class="min-w-0" data-metric="confirmed-cost"><div class="text-xs text-gray-500">确认成本</div><div class="mt-1 break-words text-sm font-semibold">{{ cny(row.confirmed_cost_cny) }}</div></div>
+                <div class="min-w-0" data-metric="pending-cost"><div class="text-xs text-gray-500">待摊</div><div class="mt-1 break-words text-sm font-semibold">{{ cny(row.pending_cost_cny) }}</div></div>
+                <div class="min-w-0" data-metric="procurement-loss"><div class="text-xs text-gray-500">采购损失</div><div class="mt-1 break-words text-sm font-semibold">{{ cny(row.procurement_loss_cny) }}</div></div>
+                <div class="min-w-0" data-metric="revenue"><div class="text-xs text-gray-500">营收</div><div class="mt-1 break-words text-sm font-semibold">{{ cny(row.revenue_cny) }}</div></div>
+                <div class="min-w-0" data-metric="net-profit"><div class="text-xs text-gray-500">净利润</div><div class="mt-1 break-words text-sm font-semibold" :class="row.net_profit_cny != null && row.net_profit_cny < 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'">{{ cny(row.net_profit_cny) }}</div></div>
+                <div class="min-w-0" data-metric="margin"><div class="text-xs text-gray-500">利润率</div><div class="mt-1 break-words text-sm font-semibold">{{ percent(row.margin) }}</div></div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <button type="button" class="btn btn-secondary px-2 py-1 text-xs" :data-test="`edit-procurement-${row.account_id}`" @click="openProcurementDialog(row)">{{ row.procurement_cost_cny == null ? '录入成本' : '编辑成本' }}</button>
+                <button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" type="button" class="btn btn-secondary px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button>
+              </div>
+            </article>
           </div>
+          <div v-else data-test="self-purchased-empty" class="text-sm text-gray-500">暂无匹配的自购账号</div>
         </template>
       </section>
       <AccountMonitorCostDialog
@@ -266,6 +321,7 @@ const activeView = ref<FinancialView>('usd')
 const activeRange = ref<FinancialRange>('today')
 const activeScope = ref<FinancialScope>({ kind: 'all' })
 const sort = ref<FinancialSort>({ key: 'net_profit', direction: 'desc' })
+const searchQuery = ref('')
 const loading = ref(false)
 const refreshing = ref(false)
 const loadError = ref('')
@@ -367,9 +423,33 @@ const sortOptions = computed(() => ([
   { key: 'net_profit' as const, label: t('admin.accountProfitability.summary.netProfit') },
   { key: 'external_margin' as const, label: t('admin.accountProfitability.summary.externalMargin') },
 ]))
-const sortedAccounts = computed(() => [...selectedAccounts.value].sort(compareAccounts))
+const searchText = computed(() => searchQuery.value.trim().toLocaleLowerCase())
+const accountSearchText = (account: FinancialAccount) => [
+  account.name,
+  account.id,
+  account.platform,
+  account.type,
+  account.historical ? 'historical' : 'active',
+].join(' ').toLocaleLowerCase()
+const filteredAccounts = computed(() => {
+  const query = searchText.value
+  return query ? selectedAccounts.value.filter((account) => accountSearchText(account).includes(query)) : selectedAccounts.value
+})
+const sortedAccounts = computed(() => [...filteredAccounts.value].sort(compareAccounts))
 const activePairPrefix = computed(() => activeScope.value.kind === 'group' ? activeScope.value.id : 'all')
 const isEmpty = computed(() => hasLoaded.value && sortedAccounts.value.length === 0)
+const filteredSelfPurchasedRows = computed(() => {
+  const query = searchText.value
+  if (!query) return selfPurchased.value.rows
+  return selfPurchased.value.rows.filter((row) => [
+    row.name,
+    row.account_id,
+    row.platform,
+    row.account_type,
+    row.status,
+    row.cost_status,
+  ].join(' ').toLocaleLowerCase().includes(query))
+})
 
 function compareAccounts(a: FinancialAccount, b: FinancialAccount) {
   const key = sort.value.key

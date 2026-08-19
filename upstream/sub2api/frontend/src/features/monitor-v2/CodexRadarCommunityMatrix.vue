@@ -28,25 +28,26 @@
       <div v-for="index in 6" :key="index" class="h-28 animate-pulse rounded-lg border border-slate-700 bg-slate-900 motion-reduce:animate-none" />
     </div>
     <p v-else-if="failed" class="mt-4 rounded-lg border border-slate-700 bg-slate-900 px-4 py-5 text-sm text-slate-300">社区测试数据暂时不可用</p>
-    <div v-else-if="activeTab" data-community-scroll class="mt-4 min-w-0 overflow-x-auto overscroll-x-contain pb-2" tabindex="0" aria-label="可横向滚动查看全部模型档位">
-      <div class="min-w-[980px] space-y-2">
-        <div v-for="family in groupedPoints" :key="family.model" class="grid grid-cols-6 gap-2">
+    <div v-else-if="activeTab" data-community-scroll class="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2" tabindex="0" aria-label="可横向滚动查看全部模型档位">
+      <div data-community-grid class="min-w-[1120px] space-y-3">
+        <div v-for="family in groupedPoints" :key="family.model" :data-community-family="family.model" class="grid grid-cols-6 gap-2.5">
           <article
             v-for="point in family.points"
             :key="`${point.model}-${point.effort}`"
             data-community-card
-            class="relative min-w-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-900/95 px-3 py-2.5 shadow-[inset_3px_0_0_var(--family-color)]"
-            :style="{ '--family-color': familyColor(point.model) }"
+            :data-effort="point.effort"
+            class="relative min-h-[116px] min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 px-4 py-3.5 shadow-[inset_4px_0_0_var(--family-color)] transition-colors hover:border-slate-500 hover:bg-slate-800/95"
+            :style="{ '--family-color': familyColor(point.model), gridColumnStart: effortColumn(point.effort) }"
           >
             <div class="flex items-start justify-between gap-2">
-              <p class="min-w-0 truncate text-xs font-bold text-slate-100">{{ modelLabel(point.model) }} {{ point.effort }}</p>
-              <p class="shrink-0 text-base font-black leading-none text-white">IQ {{ Math.round(point.iq) }}</p>
+              <p class="min-w-0 truncate text-sm font-bold text-slate-100">{{ modelLabel(point.model) }} {{ point.effort }}</p>
+              <p class="shrink-0 text-xl font-black leading-none text-white">IQ {{ Math.round(point.iq) }}</p>
             </div>
-            <p class="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">社区实测</p>
-            <div class="mt-2 grid grid-cols-3 gap-1 border-t border-slate-700/80 pt-2 text-center">
-              <div><strong class="block text-[11px] text-slate-200">{{ point.samples }}</strong><span class="text-[9px] text-slate-500">份样本</span></div>
-              <div><strong class="block text-[11px] text-emerald-300">{{ point.average_cost_usd == null ? '–' : `$${point.average_cost_usd.toFixed(2)}` }}</strong><span class="text-[9px] text-slate-500">平均费用</span></div>
-              <div><strong class="block text-[11px] text-blue-300">{{ point.average_duration_minutes == null ? '–' : point.average_duration_minutes.toFixed(1) }}</strong><span class="text-[9px] text-slate-500">分钟</span></div>
+            <p class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">社区实测</p>
+            <div class="mt-3 grid grid-cols-3 gap-1 border-t border-slate-700/80 pt-2.5 text-center">
+              <div><strong class="block text-xs text-slate-200">{{ point.samples }}</strong><span class="text-[10px] text-slate-500">份样本</span></div>
+              <div><strong class="block text-xs text-emerald-300">{{ point.average_cost_usd == null ? '–' : `$${point.average_cost_usd.toFixed(2)}` }}</strong><span class="text-[10px] text-slate-500">平均费用</span></div>
+              <div><strong class="block text-xs text-blue-300">{{ point.average_duration_minutes == null ? '–' : point.average_duration_minutes.toFixed(1) }}</strong><span class="text-[10px] text-slate-500">分钟</span></div>
             </div>
             <p class="sr-only">{{ point.samples }} 份样本 · {{ point.average_cost_usd == null ? '费用暂无' : `$${point.average_cost_usd.toFixed(2)}` }} · {{ point.average_duration_minutes == null ? '耗时暂无' : `${point.average_duration_minutes.toFixed(1)} 分钟` }}</p>
           </article>
@@ -83,8 +84,29 @@ const groupedPoints = computed(() => {
     }
     group.points.push(point)
   }
-  return groups
+  for (const group of groups) group.points.sort((a, b) => effortRank(a.effort) - effortRank(b.effort))
+  return groups.sort((a, b) => familyRank(a.model) - familyRank(b.model))
 })
+
+const effortOrder = ['ultra', 'max', 'xhigh', 'high', 'medium', 'low'] as const
+
+function effortRank(effort: string) {
+  const index = effortOrder.indexOf(effort.toLowerCase() as (typeof effortOrder)[number])
+  return index === -1 ? effortOrder.length : index
+}
+
+function effortColumn(effort: string) {
+  return Math.min(effortRank(effort) + 1, effortOrder.length)
+}
+
+function familyRank(model: string) {
+  const normalized = model.toLowerCase()
+  if (normalized.includes('sol')) return 0
+  if (normalized.includes('terra')) return 1
+  if (normalized.includes('luna')) return 2
+  if (normalized.includes('5.5')) return 3
+  return 4
+}
 
 function modelLabel(model: string) {
   const normalized = model.replace(/^gpt-/i, '')

@@ -91,9 +91,12 @@ export default {
       not_provided: 'Not provided'
     },
     baseRate: 'Base multiplier',
+    availability: '{value}% available',
+    availabilityNoData: 'No availability data',
     flagship: 'Flagship',
     peakRate: '{start}-{end} peak multiplier {rate}×',
     timeline: {
+      label: 'Availability timeline, {count} probe points',
       noData: 'No probes in this period'
     },
     empty: {

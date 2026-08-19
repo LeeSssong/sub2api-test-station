@@ -1,44 +1,48 @@
 <template>
   <article
-    class="rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900/70 sm:p-6"
+    :data-test="`monitor-group-${group.id}`"
+    class="group/monitor rounded-xl border border-gray-200 bg-white px-5 py-5 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:shadow-[0_16px_40px_-24px_rgba(16,185,129,0.65)] focus-within:border-emerald-400/60 focus-within:bg-emerald-500/10 dark:border-dark-700 dark:bg-dark-900/75 dark:hover:border-emerald-400/45 dark:hover:bg-emerald-400/10 sm:px-6 sm:py-6 lg:px-7"
     :aria-labelledby="`monitor-v2-group-${group.id}`"
   >
-    <header class="flex flex-col items-stretch justify-between gap-5 sm:flex-row sm:items-center">
-      <div class="flex min-w-0 items-center gap-3">
+    <header class="grid min-w-0 grid-cols-1 items-center gap-6 lg:grid-cols-[minmax(370px,0.9fr)_minmax(0,1.25fr)] lg:gap-10">
+      <div class="flex min-w-0 items-center gap-3.5">
         <span
-          class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold"
-          :class="group.status === 'operational'
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
-            : 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'"
+          class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-extrabold tabular-nums shadow-sm"
+          :class="availabilityClass"
         >
           <span class="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
-          {{ t(`monitorV2.status.${group.status}`) }}
+          {{ availabilityText }}
+          <span class="sr-only">{{ t(`monitorV2.status.${group.status}`) }}</span>
         </span>
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <h2
               :id="`monitor-v2-group-${group.id}`"
-              class="truncate text-lg font-semibold text-gray-950 dark:text-white"
+              class="truncate text-xl font-bold tracking-tight text-gray-950 dark:text-white"
             >
               {{ group.name }}
             </h2>
-            <span v-if="group.is_flagship" data-test="monitor-flagship" class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
+            <span v-if="group.is_flagship" data-test="monitor-flagship" class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
               {{ t('monitorV2.flagship') }}
             </span>
-            <span class="text-lg font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+            <span class="text-xl font-bold tabular-nums text-gray-700 dark:text-gray-200">
               {{ primaryDuration }}
             </span>
           </div>
-          <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             <span>{{ t('monitorV2.metric.ttft') }} {{ metricValue(group.ttft, formatDuration) }}</span>
             <span>{{ t('monitorV2.metric.tps') }} {{ metricValue(group.tps, formatTPS) }}</span>
-            <span data-test="monitor-rate-multiplier">{{ t('monitorV2.baseRate') }} {{ formatRate(group.rate_multiplier) }}×</span>
+            <span
+              data-test="monitor-rate-multiplier"
+              class="inline-flex items-center rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-2.5 py-1 text-base font-black tabular-nums text-emerald-700 shadow-sm transition-transform duration-300 group-hover/monitor:scale-105 dark:text-emerald-300"
+            >
+              {{ t('monitorV2.baseRate') }} {{ formatRate(group.rate_multiplier) }}×
+            </span>
           </div>
         </div>
       </div>
       <MonitorV2Timeline :points="group.timeline" />
     </header>
-
   </article>
 </template>
 
@@ -58,6 +62,33 @@ const primaryDuration = computed(() => {
   return metric.state === 'available' && metric.value !== null ? formatDuration(metric.value) : '—'
 })
 
+const availability = computed(() => {
+  if (props.group.timeline.length === 0) return null
+  const operational = props.group.timeline.filter((point) => point.status === 'operational').length
+  return operational / props.group.timeline.length * 100
+})
+
+const availabilityText = computed(() => {
+  if (availability.value === null) return t('monitorV2.availabilityNoData')
+  return t('monitorV2.availability', { value: formatAvailability(availability.value) })
+})
+
+const availabilityClass = computed(() => {
+  if (availability.value === null) {
+    return props.group.status === 'operational'
+      ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
+      : 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
+  }
+  if (availability.value >= 99) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
+  if (availability.value >= 95) return 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200'
+  return 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
+})
+
+function formatAvailability(value: number): string {
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
 function formatDuration(value: number): string {
   if (value < 1000) return `${Math.round(value)} ms`
   return `${Number((value / 1000).toFixed(2))} s`
@@ -74,5 +105,4 @@ function formatRate(value: number): string {
 function metricValue(metric: MonitorV2Group['ttft'], formatter: (value: number) => string): string {
   return metric.state === 'available' && metric.value !== null ? formatter(metric.value) : '—'
 }
-
 </script>

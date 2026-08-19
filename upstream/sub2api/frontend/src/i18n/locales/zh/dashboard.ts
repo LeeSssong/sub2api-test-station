@@ -91,9 +91,12 @@ export default {
       not_provided: '未提供'
     },
     baseRate: '基础倍率',
+    availability: '{value}% 可用',
+    availabilityNoData: '暂无可用率数据',
     flagship: '旗舰',
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
     timeline: {
+      label: '可用性时间线，共 {count} 个探测点',
       noData: '该时段暂无探测记录'
     },
     empty: {

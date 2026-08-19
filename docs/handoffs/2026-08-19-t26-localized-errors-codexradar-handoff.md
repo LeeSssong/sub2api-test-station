@@ -1,9 +1,9 @@
 # T26 用户错误中文投影与 CodexRadar 站长推荐 handoff
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 基线：`main@418aa4303687d905b6b891b8263be87cdc4ab20c`
-- 实现提交：`65c1bc21ad22f5169c18c581cdad22ec181a3b46`
-- 实现 tree：`a1959a01478303797c4cae85a4515a2f358a39c8`
+- 基线：`origin/main@ac457c9b358a7df773632700e15a9bf02c014e22`
+- 实现提交：`ca0efef08` (rebased implementation)
+- 实现 tree：`<superseded; see refreshed candidate below>`
 - 分支：`codex/t26-localized-errors-codexradar`
 
 ## 精确范围
@@ -40,4 +40,6 @@
 - 预期：`downtime_required=false`，最终以根 `main` 发布预检为准。
 - 回滚：撤销实现提交，或由根发布总控切回上一蓝绿槽/镜像。
 
-根发布总控可从上述实现提交审查范围；本任务停在 `READY_FOR_ROOT_REVIEW`。
+根发布总控可从上述实现提交审查范围；刷新后候选 HEAD：`cb3bb9ccd`；候选 tree：`<see git rev-parse HEAD^{tree}>`。
+
+本任务停在 `READY_FOR_ROOT_REVIEW`。

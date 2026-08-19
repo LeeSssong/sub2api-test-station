@@ -2,12 +2,12 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28 与 T29 均为 `DONE`。禁止使用 GitHub Actions。
-- 当前实施：T28 与 T29 均已完成根复核、合并、推送、0600 证据、无停机蓝绿发布和生产专项验收；当前没有任务占用整合、部署或验证单车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28 与 T29 均为 `DONE`；T30“真实采购保存与全量 OAuth 自购账号”处于 `DESIGNING`；T31“渠道监控页面优化”恢复 `IMPLEMENTING`。两者范围严格隔离，禁止使用 GitHub Actions。
+- 当前实施：T28 与 T29 均已完成根复核、合并、推送、0600 证据、无停机蓝绿发布和生产专项验收；T30 只处理采购保存错误、全量 OAuth 自购账号和 CNY 成本录入；T31 只处理 Monitor V2 渠道监控视觉与交互。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@e0b2d99b91dcbaa20b1cb4d859cd58182795c60f`、tree `34ace5c193dd1c647215ed6894c7ec1945dd69b4`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T29 蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像 `sha256:70f02ffa0ef8e555c28a3eee10a6de442bce0e9cd72457a5bcf9b9fca1f46310` 且均 healthy、重启计数 0。宿主记录为 `/var/lib/sub2api/release-records/20260819T102718Z-production-3917.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-e0b2d99b9-t29.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
-- 全局审计（2026-08-19）：T28/T29 均已完成根复核、合并、推送、发布与生产验证并转为 `DONE`。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle` 已通过校验；用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview` 与根目录既有未跟踪资料继续保留。
+- 全局审计（2026-08-19）：T28/T29 均已完成根复核、合并、推送、发布与生产验证并转为 `DONE`。T28 的生产专项保存保持只读，真实账号保存闭环、全量 OAuth 自购表和 CNY 行内录入入口登记为 T30；T30 顶层任务已创建并处于 `DESIGNING`，尚未占用整合/部署/验收车道。恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle` 已通过校验；用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview` 与根目录既有未跟踪资料继续保留。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -19,6 +19,12 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。
 
 ## 队列
+
+### T31 Monitor V2 视觉放大、时间线交互与 CodexRadar 列对齐
+
+- 当前状态：`IMPLEMENTING`。用户已确认本任务负责渠道监控页面优化：时间线固定柱宽/柱高，悬停显示具体时间点与状态、整行绿色高亮和动态效果；恢复真实可用率展示并强化倍率；按截图比例放大渠道状态、站长推荐和降智雷达；推理强度从左到右高到低，缺档不补空位，不同模型相同强度必须落在同一列（Sol `ultra → max → xhigh → high → medium → low`）。不得修改 T30 的采购保存、OAuth 自购报表或成本录入范围。
+- 工作区：`/Users/gongtengxinwen/.codex/worktrees/5d0f/sub2api搭建`，分支 `codex/t31-monitor-v2-visual-polish`，基线 `main@c85f749ef`。用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读保留。
+- 范围：仅 Monitor V2 前端组件、可用率最小数据合同、CodexRadar 排序/布局及直接相关测试；不改计费、调度、外部 Radar 数据源、生产数据或 GitHub Actions。完成 RED→GREEN、focused tests、typecheck/build、diff-check 和桌面/390px 视觉核对后交回根总控。
 
 ### T26-R1 CodexRadar 三标签社区测试矩阵补齐
 
@@ -53,6 +59,15 @@
 - 指标合同：毫秒、TPS、倍率等非百分比性能事实继续来自真实数据；Monitor V2 的所有性能查询统一时间窗、`group_id`、有效计费文本请求资格及可比主模型范围，避免 TTFT、总延迟、TPS、缓存因分母和模型构成不同而不可比。Pro 固定置顶并标记“旗舰”，不复制 Plus 数值、不人工覆盖统计结果。
 - 验收：TDD 覆盖百分号/成功率文案彻底消失、二态状态、时间线配色、Pro 置顶/旗舰和统一查询谓词；运行直接相关 Go service/repository tests、Monitor V2 Vitest、typecheck、frontend build、必要 Go build、gofmt 与 diff-check，并做桌面/390px 视觉核对。无迁移、无生产数据写入、无 GitHub Actions，预期 `downtime_required=false`。
 - 非目标：不改变主动探测重试、计费价格、调度策略、分组成员、用户请求错误处理、CodexRadar 或其他管理页面。
+
+### T30 真实采购保存与全量 OAuth 自购账号
+
+- 当前状态：`DESIGNING`。独立用户可见顶层任务已创建（客户端任务 ID `client-new-thread:d5e3b278-338b-4413-a0fb-33dab252b387`，GPT-5.6 Sol / medium），使用独立 worktree；根总控只负责登记、审查、合并、发布和线上验收。
+- 范围收敛：用户已明确 T30 不负责渠道监控/雷达视觉；T31 负责该页面优化。T30 仅处理截图1保存错误与截图2全量 OAuth 自购账号及成本录入，不得覆盖 T31 的视觉实现。
+- 首要问题：T28 已投产，但生产专项保持只读；T30 必须用一个指定的非敏感 OAuth 测试账号完成一次真实采购成本保存、刷新读取和页面 reload 验证，记录 request id、HTTP 状态、响应体、后端日志及数据库前后快照，完成后恢复/清理测试值。台账成功但读取失败、服务故障、重复提交均需可诊断响应，不得泛化为 `internal error`。
+- 自购报告：`GetSelfPurchasedReport` 以 `accounts.deleted_at IS NULL AND accounts.type='oauth'` 的全部账号为候选；无采购版本账号生成 `cost_pending` 投影，成本/额度为空但账号仍显示，0 流水也显示。
+- 页面入口：CNY 自购表每个账号行提供“录入成本/编辑成本”，复用账号监控的 `accounts.procurement_cost_cny`、`accounts.estimated_usable_quota_usd`、`account_procurement_cost_versions`、同一保存 API 和共享成本表单；默认预计额度 60 USD，保存/清空后两个页面同步刷新。
+- 验收与边界：Go/Vitest、typecheck/build、DOM/截图、真实登录态专项；无迁移、无生产数据扩散、无 GitHub Actions，预期 `downtime_required=false`。候选先完成 brainstorming、正式规格和计划，完成后停 `READY_FOR_ROOT_REVIEW`。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
 

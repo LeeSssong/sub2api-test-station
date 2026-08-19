@@ -69,6 +69,7 @@ type accountMonitorRepoStub struct {
 	monitorV2BucketSize         time.Duration
 	monitorV2Projection         map[int64]MonitorV2NativeGroupProjection
 	monitorV2ProjectionErr      error
+	deleteBeforeCalls           []time.Time
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -78,7 +79,8 @@ func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountM
 	return nil
 }
 
-func (s *accountMonitorRepoStub) DeleteBefore(context.Context, time.Time) error {
+func (s *accountMonitorRepoStub) DeleteBefore(_ context.Context, before time.Time) error {
+	s.deleteBeforeCalls = append(s.deleteBeforeCalls, before)
 	return nil
 }
 
@@ -553,6 +555,23 @@ func TestAccountMonitorProjectMonitorV2GroupsPropagatesNativeRepositoryError(t *
 
 	if err == nil || !strings.Contains(err.Error(), "native projection unavailable") {
 		t.Fatalf("error = %v, want native projection error", err)
+	}
+}
+
+func TestAccountMonitorRunAllUsesThirtyDayResultRetention(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	started := time.Now()
+	if _, err := svc.RunAll(context.Background(), 1); err != nil {
+		t.Fatalf("RunAll() error = %v", err)
+	}
+	if len(repo.deleteBeforeCalls) != 1 {
+		t.Fatalf("DeleteBefore calls = %d, want 1", len(repo.deleteBeforeCalls))
+	}
+	cutoffAge := time.Since(repo.deleteBeforeCalls[0])
+	if cutoffAge < 29*24*time.Hour || cutoffAge > 31*24*time.Hour {
+		t.Fatalf("retention cutoff age = %s, want approximately 30 days (started %s)", cutoffAge, started)
 	}
 }
 

@@ -1601,7 +1601,7 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 	if err := g.Wait(); err != nil {
 		return completed, err
 	}
-	if err := s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour)); err != nil {
+	if err := s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour)); err != nil {
 		return completed, fmt.Errorf("delete account monitor history: %w", err)
 	}
 	_ = actorID
@@ -1657,7 +1657,7 @@ func (s *AccountMonitorService) RunOne(
 	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
 		RefreshDeclaration: true, RefreshBalance: true,
 	})
-	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorHistoryDays*24*time.Hour))
+	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour))
 	_ = actorID
 	return result, nil
 }

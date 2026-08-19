@@ -11,6 +11,7 @@ const (
 	AccountMonitorMinIntervalSeconds      = 15
 	AccountMonitorMaxIntervalSeconds      = 3600
 	AccountMonitorHistoryDays             = 7
+	AccountMonitorResultRetentionDays     = 30
 	AccountMonitorDefaultHistoryLimit     = 50
 	AccountMonitorGroupEvidenceWindow     = 5 * time.Minute
 	AccountMonitorGroupEvidenceMinSamples = 3

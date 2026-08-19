@@ -30,6 +30,9 @@ describe('CodexRadarRecommendations', () => {
     await flushPromises()
     for (const value of ['站长推荐', '日常开发', '难题攻坚', '后台自动化', '跑龙虾类任务', 'Sol medium', 'IQ 90', '18 分钟', '$3.27', '日常规则']) expect(wrapper.text()).toContain(value)
     expect(wrapper.findAll('[data-radar-category]')).toHaveLength(4)
+    const panel = wrapper.get('[data-test="codexradar-panel"]')
+    expect(panel.classes()).toContain('sm:p-6')
+    expect(panel.classes()).toContain('xl:p-7')
   })
 
   it('shows a compact unavailable state without breaking the page', async () => {

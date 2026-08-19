@@ -27,6 +27,8 @@ const messages: Record<string, string> = {
   'monitorV2.status.operational': '运行中',
   'monitorV2.status.unavailable': '服务不可用',
   'monitorV2.flagship': '旗舰',
+  'monitorV2.availability': '{value}% 可用',
+  'monitorV2.availabilityNoData': '暂无可用率数据',
   'monitorV2.metric.ttft': 'TTFT P50',
   'monitorV2.metric.ttftP95': 'TTFT P95',
   'monitorV2.metric.tps': '输出 TPS',
@@ -157,10 +159,12 @@ describe('MonitorV2View', () => {
     document.dispatchEvent(new Event('visibilitychange'))
   }
 
-  it('renders compact binary health cards without percentage metrics', () => {
+  it('renders enlarged interactive cards with real probe availability and a strong multiplier', () => {
     const wrapper = mountView()
 
+    expect(wrapper.get('[data-test="monitor-v2-page"]').classes()).toContain('max-w-[1500px]')
     expect(wrapper.text()).toContain('OpenAI 旗舰组')
+    expect(wrapper.text()).toContain('100% 可用')
     expect(wrapper.text()).toContain('0.2×')
     expect(wrapper.text()).toContain('420 ms')
     expect(wrapper.text()).toContain('46.5 tok/s')
@@ -188,11 +192,19 @@ describe('MonitorV2View', () => {
       '有效调用',
       '真实请求',
       '服务波动',
-      '%',
     ]) {
       expect(wrapper.text()).not.toContain(forbidden)
     }
-    expect(wrapper.get('[data-test="monitor-rate-multiplier"]').text()).toContain('0.2×')
+    const flagshipCard = wrapper.get('[data-test="monitor-group-7"]')
+    expect(flagshipCard.classes()).toContain('transition-all')
+    expect(flagshipCard.classes()).toContain('hover:bg-emerald-500/10')
+    expect(flagshipCard.classes()).toContain('hover:-translate-y-0.5')
+    expect(flagshipCard.classes()).toContain('focus-within:bg-emerald-500/10')
+    expect(wrapper.text()).toContain('暂无可用率数据')
+    const multiplier = wrapper.get('[data-test="monitor-rate-multiplier"]')
+    expect(multiplier.text()).toContain('0.2×')
+    expect(multiplier.classes()).toContain('bg-emerald-500/15')
+    expect(multiplier.classes()).toContain('text-base')
     const unconfiguredCard = wrapper.findAll('article')[1]
     expect(unconfiguredCard.text()).not.toMatch(/\b0 ms\b/)
   })

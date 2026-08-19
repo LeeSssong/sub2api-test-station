@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <section class="mx-auto max-w-7xl" aria-labelledby="monitor-v2-title">
-      <header class="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-dark-700 md:flex-row md:items-end md:justify-between">
+    <section data-test="monitor-v2-page" class="mx-auto w-full max-w-[1500px]" aria-labelledby="monitor-v2-title">
+      <header class="flex flex-col gap-5 border-b border-gray-200 pb-6 dark:border-dark-700 md:flex-row md:items-end md:justify-between">
         <div>
           <div class="flex flex-wrap items-center gap-3">
             <h1
               id="monitor-v2-title"
-              class="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white"
+              class="text-3xl font-bold tracking-tight text-gray-950 dark:text-white"
             >
               {{ t('monitorV2.title') }}
             </h1>
@@ -19,7 +19,7 @@
               {{ t(`monitorV2.overall.${overallStatus}`) }}
             </span>
           </div>
-          <p class="mt-1.5 max-w-2xl text-sm text-gray-600 dark:text-gray-300">
+          <p class="mt-2 max-w-3xl text-base text-gray-600 dark:text-gray-300">
             {{ t('monitorV2.description') }}
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -40,7 +40,7 @@
               role="tab"
               :data-test="`monitor-window-${option.value}`"
               :aria-selected="currentWindow === option.value"
-              class="rounded-lg px-3 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              class="rounded-lg px-4 py-2 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50"
               :class="
                 currentWindow === option.value
                   ? 'bg-white text-gray-950 shadow-sm dark:bg-dark-700 dark:text-white'
@@ -57,7 +57,7 @@
 
       <div
         v-if="snapshot.groups.length > 0"
-        class="mt-6 grid grid-cols-1 gap-3"
+        class="mt-7 grid min-w-0 grid-cols-1 gap-2 rounded-2xl border border-gray-200 bg-gray-50/70 p-2 shadow-sm dark:border-dark-700 dark:bg-dark-950/50 sm:p-3"
         :aria-busy="loading"
       >
         <MonitorV2GroupCard

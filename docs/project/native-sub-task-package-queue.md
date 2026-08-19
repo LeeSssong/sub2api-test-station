@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25 与 T26 均为 `DONE`；当前没有任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 单车道。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25 与 T26 均为 `DONE`；T26-R1 已登记为 `DESIGNING`，修复 T26 遗漏的 CodexRadar 三标签社区测试矩阵。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@9de147ad673ab23f92a59a36e9f075d8bbeb8897`、tree `be3d53d052dfb4fcb35f9c9e6e8661b1825be38c`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T26 最终蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T040727Z-production-3903052.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-9de147ad6-t26-mobile-overflow-v2.json`。
 - 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26 发布验收后又将候选、移动端修复和临时发布三个干净 worktree 归档并移除，同时删除两条已合并的本地 T26 分支。T26 恢复 bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/t26-final-9de147ad6/t26-refs.bundle`，SHA-256 `d08aa5b66ecdc404ce40ef06fd16c40ebfba46d868206493797a6472e32baf12`，`git bundle verify` 通过。当前除根 `main` 外仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` 只读视觉证据，其 dirty 预览文件未修改、未清理。
@@ -18,6 +18,14 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。
 
 ## 队列
+
+### T26-R1 CodexRadar 三标签社区测试矩阵补齐
+
+- 当前状态：`DESIGNING`。用户指出此前已批准的 CodexRadar 截图中，“综合智能 / 软件工程能力 / 视觉空间推理”三标签社区测试矩阵未进入 T26 实现。根总控复核确认：T26 仅代理 `/api/radar-insights`，该接口只覆盖四类站长推荐；原页面矩阵还使用 `/api/intelligence-efficiency-metrics` 与 `/api/visual-spatial-reasoning`，因此属于已批准视觉范围的实现遗漏，而非线上加载故障。
+- 目标：继续在既有“站长推荐”下方按原站视觉补齐三标签矩阵；直接使用 CodexRadar 公开只读数据，显示更新时间、社区说明、全量模型/档位、样本数、IQ、费用和耗时。综合智能按 CodexRadar 当前原站组合口径展示，软件工程与视觉空间分别使用对应原始接口；不混入本站监控、计费、评分或推荐逻辑。
+- 实现边界：沿用 T26 固定目标、GET-only、短超时、响应大小限制、严格字段校验、内存缓存与最近成功快照；允许扩展现有 T26 DTO/endpoint 或增加同命名空间只读 endpoint。前端复用 `CodexRadarRecommendations` 区域并新增矩阵子组件/数据解析；桌面贴近截图，390px 不产生整页横向溢出。
+- 最小验证：相关 Go service/handler/routes、前端 DTO/组件测试、typecheck、build、gofmt、diff-check，以及线上登录态桌面/390 专项。无迁移、无生产数据写入、无 GitHub Actions；预期 `downtime_required=false`。
+- 工作区边界：实现由独立用户可见顶层任务和独立 worktree 承担；根线程只登记、审查、合并、推送、发布与线上验收。`/private/tmp/sub2api-monitor-v3-preview` 继续作为用户指定的 dirty detached 视觉证据只读保护。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
 

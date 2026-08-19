@@ -108,6 +108,7 @@ WITH versions AS (
       FROM accounts a
      WHERE (a.procurement_cost_cny IS NOT NULL
         OR a.estimated_usable_quota_usd IS NOT NULL)
+       AND a.type = 'oauth'
        AND NOT EXISTS (SELECT 1 FROM account_procurement_cost_versions v WHERE v.account_id = a.id)
 ), scoped AS (
     SELECT a.id, a.name, a.platform, a.type,
@@ -130,6 +131,7 @@ WITH versions AS (
        AND ul.created_at >= GREATEST(v.effective_at, $1)
        AND ul.created_at < LEAST(COALESCE(v.ended_at, $2), $2)
      WHERE a.deleted_at IS NULL
+       AND a.type = 'oauth'
        AND ((v.effective_at < $2 AND COALESCE(v.ended_at, $2) > $1)
          OR (v.settled_at >= $1 AND v.settled_at < $2))
   GROUP BY a.id, a.name, a.platform, a.type, a.status, a.expires_at,
@@ -274,7 +276,7 @@ func (s *AccountProfitabilityService) SettleProcurement(ctx context.Context, in 
 	err = tx.QueryRowContext(ctx, `SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at
         FROM account_procurement_cost_versions v
         JOIN accounts a ON a.id=v.account_id AND a.deleted_at IS NULL
-       WHERE v.account_id=$1 ORDER BY v.version_no DESC LIMIT 1 FOR UPDATE`, in.AccountID).Scan(&id, &cost, &quota, &effective, &versionStatus, &accountStatus, &expiresAt)
+       WHERE v.account_id=$1 AND a.type='oauth' ORDER BY v.version_no DESC LIMIT 1 FOR UPDATE`, in.AccountID).Scan(&id, &cost, &quota, &effective, &versionStatus, &accountStatus, &expiresAt)
 	if err != nil {
 		return false, err
 	}
@@ -348,7 +350,7 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 		return err
 	}
 	var oldID int64
-	var oldCost, oldQuota float64
+	var oldCost, oldQuota sql.NullFloat64
 	var oldEffective time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT id,cost_cny,estimated_usable_quota_usd,effective_at FROM account_procurement_cost_versions WHERE account_id=$1 AND ended_at IS NULL FOR UPDATE`, in.AccountID).Scan(&oldID, &oldCost, &oldQuota, &oldEffective); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -361,22 +363,24 @@ func (s *AccountProfitabilityService) UpdateProcurementConfig(ctx context.Contex
 	if oldID > 0 {
 		if in.CostCNY != nil {
 			var consumed float64
-			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE
+			if oldCost.Valid && oldQuota.Valid {
+				if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE
             WHEN COALESCE(billing_mode,'token')='token' AND COALESCE(image_count,0)=0
              AND COALESCE(video_count,0)=0 AND COALESCE(usage_completeness,'complete')='complete'
              AND COALESCE(request_type,0)<>4
              AND (COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_creation_tokens,0)+COALESCE(cache_read_tokens,0))>0
             THEN total_cost ELSE 0 END),0)::double precision
 	          FROM usage_logs WHERE account_id=$1 AND created_at >= $2 AND created_at < $3`, in.AccountID, oldEffective, now).Scan(&consumed); err != nil {
-				return err
-			}
-			confirmed := math.Min(oldCost, consumed*(oldCost/oldQuota))
-			remainingCost := math.Max(*in.CostCNY-confirmed, 0)
-			remainingQuota := math.Max(*in.QuotaUSD-consumed, 0)
-			nextCost = remainingCost
-			nextQuota = remainingQuota
-			if nextQuota <= 0 {
-				return errors.New("remaining estimated quota must be > 0")
+					return err
+				}
+				confirmed := math.Min(oldCost.Float64, consumed*(oldCost.Float64/oldQuota.Float64))
+				remainingCost := math.Max(*in.CostCNY-confirmed, 0)
+				remainingQuota := math.Max(*in.QuotaUSD-consumed, 0)
+				nextCost = remainingCost
+				nextQuota = remainingQuota
+				if nextQuota <= 0 {
+					return errors.New("remaining estimated quota must be > 0")
+				}
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE account_procurement_cost_versions SET ended_at=$2,status='ended',updated_at=$2 WHERE id=$1`, oldID, now); err != nil {

@@ -45,23 +45,6 @@
         </button>
       </div>
 
-      <section class="card min-w-0 space-y-3" data-test="self-purchased-panel">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div><h2 class="text-lg font-semibold">自购账号 · 人民币</h2><p class="text-xs text-gray-500">独立于渠道 USD 汇总；按标准额度消耗确认采购成本。</p></div>
-          <button class="btn btn-secondary shrink-0" data-test="self-purchased-refresh" @click="loadSelfPurchased">刷新</button>
-        </div>
-        <div v-if="selfPurchasedError" class="text-sm text-red-600" role="alert">{{ selfPurchasedError }}</div>
-        <div v-if="selfPurchasedLoaded" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div class="min-w-0"><div class="text-xs text-gray-500">采购成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.procurement_cost_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">人民币营收</div><div class="font-semibold">{{ cny(selfPurchased.summary.revenue_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
-          <div class="min-w-0"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
-        </div>
-        <div v-if="selfPurchasedLoaded && selfPurchased.rows.length" class="overflow-x-auto">
-          <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
-        </div>
-      </section>
-
       <template v-if="hasLoaded">
         <div class="text-xs text-gray-500" data-test="financial-generated-at">{{ generatedAt }}</div>
 
@@ -80,6 +63,23 @@
         <p class="text-xs text-gray-500" data-test="financial-role-history-note">
           {{ t('admin.accountProfitability.roleHistoryNote') }}
         </p>
+
+        <section class="card min-w-0 space-y-3" data-test="self-purchased-panel">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div><h2 class="text-lg font-semibold">自购账号 · 人民币</h2><p class="text-xs text-gray-500">独立于渠道 USD 汇总；按标准额度消耗确认采购成本。</p></div>
+            <button class="btn btn-secondary shrink-0" data-test="self-purchased-refresh" @click="loadSelfPurchased">刷新</button>
+          </div>
+          <div v-if="selfPurchasedError" class="text-sm text-red-600" role="alert">{{ selfPurchasedError }}</div>
+          <div v-if="selfPurchasedLoaded" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="min-w-0"><div class="text-xs text-gray-500">采购成本</div><div class="font-semibold">{{ cny(selfPurchased.summary.procurement_cost_cny) }}</div></div>
+            <div class="min-w-0"><div class="text-xs text-gray-500">人民币营收</div><div class="font-semibold">{{ cny(selfPurchased.summary.revenue_cny) }}</div></div>
+            <div class="min-w-0"><div class="text-xs text-gray-500">净利润</div><div class="font-semibold">{{ cny(selfPurchased.summary.net_profit_cny) }}</div></div>
+            <div class="min-w-0"><div class="text-xs text-gray-500">利润率</div><div class="font-semibold">{{ percent(selfPurchased.summary.margin) }}</div></div>
+          </div>
+          <div v-if="selfPurchasedLoaded && selfPurchased.rows.length" class="overflow-x-auto">
+            <table class="min-w-[1180px] w-full text-left text-sm" data-test="self-purchased-table"><thead><tr class="border-b text-xs text-gray-500"><th class="px-2 py-2">账号</th><th class="px-2 py-2 text-right">采购成本</th><th class="px-2 py-2 text-right">预计额度</th><th class="px-2 py-2 text-right">标准消耗</th><th class="px-2 py-2 text-right">利用率</th><th class="px-2 py-2 text-right">确认成本</th><th class="px-2 py-2 text-right">待摊</th><th class="px-2 py-2 text-right">采购损失</th><th class="px-2 py-2 text-right">营收</th><th class="px-2 py-2 text-right">净利润</th><th class="px-2 py-2 text-right">利润率</th><th class="px-2 py-2">状态</th></tr></thead><tbody><tr v-for="row in selfPurchased.rows" :key="row.account_id" class="border-b"><th class="px-2 py-2 font-medium">{{ row.name }} <span class="text-xs text-gray-500">#{{ row.account_id }}</span></th><td class="px-2 py-2 text-right">{{ row.procurement_cost_cny == null ? '成本待录入' : cny(row.procurement_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ row.estimated_quota_usd == null ? '—' : `${row.estimated_quota_usd.toFixed(2)} USD` }}</td><td class="px-2 py-2 text-right">{{ row.standard_consumed_usd.toFixed(2) }} USD</td><td class="px-2 py-2 text-right">{{ percent(row.utilization) }}</td><td class="px-2 py-2 text-right">{{ cny(row.confirmed_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.pending_cost_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.procurement_loss_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.revenue_cny) }}</td><td class="px-2 py-2 text-right">{{ cny(row.net_profit_cny) }}</td><td class="px-2 py-2 text-right">{{ percent(row.margin) }}</td><td class="px-2 py-2">{{ row.cost_status === 'cost_pending' ? '成本待录入' : row.cost_status }}<button v-if="row.cost_status !== 'settled' && row.cost_status !== 'cost_pending' && (row.status === 'disabled' || row.status === 'error' || row.status === 'expired')" class="btn btn-secondary ml-2 px-2 py-1 text-xs" :data-test="`settle-${row.account_id}`" @click="settleSelfPurchased(row.account_id)">确认失效</button></td></tr></tbody></table>
+          </div>
+        </section>
 
         <nav
           class="flex max-w-full gap-2 overflow-x-auto pb-1"

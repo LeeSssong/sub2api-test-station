@@ -252,6 +252,16 @@ describe('AccountProfitabilityView', () => {
     host.remove()
   })
 
+  it('places the self-purchased panel below native cards and above scope tabs', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const panel = wrapper.get('[data-test="self-purchased-panel"]')
+    const summary = wrapper.get('[data-test="summary-grid"]')
+    const scopes = wrapper.get('[data-test="scope-all"]').element.parentElement
+    expect(summary.element.compareDocumentPosition(panel.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(panel.element.compareDocumentPosition(scopes!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it.each([
     ['operational_cost', [9, 7, 8], [8, 7, 9]],
     ['business_cost', [7, 8, 9], [9, 8, 7]],

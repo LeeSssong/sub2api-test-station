@@ -34,19 +34,10 @@ type monitorV2MetricResponse struct {
 	SampleCount int64    `json:"sample_count"`
 }
 
-type monitorV2AvailabilityResponse struct {
-	monitorV2MetricResponse
-	SuccessCount  int64 `json:"success_count"`
-	EligibleCount int64 `json:"eligible_count"`
-}
-
 type monitorV2TimelinePointResponse struct {
-	BucketStart   string   `json:"bucket_start"`
-	State         string   `json:"state"`
-	Value         *float64 `json:"value"`
-	SuccessCount  int64    `json:"success_count"`
-	EligibleCount int64    `json:"eligible_count"`
-	LatencyMS     *int     `json:"latency_ms,omitempty"`
+	BucketStart string `json:"bucket_start"`
+	Status      string `json:"status"`
+	LatencyMS   *int   `json:"latency_ms,omitempty"`
 }
 
 type monitorV2GroupResponse struct {
@@ -58,14 +49,13 @@ type monitorV2GroupResponse struct {
 	PeakStart          string                           `json:"peak_start,omitempty"`
 	PeakEnd            string                           `json:"peak_end,omitempty"`
 	PeakRateMultiplier float64                          `json:"peak_rate_multiplier,omitempty"`
+	IsFlagship         bool                             `json:"is_flagship"`
 	Status             string                           `json:"status"`
-	Availability       monitorV2AvailabilityResponse    `json:"availability"`
 	TTFT               monitorV2MetricResponse          `json:"ttft"`
 	TTFTP95            monitorV2MetricResponse          `json:"ttft_p95"`
 	TPS                monitorV2MetricResponse          `json:"tps"`
 	Latency            monitorV2MetricResponse          `json:"latency"`
 	LatencyP95         monitorV2MetricResponse          `json:"latency_p95"`
-	CacheHit           monitorV2MetricResponse          `json:"cache_hit"`
 	Timeline           []monitorV2TimelinePointResponse `json:"timeline"`
 }
 
@@ -135,12 +125,9 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 		timeline := make([]monitorV2TimelinePointResponse, 0, len(group.Timeline))
 		for _, point := range group.Timeline {
 			timeline = append(timeline, monitorV2TimelinePointResponse{
-				BucketStart:   point.BucketStart.UTC().Format(time.RFC3339),
-				State:         point.State,
-				Value:         point.Value,
-				SuccessCount:  point.SuccessCount,
-				EligibleCount: point.EligibleCount,
-				LatencyMS:     point.LatencyMS,
+				BucketStart: point.BucketStart.UTC().Format(time.RFC3339),
+				Status:      point.Status,
+				LatencyMS:   point.LatencyMS,
 			})
 		}
 		groups = append(groups, monitorV2GroupResponse{
@@ -152,19 +139,14 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 			PeakStart:          group.PeakStart,
 			PeakEnd:            group.PeakEnd,
 			PeakRateMultiplier: group.PeakRateMultiplier,
+			IsFlagship:         group.IsFlagship,
 			Status:             group.Status,
-			Availability: monitorV2AvailabilityResponse{
-				monitorV2MetricResponse: monitorV2MetricFromService(group.Availability.MonitorV2Metric),
-				SuccessCount:            group.Availability.SuccessCount,
-				EligibleCount:           group.Availability.EligibleCount,
-			},
-			TTFT:       monitorV2MetricFromService(group.TTFT),
-			TTFTP95:    monitorV2MetricFromService(group.TTFTP95),
-			TPS:        monitorV2MetricFromService(group.TPS),
-			Latency:    monitorV2MetricFromService(group.Latency),
-			LatencyP95: monitorV2MetricFromService(group.LatencyP95),
-			CacheHit:   monitorV2MetricFromService(group.CacheHit),
-			Timeline:   timeline,
+			TTFT:               monitorV2MetricFromService(group.TTFT),
+			TTFTP95:            monitorV2MetricFromService(group.TTFTP95),
+			TPS:                monitorV2MetricFromService(group.TPS),
+			Latency:            monitorV2MetricFromService(group.Latency),
+			LatencyP95:         monitorV2MetricFromService(group.LatencyP95),
+			Timeline:           timeline,
 		})
 	}
 	return monitorV2SnapshotResponse{

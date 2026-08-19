@@ -61,7 +61,7 @@ export default {
 
   monitorV2: {
     title: '服务监控',
-    description: '查看当前可见分组的运行状态与调用质量',
+    description: '查看当前可见分组的运行状态与性能',
     loading: '正在读取分组状态',
     fallbackNotice: '新版监控暂不可用，已切换到基础状态页。',
     updatedAt: '更新于 {time}',
@@ -72,19 +72,12 @@ export default {
       '30d': '30 天'
     },
     overall: {
-      operational: '全部服务正常',
-      degraded: '部分服务波动',
-      unavailable: '服务不可用',
-      noData: '等待监控数据'
+      operational: '运行中',
+      unavailable: '服务不可用'
     },
     status: {
       operational: '运行中',
-      degraded: '服务波动',
-      unavailable: '不可用',
-      unconfigured: '未配置监控',
-      insufficient_data: '样本不足',
-      failed: '不可用',
-      error: '监控异常'
+      unavailable: '服务不可用'
     },
     metric: {
       ttft: 'TTFT P50',
@@ -92,21 +85,16 @@ export default {
       tps: '输出 TPS',
       latency: '总延迟 P50',
       latencyP95: '总延迟 P95',
-      cache: '缓存命中率',
       samples: '基于 {count} 次调用',
       noSamples: '暂无调用样本',
       insufficient_data: '样本不足',
       not_provided: '未提供'
     },
     baseRate: '基础倍率',
+    flagship: '旗舰',
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
-    availability: '有效调用',
-    callEvidence: '基于 {eligible} 次真实请求。',
     timeline: {
-      noData: '该时段暂无探测记录',
-      probeUnavailable: '探测完成（当前无可用模型）',
-      success: '探测成功',
-      failed: '探测失败'
+      noData: '该时段暂无探测记录'
     },
     empty: {
       title: '暂无可见分组',

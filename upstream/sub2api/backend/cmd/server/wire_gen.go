@@ -180,7 +180,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorService := service.ProvideChannelMonitorService(channelMonitorRepository, secretEncryptor, groupRepository, settingService)
 	channelMonitorUserHandler := handler.NewChannelMonitorUserHandler(channelMonitorService, settingService)
 	monitorV2Repository := repository.NewMonitorV2Repository(db)
-	monitorV2Service := service.ProvideMonitorV2Service(groupRepository, channelService, channelMonitorService, opsService, monitorV2Repository, settingService)
+	monitorV2Service := service.ProvideMonitorV2Service(groupRepository, channelMonitorService, monitorV2Repository, settingService)
 	monitorV2Handler := handler.ProvideMonitorV2Handler(monitorV2Service)
 	codexRadarInsightsService := service.ProvideCodexRadarInsightsService()
 	codexRadarInsightsHandler := handler.ProvideCodexRadarInsightsHandler(codexRadarInsightsService)

@@ -1,7 +1,6 @@
 import { apiClient } from '@/api/client'
 import {
   MONITOR_V2_CONTRACT_VERSION,
-  type MonitorV2Availability,
   type MonitorV2Group,
   type MonitorV2GroupStatus,
   type MonitorV2Metric,
@@ -28,10 +27,7 @@ const METRIC_STATES = new Set<MonitorV2MetricState>([
 ])
 const GROUP_STATUSES = new Set<MonitorV2GroupStatus>([
   'operational',
-  'degraded',
   'unavailable',
-  'unconfigured',
-  'insufficient_data',
 ])
 const MAX_GROUPS = 100
 const MAX_TIMELINE_POINTS = 64
@@ -79,8 +75,7 @@ function boolean(value: unknown, path: string): boolean {
 
 function metric(
   value: unknown,
-  path: string,
-  percent = false
+  path: string
 ): MonitorV2Metric {
   const source = record(value, path)
   const state = text(source.state, `${path}.state`) as MonitorV2MetricState
@@ -91,9 +86,6 @@ function metric(
   let metricValue: number | null = null
   if (source.value !== null) {
     metricValue = finiteNumber(source.value, `${path}.value`)
-    if (percent && metricValue > 100) {
-      throw new MonitorV2ContractError(`${path}.value must be between 0 and 100`)
-    }
   }
   if (state === 'available' && metricValue === null) {
     throw new MonitorV2ContractError(`${path}.value is required when available`)
@@ -114,77 +106,22 @@ function metric(
   }
 }
 
-function availability(value: unknown, path: string): MonitorV2Availability {
-  const source = record(value, path)
-  const parsed = metric(source, path, true)
-  const successCount = integer(source.success_count, `${path}.success_count`)
-  const eligibleCount = integer(source.eligible_count, `${path}.eligible_count`)
-  if (successCount > eligibleCount) {
-    throw new MonitorV2ContractError(`${path}.success_count exceeds eligible_count`)
-  }
-  if (parsed.sample_count !== eligibleCount) {
-    throw new MonitorV2ContractError(`${path}.sample_count must equal eligible_count`)
-  }
-  if (parsed.state === 'available') {
-    const expected = (successCount / eligibleCount) * 100
-    if (Math.abs((parsed.value ?? 0) - expected) > 0.0001) {
-      throw new MonitorV2ContractError(`${path}.value disagrees with call counts`)
-    }
-  } else if (eligibleCount > 0) {
-    throw new MonitorV2ContractError(`${path}.state disagrees with eligible_count`)
-  }
-  return {
-    ...parsed,
-    success_count: successCount,
-    eligible_count: eligibleCount,
-  }
-}
-
 function timelinePoint(value: unknown, path: string): MonitorV2TimelinePoint {
   const source = record(value, path)
-  const state = text(source.state, `${path}.state`) as MonitorV2MetricState
-  if (!METRIC_STATES.has(state)) {
-    throw new MonitorV2ContractError(`${path}.state is unsupported`)
-  }
-  let timelineValue: number | null = null
-  if (source.value !== null) {
-    timelineValue = finiteNumber(source.value, `${path}.value`)
-    if (timelineValue > 100) {
-      throw new MonitorV2ContractError(`${path}.value must be between 0 and 100`)
+  for (const legacy of ['state', 'value', 'success_count', 'eligible_count']) {
+    if (Object.prototype.hasOwnProperty.call(source, legacy)) {
+      throw new MonitorV2ContractError(`${path}.${legacy} is not supported`)
     }
   }
-  if (state === 'available' && timelineValue === null) {
-    throw new MonitorV2ContractError(`${path}.value is required when available`)
-  }
-  if (state !== 'available' && timelineValue !== null) {
-    throw new MonitorV2ContractError(`${path}.value must be null when unavailable`)
-  }
-  const successCount = integer(source.success_count, `${path}.success_count`)
-  const eligibleCount = integer(source.eligible_count, `${path}.eligible_count`)
-  if (successCount > eligibleCount) {
-    throw new MonitorV2ContractError(`${path}.success_count exceeds eligible_count`)
-  }
-  if (state === 'available') {
-    if (eligibleCount === 0) {
-      throw new MonitorV2ContractError(`${path}.eligible_count must be positive when available`)
-    }
-    const expected = (successCount / eligibleCount) * 100
-    if (Math.abs((timelineValue ?? 0) - expected) > 0.0001) {
-      throw new MonitorV2ContractError(`${path}.value disagrees with call counts`)
-    }
-  } else if (eligibleCount > 0) {
-    throw new MonitorV2ContractError(`${path}.state disagrees with eligible_count`)
-  }
+  const status = text(source.status, `${path}.status`) as MonitorV2GroupStatus
+  if (!GROUP_STATUSES.has(status)) throw new MonitorV2ContractError(`${path}.status is unsupported`)
   const bucketStart = text(source.bucket_start, `${path}.bucket_start`)
   if (Number.isNaN(Date.parse(bucketStart))) {
     throw new MonitorV2ContractError(`${path}.bucket_start must be RFC3339`)
   }
   return {
     bucket_start: bucketStart,
-    state,
-    value: timelineValue,
-    success_count: successCount,
-    eligible_count: eligibleCount,
+    status,
     latency_ms: source.latency_ms == null ? null : finiteNumber(source.latency_ms, `${path}.latency_ms`),
   }
 }
@@ -203,8 +140,10 @@ function group(value: unknown, path: string): MonitorV2Group {
       `${path}.timeline must contain at most ${MAX_TIMELINE_POINTS} points`
     )
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'models')) {
-    throw new MonitorV2ContractError(`${path}.models is not supported`)
+  for (const legacy of ['models', 'availability', 'cache_hit']) {
+    if (Object.prototype.hasOwnProperty.call(source, legacy)) {
+      throw new MonitorV2ContractError(`${path}.${legacy} is not supported`)
+    }
   }
   const peakRateEnabled = boolean(source.peak_rate_enabled, `${path}.peak_rate_enabled`)
   const peakStart = text(source.peak_start ?? '', `${path}.peak_start`, true)
@@ -235,14 +174,13 @@ function group(value: unknown, path: string): MonitorV2Group {
     peak_start: peakStart,
     peak_end: peakEnd,
     peak_rate_multiplier: peakRateMultiplier,
+    is_flagship: boolean(source.is_flagship, `${path}.is_flagship`),
     status,
-    availability: availability(source.availability, `${path}.availability`),
     ttft: metric(source.ttft, `${path}.ttft`),
     ttft_p95: metric(source.ttft_p95, `${path}.ttft_p95`),
     tps: metric(source.tps, `${path}.tps`),
     latency: metric(source.latency, `${path}.latency`),
     latency_p95: metric(source.latency_p95, `${path}.latency_p95`),
-    cache_hit: metric(source.cache_hit, `${path}.cache_hit`, true),
     timeline: source.timeline.map((point, index) =>
       timelinePoint(point, `${path}.timeline[${index}]`)
     ),

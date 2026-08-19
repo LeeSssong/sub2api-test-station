@@ -57,7 +57,7 @@
 
       <div
         v-if="snapshot.groups.length > 0"
-        class="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2"
+        class="mt-6 grid grid-cols-1 gap-3"
         :aria-busy="loading"
       >
         <MonitorV2GroupCard
@@ -125,11 +125,9 @@ const updatedAt = computed(() =>
 )
 
 const overallStatus = computed(() => {
-  if (snapshot.value.groups.length === 0) return 'noData'
-  const statuses = snapshot.value.groups.map((group) => group.status)
-  if (statuses.every((status) => status === 'operational')) return 'operational'
-  if (statuses.every((status) => status === 'unavailable')) return 'unavailable'
-  return 'degraded'
+  return snapshot.value.groups.some((group) => group.status === 'operational')
+    ? 'operational'
+    : 'unavailable'
 })
 
 const overallClass = computed(() => {
@@ -138,8 +136,6 @@ const overallClass = computed(() => {
       return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
     case 'unavailable':
       return 'bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300'
-    case 'degraded':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
     default:
       return 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-300'
   }

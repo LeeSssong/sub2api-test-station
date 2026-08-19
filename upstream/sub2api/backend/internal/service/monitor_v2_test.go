@@ -19,15 +19,6 @@ func (s *monitorV2GroupRepoStub) ListActive(context.Context) ([]Group, error) {
 	return append([]Group(nil), s.groups...), s.err
 }
 
-type monitorV2ChannelReaderStub struct {
-	channels []AvailableChannel
-	err      error
-}
-
-func (s *monitorV2ChannelReaderStub) ListAvailable(context.Context) ([]AvailableChannel, error) {
-	return append([]AvailableChannel(nil), s.channels...), s.err
-}
-
 type monitorV2ProbeReaderStub struct {
 	views []*UserMonitorView
 	err   error
@@ -37,121 +28,24 @@ func (s *monitorV2ProbeReaderStub) ListUserView(context.Context) ([]*UserMonitor
 	return append([]*UserMonitorView(nil), s.views...), s.err
 }
 
-type monitorV2OpsReaderStub struct {
-	overview        *OpsDashboardOverview
-	overviewFilters []*OpsDashboardFilter
-	throughputTrend *OpsThroughputTrendResponse
-	errorTrend      *OpsErrorTrendResponse
-	tokenStats      *OpsOpenAITokenStatsResponse
-}
-
-func (s *monitorV2OpsReaderStub) GetDashboardOverview(
-	_ context.Context,
-	filter *OpsDashboardFilter,
-) (*OpsDashboardOverview, error) {
-	if filter != nil {
-		filterCopy := *filter
-		s.overviewFilters = append(s.overviewFilters, &filterCopy)
-	}
-	if s.overview != nil {
-		return s.overview, nil
-	}
-	success := int64(9842)
-	slaErrors := int64(68)
-	if filter.GroupID != nil && *filter.GroupID == 2 {
-		success = 0
-		slaErrors = 0
-	}
-	ttftP50 := 420
-	ttftP95 := 880
-	durationP50 := 1320
-	durationP95 := 2400
-	return &OpsDashboardOverview{
-		SuccessCount:    success,
-		ErrorCountSLA:   slaErrors,
-		RequestCountSLA: success + slaErrors,
-		Duration: OpsPercentiles{
-			P50: &durationP50, P95: &durationP95, SampleCount: success,
-		},
-		TTFT: OpsPercentiles{
-			P50:         &ttftP50,
-			P95:         &ttftP95,
-			SampleCount: success,
-		},
-	}, nil
-}
-
-func (s *monitorV2OpsReaderStub) GetThroughputTrend(
-	_ context.Context,
-	filter *OpsDashboardFilter,
-	_ int,
-) (*OpsThroughputTrendResponse, error) {
-	if s.throughputTrend != nil {
-		return s.throughputTrend, nil
-	}
-	if filter.GroupID != nil && *filter.GroupID == 2 {
-		return &OpsThroughputTrendResponse{Points: []*OpsThroughputTrendPoint{}}, nil
-	}
-	return &OpsThroughputTrendResponse{
-		Points: []*OpsThroughputTrendPoint{
-			{BucketStart: filter.StartTime, RequestCount: 12},
-		},
-	}, nil
-}
-
-func (s *monitorV2OpsReaderStub) GetErrorTrend(
-	_ context.Context,
-	filter *OpsDashboardFilter,
-	_ int,
-) (*OpsErrorTrendResponse, error) {
-	if s.errorTrend != nil {
-		return s.errorTrend, nil
-	}
-	if filter.GroupID != nil && *filter.GroupID == 2 {
-		return &OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{}}, nil
-	}
-	return &OpsErrorTrendResponse{
-		Points: []*OpsErrorTrendPoint{
-			{BucketStart: filter.StartTime, ErrorCountSLA: 1},
-		},
-	}, nil
-}
-
-func (s *monitorV2OpsReaderStub) GetOpenAITokenStats(
-	_ context.Context,
-	filter *OpsOpenAITokenStatsFilter,
-) (*OpsOpenAITokenStatsResponse, error) {
-	if s.tokenStats != nil {
-		return s.tokenStats, nil
-	}
-	if filter.GroupID != nil && *filter.GroupID == 2 {
-		return &OpsOpenAITokenStatsResponse{Items: []*OpsOpenAITokenStatsItem{}}, nil
-	}
-	tps := 46.5
-	return &OpsOpenAITokenStatsResponse{
-		Items: []*OpsOpenAITokenStatsItem{
-			{
-				Model:           "gpt-5.4",
-				RequestCount:    12,
-				TPSSampleCount:  12,
-				AvgTokensPerSec: &tps,
-			},
-		},
-	}, nil
-}
-
 type monitorV2RepoStub struct {
-	stats map[int64]MonitorV2CacheStats
+	performance map[int64]MonitorV2PerformanceStats
+	scopes      []MonitorV2PerformanceScope
+	start       time.Time
+	end         time.Time
 }
 
-func (s *monitorV2RepoStub) GetCacheStats(
-	context.Context,
-	[]int64,
-	time.Time,
-	time.Time,
-) (map[int64]MonitorV2CacheStats, error) {
-	out := make(map[int64]MonitorV2CacheStats, len(s.stats))
-	for id, stat := range s.stats {
+func (s *monitorV2RepoStub) GetPerformanceStats(
+	_ context.Context,
+	scopes []MonitorV2PerformanceScope,
+	start time.Time,
+	end time.Time,
+) (map[int64]MonitorV2PerformanceStats, error) {
+	s.scopes = append([]MonitorV2PerformanceScope(nil), scopes...)
+	s.start = start
+	s.end = end
+	out := make(map[int64]MonitorV2PerformanceStats, len(s.performance))
+	for id, stat := range s.performance {
 		out[id] = stat
 	}
 	return out, nil
@@ -167,12 +61,10 @@ func TestMonitorV2SnapshotScopeControlsExclusiveGroups(t *testing.T) {
 			{ID: 2, Name: "专属组", Platform: PlatformOpenAI, Status: StatusActive, IsExclusive: true},
 			{ID: 3, Name: "停用组", Platform: PlatformOpenAI, Status: StatusDisabled},
 		}},
-		nil,
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{
 			{GroupID: &publicGroupID},
 			{GroupID: &exclusiveGroupID},
 		}},
-		nil,
 		nil,
 	)
 
@@ -194,9 +86,7 @@ func TestMonitorV2SnapshotShowsOnlyGroupsWithEnabledMonitors(t *testing.T) {
 			{ID: 20, Name: "GPT-特惠分组", Platform: PlatformOpenAI, Status: StatusActive},
 			{ID: 21, Name: "历史分组", Platform: PlatformOpenAI, Status: StatusActive},
 		}},
-		nil,
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: &configuredID}}},
-		nil,
 		nil,
 	)
 
@@ -207,25 +97,26 @@ func TestMonitorV2SnapshotShowsOnlyGroupsWithEnabledMonitors(t *testing.T) {
 	require.Equal(t, configuredID, snapshot.Groups[0].ID)
 }
 
-func TestMonitorV2SnapshotUsesRawOpsMetricsForSevenDayWindow(t *testing.T) {
+func TestMonitorV2SnapshotUsesUnifiedPerformanceScopeForSevenDayWindow(t *testing.T) {
 	now := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
 	groupID := int64(20)
-	ops := &monitorV2OpsReaderStub{}
+	repo := &monitorV2RepoStub{}
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{
 			ID: groupID, Name: "GPT-特惠分组", Platform: PlatformOpenAI, Status: StatusActive,
 		}}},
-		nil,
-		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: &groupID}}},
-		ops,
-		nil,
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
+			GroupID: &groupID, PrimaryModel: "gpt-5.6-sol", PrimaryCheckedAt: now,
+		}}},
+		repo,
 	)
 
 	_, err := svc.Snapshot(context.Background(), MonitorV2Window7D, now)
 
 	require.NoError(t, err)
-	require.Len(t, ops.overviewFilters, 1)
-	require.Equal(t, OpsQueryModeRaw, ops.overviewFilters[0].QueryMode)
+	require.Equal(t, []MonitorV2PerformanceScope{{GroupID: groupID, Model: "gpt-5.6-sol"}}, repo.scopes)
+	require.Equal(t, now.Add(-7*24*time.Hour), repo.start)
+	require.Equal(t, now, repo.end)
 }
 
 func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {
@@ -254,9 +145,7 @@ func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {
 			}
 			svc := NewMonitorV2Service(
 				&monitorV2GroupRepoStub{groups: []Group{group}},
-				&monitorV2ChannelReaderStub{},
 				&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(group.ID), Timeline: points}}},
-				&monitorV2OpsReaderStub{},
 				&monitorV2RepoStub{},
 			)
 
@@ -266,37 +155,19 @@ func TestMonitorV2SnapshotKeepsLatestProbeResults(t *testing.T) {
 			require.Len(t, snapshot.Groups, 1)
 			require.Len(t, snapshot.Groups[0].Timeline, 2)
 			require.Equal(t, points[0].CheckedAt, snapshot.Groups[0].Timeline[0].BucketStart)
-			require.Equal(t, int64(1), snapshot.Groups[0].Timeline[0].SuccessCount)
-			require.Equal(t, int64(0), snapshot.Groups[0].Timeline[1].SuccessCount)
+			require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Timeline[0].Status)
+			require.Equal(t, MonitorV2StatusUnavailable, snapshot.Groups[0].Timeline[1].Status)
 		})
 	}
 }
 
-func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
-	t.Run("timeline subtracts SLA errors from total requests", func(t *testing.T) {
-		bucket := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-
-		points := monitorV2Timeline(
-			&OpsThroughputTrendResponse{Points: []*OpsThroughputTrendPoint{{
-				BucketStart:  bucket,
-				RequestCount: 5,
-			}}},
-			&OpsErrorTrendResponse{Points: []*OpsErrorTrendPoint{{
-				BucketStart:   bucket,
-				ErrorCountSLA: 5,
-			}}},
-		)
-
-		require.Len(t, points, 1)
-		require.Equal(t, int64(0), points[0].SuccessCount)
-		require.Equal(t, int64(5), points[0].EligibleCount)
-		require.NotNil(t, points[0].Value)
-		require.Equal(t, 0.0, *points[0].Value)
-	})
-
-	t.Run("ttft ignores ordinary successes without first-token evidence", func(t *testing.T) {
+func TestMonitorV2MetricsShareUnifiedPerformanceSampleCount(t *testing.T) {
+	t.Run("insufficient unified samples hide every performance value", func(t *testing.T) {
 		ttftP50 := 420
 		ttftP95 := 880
+		latencyP50 := 1320
+		latencyP95 := 2400
+		tps := 46.5
 		svc := NewMonitorV2Service(
 			&monitorV2GroupRepoStub{groups: []Group{{
 				ID:          1,
@@ -305,18 +176,17 @@ func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
 				Status:      StatusActive,
 				IsExclusive: false,
 			}}},
-			&monitorV2ChannelReaderStub{},
-			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(1)}}},
-			&monitorV2OpsReaderStub{overview: &OpsDashboardOverview{
-				SuccessCount:    100,
-				RequestCountSLA: 100,
-				TTFT: OpsPercentiles{
-					P50:         &ttftP50,
-					P95:         &ttftP95,
+			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
+				GroupID: int64Ptr(1), PrimaryModel: "gpt-5.6-sol",
+			}}},
+			&monitorV2RepoStub{performance: map[int64]MonitorV2PerformanceStats{
+				1: {
 					SampleCount: 3,
+					TTFTP50MS:   &ttftP50, TTFTP95MS: &ttftP95,
+					LatencyP50MS: &latencyP50, LatencyP95MS: &latencyP95,
+					TPS: &tps,
 				},
 			}},
-			&monitorV2RepoStub{},
 		)
 
 		snapshot, err := svc.Snapshot(
@@ -330,58 +200,17 @@ func TestMonitorV2MetricsUseOnlyNativeEligibleSamples(t *testing.T) {
 		require.Equal(t, int64(3), snapshot.Groups[0].TTFT.SampleCount)
 		require.Equal(t, MonitorV2MetricInsufficientData, snapshot.Groups[0].TTFTP95.State)
 		require.Equal(t, int64(3), snapshot.Groups[0].TTFTP95.SampleCount)
-	})
-
-	t.Run("tps weights only requests with throughput evidence", func(t *testing.T) {
-		fastTPS := 100.0
-		slowTPS := 10.0
-
-		metric := monitorV2TPSMetric(&OpsOpenAITokenStatsResponse{
-			Items: []*OpsOpenAITokenStatsItem{
-				{
-					Model:           "gpt-fast",
-					RequestCount:    100,
-					TPSSampleCount:  1,
-					AvgTokensPerSec: &fastTPS,
-				},
-				{
-					Model:           "gpt-slow",
-					RequestCount:    4,
-					TPSSampleCount:  4,
-					AvgTokensPerSec: &slowTPS,
-				},
-			},
-		})
-
-		require.Equal(t, MonitorV2MetricAvailable, metric.State)
-		require.Equal(t, int64(5), metric.SampleCount)
-		require.NotNil(t, metric.Value)
-		require.InDelta(t, 28.0, *metric.Value, 0.0001)
-	})
-
-	t.Run("unsupported cache evidence is not reported as zero percent", func(t *testing.T) {
-		metric := monitorV2CacheMetric(MonitorV2CacheStats{
-			EvidenceAvailable: false,
-			RequestCount:      20,
-			HitCount:          0,
-		})
-
-		require.Equal(t, MonitorV2MetricNotProvided, metric.State)
-		require.Equal(t, int64(0), metric.SampleCount)
-		require.Nil(t, metric.Value)
-	})
-
-	t.Run("supported cache evidence can report an all-miss sample", func(t *testing.T) {
-		metric := monitorV2CacheMetric(MonitorV2CacheStats{
-			EvidenceAvailable: true,
-			RequestCount:      5,
-			HitCount:          0,
-		})
-
-		require.Equal(t, MonitorV2MetricAvailable, metric.State)
-		require.Equal(t, int64(5), metric.SampleCount)
-		require.NotNil(t, metric.Value)
-		require.Equal(t, 0.0, *metric.Value)
+		for _, metric := range []MonitorV2Metric{
+			snapshot.Groups[0].TTFT,
+			snapshot.Groups[0].TTFTP95,
+			snapshot.Groups[0].TPS,
+			snapshot.Groups[0].Latency,
+			snapshot.Groups[0].LatencyP95,
+		} {
+			require.Equal(t, MonitorV2MetricInsufficientData, metric.State)
+			require.Equal(t, int64(3), metric.SampleCount)
+			require.Nil(t, metric.Value)
+		}
 	})
 }
 
@@ -395,7 +224,6 @@ func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
 			Status:      StatusActive,
 			IsExclusive: false,
 		}}},
-		&monitorV2ChannelReaderStub{},
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
 			GroupName:        "公开探针组",
 			PrimaryModel:     "gpt-5.4",
@@ -407,7 +235,6 @@ func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
 				CheckedAt: now.Add(-2*time.Minute - time.Second),
 			}},
 		}}},
-		nil,
 		&monitorV2RepoStub{},
 	)
 
@@ -415,7 +242,7 @@ func TestMonitorV2SnapshotRejectsStaleProbeStatus(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
-	require.Equal(t, MonitorV2StatusInsufficientData, snapshot.Groups[0].Status)
+	require.Equal(t, MonitorV2StatusUnavailable, snapshot.Groups[0].Status)
 }
 
 func TestMonitorV2GroupStatusUsesLatestProbeObservation(t *testing.T) {
@@ -438,7 +265,7 @@ func TestMonitorV2GroupStatusUsesLatestProbeObservation(t *testing.T) {
 		require.Equal(t, MonitorV2StatusOperational, monitorV2GroupStatus(probes, now))
 	})
 
-	t.Run("latest failure with a recent success is degraded", func(t *testing.T) {
+	t.Run("latest failure with a recent success is unavailable", func(t *testing.T) {
 		probes := []*UserMonitorView{{
 			PrimaryStatus:    MonitorStatusFailed,
 			IntervalSeconds:  60,
@@ -449,7 +276,17 @@ func TestMonitorV2GroupStatusUsesLatestProbeObservation(t *testing.T) {
 			}},
 		}}
 
-		require.Equal(t, MonitorV2StatusDegraded, monitorV2GroupStatus(probes, now))
+		require.Equal(t, MonitorV2StatusUnavailable, monitorV2GroupStatus(probes, now))
+	})
+
+	t.Run("degraded probes are presented as operational", func(t *testing.T) {
+		probes := []*UserMonitorView{{
+			PrimaryStatus:    MonitorStatusDegraded,
+			IntervalSeconds:  60,
+			PrimaryCheckedAt: now,
+		}}
+
+		require.Equal(t, MonitorV2StatusOperational, monitorV2GroupStatus(probes, now))
 	})
 
 	t.Run("continuous failures remain unavailable", func(t *testing.T) {
@@ -481,6 +318,29 @@ func TestMonitorV2GroupStatusUsesLatestProbeObservation(t *testing.T) {
 	})
 }
 
+func TestMonitorV2SnapshotPutsProFlagshipFirst(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	plusID := int64(1)
+	proID := int64(2)
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{
+			{ID: plusID, Name: "GPT-Plus", Platform: PlatformOpenAI, Status: StatusActive},
+			{ID: proID, Name: "GPT-Pro", Platform: PlatformOpenAI, Status: StatusActive},
+		}},
+		&monitorV2ProbeReaderStub{views: []*UserMonitorView{
+			{GroupID: &plusID, PrimaryModel: "gpt-5.6-sol", PrimaryStatus: MonitorStatusOperational, IntervalSeconds: 60, PrimaryCheckedAt: now},
+			{GroupID: &proID, PrimaryModel: "gpt-5.6-sol", PrimaryStatus: MonitorStatusOperational, IntervalSeconds: 60, PrimaryCheckedAt: now},
+		}},
+		&monitorV2RepoStub{},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 2)
+	require.Equal(t, proID, snapshot.Groups[0].ID)
+}
+
 func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
 	groupID := int64(16)
@@ -491,7 +351,6 @@ func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 			Platform: PlatformOpenAI,
 			Status:   StatusActive,
 		}}},
-		nil,
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
 			GroupID:          &groupID,
 			GroupName:        "GPT PLUS 内测分组",
@@ -500,7 +359,6 @@ func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 			IntervalSeconds:  60,
 			PrimaryCheckedAt: now,
 		}}},
-		nil,
 		nil,
 	)
 
@@ -511,7 +369,7 @@ func TestMonitorV2SnapshotMatchesProbeByGroupIDBeforeLegacyName(t *testing.T) {
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Status)
 }
 
-func TestMonitorV2ProbeTimelineTreatsUnavailableAsSuccessfulProbe(t *testing.T) {
+func TestMonitorV2ProbeTimelineMapsUnavailableToUnavailable(t *testing.T) {
 	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
 	points := monitorV2ProbeTimeline([]*UserMonitorView{{
 		Timeline: []UserMonitorTimelinePoint{{
@@ -521,10 +379,7 @@ func TestMonitorV2ProbeTimelineTreatsUnavailableAsSuccessfulProbe(t *testing.T) 
 	}}, now.Add(-time.Minute), now)
 
 	require.Len(t, points, 1)
-	require.Equal(t, int64(1), points[0].SuccessCount)
-	require.Equal(t, int64(1), points[0].EligibleCount)
-	require.NotNil(t, points[0].Value)
-	require.Equal(t, float64(100), *points[0].Value)
+	require.Equal(t, MonitorV2StatusUnavailable, points[0].Status)
 	require.Nil(t, points[0].LatencyMS)
 }
 
@@ -548,7 +403,6 @@ func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
 				IsExclusive: true,
 			},
 		}},
-		nil,
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
 			GroupID:          &hiddenGroupID,
 			GroupName:        "同名分组",
@@ -557,7 +411,6 @@ func TestMonitorV2SnapshotDoesNotFallbackFromHiddenStableGroupID(t *testing.T) {
 			IntervalSeconds:  60,
 			PrimaryCheckedAt: now,
 		}}},
-		nil,
 		nil,
 	)
 
@@ -602,19 +455,6 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 			IsExclusive: false,
 		},
 	}
-	channels := []AvailableChannel{
-		{
-			ID:     11,
-			Name:   "公开渠道",
-			Status: StatusActive,
-			Groups: []AvailableGroupRef{
-				{ID: 1, Name: "公开标准"},
-			},
-			SupportedModels: []SupportedModel{
-				{Name: "gpt-5.4", Platform: PlatformOpenAI},
-			},
-		},
-	}
 	probes := []*UserMonitorView{
 		{
 			ID:               21,
@@ -627,14 +467,22 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 			Timeline:         []UserMonitorTimelinePoint{{Status: "operational", LatencyMs: intPtr(320), CheckedAt: now}},
 		},
 	}
+	ttftP50 := 420
+	ttftP95 := 880
+	latencyP50 := 1320
+	latencyP95 := 2400
+	tps := 46.5
 
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: groups},
-		&monitorV2ChannelReaderStub{channels: channels},
 		&monitorV2ProbeReaderStub{views: probes},
-		&monitorV2OpsReaderStub{},
-		&monitorV2RepoStub{stats: map[int64]MonitorV2CacheStats{
-			1: {EvidenceAvailable: true, RequestCount: 20, HitCount: 8},
+		&monitorV2RepoStub{performance: map[int64]MonitorV2PerformanceStats{
+			1: {
+				SampleCount: 12,
+				TTFTP50MS:   &ttftP50, TTFTP95MS: &ttftP95,
+				LatencyP50MS: &latencyP50, LatencyP95MS: &latencyP95,
+				TPS: &tps,
+			},
 		}},
 	)
 
@@ -650,28 +498,20 @@ func TestMonitorV2SnapshotSelectsOnlyActivePublicGroups(t *testing.T) {
 	require.Equal(t, "公开标准", first.Name)
 	require.InDelta(t, 0.2, first.RateMultiplier, 0.0001)
 	require.Equal(t, MonitorV2StatusOperational, first.Status)
-	require.Equal(t, int64(9842), first.Availability.SuccessCount)
-	require.Equal(t, int64(9910), first.Availability.EligibleCount)
-	require.NotNil(t, first.Availability.Value)
-	require.InDelta(t, 99.3138, *first.Availability.Value, 0.0001)
 	require.Equal(t, MonitorV2MetricAvailable, first.TTFT.State)
-	require.Equal(t, int64(9842), first.TTFT.SampleCount)
+	require.Equal(t, int64(12), first.TTFT.SampleCount)
 	require.Equal(t, 420.0, *first.TTFT.Value)
 	require.Equal(t, MonitorV2MetricAvailable, first.TTFTP95.State)
-	require.Equal(t, int64(9842), first.TTFTP95.SampleCount)
+	require.Equal(t, int64(12), first.TTFTP95.SampleCount)
 	require.Equal(t, 880.0, *first.TTFTP95.Value)
 	require.Equal(t, MonitorV2MetricAvailable, first.LatencyP95.State)
-	require.Equal(t, int64(9842), first.LatencyP95.SampleCount)
+	require.Equal(t, int64(12), first.LatencyP95.SampleCount)
 	require.Equal(t, 2400.0, *first.LatencyP95.Value)
 	require.Equal(t, MonitorV2MetricAvailable, first.TPS.State)
 	require.Equal(t, int64(12), first.TPS.SampleCount)
 	require.Equal(t, 46.5, *first.TPS.Value)
-	require.Equal(t, MonitorV2MetricAvailable, first.CacheHit.State)
-	require.Equal(t, int64(20), first.CacheHit.SampleCount)
-	require.Equal(t, 40.0, *first.CacheHit.Value)
 	require.Len(t, first.Timeline, 1)
-	require.Equal(t, int64(1), first.Timeline[0].SuccessCount)
-	require.Equal(t, int64(1), first.Timeline[0].EligibleCount)
+	require.Equal(t, MonitorV2StatusOperational, first.Timeline[0].Status)
 	require.Equal(t, 320, *first.Timeline[0].LatencyMS)
 
 }
@@ -686,7 +526,6 @@ func TestMonitorV2SnapshotMatchesProbeForPublicGroupWithoutChannel(t *testing.T)
 			Status:      StatusActive,
 			IsExclusive: false,
 		}}},
-		&monitorV2ChannelReaderStub{},
 		&monitorV2ProbeReaderStub{views: []*UserMonitorView{{
 			GroupName:        "公开探针组",
 			PrimaryModel:     "gpt-5.4",
@@ -694,7 +533,6 @@ func TestMonitorV2SnapshotMatchesProbeForPublicGroupWithoutChannel(t *testing.T)
 			IntervalSeconds:  60,
 			PrimaryCheckedAt: now,
 		}}},
-		nil,
 		&monitorV2RepoStub{},
 	)
 
@@ -709,9 +547,7 @@ func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) 
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{},
-		&monitorV2ChannelReaderStub{},
 		&monitorV2ProbeReaderStub{},
-		&monitorV2OpsReaderStub{},
 		&monitorV2RepoStub{},
 	)
 
@@ -729,9 +565,7 @@ func TestMonitorV2SnapshotRejectsInvalidWindowAndBoundsGroupCount(t *testing.T) 
 	}
 	svc = NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: groups},
-		&monitorV2ChannelReaderStub{},
 		&monitorV2ProbeReaderStub{},
-		&monitorV2OpsReaderStub{},
 		&monitorV2RepoStub{},
 	)
 
@@ -756,9 +590,7 @@ func TestMonitorV2SnapshotBoundsTimelineAndStrings(t *testing.T) {
 		}
 		svc := NewMonitorV2Service(
 			&monitorV2GroupRepoStub{groups: []Group{group}},
-			&monitorV2ChannelReaderStub{},
 			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(group.ID), Timeline: points}}},
-			&monitorV2OpsReaderStub{},
 			&monitorV2RepoStub{},
 		)
 
@@ -772,9 +604,7 @@ func TestMonitorV2SnapshotBoundsTimelineAndStrings(t *testing.T) {
 		oversized.Name = strings.Repeat("a", 257)
 		svc := NewMonitorV2Service(
 			&monitorV2GroupRepoStub{groups: []Group{oversized}},
-			&monitorV2ChannelReaderStub{},
 			&monitorV2ProbeReaderStub{views: []*UserMonitorView{{GroupID: int64Ptr(oversized.ID)}}},
-			nil,
 			&monitorV2RepoStub{},
 		)
 

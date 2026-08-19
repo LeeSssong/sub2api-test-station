@@ -1142,17 +1142,13 @@ func ProvideChannelMonitorService(
 
 func ProvideMonitorV2Service(
 	groupRepo GroupRepository,
-	channelService *ChannelService,
 	channelMonitorService *ChannelMonitorService,
-	opsService *OpsService,
 	repo MonitorV2Repository,
 	settingService *SettingService,
 ) *MonitorV2Service {
 	return NewMonitorV2Service(
 		groupRepo,
-		channelService,
 		channelMonitorService,
-		opsService,
 		repo,
 		settingService,
 	)

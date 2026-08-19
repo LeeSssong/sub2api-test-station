@@ -36,7 +36,6 @@ func (s *monitorV2SnapshotterStub) Snapshot(
 
 func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	value := 99.5
 	ttftP95 := 880.0
 	latencyP95 := 2400.0
 	stub := &monitorV2SnapshotterStub{
@@ -51,16 +50,8 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 					Name:           "公开组",
 					Platform:       service.PlatformOpenAI,
 					RateMultiplier: 0.2,
+					IsFlagship:     true,
 					Status:         service.MonitorV2StatusOperational,
-					Availability: service.MonitorV2Availability{
-						MonitorV2Metric: service.MonitorV2Metric{
-							State:       service.MonitorV2MetricAvailable,
-							Value:       &value,
-							SampleCount: 200,
-						},
-						SuccessCount:  199,
-						EligibleCount: 200,
-					},
 					TTFTP95: service.MonitorV2Metric{
 						State:       service.MonitorV2MetricAvailable,
 						Value:       &ttftP95,
@@ -91,15 +82,20 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-	require.Equal(t, "5", envelope.Data["contract_version"])
+	require.Equal(t, "6", envelope.Data["contract_version"])
 	require.Equal(t, float64(300), envelope.Data["refresh_interval_seconds"])
 	require.Equal(t, "7d", envelope.Data["window"])
 	groups, ok := envelope.Data["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 1)
 	group := groups[0].(map[string]any)
+	require.Equal(t, true, group["is_flagship"])
 	_, hasModels := group["models"]
 	require.False(t, hasModels)
+	_, hasAvailability := group["availability"]
+	require.False(t, hasAvailability)
+	_, hasCacheHit := group["cache_hit"]
+	require.False(t, hasCacheHit)
 	require.Equal(t, float64(880), group["ttft_p95"].(map[string]any)["value"])
 	require.Equal(t, float64(180), group["ttft_p95"].(map[string]any)["sample_count"])
 	require.Equal(t, float64(2400), group["latency_p95"].(map[string]any)["value"])

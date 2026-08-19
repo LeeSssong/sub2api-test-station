@@ -1,6 +1,6 @@
 <template>
   <div
-    class="mt-4"
+    class="w-full min-w-0 sm:w-[360px] sm:flex-shrink-0"
     role="img"
     :aria-label="ariaLabel"
   >
@@ -8,8 +8,8 @@
       <span
         v-for="(point, index) in points"
         :key="`${point.bucket_start}-${index}`"
-        class="min-w-0 basis-0 flex-1 rounded-sm bg-teal-500 dark:bg-teal-400"
-        style="height: 75%"
+        class="h-6 min-w-0 basis-0 flex-1 rounded-sm"
+        :class="point.status === 'operational' ? 'bg-emerald-400 dark:bg-emerald-400' : 'bg-red-400 dark:bg-red-400'"
         :title="pointTitle(point)"
       />
       <span
@@ -50,8 +50,7 @@ function pointTitle(point: MonitorV2TimelinePoint): string {
     day: 'numeric',
     hour: '2-digit',
   }).format(new Date(point.bucket_start))
-  if (point.state !== 'available' || point.value === null) return `${time} · ${t('monitorV2.timeline.noData')}`
-  const outcome = point.success_count > 0 ? t('monitorV2.timeline.success') : t('monitorV2.timeline.failed')
+  const outcome = t(`monitorV2.status.${point.status}`)
   const latency = point.latency_ms === null ? '' : ` · ${point.latency_ms} ms`
   return `${time} · ${outcome}${latency}`
 }

@@ -7,7 +7,7 @@
 - 精确基线：刷新后 `main@db7d557886b104ea9eae6c88b5a3a9c76fbc21a1`（tree `79d903503e89a6e32d514133d1991099c294e9a7`）。
 - 刷新后已验证实现合并 HEAD：`d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。
 - 刷新后已验证实现 tree：`a23ff0f9764a307347b0aa3693023cfee319db16`。
-- 当前分支 tip：`3c468dbf5b1bf2ab65d6b5b6a5a12ddb9965c4f4`；tree：`90ca87d4a9dd484669f9e06cac27d3437eb2e8a7`。
+- 当前分支 tip：`5e587c4b914e73bcd5170502d8b3bbcfc964ae19`；tree：`ece2716d06c10da4eebacb72e33e6b608c256013`。
 - 工作区：干净；未合并、未推送、未部署、未触碰生产。
 - 根总控仍拥有合并、推送、发布预检、部署和线上验收权限。
 
@@ -117,4 +117,4 @@ git diff --check
 
 - 未执行合并后 `main` 重测、推送、发布预检、部署或线上验收，按任务边界留给根总控。
 - 全量 Go suite 的既有文案失败未在 T35 范围内修复。
-- 根总控可在刷新后已验证实现 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`；当前分支 tip `3c468dbf5b1bf2ab65d6b5b6a5a12ddb9965c4f4` 仅包含后续文档整合提交。
+- 根总控可在刷新后已验证实现 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`；当前分支 tip `5e587c4b914e73bcd5170502d8b3bbcfc964ae19` 仅包含后续文档整合提交。

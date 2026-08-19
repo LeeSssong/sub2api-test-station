@@ -2,8 +2,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1 与 T27 均为 `DONE`；T28“评分方向、采购成本事实源与保存链路修复”处于 `DESIGNING`。禁止使用 GitHub Actions。
-- 当前实施：T27 已从根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064` 完成推送、0600 证据、预检、蓝绿发布和线上验收；T28 由新建独立顶层任务先完成 brainstorming、正式规格与计划，随后再实施。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1 与 T27 均为 `DONE`；T28“评分方向、采购成本事实源与保存链路修复”和 T29“Monitor V2 二态健康展示与统一指标口径”处于 `DESIGNING`。禁止使用 GitHub Actions。
+- 当前实施：T27 已从根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064` 完成推送、0600 证据、预检、蓝绿发布和线上验收；T28、T29 使用互相独立的功能 worktree 并行准备，均不占用整合/部署/验收车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@3bc16ee2682e6e978f73a71099c010a8353f2064`、tree `d7261631300e725c5f958b5406bd3781e006cc8e`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T27 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T071706Z-production-4050553.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-3bc16ee26-t27-oauth-dual-view-v1.json`。
 - 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26/T26-R1 候选与临时发布 worktree 均已在生产验收后归档移除。T27 生产验收后同样已归档移除，恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t27-final-3bc16ee26/t27-refs.bundle`，SHA-256 `3dc2f5b131aefa7863a861cb5d2687f1217e2bbed50d836f8951ed006d2d4b04`，`git bundle verify` 通过。当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
@@ -43,6 +43,14 @@
 - 范围：只修复目标评分组件最终 DOM 的强到弱顺序（左到右、上到下），保留评分算法与数值语义；采购成本继续复用 `accounts.procurement_cost_cny`、`accounts.estimated_usable_quota_usd` 与 `account_procurement_cost_versions`，不新增事实源或第二入口；查明并修复采购成本 PUT 保存 `internal error`，覆盖幂等键、handler/service 事务、NULL `cost_pending`、错误映射、成功 PUT+reload 反馈和重复提交幂等。
 - 验收：桌面/390px 顺序稳定且无整页横溢出；账号监控与自购 CNY 页读取同一采购字段；新录入、修改、清空、重复提交、旧 NULL 版本、服务错误和 reload 保持均有直接测试；Go/前端聚焦测试、typecheck/build、gofmt、diff-check。无迁移、无生产写入、无 GitHub Actions，预期 `downtime_required=false`。
 - 非目标：不调整评分权重或算法，不改账号监控其他卡片样式，不改变盈利口径，不扩展到其他页面或发布链。
+
+### T29 Monitor V2 二态健康展示与统一指标口径
+
+- 当前状态：`DESIGNING`。根总控已完成全部非 `main` worktree 盘点；从最新 `main` 创建独立 worktree `codex/t29-monitor-v2-health-semantics`。T28 与用户指定的 detached 视觉预览均不修改、不合并、不清理。
+- 展示合同：页面删除全部百分比型值，包括服务可用率、真实请求成功率、有效调用占比和缓存命中率；真实请求成功率也不进入明细、悬浮提示或无障碍文案。用户可见状态仅为“运行中 / 服务不可用”；运行中时间线统一绿色，服务不可用时间线使用故障色，卡片状态、整体状态和时间线使用同一二态投影。
+- 指标合同：毫秒、TPS、倍率等非百分比性能事实继续来自真实数据；Monitor V2 的所有性能查询统一时间窗、`group_id`、有效计费文本请求资格及可比主模型范围，避免 TTFT、总延迟、TPS、缓存因分母和模型构成不同而不可比。Pro 固定置顶并标记“旗舰”，不复制 Plus 数值、不人工覆盖统计结果。
+- 验收：TDD 覆盖百分号/成功率文案彻底消失、二态状态、时间线配色、Pro 置顶/旗舰和统一查询谓词；运行直接相关 Go service/repository tests、Monitor V2 Vitest、typecheck、frontend build、必要 Go build、gofmt 与 diff-check，并做桌面/390px 视觉核对。无迁移、无生产数据写入、无 GitHub Actions，预期 `downtime_required=false`。
+- 非目标：不改变主动探测重试、计费价格、调度策略、分组成员、用户请求错误处理、CodexRadar 或其他管理页面。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
 

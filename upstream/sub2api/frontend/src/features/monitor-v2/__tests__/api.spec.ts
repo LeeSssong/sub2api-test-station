@@ -90,7 +90,7 @@ describe('Monitor V2 API contract', () => {
     })).toThrow('ttft.sample_count')
     expect(() => validateMonitorV2Snapshot({
       ...validPayload,
-      groups: [{ ...validPayload.groups[0], ttft: { state: 'not_provided', value: null, sample_count: 0 } }],
+      groups: [{ ...validPayload.groups[0], ttft: { state: 'legacy_state', value: null, sample_count: 0 } }],
     })).toThrow('ttft.state')
   })
 

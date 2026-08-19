@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24 与 T25 均为 `DONE`；T25 已从 `main@20c563345fe802b9662faf9189ca8cc7ecb3d3aa` 完成推送、无停机蓝绿发布和线上验收。禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24 与 T25 均为 `DONE`；T26 已登记为 `DESIGNING`，待独立顶层任务从最新 `main` 完成规格、计划、TDD 实现与直接相关验证。禁止使用 GitHub Actions。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
-- 当前发布状态：生产源 `main@a76dff256d53b7e3b9f0d3df8aa8d1699edcd39b`、tree `b67d198f4f7a7fd1dbc72cc881d30cfa3103a53a`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T24 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T150106Z-production-3302557.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-a76dff256-t24-local-exhaustion-v1.json`。
+- 当前发布状态：生产源 `main@20c563345fe802b9662faf9189ca8cc7ecb3d3aa`、tree `e62afb7f22a9519ec985416a4994fb2fa216d4da`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T25 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260818T181312Z-production-3451615.json`；公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-18-main-20c563345-t25-channel-monitor-v1.json`。
 - 非 `main` worktree 清理（2026-08-18）：24 个非 `main` worktree 已完成归档并移除，当前仅保留根 `main` worktree。恢复归档 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-worktrees-2026-08-18-bdb07d354/non-main-refs.bundle`，SHA-256 `0ea027c4dcd0ae9a243bb2f669ee23119b2e85e9e3dfc2f7d07a848760868a8a`，bundle/manifest 校验通过；`upstream-resilience-hardening` 的 dirty diff 已单独保存。非 `main` 分支引用暂保留，不触碰生产，不使用 GitHub Actions。
 - 全局审计（2026-08-18）：根 `main`/`origin/main` 当前为 `215aa045b03683c2aeb393660b8f49f916480bcf`，队列登记任务均为 `DONE`，没有任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 车道。`codex/t21-model-detector-sidecar-closure`、`codex/t17-usage-detail-effective-cost`、`codex/official-v0175-fast-merge` 是已部署成果的旧分叉；`codex/account-probe-cost-design` 是历史设计证据；`codex/upstream-resilience-hardening` 为 dirty 的冻结/保护 worktree。上述五个 worktree 均保留只读证据，不合并、不恢复、不清理。其余历史发布 worktree 干净且无相对 `main` 的领先提交；根目录既有未跟踪资料保留。若无新任务登记，当前队列进入发布收口待命。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
@@ -18,6 +18,14 @@
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。
 
 ## 队列
+
+### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入
+
+- 当前状态：`DESIGNING`。用户已批准两项同页小步收口：一是将用户侧网关错误统一通过 Sub 原生错误转换层投影为中文且隐藏内部服务、URL、Cloudflare Ray、request id 与原始英文响应体；二是在渠道监控“分组状态”下方使用 CodexRadar 公开 `/api/radar-insights` 数据重组截图指定的“站长推荐”卡片，不混入本站指标或推荐规则。
+- 错误语义：本站余额不足必须显示“余额不足，请充值后重试。”；本站额度、订阅、频率/并发、模型/分组权限、请求格式和服务资源类错误分别提供可操作中文提示。内部服务账号余额或外部服务异常对用户统一为透明的“服务暂时异常/繁忙”语义，不出现“上游”；管理员诊断继续保留阶段、归属、状态和经脱敏的原始证据。覆盖 Responses、Chat Completions、Anthropic，以及 JSON/SSE 终结路径，优先复用现有 `native_error_diagnostics` 与原生错误响应写入链。
+- 推荐语义：服务端只读获取 CodexRadar `radar-insights`，做严格字段校验、短超时、短时缓存与最近成功快照回退；前端只渲染其四类推荐、模型/档位、IQ、耗时、费用和来源更新时间，视觉按用户截图复刻，保留 CodexRadar 原有分类配色。不得读取本站监控、计费或模型事实来替换推荐数据，不持久化或伪造外部结果，不提交评分或触发外部写操作。
+- 验收边界：先写失败测试；只运行直接相关 service/handler、JSON/SSE 错误投影、推荐代理与 Monitor V2 组件测试，外加后端必要编译、前端 typecheck/build、桌面与 390px 页面专项验收和 diff-check。无迁移、无生产数据修改、无 GitHub Actions；预期 `downtime_required=false`，最终以根合并后的发布预检为准。
+- 工作区边界：根发布总控只登记、审查、合并、推送、发布和线上验收；实现由新建用户可见独立顶层任务及独立 worktree 承担。`/private/tmp/sub2api-monitor-v3-preview` 为 T25 detached、dirty 的只读视觉证据，HEAD 已被 `main` 包含，继续保护，不清理、不合并、不作为 T26 基线。
 
 ### T25 自建渠道监控最终视觉与主动探测重试收口
 

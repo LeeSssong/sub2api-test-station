@@ -19,6 +19,15 @@ import (
 
 type monitorV2RouteSnapshotter struct{}
 
+type codexRadarCommunityRouteGetter struct{}
+
+func (codexRadarCommunityRouteGetter) Get(context.Context) (service.CodexRadarCommunity, bool, error) {
+	return service.CodexRadarCommunity{
+		GeneratedAt: "2026-08-19T05:00:00Z",
+		Tabs:        []service.CodexRadarCommunityTab{},
+	}, false, nil
+}
+
 type monitorV2RouteSettingRepo struct {
 	values map[string]string
 }
@@ -81,11 +90,11 @@ func (monitorV2RouteSnapshotter) Snapshot(
 	...service.MonitorV2Scope,
 ) (*service.MonitorV2Snapshot, error) {
 	return &service.MonitorV2Snapshot{
-		ContractVersion: service.MonitorV2ContractVersion,
-		Window:          service.MonitorV2Window7D,
+		ContractVersion:        service.MonitorV2ContractVersion,
+		Window:                 service.MonitorV2Window7D,
 		RefreshIntervalSeconds: 300,
-		GeneratedAt:     time.Now().UTC(),
-		Groups:          []service.MonitorV2Group{},
+		GeneratedAt:            time.Now().UTC(),
+		Groups:                 []service.MonitorV2Group{},
 	}, nil
 }
 
@@ -142,4 +151,29 @@ func TestMonitorV2RouteUsesAuthenticatedUserBoundary(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"contract_version":"`+service.MonitorV2ContractVersion+`"`)
 	require.Contains(t, recorder.Body.String(), `"refresh_interval_seconds":300`)
+}
+
+func TestCodexRadarCommunityRouteUsesAuthenticatedUserBoundary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	v1 := engine.Group("/api/v1")
+	authCalled := false
+	jwt := middleware.JWTAuthMiddleware(func(c *gin.Context) {
+		authCalled = true
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	audit := middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
+	RegisterUserRoutes(v1, &handler.Handlers{
+		MonitorV2:           handler.NewMonitorV2Handler(monitorV2RouteSnapshotter{}),
+		CodexRadarCommunity: handler.NewCodexRadarCommunityHandler(codexRadarCommunityRouteGetter{}),
+	}, jwt, audit, nil, nil)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2/codexradar-community", nil)
+	engine.ServeHTTP(recorder, request)
+
+	require.True(t, authCalled)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"generated_at":"2026-08-19T05:00:00Z"`)
 }

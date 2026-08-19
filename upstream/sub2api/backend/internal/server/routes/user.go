@@ -145,6 +145,7 @@ func RegisterUserRoutes(
 		// 星桥 Monitor V2（用户只读重查询）
 		authenticated.GET("/monitor-v2", panelRateLimiter.Heavy(), h.MonitorV2.Snapshot)
 		authenticated.GET("/monitor-v2/codexradar-insights", panelRateLimiter.Heavy(), h.CodexRadar.Get)
+		authenticated.GET("/monitor-v2/codexradar-community", panelRateLimiter.Heavy(), h.CodexRadarCommunity.Get)
 
 		// V2 passive views require feature on + mode=v2.
 		monitorV2 := authenticated.Group("/channel-monitor-v2")

@@ -9,6 +9,8 @@ vi.mock('../codexRadar', async () => ({
 
 import CodexRadarRecommendations from '../CodexRadarRecommendations.vue'
 
+const global = { stubs: { CodexRadarCommunityMatrix: true } }
+
 const fixture = {
   generated_at: '2026-08-19T01:59:16Z', source_updated_at: '2026-08-19T01:54:42Z', stale: false,
   recommendations: [
@@ -24,7 +26,7 @@ describe('CodexRadarRecommendations', () => {
 
   it('renders the four original categories and metrics', async () => {
     getCodexRadarInsights.mockResolvedValue(fixture)
-    const wrapper = mount(CodexRadarRecommendations)
+    const wrapper = mount(CodexRadarRecommendations, { global })
     await flushPromises()
     for (const value of ['站长推荐', '日常开发', '难题攻坚', '后台自动化', '跑龙虾类任务', 'Sol medium', 'IQ 90', '18 分钟', '$3.27', '日常规则']) expect(wrapper.text()).toContain(value)
     expect(wrapper.findAll('[data-radar-category]')).toHaveLength(4)
@@ -32,14 +34,14 @@ describe('CodexRadarRecommendations', () => {
 
   it('shows a compact unavailable state without breaking the page', async () => {
     getCodexRadarInsights.mockResolvedValue(null)
-    const wrapper = mount(CodexRadarRecommendations)
+    const wrapper = mount(CodexRadarRecommendations, { global })
     await flushPromises()
     expect(wrapper.text()).toContain('站长推荐暂时不可用')
   })
 
   it('marks fallback snapshots', async () => {
     getCodexRadarInsights.mockResolvedValue({ ...fixture, stale: true })
-    const wrapper = mount(CodexRadarRecommendations)
+    const wrapper = mount(CodexRadarRecommendations, { global })
     await flushPromises()
     expect(wrapper.text()).toContain('最近成功数据')
   })

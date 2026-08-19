@@ -39,12 +39,14 @@
         </div>
       </article>
     </div>
+    <CodexRadarCommunityMatrix />
   </section>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { getCodexRadarInsights, type CodexRadarInsights, type CodexRadarKey } from './codexRadar'
+import CodexRadarCommunityMatrix from './CodexRadarCommunityMatrix.vue'
 
 const insights = ref<CodexRadarInsights | null>(null)
 const loading = ref(true)

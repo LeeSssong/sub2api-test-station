@@ -23,4 +23,13 @@ See `docs/superpowers/reports/2026-08-20-t34-monitor-v2-native-probe-verificatio
 
 ## Root Action
 
-Please review this candidate and issue `AUTHORIZE_MERGE_TO_MAIN` only after root-level review. This worktree has not been merged, pushed, deployed, or used for production verification.
+Please review this candidate and issue `AUTHORIZE_MERGE_TO_MAIN` only after root-level review. This candidate has not been merged into root main, pushed, deployed, or used for production verification.
+
+## Refresh Handoff
+
+- Refreshed clean candidate `2e4ac36bc118b27c4c40a554284e09cfd90e207d` from exact target `main@101357776e1af9dbf83df282afd96cdb284ffcf4`.
+- Merge commit: `9dc618bc1d25350729b01966736b2a337b2288b9`; parents are the candidate and exact target above. Merge completed without conflicts.
+- Revalidation passed backend targeted tests, Monitor V2 8 files/35 tests, typecheck, production build, source guard, and diff-check.
+- Target-relative audit shows only approved T34 files and behavior. Migration/configuration delta: none. Expected `downtime_required=false`.
+- Rollback is to keep/reinstate target main before integration, or revert the eventual T34 integration commit and restore the prior blue-green release after integration.
+- Status after refresh: `READY_FOR_ROOT_REVIEW`.

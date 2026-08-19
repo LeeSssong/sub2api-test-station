@@ -38,7 +38,7 @@ const messages: Record<string, string> = {
   'admin.accountProfitability.summary.businessCost': '业务消耗',
   'admin.accountProfitability.summary.businessRevenue': '业务营收',
   'admin.accountProfitability.summary.totalCost': '总消耗',
-  'admin.accountProfitability.summary.netProfit': '净利润',
+  'admin.accountProfitability.summary.netProfit': '经营利润',
   'admin.accountProfitability.summary.externalMargin': '对外毛利率',
   'admin.accountProfitability.summary.includedInTotal': '已包含在总消耗中',
   'admin.accountProfitability.roleHistoryNote': '内部运营按当前管理员角色识别，历史角色变化可能影响历史区间分类',
@@ -169,8 +169,63 @@ describe('AccountProfitabilityView', () => {
     })
   })
 
+  it('defaults to USD and loads CNY on demand with the shared range', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(getReport).toHaveBeenCalledWith({ range: 'today' })
+    expect(getSelfPurchased).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="view-usd"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="self-purchased-panel"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    expect(getSelfPurchased).toHaveBeenCalledWith({ range: 'today' })
+    expect(wrapper.find('[data-test="summary-grid"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="scope-all"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="self-purchased-panel"]')).toBeTruthy()
+  })
+
+  it('refreshes and changes range only for the active primary view', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    getReport.mockClear()
+    getSelfPurchased.mockClear()
+
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await flushPromises()
+    expect(getSelfPurchased).toHaveBeenCalledWith({ range: '7d' })
+    expect(getReport).not.toHaveBeenCalled()
+
+    getSelfPurchased.mockClear()
+    await wrapper.get('[data-test="financial-refresh"]').trigger('click')
+    await flushPromises()
+    expect(getSelfPurchased).toHaveBeenCalledWith({ range: '7d' })
+    expect(getReport).not.toHaveBeenCalled()
+  })
+
+  it('reloads CNY when returning after its loaded range becomes stale', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    expect(getSelfPurchased).toHaveBeenLastCalledWith({ range: 'today' })
+
+    await wrapper.get('[data-test="view-usd"]').trigger('click')
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await flushPromises()
+    getSelfPurchased.mockClear()
+
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    expect(getSelfPurchased).toHaveBeenCalledWith({ range: '7d' })
+  })
+
   it('renders every CNY field and does not replace zero pending cost with loss', async () => {
     const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
     await flushPromises()
     const table = wrapper.get('[data-test="self-purchased-table"]')
     expect(table.text()).toContain('采购成本')
@@ -189,6 +244,8 @@ describe('AccountProfitabilityView', () => {
       rows: [{ account_id: 21, name: 'Expired purchase', platform: 'openai', account_type: 'oauth', status: 'expired', procurement_cost_cny: 120, estimated_quota_usd: 60, standard_consumed_usd: 30, utilization: 0.5, confirmed_cost_cny: 60, pending_cost_cny: 60, procurement_loss_cny: 0, revenue_cny: 100, net_profit_cny: 40, margin: 0.4, cost_status: 'active' }],
     })
     const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="settle-21"]').text()).toBe('确认失效')
   })
@@ -252,14 +309,17 @@ describe('AccountProfitabilityView', () => {
     host.remove()
   })
 
-  it('places the self-purchased panel below native cards and above scope tabs', async () => {
+  it('shows seven CNY summary metrics and contains the long table scroll', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    const panel = wrapper.get('[data-test="self-purchased-panel"]')
-    const summary = wrapper.get('[data-test="summary-grid"]')
-    const scopes = wrapper.get('[data-test="scope-all"]').element.parentElement
-    expect(summary.element.compareDocumentPosition(panel.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(panel.element.compareDocumentPosition(scopes!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await wrapper.get('[data-test="view-cny"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="self-purchased-summary-grid"]').findAll(':scope > div')).toHaveLength(7)
+    expect(wrapper.get('[data-test="self-summary-account-count"]').text()).toContain('1')
+    expect(wrapper.get('[data-test="self-summary-confirmed-cost"]').text()).toMatch(/60\.00/)
+    expect(wrapper.get('[data-test="self-summary-pending-cost"]').text()).toMatch(/0\.00/)
+    expect(wrapper.get('[data-test="self-purchased-table-wrap"]').classes()).toContain('overflow-x-auto')
+    expect(wrapper.find('[data-test="scope-all"]').exists()).toBe(false)
   })
 
   it.each([

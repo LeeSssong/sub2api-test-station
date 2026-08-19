@@ -1,51 +1,78 @@
-# T27 自购账号口径、保存失败与财务页位置修复
+# T27 自购账号口径、保存失败与双视图经营页
 
 ## 现状证据
 
-- `UpdateProcurementConfig` 查询活动版本时把可空 `cost_cny` 与 `estimated_usable_quota_usd` 直接扫描到 `float64`；从 `cost_pending` 重新录入金额会在数据库 NULL 扫描阶段失败，事务不会完成。
-- `GetSelfPurchasedReport` 的台账 CTE 与 legacy projection fallback 只按采购字段识别账号，未强制原生 `accounts.type = 'oauth'`，因此非 OAuth 账号可能进入 rows、summary 和 settlement 入口。
-- `AccountProfitabilityView.vue` 在原生五张财务摘要卡之前渲染自购人民币面板；页面已有 `overflow-x-hidden`，自购表已有 `overflow-x-auto`，只需移动 DOM 位置。
+- `UpdateProcurementConfig` 曾把 `cost_pending` 的 NULL 成本/额度扫描到 `float64`，重新录入 7.7 CNY / 60 USD 返回 internal error；候选已用严格可空扫描修复并保留原事务、幂等、版本、actor 审计和 accounts 投影。
+- `GetSelfPurchasedReport` 曾仅依赖采购台账/legacy 投影，未限制原生账号类型；候选已在台账/fallback/scoped/settlement 路径增加 `accounts.type='oauth'`，历史非 OAuth 数据保留但不展示或结算。
+- 当前页面把 CNY 面板嵌在 USD 摘要与分组之间，且挂载时并发请求 USD 与 CNY；`selfPurchased.get({})` 使 CNY 后端默认本月，而 USD 使用 today/24h/7d/31d，范围不一致。
 
 ## 目标与非目标
 
-目标是修复上述三条用户可见行为，同时保持 T23 的事务、版本、幂等、actor 审计、accounts 投影和财务字段语义不变。`cost_pending` 版本不参与旧消耗/剩余额度折算。自购台账、legacy fallback、rows/summary/settlement 只接受 `oauth`。
+目标：页头保留统一范围控件；新增默认 USD、次级 CNY 的一级 segmented view；每个视图只渲染和刷新自己的数据/错误；CNY 使用与原生 `AccountFinancialService` 相同的北京时间范围语义；USD 报表公式和接口保持不变；CNY 继续只包含“OAuth 且已有采购台账或 legacy 采购投影”的账号。
 
-非目标：不新增迁移、不回填或删除历史数据、不改变用户扣费、渠道 USD 口径、调度、采购公式或 API 字段，不引入新页面/事实源，不改发布链或 GitHub Actions。
+非目标：不新增汇率或混币汇总，不改变用户扣费、渠道 USD 公式、调度、采购成本公式、版本/结算语义，不新增迁移、历史回填、生产数据写入、平行页面或 GitHub Actions。
 
-## 方案比较
+## 方案比较与选择
 
-1. 在 handler/UI 层过滤账号：覆盖不全，后台报告和结算仍可能污染，拒绝。
-2. 在原生 service SQL 入口统一过滤并在 service 扫描处做可空处理（推荐）：覆盖台账、fallback、聚合和写事务，改动最小且保持契约。
-3. 新增数据库视图或迁移约束：部署面和回滚面扩大，且无法修复 NULL 扫描，拒绝。
+1. **A：同页一级双视图（已批准）**。共用范围和页头，按币种隔离信息架构、请求和错误；改动集中在既有 handler/API/page，认知和实现边界最清晰。
+2. USD 页面保留内嵌 CNY 面板。改动更少，但币种层级混杂、分组归属误导且难以隔离加载错误，拒绝。
+3. 新增独立路由。隔离最强，但新增导航、权限和路由维护面，超出本任务，拒绝。
+
+## 信息架构与交互
+
+页头范围按钮下新增 segmented control：`经营结果 · USD`（默认）和 `自购专题 · CNY`。USD 视图包含现有五项全站摘要、角色说明、业务分组 Tab、选中分组摘要、排序和账号表，并在摘要附近显示：`USD 经营结果未含自购账号 CNY 采购成本；自购实际采购利润请查看自购专题。` 所有 `净利润` 展示标签收敛为 `经营利润`，后端字段仍为 `net_profit`。
+
+CNY 视图只包含自购摘要和现有长表，不渲染 USD 分组、分组摘要、排序或 USD 账号表。摘要至少展示账号数、人民币营收、已确认采购成本、待摊成本、采购损失、人民币净利润、利润率；表保留采购成本、预计额度、标准消耗、利用率、确认成本、待摊、损失、营收、净利润、利润率和状态。
+
+全局刷新按钮只刷新当前一级视图。切换视图时，仅在目标视图尚未加载时加载，已加载数据保留；范围变化刷新当前视图并携带同一 `activeRange`。定时刷新也只刷新当前视图。USD/CNY 的 loading、refreshing 和 error 独立，任一失败不清除或遮蔽另一视图。
+
+## 时间范围与 API 契约
+
+`GET /admin/operations/self-purchased-profitability` 新增兼容查询参数 `range=today|24h|7d|31d`：
+
+- `24h`：以当前时刻为结束，精确回溯 24 小时。
+- `today`：北京时间当日 00:00 至当前时刻。
+- `7d`：北京时间今日及前 6 个自然日，至当前时刻。
+- `31d`：北京时间今日及前 30 个自然日，至当前时刻。
+
+显式 `start_date/end_date/timezone` 保留原半开区间兼容行为；出现任一显式日期参数时优先日期模式，未传日期而传 `range` 时使用北京时间 range；均未传时保持旧本月默认。未知 range 返回 400。响应字段不变，无显示需求时不新增 `range` 字段。
+
+前端 `selfPurchasedProfitability.get` 类型接受 `range`，CNY 视图每次范围加载均发送 `{range: activeRange}`。
 
 ## 数据与控制流
 
-保存请求进入既有 `UpdateProcurementConfig` 事务。活动版本用 `sql.NullInt64`/`sql.NullFloat64`/`sql.NullTime` 兼容 NULL；若旧状态为 `cost_pending`，直接关闭旧版本并用新输入创建 active 版本，不读取 usage_logs 做旧成本/额度折算。其他状态继续沿用原剩余成本/额度算法。幂等、锁、投影和审计 SQL 保持原序列。
+USD：view/range/refresh -> `accountFinancial.getReport({range})` -> 原生 T16 service/report -> USD UI。
 
-报告查询在 `versions` 两个分支均加入 `a.type = 'oauth'`，scoped 额外保留同一条件作为防回归屏障；因此 rows、summary、settlement 可见集合一致，历史非 OAuth 数据只读保留。
+CNY：view/range/refresh -> `selfPurchasedProfitability.get({range})` -> handler 按北京时间解析半开区间 -> `GetSelfPurchasedReport(start,end)` -> OAuth 且具采购事实的 rows/summary -> CNY UI。
 
-前端将现有 `self-purchased-panel` 节点移动到 `summary-grid` 之后、经营维度 Tab 之前，不改变加载/错误/刷新逻辑和表格滚动容器。页面根部继续限制 390px 横向溢出。
+保存与结算继续走既有事务。`cost_pending` NULL 版本关闭后直接用新输入创建 active 版本，不读取旧 usage 消耗；有效旧版本继续原剩余成本/额度算法。结算查询继续要求 OAuth。
 
-## 失败与兼容语义
+## 失败、安全与兼容
 
-NULL 旧值不再产生泛化 internal error；非法新值、幂等冲突、锁/数据库错误仍按原错误返回并回滚。非 OAuth 报告不产生行或汇总数，也不会开放结算按钮。API JSON 与现有 UI 文案不变。
+两视图分别保存最近成功数据和错误；当前视图刷新失败时保留旧数据。切换视图不触发另一视图请求。旧日期查询客户端不受 range 新参数影响；旧无参数请求仍返回本月。账号资格同时要求 OAuth 和采购事实，不把所有 OAuth 静默推断为采购资产。两币种不相加、不换算。
 
 ## 验收矩阵
 
 | 场景 | 预期 |
 | --- | --- |
-| cost_pending 旧版本重新录入 7.7/60 | 提交成功，旧版本关闭，新 active 版本和 accounts 投影写入，旧消耗不折算 |
-| active 旧版本更新 | 原剩余成本/额度算法不变 |
-| 台账含 oauth 与 api_key | 仅 oauth 出现在 rows/summary |
-| 仅 legacy projection 的 oauth 与 api_key | 仅 oauth fallback 出现 |
-| 非 oauth settlement 请求 | 查询/写路径拒绝或无可结算版本，不产生结算副作用 |
-| 财务页加载/错误/刷新 | 自购面板位于五张卡之后、Tab 之前，状态与字段保持 |
-| 390px | 根页面无横溢出，自购表仍自身横向滚动 |
+| 首次进入 | 只请求并显示 USD；CNY 面板/表不渲染 |
+| 切到 CNY | 请求 `{range:'today'}`；只显示 CNY 摘要/表 |
+| CNY 范围切到 24h/7d/31d | 分别发送 range；后端返回精确 24h 或北京时间自然日窗口 |
+| USD/CNY 任一失败 | 只显示该视图错误，另一视图已加载数据保留 |
+| 当前视图刷新 | 只请求当前 API |
+| USD 文案 | 显示 CNY 成本排除说明，净利润标签为经营利润 |
+| CNY 摘要 | 展示 7 项批准指标，表字段保持完整 |
+| 资格 | 仅 OAuth 且存在台账/legacy 投影进入 rows、summary、settlement |
+| cost_pending 重新录入 | NULL 扫描成功，旧版本不参与折算，原写事务语义保持 |
+| 390px | 页面无整页横溢出，自购长表仅自身容器滚动 |
+| 兼容日期参数/无参数 | 日期模式与旧本月默认保持 |
 
 ## 测试、发布与回滚
 
-先补 Go sqlmock service 测试、报告 SQL 合同/过滤测试和 `AccountProfitabilityView.spec.ts` DOM 顺序/390px 测试，再实现。运行直接相关 Go service/sqlmock、handler/API、AccountMonitor/AccountProfitability 前端测试，必要 typecheck、production build、gofmt、git diff --check；不跑全仓无关回归。无迁移、无配置变更，预期 `downtime_required=false`。回滚为恢复本提交前代码；不需数据回填。
+TDD 增加 handler range 边界/优先级/非法值测试、self-purchased API range 传递测试、页面双视图渲染/按需加载/刷新/错误隔离/文案/390px 测试；保留现有 service NULL/OAuth/settlement 测试。只运行直接相关 Go handler/service、self-purchased/API、AccountProfitabilityView/API 测试及必要 typecheck、build、gofmt、diff-check。
+
+无迁移、配置或生产写入，预期 `downtime_required=false`。回滚为回退 T27 候选提交；因无数据变更，无恢复或回填步骤。风险集中于客户端视图状态切换和时间边界，使用固定时钟 handler 单测与请求次数断言控制。
 
 ## 自审与批准记录
 
-范围仅触及既有 service、handler 相关测试和单一财务页；没有未决产品问题、占位项或接口矛盾。2026-08-19 依据用户已批准 T27 范围及根总控代审授权通过规格自审，可进入实施计划。
+规格无 TODO/TBD、无混币或资格歧义，范围限于既有原生接口与页面。2026-08-19 用户在根总控明确批准 A 方案；根总控依据代审授权批准本次修订，可直接进入计划与 TDD。

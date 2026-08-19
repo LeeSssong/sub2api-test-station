@@ -496,8 +496,73 @@ func TestSelfPurchasedReportUsesAllUndeletedOAuthAccountsAsCandidates(t *testing
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestProcurementAuditBoundsRequestIDToAuditSchema(t *testing.T) {
+func TestProcurementAuditSQLUsesPostgreSQLParameterTypes(t *testing.T) {
 	source, err := os.ReadFile("account_procurement_profitability.go")
 	require.NoError(t, err)
-	require.Contains(t, string(source), "LEFT($3,64)", "audit_logs.request_id is VARCHAR(64) while ledger request ids allow 128 bytes")
+	sourceText := string(source)
+	require.Equal(t, 3, strings.Count(sourceText, "LEFT($3,64)"), "all procurement audit request ids must stay bounded to audit_logs.request_id VARCHAR(64)")
+	require.Contains(t, sourceText, "jsonb_build_object('account_id',$4::bigint,'reason',$5::text)")
+	require.Contains(t, sourceText, "jsonb_build_object('account_id',$4::bigint,'cleared',true)")
+	require.Contains(t, sourceText, "jsonb_build_object('account_id',$4::bigint,'cost_cny',$5::double precision,'quota_usd',$6::double precision)")
+	require.NotContains(t, sourceText, "jsonb_build_object('account_id',$4,'reason',$5)")
+	require.NotContains(t, sourceText, "jsonb_build_object('account_id',$4,'cleared',true)")
+	require.NotContains(t, sourceText, "jsonb_build_object('account_id',$4,'cost_cny',$5,'quota_usd',$6)")
+}
+
+func TestUpdateProcurementConfigRollsBackWhenAuditInsertFails(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	cost, quota := 120.0, 60.0
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-audit-fail").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 1, cost, quota, createdAt, int64(77), "req-audit-fail", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny").WithArgs(int64(9), cost, quota, createdAt, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-audit-fail", int64(9), cost, quota).WillReturnError(errors.New("audit write failed"))
+	mock.ExpectRollback()
+
+	err := NewAccountProfitabilityService(db).UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, CostCNY: &cost, QuotaUSD: &quota, ActorUserID: 77, RequestID: "req-audit-fail"})
+	require.ErrorContains(t, err, "audit write failed")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateProcurementConfigClearRollsBackWhenAuditInsertFails(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	createdAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	effectiveAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 18, 8, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT account_id FROM account_procurement_cost_versions WHERE request_id").WithArgs("req-clear-audit-fail").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT created_at FROM accounts").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("SELECT id,cost_cny").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at"}).AddRow(int64(3), 100.0, 50.0, effectiveAt))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions SET ended_at").WithArgs(int64(3), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(version_no\\),0\\)\\+1").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(2))
+	mock.ExpectExec("UPDATE accounts SET procurement_cost_cny=NULL").WithArgs(int64(9), now).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO account_procurement_cost_versions").WithArgs(int64(9), 2, now, int64(77), "req-clear-audit-fail", now).WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement", "req-clear-audit-fail", int64(9)).WillReturnError(errors.New("clear audit write failed"))
+	mock.ExpectRollback()
+
+	svc := NewAccountProfitabilityService(db)
+	svc.now = func() time.Time { return now }
+	err := svc.UpdateProcurementConfig(context.Background(), ProcurementConfigInput{AccountID: 9, ActorUserID: 77, RequestID: "req-clear-audit-fail"})
+	require.ErrorContains(t, err, "clear audit write failed")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleProcurementRollsBackWhenAuditInsertFails(t *testing.T) {
+	db, mock := newAccountProfitabilityDB(t)
+	effective := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id,account_id FROM account_procurement_cost_versions WHERE settlement_request_id").WithArgs("settle-audit-fail").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT v.id,v.cost_cny,v.estimated_usable_quota_usd,v.effective_at,v.status,a.status,a.expires_at").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "cost_cny", "estimated_usable_quota_usd", "effective_at", "version_status", "account_status", "expires_at"}).AddRow(int64(3), 100.0, 50.0, effective, "active", StatusError, nil))
+	mock.ExpectExec("UPDATE account_procurement_cost_versions v SET status='settled'").WithArgs(int64(3), "settle-audit-fail").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(int64(77), "/admin/accounts/9/procurement/settle", "settle-audit-fail", int64(9), "administrator_confirmed_expired").WillReturnError(errors.New("settle audit write failed"))
+	mock.ExpectRollback()
+
+	ok, err := NewAccountProfitabilityService(db).SettleProcurement(context.Background(), ProcurementSettlementInput{AccountID: 9, RequestID: "settle-audit-fail", Reason: "administrator_confirmed_expired", ActorUserID: 77})
+	require.False(t, ok)
+	require.ErrorContains(t, err, "settle audit write failed")
+	require.NoError(t, mock.ExpectationsWereMet())
 }

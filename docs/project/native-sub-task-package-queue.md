@@ -2,12 +2,12 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26 与 T26-R1 均为 `DONE`；T27“自购账号保存、口径与双视图经营页重设计”处于 `IMPLEMENTING`。禁止使用 GitHub Actions。
-- 当前实施：用户已批准“经营结果 USD + 自购专题 CNY”的 A 方案。设计任务 `01a01875-7991-72a3-9bd6-5a0af430b61e` 只负责已批准的信息架构与统计合同；唯一实现任务 `01a0187a-5c80-74f1-ad03-d658f01b9a52` 在同一 T27 worktree 内承接保存修复、OAuth 硬过滤、结算过滤、双视图页面与 CNY 时间窗一致性，避免两个任务并发修改同一页面。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26 与 T26-R1 均为 `DONE`；T27“自购账号保存、口径与双视图经营页重设计”处于 `DEPLOYING`。禁止使用 GitHub Actions。
+- 当前实施：T27 候选 `1114336908305a0ed0ea4211cdc5e2ac9aaefb7f` 已合入根 `main@5294e5cd12ed799a75fecf3b41e43518cb3a75b1`。合并后直接相关 Go service/handler、前端 23/23、typecheck、production build、Go build、gofmt 与 diff-check 均通过；用户明确不追加“CNY -> USD -> 改范围 -> 再回 CNY”的复杂回切竞态设计，保留当前视图的基本 `loadedRange` 防护并进入最小发布链。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@92610b809588939b0c27f3fa831e9b24ef086de4`、tree `1a11bc8532935207b20430f4df6ad48986880ae9`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T26-R1 蓝绿链为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`，API 与 worker 使用同一不可变镜像。宿主记录为 `/var/lib/sub2api/release-records/20260819T052951Z-production-3967901.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-92610b809-t26-r1-community-matrix-v1.json`。
 - 非 `main` worktree 清理：2026-08-18 的 24 个历史 worktree 已按既有归档记录移除；T26 发布验收后又将候选、移动端修复和临时发布三个干净 worktree 归档并移除，同时删除两条已合并的本地 T26 分支。T26-R1 候选 worktree/分支已在发布成功后归档移除，恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t26-r1-final-92610b809/t26-r1-refs.bundle`，SHA-256 `713e38c858b2ca336eab7a09bf8e856011836aaee6b4f5e66d055aba48d99817`，`git bundle verify` 通过。当前仅保留正在实施的 T27 worktree 与用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。
-- 全局审计（2026-08-19）：根 `main`/`origin/main` 已同步到 `92610b809588939b0c27f3fa831e9b24ef086de4`，生产 release-state 同步绑定该源/tree；T26-R1 已完成部署验收，T27 处于 `DESIGNING`/独立实现阶段，没有任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 车道。非 `main` 仅保留 T27 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建` 与用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`，均不合并、不清理；根目录既有未跟踪资料继续保留。
+- 全局审计（2026-08-19）：根 `main@5294e5cd12ed799a75fecf3b41e43518cb3a75b1` 已包含 T27 候选，`origin/main` 与生产仍绑定上一已验证源 `92610b809588939b0c27f3fa831e9b24ef086de4`；T27 独占 `DEPLOYING` 车道。非 `main` 仅保留已合并、待生产收口后归档的 T27 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建` 与用户指定保护的 detached 视觉预览 `/private/tmp/sub2api-monitor-v3-preview`；根目录既有未跟踪资料继续保留。
 - 最终归档：全量可恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/native-subtasks-final-44aaf3b70.bundle`，`git bundle verify` 通过，SHA-256 `88abe0117a85738311bf584c4d98b3fcdb4a178e821e0764571af7ef8fa381d6`。T15/T18/T19/T16 功能 worktree、分支及四个临时发布 worktree均在推送、部署、线上验收成功后安全移除；T19 根未跟踪规格/计划原件保留于 `/private/tmp/t19-root-untracked-backup.PuJrml/`，保护/历史 worktree 和根目录既有未跟踪资料未动。
 - 原生错误中文提示配置已独立完成：生产 `ErrorPassthroughRule` 是全局规则、没有 `group_id`，因此一套配置已覆盖所有分组；该工作只调用 Sub 原生管理能力，不修改工程代码、不创建功能 worktree，也不占用发布车道。下一实施任务为 T09。
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
@@ -29,11 +29,12 @@
 
 ### T27 自购账号保存、口径与双视图经营页重设计
 
-- 当前状态：`IMPLEMENTING`。独立用户可见实现任务 `01a0187a-5c80-74f1-ad03-d658f01b9a52` 使用 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建`、分支 `codex/t27-procurement-oauth-position-fix`，已基于最新 `main@529439cde50a28449dfddcda33ee30e2f41f43c6` 保留第一阶段候选 `3452dfb2fff9028beea90946b19b2d03636725a8`，现正按已批准 A 方案修订规格、计划与 TDD 实现。设计任务 `01a01875-7991-72a3-9bd6-5a0af430b61e` 只交付信息架构和统计合同，不另行修改业务代码。
+- 当前状态：`DEPLOYING`。独立用户可见实现任务 `01a0187a-5c80-74f1-ad03-d658f01b9a52` 在 worktree `/Users/gongtengxinwen/.codex/worktrees/4961/sub2api搭建`、分支 `codex/t27-procurement-oauth-position-fix` 交付干净候选 `1114336908305a0ed0ea4211cdc5e2ac9aaefb7f`；根总控已将其合入 `main@5294e5cd12ed799a75fecf3b41e43518cb3a75b1`。合并后最小直接门禁全部通过，正在推送并进入 0600 证据、预检和蓝绿发布。设计任务 `01a01875-7991-72a3-9bd6-5a0af430b61e` 只交付信息架构和统计合同，不另行修改业务代码。
 - 根因证据：`AccountProfitabilityService.UpdateProcurementConfig` 读取 `cost_pending` 活动版本时，把允许为 `NULL` 的成本/额度扫描到非空 `float64`，数据库驱动错误被前端归一化成 `internal error`；`GetSelfPurchasedReport` 当前只按采购投影/台账识别账号，未限制 `accounts.type='oauth'`；`AccountProfitabilityView.vue` 当前把自购面板渲染在财务摘要卡片之前。
 - 目标：1) `cost_pending -> active` 重新录入采购成本时事务成功、幂等与审计保持不变；2) 自购报告 SQL、历史投影兼容分支和结算入口只纳入 `oauth` 且已有采购台账/投影的账号；3) 页面新增一级“经营结果 · USD / 自购专题 · CNY”切换，USD 视图保持 T16 原生五项摘要、分组和账号表，CNY 视图独立显示七项自购摘要与完整长表，两种币种不相加；4) self-purchased endpoint 支持 `today|24h|7d|31d`，与 USD 使用同一北京时间窗口，保留现有显式日期参数兼容；5) 两视图按需加载、刷新与错误态隔离，390px 无整页横向溢出。
 - 非目标：不修改用户扣费、渠道 USD 经营口径、采购成本公式、账号调度、账号类型数据、历史 usage_logs 或生产数据；不新增迁移，不使用 GitHub Actions。
 - 最小验证：后端 service/sqlmock 覆盖 `cost_pending` 重录、非 oauth 排除、结算过滤与四档北京时间范围；handler/API 合同；前端 self-purchased API、AccountMonitorView、AccountProfitabilityView 的双视图/按需加载/刷新/错误隔离/390px 回归；必要 typecheck、production build、Go build、gofmt 与 diff-check。无迁移、无生产数据写入，预期 `downtime_required=false`。
+- 范围收敛：用户明确不为“切到 CNY、回 USD、改范围、再回 CNY”增加额外复杂竞态状态机；当前实现的按需加载与 `loadedRange` 基本保护满足本轮合同，不继续扩大设计。
 - 发布顺序：T27 新候选达到 `READY_FOR_ROOT_REVIEW` 后先刷新最新 main，再由根总控审查、合并、最小门禁、推送、0600 证据、预检、蓝绿发布和线上专项验收；成功后归档 T27 和设计任务，不另立并行实现包。
 
 ### T26 用户错误中文投影与 CodexRadar 原生站长推荐接入

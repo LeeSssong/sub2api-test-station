@@ -213,6 +213,10 @@ func ProvideCodexRadarInsightsHandler(codexRadarInsightsService *service.CodexRa
 	return NewCodexRadarInsightsHandler(codexRadarInsightsService)
 }
 
+func ProvideCodexRadarCommunityHandler(codexRadarCommunityService *service.CodexRadarCommunityService) *CodexRadarCommunityHandler {
+	return NewCodexRadarCommunityHandler(codexRadarCommunityService)
+}
+
 // ProvideAdminSettingHandler creates admin.SettingHandler with notification template APIs.
 func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService) *admin.SettingHandler {
 	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, userAttributeService)
@@ -234,6 +238,7 @@ func ProvideHandlers(
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
 	monitorV2Handler *MonitorV2Handler,
 	codexRadarInsightsHandler *CodexRadarInsightsHandler,
+	codexRadarCommunityHandler *CodexRadarCommunityHandler,
 	channelMonitorV2Handler *ChannelMonitorV2Handler,
 	adminHandlers *AdminHandlers,
 	gatewayHandler *GatewayHandler,
@@ -251,29 +256,30 @@ func ProvideHandlers(
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
 	return &Handlers{
-		Auth:             authHandler,
-		User:             userHandler,
-		APIKey:           apiKeyHandler,
-		Usage:            usageHandler,
-		Redeem:           redeemHandler,
-		Subscription:     subscriptionHandler,
-		Announcement:     announcementHandler,
-		ChannelMonitor:   channelMonitorUserHandler,
-		MonitorV2:        monitorV2Handler,
-		CodexRadar:       codexRadarInsightsHandler,
-		ChannelMonitorV2: channelMonitorV2Handler,
-		Admin:            adminHandlers,
-		Gateway:          gatewayHandler,
-		OpenAIGateway:    openaiGatewayHandler,
-		Setting:          settingHandler,
-		Totp:             totpHandler,
-		Passkey:          passkeyHandler,
-		Payment:          paymentHandler,
-		PaymentWebhook:   paymentWebhookHandler,
-		AvailableChannel: availableChannelHandler,
-		ModelPlaza:       modelPlazaHandler,
-		AsyncImage:       asyncImageHandler,
-		BatchImage:       batchImageHandler,
+		Auth:                authHandler,
+		User:                userHandler,
+		APIKey:              apiKeyHandler,
+		Usage:               usageHandler,
+		Redeem:              redeemHandler,
+		Subscription:        subscriptionHandler,
+		Announcement:        announcementHandler,
+		ChannelMonitor:      channelMonitorUserHandler,
+		MonitorV2:           monitorV2Handler,
+		CodexRadar:          codexRadarInsightsHandler,
+		CodexRadarCommunity: codexRadarCommunityHandler,
+		ChannelMonitorV2:    channelMonitorV2Handler,
+		Admin:               adminHandlers,
+		Gateway:             gatewayHandler,
+		OpenAIGateway:       openaiGatewayHandler,
+		Setting:             settingHandler,
+		Totp:                totpHandler,
+		Passkey:             passkeyHandler,
+		Payment:             paymentHandler,
+		PaymentWebhook:      paymentWebhookHandler,
+		AvailableChannel:    availableChannelHandler,
+		ModelPlaza:          modelPlazaHandler,
+		AsyncImage:          asyncImageHandler,
+		BatchImage:          batchImageHandler,
 	}
 }
 
@@ -290,6 +296,7 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorUserHandler,
 	ProvideMonitorV2Handler,
 	ProvideCodexRadarInsightsHandler,
+	ProvideCodexRadarCommunityHandler,
 	NewChannelMonitorV2Handler,
 	ProvideGatewayHandler,
 	ProvideOpenAIGatewayHandler,

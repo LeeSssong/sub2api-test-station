@@ -47,29 +47,30 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	Auth             *AuthHandler
-	User             *UserHandler
-	APIKey           *APIKeyHandler
-	Usage            *UsageHandler
-	Redeem           *RedeemHandler
-	Subscription     *SubscriptionHandler
-	Announcement     *AnnouncementHandler
-	ChannelMonitor   *ChannelMonitorUserHandler
-	MonitorV2        *MonitorV2Handler
-	CodexRadar       *CodexRadarInsightsHandler
-	ChannelMonitorV2 *ChannelMonitorV2Handler
-	Admin            *AdminHandlers
-	Gateway          *GatewayHandler
-	OpenAIGateway    *OpenAIGatewayHandler
-	Setting          *SettingHandler
-	Totp             *TotpHandler
-	Passkey          *PasskeyHandler
-	Payment          *PaymentHandler
-	PaymentWebhook   *PaymentWebhookHandler
-	AvailableChannel *AvailableChannelHandler
-	ModelPlaza       *ModelPlazaHandler
-	AsyncImage       *AsyncImageHandler
-	BatchImage       *BatchImageHandler
+	Auth                *AuthHandler
+	User                *UserHandler
+	APIKey              *APIKeyHandler
+	Usage               *UsageHandler
+	Redeem              *RedeemHandler
+	Subscription        *SubscriptionHandler
+	Announcement        *AnnouncementHandler
+	ChannelMonitor      *ChannelMonitorUserHandler
+	MonitorV2           *MonitorV2Handler
+	CodexRadar          *CodexRadarInsightsHandler
+	CodexRadarCommunity *CodexRadarCommunityHandler
+	ChannelMonitorV2    *ChannelMonitorV2Handler
+	Admin               *AdminHandlers
+	Gateway             *GatewayHandler
+	OpenAIGateway       *OpenAIGatewayHandler
+	Setting             *SettingHandler
+	Totp                *TotpHandler
+	Passkey             *PasskeyHandler
+	Payment             *PaymentHandler
+	PaymentWebhook      *PaymentWebhookHandler
+	AvailableChannel    *AvailableChannelHandler
+	ModelPlaza          *ModelPlazaHandler
+	AsyncImage          *AsyncImageHandler
+	BatchImage          *BatchImageHandler
 }
 
 // BuildInfo contains build-time information

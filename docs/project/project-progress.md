@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T28 评分方向、采购成本事实源与保存链路修复登记（2026-08-19）：** 状态：进行中（`DESIGNING`）。用户要求评分/强弱从左到右由强到弱、采购成本与账号监控共用原生字段/台账、修复保存 `internal error` 并验证成功反馈与 reload 持久化。已创建独立用户可见顶层任务（客户端任务 ID `client-new-thread:bf40d41b-e681-43ea-b234-687defdfc947`，GPT-5.6 Sol / medium），由该任务先完整阅读约束/队列/进度、完成 brainstorming、正式规格与计划，再进入实现；根总控不直接修改业务代码。非目标为评分算法、盈利口径、其他卡片样式、生产数据和 GitHub Actions；预期无迁移、`downtime_required=false`。
+
 **T27 自购账号保存、口径与双视图经营页重设计（2026-08-19）：** 状态：已完成（`DONE`）。T26/T26-R1 已完成生产收口；“定位无法保持问题”的 `cost_pending` NULL 扫描修复已并入 T27。用户批准的 A 方案保持一级“经营结果 · USD / 自购专题 · CNY”切换，CNY 只统计 `accounts.type='oauth'` 且存在采购台账/投影的自购账号，两种币种分开展示；用户同时明确不追加“CNY -> USD -> 改范围 -> 再回 CNY”的复杂回切竞态设计。候选已合入并推送根 `main@3bc16ee2682e6e978f73a71099c010a8353f2064`、tree `d7261631300e725c5f958b5406bd3781e006cc8e`；Go service/handler、前端 23/23、typecheck、production build、Go build、gofmt 与 diff-check 全部通过。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-19-main-3bc16ee26-t27-oauth-dual-view-v1.json`，宿主记录 `/var/lib/sub2api/release-records/20260819T071706Z-production-4050553.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `blue`；公网健康三项均 200。线上登录态确认默认 USD、切换 CNY 后 7 项摘要与 3 个 OAuth 自购账号长表，未出现 API Key 账号；480px 窄视口 `scrollWidth=clientWidth=480` 无整页横向溢出。无迁移、无生产数据写入；账号成本保存回归采用候选直接测试，未对生产台账执行写入。
 
 

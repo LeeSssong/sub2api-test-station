@@ -48,14 +48,14 @@ Branch: `codex/t34-native-probe-monitor-v2`
 ## Refresh Verification
 
 - Pre-refresh candidate: `2e4ac36bc118b27c4c40a554284e09cfd90e207d`; branch and worktree were clean.
-- Final refresh baseline/target: `main@32700c32da1ad8ee472284b79224b546d4928010`.
-- Final refresh merge: `72a518edf9da512139d7dc53d8fe4ebad27df05b`, parents `a486a3388180206145a15161fb2dae93ad175c3d` and `32700c32da1ad8ee472284b79224b546d4928010`.
-- Merge completed without conflicts. Relative to the prior `101357776e1af9dbf83df282afd96cdb284ffcf4` target, final main added only the T33 cleanup entries already present in the queue/progress documents; no task-authored edit was made to either global ledger.
-- Backend refresh test passed: `go test ./internal/service ./internal/repository ./internal/handler ./cmd/server -run 'TestMonitorV2|TestAccountMonitor' -count=1`.
-- Frontend refresh test passed: `pnpm vitest run src/features/monitor-v2/__tests__` (8 files, 35 tests).
+- Final refresh baseline/target: `main@9d2fed6ebae4163fca546cc54f31a1018ceeb488`.
+- Final refresh merge: `dc9150e8ad7107aec05c78c3825e06bdf6c6e901`, parents `4e6780378e72441517924afce9170d95c74989b3` and `9d2fed6ebae4163fca546cc54f31a1018ceeb488`.
+- Merge completed without conflicts. Relative to the prior `f96297c631548c56d89da3b7162d9007dd2c7a36` target, latest main added only the T35 production-close progress entry; no task-authored edit was made to the global ledger.
+- Backend refresh test passed: `go test ./internal/service ./internal/repository ./internal/handler ./cmd/server -run 'TestMonitorV2|TestAccountMonitor' -count=1`; `go build ./cmd/server` passed.
+- Frontend refresh test passed: `pnpm vitest run src/features/monitor-v2/__tests__` (8 files, 36 tests).
 - `pnpm typecheck` and `pnpm build` passed after refresh.
-- Source guard and both `git diff --check 32700c32da1ad8ee472284b79224b546d4928010 HEAD` / working-tree `git diff --check` passed.
-- Relative to target main, the candidate contains only the approved T34 design/plan/report/handoff, native Account Monitor projection, Monitor V2 v7 service/handler/wiring, and Monitor V2 card/API/type/locale/test paths. No procurement hotfix, T33/T35 business code, migration, configuration, production, or GitHub Actions path is present.
+- Source guard and both `git diff --check 9d2fed6ebae4163fca546cc54f31a1018ceeb488 HEAD` / working-tree `git diff --check` passed.
+- Relative to target main, the candidate contains only the approved T34 design/plan/report/handoff, native Account Monitor projection, Monitor V2 v7 service/handler/wiring, and Monitor V2 card/API/type/locale/test paths. T35 code remains in the main baseline and is not part of the T34 delta. No migration, configuration, production, or GitHub Actions path is present.
 - Migration change: none. Configuration change: none. Expected `downtime_required=false`; root release preflight remains authoritative.
 - Rollback: before integration, retain target main unchanged and discard this candidate; after a root-authorized integration, revert the T34 integration commit and redeploy the prior blue-green source/image.
 

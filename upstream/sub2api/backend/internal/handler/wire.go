@@ -209,6 +209,10 @@ func ProvideMonitorV2Handler(monitorV2Service *service.MonitorV2Service) *Monito
 	return NewMonitorV2Handler(monitorV2Service)
 }
 
+func ProvideCodexRadarInsightsHandler(codexRadarInsightsService *service.CodexRadarInsightsService) *CodexRadarInsightsHandler {
+	return NewCodexRadarInsightsHandler(codexRadarInsightsService)
+}
+
 // ProvideAdminSettingHandler creates admin.SettingHandler with notification template APIs.
 func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService) *admin.SettingHandler {
 	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, userAttributeService)
@@ -229,6 +233,7 @@ func ProvideHandlers(
 	announcementHandler *AnnouncementHandler,
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
 	monitorV2Handler *MonitorV2Handler,
+	codexRadarInsightsHandler *CodexRadarInsightsHandler,
 	channelMonitorV2Handler *ChannelMonitorV2Handler,
 	adminHandlers *AdminHandlers,
 	gatewayHandler *GatewayHandler,
@@ -255,6 +260,7 @@ func ProvideHandlers(
 		Announcement:     announcementHandler,
 		ChannelMonitor:   channelMonitorUserHandler,
 		MonitorV2:        monitorV2Handler,
+		CodexRadar:       codexRadarInsightsHandler,
 		ChannelMonitorV2: channelMonitorV2Handler,
 		Admin:            adminHandlers,
 		Gateway:          gatewayHandler,
@@ -283,6 +289,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
 	ProvideMonitorV2Handler,
+	ProvideCodexRadarInsightsHandler,
 	NewChannelMonitorV2Handler,
 	ProvideGatewayHandler,
 	ProvideOpenAIGatewayHandler,

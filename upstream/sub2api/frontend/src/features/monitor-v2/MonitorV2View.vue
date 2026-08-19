@@ -79,6 +79,8 @@
         </p>
       </section>
 
+      <CodexRadarRecommendations />
+
     </section>
   </AppLayout>
 </template>
@@ -88,6 +90,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { getMonitorV2Snapshot } from './api'
+import CodexRadarRecommendations from './CodexRadarRecommendations.vue'
 import MonitorV2GroupCard from './MonitorV2GroupCard.vue'
 import type { MonitorV2Snapshot, MonitorV2Window } from './types'
 

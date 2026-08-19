@@ -179,6 +179,8 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 	if !ok {
 		return false
 	}
+	projected := projectNativeUserErrorForContext(c, http.StatusBadGateway, errType, "", message)
+	errType, message = projected.Type, projected.Message
 
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",

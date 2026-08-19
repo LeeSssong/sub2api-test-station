@@ -1920,11 +1920,12 @@ func resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel 
 
 // anthropicErrorResponse writes an error in Anthropic Messages API format.
 func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int, errType, message string) {
+	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{
-			"type":    errType,
-			"message": message,
+			"type":    projected.Type,
+			"message": projected.Message,
 		},
 	})
 }
@@ -1933,13 +1934,14 @@ func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int
 // using Anthropic SSE error format.
 func (h *OpenAIGatewayHandler) anthropicStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
+		projected := projectNativeUserErrorForContext(c, status, errType, "", message)
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
 			errPayload, _ := json.Marshal(gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    errType,
-					"message": message,
+					"type":    projected.Type,
+					"message": projected.Message,
 				},
 			})
 			fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", errPayload) //nolint:errcheck
@@ -3337,6 +3339,8 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 		} else {
 			service.MarkOpsStreamError(c, errType, message, status)
 		}
+		projected := projectNativeUserErrorForContext(c, status, errType, code, message)
+		errType, code, message = projected.Type, projected.Code, projected.Message
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
 		// 通用 `event: error` 帧不被识别为终止事件，会导致
@@ -3518,10 +3522,11 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 			return
 		}
 	}
+	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
 	c.JSON(status, gin.H{
 		"error": gin.H{
-			"type":    errType,
-			"message": message,
+			"type":    projected.Type,
+			"message": projected.Message,
 		},
 	})
 }

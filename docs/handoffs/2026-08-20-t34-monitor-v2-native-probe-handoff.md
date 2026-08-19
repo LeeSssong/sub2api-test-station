@@ -27,8 +27,8 @@ Please review this candidate and issue `AUTHORIZE_MERGE_TO_MAIN` only after root
 
 ## Refresh Handoff
 
-- Refreshed clean candidate `2e4ac36bc118b27c4c40a554284e09cfd90e207d` from exact target `main@101357776e1af9dbf83df282afd96cdb284ffcf4`.
-- Merge commit: `9dc618bc1d25350729b01966736b2a337b2288b9`; parents are the candidate and exact target above. Merge completed without conflicts.
+- Final refresh baseline/target: `main@32700c32da1ad8ee472284b79224b546d4928010`.
+- Final refresh merge: `72a518edf9da512139d7dc53d8fe4ebad27df05b`; parents are `a486a3388180206145a15161fb2dae93ad175c3d` and exact target `32700c32da1ad8ee472284b79224b546d4928010`. Merge completed without conflicts.
 - Revalidation passed backend targeted tests, Monitor V2 8 files/35 tests, typecheck, production build, source guard, and diff-check.
 - Target-relative audit shows only approved T34 files and behavior. Migration/configuration delta: none. Expected `downtime_required=false`.
 - Rollback is to keep/reinstate target main before integration, or revert the eventual T34 integration commit and restore the prior blue-green release after integration.

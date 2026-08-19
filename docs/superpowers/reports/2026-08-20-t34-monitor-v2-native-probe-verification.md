@@ -42,13 +42,13 @@ Branch: `codex/t34-native-probe-monitor-v2`
 ## Refresh Verification
 
 - Pre-refresh candidate: `2e4ac36bc118b27c4c40a554284e09cfd90e207d`; branch and worktree were clean.
-- Exact refresh target: `main@101357776e1af9dbf83df282afd96cdb284ffcf4`.
-- Refresh merge: `9dc618bc1d25350729b01966736b2a337b2288b9`, parents `2e4ac36bc118b27c4c40a554284e09cfd90e207d` and `101357776e1af9dbf83df282afd96cdb284ffcf4`.
-- Merge completed without conflicts. The only merge delta was the queue/progress content already present on target main; no task-authored edit was made to either global ledger.
+- Final refresh baseline/target: `main@32700c32da1ad8ee472284b79224b546d4928010`.
+- Final refresh merge: `72a518edf9da512139d7dc53d8fe4ebad27df05b`, parents `a486a3388180206145a15161fb2dae93ad175c3d` and `32700c32da1ad8ee472284b79224b546d4928010`.
+- Merge completed without conflicts. Relative to the prior `101357776e1af9dbf83df282afd96cdb284ffcf4` target, final main added only the T33 cleanup entries already present in the queue/progress documents; no task-authored edit was made to either global ledger.
 - Backend refresh test passed: `go test ./internal/service ./internal/repository ./internal/handler ./cmd/server -run 'TestMonitorV2|TestAccountMonitor' -count=1`.
 - Frontend refresh test passed: `pnpm vitest run src/features/monitor-v2/__tests__` (8 files, 35 tests).
 - `pnpm typecheck` and `pnpm build` passed after refresh.
-- Source guard and both `git diff --check 101357776e1af9dbf83df282afd96cdb284ffcf4 HEAD` / working-tree `git diff --check` passed.
+- Source guard and both `git diff --check 32700c32da1ad8ee472284b79224b546d4928010 HEAD` / working-tree `git diff --check` passed.
 - Relative to target main, the candidate contains only the approved T34 design/plan/report/handoff, native Account Monitor projection, Monitor V2 v7 service/handler/wiring, and Monitor V2 card/API/type/locale/test paths. No procurement hotfix, T33/T35 business code, migration, configuration, production, or GitHub Actions path is present.
 - Migration change: none. Configuration change: none. Expected `downtime_required=false`; root release preflight remains authoritative.
 - Rollback: before integration, retain target main unchanged and discard this candidate; after a root-authorized integration, revert the T34 integration commit and redeploy the prior blue-green source/image.

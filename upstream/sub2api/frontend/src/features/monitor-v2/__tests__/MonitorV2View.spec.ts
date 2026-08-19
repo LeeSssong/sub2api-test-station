@@ -28,15 +28,12 @@ const messages: Record<string, string> = {
   'monitorV2.status.unavailable': '服务不可用',
   'monitorV2.availability': '可用性：{value}%',
   'monitorV2.availabilityNoData': '暂无可用率数据',
-  'monitorV2.metric.ttft': 'TTFT P50',
-  'monitorV2.metric.ttftP95': 'TTFT P95',
+  'monitorV2.metric.ttft': '首字速度：',
   'monitorV2.metric.availability': '可用性：',
   'monitorV2.metric.averageLatency': '平均耗时：',
   'monitorV2.metric.samples': '基于 {count} 次调用',
   'monitorV2.metric.noSamples': '暂无调用样本',
   'monitorV2.metric.insufficient_data': '样本不足',
-  'monitorV2.metric.not_provided': '未提供',
-  'monitorV2.baseRate': '基础倍率',
   'monitorV2.empty.title': '暂无可见分组',
   'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
   'monitorV2.notes.metrics': '指标按所选时间范围汇总，样本不足时不显示推测值。',
@@ -158,7 +155,7 @@ describe('MonitorV2View', () => {
     expect(wrapper.text()).toContain('OpenAI 组')
     expect(wrapper.text()).toContain('可用性：100%')
     expect(wrapper.text()).toContain('0.2×')
-    expect(wrapper.text()).toContain('420 ms')
+    expect(wrapper.text()).toContain('首字速度：420 ms')
     expect(wrapper.text()).toContain('平均耗时：10 s')
     expect(wrapper.text()).toContain('运行中')
     expect(wrapper.text()).toContain('服务不可用')

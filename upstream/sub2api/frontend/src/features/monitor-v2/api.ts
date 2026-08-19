@@ -23,7 +23,6 @@ const REFRESH_INTERVALS = new Set<MonitorV2RefreshIntervalSeconds>([0, 30, 60, 3
 const METRIC_STATES = new Set<MonitorV2MetricState>([
   'available',
   'insufficient_data',
-  'not_provided',
 ])
 const GROUP_STATUSES = new Set<MonitorV2GroupStatus>([
   'operational',
@@ -100,9 +99,6 @@ function metric(
   }
   if (state !== 'available' && metricValue !== null) {
     throw new MonitorV2ContractError(`${path}.value must be null when unavailable`)
-  }
-  if (state === 'not_provided' && sampleCount !== 0) {
-    throw new MonitorV2ContractError(`${path}.sample_count must be zero when not provided`)
   }
   return {
     state,

@@ -81,18 +81,12 @@ export default {
     },
     metric: {
       availability: 'Availability: ',
-      ttft: 'TTFT P50',
-      ttftP95: 'TTFT P95',
-      tps: 'Output TPS',
-      latency: 'Total latency P50',
-      latencyP95: 'Total latency P95',
+      ttft: 'First token speed: ',
       averageLatency: 'Average latency: ',
       samples: 'Based on {count} calls',
       noSamples: 'No call samples',
-      insufficient_data: 'Insufficient data',
-      not_provided: 'Not provided'
+      insufficient_data: 'Insufficient data'
     },
-    baseRate: 'Base multiplier',
     availability: 'Availability: {value}%',
     availabilityNoData: 'No availability data',
     peakRate: '{start}-{end} peak multiplier {rate}×',

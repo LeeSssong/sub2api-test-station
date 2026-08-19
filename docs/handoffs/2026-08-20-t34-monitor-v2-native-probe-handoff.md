@@ -14,6 +14,13 @@ Branch: `codex/t34-native-probe-monitor-v2`
 
 See `docs/superpowers/reports/2026-08-20-t34-monitor-v2-native-probe-verification.md` for commands and results. Backend targeted tests, frontend Monitor V2 tests, typecheck, build, and diff-check passed.
 
+## Correction Pass
+
+- TTFT now renders as `首字速度：` / `First token speed: `.
+- Metric states are strictly `available` or `insufficient_data`; `not_provided` and its locale/test fixtures are removed.
+- Unused legacy locale keys `ttftP95`, `tps`, `latency`, `latencyP95`, and `baseRate` are removed after consumer search.
+- Revalidation passed the Monitor V2 Vitest suite (8 files, 35 tests), `pnpm typecheck`, `pnpm build`, and `git diff --check`.
+
 ## Root Action
 
 Please review this candidate and issue `AUTHORIZE_MERGE_TO_MAIN` only after root-level review. This worktree has not been merged, pushed, deployed, or used for production verification.

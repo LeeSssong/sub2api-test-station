@@ -88,6 +88,10 @@ describe('Monitor V2 API contract', () => {
       ...validPayload,
       groups: [{ ...validPayload.groups[0], ttft: { ...metric, sample_count: 0 } }],
     })).toThrow('ttft.sample_count')
+    expect(() => validateMonitorV2Snapshot({
+      ...validPayload,
+      groups: [{ ...validPayload.groups[0], ttft: { state: 'not_provided', value: null, sample_count: 0 } }],
+    })).toThrow('ttft.state')
   })
 
   it('accepts configured refresh intervals', () => {

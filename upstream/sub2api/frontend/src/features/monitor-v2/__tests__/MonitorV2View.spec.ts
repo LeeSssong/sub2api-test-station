@@ -19,35 +19,29 @@ const messages: Record<string, string> = {
   'monitorV2.updatedAt': '更新于 {time}',
   'monitorV2.refresh': '刷新',
   'monitorV2.overall.operational': '全部服务正常',
-  'monitorV2.overall.degraded': '部分服务波动',
   'monitorV2.overall.unavailable': '服务不可用',
   'monitorV2.overall.noData': '等待监控数据',
   'monitorV2.window.24h': '24 小时',
   'monitorV2.window.7d': '7 天',
   'monitorV2.window.30d': '30 天',
   'monitorV2.status.operational': '运行中',
-  'monitorV2.status.degraded': '服务波动',
-  'monitorV2.status.unavailable': '不可用',
-  'monitorV2.status.unconfigured': '未配置监控',
-  'monitorV2.status.insufficient_data': '样本不足',
+  'monitorV2.status.unavailable': '服务不可用',
+  'monitorV2.flagship': '旗舰',
   'monitorV2.metric.ttft': 'TTFT P50',
   'monitorV2.metric.ttftP95': 'TTFT P95',
   'monitorV2.metric.tps': '输出 TPS',
   'monitorV2.metric.latency': '总延迟 P50',
   'monitorV2.metric.latencyP95': '总延迟 P95',
-  'monitorV2.metric.cache': '缓存命中率',
   'monitorV2.metric.samples': '基于 {count} 次调用',
   'monitorV2.metric.noSamples': '暂无调用样本',
   'monitorV2.metric.insufficient_data': '样本不足',
   'monitorV2.metric.not_provided': '未提供',
   'monitorV2.baseRate': '基础倍率',
-  'monitorV2.availability': '有效调用',
-  'monitorV2.callEvidence': '基于 {eligible} 次真实请求。',
   'monitorV2.empty.title': '暂无可见分组',
   'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
   'monitorV2.notes.metrics': '指标按所选时间范围汇总，样本不足时不显示推测值。',
   'monitorV2.notes.privacy': '普通用户仅展示公开分组，管理员展示全部启用分组；不包含账号、用户或请求内容。',
-  'monitorV2.timeline.noData': '该时段暂无有效调用',
+  'monitorV2.timeline.noData': '该时段暂无探测记录',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -70,7 +64,7 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '5',
+  contract_version: '6',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',
@@ -84,27 +78,18 @@ const snapshot: MonitorV2Snapshot = {
       peak_start: '',
       peak_end: '',
       peak_rate_multiplier: 1,
+      is_flagship: true,
       status: 'operational',
-      availability: {
-        state: 'available',
-        value: 99.31,
-        sample_count: 9910,
-        success_count: 9842,
-        eligible_count: 9910,
-      },
       ttft: { state: 'available', value: 420, sample_count: 9842 },
       ttft_p95: { state: 'available', value: 880, sample_count: 9842 },
       tps: { state: 'available', value: 46.5, sample_count: 220 },
       latency: { state: 'available', value: 1320, sample_count: 9842 },
       latency_p95: { state: 'available', value: 2400, sample_count: 9842 },
-      cache_hit: { state: 'available', value: 40, sample_count: 800 },
       timeline: [
         {
           bucket_start: '2026-07-29T06:00:00Z',
-          state: 'available',
-          value: 99.5,
-          success_count: 199,
-          eligible_count: 200,
+          status: 'operational',
+          latency_ms: 1320,
         },
       ],
     },
@@ -117,20 +102,13 @@ const snapshot: MonitorV2Snapshot = {
       peak_start: '',
       peak_end: '',
       peak_rate_multiplier: 1,
-      status: 'unconfigured',
-      availability: {
-        state: 'insufficient_data',
-        value: null,
-        sample_count: 0,
-        success_count: 0,
-        eligible_count: 0,
-      },
+      is_flagship: false,
+      status: 'unavailable',
       ttft: { state: 'insufficient_data', value: null, sample_count: 0 },
       ttft_p95: { state: 'insufficient_data', value: null, sample_count: 0 },
       tps: { state: 'not_provided', value: null, sample_count: 0 },
       latency: { state: 'insufficient_data', value: null, sample_count: 0 },
       latency_p95: { state: 'insufficient_data', value: null, sample_count: 0 },
-      cache_hit: { state: 'insufficient_data', value: null, sample_count: 0 },
       timeline: [],
     },
   ],
@@ -142,6 +120,7 @@ function mountView(initialSnapshot = snapshot) {
     global: {
       stubs: {
         AppLayout: { template: '<main><slot /></main>' },
+        CodexRadarRecommendations: true,
         Icon: { template: '<span aria-hidden="true" />' },
       },
     },
@@ -178,20 +157,17 @@ describe('MonitorV2View', () => {
     document.dispatchEvent(new Event('visibilitychange'))
   }
 
-  it('keeps the approved metrics while removing the circled explanatory content', () => {
+  it('renders compact binary health cards without percentage metrics', () => {
     const wrapper = mountView()
 
     expect(wrapper.text()).toContain('OpenAI 旗舰组')
     expect(wrapper.text()).toContain('0.2×')
-    expect(wrapper.text()).toContain('基于 9,910 次真实请求。')
     expect(wrapper.text()).toContain('420 ms')
-    expect(wrapper.text()).toContain('基于 9,842 次调用')
     expect(wrapper.text()).toContain('46.5 tok/s')
     expect(wrapper.text()).toContain('1.32 s')
-    expect(wrapper.text()).toContain('40%')
-    expect(wrapper.text()).toContain('未配置监控')
-    expect(wrapper.text()).toContain('样本不足')
-    expect(wrapper.text()).toContain('未提供')
+    expect(wrapper.get('[data-test="monitor-flagship"]').text()).toBe('旗舰')
+    expect(wrapper.text()).toContain('运行中')
+    expect(wrapper.text()).toContain('服务不可用')
     for (const forbidden of [
       '9,842 / 9,910',
       '个模型',
@@ -206,15 +182,17 @@ describe('MonitorV2View', () => {
       '指标按所选时间范围汇总',
       '普通用户仅展示公开分组',
       '状态：运行中',
+      '40%',
+      '99.31%',
+      '缓存命中率',
+      '有效调用',
+      '真实请求',
+      '服务波动',
+      '%',
     ]) {
       expect(wrapper.text()).not.toContain(forbidden)
     }
-    const multiplier = wrapper.get('[data-test="monitor-rate-multiplier"]')
-    expect(multiplier.classes()).toEqual(expect.arrayContaining([
-      'text-base',
-      'font-bold',
-      'bg-primary-50',
-    ]))
+    expect(wrapper.get('[data-test="monitor-rate-multiplier"]').text()).toContain('0.2×')
     const unconfiguredCard = wrapper.findAll('article')[1]
     expect(unconfiguredCard.text()).not.toMatch(/\b0 ms\b/)
   })

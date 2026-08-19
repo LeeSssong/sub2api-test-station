@@ -5,9 +5,8 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => ({
       'monitorV2.timeline.noData': '暂无探测记录',
-      'monitorV2.timeline.probeUnavailable': '探测完成（当前无可用模型）',
-      'monitorV2.timeline.success': '成功',
-      'monitorV2.timeline.failed': '失败',
+      'monitorV2.status.operational': '运行中',
+      'monitorV2.status.unavailable': '服务不可用',
     })[key] ?? key,
   }),
 }))
@@ -15,44 +14,35 @@ vi.mock('vue-i18n', () => ({
 import MonitorV2Timeline from '../MonitorV2Timeline.vue'
 
 describe('MonitorV2Timeline', () => {
-  it('renders successful probes with the fixed optimistic bar shape', () => {
+  it('renders operational probes with the fixed optimistic bar shape', () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [{
           bucket_start: '2026-07-30T08:00:00Z',
-          state: 'available',
-          value: 100,
-          success_count: 1,
-          eligible_count: 1,
+          status: 'operational',
           latency_ms: null,
         }],
       },
     })
 
-    const bar = wrapper.find('[role="img"] span[title*="成功"]')
+    const bar = wrapper.find('[role="img"] span[title*="运行中"]')
     expect(bar.exists()).toBe(true)
-    expect(bar.classes()).toContain('bg-teal-500')
-    expect(bar.attributes('style')).toContain('height: 75%')
+    expect(bar.classes()).toContain('bg-emerald-400')
+    expect(bar.classes()).toContain('h-6')
   })
 
-  it('uses the same optimistic bar shape for failed and empty buckets', () => {
+  it('uses the unavailable color for an unavailable service point', () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [
           {
             bucket_start: '2026-07-30T08:00:00Z',
-            state: 'available',
-            value: 0,
-            success_count: 0,
-            eligible_count: 1,
+            status: 'unavailable',
             latency_ms: 12_000,
           },
           {
             bucket_start: '2026-07-30T09:00:00Z',
-            state: 'insufficient_data',
-            value: null,
-            success_count: 0,
-            eligible_count: 0,
+            status: 'operational',
             latency_ms: null,
           },
         ],
@@ -61,10 +51,10 @@ describe('MonitorV2Timeline', () => {
 
     const bars = wrapper.findAll('[role="img"] span[title]')
     expect(bars).toHaveLength(2)
-    for (const bar of bars) {
-      expect(bar.classes()).toContain('bg-teal-500')
-      expect(bar.attributes('style')).toContain('height: 75%')
-    }
+    expect(bars[0].classes()).toContain('bg-red-400')
+    expect(bars[0].classes()).toContain('h-6')
+    expect(bars[0].attributes('title')).toContain('服务不可用')
+    expect(bars[0].attributes('title')).not.toContain('失败')
   })
 
   it('keeps dense timelines inside the card on narrow screens', () => {
@@ -72,10 +62,7 @@ describe('MonitorV2Timeline', () => {
       props: {
         points: Array.from({ length: 64 }, (_, index) => ({
           bucket_start: `2026-07-30T${String(index % 24).padStart(2, '0')}:00:00Z`,
-          state: 'available' as const,
-          value: 100,
-          success_count: 1,
-          eligible_count: 1,
+          status: 'operational' as const,
           latency_ms: null,
         })),
       },

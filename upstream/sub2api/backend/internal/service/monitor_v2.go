@@ -6,20 +6,21 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
 const (
-	MonitorV2ContractVersion = "5"
+	MonitorV2ContractVersion = "6"
 
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
 	MonitorV2Window30D MonitorV2Window = "30d"
 
-	MonitorV2StatusOperational      = "operational"
+	MonitorV2StatusOperational = "operational"
+	MonitorV2StatusUnavailable = "unavailable"
+	// Legacy constants remain for internal source compatibility. The v6
+	// snapshot path only returns operational or unavailable.
 	MonitorV2StatusDegraded         = "degraded"
-	MonitorV2StatusUnavailable      = "unavailable"
 	MonitorV2StatusUnconfigured     = "unconfigured"
 	MonitorV2StatusInsufficientData = "insufficient_data"
 
@@ -30,7 +31,6 @@ const (
 	monitorV2MaxGroups      = 100
 	monitorV2MaxTimeline    = 64
 	monitorV2MaxTextLength  = 256
-	monitorV2MetricWorkers  = 4
 	monitorV2MinimumSamples = 5
 )
 
@@ -43,33 +43,26 @@ const (
 	MonitorV2ScopeAdmin  MonitorV2Scope = "admin"
 )
 
-type MonitorV2CacheStats struct {
-	EvidenceAvailable bool
-	RequestCount      int64
-	HitCount          int64
+type MonitorV2PerformanceScope struct {
+	GroupID int64
+	Model   string
+}
+
+type MonitorV2PerformanceStats struct {
+	SampleCount  int64
+	TTFTP50MS    *int
+	TTFTP95MS    *int
+	LatencyP50MS *int
+	LatencyP95MS *int
+	TPS          *float64
 }
 
 type MonitorV2Repository interface {
-	GetCacheStats(
-		ctx context.Context,
-		groupIDs []int64,
-		start, end time.Time,
-	) (map[int64]MonitorV2CacheStats, error)
-}
-
-type MonitorV2ChannelReader interface {
-	ListAvailable(context.Context) ([]AvailableChannel, error)
+	GetPerformanceStats(context.Context, []MonitorV2PerformanceScope, time.Time, time.Time) (map[int64]MonitorV2PerformanceStats, error)
 }
 
 type MonitorV2ProbeReader interface {
 	ListUserView(context.Context) ([]*UserMonitorView, error)
-}
-
-type MonitorV2OpsReader interface {
-	GetDashboardOverview(context.Context, *OpsDashboardFilter) (*OpsDashboardOverview, error)
-	GetThroughputTrend(context.Context, *OpsDashboardFilter, int) (*OpsThroughputTrendResponse, error)
-	GetErrorTrend(context.Context, *OpsDashboardFilter, int) (*OpsErrorTrendResponse, error)
-	GetOpenAITokenStats(context.Context, *OpsOpenAITokenStatsFilter) (*OpsOpenAITokenStatsResponse, error)
 }
 
 type MonitorV2SettingsReader interface {
@@ -82,19 +75,10 @@ type MonitorV2Metric struct {
 	SampleCount int64
 }
 
-type MonitorV2Availability struct {
-	MonitorV2Metric
-	SuccessCount  int64
-	EligibleCount int64
-}
-
 type MonitorV2TimelinePoint struct {
-	BucketStart   time.Time
-	State         string
-	Value         *float64
-	SuccessCount  int64
-	EligibleCount int64
-	LatencyMS     *int
+	BucketStart time.Time
+	Status      string
+	LatencyMS   *int
 }
 
 type MonitorV2Group struct {
@@ -106,14 +90,13 @@ type MonitorV2Group struct {
 	PeakStart          string
 	PeakEnd            string
 	PeakRateMultiplier float64
+	IsFlagship         bool
 	Status             string
-	Availability       MonitorV2Availability
 	TTFT               MonitorV2Metric
 	TTFTP95            MonitorV2Metric
 	TPS                MonitorV2Metric
 	Latency            MonitorV2Metric
 	LatencyP95         MonitorV2Metric
-	CacheHit           MonitorV2Metric
 	Timeline           []MonitorV2TimelinePoint
 }
 
@@ -128,16 +111,13 @@ type MonitorV2Snapshot struct {
 type MonitorV2Service struct {
 	groupRepo GroupRepository
 	probes    MonitorV2ProbeReader
-	ops       MonitorV2OpsReader
 	repo      MonitorV2Repository
 	settings  MonitorV2SettingsReader
 }
 
 func NewMonitorV2Service(
 	groupRepo GroupRepository,
-	_ MonitorV2ChannelReader,
 	probes MonitorV2ProbeReader,
-	ops MonitorV2OpsReader,
 	repo MonitorV2Repository,
 	settings ...MonitorV2SettingsReader,
 ) *MonitorV2Service {
@@ -148,7 +128,6 @@ func NewMonitorV2Service(
 	return &MonitorV2Service{
 		groupRepo: groupRepo,
 		probes:    probes,
-		ops:       ops,
 		repo:      repo,
 		settings:  settingsReader,
 	}
@@ -160,7 +139,7 @@ func (s *MonitorV2Service) Snapshot(
 	now time.Time,
 	scopes ...MonitorV2Scope,
 ) (*MonitorV2Snapshot, error) {
-	start, bucketSeconds, err := monitorV2WindowBounds(window, now)
+	start, _, err := monitorV2WindowBounds(window, now)
 	if err != nil {
 		return nil, err
 	}
@@ -199,40 +178,28 @@ func (s *MonitorV2Service) Snapshot(
 		}
 		visibleGroups = configuredGroups
 	}
-	groupIDs := make([]int64, 0, len(visibleGroups))
+	sort.SliceStable(visibleGroups, func(i, j int) bool {
+		return monitorV2IsFlagshipGroup(visibleGroups[i].Name) && !monitorV2IsFlagshipGroup(visibleGroups[j].Name)
+	})
+	performanceScopes := make([]MonitorV2PerformanceScope, 0, len(visibleGroups))
 	for _, group := range visibleGroups {
-		groupIDs = append(groupIDs, group.ID)
+		performanceScopes = append(performanceScopes, MonitorV2PerformanceScope{
+			GroupID: group.ID,
+			Model:   monitorV2PrimaryModel(probesByGroup[group.ID]),
+		})
 	}
-	cacheStats, _ := s.listCacheStats(ctx, groupIDs, start, now)
+	performanceStats, _ := s.listPerformanceStats(ctx, performanceScopes, start, now)
 
-	cards := make([]MonitorV2Group, len(visibleGroups))
-	sem := make(chan struct{}, monitorV2MetricWorkers)
-	var wg sync.WaitGroup
-	for i := range visibleGroups {
-		i := i
-		group := visibleGroups[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				return
-			}
-			cards[i] = s.buildGroup(
-				ctx,
-				group,
-				probesByGroup[group.ID],
-				cacheStats[group.ID],
-				window,
-				start,
-				now,
-				bucketSeconds,
-			)
-		}()
+	cards := make([]MonitorV2Group, 0, len(visibleGroups))
+	for _, group := range visibleGroups {
+		cards = append(cards, s.buildGroup(
+			group,
+			probesByGroup[group.ID],
+			performanceStats[group.ID],
+			start,
+			now,
+		))
 	}
-	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -282,27 +249,24 @@ func (s *MonitorV2Service) listProbes(ctx context.Context) ([]*UserMonitorView, 
 	return s.probes.ListUserView(ctx)
 }
 
-func (s *MonitorV2Service) listCacheStats(
+func (s *MonitorV2Service) listPerformanceStats(
 	ctx context.Context,
-	groupIDs []int64,
+	scopes []MonitorV2PerformanceScope,
 	start, end time.Time,
-) (map[int64]MonitorV2CacheStats, error) {
+) (map[int64]MonitorV2PerformanceStats, error) {
 	if s.repo == nil {
-		return map[int64]MonitorV2CacheStats{}, nil
+		return map[int64]MonitorV2PerformanceStats{}, nil
 	}
-	return s.repo.GetCacheStats(ctx, groupIDs, start, end)
+	return s.repo.GetPerformanceStats(ctx, scopes, start, end)
 }
 
 func (s *MonitorV2Service) buildGroup(
-	ctx context.Context,
 	group Group,
 	probes []*UserMonitorView,
-	cache MonitorV2CacheStats,
-	window MonitorV2Window,
+	stats MonitorV2PerformanceStats,
 	start, end time.Time,
-	bucketSeconds int,
 ) MonitorV2Group {
-	card := MonitorV2Group{
+	return MonitorV2Group{
 		ID:                 group.ID,
 		Name:               group.Name,
 		Platform:           group.Platform,
@@ -311,50 +275,15 @@ func (s *MonitorV2Service) buildGroup(
 		PeakStart:          group.PeakStart,
 		PeakEnd:            group.PeakEnd,
 		PeakRateMultiplier: group.PeakRateMultiplier,
+		IsFlagship:         monitorV2IsFlagshipGroup(group.Name),
 		Status:             monitorV2GroupStatus(probes, end),
-		Availability:       monitorV2UnavailableAvailability(),
-		TTFT:               monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
-		TTFTP95:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
-		TPS:                monitorV2UnavailableMetric(MonitorV2MetricNotProvided),
-		Latency:            monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
-		LatencyP95:         monitorV2UnavailableMetric(MonitorV2MetricInsufficientData),
-		CacheHit:           monitorV2CacheMetric(cache),
+		TTFT:               monitorV2PerformanceMetric(stats.TTFTP50MS, stats.SampleCount),
+		TTFTP95:            monitorV2PerformanceMetric(stats.TTFTP95MS, stats.SampleCount),
+		TPS:                monitorV2PerformanceFloatMetric(stats.TPS, stats.SampleCount),
+		Latency:            monitorV2PerformanceMetric(stats.LatencyP50MS, stats.SampleCount),
+		LatencyP95:         monitorV2PerformanceMetric(stats.LatencyP95MS, stats.SampleCount),
 		Timeline:           monitorV2ProbeTimeline(probes, start, end),
 	}
-	if s.ops == nil {
-		return card
-	}
-
-	groupID := group.ID
-	filter := &OpsDashboardFilter{
-		StartTime: start,
-		EndTime:   end,
-		Platform:  group.Platform,
-		GroupID:   &groupID,
-		QueryMode: OpsQueryModeRaw,
-	}
-	if overview, err := s.ops.GetDashboardOverview(ctx, filter); err == nil && overview != nil {
-		card.Availability = monitorV2AvailabilityFromOverview(overview)
-		card.TTFT = monitorV2PercentileMetric(overview.TTFT.P50, overview.TTFT.SampleCount)
-		card.TTFTP95 = monitorV2PercentileMetric(overview.TTFT.P95, overview.TTFT.SampleCount)
-		card.Latency = monitorV2PercentileMetric(overview.Duration.P50, overview.Duration.SampleCount)
-		card.LatencyP95 = monitorV2PercentileMetric(overview.Duration.P95, overview.Duration.SampleCount)
-	}
-
-	if strings.EqualFold(group.Platform, PlatformOpenAI) {
-		tokenStats, err := s.ops.GetOpenAITokenStats(ctx, &OpsOpenAITokenStatsFilter{
-			TimeRange: string(window),
-			StartTime: start,
-			EndTime:   end,
-			Platform:  group.Platform,
-			GroupID:   &groupID,
-			TopN:      100,
-		})
-		if err == nil {
-			card.TPS = monitorV2TPSMetric(tokenStats)
-		}
-	}
-	return card
 }
 
 func monitorV2ProbeTimeline(probes []*UserMonitorView, start, end time.Time) []MonitorV2TimelinePoint {
@@ -373,28 +302,9 @@ func monitorV2ProbeTimeline(probes []*UserMonitorView, start, end time.Time) []M
 				latency = item.PingLatencyMs
 			}
 			point := MonitorV2TimelinePoint{
-				BucketStart: checkedAt, State: MonitorV2MetricAvailable,
-				EligibleCount: 1, LatencyMS: latency,
-			}
-			switch strings.ToLower(strings.TrimSpace(item.Status)) {
-			case "operational", "degraded", "success", "ok":
-				value := float64(100)
-				point.Value = &value
-				point.SuccessCount = 1
-			case "unavailable":
-				// A probe that cannot reach the channel is still a completed
-				// probe for the channel monitor. Keep it green/successful, but
-				// leave latency empty so the UI can render a shorter bar.
-				value := float64(100)
-				point.Value = &value
-				point.SuccessCount = 1
-			case "failed", "error":
-				value := float64(0)
-				point.Value = &value
-			default:
-				point.State = MonitorV2MetricInsufficientData
-				point.EligibleCount = 0
-				point.LatencyMS = nil
+				BucketStart: checkedAt,
+				Status:      monitorV2TimelineStatus(item.Status),
+				LatencyMS:   latency,
 			}
 			points = append(points, point)
 		}
@@ -404,6 +314,15 @@ func monitorV2ProbeTimeline(probes []*UserMonitorView, start, end time.Time) []M
 		points = points[len(points)-monitorV2MaxTimeline:]
 	}
 	return points
+}
+
+func monitorV2TimelineStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case MonitorStatusOperational, MonitorStatusDegraded, "success", "ok":
+		return MonitorV2StatusOperational
+	default:
+		return MonitorV2StatusUnavailable
+	}
 }
 
 func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, int, error) {
@@ -422,6 +341,50 @@ func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, in
 
 func monitorV2GroupKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func monitorV2IsFlagshipGroup(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	if strings.Contains(normalized, "旗舰") {
+		return true
+	}
+	parts := strings.FieldsFunc(normalized, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	})
+	for _, part := range parts {
+		if part == "pro" {
+			return true
+		}
+	}
+	return false
+}
+
+func monitorV2PrimaryModel(probes []*UserMonitorView) string {
+	type candidate struct {
+		model     string
+		checkedAt time.Time
+	}
+	candidates := make([]candidate, 0, len(probes))
+	for _, probe := range probes {
+		if probe == nil {
+			continue
+		}
+		model := strings.TrimSpace(probe.PrimaryModel)
+		if model == "" {
+			continue
+		}
+		candidates = append(candidates, candidate{model: model, checkedAt: probe.PrimaryCheckedAt.UTC()})
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].checkedAt.Equal(candidates[j].checkedAt) {
+			return candidates[i].model < candidates[j].model
+		}
+		return candidates[i].checkedAt.After(candidates[j].checkedAt)
+	})
+	return candidates[0].model
 }
 
 func monitorV2ProbesByGroup(groups []Group, views []*UserMonitorView) map[int64][]*UserMonitorView {
@@ -472,7 +435,7 @@ func monitorV2ProbeGroupID(
 
 func monitorV2GroupStatus(probes []*UserMonitorView, now time.Time) string {
 	if len(probes) == 0 {
-		return MonitorV2StatusUnconfigured
+		return MonitorV2StatusUnavailable
 	}
 	type observation struct {
 		status    string
@@ -512,24 +475,17 @@ func monitorV2GroupStatus(probes []*UserMonitorView, now time.Time) string {
 		}
 	}
 	if latestIndex == -1 {
-		return MonitorV2StatusInsufficientData
+		return MonitorV2StatusUnavailable
 	}
 
 	latest := observations[latestIndex]
 	switch latest.status {
-	case MonitorStatusOperational:
+	case MonitorStatusOperational, MonitorStatusDegraded:
 		return MonitorV2StatusOperational
-	case MonitorStatusDegraded:
-		return MonitorV2StatusDegraded
 	case MonitorStatusFailed, MonitorStatusError:
-		for _, candidate := range observations {
-			if candidate.checkedAt.Before(latest.checkedAt) && monitorV2ProbeStatusSuccessful(candidate.status) {
-				return MonitorV2StatusDegraded
-			}
-		}
 		return MonitorV2StatusUnavailable
 	default:
-		return MonitorV2StatusInsufficientData
+		return MonitorV2StatusUnavailable
 	}
 }
 
@@ -546,10 +502,6 @@ func monitorV2NormalizeProbeStatus(status string) string {
 	default:
 		return ""
 	}
-}
-
-func monitorV2ProbeStatusSuccessful(status string) bool {
-	return status == MonitorStatusOperational || status == MonitorStatusDegraded
 }
 
 func monitorV2ProbeStatusPriority(status string) int {
@@ -572,35 +524,7 @@ func monitorV2ProbeObservationFresh(intervalSeconds int, checkedAt, now time.Tim
 	return !checkedAt.Before(now.UTC().Add(-2 * time.Duration(intervalSeconds) * time.Second))
 }
 
-func monitorV2UnavailableMetric(state string) MonitorV2Metric {
-	return MonitorV2Metric{State: state}
-}
-
-func monitorV2UnavailableAvailability() MonitorV2Availability {
-	return MonitorV2Availability{
-		MonitorV2Metric: MonitorV2Metric{State: MonitorV2MetricInsufficientData},
-	}
-}
-
-func monitorV2AvailabilityFromOverview(overview *OpsDashboardOverview) MonitorV2Availability {
-	out := MonitorV2Availability{
-		SuccessCount:  overview.SuccessCount,
-		EligibleCount: overview.RequestCountSLA,
-		MonitorV2Metric: MonitorV2Metric{
-			State:       MonitorV2MetricInsufficientData,
-			SampleCount: overview.RequestCountSLA,
-		},
-	}
-	if overview.RequestCountSLA <= 0 {
-		return out
-	}
-	value := float64(overview.SuccessCount) / float64(overview.RequestCountSLA) * 100
-	out.State = MonitorV2MetricAvailable
-	out.Value = &value
-	return out
-}
-
-func monitorV2PercentileMetric(value *int, sampleCount int64) MonitorV2Metric {
+func monitorV2PerformanceMetric(value *int, sampleCount int64) MonitorV2Metric {
 	out := MonitorV2Metric{
 		State:       MonitorV2MetricInsufficientData,
 		SampleCount: sampleCount,
@@ -614,123 +538,15 @@ func monitorV2PercentileMetric(value *int, sampleCount int64) MonitorV2Metric {
 	return out
 }
 
-func monitorV2CacheMetric(stats MonitorV2CacheStats) MonitorV2Metric {
-	if !stats.EvidenceAvailable {
-		return MonitorV2Metric{State: MonitorV2MetricNotProvided}
-	}
+func monitorV2PerformanceFloatMetric(value *float64, sampleCount int64) MonitorV2Metric {
 	out := MonitorV2Metric{
 		State:       MonitorV2MetricInsufficientData,
-		SampleCount: stats.RequestCount,
+		SampleCount: sampleCount,
 	}
-	if stats.RequestCount < monitorV2MinimumSamples {
+	if value == nil || sampleCount < monitorV2MinimumSamples {
 		return out
 	}
-	value := float64(stats.HitCount) / float64(stats.RequestCount) * 100
 	out.State = MonitorV2MetricAvailable
-	out.Value = &value
+	out.Value = value
 	return out
-}
-
-func monitorV2TPSMetric(stats *OpsOpenAITokenStatsResponse) MonitorV2Metric {
-	out := MonitorV2Metric{State: MonitorV2MetricInsufficientData}
-	if stats == nil {
-		return out
-	}
-	var (
-		samples  int64
-		weighted float64
-	)
-	for _, item := range stats.Items {
-		if item == nil || item.AvgTokensPerSec == nil || item.TPSSampleCount <= 0 {
-			continue
-		}
-		samples += item.TPSSampleCount
-		weighted += *item.AvgTokensPerSec * float64(item.TPSSampleCount)
-	}
-	out.SampleCount = samples
-	if samples < monitorV2MinimumSamples {
-		return out
-	}
-	value := weighted / float64(samples)
-	out.State = MonitorV2MetricAvailable
-	out.Value = &value
-	return out
-}
-
-func monitorV2Timeline(
-	throughput *OpsThroughputTrendResponse,
-	errorsTrend *OpsErrorTrendResponse,
-) []MonitorV2TimelinePoint {
-	type counts struct {
-		requests int64
-		errors   int64
-	}
-	byBucket := make(map[time.Time]counts)
-	if throughput != nil {
-		for _, point := range throughput.Points {
-			if point == nil {
-				continue
-			}
-			key := point.BucketStart.UTC()
-			current := byBucket[key]
-			current.requests += point.RequestCount
-			byBucket[key] = current
-		}
-	}
-	if errorsTrend != nil {
-		for _, point := range errorsTrend.Points {
-			if point == nil {
-				continue
-			}
-			key := point.BucketStart.UTC()
-			current := byBucket[key]
-			current.errors += point.ErrorCountSLA
-			byBucket[key] = current
-		}
-	}
-	keys := make([]time.Time, 0, len(byBucket))
-	for key := range byBucket {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
-
-	out := make([]MonitorV2TimelinePoint, 0, len(keys))
-	for _, key := range keys {
-		count := byBucket[key]
-		eligible := count.requests
-		success := eligible - count.errors
-		if success < 0 {
-			success = 0
-		}
-		point := MonitorV2TimelinePoint{
-			BucketStart:   key,
-			State:         MonitorV2MetricInsufficientData,
-			SuccessCount:  success,
-			EligibleCount: eligible,
-		}
-		if eligible > 0 {
-			value := float64(success) / float64(eligible) * 100
-			point.State = MonitorV2MetricAvailable
-			point.Value = &value
-		}
-		out = append(out, point)
-	}
-	return out
-}
-
-func monitorV2TrimBoundaryBucket(
-	points []MonitorV2TimelinePoint,
-	start, end time.Time,
-	bucketSeconds int,
-) []MonitorV2TimelinePoint {
-	bucket := time.Duration(bucketSeconds) * time.Second
-	window := end.Sub(start)
-	if bucket <= 0 || window <= 0 {
-		return points
-	}
-	expected := int((window + bucket - 1) / bucket)
-	if len(points) != expected+1 {
-		return points
-	}
-	return append([]MonitorV2TimelinePoint(nil), points[len(points)-expected:]...)
 }

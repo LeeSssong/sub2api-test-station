@@ -61,7 +61,7 @@ export default {
 
   monitorV2: {
     title: 'Service Monitor',
-    description: 'View the health and call quality of groups visible to you',
+    description: 'View the operating status and performance of groups visible to you',
     loading: 'Loading group status',
     fallbackNotice: 'The enhanced monitor is unavailable. Showing the basic status page.',
     updatedAt: 'Updated {time}',
@@ -72,19 +72,12 @@ export default {
       '30d': '30 days'
     },
     overall: {
-      operational: 'All services operational',
-      degraded: 'Some services are degraded',
-      unavailable: 'Services unavailable',
-      noData: 'Waiting for monitoring data'
+      operational: 'Operational',
+      unavailable: 'Services unavailable'
     },
     status: {
       operational: 'Operational',
-      degraded: 'Degraded',
-      unavailable: 'Unavailable',
-      unconfigured: 'Monitor not configured',
-      insufficient_data: 'Insufficient data',
-      failed: 'Unavailable',
-      error: 'Monitor error'
+      unavailable: 'Unavailable'
     },
     metric: {
       ttft: 'TTFT P50',
@@ -92,21 +85,16 @@ export default {
       tps: 'Output TPS',
       latency: 'Total latency P50',
       latencyP95: 'Total latency P95',
-      cache: 'Cache hit rate',
       samples: 'Based on {count} calls',
       noSamples: 'No call samples',
       insufficient_data: 'Insufficient data',
       not_provided: 'Not provided'
     },
     baseRate: 'Base multiplier',
+    flagship: 'Flagship',
     peakRate: '{start}-{end} peak multiplier {rate}×',
-    availability: 'Eligible calls',
-    callEvidence: 'Based on {eligible} real requests.',
     timeline: {
-      noData: 'No probes in this period',
-      probeUnavailable: 'Probe completed (no model available)',
-      success: 'Probe succeeded',
-      failed: 'Probe failed'
+      noData: 'No probes in this period'
     },
     empty: {
       title: 'No visible groups',

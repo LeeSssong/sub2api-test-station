@@ -62,6 +62,13 @@ type accountMonitorRepoStub struct {
 	windowUntil                 time.Time
 	aggregateCalls              []time.Time
 	aggregateResults            []map[int64]AccountMonitorAggregate
+	monitorV2Scopes             []MonitorV2GroupAccountScope
+	monitorV2FreshSince         time.Time
+	monitorV2Start              time.Time
+	monitorV2End                time.Time
+	monitorV2BucketSize         time.Duration
+	monitorV2Projection         map[int64]MonitorV2NativeGroupProjection
+	monitorV2ProjectionErr      error
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -132,6 +139,23 @@ func (s *accountMonitorRepoStub) LoadSettings(context.Context) (AccountMonitorSe
 		return AccountMonitorSettings{}, sql.ErrNoRows
 	}
 	return s.settings, nil
+}
+
+func (s *accountMonitorRepoStub) ProjectMonitorV2Groups(
+	_ context.Context,
+	scopes []MonitorV2GroupAccountScope,
+	start, end, freshSince time.Time,
+	bucketSize time.Duration,
+) (map[int64]MonitorV2NativeGroupProjection, error) {
+	s.monitorV2Scopes = append([]MonitorV2GroupAccountScope(nil), scopes...)
+	s.monitorV2Start = start
+	s.monitorV2End = end
+	s.monitorV2FreshSince = freshSince
+	s.monitorV2BucketSize = bucketSize
+	if s.monitorV2ProjectionErr != nil {
+		return nil, s.monitorV2ProjectionErr
+	}
+	return s.monitorV2Projection, nil
 }
 
 func (s *accountMonitorRepoStub) ListGroups(context.Context) ([]AccountMonitorGroup, error) {
@@ -469,6 +493,66 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	}
 	if repo.listSchedulableCalled {
 		t.Fatal("account monitor must not use runtime scheduler eligibility")
+	}
+}
+
+func TestAccountMonitorProjectMonitorV2GroupsUsesSchedulableScopes(t *testing.T) {
+	future := time.Now().Add(time.Hour)
+	past := time.Now().Add(-time.Hour)
+	accounts := []Account{
+		{ID: 1, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7, 7, 8}},
+		{ID: 2, Status: StatusDisabled, Schedulable: true, GroupIDs: []int64{7}},
+		{ID: 3, Status: StatusActive, Schedulable: false, GroupIDs: []int64{7}},
+		{ID: 4, Status: StatusActive, Schedulable: true, AutoPauseOnExpired: true, ExpiresAt: &past, GroupIDs: []int64{7}},
+		{ID: 5, Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, GroupIDs: []int64{7}},
+		{ID: 6, Status: StatusActive, Schedulable: true, RateLimitResetAt: &future, GroupIDs: []int64{7}},
+		{ID: 7, Status: StatusActive, Schedulable: true, OverloadUntil: &future, GroupIDs: []int64{7}},
+		{ID: 8, Status: StatusActive, Schedulable: true, Type: AccountTypeAPIKey, Extra: map[string]any{"quota_limit": 1.0, "quota_used": 1.0}, GroupIDs: []int64{7}},
+		{ID: 10, Status: StatusActive, Schedulable: true, GroupIDs: []int64{8}},
+	}
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 60}}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: accounts}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	start := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	_, err := svc.ProjectMonitorV2Groups(context.Background(), []int64{7, 8}, start, end, time.Hour)
+
+	if err != nil {
+		t.Fatalf("ProjectMonitorV2Groups() error = %v", err)
+	}
+	wantScopes := []MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}, {GroupID: 8, AccountID: 1}, {GroupID: 8, AccountID: 10}}
+	if !reflect.DeepEqual(repo.monitorV2Scopes, wantScopes) {
+		t.Fatalf("native scopes = %#v, want %#v", repo.monitorV2Scopes, wantScopes)
+	}
+	if got, want := repo.monitorV2FreshSince, end.Add(-2*time.Minute); !got.Equal(want) {
+		t.Fatalf("freshSince = %s, want %s", got, want)
+	}
+	if !repo.monitorV2Start.Equal(start) || !repo.monitorV2End.Equal(end) || repo.monitorV2BucketSize != time.Hour {
+		t.Fatalf("native query bounds = start %s end %s bucket %s", repo.monitorV2Start, repo.monitorV2End, repo.monitorV2BucketSize)
+	}
+}
+
+func TestAccountMonitorProjectMonitorV2GroupsPropagatesNativeRepositoryError(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		settings:               AccountMonitorSettings{IntervalSeconds: 60},
+		monitorV2ProjectionErr: errors.New("native projection unavailable"),
+	}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 1, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7},
+	}}}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+
+	_, err := svc.ProjectMonitorV2Groups(
+		context.Background(),
+		[]int64{7},
+		time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC),
+		time.Hour,
+	)
+
+	if err == nil || !strings.Contains(err.Error(), "native projection unavailable") {
+		t.Fatalf("error = %v, want native projection error", err)
 	}
 }
 

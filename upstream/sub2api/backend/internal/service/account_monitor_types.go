@@ -219,6 +219,39 @@ type AccountMonitorTimelinePoint struct {
 	CheckedAt  time.Time `json:"checked_at"`
 }
 
+type MonitorV2GroupAccountScope struct {
+	GroupID   int64
+	AccountID int64
+}
+
+type MonitorV2NativeTimelinePoint struct {
+	BucketStart time.Time
+	Status      string
+	LatencyMS   *float64
+}
+
+type MonitorV2NativeGroupProjection struct {
+	Status                 string
+	OperationalBucketCount int
+	TotalBucketCount       int
+	TTFTP50MS              *float64
+	AverageLatencyMS       *float64
+	TTFTSampleCount        int
+	LatencySampleCount     int
+	Timeline               []MonitorV2NativeTimelinePoint
+}
+
+// AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.
+// It is optional so existing Account Monitor repository adapters remain source-compatible.
+type AccountMonitorGroupProbeRepository interface {
+	ProjectMonitorV2Groups(
+		ctx context.Context,
+		scopes []MonitorV2GroupAccountScope,
+		start, end, freshSince time.Time,
+		bucketSize time.Duration,
+	) (map[int64]MonitorV2NativeGroupProjection, error)
+}
+
 type AccountMonitorMultiplier struct {
 	Value       *float64   `json:"value,omitempty"`
 	Source      string     `json:"source,omitempty"`

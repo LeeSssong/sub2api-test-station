@@ -1,8 +1,9 @@
 # T33 经营页账号卡片与搜索交接
 
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 基线 `main` SHA：`dc51b37c9dbf73a87cccceab5815f129882812c5`
-- 功能候选提交 SHA：`fa6a2b33cd35f4d6cb76a2c857e69b5ce0055049`
+- REFRESH_REQUIRED 基线 `main` SHA：`247ae84350f1b4eed8473b97728f13048ceeb834`
+- 刷新后候选 merge SHA：`f34c2e14320e01496300b95c9e2f345d62b224d6`
+- 功能提交 SHA：`fa6a2b33cd35f4d6cb76a2c857e69b5ce0055049`
 - 当前 worktree：`/Users/gongtengxinwen/.codex/worktrees/e4db/sub2api搭建`（detached candidate）
 - 规格：`docs/superpowers/specs/2026-08-19-t33-profitability-account-cards-search-design.md`
 - 计划：`docs/superpowers/plans/2026-08-19-t33-profitability-account-cards-search.md`
@@ -31,6 +32,8 @@
 - `cd upstream/sub2api/frontend && pnpm build`：通过。
 - `git diff --check`：通过。
 
+刷新后上述直接门禁全部重新执行并通过；最新 `main` 只带入 `docs/project/project-progress.md` 与 `docs/project/native-sub-task-package-queue.md` 的登记提交，未覆盖本任务文件。
+
 测试覆盖 USD/CNY 卡片、搜索名称/ID/平台/类型/状态、无匹配空态、长账号名换行、390px 单列、成本待录入、零流水、原生排序/分组/刷新/错误和共享采购操作。
 
 ## 未验证项
@@ -42,7 +45,7 @@
 
 - 无数据库迁移、无配置变化、无依赖变化、无生产数据写入、无 GitHub Actions。
 - `downtime_required=false`（本候选仅前端展示变更；最终以根合并后的发布预检为准）。
-- 未合并、未推送、未部署，未修改 `main`、`docs/project/project-progress.md`、`docs/project/native-sub-task-package-queue.md`、生产状态或发布证据。
+- 未合并到根 `main`、未推送、未部署；本 worktree 仅通过 detached merge 引入最新 `main` 登记提交，未修改其内容，未修改生产状态或发布证据。
 
 ## 回滚与剩余风险
 

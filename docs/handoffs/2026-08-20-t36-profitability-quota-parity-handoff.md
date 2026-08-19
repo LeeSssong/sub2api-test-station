@@ -2,8 +2,9 @@
 
 - 任务：`T36`
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 基线 `main` SHA：`b02d538a0ac8d90b01ef92c45e55e72e11e9ee6b`
-- 功能提交 SHA：`cd3dcce4f384e06ae5eb829e596ba53f7352b048`（文档补充后以最终 HEAD 为准）
+- 刷新后基线 `main` SHA：`180ddd25b`
+- 刷新后候选整合提交 SHA：`629e3265732602ed8d84a2c783c221c1a9fd39e1`
+- 刷新后候选 tree：`8dc322789064b14ed05fb7eba1d6084f2464bef6`
 - 候选 worktree：`/Users/gongtengxinwen/.codex/worktrees/e649/sub2api搭建`
 - 候选分支：`codex/t36-profitability-quota-parity`
 - 规格：`docs/superpowers/specs/2026-08-20-t36-profitability-quota-parity-copy-design.md`

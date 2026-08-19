@@ -169,7 +169,7 @@
 
 - [ ] **Step 4: Write the handoff and record candidate state.**
 
-  The handoff must include task `T36`, baseline `main` SHA `b02d538a0ac8d90b01ef92c45e55e72e11e9ee6b`, final candidate SHA, changed files, direct test/typecheck/build/diff results, no migration/config/data changes, expected `downtime_required=false`, rollback to the previous verified `main` image, and the remaining risk that root still owns merge/deploy/online verification.
+  The handoff must include task `T36`, refreshed baseline `main` SHA `180ddd25b`, the refreshed candidate integration SHA/tree, changed files, direct test/typecheck/build/diff results, no migration/config/data changes, expected `downtime_required=false`, rollback to the previous verified `main` image, and the remaining risk that root still owns merge/deploy/online verification.
 
 - [ ] **Step 5: Commit the candidate and stop at the root-review gate.**
 

@@ -4,9 +4,9 @@
 
 - 状态：`READY_FOR_ROOT_REVIEW`。
 - 分支：`codex/t35-procurement-audit-type-hotfix`。
-- 精确基线：`main@101357776e1af9dbf83df282afd96cdb284ffcf4`。
-- 最终候选 HEAD：`84273244ac74429b5ded57934db555547e9aa41e`。
-- 最终 tree：`74c14a5e452a21705bd3ed44510aedec07dcfb17`。
+- 精确基线：刷新后 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`。
+- 最终候选 HEAD：`d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。
+- 最终 tree：`a23ff0f9764a307347b0aa3693023cfee319db16`。
 - 工作区：干净；未合并、未推送、未部署、未触碰生产。
 - 根总控仍拥有合并、推送、发布预检、部署和线上验收权限。
 
@@ -77,6 +77,20 @@ go build ./cmd/server
 
 `gofmt -d` 无输出，`git diff --check` 通过；禁止目录 diff（migrations、Ent schema、frontend、`.github/workflows`）通过零差异检查。
 
+## 刷新后验证
+
+候选已在同一 worktree 无冲突整合最新 `main@f71e1195e8b3ddbb019dcf4285715b0788bb53aa`，刷新合并提交为 `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d`。刷新后重新执行并通过：
+
+```text
+go test ./internal/service -run 'Test(UpdateProcurementConfig|SettleProcurement|ProcurementAudit)' -count=1
+go test ./internal/handler/admin -run 'TestAccountHandler.*Procurement' -count=1
+go build ./cmd/server
+gofmt -d ...
+git diff --check
+```
+
+本机 Docker/testcontainers 实际可用，使用 PostgreSQL 18.1、Redis 8.4 容器并以 `CI=1` fail-closed 重跑真实 integration；录入、清空、结算三个子测试均 `PASS`。刷新后相对新基线的范围仍仅为 T35 规格、计划、交接、service/repository 直接测试和测试 helper 修正；迁移、配置、schema、frontend 与 GitHub Actions 无变化。
+
 ## 全量验证说明
 
 按 finishing gate 执行了 `go test ./...`。全量结果包含与 T35 无关的既有中文错误投影/网关文案断言失败，主要集中于：
@@ -100,4 +114,4 @@ go build ./cmd/server
 
 - 未执行合并后 `main` 重测、推送、发布预检、部署或线上验收，按任务边界留给根总控。
 - 全量 Go suite 的既有文案失败未在 T35 范围内修复。
-- 根总控可在候选 HEAD `84273244ac74429b5ded57934db555547e9aa41e` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`。
+- 根总控可在候选 HEAD `d31b5c3c70ee5895f0cf23155bb91bdc726dcc4d` 上复核直接证据，随后决定是否发出 `AUTHORIZE_MERGE_TO_MAIN`。

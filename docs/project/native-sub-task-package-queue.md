@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
-- **T46 性能监测自定义页面挂载**：状态 `READY_FOR_ROOT_REVIEW`。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`，分支 `codex/t46-performance-monitor`，已从登记后的 `main@a2e5c8206` 刷新，候选 tip `8a16f80ce`；规格、计划、实现、handoff 已完成。复用 Sub 原生 `MonitorV2RouteView`、Monitor V2 API/刷新/时间线数据与 T41/T42/T44 稳定性；新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过，等待根任务授权合并。
+- **T46 性能监测自定义页面挂载**：状态 `INTEGRATING`。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main`，合并提交 `cbabc2076`；候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`、分支 `codex/t46-performance-monitor` 保留作发布证据。合并后直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。根 `main` 尚未推送、部署或线上验收。
 
 ## 当前新增任务（2026-08-20，快速迭代-12）
 

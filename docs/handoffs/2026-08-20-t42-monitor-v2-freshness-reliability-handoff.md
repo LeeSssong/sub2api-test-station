@@ -1,7 +1,7 @@
 # T42 Handoff
 
-Status: READY_FOR_ROOT_REVIEW  
-Branch: `codex/t42-monitor-v2-freshness`  
+Status: READY_FOR_ROOT_REVIEW
+Branch: `codex/t42-monitor-v2-freshness`
 Base: `main@3ac10d8473923a9b017c4826024680c4361e8323`
 
 ## Delivered

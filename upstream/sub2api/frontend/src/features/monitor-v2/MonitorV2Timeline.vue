@@ -10,7 +10,7 @@
     <div
       v-if="activePoint"
       data-timeline-tooltip
-      class="pointer-events-none absolute top-full z-20 mt-3 min-w-[168px] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-center text-xs text-white shadow-2xl transition-all duration-200"
+      class="pointer-events-none absolute top-[4.25rem] z-20 min-w-[168px] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-center text-xs text-white shadow-2xl transition-all duration-200"
       :style="{ left: tooltipLeft }"
       aria-live="polite"
     >

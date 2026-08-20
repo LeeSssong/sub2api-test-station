@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**全局错误兜底规则紧急回退（2026-08-20）：** 状态：`DONE`。用户确认 2026-08-16 配置的全局 `ErrorPassthroughRule` 方案尚不成熟且已影响用户；生产证据表明规则在原生 `UpstreamFailoverError` 进入账号故障转移前直接写回响应，存在把原本可重试的 5xx/限流等失败提前终止的风险。已通过 Sub 原生管理员 API 将该批 15 条全局规则全部切换为 `enabled=false`，规则内容保留、未删除；API 与 PostgreSQL 回读均为 `total=15/enabled=0`。变更前快照 `/var/lib/sub2api/config-snapshots/20260820T141419Z-error-passthrough-rules-{api,db}-before.json`，变更后快照 `/var/lib/sub2api/config-snapshots/20260820T141700Z-error-passthrough-rules-{api,db}-after.json`，均为 `0600 root:root`；本地核验记录 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/20260820T142437Z-error-passthrough-rollback-verification.txt` 与 `20260820T142437Z-error-passthrough-rollback-verification-containers-health.txt`。API blue/green、worker 和 Caddy 重启计数保持 0，活动 API/备用 API/worker 均 healthy，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；未改工程代码、未重启或部署、未发送人工失败流量，`downtime_required=false`。回退后有自然 `gpt-5.6-sol` `/responses` 请求正常 HTTP 200；本次短观察窗未自然出现可用于证明跨账号故障转移的失败样本，不以人工故障补样本。恢复方式为按变更前快照逐条恢复原 `enabled` 状态。
+
 **T39 Responses 流式 413 二次错误映射修复（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用内入站/上游 413 的 JSON 与 Responses SSE 二次投影，保持中文“请求内容过大”语义、错误类型、终止事件和脱敏；Cloudflare 边缘 HTML 413 不在应用接管范围。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
 
 **T40 错误码/边缘错误中文映射补齐（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用侧 402、507、520、521、522、523、524、525 规则与 JSON/SSE/管理员诊断合同，保留 499 客户端断开分类，并明确 Cloudflare HTML 413 不误判/不泄露。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。

@@ -152,6 +152,7 @@ describe('MonitorV2View', () => {
     const wrapper = mountView()
 
     expect(wrapper.get('[data-test="monitor-v2-page"]').classes()).toContain('max-w-[1500px]')
+    expect(wrapper.text()).not.toContain('查看当前可见分组的实时状态与调用质量')
     expect(wrapper.text()).toContain('OpenAI 组')
     expect(wrapper.text()).toContain('可用性：100%')
     expect(wrapper.text()).toContain('0.2×')

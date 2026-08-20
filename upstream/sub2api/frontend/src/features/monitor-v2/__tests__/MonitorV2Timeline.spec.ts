@@ -40,6 +40,9 @@ describe('MonitorV2Timeline', () => {
     await bar.trigger('mouseenter')
 
     const tooltip = wrapper.get('[data-timeline-tooltip]')
+    expect(tooltip.classes()).toContain('top-full')
+    expect(tooltip.classes()).toContain('mt-3')
+    expect(tooltip.find('[data-timeline-tooltip-arrow]').classes()).toContain('-top-1')
     expect(tooltip.text()).toContain('UP')
     expect(tooltip.text()).toContain('2026-07-30')
     expect(tooltip.text()).toContain('运行中')

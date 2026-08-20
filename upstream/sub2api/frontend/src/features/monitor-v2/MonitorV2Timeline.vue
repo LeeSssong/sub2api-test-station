@@ -10,7 +10,7 @@
     <div
       v-if="activePoint"
       data-timeline-tooltip
-      class="pointer-events-none absolute top-0 z-20 min-w-[168px] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-center text-xs text-white shadow-2xl transition-all duration-200"
+      class="pointer-events-none absolute top-full z-20 mt-3 min-w-[168px] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-center text-xs text-white shadow-2xl transition-all duration-200"
       :style="{ left: tooltipLeft }"
       aria-live="polite"
     >
@@ -24,7 +24,7 @@
       <span class="mt-0.5 block text-slate-400">
         {{ t(`monitorV2.status.${activePoint.status}`) }}<template v-if="activePoint.latency_ms !== null"> · {{ activePoint.latency_ms }} ms</template>
       </span>
-      <span class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-slate-600 bg-slate-950" />
+      <span data-timeline-tooltip-arrow class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-l border-t border-slate-600 bg-slate-950" />
     </div>
 
     <div

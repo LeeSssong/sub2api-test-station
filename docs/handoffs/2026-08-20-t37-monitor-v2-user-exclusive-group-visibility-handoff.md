@@ -89,3 +89,15 @@ go build ./cmd/server
 
 - 回滚：revert T37 提交；生产侧保留上一蓝绿槽/镜像。
 - 剩余风险：原生授权服务短暂失败会使 Monitor V2 请求 fail closed，而不是退回公开快照；这是批准规格的权限正确性选择。
+
+## 用户反馈修正追加
+
+用户补充要求已在同一候选 worktree 收口：
+
+1. 分组展示严格复用 Sub 原生 Channel Monitor V2 配置：`channel_monitor_v2_config.enabled=false` 返回空页；`group_ids` 非空只显示选定 active 分组；`group_ids` 为空保持原生“全部分组”语义。随后对 active 专属分组继续按当前用户 `APIKeyService.GetAvailableGroups(userID)` 裁剪。
+2. 时间线 tooltip 放到柱体下方，使用向上的指示箭头。
+3. 删除 Monitor V2 标题下方解释性说明。
+
+新增变更文件：`upstream/sub2api/backend/internal/service/monitor_v2.go`、`monitor_v2_test.go`、`service/wire.go`、`cmd/server/wire_gen.go`、`frontend/src/features/monitor-v2/MonitorV2Timeline.vue`、`MonitorV2View.vue` 及直接测试；更新规格/计划/验证报告。
+
+直接相关后端与前端测试、typecheck、production build、Go build 和 diff-check 均已通过。仍需根总控合并后执行发布预检和线上验证。

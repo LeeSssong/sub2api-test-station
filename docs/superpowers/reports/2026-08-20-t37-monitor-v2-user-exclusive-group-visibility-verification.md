@@ -132,3 +132,28 @@ rg -n 'MonitorV2Scope|GetUserRoleFromContext' \
 ## 回滚
 
 代码回滚可 revert T37 实现与文档提交。生产发布后由根总控保留上一蓝绿槽/不可变镜像作为即时回滚依据；无迁移、配置或数据写入需要回退。
+
+## 用户反馈补充修正（2026-08-20）
+
+- Monitor V2 分组来源改为复用 Sub 原生 `ChannelMonitorV2Repository.GetConfig()`：关闭 V2 配置时返回空分组；`group_ids` 非空时只投影选中的 active 分组；`group_ids` 为空时保留 Sub 原生“全部分组”语义，再叠加当前用户专属分组授权裁剪。
+- 未授权专属分组、未选中的分组不会进入 `ProjectMonitorV2Groups`；分组顺序仍沿用 `groups.ListActive()`。
+- 前端时间线 tooltip 从柱体上方移到柱体下方，箭头改为向上指向柱体；标题下方解释性说明已删除。
+- 直接回归：后端新增 V2 配置关闭、空 group_ids 全量语义与选定 group_ids 裁剪；前端新增 tooltip 下置和说明文案删除断言。
+
+新鲜验证（候选 worktree）：
+
+```bash
+cd upstream/sub2api/backend
+go test ./internal/service -run '^TestMonitorV2' -count=1 -v
+go test ./internal/handler -run '^TestMonitorV2' -count=1
+go test ./internal/server/routes -run '^TestMonitorV2' -count=1
+go test ./cmd/server -run '^$' -count=1
+go build ./cmd/server
+cd ../frontend
+pnpm exec vitest run src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts src/features/monitor-v2/__tests__/MonitorV2View.spec.ts
+pnpm typecheck
+pnpm build
+git diff --check
+```
+
+结果：后端 Monitor V2/handler/routes、cmd/server compile-only/build 全部通过；前端 13/13 直接测试、typecheck、production build 全部通过；无迁移、配置 schema 或 GitHub Actions 变化。

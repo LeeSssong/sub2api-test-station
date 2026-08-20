@@ -36,6 +36,12 @@ type MonitorV2AvailableGroupReader interface {
 	GetAvailableGroups(context.Context, int64) ([]Group, error)
 }
 
+// MonitorV2ConfiguredGroupReader exposes the native channel-monitor
+// configuration that determines which groups are eligible for this page.
+type MonitorV2ConfiguredGroupReader interface {
+	GetConfig(context.Context) (*ChannelMonitorV2Config, error)
+}
+
 type MonitorV2SettingsReader interface {
 	GetAllSettings(context.Context) (*SystemSettings, error)
 }
@@ -77,22 +83,34 @@ type MonitorV2Snapshot struct {
 }
 
 type MonitorV2Service struct {
-	groupRepo GroupRepository
-	available MonitorV2AvailableGroupReader
-	native    MonitorV2NativeProbeReader
-	settings  MonitorV2SettingsReader
+	groupRepo  GroupRepository
+	available  MonitorV2AvailableGroupReader
+	configured MonitorV2ConfiguredGroupReader
+	native     MonitorV2NativeProbeReader
+	settings   MonitorV2SettingsReader
 }
 
-func monitorV2VisibleGroups(allGroups, availableGroups []Group) ([]Group, []int64) {
+func monitorV2VisibleGroups(allGroups, availableGroups []Group, configuredGroupIDs []int64, configuredAll bool) ([]Group, []int64) {
 	availableIDs := make(map[int64]struct{}, len(availableGroups))
 	for _, group := range availableGroups {
 		availableIDs[group.ID] = struct{}{}
+	}
+	configuredIDs := make(map[int64]struct{}, len(configuredGroupIDs))
+	for _, groupID := range configuredGroupIDs {
+		if groupID > 0 {
+			configuredIDs[groupID] = struct{}{}
+		}
 	}
 	visibleGroups := make([]Group, 0, len(allGroups))
 	groupIDs := make([]int64, 0, len(allGroups))
 	for _, group := range allGroups {
 		if group.Status != StatusActive {
 			continue
+		}
+		if !configuredAll {
+			if _, ok := configuredIDs[group.ID]; !ok {
+				continue
+			}
 		}
 		if group.IsExclusive {
 			if _, ok := availableIDs[group.ID]; !ok {
@@ -105,8 +123,8 @@ func monitorV2VisibleGroups(allGroups, availableGroups []Group) ([]Group, []int6
 	return visibleGroups, groupIDs
 }
 
-func NewMonitorV2Service(groupRepo GroupRepository, available MonitorV2AvailableGroupReader, native MonitorV2NativeProbeReader, settings MonitorV2SettingsReader) *MonitorV2Service {
-	return &MonitorV2Service{groupRepo: groupRepo, available: available, native: native, settings: settings}
+func NewMonitorV2Service(groupRepo GroupRepository, available MonitorV2AvailableGroupReader, native MonitorV2NativeProbeReader, settings MonitorV2SettingsReader, configured MonitorV2ConfiguredGroupReader) *MonitorV2Service {
+	return &MonitorV2Service{groupRepo: groupRepo, available: available, configured: configured, native: native, settings: settings}
 }
 
 func (s *MonitorV2Service) Snapshot(ctx context.Context, userID int64, window MonitorV2Window, now time.Time) (*MonitorV2Snapshot, error) {
@@ -123,6 +141,9 @@ func (s *MonitorV2Service) Snapshot(ctx context.Context, userID int64, window Mo
 	if s.available == nil {
 		return nil, fmt.Errorf("monitor v2 available group reader unavailable")
 	}
+	if s.configured == nil {
+		return nil, fmt.Errorf("monitor v2 configured group reader unavailable")
+	}
 	if s.native == nil {
 		return nil, fmt.Errorf("monitor v2 native probe reader unavailable")
 	}
@@ -130,11 +151,19 @@ func (s *MonitorV2Service) Snapshot(ctx context.Context, userID int64, window Mo
 	if err != nil {
 		return nil, fmt.Errorf("list active groups for monitor v2: %w", err)
 	}
+	monitorConfig, err := s.configured.GetConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load channel monitor v2 config: %w", err)
+	}
+	if monitorConfig == nil || !monitorConfig.Enabled {
+		return s.snapshotWithGroups(ctx, window, now, start, bucketCount, bucketSize, nil, nil)
+	}
+	configuredAll := len(monitorConfig.GroupIDs) == 0
 	availableGroups, err := s.available.GetAvailableGroups(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load available groups for monitor v2: %w", err)
 	}
-	visibleGroups, groupIDs := monitorV2VisibleGroups(allGroups, availableGroups)
+	visibleGroups, groupIDs := monitorV2VisibleGroups(allGroups, availableGroups, monitorConfig.GroupIDs, configuredAll)
 	if len(visibleGroups) > monitorV2MaxGroups {
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV2MaxGroups)
 	}
@@ -142,6 +171,10 @@ func (s *MonitorV2Service) Snapshot(ctx context.Context, userID int64, window Mo
 	if err != nil {
 		return nil, fmt.Errorf("load native monitor v2 projection: %w", err)
 	}
+	return s.snapshotWithGroups(ctx, window, now, start, bucketCount, bucketSize, visibleGroups, projections)
+}
+
+func (s *MonitorV2Service) snapshotWithGroups(ctx context.Context, window MonitorV2Window, now, start time.Time, bucketCount int, bucketSize time.Duration, visibleGroups []Group, projections map[int64]MonitorV2NativeGroupProjection) (*MonitorV2Snapshot, error) {
 	cards := make([]MonitorV2Group, 0, len(visibleGroups))
 	for _, group := range visibleGroups {
 		projection, ok := projections[group.ID]

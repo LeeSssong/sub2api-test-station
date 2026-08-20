@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `/api/v1/monitor-v2` keep every active public group while projecting an active exclusive group only when the authenticated user can access it through Sub's native group authorization.
+**Goal:** Make `/api/v1/monitor-v2` project only active groups associated with enabled Channel Monitor configurations, then apply Sub native current-user authorization for exclusive groups; align Monitor V2 presentation with the reference by placing timeline tooltips below the bars and removing the redundant header explanation.
 
-**Architecture:** The handler passes only `AuthSubject.UserID`; role is removed from Monitor V2 visibility. `MonitorV2Service` combines `GroupRepository.ListActive()` with a narrow `APIKeyService.GetAvailableGroups(userID)` dependency, filters before T34's `ProjectMonitorV2Groups`, and preserves the existing v7 response and native probe projection.
+**Architecture:** The handler passes only `AuthSubject.UserID`; role is removed from Monitor V2 visibility. `MonitorV2Service` combines `GroupRepository.ListActive()`, enabled Channel Monitor V2 `group_ids` configuration, and `APIKeyService.GetAvailableGroups(userID)`, filters before T34's `ProjectMonitorV2Groups`, and preserves the existing v7 response and native probe projection. The frontend keeps the existing card contract while moving the timeline tooltip below the track and removing the header description.
 
 **Tech Stack:** Go, Gin, Testify, Google Wire, Sub2API service/repository interfaces
 
@@ -13,24 +13,27 @@
 ## Global Constraints
 
 - Baseline is exactly `main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`.
-- Keep every active non-exclusive group visible to every authenticated user.
-- Keep an active exclusive group only when its ID is in `APIKeyService.GetAvailableGroups(ctx, userID)`.
+- Keep only active groups referenced by enabled Channel Monitor rows with a non-null `group_id`.
+- Keep an active exclusive configured group only when its ID is in `APIKeyService.GetAvailableGroups(ctx, userID)`.
+- Place timeline tooltip below the timeline with an upward arrow; remove `monitorV2.description` from the page header.
 - Filter group IDs before `ProjectMonitorV2Groups`; unauthorized exclusive IDs must never reach the native projection reader.
 - Admin role does not change visibility; only `AuthSubject.UserID` is an input.
 - Preserve Monitor V2 contract version `7`, `Cache-Control: no-store`, stable group order, and 24/28/30 buckets for `24h/7d/30d`.
-- Preserve T34's `account_monitor_results`-only projection; do not change probing, scheduling, scoring, billing, grouping, or frontend behavior.
-- No migration, schema, configuration, dependency, frontend, GitHub Actions, or production-data changes.
+- Preserve T34's `account_monitor_results`-only projection; do not change probing, scheduling, scoring, billing, or grouping semantics.
+- No migration, schema, configuration, dependency, GitHub Actions, or production-data changes; frontend changes are limited to Monitor V2 presentation and direct tests.
 - Do not modify `docs/project/project-progress.md` or `docs/project/native-sub-task-package-queue.md`.
 - Candidate ends at `READY_FOR_ROOT_REVIEW`; no main merge, push, deployment, or production access.
 
 ## File Structure
 
-- Modify `upstream/sub2api/backend/internal/service/monitor_v2.go`: visibility filter, native authorization dependency, user-bound snapshot, pre-projection fail-closed behavior.
+- Modify `upstream/sub2api/backend/internal/service/monitor_v2.go`: configured-group + native authorization visibility filter, user-bound snapshot, pre-projection fail-closed behavior.
 - Modify `upstream/sub2api/backend/internal/service/monitor_v2_test.go`: public/exclusive intersection, errors, order, and native-reader boundary.
 - Modify `upstream/sub2api/backend/internal/handler/monitor_v2_handler.go`: extract authenticated user ID and remove role scope.
 - Modify `upstream/sub2api/backend/internal/handler/monitor_v2_handler_test.go`: user-ID forwarding, role independence, missing-subject rejection.
 - Modify `upstream/sub2api/backend/internal/server/routes/monitor_v2_routes_test.go`: route stub signature and authenticated subject fixture.
-- Modify `upstream/sub2api/backend/internal/service/wire.go` and regenerate `upstream/sub2api/backend/cmd/server/wire_gen.go`: inject the existing `*APIKeyService`.
+- Modify `upstream/sub2api/backend/internal/service/channel_monitor_service.go`: expose enabled Channel Monitor V2 configured group IDs without decrypting credentials.
+- Modify `upstream/sub2api/backend/internal/service/wire.go` and `upstream/sub2api/backend/cmd/server/wire_gen.go`: inject the native Channel Monitor V2 config repository plus existing `*APIKeyService`.
+- Modify `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue`, `MonitorV2View.vue`, and their direct tests.
 - Create `docs/superpowers/reports/2026-08-20-t37-monitor-v2-user-exclusive-group-visibility-verification.md`.
 - Create `docs/handoffs/2026-08-20-t37-monitor-v2-user-exclusive-group-visibility-handoff.md`.
 

@@ -19,9 +19,6 @@
               {{ t(`monitorV2.overall.${overallStatus}`) }}
             </span>
           </div>
-          <p class="mt-2 max-w-3xl text-base text-gray-600 dark:text-gray-300">
-            {{ t('monitorV2.description') }}
-          </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {{ t('monitorV2.updatedAt', { time: updatedAt }) }}
           </p>

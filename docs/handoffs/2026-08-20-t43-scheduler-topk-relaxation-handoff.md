@@ -27,9 +27,10 @@
 - RED：旧默认值下 `TestLoadDefaultOpenAIWSConfig` 失败（实际 `true`，期望 `false`）；新增调度场景确认旧自适应路径会收窄候选。
 - GREEN：
   - `go test ./internal/config ./internal/service -run 'TestLoadDefaultOpenAIWSConfig|TestApplyOpenAIAdaptiveTopK|TestOpenAIAccountSchedulerAdaptiveTopK|TestOpenAIAccountSchedulerDefaultKeepsHealthyPoolWhenAdaptiveTopKDisabled' -count=1`
-  - `go test ./internal/service -run 'TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceTopKExcludesQuotaPaused|TestSelectTopKOpenAICandidates' -count=1`
-  - `git diff --check`
+- `go test ./internal/service -run 'TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceTopKExcludesQuotaPaused|TestSelectTopKOpenAICandidates' -count=1`
+- `git diff --check`
 - 结果：全部通过。
+- 额外全量包测试 `go test ./internal/service -count=1` 在候选与干净基线 `main@3ac10d847` 均复现两项既有失败：`TestOpenAIGatewayService_SelectAccountWithScheduler_Enabled_EmbeddingsSkipsChatOnlyStickyBindings` 与 `TestOpenAIGatewayService_SelectAccountWithScheduler_ClearsStickyAccountOutsideGroup`；失败断言分别为账号选择/会话清理，未触及本次 Top-K 代码。该基线差异已确认，不纳入本任务修复范围。
 
 ## 发布边界
 

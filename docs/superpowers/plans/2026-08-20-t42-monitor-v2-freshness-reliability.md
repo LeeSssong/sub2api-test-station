@@ -33,22 +33,20 @@
 - [ ] Add optional `SourceUpdatedAt *time.Time` fields and aggregate `MAX(l.checked_at)` in `current_by_group`; scan and serialize with `omitempty`.
 - [ ] Re-run the focused Go tests and format changed Go files with `gofmt`.
 
-### Task 2: Frontend freshness contract and current bucket label (TDD)
+### Task 2: Frontend freshness contract and card label (TDD)
 
 **Files:**
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/types.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/api.ts`
 - Modify: `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2GroupCard.vue`
-- Modify: `upstream/sub2api/frontend/src/features/monitor-v2/MonitorV2Timeline.vue`
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/zh/dashboard.ts`
 - Modify: `upstream/sub2api/frontend/src/i18n/locales/en/dashboard.ts`
 - Test: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/api.spec.ts`
-- Test: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2Timeline.spec.ts`
 - Test: `upstream/sub2api/frontend/src/features/monitor-v2/__tests__/MonitorV2View.spec.ts`
 
-- [ ] Add failing parser, card, and timeline assertions for optional `source_updated_at` and the `当前`/`Current` last-bucket label.
-- [ ] Run the three Vitest files and confirm the expected failures.
-- [ ] Implement nullable RFC3339 validation, freshness text, and last-point marker/label without changing bucket arrays.
+- [ ] Add failing parser and card assertions for optional `source_updated_at`.
+- [ ] Run the API and View Vitest files and confirm the expected failures.
+- [ ] Implement nullable RFC3339 validation and freshness text without changing timeline files or bucket arrays.
 - [ ] Re-run focused Vitest and `pnpm typecheck`.
 
 ### Task 3: Refresh retry reliability (TDD)

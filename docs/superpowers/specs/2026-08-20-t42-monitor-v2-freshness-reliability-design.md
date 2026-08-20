@@ -12,7 +12,7 @@ Monitor V2 已使用原生主动探测结果、合同版本 `7` 和固定时间�
 
 1. 保持 Monitor V2 合同版本 `7`、现有字段语义、24/28/30 固定桶与原生探测来源。
 2. 在最小合同扩展中返回每个分组最新原生探测时间 `source_updated_at`（无可用探测时省略），明确区分数据源更新时间和快照读取时间。
-3. 在时间线尾部清楚标出当前桶；保留每个桶的既有状态、延迟和数量，不改变桶计算。
+3. 在分组卡片上清楚展示最新探测时间，保留每个桶的既有状态、延迟和数量，不改变桶计算。
 4. 定时刷新或切换窗口的 GET 失败时保留上一份快照并安排短延迟重试；成功后恢复管理员配置的刷新间隔；组件卸载或请求取消时不再重试。
 
 ## 非目标
@@ -31,7 +31,7 @@ Monitor V2 已使用原生主动探测结果、合同版本 `7` 和固定时间�
 
 后端 `MonitorV2NativeGroupProjection` 增加 `SourceUpdatedAt *time.Time`。`current_by_group` 聚合每个分组最新探测时间（`MAX(l.checked_at)`），并继续以 `checked_at >= freshSince` 判定 current status。`MonitorV2Group` 与 handler DTO 增加可选 `source_updated_at`，零值不输出。合同版本仍为字符串 `"7"`。
 
-前端 `MonitorV2Group.source_updated_at?: string | null`，校验器在字段存在时要求 RFC3339，缺失归一化为 `null`。卡片显示“探测于 <时间>”或“暂无最新探测”；时间线最后一个固定桶显示“当前 · <时间>”，并用 `data-timeline-current` 标记，不增加桶。
+前端 `MonitorV2Group.source_updated_at?: string | null`，校验器在字段存在时要求 RFC3339，缺失归一化为 `null`。卡片显示“探测于 <时间>”或“暂无最新探测”；时间线保持现有视觉和数据契约不变。
 
 ## 刷新失败语义
 
@@ -41,7 +41,7 @@ Monitor V2 已使用原生主动探测结果、合同版本 `7` 和固定时间�
 
 - API 合同接受/拒绝 `source_updated_at` 的 RFC3339/非法值，保持 v7 与固定桶长度。
 - 后端 service/repository/handler 测试证明最新 `checked_at` 被投影和序列化，缺失时字段省略。
-- UI 显示分组探测时间与当前桶标签；旧 fixture（无字段）仍通过。
+- UI 显示分组探测时间；旧 fixture（无字段）仍通过。
 - UI GET 失败后在 5 秒重试，成功后恢复正常间隔；失败不触发 fallback；卸载/取消不产生后续请求。
 - 直接相关前端 Vitest、后端 Monitor V2 测试、typecheck/build、`git diff --check` 通过。
 

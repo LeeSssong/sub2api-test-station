@@ -114,9 +114,11 @@ func (s *monitorV2NativeReaderStub) ProjectMonitorV2Groups(
 
 func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	latestCheckedAt := now.Add(-45 * time.Second)
 	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{
 		7: {
 			Status:                 MonitorV2StatusOperational,
+			SourceUpdatedAt:        &latestCheckedAt,
 			OperationalBucketCount: 23,
 			TotalBucketCount:       24,
 			TTFTP50MS:              floatPtr(10990),
@@ -140,6 +142,8 @@ func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	require.Len(t, snapshot.Groups, 1)
 	group := snapshot.Groups[0]
 	require.Equal(t, MonitorV2StatusOperational, group.Status)
+	require.NotNil(t, group.SourceUpdatedAt)
+	require.Equal(t, latestCheckedAt, *group.SourceUpdatedAt)
 	require.Equal(t, 96.0, *group.Availability.Value)
 	require.Equal(t, int64(24), group.Availability.SampleCount)
 	require.Equal(t, 10990.0, *group.TTFT.Value)

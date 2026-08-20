@@ -30,6 +30,7 @@ const validPayload = {
     availability: { ...metric, value: 99 },
     ttft: metric,
     average_latency: { ...metric, value: 10000 },
+    source_updated_at: '2026-07-29T11:59:00Z',
     timeline,
   }],
 }
@@ -48,6 +49,7 @@ describe('Monitor V2 API contract', () => {
     })
     expect(snapshot.groups[0]).toMatchObject({ name: 'GPT-Pro', availability: { value: 99 } })
     expect(snapshot.groups[0].timeline[0].status).toBe('operational')
+    expect(snapshot.groups[0].source_updated_at).toBe('2026-07-29T11:59:00Z')
     expect(snapshot.groups[0]).not.toHaveProperty('cache_hit')
     expect(snapshot.groups[0].timeline[0]).not.toHaveProperty('success_count')
   })
@@ -93,6 +95,10 @@ describe('Monitor V2 API contract', () => {
       ...validPayload,
       groups: [{ ...validPayload.groups[0], ttft: { state: 'legacy_state', value: null, sample_count: 0 } }],
     })).toThrow('ttft.state')
+    expect(() => validateMonitorV2Snapshot({
+      ...validPayload,
+      groups: [{ ...validPayload.groups[0], source_updated_at: 'not-a-timestamp' }],
+    })).toThrow('source_updated_at')
   })
 
   it('accepts configured refresh intervals', () => {

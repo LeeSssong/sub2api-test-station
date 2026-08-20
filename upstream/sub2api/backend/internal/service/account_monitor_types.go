@@ -233,6 +233,7 @@ type MonitorV2NativeTimelinePoint struct {
 
 type MonitorV2NativeGroupProjection struct {
 	Status                 string
+	SourceUpdatedAt        *time.Time
 	OperationalBucketCount int
 	TotalBucketCount       int
 	TTFTP50MS              *float64

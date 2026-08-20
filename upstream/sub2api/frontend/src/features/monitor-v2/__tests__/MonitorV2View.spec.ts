@@ -39,6 +39,9 @@ const messages: Record<string, string> = {
   'monitorV2.notes.metrics': '指标按所选时间范围汇总，样本不足时不显示推测值。',
   'monitorV2.notes.privacy': '普通用户仅展示公开分组，管理员展示全部启用分组；不包含账号、用户或请求内容。',
   'monitorV2.timeline.noData': '该时段暂无探测记录',
+  'monitorV2.timeline.current': '当前',
+  'monitorV2.freshness.latestProbe': '探测于 {time}',
+  'monitorV2.freshness.noProbe': '暂无最新探测',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -79,6 +82,7 @@ const snapshot: MonitorV2Snapshot = {
       availability: { state: 'available', value: 100, sample_count: 28 },
       ttft: { state: 'available', value: 420, sample_count: 9842 },
       average_latency: { state: 'available', value: 10000, sample_count: 9842 },
+      source_updated_at: '2026-07-29T11:59:00Z',
       timeline: [
         {
           bucket_start: '2026-07-29T06:00:00Z',
@@ -158,6 +162,7 @@ describe('MonitorV2View', () => {
     expect(wrapper.text()).toContain('0.2×')
     expect(wrapper.text()).toContain('首字速度：420 ms')
     expect(wrapper.text()).toContain('平均耗时：10 s')
+    expect(wrapper.text()).toContain('探测于')
     expect(wrapper.text()).toContain('运行中')
     expect(wrapper.text()).toContain('服务不可用')
     for (const forbidden of [
@@ -284,6 +289,26 @@ describe('MonitorV2View', () => {
     expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(2)
     expect(getMonitorV2Snapshot).toHaveBeenLastCalledWith('7d', expect.any(AbortSignal))
     wrapper.unmount()
+  })
+
+  it('retries a failed periodic GET without switching to the fallback page', async () => {
+    vi.useFakeTimers()
+    getMonitorV2Snapshot
+      .mockRejectedValueOnce(new Error('temporary read failure'))
+      .mockResolvedValueOnce(snapshot)
+    const wrapper = mountView()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await flushPromises()
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('fatal')).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    expect(getMonitorV2Snapshot).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('fatal')).toBeUndefined()
   })
 
   it('renders an instructive empty state', () => {

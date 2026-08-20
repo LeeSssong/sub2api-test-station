@@ -79,15 +79,17 @@ func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *tes
 	latency := 1000.4
 	ttft := 420.5
 	bucketLatency := 900.5
+	latestCheckedAt := end.Add(-30 * time.Second)
 	mock.ExpectQuery(`(?s)WITH scopes AS.*generate_series.*account_monitor_results.*checked_at >= \$.*checked_at < \$.*status = 'success'.*PERCENTILE_CONT\(0\.50\).*AVG\(.*latency_ms.*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "bucket_start", "bucket_status", "bucket_latency_ms",
 			"operational_bucket_count", "total_bucket_count", "ttft_p50_ms", "average_latency_ms",
 			"ttft_sample_count", "latency_sample_count", "current_status",
+			"source_updated_at",
 		}).
-			AddRow(int64(7), start, "operational", bucketLatency, 1, 1, ttft, latency, 3, 2, "operational").
-			AddRow(int64(8), start, "unavailable", nil, 0, 1, nil, nil, 0, 0, "unavailable"))
+			AddRow(int64(7), start, "operational", bucketLatency, 1, 1, ttft, latency, 3, 2, "operational", latestCheckedAt).
+			AddRow(int64(8), start, "unavailable", nil, 0, 1, nil, nil, 0, 0, "unavailable", nil))
 
 	projection, err := projector.ProjectMonitorV2Groups(
 		context.Background(),
@@ -102,6 +104,12 @@ func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *tes
 	}
 	if projection[7].TTFTP50MS == nil || *projection[7].TTFTP50MS != 421 || projection[7].AverageLatencyMS == nil || *projection[7].AverageLatencyMS != 1000 {
 		t.Fatalf("group 7 metrics = %#v", projection[7])
+	}
+	if projection[7].SourceUpdatedAt == nil || !projection[7].SourceUpdatedAt.Equal(latestCheckedAt) {
+		t.Fatalf("group 7 source_updated_at = %#v", projection[7].SourceUpdatedAt)
+	}
+	if projection[8].SourceUpdatedAt != nil {
+		t.Fatalf("group 8 source_updated_at = %#v, want nil", projection[8].SourceUpdatedAt)
 	}
 	if len(projection[7].Timeline) != 1 || projection[7].Timeline[0].LatencyMS == nil || *projection[7].Timeline[0].LatencyMS != 901 {
 		t.Fatalf("group 7 timeline = %#v", projection[7].Timeline)

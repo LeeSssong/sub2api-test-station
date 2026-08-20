@@ -132,6 +132,15 @@ function timelinePoint(value: unknown, path: string): MonitorV2TimelinePoint {
   }
 }
 
+function optionalTimestamp(value: unknown, path: string): string | null {
+  if (value == null || value === '') return null
+  const parsed = text(value, path)
+  if (Number.isNaN(Date.parse(parsed))) {
+    throw new MonitorV2ContractError(`${path} must be RFC3339`)
+  }
+  return parsed
+}
+
 function group(value: unknown, path: string): MonitorV2Group {
   const source = record(value, path)
   const status = text(source.status, `${path}.status`) as MonitorV2GroupStatus
@@ -181,6 +190,7 @@ function group(value: unknown, path: string): MonitorV2Group {
     peak_end: peakEnd,
     peak_rate_multiplier: peakRateMultiplier,
     status,
+    source_updated_at: optionalTimestamp(source.source_updated_at, `${path}.source_updated_at`),
     availability: metric(source.availability, `${path}.availability`),
     ttft: metric(source.ttft, `${path}.ttft`),
     average_latency: metric(source.average_latency, `${path}.average_latency`),

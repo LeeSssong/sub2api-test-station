@@ -68,6 +68,7 @@ type MonitorV2Group struct {
 	PeakEnd            string
 	PeakRateMultiplier float64
 	Status             string
+	SourceUpdatedAt    *time.Time
 	Availability       MonitorV2Metric
 	TTFT               MonitorV2Metric
 	AverageLatency     MonitorV2Metric
@@ -224,11 +225,12 @@ func monitorV2GroupFromProjection(group Group, projection MonitorV2NativeGroupPr
 	return MonitorV2Group{
 		ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
 		PeakRateEnabled: group.PeakRateEnabled, PeakStart: group.PeakStart, PeakEnd: group.PeakEnd, PeakRateMultiplier: group.PeakRateMultiplier,
-		Status:         monitorV2NormalizeStatus(projection.Status),
-		Availability:   monitorV2AvailabilityMetric(projection.OperationalBucketCount, projection.TotalBucketCount),
-		TTFT:           monitorV2Metric(projection.TTFTP50MS, projection.TTFTSampleCount),
-		AverageLatency: monitorV2Metric(projection.AverageLatencyMS, projection.LatencySampleCount),
-		Timeline:       monitorV2Timeline(projection.Timeline, start, bucketCount, bucketSize),
+		Status:          monitorV2NormalizeStatus(projection.Status),
+		SourceUpdatedAt: projection.SourceUpdatedAt,
+		Availability:    monitorV2AvailabilityMetric(projection.OperationalBucketCount, projection.TotalBucketCount),
+		TTFT:            monitorV2Metric(projection.TTFTP50MS, projection.TTFTSampleCount),
+		AverageLatency:  monitorV2Metric(projection.AverageLatencyMS, projection.LatencySampleCount),
+		Timeline:        monitorV2Timeline(projection.Timeline, start, bucketCount, bucketSize),
 	}
 }
 

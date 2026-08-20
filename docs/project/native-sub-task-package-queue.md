@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-19）
 
-- **T37 渠道状态用户可见专属分组裁剪**：状态 `REFRESH_REQUIRED`。候选 `codex/t37-monitor-v2-user-exclusive-groups@22e948b40` 已完成规格、计划、TDD 实现、直接测试和交接，候选基线为 `main@b5ad0cdd6`；根 `main@d2d1814e7` 已领先，因此进入刷新门禁。刷新后仍只保留 active 公开分组与当前用户原生获权的 active 专属分组，并在 `ProjectMonitorV2Groups` 前裁剪；无迁移、配置、前端或生产数据写入，候选预期 `downtime_required=false`。
+- **T37 渠道状态用户可见专属分组裁剪**：状态 `INTEGRATING`。候选已刷新到 `main@3bcd7169d` 并以 fast-forward 合入根 `main@ecf70b2a9e`，刷新后 service/handler/routes 与 server build 直接门禁通过。当前发布车道独占 T37；待从该已验证 main 生成 0600 证据、运行发布预检并完成无停机蓝绿发布/线上验证。无迁移、配置、前端或生产数据写入。
 - **T38 可调度账号最近原生探测评分保留**：状态 `READY_FOR_ROOT_REVIEW`，等待 T37 完成独立发布后刷新。候选 `codex/t38-retain-native-probe-score@8ccea77f8` 已完成规格、计划、TDD 实现、直接后端/前端合同测试和交接；当前可调度且所选窗口有成功原生探测样本的账号，在 `unavailable|stale` 状态下继续保留评分和排名，纯失败/无样本仍不评分。无迁移、配置或生产数据写入，候选预期 `downtime_required=false`。
 - **根总控当前车道（2026-08-20）**：T37/T38 可并行处于设计和实现；整合、推送、部署与线上验证仍严格单车道，一次只发布一个任务包。两项均预计无迁移、无配置变化、`downtime_required=false`；若预检实际返回 `true`，在生产动作前暂停。用户真机验收作为后续反馈，不阻塞发布车道。
 

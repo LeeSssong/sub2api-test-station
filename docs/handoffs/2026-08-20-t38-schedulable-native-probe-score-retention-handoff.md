@@ -4,8 +4,8 @@
 
 - 任务包：T38 可调度账号最近原生探测评分保留
 - 状态：`READY_FOR_ROOT_REVIEW`
-- 创建基线：`main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
-- 基线 tree：`213f223f8d79ce5fd5548fae4a578261ef884547`
+- 刷新基线：`main@beaf7aebdc1b20c70346b27164cd8291f9bb5d1a`
+- 刷新基线 tree：`25c7cff2212bc8c9ff97d5fe84ca23bc075cc62e`
 - 分支：`codex/t38-retain-native-probe-score`
 - 实现/合同 tip：`a1e1d5045bef89118127ea688b4d040e9825b59c`
 - 验证文档准备前 tip/tree：`505edeedee01339798777461a1a598d02afe59b1` / `bb09fd65ff9f3cfe55e368bc30b8d842df857c53`
@@ -56,7 +56,7 @@
 
 ## 未验证与根总控动作
 
-- 当前根 `main@d2d1814e76abe0ff00ebb234240a8ea816157fcf` 已领先创建基线；整合前按根总控规则核对最新 main，必要时让候选进入刷新流程并重跑直接测试。
+- 已在候选中刷新合入根最新 `main@beaf7aebdc1b20c70346b27164cd8291f9bb5d1a`；根总控仍需执行最终整合后门禁、发布预检与线上验证。
 - 本任务未合并 main、未推送、未生成发布证据、未部署、未访问或修改生产。
 - 根总控负责唯一整合、合并后直接门禁、推送、`downtime_required` 预检、蓝绿发布和线上专项。
 

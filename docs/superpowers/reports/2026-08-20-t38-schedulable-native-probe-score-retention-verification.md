@@ -3,8 +3,8 @@
 ## 身份与范围
 
 - 任务：T38
-- 创建基线：`main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
-- 基线 tree：`213f223f8d79ce5fd5548fae4a578261ef884547`
+- 刷新基线：`main@beaf7aebdc1b20c70346b27164cd8291f9bb5d1a`
+- 刷新基线 tree：`25c7cff2212bc8c9ff97d5fe84ca23bc075cc62e`
 - 实现与合同提交 tip：`a1e1d5045bef89118127ea688b4d040e9825b59c`
 - 验证文档准备前 tip：`505edeedee01339798777461a1a598d02afe59b1`
 - 验证文档准备前 tree：`bb09fd65ff9f3cfe55e368bc30b8d842df857c53`
@@ -147,7 +147,7 @@ go test ./internal/service -run 'TestAccountMonitorProjectionSeparatesManagement
 ## 格式与范围
 
 - `gofmt` 已应用于三份受影响 Go 文件。
-- `git diff --check b5ad0cdd624e3590bd0d19000c0f78cde200ef68 HEAD --` 在 EOF 修复后 exit 0、无输出。
+- `git diff --check beaf7aebdc1b20c70346b27164cd8291f9bb5d1a HEAD --` 在 EOF 修复后 exit 0、无输出。
 - 变更不包含 migrations、`.github/workflows`、`docs/project/project-progress.md` 或 `docs/project/native-sub-task-package-queue.md`。
 - 数据库迁移：无。
 - 配置变化：无。
@@ -156,7 +156,7 @@ go test ./internal/service -run 'TestAccountMonitorProjectionSeparatesManagement
 
 ## 未验证项与发布属性
 
-- 根 `main` 已前进到 T38 创建基线之后；根总控必须在整合车道核对/刷新最新 main 并重跑直接门禁。
+- 已刷新合入根最新 `main@beaf7aebdc1b20c70346b27164cd8291f9bb5d1a`；根总控仍需在整合车道执行最终合并后门禁、发布预检与线上验证。
 - 未执行 root-main 合并、推送、发布资格证据、发布预检、蓝绿部署或生产登录态专项。
 - 预计 `downtime_required=false`；根合并后的发布预检是最终事实源。
 - 回滚：撤销 T38 功能与合同提交，并通过受审根发布链重新发布；无数据回滚。

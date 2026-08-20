@@ -4,7 +4,7 @@
 
 **T40 错误码/边缘错误中文映射补齐（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用侧 402、507、520、521、522、523、524、525 规则与 JSON/SSE/管理员诊断合同，保留 499 客户端断开分类，并明确 Cloudflare HTML 413 不误判/不泄露。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
 
-**T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`BLOCKED`。用户反馈修正已合入并推送根 `main@5a8545771`；Sub 原生 `channel_monitor_v2_config` enabled/group_ids 分组裁剪、当前用户专属授权裁剪、tooltip 下置和解释文案删除均已通过根合并后的后端/前端直接门禁。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-5a8545771-t37-feedback.json` 已生成并绑定 tested tree；发布预检在生产变更前 fail-closed，原因是当前 shell 未加载 `SUB2API_IMAGE_REPOSITORY`，尚未进入蓝绿发布。无迁移、配置 schema 或生产数据写入；补齐受控发布环境后从该 `main` 继续。
+**T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`BLOCKED`。用户反馈修正已合入并推送根 `main@7342203a0`；Sub 原生 `channel_monitor_v2_config` enabled/group_ids 分组裁剪、当前用户专属授权裁剪、tooltip 下置和解释文案删除均已通过根合并后的后端/前端直接门禁。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-7342203a0-t37-feedback.json` 已生成并绑定 tested tree；发布预检在生产变更前 fail-closed，原因是当前 shell 未加载 `SUB2API_IMAGE_REPOSITORY`，尚未进入蓝绿发布。无迁移、配置 schema 或生产数据写入；补齐受控发布环境后从该 `main` 继续。
 
 **T38 可调度账号保留最近原生探测评分（2026-08-20）：** 状态：`DEPLOYING`。独立用户可见任务 `01a01d0f-a721-7032-9cab-faaae3ce6663` 已无冲突合入根 `main@6c8810cb6b16b1321834d6d72f21ac6e99198160`，tree `8c253e87a25c1497578c8682bdb4cdd1d7f75ca0`；合并后 service/handler focused、全 AccountMonitor、成本门禁 + Monitor V2 v7、compile-only、52 项卡片测试、typecheck、gofmt/diff-check 和 protected-path guards 均通过。当前进入部署车道：从该 main 生成 0600 证据、推送、发布预检、无停机蓝绿部署与健康验证。无迁移、配置、前端、依赖或生产数据写入；预期 `downtime_required=false`。
 

@@ -790,3 +790,5 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 - 状态：`DONE`；发布源：`main@befce43e80da47c10318e5e396e1f4c26f98d053`；宿主记录：`/var/lib/sub2api/release-records/20260820T080727Z-production-1014979.json`。
 - 范围：仅 Monitor V2 原生 `checked_at` 新鲜度字段、当前桶时间语义、前端刷新失败重试及直接相关测试；不改 Monitor V2 v7 既有字段语义、原生探测执行器或生产设置值。
 - 发布：`downtime_required=false`、`result=succeeded`、`state=promoted`；无迁移、无配置变更、无生产数据写入。真机截图仍由用户验收。
+
+**T44/T45 快速迭代-12 登记（2026-08-20）：** 根总控已基于最新 `main@2d7c38de2` 完成两个独立 UI 任务登记。T44 负责 Monitor V2 时间线桌面填充、卡片 hover 防抖与固定布局；T45 负责 CodexRadar 站长推荐及社区矩阵的 light/dark 白天模式适配。两任务均不改后端数据合同、原生探测、v7/24/28/30 桶、CodexRadar 数据源、迁移或生产配置，预计 `downtime_required=false`；可并行设计/实现，合并、部署和线上验证继续严格单车道。当前状态：T44 `DESIGNING`、T45 `DESIGNING`；用户真机验收不阻塞后续。

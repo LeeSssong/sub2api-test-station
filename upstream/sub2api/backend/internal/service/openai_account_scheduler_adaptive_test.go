@@ -117,6 +117,47 @@ func TestOpenAIAccountSchedulerAdaptiveTopKNarrowsHealthyPool(t *testing.T) {
 	}
 }
 
+func TestOpenAIAccountSchedulerDefaultKeepsHealthyPoolWhenAdaptiveTopKDisabled(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	accounts := []Account{
+		{ID: 4401, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0},
+		{ID: 4402, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 1},
+		{ID: 4403, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 2},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 7
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:            &schedulerTestGatewayCache{},
+		cfg:              cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+			loadMap: map[int64]*AccountLoadInfo{
+				4401: {AccountID: 4401}, 4402: {AccountID: 4402}, 4403: {AccountID: 4403},
+			},
+			acquireResults: map[int64]bool{4401: true},
+		}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.1", nil, OpenAIUpstreamTransportAny, false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, 3, decision.CandidateCount)
+	require.Equal(t, 3, decision.EligibleCount)
+	require.Equal(t, 3, decision.EffectiveTopK)
+	require.Equal(t, 3, decision.TopK)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.SelectionLayer)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIAccountSchedulerAdaptiveTopKNeverReaddsExcludedBestAccount(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	accounts := []Account{

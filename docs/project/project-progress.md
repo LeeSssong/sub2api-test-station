@@ -784,8 +784,9 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 
 - 状态：`DONE`；发布源：`main@befce43e80da47c10318e5e396e1f4c26f98d053`；宿主记录：`/var/lib/sub2api/release-records/20260820T080727Z-production-1014979.json`。
 - 范围：仅 Monitor V2 时间线 Tooltip 布局、尺寸、无数据桶可视表达及直接相关前端测试；不改 Monitor V2 v7、原生探测数据源、24/28/30 桶契约或生产配置。
+- 发布：`downtime_required=false`、`result=succeeded`、`state=promoted`；T41/T42 合并后 Go Monitor V2、前端 8 files/38 tests、typecheck、build、server build、diff-check 均通过；健康端点 200。真机截图仍由用户验收。
 # T42 Monitor V2 时间新鲜度与刷新可靠性优化（快速迭代-11）：DONE
 
 - 状态：`DONE`；发布源：`main@befce43e80da47c10318e5e396e1f4c26f98d053`；宿主记录：`/var/lib/sub2api/release-records/20260820T080727Z-production-1014979.json`。
 - 范围：仅 Monitor V2 原生 `checked_at` 新鲜度字段、当前桶时间语义、前端刷新失败重试及直接相关测试；不改 Monitor V2 v7 既有字段语义、原生探测执行器或生产设置值。
-- 依赖/发布：无前置依赖；可与 T41 并行设计/实现，整合、推送、部署和线上验证严格单车道；预计 `downtime_required=false`。
+- 发布：`downtime_required=false`、`result=succeeded`、`state=promoted`；无迁移、无配置变更、无生产数据写入。真机截图仍由用户验收。

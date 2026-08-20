@@ -34,3 +34,11 @@
 ## 回滚
 
 恢复上一已验证 `blue` 槽或回退 T46 应用提交；无数据库回滚、历史数据修复或配置迁移。
+
+## 清理与恢复
+
+- 已移除候选分支 `codex/t46-performance-monitor`、候选 worktree 和四个 T46 临时发布 worktree。
+- 恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t46-performance-monitor-9ed4e020/t46-refs.bundle`
+- SHA-256：`bd34822cb7fd3c96ee355e5c0ed613c8ddf6010ded75f6f9e683d77e059bbbb4`
+- `git bundle verify`：passed。
+- 用户指定的 `/private/tmp/sub2api-monitor-v3-preview` 继续只读保护，未清理其未提交内容。

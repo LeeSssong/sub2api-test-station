@@ -426,6 +426,92 @@ func TestAccountMonitorProbeProjectionUsesOnlyFreshProbeEvidence(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorWindowScoreProjectionSeparatesCurrentStateFromScoreEligibility(t *testing.T) {
+	now := time.Now().UTC()
+	valid := AccountMonitorQualityEvidence{
+		Source: "stale", SampleCount: 24, SuccessSampleCount: 21,
+		SuccessRate: 21.0 / 24.0, ObservedAt: now.Add(-20 * time.Minute),
+	}
+	tests := []struct {
+		name       string
+		account    Account
+		status     string
+		evidence   AccountMonitorQualityEvidence
+		wantSource string
+		wantStatus string
+		want       bool
+	}{
+		{name: "schedulable unavailable retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "schedulable stale retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "pure failure stays unscored", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: AccountMonitorQualityEvidence{Source: "monitor_probe", SampleCount: 24}, wantSource: "monitor_probe", wantStatus: accountMonitorScoreIneligible},
+		{name: "no sample stays unscored", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: AccountMonitorQualityEvidence{Source: "stale"}, wantSource: "stale", wantStatus: accountMonitorScoreIneligible},
+		{name: "future cooldown uses native schedulability", account: Account{Status: StatusActive, Schedulable: true, TempUnschedulableUntil: timePtr(now.Add(time.Hour))}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "stale", wantStatus: accountMonitorScoreIneligible},
+		{name: "t32 paused eligible remains eligible", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreEligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "t32 abnormal cap remains capped", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreCapped, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreCapped, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotEvidence, gotStatus, gotEligible := accountMonitorWindowScoreProjection(tt.account, tt.status, tt.evidence)
+			if gotEvidence.Source != tt.wantSource || gotStatus != tt.wantStatus || gotEligible != tt.want {
+				t.Fatalf("source=%q status=%q eligible=%v", gotEvidence.Source, gotStatus, gotEligible)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorListWindowRetainsSchedulableUnavailableAndStaleNativeScores(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	accounts := []Account{
+		{ID: 501, Name: "latest-unavailable", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 502, Name: "stale-current", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 503, Name: "pure-failure", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+		{ID: 504, Name: "no-sample", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate},
+	}
+	repo := &accountMonitorRepoStub{
+		settings:      AccountMonitorSettings{IntervalSeconds: 300},
+		globalWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20},
+		groups:        []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregates: map[int64]AccountMonitorAggregate{
+			501: {SampleCount: 24, SuccessCount: 21, SuccessSampleCount: 21, ErrorCount: 3, SuccessRate: 21.0 / 24.0, ConsecutiveFailed: 3, LastCheckedAt: &now},
+			502: {SampleCount: 24, SuccessCount: 24, SuccessSampleCount: 24, SuccessRate: 1, LastCheckedAt: timePtr(now.Add(-20 * time.Minute))},
+			503: {SampleCount: 24, ErrorCount: 24, SuccessRate: 0, ConsecutiveFailed: 24, LastCheckedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			501: {Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: now},
+			502: {Status: "success", CheckedAt: now.Add(-20 * time.Minute)},
+			503: {Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: now},
+		},
+	}
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	global := accountMonitorRowsByID(page.Accounts)
+	if row := global[501]; row.AvailabilityStatus != accountMonitorAvailabilityUnavailable || row.QualityScore == nil || row.GroupRank == nil || !row.Eligible {
+		t.Fatalf("latest unavailable row = %#v, want unavailable with retained score/rank", row)
+	}
+	if row := global[502]; row.AvailabilityStatus != accountMonitorAvailabilityStale || !row.Stale || row.QualityScore == nil || row.GroupRank == nil || !row.Eligible {
+		t.Fatalf("stale row = %#v, want stale with retained score/rank", row)
+	}
+	for _, id := range []int64{503, 504} {
+		if row := global[id]; row.QualityScore != nil || row.GroupRank != nil || row.Eligible {
+			t.Fatalf("account %d unexpectedly scored: %#v", id, row)
+		}
+	}
+	byGroup := accountMonitorGroupRowsByID(page.Groups[0].Accounts)
+	for _, id := range []int64{501, 502} {
+		if row := byGroup[id]; row.QualityScore == nil || row.GroupRank == nil || !row.Eligible || row.Evidence.Source != "monitor_probe" {
+			t.Fatalf("group account %d = %#v, want retained native score/rank", id, row)
+		}
+	}
+	for _, id := range []int64{503, 504} {
+		if row := byGroup[id]; row.QualityScore != nil || row.GroupRank != nil || row.Eligible {
+			t.Fatalf("group account %d unexpectedly scored: %#v", id, row)
+		}
+	}
+}
+
 func (s *accountMonitorMultiplierStub) Resolve(account *Account, _ time.Time) AccountMonitorMultiplier {
 	if account != nil {
 		if result, ok := s.results[account.ID]; ok {

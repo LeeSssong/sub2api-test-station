@@ -14,7 +14,6 @@
   <MonitorV2View
     v-else-if="snapshot"
     :initial-snapshot="snapshot"
-    @fatal="activateFallback"
   />
 
   <AppLayout v-else>

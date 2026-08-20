@@ -29,6 +29,7 @@ export interface MonitorV2Group {
   peak_end: string
   peak_rate_multiplier: number
   status: MonitorV2GroupStatus
+  source_updated_at?: string | null
   availability: MonitorV2Metric
   ttft: MonitorV2Metric
   average_latency: MonitorV2Metric

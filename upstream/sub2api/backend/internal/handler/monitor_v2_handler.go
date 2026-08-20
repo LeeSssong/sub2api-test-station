@@ -50,6 +50,7 @@ type monitorV2GroupResponse struct {
 	PeakEnd            string                           `json:"peak_end,omitempty"`
 	PeakRateMultiplier float64                          `json:"peak_rate_multiplier,omitempty"`
 	Status             string                           `json:"status"`
+	SourceUpdatedAt    string                           `json:"source_updated_at,omitempty"`
 	Availability       monitorV2MetricResponse          `json:"availability"`
 	TTFT               monitorV2MetricResponse          `json:"ttft"`
 	AverageLatency     monitorV2MetricResponse          `json:"average_latency"`
@@ -138,6 +139,7 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 			PeakEnd:            group.PeakEnd,
 			PeakRateMultiplier: group.PeakRateMultiplier,
 			Status:             group.Status,
+			SourceUpdatedAt:    monitorV2OptionalTime(group.SourceUpdatedAt),
 			Availability:       monitorV2MetricFromService(group.Availability),
 			TTFT:               monitorV2MetricFromService(group.TTFT),
 			AverageLatency:     monitorV2MetricFromService(group.AverageLatency),
@@ -151,4 +153,11 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 		GeneratedAt:            snapshot.GeneratedAt.UTC().Format(time.RFC3339),
 		Groups:                 groups,
 	}
+}
+
+func monitorV2OptionalTime(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }

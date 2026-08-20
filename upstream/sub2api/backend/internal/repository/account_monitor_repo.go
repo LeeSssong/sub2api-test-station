@@ -169,7 +169,8 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 	), current_by_group AS (
 		SELECT
 			s.group_id,
-			BOOL_OR(l.status = 'success' AND l.checked_at >= $3) AS has_fresh_success
+			BOOL_OR(l.status = 'success' AND l.checked_at >= $3) AS has_fresh_success,
+			MAX(l.checked_at) AS source_updated_at
 		FROM scopes s
 		LEFT JOIN latest l ON l.account_id = s.account_id
 		GROUP BY s.group_id
@@ -215,7 +216,8 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 		m.average_latency_ms,
 		m.ttft_sample_count,
 		m.latency_sample_count,
-		CASE WHEN COALESCE(c.has_fresh_success, FALSE) THEN 'operational' ELSE 'unavailable' END AS current_status
+		CASE WHEN COALESCE(c.has_fresh_success, FALSE) THEN 'operational' ELSE 'unavailable' END AS current_status,
+		c.source_updated_at
 	FROM bucket_metrics bm
 	JOIN bucket_summary bs ON bs.group_id = bm.group_id
 	JOIN metrics m ON m.group_id = bm.group_id
@@ -234,18 +236,20 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 			operationalBuckets, totalBuckets, ttftSamples, latencySamples int
 			bucketStart                                                   time.Time
 			bucketStatus, currentStatus                                   string
+			latestCheckedAt                                               sql.NullTime
 			bucketLatency, ttftP50, averageLatency                        sql.NullFloat64
 		)
 		if err := rows.Scan(
 			&groupID, &bucketStart, &bucketStatus, &bucketLatency,
 			&operationalBuckets, &totalBuckets, &ttftP50, &averageLatency,
-			&ttftSamples, &latencySamples, &currentStatus,
+			&ttftSamples, &latencySamples, &currentStatus, &latestCheckedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan native monitor v2 groups: %w", err)
 		}
 		if _, exists := seenGroups[groupID]; !exists {
 			out[groupID] = service.MonitorV2NativeGroupProjection{
 				Status:                 currentStatus,
+				SourceUpdatedAt:        accountMonitorNullableTime(latestCheckedAt),
 				OperationalBucketCount: operationalBuckets,
 				TotalBucketCount:       totalBuckets,
 				TTFTP50MS:              accountMonitorRoundedFloat(ttftP50),
@@ -268,6 +272,14 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 		return nil, fmt.Errorf("iterate native monitor v2 groups: %w", err)
 	}
 	return out, nil
+}
+
+func accountMonitorNullableTime(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	checkedAt := value.Time.UTC()
+	return &checkedAt
 }
 
 func accountMonitorRoundedFloat(value sql.NullFloat64) *float64 {

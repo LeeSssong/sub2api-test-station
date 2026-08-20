@@ -95,16 +95,13 @@ const props = defineProps<{
   initialSnapshot: MonitorV2Snapshot
 }>()
 
-const emit = defineEmits<{
-  fatal: []
-}>()
-
 const { t } = useI18n()
 const snapshot = ref<MonitorV2Snapshot>(props.initialSnapshot)
 const currentWindow = ref<MonitorV2Window>(props.initialSnapshot.window)
 const loading = ref(false)
 let abortController: AbortController | null = null
 let refreshTimer: number | null = null
+const REFRESH_RETRY_DELAY_MS = 5_000
 
 const windowOptions = computed(() => [
   { value: '24h' as const, label: t('monitorV2.window.24h') },
@@ -149,13 +146,13 @@ function clearRefreshTimer() {
   refreshTimer = null
 }
 
-function scheduleRefresh(intervalSeconds: MonitorV2Snapshot['refresh_interval_seconds']) {
+function scheduleRefresh(intervalSeconds: MonitorV2Snapshot['refresh_interval_seconds'], delayMs?: number) {
   clearRefreshTimer()
-  if (intervalSeconds === 0 || document.visibilityState === 'hidden') return
+  if ((intervalSeconds === 0 && delayMs === undefined) || document.visibilityState === 'hidden') return
   refreshTimer = window.setTimeout(async () => {
     refreshTimer = null
     await reload(currentWindow.value)
-  }, intervalSeconds * 1_000)
+  }, delayMs ?? intervalSeconds * 1_000)
 }
 
 async function reload(window: MonitorV2Window) {
@@ -173,7 +170,7 @@ async function reload(window: MonitorV2Window) {
   } catch (error: unknown) {
     const candidate = error as { name?: string; code?: string }
     if (candidate?.name === 'AbortError' || candidate?.code === 'ERR_CANCELED') return
-    emit('fatal')
+    scheduleRefresh(snapshot.value.refresh_interval_seconds, REFRESH_RETRY_DELAY_MS)
   } finally {
     if (abortController === controller) {
       abortController = null

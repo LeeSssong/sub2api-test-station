@@ -38,6 +38,7 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ttft := 880.0
 	averageLatency := 2400.0
+	latestCheckedAt := time.Date(2026, 7, 29, 11, 59, 30, 0, time.UTC)
 	stub := &monitorV2SnapshotterStub{
 		snapshot: &service.MonitorV2Snapshot{
 			ContractVersion:        service.MonitorV2ContractVersion,
@@ -46,11 +47,12 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 			GeneratedAt:            time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
 			Groups: []service.MonitorV2Group{
 				{
-					ID:             7,
-					Name:           "公开组",
-					Platform:       service.PlatformOpenAI,
-					RateMultiplier: 0.2,
-					Status:         service.MonitorV2StatusOperational,
+					ID:              7,
+					Name:            "公开组",
+					Platform:        service.PlatformOpenAI,
+					RateMultiplier:  0.2,
+					Status:          service.MonitorV2StatusOperational,
+					SourceUpdatedAt: &latestCheckedAt,
 					TTFT: service.MonitorV2Metric{
 						State:       service.MonitorV2MetricAvailable,
 						Value:       &ttft,
@@ -89,6 +91,7 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, groups, 1)
 	group := groups[0].(map[string]any)
+	require.Equal(t, latestCheckedAt.Format(time.RFC3339), group["source_updated_at"])
 	_, hasFlagship := group["is_flagship"]
 	require.False(t, hasFlagship)
 	_, hasModels := group["models"]

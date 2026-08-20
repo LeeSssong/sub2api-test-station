@@ -65,6 +65,7 @@ export default {
     loading: '正在读取分组状态',
     fallbackNotice: '新版监控暂不可用，已切换到基础状态页。',
     updatedAt: '更新于 {time}',
+    freshness: { latestProbe: '探测于 {time}', noProbe: '暂无最新探测' },
     refresh: '刷新',
     window: {
       '24h': '24 小时',
@@ -94,7 +95,8 @@ export default {
       label: '可用性时间线，共 {count} 个探测点',
       noData: '该时段暂无探测记录',
       noDataBucket: '无探测数据',
-      noDataBucketLabel: '无探测数据桶'
+      noDataBucketLabel: '无探测数据桶',
+      current: '当前'
     },
     empty: {
       title: '暂无可见分组',

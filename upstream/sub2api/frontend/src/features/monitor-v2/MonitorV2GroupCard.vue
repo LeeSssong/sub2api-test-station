@@ -33,6 +33,9 @@
             <span>{{ t('monitorV2.metric.ttft') }}{{ metricValue(group.ttft, formatDuration) }}</span>
             <span>{{ t('monitorV2.metric.averageLatency') }}{{ metricValue(group.average_latency, formatDuration) }}</span>
           </div>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            {{ freshnessLabel }}
+          </p>
         </div>
       </div>
       <MonitorV2Timeline :points="group.timeline" />
@@ -74,4 +77,10 @@ function formatRate(value: number): string {
 function metricValue(metric: MonitorV2Group['ttft'], formatter: (value: number) => string): string {
   return metric.state === 'available' && metric.value !== null ? formatter(metric.value) : '—'
 }
+
+const freshnessLabel = computed(() => {
+  if (!props.group.source_updated_at) return t('monitorV2.freshness.noProbe')
+  const time = new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(props.group.source_updated_at))
+  return t('monitorV2.freshness.latestProbe', { time })
+})
 </script>

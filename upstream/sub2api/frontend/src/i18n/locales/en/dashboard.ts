@@ -65,6 +65,7 @@ export default {
     loading: 'Loading group status',
     fallbackNotice: 'The enhanced monitor is unavailable. Showing the basic status page.',
     updatedAt: 'Updated {time}',
+    freshness: { latestProbe: 'Probed {time}', noProbe: 'No recent probe' },
     refresh: 'Refresh',
     window: {
       '24h': '24 hours',
@@ -94,7 +95,8 @@ export default {
       label: 'Availability timeline, {count} probe points',
       noData: 'No probes in this period',
       noDataBucket: 'No probe data',
-      noDataBucketLabel: 'No probe data bucket'
+      noDataBucketLabel: 'No probe data bucket',
+      current: 'Current'
     },
     empty: {
       title: 'No visible groups',

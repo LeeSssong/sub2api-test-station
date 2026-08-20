@@ -536,6 +536,22 @@ describe('AccountMonitorCard', () => {
     }
   })
 
+  it('keeps a retained score and rank visible while current status is unavailable or stale', () => {
+    const unavailable = mountCard({
+      account: { ...account, availability_status: 'unavailable', service_state: 'unavailable', score_status: 'eligible', quality_score: 82, group_rank: 3, eligible: true },
+    })
+    expect(unavailable.get('[data-test="status-badge"]').text()).toContain('不可用')
+    expect(unavailable.get('[data-test="score-metric"]').text()).toContain('82')
+    expect(unavailable.get('[data-test="rank-metric"]').text()).toContain('第 3')
+
+    const stale = mountCard({
+      account: { ...account, availability_status: 'stale', service_state: 'pending', stale: true, score_status: 'eligible', quality_score: 79, group_rank: 4, eligible: true },
+    })
+    expect(stale.get('[data-test="status-badge"]').text()).toContain('待确认')
+    expect(stale.get('[data-test="score-metric"]').text()).toContain('79')
+    expect(stale.get('[data-test="rank-metric"]').text()).toContain('第 4')
+  })
+
   it('uses probe evidence wording, links the account homepage, and exposes score composition', () => {
     const wrapper = mountCard()
     expect(wrapper.get('[data-test="score-metric"]').text()).toContain('基于 72 次主动探测')

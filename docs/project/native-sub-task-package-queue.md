@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-20，快速迭代-13）
+
+- **T46 性能监测自定义页面挂载**：状态 `IMPLEMENTING`。从当前 `main@989c072a8` 创建独立候选，复用 Sub 原生 `MonitorV2RouteView`、Monitor V2 API/刷新/时间线数据与既有 T41/T42/T44 视觉稳定性；新增 `/custom/performance-monitor` 入口与“性能监测”用户菜单，隐藏原生 `/monitor` 固定入口，不保留旧路由兼容重定向；自定义页面路由直接挂载原生监控组件，保留 AppLayout、鉴权、主题和本地 optimistic 展示语义。预计无迁移、无生产数据写入、`downtime_required=false`；直接相关前端路由/侧边栏/页面挂载测试、typecheck/build、diff-check 后进入根合并车道。候选 worktree：待创建。
+
 ## 当前新增任务（2026-08-20，快速迭代-12）
 
 - **T44 Monitor V2 时间线布局稳定性与卡片防抖优化**：状态 `DONE`。已合入、推送并从 `main@9b4d5b7f6` 发布；桌面端 24/28/30 桶按可用宽度均匀填充，小屏仅时间线内部横向滚动；卡片和柱体 hover 不再位移/缩放，固定边框与几何避免跨卡片抖动。宿主记录 `/var/lib/sub2api/release-records/20260820T100427Z-production-1108935.json`，`downtime_required=false`、`result=succeeded`、`state=promoted`；健康端点 200。

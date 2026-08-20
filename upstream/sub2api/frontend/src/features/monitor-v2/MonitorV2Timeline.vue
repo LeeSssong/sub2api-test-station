@@ -8,41 +8,22 @@
     @mouseleave="activeIndex = null"
   >
     <div
-      v-if="activePoint"
-      data-timeline-tooltip
-      class="pointer-events-none absolute top-[4.25rem] z-20 min-w-[168px] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-center text-xs text-white shadow-2xl transition-all duration-200"
-      :style="{ left: tooltipLeft }"
-      aria-live="polite"
-    >
-      <span
-        class="block text-sm font-black tracking-wide"
-        :class="activePoint.status === 'operational' ? 'text-emerald-400' : 'text-red-400'"
-      >
-        {{ activePoint.status === 'operational' ? 'UP' : 'DOWN' }}
-      </span>
-      <span class="mt-0.5 block whitespace-nowrap text-slate-200">{{ tooltipTimestamp(activePoint.bucket_start) }}</span>
-      <span class="mt-0.5 block text-slate-400">
-        {{ t(`monitorV2.status.${activePoint.status}`) }}<template v-if="activePoint.latency_ms !== null"> · {{ activePoint.latency_ms }} ms</template>
-      </span>
-      <span data-timeline-tooltip-arrow class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-l border-t border-slate-600 bg-slate-950" />
-    </div>
-
-    <div
       data-timeline-scroll
-      class="max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain pt-12 [scrollbar-width:thin]"
+      class="max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain [scrollbar-width:thin]"
       @scroll="repositionTooltip"
     >
       <div
         data-timeline-track
-        class="flex min-w-max items-end gap-[4px] px-1 pb-1"
+        class="flex min-w-max items-end gap-[5px] px-2 pb-2 pt-3"
       >
         <span
           v-for="(point, index) in points"
           :key="`${point.bucket_start}-${index}`"
           :data-timeline-point="index"
+          :data-timeline-point-state="pointState(point)"
           role="img"
-          class="h-4 w-[5px] shrink-0 cursor-default rounded-full transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-y-125 hover:shadow-[0_0_10px_currentColor] focus-visible:-translate-y-1 focus-visible:scale-y-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
-          :class="point.status === 'operational' ? 'bg-emerald-400 text-emerald-400 dark:bg-emerald-400' : 'bg-red-400 text-red-400 dark:bg-red-400'"
+          class="h-5 w-[6px] shrink-0 cursor-default rounded-full transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-y-110 hover:shadow-[0_0_10px_currentColor] focus-visible:-translate-y-1 focus-visible:scale-y-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+          :class="pointClasses(point)"
           :aria-label="pointLabel(point)"
           tabindex="0"
           @mouseenter="activatePoint(index, $event)"
@@ -53,6 +34,30 @@
           v-if="points.length === 0"
           class="h-1 w-full min-w-40 rounded-sm bg-gray-200 dark:bg-dark-700"
         />
+      </div>
+    </div>
+    <div
+      data-timeline-tooltip-row
+      class="relative min-h-[68px]"
+      aria-live="polite"
+    >
+      <div
+        v-if="activePoint"
+        data-timeline-tooltip
+        class="pointer-events-none absolute top-2 z-20 min-w-[196px] -translate-x-1/2 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-center text-sm text-white shadow-2xl transition-all duration-200"
+        :style="{ left: tooltipLeft }"
+      >
+        <span
+          class="block text-base font-black tracking-wide"
+          :class="headingClass(activePoint)"
+        >
+          {{ heading(activePoint) }}
+        </span>
+        <span class="mt-1 block whitespace-nowrap text-slate-200">{{ tooltipTimestamp(activePoint.bucket_start) }}</span>
+        <span class="mt-1 block text-slate-400">
+          {{ pointStatusLabel(activePoint) }}<template v-if="activePoint.latency_ms !== null"> · {{ activePoint.latency_ms }} ms</template>
+        </span>
+        <span data-timeline-tooltip-arrow class="absolute -top-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-600 bg-slate-950" />
       </div>
     </div>
     <div v-if="points.length > 0" class="mt-1 flex justify-between px-1 text-[10px] text-gray-400 dark:text-gray-500" aria-hidden="true">
@@ -107,7 +112,7 @@ function repositionTooltip() {
     tooltipLeftPixels.value = null
     return
   }
-  const halfTooltip = 84
+  const halfTooltip = 98
   const center = pointRect.left - rootRect.left + pointRect.width / 2
   tooltipLeftPixels.value = Math.min(rootRect.width - halfTooltip, Math.max(halfTooltip, center))
 }
@@ -118,9 +123,44 @@ const ariaLabel = computed(() => {
 })
 
 function pointLabel(point: MonitorV2TimelinePoint): string {
-  const outcome = t(`monitorV2.status.${point.status}`)
+  const outcome = isNoDataPoint(point)
+    ? t('monitorV2.timeline.noDataBucketLabel')
+    : pointStatusLabel(point)
   const latency = point.latency_ms === null ? '' : ` · ${point.latency_ms} ms`
   return `${tooltipTimestamp(point.bucket_start)} · ${outcome}${latency}`
+}
+
+function isNoDataPoint(point: MonitorV2TimelinePoint): boolean {
+  return point.status === 'unavailable' && point.latency_ms === null
+}
+
+function pointState(point: MonitorV2TimelinePoint): 'operational' | 'unavailable' | 'no-data' {
+  return isNoDataPoint(point) ? 'no-data' : point.status
+}
+
+function pointClasses(point: MonitorV2TimelinePoint): string {
+  if (isNoDataPoint(point)) {
+    return 'border border-dashed border-slate-300 bg-slate-400/70 text-slate-500 dark:border-slate-500 dark:bg-slate-600/70 dark:text-slate-300'
+  }
+  return point.status === 'operational'
+    ? 'bg-emerald-400 text-emerald-400 dark:bg-emerald-400'
+    : 'bg-red-400 text-red-400 dark:bg-red-400'
+}
+
+function heading(point: MonitorV2TimelinePoint): 'UP' | 'DOWN' | 'NO DATA' {
+  if (isNoDataPoint(point)) return 'NO DATA'
+  return point.status === 'operational' ? 'UP' : 'DOWN'
+}
+
+function headingClass(point: MonitorV2TimelinePoint): string {
+  if (isNoDataPoint(point)) return 'text-amber-300'
+  return point.status === 'operational' ? 'text-emerald-400' : 'text-red-400'
+}
+
+function pointStatusLabel(point: MonitorV2TimelinePoint): string {
+  return isNoDataPoint(point)
+    ? t('monitorV2.timeline.noDataBucket')
+    : t(`monitorV2.status.${point.status}`)
 }
 
 function tooltipTimestamp(value: string): string {

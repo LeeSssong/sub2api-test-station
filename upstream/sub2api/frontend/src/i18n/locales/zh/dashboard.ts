@@ -92,7 +92,9 @@ export default {
     peakRate: '{start}-{end} 高峰倍率 {rate}×',
     timeline: {
       label: '可用性时间线，共 {count} 个探测点',
-      noData: '该时段暂无探测记录'
+      noData: '该时段暂无探测记录',
+      noDataBucket: '无探测数据',
+      noDataBucketLabel: '无探测数据桶'
     },
     empty: {
       title: '暂无可见分组',

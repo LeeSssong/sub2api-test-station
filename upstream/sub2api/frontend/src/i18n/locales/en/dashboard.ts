@@ -92,7 +92,9 @@ export default {
     peakRate: '{start}-{end} peak multiplier {rate}×',
     timeline: {
       label: 'Availability timeline, {count} probe points',
-      noData: 'No probes in this period'
+      noData: 'No probes in this period',
+      noDataBucket: 'No probe data',
+      noDataBucketLabel: 'No probe data bucket'
     },
     empty: {
       title: 'No visible groups',

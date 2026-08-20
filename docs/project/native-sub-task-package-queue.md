@@ -2,6 +2,8 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
+- **T47 monitor visual redesign**: status DESIGNING. User approved a competitor-driven redesign of `/custom/performance-monitor` and a dedicated icon for the performance monitor menu. Scope is frontend cards, timeline, sidebar icon, and direct tests only; no data source, API, migration, or production config changes. Worktree: `.worktrees/t47-performance-monitor-visual`.
+
 - **T46 性能监测自定义页面挂载**：状态 DONE。根 main@ef4401234 已推送并完成生产蓝绿发布；宿主记录 /var/lib/sub2api/release-records/20260820T174214Z-production-1481712.json 返回 result=succeeded、state=promoted、rolled_back=false，发布预检 downtime_required=false，活动槽 blue。直接相关前端 11 files/49 tests、pnpm typecheck、pnpm build、git diff --check 通过；测试证据 /Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-ef4401234-t46-performance-monitor.json。新增 /custom/performance-monitor 与“性能监测”虚拟自定义菜单，隐藏原生 /monitor 固定入口，不做旧路由重定向；无迁移、无生产数据写入。
 
 ## 当前新增任务（2026-08-20，快速迭代-12）

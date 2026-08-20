@@ -577,9 +577,12 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
-		row.Eligible = row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped
+		scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
+		row.ScoreStatus = scoreStatus
+		row.Eligible = scoreEligible
 		if row.Eligible {
-			breakdown, score := accountMonitorWindowScoreBreakdown(1, row.EffectiveMultiplier, weights, evidence)
+			row.EvidenceSource = scoreEvidence.Source
+			breakdown, score := accountMonitorWindowScoreBreakdown(1, row.EffectiveMultiplier, weights, scoreEvidence)
 			row.ScoreBreakdown = &breakdown
 			row.QualityScore = score
 			capAccountMonitorAbnormalScore(row)
@@ -661,9 +664,13 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CostMode = cost.Mode
 			row.EffectiveMultiplier = cost.EffectiveMultiplier
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
-			row.Eligible = row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped
+			scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
+			row.ScoreStatus = scoreStatus
+			row.Eligible = scoreEligible && row.GroupEligibility == accountMonitorEligibilityEligible
 			if row.Eligible {
-				breakdown, score := accountMonitorWindowScoreBreakdown(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights, evidence)
+				row.Evidence = scoreEvidence
+				row.EvidenceSource = scoreEvidence.Source
+				breakdown, score := accountMonitorWindowScoreBreakdown(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights, scoreEvidence)
 				row.ScoreBreakdown = &breakdown
 				row.QualityScore = score
 				capAccountMonitorAbnormalScore(&row.AccountMonitorAccount)
@@ -1495,6 +1502,25 @@ func accountMonitorWindowEvidence(
 		return evidence
 	}
 	return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: accountMonitorProbeObservedAt(probe, latest)}
+}
+
+func accountMonitorWindowScoreProjection(
+	account Account,
+	currentScoreStatus string,
+	evidence AccountMonitorQualityEvidence,
+) (AccountMonitorQualityEvidence, string, bool) {
+	if evidence.SampleCount <= 0 || evidence.SuccessSampleCount <= 0 {
+		return evidence, accountMonitorScoreIneligible, false
+	}
+	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
+		evidence.Source = "monitor_probe"
+		return evidence, currentScoreStatus, true
+	}
+	if !account.IsSchedulable() {
+		return evidence, accountMonitorScoreIneligible, false
+	}
+	evidence.Source = "monitor_probe"
+	return evidence, accountMonitorScoreEligible, true
 }
 
 func accountMonitorWindowObservedAt(window AccountMonitorWindowAggregate) time.Time {

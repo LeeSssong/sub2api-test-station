@@ -4,7 +4,7 @@
 
 **T40 错误码/边缘错误中文映射补齐（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用侧 402、507、520、521、522、523、524、525 规则与 JSON/SSE/管理员诊断合同，保留 499 客户端断开分类，并明确 Cloudflare HTML 413 不误判/不泄露。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
 
-**T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`DONE`。根 `main@53d5fa19fcdeeb9e0d5db13d96b0a7c6334b5779` 已推送；生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-53d5fa19-t37.json` 绑定 tested tree `b472d1aece4fd5c0216c0c86fafc37b0daabe199`，宿主记录 `/var/lib/sub2api/release-records/20260820T035515Z-production-813018.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`、`rolled_back=false`。公网 `/healthz`、`/readyz`、`/health` 均 200；管理员版本接口 200；Monitor V2 未认证请求 401。实现让 handler 使用 `AuthSubject.UserID`，公开 active 分组始终保留，专属 active 分组只取原生授权交集，并在 T34 原生投影前裁剪。登录态两用户矩阵作为用户真机验收保留，不阻塞后续任务。
+**T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`DEPLOYING`。用户反馈修正已合入根 `main@8233974ac`；Monitor V2 现在复用 Sub 原生 `channel_monitor_v2_config` 的 enabled/group_ids（空 group_ids 保持“全部分组”语义），再按当前用户原生专属授权裁剪。前端时间线 tooltip 已移到柱体下方并删除标题解释文案。根合并后 service/handler/routes、cmd/server compile/build、前端 Monitor V2 13/13、typecheck、production build、diff-check 均通过；下一步生成 0600 证据、发布预检、无停机蓝绿发布和登录态专项验证。无迁移、配置 schema 或生产数据写入；预期 `downtime_required=false`。
 
 **T38 可调度账号保留最近原生探测评分（2026-08-20）：** 状态：`DEPLOYING`。独立用户可见任务 `01a01d0f-a721-7032-9cab-faaae3ce6663` 已无冲突合入根 `main@6c8810cb6b16b1321834d6d72f21ac6e99198160`，tree `8c253e87a25c1497578c8682bdb4cdd1d7f75ca0`；合并后 service/handler focused、全 AccountMonitor、成本门禁 + Monitor V2 v7、compile-only、52 项卡片测试、typecheck、gofmt/diff-check 和 protected-path guards 均通过。当前进入部署车道：从该 main 生成 0600 证据、推送、发布预检、无停机蓝绿部署与健康验证。无迁移、配置、前端、依赖或生产数据写入；预期 `downtime_required=false`。
 

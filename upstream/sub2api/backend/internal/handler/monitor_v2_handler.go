@@ -14,9 +14,9 @@ import (
 type monitorV2Snapshotter interface {
 	Snapshot(
 		context.Context,
+		int64,
 		service.MonitorV2Window,
 		time.Time,
-		...service.MonitorV2Scope,
 	) (*service.MonitorV2Snapshot, error)
 }
 
@@ -75,11 +75,12 @@ func (h *MonitorV2Handler) Snapshot(c *gin.Context) {
 		response.InternalError(c, "monitor v2 unavailable")
 		return
 	}
-	scope := service.MonitorV2ScopePublic
-	if role, ok := middleware.GetUserRoleFromContext(c); ok && role == service.RoleAdmin {
-		scope = service.MonitorV2ScopeAdmin
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
 	}
-	snapshot, err := h.service.Snapshot(c.Request.Context(), window, time.Now().UTC(), scope)
+	snapshot, err := h.service.Snapshot(c.Request.Context(), subject.UserID, window, time.Now().UTC())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

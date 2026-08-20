@@ -85,9 +85,9 @@ func (r *monitorV2RouteSettingRepo) Delete(_ context.Context, key string) error 
 
 func (monitorV2RouteSnapshotter) Snapshot(
 	context.Context,
+	int64,
 	service.MonitorV2Window,
 	time.Time,
-	...service.MonitorV2Scope,
 ) (*service.MonitorV2Snapshot, error) {
 	return &service.MonitorV2Snapshot{
 		ContractVersion:        service.MonitorV2ContractVersion,
@@ -136,6 +136,7 @@ func TestMonitorV2RouteUsesAuthenticatedUserBoundary(t *testing.T) {
 	authCalled := false
 	jwt := middleware.JWTAuthMiddleware(func(c *gin.Context) {
 		authCalled = true
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 		c.Next()
 	})
 	audit := middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })

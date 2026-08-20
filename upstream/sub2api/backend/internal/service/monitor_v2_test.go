@@ -26,6 +26,37 @@ type monitorV2NativeReaderStub struct {
 	start      time.Time
 	end        time.Time
 	bucketSize time.Duration
+	calls      int
+}
+
+type monitorV2AvailableGroupReaderStub struct {
+	groups  []Group
+	err     error
+	userIDs []int64
+}
+
+func (s *monitorV2AvailableGroupReaderStub) GetAvailableGroups(_ context.Context, userID int64) ([]Group, error) {
+	s.userIDs = append(s.userIDs, userID)
+	return append([]Group(nil), s.groups...), s.err
+}
+
+func TestMonitorV2VisibleGroupsKeepsPublicAndAuthorizedExclusiveInRepositoryOrder(t *testing.T) {
+	allGroups := []Group{
+		{ID: 1, Name: "Public subscription", Status: StatusActive},
+		{ID: 2, Name: "Allowed exclusive", Status: StatusActive, IsExclusive: true},
+		{ID: 3, Name: "Denied exclusive", Status: StatusActive, IsExclusive: true},
+		{ID: 4, Name: "Inactive exclusive", Status: StatusDisabled, IsExclusive: true},
+		{ID: 5, Name: "Public absent from available", Status: StatusActive},
+	}
+	availableGroups := []Group{{ID: 2}, {ID: 2}, {ID: 4}}
+
+	visible, ids := monitorV2VisibleGroups(allGroups, availableGroups)
+
+	require.Equal(t, []int64{1, 2, 5}, ids)
+	require.Len(t, visible, 3)
+	require.Equal(t, []string{"Public subscription", "Allowed exclusive", "Public absent from available"}, []string{
+		visible[0].Name, visible[1].Name, visible[2].Name,
+	})
 }
 
 func (s *monitorV2NativeReaderStub) ProjectMonitorV2Groups(
@@ -34,6 +65,7 @@ func (s *monitorV2NativeReaderStub) ProjectMonitorV2Groups(
 	start, end time.Time,
 	bucketSize time.Duration,
 ) (map[int64]MonitorV2NativeGroupProjection, error) {
+	s.calls++
 	s.groupIDs = append([]int64(nil), groupIDs...)
 	s.start = start
 	s.end = end
@@ -56,11 +88,12 @@ func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	}}
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "GPT Pro", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{},
 		native,
 		nil,
 	)
 
-	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV2Window24H, now)
 
 	require.NoError(t, err)
 	require.Equal(t, "7", snapshot.ContractVersion)
@@ -74,6 +107,40 @@ func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	require.Len(t, group.Timeline, 24)
 	require.Equal(t, []int64{7}, native.groupIDs)
 	require.Equal(t, time.Hour, native.bucketSize)
+}
+
+func TestMonitorV2SnapshotUsesCurrentUserAvailableGroupsBeforeNativeProjection(t *testing.T) {
+	available := &monitorV2AvailableGroupReaderStub{groups: []Group{{ID: 3}}}
+	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{}}
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{
+			{ID: 1, Name: "Public", Status: StatusActive},
+			{ID: 2, Name: "Denied exclusive", Status: StatusActive, IsExclusive: true},
+			{ID: 3, Name: "Allowed exclusive", Status: StatusActive, IsExclusive: true},
+		}}, available, native, nil,
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV2Window7D, time.Now().UTC())
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{42}, available.userIDs)
+	require.Equal(t, []int64{1, 3}, native.groupIDs)
+	require.Equal(t, []int64{1, 3}, []int64{snapshot.Groups[0].ID, snapshot.Groups[1].ID})
+}
+
+func TestMonitorV2SnapshotStopsBeforeNativeProjectionWhenAuthorizationFails(t *testing.T) {
+	available := &monitorV2AvailableGroupReaderStub{err: errors.New("authorization unavailable")}
+	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{}}
+	svc := NewMonitorV2Service(
+		&monitorV2GroupRepoStub{groups: []Group{{ID: 1, Name: "Public", Status: StatusActive}}},
+		available, native, nil,
+	)
+
+	_, err := svc.Snapshot(context.Background(), 42, MonitorV2Window7D, time.Now().UTC())
+
+	require.ErrorContains(t, err, "authorization unavailable")
+	require.Nil(t, native.groupIDs)
+	require.Zero(t, native.calls)
 }
 
 func TestMonitorV2SnapshotMatchesMicrosecondNativeBucketsWithNanosecondNow(t *testing.T) {
@@ -92,11 +159,12 @@ func TestMonitorV2SnapshotMatchesMicrosecondNativeBucketsWithNanosecondNow(t *te
 	}}
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Microsecond bucket", Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{},
 		native,
 		nil,
 	)
 
-	snapshot, err := svc.Snapshot(context.Background(), MonitorV2Window24H, now)
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV2Window24H, now)
 
 	require.NoError(t, err)
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Timeline[0].Status)
@@ -106,6 +174,7 @@ func TestMonitorV2SnapshotReturnsFixedUnavailableBucketsForMissingNativeScope(t 
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "No Native Accounts", Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{},
 		&monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{}},
 		nil,
 	)
@@ -119,7 +188,7 @@ func TestMonitorV2SnapshotReturnsFixedUnavailableBucketsForMissingNativeScope(t 
 		{MonitorV2Window30D, 30},
 	} {
 		t.Run(string(test.window), func(t *testing.T) {
-			snapshot, err := svc.Snapshot(context.Background(), test.window, now)
+			snapshot, err := svc.Snapshot(context.Background(), 42, test.window, now)
 			require.NoError(t, err)
 			require.Len(t, snapshot.Groups[0].Timeline, test.points)
 			require.Equal(t, MonitorV2StatusUnavailable, snapshot.Groups[0].Status)
@@ -133,6 +202,7 @@ func TestMonitorV2SnapshotReturnsFixedUnavailableBucketsForMissingNativeScope(t 
 
 func TestMonitorV2SnapshotPreservesGroupOrderAndVisibility(t *testing.T) {
 	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{}}
+	available := &monitorV2AvailableGroupReaderStub{groups: []Group{{ID: 3}}}
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{
 			{ID: 1, Name: "Standard", Status: StatusActive},
@@ -140,34 +210,33 @@ func TestMonitorV2SnapshotPreservesGroupOrderAndVisibility(t *testing.T) {
 			{ID: 3, Name: "Exclusive", Status: StatusActive, IsExclusive: true},
 			{ID: 4, Name: "Disabled", Status: StatusDisabled},
 		}},
+		available,
 		native,
 		nil,
 	)
 
-	publicSnapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, time.Now().UTC())
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV2Window7D, time.Now().UTC())
 	require.NoError(t, err)
-	require.Equal(t, []int64{1, 2}, []int64{publicSnapshot.Groups[0].ID, publicSnapshot.Groups[1].ID})
-	require.Equal(t, []int64{1, 2}, native.groupIDs)
-
-	adminSnapshot, err := svc.Snapshot(context.Background(), MonitorV2Window7D, time.Now().UTC(), MonitorV2ScopeAdmin)
-	require.NoError(t, err)
-	require.Equal(t, []int64{1, 2, 3}, []int64{adminSnapshot.Groups[0].ID, adminSnapshot.Groups[1].ID, adminSnapshot.Groups[2].ID})
+	require.Equal(t, []int64{1, 2, 3}, []int64{snapshot.Groups[0].ID, snapshot.Groups[1].ID, snapshot.Groups[2].ID})
+	require.Equal(t, []int64{42}, available.userIDs)
+	require.Equal(t, []int64{1, 2, 3}, native.groupIDs)
 }
 
 func TestMonitorV2SnapshotPropagatesNativeReaderError(t *testing.T) {
 	svc := NewMonitorV2Service(
 		&monitorV2GroupRepoStub{groups: []Group{{ID: 1, Name: "Standard", Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{},
 		&monitorV2NativeReaderStub{err: errors.New("native unavailable")},
 		nil,
 	)
 
-	_, err := svc.Snapshot(context.Background(), MonitorV2Window7D, time.Now().UTC())
+	_, err := svc.Snapshot(context.Background(), 42, MonitorV2Window7D, time.Now().UTC())
 
 	require.ErrorContains(t, err, "native unavailable")
 }
 
 func TestMonitorV2SnapshotRejectsUnsupportedWindow(t *testing.T) {
-	svc := NewMonitorV2Service(&monitorV2GroupRepoStub{}, &monitorV2NativeReaderStub{}, nil)
-	_, err := svc.Snapshot(context.Background(), MonitorV2Window("15d"), time.Now().UTC())
+	svc := NewMonitorV2Service(&monitorV2GroupRepoStub{}, &monitorV2AvailableGroupReaderStub{}, &monitorV2NativeReaderStub{}, nil)
+	_, err := svc.Snapshot(context.Background(), 42, MonitorV2Window("15d"), time.Now().UTC())
 	require.ErrorContains(t, err, "unsupported monitor window")
 }

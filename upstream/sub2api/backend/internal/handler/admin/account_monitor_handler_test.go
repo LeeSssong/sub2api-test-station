@@ -29,8 +29,12 @@ type accountMonitorHandlerRepoStub struct {
 	savedGlobalWeights    []service.AccountMonitorScoreWeights
 	latest                map[int64]service.AccountMonitorLatest
 	timelines             map[int64][]service.AccountMonitorTimelinePoint
+	aggregates            map[int64]service.AccountMonitorAggregate
 	windowAggregates      map[int64]service.AccountMonitorWindowAggregate
 }
+
+func monitorTimePtr(value time.Time) *time.Time { return &value }
+func monitorIntPtr(value int) *int              { return &value }
 
 func (*accountMonitorHandlerRepoStub) LoadSettings(context.Context) (service.AccountMonitorSettings, error) {
 	return service.AccountMonitorSettings{IntervalSeconds: 300}, nil
@@ -48,8 +52,8 @@ func (s *accountMonitorHandlerRepoStub) ListTimelines(context.Context, []int64, 
 	return s.timelines, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorAggregate, error) {
-	return nil, nil
+func (s *accountMonitorHandlerRepoStub) ListAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorAggregate, error) {
+	return s.aggregates, nil
 }
 
 func (s *accountMonitorHandlerRepoStub) ListWindowAggregates(context.Context, []int64, time.Time, time.Time) (map[int64]service.AccountMonitorWindowAggregate, error) {
@@ -308,6 +312,66 @@ func TestAccountMonitorHandlerReturnsCompleteWindowTimelineAndGlobalRanking(t *t
 	}
 	if len(payload.Data.Accounts) != 1 || len(payload.Data.Accounts[0].Timeline) != 2 || payload.Data.Accounts[0].Timeline[1].Status != "failed" || payload.Data.Accounts[0].QualityScore != nil || payload.Data.Accounts[0].GroupRank != nil || payload.Data.Accounts[0].ScoreStatus != "ineligible" {
 		t.Fatalf("window payload missing full account monitor fields: %s", res.Body.String())
+	}
+}
+
+func TestAccountMonitorHandlerReturnsUnavailableAndStaleRowsWithRetainedNativeScores(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 0.5
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights: service.AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20},
+		aggregates: map[int64]service.AccountMonitorAggregate{
+			8: {SampleCount: 24, SuccessCount: 21, SuccessSampleCount: 21, ErrorCount: 3, SuccessRate: 21.0 / 24.0, ConsecutiveFailed: 3, LastCheckedAt: &now},
+			9: {SampleCount: 24, SuccessCount: 24, SuccessSampleCount: 24, SuccessRate: 1, LastCheckedAt: monitorTimePtr(now.Add(-20 * time.Minute))},
+		},
+		latest: map[int64]service.AccountMonitorLatest{
+			8: {Status: "failed", HTTPStatus: monitorIntPtr(http.StatusBadGateway), CheckedAt: now},
+			9: {Status: "success", CheckedAt: now.Add(-20 * time.Minute)},
+		},
+	}
+	accounts := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{
+		{ID: 8, Name: "unavailable-with-score", Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate},
+		{ID: 9, Name: "stale-with-score", Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate},
+	}}
+	h := NewAccountMonitorHandler(service.NewAccountMonitorService(repo, accounts, nil, nil, nil), nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Accounts []struct {
+				AvailabilityStatus string   `json:"availability_status"`
+				Stale              bool     `json:"stale"`
+				QualityScore       *float64 `json:"quality_score"`
+				GroupRank          *int     `json:"group_rank"`
+				ScoreStatus        string   `json:"score_status"`
+			} `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Accounts) != 2 {
+		t.Fatalf("accounts = %s", res.Body.String())
+	}
+	byStatus := map[string]struct {
+		stale bool
+		score *float64
+		rank  *int
+	}{
+		payload.Data.Accounts[0].AvailabilityStatus: {payload.Data.Accounts[0].Stale, payload.Data.Accounts[0].QualityScore, payload.Data.Accounts[0].GroupRank},
+		payload.Data.Accounts[1].AvailabilityStatus: {payload.Data.Accounts[1].Stale, payload.Data.Accounts[1].QualityScore, payload.Data.Accounts[1].GroupRank},
+	}
+	if row := byStatus["unavailable"]; row.score == nil || row.rank == nil {
+		t.Fatalf("unavailable row lost score/rank: %#v", byStatus)
+	}
+	if row := byStatus["stale"]; !row.stale || row.score == nil || row.rank == nil {
+		t.Fatalf("stale row lost truthful state or score/rank: %#v", byStatus)
 	}
 }
 

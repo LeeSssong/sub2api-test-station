@@ -780,3 +780,14 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 **T03-R1 根任务合并、推送与无停机预检（2026-08-13）：** 状态：进行中（已合并、已推送、生产发布被停机门禁阻断，尚未部署或线上验收）。候选 `2e28308a04495482fbe16af05344111bb4a0b0a7` 经精确根授权合并为 `main@dbe1231e0243d7190996f21cd8b8e5ac17b8420a`；唯一冲突为总账，已同时保留监控 P95 热修与 T03-R1 记录。当前已推送发布基线为 `main@f0746826c10a83688ad4363ac860a74f0f041e32`、tree `73dd8ed30451a5e018871f5f52816e5883585c17`。合并后重新通过后端迁移/repository/service/admin-handler/handler 测试、vet、server build，前端 6 文件 53/53 Vitest、typecheck、production build、负向守门与 diff-check；`0600` 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-13-main-f0746826c10a83688ad4363ac860a74f0f041e32-t03-r1-v1.json`，迁移集合 hash 为 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`。受控宿主蓝绿预检返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒；在启动候选、流量切换、停服务、迁移或重启前停止，生产未变更。回滚保持当前活动槽；如需继续，必须由用户明确授权“允许停机部署”，之后才可走受审的维护发布路径。T05 继续禁止启动。
 
 **T03-R1 停机授权后的维护发布契约核验（2026-08-14）：** 用户已明确授权“允许停机部署”。根任务核验时 `main@fbd85f608fb6519a52e87b6a8d71011efcfa90a2` 与 `origin/main` 一致、工作树干净；相对已验证 `f0746826` 仅总账/队列文档变化。当前活动迁移集为 `f1b1f3537d518c30dc2fe99d75e9f2d7a5a27452f59ce4a50a1e81277c8cfbcc`，T03-R1 候选集为 `6a0e141eb4788460a99fc3e108ce5b46c866fd2c45b9a7265ea66b0ef8faaf71`。受审宿主执行器只列出至 `MAINTENANCE_6`（`fadb… -> f1b1…`），没有 `f1b1… -> 6a0e…` 的精确 allowlist；维护标志配合正确旧 hash 仍会在任何停服、迁移、重启或切换前以 `migration_set_changed` fail-closed。已运行本地 `tests/operations/deploy_sub2api_blue_green_host_test.sh`，通过 fail-closed 与预加载运输契约；未调用生产发布链，生产未变更。下一步必须以独立用户可见顶层维护任务补充并复审唯一的精确迁移转换，再从更新后的 `main` 重新验证、生成绑定证据并使用已授权维护路径发布；不得伪造或绕过 allowlist，T05 继续禁止启动。**状态：进行中（停机授权已具备，维护发布契约缺口待独立任务闭合）。**
+# 进行中：T41 Monitor V2 时间线视觉与 Tooltip 交互优化（快速迭代-11）
+
+- 状态：`DESIGNING`；工作区：待派生独立 worktree；基线：`main@3ac10d8473923a9b017c4826024680c4361e8323`。
+- 范围：仅 Monitor V2 时间线 Tooltip 布局、尺寸、无数据桶可视表达及直接相关前端测试；不改 Monitor V2 v7、原生探测数据源、24/28/30 桶契约或生产配置。
+- 依赖/发布：无前置依赖；可与 T42 并行设计/实现，整合、推送、部署和线上验证严格单车道；预计 `downtime_required=false`。
+
+# 进行中：T42 Monitor V2 时间新鲜度与刷新可靠性优化（快速迭代-11）
+
+- 状态：`DESIGNING`；工作区：待派生独立 worktree；基线：`main@3ac10d8473923a9b017c4826024680c4361e8323`。
+- 范围：仅 Monitor V2 原生 `checked_at` 新鲜度字段、当前桶时间语义、前端刷新失败重试及直接相关测试；不改 Monitor V2 v7 既有字段语义、原生探测执行器或生产设置值。
+- 依赖/发布：无前置依赖；可与 T41 并行设计/实现，整合、推送、部署和线上验证严格单车道；预计 `downtime_required=false`。

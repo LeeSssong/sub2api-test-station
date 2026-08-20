@@ -3,9 +3,12 @@
 ## 结论
 
 - 任务：T37
-- 基线：`main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
-- 实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
-- 实现 tree：`5c480e364e462c6983042b16f6c3481100a87b34`
+- 原始设计基线：`main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
+- 刷新基线：`main@3bcd7169d874af36f6a22df2b1df05d0ce882553`
+- 刷新合并提交：`b5f172a5b`（将 `main@3bcd7169d` 合入候选）
+- 刷新前实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
+- 刷新后候选 tip：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7`
+- 刷新后候选 tree：`2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
 - 验证日期：2026-08-20
 - 候选状态：`READY_FOR_ROOT_REVIEW`
 - 迁移：无
@@ -67,7 +70,7 @@ cannot use 42 as MonitorV2Window value in argument to svc.Snapshot
 
 ## GREEN 与最终新鲜验证
 
-2026-08-20 在实现提交上新鲜运行：
+2026-08-20 在刷新后的候选合并树（含 `main@3bcd7169d`）上新鲜运行：
 
 ```bash
 cd upstream/sub2api/backend
@@ -98,10 +101,10 @@ go build ./cmd/server
 命令：
 
 ```bash
-git diff --check b5ad0cdd624e3590bd0d19000c0f78cde200ef68...HEAD
-git diff --name-only b5ad0cdd624e3590bd0d19000c0f78cde200ef68...HEAD -- \
+git diff --check 3bcd7169d874af36f6a22df2b1df05d0ce882553...HEAD
+git diff --name-only 3bcd7169d874af36f6a22df2b1df05d0ce882553...HEAD -- \
   upstream/sub2api/backend/migrations upstream/sub2api/frontend .github/workflows
-git diff --name-only b5ad0cdd624e3590bd0d19000c0f78cde200ef68...HEAD -- \
+git diff --name-only 3bcd7169d874af36f6a22df2b1df05d0ce882553...HEAD -- \
   docs/project/project-progress.md docs/project/native-sub-task-package-queue.md
 rg -n 'MonitorV2Scope|GetUserRoleFromContext' \
   upstream/sub2api/backend/internal/handler/monitor_v2_handler.go \
@@ -112,9 +115,13 @@ rg -n 'MonitorV2Scope|GetUserRoleFromContext' \
 
 - `git diff --check` 通过。
 - migration、frontend、GitHub Actions 差异为空。
-- 项目总账与任务队列差异为空。
+- 相对刷新基线 `main@3bcd7169d` 的项目总账与任务队列差异为空；刷新基线自身包含根总控已登记的 T37/T38 状态推进。
 - Monitor V2 handler/service 中旧 role scope 符号为空。
 - `MonitorV2ContractVersion = "7"` 保持；窗口仍为 24、28、30 桶。
+
+## 刷新说明
+
+候选已在本 worktree 以无冲突 merge commit `b5f172a5b` 合入 `main@3bcd7169d874af36f6a22df2b1df05d0ce882553`；未修改根 `main`、远端或生产。刷新只带入根 main 的登记文档变化，T37 业务文件无冲突。
 
 ## 未验证项
 

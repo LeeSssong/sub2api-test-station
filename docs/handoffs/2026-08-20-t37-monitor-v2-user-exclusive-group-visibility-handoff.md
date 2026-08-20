@@ -4,17 +4,20 @@
 
 `READY_FOR_ROOT_REVIEW`
 
-本任务没有合并 `main`、推送、部署、访问或修改生产。
+本任务仅在候选 worktree 合入最新 `main@3bcd7169d874af36f6a22df2b1df05d0ce882553`；没有修改根 `main`、推送、部署、访问或修改生产。
 
 ## Git 身份
 
-- 基线：`b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
+- 原始设计基线：`b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
+- 刷新基线：`3bcd7169d874af36f6a22df2b1df05d0ce882553`
 - 分支：`codex/t37-monitor-v2-user-exclusive-groups`
-- 实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
-- 实现 tree：`5c480e364e462c6983042b16f6c3481100a87b34`
+- 刷新合并提交：`b5f172a5b`
+- 刷新前实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
+- 刷新后候选 tip：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7`
+- 刷新后候选 tree：`2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
 - 规格提交：`99446215b`
 - 计划提交：`587195999`
-- 最终含交接提交与 tree：以本任务最终汇报中的 `git rev-parse HEAD` / `HEAD^{tree}` 为准
+- 最终含交接提交与 tree：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7` / `2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
 
 ## 交付行为
 
@@ -53,7 +56,7 @@ go test ./cmd/server -run '^$' -count=1
 go build ./cmd/server
 ```
 
-范围门禁通过：`git diff --check`；无 migrations、frontend、`.github/workflows`、项目总账或任务队列差异；旧 `MonitorV2Scope`/role 分支已清除。
+范围门禁通过：相对刷新基线执行 `git diff --check`；无 migrations、frontend、`.github/workflows` 或 T37 业务范围外差异；旧 `MonitorV2Scope`/role 分支已清除。
 
 详细 RED/GREEN 与输出见 `docs/superpowers/reports/2026-08-20-t37-monitor-v2-user-exclusive-group-visibility-verification.md`。
 
@@ -68,12 +71,12 @@ go build ./cmd/server
 ## 未验证项
 
 - 未执行生产或登录态浏览器验证。
-- 未在根 `main` 合并树上复跑测试、预检或发布。
+- 未在根 `main` 合并树上执行发布预检或发布；刷新后的候选直接门禁已新鲜复跑。
 - 未运行全仓/前端验证；本任务无前端差异，按直接相关最小门禁收口。
 
 ## 根总控建议验收
 
-1. 确认候选相对目标 `main` 无漂移或先在候选刷新。
+1. 候选已刷新至 `main@3bcd7169d`；根总控合并前仍复核目标 SHA 未漂移。
 2. 合并后复跑 service/handler/routes Monitor V2 与 server build。
 3. 预检确认 `downtime_required=false` 后走既有蓝绿链。
 4. GET-only 登录态验证：

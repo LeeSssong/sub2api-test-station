@@ -16,7 +16,7 @@ vi.mock('vue-i18n', () => ({
 import MonitorV2Timeline from '../MonitorV2Timeline.vue'
 
 describe('MonitorV2Timeline', () => {
-  it('shows a custom time-point tooltip and lifts the hovered operational bar', async () => {
+  it('shows a custom time-point tooltip without moving the hovered operational bar', async () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [{
@@ -36,8 +36,11 @@ describe('MonitorV2Timeline', () => {
     expect(bar.element.closest('[aria-hidden="true"]')).toBeNull()
     expect(bar.classes()).toContain('bg-emerald-400')
     expect(bar.classes()).toContain('h-5')
-    expect(bar.classes()).toContain('w-[6px]')
-    expect(bar.classes()).toContain('hover:-translate-y-1')
+    expect(bar.classes()).toContain('w-auto')
+    expect(bar.classes()).toContain('min-w-[4px]')
+    expect(bar.classes()).not.toContain('hover:-translate-y-1')
+    expect(bar.classes()).not.toContain('hover:scale-y-110')
+    expect(wrapper.get('[data-timeline-track]').attributes('style')).toContain('--timeline-count: 1')
 
     await bar.trigger('mouseenter')
 
@@ -100,10 +103,25 @@ describe('MonitorV2Timeline', () => {
     const bar = wrapper.get('[data-timeline-point="0"]')
     expect(scroll.classes()).toContain('max-w-full')
     expect(scroll.classes()).toContain('overflow-x-auto')
-    expect(track.classes()).toContain('min-w-max')
+    expect(track.classes()).not.toContain('min-w-max')
     expect(bar.classes()).toContain('shrink-0')
-    expect(bar.classes()).toContain('w-[6px]')
+    expect(bar.classes()).toContain('w-auto')
     expect(track.classes()).toContain('gap-[5px]')
+    expect(track.attributes('style')).toContain('--timeline-count: 64')
+  })
+
+  it.each([24, 28, 30])('publishes a deterministic desktop column count for %i buckets', (count) => {
+    const wrapper = mount(MonitorV2Timeline, {
+      props: {
+        points: Array.from({ length: count }, (_, index) => ({
+          bucket_start: `2026-07-30T${String(index % 24).padStart(2, '0')}:00:00Z`,
+          status: 'operational' as const,
+          latency_ms: null,
+        })),
+      },
+    })
+
+    expect(wrapper.get('[data-timeline-track]').attributes('style')).toContain(`--timeline-count: ${count}`)
   })
 
   it('clamps the tooltip inside the visible timeline after horizontal scrolling', async () => {

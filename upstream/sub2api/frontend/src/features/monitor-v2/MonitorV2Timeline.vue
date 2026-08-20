@@ -2,7 +2,7 @@
   <div
     ref="rootElement"
     data-timeline-root
-    class="relative w-full min-w-0 max-w-full sm:w-[620px] sm:flex-shrink-0"
+    class="relative w-full min-w-0 max-w-full"
     role="group"
     :aria-label="ariaLabel"
     @mouseleave="activeIndex = null"
@@ -14,7 +14,8 @@
     >
       <div
         data-timeline-track
-        class="flex min-w-max items-end gap-[5px] px-2 pb-2 pt-3"
+        class="items-end gap-[5px] px-2 pb-2 pt-3"
+        :style="trackStyle"
       >
         <span
           v-for="(point, index) in points"
@@ -22,7 +23,7 @@
           :data-timeline-point="index"
           :data-timeline-point-state="pointState(point)"
           role="img"
-          class="h-5 w-[6px] shrink-0 cursor-default rounded-full transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-y-110 hover:shadow-[0_0_10px_currentColor] focus-visible:-translate-y-1 focus-visible:scale-y-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+          class="h-5 w-auto min-w-[4px] shrink-0 cursor-default rounded-full transition-[box-shadow,filter,background-color] duration-200 ease-out hover:shadow-[0_0_10px_currentColor] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
           :class="pointClasses(point)"
           :aria-label="pointLabel(point)"
           tabindex="0"
@@ -89,6 +90,9 @@ const activeElement = ref<HTMLElement | null>(null)
 const tooltipLeftPixels = ref<number | null>(null)
 
 const activePoint = computed(() => activeIndex.value === null ? null : props.points[activeIndex.value] ?? null)
+const trackStyle = computed(() => ({
+  '--timeline-count': String(Math.max(props.points.length, 1)),
+} as Record<string, string>))
 const tooltipLeft = computed(() => {
   if (tooltipLeftPixels.value !== null) return `${tooltipLeftPixels.value}px`
   if (activeIndex.value === null || props.points.length === 0) return '50%'
@@ -173,3 +177,28 @@ function compactTimestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 </script>
+
+<style scoped>
+[data-timeline-track] {
+  display: grid;
+  grid-template-columns: repeat(var(--timeline-count), minmax(0, 1fr));
+  min-width: 0;
+}
+
+[data-timeline-point] {
+  width: auto;
+  min-width: 4px;
+}
+
+@media (max-width: 639px) {
+  [data-timeline-track] {
+    display: flex;
+    min-width: 620px;
+  }
+
+  [data-timeline-point] {
+    width: 6px;
+    flex: 0 0 6px;
+  }
+}
+</style>

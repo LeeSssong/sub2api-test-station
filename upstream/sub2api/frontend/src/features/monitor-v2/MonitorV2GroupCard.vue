@@ -1,7 +1,7 @@
 <template>
   <article
     :data-test="`monitor-group-${group.id}`"
-    class="group/monitor rounded-xl border border-gray-200 bg-white px-5 py-5 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:shadow-[0_16px_40px_-24px_rgba(16,185,129,0.65)] focus-within:border-emerald-400/60 focus-within:bg-emerald-500/10 dark:border-dark-700 dark:bg-dark-900/75 dark:hover:border-emerald-400/45 dark:hover:bg-emerald-400/10 sm:px-6 sm:py-6 lg:px-7"
+    class="group/monitor rounded-xl border border-gray-200 bg-white px-5 py-5 transition-[background-color,border-color,box-shadow] duration-200 ease-out hover:border-emerald-400/60 hover:bg-emerald-500/10 hover:shadow-[0_16px_40px_-24px_rgba(16,185,129,0.65)] focus-within:border-emerald-400/60 focus-within:bg-emerald-500/10 dark:border-dark-700 dark:bg-dark-900/75 dark:hover:border-emerald-400/45 dark:hover:bg-emerald-400/10 sm:px-6 sm:py-6 lg:px-7"
     :aria-labelledby="`monitor-v2-group-${group.id}`"
   >
     <header class="grid min-w-0 grid-cols-1 items-center gap-6 lg:grid-cols-[minmax(370px,0.9fr)_minmax(0,1.25fr)] lg:gap-10">

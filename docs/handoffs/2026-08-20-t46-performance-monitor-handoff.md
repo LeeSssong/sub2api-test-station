@@ -4,7 +4,7 @@
 - 基线：`main@989c072a87f40abcaa3b6c5c60d0eeb6941c2761`
 - 候选分支：`codex/t46-performance-monitor`
 - 候选 worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`
-- 提交：`3d81e9891`（规格/计划）、`e9f936800`（实现与测试）
+- 提交：`d7a8c2539`（规格/计划）、`7d4d2b9a4`（实现与测试）、`336e90472`（交接）
 - 状态：`READY_FOR_ROOT_REVIEW`
 
 ## 变更文件

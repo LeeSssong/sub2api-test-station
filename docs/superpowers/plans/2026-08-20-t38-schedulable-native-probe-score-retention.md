@@ -474,4 +474,3 @@ Expected: clean worktree, candidate commits only, no diff-check output. Report `
 - Placeholder scan: execution-time SHA markers are confined to documentation-writing instructions and explicitly require replacement before commit; the finished plan contains no deferred implementation decision.
 - Type consistency: the helper signature is identical in Task 1 and Task 2; all field names match `AccountMonitorQualityEvidence` and `AccountMonitorAccount`; global and group call sites consume the same helper result.
 - Scope: the plan has one production-code unit in the existing service, with handler/frontend changes driven only by demonstrated contract failures.
-

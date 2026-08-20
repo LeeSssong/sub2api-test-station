@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
-- **T46 性能监测自定义页面挂载**：状态 `INTEGRATING`。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main`，合并提交 `cbabc2076`；根 `main@9ed4e0206` 已推送并与 `origin/main` 同步。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`、分支 `codex/t46-performance-monitor` 保留作发布证据。合并后直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；0600 测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-9ed4e0206-t46-performance-monitor.json`。新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。当前等待生产部署授权，尚未部署或线上验收。
+- **T46 性能监测自定义页面挂载**：状态 `INTEGRATING`。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main`，合并提交 `cbabc2076`；根 `main@c90f35cc7` 已推送并与 `origin/main` 同步。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`、分支 `codex/t46-performance-monitor` 保留作发布证据。合并后直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；0600 测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-c90f35cc7-t46-performance-monitor.json`。新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。当前等待生产部署授权，尚未部署或线上验收。
 
 ## 当前新增任务（2026-08-20，快速迭代-12）
 

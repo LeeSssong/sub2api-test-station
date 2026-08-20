@@ -2,15 +2,15 @@
 
 ## 当前新增任务（2026-08-19）
 
-- **T41 Monitor V2 时间线视觉与 Tooltip 交互优化（快速迭代-11）**：状态 `DESIGNING`。修复 Tooltip 遮挡当前柱体、时间线与 Tooltip 比例偏小、无数据区难以辨识等前端呈现问题；保持 Monitor V2 v7、24/28/30 固定桶、原生探测数据源和 T37/T38 语义不变。依赖：无；与 T42 设计/实现并行，整合、部署、线上验证服从单车道。
-- **T42 Monitor V2 时间新鲜度与刷新可靠性优化（快速迭代-11）**：状态 `DESIGNING`。明确当前桶/最新探测时间语义，补充原生 `checked_at` 新鲜度表达，并确保刷新失败后继续调度，避免页面停在旧时间；保持 Monitor V2 v7、24/28/30 固定桶和 `no-store`。依赖：无；与 T41 设计/实现并行，整合、部署、线上验证服从单车道。
+- **T41 Monitor V2 时间线视觉与 Tooltip 交互优化（快速迭代-11）**：状态 `DONE`。已合入并从 `main@befce43e8` 发布；Tooltip 下置独立布局行，柱体放大为 6x20、间距 5px，`unavailable + null latency` 显示为灰色虚线无探测数据桶。固定 v7、24/28/30 桶和原生探测来源保持不变。宿主记录 `/var/lib/sub2api/release-records/20260820T080727Z-production-1014979.json`，`downtime_required=false`、`result=succeeded`、`state=promoted`、健康端点均 200。真机截图仍由用户验收。
+- **T42 Monitor V2 时间新鲜度与刷新可靠性优化（快速迭代-11）**：状态 `DONE`。与 T41 合并从 `main@befce43e8` 发布；分组显示原生最新 `checked_at`，刷新 GET 失败保留旧快照并 5 秒重试，成功后恢复设置间隔；v7、24/28/30、no-store 和原生探测执行器保持不变。宿主记录 `/var/lib/sub2api/release-records/20260820T080727Z-production-1014979.json`，`downtime_required=false`、`result=succeeded`、`state=promoted`、健康端点均 200。真机截图仍由用户验收。
 
 - **T39 Responses 流式 413 二次错误映射修复（快速迭代-10）**：状态 `BACKLOG`。修复应用内入站/上游 413 在 JSON 与 Responses SSE 路径被二次 `ProjectNativeUserError` 覆盖的问题，保持中文“请求内容过大”语义、错误类型、协议终止事件和脱敏；不处理 Cloudflare 已在边缘生成且未进入应用的 HTML 413。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 - **T40 错误码/边缘错误中文映射补齐（快速迭代-10）**：状态 `BACKLOG`。复用 Sub 原生错误透传与 `NativeUserErrorProjection`，补齐应用侧 402、507、520、521、522、523、524、525，并保留 499 客户端断开分类；覆盖 JSON/SSE、关键词/正文匹配、管理员诊断及 Cloudflare HTML 413 不误判/不泄露边界。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 
 - **T37 渠道状态用户可见专属分组裁剪**：状态 `DONE`。最终发布源 `main@daf965a0e1fbe421e002493b1d64a239de914f0a`、tested tree `0b6c34e9727102ca2a11bec3a95eb0cde6ae115e`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-daf965a0-t37-feedback.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T045028Z-production-862102.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`；Sub 原生配置分组语义、当前用户专属授权裁剪及 tooltip 下置已部署，健康端点均 200。无迁移、配置 schema 或生产数据写入；真机验收由用户自行完成。
 - **T38 可调度账号最近原生探测评分保留**：状态 `DONE`。发布源 `main@b010e6b2df57efe453b8e8551a108164cfd06a93`、tested tree `5d6ce56585540900ecbc0b961e414e8ab541c63c`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-b010e6b2-t38.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T042911Z-production-841669.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `green`；评分状态分离与原生探测评分保留已部署，健康端点均 200。无迁移、配置、前端、依赖或生产数据写入；真机验收由用户自行完成。
-- **根总控当前车道（2026-08-20）**：T37、T38 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG，仅登记不提前实现。用户真机验收作为后续反馈，不阻塞后续设计准备。
+- **根总控当前车道（2026-08-20）**：T37、T38、T41、T42 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG，仅登记不提前实现。用户真机验收作为后续反馈，不阻塞后续设计准备。
 
 - **根总控最近车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现、根合并、推送、无停机蓝绿发布和线上验收，当前为 `DONE`。生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`。范围仅补充中英文界面文案、组件直接测试和发布验收；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞后续任务。
 - **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。

@@ -2,8 +2,8 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-12）
 
-- **T44 Monitor V2 时间线布局稳定性与卡片防抖优化**：状态 `DESIGNING`。目标：减少时间线右侧/下方空白，让桌面端 24/28/30 个桶均匀占满可用宽度；小屏继续仅时间线内部横向滚动；移除卡片 hover 位移和会造成布局重排的 transition-all，保持固定边框与稳定卡片高度，避免鼠标跨卡片时其他卡片抖动。依赖：T41/T42 已发布；不改 v7、24/28/30 桶、原生探测数据源或生产配置；预计 `downtime_required=false`。
-- **T45 CodexRadar 站长推荐与社区矩阵白天模式适配**：状态 `DESIGNING`。目标：为站长推荐及其下方社区矩阵补齐 light/dark 双主题，白天模式下背景、边框、标题、正文、辅助信息、加载/失败状态均可读且与现有分类强调色一致；不改 CodexRadar 数据源、字段、缓存和外部调用。依赖：T41/T42 已发布；预计 `downtime_required=false`。
+- **T44 Monitor V2 时间线布局稳定性与卡片防抖优化**：状态 `DONE`。已合入、推送并从 `main@9b4d5b7f6` 发布；桌面端 24/28/30 桶按可用宽度均匀填充，小屏仅时间线内部横向滚动；卡片和柱体 hover 不再位移/缩放，固定边框与几何避免跨卡片抖动。宿主记录 `/var/lib/sub2api/release-records/20260820T100427Z-production-1108935.json`，`downtime_required=false`、`result=succeeded`、`state=promoted`；健康端点 200。
+- **T45 CodexRadar 站长推荐与社区矩阵白天模式适配**：状态 `DONE`。已合入、推送并从 `main@9b4d5b7f6` 发布；站长推荐、社区矩阵及加载/失败/过期状态均补齐 light/dark 双主题，保留暗色视觉与分类强调色。宿主记录 `/var/lib/sub2api/release-records/20260820T100427Z-production-1108935.json`，`downtime_required=false`、`result=succeeded`、`state=promoted`；健康端点 200。
 
 ## 当前新增任务（2026-08-19）
 
@@ -15,7 +15,7 @@
 
 - **T37 渠道状态用户可见专属分组裁剪**：状态 `DONE`。最终发布源 `main@daf965a0e1fbe421e002493b1d64a239de914f0a`、tested tree `0b6c34e9727102ca2a11bec3a95eb0cde6ae115e`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-daf965a0-t37-feedback.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T045028Z-production-862102.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`；Sub 原生配置分组语义、当前用户专属授权裁剪及 tooltip 下置已部署，健康端点均 200。无迁移、配置 schema 或生产数据写入；真机验收由用户自行完成。
 - **T38 可调度账号最近原生探测评分保留**：状态 `DONE`。发布源 `main@b010e6b2df57efe453b8e8551a108164cfd06a93`、tested tree `5d6ce56585540900ecbc0b961e414e8ab541c63c`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-b010e6b2-t38.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T042911Z-production-841669.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `green`；评分状态分离与原生探测评分保留已部署，健康端点均 200。无迁移、配置、前端、依赖或生产数据写入；真机验收由用户自行完成。
-- **根总控当前车道（2026-08-20）**：T37、T38、T41、T42 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG；T44/T45 已登记为 DESIGNING，分别处理时间线/卡片稳定性和 CodexRadar 白天模式。用户真机验收作为后续反馈，不阻塞后续设计准备。
+- **根总控当前车道（2026-08-20）**：T37、T38、T41、T42 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG；T44/T45 已完成发布，分别处理时间线/卡片稳定性和 CodexRadar 白天模式。用户真机验收作为后续反馈，不阻塞后续设计准备。
 
 - **根总控最近车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现、根合并、推送、无停机蓝绿发布和线上验收，当前为 `DONE`。生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`。范围仅补充中英文界面文案、组件直接测试和发布验收；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞后续任务。
 - **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。

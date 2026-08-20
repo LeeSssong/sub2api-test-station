@@ -39,6 +39,9 @@ describe('CodexRadarCommunityMatrix', () => {
     for (const value of ['综合智能', '软件工程能力', '视觉空间推理', '社区众测数据', 'Sol low', 'IQ 78', '422 份样本', '$1.80', '12.1 分钟']) expect(wrapper.text()).toContain(value)
     expect(wrapper.find('[data-community-scroll]').classes()).toContain('overflow-x-auto')
     expect(wrapper.get('[data-community-grid]').classes()).toContain('min-w-[1120px]')
+    expect(wrapper.get('[data-community-tab=\"comprehensive\"]').classes()).toContain('bg-blue-50')
+    expect(wrapper.get('[data-community-card]').classes()).toContain('bg-white')
+    expect(wrapper.get('[data-community-card]').classes()).toContain('dark:bg-dark-900/95')
 
     const solCards = wrapper.get('[data-community-family="gpt-5.6-sol"]').findAll('[data-community-card]')
     expect(solCards.map((card) => card.attributes('data-effort'))).toEqual(['ultra', 'medium', 'low'])

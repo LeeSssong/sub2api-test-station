@@ -33,6 +33,10 @@ describe('CodexRadarRecommendations', () => {
     const panel = wrapper.get('[data-test="codexradar-panel"]')
     expect(panel.classes()).toContain('sm:p-6')
     expect(panel.classes()).toContain('xl:p-7')
+    expect(panel.classes()).toContain('bg-white')
+    expect(panel.classes()).toContain('dark:bg-dark-950')
+    expect(wrapper.get('[data-radar-category]').classes()).toContain('bg-emerald-50/70')
+    expect(wrapper.get('[data-radar-category]').classes()).toContain('dark:bg-dark-900/90')
   })
 
   it('shows a compact unavailable state without breaking the page', async () => {

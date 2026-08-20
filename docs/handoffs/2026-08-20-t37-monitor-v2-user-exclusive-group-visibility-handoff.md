@@ -13,11 +13,11 @@
 - 分支：`codex/t37-monitor-v2-user-exclusive-groups`
 - 刷新合并提交：`b5f172a5b`
 - 刷新前实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
-- 刷新后候选 tip：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7`
-- 刷新后候选 tree：`2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
+- 刷新后候选 tip：`b5f172a5b`
+- 刷新后候选 tree：`6ed77174bff501c3e07fce86b309a9457557de27`
 - 规格提交：`99446215b`
 - 计划提交：`587195999`
-- 最终含交接提交与 tree：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7` / `2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
+- 最终含交接提交与 tree：`b5f172a5b` / `6ed77174bff501c3e07fce86b309a9457557de27`
 
 ## 交付行为
 

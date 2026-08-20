@@ -7,8 +7,8 @@
 - 刷新基线：`main@3bcd7169d874af36f6a22df2b1df05d0ce882553`
 - 刷新合并提交：`b5f172a5b`（将 `main@3bcd7169d` 合入候选）
 - 刷新前实现提交：`6784733402ba7852ec154324d40129f7e4ba6a0a`
-- 刷新后候选 tip：`d1bcdec2e63aeb7af44e358364688f2f8cb155c7`
-- 刷新后候选 tree：`2f56d9cdeb263fffd6ead605c6bc5f4e1321958c`
+- 刷新后候选 tip：`b5f172a5b`
+- 刷新后候选 tree：`6ed77174bff501c3e07fce86b309a9457557de27`
 - 验证日期：2026-08-20
 - 候选状态：`READY_FOR_ROOT_REVIEW`
 - 迁移：无

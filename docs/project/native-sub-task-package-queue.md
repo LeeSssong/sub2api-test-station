@@ -5,7 +5,7 @@
 - **T39 Responses 流式 413 二次错误映射修复（快速迭代-10）**：状态 `BACKLOG`。修复应用内入站/上游 413 在 JSON 与 Responses SSE 路径被二次 `ProjectNativeUserError` 覆盖的问题，保持中文“请求内容过大”语义、错误类型、协议终止事件和脱敏；不处理 Cloudflare 已在边缘生成且未进入应用的 HTML 413。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 - **T40 错误码/边缘错误中文映射补齐（快速迭代-10）**：状态 `BACKLOG`。复用 Sub 原生错误透传与 `NativeUserErrorProjection`，补齐应用侧 402、507、520、521、522、523、524、525，并保留 499 客户端断开分类；覆盖 JSON/SSE、关键词/正文匹配、管理员诊断及 Cloudflare HTML 413 不误判/不泄露边界。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 
-- **T37 渠道状态用户可见专属分组裁剪**：状态 `BLOCKED`。用户反馈修正已合入并推送根 `main@5a8545771`；Sub 原生 `channel_monitor_v2_config` enabled/group_ids 分组裁剪、当前用户专属授权裁剪、tooltip 下置和解释文案删除均已通过根合并后的后端/前端直接门禁。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-8233974-t37-feedback.json` 已生成并绑定 tested tree；发布预检在生产变更前 fail-closed，原因是当前 shell 未加载 `SUB2API_IMAGE_REPOSITORY`，尚未进入蓝绿发布。无迁移、配置 schema 或生产数据写入；补齐受控发布环境后从该 `main` 继续。
+- **T37 渠道状态用户可见专属分组裁剪**：状态 `BLOCKED`。用户反馈修正已合入并推送根 `main@5a8545771`；Sub 原生 `channel_monitor_v2_config` enabled/group_ids 分组裁剪、当前用户专属授权裁剪、tooltip 下置和解释文案删除均已通过根合并后的后端/前端直接门禁。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-5a8545771-t37-feedback.json` 已生成并绑定 tested tree；发布预检在生产变更前 fail-closed，原因是当前 shell 未加载 `SUB2API_IMAGE_REPOSITORY`，尚未进入蓝绿发布。无迁移、配置 schema 或生产数据写入；补齐受控发布环境后从该 `main` 继续。
 - **T38 可调度账号最近原生探测评分保留**：状态 `DEPLOYING`。已无冲突合入根 `main@6c8810cb6b16b1321834d6d72f21ac6e99198160`，合并后 service/handler/frontend focused tests、全 AccountMonitor、compile-only、52 项卡片测试、typecheck、diff-check 和 protected-path guards 均通过。当前仅允许从该 main 生成证据、推送、发布预检和无停机蓝绿部署；无迁移、配置、前端或生产数据写入。
 - **根总控当前车道（2026-08-20）**：T37/T38 可并行处于设计和实现；整合、推送、部署与线上验证仍严格单车道，一次只发布一个任务包。两项均预计无迁移、无配置变化、`downtime_required=false`；若预检实际返回 `true`，在生产动作前暂停。用户真机验收作为后续反馈，不阻塞发布车道。
 

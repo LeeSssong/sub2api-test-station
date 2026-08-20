@@ -5,9 +5,9 @@
 - **T39 Responses 流式 413 二次错误映射修复（快速迭代-10）**：状态 `BACKLOG`。修复应用内入站/上游 413 在 JSON 与 Responses SSE 路径被二次 `ProjectNativeUserError` 覆盖的问题，保持中文“请求内容过大”语义、错误类型、协议终止事件和脱敏；不处理 Cloudflare 已在边缘生成且未进入应用的 HTML 413。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 - **T40 错误码/边缘错误中文映射补齐（快速迭代-10）**：状态 `BACKLOG`。复用 Sub 原生错误透传与 `NativeUserErrorProjection`，补齐应用侧 402、507、520、521、522、523、524、525，并保留 499 客户端断开分类；覆盖 JSON/SSE、关键词/正文匹配、管理员诊断及 Cloudflare HTML 413 不误判/不泄露边界。可与 T38 设计/实现并行准备，依赖：无；整合、部署、线上验证继续服从单车道。
 
-- **T37 渠道状态用户可见专属分组裁剪**：状态 `BLOCKED`。用户反馈修正已合入并推送根 `main@7342203a0`；Sub 原生 `channel_monitor_v2_config` enabled/group_ids 分组裁剪、当前用户专属授权裁剪、tooltip 下置和解释文案删除均已通过根合并后的后端/前端直接门禁。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-7342203a0-t37-feedback.json` 已生成并绑定 tested tree；发布预检在生产变更前 fail-closed，原因是当前 shell 未加载 `SUB2API_IMAGE_REPOSITORY`，尚未进入蓝绿发布。无迁移、配置 schema 或生产数据写入；补齐受控发布环境后从该 `main` 继续。
-- **T38 可调度账号最近原生探测评分保留**：状态 `DEPLOYING`。已无冲突合入根 `main@6c8810cb6b16b1321834d6d72f21ac6e99198160`，合并后 service/handler/frontend focused tests、全 AccountMonitor、compile-only、52 项卡片测试、typecheck、diff-check 和 protected-path guards 均通过。当前仅允许从该 main 生成证据、推送、发布预检和无停机蓝绿部署；无迁移、配置、前端或生产数据写入。
-- **根总控当前车道（2026-08-20）**：T37/T38 可并行处于设计和实现；整合、推送、部署与线上验证仍严格单车道，一次只发布一个任务包。两项均预计无迁移、无配置变化、`downtime_required=false`；若预检实际返回 `true`，在生产动作前暂停。用户真机验收作为后续反馈，不阻塞发布车道。
+- **T37 渠道状态用户可见专属分组裁剪**：状态 `DONE`。最终发布源 `main@daf965a0e1fbe421e002493b1d64a239de914f0a`、tested tree `0b6c34e9727102ca2a11bec3a95eb0cde6ae115e`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-daf965a0-t37-feedback.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T045028Z-production-862102.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`；Sub 原生配置分组语义、当前用户专属授权裁剪及 tooltip 下置已部署，健康端点均 200。无迁移、配置 schema 或生产数据写入；真机验收由用户自行完成。
+- **T38 可调度账号最近原生探测评分保留**：状态 `DONE`。发布源 `main@b010e6b2df57efe453b8e8551a108164cfd06a93`、tested tree `5d6ce56585540900ecbc0b961e414e8ab541c63c`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-b010e6b2-t38.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T042911Z-production-841669.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `green`；评分状态分离与原生探测评分保留已部署，健康端点均 200。无迁移、配置、前端、依赖或生产数据写入；真机验收由用户自行完成。
+- **根总控当前车道（2026-08-20）**：T37、T38 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG，仅登记不提前实现。用户真机验收作为后续反馈，不阻塞后续设计准备。
 
 - **根总控最近车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现、根合并、推送、无停机蓝绿发布和线上验收，当前为 `DONE`。生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`。范围仅补充中英文界面文案、组件直接测试和发布验收；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞后续任务。
 - **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。
@@ -21,8 +21,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35 与 T36 均为 `DONE`。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T36 已完成唯一发布车道的推送、预检、蓝绿部署和线上健康验证；T34 与 T35 已完成根复核、合并、推送、0600 证据、无停机蓝绿发布和生产专项健康验证；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37 与 T38 均为 `DONE`；T39/T40 为 `BACKLOG`；T39/T40 为 `BACKLOG`。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T37、T38 已完成唯一发布车道的合并、推送、无停机蓝绿部署和线上健康验证；T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；T36 蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `green`，API、worker 与 model-detector 使用同一不可变镜像 `sha256:57c4f8f1118887a77ede635debe96878f3758cc4e520acb0015f7d34ae2f6f35` 且健康。宿主记录为 `/var/lib/sub2api/release-records/20260819T194230Z-production-443041.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-12641c328-t36.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。

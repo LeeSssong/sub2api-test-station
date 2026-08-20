@@ -30,14 +30,15 @@ describe('MonitorV2Timeline', () => {
     const bar = wrapper.get('[data-timeline-point="0"]')
     const root = wrapper.get('[data-timeline-root]')
     expect(root.attributes('role')).toBe('group')
+    expect(root.attributes('data-timeline-orientation')).toBe('vertical-bars')
     expect(root.attributes('aria-hidden')).toBeUndefined()
     expect(bar.attributes('role')).toBe('img')
     expect(bar.attributes('aria-label')).toContain('2026-07-30')
     expect(bar.element.closest('[aria-hidden="true"]')).toBeNull()
     expect(bar.classes()).toContain('bg-emerald-400')
-    expect(bar.classes()).toContain('h-5')
-    expect(bar.classes()).toContain('w-auto')
-    expect(bar.classes()).toContain('min-w-[4px]')
+    expect(bar.classes()).toContain('h-6')
+    expect(bar.classes()).toContain('w-1.5')
+    expect(bar.classes()).toContain('min-w-1.5')
     expect(bar.classes()).not.toContain('hover:-translate-y-1')
     expect(bar.classes()).not.toContain('hover:scale-y-110')
     expect(wrapper.get('[data-timeline-track]').attributes('style')).toContain('--timeline-count: 1')
@@ -80,11 +81,31 @@ describe('MonitorV2Timeline', () => {
     const bars = wrapper.findAll('[data-timeline-point]')
     expect(bars).toHaveLength(2)
     expect(bars[0].classes()).toContain('bg-red-400')
-    expect(bars[0].classes()).toContain('h-5')
+    expect(bars[0].classes()).toContain('h-6')
 
     await bars[0].trigger('mouseenter')
     expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('DOWN')
     expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('服务不可用')
+  })
+
+  it('marks high-latency operational buckets as degraded without changing the source status', async () => {
+    const wrapper = mount(MonitorV2Timeline, {
+      props: {
+        points: [{
+          bucket_start: '2026-07-30T08:00:00Z',
+          status: 'operational',
+          latency_ms: 2_000,
+        }],
+      },
+    })
+
+    const bar = wrapper.get('[data-timeline-point="0"]')
+    expect(bar.attributes('data-timeline-point-state')).toBe('operational')
+    expect(bar.classes()).toContain('bg-amber-300')
+
+    await bar.trigger('mouseenter')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('DEGRADED')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('运行中')
   })
 
   it('keeps fixed-size dense timelines in a controlled inner scroller on narrow screens', () => {

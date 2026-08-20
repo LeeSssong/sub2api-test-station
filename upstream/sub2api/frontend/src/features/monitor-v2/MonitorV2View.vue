@@ -1,17 +1,17 @@
 <template>
   <AppLayout>
-    <section data-test="monitor-v2-page" class="mx-auto w-full max-w-[1500px]" aria-labelledby="monitor-v2-title">
-      <header class="flex flex-col gap-5 border-b border-gray-200 pb-6 dark:border-dark-700 md:flex-row md:items-end md:justify-between">
+    <section data-test="monitor-v2-page" class="mx-auto w-full max-w-[1500px] rounded-2xl text-slate-900 dark:bg-[#07101f] dark:px-3 dark:py-3 dark:text-slate-100 sm:dark:px-4 sm:dark:py-4" aria-labelledby="monitor-v2-title">
+      <header class="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-slate-800/80 md:flex-row md:items-center md:justify-between">
         <div>
           <div class="flex flex-wrap items-center gap-3">
             <h1
               id="monitor-v2-title"
-              class="text-3xl font-bold tracking-tight text-gray-950 dark:text-white"
+              class="text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-[1.7rem]"
             >
               {{ t('monitorV2.title') }}
             </h1>
             <span
-              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
               :class="overallClass"
               role="status"
             >
@@ -19,14 +19,14 @@
               {{ t(`monitorV2.overall.${overallStatus}`) }}
             </span>
           </div>
-          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
             {{ t('monitorV2.updatedAt', { time: updatedAt }) }}
           </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
           <div
-            class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-800"
+            class="inline-flex rounded-lg border border-slate-200/80 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-[#101827]"
             role="tablist"
             :aria-label="t('monitorV2.title')"
           >
@@ -37,11 +37,11 @@
               role="tab"
               :data-test="`monitor-window-${option.value}`"
               :aria-selected="currentWindow === option.value"
-              class="rounded-lg px-4 py-2 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50"
+              class="rounded-md px-3 py-1.5 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-400/60 sm:px-3.5"
               :class="
                 currentWindow === option.value
-                  ? 'bg-white text-gray-950 shadow-sm dark:bg-dark-700 dark:text-white'
-                  : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'
+                  ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
               "
               :disabled="loading"
               @click="selectWindow(option.value)"
@@ -54,7 +54,7 @@
 
       <div
         v-if="snapshot.groups.length > 0"
-        class="mt-7 grid min-w-0 grid-cols-1 gap-2 rounded-2xl border border-gray-200 bg-gray-50/70 p-2 shadow-sm dark:border-dark-700 dark:bg-dark-950/50 sm:p-3"
+        class="mt-4 grid min-w-0 grid-cols-1 gap-2 rounded-xl border border-slate-200/80 bg-slate-100/65 p-1.5 shadow-sm dark:border-slate-800 dark:bg-[#080f1b] sm:p-2"
         :aria-busy="loading"
       >
         <MonitorV2GroupCard
@@ -66,7 +66,7 @@
 
       <section
         v-else
-        class="mt-6 rounded-lg border border-dashed border-gray-300 bg-white px-6 py-14 text-center dark:border-dark-600 dark:bg-dark-900/60"
+        class="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-[#0b1220]"
       >
         <h2 class="text-base font-semibold text-gray-950 dark:text-white">
           {{ t('monitorV2.empty.title') }}

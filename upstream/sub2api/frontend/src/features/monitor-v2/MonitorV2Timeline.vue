@@ -2,6 +2,7 @@
   <div
     ref="rootElement"
     data-timeline-root
+    data-timeline-orientation="vertical-bars"
     class="relative w-full min-w-0 max-w-full"
     role="group"
     :aria-label="ariaLabel"
@@ -14,7 +15,7 @@
     >
       <div
         data-timeline-track
-        class="items-end gap-[5px] px-2 pb-2 pt-3"
+        class="items-end gap-[5px] px-2 pb-1 pt-2"
         :style="trackStyle"
       >
         <span
@@ -23,7 +24,7 @@
           :data-timeline-point="index"
           :data-timeline-point-state="pointState(point)"
           role="img"
-          class="h-5 w-auto min-w-[4px] shrink-0 cursor-default rounded-full transition-[box-shadow,filter,background-color] duration-200 ease-out hover:shadow-[0_0_10px_currentColor] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+          class="h-6 w-1.5 w-auto min-w-1.5 shrink-0 cursor-default rounded-[2px] transition-[box-shadow,filter,background-color] duration-200 ease-out hover:shadow-[0_0_10px_currentColor] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
           :class="pointClasses(point)"
           :aria-label="pointLabel(point)"
           tabindex="0"
@@ -146,18 +147,23 @@ function pointClasses(point: MonitorV2TimelinePoint): string {
   if (isNoDataPoint(point)) {
     return 'border border-dashed border-slate-300 bg-slate-400/70 text-slate-500 dark:border-slate-500 dark:bg-slate-600/70 dark:text-slate-300'
   }
+  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) {
+    return 'bg-amber-300 text-amber-300 dark:bg-amber-300'
+  }
   return point.status === 'operational'
     ? 'bg-emerald-400 text-emerald-400 dark:bg-emerald-400'
     : 'bg-red-400 text-red-400 dark:bg-red-400'
 }
 
-function heading(point: MonitorV2TimelinePoint): 'UP' | 'DOWN' | 'NO DATA' {
+function heading(point: MonitorV2TimelinePoint): 'UP' | 'DEGRADED' | 'DOWN' | 'NO DATA' {
   if (isNoDataPoint(point)) return 'NO DATA'
+  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) return 'DEGRADED'
   return point.status === 'operational' ? 'UP' : 'DOWN'
 }
 
 function headingClass(point: MonitorV2TimelinePoint): string {
   if (isNoDataPoint(point)) return 'text-amber-300'
+  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) return 'text-amber-300'
   return point.status === 'operational' ? 'text-emerald-400' : 'text-red-400'
 }
 

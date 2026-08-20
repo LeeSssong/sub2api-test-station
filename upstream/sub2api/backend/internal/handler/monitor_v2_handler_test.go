@@ -17,20 +17,20 @@ import (
 
 type monitorV2SnapshotterStub struct {
 	snapshot *service.MonitorV2Snapshot
+	userID   int64
 	window   service.MonitorV2Window
-	scope    service.MonitorV2Scope
+	calls    int
 }
 
 func (s *monitorV2SnapshotterStub) Snapshot(
 	_ context.Context,
+	userID int64,
 	window service.MonitorV2Window,
 	_ time.Time,
-	scope ...service.MonitorV2Scope,
 ) (*service.MonitorV2Snapshot, error) {
+	s.calls++
+	s.userID = userID
 	s.window = window
-	if len(scope) > 0 {
-		s.scope = scope[0]
-	}
 	return s.snapshot, nil
 }
 
@@ -69,13 +69,14 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2?window=7d", nil)
+	context.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 
 	handler.Snapshot(context)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 	require.Equal(t, service.MonitorV2Window7D, stub.window)
-	require.Equal(t, service.MonitorV2ScopePublic, stub.scope)
+	require.Equal(t, int64(42), stub.userID)
 
 	var envelope struct {
 		Data map[string]any `json:"data"`
@@ -121,23 +122,42 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	}
 }
 
-func TestMonitorV2HandlerUsesAdminScopeFromTrustedRoleContext(t *testing.T) {
+func TestMonitorV2HandlerUsesAuthenticatedUserIDRegardlessOfRole(t *testing.T) {
+	for _, role := range []string{service.RoleUser, service.RoleAdmin} {
+		t.Run(role, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			stub := &monitorV2SnapshotterStub{snapshot: &service.MonitorV2Snapshot{
+				ContractVersion: service.MonitorV2ContractVersion,
+				Window:          service.MonitorV2Window7D,
+				Groups:          []service.MonitorV2Group{},
+			}}
+			handler := NewMonitorV2Handler(stub)
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2?window=7d", nil)
+			context.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+			context.Set(string(middleware.ContextKeyUserRole), role)
+
+			handler.Snapshot(context)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Equal(t, int64(42), stub.userID)
+		})
+	}
+}
+
+func TestMonitorV2HandlerRejectsMissingAuthenticatedSubject(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	stub := &monitorV2SnapshotterStub{snapshot: &service.MonitorV2Snapshot{
-		ContractVersion: service.MonitorV2ContractVersion,
-		Window:          service.MonitorV2Window7D,
-		Groups:          []service.MonitorV2Group{},
-	}}
+	stub := &monitorV2SnapshotterStub{snapshot: &service.MonitorV2Snapshot{}}
 	handler := NewMonitorV2Handler(stub)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v2?window=7d", nil)
-	context.Set(string(middleware.ContextKeyUserRole), service.RoleAdmin)
 
 	handler.Snapshot(context)
 
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, service.MonitorV2ScopeAdmin, stub.scope)
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+	require.Zero(t, stub.calls)
 }
 
 func TestMonitorV2HandlerRejectsUnsupportedWindow(t *testing.T) {

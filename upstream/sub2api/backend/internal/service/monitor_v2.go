@@ -27,15 +27,13 @@ const (
 )
 
 type MonitorV2Window string
-type MonitorV2Scope string
-
-const (
-	MonitorV2ScopePublic MonitorV2Scope = "public"
-	MonitorV2ScopeAdmin  MonitorV2Scope = "admin"
-)
 
 type MonitorV2NativeProbeReader interface {
 	ProjectMonitorV2Groups(context.Context, []int64, time.Time, time.Time, time.Duration) (map[int64]MonitorV2NativeGroupProjection, error)
+}
+
+type MonitorV2AvailableGroupReader interface {
+	GetAvailableGroups(context.Context, int64) ([]Group, error)
 }
 
 type MonitorV2SettingsReader interface {
@@ -80,21 +78,50 @@ type MonitorV2Snapshot struct {
 
 type MonitorV2Service struct {
 	groupRepo GroupRepository
+	available MonitorV2AvailableGroupReader
 	native    MonitorV2NativeProbeReader
 	settings  MonitorV2SettingsReader
 }
 
-func NewMonitorV2Service(groupRepo GroupRepository, native MonitorV2NativeProbeReader, settings MonitorV2SettingsReader) *MonitorV2Service {
-	return &MonitorV2Service{groupRepo: groupRepo, native: native, settings: settings}
+func monitorV2VisibleGroups(allGroups, availableGroups []Group) ([]Group, []int64) {
+	availableIDs := make(map[int64]struct{}, len(availableGroups))
+	for _, group := range availableGroups {
+		availableIDs[group.ID] = struct{}{}
+	}
+	visibleGroups := make([]Group, 0, len(allGroups))
+	groupIDs := make([]int64, 0, len(allGroups))
+	for _, group := range allGroups {
+		if group.Status != StatusActive {
+			continue
+		}
+		if group.IsExclusive {
+			if _, ok := availableIDs[group.ID]; !ok {
+				continue
+			}
+		}
+		visibleGroups = append(visibleGroups, group)
+		groupIDs = append(groupIDs, group.ID)
+	}
+	return visibleGroups, groupIDs
 }
 
-func (s *MonitorV2Service) Snapshot(ctx context.Context, window MonitorV2Window, now time.Time, scopes ...MonitorV2Scope) (*MonitorV2Snapshot, error) {
+func NewMonitorV2Service(groupRepo GroupRepository, available MonitorV2AvailableGroupReader, native MonitorV2NativeProbeReader, settings MonitorV2SettingsReader) *MonitorV2Service {
+	return &MonitorV2Service{groupRepo: groupRepo, available: available, native: native, settings: settings}
+}
+
+func (s *MonitorV2Service) Snapshot(ctx context.Context, userID int64, window MonitorV2Window, now time.Time) (*MonitorV2Snapshot, error) {
 	start, bucketCount, bucketSize, err := monitorV2WindowBounds(window, now)
 	if err != nil {
 		return nil, err
 	}
 	if s == nil || s.groupRepo == nil {
 		return nil, fmt.Errorf("monitor v2 group repository unavailable")
+	}
+	if userID <= 0 {
+		return nil, fmt.Errorf("monitor v2 authenticated user unavailable")
+	}
+	if s.available == nil {
+		return nil, fmt.Errorf("monitor v2 available group reader unavailable")
 	}
 	if s.native == nil {
 		return nil, fmt.Errorf("monitor v2 native probe reader unavailable")
@@ -103,19 +130,11 @@ func (s *MonitorV2Service) Snapshot(ctx context.Context, window MonitorV2Window,
 	if err != nil {
 		return nil, fmt.Errorf("list active groups for monitor v2: %w", err)
 	}
-	scope := MonitorV2ScopePublic
-	if len(scopes) > 0 && scopes[0] == MonitorV2ScopeAdmin {
-		scope = MonitorV2ScopeAdmin
+	availableGroups, err := s.available.GetAvailableGroups(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("load available groups for monitor v2: %w", err)
 	}
-	visibleGroups := make([]Group, 0, len(allGroups))
-	groupIDs := make([]int64, 0, len(allGroups))
-	for _, group := range allGroups {
-		if group.Status != StatusActive || (scope != MonitorV2ScopeAdmin && group.IsExclusive) {
-			continue
-		}
-		visibleGroups = append(visibleGroups, group)
-		groupIDs = append(groupIDs, group.ID)
-	}
+	visibleGroups, groupIDs := monitorV2VisibleGroups(allGroups, availableGroups)
 	if len(visibleGroups) > monitorV2MaxGroups {
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV2MaxGroups)
 	}

@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
-- **T46 性能监测自定义页面挂载**：状态 `IMPLEMENTING`。从当前 `main@989c072a8` 创建独立候选，复用 Sub 原生 `MonitorV2RouteView`、Monitor V2 API/刷新/时间线数据与既有 T41/T42/T44 视觉稳定性；新增 `/custom/performance-monitor` 入口与“性能监测”用户菜单，隐藏原生 `/monitor` 固定入口，不保留旧路由兼容重定向；自定义页面路由直接挂载原生监控组件，保留 AppLayout、鉴权、主题和本地 optimistic 展示语义。预计无迁移、无生产数据写入、`downtime_required=false`；直接相关前端路由/侧边栏/页面挂载测试、typecheck/build、diff-check 后进入根合并车道。候选 worktree：待创建。
+- **T46 性能监测自定义页面挂载**：状态 `READY_FOR_ROOT_REVIEW`。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`，分支 `codex/t46-performance-monitor`，已从登记后的 `main@a2e5c8206` 刷新，候选 tip `8a16f80ce`；规格、计划、实现、handoff 已完成。复用 Sub 原生 `MonitorV2RouteView`、Monitor V2 API/刷新/时间线数据与 T41/T42/T44 稳定性；新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过，等待根任务授权合并。
 
 ## 当前新增任务（2026-08-20，快速迭代-12）
 

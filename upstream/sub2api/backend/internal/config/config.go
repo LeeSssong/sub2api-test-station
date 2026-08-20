@@ -2614,7 +2614,7 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_enabled", true)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_error_rate", 0.0)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_ttft_ms", 0)
-	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_enabled", true)
+	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_enabled", false)
 	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_max", 7)
 	viper.SetDefault("gateway.openai_scheduler.adaptive_top_k_score_gap", 0.15)
 	viper.SetDefault("gateway.openai_scheduler.ttft_report_only_enabled", true)

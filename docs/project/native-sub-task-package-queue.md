@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
-- **T46 性能监测自定义页面挂载**：状态 `INTEGRATING`。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入根 `main`，合并提交 `cbabc2076`；根 `main` 已推送并与 `origin/main` 同步。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t46-performance-monitor`、分支 `codex/t46-performance-monitor` 保留作发布证据。合并后直接相关前端 11 files/49 tests、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；最新 0600 测试证据位于 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/`，绑定当前已推送 `main`。新增 `/custom/performance-monitor` 和“性能监测”虚拟自定义菜单，隐藏原生 `/monitor` 固定入口，不做旧路由重定向；无迁移、无生产数据写入，预期 `downtime_required=false`。当前等待生产部署授权，尚未部署或线上验收。
+- **T46 性能监测自定义页面挂载**：状态 `DONE`。已从根 `main@9ed4e020675a0a9afd2d194d3d7c52a619df4743` 推送并通过既有本地/宿主蓝绿链发布；控制器返回 `downtime_required=false`、`result=succeeded`、活动槽 `green`，宿主记录 `/var/lib/sub2api/release-records/20260820T173243Z-production-1470220.json` 为 `succeeded/promoted`、`rolled_back=false`。登录态线上确认导航仅显示“性能监测”并指向 `/custom/performance-monitor`，固定 `/monitor` 链接为 0；页面标题、Monitor V2 原生数据、乐观状态、7 天 28 桶时间线和服务指标正常，1432px 与 383px 客户区均无整页横向溢出。公网 `/healthz`、`/readyz`、`/health` 均 200。0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-9ed4e02067-t46-performance-monitor.json`；无迁移、无生产数据写入。
 
 ## 当前新增任务（2026-08-20，快速迭代-12）
 

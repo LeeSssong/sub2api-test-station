@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**T39 Responses 流式 413 二次错误映射修复（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用内入站/上游 413 的 JSON 与 Responses SSE 二次投影，保持中文“请求内容过大”语义、错误类型、终止事件和脱敏；Cloudflare 边缘 HTML 413 不在应用接管范围。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
+
+**T40 错误码/边缘错误中文映射补齐（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用侧 402、507、520、521、522、523、524、525 规则与 JSON/SSE/管理员诊断合同，保留 499 客户端断开分类，并明确 Cloudflare HTML 413 不误判/不泄露。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
+
 **T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`INTEGRATING`。独立用户可见任务 `01a01d0f-a773-7d03-9974-96e4b4cec680` 已刷新到根登记后的最新 main 并 fast-forward 合入根 `main@ecf70b2a9e69361a212ca9a4ef383640cbbe7d27`，tree `42e030a9ad830934500bdabfb20ec00a151760d7`；刷新后 Monitor V2 service/handler/routes、cmd/server compile/build、diff/protected-path/source guards 均通过。当前进入唯一发布车道：生成 0600 测试证据、发布预检、无停机蓝绿发布和登录态专项验证。无迁移、配置、前端、依赖或生产数据写入；预期 `downtime_required=false`。
 
 **T38 可调度账号保留最近原生探测评分（2026-08-20）：** 状态：`READY_FOR_ROOT_REVIEW`，等待 T37 独立发布完成后进入刷新车道。独立用户可见任务 `01a01d0f-a721-7032-9cab-faaae3ce6663`，worktree `/Users/gongtengxinwen/.codex/worktrees/83d7/sub2api搭建`，分支 `codex/t38-retain-native-probe-score`；候选 tip `8ccea77f8b4b52f6b8a8cc20f2b93c0955349a9e`、tree `1450475db3413ae6398196e48b8eb240aed8a15a`，工作树干净。实现新增 global/group 共用的窗口评分投影：既有 T32 `eligible|capped` 语义保持；T38 新路径严格使用 `Account.IsSchedulable()`，且所选窗口必须 `SampleCount>0 && SuccessSampleCount>0`；当前 `unavailable|stale` 状态继续如实展示，但评分、排名和原生证据来源保留；纯失败、无样本及成本不合格仍无评分。直接 service/handler/frontend 合同、52 项卡片测试及 typecheck 均通过；无迁移、配置或生产数据写入，候选预期 `downtime_required=false`。

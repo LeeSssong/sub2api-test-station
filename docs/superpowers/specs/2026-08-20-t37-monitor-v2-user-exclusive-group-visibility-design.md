@@ -2,7 +2,7 @@
 
 ## 状态
 
-- 阶段：`DESIGNING`
+- 阶段：`READY_FOR_ROOT_REVIEW`
 - 基线：`main@b5ad0cdd624e3590bd0d19000c0f78cde200ef68`
 - 规格结论：根总控已批准
 - 实施门禁：实施计划获根总控批准前，不修改业务代码

@@ -704,7 +704,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
-    { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -738,8 +737,17 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 // Custom menu items filtered by visibility
 const customMenuItemsForUser = computed(() => {
   const items = appStore.cachedPublicSettings?.custom_menu_items ?? []
-  return items
-    .filter((item) => item.visibility === 'user')
+  const performanceMonitorItem = {
+    id: 'performance-monitor',
+    label: t('nav.performanceMonitor'),
+    icon_svg: '',
+    url: '/custom/performance-monitor',
+    visibility: 'user' as const,
+    sort_order: -1,
+  }
+  const configuredItems = items.filter((item) => item.visibility === 'user' && item.id !== performanceMonitorItem.id)
+  if (flagChannelMonitor() === false) return configuredItems.sort((a, b) => a.sort_order - b.sort_order)
+  return [performanceMonitorItem, ...configuredItems]
     .sort((a, b) => a.sort_order - b.sort_order)
 })
 

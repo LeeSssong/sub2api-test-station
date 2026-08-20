@@ -210,6 +210,7 @@ export default {
     channelMonitor: '渠道监控',
     accountMonitor: '账号监控',
     channelStatus: '渠道状态',
+    performanceMonitor: '性能监测',
     riskControl: '风控中心',
     securityAudit: '安全审计',
     contentModeration: '内容审核',

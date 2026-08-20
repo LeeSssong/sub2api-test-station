@@ -395,6 +395,17 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'customPage.title',
     }
   },
+  {
+    path: '/custom/performance-monitor',
+    name: 'PerformanceMonitor',
+    component: () => import('@/views/user/PerformanceMonitorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Performance Monitor',
+      titleKey: 'nav.performanceMonitor',
+    }
+  },
 
   // ==================== Admin Routes ====================
   {

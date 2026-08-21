@@ -9,7 +9,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => ({
+      t: (key: string, params?: Record<string, unknown>) => ({
         'admin.accountMonitor.status.success': '正常',
         'admin.accountMonitor.status.failed': '不可用',
         'admin.accountMonitor.status.pending': '待确认',
@@ -28,6 +28,25 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.detectorUnavailable': '检测服务暂不可用',
         'admin.accounts.modelDetection.recentStatus': '最近状态',
         'admin.accounts.modelDetection.declaredModel': '申报模型',
+        'admin.accounts.modelDetection.requestedModel': '请求模型',
+        'admin.accounts.modelDetection.upstreamResponseModel': '上游响应模型',
+        'admin.accounts.modelDetection.upstreamModelMissing': '上游未返回 model 字段',
+        'admin.accounts.modelDetection.activeResponseUnavailable': '未取得主动响应',
+        'admin.accounts.modelDetection.catalogEvidence': '模型目录',
+        'admin.accounts.modelDetection.catalogMatch': '已命中请求模型',
+        'admin.accounts.modelDetection.catalogMissing': '未命中请求模型',
+        'admin.accounts.modelDetection.catalogUnavailable': '未取得模型目录',
+        'admin.accounts.modelDetection.catalogReturned': '目录共返回 {count} 个模型：{models}',
+        'admin.accounts.modelDetection.fingerprintEvidence': '行为指纹',
+        'admin.accounts.modelDetection.fingerprintMatch': '指纹匹配',
+        'admin.accounts.modelDetection.fingerprintMismatch': '指纹候选：{candidate}（{similarity}）',
+        'admin.accounts.modelDetection.fingerprintUnavailable': '未检测行为指纹',
+        'admin.accounts.modelDetection.technicalDetails': '技术详情',
+        'admin.accounts.modelDetection.verdict.verified': '模型可信',
+        'admin.accounts.modelDetection.verdict.suspected_mapping': '疑似模型映射',
+        'admin.accounts.modelDetection.verdict.suspected_replacement': '疑似替换模型',
+        'admin.accounts.modelDetection.verdict.high_risk_inconsistent': '高风险不一致',
+        'admin.accounts.modelDetection.verdict.insufficient': '证据不足',
         'admin.accounts.modelDetection.juice': 'Juice',
         'admin.accounts.modelDetection.juiceSummary': 'Juice 摘要',
         'admin.accounts.modelDetection.fingerprintCandidate': '行为指纹候选',
@@ -42,7 +61,7 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.status.abnormal': '异常',
         'admin.accounts.modelDetection.status.service_unconfigured': '检测服务未接入',
         'admin.accounts.modelDetection.status.service_unavailable': '检测服务暂不可用',
-      }[key] ?? key),
+      }[key] ?? key).replace('{count}', String(params?.count ?? '')).replace('{models}', String(params?.models ?? '')).replace('{candidate}', String(params?.candidate ?? '')).replace('{similarity}', String(params?.similarity ?? '')),
     }),
   }
 })
@@ -893,6 +912,140 @@ describe('AccountMonitorCard', () => {
     expect(dialog.get('[data-test="model-detection-finished-at"]').text()).toContain('2026')
     expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('fingerprint_mismatch')
     expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('证据不一致')
+  })
+
+  it('shows mapping evidence without confusing the catalog with the upstream response model', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'abnormal',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: {
+            status: 'abnormal',
+            claimed_model: 'gpt-5.6-sol',
+            juice_status: 'suspected_mapping',
+            juice_summary: {
+              evidence_version: 'model-detection-evidence-v1',
+              requested_model: 'gpt-5.6-sol',
+              catalog: { status: 'missing', returned_count: 2, returned_models: ['gpt-5.4', 'gpt-5.6-terra'] },
+              active_response: { status: 'match', returned_model: 'gpt-5.6-sol' },
+              fingerprint: { status: 'unavailable', candidate: '', similarity: 0 },
+              verdict: 'suspected_mapping',
+            },
+            detector_version: 'native-2',
+            error_code: 'model_not_advertised',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.get('[data-test="model-detection-verdict"]').text()).toContain('疑似模型映射')
+    expect(dialog.get('[data-test="model-detection-requested-model"]').text()).toContain('gpt-5.6-sol')
+    expect(dialog.get('[data-test="model-detection-response-model"]').text()).toContain('gpt-5.6-sol')
+    expect(dialog.get('[data-test="model-detection-catalog"]').text()).toContain('目录共返回 2 个模型：gpt-5.4、gpt-5.6-terra')
+    expect(dialog.get('[data-test="model-detection-fingerprint"]').text()).toContain('未检测行为指纹')
+  })
+
+  it('writes the upstream returned model when an active response indicates replacement', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'abnormal',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: {
+            status: 'abnormal',
+            claimed_model: 'gpt-5.6-sol',
+            juice_summary: {
+              evidence_version: 'model-detection-evidence-v1',
+              requested_model: 'gpt-5.6-sol',
+              catalog: { status: 'match', returned_count: 2, returned_models: ['gpt-5.4', 'gpt-5.6-sol'] },
+              active_response: { status: 'mismatch', returned_model: 'gpt-5.4' },
+              fingerprint: { status: 'unavailable', candidate: '', similarity: 0 },
+              verdict: 'suspected_replacement',
+            },
+            error_code: 'response_or_fingerprint_mismatch',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.get('[data-test="model-detection-verdict"]').text()).toContain('疑似替换模型')
+    expect(dialog.get('[data-test="model-detection-requested-model"]').text()).toContain('gpt-5.6-sol')
+    expect(dialog.get('[data-test="model-detection-response-model"]').text()).toContain('gpt-5.4')
+  })
+
+  it('states when the active response omitted model and does not borrow a catalog candidate', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'insufficient',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: {
+            status: 'insufficient',
+            claimed_model: 'gpt-5.6-sol',
+            juice_summary: {
+              evidence_version: 'model-detection-evidence-v1',
+              requested_model: 'gpt-5.6-sol',
+              catalog: { status: 'match', returned_count: 2, returned_models: ['gpt-5.4', 'gpt-5.6-sol'] },
+              active_response: { status: 'missing', returned_model: '' },
+              fingerprint: { status: 'unavailable', candidate: '', similarity: 0 },
+              verdict: 'insufficient',
+            },
+            error_code: 'response_model_missing',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const responseRow = wrapper.get('[data-test="model-detection-response-model"]')
+    expect(responseRow.text()).toContain('上游未返回 model 字段')
+    expect(responseRow.text()).not.toContain('gpt-5.4')
+  })
+
+  it('shows both returned model and fingerprint candidate when evidence conflicts', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'abnormal',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: {
+            status: 'abnormal',
+            claimed_model: 'gpt-5.6-sol',
+            fingerprint_candidate: 'gpt-5.6-terra',
+            fingerprint_similarity: { 'gpt-5.6-terra': 0.98 },
+            juice_summary: {
+              evidence_version: 'model-detection-evidence-v1',
+              requested_model: 'gpt-5.6-sol',
+              catalog: { status: 'missing', returned_count: 1, returned_models: ['gpt-5.4'] },
+              active_response: { status: 'mismatch', returned_model: 'gpt-5.4' },
+              fingerprint: { status: 'mismatch', candidate: 'gpt-5.6-terra', similarity: 0.98 },
+              verdict: 'high_risk_inconsistent',
+            },
+            error_code: 'evidence_inconsistent',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    const dialog = wrapper.get('[data-test="model-detection-dialog"]')
+    expect(dialog.get('[data-test="model-detection-verdict"]').text()).toContain('高风险不一致')
+    expect(dialog.get('[data-test="model-detection-response-model"]').text()).toContain('gpt-5.4')
+    expect(dialog.get('[data-test="model-detection-fingerprint"]').text()).toContain('gpt-5.6-terra')
+    expect(dialog.get('[data-test="model-detection-fingerprint"]').text()).toContain('98%')
   })
 
   it('exposes an explicit connection probe model entry next to recent probes', async () => {

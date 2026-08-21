@@ -436,4 +436,4 @@
 - 依赖与窗口：T23/T24 均已完成 `DONE`；当前没有功能任务占用整合/发布/验收车道；T16 等冻结/保护 worktree 不解冻。
 - 验收边界：覆盖特惠分组仅允许自购账号且全部不可调度时的 `/responses`、Chat Completions 与流式/非流式本地拒绝；保留上游真实 503 透传；用户侧中文泛化提示与管理员诊断阶段/归属可区分；无迁移、无生产数据修改，预期 `downtime_required=false`。
 
-- **T47-R2 Monitor V2 紧凑布局与信息层级优化（2026-08-21）**：状态 `IMPLEMENTING`。用户已确认实施“紧凑服务行”方案：放大标题与核心指标，统一服务信息/时间线网格和垂直基线，移除 Tooltip 常驻占位行并改为悬浮定位，时间标签贴近柱状图，收紧卡片间距；移动端继续上下堆叠且仅时间线内部横向滚动。范围仅 `MonitorV2GroupCard.vue`、`MonitorV2Timeline.vue` 及直接相关前端测试；保持 operational/unavailable/no-data 状态契约、API、数据源、迁移、配置和调度语义不变。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t47-r2-monitor-layout`，分支 `codex/t47-r2-monitor-layout`；基线 `main@67cf4c88d`。尚未合并、推送、部署或线上验收。
+- **T47-R2 Monitor V2 紧凑布局与信息层级优化（2026-08-21）**：状态 `INTEGRATING`。用户已确认实施“紧凑服务行”方案：放大标题与核心指标，统一服务信息/时间线网格和垂直基线，移除 Tooltip 常驻占位行并改为悬浮定位，时间标签贴近柱状图，收紧卡片间距；移动端继续上下堆叠且仅时间线内部横向滚动。范围仅 `MonitorV2GroupCard.vue`、`MonitorV2Timeline.vue` 及直接相关前端测试；保持 operational/unavailable/no-data 状态契约、API、数据源、迁移、配置和调度语义不变。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t47-r2-monitor-layout`，分支 `codex/t47-r2-monitor-layout`；基线 `main@67cf4c88d`。尚未合并、推送、部署或线上验收。

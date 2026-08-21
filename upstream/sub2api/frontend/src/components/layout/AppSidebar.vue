@@ -627,6 +627,22 @@ const SignalIcon = {
     )
 }
 
+// Dedicated icon for the virtual performance monitor entry.  It intentionally
+// uses currentColor so the existing sidebar link styles provide the neutral
+// and active (teal) states in both expanded and collapsed navigation.
+const PerformanceMonitorIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5', 'aria-hidden': 'true' },
+      [
+        h('rect', { x: '3.25', y: '4.25', width: '17.5', height: '13.5', rx: '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+        h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', d: 'M7 14.25l2.25-3 2.1 1.8 2.4-3.3 3.25 2.7' }),
+        h('path', { 'stroke-linecap': 'round', d: 'M9 20h6M12 17.75V20' }),
+      ],
+    ),
+}
+
 const ShieldIcon = {
   render: () =>
     h(
@@ -713,7 +729,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
       label: item.label,
-      icon: null,
+      icon: item.id === 'performance-monitor' ? PerformanceMonitorIcon : null,
       iconSvg: item.icon_svg,
     })),
   )

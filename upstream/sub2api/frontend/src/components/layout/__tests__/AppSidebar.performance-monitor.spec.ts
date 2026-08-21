@@ -6,6 +6,8 @@ describe('performance monitor navigation contract', () => {
     const source = readFileSync('src/components/layout/AppSidebar.vue', 'utf8')
     expect(source).toContain("t('nav.performanceMonitor')")
     expect(source).toContain("id: 'performance-monitor'")
+    expect(source).toContain('PerformanceMonitorIcon')
+    expect(source).toContain("item.id === 'performance-monitor' ? PerformanceMonitorIcon : null")
     expect(source).not.toContain("path: '/monitor', label: t('nav.channelStatus')")
   })
 })

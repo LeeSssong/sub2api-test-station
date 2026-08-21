@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-22，T49 失败流水展示热修）
+
+- **T49 失败尝试从正常流水列表隔离**：状态 `READY_FOR_ROOT_REVIEW`。用户续接“流水登记优化”窗口反馈今天频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/hide-failed-usage-attempts`、分支 `codex/hide-failed-usage-attempts`，基线 `main@bf3815c1e`、提交 `f065c4d4b718d6949bc6f502af624637f597a594`；规格/计划/交接在候选中，repository RED 已复现并 GREEN。范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移，目标 `downtime_required=false`。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过；尚未根合并、推送、部署或线上验证。
+
 ## 当前新增任务（2026-08-21，模型检测证据增强）
 
 - **T48 模型映射/替换双证据检测与上游返回值展示**：状态 `DONE`。候选已刷新到 T47-R2 发布后的根 `main`，完成合并为 `main@86a956b5a059e46a049a6e660efe8ccdd0cb6abf`；直接相关 Go/Vitest 103/103、typecheck、build、gofmt、diff-check 已通过，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-86a956b5a-t48-model-detection.json`。已通过既有本地/宿主蓝绿链完成推送和生产切换；宿主记录 `/var/lib/sub2api/release-records/20260821T074947Z-production-2144246.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 blue；生产 `/healthz`、`/readyz`、`/health` 均 HTTP 200，API、worker、model-detector healthy。失败尝试因预加载 SCP 600 秒超时和 GHCR 403 已保留证据，未造成生产变更；最终使用 SSH 压缩预加载传输成功。生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-1e8d23b05-t48-production.json`。功能语义：目录缺失但主动响应/指纹匹配为“疑似映射”，目录命中但响应模型或指纹不匹配为“疑似替换”，多项不一致为高风险；模型或指纹不匹配时页面分别显示请求模型、上游响应声明的 `model`、目录摘要、指纹候选及相似度；上游未返回 `model` 时明确标记，不将 `/models` 目录候选冒充为单次响应模型。原始完整请求/响应、API Key、Base URL 和完整输出不持久化。

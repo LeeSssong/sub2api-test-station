@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -38,11 +39,13 @@ type detectRequest struct {
 }
 
 type detectResponse struct {
-	Status      string `json:"status"`
-	JuiceStatus string `json:"juice_status,omitempty"`
-	DetectorVer string `json:"detector_version,omitempty"`
-	Fingerprint string `json:"fingerprint_candidate,omitempty"`
-	ErrorCode   string `json:"error_code,omitempty"`
+	Status                string         `json:"status"`
+	JuiceStatus           string         `json:"juice_status,omitempty"`
+	JuiceSummary          map[string]any `json:"juice_summary,omitempty"`
+	DetectorVer           string         `json:"detector_version,omitempty"`
+	Fingerprint           string         `json:"fingerprint_candidate,omitempty"`
+	FingerprintSimilarity map[string]any `json:"fingerprint_similarity,omitempty"`
+	ErrorCode             string         `json:"error_code,omitempty"`
 }
 
 func main() {
@@ -116,23 +119,66 @@ func (d *detector) detect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, detectResponse{Status: "insufficient", DetectorVer: d.version, ErrorCode: "missing_probe_input"})
 		return
 	}
-	models, err := d.fetchModels(r.Context(), request.BaseURL, request.APIKey)
-	if err != nil {
-		status := "insufficient"
-		code := "upstream_unavailable"
-		if errors.Is(err, errUnauthorized) {
-			code = "upstream_unauthorized"
-		}
-		writeJSON(w, http.StatusOK, detectResponse{Status: status, DetectorVer: d.version, ErrorCode: code})
-		return
+	type catalogResult struct {
+		models []string
+		err    error
 	}
-	for _, candidate := range models {
-		if candidate == model {
-			writeJSON(w, http.StatusOK, detectResponse{Status: "normal", JuiceStatus: "match", DetectorVer: d.version, Fingerprint: candidate})
-			return
+	type activeResult struct {
+		model string
+		err   error
+	}
+	catalogCh := make(chan catalogResult, 1)
+	activeCh := make(chan activeResult, 1)
+	go func() {
+		models, err := d.fetchModels(r.Context(), request.BaseURL, request.APIKey)
+		catalogCh <- catalogResult{models: models, err: err}
+	}()
+	go func() {
+		returnedModel, err := d.fetchResponseModel(r.Context(), request.BaseURL, request.APIKey, model)
+		activeCh <- activeResult{model: returnedModel, err: err}
+	}()
+	catalog := <-catalogCh
+	active := <-activeCh
+
+	evidence := detectionEvidence{
+		RequestedModel: model,
+		Catalog: catalogEvidence{
+			Status:         evidenceUnavailable,
+			ReturnedCount:  len(catalog.models),
+			ReturnedModels: catalog.models,
+		},
+		ActiveResponse: activeResponseEvidence{Status: evidenceUnavailable},
+		Fingerprint:    fingerprintEvidence{Status: evidenceUnavailable},
+	}
+	if catalog.err == nil {
+		evidence.Catalog.Status = evidenceMissing
+		for _, candidate := range catalog.models {
+			if candidate == model {
+				evidence.Catalog.Status = evidenceMatch
+				break
+			}
 		}
 	}
-	writeJSON(w, http.StatusOK, detectResponse{Status: "abnormal", JuiceStatus: "mismatch", DetectorVer: d.version, ErrorCode: "model_not_advertised"})
+	if active.err == nil {
+		evidence.ActiveResponse.ReturnedModel = boundedEvidenceModelID(active.model)
+		switch {
+		case evidence.ActiveResponse.ReturnedModel == "":
+			evidence.ActiveResponse.Status = evidenceMissing
+		case evidence.ActiveResponse.ReturnedModel == model:
+			evidence.ActiveResponse.Status = evidenceMatch
+		default:
+			evidence.ActiveResponse.Status = evidenceMismatch
+		}
+	}
+	evidence.Verdict = classifyEvidence(evidence)
+	response := detectResponse{
+		Status:       statusForVerdict(evidence.Verdict),
+		JuiceStatus:  evidence.Verdict,
+		JuiceSummary: evidenceSummary(evidence),
+		DetectorVer:  d.version,
+		ErrorCode:    errorCodeForEvidence(evidence, catalog.err, active.err),
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 var errUnauthorized = errors.New("upstream unauthorized")
@@ -179,7 +225,56 @@ func (d *detector) fetchModels(ctx context.Context, rawBaseURL, apiKey string) (
 	return models, nil
 }
 
+func (d *detector) fetchResponseModel(ctx context.Context, rawBaseURL, apiKey, model string) (string, error) {
+	endpoint, err := responsesEndpoint(rawBaseURL)
+	if err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":             model,
+		"input":             "Reply with exactly OK.",
+		"max_output_tokens": 8,
+		"stream":            false,
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return "", errUnauthorized
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("upstream status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodySize)).Decode(&payload); err != nil {
+		return "", err
+	}
+	return boundedEvidenceModelID(payload.Model), nil
+}
+
 func modelsEndpoint(raw string) (string, error) {
+	return upstreamEndpoint(raw, "/models")
+}
+
+func responsesEndpoint(raw string) (string, error) {
+	return upstreamEndpoint(raw, "/responses")
+}
+
+func upstreamEndpoint(raw, suffix string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
 		return "", errors.New("invalid upstream base URL")
@@ -187,11 +282,42 @@ func modelsEndpoint(raw string) (string, error) {
 	u.RawQuery, u.Fragment = "", ""
 	path := strings.TrimRight(u.Path, "/")
 	if strings.HasSuffix(path, "/v1") {
-		u.Path = path + "/models"
+		u.Path = path + suffix
 	} else {
-		u.Path = path + "/v1/models"
+		u.Path = path + "/v1" + suffix
 	}
 	return u.String(), nil
+}
+
+func statusForVerdict(verdict string) string {
+	switch verdict {
+	case verdictVerified:
+		return "normal"
+	case verdictSuspectedMapping, verdictSuspectedReplacement, verdictHighRiskInconsistent:
+		return "abnormal"
+	default:
+		return "insufficient"
+	}
+}
+
+func errorCodeForEvidence(evidence detectionEvidence, catalogErr, activeErr error) string {
+	switch evidence.Verdict {
+	case verdictVerified:
+		return ""
+	case verdictSuspectedMapping:
+		return "model_not_advertised"
+	case verdictSuspectedReplacement:
+		return "response_or_fingerprint_mismatch"
+	case verdictHighRiskInconsistent:
+		return "evidence_inconsistent"
+	}
+	if errors.Is(catalogErr, errUnauthorized) || errors.Is(activeErr, errUnauthorized) {
+		return "upstream_unauthorized"
+	}
+	if evidence.ActiveResponse.Status == evidenceMissing {
+		return "response_model_missing"
+	}
+	return "evidence_insufficient"
 }
 
 func (d *detector) authorized(r *http.Request) bool {

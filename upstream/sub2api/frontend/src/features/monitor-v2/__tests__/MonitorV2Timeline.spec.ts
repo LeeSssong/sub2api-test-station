@@ -88,7 +88,7 @@ describe('MonitorV2Timeline', () => {
     expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('服务不可用')
   })
 
-  it('marks high-latency operational buckets as degraded without changing the source status', async () => {
+  it('keeps high-latency operational buckets green and running', async () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [{
@@ -101,10 +101,12 @@ describe('MonitorV2Timeline', () => {
 
     const bar = wrapper.get('[data-timeline-point="0"]')
     expect(bar.attributes('data-timeline-point-state')).toBe('operational')
-    expect(bar.classes()).toContain('bg-amber-300')
+    expect(bar.classes()).toContain('bg-emerald-400')
+    expect(bar.classes()).not.toContain('bg-amber-300')
 
     await bar.trigger('mouseenter')
-    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('DEGRADED')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('UP')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).not.toContain('DEGRADED')
     expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('运行中')
   })
 

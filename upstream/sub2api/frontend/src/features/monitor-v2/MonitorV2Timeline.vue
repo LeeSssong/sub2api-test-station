@@ -147,23 +147,18 @@ function pointClasses(point: MonitorV2TimelinePoint): string {
   if (isNoDataPoint(point)) {
     return 'border border-dashed border-slate-300 bg-slate-400/70 text-slate-500 dark:border-slate-500 dark:bg-slate-600/70 dark:text-slate-300'
   }
-  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) {
-    return 'bg-amber-300 text-amber-300 dark:bg-amber-300'
-  }
   return point.status === 'operational'
     ? 'bg-emerald-400 text-emerald-400 dark:bg-emerald-400'
     : 'bg-red-400 text-red-400 dark:bg-red-400'
 }
 
-function heading(point: MonitorV2TimelinePoint): 'UP' | 'DEGRADED' | 'DOWN' | 'NO DATA' {
+function heading(point: MonitorV2TimelinePoint): 'UP' | 'DOWN' | 'NO DATA' {
   if (isNoDataPoint(point)) return 'NO DATA'
-  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) return 'DEGRADED'
   return point.status === 'operational' ? 'UP' : 'DOWN'
 }
 
 function headingClass(point: MonitorV2TimelinePoint): string {
   if (isNoDataPoint(point)) return 'text-amber-300'
-  if (point.status === 'operational' && point.latency_ms !== null && point.latency_ms >= 2000) return 'text-amber-300'
   return point.status === 'operational' ? 'text-emerald-400' : 'text-red-400'
 }
 

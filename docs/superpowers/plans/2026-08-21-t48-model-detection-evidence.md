@@ -1,6 +1,6 @@
 # T48 Model Detection Evidence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将模型目录、主动响应声明模型和可选指纹候选分开为有界证据，对映射/替换风险给出可读结论，并在不匹配时明确展示上游返回的模型或指纹候选。
 
@@ -34,7 +34,7 @@
 - Consumes: `requestedModel string`, catalog observation, active-response observation, optional fingerprint observation.
 - Produces: `detectionEvidence` with `EvidenceVersion`, `RequestedModel`, `Catalog`, `ActiveResponse`, `Fingerprint`, `Verdict`; `classifyEvidence(detectionEvidence) string`; `evidenceSummary(detectionEvidence) map[string]any`.
 
-- [ ] **Step 1: Write failing verdict matrix tests**
+- [x] **Step 1: Write failing verdict matrix tests**
 
 Add table tests covering:
 
@@ -53,7 +53,7 @@ tests := []struct {
 }
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -64,15 +64,15 @@ go test ./cmd/model-detector -run 'TestClassifyEvidence|TestEvidenceSummary' -co
 
 Expected: FAIL because the evidence types/classifier do not exist.
 
-- [ ] **Step 3: Implement bounded evidence types and classifier**
+- [x] **Step 3: Implement bounded evidence types and classifier**
 
 Implement constants for statuses/verdicts, a deterministic classifier, model ID truncation/deduplication/sorting, `returned_models` cap 10, and summary conversion. Do not include request/response bodies or credentials.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add upstream/sub2api/backend/cmd/model-detector/evidence.go upstream/sub2api/backend/cmd/model-detector/evidence_test.go upstream/sub2api/backend/cmd/model-detector/main.go
@@ -89,7 +89,7 @@ git commit -m "feat: classify model detection evidence"
 - Consumes: `fetchModels(ctx, baseURL, apiKey)` and new `fetchResponseModel(ctx, baseURL, apiKey, requestModel)`.
 - Produces: active request `POST <base>/v1/responses` with `{model,input,max_output_tokens,stream}` and returns only the bounded top-level response `model` plus stable observation status.
 
-- [ ] **Step 1: Write failing active-probe tests**
+- [x] **Step 1: Write failing active-probe tests**
 
 Add tests that assert:
 
@@ -106,7 +106,7 @@ if r.URL.Path == "/v1/responses" {
 
 Cover returned model mismatch, missing top-level model, non-2xx/invalid JSON, and URL normalization for root and `/v1` bases. Assert the sidecar response contains `juice_summary.evidence_version`, `active_response.returned_model`, and no output text.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 ```bash
 cd upstream/sub2api/backend
@@ -115,7 +115,7 @@ go test ./cmd/model-detector -run 'TestDetector.*Evidence|TestResponsesEndpoint'
 
 Expected: FAIL because the active probe and evidence summary are absent.
 
-- [ ] **Step 3: Implement the one-shot active probe**
+- [x] **Step 3: Implement the one-shot active probe**
 
 Generalize endpoint construction without accepting userinfo or non-HTTP(S) schemes. Send one non-stream request with `max_output_tokens=8`; parse through the existing 2 MiB limit; never log or return output. Gather catalog and active evidence independently, classify them, set legacy-compatible `Status`, `JuiceStatus`, `JuiceSummary`, `DetectorVer`, and stable `ErrorCode`.
 
@@ -129,7 +129,7 @@ high_risk_inconsistent -> status=abnormal, error_code=evidence_inconsistent
 insufficient -> status=insufficient, error_code=evidence_insufficient
 ```
 
-- [ ] **Step 4: Run all model-detector tests and verify GREEN**
+- [x] **Step 4: Run all model-detector tests and verify GREEN**
 
 ```bash
 cd upstream/sub2api/backend
@@ -138,7 +138,7 @@ go test ./cmd/model-detector -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add upstream/sub2api/backend/cmd/model-detector/main.go upstream/sub2api/backend/cmd/model-detector/main_test.go
@@ -154,7 +154,7 @@ git commit -m "feat: capture upstream response model evidence"
 - Consumes: existing `AccountModelDetectionResponse.JuiceSummary` and `boundedSummary`.
 - Produces: regression evidence that `evidence_v1` survives bounded sanitization while `api_key`, `base_url`, `authorization`, `prompt`, `output`, `request`, and `response` keys remain removed recursively.
 
-- [ ] **Step 1: Write a failing/contract-strengthening sanitization test**
+- [x] **Step 1: Write a failing/contract-strengthening sanitization test**
 
 Extend the fake `/v1/detect` payload with the complete bounded evidence envelope and nested sensitive keys. Assert:
 
@@ -166,7 +166,7 @@ if len(catalog["returned_models"].([]any)) != 2 { t.Fatalf(...) }
 if _, exists := active["output"]; exists { t.Fatalf(...) }
 ```
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 ```bash
 cd upstream/sub2api/backend
@@ -175,15 +175,15 @@ go test ./internal/service -run 'TestHTTPAccountModelDetectionSidecar(CatalogAnd
 
 Expected: PASS if the existing sanitizer fully supports the envelope; if it fails for a real bounded-summary gap, continue to Step 3. A passing contract test is acceptable here because this task explicitly verifies reuse of an existing security primitive rather than adding production behavior.
 
-- [ ] **Step 3: Apply only the minimal sanitizer correction if required**
+- [x] **Step 3: Apply only the minimal sanitizer correction if required**
 
 Modify `account_model_detection_sidecar.go` only if the new real payload exposes a sanitizer defect. Do not relax the 8 KiB total limit, 32-key map limit, depth limit, sensitive-key list, or string limit.
 
-- [ ] **Step 4: Re-run focused service tests**
+- [x] **Step 4: Re-run focused service tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add upstream/sub2api/backend/internal/service/account_model_detection_sidecar.go upstream/sub2api/backend/internal/service/account_model_detection_sidecar_test.go
@@ -202,7 +202,7 @@ git commit -m "test: preserve bounded model detection evidence"
 - Consumes: `recent.juice_summary` evidence envelope plus legacy `claimed_model`, `fingerprint_candidate`, `fingerprint_similarity`, `detector_version`, `error_code`, and timestamps.
 - Produces: computed safe evidence projection and user-facing rows for verdict, requested model, upstream returned model, catalog evidence, fingerprint evidence, and technical details.
 
-- [ ] **Step 1: Write failing Vue tests**
+- [x] **Step 1: Write failing Vue tests**
 
 Add separate tests for:
 
@@ -213,7 +213,7 @@ Add separate tests for:
 5. high-risk conflict: shows both response `gpt-5.4` and fingerprint `gpt-5.6-terra`.
 6. legacy result: dialog opens without `evidence_version`, retains existing candidate/error/time information, and does not fabricate an upstream returned model.
 
-- [ ] **Step 2: Run focused Vitest and verify RED**
+- [x] **Step 2: Run focused Vitest and verify RED**
 
 ```bash
 cd upstream/sub2api/frontend
@@ -222,7 +222,7 @@ pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts
 
 Expected: FAIL because the evidence rows and localized verdicts do not exist.
 
-- [ ] **Step 3: Implement safe evidence parsing and display**
+- [x] **Step 3: Implement safe evidence parsing and display**
 
 Add local TypeScript guards that accept only expected string/number/array/map shapes. Do not cast the entire summary blindly. Replace raw `Juice` rows with explicit evidence rows. Keep raw stable error code in a subdued technical-details row and retain the cautious disclaimer.
 
@@ -250,11 +250,11 @@ fingerprintUnavailable
 technicalDetails
 ```
 
-- [ ] **Step 4: Run focused Vitest and verify GREEN**
+- [x] **Step 4: Run focused Vitest and verify GREEN**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```bash
 git add upstream/sub2api/frontend/src/components/admin/account-monitor/AccountModelDetectionDialog.vue upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts upstream/sub2api/frontend/src/i18n/locales/zh/admin/accounts.ts upstream/sub2api/frontend/src/i18n/locales/en/admin/accounts.ts
@@ -272,7 +272,7 @@ git commit -m "feat: explain model detection mismatch evidence"
 - Consumes: Tasks 1-4 implementation.
 - Produces: clean candidate commit and handoff at `READY_FOR_ROOT_REVIEW`; no root merge, push, deployment, or production mutation.
 
-- [ ] **Step 1: Run backend focused verification**
+- [x] **Step 1: Run backend focused verification**
 
 ```bash
 cd upstream/sub2api/backend
@@ -282,7 +282,7 @@ go test ./internal/service -run 'TestHTTPAccountModelDetectionSidecar' -count=1
 go test ./internal/repository -run 'TestAccountModelDetection' -count=1
 ```
 
-- [ ] **Step 2: Run frontend focused verification**
+- [x] **Step 2: Run frontend focused verification**
 
 ```bash
 cd upstream/sub2api/frontend
@@ -291,7 +291,7 @@ pnpm typecheck
 pnpm build
 ```
 
-- [ ] **Step 3: Run scope/security/diff checks**
+- [x] **Step 3: Run scope/security/diff checks**
 
 ```bash
 git diff --check
@@ -302,11 +302,11 @@ rg -n 'api_key|authorization|base_url|prompt|output|request|response' upstream/s
 
 Review each match and confirm it is request handling, redaction, or a negative test rather than persisted/logged secret material.
 
-- [ ] **Step 4: Write handoff**
+- [x] **Step 4: Write handoff**
 
 Record baseline SHA, candidate SHA, changed files, RED/GREEN commands, final tests, no migration/config/schema changes, expected `downtime_required=false`, rollback, known limitation that `native-1` does not fabricate behavior-fingerprint candidates, and the T47-R2 release-lane dependency.
 
-- [ ] **Step 5: Commit final docs and report READY**
+- [x] **Step 5: Commit final docs and report READY**
 
 ```bash
 git add docs/superpowers/specs/2026-08-21-t48-model-detection-evidence-design.md docs/superpowers/plans/2026-08-21-t48-model-detection-evidence.md docs/handoffs/2026-08-21-t48-model-detection-evidence-handoff.md

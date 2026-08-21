@@ -32,3 +32,5 @@ The standard preloaded controller safely stopped twice before host execution bec
 ## Rollback
 
 Use the retained previous green slot and host rollback procedure. No migration or data rollback is required.
+
+The candidate was archived as `/Users/gongtengxinwen/Documents/sub2api-archives/t47-r1-operational-green-8d38819d0.bundle` (mode 0600, verified complete history, SHA-256 `3cecf5314e8ed3bf0eaee02e92912e421998450daff6242026d70472c7a5fba1`). After confirming production and remote `main`, the candidate worktree/local branch and detached release worktree were removed. Local, remote temporary, and remote staging archive copies were deleted; the root untracked `tools/gpt56_api_detector-git/` directory and historical worktrees were not changed.

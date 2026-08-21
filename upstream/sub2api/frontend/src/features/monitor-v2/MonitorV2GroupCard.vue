@@ -2,45 +2,45 @@
   <article
     :data-test="`monitor-group-${group.id}`"
     data-monitor-layout="service-line"
-    class="group/monitor rounded-lg border border-slate-200/75 bg-white px-3 py-3 transition-[background-color,border-color,box-shadow] duration-200 ease-out hover:border-emerald-400/60 hover:bg-emerald-500/5 hover:shadow-[0_12px_28px_-22px_rgba(16,185,129,0.65)] focus-within:border-emerald-400/60 focus-within:bg-emerald-500/5 dark:border-slate-800 dark:bg-[#0b1220] dark:hover:border-emerald-400/45 dark:hover:bg-emerald-400/5 sm:px-4 sm:py-3.5"
+    class="group/monitor rounded-lg border border-slate-200/75 bg-white px-4 py-3.5 transition-[background-color,border-color,box-shadow] duration-200 ease-out hover:border-emerald-400/60 hover:bg-emerald-500/5 hover:shadow-[0_12px_28px_-22px_rgba(16,185,129,0.65)] focus-within:border-emerald-400/60 focus-within:bg-emerald-500/5 dark:border-slate-800 dark:bg-[#0b1220] dark:hover:border-emerald-400/45 dark:hover:bg-emerald-400/5 sm:px-5 sm:py-4"
     :aria-labelledby="`monitor-v2-group-${group.id}`"
   >
-    <header class="grid min-w-0 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(330px,0.92fr)_minmax(0,1.45fr)] lg:gap-6">
+    <header class="grid min-w-0 grid-cols-1 items-center gap-3.5 lg:grid-cols-[minmax(360px,0.95fr)_minmax(0,1.35fr)] lg:gap-5">
       <div class="flex min-w-0 items-center gap-2.5">
         <span
           data-test="monitor-availability-badge"
-          class="inline-flex min-w-[58px] flex-shrink-0 items-center justify-center rounded-md border px-2 py-1.5 text-sm font-black tabular-nums shadow-sm"
+          class="inline-flex min-w-[62px] flex-shrink-0 items-center justify-center rounded-md border px-2.5 py-1.5 text-base font-black tabular-nums shadow-sm"
           :class="availabilityBadgeClass"
         >
           {{ availabilityLabel }}
         </span>
         <span
-          class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm"
+          class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide shadow-sm"
           :class="availabilityClass"
         >
           <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-          <span data-test="monitor-group-status">{{ t(`monitorV2.status.${group.status}`) }}</span>
+          <span data-test="monitor-group-status" class="text-[11px]">{{ t(`monitorV2.status.${group.status}`) }}</span>
         </span>
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <h2
               :id="`monitor-v2-group-${group.id}`"
-              class="truncate text-[15px] font-bold tracking-tight text-slate-950 dark:text-white sm:text-base"
+              class="truncate text-lg font-bold tracking-tight text-slate-950 dark:text-white"
             >
               {{ group.name }}
             </h2>
             <span
               data-test="monitor-rate-multiplier"
-              class="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-500/12 px-1.5 py-0.5 text-[11px] font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
+              class="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-xs font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
             >
               {{ formatRate(group.rate_multiplier) }}×
             </span>
           </div>
-          <div class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
             <span>{{ t('monitorV2.metric.ttft') }}{{ metricValue(group.ttft, formatDuration) }}</span>
             <span>{{ t('monitorV2.metric.averageLatency') }}{{ metricValue(group.average_latency, formatDuration) }}</span>
           </div>
-          <p class="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+          <p data-test="monitor-freshness" class="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
             {{ freshnessLabel }}
           </p>
         </div>

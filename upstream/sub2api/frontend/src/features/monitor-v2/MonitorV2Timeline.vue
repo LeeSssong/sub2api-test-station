@@ -3,7 +3,7 @@
     ref="rootElement"
     data-timeline-root
     data-timeline-orientation="vertical-bars"
-    class="relative w-full min-w-0 max-w-full"
+    class="relative flex w-full min-w-0 max-w-full flex-col justify-center"
     role="group"
     :aria-label="ariaLabel"
     @mouseleave="activeIndex = null"
@@ -15,7 +15,7 @@
     >
       <div
         data-timeline-track
-        class="items-end gap-[5px] px-2 pb-1 pt-2"
+        class="items-center gap-[6px] px-1 py-1"
         :style="trackStyle"
       >
         <span
@@ -24,7 +24,7 @@
           :data-timeline-point="index"
           :data-timeline-point-state="pointState(point)"
           role="img"
-          class="h-6 w-1.5 w-auto min-w-1.5 shrink-0 cursor-default rounded-[2px] transition-[box-shadow,filter,background-color] duration-200 ease-out hover:shadow-[0_0_10px_currentColor] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+          class="h-8 w-1.5 w-auto min-w-1.5 shrink-0 cursor-default rounded-[2px] transition-[box-shadow,filter,background-color] duration-200 ease-out hover:shadow-[0_0_10px_currentColor] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
           :class="pointClasses(point)"
           :aria-label="pointLabel(point)"
           tabindex="0"
@@ -40,13 +40,13 @@
     </div>
     <div
       data-timeline-tooltip-row
-      class="relative min-h-[68px]"
+      class="pointer-events-none absolute inset-x-0 top-full z-30"
       aria-live="polite"
     >
       <div
         v-if="activePoint"
         data-timeline-tooltip
-        class="pointer-events-none absolute top-2 z-20 min-w-[196px] -translate-x-1/2 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-center text-sm text-white shadow-2xl transition-all duration-200"
+        class="absolute top-0 z-20 min-w-[196px] -translate-x-1/2 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-center text-sm text-white shadow-2xl transition-opacity duration-200"
         :style="{ left: tooltipLeft }"
       >
         <span
@@ -62,7 +62,7 @@
         <span data-timeline-tooltip-arrow class="absolute -top-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-600 bg-slate-950" />
       </div>
     </div>
-    <div v-if="points.length > 0" class="mt-1 flex justify-between px-1 text-[10px] text-gray-400 dark:text-gray-500" aria-hidden="true">
+    <div v-if="points.length > 0" class="mt-0.5 flex justify-between px-1 text-[11px] text-gray-400 dark:text-gray-500" aria-hidden="true">
       <span>{{ compactTimestamp(points[0].bucket_start) }}</span>
       <span>{{ compactTimestamp(points[points.length - 1].bucket_start) }}</span>
     </div>

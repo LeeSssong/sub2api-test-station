@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T49 失败流水展示热修）
 
-- **T49 失败尝试从正常流水列表隔离**：状态 `INTEGRATING`（已合并并推送，待生产授权）。用户续接“流水登记优化”窗口反馈今天频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选提交 `f065c4d4b718d6949bc6f502af624637f597a594` 已无冲突合并到根 `main@207ba3861` 并推送 `origin/main`；规格/计划/交接已归档。范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移，目标 `downtime_required=false`。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过；尚未构建制品、部署或线上验证。发布脚本要求用户明确“部署生产”后才启动生产链。
+- **T49 失败尝试从正常流水列表隔离**：状态 `DONE`。用户续接“流水登记优化”窗口反馈管理员页面频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选提交 `f065c4d4b718d6949bc6f502af624637f597a594` 已无冲突合并到根 `main@69dabecd715846e79e3c4d8150b0452ed4521a4f` 并推送 `origin/main`；范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过。生产发布首次因缺少网络探针变量在宿主变更前 fail-closed，补齐既有 allowlist 后预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`；宿主记录 `/var/lib/sub2api/release-records/20260821T202903Z-production-2707288.json`，0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-69dabecd7-t49-production.json`。公网 `/healthz`、`/readyz`、`/health` 均 200；管理员 `/api/v1/admin/usage` 返回 200 且当前页 100 行无 `unknown`，数据库只读核对为 `143417 = 6230 unknown + 137187 non-unknown`。API/worker/model-detector 已切换，PostgreSQL/Redis/Caddy 身份保留。
 
 ## 当前新增任务（2026-08-21，模型检测证据增强）
 

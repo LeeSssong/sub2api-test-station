@@ -66,6 +66,78 @@ func TestHTTPAccountModelDetectionSidecarCatalogAndDetect(t *testing.T) {
 	}
 }
 
+func TestHTTPAccountModelDetectionSidecarPreservesBoundedEvidenceEnvelope(t *testing.T) {
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{
+			"status":       "abnormal",
+			"juice_status": "suspected_replacement",
+			"juice_summary": map[string]any{
+				"evidence_version": "model-detection-evidence-v1",
+				"requested_model":  "gpt-5.6-sol",
+				"catalog": map[string]any{
+					"status":          "match",
+					"returned_count":  2,
+					"returned_models": []string{"gpt-5.6-sol", "gpt-5.4"},
+					"api_key":         "sk-secret",
+				},
+				"active_response": map[string]any{
+					"status":         "mismatch",
+					"returned_model": "gpt-5.4",
+					"output":         "full upstream output",
+					"response":       map[string]any{"model": "must-not-survive"},
+				},
+				"fingerprint": map[string]any{
+					"status":        "mismatch",
+					"candidate":     "gpt-5.4",
+					"similarity":    0.98,
+					"authorization": "Bearer secret",
+				},
+				"verdict":  "suspected_replacement",
+				"base_url": "https://secret.example/v1",
+			},
+		}), nil
+	})})
+
+	response, err := client.Detect(context.Background(), AccountModelDetectionRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.JuiceSummary["evidence_version"] != "model-detection-evidence-v1" {
+		t.Fatalf("juice summary = %#v", response.JuiceSummary)
+	}
+	active, ok := response.JuiceSummary["active_response"].(map[string]any)
+	if !ok || active["returned_model"] != "gpt-5.4" {
+		t.Fatalf("active response = %#v", response.JuiceSummary["active_response"])
+	}
+	if _, ok := active["output"]; ok {
+		t.Fatalf("active response retained output: %#v", active)
+	}
+	if _, ok := active["response"]; ok {
+		t.Fatalf("active response retained raw response: %#v", active)
+	}
+	catalog, ok := response.JuiceSummary["catalog"].(map[string]any)
+	if !ok {
+		t.Fatalf("catalog = %#v", response.JuiceSummary["catalog"])
+	}
+	models, ok := catalog["returned_models"].([]any)
+	if !ok || len(models) != 2 || models[0] != "gpt-5.6-sol" || models[1] != "gpt-5.4" {
+		t.Fatalf("returned models = %#v", catalog["returned_models"])
+	}
+	if _, ok := catalog["api_key"]; ok {
+		t.Fatalf("catalog retained api key: %#v", catalog)
+	}
+	fingerprint, ok := response.JuiceSummary["fingerprint"].(map[string]any)
+	if !ok || fingerprint["candidate"] != "gpt-5.4" || fingerprint["similarity"] != 0.98 {
+		t.Fatalf("fingerprint = %#v", response.JuiceSummary["fingerprint"])
+	}
+	if _, ok := fingerprint["authorization"]; ok {
+		t.Fatalf("fingerprint retained authorization: %#v", fingerprint)
+	}
+	if _, ok := response.JuiceSummary["base_url"]; ok {
+		t.Fatalf("summary retained base URL: %#v", response.JuiceSummary)
+	}
+}
+
 func TestHTTPAccountModelDetectionSidecarReturnsStableErrorsWithoutSecrets(t *testing.T) {
 	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return accountModelDetectionJSONResponse(http.StatusBadGateway, map[string]any{"error": "upstream rejected sk-leaked-secret at https://secret.example/v1"}), nil

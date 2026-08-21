@@ -4,7 +4,8 @@ export default {
       description: '管理 AI 平台账号和 Cookie',
       modelDetection: {
         title: '账号模型检测', close: '关闭', connectionProbeModel: '连接测试模型', detectionModel: '检测模型', detectorUnsupported: '检测器暂不支持', detectorUnconfigured: '检测服务未接入', detectorUnavailable: '检测服务暂不可用',
-        recentStatus: '最近状态', declaredModel: '申报模型', juice: 'Juice', juiceSummary: 'Juice 摘要', fingerprintCandidate: '行为指纹候选', fingerprintSimilarity: '相似度', detectorVersion: '检测器版本', detectionTime: '检测时间', error: '错误',
+        recentStatus: '最近状态', declaredModel: '申报模型', requestedModel: '请求模型', upstreamResponseModel: '上游响应模型', upstreamModelMissing: '上游未返回 model 字段', activeResponseUnavailable: '未取得主动响应', catalogEvidence: '模型目录', catalogMatch: '已命中请求模型', catalogMissing: '未命中请求模型', catalogUnavailable: '未取得模型目录', catalogReturned: '目录共返回 {count} 个模型：{models}', fingerprintEvidence: '行为指纹', fingerprintMatch: '指纹匹配', fingerprintMismatch: '指纹候选：{candidate}（{similarity}）', fingerprintUnavailable: '未检测行为指纹', technicalDetails: '技术详情', juice: 'Juice', juiceSummary: 'Juice 摘要', fingerprintCandidate: '行为指纹候选', fingerprintSimilarity: '相似度', detectorVersion: '检测器版本', detectionTime: '检测时间', error: '错误',
+        verdict: { verified: '模型可信', suspected_mapping: '疑似模型映射', suspected_replacement: '疑似替换模型', high_risk_inconsistent: '高风险不一致', insufficient: '证据不足' },
         abnormalDisclaimer: '检测器观察到异常；该结果不代表上游确认替换。', saveModels: '保存模型', detecting: '已排队…', detectNow: '立即检测', section: '模型检测', editConnectionProbeModel: '修改连接测试模型', viewRecent: '点击查看最近检测结果', observedAbnormal: '检测器观察到异常',
         status: { untested: '未检测', queued: '排队中', running: '检测中', normal: '正常', abnormal: '异常', insufficient: '证据不足', failed: '检测失败', unsupported: '不支持', service_unconfigured: '检测服务未接入', service_unavailable: '检测服务暂不可用' }
       },

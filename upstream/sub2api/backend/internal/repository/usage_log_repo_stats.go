@@ -924,6 +924,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 		conditions = append(conditions, fmt.Sprintf("created_at < $%d", len(args)+1))
 		args = append(args, *filters.EndTime)
 	}
+	conditions = append(conditions, usageLogNormalQueryFilter)
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -1085,6 +1086,7 @@ func (r *usageLogRepository) getEndpointStatsByColumnWithFilters(ctx context.Con
 		args = append(args, int16(*billingType))
 	}
 	query, args = appendUsageLogBillingModeQueryFilter(query, args, billingMode, "")
+	query += " AND " + usageLogNormalQueryFilter
 	query += " GROUP BY endpoint ORDER BY requests DESC"
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -1157,6 +1159,7 @@ func (r *usageLogRepository) getEndpointPathStatsWithFilters(ctx context.Context
 		args = append(args, int16(*billingType))
 	}
 	query, args = appendUsageLogBillingModeQueryFilter(query, args, billingMode, "")
+	query += " AND " + usageLogNormalQueryFilter
 	query += " GROUP BY endpoint ORDER BY requests DESC"
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)

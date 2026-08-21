@@ -30,6 +30,12 @@ const rawUsageLogModelColumn = "model"
 // 配合 `FROM usage_logs ul` JOIN 查询使用。
 const usageLogSuccessFilterUL = "ul.actual_cost > 0"
 
+// usageLogNormalQueryFilter hides failover attempts whose upstream usage is
+// unknown from normal usage lists and summaries. NULL is legacy data and is
+// treated as complete for backward compatibility; partial usage remains
+// visible because it may represent a billable request with incomplete detail.
+const usageLogNormalQueryFilter = "COALESCE(usage_completeness, 'complete') <> 'unknown'"
+
 // usageLogEffectivePlatformExpr 用于按"有效平台"维度聚合 usage_logs：
 // 优先取请求实际走的分组 platform，若分组未设置 platform 再 fallback 到 account.platform。
 // Composite groups are a routing layer, so platform analytics must use the

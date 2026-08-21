@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-21，模型检测证据增强）
 
-- **T48 模型映射/替换双证据检测与上游返回值展示**：状态 `DEPLOYING`。候选已刷新到 T47-R2 发布后的根 `main`，完成合并为 `main@86a956b5a059e46a049a6e660efe8ccdd0cb6abf`；直接相关 Go/Vitest 103/103、typecheck、build、gofmt、diff-check 已通过，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-86a956b5a-t48-model-detection.json`。当前执行既有本地/宿主蓝绿发布链，尚未完成推送、生产切换和线上专项验收。功能语义：目录缺失但主动响应/指纹匹配为“疑似映射”，目录命中但响应模型或指纹不匹配为“疑似替换”，多项不一致为高风险；模型或指纹不匹配时页面分别显示请求模型、上游响应声明的 `model`、目录摘要、指纹候选及相似度；上游未返回 `model` 时明确标记，不将 `/models` 目录候选冒充为单次响应模型。原始完整请求/响应、API Key、Base URL 和完整输出不持久化。
+- **T48 模型映射/替换双证据检测与上游返回值展示**：状态 `DONE`。候选已刷新到 T47-R2 发布后的根 `main`，完成合并为 `main@86a956b5a059e46a049a6e660efe8ccdd0cb6abf`；直接相关 Go/Vitest 103/103、typecheck、build、gofmt、diff-check 已通过，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-86a956b5a-t48-model-detection.json`。已通过既有本地/宿主蓝绿链完成推送和生产切换；宿主记录 `/var/lib/sub2api/release-records/20260821T074947Z-production-2144246.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 blue；生产 `/healthz`、`/readyz`、`/health` 均 HTTP 200，API、worker、model-detector healthy。失败尝试因预加载 SCP 600 秒超时和 GHCR 403 已保留证据，未造成生产变更；最终使用 SSH 压缩预加载传输成功。生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-21-main-1e8d23b05-t48-production.json`。功能语义：目录缺失但主动响应/指纹匹配为“疑似映射”，目录命中但响应模型或指纹不匹配为“疑似替换”，多项不一致为高风险；模型或指纹不匹配时页面分别显示请求模型、上游响应声明的 `model`、目录摘要、指纹候选及相似度；上游未返回 `model` 时明确标记，不将 `/models` 目录候选冒充为单次响应模型。原始完整请求/响应、API Key、Base URL 和完整输出不持久化。
 
 ## 当前新增任务（2026-08-20，快速迭代-13）
 

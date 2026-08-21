@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T49 失败流水展示热修）
 
-- **T49 失败尝试从正常流水列表隔离**：状态 `READY_FOR_ROOT_REVIEW`。用户续接“流水登记优化”窗口反馈今天频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/hide-failed-usage-attempts`、分支 `codex/hide-failed-usage-attempts`，基线 `main@bf3815c1e`、提交 `f065c4d4b718d6949bc6f502af624637f597a594`；规格/计划/交接在候选中，repository RED 已复现并 GREEN。范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移，目标 `downtime_required=false`。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过；尚未根合并、推送、部署或线上验证。
+- **T49 失败尝试从正常流水列表隔离**：状态 `INTEGRATING`（已合并并推送，待生产授权）。用户续接“流水登记优化”窗口反馈今天频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选提交 `f065c4d4b718d6949bc6f502af624637f597a594` 已无冲突合并到根 `main@207ba3861` 并推送 `origin/main`；规格/计划/交接已归档。范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移，目标 `downtime_required=false`。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过；尚未构建制品、部署或线上验证。发布脚本要求用户明确“部署生产”后才启动生产链。
 
 ## 当前新增任务（2026-08-21，模型检测证据增强）
 

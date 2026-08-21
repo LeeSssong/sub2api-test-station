@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-21，模型检测证据增强）
+
+- **T48 模型映射/替换双证据检测与上游返回值展示**：状态 `DESIGNING`。用户已批准将模型目录与主动响应/指纹证据分开判定：目录缺失但指纹匹配为“疑似映射”，目录命中但响应模型或指纹不匹配为“疑似替换”，多项不一致为高风险。当模型或指纹不匹配时，页面必须分别显示请求模型、上游响应声明的 `model`、指纹候选及相似度；上游未返回 `model` 时明确标记，不将 `/models` 目录候选冒充为单次响应模型。原始完整请求/响应、API Key、Base URL 和完整输出不持久化。任务仅准备独立候选，T47-R2 完成当前 `INTEGRATING/DEPLOYING/VERIFYING` 单车道前不合并、不推送、不发布。
+
 ## 当前新增任务（2026-08-20，快速迭代-13）
 
 - **T47-R1 operational timeline color correction**: status DONE. Candidate `codex/t47-r1-operational-green@8d38819d0` was integrated and released from pushed root `main@11d871832`. Host record `/var/lib/sub2api/release-records/20260821T032911Z-production-1936940.json` reports `succeeded/promoted`, `rolled_back=false`, `downtime_required=false`, active slot `blue`; all health endpoints returned 200. Logged-in production inspection found 82 `operational` buckets, all emerald green with zero amber/non-green operational buckets; 2 no-probe buckets remained gray. Focused Vitest 20/20, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. No API, data source, migration, config, or production-data changes. Verified recovery bundle `t47-r1-operational-green-8d38819d0.bundle` was retained, and the candidate branch/worktree plus temporary release artifacts were cleaned. Report: `docs/superpowers/reports/2026-08-21-t47-r1-operational-green-production.md`.

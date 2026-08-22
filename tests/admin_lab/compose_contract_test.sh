@@ -10,7 +10,7 @@ docker compose --project-name sub2api-admin-lab --env-file "$ENV_FILE" -f "$COMP
 
 config=$(docker compose --project-name sub2api-admin-lab --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config)
 for needle in \
-  'admin-lab-postgres' 'admin-lab-redis' 'sub2api-admin-lab-network' \
+  'admin-lab-postgres' 'admin-lab-redis' 'sub2api-admin-lab-network' 'sub2api_default' \
   'sub2api-admin-lab-postgres-data' 'sub2api-admin-lab-redis-data' \
   'PAYMENT_PROVIDER: mock' 'UPSTREAM_PROVIDER: mock-upstream' \
   'MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091' \

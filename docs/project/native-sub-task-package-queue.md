@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
+
+- **T50 Monitor V2 可用性字段文案精简**：状态 `IMPLEMENTING`。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。基线 `main@6035f7f5488d5f2df9072db44260bdf9fa6ec3df`，候选 worktree 待创建。
+
 ## 当前新增任务（2026-08-22，T49 失败流水展示热修）
 
 - **T49 失败尝试从正常流水列表隔离**：状态 `DONE`。用户续接“流水登记优化”窗口反馈管理员页面频繁出现 Luna/Sol 0 token、0 元流水；已确认来源是本定制 failover 审计为每次无 usage 失败写入的 `usage_completeness='unknown'` attempt。候选提交 `f065c4d4b718d6949bc6f502af624637f597a594` 已无冲突合并到根 `main@c3971899055bb7a65e09a18729d908f7be9f26c3` 并推送 `origin/main`；范围仅在原生 usage repository 正常列表、过滤统计及 endpoint breakdown 排除 `unknown`，保留 `complete`、`partial`、历史 `NULL`；不删库、不改扣费/重试/失败审计、不新增迁移。repository 全包、admin handler focused、server build、gofmt、diff-check 均通过。预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`；宿主记录 `/var/lib/sub2api/release-records/20260821T205212Z-production-2739074.json`，0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-73cc438b-t49-production.json`。公网 `/healthz`、`/readyz`、`/health` 均 200；管理员 `/api/v1/admin/usage` 返回 200、固定截止点前当前页 100 行无 `unknown`，数据库只读核对为 `143537 = 6259 unknown + 137278 non-unknown`。API/worker/model-detector 已切换，PostgreSQL/Redis/Caddy 身份保留。

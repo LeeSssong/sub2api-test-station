@@ -6,7 +6,7 @@
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 
-- **T53 管理员隔离测试站**：状态 `INTEGRATING`。候选 `codex/t53-admin-lab@b51dd821d4bf476f1e0eeabfcf04caf20cfffdf2` 已由根任务合并到 `main@abe3fb1b09cfa9a7ad3e733618ff18ebb06db618`，并在合并后的树上通过 admin-lab contract/smoke、Go `internal/lab`、前端 focused Vitest、前端生产构建、后端 server build、Compose config、Caddy adapt 与 `git diff --check`。范围为复用 Sub 原生管理员 API/页面/迁移集合，在独立 PostgreSQL、Redis、Cookie、secret、网络和 mock 出站边界下挂载 `/admin/lab/`；不实现额度账本、充值包、经营分析或第二账务事实源。尚未推送、生产部署或线上验收；发布前需执行根发布预检、宿主 live smoke 和既有本地/宿主蓝绿链。详见 `docs/handoffs/2026-08-22-t53-admin-lab-handoff.md`。
+- **T53 管理员隔离测试站**：状态 `DONE`。候选 `codex/t53-admin-lab@b51dd821d4bf476f1e0eeabfcf04caf20cfffdf2` 已由根任务合并；生产发布使用已推送 `main@70bc3263d0a4632affa12a88849745b94a4cacc6`、tested tree `7cd989ee3becaf7a96fefe97811c9b13fc05d849` 和 `0600` 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-70bc3263-t53-admin-lab.json`。预加载蓝绿记录 `/var/lib/sub2api/release-records/20260822T175244Z-production-3697754.json` 返回 `succeeded/promoted`、请求 `downtime_required=false`、活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 和 `/admin/lab/` 均 HTTP 200。范围为复用 Sub 原生管理员 API/页面/迁移集合，在独立 PostgreSQL、Redis、Cookie、secret、网络和 mock 出站边界下挂载 `/admin/lab/`；不实现额度账本、充值包、经营分析或第二账务事实源。无停机、无生产数据写入、无 GitHub Actions。详见 `docs/handoffs/2026-08-22-t53-admin-lab-handoff.md`。
 
 ## 当前新增任务（2026-08-22，T52 调度公平性与管理员实时参数页）
 

@@ -7,20 +7,18 @@
   >
     <header class="grid min-w-0 grid-cols-1 items-center gap-3.5 lg:grid-cols-[minmax(360px,0.95fr)_minmax(0,1.35fr)] lg:gap-5">
       <div class="flex min-w-0 items-center gap-2.5">
-        <span
-          data-test="monitor-availability-badge"
-          class="inline-flex min-w-[62px] flex-shrink-0 items-center justify-center rounded-md border px-2.5 py-1.5 text-base font-black tabular-nums shadow-sm"
-          :class="availabilityBadgeClass"
-        >
-          {{ availabilityLabel }}
-        </span>
-        <span
-          class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide shadow-sm"
-          :class="availabilityClass"
-        >
-          <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-          <span data-test="monitor-group-status" class="text-[11px]">{{ t(`monitorV2.status.${group.status}`) }}</span>
-        </span>
+        <div class="flex flex-shrink-0 items-baseline gap-1.5">
+          <span
+            data-test="monitor-availability-badge"
+            class="inline-flex min-w-[62px] items-center justify-center rounded-md border px-2.5 py-1.5 text-base font-black tabular-nums shadow-sm"
+            :class="availabilityBadgeClass"
+          >
+            {{ availabilityLabel }}
+          </span>
+          <span data-test="monitor-availability-label" class="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+            {{ t('monitorV2.metric.availabilityLabel') }}
+          </span>
+        </div>
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <h2
@@ -31,7 +29,7 @@
             </h2>
             <span
               data-test="monitor-rate-multiplier"
-              class="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-xs font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
+              class="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-[11px] font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
             >
               {{ formatRate(group.rate_multiplier) }}×
             </span>
@@ -61,11 +59,6 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const availabilityClass = computed(() => {
-  return props.group.status === 'operational'
-    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
-    : 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
-})
 const availabilityBadgeClass = computed(() => {
   return props.group.status === 'operational'
     ? 'border-emerald-300/60 bg-emerald-50 text-emerald-700 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-200'

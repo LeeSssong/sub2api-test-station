@@ -6,7 +6,8 @@ vi.mock('vue-i18n', () => ({
     t: (key: string) => ({
       'monitorV2.status.operational': '运行中',
       'monitorV2.status.unavailable': '服务不可用',
-      'monitorV2.metric.availability': '可用性：',
+      'monitorV2.metric.availability': '可用性',
+      'monitorV2.metric.availabilityLabel': '可用性',
       'monitorV2.metric.ttft': '首字速度：',
       'monitorV2.metric.averageLatency': '平均耗时：',
       'monitorV2.freshness.latestProbe': '探测于',
@@ -53,10 +54,10 @@ describe('MonitorV2GroupCard', () => {
     expect(wrapper.get('header').classes()).toContain('lg:grid-cols-[minmax(360px,0.95fr)_minmax(0,1.35fr)]')
     expect(wrapper.get('h2').classes()).toContain('text-lg')
     expect(wrapper.get('[data-test=monitor-availability-badge]').classes()).toContain('text-base')
-    expect(wrapper.get('[data-test=monitor-group-status]').classes()).toContain('text-[11px]')
     expect(wrapper.get('p').classes()).toContain('text-[11px]')
-    expect(wrapper.get('[data-test="monitor-group-status"]').text()).toBe('运行中')
+    expect(wrapper.find('[data-test="monitor-group-status"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="monitor-availability-badge"]').text()).toBe('100%')
+    expect(wrapper.get('[data-test="monitor-availability-label"]').text()).toBe('可用性')
     expect(wrapper.get('[data-test="monitor-rate-multiplier"]').text()).toContain('0.3×')
     expect(wrapper.text()).toContain('首字速度：2.22 s')
     expect(wrapper.get('[data-test="timeline-slot"]').exists()).toBe(true)

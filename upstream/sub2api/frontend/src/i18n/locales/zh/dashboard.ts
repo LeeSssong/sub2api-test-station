@@ -82,6 +82,7 @@ export default {
     },
     metric: {
       availability: '可用性：',
+      availabilityLabel: '可用性',
       ttft: '首字速度：',
       averageLatency: '平均耗时：',
       samples: '基于 {count} 次调用',

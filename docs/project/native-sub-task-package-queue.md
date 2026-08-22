@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-22，T51-R1 Monitor V2 生产热修）
+
+- **T51-R1 Monitor V2 生产热修**：状态 `IMPLEMENTING`。T51 发布后新版监控接口持续 500，生产日志为 `sql: expected 12 destination arguments in Scan, not 13`；确认 T51 的外层 SQL `SELECT` 漏掉 `bm.bucket_has_result`，与已更新的 `rows.Scan` 列数不匹配。仅补齐查询列和直接相关回归断言，不改 Monitor V2 v8 合同、状态计算、数据源、迁移或配置；修复后从最新 `main` 重新走测试、推送、无停机蓝绿发布和线上验收。
+
 ## 当前新增任务（2026-08-22，T51 Monitor V2 检测失败红色状态）
 
 - **T51 Monitor V2 检测失败红色状态**：状态 `DONE`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；根因是原生时间桶 SQL 将失败结果桶与无结果桶都投影为 `unavailable`，前端原先据 `latency_ms=null` 误判为 `no-data`。候选 `codex/t51-monitor-failed-red@b262756b76e81b263280ed657b08901c48c337cd` 已合入并推送根 `main@81366f15a9452682dced2ad67d8b001ab6cb7002`；通过原生时间线投影新增必填 `has_result`，失败桶红色、空桶灰色，Monitor V2 合同升级 v8，成功、可用率、调度资格、数据源和探测逻辑不改。Monitor V2 9 个测试文件 45/45、Go service/handler/repository 定向测试、`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；发布预检 `downtime_required=false`，宿主记录 `/var/lib/sub2api/release-records/20260822T073115Z-production-3216658.json` 为 `succeeded/promoted`，活动槽 `blue`，公网 `/healthz`、`/readyz`、`/health` 均 200，API/worker/model-detector healthy。生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-81366f15-t51-production.json`；无迁移、无配置和生产数据写入。

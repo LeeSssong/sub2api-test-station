@@ -3,6 +3,17 @@ name: sub2api-admin-lab
 services:
   admin-lab-api:
     image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        test "$$LAB_ONLY" = 1 &&
+        test "$$DATABASE_HOST" = admin-lab-postgres &&
+        test "$$REDIS_HOST" = admin-lab-redis &&
+        test "$$PAYMENT_PROVIDER" = mock &&
+        test "$$UPSTREAM_PROVIDER" = mock-upstream &&
+        test "$$FRONTEND_BASE_PATH" = /admin/lab/ &&
+        exec /app/sub2api
     environment:
       LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
       SERVER_HOST: 0.0.0.0
@@ -33,7 +44,9 @@ services:
       admin-lab-redis: {condition: service_healthy}
       admin-lab-mock-upstream: {condition: service_healthy}
       admin-lab-mock-payment: {condition: service_healthy}
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 10s
@@ -42,6 +55,14 @@ services:
 
   admin-lab-worker:
     image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        test "$$LAB_ONLY" = 1 &&
+        test "$$DATABASE_HOST" = admin-lab-postgres &&
+        test "$$REDIS_HOST" = admin-lab-redis &&
+        exec /app/sub2api
     environment:
       LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
       SERVER_HOST: 0.0.0.0
@@ -66,7 +87,8 @@ services:
     depends_on:
       admin-lab-postgres: {condition: service_healthy}
       admin-lab-redis: {condition: service_healthy}
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
 
   admin-lab-postgres:
     image: ${ADMIN_LAB_POSTGRES_IMAGE:?ADMIN_LAB_POSTGRES_IMAGE is required}
@@ -75,7 +97,8 @@ services:
       POSTGRES_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
       POSTGRES_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
     volumes: [admin-lab-postgres-data:/var/lib/postgresql/data]
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${ADMIN_LAB_DB_USER} -d ${ADMIN_LAB_DB_NAME}"]
       interval: 5s
@@ -86,7 +109,8 @@ services:
     image: ${ADMIN_LAB_REDIS_IMAGE:?ADMIN_LAB_REDIS_IMAGE is required}
     command: ["redis-server", "--requirepass", "${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}"]
     volumes: [admin-lab-redis-data:/data]
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${ADMIN_LAB_REDIS_PASSWORD}", "PING"]
       interval: 5s
@@ -94,12 +118,14 @@ services:
       retries: 10
 
   admin-lab-mock-upstream:
-    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
-    command: ["/app/admin-lab-mock-upstream"]
+    image: python:3.12-alpine
+    command: ["python", "/opt/admin-lab/mock_server.py", "8091", "upstream"]
+    volumes: [../tools/admin-lab/mock_server.py:/opt/admin-lab/mock_server.py:ro]
     environment:
       LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
       LISTEN_ADDRESS: ":8091"
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
     expose: ["8091"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8091/healthz"]
@@ -108,12 +134,14 @@ services:
       retries: 10
 
   admin-lab-mock-payment:
-    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
-    command: ["/app/admin-lab-mock-payment"]
+    image: python:3.12-alpine
+    command: ["python", "/opt/admin-lab/mock_server.py", "8092", "payment"]
+    volumes: [../tools/admin-lab/mock_server.py:/opt/admin-lab/mock_server.py:ro]
     environment:
       LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
       LISTEN_ADDRESS: ":8092"
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
     expose: ["8092"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8092/healthz"]
@@ -122,16 +150,24 @@ services:
       retries: 10
 
   admin-lab-frontend:
+    build:
+      context: ..
+      dockerfile: infra/admin-lab/Dockerfile.frontend
     image: ${ADMIN_LAB_FRONTEND_IMAGE:?ADMIN_LAB_FRONTEND_IMAGE is required}
     environment:
       LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
-    networks: [admin-lab]
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
     expose: ["4173"]
 
 networks:
   admin-lab:
     name: sub2api-admin-lab-network
     internal: true
+  admin-lab-gateway:
+    name: ${ADMIN_LAB_GATEWAY_NETWORK:-sub2api_default}
+    external: true
 
 volumes:
   admin-lab-postgres-data:

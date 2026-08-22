@@ -84,8 +84,11 @@ export default defineConfig(({ mode }) => {
   const configuredPort = env.VITE_DEV_PORT ?? process.env.VITE_DEV_PORT
   const devPort = configuredPort === undefined ? 3000 : Number(configuredPort)
   const browserTest = mode === 'browser-test' || env.VITE_BROWSER_TEST === '1'
+  const appBasePath = env.VITE_APP_BASE_PATH || '/'
+  const buildOutDir = env.VITE_BUILD_OUT_DIR || '../backend/internal/web/dist'
 
   return {
+    base: appBasePath,
     plugins: [
       vue(),
       checker({
@@ -106,7 +109,7 @@ export default defineConfig(({ mode }) => {
     __INTLIFY_JIT_COMPILATION__: true
   },
   build: {
-    outDir: '../backend/internal/web/dist',
+    outDir: buildOutDir,
     emptyOutDir: true,
     rollupOptions: {
       output: {

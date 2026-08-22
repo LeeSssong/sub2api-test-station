@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T51-R1 Monitor V2 生产热修）
 
-- **T51-R1 Monitor V2 生产热修**：状态 `IMPLEMENTING`。T51 发布后新版监控接口持续 500，生产日志为 `sql: expected 12 destination arguments in Scan, not 13`；确认 T51 的外层 SQL `SELECT` 漏掉 `bm.bucket_has_result`，与已更新的 `rows.Scan` 列数不匹配。仅补齐查询列和直接相关回归断言，不改 Monitor V2 v8 合同、状态计算、数据源、迁移或配置；修复后从最新 `main` 重新走测试、推送、无停机蓝绿发布和线上验收。
+- **T51-R1 Monitor V2 生产热修**：状态 `DONE`。T51 发布后新版监控接口持续 500，生产日志为 `sql: expected 12 destination arguments in Scan, not 13`；确认外层 SQL `SELECT` 漏掉 `bm.bucket_has_result`，与已更新的 `rows.Scan` 列数不匹配。修复已合入并推送 `main@99a423510f3aa36def40d2b253be21be0d8e85e9`，补齐查询列和 SQL 列序回归断言；直接相关后端/前端测试、构建和 diff 检查通过。已通过既有无停机蓝绿链发布，宿主记录 `/var/lib/sub2api/release-records/20260822T075347Z-production-3238611.json` 为 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，API/worker/model-detector healthy，三项公网健康端点 200。无迁移、无配置和生产数据写入。
 
 ## 当前新增任务（2026-08-22，T51 Monitor V2 检测失败红色状态）
 

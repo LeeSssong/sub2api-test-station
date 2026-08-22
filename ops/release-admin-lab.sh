@@ -89,8 +89,10 @@ chmod 600 "$env_file"
 
 remote_tmp=$("$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -d -p /tmp ".admin-lab-$source_commit.XXXXXX" | tr -d '[:space:]') || fail 'remote staging unavailable'
 scp_opts=(-q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -P "$ssh_port")
-"$scp_bin" "${scp_opts[@]}" "$bundle" "$env_file" "$frontend_image" ops/deploy-admin-lab-host.sh "$ssh_target:$remote_tmp/" \
-  || fail 'admin lab release transfer failed'
+for file in "$bundle" "$env_file" "$frontend_image" ops/deploy-admin-lab-host.sh; do
+  "$scp_bin" "${scp_opts[@]}" "$file" "$ssh_target:$remote_tmp/$(basename "$file")" \
+    || fail "admin lab release transfer failed: $(basename "$file")"
+done
 
 host_output=$("$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -p "$ssh_port" "$ssh_target" \
   sudo -n bash -s -- "$remote_tmp" "$staging_root" "$release_id" "$bundle_sha" "$frontend_sha" "$source_commit" "$source_tree" "$base_url" "$release_root" <<'REMOTE'

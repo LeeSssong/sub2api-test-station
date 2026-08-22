@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+cd "$ROOT"
+
+fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
+
+controller=ops/release-admin-lab.sh
+executor=ops/deploy-admin-lab-host.sh
+[[ -f "$controller" ]] || fail 'admin lab release controller is missing'
+[[ -x "$controller" ]] || fail 'admin lab release controller is not executable'
+[[ -f "$executor" ]] || fail 'admin lab host executor is missing'
+[[ -x "$executor" ]] || fail 'admin lab host executor is not executable'
+
+for needle in \
+  'compose.admin-lab.yaml' \
+  'infra/Caddyfile' \
+  'Dockerfile.frontend' \
+  'gateway.conf' \
+  'mock_server.py' \
+  'ADMIN_LAB_IMAGE' \
+  'ADMIN_LAB_FRONTEND_IMAGE' \
+  'admin-lab-bundle' \
+  'sha256'; do
+  grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
+done
+
+for needle in \
+  'sub2api-admin-lab' \
+  'ADMIN_LAB_ENV' \
+  'install -o root -g root -m 0600' \
+  'up -d --no-build --wait' \
+  'admin-lab-api' \
+  'admin-lab-gateway' \
+  'admin-lab-frontend' \
+  '/admin/lab/assets/' \
+  'caddy validate' \
+  'caddy reload' \
+  'Caddyfile.backup' \
+  '主站 HTML' \
+  'rollback'; do
+  grep -Fq "$needle" "$executor" || fail "host executor missing contract: $needle"
+done
+
+echo 'admin lab release delivery contract: PASS'

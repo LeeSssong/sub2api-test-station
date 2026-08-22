@@ -221,6 +221,23 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.upstreamCostWeight": "计费倍率",
     "admin.settings.openaiExperimentalScheduler.previousResponseWeight": "previous_response 粘性",
     "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
+    "admin.settings.openaiExperimentalScheduler.fairnessTitle": "公平调度",
+    "admin.settings.openaiExperimentalScheduler.fairnessDescription": "控制候选池覆盖和长期未使用账号的探索，减少请求集中在少数上游账号。粘性请求仍遵循原有绑定语义。",
+    "admin.settings.openaiExperimentalScheduler.poolMode": "候选池模式",
+    "admin.settings.openaiExperimentalScheduler.poolModeHybrid": "混合公平（推荐）",
+    "admin.settings.openaiExperimentalScheduler.poolModeTopK": "仅 Top-K",
+    "admin.settings.openaiExperimentalScheduler.poolModeAll": "全部可用账号",
+    "admin.settings.openaiExperimentalScheduler.poolModeHint": "top_k 只使用 Top-K；all_eligible 使用全部可用账号；hybrid 保留 Top-K，并在需要时加入最久未使用账号。",
+    "admin.settings.openaiExperimentalScheduler.explorationRatio": "探索比例",
+    "admin.settings.openaiExperimentalScheduler.explorationRatioHint": "仅 hybrid 生效；没有达到饥饿阈值时，按该百分比抽取最久未用账号。0=关闭，100=每次都探索。",
+    "admin.settings.openaiExperimentalScheduler.starvationThreshold": "饥饿阈值（秒）",
+    "admin.settings.openaiExperimentalScheduler.starvationThresholdHint": "账号超过该时长未使用就进入优先探索；0=关闭阈值，仅按探索比例运行。默认 21600=6 小时。",
+    "admin.settings.openaiExperimentalScheduler.fairnessWeight": "公平权重",
+    "admin.settings.openaiExperimentalScheduler.fairnessWeightHint": "把“距上次使用时间”加入排序；0=关闭，数值越大越优先长期未使用账号（范围 0-10）。",
+    "admin.settings.openaiExperimentalScheduler.groupOverrides": "分组覆盖（JSON）",
+    "admin.settings.openaiExperimentalScheduler.groupOverridesHint": "按分组 ID 覆盖公平参数；未填写字段继承全局值。",
+    "admin.settings.openaiExperimentalScheduler.topKHint": "每次先保留得分最高的候选数；数值越小越省探测开销，但可能长期忽略低分账号。",
+    "admin.settings.openaiExperimentalScheduler.priorityWeightHint": "账号 priority 的权重；越大越偏向优先级数字更小的账号，0 表示不参与排序。",
     "admin.settings.upstreamBillingProbe.title": "上游倍率自动探测",
     "admin.settings.upstreamBillingProbe.description": "定期获取 OpenAI API Key 所连接上游 Sub2API 站点声明的计费倍率。",
     "admin.settings.upstreamBillingProbe.enabled": "启用全局自动探测",
@@ -1429,6 +1446,43 @@ describe("admin SettingsView payment visible method controls", () => {
       weightedModeText.indexOf("调度权值覆盖"),
     );
     expect(weightedModeText).toContain("计费倍率");
+  });
+
+  it("renders scheduler fairness parameter hints and submits the live controls", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="openai-advanced-scheduler-toggle"]')
+      .setValue(true);
+
+    const card = wrapper.get('[data-testid="openai-scheduler-fairness"]');
+    expect(card.text()).toContain("候选池模式");
+    expect(card.text()).toContain("0=关闭，100=每次都探索");
+    expect(card.text()).toContain("范围 0-10");
+    expect(wrapper.text()).toContain("TopK");
+    expect(wrapper.text()).toContain("账号 priority 的权重");
+
+    await card.get('[data-testid="scheduler-pool-mode"]').setValue("all_eligible");
+    await card.get('[data-testid="scheduler-exploration-ratio"]').setValue(35);
+    await card.get('[data-testid="scheduler-starvation-threshold"]').setValue(3600);
+    await card.get('[data-testid="scheduler-fairness-weight"]').setValue(4);
+    await card.get('[data-testid="scheduler-group-overrides"]').setValue(
+      '{"12":{"candidate_pool_mode":"hybrid","exploration_ratio":50}}',
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai_advanced_scheduler_candidate_pool_mode: "all_eligible",
+        openai_advanced_scheduler_exploration_ratio: 35,
+        openai_advanced_scheduler_starvation_threshold_seconds: 3600,
+        openai_advanced_scheduler_fairness_weight: 4,
+        openai_advanced_scheduler_group_overrides: {
+          12: { candidate_pool_mode: "hybrid", exploration_ratio: 50 },
+        },
+      }),
+    );
   });
 
   it("passes translated upload and remove labels to the payment help image uploader", async () => {

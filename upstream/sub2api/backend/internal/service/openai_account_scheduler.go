@@ -53,6 +53,7 @@ type cachedOpenAIAdvancedSchedulerSetting struct {
 	subscriptionPriorityEnabled    bool
 	lbTopKOverride                 int
 	weightOverrides                map[string]float64
+	fairness                       OpenAISchedulerFairnessSettings
 	expiresAt                      int64
 }
 
@@ -64,6 +65,7 @@ type openAIAdvancedSchedulerRuntimeSettings struct {
 	subscriptionPriorityEnabled    bool
 	lbTopKOverride                 int
 	weightOverrides                map[string]float64
+	fairness                       OpenAISchedulerFairnessSettings
 }
 
 var openAIAdvancedSchedulerSettingCache atomic.Value // *cachedOpenAIAdvancedSchedulerSetting
@@ -778,6 +780,43 @@ func openAIAccountSchedulingPriority(account *Account) int {
 	return account.Priority
 }
 
+func schedulerGroupID(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func sortOpenAIFairnessCandidates(pool []openAIAccountCandidateScore, now time.Time) []openAIAccountCandidateScore {
+	ordered := append([]openAIAccountCandidateScore(nil), pool...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i].account, ordered[j].account
+		if a.LastUsedAt == nil && b.LastUsedAt != nil {
+			return true
+		}
+		if a.LastUsedAt != nil && b.LastUsedAt == nil {
+			return false
+		}
+		if a.LastUsedAt != nil && b.LastUsedAt != nil && !a.LastUsedAt.Equal(*b.LastUsedAt) {
+			return a.LastUsedAt.Before(*b.LastUsedAt)
+		}
+		return a.ID < b.ID
+	})
+	return ordered
+}
+
+func fairnessExplorationDue(sessionHash string, ratio int) bool {
+	if ratio <= 0 {
+		return false
+	}
+	if ratio >= 100 {
+		return true
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(sessionHash))
+	return int(h.Sum32()%100) < ratio
+}
+
 func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int64, cfg openAIStickyEscapeConfig) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
 	if !cfg.enabled || s == nil || s.stats == nil || accountID <= 0 {
 		return "", 0, 0, false
@@ -797,6 +836,7 @@ type openAIAccountCandidateScore struct {
 	loadInfo  *AccountLoadInfo
 	loadKnown bool
 	score     float64
+	fairness  float64
 	priority  int
 	errorRate float64
 	ttft      float64
@@ -1091,7 +1131,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		candidateCount:            len(candidates),
 	}
 	if len(candidates) == 0 {
-		plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan)
+		plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
 		return plan
 	}
 
@@ -1132,6 +1172,10 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	}
 	plan.loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
+	fairness := defaultOpenAISchedulerFairnessSettings()
+	if s.service != nil {
+		fairness = resolveOpenAISchedulerFairnessForGroup(s.service.openAIAdvancedSchedulerRuntimeSettings(ctx).fairness, valueOrZero(req.GroupID))
+	}
 	weights := s.service.openAIWSSchedulerWeightsForRequest(ctx)
 	now := time.Now()
 	upstreamCostFactors := map[int64]float64(nil)
@@ -1216,6 +1260,8 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 			weights.Reset*resetFactor +
 			weights.QuotaHeadroom*quotaHeadroomFactor +
 			weights.UpstreamCost*(upstreamCostFactor-openAIUpstreamCostNeutralFactor)
+		item.fairness = openAIFairnessFactor(item.account, candidates, now)
+		item.score += fairness.FairnessWeight * item.fairness
 		if req.StickyWeighted {
 			if req.PreviousResponseCanMove && req.StickyPreviousAccountID > 0 && item.account.ID == req.StickyPreviousAccountID {
 				item.score += weights.Previous
@@ -1230,8 +1276,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	if configuredTopK <= 0 {
 		configuredTopK = 1
 	}
-	adaptiveEnabled := s.service != nil && s.service.cfg != nil && s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled
+	adaptiveEnabled := s.service != nil && s.service.cfg != nil && s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled && fairness.CandidatePoolMode != OpenAISchedulerCandidatePoolModeAllEligible
 	if adaptiveEnabled {
+		eligibleCandidates := candidates
 		stickyWasEligible := req.StickyWeighted && openAIAccountCandidatesContainAnyID(candidates, req.StickyPreviousAccountID, req.StickyAccountID)
 		candidates, plan.minimumScoreThreshold, plan.qualityFallback = applyOpenAIAdaptiveTopK(
 			candidates,
@@ -1245,9 +1292,19 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 				req.decisionDetails.stickyEscapeReason = "quality_floor"
 			}
 		}
+		if fairness.CandidatePoolMode == OpenAISchedulerCandidatePoolModeHybrid && !req.StickyWeighted {
+			candidates = appendOldestStarvedOpenAICandidate(candidates, eligibleCandidates, fairness.StarvationThresholdSeconds, time.Now())
+		}
 	}
 	plan.candidates = candidates
 	plan.topK = configuredTopK
+	if fairness.CandidatePoolMode == OpenAISchedulerCandidatePoolModeAllEligible {
+		plan.topK = len(candidates)
+	} else if fairness.CandidatePoolMode == OpenAISchedulerCandidatePoolModeHybrid && len(candidates) > configuredTopK {
+		// Adaptive Top-K may add one overdue account after quality filtering.
+		// Keep that explicit fairness candidate in the acquisition order.
+		plan.topK = len(candidates)
+	}
 	if plan.topK > len(candidates) {
 		plan.topK = len(candidates)
 	}
@@ -1262,8 +1319,61 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		req.decisionDetails.qualityFallback = plan.qualityFallback
 	}
 
-	plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan)
+	plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
 	return plan
+}
+
+func openAIFairnessFactor(account *Account, candidates []openAIAccountCandidateScore, now time.Time) float64 {
+	if account == nil || len(candidates) == 0 {
+		return 0
+	}
+	maxAge := 0.0
+	for _, candidate := range candidates {
+		age := math.MaxFloat64
+		if candidate.account != nil && candidate.account.LastUsedAt != nil {
+			age = math.Max(0, now.Sub(*candidate.account.LastUsedAt).Seconds())
+		}
+		if age != math.MaxFloat64 && age > maxAge {
+			maxAge = age
+		}
+	}
+	if account.LastUsedAt == nil {
+		return 0
+	}
+	age := math.Max(0, now.Sub(*account.LastUsedAt).Seconds())
+	if maxAge <= 0 {
+		return 0
+	}
+	return clamp01(age / maxAge)
+}
+
+func appendOldestStarvedOpenAICandidate(selected, eligible []openAIAccountCandidateScore, thresholdSeconds int, now time.Time) []openAIAccountCandidateScore {
+	if len(selected) == 0 || len(eligible) <= len(selected) || thresholdSeconds <= 0 {
+		return selected
+	}
+	selectedIDs := make(map[int64]struct{}, len(selected))
+	for _, candidate := range selected {
+		if candidate.account != nil {
+			selectedIDs[candidate.account.ID] = struct{}{}
+		}
+	}
+	starved := make([]openAIAccountCandidateScore, 0, len(eligible))
+	threshold := time.Duration(thresholdSeconds) * time.Second
+	for _, candidate := range sortOpenAIFairnessCandidates(eligible, now) {
+		if candidate.account == nil {
+			continue
+		}
+		if _, exists := selectedIDs[candidate.account.ID]; exists {
+			continue
+		}
+		if candidate.account.LastUsedAt != nil && now.Sub(*candidate.account.LastUsedAt) >= threshold {
+			starved = append(starved, candidate)
+		}
+	}
+	if len(starved) == 0 {
+		return selected
+	}
+	return append(selected, starved[0])
 }
 
 func openAIAccountCandidatesContainAnyID(candidates []openAIAccountCandidateScore, ids ...int64) bool {
@@ -1283,7 +1393,12 @@ func openAIAccountCandidatesContainAnyID(candidates []openAIAccountCandidateScor
 func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 	req OpenAIAccountScheduleRequest,
 	plan openAIAccountLoadPlan,
+	contexts ...context.Context,
 ) []openAIAccountCandidateScore {
+	ctx := context.Background()
+	if len(contexts) > 0 && contexts[0] != nil {
+		ctx = contexts[0]
+	}
 	buildSelectionOrder := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 		if len(pool) == 0 || plan.topK <= 0 {
 			return nil
@@ -1313,6 +1428,47 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 		}
 		if len(primary) == 0 {
 			primary = buildOpenAIWeightedSelectionOrder(ranked, req)
+		}
+		fairness := defaultOpenAISchedulerFairnessSettings()
+		if s.service != nil {
+			fairness = resolveOpenAISchedulerFairnessForGroup(s.service.openAIAdvancedSchedulerRuntimeSettings(ctx).fairness, schedulerGroupID(req.GroupID))
+		}
+		if fairness.CandidatePoolMode != OpenAISchedulerCandidatePoolModeTopK && !req.StickyWeighted {
+			now := time.Now()
+			allIdle := sortOpenAIFairnessCandidates(pool, now)
+			threshold := time.Duration(fairness.StarvationThresholdSeconds) * time.Second
+			starved := make([]openAIAccountCandidateScore, 0, len(allIdle))
+			if threshold > 0 {
+				for _, candidate := range allIdle {
+					if candidate.account.LastUsedAt == nil || now.Sub(*candidate.account.LastUsedAt) >= threshold {
+						starved = append(starved, candidate)
+					}
+				}
+			}
+			explore := starved
+			if len(explore) == 0 && fairness.CandidatePoolMode == OpenAISchedulerCandidatePoolModeHybrid && fairnessExplorationDue(req.SessionHash, fairness.ExplorationRatio) {
+				explore = allIdle
+			}
+			if len(explore) > 0 {
+				// One oldest account is enough to guarantee progress without turning
+				// every request into a full-pool rotation.
+				explore = explore[:1]
+				selected := make(map[int64]struct{}, len(explore))
+				fair := make([]openAIAccountCandidateScore, 0, len(explore))
+				for _, candidate := range explore {
+					if _, ok := selected[candidate.account.ID]; ok {
+						continue
+					}
+					selected[candidate.account.ID] = struct{}{}
+					fair = append(fair, candidate)
+				}
+				for _, candidate := range primary {
+					if _, ok := selected[candidate.account.ID]; !ok {
+						fair = append(fair, candidate)
+					}
+				}
+				primary = fair
+			}
 		}
 		if !plan.includeOverflowFallback || groupTopK >= len(pool) {
 			return primary
@@ -2178,6 +2334,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				subscriptionPriorityEnabled:    cached.subscriptionPriorityEnabled,
 				lbTopKOverride:                 cached.lbTopKOverride,
 				weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(cached.weightOverrides),
+				fairness:                       cached.fairness,
 			}
 		}
 	}
@@ -2193,6 +2350,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 					subscriptionPriorityEnabled:    cached.subscriptionPriorityEnabled,
 					lbTopKOverride:                 cached.lbTopKOverride,
 					weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(cached.weightOverrides),
+					fairness:                       cached.fairness,
 				}, nil
 			}
 		}
@@ -2204,6 +2362,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 		subscriptionPriorityEnabled := false
 		lbTopKOverride := 0
 		weightOverrides := map[string]float64{}
+		fairness := defaultOpenAISchedulerFairnessSettings()
 		if repo := s.openAIAdvancedSchedulerSettingRepo(); repo != nil {
 			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
 			defer cancel()
@@ -2216,6 +2375,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				subscriptionPriorityEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled]), "true")
 				lbTopKOverride = parsePositiveIntOverride(values[SettingKeyOpenAIAdvancedSchedulerLBTopK])
 				weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(values)
+				fairness = parseOpenAISchedulerFairnessRuntimeSettings(values)
 			} else {
 				// 批量读取失败时逐键降级，覆盖全部键（含 TopK/权重），避免只加载布尔开关
 				// 而静默丢弃管理员配置的覆盖值；降级状态会被缓存一个 TTL，必须留痕。
@@ -2233,6 +2393,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				subscriptionPriorityEnabled = strings.EqualFold(strings.TrimSpace(fallbackValues[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled]), "true")
 				lbTopKOverride = parsePositiveIntOverride(fallbackValues[SettingKeyOpenAIAdvancedSchedulerLBTopK])
 				weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(fallbackValues)
+				fairness = parseOpenAISchedulerFairnessRuntimeSettings(fallbackValues)
 			}
 		}
 
@@ -2244,6 +2405,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			subscriptionPriorityEnabled:    subscriptionPriorityEnabled,
 			lbTopKOverride:                 lbTopKOverride,
 			weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(weightOverrides),
+			fairness:                       fairness,
 			expiresAt:                      time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 		})
 		return openAIAdvancedSchedulerRuntimeSettings{
@@ -2254,6 +2416,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			subscriptionPriorityEnabled:    subscriptionPriorityEnabled,
 			lbTopKOverride:                 lbTopKOverride,
 			weightOverrides:                weightOverrides,
+			fairness:                       fairness,
 		}, nil
 	})
 
@@ -2292,6 +2455,11 @@ func openAIAdvancedSchedulerRuntimeSettingKeys() []string {
 		SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled,
 		SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
 		SettingKeyOpenAIAdvancedSchedulerLBTopK,
+		SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode,
+		SettingKeyOpenAIAdvancedSchedulerExplorationRatio,
+		SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds,
+		SettingKeyOpenAIAdvancedSchedulerFairnessWeight,
+		SettingKeyOpenAIAdvancedSchedulerGroupOverrides,
 	}
 	for _, spec := range openAIAdvancedSchedulerWeightOverrideSpecs() {
 		keys = append(keys, spec.key)
@@ -2345,6 +2513,21 @@ func parseOpenAIAdvancedSchedulerWeightOverrides(values map[string]string) map[s
 		overrides[spec.name] = value
 	}
 	return overrides
+}
+
+func parseOpenAISchedulerFairnessRuntimeSettings(values map[string]string) OpenAISchedulerFairnessSettings {
+	settings := OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          values[SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode],
+		ExplorationRatio:           parseIntSettingOrDefault(values[SettingKeyOpenAIAdvancedSchedulerExplorationRatio], 20),
+		StarvationThresholdSeconds: parseIntSettingOrDefault(values[SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds], 21600),
+		FairnessWeight:             parseFloatSettingOrDefault(values[SettingKeyOpenAIAdvancedSchedulerFairnessWeight], 2),
+		GroupOverrides:             parseOpenAISchedulerFairnessOverrides(values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides]),
+	}
+	settings, err := normalizeOpenAISchedulerFairnessSettings(settings)
+	if err != nil {
+		return defaultOpenAISchedulerFairnessSettings()
+	}
+	return settings
 }
 
 func cloneOpenAIAdvancedSchedulerWeightOverrides(in map[string]float64) map[string]float64 {

@@ -5136,8 +5136,57 @@
                       :placeholder="field.placeholder"
                       type="text"
                     />
+                    <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                      {{ field.hint }}
+                    </span>
                   </label>
                 </div>
+              </div>
+
+              <div
+                v-if="form.openai_advanced_scheduler_enabled"
+                class="border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-testid="openai-scheduler-fairness"
+              >
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.openaiExperimentalScheduler.fairnessTitle") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiExperimentalScheduler.fairnessDescription") }}
+                  </p>
+                </div>
+                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <label class="block">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.poolMode") }}</span>
+                    <select v-model="form.openai_advanced_scheduler_candidate_pool_mode" class="input mt-1" data-testid="scheduler-pool-mode">
+                      <option value="hybrid">{{ t("admin.settings.openaiExperimentalScheduler.poolModeHybrid") }}</option>
+                      <option value="top_k">{{ t("admin.settings.openaiExperimentalScheduler.poolModeTopK") }}</option>
+                      <option value="all_eligible">{{ t("admin.settings.openaiExperimentalScheduler.poolModeAll") }}</option>
+                    </select>
+                    <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.poolModeHint") }}</span>
+                  </label>
+                  <label class="block">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.explorationRatio") }}</span>
+                    <input v-model.number="form.openai_advanced_scheduler_exploration_ratio" class="input mt-1" data-testid="scheduler-exploration-ratio" min="0" max="100" step="1" type="number" />
+                    <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.explorationRatioHint") }}</span>
+                  </label>
+                  <label class="block">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.starvationThreshold") }}</span>
+                    <input v-model.number="form.openai_advanced_scheduler_starvation_threshold_seconds" class="input mt-1" data-testid="scheduler-starvation-threshold" min="0" max="86400" step="300" type="number" />
+                    <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.starvationThresholdHint") }}</span>
+                  </label>
+                  <label class="block">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeight") }}</span>
+                    <input v-model.number="form.openai_advanced_scheduler_fairness_weight" class="input mt-1" data-testid="scheduler-fairness-weight" min="0" max="10" step="0.1" type="number" />
+                    <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeightHint") }}</span>
+                  </label>
+                </div>
+                <label class="mt-4 block">
+                  <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupOverrides") }}</span>
+                  <textarea v-model="schedulerGroupOverridesText" class="input mt-1 min-h-20 font-mono text-xs" data-testid="scheduler-group-overrides" spellcheck="false" />
+                  <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupOverridesHint") }}</span>
+                </label>
               </div>
             </div>
           </div>
@@ -9439,6 +9488,11 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_upstream_cost: string;
   openai_advanced_scheduler_weight_previous_response: string;
   openai_advanced_scheduler_weight_session_sticky: string;
+  openai_advanced_scheduler_candidate_pool_mode: string;
+  openai_advanced_scheduler_exploration_ratio: number;
+  openai_advanced_scheduler_starvation_threshold_seconds: number;
+  openai_advanced_scheduler_fairness_weight: number;
+  openai_advanced_scheduler_group_overrides: Record<string, unknown>;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
@@ -9681,6 +9735,11 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_weight_upstream_cost: "",
   openai_advanced_scheduler_weight_previous_response: "",
   openai_advanced_scheduler_weight_session_sticky: "",
+  openai_advanced_scheduler_candidate_pool_mode: "hybrid",
+  openai_advanced_scheduler_exploration_ratio: 20,
+  openai_advanced_scheduler_starvation_threshold_seconds: 21600,
+  openai_advanced_scheduler_fairness_weight: 2,
+  openai_advanced_scheduler_group_overrides: {},
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -9728,6 +9787,8 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+const schedulerGroupOverridesText = ref("{}");
 
 // 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是三个独立
 // enabled 键（与上游一致），由下面的映射保证同一时间至多一家启用。
@@ -9812,6 +9873,7 @@ const openAIAdvancedSchedulerWeightFields = computed<
     key: OpenAIAdvancedSchedulerOverrideKey;
     label: string;
     placeholder: string;
+    hint: string;
   }>
 >(() => {
   const placeholder = (
@@ -9831,56 +9893,67 @@ const openAIAdvancedSchedulerWeightFields = computed<
       key: "openai_advanced_scheduler_lb_top_k",
       label: t("admin.settings.openaiExperimentalScheduler.topKLabel"),
       placeholder: placeholder("openai_advanced_scheduler_effective_lb_top_k", "7"),
+      hint: t("admin.settings.openaiExperimentalScheduler.topKHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_priority",
       label: t("admin.settings.openaiExperimentalScheduler.priorityWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_priority", "1"),
+      hint: t("admin.settings.openaiExperimentalScheduler.priorityWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_load",
       label: t("admin.settings.openaiExperimentalScheduler.loadWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_load", "1"),
+      hint: t("admin.settings.openaiExperimentalScheduler.loadWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_queue",
       label: t("admin.settings.openaiExperimentalScheduler.queueWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_queue", "0.7"),
+      hint: t("admin.settings.openaiExperimentalScheduler.queueWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_error_rate",
       label: t("admin.settings.openaiExperimentalScheduler.errorRateWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_error_rate", "0.8"),
+      hint: t("admin.settings.openaiExperimentalScheduler.errorRateWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_ttft",
       label: t("admin.settings.openaiExperimentalScheduler.ttftWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_ttft", "0.5"),
+      hint: t("admin.settings.openaiExperimentalScheduler.ttftWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_reset",
       label: t("admin.settings.openaiExperimentalScheduler.resetWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_reset", "0"),
+      hint: t("admin.settings.openaiExperimentalScheduler.resetWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_quota_headroom",
       label: t("admin.settings.openaiExperimentalScheduler.quotaHeadroomWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_quota_headroom", "0"),
+      hint: t("admin.settings.openaiExperimentalScheduler.quotaHeadroomWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_upstream_cost",
       label: t("admin.settings.openaiExperimentalScheduler.upstreamCostWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_upstream_cost", "0"),
+      hint: t("admin.settings.openaiExperimentalScheduler.upstreamCostWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_previous_response",
       label: t("admin.settings.openaiExperimentalScheduler.previousResponseWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_previous_response", "5"),
+      hint: t("admin.settings.openaiExperimentalScheduler.previousResponseWeightHint"),
     },
     {
       key: "openai_advanced_scheduler_weight_session_sticky",
       label: t("admin.settings.openaiExperimentalScheduler.sessionStickyWeight"),
       placeholder: placeholder("openai_advanced_scheduler_effective_weight_session_sticky", "3"),
+      hint: t("admin.settings.openaiExperimentalScheduler.sessionStickyWeightHint"),
     },
   ];
 });
@@ -10692,6 +10765,7 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    schedulerGroupOverridesText.value = JSON.stringify(form.openai_advanced_scheduler_group_overrides || {}, null, 2);
     form.monitor_page_refresh_interval_seconds =
       normalizeMonitorPageRefreshInterval(
         settings.monitor_page_refresh_interval_seconds,
@@ -11355,6 +11429,23 @@ async function saveSettings() {
         form.openai_advanced_scheduler_weight_previous_response.trim(),
       openai_advanced_scheduler_weight_session_sticky:
         form.openai_advanced_scheduler_weight_session_sticky.trim(),
+      openai_advanced_scheduler_candidate_pool_mode:
+        form.openai_advanced_scheduler_candidate_pool_mode,
+      openai_advanced_scheduler_exploration_ratio:
+        form.openai_advanced_scheduler_exploration_ratio,
+      openai_advanced_scheduler_starvation_threshold_seconds:
+        form.openai_advanced_scheduler_starvation_threshold_seconds,
+      openai_advanced_scheduler_fairness_weight:
+        form.openai_advanced_scheduler_fairness_weight,
+      openai_advanced_scheduler_group_overrides: (() => {
+        try {
+          const parsed = JSON.parse(schedulerGroupOverridesText.value || "{}");
+          if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("object required");
+          return parsed;
+        } catch {
+          throw new Error(t("admin.settings.openaiExperimentalScheduler.groupOverridesInvalid"));
+        }
+      })(),
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

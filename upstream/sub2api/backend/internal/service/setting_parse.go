@@ -258,6 +258,11 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIAdvancedSchedulerWeightUpstreamCost:          "",
 		SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse:      "",
 		SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:         "",
+		SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode:           OpenAISchedulerCandidatePoolModeHybrid,
+		SettingKeyOpenAIAdvancedSchedulerExplorationRatio:            "20",
+		SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds:  "21600",
+		SettingKeyOpenAIAdvancedSchedulerFairnessWeight:              "2",
+		SettingKeyOpenAIAdvancedSchedulerGroupOverrides:              "{}",
 
 		SettingKeyAllowUserViewErrorRequests: "false",
 	}
@@ -916,6 +921,17 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerWeightUpstreamCost = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightUpstreamCost])
 	result.OpenAIAdvancedSchedulerWeightPreviousResponse = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse])
 	result.OpenAIAdvancedSchedulerWeightSessionSticky = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky])
+	fairness, _ := normalizeOpenAISchedulerFairnessSettings(OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          settings[SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode],
+		ExplorationRatio:           parseIntSettingOrDefault(settings[SettingKeyOpenAIAdvancedSchedulerExplorationRatio], 20),
+		StarvationThresholdSeconds: parseIntSettingOrDefault(settings[SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds], 21600),
+		FairnessWeight:             parseFloatSettingOrDefault(settings[SettingKeyOpenAIAdvancedSchedulerFairnessWeight], 2),
+	})
+	result.OpenAIAdvancedSchedulerCandidatePoolMode = fairness.CandidatePoolMode
+	result.OpenAIAdvancedSchedulerExplorationRatio = fairness.ExplorationRatio
+	result.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
+	result.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
+	result.OpenAIAdvancedSchedulerGroupOverrides = parseOpenAISchedulerFairnessOverrides(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
 	result.OpenAIAdvancedSchedulerEffectiveLBTopK = s.openAIAdvancedSchedulerEffectiveLBTopK()
 	effectiveWeights := s.openAIAdvancedSchedulerEffectiveWeights()
 	result.OpenAIAdvancedSchedulerEffectiveWeightPriority = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.Priority)
@@ -1110,7 +1126,136 @@ func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *Sys
 	if !resolved.IsValid() {
 		return infraerrors.BadRequest("INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT", "openai advanced scheduler weights must have finite non-zero base and total sums")
 	}
+	fairness, err := normalizeOpenAISchedulerFairnessSettings(OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          settings.OpenAIAdvancedSchedulerCandidatePoolMode,
+		ExplorationRatio:           settings.OpenAIAdvancedSchedulerExplorationRatio,
+		StarvationThresholdSeconds: settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds,
+		FairnessWeight:             settings.OpenAIAdvancedSchedulerFairnessWeight,
+		GroupOverrides:             settings.OpenAIAdvancedSchedulerGroupOverrides,
+	})
+	if err != nil {
+		return err
+	}
+	settings.OpenAIAdvancedSchedulerCandidatePoolMode = fairness.CandidatePoolMode
+	settings.OpenAIAdvancedSchedulerExplorationRatio = fairness.ExplorationRatio
+	settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
+	settings.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
+	settings.OpenAIAdvancedSchedulerGroupOverrides = fairness.GroupOverrides
 	return nil
+}
+
+func normalizeOpenAISchedulerFairnessSettings(value OpenAISchedulerFairnessSettings) (OpenAISchedulerFairnessSettings, error) {
+	defaults := defaultOpenAISchedulerFairnessSettings()
+	if value.CandidatePoolMode == "" && value.ExplorationRatio == 0 && value.StarvationThresholdSeconds == 0 && value.FairnessWeight == 0 && len(value.GroupOverrides) == 0 {
+		return defaults, nil
+	}
+	mode := strings.TrimSpace(strings.ToLower(value.CandidatePoolMode))
+	if mode == "" {
+		mode = defaults.CandidatePoolMode
+	}
+	switch mode {
+	case OpenAISchedulerCandidatePoolModeTopK, OpenAISchedulerCandidatePoolModeAllEligible, OpenAISchedulerCandidatePoolModeHybrid:
+	default:
+		return OpenAISchedulerFairnessSettings{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_CANDIDATE_POOL_MODE", "candidate pool mode must be top_k, all_eligible, or hybrid")
+	}
+	ratio := value.ExplorationRatio
+	if ratio == 0 && value.CandidatePoolMode == "" && value.StarvationThresholdSeconds == 0 && value.FairnessWeight == 0 {
+		ratio = defaults.ExplorationRatio
+	}
+	if ratio < 0 || ratio > 100 {
+		return OpenAISchedulerFairnessSettings{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_EXPLORATION_RATIO", "exploration ratio must be between 0 and 100")
+	}
+	threshold := value.StarvationThresholdSeconds
+	if threshold == 0 && value.CandidatePoolMode == "" && value.ExplorationRatio == 0 && value.FairnessWeight == 0 {
+		threshold = defaults.StarvationThresholdSeconds
+	}
+	if threshold != 0 && (threshold < 300 || threshold > 86400) {
+		return OpenAISchedulerFairnessSettings{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_STARVATION_THRESHOLD", "starvation threshold must be 0 or between 300 and 86400 seconds")
+	}
+	weight := value.FairnessWeight
+	if weight == 0 && value.CandidatePoolMode == "" && value.ExplorationRatio == 0 && value.StarvationThresholdSeconds == 0 {
+		weight = defaults.FairnessWeight
+	}
+	if math.IsNaN(weight) || math.IsInf(weight, 0) || weight < 0 || weight > 10 {
+		return OpenAISchedulerFairnessSettings{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_FAIRNESS_WEIGHT", "fairness weight must be between 0 and 10")
+	}
+	overrides := make(map[int64]OpenAISchedulerFairnessOverride, len(value.GroupOverrides))
+	for groupID, override := range value.GroupOverrides {
+		if groupID <= 0 {
+			return OpenAISchedulerFairnessSettings{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_OVERRIDE", "group override group id must be positive")
+		}
+		if err := validateOpenAISchedulerFairnessOverride(override); err != nil {
+			return OpenAISchedulerFairnessSettings{}, err
+		}
+		overrides[groupID] = override
+	}
+	return OpenAISchedulerFairnessSettings{CandidatePoolMode: mode, ExplorationRatio: ratio, StarvationThresholdSeconds: threshold, FairnessWeight: weight, GroupOverrides: overrides}, nil
+}
+
+func parseIntSettingOrDefault(raw string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func parseFloatSettingOrDefault(raw string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func parseOpenAISchedulerFairnessOverrides(raw string) map[int64]OpenAISchedulerFairnessOverride {
+	result := map[int64]OpenAISchedulerFairnessOverride{}
+	if strings.TrimSpace(raw) == "" {
+		return result
+	}
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return map[int64]OpenAISchedulerFairnessOverride{}
+	}
+	return result
+}
+
+func validateOpenAISchedulerFairnessOverride(value OpenAISchedulerFairnessOverride) error {
+	if value.CandidatePoolMode != nil {
+		mode := strings.ToLower(strings.TrimSpace(*value.CandidatePoolMode))
+		if mode != OpenAISchedulerCandidatePoolModeTopK && mode != OpenAISchedulerCandidatePoolModeAllEligible && mode != OpenAISchedulerCandidatePoolModeHybrid {
+			return infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_OVERRIDE", "group override candidate pool mode is invalid")
+		}
+	}
+	if value.ExplorationRatio != nil && (*value.ExplorationRatio < 0 || *value.ExplorationRatio > 100) {
+		return infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_OVERRIDE", "group override exploration ratio must be between 0 and 100")
+	}
+	if value.StarvationThresholdSeconds != nil && *value.StarvationThresholdSeconds != 0 && (*value.StarvationThresholdSeconds < 300 || *value.StarvationThresholdSeconds > 86400) {
+		return infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_OVERRIDE", "group override starvation threshold is invalid")
+	}
+	if value.FairnessWeight != nil && (math.IsNaN(*value.FairnessWeight) || math.IsInf(*value.FairnessWeight, 0) || *value.FairnessWeight < 0 || *value.FairnessWeight > 10) {
+		return infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_OVERRIDE", "group override fairness weight is invalid")
+	}
+	return nil
+}
+
+func resolveOpenAISchedulerFairnessForGroup(value OpenAISchedulerFairnessSettings, groupID int64) OpenAISchedulerFairnessSettings {
+	resolved := value
+	resolved.GroupOverrides = nil
+	if override, ok := value.GroupOverrides[groupID]; ok {
+		if override.CandidatePoolMode != nil {
+			resolved.CandidatePoolMode = *override.CandidatePoolMode
+		}
+		if override.ExplorationRatio != nil {
+			resolved.ExplorationRatio = *override.ExplorationRatio
+		}
+		if override.StarvationThresholdSeconds != nil {
+			resolved.StarvationThresholdSeconds = *override.StarvationThresholdSeconds
+		}
+		if override.FairnessWeight != nil {
+			resolved.FairnessWeight = *override.FairnessWeight
+		}
+	}
+	return resolved
 }
 
 func parseOpenAIOAuthSchedulingRateMultiplier(raw string) float64 {

@@ -2,6 +2,37 @@ package service
 
 import "strings"
 
+const (
+	OpenAISchedulerCandidatePoolModeTopK        = "top_k"
+	OpenAISchedulerCandidatePoolModeAllEligible = "all_eligible"
+	OpenAISchedulerCandidatePoolModeHybrid      = "hybrid"
+)
+
+type OpenAISchedulerFairnessOverride struct {
+	CandidatePoolMode          *string  `json:"candidate_pool_mode,omitempty"`
+	ExplorationRatio           *int     `json:"exploration_ratio,omitempty"`
+	StarvationThresholdSeconds *int     `json:"starvation_threshold_seconds,omitempty"`
+	FairnessWeight             *float64 `json:"fairness_weight,omitempty"`
+}
+
+type OpenAISchedulerFairnessSettings struct {
+	CandidatePoolMode          string                                    `json:"candidate_pool_mode"`
+	ExplorationRatio           int                                       `json:"exploration_ratio"`
+	StarvationThresholdSeconds int                                       `json:"starvation_threshold_seconds"`
+	FairnessWeight             float64                                   `json:"fairness_weight"`
+	GroupOverrides             map[int64]OpenAISchedulerFairnessOverride `json:"group_overrides"`
+}
+
+func defaultOpenAISchedulerFairnessSettings() OpenAISchedulerFairnessSettings {
+	return OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          OpenAISchedulerCandidatePoolModeHybrid,
+		ExplorationRatio:           20,
+		StarvationThresholdSeconds: 21600,
+		FairnessWeight:             2,
+		GroupOverrides:             map[int64]OpenAISchedulerFairnessOverride{},
+	}
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -274,6 +305,11 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerWeightUpstreamCost              string
 	OpenAIAdvancedSchedulerWeightPreviousResponse          string
 	OpenAIAdvancedSchedulerWeightSessionSticky             string
+	OpenAIAdvancedSchedulerCandidatePoolMode               string
+	OpenAIAdvancedSchedulerExplorationRatio                int
+	OpenAIAdvancedSchedulerStarvationThresholdSeconds      int
+	OpenAIAdvancedSchedulerFairnessWeight                  float64
+	OpenAIAdvancedSchedulerGroupOverrides                  map[int64]OpenAISchedulerFairnessOverride
 	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
 	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
 	OpenAIAdvancedSchedulerEffectiveWeightLoad             string

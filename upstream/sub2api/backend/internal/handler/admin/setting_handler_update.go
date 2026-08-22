@@ -272,22 +272,27 @@ type UpdateSettingsRequest struct {
 	PaymentVisibleMethodWxpayEnabled  *bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAILowUpstreamRatePriorityEnabled               *bool    `json:"openai_low_upstream_rate_priority_enabled"`
-	OpenAIOAuthSchedulingRateMultiplier                *float64 `json:"openai_oauth_scheduling_rate_multiplier"`
-	OpenAIAdvancedSchedulerEnabled                     *bool    `json:"openai_advanced_scheduler_enabled"`
-	OpenAIAdvancedSchedulerStickyWeightedEnabled       *bool    `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
-	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled *bool    `json:"openai_advanced_scheduler_subscription_priority_enabled"`
-	OpenAIAdvancedSchedulerLBTopK                      *string  `json:"openai_advanced_scheduler_lb_top_k"`
-	OpenAIAdvancedSchedulerWeightPriority              *string  `json:"openai_advanced_scheduler_weight_priority"`
-	OpenAIAdvancedSchedulerWeightLoad                  *string  `json:"openai_advanced_scheduler_weight_load"`
-	OpenAIAdvancedSchedulerWeightQueue                 *string  `json:"openai_advanced_scheduler_weight_queue"`
-	OpenAIAdvancedSchedulerWeightErrorRate             *string  `json:"openai_advanced_scheduler_weight_error_rate"`
-	OpenAIAdvancedSchedulerWeightTTFT                  *string  `json:"openai_advanced_scheduler_weight_ttft"`
-	OpenAIAdvancedSchedulerWeightReset                 *string  `json:"openai_advanced_scheduler_weight_reset"`
-	OpenAIAdvancedSchedulerWeightQuotaHeadroom         *string  `json:"openai_advanced_scheduler_weight_quota_headroom"`
-	OpenAIAdvancedSchedulerWeightUpstreamCost          *string  `json:"openai_advanced_scheduler_weight_upstream_cost"`
-	OpenAIAdvancedSchedulerWeightPreviousResponse      *string  `json:"openai_advanced_scheduler_weight_previous_response"`
-	OpenAIAdvancedSchedulerWeightSessionSticky         *string  `json:"openai_advanced_scheduler_weight_session_sticky"`
+	OpenAILowUpstreamRatePriorityEnabled               *bool                                              `json:"openai_low_upstream_rate_priority_enabled"`
+	OpenAIOAuthSchedulingRateMultiplier                *float64                                           `json:"openai_oauth_scheduling_rate_multiplier"`
+	OpenAIAdvancedSchedulerEnabled                     *bool                                              `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerStickyWeightedEnabled       *bool                                              `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled *bool                                              `json:"openai_advanced_scheduler_subscription_priority_enabled"`
+	OpenAIAdvancedSchedulerLBTopK                      *string                                            `json:"openai_advanced_scheduler_lb_top_k"`
+	OpenAIAdvancedSchedulerWeightPriority              *string                                            `json:"openai_advanced_scheduler_weight_priority"`
+	OpenAIAdvancedSchedulerWeightLoad                  *string                                            `json:"openai_advanced_scheduler_weight_load"`
+	OpenAIAdvancedSchedulerWeightQueue                 *string                                            `json:"openai_advanced_scheduler_weight_queue"`
+	OpenAIAdvancedSchedulerWeightErrorRate             *string                                            `json:"openai_advanced_scheduler_weight_error_rate"`
+	OpenAIAdvancedSchedulerWeightTTFT                  *string                                            `json:"openai_advanced_scheduler_weight_ttft"`
+	OpenAIAdvancedSchedulerWeightReset                 *string                                            `json:"openai_advanced_scheduler_weight_reset"`
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom         *string                                            `json:"openai_advanced_scheduler_weight_quota_headroom"`
+	OpenAIAdvancedSchedulerWeightUpstreamCost          *string                                            `json:"openai_advanced_scheduler_weight_upstream_cost"`
+	OpenAIAdvancedSchedulerWeightPreviousResponse      *string                                            `json:"openai_advanced_scheduler_weight_previous_response"`
+	OpenAIAdvancedSchedulerWeightSessionSticky         *string                                            `json:"openai_advanced_scheduler_weight_session_sticky"`
+	OpenAIAdvancedSchedulerCandidatePoolMode           *string                                            `json:"openai_advanced_scheduler_candidate_pool_mode"`
+	OpenAIAdvancedSchedulerExplorationRatio            *int                                               `json:"openai_advanced_scheduler_exploration_ratio"`
+	OpenAIAdvancedSchedulerStarvationThresholdSeconds  *int                                               `json:"openai_advanced_scheduler_starvation_threshold_seconds"`
+	OpenAIAdvancedSchedulerFairnessWeight              *float64                                           `json:"openai_advanced_scheduler_fairness_weight"`
+	OpenAIAdvancedSchedulerGroupOverrides              *map[int64]service.OpenAISchedulerFairnessOverride `json:"openai_advanced_scheduler_group_overrides"`
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -1844,6 +1849,36 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIAdvancedSchedulerWeightUpstreamCost:     stringSetting(req.OpenAIAdvancedSchedulerWeightUpstreamCost, previousSettings.OpenAIAdvancedSchedulerWeightUpstreamCost),
 		OpenAIAdvancedSchedulerWeightPreviousResponse: stringSetting(req.OpenAIAdvancedSchedulerWeightPreviousResponse, previousSettings.OpenAIAdvancedSchedulerWeightPreviousResponse),
 		OpenAIAdvancedSchedulerWeightSessionSticky:    stringSetting(req.OpenAIAdvancedSchedulerWeightSessionSticky, previousSettings.OpenAIAdvancedSchedulerWeightSessionSticky),
+		OpenAIAdvancedSchedulerCandidatePoolMode: func() string {
+			if req.OpenAIAdvancedSchedulerCandidatePoolMode != nil {
+				return *req.OpenAIAdvancedSchedulerCandidatePoolMode
+			}
+			return previousSettings.OpenAIAdvancedSchedulerCandidatePoolMode
+		}(),
+		OpenAIAdvancedSchedulerExplorationRatio: func() int {
+			if req.OpenAIAdvancedSchedulerExplorationRatio != nil {
+				return *req.OpenAIAdvancedSchedulerExplorationRatio
+			}
+			return previousSettings.OpenAIAdvancedSchedulerExplorationRatio
+		}(),
+		OpenAIAdvancedSchedulerStarvationThresholdSeconds: func() int {
+			if req.OpenAIAdvancedSchedulerStarvationThresholdSeconds != nil {
+				return *req.OpenAIAdvancedSchedulerStarvationThresholdSeconds
+			}
+			return previousSettings.OpenAIAdvancedSchedulerStarvationThresholdSeconds
+		}(),
+		OpenAIAdvancedSchedulerFairnessWeight: func() float64 {
+			if req.OpenAIAdvancedSchedulerFairnessWeight != nil {
+				return *req.OpenAIAdvancedSchedulerFairnessWeight
+			}
+			return previousSettings.OpenAIAdvancedSchedulerFairnessWeight
+		}(),
+		OpenAIAdvancedSchedulerGroupOverrides: func() map[int64]service.OpenAISchedulerFairnessOverride {
+			if req.OpenAIAdvancedSchedulerGroupOverrides != nil {
+				return *req.OpenAIAdvancedSchedulerGroupOverrides
+			}
+			return previousSettings.OpenAIAdvancedSchedulerGroupOverrides
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled

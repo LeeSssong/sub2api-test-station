@@ -511,6 +511,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightUpstreamCost] = settings.OpenAIAdvancedSchedulerWeightUpstreamCost
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse] = settings.OpenAIAdvancedSchedulerWeightPreviousResponse
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky] = settings.OpenAIAdvancedSchedulerWeightSessionSticky
+	updates[SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode] = settings.OpenAIAdvancedSchedulerCandidatePoolMode
+	updates[SettingKeyOpenAIAdvancedSchedulerExplorationRatio] = strconv.Itoa(settings.OpenAIAdvancedSchedulerExplorationRatio)
+	updates[SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds] = strconv.Itoa(settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds)
+	updates[SettingKeyOpenAIAdvancedSchedulerFairnessWeight] = strconv.FormatFloat(settings.OpenAIAdvancedSchedulerFairnessWeight, 'f', -1, 64)
+	overridesJSON, err := json.Marshal(settings.OpenAIAdvancedSchedulerGroupOverrides)
+	if err != nil {
+		return nil, fmt.Errorf("marshal scheduler fairness group overrides: %w", err)
+	}
+	updates[SettingKeyOpenAIAdvancedSchedulerGroupOverrides] = string(overridesJSON)
 
 	// 余额、订阅到期与账号限额通知
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)

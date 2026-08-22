@@ -23,6 +23,7 @@ describe('MonitorV2Timeline', () => {
           bucket_start: '2026-07-30T08:00:00Z',
           status: 'operational',
           latency_ms: null,
+          has_result: true,
         }],
       },
     })
@@ -71,12 +72,14 @@ describe('MonitorV2Timeline', () => {
           {
             bucket_start: '2026-07-30T08:00:00Z',
             status: 'unavailable',
-            latency_ms: 12_000,
+            latency_ms: null,
+            has_result: true,
           },
           {
             bucket_start: '2026-07-30T09:00:00Z',
             status: 'operational',
             latency_ms: null,
+            has_result: true,
           },
         ],
       },
@@ -99,6 +102,7 @@ describe('MonitorV2Timeline', () => {
           bucket_start: '2026-07-30T08:00:00Z',
           status: 'operational',
           latency_ms: 2_000,
+          has_result: true,
         }],
       },
     })
@@ -121,6 +125,7 @@ describe('MonitorV2Timeline', () => {
           bucket_start: `2026-07-30T${String(index % 24).padStart(2, '0')}:00:00Z`,
           status: 'operational' as const,
           latency_ms: null,
+          has_result: true,
         })),
       },
     })
@@ -144,6 +149,7 @@ describe('MonitorV2Timeline', () => {
           bucket_start: `2026-07-30T${String(index % 24).padStart(2, '0')}:00:00Z`,
           status: 'operational' as const,
           latency_ms: null,
+          has_result: true,
         })),
       },
     })
@@ -155,8 +161,8 @@ describe('MonitorV2Timeline', () => {
     const wrapper = mount(MonitorV2Timeline, {
       props: {
         points: [
-          { bucket_start: '2026-07-30T08:00:00Z', status: 'operational', latency_ms: 320 },
-          { bucket_start: '2026-07-30T09:00:00Z', status: 'unavailable', latency_ms: 12_000 },
+          { bucket_start: '2026-07-30T08:00:00Z', status: 'operational', latency_ms: 320, has_result: true },
+          { bucket_start: '2026-07-30T09:00:00Z', status: 'unavailable', latency_ms: 12_000, has_result: true },
         ],
       },
     })
@@ -182,6 +188,7 @@ describe('MonitorV2Timeline', () => {
           bucket_start: '2026-07-30T10:00:00Z',
           status: 'unavailable',
           latency_ms: null,
+          has_result: false,
         }],
       },
     })
@@ -196,5 +203,28 @@ describe('MonitorV2Timeline', () => {
     expect(tooltip.text()).toContain('NO DATA')
     expect(tooltip.text()).toContain('无探测数据')
     expect(tooltip.text()).not.toContain('DOWN')
+  })
+
+  it('renders a failed probe without latency as red DOWN rather than no data', async () => {
+    const wrapper = mount(MonitorV2Timeline, {
+      props: {
+        points: [{
+          bucket_start: '2026-07-30T11:00:00Z',
+          status: 'unavailable',
+          latency_ms: null,
+          has_result: true,
+        }],
+      },
+    })
+
+    const point = wrapper.get('[data-timeline-point="0"]')
+    expect(point.attributes('data-timeline-point-state')).toBe('unavailable')
+    expect(point.classes()).toContain('bg-red-400')
+    expect(point.classes()).not.toContain('border-dashed')
+
+    await point.trigger('mouseenter')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('DOWN')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('服务不可用')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).not.toContain('NO DATA')
   })
 })

@@ -229,6 +229,7 @@ type MonitorV2NativeTimelinePoint struct {
 	BucketStart time.Time
 	Status      string
 	LatencyMS   *float64
+	HasResult   bool
 }
 
 type MonitorV2NativeGroupProjection struct {

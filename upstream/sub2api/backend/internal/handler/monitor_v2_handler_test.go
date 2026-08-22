@@ -63,6 +63,11 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 						Value:       &averageLatency,
 						SampleCount: 199,
 					},
+					Timeline: []service.MonitorV2TimelinePoint{{
+						BucketStart: latestCheckedAt.Add(-time.Hour),
+						Status:      service.MonitorV2StatusUnavailable,
+						HasResult:   true,
+					}},
 				},
 			},
 		},
@@ -104,6 +109,8 @@ func TestMonitorV2HandlerReturnsVersionedNoStoreContract(t *testing.T) {
 	require.Equal(t, float64(180), group["ttft"].(map[string]any)["sample_count"])
 	require.Equal(t, float64(2400), group["average_latency"].(map[string]any)["value"])
 	require.Equal(t, float64(199), group["average_latency"].(map[string]any)["sample_count"])
+	timeline := group["timeline"].([]any)
+	require.Equal(t, true, timeline[0].(map[string]any)["has_result"])
 
 	serialized := strings.ToLower(recorder.Body.String())
 	for _, forbidden := range []string{

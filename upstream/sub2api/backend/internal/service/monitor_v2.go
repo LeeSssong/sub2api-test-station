@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	MonitorV2ContractVersion = "7"
+	MonitorV2ContractVersion = "8"
 
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
@@ -56,6 +56,7 @@ type MonitorV2TimelinePoint struct {
 	BucketStart time.Time
 	Status      string
 	LatencyMS   *int
+	HasResult   bool
 }
 
 type MonitorV2Group struct {
@@ -216,7 +217,7 @@ func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, in
 func monitorV2EmptyProjection(start time.Time, bucketCount int, bucketSize time.Duration) MonitorV2NativeGroupProjection {
 	timeline := make([]MonitorV2NativeTimelinePoint, 0, bucketCount)
 	for index := 0; index < bucketCount; index++ {
-		timeline = append(timeline, MonitorV2NativeTimelinePoint{BucketStart: start.Add(time.Duration(index) * bucketSize), Status: MonitorV2StatusUnavailable})
+		timeline = append(timeline, MonitorV2NativeTimelinePoint{BucketStart: start.Add(time.Duration(index) * bucketSize), Status: MonitorV2StatusUnavailable, HasResult: false})
 	}
 	return MonitorV2NativeGroupProjection{Status: MonitorV2StatusUnavailable, TotalBucketCount: bucketCount, Timeline: timeline}
 }
@@ -272,10 +273,10 @@ func monitorV2Timeline(points []MonitorV2NativeTimelinePoint, start time.Time, b
 		bucketStart := start.Add(time.Duration(index) * bucketSize).UTC()
 		point, ok := byBucket[bucketStart]
 		if !ok {
-			result = append(result, MonitorV2TimelinePoint{BucketStart: bucketStart, Status: MonitorV2StatusUnavailable})
+			result = append(result, MonitorV2TimelinePoint{BucketStart: bucketStart, Status: MonitorV2StatusUnavailable, HasResult: false})
 			continue
 		}
-		result = append(result, MonitorV2TimelinePoint{BucketStart: bucketStart, Status: monitorV2NormalizeStatus(point.Status), LatencyMS: monitorV2RoundedInt(point.LatencyMS)})
+		result = append(result, MonitorV2TimelinePoint{BucketStart: bucketStart, Status: monitorV2NormalizeStatus(point.Status), LatencyMS: monitorV2RoundedInt(point.LatencyMS), HasResult: point.HasResult})
 	}
 	return result
 }

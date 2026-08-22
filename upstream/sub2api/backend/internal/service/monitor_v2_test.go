@@ -112,7 +112,7 @@ func (s *monitorV2NativeReaderStub) ProjectMonitorV2Groups(
 	return s.projection, s.err
 }
 
-func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
+func TestMonitorV2SnapshotUsesNativeProjectionV8(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	latestCheckedAt := now.Add(-45 * time.Second)
 	native := &monitorV2NativeReaderStub{projection: map[int64]MonitorV2NativeGroupProjection{
@@ -138,7 +138,7 @@ func TestMonitorV2SnapshotUsesNativeProjectionV7(t *testing.T) {
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV2Window24H, now)
 
 	require.NoError(t, err)
-	require.Equal(t, "7", snapshot.ContractVersion)
+	require.Equal(t, "8", snapshot.ContractVersion)
 	require.Len(t, snapshot.Groups, 1)
 	group := snapshot.Groups[0]
 	require.Equal(t, MonitorV2StatusOperational, group.Status)
@@ -213,6 +213,7 @@ func TestMonitorV2SnapshotMatchesMicrosecondNativeBucketsWithNanosecondNow(t *te
 			Timeline: []MonitorV2NativeTimelinePoint{{
 				BucketStart: start,
 				Status:      MonitorV2StatusOperational,
+				HasResult:   true,
 			}},
 		},
 	}}
@@ -228,6 +229,7 @@ func TestMonitorV2SnapshotMatchesMicrosecondNativeBucketsWithNanosecondNow(t *te
 
 	require.NoError(t, err)
 	require.Equal(t, MonitorV2StatusOperational, snapshot.Groups[0].Timeline[0].Status)
+	require.True(t, snapshot.Groups[0].Timeline[0].HasResult)
 }
 
 func TestMonitorV2SnapshotReturnsFixedUnavailableBucketsForMissingNativeScope(t *testing.T) {

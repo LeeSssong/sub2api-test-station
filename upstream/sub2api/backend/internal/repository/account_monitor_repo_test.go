@@ -83,23 +83,24 @@ func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *tes
 	mock.ExpectQuery(`(?s)WITH scopes AS.*generate_series.*account_monitor_results.*checked_at >= \$.*checked_at < \$.*status = 'success'.*PERCENTILE_CONT\(0\.50\).*AVG\(.*latency_ms.*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"group_id", "bucket_start", "bucket_status", "bucket_latency_ms",
+			"group_id", "bucket_start", "bucket_status", "bucket_has_result", "bucket_latency_ms",
 			"operational_bucket_count", "total_bucket_count", "ttft_p50_ms", "average_latency_ms",
 			"ttft_sample_count", "latency_sample_count", "current_status",
 			"source_updated_at",
 		}).
-			AddRow(int64(7), start, "operational", bucketLatency, 1, 1, ttft, latency, 3, 2, "operational", latestCheckedAt).
-			AddRow(int64(8), start, "unavailable", nil, 0, 1, nil, nil, 0, 0, "unavailable", nil))
+			AddRow(int64(7), start, "operational", true, bucketLatency, 1, 1, ttft, latency, 3, 2, "operational", latestCheckedAt).
+			AddRow(int64(8), start, "unavailable", true, nil, 0, 1, nil, nil, 0, 0, "unavailable", latestCheckedAt).
+			AddRow(int64(9), start, "unavailable", false, nil, 0, 1, nil, nil, 0, 0, "unavailable", nil))
 
 	projection, err := projector.ProjectMonitorV2Groups(
 		context.Background(),
-		[]service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}, {GroupID: 8, AccountID: 2}},
+		[]service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}, {GroupID: 8, AccountID: 2}, {GroupID: 9, AccountID: 3}},
 		start, end, freshSince, time.Hour,
 	)
 	if err != nil {
 		t.Fatalf("ProjectMonitorV2Groups() error = %v", err)
 	}
-	if len(projection) != 2 || projection[7].Status != "operational" || projection[8].Status != "unavailable" {
+	if len(projection) != 3 || projection[7].Status != "operational" || projection[8].Status != "unavailable" {
 		t.Fatalf("projection = %#v", projection)
 	}
 	if projection[7].TTFTP50MS == nil || *projection[7].TTFTP50MS != 421 || projection[7].AverageLatencyMS == nil || *projection[7].AverageLatencyMS != 1000 {
@@ -108,8 +109,14 @@ func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *tes
 	if projection[7].SourceUpdatedAt == nil || !projection[7].SourceUpdatedAt.Equal(latestCheckedAt) {
 		t.Fatalf("group 7 source_updated_at = %#v", projection[7].SourceUpdatedAt)
 	}
-	if projection[8].SourceUpdatedAt != nil {
-		t.Fatalf("group 8 source_updated_at = %#v, want nil", projection[8].SourceUpdatedAt)
+	if projection[8].SourceUpdatedAt == nil {
+		t.Fatalf("group 8 source_updated_at = %#v, want non-nil", projection[8].SourceUpdatedAt)
+	}
+	if len(projection[8].Timeline) != 1 || !projection[8].Timeline[0].HasResult || projection[8].Timeline[0].LatencyMS != nil {
+		t.Fatalf("failed group timeline = %#v, want failed result evidence without latency", projection[8].Timeline)
+	}
+	if len(projection[9].Timeline) != 1 || projection[9].Timeline[0].HasResult {
+		t.Fatalf("empty group timeline = %#v, want no result evidence", projection[9].Timeline)
 	}
 	if len(projection[7].Timeline) != 1 || projection[7].Timeline[0].LatencyMS == nil || *projection[7].Timeline[0].LatencyMS != 901 {
 		t.Fatalf("group 7 timeline = %#v", projection[7].Timeline)

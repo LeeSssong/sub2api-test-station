@@ -136,7 +136,7 @@ function pointLabel(point: MonitorV2TimelinePoint): string {
 }
 
 function isNoDataPoint(point: MonitorV2TimelinePoint): boolean {
-  return point.status === 'unavailable' && point.latency_ms === null
+  return !point.has_result
 }
 
 function pointState(point: MonitorV2TimelinePoint): 'operational' | 'unavailable' | 'no-data' {

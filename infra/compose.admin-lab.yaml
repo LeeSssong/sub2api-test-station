@@ -1,0 +1,205 @@
+name: sub2api-admin-lab
+
+services:
+  admin-lab-api:
+    build:
+      context: ../upstream/sub2api
+      dockerfile: Dockerfile
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        test "$$LAB_ONLY" = 1 &&
+        test "$$DATABASE_HOST" = admin-lab-postgres &&
+        test "$$REDIS_HOST" = admin-lab-redis &&
+        test "$$PAYMENT_PROVIDER" = mock &&
+        test "$$UPSTREAM_PROVIDER" = mock-upstream &&
+        test "$$NOTIFICATION_TRANSPORT" = lab-outbox &&
+        test "$$FRONTEND_BASE_PATH" = /admin/lab/ &&
+        exec /app/sub2api
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_PROCESS_ROLE: api
+      DATABASE_HOST: admin-lab-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      DATABASE_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+      DATABASE_DBNAME: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      REDIS_HOST: admin-lab-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}
+      REDIS_DB: "0"
+      ADMIN_EMAIL: ${ADMIN_LAB_ADMIN_EMAIL:?ADMIN_LAB_ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${ADMIN_LAB_ADMIN_PASSWORD:?ADMIN_LAB_ADMIN_PASSWORD is required}
+      JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?ADMIN_LAB_JWT_SECRET is required}
+      CSRF_SECRET: ${ADMIN_LAB_CSRF_SECRET:?ADMIN_LAB_CSRF_SECRET is required}
+      AUTH_COOKIE_NAME: ${ADMIN_LAB_COOKIE_NAME:?ADMIN_LAB_COOKIE_NAME is required}
+      FRONTEND_BASE_PATH: ${ADMIN_LAB_FRONTEND_BASE_PATH:?ADMIN_LAB_FRONTEND_BASE_PATH is required}
+      PAYMENT_PROVIDER: ${ADMIN_LAB_PAYMENT_PROVIDER:?ADMIN_LAB_PAYMENT_PROVIDER is required}
+      UPSTREAM_PROVIDER: ${ADMIN_LAB_UPSTREAM_PROVIDER:?ADMIN_LAB_UPSTREAM_PROVIDER is required}
+      NOTIFICATION_TRANSPORT: lab-outbox
+      EXTERNAL_ALLOWLIST: ${ADMIN_LAB_EXTERNAL_ALLOWLIST:?ADMIN_LAB_EXTERNAL_ALLOWLIST is required}
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: admin-lab-mock-upstream,admin-lab-mock-payment
+      MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
+      MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
+    depends_on:
+      admin-lab-postgres: {condition: service_healthy}
+      admin-lab-redis: {condition: service_healthy}
+      admin-lab-mock-upstream: {condition: service_healthy}
+      admin-lab-mock-payment: {condition: service_healthy}
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  admin-lab-worker:
+    build:
+      context: ../upstream/sub2api
+      dockerfile: Dockerfile
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        test "$$LAB_ONLY" = 1 &&
+        test "$$DATABASE_HOST" = admin-lab-postgres &&
+        test "$$REDIS_HOST" = admin-lab-redis &&
+        exec /app/sub2api
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_PROCESS_ROLE: worker
+      DATABASE_HOST: admin-lab-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      DATABASE_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+      DATABASE_DBNAME: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      REDIS_HOST: admin-lab-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}
+      REDIS_DB: "0"
+      JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?ADMIN_LAB_JWT_SECRET is required}
+      CSRF_SECRET: ${ADMIN_LAB_CSRF_SECRET:?ADMIN_LAB_CSRF_SECRET is required}
+      AUTH_COOKIE_NAME: ${ADMIN_LAB_COOKIE_NAME:?ADMIN_LAB_COOKIE_NAME is required}
+      PAYMENT_PROVIDER: mock
+      UPSTREAM_PROVIDER: mock-upstream
+      NOTIFICATION_TRANSPORT: lab-outbox
+      MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
+      MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: admin-lab-mock-upstream,admin-lab-mock-payment
+    depends_on:
+      admin-lab-postgres: {condition: service_healthy}
+      admin-lab-redis: {condition: service_healthy}
+    networks:
+      admin-lab: {}
+
+  admin-lab-postgres:
+    image: ${ADMIN_LAB_POSTGRES_IMAGE:?ADMIN_LAB_POSTGRES_IMAGE is required}
+    environment:
+      POSTGRES_DB: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      POSTGRES_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      POSTGRES_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+    # PostgreSQL 18 stores the cluster under a versioned subdirectory below
+    # /var/lib/postgresql; mounting the legacy /data path makes the image
+    # fail-closed instead of starting with an ambiguous volume layout.
+    volumes: [admin-lab-postgres-data:/var/lib/postgresql]
+    networks:
+      admin-lab: {}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_LAB_DB_USER} -d ${ADMIN_LAB_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-redis:
+    image: ${ADMIN_LAB_REDIS_IMAGE:?ADMIN_LAB_REDIS_IMAGE is required}
+    command: ["redis-server", "--requirepass", "${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}"]
+    volumes: [admin-lab-redis-data:/data]
+    networks:
+      admin-lab: {}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ADMIN_LAB_REDIS_PASSWORD}", "PING"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-mock-upstream:
+    image: python:3.12-alpine
+    command: ["python", "/opt/admin-lab/mock_server.py", "8091", "upstream"]
+    volumes: [../tools/admin-lab/mock_server.py:/opt/admin-lab/mock_server.py:ro]
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      LISTEN_ADDRESS: ":8091"
+    networks:
+      admin-lab: {}
+    expose: ["8091"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8091/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-mock-payment:
+    image: python:3.12-alpine
+    command: ["python", "/opt/admin-lab/mock_server.py", "8092", "payment"]
+    volumes: [../tools/admin-lab/mock_server.py:/opt/admin-lab/mock_server.py:ro]
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      LISTEN_ADDRESS: ":8092"
+    networks:
+      admin-lab: {}
+    expose: ["8092"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8092/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-frontend:
+    build:
+      context: ..
+      dockerfile: infra/admin-lab/Dockerfile.frontend
+    image: ${ADMIN_LAB_FRONTEND_IMAGE:?ADMIN_LAB_FRONTEND_IMAGE is required}
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
+    expose: ["4173"]
+
+  admin-lab-gateway:
+    image: nginx:1.27-alpine
+    volumes: [./admin-lab/gateway.conf:/etc/nginx/conf.d/default.conf:ro]
+    depends_on:
+      admin-lab-api: {condition: service_healthy}
+      admin-lab-frontend: {condition: service_started}
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
+    expose: ["8088"]
+
+networks:
+  admin-lab:
+    name: sub2api-admin-lab-network
+    internal: true
+  admin-lab-gateway:
+    name: ${ADMIN_LAB_GATEWAY_NETWORK:-sub2api_default}
+    external: true
+
+volumes:
+  admin-lab-postgres-data:
+    name: sub2api-admin-lab-postgres-data
+  admin-lab-redis-data:
+    name: sub2api-admin-lab-redis-data

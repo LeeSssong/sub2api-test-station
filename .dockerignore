@@ -3,6 +3,13 @@
 # dependency trees, and generated output as Docker build context.
 *
 !infra/
+!upstream/
+!upstream/sub2api/
+!upstream/sub2api/frontend/
+!upstream/sub2api/frontend/**
+!upstream/sub2api/docs/
+!upstream/sub2api/docs/legal/
+!upstream/sub2api/docs/legal/**
 !infra/Dockerfile.relay-ops
 !relay-ops-service/
 !relay-ops-service/**

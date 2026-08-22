@@ -18,6 +18,7 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+const isAdminLab = import.meta.env.VITE_ADMIN_LAB === '1'
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -137,6 +138,13 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div
+    v-if="isAdminLab"
+    class="fixed inset-x-0 top-0 z-[100] border-b border-amber-300 bg-amber-100 px-3 py-1 text-center text-xs font-semibold text-amber-900"
+    data-testid="admin-lab-banner"
+  >
+    测试环境 · LAB_ONLY · 不连接生产数据或真实外部服务
+  </div>
   <NavigationProgress />
   <RouterView />
   <Toast />

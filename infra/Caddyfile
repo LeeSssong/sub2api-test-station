@@ -214,6 +214,44 @@
 	}
 	respond @sub2api_restart_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
 
+
+	# T53 admin lab isolated path
+	# T53 admin lab: keep this block before the production fallback proxy.
+	@admin_lab_root path /admin/lab
+	redir @admin_lab_root /admin/lab/ 308
+
+	@admin_lab_assets path /admin/lab/assets/*
+	handle @admin_lab_assets {
+	  uri strip_prefix /admin/lab
+	  reverse_proxy admin-lab-gateway:8088
+	}
+
+	@admin_lab_api path /admin/lab/api/*
+	handle @admin_lab_api {
+	  uri strip_prefix /admin/lab
+	  reverse_proxy admin-lab-gateway:8088 {
+	    header_up -Cookie
+	    header_up Authorization {http.request.header.Authorization}
+	    header_up X-Admin-Lab-Only 1
+	  }
+	}
+
+	@admin_lab_ws path /admin/lab/ws/*
+	handle @admin_lab_ws {
+	  uri strip_prefix /admin/lab
+	  reverse_proxy admin-lab-gateway:8088 {
+	    header_up -Cookie
+	    header_up Authorization {http.request.header.Authorization}
+	    header_up X-Admin-Lab-Only 1
+	  }
+	}
+
+	@admin_lab_app path /admin/lab/*
+	handle @admin_lab_app {
+	  uri strip_prefix /admin/lab
+	  reverse_proxy admin-lab-gateway:8088
+	}
+
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {
 		flush_interval -1
 		header_down Content-Security-Policy "frame-src " "frame-src 'self' https://shop.xingqiaolab.top https://catfk.com "

@@ -1,0 +1,22 @@
+FROM node:24-alpine
+
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+COPY upstream/sub2api/frontend/package.json upstream/sub2api/frontend/pnpm-lock.yaml ./frontend/
+RUN cd frontend && pnpm install --frozen-lockfile --prefer-offline
+COPY upstream/sub2api/frontend/ ./frontend/
+COPY upstream/sub2api/docs/legal/ ./docs/legal/
+
+RUN cd frontend && \
+  VITE_APP_BASE_PATH=/admin/lab/ \
+  VITE_API_BASE_URL=/admin/lab/api/v1 \
+  VITE_AUTH_STORAGE_PREFIX=admin_lab_ \
+  VITE_ADMIN_LAB=1 \
+  VITE_BUILD_OUT_DIR=/app/dist \
+  pnpm build
+
+FROM nginx:1.27-alpine
+COPY --from=0 /app/dist /usr/share/nginx/html
+COPY infra/admin-lab/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 4173

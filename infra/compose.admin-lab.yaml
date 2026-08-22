@@ -2,6 +2,9 @@ name: sub2api-admin-lab
 
 services:
   admin-lab-api:
+    build:
+      context: ../upstream/sub2api
+      dockerfile: Dockerfile
     image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
     command:
       - /bin/sh
@@ -57,6 +60,9 @@ services:
       retries: 5
 
   admin-lab-worker:
+    build:
+      context: ../upstream/sub2api
+      dockerfile: Dockerfile
     image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
     command:
       - /bin/sh

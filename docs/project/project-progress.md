@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T54 根总控状态更新（2026-08-23）：** 候选已以合并提交 `04a146e08` 合入根 `main`，当前进入 `INTEGRATING`；待推送、发布预检、蓝绿部署和线上专项验收。
+
 **T54 分组调度策略与乐观体验卡（2026-08-23）：** 状态：`IMPLEMENTING`。承接“优化分组调度设置”窗口：每组先选策略模式，再在“调度权值覆盖”和“公平调度”之间二选一；公平调度提供特惠、均衡、Pro 三个预设并自动回填权值；公平模式增加最长闲置保护和按组候选池探索，继续复用原生 S1/S2、sticky、并发和故障域门槛。分组体验卡只保留乐观主指标，不展示试用探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅作为后台资格与健康判定输入。规格与计划已获用户确认，将在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；不进入 T53 当前占用的合并/发布车道。预计无迁移、无生产数据写入，`downtime_required=false`。
 
 **T53-R1 测试站生产交付修复（2026-08-23）：** 状态：`DONE`。已推送 `main@84279999f767f6f22ed5c2ca5613e4a6704ed192` 并通过独立发布链上线。8 个隔离服务（API、worker、frontend、gateway、PostgreSQL、Redis、mock upstream、mock payment）均 healthy；公网 `/admin/lab/` HTTP 200，HTML 含 `/admin/lab/assets/` 且不含主站 `/assets/`；主站 `/healthz` HTTP 200，活动 API/Caddy 身份未变化。根因修复包含空库 AUTO_SETUP、共享 `/app/data`、lab 凭据复用、IPv4 healthcheck、Caddy 路由排除及 bind-mounted Caddy 配置 stdin validate/reload。保持生产 PostgreSQL、Redis、Caddy、活动 API 不重启，不连接生产支付/上游、不写生产数据库、不使用 GitHub Actions。原 T53 的失败证据保留。

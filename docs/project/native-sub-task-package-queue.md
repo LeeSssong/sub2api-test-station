@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-22，T51 Monitor V2 检测失败红色状态）
+
+- **T51 Monitor V2 检测失败红色状态**：状态 `IMPLEMENTING`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；已完成根因确认：原生 `account_monitor_results` 时间桶 SQL 只返回二值 `status`，失败结果桶与无结果桶都为 `unavailable`，前端据 `latency_ms=null` 误判为 `no-data`。范围锁定 Monitor V2 原生时间线投影/API 合同/前端状态映射和直接相关测试；失败桶新增明确 `has_result=true` 并红色显示，空桶 `has_result=false` 继续灰色，成功、可用率、调度资格、数据源和探测逻辑不改。基线 `main@3152d95e30a4e800b2e4a38c2ad2ca4654cb7e07`；候选工作区待创建；无迁移、无配置和生产数据变更，预计 `downtime_required=false`。
+
 ## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
 
 - **T50 Monitor V2 可用性字段文案精简**：状态 `READY_FOR_ROOT_REVIEW`。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。候选 `codex/t50-monitor-availability-label@041af7d072acbab09ed86c006426504be2638a30` 已合并到根 `main@461844764018250d8dd878573082dccbcd0ebd72`；Monitor V2 9 个测试文件 43/43、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。无迁移、无配置和生产数据变更；待根门禁、推送、无停机发布和线上验收。

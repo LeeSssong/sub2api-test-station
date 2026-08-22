@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T51 Monitor V2 检测失败红色状态）
 
-- **T51 Monitor V2 检测失败红色状态**：状态 `DEPLOYING`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；根因是原生时间桶 SQL 将失败结果桶与无结果桶都投影为 `unavailable`，前端原先据 `latency_ms=null` 误判为 `no-data`。候选 `codex/t51-monitor-failed-red@b262756b76e81b263280ed657b08901c48c337cd` 已合入根 `main@9dcd4bfa8`；通过原生时间线投影新增必填 `has_result`，失败桶红色、空桶灰色，Monitor V2 合同升级 v8，成功、可用率、调度资格、数据源和探测逻辑不改。候选与根门禁：Monitor V2 9 个测试文件 45/45、Go service/handler/repository 定向测试、`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；无迁移、无配置和生产数据变更，预计 `downtime_required=false`。待推送、生产发布和线上验证。
+- **T51 Monitor V2 检测失败红色状态**：状态 `DONE`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；根因是原生时间桶 SQL 将失败结果桶与无结果桶都投影为 `unavailable`，前端原先据 `latency_ms=null` 误判为 `no-data`。候选 `codex/t51-monitor-failed-red@b262756b76e81b263280ed657b08901c48c337cd` 已合入并推送根 `main@81366f15a9452682dced2ad67d8b001ab6cb7002`；通过原生时间线投影新增必填 `has_result`，失败桶红色、空桶灰色，Monitor V2 合同升级 v8，成功、可用率、调度资格、数据源和探测逻辑不改。Monitor V2 9 个测试文件 45/45、Go service/handler/repository 定向测试、`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；发布预检 `downtime_required=false`，宿主记录 `/var/lib/sub2api/release-records/20260822T073115Z-production-3216658.json` 为 `succeeded/promoted`，活动槽 `blue`，公网 `/healthz`、`/readyz`、`/health` 均 200，API/worker/model-detector healthy。生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-81366f15-t51-production.json`；无迁移、无配置和生产数据写入。
 
 ## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
 

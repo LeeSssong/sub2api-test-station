@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
+
+- **T53 管理员隔离测试站**：状态 `INTEGRATING`。候选 `codex/t53-admin-lab@b51dd821d4bf476f1e0eeabfcf04caf20cfffdf2` 已由根任务合并到 `main@abe3fb1b09cfa9a7ad3e733618ff18ebb06db618`，并在合并后的树上通过 admin-lab contract/smoke、Go `internal/lab`、前端 focused Vitest、前端生产构建、后端 server build、Compose config、Caddy adapt 与 `git diff --check`。范围为复用 Sub 原生管理员 API/页面/迁移集合，在独立 PostgreSQL、Redis、Cookie、secret、网络和 mock 出站边界下挂载 `/admin/lab/`；不实现额度账本、充值包、经营分析或第二账务事实源。尚未推送、生产部署或线上验收；发布前需执行根发布预检、宿主 live smoke 和既有本地/宿主蓝绿链。详见 `docs/handoffs/2026-08-22-t53-admin-lab-handoff.md`。
+
 ## 当前新增任务（2026-08-22，T52 调度公平性与管理员实时参数页）
 
 - **T52 调度公平性与管理员实时参数页**：状态 `DONE`。实现已合入并推送 `main@1ddc7bbfa93b3337663ba427d7bd2b34c78ffdf4`，tested tree `7e5c344f3da60c378434c2fce68ffe62e1751c43`；复用原生 settings 与 `SettingsView`，新增候选池模式、探索比例、饥饿阈值、公平权重和分组覆盖，参数旁提供作用、范围及调大/调小效果说明。直接相关 Go/Vitest、服务构建、前端 typecheck/build 和 diff-check 通过，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-1ddc7bbf-t52-scheduler-fairness.json`。预加载蓝绿链最终宿主记录 `/var/lib/sub2api/release-records/20260822T094458Z-production-3328814.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`；公网三项健康端点 200，管理员 settings API 已读取生产公平参数。无迁移、无配置 schema 变化、无生产数据写入、无 GitHub Actions。
@@ -61,8 +65,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1 与 T52 均为 `DONE`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T52 已完成唯一发布车道的合并、推送、无停机蓝绿部署和线上健康验证；T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1 与 T52 均为 `DONE`；T53 为 `INTEGRATING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T53 已完成候选合并和合并后直接相关验证，尚未推送、部署或线上验收；T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：T52 生产源 `main@1ddc7bbfa93b3337663ba427d7bd2b34c78ffdf4`、tree `7e5c344f3da60c378434c2fce68ffe62e1751c43`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像且健康。宿主记录为 `/var/lib/sub2api/release-records/20260822T094458Z-production-3328814.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-1ddc7bbf-t52-scheduler-fairness.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。

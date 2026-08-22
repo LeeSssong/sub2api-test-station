@@ -7,8 +7,8 @@
 - 基线 `main`：`c6fc031c65e4c6902afa2a894eb18f4484a15983`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t52-scheduler-fairness`
 - 分支：`codex/t52-scheduler-fairness`
-- 候选提交：`6b4e68b9c3f0f5d5bdc6ddcec83a841c06b9194f`
-- 候选 tree：`e48612e546912f84e1e979617bd07f05eb993734`
+- 候选实现提交：`0d593b26a091854358d882a18ce33aea3f238241`
+- 候选实现 tree：`9b4396386c0eaf2f9785c087000a0d1f14260862`
 - 规格：`docs/superpowers/specs/2026-08-22-t52-scheduler-fairness-design.md`
 - 计划：`docs/superpowers/plans/2026-08-22-t52-scheduler-fairness.md`
 

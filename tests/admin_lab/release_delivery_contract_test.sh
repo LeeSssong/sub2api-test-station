@@ -31,7 +31,7 @@ done
 for needle in \
   'AUTO_SETUP: "true"' \
   'admin-lab-app-data:/app/data' \
-  'admin-lab-api: {condition: service_healthy}'; do
+  'admin-lab-worker: {condition: service_healthy}'; do
   grep -Fq "$needle" "$compose" || fail "admin lab compose missing contract: $needle"
 done
 

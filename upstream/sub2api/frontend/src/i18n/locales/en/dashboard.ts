@@ -82,6 +82,7 @@ export default {
     },
     metric: {
       availability: 'Availability: ',
+      availabilityLabel: 'Availability',
       ttft: 'First token speed: ',
       averageLatency: 'Average latency: ',
       samples: 'Based on {count} calls',

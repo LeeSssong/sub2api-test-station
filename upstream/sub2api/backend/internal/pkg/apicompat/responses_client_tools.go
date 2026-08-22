@@ -228,6 +228,24 @@ func customToolCallArguments(input string) string {
 	return string(encoded)
 }
 
+// customToolCallItemID converts a standard Responses function-call item ID to
+// the client-only ID namespace used by custom_tool_call items. Codex validates
+// these namespaces when it replays the input on the next turn: function_call
+// items may use fc_/item_ IDs, while custom_tool_call items must use ctc_ IDs.
+func customToolCallItemID(id string) string {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "ctc_") {
+		return id
+	}
+	if _, suffix, ok := strings.Cut(id, "_"); ok && suffix != "" {
+		return "ctc_" + suffix
+	}
+	if id != "" {
+		return "ctc_" + id
+	}
+	return "ctc_generated"
+}
+
 func rawObjectString(value any) string {
 	if text, ok := value.(string); ok {
 		return text
@@ -285,6 +303,7 @@ func restoreClientToolValue(value any, adapter *ResponsesClientToolMapping) bool
 			name := strings.TrimSpace(stringValue(typed["name"]))
 			if adapter.CustomTools[name] {
 				typed["type"] = "custom_tool_call"
+				typed["id"] = customToolCallItemID(stringValue(typed["id"]))
 				typed["input"] = extractCustomToolCallInput(rawObjectString(typed["arguments"]))
 				delete(typed, "arguments")
 				delete(typed, "namespace")
@@ -352,6 +371,7 @@ func (r *ResponsesClientToolStreamRestorer) Restore(event ResponsesStreamEvent) 
 		if call := r.recordItem(event); call != nil {
 			if call.kind == "custom" {
 				event.Item.Type = "custom_tool_call"
+				event.Item.ID = customToolCallItemID(event.Item.ID)
 				event.Item.Input = ""
 				event.Item.Arguments = ""
 				event.Item.Namespace = ""
@@ -389,6 +409,7 @@ func (r *ResponsesClientToolStreamRestorer) Restore(event ResponsesStreamEvent) 
 		if call := r.recordItem(event); call != nil {
 			if call.kind == "custom" {
 				event.Item.Type = "custom_tool_call"
+				event.Item.ID = customToolCallItemID(event.Item.ID)
 				event.Item.Input = extractCustomToolCallInput(call.arguments.String())
 				event.Item.Arguments = ""
 				event.Item.Namespace = ""
@@ -548,8 +569,15 @@ func (r *ResponsesClientToolStreamRestorer) recordItem(event ResponsesStreamEven
 	}
 	call := r.calls[key]
 	if call == nil {
-		call = &responsesClientToolStreamCall{kind: kind, name: name, callID: event.Item.CallID, itemID: event.Item.ID, outputIdx: event.OutputIndex}
+		itemID := event.Item.ID
+		if kind == "custom" {
+			itemID = customToolCallItemID(itemID)
+		}
+		call = &responsesClientToolStreamCall{kind: kind, name: name, callID: event.Item.CallID, itemID: itemID, outputIdx: event.OutputIndex}
 		r.calls[key] = call
+		if key != itemID && itemID != "" {
+			r.calls[itemID] = call
+		}
 		if call.callID != "" {
 			r.calls[call.callID] = call
 		}
@@ -602,6 +630,7 @@ func restoreResponsesOutputClientTools(outputs []ResponsesOutput, adapter *Respo
 		}
 		if adapter.CustomTools[output.Name] {
 			output.Type = "custom_tool_call"
+			output.ID = customToolCallItemID(output.ID)
 			output.Input = extractCustomToolCallInput(output.Arguments)
 			output.Arguments = ""
 			output.Namespace = ""

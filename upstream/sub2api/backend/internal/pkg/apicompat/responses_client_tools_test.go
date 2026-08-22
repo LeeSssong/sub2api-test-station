@@ -86,28 +86,46 @@ func TestRestoreResponsesClientToolPayload_RestoresClientAndNamespaceCalls(t *te
 		CustomTools: map[string]bool{"exec": true}, ToolSearch: true,
 		NamespaceTools: map[string]ResponsesNamespaceName{"team__send": {Namespace: "team", Name: "send"}},
 	}
-	payload := []byte(`{"id":"resp","output":[{"type":"function_call","id":"i1","call_id":"c1","name":"exec","arguments":"{\"input\":\"dir\"}","namespace":"ignore"},{"type":"function_call","id":"i2","call_id":"s1","name":"tool_search","arguments":"{\"query\":\"git\"}"},{"type":"function_call","id":"i3","call_id":"n1","name":"team__send","arguments":"{}"}]}`)
+	payload := []byte(`{"id":"resp","output":[{"type":"function_call","id":"fc_1","call_id":"c1","name":"exec","arguments":"{\"input\":\"dir\"}","namespace":"ignore"},{"type":"function_call","id":"i2","call_id":"s1","name":"tool_search","arguments":"{\"query\":\"git\"}"},{"type":"function_call","id":"i3","call_id":"n1","name":"team__send","arguments":"{}"}]}`)
 
 	restored, changed, err := RestoreResponsesClientToolPayload(payload, mapping)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.JSONEq(t, `{"id":"resp","output":[{"type":"custom_tool_call","id":"i1","call_id":"c1","name":"exec","input":"dir"},{"type":"tool_search_call","id":"i2","call_id":"s1","execution":"client","arguments":{"query":"git"}},{"type":"function_call","id":"i3","call_id":"n1","name":"send","namespace":"team","arguments":"{}"}]}`, string(restored))
+	require.JSONEq(t, `{"id":"resp","output":[{"type":"custom_tool_call","id":"ctc_1","call_id":"c1","name":"exec","input":"dir"},{"type":"tool_search_call","id":"i2","call_id":"s1","execution":"client","arguments":{"query":"git"}},{"type":"function_call","id":"i3","call_id":"n1","name":"send","namespace":"team","arguments":"{}"}]}`, string(restored))
+}
+
+func TestRestoreResponsesClientToolPayload_NormalizesCompletedCustomToolID(t *testing.T) {
+	mapping := ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}}
+	payload := []byte(`{"type":"response.completed","sequence_number":4,"response":{"output":[{"type":"function_call","id":"item_completed","call_id":"c1","name":"exec","arguments":"{\"input\":\"pwd\"}"}]}}`)
+
+	restored, changed, err := RestoreResponsesClientToolPayload(payload, mapping)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.JSONEq(t, `{"type":"response.completed","sequence_number":4,"response":{"output":[{"type":"custom_tool_call","id":"ctc_completed","call_id":"c1","name":"exec","input":"pwd"}]}}`, string(restored))
+}
+
+func TestCustomToolCallItemID_PreservesClientNamespace(t *testing.T) {
+	require.Equal(t, "ctc_abc", customToolCallItemID("fc_abc"))
+	require.Equal(t, "ctc_abc", customToolCallItemID("item_abc"))
+	require.Equal(t, "ctc_abc", customToolCallItemID("ctc_abc"))
 }
 
 func TestResponsesClientToolStreamRestorer_CustomToolBuffersWrapperAndSequences(t *testing.T) {
 	restorer := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}})
-	added := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.added", SequenceNumber: 7, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "i1", CallID: "c1", Name: "exec", Status: "in_progress"}})
+	added := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.added", SequenceNumber: 7, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "fc_i1", CallID: "c1", Name: "exec", Status: "in_progress"}})
 	require.Len(t, added, 1)
 	require.Equal(t, 7, added[0].SequenceNumber)
 	require.Equal(t, "custom_tool_call", added[0].Item.Type)
-	require.Empty(t, restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.delta", SequenceNumber: 8, ItemID: "i1", Delta: `{"input":"di`}))
-	done := restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.done", SequenceNumber: 9, ItemID: "i1", CallID: "c1", Name: "exec", Arguments: `{"input":"dir"}`})
+	require.Equal(t, "ctc_i1", added[0].Item.ID)
+	require.Empty(t, restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.delta", SequenceNumber: 8, ItemID: "fc_i1", Delta: `{"input":"di`}))
+	done := restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.done", SequenceNumber: 9, ItemID: "fc_i1", CallID: "c1", Name: "exec", Arguments: `{"input":"dir"}`})
 	require.Len(t, done, 2)
 	require.Equal(t, 8, done[0].SequenceNumber)
 	require.Equal(t, "response.custom_tool_call_input.delta", done[0].Type)
 	require.Equal(t, "dir", done[0].Delta)
 	require.Equal(t, 9, done[1].SequenceNumber)
 	require.Equal(t, "response.custom_tool_call_input.done", done[1].Type)
+	require.Equal(t, "ctc_i1", done[1].ItemID)
 	require.Equal(t, "dir", done[1].Input)
 	closed := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.done", SequenceNumber: 10, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "i1", CallID: "c1", Name: "exec", Arguments: `{"input":"dir"}`, Status: "completed"}})
 	require.Equal(t, 10, closed[0].SequenceNumber)
@@ -119,17 +137,36 @@ func TestResponsesClientToolStreamRestorer_ToolSearchAndFunction(t *testing.T) {
 	restorer := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{ToolSearch: true})
 	search := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.added", SequenceNumber: 0, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "s1", CallID: "c1", Name: "tool_search", Status: "in_progress"}})
 	require.Equal(t, "tool_search_call", search[0].Item.Type)
+	require.Equal(t, "s1", search[0].Item.ID)
 	require.Empty(t, restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.delta", SequenceNumber: 1, ItemID: "s1", Delta: `{"query":"git"}`}))
 	require.Empty(t, restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.done", SequenceNumber: 2, ItemID: "s1", Arguments: `{"query":"git"}`}))
 	closed := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.done", SequenceNumber: 3, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "s1", CallID: "c1", Name: "tool_search", Status: "completed"}})
 	require.Equal(t, 1, closed[0].SequenceNumber)
 	require.Equal(t, "tool_search_call", closed[0].Item.Type)
+	require.Equal(t, "s1", closed[0].Item.ID)
 	require.JSONEq(t, `{"query":"git"}`, string(toolSearchCallArgumentsJSON(closed[0].Item.Arguments)))
 
 	function := restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.done", SequenceNumber: 4, ItemID: "plain", Name: "plain", Arguments: "{}"})
 	require.Len(t, function, 1)
 	require.Equal(t, "response.function_call_arguments.done", function[0].Type)
 	require.Equal(t, 2, function[0].SequenceNumber)
+}
+
+func TestResponsesClientToolStreamRestorer_RawCustomIDsUseClientNamespace(t *testing.T) {
+	restorer := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}})
+	added, changed, err := restorer.RestoreEvent([]byte(`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"function_call","id":"fc_raw","call_id":"c1","name":"exec","status":"in_progress"}}`))
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Len(t, added, 1)
+	require.Equal(t, "custom_tool_call", gjson.GetBytes(added[0], "item.type").String())
+	require.Equal(t, "ctc_raw", gjson.GetBytes(added[0], "item.id").String())
+
+	done, changed, err := restorer.RestoreEvent([]byte(`{"type":"response.function_call_arguments.done","sequence_number":2,"output_index":0,"item_id":"fc_raw","call_id":"c1","name":"exec","arguments":"{\"input\":\"pwd\"}"}`))
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Len(t, done, 2)
+	require.Equal(t, "ctc_raw", gjson.GetBytes(done[0], "item_id").String())
+	require.Equal(t, "ctc_raw", gjson.GetBytes(done[1], "item_id").String())
 }
 
 func TestResponsesClientToolStreamRestorer_RestoresNamespaceLifecycle(t *testing.T) {

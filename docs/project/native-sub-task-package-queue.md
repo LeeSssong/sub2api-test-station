@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
 
-- **T50 Monitor V2 可用性字段文案精简**：状态 `IMPLEMENTING`。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。基线 `main@6035f7f5488d5f2df9072db44260bdf9fa6ec3df`，候选 worktree 待创建。
+- **T50 Monitor V2 可用性字段文案精简**：状态 `READY_FOR_ROOT_REVIEW`。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。候选 `codex/t50-monitor-availability-label@041af7d072acbab09ed86c006426504be2638a30` 已合并到根 `main@461844764018250d8dd878573082dccbcd0ebd72`；Monitor V2 9 个测试文件 43/43、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。无迁移、无配置和生产数据变更；待根门禁、推送、无停机发布和线上验收。
 
 ## 当前新增任务（2026-08-22，T49 失败流水展示热修）
 

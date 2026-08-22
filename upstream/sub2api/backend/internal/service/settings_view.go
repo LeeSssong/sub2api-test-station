@@ -51,6 +51,7 @@ type OpenAISchedulerPolicyValues struct {
 type OpenAISchedulerGroupPolicy struct {
 	Mode            OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
 	Preset          OpenAISchedulerPreset            `json:"preset,omitempty"`
+	TopK            *int                             `json:"top_k,omitempty"`
 	WeightOverrides map[string]float64               `json:"weight_overrides,omitempty"`
 	Fairness        *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
 	Values          OpenAISchedulerPolicyValues      `json:"-"`

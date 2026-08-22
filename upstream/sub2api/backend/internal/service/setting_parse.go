@@ -1318,6 +1318,12 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 		} else if policy.Preset != "" {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "weighted group policy cannot set a preset")
 		}
+		if policy.TopK != nil {
+			if *policy.TopK < 1 || *policy.TopK > 32 {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy TopK must be between 1 and 32")
+			}
+			values.TopK = *policy.TopK
+		}
 		for key, value := range policy.WeightOverrides {
 			if !openAISchedulerPolicyWeightKeys[key] || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weight is invalid")

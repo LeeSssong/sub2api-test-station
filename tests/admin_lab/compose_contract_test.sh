@@ -36,3 +36,6 @@ if grep -Eq 'DATABASE_HOST: (postgres|sub2api-postgres)|REDIS_HOST: (redis|sub2a
   exit 1
 fi
 echo 'admin lab compose contract: PASS'
+
+grep -Fq '!upstream/sub2api/frontend/**' .dockerignore || { echo 'lab frontend build context excluded by root .dockerignore' >&2; exit 1; }
+grep -Fq 'COPY upstream/sub2api/docs/legal/ ./docs/legal/' infra/admin-lab/Dockerfile.frontend || { echo 'lab frontend legal-doc source path is wrong' >&2; exit 1; }

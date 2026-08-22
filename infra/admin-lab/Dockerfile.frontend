@@ -6,7 +6,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY upstream/sub2api/frontend/package.json upstream/sub2api/frontend/pnpm-lock.yaml ./frontend/
 RUN cd frontend && pnpm install --frozen-lockfile --prefer-offline
 COPY upstream/sub2api/frontend/ ./frontend/
-COPY docs/legal/ ./docs/legal/
+COPY upstream/sub2api/docs/legal/ ./docs/legal/
 
 RUN cd frontend && \
   VITE_APP_BASE_PATH=/admin/lab/ \

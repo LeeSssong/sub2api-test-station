@@ -6,7 +6,7 @@
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 
-- **T53 管理员隔离测试站**：状态 `DONE`。候选 `codex/t53-admin-lab@b51dd821d4bf476f1e0eeabfcf04caf20cfffdf2` 已由根任务合并；生产发布使用已推送 `main@70bc3263d0a4632affa12a88849745b94a4cacc6`、tested tree `7cd989ee3becaf7a96fefe97811c9b13fc05d849` 和 `0600` 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-70bc3263-t53-admin-lab.json`。预加载蓝绿记录 `/var/lib/sub2api/release-records/20260822T175244Z-production-3697754.json` 返回 `succeeded/promoted`、请求 `downtime_required=false`、活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 和 `/admin/lab/` 均 HTTP 200。范围为复用 Sub 原生管理员 API/页面/迁移集合，在独立 PostgreSQL、Redis、Cookie、secret、网络和 mock 出站边界下挂载 `/admin/lab/`；不实现额度账本、充值包、经营分析或第二账务事实源。无停机、无生产数据写入、无 GitHub Actions。详见 `docs/handoffs/2026-08-22-t53-admin-lab-handoff.md`。
+- **T53-R1 管理员隔离测试站生产交付修复**：状态 `INTEGRATING`。2026-08-23 公网复核确认 `/admin/lab/` 虽返回 HTTP 200，但 HTML 引用主站 `/assets/...`，浏览器因此进入主站前端 404；宿主没有 `sub2api-admin-lab` Compose 服务。根因是既有蓝绿发布只交付主应用镜像与 host executor，没有同步、启动和验收独立 lab Compose 附件。保留原 T53 发布记录为失败证据，修复必须补齐独立附件交付、root-owned `0600` lab env、独立 Compose 启动、容器健康和 `/admin/lab/assets/...` HTML 合同验收；不得重启生产 PostgreSQL、Redis、Caddy 或活动 API，不得连接生产支付/上游或写生产数据库，不使用 GitHub Actions。原 T53 范围仍不包含额度账本、充值包、经营分析或第二账务事实源。
 
 ## 当前新增任务（2026-08-22，T52 调度公平性与管理员实时参数页）
 

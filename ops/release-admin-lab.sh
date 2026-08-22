@@ -53,8 +53,7 @@ admin_image=$("$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes
   -o "UserKnownHostsFile=$known_hosts" -p "$ssh_port" "$ssh_target" \
   sudo -n sh -s <<'REMOTE'
 set -eu
-id=$(sudo -n docker compose --project-name sub2api --project-directory /opt/sub2api/production \
-  --env-file /opt/sub2api/production/.env -f /opt/sub2api/production/compose.yaml ps -q sub2api-blue | tr -d '[:space:]')
+id=$(sudo -n docker ps -q --filter label=com.docker.compose.service=sub2api-blue | tr -d '[:space:]')
 [ -n "$id" ]
 sudo -n docker inspect --format '{{.Config.Image}}' "$id"
 REMOTE

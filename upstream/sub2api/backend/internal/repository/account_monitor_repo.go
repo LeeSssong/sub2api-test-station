@@ -210,6 +210,7 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 		bm.group_id,
 		bm.bucket_start,
 		bm.bucket_status,
+		bm.bucket_has_result,
 		bm.bucket_latency_ms,
 		bs.operational_bucket_count,
 		bs.total_bucket_count,

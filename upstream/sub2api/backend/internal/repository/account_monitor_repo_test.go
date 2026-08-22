@@ -80,7 +80,7 @@ func TestAccountMonitorRepositoryProjectMonitorV2GroupsUsesOneNativeQuery(t *tes
 	ttft := 420.5
 	bucketLatency := 900.5
 	latestCheckedAt := end.Add(-30 * time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*generate_series.*account_monitor_results.*checked_at >= \$.*checked_at < \$.*status = 'success'.*PERCENTILE_CONT\(0\.50\).*AVG\(.*latency_ms.*`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*generate_series.*account_monitor_results.*checked_at >= \$.*checked_at < \$.*status = 'success'.*PERCENTILE_CONT\(0\.50\).*AVG\(.*latency_ms.*SELECT\s+bm\.group_id,\s+bm\.bucket_start,\s+bm\.bucket_status,\s+bm\.bucket_has_result,\s+bm\.bucket_latency_ms.*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "bucket_start", "bucket_status", "bucket_has_result", "bucket_latency_ms",

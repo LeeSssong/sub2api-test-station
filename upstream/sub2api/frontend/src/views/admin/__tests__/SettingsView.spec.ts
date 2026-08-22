@@ -1449,6 +1449,9 @@ describe("admin SettingsView payment visible method controls", () => {
   });
 
   it("renders scheduler fairness parameter hints and submits the live controls", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "特惠", description: "", platform: "openai", subscription_type: "subscription", status: "active" },
+    ]);
     const wrapper = mountView();
     await flushPromises();
     await wrapper
@@ -1489,9 +1492,9 @@ describe("admin SettingsView payment visible method controls", () => {
     await card.get('[data-testid="scheduler-exploration-ratio"]').setValue(35);
     await card.get('[data-testid="scheduler-starvation-threshold"]').setValue(3600);
     await card.get('[data-testid="scheduler-fairness-weight"]').setValue(4);
-    await card.get('[data-testid="scheduler-group-overrides"]').setValue(
-      '{"12":{"candidate_pool_mode":"hybrid","exploration_ratio":50}}',
-    );
+    await card.get('[data-testid="scheduler-group-select"]').setValue("12");
+    await card.get('[data-testid="scheduler-policy-mode"]').setValue("fair");
+    await card.get('[data-testid="scheduler-policy-preset"]').setValue("pro");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
@@ -1501,8 +1504,13 @@ describe("admin SettingsView payment visible method controls", () => {
         openai_advanced_scheduler_exploration_ratio: 35,
         openai_advanced_scheduler_starvation_threshold_seconds: 3600,
         openai_advanced_scheduler_fairness_weight: 4,
-        openai_advanced_scheduler_group_overrides: {
-          12: { candidate_pool_mode: "hybrid", exploration_ratio: 50 },
+        openai_advanced_scheduler_group_policies: {
+          12: expect.objectContaining({
+            mode: "fair",
+            preset: "pro",
+            top_k: 10,
+            fairness: expect.objectContaining({ exploration_ratio: 40 }),
+          }),
         },
       }),
     );

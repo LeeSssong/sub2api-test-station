@@ -54,6 +54,7 @@ type cachedOpenAIAdvancedSchedulerSetting struct {
 	lbTopKOverride                 int
 	weightOverrides                map[string]float64
 	fairness                       OpenAISchedulerFairnessSettings
+	groupPolicies                  map[int64]OpenAISchedulerGroupPolicy
 	expiresAt                      int64
 }
 
@@ -66,6 +67,7 @@ type openAIAdvancedSchedulerRuntimeSettings struct {
 	lbTopKOverride                 int
 	weightOverrides                map[string]float64
 	fairness                       OpenAISchedulerFairnessSettings
+	groupPolicies                  map[int64]OpenAISchedulerGroupPolicy
 }
 
 var openAIAdvancedSchedulerSettingCache atomic.Value // *cachedOpenAIAdvancedSchedulerSetting
@@ -1084,6 +1086,40 @@ func buildOpenAIWeightedSelectionOrder(
 	return order
 }
 
+// applyOpenAISchedulerGroupPolicy projects one normalized group policy onto the
+// native score/fairness inputs. Hard qualification and lease gates remain in
+// the caller; this helper only changes ranking inputs after those gates.
+func applyOpenAISchedulerGroupPolicy(
+	weights GatewayOpenAIWSSchedulerScoreWeightsView,
+	fairness OpenAISchedulerFairnessSettings,
+	policy OpenAISchedulerGroupPolicy,
+	configured bool,
+) (GatewayOpenAIWSSchedulerScoreWeightsView, OpenAISchedulerFairnessSettings) {
+	if !configured || policy.Values.TopK <= 0 {
+		return weights, fairness
+	}
+	values := policy.Values
+	weights.Priority = values.Priority
+	weights.Load = values.Load
+	weights.Queue = values.Queue
+	weights.ErrorRate = values.ErrorRate
+	weights.TTFT = values.TTFT
+	weights.Reset = values.Reset
+	weights.QuotaHeadroom = values.QuotaHeadroom
+	weights.UpstreamCost = values.UpstreamCost
+	weights.Previous = values.PreviousResponse
+	weights.SessionSticky = values.SessionSticky
+	if policy.Mode != OpenAISchedulerGroupPolicyModeFair {
+		return weights, OpenAISchedulerFairnessSettings{CandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK}
+	}
+	return weights, OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          values.CandidatePoolMode,
+		ExplorationRatio:           values.ExplorationRatio,
+		StarvationThresholdSeconds: values.StarvationThresholdSeconds,
+		FairnessWeight:             values.FairnessWeight,
+	}
+}
+
 func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
@@ -1173,10 +1209,18 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	plan.loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
 	fairness := defaultOpenAISchedulerFairnessSettings()
-	if s.service != nil {
-		fairness = resolveOpenAISchedulerFairnessForGroup(s.service.openAIAdvancedSchedulerRuntimeSettings(ctx).fairness, valueOrZero(req.GroupID))
-	}
 	weights := s.service.openAIWSSchedulerWeightsForRequest(ctx)
+	configuredTopK := s.service.openAIWSLBTopKForRequest(ctx)
+	if s.service != nil {
+		runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+		fairness = resolveOpenAISchedulerFairnessForGroup(runtime.fairness, valueOrZero(req.GroupID))
+		if policy, ok := runtime.groupPolicies[valueOrZero(req.GroupID)]; ok {
+			weights, fairness = applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
+			if policy.Values.TopK > 0 {
+				configuredTopK = policy.Values.TopK
+			}
+		}
+	}
 	now := time.Now()
 	upstreamCostFactors := map[int64]float64(nil)
 	if req.UseUpstreamTokenCost && weights.UpstreamCost > 0 {
@@ -1272,7 +1316,6 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		}
 	}
 	plan.eligibleCount = len(candidates)
-	configuredTopK := s.service.openAIWSLBTopKForRequest(ctx)
 	if configuredTopK <= 0 {
 		configuredTopK = 1
 	}
@@ -1431,7 +1474,11 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 		}
 		fairness := defaultOpenAISchedulerFairnessSettings()
 		if s.service != nil {
-			fairness = resolveOpenAISchedulerFairnessForGroup(s.service.openAIAdvancedSchedulerRuntimeSettings(ctx).fairness, schedulerGroupID(req.GroupID))
+			runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+			fairness = resolveOpenAISchedulerFairnessForGroup(runtime.fairness, schedulerGroupID(req.GroupID))
+			if policy, ok := runtime.groupPolicies[schedulerGroupID(req.GroupID)]; ok {
+				_, fairness = applyOpenAISchedulerGroupPolicy(s.service.openAIWSSchedulerWeightsForRequest(ctx), fairness, policy, true)
+			}
 		}
 		if fairness.CandidatePoolMode != OpenAISchedulerCandidatePoolModeTopK && !req.StickyWeighted {
 			now := time.Now()
@@ -2335,6 +2382,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				lbTopKOverride:                 cached.lbTopKOverride,
 				weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(cached.weightOverrides),
 				fairness:                       cached.fairness,
+				groupPolicies:                  cloneOpenAISchedulerGroupPolicies(cached.groupPolicies),
 			}
 		}
 	}
@@ -2351,6 +2399,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 					lbTopKOverride:                 cached.lbTopKOverride,
 					weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(cached.weightOverrides),
 					fairness:                       cached.fairness,
+					groupPolicies:                  cloneOpenAISchedulerGroupPolicies(cached.groupPolicies),
 				}, nil
 			}
 		}
@@ -2363,6 +2412,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 		lbTopKOverride := 0
 		weightOverrides := map[string]float64{}
 		fairness := defaultOpenAISchedulerFairnessSettings()
+		groupPolicies := map[int64]OpenAISchedulerGroupPolicy{}
 		if repo := s.openAIAdvancedSchedulerSettingRepo(); repo != nil {
 			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
 			defer cancel()
@@ -2376,6 +2426,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				lbTopKOverride = parsePositiveIntOverride(values[SettingKeyOpenAIAdvancedSchedulerLBTopK])
 				weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(values)
 				fairness = parseOpenAISchedulerFairnessRuntimeSettings(values)
+				groupPolicies = normalizeOpenAISchedulerRuntimeGroupPolicies(lbTopKOverride, weightOverrides, fairness, values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
 			} else {
 				// 批量读取失败时逐键降级，覆盖全部键（含 TopK/权重），避免只加载布尔开关
 				// 而静默丢弃管理员配置的覆盖值；降级状态会被缓存一个 TTL，必须留痕。
@@ -2394,6 +2445,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 				lbTopKOverride = parsePositiveIntOverride(fallbackValues[SettingKeyOpenAIAdvancedSchedulerLBTopK])
 				weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(fallbackValues)
 				fairness = parseOpenAISchedulerFairnessRuntimeSettings(fallbackValues)
+				groupPolicies = normalizeOpenAISchedulerRuntimeGroupPolicies(lbTopKOverride, weightOverrides, fairness, fallbackValues[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
 			}
 		}
 
@@ -2406,6 +2458,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			lbTopKOverride:                 lbTopKOverride,
 			weightOverrides:                cloneOpenAIAdvancedSchedulerWeightOverrides(weightOverrides),
 			fairness:                       fairness,
+			groupPolicies:                  cloneOpenAISchedulerGroupPolicies(groupPolicies),
 			expiresAt:                      time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 		})
 		return openAIAdvancedSchedulerRuntimeSettings{
@@ -2417,6 +2470,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			lbTopKOverride:                 lbTopKOverride,
 			weightOverrides:                weightOverrides,
 			fairness:                       fairness,
+			groupPolicies:                  groupPolicies,
 		}, nil
 	})
 
@@ -2537,6 +2591,71 @@ func cloneOpenAIAdvancedSchedulerWeightOverrides(in map[string]float64) map[stri
 	out := make(map[string]float64, len(in))
 	for key, value := range in {
 		out[key] = value
+	}
+	return out
+}
+
+func normalizeOpenAISchedulerRuntimeGroupPolicies(topK int, overrides map[string]float64, fairness OpenAISchedulerFairnessSettings, raw string) map[int64]OpenAISchedulerGroupPolicy {
+	parsed, err := parseOpenAISchedulerGroupPolicies(raw)
+	if err != nil || len(parsed) == 0 {
+		return map[int64]OpenAISchedulerGroupPolicy{}
+	}
+	global := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
+	if topK > 0 {
+		global.TopK = topK
+	}
+	global.CandidatePoolMode = fairness.CandidatePoolMode
+	global.ExplorationRatio = fairness.ExplorationRatio
+	global.StarvationThresholdSeconds = fairness.StarvationThresholdSeconds
+	global.FairnessWeight = fairness.FairnessWeight
+	for key, value := range overrides {
+		switch key {
+		case "priority":
+			global.Priority = value
+		case "load":
+			global.Load = value
+		case "queue":
+			global.Queue = value
+		case "error_rate":
+			global.ErrorRate = value
+		case "ttft":
+			global.TTFT = value
+		case "reset":
+			global.Reset = value
+		case "quota_headroom":
+			global.QuotaHeadroom = value
+		case "upstream_cost":
+			global.UpstreamCost = value
+		case "previous_response":
+			global.PreviousResponse = value
+		case "session_sticky":
+			global.SessionSticky = value
+		}
+	}
+	normalized, err := normalizeOpenAISchedulerGroupPolicies(parsed, global, nil)
+	if err != nil {
+		return map[int64]OpenAISchedulerGroupPolicy{}
+	}
+	for id, policy := range normalized {
+		if policy.LegacyFairness.CandidatePoolMode != nil || policy.LegacyFairness.ExplorationRatio != nil || policy.LegacyFairness.StarvationThresholdSeconds != nil || policy.LegacyFairness.FairnessWeight != nil {
+			delete(normalized, id)
+		}
+	}
+	return normalized
+}
+
+func cloneOpenAISchedulerGroupPolicies(in map[int64]OpenAISchedulerGroupPolicy) map[int64]OpenAISchedulerGroupPolicy {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[int64]OpenAISchedulerGroupPolicy, len(in))
+	for id, policy := range in {
+		policy.WeightOverrides = cloneOpenAIAdvancedSchedulerWeightOverrides(policy.WeightOverrides)
+		if policy.Fairness != nil {
+			fairness := *policy.Fairness
+			policy.Fairness = &fairness
+		}
+		out[id] = policy
 	}
 	return out
 }

@@ -293,6 +293,7 @@ type UpdateSettingsRequest struct {
 	OpenAIAdvancedSchedulerStarvationThresholdSeconds  *int                                               `json:"openai_advanced_scheduler_starvation_threshold_seconds"`
 	OpenAIAdvancedSchedulerFairnessWeight              *float64                                           `json:"openai_advanced_scheduler_fairness_weight"`
 	OpenAIAdvancedSchedulerGroupOverrides              *map[int64]service.OpenAISchedulerFairnessOverride `json:"openai_advanced_scheduler_group_overrides"`
+	OpenAIAdvancedSchedulerGroupPolicies               *map[int64]service.OpenAISchedulerGroupPolicy      `json:"openai_advanced_scheduler_group_policies"`
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -1878,6 +1879,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.OpenAIAdvancedSchedulerGroupOverrides
 			}
 			return previousSettings.OpenAIAdvancedSchedulerGroupOverrides
+		}(),
+		OpenAIAdvancedSchedulerGroupPolicies: func() map[int64]service.OpenAISchedulerGroupPolicy {
+			if req.OpenAIAdvancedSchedulerGroupPolicies != nil {
+				return *req.OpenAIAdvancedSchedulerGroupPolicies
+			}
+			return previousSettings.OpenAIAdvancedSchedulerGroupPolicies
 		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {

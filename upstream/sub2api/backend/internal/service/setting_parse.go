@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -932,6 +933,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
 	result.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
 	result.OpenAIAdvancedSchedulerGroupOverrides = parseOpenAISchedulerFairnessOverrides(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	result.OpenAIAdvancedSchedulerGroupPolicies, _ = parseOpenAISchedulerGroupPolicies(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
 	result.OpenAIAdvancedSchedulerEffectiveLBTopK = s.openAIAdvancedSchedulerEffectiveLBTopK()
 	effectiveWeights := s.openAIAdvancedSchedulerEffectiveWeights()
 	result.OpenAIAdvancedSchedulerEffectiveWeightPriority = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.Priority)
@@ -1141,6 +1143,24 @@ func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *Sys
 	settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
 	settings.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
 	settings.OpenAIAdvancedSchedulerGroupOverrides = fairness.GroupOverrides
+	if settings.OpenAIAdvancedSchedulerGroupPolicies != nil {
+		global := OpenAISchedulerPolicyValues{TopK: parsePositiveIntOverride(settings.OpenAIAdvancedSchedulerLBTopK), CandidatePoolMode: fairness.CandidatePoolMode, ExplorationRatio: fairness.ExplorationRatio, StarvationThresholdSeconds: fairness.StarvationThresholdSeconds, FairnessWeight: fairness.FairnessWeight}
+		global.Priority = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPriority, 1)
+		global.Load = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightLoad, 1)
+		global.Queue = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQueue, .7)
+		global.ErrorRate = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightErrorRate, .8)
+		global.TTFT = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightTTFT, .5)
+		global.Reset = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightReset, 0)
+		global.QuotaHeadroom = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom, 0)
+		global.UpstreamCost = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightUpstreamCost, 0)
+		global.PreviousResponse = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPreviousResponse, 5)
+		global.SessionSticky = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightSessionSticky, 3)
+		normalized, err := normalizeOpenAISchedulerGroupPolicies(settings.OpenAIAdvancedSchedulerGroupPolicies, global, nil)
+		if err != nil {
+			return err
+		}
+		settings.OpenAIAdvancedSchedulerGroupPolicies = normalized
+	}
 	return nil
 }
 
@@ -1217,6 +1237,168 @@ func parseOpenAISchedulerFairnessOverrides(raw string) map[int64]OpenAIScheduler
 		return map[int64]OpenAISchedulerFairnessOverride{}
 	}
 	return result
+}
+
+func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGroupPolicy, error) {
+	result := map[int64]OpenAISchedulerGroupPolicy{}
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
+		return result, nil
+	}
+	var objects map[int64]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &objects); err != nil {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policies must be valid JSON")
+	}
+	for id, blob := range objects {
+		if id <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy group id must be positive")
+		}
+		var legacy OpenAISchedulerFairnessOverride
+		_ = json.Unmarshal(blob, &legacy)
+		var rawFields map[string]json.RawMessage
+		_ = json.Unmarshal(blob, &rawFields)
+		var policy OpenAISchedulerGroupPolicy
+		isLegacy := rawFields["candidate_pool_mode"] != nil || rawFields["exploration_ratio"] != nil || rawFields["starvation_threshold_seconds"] != nil || rawFields["fairness_weight"] != nil
+		if isLegacy {
+			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
+			policy.LegacyFairness = legacy
+		} else {
+			dec := json.NewDecoder(bytes.NewReader(blob))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&policy); err != nil {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy contains unknown or invalid fields")
+			}
+		}
+		result[id] = policy
+	}
+	return result, nil
+}
+
+func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}) (map[int64]OpenAISchedulerGroupPolicy, error) {
+	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
+	for id, policy := range policies {
+		if id <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy group id must be positive")
+		}
+		if len(knownGroups) > 0 {
+			if _, ok := knownGroups[id]; !ok {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy references unknown group")
+			}
+		}
+		if policy.Mode == "" {
+			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
+		}
+		if policy.Mode != OpenAISchedulerGroupPolicyModeWeightedOverride && policy.Mode != OpenAISchedulerGroupPolicyModeFair {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy mode is invalid")
+		}
+		values := global
+		if policy.Fairness != nil {
+			if err := validateOpenAISchedulerFairnessOverride(*policy.Fairness); err != nil {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy fairness override is invalid")
+			}
+		}
+		if policy.Mode == OpenAISchedulerGroupPolicyModeFair {
+			if policy.Preset != OpenAISchedulerPresetSpecialOffer && policy.Preset != OpenAISchedulerPresetBalanced && policy.Preset != OpenAISchedulerPresetPro {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "fair group policy preset is invalid")
+			}
+			values = openAISchedulerPresetValues(policy.Preset)
+			if policy.Fairness != nil {
+				if policy.Fairness.CandidatePoolMode != nil {
+					values.CandidatePoolMode = *policy.Fairness.CandidatePoolMode
+				}
+				if policy.Fairness.ExplorationRatio != nil {
+					values.ExplorationRatio = *policy.Fairness.ExplorationRatio
+				}
+				if policy.Fairness.StarvationThresholdSeconds != nil {
+					values.StarvationThresholdSeconds = *policy.Fairness.StarvationThresholdSeconds
+				}
+				if policy.Fairness.FairnessWeight != nil {
+					values.FairnessWeight = *policy.Fairness.FairnessWeight
+				}
+			}
+		} else if policy.Preset != "" {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "weighted group policy cannot set a preset")
+		}
+		if policy.TopK != nil {
+			if *policy.TopK < 1 || *policy.TopK > 32 {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy TopK must be between 1 and 32")
+			}
+			values.TopK = *policy.TopK
+		}
+		for key, value := range policy.WeightOverrides {
+			if !openAISchedulerPolicyWeightKeys[key] || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weight is invalid")
+			}
+			switch key {
+			case "priority":
+				values.Priority = value
+			case "load":
+				values.Load = value
+			case "queue":
+				values.Queue = value
+			case "error_rate":
+				values.ErrorRate = value
+			case "ttft":
+				values.TTFT = value
+			case "reset":
+				values.Reset = value
+			case "quota_headroom":
+				values.QuotaHeadroom = value
+			case "upstream_cost":
+				values.UpstreamCost = value
+			case "previous_response":
+				values.PreviousResponse = value
+			case "session_sticky":
+				values.SessionSticky = value
+			}
+		}
+		if values.TopK <= 0 || values.TopK > 32 || values.Priority+values.Load+values.Queue+values.ErrorRate+values.TTFT+values.Reset+values.QuotaHeadroom+values.UpstreamCost <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weights must have a positive total")
+		}
+		if values.ExplorationRatio < 0 || values.ExplorationRatio > 100 || (values.StarvationThresholdSeconds != 0 && (values.StarvationThresholdSeconds < 300 || values.StarvationThresholdSeconds > 86400)) || values.FairnessWeight < 0 || values.FairnessWeight > 10 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy fairness values are invalid")
+		}
+		policy.Values = values
+		result[id] = policy
+	}
+	return result, nil
+}
+
+var openAISchedulerPolicyWeightKeys = map[string]bool{"priority": true, "load": true, "queue": true, "error_rate": true, "ttft": true, "reset": true, "quota_headroom": true, "upstream_cost": true, "previous_response": true, "session_sticky": true}
+
+func openAISchedulerPresetValues(p OpenAISchedulerPreset) OpenAISchedulerPolicyValues {
+	v := OpenAISchedulerPolicyValues{TopK: 7, Priority: 1, Load: 1, Queue: .7, ErrorRate: .8, TTFT: .5, PreviousResponse: 5, SessionSticky: 3, CandidatePoolMode: OpenAISchedulerCandidatePoolModeHybrid, ExplorationRatio: 25, StarvationThresholdSeconds: 21600, FairnessWeight: 3}
+	switch p {
+	case OpenAISchedulerPresetSpecialOffer:
+		v.Priority = .8
+		v.Load = .8
+		v.Queue = .5
+		v.ErrorRate = .8
+		v.TTFT = .2
+		v.UpstreamCost = 2.5
+		v.ExplorationRatio = 15
+		v.FairnessWeight = 2
+	case OpenAISchedulerPresetPro:
+		v.TopK = 10
+		v.Priority = 1.2
+		v.Load = 1.4
+		v.Queue = 1.2
+		v.ErrorRate = 2.5
+		v.TTFT = 2
+		v.Reset = .5
+		v.QuotaHeadroom = .2
+		v.UpstreamCost = 1.5
+		v.ExplorationRatio = 40
+		v.StarvationThresholdSeconds = 10800
+		v.FairnessWeight = 5
+	}
+	return v
+}
+
+func resolveOpenAISchedulerPolicyForGroup(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, groupID int64) OpenAISchedulerGroupPolicy {
+	if p, ok := policies[groupID]; ok {
+		return p
+	}
+	return OpenAISchedulerGroupPolicy{Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, Values: global}
 }
 
 func validateOpenAISchedulerFairnessOverride(value OpenAISchedulerFairnessOverride) error {

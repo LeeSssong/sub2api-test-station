@@ -266,6 +266,7 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerStarvationThresholdSeconds      int                                               `json:"openai_advanced_scheduler_starvation_threshold_seconds"`
 	OpenAIAdvancedSchedulerFairnessWeight                  float64                                           `json:"openai_advanced_scheduler_fairness_weight"`
 	OpenAIAdvancedSchedulerGroupOverrides                  map[int64]service.OpenAISchedulerFairnessOverride `json:"openai_advanced_scheduler_group_overrides"`
+	OpenAIAdvancedSchedulerGroupPolicies                   map[int64]service.OpenAISchedulerGroupPolicy      `json:"openai_advanced_scheduler_group_policies"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

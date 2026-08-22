@@ -10,7 +10,7 @@ import (
 // ValidateEgressTarget permits only the explicitly named lab mock services.
 func ValidateEgressTarget(raw string, allowedHosts ...string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Scheme != "http" || u.Hostname() == "" {
+	if err != nil || u.Scheme != "http" || u.Hostname() == "" || u.User != nil {
 		return fmt.Errorf("lab egress rejected: target must be an http URL with a host")
 	}
 	host := strings.ToLower(u.Hostname())

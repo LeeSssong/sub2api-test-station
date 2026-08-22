@@ -15,3 +15,4 @@ if grep -RInE 'api\.openai\.com|api\.anthropic\.com|smtp://|feishu\.cn' infra/ad
   exit 1
 fi
 echo 'admin lab mock egress contract: PASS'
+python3 tools/admin-lab/mock_server_test.py

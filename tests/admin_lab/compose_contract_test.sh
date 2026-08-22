@@ -13,7 +13,7 @@ for needle in \
   'admin-lab-postgres' 'admin-lab-redis' 'sub2api-admin-lab-network' 'sub2api_default' \
   'sub2api-admin-lab-postgres-data' 'sub2api-admin-lab-redis-data' \
   'context: /' 'dockerfile: Dockerfile' \
-  'PAYMENT_PROVIDER: mock' 'UPSTREAM_PROVIDER: mock-upstream' \
+  'PAYMENT_PROVIDER: mock' 'UPSTREAM_PROVIDER: mock-upstream' 'NOTIFICATION_TRANSPORT: lab-outbox' \
   'MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091' \
   'MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092'; do
   grep -Fq "$needle" <<<"$config" || { echo "missing compose isolation contract: $needle" >&2; exit 1; }

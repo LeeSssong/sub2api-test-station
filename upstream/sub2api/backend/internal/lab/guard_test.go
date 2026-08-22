@@ -7,7 +7,7 @@ func validConfig() Config {
 		LabOnly: "1", DatabaseHost: "admin-lab-postgres", DatabaseName: "sub2api_lab",
 		RedisHost: "admin-lab-redis", ServiceName: "admin-lab-api", CookieName: "sub2api_lab_session",
 		JWTSecret: "lab-jwt-secret-unique", CSRFSecret: "lab-csrf-secret-unique",
-		PaymentProvider: "mock", UpstreamProvider: "mock-upstream", FrontendBasePath: "/admin/lab/",
+		PaymentProvider: "mock", UpstreamProvider: "mock-upstream", FrontendBasePath: "/admin/lab/", NotificationTransport: "lab-outbox",
 	}
 }
 
@@ -51,6 +51,7 @@ func TestValidateConfigRejectsRealPaymentUpstreamAndWrongBase(t *testing.T) {
 		func(c *Config) { c.PaymentProvider = "stripe" },
 		func(c *Config) { c.UpstreamProvider = "openai" },
 		func(c *Config) { c.FrontendBasePath = "/" },
+		func(c *Config) { c.NotificationTransport = "smtp" },
 	}
 	for i, mutate := range cases {
 		cfg := validConfig()

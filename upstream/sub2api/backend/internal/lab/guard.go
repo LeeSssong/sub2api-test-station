@@ -9,18 +9,19 @@ import (
 
 // Config is the minimal environment contract required before a lab process may start.
 type Config struct {
-	LabOnly           string
-	DatabaseHost      string
-	DatabaseName      string
-	RedisHost         string
-	ServiceName       string
-	CookieName        string
-	JWTSecret         string
-	CSRFSecret        string
-	PaymentProvider   string
-	UpstreamProvider  string
-	ExternalAllowlist string
-	FrontendBasePath  string
+	LabOnly               string
+	DatabaseHost          string
+	DatabaseName          string
+	RedisHost             string
+	ServiceName           string
+	CookieName            string
+	JWTSecret             string
+	CSRFSecret            string
+	PaymentProvider       string
+	UpstreamProvider      string
+	ExternalAllowlist     string
+	FrontendBasePath      string
+	NotificationTransport string
 }
 
 // ValidateConfig rejects ambiguous or production-like resource configuration.
@@ -45,6 +46,7 @@ func ValidateConfig(cfg Config) error {
 		{"PAYMENT_PROVIDER", cfg.PaymentProvider, func(v string) bool { return v != "mock" }},
 		{"UPSTREAM_PROVIDER", cfg.UpstreamProvider, func(v string) bool { return v != "mock-upstream" }},
 		{"FRONTEND_BASE_PATH", cfg.FrontendBasePath, func(v string) bool { return v != "/admin/lab/" }},
+		{"NOTIFICATION_TRANSPORT", cfg.NotificationTransport, func(v string) bool { return v != "lab-outbox" }},
 	}
 	for _, check := range checks {
 		if check.bad(strings.TrimSpace(check.value)) {

@@ -19,7 +19,7 @@ for needle in \
   grep -Fq "$needle" <<<"$config" || { echo "missing compose isolation contract: $needle" >&2; exit 1; }
 done
 
-grep -Fq '/var/lib/postgresql:/var/lib/postgresql' <<<"$config" || {
+grep -Fq 'target: /var/lib/postgresql' <<<"$config" || {
   echo 'PostgreSQL 18 lab volume must mount /var/lib/postgresql (not the legacy data subpath)' >&2
   exit 1
 }

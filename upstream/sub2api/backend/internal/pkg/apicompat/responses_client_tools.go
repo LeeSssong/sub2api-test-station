@@ -303,7 +303,11 @@ func restoreClientToolValue(value any, adapter *ResponsesClientToolMapping) bool
 			name := strings.TrimSpace(stringValue(typed["name"]))
 			if adapter.CustomTools[name] {
 				typed["type"] = "custom_tool_call"
-				typed["id"] = customToolCallItemID(stringValue(typed["id"]))
+				itemID := stringValue(typed["id"])
+				if itemID == "" {
+					itemID = stringValue(typed["call_id"])
+				}
+				typed["id"] = customToolCallItemID(itemID)
 				typed["input"] = extractCustomToolCallInput(rawObjectString(typed["arguments"]))
 				delete(typed, "arguments")
 				delete(typed, "namespace")
@@ -371,7 +375,7 @@ func (r *ResponsesClientToolStreamRestorer) Restore(event ResponsesStreamEvent) 
 		if call := r.recordItem(event); call != nil {
 			if call.kind == "custom" {
 				event.Item.Type = "custom_tool_call"
-				event.Item.ID = customToolCallItemID(event.Item.ID)
+				event.Item.ID = call.itemID
 				event.Item.Input = ""
 				event.Item.Arguments = ""
 				event.Item.Namespace = ""
@@ -409,7 +413,7 @@ func (r *ResponsesClientToolStreamRestorer) Restore(event ResponsesStreamEvent) 
 		if call := r.recordItem(event); call != nil {
 			if call.kind == "custom" {
 				event.Item.Type = "custom_tool_call"
-				event.Item.ID = customToolCallItemID(event.Item.ID)
+				event.Item.ID = call.itemID
 				event.Item.Input = extractCustomToolCallInput(call.arguments.String())
 				event.Item.Arguments = ""
 				event.Item.Namespace = ""
@@ -571,8 +575,12 @@ func (r *ResponsesClientToolStreamRestorer) recordItem(event ResponsesStreamEven
 	if call == nil {
 		itemID := event.Item.ID
 		if kind == "custom" {
+			if itemID == "" {
+				itemID = event.Item.CallID
+			}
 			itemID = customToolCallItemID(itemID)
 		}
+		event.Item.ID = itemID
 		call = &responsesClientToolStreamCall{kind: kind, name: name, callID: event.Item.CallID, itemID: itemID, outputIdx: event.OutputIndex}
 		r.calls[key] = call
 		if key != itemID && itemID != "" {
@@ -630,7 +638,11 @@ func restoreResponsesOutputClientTools(outputs []ResponsesOutput, adapter *Respo
 		}
 		if adapter.CustomTools[output.Name] {
 			output.Type = "custom_tool_call"
-			output.ID = customToolCallItemID(output.ID)
+			itemID := output.ID
+			if itemID == "" {
+				itemID = output.CallID
+			}
+			output.ID = customToolCallItemID(itemID)
 			output.Input = extractCustomToolCallInput(output.Arguments)
 			output.Arguments = ""
 			output.Namespace = ""

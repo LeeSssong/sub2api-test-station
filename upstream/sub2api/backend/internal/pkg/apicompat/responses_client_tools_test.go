@@ -110,6 +110,16 @@ func TestCustomToolCallItemID_PreservesClientNamespace(t *testing.T) {
 	require.Equal(t, "ctc_abc", customToolCallItemID("ctc_abc"))
 }
 
+func TestRestoreResponsesClientToolPayload_UsesCallIDWhenItemIDMissing(t *testing.T) {
+	mapping := ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}}
+	payload := []byte(`{"output":[{"type":"function_call","call_id":"call_missing_id","name":"exec","arguments":"{\"input\":\"pwd\"}"}]}`)
+
+	restored, changed, err := RestoreResponsesClientToolPayload(payload, mapping)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.JSONEq(t, `{"output":[{"type":"custom_tool_call","id":"ctc_missing_id","call_id":"call_missing_id","name":"exec","input":"pwd"}]}`, string(restored))
+}
+
 func TestResponsesClientToolStreamRestorer_CustomToolBuffersWrapperAndSequences(t *testing.T) {
 	restorer := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}})
 	added := restorer.Restore(ResponsesStreamEvent{Type: "response.output_item.added", SequenceNumber: 7, OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", ID: "fc_i1", CallID: "c1", Name: "exec", Status: "in_progress"}})
@@ -167,6 +177,12 @@ func TestResponsesClientToolStreamRestorer_RawCustomIDsUseClientNamespace(t *tes
 	require.Len(t, done, 2)
 	require.Equal(t, "ctc_raw", gjson.GetBytes(done[0], "item_id").String())
 	require.Equal(t, "ctc_raw", gjson.GetBytes(done[1], "item_id").String())
+
+	missingID := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}})
+	streamAdded := missingID.Restore(ResponsesStreamEvent{Type: "response.output_item.added", OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", CallID: "call_missing_id", Name: "exec"}})
+	require.Equal(t, "ctc_missing_id", streamAdded[0].Item.ID)
+	streamClosed := missingID.Restore(ResponsesStreamEvent{Type: "response.output_item.done", OutputIndex: 0, Item: &ResponsesOutput{Type: "function_call", CallID: "call_missing_id", Name: "exec", Arguments: `{"input":"pwd"}`}})
+	require.Equal(t, "ctc_missing_id", streamClosed[0].Item.ID)
 }
 
 func TestResponsesClientToolStreamRestorer_RestoresNamespaceLifecycle(t *testing.T) {

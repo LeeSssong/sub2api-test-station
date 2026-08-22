@@ -163,7 +163,7 @@
 	@sub2api_html {
 		header Accept *text/html*
 		not {
-		path /api/* /relay-ops/* /ops /ops/* /health /home-assets/* /xingqiao-update-ui.* /__sub2api-official-index /admin/lab /admin/lab/*
+		path /api/* /relay-ops/* /ops /ops/* /health /home-assets/* /xingqiao-update-ui.* /__sub2api-official-index /admin/lab*
 		}
 	}
 	handle @sub2api_html {

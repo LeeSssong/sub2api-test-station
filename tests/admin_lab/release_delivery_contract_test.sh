@@ -30,7 +30,7 @@ for needle in \
   grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
 done
 
-for needle in '/admin/lab /admin/lab/*' 'handle @admin_lab_app'; do
+for needle in '/admin/lab*' 'handle @admin_lab_app'; do
   grep -Fq "$needle" "$caddy" || fail "Caddyfile missing lab routing contract: $needle"
 done
 

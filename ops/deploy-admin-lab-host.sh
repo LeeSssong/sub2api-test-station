@@ -30,7 +30,7 @@ rollback() {
     cat "$deploy_root/admin-lab/Caddyfile.backup" >"$deploy_root/Caddyfile"
     chown root:root "$deploy_root/Caddyfile"
     chmod 0644 "$deploy_root/Caddyfile"
-    docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || true
+    docker exec -i sub2api-caddy-1 caddy reload --config - --adapter caddyfile <"$deploy_root/admin-lab/Caddyfile.backup" >/dev/null 2>&1 || true
   fi
 }
 trap rollback ERR
@@ -85,8 +85,8 @@ install -o root -g root -m 0600 "$effective_env" "$deploy_root/admin-lab/.env"
 compose=(docker compose --project-name sub2api-admin-lab --project-directory "$deploy_root/infra" --env-file "$deploy_root/admin-lab/.env" -f "$deploy_root/infra/compose.admin-lab.yaml")
 "${compose[@]}" config --quiet || fail 'lab compose config failed'
 "${compose[@]}" up -d --no-build --wait || fail 'lab compose did not become ready'
-docker exec sub2api-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null || fail 'Caddy lab route validation failed'
-docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null || fail 'Caddy lab route reload failed'
+docker exec -i sub2api-caddy-1 caddy validate --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route validation failed'
+docker exec -i sub2api-caddy-1 caddy reload --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route reload failed'
 
 html=$(curl -ksS --fail --max-time 20 "$base_url/admin/lab/") || fail 'public lab route probe failed'
 grep -Fq '/admin/lab/assets/' <<<"$html" || fail 'public lab HTML does not contain lab asset base path'

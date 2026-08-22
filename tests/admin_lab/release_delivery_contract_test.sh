@@ -54,7 +54,8 @@ for needle in \
   'admin-lab-gateway' \
   'admin-lab-frontend' \
   '/admin/lab/assets/' \
-  'caddy validate' \
+  'caddy validate --config -' \
+  'caddy reload --config -' \
   'caddy reload' \
   'Caddyfile.backup' \
   'cat "$stage/infra/Caddyfile" >"$deploy_root/Caddyfile"' \

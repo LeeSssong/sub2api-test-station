@@ -4,6 +4,8 @@
 
 > 根总控状态：`INTEGRATING`；合并提交 `04a146e08` 已进入根 `main`，待推送、发布预检、蓝绿部署和线上专项验收。
 
+> 生产收口：状态 `DONE`。已推送 `main@67a41463fdadc4ef05dc1b97c52bc0a328586c37`，测试树 `8a5e5a8a2396fcb509f801a511a99a47f4e2556c`；预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。宿主记录 `/var/lib/sub2api/release-records/20260822T204341Z-production-3918367.json` 的 requested source/tree/tested tree 与本次发布一致；公网 `/healthz`、`/readyz`、`/health` 均 200，管理员设置 API 读取 200，乐观监控资源验收通过。无迁移、无配置 schema 变化、无生产数据写入、无 GitHub Actions。
+
 - **T54 分组调度策略与乐观体验卡**：状态 `IMPLEMENTING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格与计划已获用户确认，独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；尚未合并、推送、部署或线上验收。预计无迁移、无生产数据写入，`downtime_required=false`。
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）

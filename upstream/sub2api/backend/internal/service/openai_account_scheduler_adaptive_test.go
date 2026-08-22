@@ -9,6 +9,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestApplyOpenAISchedulerGroupPolicyWeightedDisablesFairness(t *testing.T) {
+	weights := GatewayOpenAIWSSchedulerScoreWeightsView{Priority: 1, Load: 1, Queue: 1, ErrorRate: 1, TTFT: 1, UpstreamCost: 1, Previous: 5, SessionSticky: 3}
+	fairness := defaultOpenAISchedulerFairnessSettings()
+	policy := OpenAISchedulerGroupPolicy{
+		Mode:   OpenAISchedulerGroupPolicyModeWeightedOverride,
+		Values: OpenAISchedulerPolicyValues{TopK: 4, Priority: 2, Load: 3, Queue: 1, ErrorRate: 1, TTFT: 1, UpstreamCost: 2, PreviousResponse: 7, SessionSticky: 8},
+	}
+	gotWeights, gotFairness := applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
+	require.Equal(t, 2.0, gotWeights.Priority)
+	require.Equal(t, 3.0, gotWeights.Load)
+	require.Equal(t, 7.0, gotWeights.Previous)
+	require.Equal(t, 8.0, gotWeights.SessionSticky)
+	require.Equal(t, 0.0, gotFairness.FairnessWeight)
+	require.Equal(t, OpenAISchedulerCandidatePoolModeTopK, gotFairness.CandidatePoolMode)
+}
+
+func TestApplyOpenAISchedulerGroupPolicyFairKeepsFairness(t *testing.T) {
+	weights := GatewayOpenAIWSSchedulerScoreWeightsView{Priority: 1, Load: 1, Queue: 1, ErrorRate: 1, TTFT: 1, UpstreamCost: 1, Previous: 5, SessionSticky: 3}
+	fairness := defaultOpenAISchedulerFairnessSettings()
+	policy := OpenAISchedulerGroupPolicy{
+		Mode:   OpenAISchedulerGroupPolicyModeFair,
+		Values: OpenAISchedulerPolicyValues{TopK: 10, Priority: 1.2, Load: 1.4, Queue: 1.2, ErrorRate: 2.5, TTFT: 2, UpstreamCost: 1.5, ExplorationRatio: 40, StarvationThresholdSeconds: 10800, FairnessWeight: 5, CandidatePoolMode: OpenAISchedulerCandidatePoolModeHybrid, PreviousResponse: 5, SessionSticky: 3},
+	}
+	gotWeights, gotFairness := applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
+	require.Equal(t, 2.5, gotWeights.ErrorRate)
+	require.Equal(t, 2.0, gotWeights.TTFT)
+	require.Equal(t, 5.0, gotFairness.FairnessWeight)
+	require.Equal(t, 40, gotFairness.ExplorationRatio)
+	require.Equal(t, 10800, gotFairness.StarvationThresholdSeconds)
+}
+
 func adaptiveCandidate(id int64, score float64) openAIAccountCandidateScore {
 	return openAIAccountCandidateScore{
 		account:  &Account{ID: id},

@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
+
+- **T54 分组调度策略与乐观体验卡**：状态 `DESIGNING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格：`docs/superpowers/specs/2026-08-23-t54-group-scheduler-policy-optimistic-experience-design.md`。尚未计划、实现、合并、推送、部署或线上验收；预计无迁移、无生产数据写入，`downtime_required=false`。
+
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 
 - **T53 管理员隔离测试站**：状态 `INTEGRATING`。候选 `codex/t53-admin-lab@b51dd821d4bf476f1e0eeabfcf04caf20cfffdf2` 已由根任务合并到 `main@abe3fb1b09cfa9a7ad3e733618ff18ebb06db618`，并在合并后的树上通过 admin-lab contract/smoke、Go `internal/lab`、前端 focused Vitest、前端生产构建、后端 server build、Compose config、Caddy adapt 与 `git diff --check`。范围为复用 Sub 原生管理员 API/页面/迁移集合，在独立 PostgreSQL、Redis、Cookie、secret、网络和 mock 出站边界下挂载 `/admin/lab/`；不实现额度账本、充值包、经营分析或第二账务事实源。尚未推送、生产部署或线上验收；发布前需执行根发布预检、宿主 live smoke 和既有本地/宿主蓝绿链。详见 `docs/handoffs/2026-08-22-t53-admin-lab-handoff.md`。

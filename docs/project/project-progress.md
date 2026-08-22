@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T54 分组调度策略与乐观体验卡（2026-08-23）：** 状态：`DESIGNING`。承接“优化分组调度设置”窗口：每组先选策略模式，再在“调度权值覆盖”和“公平调度”之间二选一；公平调度提供特惠、均衡、Pro 三个预设并自动回填权值；公平模式增加最长闲置保护和按组候选池探索，继续复用原生 S1/S2、sticky、并发和故障域门槛。分组体验卡只保留乐观主指标，不展示试用探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅作为后台资格与健康判定输入。规格已写入 `docs/superpowers/specs/2026-08-23-t54-group-scheduler-policy-optimistic-experience-design.md`，尚未编写计划、实现、合并、部署或生产验证；预计无迁移、无生产数据写入，`downtime_required=false`。
+**T54 分组调度策略与乐观体验卡（2026-08-23）：** 状态：`IMPLEMENTING`。承接“优化分组调度设置”窗口：每组先选策略模式，再在“调度权值覆盖”和“公平调度”之间二选一；公平调度提供特惠、均衡、Pro 三个预设并自动回填权值；公平模式增加最长闲置保护和按组候选池探索，继续复用原生 S1/S2、sticky、并发和故障域门槛。分组体验卡只保留乐观主指标，不展示试用探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅作为后台资格与健康判定输入。规格与计划已获用户确认，将在独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；不进入 T53 当前占用的合并/发布车道。预计无迁移、无生产数据写入，`downtime_required=false`。
 
 **T53-R1 测试站生产交付修复（2026-08-23）：** 状态：`INTEGRATING`。2026-08-23 根据用户截图复核发现，原 T53 线上验收只检查 `/admin/lab/` HTTP 200，实际响应仍是引用 `/assets/...` 的主站 HTML，浏览器进入主站前端 404；生产宿主也没有任何 `admin-lab-*` 服务。原宿主记录 `/var/lib/sub2api/release-records/20260822T175244Z-production-3697754.json` 仅证明主栈蓝绿切换成功，不能证明独立 lab 栈已交付。根因是发布链漏传并漏启 `infra/compose.admin-lab.yaml`、lab 前端/gateway 配置和 mock 工具。现回退原 `DONE` 结论，登记 T53-R1：补充失败回归测试、独立发布附件、root-owned `0600` secret env、独立 `sub2api-admin-lab` Compose 启动、容器健康与 HTML base/assets 严格验收；保持生产 PostgreSQL、Redis、Caddy、活动 API 身份不变，不连接生产支付/上游、不写生产数据库、不使用 GitHub Actions。原 T53 的代码与失败证据保留。
 

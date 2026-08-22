@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
 
-- **T54 分组调度策略与乐观体验卡**：状态 `DESIGNING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格：`docs/superpowers/specs/2026-08-23-t54-group-scheduler-policy-optimistic-experience-design.md`。尚未计划、实现、合并、推送、部署或线上验收；预计无迁移、无生产数据写入，`downtime_required=false`。
+- **T54 分组调度策略与乐观体验卡**：状态 `IMPLEMENTING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格与计划已获用户确认，独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；尚未合并、推送、部署或线上验收，不进入 T53 当前占用的发布车道。预计无迁移、无生产数据写入，`downtime_required=false`。
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 

@@ -1,0 +1,41 @@
+version: v1
+source: LAB_ONLY
+administrator:
+  email: admin-lab@example.test
+users:
+  - id: user_a
+    scenario: paid_and_bonus
+    paid_q: 100
+    bonus_q: 20
+  - id: user_b
+    scenario: bonus_only
+    paid_q: 0
+    bonus_q: 10
+  - id: user_c
+    scenario: pending_repayment
+    pending_repayment_q: 0.40
+  - id: user_d
+    scenario: legacy_balance_as_paid
+    paid_q: 50
+    legacy_balance_migrated: true
+groups:
+  - id: group_alpha
+  - id: group_beta
+models:
+  - id: model_lab_fast
+  - id: model_lab_stream
+  - id: model_lab_failure
+usage_scenarios:
+  - id: normal
+  - id: upstream_failed
+  - id: stream_interrupted
+  - id: crosses_paid_and_bonus
+payment_scenarios:
+  - id: payment_success
+  - id: payment_failed
+  - id: refund_reserved
+cost_scenarios:
+  - id: account_effective_cost
+    status: confirmed
+  - id: account_effective_cost_missing
+    status: pending_confirmation

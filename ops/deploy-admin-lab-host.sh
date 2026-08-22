@@ -27,7 +27,9 @@ docker network inspect sub2api_default >/dev/null 2>&1 || fail 'production gatew
 rollback() {
   docker compose --project-name sub2api-admin-lab --project-directory "$deploy_root/infra" --env-file "$deploy_root/admin-lab/.env" -f "$deploy_root/infra/compose.admin-lab.yaml" down --remove-orphans >/dev/null 2>&1 || true
   if [[ -f "$deploy_root/admin-lab/Caddyfile.backup" ]]; then
-    install -o root -g root -m 0644 "$deploy_root/admin-lab/Caddyfile.backup" "$deploy_root/Caddyfile"
+    cp "$deploy_root/admin-lab/Caddyfile.backup" "$deploy_root/Caddyfile"
+    chown root:root "$deploy_root/Caddyfile"
+    chmod 0644 "$deploy_root/Caddyfile"
     docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || true
   fi
 }
@@ -69,7 +71,9 @@ fi
 
 install -d -o root -g root -m 0755 "$deploy_root/infra/admin-lab" "$deploy_root/tools/admin-lab" "$deploy_root/admin-lab"
 install -o root -g root -m 0644 "$deploy_root/Caddyfile" "$deploy_root/admin-lab/Caddyfile.backup"
-install -o root -g root -m 0644 "$stage/infra/Caddyfile" "$deploy_root/Caddyfile"
+cp "$stage/infra/Caddyfile" "$deploy_root/Caddyfile"
+chown root:root "$deploy_root/Caddyfile"
+chmod 0644 "$deploy_root/Caddyfile"
 install -o root -g root -m 0644 "$stage/infra/compose.admin-lab.yaml" "$deploy_root/infra/compose.admin-lab.yaml"
 install -o root -g root -m 0644 "$stage/infra/.env.admin-lab.example" "$deploy_root/infra/.env.admin-lab.example"
 install -o root -g root -m 0644 "$stage/infra/admin-lab/Dockerfile.frontend" "$deploy_root/infra/admin-lab/Dockerfile.frontend"

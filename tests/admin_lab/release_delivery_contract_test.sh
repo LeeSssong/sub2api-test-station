@@ -57,6 +57,7 @@ for needle in \
   'caddy validate' \
   'caddy reload' \
   'Caddyfile.backup' \
+  'cp "$stage/infra/Caddyfile" "$deploy_root/Caddyfile"' \
   '主站 HTML' \
   'rollback'; do
   grep -Fq "$needle" "$executor" || fail "host executor missing contract: $needle"

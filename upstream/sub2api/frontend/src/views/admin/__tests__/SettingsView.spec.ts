@@ -236,8 +236,8 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.fairnessWeightHint": "把“距上次使用时间”加入排序；0=关闭，数值越大越优先长期未使用账号（范围 0-10）。",
     "admin.settings.openaiExperimentalScheduler.groupOverrides": "分组覆盖（JSON）",
     "admin.settings.openaiExperimentalScheduler.groupOverridesHint": "按分组 ID 覆盖公平参数；未填写字段继承全局值。",
-    "admin.settings.openaiExperimentalScheduler.topKHint": "每次先保留得分最高的候选数；数值越小越省探测开销，但可能长期忽略低分账号。",
-    "admin.settings.openaiExperimentalScheduler.priorityWeightHint": "账号 priority 的权重；越大越偏向优先级数字更小的账号，0 表示不参与排序。",
+    "admin.settings.openaiExperimentalScheduler.topKHint": "每次先保留得分最高的候选数；数值越小越省探测开销，但可能长期忽略低分账号。范围：正整数（>= 1）；留空继承配置/默认值。",
+    "admin.settings.openaiExperimentalScheduler.priorityWeightHint": "账号 priority 的权重；越大越偏向优先级数字更小的账号，0 表示不参与排序。范围：非负有限数（>= 0，支持小数）；留空继承配置/默认值。",
     "admin.settings.upstreamBillingProbe.title": "上游倍率自动探测",
     "admin.settings.upstreamBillingProbe.description": "定期获取 OpenAI API Key 所连接上游 Sub2API 站点声明的计费倍率。",
     "admin.settings.upstreamBillingProbe.enabled": "启用全局自动探测",
@@ -1461,6 +1461,29 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(card.text()).toContain("范围 0-10");
     expect(wrapper.text()).toContain("TopK");
     expect(wrapper.text()).toContain("账号 priority 的权重");
+    expect(wrapper.text()).toContain("范围：正整数（>= 1）");
+    expect(wrapper.text()).toContain("范围：非负有限数（>= 0，支持小数）");
+
+    const weightHintKeys = [
+      "topKHint",
+      "priorityWeightHint",
+      "loadWeightHint",
+      "queueWeightHint",
+      "errorRateWeightHint",
+      "ttftWeightHint",
+      "resetWeightHint",
+      "quotaHeadroomWeightHint",
+      "upstreamCostWeightHint",
+      "previousResponseWeightHint",
+      "sessionStickyWeightHint",
+    ] as const;
+    for (const key of weightHintKeys) {
+      const zhHint = zhSettings.settings.openaiExperimentalScheduler[key];
+      const enHint = enSettings.settings.openaiExperimentalScheduler[key];
+      const range = key === "topKHint" ? ">= 1" : ">= 0";
+      expect(zhHint).toContain(range);
+      expect(enHint).toContain(range);
+    }
 
     await card.get('[data-testid="scheduler-pool-mode"]').setValue("all_eligible");
     await card.get('[data-testid="scheduler-exploration-ratio"]').setValue(35);

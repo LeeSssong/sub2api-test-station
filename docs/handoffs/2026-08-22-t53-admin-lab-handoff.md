@@ -8,7 +8,7 @@
 
 - 基线 `main`：`ca92211e9341e5ae2baba49666604bcd049c6754`
 - 候选分支：`codex/t53-admin-lab`
-- 候选 HEAD：`b99dd8d6ae7acb1999d01e463652e0d68302d95a`
+- 候选 HEAD：`032fac2ec85012cb4216836a1a9923dc67dfacf0`
 - worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t53-admin-lab`
 
 ## 交付范围

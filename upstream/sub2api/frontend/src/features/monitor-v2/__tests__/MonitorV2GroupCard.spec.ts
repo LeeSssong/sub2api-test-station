@@ -37,7 +37,7 @@ describe('MonitorV2GroupCard', () => {
           ttft: { state: 'available', value: 2220, sample_count: 28 },
           average_latency: { state: 'available', value: 3810, sample_count: 28 },
           source_updated_at: '2026-08-21T01:54:00Z',
-          timeline: [{ bucket_start: '2026-08-21T01:00:00Z', status: 'operational', latency_ms: 2220 }],
+          timeline: [{ bucket_start: '2026-08-21T01:00:00Z', status: 'operational', latency_ms: 2220, has_result: true }],
         },
       },
       global: {

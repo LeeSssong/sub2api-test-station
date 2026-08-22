@@ -191,6 +191,7 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 			b.bucket_start,
 			CASE WHEN COUNT(sr.id) FILTER (WHERE sr.status = 'success') > 0
 				THEN 'operational' ELSE 'unavailable' END AS bucket_status,
+			COUNT(sr.id) > 0 AS bucket_has_result,
 			AVG(sr.latency_ms) FILTER (WHERE sr.status = 'success' AND sr.latency_ms IS NOT NULL) AS bucket_latency_ms
 		FROM (SELECT DISTINCT group_id FROM scopes) s
 		CROSS JOIN buckets b
@@ -236,11 +237,12 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 			operationalBuckets, totalBuckets, ttftSamples, latencySamples int
 			bucketStart                                                   time.Time
 			bucketStatus, currentStatus                                   string
+			bucketHasResult                                               bool
 			latestCheckedAt                                               sql.NullTime
 			bucketLatency, ttftP50, averageLatency                        sql.NullFloat64
 		)
 		if err := rows.Scan(
-			&groupID, &bucketStart, &bucketStatus, &bucketLatency,
+			&groupID, &bucketStart, &bucketStatus, &bucketHasResult, &bucketLatency,
 			&operationalBuckets, &totalBuckets, &ttftP50, &averageLatency,
 			&ttftSamples, &latencySamples, &currentStatus, &latestCheckedAt,
 		); err != nil {
@@ -263,6 +265,7 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 			BucketStart: bucketStart.UTC(),
 			Status:      bucketStatus,
 			LatencyMS:   accountMonitorRoundedFloat(bucketLatency),
+			HasResult:   bucketHasResult,
 		}
 		projection := out[groupID]
 		projection.Timeline = append(projection.Timeline, point)

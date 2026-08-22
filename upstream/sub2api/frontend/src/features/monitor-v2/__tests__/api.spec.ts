@@ -11,9 +11,10 @@ const timeline = Array.from({ length: 28 }, (_, index) => ({
   bucket_start: new Date(Date.UTC(2026, 6, 29, 6 + index * 6)).toISOString(),
   status: 'operational',
   latency_ms: 1320,
+  has_result: true,
 }))
 const validPayload = {
-  contract_version: '7',
+  contract_version: '8',
   refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',
@@ -38,7 +39,7 @@ const validPayload = {
 describe('Monitor V2 API contract', () => {
   beforeEach(() => get.mockReset())
 
-  it('returns a validated version 7 snapshot with native metrics', async () => {
+  it('returns a validated version 8 snapshot with explicit probe-result evidence', async () => {
     get.mockResolvedValue({ data: validPayload })
 
     const snapshot = await getMonitorV2Snapshot('7d')
@@ -49,9 +50,21 @@ describe('Monitor V2 API contract', () => {
     })
     expect(snapshot.groups[0]).toMatchObject({ name: 'GPT-Pro', availability: { value: 99 } })
     expect(snapshot.groups[0].timeline[0].status).toBe('operational')
+    expect(snapshot.groups[0].timeline[0].has_result).toBe(true)
     expect(snapshot.groups[0].source_updated_at).toBe('2026-07-29T11:59:00Z')
     expect(snapshot.groups[0]).not.toHaveProperty('cache_hit')
     expect(snapshot.groups[0].timeline[0]).not.toHaveProperty('success_count')
+  })
+
+  it('requires explicit timeline result evidence', () => {
+    const { has_result: _hasResult, ...withoutResultEvidence } = validPayload.groups[0].timeline[0]
+    expect(() => validateMonitorV2Snapshot({
+      ...validPayload,
+      groups: [{
+        ...validPayload.groups[0],
+        timeline: validPayload.groups[0].timeline.map((point, index) => index === 0 ? withoutResultEvidence : point),
+      }],
+    })).toThrow('has_result')
   })
 
   it('rejects unsupported contract versions and non-binary states', () => {

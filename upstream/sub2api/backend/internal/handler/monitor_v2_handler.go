@@ -38,6 +38,7 @@ type monitorV2TimelinePointResponse struct {
 	BucketStart string `json:"bucket_start"`
 	Status      string `json:"status"`
 	LatencyMS   *int   `json:"latency_ms,omitempty"`
+	HasResult   bool   `json:"has_result"`
 }
 
 type monitorV2GroupResponse struct {
@@ -127,6 +128,7 @@ func monitorV2SnapshotFromService(snapshot *service.MonitorV2Snapshot) monitorV2
 				BucketStart: point.BucketStart.UTC().Format(time.RFC3339),
 				Status:      point.Status,
 				LatencyMS:   point.LatencyMS,
+				HasResult:   point.HasResult,
 			})
 		}
 		groups = append(groups, monitorV2GroupResponse{

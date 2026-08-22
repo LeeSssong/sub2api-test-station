@@ -129,6 +129,7 @@ function timelinePoint(value: unknown, path: string): MonitorV2TimelinePoint {
     bucket_start: bucketStart,
     status,
     latency_ms: source.latency_ms == null ? null : finiteNumber(source.latency_ms, `${path}.latency_ms`),
+    has_result: boolean(source.has_result, `${path}.has_result`),
   }
 }
 

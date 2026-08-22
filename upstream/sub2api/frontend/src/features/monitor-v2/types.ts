@@ -1,4 +1,4 @@
-export const MONITOR_V2_CONTRACT_VERSION = '7' as const
+export const MONITOR_V2_CONTRACT_VERSION = '8' as const
 
 export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
@@ -17,6 +17,7 @@ export interface MonitorV2TimelinePoint {
   bucket_start: string
   status: MonitorV2GroupStatus
   latency_ms: number | null
+  has_result: boolean
 }
 
 export interface MonitorV2Group {

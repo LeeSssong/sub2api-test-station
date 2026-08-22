@@ -65,7 +65,7 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '7',
+  contract_version: '8',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',
@@ -89,6 +89,7 @@ const snapshot: MonitorV2Snapshot = {
           bucket_start: '2026-07-29T06:00:00Z',
           status: 'operational',
           latency_ms: 1320,
+          has_result: true,
         },
       ],
     },

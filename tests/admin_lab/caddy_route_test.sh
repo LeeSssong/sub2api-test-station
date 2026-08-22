@@ -8,9 +8,18 @@ for needle in \
   '@admin_lab_api path /admin/lab/api/*' \
   '@admin_lab_ws path /admin/lab/ws/*' \
   'reverse_proxy admin-lab-gateway:8088' \
-  'header_up X-Admin-Lab-Only 1'; do
+  'header_up X-Admin-Lab-Only 1' \
+  'uri strip_prefix /admin/lab'; do
   grep -Fq "$needle" "$CADDY" || { echo "missing Caddy lab route: $needle" >&2; exit 1; }
 done
+grep -Fq 'proxy_pass http://admin-lab-api:8080;' infra/admin-lab/gateway.conf || {
+  echo 'lab gateway must preserve native API path when proxying' >&2
+  exit 1
+}
+if grep -Fq 'uri strip_prefix /admin/lab/api' "$CADDY"; then
+  echo 'lab API route strips native /api prefix and cannot reach Sub API' >&2
+  exit 1
+fi
 lab_line=$(grep -n '@admin_lab_root' "$CADDY" | head -n1 | cut -d: -f1)
 prod_line=$(grep -nF 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {' "$CADDY" | tail -n1 | cut -d: -f1)
 [[ "$lab_line" -lt "$prod_line" ]] || { echo 'lab route must precede production fallback' >&2; exit 1; }

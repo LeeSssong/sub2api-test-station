@@ -228,7 +228,7 @@
 
 	@admin_lab_api path /admin/lab/api/*
 	handle @admin_lab_api {
-	  uri strip_prefix /admin/lab/api
+	  uri strip_prefix /admin/lab
 	  reverse_proxy admin-lab-gateway:8088 {
 	    header_up -Cookie
 	    header_up Authorization {http.request.header.Authorization}

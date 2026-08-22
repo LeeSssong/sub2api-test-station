@@ -9,11 +9,13 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 controller=ops/release-admin-lab.sh
 executor=ops/deploy-admin-lab-host.sh
 compose=infra/compose.admin-lab.yaml
+caddy=infra/Caddyfile
 [[ -f "$controller" ]] || fail 'admin lab release controller is missing'
 [[ -x "$controller" ]] || fail 'admin lab release controller is not executable'
 [[ -f "$executor" ]] || fail 'admin lab host executor is missing'
 [[ -x "$executor" ]] || fail 'admin lab host executor is not executable'
 [[ -f "$compose" ]] || fail 'admin lab compose is missing'
+[[ -f "$caddy" ]] || fail 'Caddyfile is missing'
 
 for needle in \
   'compose.admin-lab.yaml' \
@@ -26,6 +28,10 @@ for needle in \
   'admin-lab-bundle' \
   'sha256'; do
   grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
+done
+
+for needle in '/admin/lab /admin/lab/*' 'handle @admin_lab_app'; do
+  grep -Fq "$needle" "$caddy" || fail "Caddyfile missing lab routing contract: $needle"
 done
 
 for needle in \

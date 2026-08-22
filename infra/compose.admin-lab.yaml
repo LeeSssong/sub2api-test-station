@@ -111,7 +111,10 @@ services:
       POSTGRES_DB: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
       POSTGRES_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
       POSTGRES_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
-    volumes: [admin-lab-postgres-data:/var/lib/postgresql/data]
+    # PostgreSQL 18 stores the cluster under a versioned subdirectory below
+    # /var/lib/postgresql; mounting the legacy /data path makes the image
+    # fail-closed instead of starting with an ambiguous volume layout.
+    volumes: [admin-lab-postgres-data:/var/lib/postgresql]
     networks:
       admin-lab: {}
     healthcheck:
@@ -143,7 +146,7 @@ services:
       admin-lab: {}
     expose: ["8091"]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8091/healthz"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8091/healthz"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -159,7 +162,7 @@ services:
       admin-lab: {}
     expose: ["8092"]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8092/healthz"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8092/healthz"]
       interval: 5s
       timeout: 5s
       retries: 10

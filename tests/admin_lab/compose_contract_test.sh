@@ -19,6 +19,19 @@ for needle in \
   grep -Fq "$needle" <<<"$config" || { echo "missing compose isolation contract: $needle" >&2; exit 1; }
 done
 
+grep -Fq '/var/lib/postgresql:/var/lib/postgresql' <<<"$config" || {
+  echo 'PostgreSQL 18 lab volume must mount /var/lib/postgresql (not the legacy data subpath)' >&2
+  exit 1
+}
+grep -Fq 'http://127.0.0.1:8091/healthz' <<<"$config" || {
+  echo 'upstream mock healthcheck must use IPv4 loopback' >&2
+  exit 1
+}
+grep -Fq 'http://127.0.0.1:8092/healthz' <<<"$config" || {
+  echo 'payment mock healthcheck must use IPv4 loopback' >&2
+  exit 1
+}
+
 # API and worker must be locally buildable from the checked-out Sub2API source,
 # while retaining a deterministic image tag for promotion/reuse.  An image-only
 # declaration would silently pull an unrelated registry artifact and violate

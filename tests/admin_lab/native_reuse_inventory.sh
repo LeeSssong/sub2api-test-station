@@ -30,7 +30,9 @@ require_file infra/Caddyfile
 require_text 'RegisterAdminRoutes(v1' upstream/sub2api/backend/internal/server/router.go
 require_text 'RegisterAuthRoutes(v1' upstream/sub2api/backend/internal/server/router.go
 require_text 'baseURL: getAPIBaseURL()' upstream/sub2api/frontend/src/api/client.ts
-require_text 'localStorage.getItem('\''auth_token'\'')' upstream/sub2api/frontend/src/api/client.ts
+if ! grep -Fq "authStorageGet('auth_token')" upstream/sub2api/frontend/src/api/client.ts; then
+  require_text 'localStorage.getItem('\''auth_token'\'')' upstream/sub2api/frontend/src/api/client.ts
+fi
 require_text 'reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080}' infra/Caddyfile
 require_text 'DATABASE_HOST: postgres' infra/compose.yaml
 require_text 'REDIS_HOST: redis' infra/compose.yaml

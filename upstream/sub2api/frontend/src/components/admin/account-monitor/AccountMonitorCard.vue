@@ -38,21 +38,6 @@
               </template>
               <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
             </HelpTooltip>
-            <HelpTooltip v-else-if="isNotRecommended" class="!ml-0" trigger="hover-click" :reset-key="recommendationResetKey" data-test="recommendation-reason-trigger">
-              <template #trigger>
-                <button
-                  class="inline-flex items-center gap-0.5 text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:text-red-200"
-                  data-test="recommendation-reason-button"
-                  type="button"
-                  :title="`${recommendationLabel}，${recommendationReasonHint}`"
-                  :aria-label="`${recommendationLabel}，${recommendationReasonHint}`"
-                >
-                  <span data-test="group-recommendation">{{ recommendationLabel }}</span>
-                  <Icon name="infoCircle" size="xs" />
-                </button>
-              </template>
-              <div data-test="group-recommendation-reason" class="line-clamp-2 max-w-[min(16rem,calc(100vw-1.5rem))] whitespace-normal break-words leading-5">{{ recommendationReasonHint }}</div>
-            </HelpTooltip>
             <span v-else data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
           </template>
         </div>
@@ -104,7 +89,7 @@
               <button class="w-full cursor-help text-left" type="button" :title="scoreTooltip" :aria-label="scoreTooltip">
                 <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
                 <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
-                <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
+        <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
               </button>
             </template>
             <div data-test="score-breakdown-tooltip">{{ scoreTooltip }}</div>
@@ -150,9 +135,9 @@
       </section>
 
       <section class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6" aria-label="账号服务指标">
-        <MetricCell data-test="success-rate-metric" tone="success" label="探测成功率" :value="formatPercent(probeSuccessRate)" :detail="`${formatNumber(probeSampleCount)} 次探测样本，${formatNumber(probeFailureCount)} 次失败`" />
-        <MetricCell data-test="ttft-metric" tone="ttft" label="首 Token 延迟 P50" :value="formatMs(probeTTFTP50MS)" :detail="sampleDetail(probeSuccessCount)" />
-        <MetricCell data-test="latency-metric" tone="latency" label="完整响应耗时 P95" :value="formatMs(probeLatencyP95MS)" :detail="sampleDetail(probeSuccessCount)" />
+        <MetricCell data-test="success-rate-metric" tone="success" label="可用性" :value="formatPercent(probeSuccessRate)" detail="当前可用性" />
+        <MetricCell data-test="ttft-metric" tone="ttft" label="首 Token 延迟 P50" :value="formatMs(probeTTFTP50MS)" detail="成功响应表现" />
+        <MetricCell data-test="latency-metric" tone="latency" label="完整响应耗时 P95" :value="formatMs(probeLatencyP95MS)" detail="成功响应表现" />
         <div class="min-h-[116px] min-w-0 rounded-lg border border-violet-200 bg-violet-50 p-3 service-metric dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-slate-400">
             <HelpTooltip class="!ml-0" trigger="click" width-class="w-72" data-test="cost-tooltip-trigger">
@@ -184,13 +169,12 @@
         <CostMetric label="成本折合本站倍率" :value="formatMultiplier(account.equivalent_site_multiplier)" />
       </section>
 
-      <section class="mt-4 border-t border-gray-100 py-4 dark:border-slate-800" aria-label="近期探测" data-test="probe-section">
+      <section class="mt-4 border-t border-gray-100 py-4 dark:border-slate-800" aria-label="近期表现" data-test="timeline-section">
         <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-gray-800 dark:text-slate-100">近期探测</h3>
+            <h3 class="text-sm font-semibold text-gray-800 dark:text-slate-100">近期表现</h3>
             <button type="button" class="text-[11px] text-primary-600 hover:underline dark:text-primary-300" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button>
           </div>
-          <span class="text-[11px] text-gray-500 dark:text-slate-400" data-test="probe-summary">{{ probeSummary }}</span>
         </div>
         <div class="mt-3 grid h-9 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="timelineAriaLabel">
           <span
@@ -308,10 +292,8 @@ const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
-const recommendationIdentityRevision = ref(0)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
-const isNotRecommended = computed(() => recommendation.value?.status === 'not_recommended')
 const recommendationTargetLabel = computed(() => recommendation.value?.target_name || ({ gpt_pro: 'GPT-Pro', gpt_plus: 'GPT-Plus', gpt_special: 'GPT-特惠' }[recommendation.value?.target ?? ''] ?? '目标分组'))
 const recommendationLabel = computed(() => {
   switch (recommendation.value?.status) {
@@ -327,35 +309,10 @@ const recommendationTextClass = computed(() => ({
   'text-amber-600 dark:text-amber-300': recommendation.value?.status === 'observe' || recommendation.value?.status === 'blocked',
   'text-red-600 dark:text-red-300': recommendation.value?.status === 'not_recommended',
 }))
-watch(recommendation, (next, previous) => {
-  if (next === previous) return
-  if (next?.status === 'not_recommended' || previous?.status === 'not_recommended') {
-    recommendationIdentityRevision.value += 1
-  }
-})
-const recommendationResetKey = computed(() => isNotRecommended.value ? `${recommendationIdentityRevision.value}|${recommendation.value?.reason_codes?.[0] ?? ''}|${recommendation.value?.observed_at ?? ''}` : '')
-const recommendationReason = computed(() => {
-  const code = recommendation.value?.reason_codes?.[0]
-  return ({
-    codex_auth_default_pro: 'Codex Auth 默认进入 Pro',
-    sample_insufficient: '主动探测样本不足',
-    profit_below_minimum: '成本超过该分组利润下限',
-    auth_failed: '认证失败',
-    balance_unavailable: '余额不可用',
-    quota_unavailable: '配额不可用',
-    model_unavailable: '模型不可用',
-    success_rate_below_pro: '探测成功率未达到 Pro 门槛',
-    success_rate_below_plus: '探测成功率未达到 Plus 门槛',
-    success_rate_below_special: '探测成功率未达到特惠门槛',
-    ttft_exceeds_target: '首 Token 延迟超过目标',
-    latency_exceeds_limit: '完整响应耗时超过目标',
-  }[code ?? ''] ?? '主动探测质量不满足目标')
-})
-const recommendationReasonHint = computed(() => isNotRecommended.value ? `原因：${recommendationReason.value}` : '')
 const recommendationTooltip = computed(() => {
   const item = recommendation.value
   if (!item) return ''
-  return `推荐迁移至 ${recommendationTargetLabel.value}。原因：${recommendationReason.value}。依据：固定 7d 主动探测 ${formatNumber(item.sample_count)} 次，观察于 ${formatDateTime(item.observed_at)}。`
+  return `推荐迁移至 ${recommendationTargetLabel.value}`
 })
 
 watch(() => props.account.priority, (value) => {
@@ -391,9 +348,7 @@ const statusHeaderClass = computed(() => ({
   'border-red-100 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20': statusLabel.value === '不可用',
 }))
 const evidenceDetail = computed(() => {
-  if (props.account.evidence_source === 'monitor_probe') return `基于 ${formatNumber(props.account.sample_count)} 次主动探测`
-  if (props.account.evidence_source === 'stale') return '暂无有效主动探测证据'
-  return '等待主动探测证据'
+  return props.account.quality_score == null ? '评分暂不可用' : '当前服务表现'
 })
 const manualCost = computed(() => {
   if (props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type)) return props.account.multiplier.source === 'manual'
@@ -408,9 +363,7 @@ const costSourceTooltip = computed(() => {
   return '成本来源：当前没有可用的上游原生或手工成本证据'
 })
 const scoreTooltip = computed(() => {
-  const breakdown = props.account.score_breakdown
-  if (!breakdown || props.account.quality_score == null) return '暂无足够主动探测证据，无法计算评分构成'
-  return `评分构成：成本优势 ${formatScorePart(breakdown.cost)}，探测成功率 ${formatScorePart(breakdown.success)}，TTFT ${formatScorePart(breakdown.ttft)}，总耗时 ${formatScorePart(breakdown.latency)}，合计 ${scoreLabel.value} / 100`
+  return props.account.quality_score == null ? '当前服务评分暂不可用' : `当前服务评分 ${scoreLabel.value} / 100`
 })
 const scoreEligible = computed(() => props.account.score_status
   ? ['eligible', 'capped'].includes(props.account.score_status)
@@ -429,12 +382,9 @@ const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
 const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
-const probeSampleCount = computed(() => props.account.probe_sample_count ?? props.account.sample_count ?? 0)
-const probeSuccessCount = computed(() => props.account.probe_success_count ?? props.account.success_sample_count ?? 0)
 const probeSuccessRate = computed(() => props.account.probe_success_rate ?? props.account.success_rate ?? 0)
 const probeTTFTP50MS = computed(() => props.account.probe_ttft_p50_ms ?? props.account.ttft_p50_ms ?? null)
 const probeLatencyP95MS = computed(() => props.account.probe_latency_p95_ms ?? props.account.latency_p95_ms ?? null)
-const probeFailureCount = computed(() => Math.max(0, probeSampleCount.value - probeSuccessCount.value))
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const statisticsCutoffLabel = computed(() => formatShortTime(props.statisticsCutoff))
 const timelinePoints = computed(() => (props.account.timeline ?? []).slice(-24))
@@ -446,17 +396,14 @@ const probeBars = computed<ProbeBar[]>(() => {
       const latency = point.latency_ms ?? point.ttft_ms
       bars.push({ colorClass: 'bg-emerald-500 dark:bg-emerald-400', height: point.status === 'unavailable' || point.status === 'model_unavailable' || point.status === 'degraded' ? 40 : latencyBarHeight(latency), title: `${timestamp} · ${latency == null ? '探测完成' : `成功 · ${formatMs(latency)}`}` })
     } else if (isFailedProbe(point.status)) {
-      bars.push({ colorClass: 'bg-red-500 dark:bg-red-400', height: 28, title: `${timestamp} · 探测失败` })
+      bars.push({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: `${timestamp} · 暂无结果` })
     } else {
       bars.push({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: `${timestamp} · 暂无结果` })
     }
   }
   return bars
 })
-const probeSummary = computed(() => {
-  return `${formatNumber(probeSampleCount.value)} 次结果 · ${formatNumber(probeSuccessCount.value)} 成功 · ${formatNumber(probeFailureCount.value)} 失败`
-})
-const timelineAriaLabel = computed(() => `近期 ${probeSummary.value}探测`)
+const timelineAriaLabel = computed(() => '近期成功表现')
 const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
 const modelDetectionStatusHint = computed(() => {
@@ -512,9 +459,6 @@ function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value)
 }
-function formatScorePart(value?: number | null): string {
-  return value == null || !Number.isFinite(value) ? '--' : value.toFixed(1)
-}
 function formatMs(value?: number | null): string {
 	if (value == null || !Number.isFinite(value)) return '--'
 	return `${Math.round(value)} ms`
@@ -548,9 +492,6 @@ function formatShortTime(value?: string | null): string {
 }
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0))
-}
-function sampleDetail(count: number): string {
-  return `基于 ${formatNumber(count)} 次有效响应`
 }
 function isCompletedProbe(status: string): boolean {
   return ['success', 'operational', 'ok', 'unavailable', 'model_unavailable', 'degraded'].includes(status)

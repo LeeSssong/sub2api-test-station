@@ -9,11 +9,13 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 controller=ops/release-admin-lab.sh
 executor=ops/deploy-admin-lab-host.sh
 compose=infra/compose.admin-lab.yaml
+caddy=infra/Caddyfile
 [[ -f "$controller" ]] || fail 'admin lab release controller is missing'
 [[ -x "$controller" ]] || fail 'admin lab release controller is not executable'
 [[ -f "$executor" ]] || fail 'admin lab host executor is missing'
 [[ -x "$executor" ]] || fail 'admin lab host executor is not executable'
 [[ -f "$compose" ]] || fail 'admin lab compose is missing'
+[[ -f "$caddy" ]] || fail 'Caddyfile is missing'
 
 for needle in \
   'compose.admin-lab.yaml' \
@@ -28,16 +30,23 @@ for needle in \
   grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
 done
 
+for needle in '/admin/lab*' 'handle @admin_lab_app'; do
+  grep -Fq "$needle" "$caddy" || fail "Caddyfile missing lab routing contract: $needle"
+done
+
 for needle in \
   'AUTO_SETUP: "true"' \
   'admin-lab-app-data:/app/data' \
-  'admin-lab-api: {condition: service_healthy}'; do
+  'admin-lab-worker: {condition: service_healthy}'; do
   grep -Fq "$needle" "$compose" || fail "admin lab compose missing contract: $needle"
 done
 
 for needle in \
   'sub2api-admin-lab' \
   'ADMIN_LAB_ENV' \
+  'effective_env' \
+  'ADMIN_LAB_DB_PASSWORD' \
+  'ADMIN_LAB_REDIS_PASSWORD' \
   'install -o root -g root -m 0600' \
   'up -d --no-build --wait' \
   'admin-lab-api' \
@@ -45,9 +54,11 @@ for needle in \
   'admin-lab-gateway' \
   'admin-lab-frontend' \
   '/admin/lab/assets/' \
-  'caddy validate' \
+  'caddy validate --config -' \
+  'caddy reload --config -' \
   'caddy reload' \
   'Caddyfile.backup' \
+  'cat "$stage/infra/Caddyfile" >"$deploy_root/Caddyfile"' \
   '主站 HTML' \
   'rollback'; do
   grep -Fq "$needle" "$executor" || fail "host executor missing contract: $needle"

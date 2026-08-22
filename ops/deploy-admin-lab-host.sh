@@ -27,8 +27,10 @@ docker network inspect sub2api_default >/dev/null 2>&1 || fail 'production gatew
 rollback() {
   docker compose --project-name sub2api-admin-lab --project-directory "$deploy_root/infra" --env-file "$deploy_root/admin-lab/.env" -f "$deploy_root/infra/compose.admin-lab.yaml" down --remove-orphans >/dev/null 2>&1 || true
   if [[ -f "$deploy_root/admin-lab/Caddyfile.backup" ]]; then
-    install -o root -g root -m 0644 "$deploy_root/admin-lab/Caddyfile.backup" "$deploy_root/Caddyfile"
-    docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || true
+    cat "$deploy_root/admin-lab/Caddyfile.backup" >"$deploy_root/Caddyfile"
+    chown root:root "$deploy_root/Caddyfile"
+    chmod 0644 "$deploy_root/Caddyfile"
+    docker exec -i sub2api-caddy-1 caddy reload --config - --adapter caddyfile <"$deploy_root/admin-lab/Caddyfile.backup" >/dev/null 2>&1 || true
   fi
 }
 trap rollback ERR
@@ -51,22 +53,40 @@ frontend_image=$(grep '^ADMIN_LAB_FRONTEND_IMAGE=' "$env_file" | cut -d= -f2-)
 [[ -n "$frontend_image" ]] || fail 'frontend image missing from env'
 docker image inspect "$frontend_image" >/dev/null || fail 'loaded frontend image tag missing'
 
+# Keep the isolated lab identity stable across releases. PostgreSQL and Redis
+# volumes retain their credentials, and rotating them on every bundle would
+# make a failed rollout permanently unable to reconnect to its own volumes.
+effective_env="$stage/admin-lab.env"
+install -o root -g root -m 0600 "$env_file" "$effective_env"
+if [[ -f "$deploy_root/admin-lab/.env" ]]; then
+  for key in \
+    ADMIN_LAB_DB_NAME ADMIN_LAB_DB_USER ADMIN_LAB_DB_PASSWORD \
+    ADMIN_LAB_REDIS_PASSWORD ADMIN_LAB_ADMIN_EMAIL ADMIN_LAB_ADMIN_PASSWORD \
+    ADMIN_LAB_JWT_SECRET ADMIN_LAB_CSRF_SECRET ADMIN_LAB_COOKIE_NAME; do
+    value=$(awk -F= -v wanted="$key" '$1 == wanted { sub(/^[^=]*=/, ""); print; exit }' "$deploy_root/admin-lab/.env")
+    [[ -n "$value" && "$value" != *$'\n'* ]] || continue
+    sed -i "s|^${key}=.*|${key}=${value}|" "$effective_env"
+  done
+fi
+
 install -d -o root -g root -m 0755 "$deploy_root/infra/admin-lab" "$deploy_root/tools/admin-lab" "$deploy_root/admin-lab"
 install -o root -g root -m 0644 "$deploy_root/Caddyfile" "$deploy_root/admin-lab/Caddyfile.backup"
-install -o root -g root -m 0644 "$stage/infra/Caddyfile" "$deploy_root/Caddyfile"
+cat "$stage/infra/Caddyfile" >"$deploy_root/Caddyfile"
+chown root:root "$deploy_root/Caddyfile"
+chmod 0644 "$deploy_root/Caddyfile"
 install -o root -g root -m 0644 "$stage/infra/compose.admin-lab.yaml" "$deploy_root/infra/compose.admin-lab.yaml"
 install -o root -g root -m 0644 "$stage/infra/.env.admin-lab.example" "$deploy_root/infra/.env.admin-lab.example"
 install -o root -g root -m 0644 "$stage/infra/admin-lab/Dockerfile.frontend" "$deploy_root/infra/admin-lab/Dockerfile.frontend"
 install -o root -g root -m 0644 "$stage/infra/admin-lab/nginx.conf" "$deploy_root/infra/admin-lab/nginx.conf"
 install -o root -g root -m 0644 "$stage/infra/admin-lab/gateway.conf" "$deploy_root/infra/admin-lab/gateway.conf"
 install -o root -g root -m 0644 "$stage/tools/admin-lab/mock_server.py" "$deploy_root/tools/admin-lab/mock_server.py"
-install -o root -g root -m 0600 "$env_file" "$deploy_root/admin-lab/.env"
+install -o root -g root -m 0600 "$effective_env" "$deploy_root/admin-lab/.env"
 
 compose=(docker compose --project-name sub2api-admin-lab --project-directory "$deploy_root/infra" --env-file "$deploy_root/admin-lab/.env" -f "$deploy_root/infra/compose.admin-lab.yaml")
 "${compose[@]}" config --quiet || fail 'lab compose config failed'
 "${compose[@]}" up -d --no-build --wait || fail 'lab compose did not become ready'
-docker exec sub2api-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null || fail 'Caddy lab route validation failed'
-docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null || fail 'Caddy lab route reload failed'
+docker exec -i sub2api-caddy-1 caddy validate --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route validation failed'
+docker exec -i sub2api-caddy-1 caddy reload --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route reload failed'
 
 html=$(curl -ksS --fail --max-time 20 "$base_url/admin/lab/") || fail 'public lab route probe failed'
 grep -Fq '/admin/lab/assets/' <<<"$html" || fail 'public lab HTML does not contain lab asset base path'

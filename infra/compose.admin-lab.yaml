@@ -49,6 +49,7 @@ services:
       MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
       MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
     depends_on:
+      admin-lab-worker: {condition: service_healthy}
       admin-lab-postgres: {condition: service_healthy}
       admin-lab-redis: {condition: service_healthy}
       admin-lab-mock-upstream: {condition: service_healthy}
@@ -59,7 +60,7 @@ services:
       admin-lab: {}
       admin-lab-gateway: {}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,6 +93,8 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}
       REDIS_DB: "0"
+      ADMIN_EMAIL: ${ADMIN_LAB_ADMIN_EMAIL:?ADMIN_LAB_ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${ADMIN_LAB_ADMIN_PASSWORD:?ADMIN_LAB_ADMIN_PASSWORD is required}
       JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?ADMIN_LAB_JWT_SECRET is required}
       CSRF_SECRET: ${ADMIN_LAB_CSRF_SECRET:?ADMIN_LAB_CSRF_SECRET is required}
       AUTH_COOKIE_NAME: ${ADMIN_LAB_COOKIE_NAME:?ADMIN_LAB_COOKIE_NAME is required}
@@ -104,7 +107,6 @@ services:
       SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
       SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: admin-lab-mock-upstream,admin-lab-mock-payment
     depends_on:
-      admin-lab-api: {condition: service_healthy}
       admin-lab-postgres: {condition: service_healthy}
       admin-lab-redis: {condition: service_healthy}
     volumes:
@@ -112,7 +114,7 @@ services:
     networks:
       admin-lab: {}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -191,7 +193,7 @@ services:
       admin-lab-gateway: {}
     expose: ["4173"]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:4173/"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:4173/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -207,7 +209,7 @@ services:
       admin-lab-gateway: {}
     expose: ["8088"]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8088/"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8088/"]
       interval: 10s
       timeout: 5s
       retries: 5

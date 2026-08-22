@@ -2,11 +2,11 @@
 
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
 
-- **T54 分组调度策略与乐观体验卡**：状态 `IMPLEMENTING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格与计划已获用户确认，独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；尚未合并、推送、部署或线上验收，不进入 T53 当前占用的发布车道。预计无迁移、无生产数据写入，`downtime_required=false`。
+- **T54 分组调度策略与乐观体验卡**：状态 `IMPLEMENTING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格与计划已获用户确认，独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；尚未合并、推送、部署或线上验收。预计无迁移、无生产数据写入，`downtime_required=false`。
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 
-- **T53-R1 管理员隔离测试站生产交付修复**：状态 `INTEGRATING`。2026-08-23 公网复核确认 `/admin/lab/` 虽返回 HTTP 200，但 HTML 引用主站 `/assets/...`，浏览器因此进入主站前端 404；宿主没有 `sub2api-admin-lab` Compose 服务。根因是既有蓝绿发布只交付主应用镜像与 host executor，没有同步、启动和验收独立 lab Compose 附件。保留原 T53 发布记录为失败证据，修复必须补齐独立附件交付、root-owned `0600` lab env、独立 Compose 启动、容器健康和 `/admin/lab/assets/...` HTML 合同验收；不得重启生产 PostgreSQL、Redis、Caddy 或活动 API，不得连接生产支付/上游或写生产数据库，不使用 GitHub Actions。原 T53 范围仍不包含额度账本、充值包、经营分析或第二账务事实源。
+- **T53-R1 管理员隔离测试站生产交付修复**：状态 `DONE`。已推送 `main@84279999f767f6f22ed5c2ca5613e4a6704ed192` 并通过独立发布链上线；隔离 Compose 的 API/worker/frontend/gateway/PostgreSQL/Redis/mock upstream/mock payment 共 8 个服务均 healthy，root-owned `0600` lab env 保留独立凭据。Caddy 通过 stdin validate/reload 生效，公网 `/admin/lab/` HTTP 200，HTML 含 `/admin/lab/assets/` 且不含主站 `/assets/`；主站 `/healthz` HTTP 200，活动 API/Caddy 身份未变化。根因修复覆盖空库 AUTO_SETUP、共享 `/app/data`、lab 凭据复用、IPv4 healthcheck、Caddy 路由排除和 bind-mounted Caddy 配置 reload；不重启生产 PostgreSQL、Redis、Caddy 或活动 API，不连接生产支付/上游或写生产数据库，不使用 GitHub Actions。原 T53 范围仍不包含额度账本、充值包、经营分析或第二账务事实源。
 
 ## 当前新增任务（2026-08-22，T52 调度公平性与管理员实时参数页）
 

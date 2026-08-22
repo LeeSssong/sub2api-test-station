@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	OpenAISchedulerCandidatePoolModeTopK        = "top_k"
@@ -21,6 +24,50 @@ type OpenAISchedulerFairnessSettings struct {
 	StarvationThresholdSeconds int                                       `json:"starvation_threshold_seconds"`
 	FairnessWeight             float64                                   `json:"fairness_weight"`
 	GroupOverrides             map[int64]OpenAISchedulerFairnessOverride `json:"group_overrides"`
+}
+
+type OpenAISchedulerGroupPolicyMode string
+
+const (
+	OpenAISchedulerGroupPolicyModeWeightedOverride OpenAISchedulerGroupPolicyMode = "weighted_override"
+	OpenAISchedulerGroupPolicyModeFair             OpenAISchedulerGroupPolicyMode = "fair"
+)
+
+type OpenAISchedulerPreset string
+
+const (
+	OpenAISchedulerPresetSpecialOffer OpenAISchedulerPreset = "special_offer"
+	OpenAISchedulerPresetBalanced     OpenAISchedulerPreset = "balanced"
+	OpenAISchedulerPresetPro          OpenAISchedulerPreset = "pro"
+)
+
+type OpenAISchedulerPolicyValues struct {
+	TopK                                                                                                        int `json:"top_k,omitempty"`
+	Priority, Load, Queue, ErrorRate, TTFT, Reset, QuotaHeadroom, UpstreamCost, PreviousResponse, SessionSticky float64
+	CandidatePoolMode                                                                                           string `json:"candidate_pool_mode,omitempty"`
+	ExplorationRatio, StarvationThresholdSeconds                                                                int
+	FairnessWeight                                                                                              float64
+}
+type OpenAISchedulerGroupPolicy struct {
+	Mode            OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
+	Preset          OpenAISchedulerPreset            `json:"preset,omitempty"`
+	WeightOverrides map[string]float64               `json:"weight_overrides,omitempty"`
+	Fairness        *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
+	Values          OpenAISchedulerPolicyValues      `json:"-"`
+	LegacyFairness  OpenAISchedulerFairnessOverride  `json:"-"`
+}
+
+func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
+	type alias OpenAISchedulerGroupPolicy
+	m := map[string]any{}
+	b, _ := json.Marshal(alias(p))
+	_ = json.Unmarshal(b, &m)
+	for k, v := range map[string]any{"candidate_pool_mode": p.LegacyFairness.CandidatePoolMode, "exploration_ratio": p.LegacyFairness.ExplorationRatio, "starvation_threshold_seconds": p.LegacyFairness.StarvationThresholdSeconds, "fairness_weight": p.LegacyFairness.FairnessWeight} {
+		if v != nil {
+			m[k] = v
+		}
+	}
+	return json.Marshal(m)
 }
 
 func defaultOpenAISchedulerFairnessSettings() OpenAISchedulerFairnessSettings {
@@ -310,6 +357,7 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerStarvationThresholdSeconds      int
 	OpenAIAdvancedSchedulerFairnessWeight                  float64
 	OpenAIAdvancedSchedulerGroupOverrides                  map[int64]OpenAISchedulerFairnessOverride
+	OpenAIAdvancedSchedulerGroupPolicies                   map[int64]OpenAISchedulerGroupPolicy
 	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
 	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
 	OpenAIAdvancedSchedulerEffectiveWeightLoad             string

@@ -515,7 +515,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIAdvancedSchedulerExplorationRatio] = strconv.Itoa(settings.OpenAIAdvancedSchedulerExplorationRatio)
 	updates[SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds] = strconv.Itoa(settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds)
 	updates[SettingKeyOpenAIAdvancedSchedulerFairnessWeight] = strconv.FormatFloat(settings.OpenAIAdvancedSchedulerFairnessWeight, 'f', -1, 64)
-	overridesJSON, err := json.Marshal(settings.OpenAIAdvancedSchedulerGroupOverrides)
+	groupOverrides := any(settings.OpenAIAdvancedSchedulerGroupOverrides)
+	if settings.OpenAIAdvancedSchedulerGroupPolicies != nil {
+		groupOverrides = settings.OpenAIAdvancedSchedulerGroupPolicies
+	}
+	overridesJSON, err := json.Marshal(groupOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("marshal scheduler fairness group overrides: %w", err)
 	}

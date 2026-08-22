@@ -345,6 +345,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIAdvancedSchedulerStarvationThresholdSeconds:      settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds,
 		OpenAIAdvancedSchedulerFairnessWeight:                  settings.OpenAIAdvancedSchedulerFairnessWeight,
 		OpenAIAdvancedSchedulerGroupOverrides:                  settings.OpenAIAdvancedSchedulerGroupOverrides,
+		OpenAIAdvancedSchedulerGroupPolicies:                   settings.OpenAIAdvancedSchedulerGroupPolicies,
 		BalanceLowNotifyEnabled:                                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:                              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:                            settings.BalanceLowNotifyRechargeURL,

@@ -1,11 +1,50 @@
 package service
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeOpenAISchedulerGroupPoliciesExpandsPresetsAndInheritsGlobal(t *testing.T) {
+	global := OpenAISchedulerPolicyValues{TopK: 7, Priority: 1, Load: 1, Queue: .7, ErrorRate: .8, TTFT: .5, PreviousResponse: 5, SessionSticky: 3, CandidatePoolMode: OpenAISchedulerCandidatePoolModeHybrid, ExplorationRatio: 25, StarvationThresholdSeconds: 21600, FairnessWeight: 3}
+	policies, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		10: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: OpenAISchedulerPresetPro},
+		20: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": 2}},
+	}, global, map[int64]struct{}{10: {}, 20: {}})
+	require.NoError(t, err)
+	pro := policies[10]
+	require.Equal(t, OpenAISchedulerPresetPro, pro.Preset)
+	require.Equal(t, 10, pro.Values.TopK)
+	require.Equal(t, 40, pro.Values.ExplorationRatio)
+	require.Equal(t, 5.0, pro.Values.FairnessWeight)
+	require.Equal(t, 2.0, policies[20].Values.Priority)
+	require.Equal(t, global.Load, policies[20].Values.Load)
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesLegacyJSON(t *testing.T) {
+	var raw = `{"10":{"candidate_pool_mode":"all_eligible","exploration_ratio":40}}`
+	policies, err := parseOpenAISchedulerGroupPolicies(raw)
+	require.NoError(t, err)
+	require.Equal(t, OpenAISchedulerGroupPolicyModeWeightedOverride, policies[10].Mode)
+	require.NotNil(t, policies[10].LegacyFairness.ExplorationRatio)
+	encoded, err := json.Marshal(policies)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), "exploration_ratio")
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesRejectsInvalidPayload(t *testing.T) {
+	_, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		1: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: "unknown"},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{1: {}})
+	require.Error(t, err)
+	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		2: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": 0}},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{2: {}})
+	require.Error(t, err)
+}
 
 func TestNormalizeOpenAISchedulerFairnessSettingsDefaultsMissingValues(t *testing.T) {
 	got, err := normalizeOpenAISchedulerFairnessSettings(OpenAISchedulerFairnessSettings{})

@@ -38,6 +38,9 @@ done
 for needle in \
   'sub2api-admin-lab' \
   'ADMIN_LAB_ENV' \
+  'effective_env' \
+  'ADMIN_LAB_DB_PASSWORD' \
+  'ADMIN_LAB_REDIS_PASSWORD' \
   'install -o root -g root -m 0600' \
   'up -d --no-build --wait' \
   'admin-lab-api' \

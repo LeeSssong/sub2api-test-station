@@ -223,13 +223,13 @@
 	@admin_lab_assets path /admin/lab/assets/*
 	handle @admin_lab_assets {
 	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-frontend:4173
+	  reverse_proxy admin-lab-gateway:8088
 	}
 
 	@admin_lab_api path /admin/lab/api/*
 	handle @admin_lab_api {
 	  uri strip_prefix /admin/lab/api
-	  reverse_proxy admin-lab-api:8080 {
+	  reverse_proxy admin-lab-gateway:8088 {
 	    header_up -Cookie
 	    header_up Authorization {http.request.header.Authorization}
 	    header_up X-Admin-Lab-Only 1
@@ -239,7 +239,7 @@
 	@admin_lab_ws path /admin/lab/ws/*
 	handle @admin_lab_ws {
 	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-api:8080 {
+	  reverse_proxy admin-lab-gateway:8088 {
 	    header_up -Cookie
 	    header_up Authorization {http.request.header.Authorization}
 	    header_up X-Admin-Lab-Only 1
@@ -249,7 +249,7 @@
 	@admin_lab_app path /admin/lab/*
 	handle @admin_lab_app {
 	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-frontend:4173
+	  reverse_proxy admin-lab-gateway:8088
 	}
 
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {

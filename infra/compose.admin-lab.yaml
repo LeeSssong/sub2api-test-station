@@ -37,6 +37,9 @@ services:
       PAYMENT_PROVIDER: ${ADMIN_LAB_PAYMENT_PROVIDER:?ADMIN_LAB_PAYMENT_PROVIDER is required}
       UPSTREAM_PROVIDER: ${ADMIN_LAB_UPSTREAM_PROVIDER:?ADMIN_LAB_UPSTREAM_PROVIDER is required}
       EXTERNAL_ALLOWLIST: ${ADMIN_LAB_EXTERNAL_ALLOWLIST:?ADMIN_LAB_EXTERNAL_ALLOWLIST is required}
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: admin-lab-mock-upstream,admin-lab-mock-payment
       MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
       MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
     depends_on:
@@ -84,6 +87,9 @@ services:
       UPSTREAM_PROVIDER: mock-upstream
       MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
       MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: admin-lab-mock-upstream,admin-lab-mock-payment
     depends_on:
       admin-lab-postgres: {condition: service_healthy}
       admin-lab-redis: {condition: service_healthy}
@@ -160,6 +166,17 @@ services:
       admin-lab: {}
       admin-lab-gateway: {}
     expose: ["4173"]
+
+  admin-lab-gateway:
+    image: nginx:1.27-alpine
+    volumes: [./admin-lab/gateway.conf:/etc/nginx/conf.d/default.conf:ro]
+    depends_on:
+      admin-lab-api: {condition: service_healthy}
+      admin-lab-frontend: {condition: service_started}
+    networks:
+      admin-lab: {}
+      admin-lab-gateway: {}
+    expose: ["8088"]
 
 networks:
   admin-lab:

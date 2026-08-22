@@ -7,8 +7,7 @@ for needle in \
   '@admin_lab_root path /admin/lab' \
   '@admin_lab_api path /admin/lab/api/*' \
   '@admin_lab_ws path /admin/lab/ws/*' \
-  'reverse_proxy admin-lab-api:8080' \
-  'reverse_proxy admin-lab-frontend:4173' \
+  'reverse_proxy admin-lab-gateway:8088' \
   'header_up X-Admin-Lab-Only 1'; do
   grep -Fq "$needle" "$CADDY" || { echo "missing Caddy lab route: $needle" >&2; exit 1; }
 done

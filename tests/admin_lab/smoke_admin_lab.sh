@@ -19,6 +19,7 @@ docker compose --project-name sub2api-admin-lab --env-file "$ENV_FILE" -f "$COMP
 
 for contract in \
   tests/admin_lab/native_reuse_inventory.sh \
+  tests/admin_lab/release_delivery_contract_test.sh \
   tests/admin_lab/compose_contract_test.sh \
   tests/admin_lab/caddy_route_test.sh \
   tests/admin_lab/auth_isolation_test.sh \

@@ -1,0 +1,140 @@
+name: sub2api-admin-lab
+
+services:
+  admin-lab-api:
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_PROCESS_ROLE: api
+      DATABASE_HOST: admin-lab-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      DATABASE_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+      DATABASE_DBNAME: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      REDIS_HOST: admin-lab-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}
+      REDIS_DB: "0"
+      ADMIN_EMAIL: ${ADMIN_LAB_ADMIN_EMAIL:?ADMIN_LAB_ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${ADMIN_LAB_ADMIN_PASSWORD:?ADMIN_LAB_ADMIN_PASSWORD is required}
+      JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?ADMIN_LAB_JWT_SECRET is required}
+      CSRF_SECRET: ${ADMIN_LAB_CSRF_SECRET:?ADMIN_LAB_CSRF_SECRET is required}
+      AUTH_COOKIE_NAME: ${ADMIN_LAB_COOKIE_NAME:?ADMIN_LAB_COOKIE_NAME is required}
+      FRONTEND_BASE_PATH: ${ADMIN_LAB_FRONTEND_BASE_PATH:?ADMIN_LAB_FRONTEND_BASE_PATH is required}
+      PAYMENT_PROVIDER: ${ADMIN_LAB_PAYMENT_PROVIDER:?ADMIN_LAB_PAYMENT_PROVIDER is required}
+      UPSTREAM_PROVIDER: ${ADMIN_LAB_UPSTREAM_PROVIDER:?ADMIN_LAB_UPSTREAM_PROVIDER is required}
+      EXTERNAL_ALLOWLIST: ${ADMIN_LAB_EXTERNAL_ALLOWLIST:?ADMIN_LAB_EXTERNAL_ALLOWLIST is required}
+      MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
+      MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
+    depends_on:
+      admin-lab-postgres: {condition: service_healthy}
+      admin-lab-redis: {condition: service_healthy}
+      admin-lab-mock-upstream: {condition: service_healthy}
+      admin-lab-mock-payment: {condition: service_healthy}
+    networks: [admin-lab]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  admin-lab-worker:
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_PROCESS_ROLE: worker
+      DATABASE_HOST: admin-lab-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      DATABASE_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+      DATABASE_DBNAME: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      REDIS_HOST: admin-lab-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}
+      REDIS_DB: "0"
+      JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?ADMIN_LAB_JWT_SECRET is required}
+      CSRF_SECRET: ${ADMIN_LAB_CSRF_SECRET:?ADMIN_LAB_CSRF_SECRET is required}
+      AUTH_COOKIE_NAME: ${ADMIN_LAB_COOKIE_NAME:?ADMIN_LAB_COOKIE_NAME is required}
+      PAYMENT_PROVIDER: mock
+      UPSTREAM_PROVIDER: mock-upstream
+      MOCK_UPSTREAM_URL: http://admin-lab-mock-upstream:8091
+      MOCK_PAYMENT_URL: http://admin-lab-mock-payment:8092
+    depends_on:
+      admin-lab-postgres: {condition: service_healthy}
+      admin-lab-redis: {condition: service_healthy}
+    networks: [admin-lab]
+
+  admin-lab-postgres:
+    image: ${ADMIN_LAB_POSTGRES_IMAGE:?ADMIN_LAB_POSTGRES_IMAGE is required}
+    environment:
+      POSTGRES_DB: ${ADMIN_LAB_DB_NAME:?ADMIN_LAB_DB_NAME is required}
+      POSTGRES_USER: ${ADMIN_LAB_DB_USER:?ADMIN_LAB_DB_USER is required}
+      POSTGRES_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?ADMIN_LAB_DB_PASSWORD is required}
+    volumes: [admin-lab-postgres-data:/var/lib/postgresql/data]
+    networks: [admin-lab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_LAB_DB_USER} -d ${ADMIN_LAB_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-redis:
+    image: ${ADMIN_LAB_REDIS_IMAGE:?ADMIN_LAB_REDIS_IMAGE is required}
+    command: ["redis-server", "--requirepass", "${ADMIN_LAB_REDIS_PASSWORD:?ADMIN_LAB_REDIS_PASSWORD is required}"]
+    volumes: [admin-lab-redis-data:/data]
+    networks: [admin-lab]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ADMIN_LAB_REDIS_PASSWORD}", "PING"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-mock-upstream:
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command: ["/app/admin-lab-mock-upstream"]
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      LISTEN_ADDRESS: ":8091"
+    networks: [admin-lab]
+    expose: ["8091"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8091/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-mock-payment:
+    image: ${ADMIN_LAB_IMAGE:?ADMIN_LAB_IMAGE is required}
+    command: ["/app/admin-lab-mock-payment"]
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+      LISTEN_ADDRESS: ":8092"
+    networks: [admin-lab]
+    expose: ["8092"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8092/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  admin-lab-frontend:
+    image: ${ADMIN_LAB_FRONTEND_IMAGE:?ADMIN_LAB_FRONTEND_IMAGE is required}
+    environment:
+      LAB_ONLY: ${LAB_ONLY:?LAB_ONLY is required}
+    networks: [admin-lab]
+    expose: ["4173"]
+
+networks:
+  admin-lab:
+    name: sub2api-admin-lab-network
+    internal: true
+
+volumes:
+  admin-lab-postgres-data:
+    name: sub2api-admin-lab-postgres-data
+  admin-lab-redis-data:
+    name: sub2api-admin-lab-redis-data

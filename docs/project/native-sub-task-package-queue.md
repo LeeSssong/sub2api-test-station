@@ -2,7 +2,7 @@
 
 ## 当前新增任务（2026-08-22，T51 Monitor V2 检测失败红色状态）
 
-- **T51 Monitor V2 检测失败红色状态**：状态 `IMPLEMENTING`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；已完成根因确认：原生 `account_monitor_results` 时间桶 SQL 只返回二值 `status`，失败结果桶与无结果桶都为 `unavailable`，前端据 `latency_ms=null` 误判为 `no-data`。范围锁定 Monitor V2 原生时间线投影/API 合同/前端状态映射和直接相关测试；失败桶新增明确 `has_result=true` 并红色显示，空桶 `has_result=false` 继续灰色，成功、可用率、调度资格、数据源和探测逻辑不改。基线 `main@3152d95e30a4e800b2e4a38c2ad2ca4654cb7e07`；候选工作区待创建；无迁移、无配置和生产数据变更，预计 `downtime_required=false`。
+- **T51 Monitor V2 检测失败红色状态**：状态 `DEPLOYING`。用户补充要求主动检测失败显示红色 DOWN，不得显示为灰色无数据；根因是原生时间桶 SQL 将失败结果桶与无结果桶都投影为 `unavailable`，前端原先据 `latency_ms=null` 误判为 `no-data`。候选 `codex/t51-monitor-failed-red@b262756b76e81b263280ed657b08901c48c337cd` 已合入根 `main@9dcd4bfa8`；通过原生时间线投影新增必填 `has_result`，失败桶红色、空桶灰色，Monitor V2 合同升级 v8，成功、可用率、调度资格、数据源和探测逻辑不改。候选与根门禁：Monitor V2 9 个测试文件 45/45、Go service/handler/repository 定向测试、`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过；无迁移、无配置和生产数据变更，预计 `downtime_required=false`。待推送、生产发布和线上验证。
 
 ## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
 

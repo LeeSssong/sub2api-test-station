@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T51 Monitor V2 检测失败红色状态（2026-08-22）：** 状态：进行中。用户补充要求检测失败显示红色 DOWN，不得与无探测记录混为灰色 NO DATA。已确认当前根因：原生 `account_monitor_results` 查询将“失败结果桶”和“空桶”都投影为 `status=unavailable`，前端又以 `status=unavailable && latency_ms=null` 推断无数据；本任务将通过原生时间线投影增加明确 `has_result` 证据，失败桶红色、空桶灰色，成功/可用率/探测调度语义不变。基线为根 `main@3152d95e30a4e800b2e4a38c2ad2ca4654cb7e07`，候选工作区待创建；无迁移、无配置和生产数据变更，预计 `downtime_required=false`。待候选实现、直接相关测试、根合并、推送、生产部署和线上验证。
+**T51 Monitor V2 检测失败红色状态（2026-08-22）：** 状态：DEPLOYING。用户补充要求检测失败显示红色 DOWN，不得与无探测记录混为灰色 NO DATA。已确认根因：原生 `account_monitor_results` 查询将失败结果桶和空桶都投影为 `status=unavailable`，前端又以 `latency_ms=null` 推断无数据；实现通过原生时间线投影增加明确 `has_result` 证据，失败桶红色、空桶灰色，成功/可用率/探测调度语义不变。候选 `codex/t51-monitor-failed-red@b262756b76e81b263280ed657b08901c48c337cd` 已合入根 `main@9dcd4bfa8`；Monitor V2 9 个测试文件 45/45、Go 定向测试、`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。无迁移、无配置和生产数据变更，预计 `downtime_required=false`；待推送、生产部署和线上验证。
 
 **T50 Monitor V2 可用性字段文案精简（2026-08-22）：** 状态：READY_FOR_ROOT_REVIEW。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 的展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。候选 `codex/t50-monitor-availability-label@041af7d072acbab09ed86c006426504be2638a30` 已合并到根 `main@461844764018250d8dd878573082dccbcd0ebd72`；Monitor V2 9 个测试文件 43/43、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。无迁移、无配置和生产数据变更；待根门禁、推送、无停机发布和线上验收。
 

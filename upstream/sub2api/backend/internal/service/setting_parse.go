@@ -1291,16 +1291,35 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy mode is invalid")
 		}
 		values := global
+		if policy.Fairness != nil {
+			if err := validateOpenAISchedulerFairnessOverride(*policy.Fairness); err != nil {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy fairness override is invalid")
+			}
+		}
 		if policy.Mode == OpenAISchedulerGroupPolicyModeFair {
 			if policy.Preset != OpenAISchedulerPresetSpecialOffer && policy.Preset != OpenAISchedulerPresetBalanced && policy.Preset != OpenAISchedulerPresetPro {
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "fair group policy preset is invalid")
 			}
 			values = openAISchedulerPresetValues(policy.Preset)
+			if policy.Fairness != nil {
+				if policy.Fairness.CandidatePoolMode != nil {
+					values.CandidatePoolMode = *policy.Fairness.CandidatePoolMode
+				}
+				if policy.Fairness.ExplorationRatio != nil {
+					values.ExplorationRatio = *policy.Fairness.ExplorationRatio
+				}
+				if policy.Fairness.StarvationThresholdSeconds != nil {
+					values.StarvationThresholdSeconds = *policy.Fairness.StarvationThresholdSeconds
+				}
+				if policy.Fairness.FairnessWeight != nil {
+					values.FairnessWeight = *policy.Fairness.FairnessWeight
+				}
+			}
 		} else if policy.Preset != "" {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "weighted group policy cannot set a preset")
 		}
 		for key, value := range policy.WeightOverrides {
-			if !openAISchedulerPolicyWeightKeys[key] || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			if !openAISchedulerPolicyWeightKeys[key] || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weight is invalid")
 			}
 			switch key {
@@ -1326,7 +1345,7 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 				values.SessionSticky = value
 			}
 		}
-		if values.TopK <= 0 || values.Priority+values.Load+values.Queue+values.ErrorRate+values.TTFT+values.Reset+values.QuotaHeadroom+values.UpstreamCost <= 0 {
+		if values.TopK <= 0 || values.TopK > 32 || values.Priority+values.Load+values.Queue+values.ErrorRate+values.TTFT+values.Reset+values.QuotaHeadroom+values.UpstreamCost <= 0 {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weights must have a positive total")
 		}
 		if values.ExplorationRatio < 0 || values.ExplorationRatio > 100 || (values.StarvationThresholdSeconds != 0 && (values.StarvationThresholdSeconds < 300 || values.StarvationThresholdSeconds > 86400)) || values.FairnessWeight < 0 || values.FairnessWeight > 10 {

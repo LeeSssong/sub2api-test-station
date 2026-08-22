@@ -44,6 +44,21 @@ func TestNormalizeOpenAISchedulerGroupPoliciesRejectsInvalidPayload(t *testing.T
 		2: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": 0}},
 	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{2: {}})
 	require.Error(t, err)
+	tooLarge := 11.0
+	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		3: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": tooLarge}},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{3: {}})
+	require.Error(t, err)
+	tooLargeTopK := OpenAISchedulerPolicyValues{TopK: 33, Priority: 1}
+	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		4: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride},
+	}, tooLargeTopK, map[int64]struct{}{4: {}})
+	require.Error(t, err)
+	customFairness := OpenAISchedulerFairnessOverride{ExplorationRatio: fairnessIntPtr(101)}
+	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		5: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: OpenAISchedulerPresetBalanced, Fairness: &customFairness},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{5: {}})
+	require.Error(t, err)
 }
 
 func TestNormalizeOpenAISchedulerFairnessSettingsDefaultsMissingValues(t *testing.T) {

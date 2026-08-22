@@ -8,10 +8,12 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 controller=ops/release-admin-lab.sh
 executor=ops/deploy-admin-lab-host.sh
+compose=infra/compose.admin-lab.yaml
 [[ -f "$controller" ]] || fail 'admin lab release controller is missing'
 [[ -x "$controller" ]] || fail 'admin lab release controller is not executable'
 [[ -f "$executor" ]] || fail 'admin lab host executor is missing'
 [[ -x "$executor" ]] || fail 'admin lab host executor is not executable'
+[[ -f "$compose" ]] || fail 'admin lab compose is missing'
 
 for needle in \
   'compose.admin-lab.yaml' \
@@ -27,11 +29,19 @@ for needle in \
 done
 
 for needle in \
+  'AUTO_SETUP: "true"' \
+  'admin-lab-app-data:/app/data' \
+  'admin-lab-api: {condition: service_healthy}'; do
+  grep -Fq "$needle" "$compose" || fail "admin lab compose missing contract: $needle"
+done
+
+for needle in \
   'sub2api-admin-lab' \
   'ADMIN_LAB_ENV' \
   'install -o root -g root -m 0600' \
   'up -d --no-build --wait' \
   'admin-lab-api' \
+  'admin-lab-worker' \
   'admin-lab-gateway' \
   'admin-lab-frontend' \
   '/admin/lab/assets/' \

@@ -71,7 +71,7 @@ docker exec sub2api-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter
 html=$(curl -ksS --fail --max-time 20 "$base_url/admin/lab/") || fail 'public lab route probe failed'
 grep -Fq '/admin/lab/assets/' <<<"$html" || fail 'public lab HTML does not contain lab asset base path'
   if grep -Eq 'src="/assets/|href="/assets/' <<<"$html"; then fail '主站 HTML returned for lab path'; fi
-for service in admin-lab-api admin-lab-frontend admin-lab-gateway admin-lab-postgres admin-lab-redis; do
+for service in admin-lab-api admin-lab-worker admin-lab-frontend admin-lab-gateway admin-lab-postgres admin-lab-redis admin-lab-mock-upstream admin-lab-mock-payment; do
   id=$("${compose[@]}" ps -q "$service")
   [[ -n "$id" ]] || fail "lab service missing: $service"
 done

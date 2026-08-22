@@ -333,6 +333,11 @@ function mountView(options: { useRealCard?: boolean } = {}) {
   return wrapper
 }
 
+function latestModalInput(): HTMLInputElement | null {
+  const inputs = document.body.querySelectorAll<HTMLInputElement>('.modal-overlay input')
+  return inputs.length ? inputs[inputs.length - 1] : null
+}
+
 async function selectRange(wrapper: ReturnType<typeof mount>, range: '24h' | '7d' | '30d') {
   await wrapper.get(`[data-test="range-${range}"]`).trigger('click')
   await flushPromises()
@@ -835,7 +840,7 @@ describe('admin account monitor view V3', () => {
     wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const groupCostInput = document.body.querySelector<HTMLInputElement>('.modal-overlay input')
+    const groupCostInput = latestModalInput()
     expect(groupCostInput).not.toBeNull()
     groupCostInput!.value = '26'
     groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
@@ -853,7 +858,7 @@ describe('admin account monitor view V3', () => {
     const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
     expect(currentDialog.props('mode')).toBe('group')
     expect(currentDialog.props('show')).toBe(true)
-    expect(document.body.querySelector<HTMLInputElement>('.modal-overlay input')?.value).toBe('26')
+    expect(latestModalInput()?.value).toBe('26')
     expect(wrapper.text()).not.toContain('STALE GLOBAL SAVE RELOAD')
     expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
     expect(currentDialog.props('error')).toBeNull()
@@ -876,7 +881,7 @@ describe('admin account monitor view V3', () => {
     wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const groupCostInput = document.body.querySelector<HTMLInputElement>('.modal-overlay input')
+    const groupCostInput = latestModalInput()
     expect(groupCostInput).not.toBeNull()
     groupCostInput!.value = '26'
     groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
@@ -890,7 +895,7 @@ describe('admin account monitor view V3', () => {
     const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
     expect(currentDialog.props('mode')).toBe('group')
     expect(currentDialog.props('show')).toBe(true)
-    expect(document.body.querySelector<HTMLInputElement>('.modal-overlay input')?.value).toBe('26')
+    expect(latestModalInput()?.value).toBe('26')
     expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
     expect(currentDialog.props('error')).toBeNull()
     expect(showError).not.toHaveBeenCalled()

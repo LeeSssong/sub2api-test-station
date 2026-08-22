@@ -1320,7 +1320,18 @@ export default {
         fairnessWeightHint: 'Adds time-since-last-use to scoring. 0 disables it; higher values favor accounts that have waited longer (range 0-10).',
         groupOverrides: 'Per-group overrides (JSON)',
         groupOverridesHint: 'Override mode, exploration_ratio, starvation_threshold_seconds, or fairness_weight by group ID. Omitted fields inherit global values.',
-        groupOverridesInvalid: 'Group overrides must be a JSON object.'
+        groupOverridesInvalid: 'Group overrides must be a JSON object.',
+        groupSelect: 'Group',
+        groupSelectPlaceholder: 'Select a group',
+        modeSelect: 'Policy mode',
+        weightedMode: 'Scheduler weight override',
+        fairMode: 'Fair scheduling',
+        presetSelect: 'Fair preset',
+        presetSpecialOffer: 'Special offer',
+        presetBalanced: 'Balanced',
+        presetPro: 'Pro',
+        presetValuesHint: '{mode} selected; preset weights and fairness values are filled and locked.',
+        clearGroupPolicy: 'Clear this group override and inherit global values'
       },
       usageRecords: {
         title: 'Usage Records',

@@ -16,6 +16,22 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+export type OpenAISchedulerGroupPolicyMode = "weighted_override" | "fair";
+export type OpenAISchedulerPreset = "special_offer" | "balanced" | "pro";
+export interface OpenAISchedulerFairnessOverride {
+  candidate_pool_mode?: "top_k" | "all_eligible" | "hybrid";
+  exploration_ratio?: number;
+  starvation_threshold_seconds?: number;
+  fairness_weight?: number;
+}
+export interface OpenAISchedulerGroupPolicy {
+  mode?: OpenAISchedulerGroupPolicyMode;
+  preset?: OpenAISchedulerPreset;
+  top_k?: number;
+  weight_overrides?: Record<string, number>;
+  fairness?: OpenAISchedulerFairnessOverride;
+}
+
 // ── 平台限额类型 ──────────────────────────────────────────────────
 export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
@@ -692,6 +708,7 @@ export interface SystemSettings {
   openai_advanced_scheduler_starvation_threshold_seconds?: number;
   openai_advanced_scheduler_fairness_weight?: number;
   openai_advanced_scheduler_group_overrides?: Record<string, unknown>;
+  openai_advanced_scheduler_group_policies?: Record<string, OpenAISchedulerGroupPolicy>;
   openai_advanced_scheduler_effective_lb_top_k?: string;
   openai_advanced_scheduler_effective_weight_priority?: string;
   openai_advanced_scheduler_effective_weight_load?: string;
@@ -1008,6 +1025,7 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_starvation_threshold_seconds?: number;
   openai_advanced_scheduler_fairness_weight?: number;
   openai_advanced_scheduler_group_overrides?: Record<string, unknown>;
+  openai_advanced_scheduler_group_policies?: Record<string, OpenAISchedulerGroupPolicy>;
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;

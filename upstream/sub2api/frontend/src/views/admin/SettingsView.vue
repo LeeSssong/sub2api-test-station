@@ -5182,11 +5182,58 @@
                     <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeightHint") }}</span>
                   </label>
                 </div>
-                <label class="mt-4 block">
-                  <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupOverrides") }}</span>
-                  <textarea v-model="schedulerGroupOverridesText" class="input mt-1 min-h-20 font-mono text-xs" data-testid="scheduler-group-overrides" spellcheck="false" />
-                  <span class="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupOverridesHint") }}</span>
-                </label>
+                <div class="mt-4 border-t border-gray-100 pt-5 dark:border-dark-700" data-testid="scheduler-group-policy-panel">
+                  <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <label class="block">
+                      <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupSelect") }}</span>
+                      <select v-model="schedulerSelectedGroupId" class="input mt-1" data-testid="scheduler-group-select" @change="selectSchedulerPolicyGroup">
+                        <option value="">{{ t("admin.settings.openaiExperimentalScheduler.groupSelectPlaceholder") }}</option>
+                        <option v-for="group in schedulerPolicyGroups" :key="group.id" :value="String(group.id)">{{ group.name }}</option>
+                      </select>
+                    </label>
+                    <label class="block">
+                      <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.modeSelect") }}</span>
+                      <select v-model="schedulerPolicyDraft.mode" class="input mt-1" data-testid="scheduler-policy-mode" @change="schedulerPolicyDraft.mode === 'fair' ? applySchedulerPreset() : undefined">
+                        <option value="weighted_override">{{ t("admin.settings.openaiExperimentalScheduler.weightedMode") }}</option>
+                        <option value="fair">{{ t("admin.settings.openaiExperimentalScheduler.fairMode") }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div v-if="schedulerSelectedGroupId" class="mt-4">
+                    <div v-if="schedulerPolicyDraft.mode === 'fair'" class="grid gap-4 md:grid-cols-2">
+                      <label class="block">
+                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.presetSelect") }}</span>
+                        <select v-model="schedulerPolicyDraft.preset" class="input mt-1" data-testid="scheduler-policy-preset" @change="applySchedulerPreset">
+                          <option value="special_offer">{{ t("admin.settings.openaiExperimentalScheduler.presetSpecialOffer") }}</option>
+                          <option value="balanced">{{ t("admin.settings.openaiExperimentalScheduler.presetBalanced") }}</option>
+                          <option value="pro">{{ t("admin.settings.openaiExperimentalScheduler.presetPro") }}</option>
+                        </select>
+                      </label>
+                      <div class="rounded border border-gray-200 p-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                        {{ t("admin.settings.openaiExperimentalScheduler.presetValuesHint", { mode: schedulerPolicyModeLabel }) }}
+                      </div>
+                    </div>
+                    <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                      <label class="block">
+                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.topKLabel") }}</span>
+                        <input v-model.number="schedulerPolicyDraft.top_k" class="input mt-1" data-testid="scheduler-policy-top-k" min="1" max="32" step="1" type="number" :readonly="schedulerPolicyDraft.mode === 'fair'" />
+                      </label>
+                      <label v-for="key in schedulerPolicyWeightKeys" :key="key" class="block">
+                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ key }}</span>
+                        <input v-model.number="schedulerPolicyDraft.weight_overrides[key]" class="input mt-1" data-testid="scheduler-policy-weight" min="0" max="10" step="0.1" type="number" :readonly="schedulerPolicyDraft.mode === 'fair'" />
+                      </label>
+                    </div>
+                    <div v-if="schedulerPolicyDraft.mode === 'fair'" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.poolMode") }}</span><select v-model="schedulerPolicyDraft.fairness.candidate_pool_mode" class="input mt-1" data-testid="scheduler-policy-pool-mode" disabled><option value="hybrid">{{ t("admin.settings.openaiExperimentalScheduler.poolModeHybrid") }}</option></select></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.explorationRatio") }}</span><input v-model.number="schedulerPolicyDraft.fairness.exploration_ratio" class="input mt-1" data-testid="scheduler-policy-exploration" readonly type="number" /></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.starvationThreshold") }}</span><input v-model.number="schedulerPolicyDraft.fairness.starvation_threshold_seconds" class="input mt-1" data-testid="scheduler-policy-starvation" readonly type="number" /></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeight") }}</span><input v-model.number="schedulerPolicyDraft.fairness.fairness_weight" class="input mt-1" data-testid="scheduler-policy-fairness" readonly type="number" /></label>
+                    </div>
+                    <button v-if="schedulerSelectedGroupId" type="button" class="btn btn-secondary btn-sm mt-4" data-testid="scheduler-policy-clear" @click="clearSchedulerPolicy">
+                      {{ t("admin.settings.openaiExperimentalScheduler.clearGroupPolicy") }}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -8753,6 +8800,9 @@ import type {
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
   WebSearchTestResult,
+  OpenAISchedulerGroupPolicy,
+  OpenAISchedulerGroupPolicyMode,
+  OpenAISchedulerPreset,
 } from "@/api/admin/settings";
 import type {
   AdminGroup,
@@ -9493,6 +9543,7 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_starvation_threshold_seconds: number;
   openai_advanced_scheduler_fairness_weight: number;
   openai_advanced_scheduler_group_overrides: Record<string, unknown>;
+  openai_advanced_scheduler_group_policies: Record<string, OpenAISchedulerGroupPolicy>;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
@@ -9740,6 +9791,7 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_starvation_threshold_seconds: 21600,
   openai_advanced_scheduler_fairness_weight: 2,
   openai_advanced_scheduler_group_overrides: {},
+  openai_advanced_scheduler_group_policies: {},
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -9789,6 +9841,141 @@ const form = reactive<SettingsForm>({
 });
 
 const schedulerGroupOverridesText = ref("{}");
+
+type SchedulerPolicyDraft = {
+  mode: OpenAISchedulerGroupPolicyMode;
+  preset: OpenAISchedulerPreset;
+  top_k: number;
+  weight_overrides: Record<string, number | undefined>;
+  fairness: {
+    candidate_pool_mode: "top_k" | "all_eligible" | "hybrid";
+    exploration_ratio: number;
+    starvation_threshold_seconds: number;
+    fairness_weight: number;
+  };
+};
+
+const schedulerSelectedGroupId = ref("");
+const schedulerPolicyDraft = reactive<SchedulerPolicyDraft>({
+  mode: "weighted_override",
+  preset: "balanced",
+  top_k: 7,
+  weight_overrides: {},
+  fairness: {
+    candidate_pool_mode: "hybrid",
+    exploration_ratio: 25,
+    starvation_threshold_seconds: 21600,
+    fairness_weight: 3,
+  },
+});
+
+const schedulerPolicyPresetValues: Record<OpenAISchedulerPreset, SchedulerPolicyDraft> = {
+  special_offer: {
+    mode: "fair", preset: "special_offer", top_k: 7,
+    weight_overrides: { priority: .8, load: .8, queue: .5, error_rate: .8, ttft: .2, reset: 0, quota_headroom: 0, upstream_cost: 2.5, previous_response: 5, session_sticky: 3 },
+    fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 15, starvation_threshold_seconds: 21600, fairness_weight: 2 },
+  },
+  balanced: {
+    mode: "fair", preset: "balanced", top_k: 7,
+    weight_overrides: { priority: 1, load: 1, queue: .7, error_rate: .8, ttft: .5, reset: 0, quota_headroom: 0, upstream_cost: 0, previous_response: 5, session_sticky: 3 },
+    fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 25, starvation_threshold_seconds: 21600, fairness_weight: 3 },
+  },
+  pro: {
+    mode: "fair", preset: "pro", top_k: 10,
+    weight_overrides: { priority: 1.2, load: 1.4, queue: 1.2, error_rate: 2.5, ttft: 2, reset: .5, quota_headroom: .2, upstream_cost: 1.5, previous_response: 5, session_sticky: 3 },
+    fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 40, starvation_threshold_seconds: 10800, fairness_weight: 5 },
+  },
+};
+
+const schedulerPolicyWeightKeys = [
+  "priority", "load", "queue", "error_rate", "ttft", "reset", "quota_headroom", "upstream_cost", "previous_response", "session_sticky",
+];
+
+const schedulerPolicyGroups = computed(() => subscriptionGroups.value);
+const schedulerPolicyModeLabel = computed(() => schedulerPolicyDraft.mode === "fair"
+  ? t("admin.settings.openaiExperimentalScheduler.fairMode")
+  : t("admin.settings.openaiExperimentalScheduler.weightedMode"));
+
+function cloneSchedulerPolicyDraft(source: SchedulerPolicyDraft): SchedulerPolicyDraft {
+  return {
+    mode: source.mode,
+    preset: source.preset,
+    top_k: source.top_k,
+    weight_overrides: { ...source.weight_overrides },
+    fairness: { ...source.fairness },
+  };
+}
+
+function loadSchedulerPolicyDraft(groupId: string): void {
+  const policy = form.openai_advanced_scheduler_group_policies?.[groupId];
+  const next = policy?.mode === "fair" && policy.preset
+    ? cloneSchedulerPolicyDraft(schedulerPolicyPresetValues[policy.preset])
+    : {
+        mode: "weighted_override" as OpenAISchedulerGroupPolicyMode,
+        preset: "balanced" as OpenAISchedulerPreset,
+        top_k: Number(policy?.top_k) || Number(form.openai_advanced_scheduler_effective_lb_top_k) || 7,
+        weight_overrides: { ...(policy?.weight_overrides || {}) },
+        fairness: { ...schedulerPolicyDraft.fairness },
+      };
+  Object.assign(schedulerPolicyDraft, next);
+}
+
+function selectSchedulerPolicyGroup(): void {
+  if (schedulerSelectedGroupId.value) loadSchedulerPolicyDraft(schedulerSelectedGroupId.value);
+}
+
+function applySchedulerPreset(): void {
+  const preset = schedulerPolicyPresetValues[schedulerPolicyDraft.preset];
+  Object.assign(schedulerPolicyDraft, cloneSchedulerPolicyDraft(preset));
+}
+
+function serializeSchedulerPolicies(): Record<string, OpenAISchedulerGroupPolicy> {
+  const policies = { ...form.openai_advanced_scheduler_group_policies };
+  if (!schedulerSelectedGroupId.value) return policies;
+  const weightOverrides = Object.fromEntries(
+    schedulerPolicyWeightKeys
+      .map((key) => [key, schedulerPolicyDraft.weight_overrides[key]])
+      .filter(([, value]) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10),
+  );
+  if (schedulerPolicyDraft.mode === "fair") {
+    policies[schedulerSelectedGroupId.value] = {
+      mode: "fair",
+      preset: schedulerPolicyDraft.preset,
+      top_k: Math.min(32, Math.max(1, Math.trunc(schedulerPolicyDraft.top_k))),
+      weight_overrides: weightOverrides,
+      fairness: { ...schedulerPolicyDraft.fairness },
+    };
+  } else {
+    policies[schedulerSelectedGroupId.value] = {
+      mode: "weighted_override",
+      top_k: Math.min(32, Math.max(1, Math.trunc(schedulerPolicyDraft.top_k))),
+      weight_overrides: weightOverrides,
+    };
+  }
+  return policies;
+}
+
+function clearSchedulerPolicy(): void {
+  if (!schedulerSelectedGroupId.value) return;
+  const policies = { ...form.openai_advanced_scheduler_group_policies };
+  delete policies[schedulerSelectedGroupId.value];
+  form.openai_advanced_scheduler_group_policies = policies;
+  loadSchedulerPolicyDraft(schedulerSelectedGroupId.value);
+}
+
+function validateSchedulerPolicyDraft(): boolean {
+  if (!schedulerSelectedGroupId.value) return true;
+  if (!Number.isInteger(schedulerPolicyDraft.top_k) || schedulerPolicyDraft.top_k < 1 || schedulerPolicyDraft.top_k > 32) return false;
+  for (const value of Object.values(schedulerPolicyDraft.weight_overrides)) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 10)) return false;
+  }
+  if (schedulerPolicyDraft.mode === "fair") {
+    const fairness = schedulerPolicyDraft.fairness;
+    if (fairness.exploration_ratio < 0 || fairness.exploration_ratio > 100 || fairness.fairness_weight < 0 || fairness.fairness_weight > 10) return false;
+    if (fairness.starvation_threshold_seconds !== 0 && (fairness.starvation_threshold_seconds < 300 || fairness.starvation_threshold_seconds > 86400)) return false;
+  }
+  return true;
+}
 
 // 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是三个独立
 // enabled 键（与上游一致），由下面的映射保证同一时间至多一家启用。
@@ -10766,6 +10953,12 @@ async function loadSettings() {
       }
     }
     schedulerGroupOverridesText.value = JSON.stringify(form.openai_advanced_scheduler_group_overrides || {}, null, 2);
+    if (!schedulerSelectedGroupId.value) {
+      schedulerSelectedGroupId.value = schedulerPolicyGroups.value[0]?.id
+        ? String(schedulerPolicyGroups.value[0].id)
+        : Object.keys(form.openai_advanced_scheduler_group_policies || {})[0] || "";
+    }
+    selectSchedulerPolicyGroup();
     form.monitor_page_refresh_interval_seconds =
       normalizeMonitorPageRefreshInterval(
         settings.monitor_page_refresh_interval_seconds,
@@ -10935,6 +11128,12 @@ async function loadSubscriptionGroups() {
       (group) =>
         group.subscription_type === "subscription" && group.status === "active",
     );
+    if (!schedulerSelectedGroupId.value) {
+      schedulerSelectedGroupId.value = schedulerPolicyGroups.value[0]
+        ? String(schedulerPolicyGroups.value[0].id)
+        : "";
+      selectSchedulerPolicyGroup();
+    }
   } catch (_error: unknown) {
     subscriptionGroups.value = [];
   }
@@ -10997,6 +11196,10 @@ function findDuplicateDefaultSubscription(
 }
 
 async function saveSettings() {
+  if (!validateSchedulerPolicyDraft()) {
+    appStore.showError(t("admin.settings.openaiExperimentalScheduler.groupOverridesInvalid"));
+    return;
+  }
   saving.value = true;
   try {
     const normalizedTableDefaultPageSize = Math.floor(
@@ -11437,15 +11640,7 @@ async function saveSettings() {
         form.openai_advanced_scheduler_starvation_threshold_seconds,
       openai_advanced_scheduler_fairness_weight:
         form.openai_advanced_scheduler_fairness_weight,
-      openai_advanced_scheduler_group_overrides: (() => {
-        try {
-          const parsed = JSON.parse(schedulerGroupOverridesText.value || "{}");
-          if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("object required");
-          return parsed;
-        } catch {
-          throw new Error(t("admin.settings.openaiExperimentalScheduler.groupOverridesInvalid"));
-        }
-      })(),
+      openai_advanced_scheduler_group_policies: serializeSchedulerPolicies(),
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

@@ -1314,7 +1314,18 @@ export default {
         fairnessWeightHint: '把“距上次使用时间”加入排序；0=关闭，数值越大越优先长期未使用账号（范围 0-10）。',
         groupOverrides: '分组覆盖（JSON）',
         groupOverridesHint: '按分组 ID 覆盖 mode、exploration_ratio、starvation_threshold_seconds、fairness_weight；未填写字段继承全局值。',
-        groupOverridesInvalid: '分组覆盖必须是 JSON 对象。'
+        groupOverridesInvalid: '分组覆盖必须是 JSON 对象。',
+        groupSelect: '选择分组',
+        groupSelectPlaceholder: '请选择分组',
+        modeSelect: '策略模式',
+        weightedMode: '调度权值覆盖',
+        fairMode: '公平调度',
+        presetSelect: '公平预设',
+        presetSpecialOffer: '特惠',
+        presetBalanced: '均衡',
+        presetPro: 'Pro',
+        presetValuesHint: '已选择 {mode}；公平预设的底层权值和公平参数自动回填并锁定。',
+        clearGroupPolicy: '清除该分组覆盖，继承全局值'
       },
       usageRecords: {
         title: '使用记录',

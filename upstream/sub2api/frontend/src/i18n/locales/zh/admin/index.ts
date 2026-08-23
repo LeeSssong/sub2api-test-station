@@ -57,6 +57,10 @@ export default {
     quotaParityNote: '额度口径：1 USD 额度 = 1 CNY 额度（仅用于额度关系理解，不是汇率换算）',
     oauthComplete: 'OAuth 已填写', oauthPending: 'OAuth 待填写',
   },
+  businessOverview: {
+    title: '经营总览',
+    description: '按用户实际扣费与上游实际成本查看站内经营结果。',
+  },
   usageCostDetail: {
     siteRequestId: '本站请求 ID',
     upstreamRequestId: '上游请求 ID',

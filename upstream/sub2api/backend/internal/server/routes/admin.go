@@ -138,6 +138,7 @@ func registerOperationsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		operations.POST("/accounts/:id/procurement/settle", h.Admin.Dashboard.SettleSelfPurchasedAccount)
 		operations.PUT("/accounts/:id/procurement", h.Admin.Dashboard.UpdateSelfPurchasedConfig)
 		operations.GET("/account-financial", h.Admin.AccountFinancial.GetReport)
+		operations.GET("/business-overview", h.Admin.Dashboard.GetBusinessOverview)
 	}
 }
 

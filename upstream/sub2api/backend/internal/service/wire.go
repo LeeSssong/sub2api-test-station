@@ -596,6 +596,10 @@ func ProvideAccountFinancialService(repo AccountFinancialRepository, usageReader
 	return NewAccountFinancialServiceWithAudit(repo, usageReader, time.Now, NewAccountFinancialAudit(audit))
 }
 
+func ProvideBusinessOverviewService(db *sql.DB) BusinessOverviewService {
+	return NewBusinessOverviewService(db)
+}
+
 func buildIdempotencyConfig(cfg *config.Config) IdempotencyConfig {
 	idempotencyCfg := DefaultIdempotencyConfig()
 	if cfg != nil {
@@ -971,6 +975,7 @@ var ProviderSet = wire.NewSet(
 	NewDashboardService,
 	NewAccountProfitabilityService,
 	ProvideAccountFinancialService,
+	ProvideBusinessOverviewService,
 	ProvidePricingService,
 	NewBillingService,
 	ProvideBillingCacheService,

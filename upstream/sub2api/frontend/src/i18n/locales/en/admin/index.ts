@@ -57,6 +57,10 @@ export default {
     quotaParityNote: 'Quota basis: 1 USD quota = 1 CNY quota (for understanding the quota relationship only; not an exchange-rate conversion)',
     oauthComplete: 'OAuth complete', oauthPending: 'OAuth pending',
   },
+  businessOverview: {
+    title: 'Business Overview',
+    description: 'Review CNY revenue, upstream cost, and group margin from native usage and quota records.',
+  },
   usageCostDetail: {
     siteRequestId: 'Site Request ID',
     upstreamRequestId: 'Upstream Request ID',

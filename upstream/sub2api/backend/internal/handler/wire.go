@@ -15,9 +15,11 @@ func ProvideDashboardHandler(
 	dashboardService *service.DashboardService,
 	aggregationService *service.DashboardAggregationService,
 	accountProfitabilityService *service.AccountProfitabilityService,
+	businessOverviewService service.BusinessOverviewService,
 ) *admin.DashboardHandler {
 	h := admin.NewDashboardHandler(dashboardService, aggregationService)
 	h.SetAccountProfitabilityService(accountProfitabilityService)
+	h.SetBusinessOverviewService(businessOverviewService)
 	return h
 }
 

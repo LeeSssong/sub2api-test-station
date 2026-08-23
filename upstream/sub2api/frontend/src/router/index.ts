@@ -450,6 +450,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/operations/business-overview',
+    name: 'AdminBusinessOverview',
+    component: () => import('@/views/admin/BusinessOverviewView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Business Overview',
+      titleKey: 'admin.businessOverview.title',
+      descriptionKey: 'admin.businessOverview.description'
+    }
+  },
+  {
     path: '/admin/audit-logs',
     name: 'AdminAuditLogs',
     component: () => import('@/views/admin/AuditLogView.vue'),

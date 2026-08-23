@@ -188,6 +188,7 @@ export default {
     ops: 'Ops',
     operations: 'Operations',
     accountProfitability: 'Account Profitability',
+    businessOverview: 'Business Overview',
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',

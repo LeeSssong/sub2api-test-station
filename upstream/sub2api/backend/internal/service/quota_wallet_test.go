@@ -28,6 +28,14 @@ func (f *quotaRepoFake) ListLedger(context.Context, int64, int, int, string) ([]
 }
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
+func TestQuotaRequestFingerprintUsesOperatorValue(t *testing.T) {
+	operatorA := int64(7)
+	operatorB := int64(7)
+	if quotaRequestFingerprint(QuotaRecordRecharge, dec("10"), &operatorA) != quotaRequestFingerprint(QuotaRecordRecharge, dec("10"), &operatorB) {
+		t.Fatal("same operator value must produce the same idempotency fingerprint")
+	}
+}
+
 func TestQuotaWalletConsumptionPaidFirst(t *testing.T) {
 	f := &quotaRepoFake{wallet: QuotaWallet{UserID: 1, PaidQuotaBalanceUSD: dec("5"), GiftQuotaBalanceUSD: dec("8"), Version: 1}}
 	r, err := NewQuotaWalletService(f).ConsumeUsage(context.Background(), UsageConsumptionInput{UserID: 1, AmountUSD: dec("7")})

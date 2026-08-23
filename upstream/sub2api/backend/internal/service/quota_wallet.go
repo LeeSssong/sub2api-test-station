@@ -134,6 +134,7 @@ type QuotaWalletRepository interface {
 
 type QuotaWalletService interface {
 	GetSummary(context.Context, int64) (QuotaSummary, error)
+	ListLedger(context.Context, int64, int, int, string) ([]QuotaLedgerEntry, int, error)
 	Recharge(context.Context, RechargeInput) (QuotaMutationResult, error)
 	Refund(context.Context, RefundInput) (QuotaMutationResult, error)
 	ConsumeUsage(context.Context, UsageConsumptionInput) (QuotaMutationResult, error)
@@ -151,6 +152,13 @@ func (s *quotaWalletService) GetSummary(ctx context.Context, userID int64) (Quot
 		return QuotaSummary{}, ErrQuotaWalletNotFound
 	}
 	return s.repo.GetSummary(ctx, userID)
+}
+
+func (s *quotaWalletService) ListLedger(ctx context.Context, userID int64, page, pageSize int, recordType string) ([]QuotaLedgerEntry, int, error) {
+	if userID <= 0 {
+		return nil, 0, ErrQuotaWalletNotFound
+	}
+	return s.repo.ListLedger(ctx, userID, page, pageSize, strings.TrimSpace(recordType))
 }
 
 func (s *quotaWalletService) mutate(ctx context.Context, userID int64, key, fingerprint string, fn func(*QuotaWallet) (QuotaMutationResult, error), recordType, refType, refID, note string, operator *int64) (QuotaMutationResult, error) {
@@ -259,6 +267,17 @@ func (s *quotaWalletService) LegacyAdjust(ctx context.Context, in LegacyBalanceA
 func quotaRequestFingerprint(parts ...any) string {
 	h := sha256.New()
 	for _, part := range parts {
+		// Operator IDs are passed as pointers by the handler. Hash the stable
+		// value rather than the process-local pointer address so retries with
+		// the same Idempotency-Key replay successfully.
+		if operator, ok := part.(*int64); ok {
+			if operator == nil {
+				fmt.Fprint(h, "<nil>\x00")
+			} else {
+				fmt.Fprintf(h, "%d\x00", *operator)
+			}
+			continue
+		}
 		fmt.Fprintf(h, "%v\x00", part)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))

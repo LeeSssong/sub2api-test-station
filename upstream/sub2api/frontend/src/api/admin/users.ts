@@ -185,6 +185,67 @@ export async function updateBalance(
   return data
 }
 
+export interface QuotaSummary {
+  user_id: number
+  cash_balance_cny: string
+  paid_quota_balance_usd: string
+  gift_quota_balance_usd: string
+  total_quota_balance_usd: string
+  wallet_version: number
+  updated_at: string
+}
+
+export interface QuotaLedgerEntry {
+  id: number
+  user_id: number
+  record_type: string
+  cash_delta_cny: string
+  paid_quota_delta_usd: string
+  gift_quota_delta_usd: string
+  cash_before_cny: string
+  cash_after_cny: string
+  paid_before_usd: string
+  paid_after_usd: string
+  gift_before_usd: string
+  gift_after_usd: string
+  reference_type: string
+  reference_id: string
+  note: string
+  operator_id?: number
+  status: string
+  created_at: string
+}
+
+export async function getUserQuotaSummary(id: number): Promise<QuotaSummary> {
+  const { data } = await apiClient.get<QuotaSummary>(`/admin/users/${id}/quota-summary`)
+  return data
+}
+
+export async function createQuotaLedgerEntry(
+  id: number,
+  request: { record_type: 'recharge' | 'refund'; amount_cny: number; gift_quota_usd?: number; note?: string },
+  idempotencyKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+): Promise<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }> {
+  const { data } = await apiClient.post<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }>(
+    `/admin/users/${id}/quota-ledger`,
+    request,
+    { headers: { 'Idempotency-Key': idempotencyKey } }
+  )
+  return data
+}
+
+export async function getUserQuotaLedger(
+  id: number,
+  page = 1,
+  pageSize = 20,
+  type?: string
+): Promise<PaginatedResponse<QuotaLedgerEntry>> {
+  const params: Record<string, any> = { page, page_size: pageSize }
+  if (type) params.type = type
+  const { data } = await apiClient.get<PaginatedResponse<QuotaLedgerEntry>>(`/admin/users/${id}/quota-ledger`, { params })
+  return data
+}
+
 /**
  * Update user concurrency
  * @param id - User ID
@@ -406,6 +467,9 @@ export const usersAPI = {
   update,
   delete: deleteUser,
   updateBalance,
+  getUserQuotaSummary,
+  createQuotaLedgerEntry,
+  getUserQuotaLedger,
   updateConcurrency,
   batchUpdateLimits,
   toggleStatus,

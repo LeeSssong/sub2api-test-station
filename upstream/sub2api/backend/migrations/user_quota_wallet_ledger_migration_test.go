@@ -22,8 +22,7 @@ func TestUserQuotaWalletLedgerMigration(t *testing.T) {
 	sql := normalizedUserQuotaWalletLedgerSQL(t)
 	for _, fragment := range []string{
 		"create table if not exists user_wallets (",
-		"id bigserial primary key",
-		"user_id bigint not null unique references users(id) on delete cascade",
+		"user_id bigint primary key references users(id) on delete cascade",
 		"cash_balance_cny decimal(20,8) not null default 0 check (cash_balance_cny >= 0)",
 		"paid_quota_balance_usd decimal(20,8) not null default 0 check (paid_quota_balance_usd >= 0)",
 		"gift_quota_balance_usd decimal(20,8) not null default 0 check (gift_quota_balance_usd >= 0)",
@@ -54,7 +53,7 @@ func TestUserQuotaWalletLedgerMigration(t *testing.T) {
 		t.Fatal("user_wallets table definition not found")
 	}
 	walletSQL := sql[walletStart : walletStart+walletEnd]
-	if !strings.Contains(walletSQL, "id bigserial primary key") || !strings.Contains(walletSQL, "user_id bigint not null unique") {
+	if strings.Contains(walletSQL, "id bigserial primary key") || !strings.Contains(walletSQL, "user_id bigint primary key") {
 		t.Fatal("user_wallets must use the Ent-compatible surrogate id with unique user_id")
 	}
 	if strings.Contains(sql, "insert into user_quota_ledger_entries") {

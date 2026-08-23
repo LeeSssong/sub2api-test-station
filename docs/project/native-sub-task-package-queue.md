@@ -1,8 +1,8 @@
 # 原生 Sub 小步发布任务包队列
 
-## 当前生产修复（2026-08-23，T53-R2 隔离站路由持久化）
+## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
 
-- **T53-R2 隔离站路由持久化修复**：状态 `INTEGRATING`。生产只读证据确认 8 个 admin-lab 容器持续 healthy、宿主 `/opt/sub2api/production/Caddyfile` 已包含 `/admin/lab` 路由，但运行中的 Caddy 曾从 bind mount 固定的旧 inode 重新加载配置，导致公网 `/admin/lab/` 返回主站 HTML（`/assets/...`）并由主站 Vue 显示 404。修复范围仅为让 production 蓝绿发布的 Caddy validate/reload/rollback 统一从宿主 canonical Caddyfile 经 stdin 执行，防止后续主站发布再次抹掉隔离路由；rehearsal 行为保持不变。直接相关 admin-lab 合同和完整蓝绿宿主回归已通过，待推送、无停机热 reload 和浏览器验收。主站“账号盈利”页不属于 T53 或 T54 的改造范围；T54 更新位置是系统设置中的分组调度策略和账号监控体验卡。
+- **T53-R3 隔离站管理员可见性修复**：状态 `INTEGRATING`。T53-R2 路由持久化已推送、部署并验证，但浏览器专项验收发现匿名访客仍能打开 lab Home，违反批准规格。根因是原实现仅隔离 Bearer JWT/localStorage，未实现 `RequireLabAdmin` 页面/API 门禁，原认证合同也没有真实行为矩阵。修复仅补齐既定 T53 Task 4：复用原生 admin JWT/角色校验，在 lab 进程签发 Path 限定的 HttpOnly Cookie 供 Caddy forward-auth；仅独立登录页、登录所需 API 和静态资源公开，所有其他 lab 页面/API 拒绝匿名、普通 lab 用户和生产会话。直接相关 Go/前端/Caddy/lab smoke/typecheck 已通过，待构建、推送、无停机部署和线上正反向验收。T53-R2 已为 `DONE`；主站账号盈利页仍不在 T53/T54 范围。
 
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
 
@@ -77,8 +77,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1 与 T52 均为 `DONE`；T53 为 `INTEGRATING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T53 已完成候选合并和合并后直接相关验证，尚未推送、部署或线上验收；T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52 与 T53-R2 均为 `DONE`；T53-R3 为 `INTEGRATING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T53-R3 已在根 `main` 完成实现和直接相关验证，尚未推送、部署或线上验收；T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：T52 生产源 `main@1ddc7bbfa93b3337663ba427d7bd2b34c78ffdf4`、tree `7e5c344f3da60c378434c2fce68ffe62e1751c43`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`，API、worker 与 model-detector 使用同一不可变镜像且健康。宿主记录为 `/var/lib/sub2api/release-records/20260822T094458Z-production-3328814.json`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-22-main-1ddc7bbf-t52-scheduler-fairness.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。

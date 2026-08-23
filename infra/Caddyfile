@@ -217,10 +217,10 @@
 
 	# T53 admin lab isolated path
 	# T53 admin lab: keep this block before the production fallback proxy.
-	@admin_lab_root path /admin/lab
-	redir @admin_lab_root /admin/lab/ 308
+	@admin_lab_root path /admin/lab /admin/lab/
+	redir @admin_lab_root /admin/lab/login 302
 
-	@admin_lab_assets path /admin/lab/assets/*
+	@admin_lab_assets path /admin/lab/assets/* /admin/lab/logo.svg
 	handle @admin_lab_assets {
 	  uri strip_prefix /admin/lab
 	  reverse_proxy admin-lab-gateway:8088
@@ -246,10 +246,29 @@
 	  }
 	}
 
-	@admin_lab_app path /admin/lab/*
-	handle @admin_lab_app {
+	@admin_lab_login path /admin/lab/login
+	handle @admin_lab_login {
 	  uri strip_prefix /admin/lab
 	  reverse_proxy admin-lab-gateway:8088
+	}
+
+	@admin_lab_no_session {
+	  path /admin/lab/*
+	  not path /admin/lab/login /admin/lab/assets/* /admin/lab/logo.svg /admin/lab/api/* /admin/lab/ws/*
+	  not header Cookie *sub2api_lab_session=*
+	}
+	redir @admin_lab_no_session /admin/lab/login 302
+
+	@admin_lab_app path /admin/lab/*
+	handle @admin_lab_app {
+	  forward_auth admin-lab-gateway:8088 {
+	    uri /api/v1/auth/lab-session
+	    header_up X-Admin-Lab-Only 1
+	  }
+	  uri strip_prefix /admin/lab
+	  reverse_proxy admin-lab-gateway:8088 {
+	    header_up -Cookie
+	  }
 	}
 
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {

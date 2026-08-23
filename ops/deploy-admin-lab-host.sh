@@ -88,7 +88,10 @@ compose=(docker compose --project-name sub2api-admin-lab --project-directory "$d
 docker exec -i sub2api-caddy-1 caddy validate --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route validation failed'
 docker exec -i sub2api-caddy-1 caddy reload --config - --adapter caddyfile <"$stage/infra/Caddyfile" >/dev/null || fail 'Caddy lab route reload failed'
 
-html=$(curl -ksS --fail --max-time 20 "$base_url/admin/lab/") || fail 'public lab route probe failed'
+redirect_headers=$(curl -ksS --fail --max-time 20 -D - -o /dev/null "$base_url/admin/lab/") || fail 'public lab route probe failed'
+grep -Eiq '^HTTP/[0-9.]+ 302([[:space:]]|$)' <<<"$redirect_headers" || fail 'public lab route did not redirect to isolated login'
+grep -Fqi $'location: /admin/lab/login' <<<"$redirect_headers" || fail 'public lab route redirect target is not isolated login'
+html=$(curl -ksS --fail --max-time 20 "$base_url/admin/lab/login") || fail 'isolated lab login probe failed'
 grep -Fq '/admin/lab/assets/' <<<"$html" || fail 'public lab HTML does not contain lab asset base path'
   if grep -Eq 'src="/assets/|href="/assets/' <<<"$html"; then fail '主站 HTML returned for lab path'; fi
 for service in admin-lab-api admin-lab-worker admin-lab-frontend admin-lab-gateway admin-lab-postgres admin-lab-redis admin-lab-mock-upstream admin-lab-mock-payment; do

@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { resolveAdminLabAccessRedirect } from './adminLabAccess'
 
 /**
  * Route definitions with lazy loading
@@ -784,6 +785,7 @@ const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/wechat/payment/callback',
 ]
 const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
+const IS_ADMIN_LAB = import.meta.env.VITE_ADMIN_LAB === '1'
 
 function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
   if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(allowedPath))) {
@@ -811,6 +813,17 @@ router.beforeEach(async (to, _from, next) => {
   if (!authInitialized) {
     authStore.checkAuth()
     authInitialized = true
+  }
+
+  const adminLabRedirect = resolveAdminLabAccessRedirect(
+    IS_ADMIN_LAB,
+    to.path,
+    authStore.isAuthenticated,
+    authStore.isAdmin,
+  )
+  if (adminLabRedirect) {
+    next({ path: adminLabRedirect, query: { redirect: to.fullPath } })
+    return
   }
 
   // Set page title
@@ -842,6 +855,10 @@ router.beforeEach(async (to, _from, next) => {
   if (!requiresAuth) {
     // If already authenticated and trying to access login/register, redirect to appropriate dashboard
     if (authStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
+      if (IS_ADMIN_LAB && !authStore.isAdmin) {
+        next()
+        return
+      }
       // In backend mode, non-admin users should NOT be redirected away from login
       // (they are blocked from all protected routes, so redirecting would cause a loop)
       if (appStore.backendModeEnabled && !authStore.isAdmin) {

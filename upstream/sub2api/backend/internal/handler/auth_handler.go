@@ -8,6 +8,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/lab"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -130,12 +131,24 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 			response.InternalError(c, "Failed to generate token")
 			return
 		}
+		if user.IsAdmin() {
+			if cookieErr := lab.SetAdminSessionCookie(c, token); cookieErr != nil {
+				response.InternalError(c, "Failed to create lab admin session")
+				return
+			}
+		}
 		response.Success(c, AuthResponse{
 			AccessToken: token,
 			TokenType:   "Bearer",
 			User:        dto.UserFromService(user),
 		})
 		return
+	}
+	if user.IsAdmin() {
+		if cookieErr := lab.SetAdminSessionCookie(c, tokenPair.AccessToken); cookieErr != nil {
+			response.InternalError(c, "Failed to create lab admin session")
+			return
+		}
 	}
 	response.Success(c, AuthResponse{
 		AccessToken:  tokenPair.AccessToken,
@@ -150,14 +163,14 @@ func (h *AuthHandler) ensureBackendModeAllowsUser(ctx context.Context, user *ser
 	if user == nil {
 		return infraerrors.Unauthorized("INVALID_USER", "user not found")
 	}
-	if h == nil || !h.isBackendModeEnabled(ctx) || user.IsAdmin() {
+	if h == nil || (!lab.Enabled() && !h.isBackendModeEnabled(ctx)) || user.IsAdmin() {
 		return nil
 	}
 	return infraerrors.Forbidden("BACKEND_MODE_ADMIN_ONLY", "Backend mode is active. Only admin login is allowed.")
 }
 
 func (h *AuthHandler) ensureBackendModeAllowsNewUserLogin(ctx context.Context) error {
-	if h == nil || !h.isBackendModeEnabled(ctx) {
+	if h == nil || (!lab.Enabled() && !h.isBackendModeEnabled(ctx)) {
 		return nil
 	}
 	return infraerrors.Forbidden("BACKEND_MODE_ADMIN_ONLY", "Backend mode is active. Only admin login is allowed.")
@@ -696,9 +709,15 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	// Backend mode: block non-admin token refresh
-	if h.settingSvc.IsBackendModeEnabled(c.Request.Context()) && result.UserRole != "admin" {
+	if (lab.Enabled() || h.settingSvc.IsBackendModeEnabled(c.Request.Context())) && result.UserRole != "admin" {
 		response.Forbidden(c, "Backend mode is active. Only admin login is allowed.")
 		return
+	}
+	if result.UserRole == "admin" {
+		if cookieErr := lab.SetAdminSessionCookie(c, result.AccessToken); cookieErr != nil {
+			response.InternalError(c, "Failed to refresh lab admin session")
+			return
+		}
 	}
 
 	response.Success(c, RefreshTokenResponse{
@@ -735,6 +754,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	h.consumePendingOAuthSessionOnLogout(c)
 	clearOAuthLogoutCookies(c)
+	if err := lab.ClearAdminSessionCookie(c); err != nil {
+		response.InternalError(c, "Failed to clear lab admin session")
+		return
+	}
 
 	response.Success(c, LogoutResponse{
 		Message: "Logged out successfully",

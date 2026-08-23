@@ -63,6 +63,8 @@ for needle in \
   'Caddyfile.backup' \
   'cat "$stage/infra/Caddyfile" >"$deploy_root/Caddyfile"' \
   '主站 HTML' \
+	'admin/lab/login' \
+	'public lab route did not redirect to isolated login' \
   'rollback'; do
   grep -Fq "$needle" "$executor" || fail "host executor missing contract: $needle"
 done

@@ -16,8 +16,10 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
-export type OpenAISchedulerGroupPolicyMode = "weighted_override" | "fair";
+export type OpenAISchedulerGroupPolicyMode = "custom" | "preset";
+export type LegacyOpenAISchedulerGroupPolicyMode = "weighted_override" | "fair";
 export type OpenAISchedulerPreset = "special_offer" | "balanced" | "pro";
+export type OpenAISchedulerPresetID = `builtin:${OpenAISchedulerPreset}` | `custom:${string}` | `custom:new:${string}`;
 export interface OpenAISchedulerFairnessOverride {
   candidate_pool_mode?: "top_k" | "all_eligible" | "hybrid";
   exploration_ratio?: number;
@@ -25,11 +27,28 @@ export interface OpenAISchedulerFairnessOverride {
   fairness_weight?: number;
 }
 export interface OpenAISchedulerGroupPolicy {
-  mode?: OpenAISchedulerGroupPolicyMode;
+  mode?: OpenAISchedulerGroupPolicyMode | LegacyOpenAISchedulerGroupPolicyMode;
   preset?: OpenAISchedulerPreset;
+  preset_id?: OpenAISchedulerPresetID;
   top_k?: number;
   weight_overrides?: Record<string, number>;
   fairness?: OpenAISchedulerFairnessOverride;
+}
+export interface OpenAISchedulerPolicyValues {
+  top_k: number;
+  weight_overrides: Record<string, number>;
+  fairness: Required<OpenAISchedulerFairnessOverride>;
+}
+export interface OpenAISchedulerPresetDefinition {
+  id: string;
+  name: string;
+  kind: "builtin" | "custom";
+  values: OpenAISchedulerPolicyValues;
+}
+export interface OpenAISchedulerCustomPreset {
+  id: string;
+  name: string;
+  values: OpenAISchedulerPolicyValues;
 }
 
 // ── 平台限额类型 ──────────────────────────────────────────────────
@@ -709,6 +728,8 @@ export interface SystemSettings {
   openai_advanced_scheduler_fairness_weight?: number;
   openai_advanced_scheduler_group_overrides?: Record<string, unknown>;
   openai_advanced_scheduler_group_policies?: Record<string, OpenAISchedulerGroupPolicy>;
+  openai_advanced_scheduler_custom_presets?: Record<string, OpenAISchedulerCustomPreset>;
+  openai_advanced_scheduler_available_presets?: OpenAISchedulerPresetDefinition[];
   openai_advanced_scheduler_effective_lb_top_k?: string;
   openai_advanced_scheduler_effective_weight_priority?: string;
   openai_advanced_scheduler_effective_weight_load?: string;
@@ -1026,6 +1047,7 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_fairness_weight?: number;
   openai_advanced_scheduler_group_overrides?: Record<string, unknown>;
   openai_advanced_scheduler_group_policies?: Record<string, OpenAISchedulerGroupPolicy>;
+  openai_advanced_scheduler_custom_presets?: Record<string, OpenAISchedulerCustomPreset>;
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;

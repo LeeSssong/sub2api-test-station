@@ -2,7 +2,8 @@
 -- Expand-only: preserve users.balance and do not backfill historical ledger rows.
 
 CREATE TABLE IF NOT EXISTS user_wallets (
-    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     cash_balance_cny DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (cash_balance_cny >= 0),
     paid_quota_balance_usd DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (paid_quota_balance_usd >= 0),
     gift_quota_balance_usd DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (gift_quota_balance_usd >= 0),

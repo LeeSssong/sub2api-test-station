@@ -105,6 +105,15 @@ func TestNormalizeOpenAISchedulerPresetValuesRejectsOutOfRangeWrites(t *testing.
 	}
 }
 
+func TestNormalizeOpenAISchedulerOverridesRejectsOutOfRangeWrites(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+	tooLargeTopK := &SystemSettings{OpenAIAdvancedSchedulerLBTopK: "33"}
+	require.Error(t, svc.normalizeOpenAIAdvancedSchedulerOverrides(tooLargeTopK))
+
+	tooLargeWeight := &SystemSettings{OpenAIAdvancedSchedulerWeightPriority: "10.01"}
+	require.Error(t, svc.normalizeOpenAIAdvancedSchedulerOverrides(tooLargeWeight))
+}
+
 func TestNormalizeOpenAISchedulerCustomPresetsForReadKeepsValidIDsAndClampsValues(t *testing.T) {
 	customID := "custom:550e8400-e29b-41d4-a716-446655440000"
 	got := normalizeOpenAISchedulerCustomPresetsForRead(map[string]OpenAISchedulerCustomPreset{
@@ -142,6 +151,22 @@ func TestSettingServiceParseSettingsClampsLegacySchedulerValues(t *testing.T) {
 	require.Equal(t, 100, got.OpenAIAdvancedSchedulerExplorationRatio)
 	require.Equal(t, 300, got.OpenAIAdvancedSchedulerStarvationThresholdSeconds)
 	require.Equal(t, 2.0, got.OpenAIAdvancedSchedulerFairnessWeight)
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesForReadClampsLegacySnapshots(t *testing.T) {
+	topK := 99
+	priority := 11.0
+	ratio := 101
+	policies := normalizeOpenAISchedulerGroupPoliciesForRead(map[int64]OpenAISchedulerGroupPolicy{
+		7: {
+			TopK:            &topK,
+			WeightOverrides: map[string]float64{"priority": priority},
+			Fairness:        &OpenAISchedulerFairnessOverride{ExplorationRatio: &ratio},
+		},
+	})
+	require.Equal(t, 32, *policies[7].TopK)
+	require.Equal(t, 10.0, policies[7].WeightOverrides["priority"])
+	require.Equal(t, 100, *policies[7].Fairness.ExplorationRatio)
 }
 
 func TestNormalizeOpenAISchedulerGroupPoliciesConvertsLegacyModesAndPersistsSnapshots(t *testing.T) {

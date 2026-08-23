@@ -8835,6 +8835,7 @@ import type {
   OpenAISchedulerPreset,
   OpenAISchedulerPresetID,
   OpenAISchedulerPolicyValues,
+  OpenAISchedulerFairnessOverride,
   OpenAISchedulerPresetDefinition,
   OpenAISchedulerCustomPreset,
 } from "@/api/admin/settings";
@@ -9956,10 +9957,42 @@ const schedulerPolicyModeLabel = computed(() => schedulerPolicyDraft.mode === "p
   : t("admin.settings.openaiExperimentalScheduler.weightedMode"));
 
 function valuesFromDraft(draft: SchedulerPolicyDraft): OpenAISchedulerPolicyValues {
+  const topK = Number(draft.top_k);
+  const normalizedTopK = Number.isFinite(topK)
+    ? Math.min(OPENAI_SCHEDULER_LIMITS.topK.max, Math.max(OPENAI_SCHEDULER_LIMITS.topK.min, Math.trunc(topK)))
+    : OPENAI_SCHEDULER_LIMITS.topK.min;
+  const weights = Object.fromEntries(
+    schedulerPolicyWeightKeys
+      .map((key) => [key, Number(draft.weight_overrides[key])])
+      .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= OPENAI_SCHEDULER_LIMITS.weight.min && Number(value) <= OPENAI_SCHEDULER_LIMITS.weight.max),
+  ) as Record<string, number>;
   return {
-    top_k: draft.top_k,
-    weight_overrides: { ...draft.weight_overrides } as Record<string, number>,
-    fairness: { ...draft.fairness },
+    top_k: normalizedTopK,
+    weight_overrides: weights,
+    fairness: normalizeSchedulerFairness(draft.fairness),
+  };
+}
+
+function normalizeSchedulerFairness(fairness?: OpenAISchedulerFairnessOverride | null): Required<OpenAISchedulerFairnessOverride> {
+  const finite = (value: unknown, fallback: number, min: number, max: number, integer = false): number => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const normalized = integer ? Math.trunc(parsed) : parsed;
+    return Math.min(max, Math.max(min, normalized));
+  };
+  const rawStarvation = Number(fairness?.starvation_threshold_seconds);
+  const starvation = !Number.isFinite(rawStarvation)
+    ? 21600
+    : rawStarvation === 0
+      ? 0
+      : Math.min(86400, Math.max(300, Math.trunc(rawStarvation)));
+  return {
+    candidate_pool_mode: OPENAI_SCHEDULER_POOL_MODES.includes(fairness?.candidate_pool_mode as typeof OPENAI_SCHEDULER_POOL_MODES[number])
+      ? fairness!.candidate_pool_mode as Required<OpenAISchedulerFairnessOverride>["candidate_pool_mode"]
+      : "hybrid",
+    exploration_ratio: finite(fairness?.exploration_ratio, 0, 0, 100, true),
+    starvation_threshold_seconds: starvation,
+    fairness_weight: finite(fairness?.fairness_weight, 0, 0, 10),
   };
 }
 
@@ -9967,13 +10000,10 @@ function draftFromValues(values: OpenAISchedulerPolicyValues, mode: OpenAISchedu
   return {
     mode,
     preset_id: presetId,
-    top_k: Number(values.top_k) || 7,
+    top_k: Number.isFinite(Number(values.top_k)) ? Math.min(32, Math.max(1, Math.trunc(Number(values.top_k)))) : 7,
     weight_overrides: { ...(values.weight_overrides || {}) },
     fairness: {
-      candidate_pool_mode: values.fairness?.candidate_pool_mode || "hybrid",
-      exploration_ratio: Number(values.fairness?.exploration_ratio) || 0,
-      starvation_threshold_seconds: Number(values.fairness?.starvation_threshold_seconds) || 21600,
-      fairness_weight: Number(values.fairness?.fairness_weight) || 0,
+      ...normalizeSchedulerFairness(values.fairness),
     },
   };
 }
@@ -9987,18 +10017,26 @@ function builtinPresetDefinitions(): OpenAISchedulerPresetDefinition[] {
   }));
 }
 
+function builtinPresetLabel(id: string): string {
+  const suffix = id.endsWith("special_offer") ? "SpecialOffer" : id.endsWith("balanced") ? "Balanced" : "Pro";
+  return t(`admin.settings.openaiExperimentalScheduler.preset${suffix}`);
+}
+
 const schedulerPresetDefinitions = computed(() =>
   (() => {
     const definitions = form.openai_advanced_scheduler_available_presets?.length
       ? [...form.openai_advanced_scheduler_available_presets]
       : builtinPresetDefinitions();
-    const known = new Set(definitions.map((definition) => definition.id));
+    const localizedDefinitions = definitions.map((definition) => definition.kind === "builtin"
+      ? { ...definition, name: builtinPresetLabel(definition.id) }
+      : definition);
+    const known = new Set(localizedDefinitions.map((definition) => definition.id));
     for (const preset of Object.values(form.openai_advanced_scheduler_custom_presets || {})) {
       if (!known.has(preset.id)) {
-        definitions.push({ id: preset.id, name: preset.name, kind: "custom", values: preset.values });
+        localizedDefinitions.push({ id: preset.id, name: preset.name, kind: "custom", values: preset.values });
       }
     }
-    return definitions;
+    return localizedDefinitions;
   })(),
 );
 

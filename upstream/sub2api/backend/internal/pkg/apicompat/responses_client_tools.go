@@ -23,12 +23,20 @@ func AdaptResponsesClientTools(req map[string]any) (ResponsesClientToolMapping, 
 	if req == nil {
 		return ResponsesClientToolMapping{}, false, nil
 	}
+	adapter := ResponsesClientToolMapping{CustomTools: make(map[string]bool)}
+	inferCustomToolNames(req["input"], adapter.CustomTools)
 	tools, ok := req["tools"].([]any)
 	if !ok || len(tools) == 0 {
-		return ResponsesClientToolMapping{}, false, nil
+		if len(adapter.CustomTools) == 0 {
+			return ResponsesClientToolMapping{}, false, nil
+		}
+		changed := rewriteClientToolHistory(req["input"], &adapter)
+		if len(adapter.CustomTools) == 0 {
+			adapter.CustomTools = nil
+		}
+		return adapter, changed, nil
 	}
 
-	adapter := ResponsesClientToolMapping{CustomTools: make(map[string]bool)}
 	functionNames := make(map[string]bool)
 	customNames := make(map[string]bool)
 	for _, raw := range tools {
@@ -49,6 +57,9 @@ func AdaptResponsesClientTools(req map[string]any) (ResponsesClientToolMapping, 
 		case "tool_search":
 			adapter.ToolSearch = true
 		}
+	}
+	for name := range adapter.CustomTools {
+		customNames[name] = true
 	}
 	for name := range customNames {
 		if functionNames[name] {
@@ -128,6 +139,27 @@ func AdaptResponsesClientTools(req map[string]any) (ResponsesClientToolMapping, 
 		adapter.NamespaceTools = nil
 	}
 	return adapter, changed, nil
+}
+
+func inferCustomToolNames(value any, names map[string]bool) {
+	if len(names) == 0 && value == nil {
+		return
+	}
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			inferCustomToolNames(item, names)
+		}
+	case map[string]any:
+		if strings.TrimSpace(stringValue(typed["type"])) == "custom_tool_call" {
+			if name := strings.TrimSpace(stringValue(typed["name"])); name != "" {
+				names[name] = true
+			}
+		}
+		for _, child := range typed {
+			inferCustomToolNames(child, names)
+		}
+	}
 }
 
 func copyClientTool(tool map[string]any) map[string]any {

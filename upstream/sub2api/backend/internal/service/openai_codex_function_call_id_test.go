@@ -66,6 +66,28 @@ func TestFilterCodexInput_KeepsFcID_WhenPreservingReferences(t *testing.T) {
 	require.Equal(t, "fc_validID123", fc["id"], "valid fc* id must be preserved")
 }
 
+func TestFilterCodexInput_CustomToolCallUsesCtcNamespace(t *testing.T) {
+	input := []any{
+		map[string]any{
+			"type":    "custom_tool_call",
+			"id":      "fc_wrong_namespace",
+			"call_id": "call_custom",
+			"name":    "exec",
+			"input":   "pwd",
+		},
+	}
+
+	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		PreserveReferences: true,
+	})
+
+	require.Len(t, filtered, 1)
+	call, ok := filtered[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, call, "id", "custom_tool_call with fc_* id must not be replayed")
+	require.Equal(t, "fc_custom", call["call_id"], "existing upstream call_id normalization remains unchanged")
+}
+
 // TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes verifies that
 // item_* ids are stripped from all call-input types (not output types).
 func TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes(t *testing.T) {

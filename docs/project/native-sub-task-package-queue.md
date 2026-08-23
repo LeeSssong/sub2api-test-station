@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
+
+- **T56 Responses custom-tool ID namespace repair**：状态 `IMPLEMENTING`。已用真实任务 rollout 证据确认 Codex 上下文压缩后会把 `custom_tool_call.id` 写成 `fc_*`；现有中转兼容层又在续请求缺少 `tools` 声明时直接跳过 custom history 转换，OpenAI 直通输入过滤还把 custom/function 两类工具统一按 `fc_*` 规则处理。修复为：从历史调用推断 custom 工具并执行可逆 lowering；直通与 OAuth 输入按 `custom_tool_call -> ctc_*` 独立校验/归一化；保留 `call_id` 配对，不改历史数据库。定向 RED/GREEN 已完成，待构建、推送、无停机发布与线上验证。无迁移、无生产业务数据写入，预计 `downtime_required=false`。
+
 ## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
 
 - **T55 原生额度钱包与手动充值退款账本**：状态 `DESIGNING`。用户已确认采用方案 B：新增钱包拆分与额度流水，保留 `users.balance` 作为兼容投影；扣费顺序为付费额度优先、赠送额度其次；历史 `users.balance` 迁移为未拆分付费额度，历史 `cash_balance_cny=0`、`gift_quota_balance_usd=0`，不标记历史用户。范围包含管理员手动充值/退款弹窗、用户额度拆分展示、额度流水、原子事务、幂等与缓存失效；不包含自动支付、支付订单替代、赠送额度有效期、完整收入确认或第二套计费事实源。当前独立 worktree 待创建；规格书完成后停在用户审阅批准门禁，尚未实施、测试、合并、推送或部署。

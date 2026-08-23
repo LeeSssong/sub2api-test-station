@@ -65,8 +65,21 @@ func TestQuotaWalletRepositoryConcurrentRefundSerializationContract(t *testing.T
 }
 
 func TestQuotaWalletRepositoryReplayPreservesConsumptionSplit(t *testing.T) {
-	entry := service.QuotaLedgerEntry{UserID: 7, ID: 11, PaidQuotaDeltaUSD: decimal.RequireFromString("-2"), GiftQuotaDeltaUSD: decimal.RequireFromString("-3"), PaidAfterUSD: decimal.RequireFromString("4"), GiftAfterUSD: decimal.RequireFromString("1")}
-	result := service.QuotaMutationResult{PaidConsumedUSD: entry.PaidQuotaDeltaUSD.Neg(), GiftConsumedUSD: entry.GiftQuotaDeltaUSD.Neg()}
-	require.Equal(t, decimal.RequireFromString("2"), result.PaidConsumedUSD)
-	require.Equal(t, decimal.RequireFromString("3"), result.GiftConsumedUSD)
+	r, mock, cleanup := newQuotaRepoMock(t)
+	defer cleanup()
+	query := regexp.QuoteMeta(`SELECT id,user_id,record_type,cash_delta_cny,paid_quota_delta_usd,gift_quota_delta_usd,cash_after_cny,paid_after_usd,gift_after_usd FROM user_quota_ledger_entries WHERE id=$1`)
+	rows := sqlmock.NewRows([]string{"id", "user_id", "record_type", "cash_delta_cny", "paid_quota_delta_usd", "gift_quota_delta_usd", "cash_after_cny", "paid_after_usd", "gift_after_usd"}).AddRow(11, 7, service.QuotaRecordUsageConsumption, "0", "-2", "-3", "0", "4", "1")
+	mock.ExpectQuery(query).WithArgs(int64(11)).WillReturnRows(rows)
+	result, err := r.loadMutation(context.Background(), r.client, 11)
+	require.NoError(t, err)
+	require.True(t, decimal.RequireFromString("2").Equal(result.PaidConsumedUSD))
+	require.True(t, decimal.RequireFromString("3").Equal(result.GiftConsumedUSD))
+
+	rows = sqlmock.NewRows([]string{"id", "user_id", "record_type", "cash_delta_cny", "paid_quota_delta_usd", "gift_quota_delta_usd", "cash_after_cny", "paid_after_usd", "gift_after_usd"}).AddRow(12, 7, service.QuotaRecordRefund, "-2", "-2", "-3", "8", "2", "0")
+	mock.ExpectQuery(query).WithArgs(int64(12)).WillReturnRows(rows)
+	result, err = r.loadMutation(context.Background(), r.client, 12)
+	require.NoError(t, err)
+	require.True(t, result.PaidConsumedUSD.IsZero())
+	require.True(t, result.GiftConsumedUSD.IsZero())
+	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -152,12 +152,17 @@ func (r *quotaWalletRepository) ApplyMutation(ctx context.Context, wallet *servi
 
 func (r *quotaWalletRepository) loadMutation(ctx context.Context, c *dbent.Client, id int64) (service.QuotaMutationResult, error) {
 	var e service.QuotaLedgerEntry
-	err := scanOne(ctx, c, `SELECT id,user_id,cash_delta_cny,paid_quota_delta_usd,gift_quota_delta_usd,cash_after_cny,paid_after_usd,gift_after_usd FROM user_quota_ledger_entries WHERE id=$1`, []any{id}, &e.ID, &e.UserID, &e.CashDeltaCNY, &e.PaidQuotaDeltaUSD, &e.GiftQuotaDeltaUSD, &e.CashAfterCNY, &e.PaidAfterUSD, &e.GiftAfterUSD)
+	err := scanOne(ctx, c, `SELECT id,user_id,record_type,cash_delta_cny,paid_quota_delta_usd,gift_quota_delta_usd,cash_after_cny,paid_after_usd,gift_after_usd FROM user_quota_ledger_entries WHERE id=$1`, []any{id}, &e.ID, &e.UserID, &e.RecordType, &e.CashDeltaCNY, &e.PaidQuotaDeltaUSD, &e.GiftQuotaDeltaUSD, &e.CashAfterCNY, &e.PaidAfterUSD, &e.GiftAfterUSD)
 	if err != nil {
 		return service.QuotaMutationResult{}, err
 	}
 	s := service.QuotaSummary{UserID: e.UserID, CashBalanceCNY: e.CashAfterCNY, PaidQuotaBalanceUSD: e.PaidAfterUSD, GiftQuotaBalanceUSD: e.GiftAfterUSD, TotalQuotaBalanceUSD: e.PaidAfterUSD.Add(e.GiftAfterUSD)}
-	return service.QuotaMutationResult{Summary: s, CashDeltaCNY: e.CashDeltaCNY, PaidDeltaUSD: e.PaidQuotaDeltaUSD, GiftDeltaUSD: e.GiftQuotaDeltaUSD, PaidConsumedUSD: e.PaidQuotaDeltaUSD.Neg(), GiftConsumedUSD: e.GiftQuotaDeltaUSD.Neg(), LedgerEntryID: e.ID}, nil
+	result := service.QuotaMutationResult{Summary: s, CashDeltaCNY: e.CashDeltaCNY, PaidDeltaUSD: e.PaidQuotaDeltaUSD, GiftDeltaUSD: e.GiftQuotaDeltaUSD, LedgerEntryID: e.ID}
+	if e.RecordType == service.QuotaRecordUsageConsumption {
+		result.PaidConsumedUSD = e.PaidQuotaDeltaUSD.Neg()
+		result.GiftConsumedUSD = e.GiftQuotaDeltaUSD.Neg()
+	}
+	return result, nil
 }
 
 func (r *quotaWalletRepository) ListLedger(ctx context.Context, userID int64, page, pageSize int, recordType string) ([]service.QuotaLedgerEntry, int, error) {

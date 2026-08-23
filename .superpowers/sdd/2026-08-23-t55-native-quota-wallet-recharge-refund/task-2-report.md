@@ -47,3 +47,18 @@ Verification:
 
 Live PostgreSQL rollback and concurrent-refund integration tests remain pending
 because no PostgreSQL fixture was available in this worktree.
+
+## Fix round 2
+
+- Idempotent replay now reads `record_type`; paid/gift consumed fields are
+  restored only for `usage_consumption`. Recharge, refund, and legacy replay
+  results keep those fields zero.
+- `ApplyRedeemBalanceAdjustment` and `DeductAvailableBalance` route through the
+  coordinator when configured while retaining redeem floor-at-zero and
+  available-deduction min(balance, amount) semantics.
+- Added a sqlmock replay test covering usage split restoration and refund
+  consumption-field suppression.
+
+Verification:
+
+`go test ./internal/service ./internal/repository -run 'QuotaWallet|UserRepo' -count=1` — passed.

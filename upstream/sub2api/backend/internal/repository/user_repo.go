@@ -865,6 +865,27 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 }
 
 func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {
+	if r.quotaWallet != nil {
+		before, err := r.quotaWallet.GetSummary(ctx, id)
+		if err != nil {
+			return err
+		}
+		if delta >= 0 {
+			_, err = r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "add", AmountUSD: decimal.NewFromFloat(delta), ReferenceType: "redeem"})
+			return err
+		}
+		// Redeem's historical floor-at-zero behavior is retained. Negative
+		// adjustments reduce paid quota, but never consume gift quota here.
+		target := before.TotalQuotaBalanceUSD.Add(decimal.NewFromFloat(delta))
+		if target.IsNegative() {
+			target = decimal.Zero
+		}
+		if target.LessThan(before.GiftQuotaBalanceUSD) {
+			target = before.GiftQuotaBalanceUSD
+		}
+		_, err = r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "set", TargetUSD: target, ReferenceType: "redeem"})
+		return err
+	}
 	const updateSQL = `
 		UPDATE users
 		SET balance = GREATEST(balance + $1, 0), updated_at = NOW()
@@ -927,6 +948,27 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 func (r *userRepository) DeductAvailableBalance(ctx context.Context, id int64, amount float64) (deducted float64, err error) {
 	if amount < 0 {
 		return 0, fmt.Errorf("deduction amount must be nonnegative")
+	}
+	if r.quotaWallet != nil {
+		if amount == 0 {
+			return 0, nil
+		}
+		before, err := r.quotaWallet.GetSummary(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		available := decimal.NewFromFloat(amount)
+		if available.GreaterThan(before.TotalQuotaBalanceUSD) {
+			available = before.TotalQuotaBalanceUSD
+		}
+		if available.IsZero() {
+			return 0, nil
+		}
+		_, err = r.quotaWallet.ConsumeUsage(ctx, service.UsageConsumptionInput{UserID: id, AmountUSD: available, ReferenceType: "legacy_available_deduction"})
+		if err != nil {
+			return 0, err
+		}
+		return available.InexactFloat64(), nil
 	}
 	const updateSQL = `
 		WITH target AS (

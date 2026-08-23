@@ -120,6 +120,8 @@ func TestShouldStripOpenAIResponsesInputItemID_Reasoning(t *testing.T) {
 		{"message item id", "message", "item_x", true},
 		{"function_call fc id", "function_call", "fc_abc", false},
 		{"function_call item id", "function_call", "item_x", true},
+		{"custom tool ctc id", "custom_tool_call", "ctc_abc", false},
+		{"custom tool fc id", "custom_tool_call", "fc_abc", true},
 		{"unconstrained type", "web_search_call", "ws_001", false},
 	}
 	for _, tc := range cases {
@@ -127,6 +129,22 @@ func TestShouldStripOpenAIResponsesInputItemID_Reasoning(t *testing.T) {
 			require.Equal(t, tc.want, shouldStripOpenAIResponsesInputItemID(tc.itemType, tc.id))
 		})
 	}
+}
+
+func TestSanitizeOpenAIResponsesInputItemIDs_NormalizesCustomToolCallID(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":[
+		{"type":"custom_tool_call","id":"fc_bad123","call_id":"call_exec","name":"exec","input":"pwd"},
+		{"type":"custom_tool_call_output","call_id":"call_exec","output":"ok"},
+		{"type":"custom_tool_call","id":"ctc_good123","call_id":"call_other","name":"exec","input":"ls"}
+	]}`)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesInputItemIDs(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "ctc_bad123", gjson.GetBytes(sanitized, "input.0.id").String())
+	require.Equal(t, "call_exec", gjson.GetBytes(sanitized, "input.0.call_id").String())
+	require.Equal(t, "call_exec", gjson.GetBytes(sanitized, "input.1.call_id").String())
+	require.Equal(t, "ctc_good123", gjson.GetBytes(sanitized, "input.2.id").String())
 }
 
 func TestSanitizeOpenAIResponsesInputItemIDs_AllocationGrowthIsLinear(t *testing.T) {

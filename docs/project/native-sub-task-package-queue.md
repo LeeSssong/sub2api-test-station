@@ -1,8 +1,24 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
+
+- **T57 DOCX 经营分析总览**：状态 `DESIGNING`。范围来自《星桥AI-Link-经营分析开发需求.docx》，在 Sub 原生管理员经营/盈利页面与 `/admin/operations/*` API 模式上扩展 CNY 经营总览：收入、上游成本、毛利、毛利率、现金充值、期初/期末付费余额、实际消耗、净沉淀、充值/消耗趋势及站内分组毛利。`usage_logs` 继续作为用量与上游成本事实源；付费/赠送额度拆分和现金/额度余额只读取 T55 稳定账本契约，不修改 T55 worktree，不假设 T55 已部署。无法可靠拆分的历史区间必须返回 `pending_split`，不得按 0 计算。T57 与 T55 可在相互隔离的顶层任务/worktree 中并行设计和实现，但只能有一个任务进入整合、部署或线上验收车道；预计涉及只读聚合接口与前端页面，不新增第二账务事实源，迁移和 `downtime_required` 以正式规格与发布预检为准。
+
+## 当前暂停任务（2026-08-23，T54-R2 调度预设与参数中文化）
+
+- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `DONE`。三个内置预设已在生产管理员设置 API 中确认展示为“体验优先 / 体验均衡 / 利润优先”，内部 ID `builtin:special_offer / builtin:balanced / builtin:pro` 保持兼容；中文参数标签、区间限制和旧值读取归一化的直接相关测试、后端构建、前端 SettingsView、typecheck/build 与 diff-check 已通过。根 `main@bcc6f8878` 已推送并经既有本地/宿主蓝绿链发布，宿主记录 `/var/lib/sub2api/release-records/20260823T205048Z-production-2811848.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 200，生产管理员 settings API 返回 200。0600 生产证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-bcc6f887-t54-r2-production.json`。候选 worktree 仅作历史证据保留，不再进入发布车道。
+
+## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
+
+- **T56 Responses custom-tool ID namespace repair**：状态 `DONE`。已用真实任务 rollout 证据确认 Codex 上下文压缩后会把 `custom_tool_call.id` 写成 `fc_*`；现有中转兼容层又在续请求缺少 `tools` 声明时直接跳过 custom history 转换，OpenAI 直通输入过滤还把 custom/function 两类工具统一按 `fc_*` 规则处理。修复已提交并推送 `main@be6738b88819152639ce918743739f2a320f3c4a`：从历史调用推断 custom 工具并执行可逆 lowering；直通与 OAuth 输入按 `custom_tool_call -> ctc_*` 独立校验/归一化；保留 `call_id` 配对，不改历史数据库。定向 RED/GREEN、服务构建与 diff-check 已完成，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-be6738b8-t56-ctc-fc-repair.json`。生产授权已获并完成无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260823T164955Z-production-2302751.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`，公网三项健康端点均 200。无迁移、无生产业务数据写入。
+
+## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
+
+- **T55 原生额度钱包与手动充值退款账本**：状态 `VERIFYING`（仅 admin-lab 隔离测试站，主站不变）。用户已确认采用方案 B：新增钱包拆分与额度流水，保留 `users.balance` 作为兼容投影；扣费顺序为付费额度优先、赠送额度其次；历史 `users.balance` 迁移为未拆分付费额度，历史 `cash_balance_cny=0`、`gift_quota_balance_usd=0`，不标记历史用户。候选 `b80c99f9658b0dab3d8798353b67ad757466d671` 已经隔离发布并完成管理员登录、钱包摘要、手动充值、手动退款、额度流水、合规确认与幂等重放验证；未合并、未推送、未部署到根 `main`/主站。T57 只能读取 T55 稳定契约，不能修改本 worktree。证据见 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-t55-admin-lab-verification.json`。
+
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 
-- **T54-R1 分组调度三步流程与全局命名预设**：状态 `IMPLEMENTING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。正式规格与计划已获用户确认；独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r1-group-scheduler-preset-workflow`、分支 `codex/t54-r1-group-scheduler-preset-workflow` 已从最新干净 `main@d0b6188f2a0d5bcb756afd147fd6c05e0917c292` 创建，使用 fresh subagent 逐任务实施。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
+- **T54-R1 分组调度三步流程与全局命名预设**：状态 `DONE`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。Task 1-4 已完成，功能已合并并推送到 `main@3ab2c3fae90c13a90990f7cb91874cfbb09b6620`；测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-3ab2c3fae-t54-r1-scheduler-workflow.json`（0600）。宿主发布记录 `/var/lib/sub2api/release-records/20260823T160921Z-production-2213574.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `green`；线上 `/healthz`、`/readyz`、`/health` 均 200，管理员设置页确认五个原生 OpenAI 分组、三步顺序、custom/preset 两种模式及预设参数禁用。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入。
 
 ## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
 
@@ -83,8 +99,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52、T53-R2 与 T53-R3 均为 `DONE`；T54-R1 为 `IMPLEMENTING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T54-R1 已完成需求收敛、规格与实施计划，将从最新干净 `main` 建立独立候选并使用 fresh subagent 逐项实施；当前没有其他任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 单车道。T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52、T53-R2、T53-R3 与 T54-R1 均为 `DONE`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T54-R1 已完成推送、无停机蓝绿部署和线上专项验收；最终源 `main@3ab2c3fae90c13a90990f7cb91874cfbb09b6620`，tested tree `5d9b463fcf6a235e601431c3902655f56b35775b`，0600 测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-3ab2c3fae-t54-r1-scheduler-preset.json`，宿主记录 `/var/lib/sub2api/release-records/20260823T160921Z-production-2213574.json`；发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`，三项公网健康均 200。T39/T40 保持 BACKLOG，仅登记不提前实现；T55 继续停在 DESIGNING，不占用整合/部署/验收车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：T53-R3 生产源 `main@4e05195e2a42547dbad04591d5ed4615698f16d9`、tree `a32293c649163a73ae17e8809c4d7e73a5b0b14b`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `green`，API、worker 与 model-detector 使用同源不可变镜像且健康。宿主记录为 `/var/lib/sub2api/release-records/20260823T083812Z-production-1250022.json`；隔离站管理员正向登录、会话 Cookie 和匿名拒绝均通过，公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4e05195e2-t53-r3-admin-only.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。

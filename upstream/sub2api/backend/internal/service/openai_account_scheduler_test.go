@@ -351,11 +351,11 @@ func TestOpenAIGatewayService_OpenAIAdvancedSchedulerRuntimeSettings_DBOverrides
 	require.Equal(t, 2.0, weights.Load)
 	require.Equal(t, 8.0, weights.UpstreamCost)
 	require.Equal(t, 0.25, weights.Reset)
-	require.Equal(t, 12.0, weights.Previous)
+	require.Equal(t, 10.0, weights.Previous)
 	require.Equal(t, 10.0, weights.SessionSticky)
 }
 
-func TestOpenAIGatewayService_OpenAIAdvancedSchedulerRuntimeSettings_InvalidWeightSumsFallBackToConfig(t *testing.T) {
+func TestOpenAIGatewayService_OpenAIAdvancedSchedulerRuntimeSettings_ClampsLegacyWeights(t *testing.T) {
 	base := config.GatewayOpenAIWSSchedulerScoreWeights{
 		Priority: 1, Load: 2, Queue: 3, ErrorRate: 4, TTFT: 5, Reset: 6,
 		QuotaHeadroom: 7, UpstreamCost: 8, PreviousResponse: 9, SessionSticky: 10,
@@ -397,7 +397,13 @@ func TestOpenAIGatewayService_OpenAIAdvancedSchedulerRuntimeSettings_InvalidWeig
 			repo := &openAIAdvancedSchedulerSettingRepoStub{values: tt.values}
 			svc := &OpenAIGatewayService{cfg: cfg, rateLimitService: &RateLimitService{settingService: NewSettingService(repo, cfg)}}
 
-			require.Equal(t, (&OpenAIGatewayService{cfg: cfg}).openAIWSSchedulerWeights(), svc.openAIWSSchedulerWeightsForRequest(context.Background()))
+			want := (&OpenAIGatewayService{cfg: cfg}).openAIWSSchedulerWeights()
+			if tt.name == "base sum overflow" {
+				want.Priority, want.Load = 10, 10
+			} else if tt.name == "sticky total sum overflow" {
+				want.Priority, want.Previous = 10, 10
+			}
+			require.Equal(t, want, svc.openAIWSSchedulerWeightsForRequest(context.Background()))
 		})
 	}
 }

@@ -62,6 +62,26 @@ func TestAdaptResponsesClientTools_LowersDeclarationsHistoryChoiceAndNamespaces(
 	require.Equal(t, "team__send", namespaceCall["name"])
 }
 
+func TestAdaptResponsesClientTools_InfersCustomHistoryWithoutDeclarations(t *testing.T) {
+	req := map[string]any{
+		"input": []any{
+			map[string]any{"type": "custom_tool_call", "id": "fc_bad", "call_id": "call_exec", "name": "exec", "input": "pwd"},
+			map[string]any{"type": "custom_tool_call_output", "call_id": "call_exec", "output": "ok"},
+		},
+	}
+
+	mapping, changed, err := AdaptResponsesClientTools(req)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, mapping.CustomTools["exec"])
+	input := requireResponsesClientToolValue[[]any](t, req["input"])
+	call := requireResponsesClientToolValue[map[string]any](t, input[0])
+	require.Equal(t, "function_call", call["type"])
+	require.Equal(t, "fc_bad", call["id"])
+	output := requireResponsesClientToolValue[map[string]any](t, input[1])
+	require.Equal(t, "function_call_output", output["type"])
+}
+
 func requireResponsesClientToolValue[T any](t *testing.T, value any) T {
 	t.Helper()
 	typed, ok := value.(T)

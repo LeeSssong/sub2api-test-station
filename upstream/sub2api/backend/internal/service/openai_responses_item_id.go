@@ -20,10 +20,27 @@ func shouldStripOpenAIResponsesInputItemID(itemType, id string) bool {
 	if itemType == "reasoning" {
 		return !strings.HasPrefix(id, "rs")
 	}
+	if itemType == "custom_tool_call" {
+		return !strings.HasPrefix(id, "ctc")
+	}
 	if isCodexToolCallInputType(itemType) {
 		return !strings.HasPrefix(id, "fc")
 	}
 	return false
+}
+
+func normalizeCustomToolCallInputItemID(id string) string {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "ctc_") {
+		return id
+	}
+	if _, suffix, ok := strings.Cut(id, "_"); ok && suffix != "" {
+		return "ctc_" + suffix
+	}
+	if id == "" {
+		return "ctc_generated"
+	}
+	return "ctc_" + id
 }
 
 func sanitizeOpenAIResponsesInputItemIDs(body []byte) ([]byte, bool, error) {
@@ -43,14 +60,25 @@ func sanitizeOpenAIResponsesInputItemIDs(body []byte) ([]byte, bool, error) {
 		if item.IsObject() {
 			itemType := item.Get("type")
 			id := item.Get("id")
-			if itemType.Type == gjson.String && id.Type == gjson.String &&
-				shouldStripOpenAIResponsesInputItemID(itemType.String(), id.String()) {
-				itemBody, sanitizeErr = sjson.DeleteBytes(itemBody, "id")
-				if sanitizeErr != nil {
-					sanitizeErr = fmt.Errorf("delete input.%d.id: %w", currentIndex, sanitizeErr)
-					return false
+			if itemType.Type == gjson.String && id.Type == gjson.String {
+				typ := itemType.String()
+				if typ == "custom_tool_call" {
+					if !strings.HasPrefix(id.String(), "ctc_") {
+						itemBody, sanitizeErr = sjson.SetBytes(itemBody, "id", normalizeCustomToolCallInputItemID(id.String()))
+						if sanitizeErr != nil {
+							sanitizeErr = fmt.Errorf("normalize input.%d.id: %w", currentIndex, sanitizeErr)
+							return false
+						}
+						changed = true
+					}
+				} else if shouldStripOpenAIResponsesInputItemID(typ, id.String()) {
+					itemBody, sanitizeErr = sjson.DeleteBytes(itemBody, "id")
+					if sanitizeErr != nil {
+						sanitizeErr = fmt.Errorf("delete input.%d.id: %w", currentIndex, sanitizeErr)
+						return false
+					}
+					changed = true
 				}
-				changed = true
 			}
 		}
 		items = append(items, itemBody)

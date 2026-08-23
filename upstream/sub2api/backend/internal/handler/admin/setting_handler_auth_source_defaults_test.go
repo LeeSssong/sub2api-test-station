@@ -258,6 +258,42 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
 }
 
+func TestSettingHandlerSchedulerPresetsRoundTripAndRejectsReferencedPresetDeletion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	customID := "custom:550e8400-e29b-41d4-a716-446655440000"
+	customJSON := `{"` + customID + `":{"id":"` + customID + `","name":"Steady","values":{"top_k":7,"priority":1,"load":1,"queue":0.7,"error_rate":0.8,"ttft":0.5,"reset":0,"quota_headroom":0,"upstream_cost":0,"previous_response":5,"session_sticky":3,"candidate_pool_mode":"hybrid","exploration_ratio":25,"starvation_threshold_seconds":21600,"fairness_weight":3}}}`
+	repo := &settingHandlerRepoStub{values: map[string]string{service.SettingKeyOpenAIAdvancedSchedulerCustomPresets: customJSON}}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+	h.GetSettings(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	available, ok := data["openai_advanced_scheduler_available_presets"].([]any)
+	require.True(t, ok)
+	require.Len(t, available, 4)
+
+	body := map[string]any{
+		"openai_advanced_scheduler_custom_presets": map[string]any{},
+		"openai_advanced_scheduler_group_policies": map[string]any{"1": map[string]any{"mode": "preset", "preset_id": customID}},
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.UpdateSettings(c)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "cannot delete a preset referenced by a group policy")
+	require.Contains(t, repo.values[service.SettingKeyOpenAIAdvancedSchedulerCustomPresets], customID)
+}
+
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{

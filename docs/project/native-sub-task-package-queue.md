@@ -2,9 +2,11 @@
 
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 
-- **T54-R1 分组调度三步流程与全局命名预设**：状态 `DESIGNING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。正式规格与计划已获用户确认；预定独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r1-group-scheduler-preset-workflow`、分支 `codex/t54-r1-group-scheduler-preset-workflow`，从最新干净 `main@cacf5804d5eaa35cf5aa1f05cf06255f104b2e67` 创建并用 fresh subagent 逐任务实施。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
+- **T54-R1 分组调度三步流程与全局命名预设**：状态 `IMPLEMENTING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。正式规格与计划已获用户确认；独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r1-group-scheduler-preset-workflow`、分支 `codex/t54-r1-group-scheduler-preset-workflow` 已从最新干净 `main@d0b6188f2a0d5bcb756afd147fd6c05e0917c292` 创建，使用 fresh subagent 逐任务实施。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
 
 ## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
+
+- **T53-R4 隔离站登录页修复**：状态 `DONE`。已推送并从 `main@5e48085b0bad5e8cb7c58d9c34866a380ce8b9c0` 通过独立隔离站发布链生效；发布会话 `38311` 返回 `succeeded`、`downtime_required=false`、`lab_html_contract=passed`。仅在 `VITE_ADMIN_LAB=1` 隐藏测试站不允许使用的注册入口。线上 `/admin/lab/` 302、登录页 200 且资产基路径正确，独立测试账号登录 200 并可用 Bearer token 访问 `/admin/lab/api/v1/auth/me` 返回 200；主站 `/admin/`、`/healthz` 仍 200。截图中的 `940310446@qq.com` 为生产管理员账号，不是测试站账号。
 
 - **T53-R3 隔离站管理员可见性修复**：状态 `DONE`。基线 `main@4e05195e2a42547dbad04591d5ed4615698f16d9` 已推送并完成预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260823T083812Z-production-1250022.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `green`，API/worker 使用 source commit `4e05195e2` 的不可变镜像且 healthy。线上验收：`/healthz`、`/readyz`、`/health` 均 200；匿名 `/admin/lab` 与 `/admin/lab/` 均 302 到 `/admin/lab/login`，登录页 200，匿名 `/admin/lab/api/v1/admin/accounts` 返回 401；主站 `/admin/` 保持 200。发布前曾发现隔离站重载完整 Caddy 配置导致运行态 upstream 漂移为 `sub2api-blue:8080`，已按 release-state 恢复为 `sub2api-green:8080` 后再执行蓝绿链，未重启 PostgreSQL、Redis、Caddy 或活动 API。0600 测试证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4e05195e2-t53-r3-admin-only.json`；主站账号盈利页仍不在 T53/T54 范围。
 
@@ -81,7 +83,7 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52、T53-R2 与 T53-R3 均为 `DONE`；T54-R1 为 `DESIGNING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52、T53-R2 与 T53-R3 均为 `DONE`；T54-R1 为 `IMPLEMENTING`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
 - 当前实施：T54-R1 已完成需求收敛、规格与实施计划，将从最新干净 `main` 建立独立候选并使用 fresh subagent 逐项实施；当前没有其他任务占用 `INTEGRATING`、`DEPLOYING` 或 `VERIFYING` 单车道。T39/T40 保持 BACKLOG，仅登记不提前实现；真机视觉验收按用户指令作为后续反馈，不占用发布车道。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：T53-R3 生产源 `main@4e05195e2a42547dbad04591d5ed4615698f16d9`、tree `a32293c649163a73ae17e8809c4d7e73a5b0b14b`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `green`，API、worker 与 model-detector 使用同源不可变镜像且健康。宿主记录为 `/var/lib/sub2api/release-records/20260823T083812Z-production-1250022.json`；隔离站管理员正向登录、会话 Cookie 和匿名拒绝均通过，公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4e05195e2-t53-r3-admin-only.json`。

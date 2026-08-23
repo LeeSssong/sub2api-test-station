@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T55 原生额度钱包与手动充值退款账本（2026-08-23）：** 状态：`VERIFYING`（当前仅测试站）。用户已明确先把手动充值优化部署到测试站，主站保持不变。2026-08-23T23:00Z 重新切换隔离 admin-lab，运行镜像为 `release-7766644aaf2e4eadccb6940a572664f68085dd4f`，8 个隔离服务全部 healthy，入口 `https://api.xingqiaolab.top/admin/lab/` 登录、管理员身份、用户列表、额度摘要、额度流水均 HTTP 200；充值、同键幂等重放、退款均 HTTP 200，重放未新增流水。主站 `main@5ba7a82b1fce468d032815217e032d8adbd84781`、`healthz/readyz/health` 均保持不变且 HTTP 200；未执行主站 T55 迁移、重启或切换。证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-t55-admin-lab-7766644aaf.json`。
+**T55 原生额度钱包与手动充值退款账本（2026-08-23）：** 状态：`VERIFYING`（当前仅测试站）。用户已明确先把手动充值优化部署到测试站，主站保持不变。2026-08-23T23:23Z 重新从根 `main@74f24b5467cfc1b8dfe54a7f4ba41ac2eeaaa125` 通过 `ops/release-admin-lab.sh` 切换隔离 admin-lab，运行镜像为 `release-74f24b5467cfc1b8dfe54a7f4ba41ac2eeaaa125`（前后端），8 个隔离服务全部 healthy，入口 `https://api.xingqiaolab.top/admin/lab/` 302 到隔离登录页；独立管理员登录、用户列表、额度摘要、额度流水、充值、同键幂等重放、退款均线上通过，重放未新增流水，最终余额恢复为现金 `21`、付费额度 `21`、赠送额度 `0`。主站 `main@74f24b5467cfc1b8dfe54a7f4ba41ac2eeaaa125` 对应的生产镜像未发布，生产活动槽仍为 green，Caddy upstream 仍为 `sub2api-green:8080`，生产 `/healthz`、`/readyz`、`/health` 均 HTTP 200；未执行主站 T55 迁移、重启或切换。
 
 **T57 DOCX 经营分析总览（2026-08-24）：** 状态：`DESIGNING`。本任务只承接《星桥AI-Link-经营分析开发需求.docx》，目标是在 Sub 原生管理员经营/盈利能力上增加 CNY 经营总览、现金充值与付费余额沉淀、充值/消耗趋势和站内分组毛利。继续以原生 `usage_logs` 作为请求、Token、分组与上游成本事实源；付费/赠送额度消费拆分、现金余额和额度余额读取 T55 稳定账本契约，不修改或接管 T55 worktree，不把尚未部署的 T55 当作生产事实。历史无法拆分时显示 `pending_split`，不得按 0 计算。本任务将建立独立用户可见顶层任务和 worktree，先完成完整 brainstorming、正式规格、自审与代审批准，再写计划和实现；与 T55 仅并行设计/实现，整合、部署和线上验收保持单车道。
 

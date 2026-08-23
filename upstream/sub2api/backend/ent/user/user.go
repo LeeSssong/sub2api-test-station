@@ -89,6 +89,14 @@ const (
 	EdgePendingAuthSessions = "pending_auth_sessions"
 	// EdgePlatformQuotas holds the string denoting the platform_quotas edge name in mutations.
 	EdgePlatformQuotas = "platform_quotas"
+	// EdgeWallet holds the string denoting the wallet edge name in mutations.
+	EdgeWallet = "wallet"
+	// EdgeQuotaLedgerEntries holds the string denoting the quota_ledger_entries edge name in mutations.
+	EdgeQuotaLedgerEntries = "quota_ledger_entries"
+	// EdgeOperatedQuotaLedgerEntries holds the string denoting the operated_quota_ledger_entries edge name in mutations.
+	EdgeOperatedQuotaLedgerEntries = "operated_quota_ledger_entries"
+	// EdgeQuotaIdempotencyRecords holds the string denoting the quota_idempotency_records edge name in mutations.
+	EdgeQuotaIdempotencyRecords = "quota_idempotency_records"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
 	EdgeUserAllowedGroups = "user_allowed_groups"
 	// Table holds the table name of the user in the database.
@@ -182,6 +190,34 @@ const (
 	PlatformQuotasInverseTable = "user_platform_quotas"
 	// PlatformQuotasColumn is the table column denoting the platform_quotas relation/edge.
 	PlatformQuotasColumn = "user_id"
+	// WalletTable is the table that holds the wallet relation/edge.
+	WalletTable = "user_wallets"
+	// WalletInverseTable is the table name for the UserWallet entity.
+	// It exists in this package in order to avoid circular dependency with the "userwallet" package.
+	WalletInverseTable = "user_wallets"
+	// WalletColumn is the table column denoting the wallet relation/edge.
+	WalletColumn = "user_id"
+	// QuotaLedgerEntriesTable is the table that holds the quota_ledger_entries relation/edge.
+	QuotaLedgerEntriesTable = "user_quota_ledger_entries"
+	// QuotaLedgerEntriesInverseTable is the table name for the UserQuotaLedgerEntry entity.
+	// It exists in this package in order to avoid circular dependency with the "userquotaledgerentry" package.
+	QuotaLedgerEntriesInverseTable = "user_quota_ledger_entries"
+	// QuotaLedgerEntriesColumn is the table column denoting the quota_ledger_entries relation/edge.
+	QuotaLedgerEntriesColumn = "user_id"
+	// OperatedQuotaLedgerEntriesTable is the table that holds the operated_quota_ledger_entries relation/edge.
+	OperatedQuotaLedgerEntriesTable = "user_quota_ledger_entries"
+	// OperatedQuotaLedgerEntriesInverseTable is the table name for the UserQuotaLedgerEntry entity.
+	// It exists in this package in order to avoid circular dependency with the "userquotaledgerentry" package.
+	OperatedQuotaLedgerEntriesInverseTable = "user_quota_ledger_entries"
+	// OperatedQuotaLedgerEntriesColumn is the table column denoting the operated_quota_ledger_entries relation/edge.
+	OperatedQuotaLedgerEntriesColumn = "operator_id"
+	// QuotaIdempotencyRecordsTable is the table that holds the quota_idempotency_records relation/edge.
+	QuotaIdempotencyRecordsTable = "quota_idempotency_records"
+	// QuotaIdempotencyRecordsInverseTable is the table name for the QuotaIdempotencyRecord entity.
+	// It exists in this package in order to avoid circular dependency with the "quotaidempotencyrecord" package.
+	QuotaIdempotencyRecordsInverseTable = "quota_idempotency_records"
+	// QuotaIdempotencyRecordsColumn is the table column denoting the quota_idempotency_records relation/edge.
+	QuotaIdempotencyRecordsColumn = "user_id"
 	// UserAllowedGroupsTable is the table that holds the user_allowed_groups relation/edge.
 	UserAllowedGroupsTable = "user_allowed_groups"
 	// UserAllowedGroupsInverseTable is the table name for the UserAllowedGroup entity.
@@ -602,6 +638,55 @@ func ByPlatformQuotas(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByWalletField orders the results by wallet field.
+func ByWalletField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newWalletStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByQuotaLedgerEntriesCount orders the results by quota_ledger_entries count.
+func ByQuotaLedgerEntriesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newQuotaLedgerEntriesStep(), opts...)
+	}
+}
+
+// ByQuotaLedgerEntries orders the results by quota_ledger_entries terms.
+func ByQuotaLedgerEntries(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newQuotaLedgerEntriesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByOperatedQuotaLedgerEntriesCount orders the results by operated_quota_ledger_entries count.
+func ByOperatedQuotaLedgerEntriesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newOperatedQuotaLedgerEntriesStep(), opts...)
+	}
+}
+
+// ByOperatedQuotaLedgerEntries orders the results by operated_quota_ledger_entries terms.
+func ByOperatedQuotaLedgerEntries(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newOperatedQuotaLedgerEntriesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByQuotaIdempotencyRecordsCount orders the results by quota_idempotency_records count.
+func ByQuotaIdempotencyRecordsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newQuotaIdempotencyRecordsStep(), opts...)
+	}
+}
+
+// ByQuotaIdempotencyRecords orders the results by quota_idempotency_records terms.
+func ByQuotaIdempotencyRecords(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newQuotaIdempotencyRecordsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByUserAllowedGroupsCount orders the results by user_allowed_groups count.
 func ByUserAllowedGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -704,6 +789,34 @@ func newPlatformQuotasStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PlatformQuotasInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PlatformQuotasTable, PlatformQuotasColumn),
+	)
+}
+func newWalletStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(WalletInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, WalletTable, WalletColumn),
+	)
+}
+func newQuotaLedgerEntriesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(QuotaLedgerEntriesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, QuotaLedgerEntriesTable, QuotaLedgerEntriesColumn),
+	)
+}
+func newOperatedQuotaLedgerEntriesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(OperatedQuotaLedgerEntriesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, OperatedQuotaLedgerEntriesTable, OperatedQuotaLedgerEntriesColumn),
+	)
+}
+func newQuotaIdempotencyRecordsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(QuotaIdempotencyRecordsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, QuotaIdempotencyRecordsTable, QuotaIdempotencyRecordsColumn),
 	)
 }
 func newUserAllowedGroupsStep() *sqlgraph.Step {

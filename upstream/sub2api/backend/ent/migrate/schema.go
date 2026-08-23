@@ -1507,6 +1507,52 @@ var (
 			},
 		},
 	}
+	// QuotaIdempotencyRecordsColumns holds the columns for the "quota_idempotency_records" table.
+	QuotaIdempotencyRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "idempotency_key", Type: field.TypeString, Size: 255},
+		{Name: "request_fingerprint", Type: field.TypeString, Size: 64},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "processing"},
+		{Name: "response_status", Type: field.TypeInt, Nullable: true},
+		{Name: "response_body", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "ledger_entry_id", Type: field.TypeInt64, Unique: true, Nullable: true},
+	}
+	// QuotaIdempotencyRecordsTable holds the schema information for the "quota_idempotency_records" table.
+	QuotaIdempotencyRecordsTable = &schema.Table{
+		Name:       "quota_idempotency_records",
+		Columns:    QuotaIdempotencyRecordsColumns,
+		PrimaryKey: []*schema.Column{QuotaIdempotencyRecordsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "quota_idempotency_records_users_quota_idempotency_records",
+				Columns:    []*schema.Column{QuotaIdempotencyRecordsColumns[9]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "quota_idempotency_records_user_quota_ledger_entries_idempotency_record",
+				Columns:    []*schema.Column{QuotaIdempotencyRecordsColumns[10]},
+				RefColumns: []*schema.Column{UserQuotaLedgerEntriesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaidempotencyrecord_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaIdempotencyRecordsColumns[9], QuotaIdempotencyRecordsColumns[1]},
+			},
+			{
+				Name:    "quotaidempotencyrecord_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaIdempotencyRecordsColumns[6]},
+			},
+		},
+	}
 	// RedeemCodesColumns holds the columns for the "redeem_codes" table.
 	RedeemCodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2141,6 +2187,65 @@ var (
 			},
 		},
 	}
+	// UserQuotaLedgerEntriesColumns holds the columns for the "user_quota_ledger_entries" table.
+	UserQuotaLedgerEntriesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "record_type", Type: field.TypeString, Size: 40},
+		{Name: "cash_delta_cny", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "paid_quota_delta_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "gift_quota_delta_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "cash_before_cny", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "cash_after_cny", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "paid_before_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "paid_after_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "gift_before_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "gift_after_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "reference_type", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "reference_id", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "note", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "confirmed"},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "operator_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// UserQuotaLedgerEntriesTable holds the schema information for the "user_quota_ledger_entries" table.
+	UserQuotaLedgerEntriesTable = &schema.Table{
+		Name:       "user_quota_ledger_entries",
+		Columns:    UserQuotaLedgerEntriesColumns,
+		PrimaryKey: []*schema.Column{UserQuotaLedgerEntriesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_quota_ledger_entries_users_quota_ledger_entries",
+				Columns:    []*schema.Column{UserQuotaLedgerEntriesColumns[17]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "user_quota_ledger_entries_users_operated_quota_ledger_entries",
+				Columns:    []*schema.Column{UserQuotaLedgerEntriesColumns[18]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_user_quota_ledger_entries_user_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserQuotaLedgerEntriesColumns[17], UserQuotaLedgerEntriesColumns[16]},
+			},
+			{
+				Name:    "idx_user_quota_ledger_entries_reference",
+				Unique:  false,
+				Columns: []*schema.Column{UserQuotaLedgerEntriesColumns[11], UserQuotaLedgerEntriesColumns[12]},
+			},
+			{
+				Name:    "userquotaledgerentry_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaLedgerEntriesColumns[17], UserQuotaLedgerEntriesColumns[13]},
+			},
+		},
+	}
 	// UserSubscriptionsColumns holds the columns for the "user_subscriptions" table.
 	UserSubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2230,6 +2335,38 @@ var (
 			},
 		},
 	}
+	// UserWalletsColumns holds the columns for the "user_wallets" table.
+	UserWalletsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "cash_balance_cny", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "paid_quota_balance_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "gift_quota_balance_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64, Unique: true},
+	}
+	// UserWalletsTable holds the schema information for the "user_wallets" table.
+	UserWalletsTable = &schema.Table{
+		Name:       "user_wallets",
+		Columns:    UserWalletsColumns,
+		PrimaryKey: []*schema.Column{UserWalletsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_wallets_users_wallet",
+				Columns:    []*schema.Column{UserWalletsColumns[7]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userwallet_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserWalletsColumns[7]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		APIKeysTable,
@@ -2260,6 +2397,7 @@ var (
 		PromoCodesTable,
 		PromoCodeUsagesTable,
 		ProxiesTable,
+		QuotaIdempotencyRecordsTable,
 		RedeemCodesTable,
 		SecuritySecretsTable,
 		SettingsTable,
@@ -2274,7 +2412,9 @@ var (
 		UserAttributeDefinitionsTable,
 		UserAttributeValuesTable,
 		UserPlatformQuotasTable,
+		UserQuotaLedgerEntriesTable,
 		UserSubscriptionsTable,
+		UserWalletsTable,
 	}
 )
 
@@ -2385,6 +2525,11 @@ func init() {
 	ProxiesTable.Annotation = &entsql.Annotation{
 		Table: "proxies",
 	}
+	QuotaIdempotencyRecordsTable.ForeignKeys[0].RefTable = UsersTable
+	QuotaIdempotencyRecordsTable.ForeignKeys[1].RefTable = UserQuotaLedgerEntriesTable
+	QuotaIdempotencyRecordsTable.Annotation = &entsql.Annotation{
+		Table: "quota_idempotency_records",
+	}
 	RedeemCodesTable.ForeignKeys[0].RefTable = GroupsTable
 	RedeemCodesTable.ForeignKeys[1].RefTable = UsersTable
 	RedeemCodesTable.Annotation = &entsql.Annotation{
@@ -2441,10 +2586,19 @@ func init() {
 	UserPlatformQuotasTable.Annotation = &entsql.Annotation{
 		Table: "user_platform_quotas",
 	}
+	UserQuotaLedgerEntriesTable.ForeignKeys[0].RefTable = UsersTable
+	UserQuotaLedgerEntriesTable.ForeignKeys[1].RefTable = UsersTable
+	UserQuotaLedgerEntriesTable.Annotation = &entsql.Annotation{
+		Table: "user_quota_ledger_entries",
+	}
 	UserSubscriptionsTable.ForeignKeys[0].RefTable = GroupsTable
 	UserSubscriptionsTable.ForeignKeys[1].RefTable = UsersTable
 	UserSubscriptionsTable.ForeignKeys[2].RefTable = UsersTable
 	UserSubscriptionsTable.Annotation = &entsql.Annotation{
 		Table: "user_subscriptions",
+	}
+	UserWalletsTable.ForeignKeys[0].RefTable = UsersTable
+	UserWalletsTable.Annotation = &entsql.Annotation{
+		Table: "user_wallets",
 	}
 }

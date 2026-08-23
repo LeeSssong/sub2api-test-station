@@ -43,6 +43,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -57,7 +58,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 
 	stdsql "database/sql"
 )
@@ -123,6 +126,8 @@ type Client struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// QuotaIdempotencyRecord is the client for interacting with the QuotaIdempotencyRecord builders.
+	QuotaIdempotencyRecord *QuotaIdempotencyRecordClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
@@ -151,8 +156,12 @@ type Client struct {
 	UserAttributeValue *UserAttributeValueClient
 	// UserPlatformQuota is the client for interacting with the UserPlatformQuota builders.
 	UserPlatformQuota *UserPlatformQuotaClient
+	// UserQuotaLedgerEntry is the client for interacting with the UserQuotaLedgerEntry builders.
+	UserQuotaLedgerEntry *UserQuotaLedgerEntryClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
+	// UserWallet is the client for interacting with the UserWallet builders.
+	UserWallet *UserWalletClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -192,6 +201,7 @@ func (c *Client) init() {
 	c.PromoCode = NewPromoCodeClient(c.config)
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
+	c.QuotaIdempotencyRecord = NewQuotaIdempotencyRecordClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
@@ -206,7 +216,9 @@ func (c *Client) init() {
 	c.UserAttributeDefinition = NewUserAttributeDefinitionClient(c.config)
 	c.UserAttributeValue = NewUserAttributeValueClient(c.config)
 	c.UserPlatformQuota = NewUserPlatformQuotaClient(c.config)
+	c.UserQuotaLedgerEntry = NewUserQuotaLedgerEntryClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
+	c.UserWallet = NewUserWalletClient(c.config)
 }
 
 type (
@@ -327,6 +339,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
+		QuotaIdempotencyRecord:        NewQuotaIdempotencyRecordClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
@@ -341,7 +354,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
 		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
+		UserQuotaLedgerEntry:          NewUserQuotaLedgerEntryClient(cfg),
 		UserSubscription:              NewUserSubscriptionClient(cfg),
+		UserWallet:                    NewUserWalletClient(cfg),
 	}, nil
 }
 
@@ -389,6 +404,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
+		QuotaIdempotencyRecord:        NewQuotaIdempotencyRecordClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
@@ -403,7 +419,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
 		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
+		UserQuotaLedgerEntry:          NewUserQuotaLedgerEntryClient(cfg),
 		UserSubscription:              NewUserSubscriptionClient(cfg),
+		UserWallet:                    NewUserWalletClient(cfg),
 	}, nil
 }
 
@@ -440,11 +458,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
 		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask,
-		c.UsageCostReview, c.UsageLog, c.UsageUpstreamCostEvidence, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PromoCodeUsage, c.Proxy, c.QuotaIdempotencyRecord, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageCostReview, c.UsageLog, c.UsageUpstreamCostEvidence,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserQuotaLedgerEntry, c.UserSubscription, c.UserWallet,
 	} {
 		n.Use(hooks...)
 	}
@@ -461,11 +479,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
 		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask,
-		c.UsageCostReview, c.UsageLog, c.UsageUpstreamCostEvidence, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PromoCodeUsage, c.Proxy, c.QuotaIdempotencyRecord, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageCostReview, c.UsageLog, c.UsageUpstreamCostEvidence,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserQuotaLedgerEntry, c.UserSubscription, c.UserWallet,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -530,6 +548,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PromoCodeUsage.mutate(ctx, m)
 	case *ProxyMutation:
 		return c.Proxy.mutate(ctx, m)
+	case *QuotaIdempotencyRecordMutation:
+		return c.QuotaIdempotencyRecord.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
 	case *SecuritySecretMutation:
@@ -558,8 +578,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UserAttributeValue.mutate(ctx, m)
 	case *UserPlatformQuotaMutation:
 		return c.UserPlatformQuota.mutate(ctx, m)
+	case *UserQuotaLedgerEntryMutation:
+		return c.UserQuotaLedgerEntry.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
+	case *UserWalletMutation:
+		return c.UserWallet.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -4954,6 +4978,171 @@ func (c *ProxyClient) mutate(ctx context.Context, m *ProxyMutation) (Value, erro
 	}
 }
 
+// QuotaIdempotencyRecordClient is a client for the QuotaIdempotencyRecord schema.
+type QuotaIdempotencyRecordClient struct {
+	config
+}
+
+// NewQuotaIdempotencyRecordClient returns a client for the QuotaIdempotencyRecord from the given config.
+func NewQuotaIdempotencyRecordClient(c config) *QuotaIdempotencyRecordClient {
+	return &QuotaIdempotencyRecordClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `quotaidempotencyrecord.Hooks(f(g(h())))`.
+func (c *QuotaIdempotencyRecordClient) Use(hooks ...Hook) {
+	c.hooks.QuotaIdempotencyRecord = append(c.hooks.QuotaIdempotencyRecord, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `quotaidempotencyrecord.Intercept(f(g(h())))`.
+func (c *QuotaIdempotencyRecordClient) Intercept(interceptors ...Interceptor) {
+	c.inters.QuotaIdempotencyRecord = append(c.inters.QuotaIdempotencyRecord, interceptors...)
+}
+
+// Create returns a builder for creating a QuotaIdempotencyRecord entity.
+func (c *QuotaIdempotencyRecordClient) Create() *QuotaIdempotencyRecordCreate {
+	mutation := newQuotaIdempotencyRecordMutation(c.config, OpCreate)
+	return &QuotaIdempotencyRecordCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of QuotaIdempotencyRecord entities.
+func (c *QuotaIdempotencyRecordClient) CreateBulk(builders ...*QuotaIdempotencyRecordCreate) *QuotaIdempotencyRecordCreateBulk {
+	return &QuotaIdempotencyRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *QuotaIdempotencyRecordClient) MapCreateBulk(slice any, setFunc func(*QuotaIdempotencyRecordCreate, int)) *QuotaIdempotencyRecordCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &QuotaIdempotencyRecordCreateBulk{err: fmt.Errorf("calling to QuotaIdempotencyRecordClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*QuotaIdempotencyRecordCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &QuotaIdempotencyRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for QuotaIdempotencyRecord.
+func (c *QuotaIdempotencyRecordClient) Update() *QuotaIdempotencyRecordUpdate {
+	mutation := newQuotaIdempotencyRecordMutation(c.config, OpUpdate)
+	return &QuotaIdempotencyRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *QuotaIdempotencyRecordClient) UpdateOne(_m *QuotaIdempotencyRecord) *QuotaIdempotencyRecordUpdateOne {
+	mutation := newQuotaIdempotencyRecordMutation(c.config, OpUpdateOne, withQuotaIdempotencyRecord(_m))
+	return &QuotaIdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *QuotaIdempotencyRecordClient) UpdateOneID(id int64) *QuotaIdempotencyRecordUpdateOne {
+	mutation := newQuotaIdempotencyRecordMutation(c.config, OpUpdateOne, withQuotaIdempotencyRecordID(id))
+	return &QuotaIdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for QuotaIdempotencyRecord.
+func (c *QuotaIdempotencyRecordClient) Delete() *QuotaIdempotencyRecordDelete {
+	mutation := newQuotaIdempotencyRecordMutation(c.config, OpDelete)
+	return &QuotaIdempotencyRecordDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *QuotaIdempotencyRecordClient) DeleteOne(_m *QuotaIdempotencyRecord) *QuotaIdempotencyRecordDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *QuotaIdempotencyRecordClient) DeleteOneID(id int64) *QuotaIdempotencyRecordDeleteOne {
+	builder := c.Delete().Where(quotaidempotencyrecord.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &QuotaIdempotencyRecordDeleteOne{builder}
+}
+
+// Query returns a query builder for QuotaIdempotencyRecord.
+func (c *QuotaIdempotencyRecordClient) Query() *QuotaIdempotencyRecordQuery {
+	return &QuotaIdempotencyRecordQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeQuotaIdempotencyRecord},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a QuotaIdempotencyRecord entity by its id.
+func (c *QuotaIdempotencyRecordClient) Get(ctx context.Context, id int64) (*QuotaIdempotencyRecord, error) {
+	return c.Query().Where(quotaidempotencyrecord.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *QuotaIdempotencyRecordClient) GetX(ctx context.Context, id int64) *QuotaIdempotencyRecord {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a QuotaIdempotencyRecord.
+func (c *QuotaIdempotencyRecordClient) QueryUser(_m *QuotaIdempotencyRecord) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(quotaidempotencyrecord.Table, quotaidempotencyrecord.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, quotaidempotencyrecord.UserTable, quotaidempotencyrecord.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryLedgerEntry queries the ledger_entry edge of a QuotaIdempotencyRecord.
+func (c *QuotaIdempotencyRecordClient) QueryLedgerEntry(_m *QuotaIdempotencyRecord) *UserQuotaLedgerEntryQuery {
+	query := (&UserQuotaLedgerEntryClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(quotaidempotencyrecord.Table, quotaidempotencyrecord.FieldID, id),
+			sqlgraph.To(userquotaledgerentry.Table, userquotaledgerentry.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, quotaidempotencyrecord.LedgerEntryTable, quotaidempotencyrecord.LedgerEntryColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *QuotaIdempotencyRecordClient) Hooks() []Hook {
+	return c.hooks.QuotaIdempotencyRecord
+}
+
+// Interceptors returns the client interceptors.
+func (c *QuotaIdempotencyRecordClient) Interceptors() []Interceptor {
+	return c.inters.QuotaIdempotencyRecord
+}
+
+func (c *QuotaIdempotencyRecordClient) mutate(ctx context.Context, m *QuotaIdempotencyRecordMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&QuotaIdempotencyRecordCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&QuotaIdempotencyRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&QuotaIdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&QuotaIdempotencyRecordDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown QuotaIdempotencyRecord mutation op: %q", m.Op())
+	}
+}
+
 // RedeemCodeClient is a client for the RedeemCode schema.
 type RedeemCodeClient struct {
 	config
@@ -6611,6 +6800,70 @@ func (c *UserClient) QueryPlatformQuotas(_m *User) *UserPlatformQuotaQuery {
 	return query
 }
 
+// QueryWallet queries the wallet edge of a User.
+func (c *UserClient) QueryWallet(_m *User) *UserWalletQuery {
+	query := (&UserWalletClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userwallet.Table, userwallet.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.WalletTable, user.WalletColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryQuotaLedgerEntries queries the quota_ledger_entries edge of a User.
+func (c *UserClient) QueryQuotaLedgerEntries(_m *User) *UserQuotaLedgerEntryQuery {
+	query := (&UserQuotaLedgerEntryClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userquotaledgerentry.Table, userquotaledgerentry.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.QuotaLedgerEntriesTable, user.QuotaLedgerEntriesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryOperatedQuotaLedgerEntries queries the operated_quota_ledger_entries edge of a User.
+func (c *UserClient) QueryOperatedQuotaLedgerEntries(_m *User) *UserQuotaLedgerEntryQuery {
+	query := (&UserQuotaLedgerEntryClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userquotaledgerentry.Table, userquotaledgerentry.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.OperatedQuotaLedgerEntriesTable, user.OperatedQuotaLedgerEntriesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryQuotaIdempotencyRecords queries the quota_idempotency_records edge of a User.
+func (c *UserClient) QueryQuotaIdempotencyRecords(_m *User) *QuotaIdempotencyRecordQuery {
+	query := (&QuotaIdempotencyRecordClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(quotaidempotencyrecord.Table, quotaidempotencyrecord.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.QuotaIdempotencyRecordsTable, user.QuotaIdempotencyRecordsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups queries the user_allowed_groups edge of a User.
 func (c *UserClient) QueryUserAllowedGroups(_m *User) *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: c.config}).Query()
@@ -7237,6 +7490,187 @@ func (c *UserPlatformQuotaClient) mutate(ctx context.Context, m *UserPlatformQuo
 	}
 }
 
+// UserQuotaLedgerEntryClient is a client for the UserQuotaLedgerEntry schema.
+type UserQuotaLedgerEntryClient struct {
+	config
+}
+
+// NewUserQuotaLedgerEntryClient returns a client for the UserQuotaLedgerEntry from the given config.
+func NewUserQuotaLedgerEntryClient(c config) *UserQuotaLedgerEntryClient {
+	return &UserQuotaLedgerEntryClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userquotaledgerentry.Hooks(f(g(h())))`.
+func (c *UserQuotaLedgerEntryClient) Use(hooks ...Hook) {
+	c.hooks.UserQuotaLedgerEntry = append(c.hooks.UserQuotaLedgerEntry, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userquotaledgerentry.Intercept(f(g(h())))`.
+func (c *UserQuotaLedgerEntryClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserQuotaLedgerEntry = append(c.inters.UserQuotaLedgerEntry, interceptors...)
+}
+
+// Create returns a builder for creating a UserQuotaLedgerEntry entity.
+func (c *UserQuotaLedgerEntryClient) Create() *UserQuotaLedgerEntryCreate {
+	mutation := newUserQuotaLedgerEntryMutation(c.config, OpCreate)
+	return &UserQuotaLedgerEntryCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserQuotaLedgerEntry entities.
+func (c *UserQuotaLedgerEntryClient) CreateBulk(builders ...*UserQuotaLedgerEntryCreate) *UserQuotaLedgerEntryCreateBulk {
+	return &UserQuotaLedgerEntryCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserQuotaLedgerEntryClient) MapCreateBulk(slice any, setFunc func(*UserQuotaLedgerEntryCreate, int)) *UserQuotaLedgerEntryCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserQuotaLedgerEntryCreateBulk{err: fmt.Errorf("calling to UserQuotaLedgerEntryClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserQuotaLedgerEntryCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserQuotaLedgerEntryCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) Update() *UserQuotaLedgerEntryUpdate {
+	mutation := newUserQuotaLedgerEntryMutation(c.config, OpUpdate)
+	return &UserQuotaLedgerEntryUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserQuotaLedgerEntryClient) UpdateOne(_m *UserQuotaLedgerEntry) *UserQuotaLedgerEntryUpdateOne {
+	mutation := newUserQuotaLedgerEntryMutation(c.config, OpUpdateOne, withUserQuotaLedgerEntry(_m))
+	return &UserQuotaLedgerEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserQuotaLedgerEntryClient) UpdateOneID(id int64) *UserQuotaLedgerEntryUpdateOne {
+	mutation := newUserQuotaLedgerEntryMutation(c.config, OpUpdateOne, withUserQuotaLedgerEntryID(id))
+	return &UserQuotaLedgerEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) Delete() *UserQuotaLedgerEntryDelete {
+	mutation := newUserQuotaLedgerEntryMutation(c.config, OpDelete)
+	return &UserQuotaLedgerEntryDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserQuotaLedgerEntryClient) DeleteOne(_m *UserQuotaLedgerEntry) *UserQuotaLedgerEntryDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserQuotaLedgerEntryClient) DeleteOneID(id int64) *UserQuotaLedgerEntryDeleteOne {
+	builder := c.Delete().Where(userquotaledgerentry.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserQuotaLedgerEntryDeleteOne{builder}
+}
+
+// Query returns a query builder for UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) Query() *UserQuotaLedgerEntryQuery {
+	return &UserQuotaLedgerEntryQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserQuotaLedgerEntry},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserQuotaLedgerEntry entity by its id.
+func (c *UserQuotaLedgerEntryClient) Get(ctx context.Context, id int64) (*UserQuotaLedgerEntry, error) {
+	return c.Query().Where(userquotaledgerentry.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserQuotaLedgerEntryClient) GetX(ctx context.Context, id int64) *UserQuotaLedgerEntry {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) QueryUser(_m *UserQuotaLedgerEntry) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userquotaledgerentry.Table, userquotaledgerentry.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userquotaledgerentry.UserTable, userquotaledgerentry.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryOperator queries the operator edge of a UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) QueryOperator(_m *UserQuotaLedgerEntry) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userquotaledgerentry.Table, userquotaledgerentry.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userquotaledgerentry.OperatorTable, userquotaledgerentry.OperatorColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryIdempotencyRecord queries the idempotency_record edge of a UserQuotaLedgerEntry.
+func (c *UserQuotaLedgerEntryClient) QueryIdempotencyRecord(_m *UserQuotaLedgerEntry) *QuotaIdempotencyRecordQuery {
+	query := (&QuotaIdempotencyRecordClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userquotaledgerentry.Table, userquotaledgerentry.FieldID, id),
+			sqlgraph.To(quotaidempotencyrecord.Table, quotaidempotencyrecord.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, userquotaledgerentry.IdempotencyRecordTable, userquotaledgerentry.IdempotencyRecordColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserQuotaLedgerEntryClient) Hooks() []Hook {
+	return c.hooks.UserQuotaLedgerEntry
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserQuotaLedgerEntryClient) Interceptors() []Interceptor {
+	return c.inters.UserQuotaLedgerEntry
+}
+
+func (c *UserQuotaLedgerEntryClient) mutate(ctx context.Context, m *UserQuotaLedgerEntryMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserQuotaLedgerEntryCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserQuotaLedgerEntryUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserQuotaLedgerEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserQuotaLedgerEntryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserQuotaLedgerEntry mutation op: %q", m.Op())
+	}
+}
+
 // UserSubscriptionClient is a client for the UserSubscription schema.
 type UserSubscriptionClient struct {
 	config
@@ -7436,6 +7870,155 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 	}
 }
 
+// UserWalletClient is a client for the UserWallet schema.
+type UserWalletClient struct {
+	config
+}
+
+// NewUserWalletClient returns a client for the UserWallet from the given config.
+func NewUserWalletClient(c config) *UserWalletClient {
+	return &UserWalletClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userwallet.Hooks(f(g(h())))`.
+func (c *UserWalletClient) Use(hooks ...Hook) {
+	c.hooks.UserWallet = append(c.hooks.UserWallet, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userwallet.Intercept(f(g(h())))`.
+func (c *UserWalletClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserWallet = append(c.inters.UserWallet, interceptors...)
+}
+
+// Create returns a builder for creating a UserWallet entity.
+func (c *UserWalletClient) Create() *UserWalletCreate {
+	mutation := newUserWalletMutation(c.config, OpCreate)
+	return &UserWalletCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserWallet entities.
+func (c *UserWalletClient) CreateBulk(builders ...*UserWalletCreate) *UserWalletCreateBulk {
+	return &UserWalletCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserWalletClient) MapCreateBulk(slice any, setFunc func(*UserWalletCreate, int)) *UserWalletCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserWalletCreateBulk{err: fmt.Errorf("calling to UserWalletClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserWalletCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserWalletCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserWallet.
+func (c *UserWalletClient) Update() *UserWalletUpdate {
+	mutation := newUserWalletMutation(c.config, OpUpdate)
+	return &UserWalletUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserWalletClient) UpdateOne(_m *UserWallet) *UserWalletUpdateOne {
+	mutation := newUserWalletMutation(c.config, OpUpdateOne, withUserWallet(_m))
+	return &UserWalletUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserWalletClient) UpdateOneID(id int64) *UserWalletUpdateOne {
+	mutation := newUserWalletMutation(c.config, OpUpdateOne, withUserWalletID(id))
+	return &UserWalletUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserWallet.
+func (c *UserWalletClient) Delete() *UserWalletDelete {
+	mutation := newUserWalletMutation(c.config, OpDelete)
+	return &UserWalletDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserWalletClient) DeleteOne(_m *UserWallet) *UserWalletDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserWalletClient) DeleteOneID(id int64) *UserWalletDeleteOne {
+	builder := c.Delete().Where(userwallet.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserWalletDeleteOne{builder}
+}
+
+// Query returns a query builder for UserWallet.
+func (c *UserWalletClient) Query() *UserWalletQuery {
+	return &UserWalletQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserWallet},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserWallet entity by its id.
+func (c *UserWalletClient) Get(ctx context.Context, id int64) (*UserWallet, error) {
+	return c.Query().Where(userwallet.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserWalletClient) GetX(ctx context.Context, id int64) *UserWallet {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserWallet.
+func (c *UserWalletClient) QueryUser(_m *UserWallet) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userwallet.Table, userwallet.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, userwallet.UserTable, userwallet.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserWalletClient) Hooks() []Hook {
+	return c.hooks.UserWallet
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserWalletClient) Interceptors() []Interceptor {
+	return c.inters.UserWallet
+}
+
+func (c *UserWalletClient) mutate(ctx context.Context, m *UserWalletMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserWalletCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserWalletUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserWalletUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserWalletDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserWallet mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
@@ -7446,10 +8029,11 @@ type (
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageCostReview, UsageLog,
-		UsageUpstreamCostEvidence, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		PromoCodeUsage, Proxy, QuotaIdempotencyRecord, RedeemCode, SecuritySecret,
+		Setting, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
+		UsageCostReview, UsageLog, UsageUpstreamCostEvidence, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserQuotaLedgerEntry, UserSubscription, UserWallet []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountDailyFinancialValue, AccountFinancialSetting,
@@ -7459,10 +8043,11 @@ type (
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageCostReview, UsageLog,
-		UsageUpstreamCostEvidence, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		PromoCodeUsage, Proxy, QuotaIdempotencyRecord, RedeemCode, SecuritySecret,
+		Setting, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
+		UsageCostReview, UsageLog, UsageUpstreamCostEvidence, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserQuotaLedgerEntry, UserSubscription, UserWallet []ent.Interceptor
 	}
 )
 

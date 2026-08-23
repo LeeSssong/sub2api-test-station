@@ -33,6 +33,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -48,7 +49,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
@@ -1745,6 +1748,32 @@ func init() {
 	proxyDescExpiryWarnDays := proxyFields[10].Descriptor()
 	// proxy.DefaultExpiryWarnDays holds the default value on creation for the expiry_warn_days field.
 	proxy.DefaultExpiryWarnDays = proxyDescExpiryWarnDays.Default.(int)
+	quotaidempotencyrecordFields := schema.QuotaIdempotencyRecord{}.Fields()
+	_ = quotaidempotencyrecordFields
+	// quotaidempotencyrecordDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	quotaidempotencyrecordDescIdempotencyKey := quotaidempotencyrecordFields[1].Descriptor()
+	// quotaidempotencyrecord.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	quotaidempotencyrecord.IdempotencyKeyValidator = quotaidempotencyrecordDescIdempotencyKey.Validators[0].(func(string) error)
+	// quotaidempotencyrecordDescRequestFingerprint is the schema descriptor for request_fingerprint field.
+	quotaidempotencyrecordDescRequestFingerprint := quotaidempotencyrecordFields[2].Descriptor()
+	// quotaidempotencyrecord.RequestFingerprintValidator is a validator for the "request_fingerprint" field. It is called by the builders before save.
+	quotaidempotencyrecord.RequestFingerprintValidator = quotaidempotencyrecordDescRequestFingerprint.Validators[0].(func(string) error)
+	// quotaidempotencyrecordDescStatus is the schema descriptor for status field.
+	quotaidempotencyrecordDescStatus := quotaidempotencyrecordFields[3].Descriptor()
+	// quotaidempotencyrecord.DefaultStatus holds the default value on creation for the status field.
+	quotaidempotencyrecord.DefaultStatus = quotaidempotencyrecordDescStatus.Default.(string)
+	// quotaidempotencyrecord.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	quotaidempotencyrecord.StatusValidator = quotaidempotencyrecordDescStatus.Validators[0].(func(string) error)
+	// quotaidempotencyrecordDescCreatedAt is the schema descriptor for created_at field.
+	quotaidempotencyrecordDescCreatedAt := quotaidempotencyrecordFields[8].Descriptor()
+	// quotaidempotencyrecord.DefaultCreatedAt holds the default value on creation for the created_at field.
+	quotaidempotencyrecord.DefaultCreatedAt = quotaidempotencyrecordDescCreatedAt.Default.(func() time.Time)
+	// quotaidempotencyrecordDescUpdatedAt is the schema descriptor for updated_at field.
+	quotaidempotencyrecordDescUpdatedAt := quotaidempotencyrecordFields[9].Descriptor()
+	// quotaidempotencyrecord.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	quotaidempotencyrecord.DefaultUpdatedAt = quotaidempotencyrecordDescUpdatedAt.Default.(func() time.Time)
+	// quotaidempotencyrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	quotaidempotencyrecord.UpdateDefaultUpdatedAt = quotaidempotencyrecordDescUpdatedAt.UpdateDefault.(func() time.Time)
 	redeemcodeFields := schema.RedeemCode{}.Fields()
 	_ = redeemcodeFields
 	// redeemcodeDescCode is the schema descriptor for code field.
@@ -2535,6 +2564,102 @@ func init() {
 	userplatformquotaDescMonthlyUsageUsd := userplatformquotaFields[7].Descriptor()
 	// userplatformquota.DefaultMonthlyUsageUsd holds the default value on creation for the monthly_usage_usd field.
 	userplatformquota.DefaultMonthlyUsageUsd = userplatformquotaDescMonthlyUsageUsd.Default.(float64)
+	userquotaledgerentryFields := schema.UserQuotaLedgerEntry{}.Fields()
+	_ = userquotaledgerentryFields
+	// userquotaledgerentryDescRecordType is the schema descriptor for record_type field.
+	userquotaledgerentryDescRecordType := userquotaledgerentryFields[1].Descriptor()
+	// userquotaledgerentry.RecordTypeValidator is a validator for the "record_type" field. It is called by the builders before save.
+	userquotaledgerentry.RecordTypeValidator = func() func(string) error {
+		validators := userquotaledgerentryDescRecordType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(record_type string) error {
+			for _, fn := range fns {
+				if err := fn(record_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// userquotaledgerentryDescCashDeltaCny is the schema descriptor for cash_delta_cny field.
+	userquotaledgerentryDescCashDeltaCny := userquotaledgerentryFields[2].Descriptor()
+	// userquotaledgerentry.DefaultCashDeltaCny holds the default value on creation for the cash_delta_cny field.
+	userquotaledgerentry.DefaultCashDeltaCny = userquotaledgerentryDescCashDeltaCny.Default.(float64)
+	// userquotaledgerentryDescPaidQuotaDeltaUsd is the schema descriptor for paid_quota_delta_usd field.
+	userquotaledgerentryDescPaidQuotaDeltaUsd := userquotaledgerentryFields[3].Descriptor()
+	// userquotaledgerentry.DefaultPaidQuotaDeltaUsd holds the default value on creation for the paid_quota_delta_usd field.
+	userquotaledgerentry.DefaultPaidQuotaDeltaUsd = userquotaledgerentryDescPaidQuotaDeltaUsd.Default.(float64)
+	// userquotaledgerentryDescGiftQuotaDeltaUsd is the schema descriptor for gift_quota_delta_usd field.
+	userquotaledgerentryDescGiftQuotaDeltaUsd := userquotaledgerentryFields[4].Descriptor()
+	// userquotaledgerentry.DefaultGiftQuotaDeltaUsd holds the default value on creation for the gift_quota_delta_usd field.
+	userquotaledgerentry.DefaultGiftQuotaDeltaUsd = userquotaledgerentryDescGiftQuotaDeltaUsd.Default.(float64)
+	// userquotaledgerentryDescCashBeforeCny is the schema descriptor for cash_before_cny field.
+	userquotaledgerentryDescCashBeforeCny := userquotaledgerentryFields[5].Descriptor()
+	// userquotaledgerentry.DefaultCashBeforeCny holds the default value on creation for the cash_before_cny field.
+	userquotaledgerentry.DefaultCashBeforeCny = userquotaledgerentryDescCashBeforeCny.Default.(float64)
+	// userquotaledgerentryDescCashAfterCny is the schema descriptor for cash_after_cny field.
+	userquotaledgerentryDescCashAfterCny := userquotaledgerentryFields[6].Descriptor()
+	// userquotaledgerentry.DefaultCashAfterCny holds the default value on creation for the cash_after_cny field.
+	userquotaledgerentry.DefaultCashAfterCny = userquotaledgerentryDescCashAfterCny.Default.(float64)
+	// userquotaledgerentryDescPaidBeforeUsd is the schema descriptor for paid_before_usd field.
+	userquotaledgerentryDescPaidBeforeUsd := userquotaledgerentryFields[7].Descriptor()
+	// userquotaledgerentry.DefaultPaidBeforeUsd holds the default value on creation for the paid_before_usd field.
+	userquotaledgerentry.DefaultPaidBeforeUsd = userquotaledgerentryDescPaidBeforeUsd.Default.(float64)
+	// userquotaledgerentryDescPaidAfterUsd is the schema descriptor for paid_after_usd field.
+	userquotaledgerentryDescPaidAfterUsd := userquotaledgerentryFields[8].Descriptor()
+	// userquotaledgerentry.DefaultPaidAfterUsd holds the default value on creation for the paid_after_usd field.
+	userquotaledgerentry.DefaultPaidAfterUsd = userquotaledgerentryDescPaidAfterUsd.Default.(float64)
+	// userquotaledgerentryDescGiftBeforeUsd is the schema descriptor for gift_before_usd field.
+	userquotaledgerentryDescGiftBeforeUsd := userquotaledgerentryFields[9].Descriptor()
+	// userquotaledgerentry.DefaultGiftBeforeUsd holds the default value on creation for the gift_before_usd field.
+	userquotaledgerentry.DefaultGiftBeforeUsd = userquotaledgerentryDescGiftBeforeUsd.Default.(float64)
+	// userquotaledgerentryDescGiftAfterUsd is the schema descriptor for gift_after_usd field.
+	userquotaledgerentryDescGiftAfterUsd := userquotaledgerentryFields[10].Descriptor()
+	// userquotaledgerentry.DefaultGiftAfterUsd holds the default value on creation for the gift_after_usd field.
+	userquotaledgerentry.DefaultGiftAfterUsd = userquotaledgerentryDescGiftAfterUsd.Default.(float64)
+	// userquotaledgerentryDescReferenceType is the schema descriptor for reference_type field.
+	userquotaledgerentryDescReferenceType := userquotaledgerentryFields[11].Descriptor()
+	// userquotaledgerentry.ReferenceTypeValidator is a validator for the "reference_type" field. It is called by the builders before save.
+	userquotaledgerentry.ReferenceTypeValidator = userquotaledgerentryDescReferenceType.Validators[0].(func(string) error)
+	// userquotaledgerentryDescReferenceID is the schema descriptor for reference_id field.
+	userquotaledgerentryDescReferenceID := userquotaledgerentryFields[12].Descriptor()
+	// userquotaledgerentry.ReferenceIDValidator is a validator for the "reference_id" field. It is called by the builders before save.
+	userquotaledgerentry.ReferenceIDValidator = userquotaledgerentryDescReferenceID.Validators[0].(func(string) error)
+	// userquotaledgerentryDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	userquotaledgerentryDescIdempotencyKey := userquotaledgerentryFields[13].Descriptor()
+	// userquotaledgerentry.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	userquotaledgerentry.IdempotencyKeyValidator = userquotaledgerentryDescIdempotencyKey.Validators[0].(func(string) error)
+	// userquotaledgerentryDescNote is the schema descriptor for note field.
+	userquotaledgerentryDescNote := userquotaledgerentryFields[14].Descriptor()
+	// userquotaledgerentry.DefaultNote holds the default value on creation for the note field.
+	userquotaledgerentry.DefaultNote = userquotaledgerentryDescNote.Default.(string)
+	// userquotaledgerentryDescStatus is the schema descriptor for status field.
+	userquotaledgerentryDescStatus := userquotaledgerentryFields[16].Descriptor()
+	// userquotaledgerentry.DefaultStatus holds the default value on creation for the status field.
+	userquotaledgerentry.DefaultStatus = userquotaledgerentryDescStatus.Default.(string)
+	// userquotaledgerentry.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	userquotaledgerentry.StatusValidator = func() func(string) error {
+		validators := userquotaledgerentryDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// userquotaledgerentryDescCreatedAt is the schema descriptor for created_at field.
+	userquotaledgerentryDescCreatedAt := userquotaledgerentryFields[17].Descriptor()
+	// userquotaledgerentry.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userquotaledgerentry.DefaultCreatedAt = userquotaledgerentryDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionMixin := schema.UserSubscription{}.Mixin()
 	usersubscriptionMixinHooks1 := usersubscriptionMixin[1].Hooks()
 	usersubscription.Hooks[0] = usersubscriptionMixinHooks1[0]
@@ -2576,6 +2701,34 @@ func init() {
 	usersubscriptionDescAssignedAt := usersubscriptionFields[12].Descriptor()
 	// usersubscription.DefaultAssignedAt holds the default value on creation for the assigned_at field.
 	usersubscription.DefaultAssignedAt = usersubscriptionDescAssignedAt.Default.(func() time.Time)
+	userwalletFields := schema.UserWallet{}.Fields()
+	_ = userwalletFields
+	// userwalletDescCashBalanceCny is the schema descriptor for cash_balance_cny field.
+	userwalletDescCashBalanceCny := userwalletFields[1].Descriptor()
+	// userwallet.DefaultCashBalanceCny holds the default value on creation for the cash_balance_cny field.
+	userwallet.DefaultCashBalanceCny = userwalletDescCashBalanceCny.Default.(float64)
+	// userwalletDescPaidQuotaBalanceUsd is the schema descriptor for paid_quota_balance_usd field.
+	userwalletDescPaidQuotaBalanceUsd := userwalletFields[2].Descriptor()
+	// userwallet.DefaultPaidQuotaBalanceUsd holds the default value on creation for the paid_quota_balance_usd field.
+	userwallet.DefaultPaidQuotaBalanceUsd = userwalletDescPaidQuotaBalanceUsd.Default.(float64)
+	// userwalletDescGiftQuotaBalanceUsd is the schema descriptor for gift_quota_balance_usd field.
+	userwalletDescGiftQuotaBalanceUsd := userwalletFields[3].Descriptor()
+	// userwallet.DefaultGiftQuotaBalanceUsd holds the default value on creation for the gift_quota_balance_usd field.
+	userwallet.DefaultGiftQuotaBalanceUsd = userwalletDescGiftQuotaBalanceUsd.Default.(float64)
+	// userwalletDescVersion is the schema descriptor for version field.
+	userwalletDescVersion := userwalletFields[4].Descriptor()
+	// userwallet.DefaultVersion holds the default value on creation for the version field.
+	userwallet.DefaultVersion = userwalletDescVersion.Default.(int64)
+	// userwalletDescCreatedAt is the schema descriptor for created_at field.
+	userwalletDescCreatedAt := userwalletFields[5].Descriptor()
+	// userwallet.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userwallet.DefaultCreatedAt = userwalletDescCreatedAt.Default.(func() time.Time)
+	// userwalletDescUpdatedAt is the schema descriptor for updated_at field.
+	userwalletDescUpdatedAt := userwalletFields[6].Descriptor()
+	// userwallet.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	userwallet.DefaultUpdatedAt = userwalletDescUpdatedAt.Default.(func() time.Time)
+	// userwallet.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	userwallet.UpdateDefaultUpdatedAt = userwalletDescUpdatedAt.UpdateDefault.(func() time.Time)
 }
 
 const (

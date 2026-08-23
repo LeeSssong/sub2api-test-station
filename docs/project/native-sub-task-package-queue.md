@@ -6,7 +6,7 @@
 
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 
-- **T54-R1 分组调度三步流程与全局命名预设**：状态 `INTEGRATING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。Task 1-4 已完成，候选 handoff 为 `docs/handoffs/2026-08-23-t54-r1-group-scheduler-preset-workflow-handoff.md`，功能已合并到根 `main@3399a4f0c4b57857fb3e57bb2ab5a5eeb667e6cb`；合并后根门禁、推送、发布预检、蓝绿部署和线上专项验收待执行。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
+- **T54-R1 分组调度三步流程与全局命名预设**：状态 `DONE`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。Task 1-4 已完成，功能已合并并推送到 `main@3ab2c3fae90c13a90990f7cb91874cfbb09b6620`；测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-3ab2c3fae-t54-r1-scheduler-workflow.json`（0600）。宿主发布记录 `/var/lib/sub2api/release-records/20260823T160921Z-production-2213574.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `green`；线上 `/healthz`、`/readyz`、`/health` 均 200，管理员设置页确认五个原生 OpenAI 分组、三步顺序、custom/preset 两种模式及预设参数禁用。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入。
 
 ## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
 

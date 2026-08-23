@@ -1,6 +1,6 @@
 # T54-R1 分组调度三步流程与全局命名预设交接
 
-状态：`READY_FOR_ROOT_REVIEW`（本地直接验证完成；未合并、未推送、未部署、未进行线上验收）
+状态：`DONE`（已合并、推送、无停机蓝绿发布并完成线上验收）
 
 ## 候选与基线
 
@@ -9,9 +9,10 @@
 - 候选 worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r1-group-scheduler-preset-workflow`
 - 候选实现提交（本 handoff 提交前）：`373244637b3f67068ba54a869c805a0e4e8c3e10`
 - 候选实现 tree：`6a488d93945a582712235bc907765de1de4b298b`
-- 验证时根 `main`：`1af258ba776a9ff6e72248f36cb685d1e5a4a4a3`
+- 根发布提交：`3ab2c3fae90c13a90990f7cb91874cfbb09b6620`
+- 根发布树：`5d9b463fcf6a235e601431c3902655f56b35775b`
 
-候选从任务声明基线之后包含 Task 1–3 实现。验证命令按 brief 原样在当前 worktree 执行，其中 `git diff ... main...HEAD` 以验证时的 `main@1af258b…` 为目标。根 `main` 已在候选创建后前进，候选相对当前 `main` 处于 `REFRESH_REQUIRED`：根总控合并前必须将候选刷新到最新 `main`，解决仅本任务范围冲突（如有），并重跑本 handoff 中的直接门禁。
+候选从任务声明基线之后包含 Task 1–3 实现；Task 4 验证已完成。根总控已将实现合并至 `main@3ab2c3fae`，推送到 `origin/main`，并从该提交完成生产发布与线上验收。
 
 ## 实现范围
 
@@ -67,6 +68,8 @@ All commands below exited `0` on the candidate implementation:
 
 The Vitest run emits existing non-blocking `router-link` resolution warnings, one existing jsdom XHR `AggregateError` warning, pnpm `pnpm.overrides` configuration warning, Browserslist staleness notice, and Node/Vite deprecation notices. They did not fail assertions or change exit status.
 
+根 `main` 合并后直接门禁同样通过：Go 定向测试、`go build ./cmd/server`、SettingsView `43/43`、`pnpm typecheck`、`pnpm build` 和 `git diff --check` 均为退出码 `0`。测试证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-3ab2c3fae-t54-r1-scheduler-workflow.json`（`0600`）。
+
 ## Release properties
 
 - Database migrations: none.
@@ -78,11 +81,10 @@ The Vitest run emits existing non-blocking `router-link` resolution warnings, on
 
 ## Unverified items and risks
 
-- Candidate has not been refreshed onto current root `main@1af258b…`; this is a mandatory `REFRESH_REQUIRED` action before integration.
-- Root merge, push, release preflight, blue-green deployment, runtime readiness, and logged-in production SettingsView verification remain unverified.
-- No production settings were modified during this task, so persisted preset behavior in production remains for post-deploy online verification.
+- Candidate was refreshed and integrated into root `main@3ab2c3fae`; root merge, push, release preflight, blue-green deployment, runtime readiness, and logged-in production SettingsView verification completed.
+- No production settings were modified during online verification; only read-only UI/API checks were performed.
 - Existing test-harness warnings listed above remain non-blocking but should be retained as context when reviewing the root run.
 
 ## Rollback
 
-Before integration, discard this candidate and retain the current verified root `main`. After integration/deployment, roll back by promoting the previous verified blue-green application slot or reverting the T54-R1 merge on `main`; no database rollback or data cleanup is required because this candidate adds no migration or production-data write.
+Release record: `/var/lib/sub2api/release-records/20260823T160921Z-production-2213574.json` (`succeeded`, `promoted`, `downtime_required=false`, `rolled_back=false`). Runtime source is `main@3ab2c3fae`; active slot is `green`; `/healthz`, `/readyz`, and `/health` all returned `200`. Logged-in SettingsView verification confirmed five native OpenAI groups, the three-step order, `custom/preset` modes, and disabled preset parameters. Roll back by promoting the previous verified blue-green application slot or reverting the T54-R1 merge on `main`; no database rollback or data cleanup is required because this candidate adds no migration or production-data write.

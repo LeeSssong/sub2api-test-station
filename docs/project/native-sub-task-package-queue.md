@@ -6,6 +6,8 @@
 
 ## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
 
+- **T53-R4 隔离站登录页修复**：状态 `DONE`。已推送并从 `main@5e48085b0bad5e8cb7c58d9c34866a380ce8b9c0` 通过独立隔离站发布链生效；发布会话 `38311` 返回 `succeeded`、`downtime_required=false`、`lab_html_contract=passed`。仅在 `VITE_ADMIN_LAB=1` 隐藏测试站不允许使用的注册入口。线上 `/admin/lab/` 302、登录页 200 且资产基路径正确，独立测试账号登录 200 并可用 Bearer token 访问 `/admin/lab/api/v1/auth/me` 返回 200；主站 `/admin/`、`/healthz` 仍 200。截图中的 `940310446@qq.com` 为生产管理员账号，不是测试站账号。
+
 - **T53-R3 隔离站管理员可见性修复**：状态 `DONE`。基线 `main@4e05195e2a42547dbad04591d5ed4615698f16d9` 已推送并完成预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260823T083812Z-production-1250022.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `green`，API/worker 使用 source commit `4e05195e2` 的不可变镜像且 healthy。线上验收：`/healthz`、`/readyz`、`/health` 均 200；匿名 `/admin/lab` 与 `/admin/lab/` 均 302 到 `/admin/lab/login`，登录页 200，匿名 `/admin/lab/api/v1/admin/accounts` 返回 401；主站 `/admin/` 保持 200。发布前曾发现隔离站重载完整 Caddy 配置导致运行态 upstream 漂移为 `sub2api-blue:8080`，已按 release-state 恢复为 `sub2api-green:8080` 后再执行蓝绿链，未重启 PostgreSQL、Redis、Caddy 或活动 API。0600 测试证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4e05195e2-t53-r3-admin-only.json`；主站账号盈利页仍不在 T53/T54 范围。
 
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）

@@ -14,7 +14,7 @@
 
 ## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
 
-- **T55 原生额度钱包与手动充值退款账本**：状态 `VERIFYING`（仅 admin-lab 隔离测试站，主站不变）。用户已确认采用方案 B：新增钱包拆分与额度流水，保留 `users.balance` 作为兼容投影；扣费顺序为付费额度优先、赠送额度其次；历史 `users.balance` 迁移为未拆分付费额度，历史 `cash_balance_cny=0`、`gift_quota_balance_usd=0`，不标记历史用户。候选 `b80c99f9658b0dab3d8798353b67ad757466d671` 已经隔离发布并完成管理员登录、钱包摘要、手动充值、手动退款、额度流水、合规确认与幂等重放验证；未合并、未推送、未部署到根 `main`/主站。T57 只能读取 T55 稳定契约，不能修改本 worktree。证据见 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-t55-admin-lab-verification.json`。
+- **T55 原生额度钱包与手动充值退款账本**：状态 `DEPLOYING`。用户已确认采用方案 B：新增钱包拆分与额度流水，保留 `users.balance` 作为兼容投影；扣费顺序为付费额度优先、赠送额度其次；历史 `users.balance` 迁移为未拆分付费额度，历史 `cash_balance_cny=0`、`gift_quota_balance_usd=0`，不标记历史用户。候选已刷新并整合到根 `main`，当前合并提交为 `0b61a8e3bd7e2c342161fdd150433fe4f4b7f937`（发布前由根总控推送）；T55 直接相关后端/前端测试、构建、typecheck 与 diff-check 已 fresh 通过。admin-lab 仍运行独立 T55 镜像并保留之前的充值/退款/流水/幂等验证；生产发布仅在迁移预检确认无需停机或取得明确停机授权后继续。T57 只能读取 T55 稳定契约，不能修改 T55 worktree。
 
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 

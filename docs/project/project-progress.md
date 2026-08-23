@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T55 隔离测试站收口（2026-08-23）：** 状态：`VERIFYING`（仅 admin-lab，不代表主站完成）。候选 `b80c99f9658b0dab3d8798353b67ad757466d671` 已通过 `ops/release-admin-lab.sh` 隔离发布；发布结果 `succeeded`、`downtime_required=false`、`lab_html_contract=passed`，测试站后端使用 T55 独立镜像。线上登录、钱包摘要、手动充值、手动退款、额度流水、合规确认及同一 `Idempotency-Key` 重放已验证：第二次返回 `idempotent=true` 且复用同一流水 ID，余额恢复到测试前值。主站 `/healthz`、`/readyz`、`/health` 均 200，主站蓝绿容器身份未变化；T55 未合并、未推送、未部署到主站。0600 证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-t55-admin-lab-verification.json`。测试站入口：`https://api.xingqiaolab.top/admin/lab/`；账号凭据仅从宿主 `/opt/sub2api/production/admin-lab/.env` 读取，不在聊天中披露。
+**T55 原生额度钱包与手动充值退款账本（2026-08-23）：** 状态：`DEPLOYING`。候选已刷新并整合到根 `main`，T55 直接相关后端/前端测试、构建、typecheck 与 diff-check fresh 通过；admin-lab 仍运行独立 T55 镜像并保留充值、退款、流水、合规确认及幂等重放证据。生产发布含钱包迁移，当前仅在发布预检确认 `downtime_required=false` 或取得用户明确停机授权后继续；尚未宣称主站已生效。测试站入口：`https://api.xingqiaolab.top/admin/lab/`；凭据仅从宿主 `/opt/sub2api/production/admin-lab/.env` 读取，不在聊天中披露。
 
 **T57 DOCX 经营分析总览（2026-08-24）：** 状态：`DESIGNING`。本任务只承接《星桥AI-Link-经营分析开发需求.docx》，目标是在 Sub 原生管理员经营/盈利能力上增加 CNY 经营总览、现金充值与付费余额沉淀、充值/消耗趋势和站内分组毛利。继续以原生 `usage_logs` 作为请求、Token、分组与上游成本事实源；付费/赠送额度消费拆分、现金余额和额度余额读取 T55 稳定账本契约，不修改或接管 T55 worktree，不把尚未部署的 T55 当作生产事实。历史无法拆分时显示 `pending_split`，不得按 0 计算。本任务将建立独立用户可见顶层任务和 worktree，先完成完整 brainstorming、正式规格、自审与代审批准，再写计划和实现；与 T55 仅并行设计/实现，整合、部署和线上验收保持单车道。
 

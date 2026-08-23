@@ -364,6 +364,10 @@ else
 	[[ "$base_url" =~ ^https?://(localhost|127\.0\.0\.1)(:[1-9][0-9]{0,4})?$ ]] \
 		|| fail 'rehearsal BASE_URL must be localhost-only'
 fi
+caddy_config=''
+if [[ "$mode" == production ]]; then
+  caddy_config=$(canonical_file "$deploy_root/Caddyfile" 'CADDY_CONFIG')
+fi
 
 network_curl_image=${NETWORK_CURL_IMAGE:-}
 network_curl_allowlist=${NETWORK_CURL_IMAGE_ALLOWLIST:-}
@@ -559,6 +563,37 @@ compose_current=(docker compose --project-name "$compose_project" --project-dire
 compose_pull_args=()
 [[ "$preloaded_image" == true ]] && compose_pull_args=(--pull never)
 export SUB2API_RELEASE_ENV_FILE="$release_env"
+
+run_caddy_config_command() {
+  local upstream=$1 action=$2
+  validate_upstream "$upstream" || return 1
+  if [[ "$mode" == production ]]; then
+    case "$action" in
+      validate)
+        run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$upstream" caddy \
+          caddy validate --config - --adapter caddyfile <"$caddy_config"
+        ;;
+      reload)
+        run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$upstream" caddy \
+          caddy reload --config - --adapter caddyfile <"$caddy_config"
+        ;;
+      *) return 1 ;;
+    esac
+    return
+  fi
+
+  case "$action" in
+    validate)
+      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$upstream" caddy \
+        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      ;;
+    reload)
+      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$upstream" caddy \
+        caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+      ;;
+    *) return 1 ;;
+  esac
+}
 
 write_final_record() {
   local result=$1 state=$2 reason=$3 temporary
@@ -908,10 +943,8 @@ restore_previous() {
   rollback_in_progress=true
   if [[ "$cutover_attempted" == true ]]; then
     if validate_upstream "$previous_upstream"; then
-      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
-        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || rollback_ok=false
-      run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$previous_upstream" caddy \
-        caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || rollback_ok=false
+      run_caddy_config_command "$previous_upstream" validate >/dev/null 2>&1 || rollback_ok=false
+      run_caddy_config_command "$previous_upstream" reload >/dev/null 2>&1 || rollback_ok=false
     else
       rollback_ok=false
     fi
@@ -1612,15 +1645,13 @@ write_partial candidate_accepted
 check_maintenance_deadline
 
 failure_reason=caddy_validate_failed
-run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+run_caddy_config_command "$candidate_upstream" validate >/dev/null
 write_partial caddy_validated
 
 failure_reason=caddy_reload_failed
 cutover_attempted=true
 write_partial cutover_attempted
-run_post_stop_command "${compose_current[@]}" exec -T -e "SUB2API_ACTIVE_UPSTREAM=$candidate_upstream" caddy \
-  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+run_caddy_config_command "$candidate_upstream" reload >/dev/null
 cutover_applied=true
 write_partial cutover_applied
 

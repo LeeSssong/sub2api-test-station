@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前生产修复（2026-08-23，T53-R2 隔离站路由持久化）
+
+- **T53-R2 隔离站路由持久化修复**：状态 `INTEGRATING`。生产只读证据确认 8 个 admin-lab 容器持续 healthy、宿主 `/opt/sub2api/production/Caddyfile` 已包含 `/admin/lab` 路由，但运行中的 Caddy 曾从 bind mount 固定的旧 inode 重新加载配置，导致公网 `/admin/lab/` 返回主站 HTML（`/assets/...`）并由主站 Vue 显示 404。修复范围仅为让 production 蓝绿发布的 Caddy validate/reload/rollback 统一从宿主 canonical Caddyfile 经 stdin 执行，防止后续主站发布再次抹掉隔离路由；rehearsal 行为保持不变。直接相关 admin-lab 合同和完整蓝绿宿主回归已通过，待推送、无停机热 reload 和浏览器验收。主站“账号盈利”页不属于 T53 或 T54 的改造范围；T54 更新位置是系统设置中的分组调度策略和账号监控体验卡。
+
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
 
 > 根总控状态：`INTEGRATING`；合并提交 `04a146e08` 已进入根 `main`，待推送、发布预检、蓝绿部署和线上专项验收。

@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T53-R2 隔离站路由持久化修复（2026-08-23）：** 状态：`INTEGRATING`。用户真机再次报告 `/admin/lab/` 显示 Vue 404。生产只读核对确认 admin-lab API、worker、frontend、gateway、PostgreSQL、Redis、mock upstream、mock payment 8 个容器全部 healthy；宿主 `/opt/sub2api/production/Caddyfile` 哈希 `6ef25814…` 且包含完整 lab 路由，但 Caddy 容器内 bind mount 固定在旧 inode，运行配置不含 lab 路由，公网因此返回主站 `/assets/index-DbkVPJWH.js` HTML。根因是 T53 通过 stdin 临时 reload 后，后续 T54 蓝绿发布仍从容器内 `/etc/caddy/Caddyfile` validate/reload，覆盖了 lab 路由。已按 TDD 增加发布合同 RED，并将 production 正常切换和 rollback 全部收敛为从宿主 canonical Caddyfile 经 stdin 执行；rehearsal 仍使用自身容器内配置。admin-lab 合同/静态 smoke 和完整蓝绿宿主安全回归通过；待推送、无停机热 reload 和浏览器验收。主站截图中的“账号盈利”页未被 T53/T54 修改，T54 的用户可见更新位于系统设置分组调度策略与账号监控体验卡。
+
 **T54 根总控状态更新（2026-08-23）：** 候选已以合并提交 `04a146e08` 合入根 `main`，当前进入 `INTEGRATING`；待推送、发布预检、蓝绿部署和线上专项验收。
 
 **T54 生产收口（2026-08-23）：** 状态：`DONE`。已推送 `main@67a41463fdadc4ef05dc1b97c52bc0a328586c37`，tested tree `8a5e5a8a2396fcb509f801a511a99a47f4e2556c`；预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。宿主记录 `/var/lib/sub2api/release-records/20260822T204341Z-production-3918367.json`，公网三项健康端点 200，管理员 settings API 200 且返回调度字段，线上乐观监控资源包含“暂无结果”并隐藏探测旁证字段。无迁移、无配置 schema 变化、无生产数据写入、无 GitHub Actions。

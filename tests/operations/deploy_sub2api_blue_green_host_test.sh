@@ -63,6 +63,7 @@ setup_case() {
   printf 'admin-test-key\n' >"$CASE_DIR/admin.key"
   printf 'gateway-test-key\n' >"$CASE_DIR/gateway.key"
   printf '%s\n' '{"services":{"sub2api-blue":{"environment":{},"depends_on":{}},"sub2api-green":{"environment":{},"depends_on":{}},"sub2api-worker":{"environment":{},"depends_on":{}}}}' >"$CASE_DIR/compose.yaml"
+  printf ':443 { respond "fixture" 200 }\n' >"$CASE_DIR/deploy/Caddyfile"
   cat >"$CASE_DIR/release.env" <<EOF
 UNRELATED_SETTING=preserved
 SUB2API_BLUE_IMAGE=$PREVIOUS_IMAGE

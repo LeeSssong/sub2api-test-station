@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -933,7 +935,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
 	result.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
 	result.OpenAIAdvancedSchedulerGroupOverrides = parseOpenAISchedulerFairnessOverrides(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	result.OpenAIAdvancedSchedulerCustomPresets, _ = parseOpenAISchedulerCustomPresets(settings[SettingKeyOpenAIAdvancedSchedulerCustomPresets])
 	result.OpenAIAdvancedSchedulerGroupPolicies, _ = parseOpenAISchedulerGroupPolicies(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	global := openAISchedulerPolicyValuesFromSettings(result)
+	if policies, err := normalizeOpenAISchedulerGroupPoliciesWithPresets(result.OpenAIAdvancedSchedulerGroupPolicies, global, nil, result.OpenAIAdvancedSchedulerCustomPresets); err == nil {
+		result.OpenAIAdvancedSchedulerGroupPolicies = policies
+	}
+	result.OpenAIAdvancedSchedulerAvailablePresets = openAISchedulerAvailablePresets(result.OpenAIAdvancedSchedulerCustomPresets)
 	result.OpenAIAdvancedSchedulerEffectiveLBTopK = s.openAIAdvancedSchedulerEffectiveLBTopK()
 	effectiveWeights := s.openAIAdvancedSchedulerEffectiveWeights()
 	result.OpenAIAdvancedSchedulerEffectiveWeightPriority = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.Priority)
@@ -1144,24 +1152,24 @@ func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *Sys
 	settings.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
 	settings.OpenAIAdvancedSchedulerGroupOverrides = fairness.GroupOverrides
 	if settings.OpenAIAdvancedSchedulerGroupPolicies != nil {
-		global := OpenAISchedulerPolicyValues{TopK: parsePositiveIntOverride(settings.OpenAIAdvancedSchedulerLBTopK), CandidatePoolMode: fairness.CandidatePoolMode, ExplorationRatio: fairness.ExplorationRatio, StarvationThresholdSeconds: fairness.StarvationThresholdSeconds, FairnessWeight: fairness.FairnessWeight}
-		global.Priority = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPriority, 1)
-		global.Load = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightLoad, 1)
-		global.Queue = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQueue, .7)
-		global.ErrorRate = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightErrorRate, .8)
-		global.TTFT = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightTTFT, .5)
-		global.Reset = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightReset, 0)
-		global.QuotaHeadroom = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom, 0)
-		global.UpstreamCost = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightUpstreamCost, 0)
-		global.PreviousResponse = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPreviousResponse, 5)
-		global.SessionSticky = parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightSessionSticky, 3)
-		normalized, err := normalizeOpenAISchedulerGroupPolicies(settings.OpenAIAdvancedSchedulerGroupPolicies, global, nil)
+		global := openAISchedulerPolicyValuesFromSettings(settings)
+		customPresets, err := normalizeOpenAISchedulerCustomPresets(settings.OpenAIAdvancedSchedulerCustomPresets)
+		if err != nil {
+			return err
+		}
+		normalized, err := normalizeOpenAISchedulerGroupPoliciesWithPresets(settings.OpenAIAdvancedSchedulerGroupPolicies, global, nil, customPresets)
 		if err != nil {
 			return err
 		}
 		settings.OpenAIAdvancedSchedulerGroupPolicies = normalized
+		settings.OpenAIAdvancedSchedulerCustomPresets = customPresets
+		settings.OpenAIAdvancedSchedulerAvailablePresets = openAISchedulerAvailablePresets(customPresets)
 	}
 	return nil
+}
+
+func openAISchedulerPolicyValuesFromSettings(settings *SystemSettings) OpenAISchedulerPolicyValues {
+	return OpenAISchedulerPolicyValues{TopK: parsePositiveIntOverride(settings.OpenAIAdvancedSchedulerLBTopK), Priority: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPriority, 1), Load: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightLoad, 1), Queue: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQueue, .7), ErrorRate: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightErrorRate, .8), TTFT: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightTTFT, .5), Reset: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightReset, 0), QuotaHeadroom: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom, 0), UpstreamCost: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightUpstreamCost, 0), PreviousResponse: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightPreviousResponse, 5), SessionSticky: parseFloatSettingOrDefault(settings.OpenAIAdvancedSchedulerWeightSessionSticky, 3), CandidatePoolMode: settings.OpenAIAdvancedSchedulerCandidatePoolMode, ExplorationRatio: settings.OpenAIAdvancedSchedulerExplorationRatio, StarvationThresholdSeconds: settings.OpenAIAdvancedSchedulerStarvationThresholdSeconds, FairnessWeight: settings.OpenAIAdvancedSchedulerFairnessWeight}
 }
 
 func normalizeOpenAISchedulerFairnessSettings(value OpenAISchedulerFairnessSettings) (OpenAISchedulerFairnessSettings, error) {
@@ -1271,6 +1279,237 @@ func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGro
 		result[id] = policy
 	}
 	return result, nil
+}
+
+func parseOpenAISchedulerCustomPresets(raw string) (map[string]OpenAISchedulerCustomPreset, error) {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
+		return map[string]OpenAISchedulerCustomPreset{}, nil
+	}
+	var presets map[string]OpenAISchedulerCustomPreset
+	if err := json.Unmarshal([]byte(raw), &presets); err != nil {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESETS", "custom presets must be valid JSON")
+	}
+	return normalizeOpenAISchedulerCustomPresets(presets)
+}
+
+func normalizeOpenAISchedulerCustomPresets(presets map[string]OpenAISchedulerCustomPreset) (map[string]OpenAISchedulerCustomPreset, error) {
+	result := make(map[string]OpenAISchedulerCustomPreset, len(presets))
+	names := map[string]struct{}{}
+	for key, preset := range presets {
+		id := strings.TrimSpace(preset.ID)
+		if id == "" {
+			id = strings.TrimSpace(key)
+		}
+		if strings.HasPrefix(id, "custom:new:") {
+			id = "custom:" + uuid.NewString()
+		}
+		parsed, err := uuid.Parse(strings.TrimPrefix(id, "custom:"))
+		if !strings.HasPrefix(id, "custom:") || err != nil || parsed.String() != strings.TrimPrefix(id, "custom:") {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_ID", "custom preset id must be custom:<uuid>")
+		}
+		name := strings.TrimSpace(preset.Name)
+		if len([]rune(name)) < 1 || len([]rune(name)) > 40 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_NAME", "custom preset name must be 1-40 characters")
+		}
+		if _, exists := names[name]; exists {
+			return nil, infraerrors.BadRequest("DUPLICATE_OPENAI_SCHEDULER_PRESET_NAME", "custom preset names must be unique")
+		}
+		names[name] = struct{}{}
+		values, err := normalizeOpenAISchedulerPresetValues(preset.Values)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = OpenAISchedulerCustomPreset{ID: id, Name: name, Values: values}
+	}
+	return result, nil
+}
+
+func normalizeOpenAISchedulerPresetValues(values OpenAISchedulerPolicyValues) (OpenAISchedulerPolicyValues, error) {
+	if values.TopK < 1 || values.TopK > 32 {
+		return OpenAISchedulerPolicyValues{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_VALUES", "top_k must be between 1 and 32")
+	}
+	weights := []float64{values.Priority, values.Load, values.Queue, values.ErrorRate, values.TTFT, values.Reset, values.QuotaHeadroom, values.UpstreamCost, values.PreviousResponse, values.SessionSticky}
+	sum := 0.0
+	for _, value := range weights {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
+			return OpenAISchedulerPolicyValues{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_VALUES", "weights must be finite values between 0 and 10")
+		}
+		sum += value
+	}
+	if sum == 0 {
+		return OpenAISchedulerPolicyValues{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_VALUES", "base weights must have a positive total")
+	}
+	if values.CandidatePoolMode != OpenAISchedulerCandidatePoolModeTopK && values.CandidatePoolMode != OpenAISchedulerCandidatePoolModeAllEligible && values.CandidatePoolMode != OpenAISchedulerCandidatePoolModeHybrid {
+		return OpenAISchedulerPolicyValues{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_VALUES", "candidate pool mode is invalid")
+	}
+	if values.ExplorationRatio < 0 || values.ExplorationRatio > 100 || (values.StarvationThresholdSeconds != 0 && (values.StarvationThresholdSeconds < 300 || values.StarvationThresholdSeconds > 86400)) || values.FairnessWeight < 0 || values.FairnessWeight > 10 || math.IsNaN(values.FairnessWeight) || math.IsInf(values.FairnessWeight, 0) {
+		return OpenAISchedulerPolicyValues{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESET_VALUES", "fairness values are invalid")
+	}
+	return values, nil
+}
+
+func openAISchedulerAvailablePresets(custom map[string]OpenAISchedulerCustomPreset) []OpenAISchedulerPresetDefinition {
+	defs := []OpenAISchedulerPresetDefinition{{ID: "builtin:special_offer", Name: "Special offer", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetSpecialOffer)}, {ID: "builtin:balanced", Name: "Balanced", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)}, {ID: "builtin:pro", Name: "Pro", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetPro)}}
+	keys := make([]string, 0, len(custom))
+	for key := range custom {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		p := custom[key]
+		defs = append(defs, OpenAISchedulerPresetDefinition{ID: p.ID, Name: p.Name, Kind: OpenAISchedulerPresetKindCustom, Values: p.Values})
+	}
+	return defs
+}
+
+func normalizeOpenAISchedulerPresetState(presets map[string]OpenAISchedulerCustomPreset, policies map[int64]OpenAISchedulerGroupPolicy, previous map[string]OpenAISchedulerCustomPreset, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}) (map[string]OpenAISchedulerCustomPreset, map[int64]OpenAISchedulerGroupPolicy, error) {
+	normalized, err := normalizeOpenAISchedulerCustomPresets(presets)
+	if err != nil {
+		return nil, nil, err
+	}
+	for id := range previous {
+		if _, ok := normalized[id]; !ok {
+			for _, policy := range policies {
+				if policy.PresetID == id {
+					return nil, nil, infraerrors.BadRequest("OPENAI_SCHEDULER_PRESET_IN_USE", "cannot delete a preset referenced by a group policy")
+				}
+			}
+		}
+	}
+	groups, err := normalizeOpenAISchedulerGroupPoliciesWithPresets(policies, global, knownGroups, normalized)
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalized, groups, nil
+}
+
+// ValidateOpenAISchedulerPresetUpdate rejects deleting a custom preset while a
+// group policy still points at it. Callers should run this before the combined
+// settings transaction so neither settings key is written on failure.
+func ValidateOpenAISchedulerPresetUpdate(previous, next map[string]OpenAISchedulerCustomPreset, policies map[int64]OpenAISchedulerGroupPolicy) error {
+	for id := range previous {
+		if _, ok := next[id]; ok {
+			continue
+		}
+		for _, policy := range policies {
+			if policy.PresetID == id {
+				return infraerrors.BadRequest("OPENAI_SCHEDULER_PRESET_IN_USE", "cannot delete a preset referenced by a group policy")
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}, custom map[string]OpenAISchedulerCustomPreset) (map[int64]OpenAISchedulerGroupPolicy, error) {
+	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
+	for id, policy := range policies {
+		if id <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy group id must be positive")
+		}
+		if len(knownGroups) > 0 {
+			if _, ok := knownGroups[id]; !ok {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy references unknown group")
+			}
+		}
+		if policy.Mode == OpenAISchedulerGroupPolicyModeWeightedOverride {
+			policy.Mode = OpenAISchedulerGroupPolicyModeCustom
+		}
+		if policy.Mode == OpenAISchedulerGroupPolicyModeFair {
+			policy.Mode = OpenAISchedulerGroupPolicyModePreset
+			policy.PresetID = "builtin:" + string(policy.Preset)
+		}
+		if policy.Mode == OpenAISchedulerGroupPolicyModePreset {
+			if policy.PresetID == "" {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "preset mode requires preset_id")
+			}
+			values, ok := schedulerPresetValuesByID(policy.PresetID, custom)
+			if !ok {
+				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "unknown preset")
+			}
+			values = applyOpenAISchedulerGroupPolicySnapshot(values, policy)
+			if _, err := normalizeOpenAISchedulerPresetValues(values); err != nil {
+				return nil, err
+			}
+			policy.Values = values
+			result[id] = policy
+			continue
+		}
+		if policy.Mode == "" {
+			policy.Mode = OpenAISchedulerGroupPolicyModeCustom
+		}
+		if policy.Mode != OpenAISchedulerGroupPolicyModeCustom {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy mode is invalid")
+		}
+		policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
+		normalized, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{id: policy}, global, knownGroups)
+		if err != nil {
+			return nil, err
+		}
+		policy = normalized[id]
+		policy.Mode = OpenAISchedulerGroupPolicyModeCustom
+		policy.Preset = ""
+		policy.PresetID = ""
+		result[id] = policy
+	}
+	return result, nil
+}
+
+func applyOpenAISchedulerGroupPolicySnapshot(values OpenAISchedulerPolicyValues, policy OpenAISchedulerGroupPolicy) OpenAISchedulerPolicyValues {
+	if policy.TopK != nil {
+		values.TopK = *policy.TopK
+	}
+	for key, value := range policy.WeightOverrides {
+		switch key {
+		case "priority":
+			values.Priority = value
+		case "load":
+			values.Load = value
+		case "queue":
+			values.Queue = value
+		case "error_rate":
+			values.ErrorRate = value
+		case "ttft":
+			values.TTFT = value
+		case "reset":
+			values.Reset = value
+		case "quota_headroom":
+			values.QuotaHeadroom = value
+		case "upstream_cost":
+			values.UpstreamCost = value
+		case "previous_response":
+			values.PreviousResponse = value
+		case "session_sticky":
+			values.SessionSticky = value
+		}
+	}
+	if fairness := policy.Fairness; fairness != nil {
+		if fairness.CandidatePoolMode != nil {
+			values.CandidatePoolMode = *fairness.CandidatePoolMode
+		}
+		if fairness.ExplorationRatio != nil {
+			values.ExplorationRatio = *fairness.ExplorationRatio
+		}
+		if fairness.StarvationThresholdSeconds != nil {
+			values.StarvationThresholdSeconds = *fairness.StarvationThresholdSeconds
+		}
+		if fairness.FairnessWeight != nil {
+			values.FairnessWeight = *fairness.FairnessWeight
+		}
+	}
+	return values
+}
+
+func schedulerPresetValuesByID(id string, custom map[string]OpenAISchedulerCustomPreset) (OpenAISchedulerPolicyValues, bool) {
+	switch id {
+	case "builtin:special_offer":
+		return openAISchedulerPresetValues(OpenAISchedulerPresetSpecialOffer), true
+	case "builtin:balanced":
+		return openAISchedulerPresetValues(OpenAISchedulerPresetBalanced), true
+	case "builtin:pro":
+		return openAISchedulerPresetValues(OpenAISchedulerPresetPro), true
+	}
+	p, ok := custom[id]
+	return p.Values, ok
 }
 
 func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}) (map[int64]OpenAISchedulerGroupPolicy, error) {

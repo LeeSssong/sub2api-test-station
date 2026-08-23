@@ -1442,13 +1442,11 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(weightedModeText.indexOf("订阅优先")).toBeLessThan(
       weightedModeText.indexOf("OAuth 调度参考倍率"),
     );
-    expect(weightedModeText.indexOf("OAuth 调度参考倍率")).toBeLessThan(
-      weightedModeText.indexOf("调度权值覆盖"),
-    );
+    expect(weightedModeText).not.toContain("调度权值覆盖");
     expect(weightedModeText).toContain("计费倍率");
   });
 
-  it("renders scheduler fairness parameter hints and submits the live controls", async () => {
+  it("renders the scheduler workflow in group, mode, then values order", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "特惠", description: "", platform: "openai", subscription_type: "subscription", status: "active" },
     ]);
@@ -1459,61 +1457,181 @@ describe("admin SettingsView payment visible method controls", () => {
       .setValue(true);
 
     const card = wrapper.get('[data-testid="openai-scheduler-fairness"]');
-    expect(card.text()).toContain("候选池模式");
-    expect(card.text()).toContain("0=关闭，100=每次都探索");
-    expect(card.text()).toContain("范围 0-10");
-    expect(wrapper.text()).toContain("TopK");
-    expect(wrapper.text()).toContain("账号 priority 的权重");
-    expect(wrapper.text()).toContain("范围：正整数（>= 1）");
-    expect(wrapper.text()).toContain("范围：非负有限数（>= 0，支持小数）");
+    expect(card.find('[data-testid="scheduler-group-select"]').exists()).toBe(true);
+    expect(card.find('[data-testid="scheduler-policy-mode-custom"]').exists()).toBe(true);
+    expect(card.find('[data-testid="scheduler-policy-mode-preset"]').exists()).toBe(true);
+    expect(card.find('[data-testid="scheduler-policy-gate"]').exists()).toBe(true);
 
-    const weightHintKeys = [
-      "topKHint",
-      "priorityWeightHint",
-      "loadWeightHint",
-      "queueWeightHint",
-      "errorRateWeightHint",
-      "ttftWeightHint",
-      "resetWeightHint",
-      "quotaHeadroomWeightHint",
-      "upstreamCostWeightHint",
-      "previousResponseWeightHint",
-      "sessionStickyWeightHint",
-    ] as const;
-    for (const key of weightHintKeys) {
-      const zhHint = zhSettings.settings.openaiExperimentalScheduler[key];
-      const enHint = enSettings.settings.openaiExperimentalScheduler[key];
-      const range = key === "topKHint" ? ">= 1" : ">= 0";
-      expect(zhHint).toContain(range);
-      expect(enHint).toContain(range);
-    }
-
-    await card.get('[data-testid="scheduler-pool-mode"]').setValue("all_eligible");
-    await card.get('[data-testid="scheduler-exploration-ratio"]').setValue(35);
-    await card.get('[data-testid="scheduler-starvation-threshold"]').setValue(3600);
-    await card.get('[data-testid="scheduler-fairness-weight"]').setValue(4);
     await card.get('[data-testid="scheduler-group-select"]').setValue("12");
-    await card.get('[data-testid="scheduler-policy-mode"]').setValue("fair");
-    await card.get('[data-testid="scheduler-policy-preset"]').setValue("pro");
+    await card.get('[data-testid="scheduler-policy-mode-preset"]').trigger("click");
+    await card.get('[data-testid="scheduler-policy-preset"]').setValue("builtin:pro");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        openai_advanced_scheduler_candidate_pool_mode: "all_eligible",
-        openai_advanced_scheduler_exploration_ratio: 35,
-        openai_advanced_scheduler_starvation_threshold_seconds: 3600,
-        openai_advanced_scheduler_fairness_weight: 4,
         openai_advanced_scheduler_group_policies: {
           12: expect.objectContaining({
-            mode: "fair",
-            preset: "pro",
+            mode: "preset",
+            preset_id: "builtin:pro",
             top_k: 10,
             fairness: expect.objectContaining({ exploration_ratio: 40 }),
           }),
         },
       }),
     );
+  });
+
+  it("loads native OpenAI scheduler groups separately and leaves selection empty", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "订阅组", description: "", platform: "openai", subscription_type: "subscription", status: "active" },
+      { id: 13, name: "标准组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(getGroups).toHaveBeenCalledWith("openai");
+
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    const schedulerSelect = wrapper.get('[data-testid="scheduler-group-select"]');
+    expect((schedulerSelect.element as HTMLSelectElement).value).toBe("");
+    expect(schedulerSelect.findAll("option").map((option) => option.attributes("value"))).toEqual([
+      "",
+      "12",
+      "13",
+    ]);
+
+    const addDefaultButton = wrapper.findAll("button").find((button) =>
+      button.text().includes("admin.settings.defaults.addDefaultSubscription"),
+    );
+    expect(addDefaultButton).toBeDefined();
+    await addDefaultButton?.trigger("click");
+    const defaultGroupSelect = wrapper.get(".default-sub-group-select");
+    expect(defaultGroupSelect.findAll("option").map((option) => option.attributes("value"))).toContain("12");
+    expect(defaultGroupSelect.findAll("option").map((option) => option.attributes("value"))).not.toContain("13");
+  });
+
+  it("keeps a separate draft for each scheduler group", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+      { id: 13, name: "二组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+
+    const groupSelect = wrapper.get('[data-testid="scheduler-group-select"]');
+    await groupSelect.setValue("12");
+    await wrapper.get('[data-testid="scheduler-policy-mode-custom"]').trigger("click");
+    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("11");
+
+    await groupSelect.setValue("13");
+    await wrapper.get('[data-testid="scheduler-policy-mode-custom"]').trigger("click");
+    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("13");
+
+    await groupSelect.setValue("12");
+    expect((wrapper.get('[data-testid="scheduler-policy-top-k"]').element as HTMLInputElement).value).toBe("11");
+  });
+
+  it("normalizes legacy scheduler policies to custom and preset modes", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_advanced_scheduler_group_policies: {
+        12: { mode: "fair", preset: "pro", top_k: 10, weight_overrides: { priority: 1.2 } },
+      },
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+
+    expect(wrapper.get('[data-testid="scheduler-policy-mode-preset"]').classes()).toContain("bg-gray-900");
+    expect((wrapper.get('[data-testid="scheduler-policy-preset"]').element as HTMLSelectElement).value).toBe("builtin:pro");
+  });
+
+  it("serializes preset values from the server snapshot instead of draft edits", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    const presetDefinition = {
+      top_k: 9,
+      weight_overrides: { priority: 1, load: 1, queue: 0.7 },
+      fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 25, starvation_threshold_seconds: 21600, fairness_weight: 3 },
+    };
+    const snapshot = {
+      top_k: 11,
+      weight_overrides: { priority: 2, load: 1, queue: 0.5 },
+      fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 31, starvation_threshold_seconds: 3600, fairness_weight: 4 },
+    };
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_advanced_scheduler_available_presets: [
+        { id: "custom:stable", name: "稳态", kind: "custom", values: presetDefinition },
+      ],
+      openai_advanced_scheduler_group_policies: {
+        12: { mode: "preset", preset_id: "custom:stable", ...snapshot },
+      },
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+
+    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("31");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      openai_advanced_scheduler_group_policies: {
+        12: expect.objectContaining({
+          mode: "preset",
+          preset_id: "custom:stable",
+          top_k: 11,
+          weight_overrides: snapshot.weight_overrides,
+          fairness: snapshot.fairness,
+        }),
+      },
+    }));
+  });
+
+  it("keeps preset values disabled and saves a custom preset without switching mode", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+    await wrapper.get('[data-testid="scheduler-policy-mode-preset"]').trigger("click");
+    expect(wrapper.get('[data-testid="scheduler-policy-top-k"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('[data-testid="scheduler-policy-mode-custom"]').trigger("click");
+    await wrapper.get('[data-testid="scheduler-preset-name"]').setValue("晚高峰稳态");
+    await wrapper.get('[data-testid="scheduler-save-preset"]').trigger("click");
+    expect(wrapper.get('[data-testid="scheduler-policy-mode-custom"]').classes()).toContain("bg-gray-900");
+    expect(wrapper.find('[data-testid="scheduler-custom-presets"] input').attributes("value")).toBe("晚高峰稳态");
+  });
+
+  it("blocks deleting a referenced custom preset", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_advanced_scheduler_custom_presets: {
+        "custom:stable": { id: "custom:stable", name: "稳态", values: { top_k: 7, weight_overrides: {}, fairness: { candidate_pool_mode: "hybrid", exploration_ratio: 20, starvation_threshold_seconds: 21600, fairness_weight: 2 } } },
+      },
+      openai_advanced_scheduler_group_policies: { 12: { mode: "preset", preset_id: "custom:stable" } },
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+    const button = wrapper.get('[data-testid="scheduler-preset-delete-custom-stable"]');
+    expect(button.attributes("disabled")).toBeDefined();
   });
 
   it("passes translated upload and remove labels to the payment help image uploader", async () => {

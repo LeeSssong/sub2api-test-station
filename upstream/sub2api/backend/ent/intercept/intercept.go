@@ -37,6 +37,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -51,7 +52,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 )
 
 // The Query interface represents an operation that queries a graph.
@@ -866,6 +869,33 @@ func (f TraverseProxy) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.ProxyQuery", q)
 }
 
+// The QuotaIdempotencyRecordFunc type is an adapter to allow the use of ordinary function as a Querier.
+type QuotaIdempotencyRecordFunc func(context.Context, *ent.QuotaIdempotencyRecordQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f QuotaIdempotencyRecordFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.QuotaIdempotencyRecordQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.QuotaIdempotencyRecordQuery", q)
+}
+
+// The TraverseQuotaIdempotencyRecord type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseQuotaIdempotencyRecord func(context.Context, *ent.QuotaIdempotencyRecordQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseQuotaIdempotencyRecord) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseQuotaIdempotencyRecord) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.QuotaIdempotencyRecordQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.QuotaIdempotencyRecordQuery", q)
+}
+
 // The RedeemCodeFunc type is an adapter to allow the use of ordinary function as a Querier.
 type RedeemCodeFunc func(context.Context, *ent.RedeemCodeQuery) (ent.Value, error)
 
@@ -1244,6 +1274,33 @@ func (f TraverseUserPlatformQuota) Traverse(ctx context.Context, q ent.Query) er
 	return fmt.Errorf("unexpected query type %T. expect *ent.UserPlatformQuotaQuery", q)
 }
 
+// The UserQuotaLedgerEntryFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserQuotaLedgerEntryFunc func(context.Context, *ent.UserQuotaLedgerEntryQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserQuotaLedgerEntryFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserQuotaLedgerEntryQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaLedgerEntryQuery", q)
+}
+
+// The TraverseUserQuotaLedgerEntry type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserQuotaLedgerEntry func(context.Context, *ent.UserQuotaLedgerEntryQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserQuotaLedgerEntry) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserQuotaLedgerEntry) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserQuotaLedgerEntryQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaLedgerEntryQuery", q)
+}
+
 // The UserSubscriptionFunc type is an adapter to allow the use of ordinary function as a Querier.
 type UserSubscriptionFunc func(context.Context, *ent.UserSubscriptionQuery) (ent.Value, error)
 
@@ -1269,6 +1326,33 @@ func (f TraverseUserSubscription) Traverse(ctx context.Context, q ent.Query) err
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.UserSubscriptionQuery", q)
+}
+
+// The UserWalletFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserWalletFunc func(context.Context, *ent.UserWalletQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserWalletFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserWalletQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserWalletQuery", q)
+}
+
+// The TraverseUserWallet type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserWallet func(context.Context, *ent.UserWalletQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserWallet) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserWallet) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserWalletQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserWalletQuery", q)
 }
 
 // NewQuery returns the generic Query interface for the given typed query.
@@ -1330,6 +1414,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.PromoCodeUsageQuery, predicate.PromoCodeUsage, promocodeusage.OrderOption]{typ: ent.TypePromoCodeUsage, tq: q}, nil
 	case *ent.ProxyQuery:
 		return &query[*ent.ProxyQuery, predicate.Proxy, proxy.OrderOption]{typ: ent.TypeProxy, tq: q}, nil
+	case *ent.QuotaIdempotencyRecordQuery:
+		return &query[*ent.QuotaIdempotencyRecordQuery, predicate.QuotaIdempotencyRecord, quotaidempotencyrecord.OrderOption]{typ: ent.TypeQuotaIdempotencyRecord, tq: q}, nil
 	case *ent.RedeemCodeQuery:
 		return &query[*ent.RedeemCodeQuery, predicate.RedeemCode, redeemcode.OrderOption]{typ: ent.TypeRedeemCode, tq: q}, nil
 	case *ent.SecuritySecretQuery:
@@ -1358,8 +1444,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.UserAttributeValueQuery, predicate.UserAttributeValue, userattributevalue.OrderOption]{typ: ent.TypeUserAttributeValue, tq: q}, nil
 	case *ent.UserPlatformQuotaQuery:
 		return &query[*ent.UserPlatformQuotaQuery, predicate.UserPlatformQuota, userplatformquota.OrderOption]{typ: ent.TypeUserPlatformQuota, tq: q}, nil
+	case *ent.UserQuotaLedgerEntryQuery:
+		return &query[*ent.UserQuotaLedgerEntryQuery, predicate.UserQuotaLedgerEntry, userquotaledgerentry.OrderOption]{typ: ent.TypeUserQuotaLedgerEntry, tq: q}, nil
 	case *ent.UserSubscriptionQuery:
 		return &query[*ent.UserSubscriptionQuery, predicate.UserSubscription, usersubscription.OrderOption]{typ: ent.TypeUserSubscription, tq: q}, nil
+	case *ent.UserWalletQuery:
+		return &query[*ent.UserWalletQuery, predicate.UserWallet, userwallet.OrderOption]{typ: ent.TypeUserWallet, tq: q}, nil
 	default:
 		return nil, fmt.Errorf("unknown query type %T", q)
 	}

@@ -793,6 +793,7 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	quotaWallet           QuotaWalletService
 	costEvidenceRegistrar UsageCostEvidenceRegisterer
 }
 
@@ -838,7 +839,7 @@ func NewGatewayService(
 	resolver *ModelPricingResolver,
 	compositeResolver *CompositeRouteResolver,
 	balanceNotifyService *BalanceNotifyService,
-	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	userPlatformQuotaRepo UserPlatformQuotaRepository, wallets ...QuotaWalletService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -876,6 +877,9 @@ func NewGatewayService(
 		compositeResolver:     compositeResolver,
 		balanceNotifyService:  balanceNotifyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+	}
+	if len(wallets) > 0 {
+		svc.quotaWallet = wallets[0]
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,

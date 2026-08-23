@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"math"
 	"strconv"
@@ -288,6 +289,13 @@ type availableBalanceDeductor interface {
 }
 
 func (s *PaymentService) deductAvailableBalance(ctx context.Context, userID int64, amount float64) (float64, error) {
+	if s.quotaWallet != nil {
+		_, err := s.quotaWallet.LegacyAdjust(ctx, LegacyBalanceAdjustmentInput{UserID: userID, Mode: "subtract", AmountUSD: decimal.NewFromFloat(amount), IdempotencyKey: fmt.Sprintf("refund:%d:%g", userID, amount), ReferenceType: "payment_refund"})
+		if err != nil {
+			return 0, err
+		}
+		return amount, nil
+	}
 	repo, ok := s.userRepo.(availableBalanceDeductor)
 	if !ok {
 		return 0, errors.New("user repository does not support available balance deduction")
@@ -695,7 +703,13 @@ func refundResponseID(resp *payment.RefundResponse) string {
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
-		if err := s.userRepo.UpdateBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
+		var err error
+		if s.quotaWallet != nil {
+			_, err = s.quotaWallet.Recharge(ctx, RechargeInput{UserID: p.Order.UserID, AmountCNY: decimal.NewFromFloat(p.BalanceToDeduct), IdempotencyKey: fmt.Sprintf("refund-rollback:%d:%g", p.OrderID, p.BalanceToDeduct), ReferenceType: "payment_refund_rollback"})
+		} else {
+			err = s.userRepo.UpdateBalance(ctx, p.Order.UserID, p.BalanceToDeduct)
+		}
+		if err != nil {
 			slog.Error("[CRITICAL] rollback failed", "orderID", p.OrderID, "amount", p.BalanceToDeduct, "error", err)
 			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "balanceDeducted": p.BalanceToDeduct})
 			return false

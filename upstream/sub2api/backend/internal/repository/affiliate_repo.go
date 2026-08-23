@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -57,10 +58,11 @@ type affiliateQueryExecer interface {
 
 type affiliateRepository struct {
 	client *dbent.Client
+	wallet service.QuotaWalletService
 }
 
 func NewAffiliateRepository(client *dbent.Client, _ *sql.DB) service.AffiliateRepository {
-	return &affiliateRepository{client: client}
+	return &affiliateRepository{client: client, wallet: service.NewQuotaWalletService(NewQuotaWalletRepository(client, nil))}
 }
 
 func (r *affiliateRepository) EnsureUserAffiliate(ctx context.Context, userID int64) (*service.AffiliateSummary, error) {
@@ -288,7 +290,6 @@ FROM cleared`, userID)
 
 		affected, err := txClient.User.Update().
 			Where(user.IDEQ(userID)).
-			AddBalance(transferred).
 			AddTotalRecharged(transferred).
 			Save(txCtx)
 		if err != nil {
@@ -296,6 +297,11 @@ FROM cleared`, userID)
 		}
 		if affected == 0 {
 			return service.ErrUserNotFound
+		}
+		if r.wallet != nil {
+			if _, err := r.wallet.LegacyAdjust(txCtx, service.LegacyBalanceAdjustmentInput{UserID: userID, Mode: "add", AmountUSD: decimal.NewFromFloat(transferred), IdempotencyKey: fmt.Sprintf("affiliate-transfer:%d:%g", userID, transferred), ReferenceType: "affiliate_credit", ReferenceID: fmt.Sprintf("%d", userID)}); err != nil {
+				return fmt.Errorf("credit quota wallet by affiliate quota: %w", err)
+			}
 		}
 
 		newBalance, err = queryUserBalance(txCtx, txClient, userID)

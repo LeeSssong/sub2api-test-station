@@ -19,12 +19,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 )
 
 // UserUpdate is the builder for updating User entities.
@@ -627,6 +630,70 @@ func (_u *UserUpdate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdate {
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// SetWalletID sets the "wallet" edge to the UserWallet entity by ID.
+func (_u *UserUpdate) SetWalletID(id int64) *UserUpdate {
+	_u.mutation.SetWalletID(id)
+	return _u
+}
+
+// SetNillableWalletID sets the "wallet" edge to the UserWallet entity by ID if the given value is not nil.
+func (_u *UserUpdate) SetNillableWalletID(id *int64) *UserUpdate {
+	if id != nil {
+		_u = _u.SetWalletID(*id)
+	}
+	return _u
+}
+
+// SetWallet sets the "wallet" edge to the UserWallet entity.
+func (_u *UserUpdate) SetWallet(v *UserWallet) *UserUpdate {
+	return _u.SetWalletID(v.ID)
+}
+
+// AddQuotaLedgerEntryIDs adds the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_u *UserUpdate) AddQuotaLedgerEntryIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// AddQuotaLedgerEntries adds the "quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdate) AddQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaLedgerEntryIDs(ids...)
+}
+
+// AddOperatedQuotaLedgerEntryIDs adds the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_u *UserUpdate) AddOperatedQuotaLedgerEntryIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddOperatedQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// AddOperatedQuotaLedgerEntries adds the "operated_quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdate) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
+func (_u *UserUpdate) AddQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddQuotaIdempotencyRecordIDs(ids...)
+	return _u
+}
+
+// AddQuotaIdempotencyRecords adds the "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
+func (_u *UserUpdate) AddQuotaIdempotencyRecords(v ...*QuotaIdempotencyRecord) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaIdempotencyRecordIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -903,6 +970,75 @@ func (_u *UserUpdate) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpdate 
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearWallet clears the "wallet" edge to the UserWallet entity.
+func (_u *UserUpdate) ClearWallet() *UserUpdate {
+	_u.mutation.ClearWallet()
+	return _u
+}
+
+// ClearQuotaLedgerEntries clears all "quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdate) ClearQuotaLedgerEntries() *UserUpdate {
+	_u.mutation.ClearQuotaLedgerEntries()
+	return _u
+}
+
+// RemoveQuotaLedgerEntryIDs removes the "quota_ledger_entries" edge to UserQuotaLedgerEntry entities by IDs.
+func (_u *UserUpdate) RemoveQuotaLedgerEntryIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaLedgerEntries removes "quota_ledger_entries" edges to UserQuotaLedgerEntry entities.
+func (_u *UserUpdate) RemoveQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaLedgerEntryIDs(ids...)
+}
+
+// ClearOperatedQuotaLedgerEntries clears all "operated_quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdate) ClearOperatedQuotaLedgerEntries() *UserUpdate {
+	_u.mutation.ClearOperatedQuotaLedgerEntries()
+	return _u
+}
+
+// RemoveOperatedQuotaLedgerEntryIDs removes the "operated_quota_ledger_entries" edge to UserQuotaLedgerEntry entities by IDs.
+func (_u *UserUpdate) RemoveOperatedQuotaLedgerEntryIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveOperatedQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// RemoveOperatedQuotaLedgerEntries removes "operated_quota_ledger_entries" edges to UserQuotaLedgerEntry entities.
+func (_u *UserUpdate) RemoveOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// ClearQuotaIdempotencyRecords clears all "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
+func (_u *UserUpdate) ClearQuotaIdempotencyRecords() *UserUpdate {
+	_u.mutation.ClearQuotaIdempotencyRecords()
+	return _u
+}
+
+// RemoveQuotaIdempotencyRecordIDs removes the "quota_idempotency_records" edge to QuotaIdempotencyRecord entities by IDs.
+func (_u *UserUpdate) RemoveQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveQuotaIdempotencyRecordIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaIdempotencyRecords removes "quota_idempotency_records" edges to QuotaIdempotencyRecord entities.
+func (_u *UserUpdate) RemoveQuotaIdempotencyRecords(v ...*QuotaIdempotencyRecord) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaIdempotencyRecordIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1696,6 +1832,170 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.WalletCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.WalletTable,
+			Columns: []string{user.WalletColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userwallet.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.WalletIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.WalletTable,
+			Columns: []string{user.WalletColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userwallet.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaLedgerEntriesIDs(); len(nodes) > 0 && !_u.mutation.QuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.OperatedQuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedOperatedQuotaLedgerEntriesIDs(); len(nodes) > 0 && !_u.mutation.OperatedQuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OperatedQuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaIdempotencyRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaIdempotencyRecordsIDs(); len(nodes) > 0 && !_u.mutation.QuotaIdempotencyRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaIdempotencyRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -2303,6 +2603,70 @@ func (_u *UserUpdateOne) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdateO
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// SetWalletID sets the "wallet" edge to the UserWallet entity by ID.
+func (_u *UserUpdateOne) SetWalletID(id int64) *UserUpdateOne {
+	_u.mutation.SetWalletID(id)
+	return _u
+}
+
+// SetNillableWalletID sets the "wallet" edge to the UserWallet entity by ID if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableWalletID(id *int64) *UserUpdateOne {
+	if id != nil {
+		_u = _u.SetWalletID(*id)
+	}
+	return _u
+}
+
+// SetWallet sets the "wallet" edge to the UserWallet entity.
+func (_u *UserUpdateOne) SetWallet(v *UserWallet) *UserUpdateOne {
+	return _u.SetWalletID(v.ID)
+}
+
+// AddQuotaLedgerEntryIDs adds the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_u *UserUpdateOne) AddQuotaLedgerEntryIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// AddQuotaLedgerEntries adds the "quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdateOne) AddQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaLedgerEntryIDs(ids...)
+}
+
+// AddOperatedQuotaLedgerEntryIDs adds the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_u *UserUpdateOne) AddOperatedQuotaLedgerEntryIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddOperatedQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// AddOperatedQuotaLedgerEntries adds the "operated_quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdateOne) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
+func (_u *UserUpdateOne) AddQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddQuotaIdempotencyRecordIDs(ids...)
+	return _u
+}
+
+// AddQuotaIdempotencyRecords adds the "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
+func (_u *UserUpdateOne) AddQuotaIdempotencyRecords(v ...*QuotaIdempotencyRecord) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaIdempotencyRecordIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -2579,6 +2943,75 @@ func (_u *UserUpdateOne) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpda
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearWallet clears the "wallet" edge to the UserWallet entity.
+func (_u *UserUpdateOne) ClearWallet() *UserUpdateOne {
+	_u.mutation.ClearWallet()
+	return _u
+}
+
+// ClearQuotaLedgerEntries clears all "quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdateOne) ClearQuotaLedgerEntries() *UserUpdateOne {
+	_u.mutation.ClearQuotaLedgerEntries()
+	return _u
+}
+
+// RemoveQuotaLedgerEntryIDs removes the "quota_ledger_entries" edge to UserQuotaLedgerEntry entities by IDs.
+func (_u *UserUpdateOne) RemoveQuotaLedgerEntryIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaLedgerEntries removes "quota_ledger_entries" edges to UserQuotaLedgerEntry entities.
+func (_u *UserUpdateOne) RemoveQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaLedgerEntryIDs(ids...)
+}
+
+// ClearOperatedQuotaLedgerEntries clears all "operated_quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_u *UserUpdateOne) ClearOperatedQuotaLedgerEntries() *UserUpdateOne {
+	_u.mutation.ClearOperatedQuotaLedgerEntries()
+	return _u
+}
+
+// RemoveOperatedQuotaLedgerEntryIDs removes the "operated_quota_ledger_entries" edge to UserQuotaLedgerEntry entities by IDs.
+func (_u *UserUpdateOne) RemoveOperatedQuotaLedgerEntryIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveOperatedQuotaLedgerEntryIDs(ids...)
+	return _u
+}
+
+// RemoveOperatedQuotaLedgerEntries removes "operated_quota_ledger_entries" edges to UserQuotaLedgerEntry entities.
+func (_u *UserUpdateOne) RemoveOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// ClearQuotaIdempotencyRecords clears all "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
+func (_u *UserUpdateOne) ClearQuotaIdempotencyRecords() *UserUpdateOne {
+	_u.mutation.ClearQuotaIdempotencyRecords()
+	return _u
+}
+
+// RemoveQuotaIdempotencyRecordIDs removes the "quota_idempotency_records" edge to QuotaIdempotencyRecord entities by IDs.
+func (_u *UserUpdateOne) RemoveQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveQuotaIdempotencyRecordIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaIdempotencyRecords removes "quota_idempotency_records" edges to QuotaIdempotencyRecord entities.
+func (_u *UserUpdateOne) RemoveQuotaIdempotencyRecords(v ...*QuotaIdempotencyRecord) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaIdempotencyRecordIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -3395,6 +3828,170 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.WalletCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.WalletTable,
+			Columns: []string{user.WalletColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userwallet.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.WalletIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.WalletTable,
+			Columns: []string{user.WalletColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userwallet.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaLedgerEntriesIDs(); len(nodes) > 0 && !_u.mutation.QuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.OperatedQuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedOperatedQuotaLedgerEntriesIDs(); len(nodes) > 0 && !_u.mutation.OperatedQuotaLedgerEntriesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OperatedQuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaIdempotencyRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaIdempotencyRecordsIDs(); len(nodes) > 0 && !_u.mutation.QuotaIdempotencyRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaIdempotencyRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

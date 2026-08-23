@@ -4,19 +4,22 @@ umask 077
 
 fail() { printf 'admin lab host deploy failed: %s\n' "$1" >&2; exit 1; }
 sha256_file() { sha256sum "$1" | awk '{print $1}'; }
-bundle=''; bundle_sha=''; frontend_archive=''; frontend_sha=''; env_file=''; source_commit=''; source_tree=''; base_url=''; deploy_root=''; release_staging=''
+bundle=''; bundle_sha=''; frontend_archive=''; frontend_sha=''; backend_archive=''; backend_sha=''; env_file=''; source_commit=''; source_tree=''; base_url=''; deploy_root=''; release_staging=''
 ADMIN_LAB_ENV=''
 while (($#)); do case "$1" in
   --bundle) bundle=$2; shift 2;; --bundle-sha256) bundle_sha=$2; shift 2;;
   --frontend-archive) frontend_archive=$2; shift 2;; --frontend-sha256) frontend_sha=$2; shift 2;;
+  --backend-archive) backend_archive=$2; shift 2;; --backend-sha256) backend_sha=$2; shift 2;;
   --env-file) env_file=$2; shift 2;; --source-commit) source_commit=$2; shift 2;; --source-tree) source_tree=$2; shift 2;;
   --base-url) base_url=$2; shift 2;; --deploy-root) deploy_root=$2; shift 2;; --release-staging-root) release_staging=$2; shift 2;;
   *) fail "unknown argument: $1";; esac; done
 [[ "$bundle" == "$release_staging"/* && -f "$bundle" ]] || fail 'bundle path is invalid'
 [[ "$frontend_archive" == "$release_staging"/* && -f "$frontend_archive" ]] || fail 'frontend archive path is invalid'
+[[ "$backend_archive" == "$release_staging"/* && -f "$backend_archive" ]] || fail 'backend archive path is invalid'
 [[ "$env_file" == "$release_staging"/* && -f "$env_file" ]] || fail 'env path is invalid'
 [[ "$bundle_sha" =~ ^[a-f0-9]{64}$ && "$(sha256_file "$bundle")" == "$bundle_sha" ]] || fail 'bundle checksum mismatch'
 [[ "$frontend_sha" =~ ^[a-f0-9]{64}$ && "$(sha256_file "$frontend_archive")" == "$frontend_sha" ]] || fail 'frontend checksum mismatch'
+[[ "$backend_sha" =~ ^[a-f0-9]{64}$ && "$(sha256_file "$backend_archive")" == "$backend_sha" ]] || fail 'backend checksum mismatch'
 [[ "$(stat -c '%a' "$env_file")" == 600 ]] || fail 'lab env must be mode 0600'
 ADMIN_LAB_ENV="$env_file"
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail 'source identity invalid'
@@ -49,9 +52,13 @@ trap finish EXIT
 tar -xf "$bundle" -C "$stage" || fail 'bundle extraction failed'
 [[ -f "$stage/infra/Caddyfile" && -f "$stage/infra/compose.admin-lab.yaml" && -f "$stage/infra/admin-lab/gateway.conf" && -f "$stage/tools/admin-lab/mock_server.py" ]] || fail 'bundle contents incomplete'
 docker load --input "$frontend_archive" >/dev/null || fail 'frontend image load failed'
+docker load --input "$backend_archive" >/dev/null || fail 'backend image load failed'
 frontend_image=$(grep '^ADMIN_LAB_FRONTEND_IMAGE=' "$env_file" | cut -d= -f2-)
 [[ -n "$frontend_image" ]] || fail 'frontend image missing from env'
 docker image inspect "$frontend_image" >/dev/null || fail 'loaded frontend image tag missing'
+admin_image=$(grep '^ADMIN_LAB_IMAGE=' "$env_file" | cut -d= -f2-)
+[[ -n "$admin_image" ]] || fail 'backend image missing from env'
+docker image inspect "$admin_image" >/dev/null || fail 'loaded backend image tag missing'
 
 # Keep the isolated lab identity stable across releases. PostgreSQL and Redis
 # volumes retain their credentials, and rotating them on every bundle would

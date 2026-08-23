@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 )
 
 // User is the model entity for the User schema.
@@ -99,11 +100,19 @@ type UserEdges struct {
 	PendingAuthSessions []*PendingAuthSession `json:"pending_auth_sessions,omitempty"`
 	// PlatformQuotas holds the value of the platform_quotas edge.
 	PlatformQuotas []*UserPlatformQuota `json:"platform_quotas,omitempty"`
+	// Wallet holds the value of the wallet edge.
+	Wallet *UserWallet `json:"wallet,omitempty"`
+	// QuotaLedgerEntries holds the value of the quota_ledger_entries edge.
+	QuotaLedgerEntries []*UserQuotaLedgerEntry `json:"quota_ledger_entries,omitempty"`
+	// OperatedQuotaLedgerEntries holds the value of the operated_quota_ledger_entries edge.
+	OperatedQuotaLedgerEntries []*UserQuotaLedgerEntry `json:"operated_quota_ledger_entries,omitempty"`
+	// QuotaIdempotencyRecords holds the value of the quota_idempotency_records edge.
+	QuotaIdempotencyRecords []*QuotaIdempotencyRecord `json:"quota_idempotency_records,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [14]bool
+	loadedTypes [18]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -223,10 +232,48 @@ func (e UserEdges) PlatformQuotasOrErr() ([]*UserPlatformQuota, error) {
 	return nil, &NotLoadedError{edge: "platform_quotas"}
 }
 
+// WalletOrErr returns the Wallet value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserEdges) WalletOrErr() (*UserWallet, error) {
+	if e.Wallet != nil {
+		return e.Wallet, nil
+	} else if e.loadedTypes[13] {
+		return nil, &NotFoundError{label: userwallet.Label}
+	}
+	return nil, &NotLoadedError{edge: "wallet"}
+}
+
+// QuotaLedgerEntriesOrErr returns the QuotaLedgerEntries value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) QuotaLedgerEntriesOrErr() ([]*UserQuotaLedgerEntry, error) {
+	if e.loadedTypes[14] {
+		return e.QuotaLedgerEntries, nil
+	}
+	return nil, &NotLoadedError{edge: "quota_ledger_entries"}
+}
+
+// OperatedQuotaLedgerEntriesOrErr returns the OperatedQuotaLedgerEntries value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) OperatedQuotaLedgerEntriesOrErr() ([]*UserQuotaLedgerEntry, error) {
+	if e.loadedTypes[15] {
+		return e.OperatedQuotaLedgerEntries, nil
+	}
+	return nil, &NotLoadedError{edge: "operated_quota_ledger_entries"}
+}
+
+// QuotaIdempotencyRecordsOrErr returns the QuotaIdempotencyRecords value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) QuotaIdempotencyRecordsOrErr() ([]*QuotaIdempotencyRecord, error) {
+	if e.loadedTypes[16] {
+		return e.QuotaIdempotencyRecords, nil
+	}
+	return nil, &NotLoadedError{edge: "quota_idempotency_records"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[13] {
+	if e.loadedTypes[17] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -494,6 +541,26 @@ func (_m *User) QueryPendingAuthSessions() *PendingAuthSessionQuery {
 // QueryPlatformQuotas queries the "platform_quotas" edge of the User entity.
 func (_m *User) QueryPlatformQuotas() *UserPlatformQuotaQuery {
 	return NewUserClient(_m.config).QueryPlatformQuotas(_m)
+}
+
+// QueryWallet queries the "wallet" edge of the User entity.
+func (_m *User) QueryWallet() *UserWalletQuery {
+	return NewUserClient(_m.config).QueryWallet(_m)
+}
+
+// QueryQuotaLedgerEntries queries the "quota_ledger_entries" edge of the User entity.
+func (_m *User) QueryQuotaLedgerEntries() *UserQuotaLedgerEntryQuery {
+	return NewUserClient(_m.config).QueryQuotaLedgerEntries(_m)
+}
+
+// QueryOperatedQuotaLedgerEntries queries the "operated_quota_ledger_entries" edge of the User entity.
+func (_m *User) QueryOperatedQuotaLedgerEntries() *UserQuotaLedgerEntryQuery {
+	return NewUserClient(_m.config).QueryOperatedQuotaLedgerEntries(_m)
+}
+
+// QueryQuotaIdempotencyRecords queries the "quota_idempotency_records" edge of the User entity.
+func (_m *User) QueryQuotaIdempotencyRecords() *QuotaIdempotencyRecordQuery {
+	return NewUserClient(_m.config).QueryQuotaIdempotencyRecords(_m)
 }
 
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.

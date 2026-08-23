@@ -10,6 +10,7 @@ import (
 	"fmt"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shopspring/decimal"
 	"image"
 	"image/color"
 	stddraw "image/draw"
@@ -293,17 +294,23 @@ type UserService struct {
 	settingRepo          SettingRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
+	quotaWallet          QuotaWalletService
 	lastActiveTouchL1    sync.Map
 	lastActiveTouchSF    singleflight.Group
 }
 
 // NewUserService 创建用户服务实例
-func NewUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache) *UserService {
+func NewUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache, wallets ...QuotaWalletService) *UserService {
+	var wallet QuotaWalletService
+	if len(wallets) > 0 {
+		wallet = wallets[0]
+	}
 	return &UserService{
 		userRepo:             userRepo,
 		settingRepo:          settingRepo,
 		authCacheInvalidator: authCacheInvalidator,
 		billingCache:         billingCache,
+		quotaWallet:          wallet,
 	}
 }
 
@@ -1150,7 +1157,18 @@ func (s *UserService) List(ctx context.Context, params pagination.PaginationPara
 
 // UpdateBalance 更新用户余额（管理员功能）
 func (s *UserService) UpdateBalance(ctx context.Context, userID int64, amount float64) error {
-	if err := s.userRepo.UpdateBalance(ctx, userID, amount); err != nil {
+	var err error
+	if s.quotaWallet != nil {
+		mode := "add"
+		value := amount
+		if amount < 0 {
+			mode, value = "subtract", -amount
+		}
+		_, err = s.quotaWallet.LegacyAdjust(ctx, LegacyBalanceAdjustmentInput{UserID: userID, Mode: mode, AmountUSD: decimal.NewFromFloat(value), ReferenceType: "legacy_balance_adjustment", ReferenceID: fmt.Sprintf("user:%d", userID)})
+	} else {
+		err = s.userRepo.UpdateBalance(ctx, userID, amount)
+	}
+	if err != nil {
 		return fmt.Errorf("update balance: %w", err)
 	}
 	if s.authCacheInvalidator != nil {

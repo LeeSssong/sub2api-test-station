@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type PromoService struct {
 	billingCacheService  *BillingCacheService
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	quotaWallet          QuotaWalletService
 }
 
 // NewPromoService 创建优惠码服务实例
@@ -37,14 +39,19 @@ func NewPromoService(
 	userRepo UserRepository,
 	billingCacheService *BillingCacheService,
 	entClient *dbent.Client,
-	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	authCacheInvalidator APIKeyAuthCacheInvalidator, wallets ...QuotaWalletService,
 ) *PromoService {
+	var wallet QuotaWalletService
+	if len(wallets) > 0 {
+		wallet = wallets[0]
+	}
 	return &PromoService{
 		promoRepo:            promoRepo,
 		userRepo:             userRepo,
 		billingCacheService:  billingCacheService,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
+		quotaWallet:          wallet,
 	}
 }
 
@@ -124,8 +131,14 @@ func (s *PromoService) ApplyPromoCode(ctx context.Context, userID int64, code st
 	}
 
 	// 增加用户余额
-	if err := s.userRepo.UpdateBalance(txCtx, userID, promoCode.BonusAmount); err != nil {
-		return fmt.Errorf("update user balance: %w", err)
+	var balanceErr error
+	if s.quotaWallet != nil {
+		_, balanceErr = s.quotaWallet.LegacyAdjust(txCtx, LegacyBalanceAdjustmentInput{UserID: userID, Mode: "add", AmountUSD: decimal.NewFromFloat(promoCode.BonusAmount), IdempotencyKey: fmt.Sprintf("promo:%d:%d", promoCode.ID, userID), ReferenceType: "promo_credit", ReferenceID: fmt.Sprintf("%d", promoCode.ID)})
+	} else {
+		balanceErr = s.userRepo.UpdateBalance(txCtx, userID, promoCode.BonusAmount)
+	}
+	if balanceErr != nil {
+		return fmt.Errorf("update user balance: %w", balanceErr)
 	}
 
 	// 创建使用记录

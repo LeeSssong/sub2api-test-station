@@ -23,13 +23,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
 
 type userRepository struct {
-	client *dbent.Client
-	sql    sqlExecutor
+	client      *dbent.Client
+	sql         sqlExecutor
+	quotaWallet service.QuotaWalletService
 }
 
 var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)
@@ -39,7 +41,27 @@ func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserReposito
 }
 
 func newUserRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *userRepository {
-	return &userRepository{client: client, sql: sqlq}
+	r := &userRepository{client: client, sql: sqlq}
+	if client != nil {
+		r.quotaWallet = service.NewQuotaWalletService(NewQuotaWalletRepository(client, nil))
+	}
+	return r
+}
+
+func (r *userRepository) legacyQuotaAdjust(ctx context.Context, id int64, mode string, amount, target float64) (service.BalanceChange, error) {
+	if r.quotaWallet == nil {
+		return service.BalanceChange{}, errors.New("quota wallet coordinator is not configured")
+	}
+	before, err := r.quotaWallet.GetSummary(ctx, id)
+	if err != nil {
+		return service.BalanceChange{}, err
+	}
+	in := service.LegacyBalanceAdjustmentInput{UserID: id, Mode: mode, AmountUSD: decimal.NewFromFloat(amount), TargetUSD: decimal.NewFromFloat(target), ReferenceType: "legacy_user_repository"}
+	res, err := r.quotaWallet.LegacyAdjust(ctx, in)
+	if err != nil {
+		return service.BalanceChange{Old: before.TotalQuotaBalanceUSD.InexactFloat64(), New: before.TotalQuotaBalanceUSD.InexactFloat64() + amount}, err
+	}
+	return service.BalanceChange{Old: before.TotalQuotaBalanceUSD.InexactFloat64(), New: res.Summary.TotalQuotaBalanceUSD.InexactFloat64()}, nil
 }
 
 func (r *userRepository) Create(ctx context.Context, userIn *service.User) error {
@@ -817,6 +839,15 @@ func (r *userRepository) filterUsersByAttributes(ctx context.Context, attrs map[
 }
 
 func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {
+	if r.quotaWallet != nil {
+		mode := "add"
+		if amount < 0 {
+			mode = "subtract"
+			amount = -amount
+		}
+		_, err := r.legacyQuotaAdjust(ctx, id, mode, amount, 0)
+		return err
+	}
 	client := clientFromContext(ctx, r.client)
 	update := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)
 	// Track cumulative recharge amount for percentage-based notifications
@@ -834,6 +865,27 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 }
 
 func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {
+	if r.quotaWallet != nil {
+		before, err := r.quotaWallet.GetSummary(ctx, id)
+		if err != nil {
+			return err
+		}
+		if delta >= 0 {
+			_, err = r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "add", AmountUSD: decimal.NewFromFloat(delta), ReferenceType: "redeem"})
+			return err
+		}
+		// Redeem's historical floor-at-zero behavior is retained. Negative
+		// adjustments reduce paid quota, but never consume gift quota here.
+		target := before.TotalQuotaBalanceUSD.Add(decimal.NewFromFloat(delta))
+		if target.IsNegative() {
+			target = decimal.Zero
+		}
+		if target.LessThan(before.GiftQuotaBalanceUSD) {
+			target = before.GiftQuotaBalanceUSD
+		}
+		_, err = r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "set", TargetUSD: target, ReferenceType: "redeem"})
+		return err
+	}
 	const updateSQL = `
 		UPDATE users
 		SET balance = GREATEST(balance + $1, 0), updated_at = NOW()
@@ -858,6 +910,13 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
+	if r.quotaWallet != nil {
+		if amount < 0 {
+			return service.ErrBalanceNegative
+		}
+		_, err := r.quotaWallet.ConsumeUsage(ctx, service.UsageConsumptionInput{UserID: id, AmountUSD: decimal.NewFromFloat(amount), ReferenceType: "legacy_user_repository"})
+		return err
+	}
 	client := clientFromContext(ctx, r.client)
 	n, err := client.User.Update().
 		Where(dbuser.IDEQ(id), dbuser.BalanceGTE(amount)).
@@ -889,6 +948,27 @@ func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount flo
 func (r *userRepository) DeductAvailableBalance(ctx context.Context, id int64, amount float64) (deducted float64, err error) {
 	if amount < 0 {
 		return 0, fmt.Errorf("deduction amount must be nonnegative")
+	}
+	if r.quotaWallet != nil {
+		if amount == 0 {
+			return 0, nil
+		}
+		before, err := r.quotaWallet.GetSummary(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		available := decimal.NewFromFloat(amount)
+		if available.GreaterThan(before.TotalQuotaBalanceUSD) {
+			available = before.TotalQuotaBalanceUSD
+		}
+		if available.IsZero() {
+			return 0, nil
+		}
+		_, err = r.quotaWallet.ConsumeUsage(ctx, service.UsageConsumptionInput{UserID: id, AmountUSD: available, ReferenceType: "legacy_available_deduction"})
+		if err != nil {
+			return 0, err
+		}
+		return available.InexactFloat64(), nil
 	}
 	const updateSQL = `
 		WITH target AS (
@@ -930,6 +1010,15 @@ func (r *userRepository) DeductAvailableBalance(ctx context.Context, id int64, a
 // 相比"读余额 → 算新值 → 整行写回"，这里把读与写压进同一条 UPDATE，
 // 并发的计费扣款不会被旧快照覆盖。
 func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {
+	if r.quotaWallet != nil {
+		mode := "add"
+		amount := delta
+		if delta < 0 {
+			mode = "subtract"
+			amount = -delta
+		}
+		return r.legacyQuotaAdjust(ctx, id, mode, amount, 0)
+	}
 	const updateSQL = `
 		UPDATE users
 		SET balance = balance + $1, updated_at = NOW()
@@ -954,6 +1043,9 @@ func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta floa
 
 // SetBalance 原子地把余额置为 value，并返回变更前后的值。
 func (r *userRepository) SetBalance(ctx context.Context, id int64, value float64) (service.BalanceChange, error) {
+	if r.quotaWallet != nil {
+		return r.legacyQuotaAdjust(ctx, id, "set", 0, value)
+	}
 	if value < 0 {
 		// 连同当前余额一起返回，便于上层给出可读的错误信息。
 		current, err := r.currentBalance(ctx, id)

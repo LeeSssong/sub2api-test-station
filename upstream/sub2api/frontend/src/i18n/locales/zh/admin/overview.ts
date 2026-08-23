@@ -633,6 +633,8 @@ export default {
       withdraw: '退款',
       depositAmount: '充值金额',
       withdrawAmount: '退款金额',
+      giftQuota: '赠送额度',
+      refundGiftClears: '退款会清空当前剩余赠送额度，赠送额度不折现。',
       withdrawAll: '全部',
       depositNotesPlaceholder: '例如：新用户注册奖励、活动充值、补偿充值等',
       withdrawNotesPlaceholder: '例如：服务问题退款、错误充值退回、账户注销退款等',
@@ -650,6 +652,9 @@ export default {
       useDepositWithdrawButtons: '请使用充值/退款按钮调整余额',
       // 余额变动记录
       balanceHistory: '充值记录',
+      legacyHistory: '原生记录',
+      quotaLedger: '额度流水',
+      noQuotaLedger: '暂无额度流水',
       balanceHistoryTip: '点击查看充值记录',
       columnAlwaysVisible: '该列固定显示，不可隐藏',
       // 平台用量明细（悬浮显示）

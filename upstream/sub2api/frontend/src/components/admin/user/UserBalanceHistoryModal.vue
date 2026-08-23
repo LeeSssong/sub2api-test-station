@@ -49,7 +49,12 @@
 
       <!-- Type filter + Action buttons -->
       <div class="flex items-center gap-3">
+        <div class="flex rounded-lg border border-gray-200 p-1 dark:border-dark-600">
+          <button class="rounded px-3 py-1 text-sm" :class="activeTab === 'legacy' ? 'bg-gray-100 dark:bg-dark-700' : ''" @click="activeTab = 'legacy'">{{ t('admin.users.legacyHistory') }}</button>
+          <button class="rounded px-3 py-1 text-sm" :class="activeTab === 'quota' ? 'bg-gray-100 dark:bg-dark-700' : ''" @click="activeTab = 'quota'; loadQuotaLedger(1)">{{ t('admin.users.quotaLedger') }}</button>
+        </div>
         <Select
+          v-show="activeTab === 'legacy'"
           v-model="typeFilter"
           :options="typeOptions"
           class="w-56"
@@ -78,7 +83,19 @@
       </div>
 
       <!-- Loading -->
-      <div v-if="loading" class="flex justify-center py-8">
+      <div v-if="activeTab === 'quota'" class="space-y-3">
+        <div v-if="quotaLoading" class="py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
+        <div v-else-if="quotaHistory.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('admin.users.noQuotaLedger') }}</div>
+        <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
+          <div v-for="item in quotaHistory" :key="item.id" class="rounded-xl border border-gray-200 p-3 dark:border-dark-600">
+            <div class="flex justify-between text-sm"><span class="font-medium">{{ item.record_type }}</span><span>{{ formatDateTime(item.created_at) }}</span></div>
+            <div class="mt-1 grid grid-cols-3 gap-2 text-xs text-gray-500"><span>¥{{ item.cash_delta_cny }}</span><span>付费 {{ item.paid_quota_delta_usd }}</span><span>赠送 {{ item.gift_quota_delta_usd }}</span></div>
+            <p v-if="item.note" class="mt-1 text-xs text-gray-500">{{ item.note }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="activeTab === 'legacy' && loading" class="flex justify-center py-8">
         <svg class="h-8 w-8 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -86,12 +103,12 @@
       </div>
 
       <!-- Empty state -->
-      <div v-else-if="history.length === 0" class="py-8 text-center">
+      <div v-else-if="activeTab === 'legacy' && history.length === 0" class="py-8 text-center">
         <p class="text-sm text-gray-500">{{ t('admin.users.noBalanceHistory') }}</p>
       </div>
 
       <!-- History list -->
-      <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
+      <div v-else-if="activeTab === 'legacy'" class="max-h-[28rem] space-y-3 overflow-y-auto">
         <div
           v-for="item in history"
           :key="item.id"
@@ -148,7 +165,7 @@
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 pt-2">
+      <div v-if="activeTab === 'legacy' && totalPages > 1" class="flex items-center justify-center gap-2 pt-2">
         <button
           :disabled="currentPage <= 1"
           class="btn btn-secondary px-3 py-1 text-sm"
@@ -174,7 +191,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
+import { adminAPI, type BalanceHistoryItem, type QuotaLedgerEntry } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -192,6 +209,11 @@ const total = ref(0)
 const totalRecharged = ref(0)
 const pageSize = 15
 const typeFilter = ref('')
+const activeTab = ref<'legacy' | 'quota'>('legacy')
+const quotaHistory = ref<QuotaLedgerEntry[]>([])
+const quotaLoading = ref(false)
+const quotaTotal = ref(0)
+const quotaPage = ref(1)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
 
@@ -210,6 +232,8 @@ const typeOptions = computed(() => [
 watch(() => props.show, (v) => {
   if (v && props.user) {
     typeFilter.value = ''
+    activeTab.value = 'legacy'
+    quotaHistory.value = []
     loadHistory(1)
   }
 })
@@ -232,6 +256,19 @@ const loadHistory = async (page: number) => {
     console.error('Failed to load balance history:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const loadQuotaLedger = async (page: number) => {
+  if (!props.user) return
+  quotaLoading.value = true
+  quotaPage.value = page
+  try {
+    const result = await adminAPI.users.getUserQuotaLedger(props.user.id, page, pageSize)
+    quotaHistory.value = result.items
+    quotaTotal.value = result.total
+  } finally {
+    quotaLoading.value = false
   }
 }
 

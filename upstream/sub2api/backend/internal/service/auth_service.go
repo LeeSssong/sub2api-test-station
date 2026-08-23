@@ -86,6 +86,7 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	quotaWallet           QuotaWalletService
 }
 
 type CaptchaProof struct {
@@ -120,8 +121,12 @@ func NewAuthService(
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
-	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	userPlatformQuotaRepo UserPlatformQuotaRepository, wallets ...QuotaWalletService,
 ) *AuthService {
+	var wallet QuotaWalletService
+	if len(wallets) > 0 {
+		wallet = wallets[0]
+	}
 	return &AuthService{
 		entClient:             entClient,
 		userRepo:              userRepo,
@@ -136,6 +141,7 @@ func NewAuthService(
 		affiliateService:      affiliateService,
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		quotaWallet:           wallet,
 	}
 }
 

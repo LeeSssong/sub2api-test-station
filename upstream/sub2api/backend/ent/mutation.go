@@ -41,6 +41,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -55,7 +56,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
@@ -96,6 +99,7 @@ const (
 	TypePromoCode                     = "PromoCode"
 	TypePromoCodeUsage                = "PromoCodeUsage"
 	TypeProxy                         = "Proxy"
+	TypeQuotaIdempotencyRecord        = "QuotaIdempotencyRecord"
 	TypeRedeemCode                    = "RedeemCode"
 	TypeSecuritySecret                = "SecuritySecret"
 	TypeSetting                       = "Setting"
@@ -110,7 +114,9 @@ const (
 	TypeUserAttributeDefinition       = "UserAttributeDefinition"
 	TypeUserAttributeValue            = "UserAttributeValue"
 	TypeUserPlatformQuota             = "UserPlatformQuota"
+	TypeUserQuotaLedgerEntry          = "UserQuotaLedgerEntry"
 	TypeUserSubscription              = "UserSubscription"
+	TypeUserWallet                    = "UserWallet"
 )
 
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
@@ -40743,6 +40749,1034 @@ func (m *ProxyMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Proxy edge %s", name)
 }
 
+// QuotaIdempotencyRecordMutation represents an operation that mutates the QuotaIdempotencyRecord nodes in the graph.
+type QuotaIdempotencyRecordMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int64
+	idempotency_key     *string
+	request_fingerprint *string
+	status              *string
+	response_status     *int
+	addresponse_status  *int
+	response_body       *string
+	expires_at          *time.Time
+	created_at          *time.Time
+	updated_at          *time.Time
+	clearedFields       map[string]struct{}
+	user                *int64
+	cleareduser         bool
+	ledger_entry        *int64
+	clearedledger_entry bool
+	done                bool
+	oldValue            func(context.Context) (*QuotaIdempotencyRecord, error)
+	predicates          []predicate.QuotaIdempotencyRecord
+}
+
+var _ ent.Mutation = (*QuotaIdempotencyRecordMutation)(nil)
+
+// quotaidempotencyrecordOption allows management of the mutation configuration using functional options.
+type quotaidempotencyrecordOption func(*QuotaIdempotencyRecordMutation)
+
+// newQuotaIdempotencyRecordMutation creates new mutation for the QuotaIdempotencyRecord entity.
+func newQuotaIdempotencyRecordMutation(c config, op Op, opts ...quotaidempotencyrecordOption) *QuotaIdempotencyRecordMutation {
+	m := &QuotaIdempotencyRecordMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeQuotaIdempotencyRecord,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withQuotaIdempotencyRecordID sets the ID field of the mutation.
+func withQuotaIdempotencyRecordID(id int64) quotaidempotencyrecordOption {
+	return func(m *QuotaIdempotencyRecordMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *QuotaIdempotencyRecord
+		)
+		m.oldValue = func(ctx context.Context) (*QuotaIdempotencyRecord, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().QuotaIdempotencyRecord.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withQuotaIdempotencyRecord sets the old QuotaIdempotencyRecord of the mutation.
+func withQuotaIdempotencyRecord(node *QuotaIdempotencyRecord) quotaidempotencyrecordOption {
+	return func(m *QuotaIdempotencyRecordMutation) {
+		m.oldValue = func(context.Context) (*QuotaIdempotencyRecord, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m QuotaIdempotencyRecordMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m QuotaIdempotencyRecordMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *QuotaIdempotencyRecordMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *QuotaIdempotencyRecordMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().QuotaIdempotencyRecord.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUserID sets the "user_id" field.
+func (m *QuotaIdempotencyRecordMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *QuotaIdempotencyRecordMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (m *QuotaIdempotencyRecordMutation) SetIdempotencyKey(s string) {
+	m.idempotency_key = &s
+}
+
+// IdempotencyKey returns the value of the "idempotency_key" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) IdempotencyKey() (r string, exists bool) {
+	v := m.idempotency_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKey returns the old "idempotency_key" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldIdempotencyKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKey: %w", err)
+	}
+	return oldValue.IdempotencyKey, nil
+}
+
+// ResetIdempotencyKey resets all changes to the "idempotency_key" field.
+func (m *QuotaIdempotencyRecordMutation) ResetIdempotencyKey() {
+	m.idempotency_key = nil
+}
+
+// SetRequestFingerprint sets the "request_fingerprint" field.
+func (m *QuotaIdempotencyRecordMutation) SetRequestFingerprint(s string) {
+	m.request_fingerprint = &s
+}
+
+// RequestFingerprint returns the value of the "request_fingerprint" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) RequestFingerprint() (r string, exists bool) {
+	v := m.request_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestFingerprint returns the old "request_fingerprint" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldRequestFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestFingerprint: %w", err)
+	}
+	return oldValue.RequestFingerprint, nil
+}
+
+// ResetRequestFingerprint resets all changes to the "request_fingerprint" field.
+func (m *QuotaIdempotencyRecordMutation) ResetRequestFingerprint() {
+	m.request_fingerprint = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *QuotaIdempotencyRecordMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *QuotaIdempotencyRecordMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetLedgerEntryID sets the "ledger_entry_id" field.
+func (m *QuotaIdempotencyRecordMutation) SetLedgerEntryID(i int64) {
+	m.ledger_entry = &i
+}
+
+// LedgerEntryID returns the value of the "ledger_entry_id" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) LedgerEntryID() (r int64, exists bool) {
+	v := m.ledger_entry
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLedgerEntryID returns the old "ledger_entry_id" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldLedgerEntryID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLedgerEntryID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLedgerEntryID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLedgerEntryID: %w", err)
+	}
+	return oldValue.LedgerEntryID, nil
+}
+
+// ClearLedgerEntryID clears the value of the "ledger_entry_id" field.
+func (m *QuotaIdempotencyRecordMutation) ClearLedgerEntryID() {
+	m.ledger_entry = nil
+	m.clearedFields[quotaidempotencyrecord.FieldLedgerEntryID] = struct{}{}
+}
+
+// LedgerEntryIDCleared returns if the "ledger_entry_id" field was cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) LedgerEntryIDCleared() bool {
+	_, ok := m.clearedFields[quotaidempotencyrecord.FieldLedgerEntryID]
+	return ok
+}
+
+// ResetLedgerEntryID resets all changes to the "ledger_entry_id" field.
+func (m *QuotaIdempotencyRecordMutation) ResetLedgerEntryID() {
+	m.ledger_entry = nil
+	delete(m.clearedFields, quotaidempotencyrecord.FieldLedgerEntryID)
+}
+
+// SetResponseStatus sets the "response_status" field.
+func (m *QuotaIdempotencyRecordMutation) SetResponseStatus(i int) {
+	m.response_status = &i
+	m.addresponse_status = nil
+}
+
+// ResponseStatus returns the value of the "response_status" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) ResponseStatus() (r int, exists bool) {
+	v := m.response_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseStatus returns the old "response_status" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldResponseStatus(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseStatus: %w", err)
+	}
+	return oldValue.ResponseStatus, nil
+}
+
+// AddResponseStatus adds i to the "response_status" field.
+func (m *QuotaIdempotencyRecordMutation) AddResponseStatus(i int) {
+	if m.addresponse_status != nil {
+		*m.addresponse_status += i
+	} else {
+		m.addresponse_status = &i
+	}
+}
+
+// AddedResponseStatus returns the value that was added to the "response_status" field in this mutation.
+func (m *QuotaIdempotencyRecordMutation) AddedResponseStatus() (r int, exists bool) {
+	v := m.addresponse_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearResponseStatus clears the value of the "response_status" field.
+func (m *QuotaIdempotencyRecordMutation) ClearResponseStatus() {
+	m.response_status = nil
+	m.addresponse_status = nil
+	m.clearedFields[quotaidempotencyrecord.FieldResponseStatus] = struct{}{}
+}
+
+// ResponseStatusCleared returns if the "response_status" field was cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) ResponseStatusCleared() bool {
+	_, ok := m.clearedFields[quotaidempotencyrecord.FieldResponseStatus]
+	return ok
+}
+
+// ResetResponseStatus resets all changes to the "response_status" field.
+func (m *QuotaIdempotencyRecordMutation) ResetResponseStatus() {
+	m.response_status = nil
+	m.addresponse_status = nil
+	delete(m.clearedFields, quotaidempotencyrecord.FieldResponseStatus)
+}
+
+// SetResponseBody sets the "response_body" field.
+func (m *QuotaIdempotencyRecordMutation) SetResponseBody(s string) {
+	m.response_body = &s
+}
+
+// ResponseBody returns the value of the "response_body" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) ResponseBody() (r string, exists bool) {
+	v := m.response_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseBody returns the old "response_body" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldResponseBody(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseBody: %w", err)
+	}
+	return oldValue.ResponseBody, nil
+}
+
+// ClearResponseBody clears the value of the "response_body" field.
+func (m *QuotaIdempotencyRecordMutation) ClearResponseBody() {
+	m.response_body = nil
+	m.clearedFields[quotaidempotencyrecord.FieldResponseBody] = struct{}{}
+}
+
+// ResponseBodyCleared returns if the "response_body" field was cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) ResponseBodyCleared() bool {
+	_, ok := m.clearedFields[quotaidempotencyrecord.FieldResponseBody]
+	return ok
+}
+
+// ResetResponseBody resets all changes to the "response_body" field.
+func (m *QuotaIdempotencyRecordMutation) ResetResponseBody() {
+	m.response_body = nil
+	delete(m.clearedFields, quotaidempotencyrecord.FieldResponseBody)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *QuotaIdempotencyRecordMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *QuotaIdempotencyRecordMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[quotaidempotencyrecord.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[quotaidempotencyrecord.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *QuotaIdempotencyRecordMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, quotaidempotencyrecord.FieldExpiresAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *QuotaIdempotencyRecordMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *QuotaIdempotencyRecordMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *QuotaIdempotencyRecordMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *QuotaIdempotencyRecordMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the QuotaIdempotencyRecord entity.
+// If the QuotaIdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaIdempotencyRecordMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *QuotaIdempotencyRecordMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *QuotaIdempotencyRecordMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[quotaidempotencyrecord.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *QuotaIdempotencyRecordMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *QuotaIdempotencyRecordMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *QuotaIdempotencyRecordMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// ClearLedgerEntry clears the "ledger_entry" edge to the UserQuotaLedgerEntry entity.
+func (m *QuotaIdempotencyRecordMutation) ClearLedgerEntry() {
+	m.clearedledger_entry = true
+	m.clearedFields[quotaidempotencyrecord.FieldLedgerEntryID] = struct{}{}
+}
+
+// LedgerEntryCleared reports if the "ledger_entry" edge to the UserQuotaLedgerEntry entity was cleared.
+func (m *QuotaIdempotencyRecordMutation) LedgerEntryCleared() bool {
+	return m.LedgerEntryIDCleared() || m.clearedledger_entry
+}
+
+// LedgerEntryIDs returns the "ledger_entry" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// LedgerEntryID instead. It exists only for internal usage by the builders.
+func (m *QuotaIdempotencyRecordMutation) LedgerEntryIDs() (ids []int64) {
+	if id := m.ledger_entry; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetLedgerEntry resets all changes to the "ledger_entry" edge.
+func (m *QuotaIdempotencyRecordMutation) ResetLedgerEntry() {
+	m.ledger_entry = nil
+	m.clearedledger_entry = false
+}
+
+// Where appends a list predicates to the QuotaIdempotencyRecordMutation builder.
+func (m *QuotaIdempotencyRecordMutation) Where(ps ...predicate.QuotaIdempotencyRecord) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the QuotaIdempotencyRecordMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *QuotaIdempotencyRecordMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.QuotaIdempotencyRecord, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *QuotaIdempotencyRecordMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *QuotaIdempotencyRecordMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (QuotaIdempotencyRecord).
+func (m *QuotaIdempotencyRecordMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *QuotaIdempotencyRecordMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.user != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldUserID)
+	}
+	if m.idempotency_key != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldIdempotencyKey)
+	}
+	if m.request_fingerprint != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldRequestFingerprint)
+	}
+	if m.status != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldStatus)
+	}
+	if m.ledger_entry != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldLedgerEntryID)
+	}
+	if m.response_status != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldResponseStatus)
+	}
+	if m.response_body != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldResponseBody)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldExpiresAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *QuotaIdempotencyRecordMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case quotaidempotencyrecord.FieldUserID:
+		return m.UserID()
+	case quotaidempotencyrecord.FieldIdempotencyKey:
+		return m.IdempotencyKey()
+	case quotaidempotencyrecord.FieldRequestFingerprint:
+		return m.RequestFingerprint()
+	case quotaidempotencyrecord.FieldStatus:
+		return m.Status()
+	case quotaidempotencyrecord.FieldLedgerEntryID:
+		return m.LedgerEntryID()
+	case quotaidempotencyrecord.FieldResponseStatus:
+		return m.ResponseStatus()
+	case quotaidempotencyrecord.FieldResponseBody:
+		return m.ResponseBody()
+	case quotaidempotencyrecord.FieldExpiresAt:
+		return m.ExpiresAt()
+	case quotaidempotencyrecord.FieldCreatedAt:
+		return m.CreatedAt()
+	case quotaidempotencyrecord.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *QuotaIdempotencyRecordMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case quotaidempotencyrecord.FieldUserID:
+		return m.OldUserID(ctx)
+	case quotaidempotencyrecord.FieldIdempotencyKey:
+		return m.OldIdempotencyKey(ctx)
+	case quotaidempotencyrecord.FieldRequestFingerprint:
+		return m.OldRequestFingerprint(ctx)
+	case quotaidempotencyrecord.FieldStatus:
+		return m.OldStatus(ctx)
+	case quotaidempotencyrecord.FieldLedgerEntryID:
+		return m.OldLedgerEntryID(ctx)
+	case quotaidempotencyrecord.FieldResponseStatus:
+		return m.OldResponseStatus(ctx)
+	case quotaidempotencyrecord.FieldResponseBody:
+		return m.OldResponseBody(ctx)
+	case quotaidempotencyrecord.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case quotaidempotencyrecord.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case quotaidempotencyrecord.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown QuotaIdempotencyRecord field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaIdempotencyRecordMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case quotaidempotencyrecord.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case quotaidempotencyrecord.FieldIdempotencyKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKey(v)
+		return nil
+	case quotaidempotencyrecord.FieldRequestFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestFingerprint(v)
+		return nil
+	case quotaidempotencyrecord.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case quotaidempotencyrecord.FieldLedgerEntryID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLedgerEntryID(v)
+		return nil
+	case quotaidempotencyrecord.FieldResponseStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseStatus(v)
+		return nil
+	case quotaidempotencyrecord.FieldResponseBody:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseBody(v)
+		return nil
+	case quotaidempotencyrecord.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case quotaidempotencyrecord.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case quotaidempotencyrecord.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *QuotaIdempotencyRecordMutation) AddedFields() []string {
+	var fields []string
+	if m.addresponse_status != nil {
+		fields = append(fields, quotaidempotencyrecord.FieldResponseStatus)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *QuotaIdempotencyRecordMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case quotaidempotencyrecord.FieldResponseStatus:
+		return m.AddedResponseStatus()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaIdempotencyRecordMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case quotaidempotencyrecord.FieldResponseStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddResponseStatus(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *QuotaIdempotencyRecordMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(quotaidempotencyrecord.FieldLedgerEntryID) {
+		fields = append(fields, quotaidempotencyrecord.FieldLedgerEntryID)
+	}
+	if m.FieldCleared(quotaidempotencyrecord.FieldResponseStatus) {
+		fields = append(fields, quotaidempotencyrecord.FieldResponseStatus)
+	}
+	if m.FieldCleared(quotaidempotencyrecord.FieldResponseBody) {
+		fields = append(fields, quotaidempotencyrecord.FieldResponseBody)
+	}
+	if m.FieldCleared(quotaidempotencyrecord.FieldExpiresAt) {
+		fields = append(fields, quotaidempotencyrecord.FieldExpiresAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *QuotaIdempotencyRecordMutation) ClearField(name string) error {
+	switch name {
+	case quotaidempotencyrecord.FieldLedgerEntryID:
+		m.ClearLedgerEntryID()
+		return nil
+	case quotaidempotencyrecord.FieldResponseStatus:
+		m.ClearResponseStatus()
+		return nil
+	case quotaidempotencyrecord.FieldResponseBody:
+		m.ClearResponseBody()
+		return nil
+	case quotaidempotencyrecord.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *QuotaIdempotencyRecordMutation) ResetField(name string) error {
+	switch name {
+	case quotaidempotencyrecord.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case quotaidempotencyrecord.FieldIdempotencyKey:
+		m.ResetIdempotencyKey()
+		return nil
+	case quotaidempotencyrecord.FieldRequestFingerprint:
+		m.ResetRequestFingerprint()
+		return nil
+	case quotaidempotencyrecord.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case quotaidempotencyrecord.FieldLedgerEntryID:
+		m.ResetLedgerEntryID()
+		return nil
+	case quotaidempotencyrecord.FieldResponseStatus:
+		m.ResetResponseStatus()
+		return nil
+	case quotaidempotencyrecord.FieldResponseBody:
+		m.ResetResponseBody()
+		return nil
+	case quotaidempotencyrecord.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case quotaidempotencyrecord.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case quotaidempotencyrecord.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *QuotaIdempotencyRecordMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.user != nil {
+		edges = append(edges, quotaidempotencyrecord.EdgeUser)
+	}
+	if m.ledger_entry != nil {
+		edges = append(edges, quotaidempotencyrecord.EdgeLedgerEntry)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *QuotaIdempotencyRecordMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case quotaidempotencyrecord.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	case quotaidempotencyrecord.EdgeLedgerEntry:
+		if id := m.ledger_entry; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *QuotaIdempotencyRecordMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *QuotaIdempotencyRecordMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.cleareduser {
+		edges = append(edges, quotaidempotencyrecord.EdgeUser)
+	}
+	if m.clearedledger_entry {
+		edges = append(edges, quotaidempotencyrecord.EdgeLedgerEntry)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *QuotaIdempotencyRecordMutation) EdgeCleared(name string) bool {
+	switch name {
+	case quotaidempotencyrecord.EdgeUser:
+		return m.cleareduser
+	case quotaidempotencyrecord.EdgeLedgerEntry:
+		return m.clearedledger_entry
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *QuotaIdempotencyRecordMutation) ClearEdge(name string) error {
+	switch name {
+	case quotaidempotencyrecord.EdgeUser:
+		m.ClearUser()
+		return nil
+	case quotaidempotencyrecord.EdgeLedgerEntry:
+		m.ClearLedgerEntry()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *QuotaIdempotencyRecordMutation) ResetEdge(name string) error {
+	switch name {
+	case quotaidempotencyrecord.EdgeUser:
+		m.ResetUser()
+		return nil
+	case quotaidempotencyrecord.EdgeLedgerEntry:
+		m.ResetLedgerEntry()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaIdempotencyRecord edge %s", name)
+}
+
 // RedeemCodeMutation represents an operation that mutates the RedeemCode nodes in the graph.
 type RedeemCodeMutation struct {
 	config
@@ -53403,82 +54437,93 @@ func (m *UsageUpstreamCostEvidenceMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	email                         *string
-	password_hash                 *string
-	role                          *string
-	balance                       *float64
-	addbalance                    *float64
-	frozen_balance                *float64
-	addfrozen_balance             *float64
-	concurrency                   *int
-	addconcurrency                *int
-	status                        *string
-	username                      *string
-	notes                         *string
-	totp_secret_encrypted         *string
-	totp_enabled                  *bool
-	totp_enabled_at               *time.Time
-	signup_source                 *string
-	last_login_at                 *time.Time
-	last_active_at                *time.Time
-	balance_notify_enabled        *bool
-	balance_notify_threshold_type *string
-	balance_notify_threshold      *float64
-	addbalance_notify_threshold   *float64
-	balance_notify_extra_emails   *string
-	total_recharged               *float64
-	addtotal_recharged            *float64
-	rpm_limit                     *int
-	addrpm_limit                  *int
-	clearedFields                 map[string]struct{}
-	api_keys                      map[int64]struct{}
-	removedapi_keys               map[int64]struct{}
-	clearedapi_keys               bool
-	redeem_codes                  map[int64]struct{}
-	removedredeem_codes           map[int64]struct{}
-	clearedredeem_codes           bool
-	subscriptions                 map[int64]struct{}
-	removedsubscriptions          map[int64]struct{}
-	clearedsubscriptions          bool
-	assigned_subscriptions        map[int64]struct{}
-	removedassigned_subscriptions map[int64]struct{}
-	clearedassigned_subscriptions bool
-	announcement_reads            map[int64]struct{}
-	removedannouncement_reads     map[int64]struct{}
-	clearedannouncement_reads     bool
-	allowed_groups                map[int64]struct{}
-	removedallowed_groups         map[int64]struct{}
-	clearedallowed_groups         bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	attribute_values              map[int64]struct{}
-	removedattribute_values       map[int64]struct{}
-	clearedattribute_values       bool
-	promo_code_usages             map[int64]struct{}
-	removedpromo_code_usages      map[int64]struct{}
-	clearedpromo_code_usages      bool
-	payment_orders                map[int64]struct{}
-	removedpayment_orders         map[int64]struct{}
-	clearedpayment_orders         bool
-	auth_identities               map[int64]struct{}
-	removedauth_identities        map[int64]struct{}
-	clearedauth_identities        bool
-	pending_auth_sessions         map[int64]struct{}
-	removedpending_auth_sessions  map[int64]struct{}
-	clearedpending_auth_sessions  bool
-	platform_quotas               map[int64]struct{}
-	removedplatform_quotas        map[int64]struct{}
-	clearedplatform_quotas        bool
-	done                          bool
-	oldValue                      func(context.Context) (*User, error)
-	predicates                    []predicate.User
+	op                                   Op
+	typ                                  string
+	id                                   *int64
+	created_at                           *time.Time
+	updated_at                           *time.Time
+	deleted_at                           *time.Time
+	email                                *string
+	password_hash                        *string
+	role                                 *string
+	balance                              *float64
+	addbalance                           *float64
+	frozen_balance                       *float64
+	addfrozen_balance                    *float64
+	concurrency                          *int
+	addconcurrency                       *int
+	status                               *string
+	username                             *string
+	notes                                *string
+	totp_secret_encrypted                *string
+	totp_enabled                         *bool
+	totp_enabled_at                      *time.Time
+	signup_source                        *string
+	last_login_at                        *time.Time
+	last_active_at                       *time.Time
+	balance_notify_enabled               *bool
+	balance_notify_threshold_type        *string
+	balance_notify_threshold             *float64
+	addbalance_notify_threshold          *float64
+	balance_notify_extra_emails          *string
+	total_recharged                      *float64
+	addtotal_recharged                   *float64
+	rpm_limit                            *int
+	addrpm_limit                         *int
+	clearedFields                        map[string]struct{}
+	api_keys                             map[int64]struct{}
+	removedapi_keys                      map[int64]struct{}
+	clearedapi_keys                      bool
+	redeem_codes                         map[int64]struct{}
+	removedredeem_codes                  map[int64]struct{}
+	clearedredeem_codes                  bool
+	subscriptions                        map[int64]struct{}
+	removedsubscriptions                 map[int64]struct{}
+	clearedsubscriptions                 bool
+	assigned_subscriptions               map[int64]struct{}
+	removedassigned_subscriptions        map[int64]struct{}
+	clearedassigned_subscriptions        bool
+	announcement_reads                   map[int64]struct{}
+	removedannouncement_reads            map[int64]struct{}
+	clearedannouncement_reads            bool
+	allowed_groups                       map[int64]struct{}
+	removedallowed_groups                map[int64]struct{}
+	clearedallowed_groups                bool
+	usage_logs                           map[int64]struct{}
+	removedusage_logs                    map[int64]struct{}
+	clearedusage_logs                    bool
+	attribute_values                     map[int64]struct{}
+	removedattribute_values              map[int64]struct{}
+	clearedattribute_values              bool
+	promo_code_usages                    map[int64]struct{}
+	removedpromo_code_usages             map[int64]struct{}
+	clearedpromo_code_usages             bool
+	payment_orders                       map[int64]struct{}
+	removedpayment_orders                map[int64]struct{}
+	clearedpayment_orders                bool
+	auth_identities                      map[int64]struct{}
+	removedauth_identities               map[int64]struct{}
+	clearedauth_identities               bool
+	pending_auth_sessions                map[int64]struct{}
+	removedpending_auth_sessions         map[int64]struct{}
+	clearedpending_auth_sessions         bool
+	platform_quotas                      map[int64]struct{}
+	removedplatform_quotas               map[int64]struct{}
+	clearedplatform_quotas               bool
+	wallet                               *int64
+	clearedwallet                        bool
+	quota_ledger_entries                 map[int64]struct{}
+	removedquota_ledger_entries          map[int64]struct{}
+	clearedquota_ledger_entries          bool
+	operated_quota_ledger_entries        map[int64]struct{}
+	removedoperated_quota_ledger_entries map[int64]struct{}
+	clearedoperated_quota_ledger_entries bool
+	quota_idempotency_records            map[int64]struct{}
+	removedquota_idempotency_records     map[int64]struct{}
+	clearedquota_idempotency_records     bool
+	done                                 bool
+	oldValue                             func(context.Context) (*User, error)
+	predicates                           []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -55344,6 +56389,207 @@ func (m *UserMutation) ResetPlatformQuotas() {
 	m.removedplatform_quotas = nil
 }
 
+// SetWalletID sets the "wallet" edge to the UserWallet entity by id.
+func (m *UserMutation) SetWalletID(id int64) {
+	m.wallet = &id
+}
+
+// ClearWallet clears the "wallet" edge to the UserWallet entity.
+func (m *UserMutation) ClearWallet() {
+	m.clearedwallet = true
+}
+
+// WalletCleared reports if the "wallet" edge to the UserWallet entity was cleared.
+func (m *UserMutation) WalletCleared() bool {
+	return m.clearedwallet
+}
+
+// WalletID returns the "wallet" edge ID in the mutation.
+func (m *UserMutation) WalletID() (id int64, exists bool) {
+	if m.wallet != nil {
+		return *m.wallet, true
+	}
+	return
+}
+
+// WalletIDs returns the "wallet" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// WalletID instead. It exists only for internal usage by the builders.
+func (m *UserMutation) WalletIDs() (ids []int64) {
+	if id := m.wallet; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetWallet resets all changes to the "wallet" edge.
+func (m *UserMutation) ResetWallet() {
+	m.wallet = nil
+	m.clearedwallet = false
+}
+
+// AddQuotaLedgerEntryIDs adds the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by ids.
+func (m *UserMutation) AddQuotaLedgerEntryIDs(ids ...int64) {
+	if m.quota_ledger_entries == nil {
+		m.quota_ledger_entries = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.quota_ledger_entries[ids[i]] = struct{}{}
+	}
+}
+
+// ClearQuotaLedgerEntries clears the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity.
+func (m *UserMutation) ClearQuotaLedgerEntries() {
+	m.clearedquota_ledger_entries = true
+}
+
+// QuotaLedgerEntriesCleared reports if the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity was cleared.
+func (m *UserMutation) QuotaLedgerEntriesCleared() bool {
+	return m.clearedquota_ledger_entries
+}
+
+// RemoveQuotaLedgerEntryIDs removes the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (m *UserMutation) RemoveQuotaLedgerEntryIDs(ids ...int64) {
+	if m.removedquota_ledger_entries == nil {
+		m.removedquota_ledger_entries = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.quota_ledger_entries, ids[i])
+		m.removedquota_ledger_entries[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedQuotaLedgerEntries returns the removed IDs of the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity.
+func (m *UserMutation) RemovedQuotaLedgerEntriesIDs() (ids []int64) {
+	for id := range m.removedquota_ledger_entries {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// QuotaLedgerEntriesIDs returns the "quota_ledger_entries" edge IDs in the mutation.
+func (m *UserMutation) QuotaLedgerEntriesIDs() (ids []int64) {
+	for id := range m.quota_ledger_entries {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetQuotaLedgerEntries resets all changes to the "quota_ledger_entries" edge.
+func (m *UserMutation) ResetQuotaLedgerEntries() {
+	m.quota_ledger_entries = nil
+	m.clearedquota_ledger_entries = false
+	m.removedquota_ledger_entries = nil
+}
+
+// AddOperatedQuotaLedgerEntryIDs adds the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by ids.
+func (m *UserMutation) AddOperatedQuotaLedgerEntryIDs(ids ...int64) {
+	if m.operated_quota_ledger_entries == nil {
+		m.operated_quota_ledger_entries = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.operated_quota_ledger_entries[ids[i]] = struct{}{}
+	}
+}
+
+// ClearOperatedQuotaLedgerEntries clears the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity.
+func (m *UserMutation) ClearOperatedQuotaLedgerEntries() {
+	m.clearedoperated_quota_ledger_entries = true
+}
+
+// OperatedQuotaLedgerEntriesCleared reports if the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity was cleared.
+func (m *UserMutation) OperatedQuotaLedgerEntriesCleared() bool {
+	return m.clearedoperated_quota_ledger_entries
+}
+
+// RemoveOperatedQuotaLedgerEntryIDs removes the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (m *UserMutation) RemoveOperatedQuotaLedgerEntryIDs(ids ...int64) {
+	if m.removedoperated_quota_ledger_entries == nil {
+		m.removedoperated_quota_ledger_entries = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.operated_quota_ledger_entries, ids[i])
+		m.removedoperated_quota_ledger_entries[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedOperatedQuotaLedgerEntries returns the removed IDs of the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity.
+func (m *UserMutation) RemovedOperatedQuotaLedgerEntriesIDs() (ids []int64) {
+	for id := range m.removedoperated_quota_ledger_entries {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// OperatedQuotaLedgerEntriesIDs returns the "operated_quota_ledger_entries" edge IDs in the mutation.
+func (m *UserMutation) OperatedQuotaLedgerEntriesIDs() (ids []int64) {
+	for id := range m.operated_quota_ledger_entries {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetOperatedQuotaLedgerEntries resets all changes to the "operated_quota_ledger_entries" edge.
+func (m *UserMutation) ResetOperatedQuotaLedgerEntries() {
+	m.operated_quota_ledger_entries = nil
+	m.clearedoperated_quota_ledger_entries = false
+	m.removedoperated_quota_ledger_entries = nil
+}
+
+// AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by ids.
+func (m *UserMutation) AddQuotaIdempotencyRecordIDs(ids ...int64) {
+	if m.quota_idempotency_records == nil {
+		m.quota_idempotency_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.quota_idempotency_records[ids[i]] = struct{}{}
+	}
+}
+
+// ClearQuotaIdempotencyRecords clears the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity.
+func (m *UserMutation) ClearQuotaIdempotencyRecords() {
+	m.clearedquota_idempotency_records = true
+}
+
+// QuotaIdempotencyRecordsCleared reports if the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity was cleared.
+func (m *UserMutation) QuotaIdempotencyRecordsCleared() bool {
+	return m.clearedquota_idempotency_records
+}
+
+// RemoveQuotaIdempotencyRecordIDs removes the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
+func (m *UserMutation) RemoveQuotaIdempotencyRecordIDs(ids ...int64) {
+	if m.removedquota_idempotency_records == nil {
+		m.removedquota_idempotency_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.quota_idempotency_records, ids[i])
+		m.removedquota_idempotency_records[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedQuotaIdempotencyRecords returns the removed IDs of the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity.
+func (m *UserMutation) RemovedQuotaIdempotencyRecordsIDs() (ids []int64) {
+	for id := range m.removedquota_idempotency_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// QuotaIdempotencyRecordsIDs returns the "quota_idempotency_records" edge IDs in the mutation.
+func (m *UserMutation) QuotaIdempotencyRecordsIDs() (ids []int64) {
+	for id := range m.quota_idempotency_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetQuotaIdempotencyRecords resets all changes to the "quota_idempotency_records" edge.
+func (m *UserMutation) ResetQuotaIdempotencyRecords() {
+	m.quota_idempotency_records = nil
+	m.clearedquota_idempotency_records = false
+	m.removedquota_idempotency_records = nil
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -55982,7 +57228,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 17)
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -56021,6 +57267,18 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.platform_quotas != nil {
 		edges = append(edges, user.EdgePlatformQuotas)
+	}
+	if m.wallet != nil {
+		edges = append(edges, user.EdgeWallet)
+	}
+	if m.quota_ledger_entries != nil {
+		edges = append(edges, user.EdgeQuotaLedgerEntries)
+	}
+	if m.operated_quota_ledger_entries != nil {
+		edges = append(edges, user.EdgeOperatedQuotaLedgerEntries)
+	}
+	if m.quota_idempotency_records != nil {
+		edges = append(edges, user.EdgeQuotaIdempotencyRecords)
 	}
 	return edges
 }
@@ -56107,13 +57365,35 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeWallet:
+		if id := m.wallet; id != nil {
+			return []ent.Value{*id}
+		}
+	case user.EdgeQuotaLedgerEntries:
+		ids := make([]ent.Value, 0, len(m.quota_ledger_entries))
+		for id := range m.quota_ledger_entries {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeOperatedQuotaLedgerEntries:
+		ids := make([]ent.Value, 0, len(m.operated_quota_ledger_entries))
+		for id := range m.operated_quota_ledger_entries {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeQuotaIdempotencyRecords:
+		ids := make([]ent.Value, 0, len(m.quota_idempotency_records))
+		for id := range m.quota_idempotency_records {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 17)
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -56152,6 +57432,15 @@ func (m *UserMutation) RemovedEdges() []string {
 	}
 	if m.removedplatform_quotas != nil {
 		edges = append(edges, user.EdgePlatformQuotas)
+	}
+	if m.removedquota_ledger_entries != nil {
+		edges = append(edges, user.EdgeQuotaLedgerEntries)
+	}
+	if m.removedoperated_quota_ledger_entries != nil {
+		edges = append(edges, user.EdgeOperatedQuotaLedgerEntries)
+	}
+	if m.removedquota_idempotency_records != nil {
+		edges = append(edges, user.EdgeQuotaIdempotencyRecords)
 	}
 	return edges
 }
@@ -56238,13 +57527,31 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeQuotaLedgerEntries:
+		ids := make([]ent.Value, 0, len(m.removedquota_ledger_entries))
+		for id := range m.removedquota_ledger_entries {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeOperatedQuotaLedgerEntries:
+		ids := make([]ent.Value, 0, len(m.removedoperated_quota_ledger_entries))
+		for id := range m.removedoperated_quota_ledger_entries {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeQuotaIdempotencyRecords:
+		ids := make([]ent.Value, 0, len(m.removedquota_idempotency_records))
+		for id := range m.removedquota_idempotency_records {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 17)
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -56284,6 +57591,18 @@ func (m *UserMutation) ClearedEdges() []string {
 	if m.clearedplatform_quotas {
 		edges = append(edges, user.EdgePlatformQuotas)
 	}
+	if m.clearedwallet {
+		edges = append(edges, user.EdgeWallet)
+	}
+	if m.clearedquota_ledger_entries {
+		edges = append(edges, user.EdgeQuotaLedgerEntries)
+	}
+	if m.clearedoperated_quota_ledger_entries {
+		edges = append(edges, user.EdgeOperatedQuotaLedgerEntries)
+	}
+	if m.clearedquota_idempotency_records {
+		edges = append(edges, user.EdgeQuotaIdempotencyRecords)
+	}
 	return edges
 }
 
@@ -56317,6 +57636,14 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedpending_auth_sessions
 	case user.EdgePlatformQuotas:
 		return m.clearedplatform_quotas
+	case user.EdgeWallet:
+		return m.clearedwallet
+	case user.EdgeQuotaLedgerEntries:
+		return m.clearedquota_ledger_entries
+	case user.EdgeOperatedQuotaLedgerEntries:
+		return m.clearedoperated_quota_ledger_entries
+	case user.EdgeQuotaIdempotencyRecords:
+		return m.clearedquota_idempotency_records
 	}
 	return false
 }
@@ -56325,6 +57652,9 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *UserMutation) ClearEdge(name string) error {
 	switch name {
+	case user.EdgeWallet:
+		m.ClearWallet()
+		return nil
 	}
 	return fmt.Errorf("unknown User unique edge %s", name)
 }
@@ -56371,6 +57701,18 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgePlatformQuotas:
 		m.ResetPlatformQuotas()
+		return nil
+	case user.EdgeWallet:
+		m.ResetWallet()
+		return nil
+	case user.EdgeQuotaLedgerEntries:
+		m.ResetQuotaLedgerEntries()
+		return nil
+	case user.EdgeOperatedQuotaLedgerEntries:
+		m.ResetOperatedQuotaLedgerEntries()
+		return nil
+	case user.EdgeQuotaIdempotencyRecords:
+		m.ResetQuotaIdempotencyRecords()
 		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)
@@ -60014,6 +61356,1788 @@ func (m *UserPlatformQuotaMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown UserPlatformQuota edge %s", name)
 }
 
+// UserQuotaLedgerEntryMutation represents an operation that mutates the UserQuotaLedgerEntry nodes in the graph.
+type UserQuotaLedgerEntryMutation struct {
+	config
+	op                        Op
+	typ                       string
+	id                        *int64
+	record_type               *string
+	cash_delta_cny            *float64
+	addcash_delta_cny         *float64
+	paid_quota_delta_usd      *float64
+	addpaid_quota_delta_usd   *float64
+	gift_quota_delta_usd      *float64
+	addgift_quota_delta_usd   *float64
+	cash_before_cny           *float64
+	addcash_before_cny        *float64
+	cash_after_cny            *float64
+	addcash_after_cny         *float64
+	paid_before_usd           *float64
+	addpaid_before_usd        *float64
+	paid_after_usd            *float64
+	addpaid_after_usd         *float64
+	gift_before_usd           *float64
+	addgift_before_usd        *float64
+	gift_after_usd            *float64
+	addgift_after_usd         *float64
+	reference_type            *string
+	reference_id              *string
+	idempotency_key           *string
+	note                      *string
+	status                    *string
+	created_at                *time.Time
+	clearedFields             map[string]struct{}
+	user                      *int64
+	cleareduser               bool
+	operator                  *int64
+	clearedoperator           bool
+	idempotency_record        *int64
+	clearedidempotency_record bool
+	done                      bool
+	oldValue                  func(context.Context) (*UserQuotaLedgerEntry, error)
+	predicates                []predicate.UserQuotaLedgerEntry
+}
+
+var _ ent.Mutation = (*UserQuotaLedgerEntryMutation)(nil)
+
+// userquotaledgerentryOption allows management of the mutation configuration using functional options.
+type userquotaledgerentryOption func(*UserQuotaLedgerEntryMutation)
+
+// newUserQuotaLedgerEntryMutation creates new mutation for the UserQuotaLedgerEntry entity.
+func newUserQuotaLedgerEntryMutation(c config, op Op, opts ...userquotaledgerentryOption) *UserQuotaLedgerEntryMutation {
+	m := &UserQuotaLedgerEntryMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUserQuotaLedgerEntry,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUserQuotaLedgerEntryID sets the ID field of the mutation.
+func withUserQuotaLedgerEntryID(id int64) userquotaledgerentryOption {
+	return func(m *UserQuotaLedgerEntryMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UserQuotaLedgerEntry
+		)
+		m.oldValue = func(ctx context.Context) (*UserQuotaLedgerEntry, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UserQuotaLedgerEntry.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUserQuotaLedgerEntry sets the old UserQuotaLedgerEntry of the mutation.
+func withUserQuotaLedgerEntry(node *UserQuotaLedgerEntry) userquotaledgerentryOption {
+	return func(m *UserQuotaLedgerEntryMutation) {
+		m.oldValue = func(context.Context) (*UserQuotaLedgerEntry, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UserQuotaLedgerEntryMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UserQuotaLedgerEntryMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UserQuotaLedgerEntryMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UserQuotaLedgerEntryMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UserQuotaLedgerEntry.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUserID sets the "user_id" field.
+func (m *UserQuotaLedgerEntryMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *UserQuotaLedgerEntryMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetRecordType sets the "record_type" field.
+func (m *UserQuotaLedgerEntryMutation) SetRecordType(s string) {
+	m.record_type = &s
+}
+
+// RecordType returns the value of the "record_type" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) RecordType() (r string, exists bool) {
+	v := m.record_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecordType returns the old "record_type" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldRecordType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecordType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecordType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecordType: %w", err)
+	}
+	return oldValue.RecordType, nil
+}
+
+// ResetRecordType resets all changes to the "record_type" field.
+func (m *UserQuotaLedgerEntryMutation) ResetRecordType() {
+	m.record_type = nil
+}
+
+// SetCashDeltaCny sets the "cash_delta_cny" field.
+func (m *UserQuotaLedgerEntryMutation) SetCashDeltaCny(f float64) {
+	m.cash_delta_cny = &f
+	m.addcash_delta_cny = nil
+}
+
+// CashDeltaCny returns the value of the "cash_delta_cny" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) CashDeltaCny() (r float64, exists bool) {
+	v := m.cash_delta_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCashDeltaCny returns the old "cash_delta_cny" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldCashDeltaCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCashDeltaCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCashDeltaCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCashDeltaCny: %w", err)
+	}
+	return oldValue.CashDeltaCny, nil
+}
+
+// AddCashDeltaCny adds f to the "cash_delta_cny" field.
+func (m *UserQuotaLedgerEntryMutation) AddCashDeltaCny(f float64) {
+	if m.addcash_delta_cny != nil {
+		*m.addcash_delta_cny += f
+	} else {
+		m.addcash_delta_cny = &f
+	}
+}
+
+// AddedCashDeltaCny returns the value that was added to the "cash_delta_cny" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedCashDeltaCny() (r float64, exists bool) {
+	v := m.addcash_delta_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCashDeltaCny resets all changes to the "cash_delta_cny" field.
+func (m *UserQuotaLedgerEntryMutation) ResetCashDeltaCny() {
+	m.cash_delta_cny = nil
+	m.addcash_delta_cny = nil
+}
+
+// SetPaidQuotaDeltaUsd sets the "paid_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetPaidQuotaDeltaUsd(f float64) {
+	m.paid_quota_delta_usd = &f
+	m.addpaid_quota_delta_usd = nil
+}
+
+// PaidQuotaDeltaUsd returns the value of the "paid_quota_delta_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) PaidQuotaDeltaUsd() (r float64, exists bool) {
+	v := m.paid_quota_delta_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidQuotaDeltaUsd returns the old "paid_quota_delta_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldPaidQuotaDeltaUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidQuotaDeltaUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidQuotaDeltaUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidQuotaDeltaUsd: %w", err)
+	}
+	return oldValue.PaidQuotaDeltaUsd, nil
+}
+
+// AddPaidQuotaDeltaUsd adds f to the "paid_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddPaidQuotaDeltaUsd(f float64) {
+	if m.addpaid_quota_delta_usd != nil {
+		*m.addpaid_quota_delta_usd += f
+	} else {
+		m.addpaid_quota_delta_usd = &f
+	}
+}
+
+// AddedPaidQuotaDeltaUsd returns the value that was added to the "paid_quota_delta_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedPaidQuotaDeltaUsd() (r float64, exists bool) {
+	v := m.addpaid_quota_delta_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPaidQuotaDeltaUsd resets all changes to the "paid_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetPaidQuotaDeltaUsd() {
+	m.paid_quota_delta_usd = nil
+	m.addpaid_quota_delta_usd = nil
+}
+
+// SetGiftQuotaDeltaUsd sets the "gift_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetGiftQuotaDeltaUsd(f float64) {
+	m.gift_quota_delta_usd = &f
+	m.addgift_quota_delta_usd = nil
+}
+
+// GiftQuotaDeltaUsd returns the value of the "gift_quota_delta_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) GiftQuotaDeltaUsd() (r float64, exists bool) {
+	v := m.gift_quota_delta_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGiftQuotaDeltaUsd returns the old "gift_quota_delta_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldGiftQuotaDeltaUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGiftQuotaDeltaUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGiftQuotaDeltaUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGiftQuotaDeltaUsd: %w", err)
+	}
+	return oldValue.GiftQuotaDeltaUsd, nil
+}
+
+// AddGiftQuotaDeltaUsd adds f to the "gift_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddGiftQuotaDeltaUsd(f float64) {
+	if m.addgift_quota_delta_usd != nil {
+		*m.addgift_quota_delta_usd += f
+	} else {
+		m.addgift_quota_delta_usd = &f
+	}
+}
+
+// AddedGiftQuotaDeltaUsd returns the value that was added to the "gift_quota_delta_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedGiftQuotaDeltaUsd() (r float64, exists bool) {
+	v := m.addgift_quota_delta_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGiftQuotaDeltaUsd resets all changes to the "gift_quota_delta_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetGiftQuotaDeltaUsd() {
+	m.gift_quota_delta_usd = nil
+	m.addgift_quota_delta_usd = nil
+}
+
+// SetCashBeforeCny sets the "cash_before_cny" field.
+func (m *UserQuotaLedgerEntryMutation) SetCashBeforeCny(f float64) {
+	m.cash_before_cny = &f
+	m.addcash_before_cny = nil
+}
+
+// CashBeforeCny returns the value of the "cash_before_cny" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) CashBeforeCny() (r float64, exists bool) {
+	v := m.cash_before_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCashBeforeCny returns the old "cash_before_cny" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldCashBeforeCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCashBeforeCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCashBeforeCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCashBeforeCny: %w", err)
+	}
+	return oldValue.CashBeforeCny, nil
+}
+
+// AddCashBeforeCny adds f to the "cash_before_cny" field.
+func (m *UserQuotaLedgerEntryMutation) AddCashBeforeCny(f float64) {
+	if m.addcash_before_cny != nil {
+		*m.addcash_before_cny += f
+	} else {
+		m.addcash_before_cny = &f
+	}
+}
+
+// AddedCashBeforeCny returns the value that was added to the "cash_before_cny" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedCashBeforeCny() (r float64, exists bool) {
+	v := m.addcash_before_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCashBeforeCny resets all changes to the "cash_before_cny" field.
+func (m *UserQuotaLedgerEntryMutation) ResetCashBeforeCny() {
+	m.cash_before_cny = nil
+	m.addcash_before_cny = nil
+}
+
+// SetCashAfterCny sets the "cash_after_cny" field.
+func (m *UserQuotaLedgerEntryMutation) SetCashAfterCny(f float64) {
+	m.cash_after_cny = &f
+	m.addcash_after_cny = nil
+}
+
+// CashAfterCny returns the value of the "cash_after_cny" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) CashAfterCny() (r float64, exists bool) {
+	v := m.cash_after_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCashAfterCny returns the old "cash_after_cny" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldCashAfterCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCashAfterCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCashAfterCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCashAfterCny: %w", err)
+	}
+	return oldValue.CashAfterCny, nil
+}
+
+// AddCashAfterCny adds f to the "cash_after_cny" field.
+func (m *UserQuotaLedgerEntryMutation) AddCashAfterCny(f float64) {
+	if m.addcash_after_cny != nil {
+		*m.addcash_after_cny += f
+	} else {
+		m.addcash_after_cny = &f
+	}
+}
+
+// AddedCashAfterCny returns the value that was added to the "cash_after_cny" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedCashAfterCny() (r float64, exists bool) {
+	v := m.addcash_after_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCashAfterCny resets all changes to the "cash_after_cny" field.
+func (m *UserQuotaLedgerEntryMutation) ResetCashAfterCny() {
+	m.cash_after_cny = nil
+	m.addcash_after_cny = nil
+}
+
+// SetPaidBeforeUsd sets the "paid_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetPaidBeforeUsd(f float64) {
+	m.paid_before_usd = &f
+	m.addpaid_before_usd = nil
+}
+
+// PaidBeforeUsd returns the value of the "paid_before_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) PaidBeforeUsd() (r float64, exists bool) {
+	v := m.paid_before_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidBeforeUsd returns the old "paid_before_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldPaidBeforeUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidBeforeUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidBeforeUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidBeforeUsd: %w", err)
+	}
+	return oldValue.PaidBeforeUsd, nil
+}
+
+// AddPaidBeforeUsd adds f to the "paid_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddPaidBeforeUsd(f float64) {
+	if m.addpaid_before_usd != nil {
+		*m.addpaid_before_usd += f
+	} else {
+		m.addpaid_before_usd = &f
+	}
+}
+
+// AddedPaidBeforeUsd returns the value that was added to the "paid_before_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedPaidBeforeUsd() (r float64, exists bool) {
+	v := m.addpaid_before_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPaidBeforeUsd resets all changes to the "paid_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetPaidBeforeUsd() {
+	m.paid_before_usd = nil
+	m.addpaid_before_usd = nil
+}
+
+// SetPaidAfterUsd sets the "paid_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetPaidAfterUsd(f float64) {
+	m.paid_after_usd = &f
+	m.addpaid_after_usd = nil
+}
+
+// PaidAfterUsd returns the value of the "paid_after_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) PaidAfterUsd() (r float64, exists bool) {
+	v := m.paid_after_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidAfterUsd returns the old "paid_after_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldPaidAfterUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidAfterUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidAfterUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidAfterUsd: %w", err)
+	}
+	return oldValue.PaidAfterUsd, nil
+}
+
+// AddPaidAfterUsd adds f to the "paid_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddPaidAfterUsd(f float64) {
+	if m.addpaid_after_usd != nil {
+		*m.addpaid_after_usd += f
+	} else {
+		m.addpaid_after_usd = &f
+	}
+}
+
+// AddedPaidAfterUsd returns the value that was added to the "paid_after_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedPaidAfterUsd() (r float64, exists bool) {
+	v := m.addpaid_after_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPaidAfterUsd resets all changes to the "paid_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetPaidAfterUsd() {
+	m.paid_after_usd = nil
+	m.addpaid_after_usd = nil
+}
+
+// SetGiftBeforeUsd sets the "gift_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetGiftBeforeUsd(f float64) {
+	m.gift_before_usd = &f
+	m.addgift_before_usd = nil
+}
+
+// GiftBeforeUsd returns the value of the "gift_before_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) GiftBeforeUsd() (r float64, exists bool) {
+	v := m.gift_before_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGiftBeforeUsd returns the old "gift_before_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldGiftBeforeUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGiftBeforeUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGiftBeforeUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGiftBeforeUsd: %w", err)
+	}
+	return oldValue.GiftBeforeUsd, nil
+}
+
+// AddGiftBeforeUsd adds f to the "gift_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddGiftBeforeUsd(f float64) {
+	if m.addgift_before_usd != nil {
+		*m.addgift_before_usd += f
+	} else {
+		m.addgift_before_usd = &f
+	}
+}
+
+// AddedGiftBeforeUsd returns the value that was added to the "gift_before_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedGiftBeforeUsd() (r float64, exists bool) {
+	v := m.addgift_before_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGiftBeforeUsd resets all changes to the "gift_before_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetGiftBeforeUsd() {
+	m.gift_before_usd = nil
+	m.addgift_before_usd = nil
+}
+
+// SetGiftAfterUsd sets the "gift_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) SetGiftAfterUsd(f float64) {
+	m.gift_after_usd = &f
+	m.addgift_after_usd = nil
+}
+
+// GiftAfterUsd returns the value of the "gift_after_usd" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) GiftAfterUsd() (r float64, exists bool) {
+	v := m.gift_after_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGiftAfterUsd returns the old "gift_after_usd" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldGiftAfterUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGiftAfterUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGiftAfterUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGiftAfterUsd: %w", err)
+	}
+	return oldValue.GiftAfterUsd, nil
+}
+
+// AddGiftAfterUsd adds f to the "gift_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) AddGiftAfterUsd(f float64) {
+	if m.addgift_after_usd != nil {
+		*m.addgift_after_usd += f
+	} else {
+		m.addgift_after_usd = &f
+	}
+}
+
+// AddedGiftAfterUsd returns the value that was added to the "gift_after_usd" field in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedGiftAfterUsd() (r float64, exists bool) {
+	v := m.addgift_after_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGiftAfterUsd resets all changes to the "gift_after_usd" field.
+func (m *UserQuotaLedgerEntryMutation) ResetGiftAfterUsd() {
+	m.gift_after_usd = nil
+	m.addgift_after_usd = nil
+}
+
+// SetReferenceType sets the "reference_type" field.
+func (m *UserQuotaLedgerEntryMutation) SetReferenceType(s string) {
+	m.reference_type = &s
+}
+
+// ReferenceType returns the value of the "reference_type" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) ReferenceType() (r string, exists bool) {
+	v := m.reference_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReferenceType returns the old "reference_type" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldReferenceType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReferenceType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReferenceType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReferenceType: %w", err)
+	}
+	return oldValue.ReferenceType, nil
+}
+
+// ClearReferenceType clears the value of the "reference_type" field.
+func (m *UserQuotaLedgerEntryMutation) ClearReferenceType() {
+	m.reference_type = nil
+	m.clearedFields[userquotaledgerentry.FieldReferenceType] = struct{}{}
+}
+
+// ReferenceTypeCleared returns if the "reference_type" field was cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) ReferenceTypeCleared() bool {
+	_, ok := m.clearedFields[userquotaledgerentry.FieldReferenceType]
+	return ok
+}
+
+// ResetReferenceType resets all changes to the "reference_type" field.
+func (m *UserQuotaLedgerEntryMutation) ResetReferenceType() {
+	m.reference_type = nil
+	delete(m.clearedFields, userquotaledgerentry.FieldReferenceType)
+}
+
+// SetReferenceID sets the "reference_id" field.
+func (m *UserQuotaLedgerEntryMutation) SetReferenceID(s string) {
+	m.reference_id = &s
+}
+
+// ReferenceID returns the value of the "reference_id" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) ReferenceID() (r string, exists bool) {
+	v := m.reference_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReferenceID returns the old "reference_id" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldReferenceID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReferenceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReferenceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReferenceID: %w", err)
+	}
+	return oldValue.ReferenceID, nil
+}
+
+// ClearReferenceID clears the value of the "reference_id" field.
+func (m *UserQuotaLedgerEntryMutation) ClearReferenceID() {
+	m.reference_id = nil
+	m.clearedFields[userquotaledgerentry.FieldReferenceID] = struct{}{}
+}
+
+// ReferenceIDCleared returns if the "reference_id" field was cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) ReferenceIDCleared() bool {
+	_, ok := m.clearedFields[userquotaledgerentry.FieldReferenceID]
+	return ok
+}
+
+// ResetReferenceID resets all changes to the "reference_id" field.
+func (m *UserQuotaLedgerEntryMutation) ResetReferenceID() {
+	m.reference_id = nil
+	delete(m.clearedFields, userquotaledgerentry.FieldReferenceID)
+}
+
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (m *UserQuotaLedgerEntryMutation) SetIdempotencyKey(s string) {
+	m.idempotency_key = &s
+}
+
+// IdempotencyKey returns the value of the "idempotency_key" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) IdempotencyKey() (r string, exists bool) {
+	v := m.idempotency_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKey returns the old "idempotency_key" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldIdempotencyKey(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKey: %w", err)
+	}
+	return oldValue.IdempotencyKey, nil
+}
+
+// ClearIdempotencyKey clears the value of the "idempotency_key" field.
+func (m *UserQuotaLedgerEntryMutation) ClearIdempotencyKey() {
+	m.idempotency_key = nil
+	m.clearedFields[userquotaledgerentry.FieldIdempotencyKey] = struct{}{}
+}
+
+// IdempotencyKeyCleared returns if the "idempotency_key" field was cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) IdempotencyKeyCleared() bool {
+	_, ok := m.clearedFields[userquotaledgerentry.FieldIdempotencyKey]
+	return ok
+}
+
+// ResetIdempotencyKey resets all changes to the "idempotency_key" field.
+func (m *UserQuotaLedgerEntryMutation) ResetIdempotencyKey() {
+	m.idempotency_key = nil
+	delete(m.clearedFields, userquotaledgerentry.FieldIdempotencyKey)
+}
+
+// SetNote sets the "note" field.
+func (m *UserQuotaLedgerEntryMutation) SetNote(s string) {
+	m.note = &s
+}
+
+// Note returns the value of the "note" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) Note() (r string, exists bool) {
+	v := m.note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNote returns the old "note" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldNote(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNote: %w", err)
+	}
+	return oldValue.Note, nil
+}
+
+// ResetNote resets all changes to the "note" field.
+func (m *UserQuotaLedgerEntryMutation) ResetNote() {
+	m.note = nil
+}
+
+// SetOperatorID sets the "operator_id" field.
+func (m *UserQuotaLedgerEntryMutation) SetOperatorID(i int64) {
+	m.operator = &i
+}
+
+// OperatorID returns the value of the "operator_id" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) OperatorID() (r int64, exists bool) {
+	v := m.operator
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperatorID returns the old "operator_id" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldOperatorID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperatorID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperatorID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperatorID: %w", err)
+	}
+	return oldValue.OperatorID, nil
+}
+
+// ClearOperatorID clears the value of the "operator_id" field.
+func (m *UserQuotaLedgerEntryMutation) ClearOperatorID() {
+	m.operator = nil
+	m.clearedFields[userquotaledgerentry.FieldOperatorID] = struct{}{}
+}
+
+// OperatorIDCleared returns if the "operator_id" field was cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) OperatorIDCleared() bool {
+	_, ok := m.clearedFields[userquotaledgerentry.FieldOperatorID]
+	return ok
+}
+
+// ResetOperatorID resets all changes to the "operator_id" field.
+func (m *UserQuotaLedgerEntryMutation) ResetOperatorID() {
+	m.operator = nil
+	delete(m.clearedFields, userquotaledgerentry.FieldOperatorID)
+}
+
+// SetStatus sets the "status" field.
+func (m *UserQuotaLedgerEntryMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *UserQuotaLedgerEntryMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UserQuotaLedgerEntryMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UserQuotaLedgerEntryMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UserQuotaLedgerEntry entity.
+// If the UserQuotaLedgerEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserQuotaLedgerEntryMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UserQuotaLedgerEntryMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *UserQuotaLedgerEntryMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[userquotaledgerentry.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *UserQuotaLedgerEntryMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *UserQuotaLedgerEntryMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *UserQuotaLedgerEntryMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// ClearOperator clears the "operator" edge to the User entity.
+func (m *UserQuotaLedgerEntryMutation) ClearOperator() {
+	m.clearedoperator = true
+	m.clearedFields[userquotaledgerentry.FieldOperatorID] = struct{}{}
+}
+
+// OperatorCleared reports if the "operator" edge to the User entity was cleared.
+func (m *UserQuotaLedgerEntryMutation) OperatorCleared() bool {
+	return m.OperatorIDCleared() || m.clearedoperator
+}
+
+// OperatorIDs returns the "operator" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OperatorID instead. It exists only for internal usage by the builders.
+func (m *UserQuotaLedgerEntryMutation) OperatorIDs() (ids []int64) {
+	if id := m.operator; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOperator resets all changes to the "operator" edge.
+func (m *UserQuotaLedgerEntryMutation) ResetOperator() {
+	m.operator = nil
+	m.clearedoperator = false
+}
+
+// SetIdempotencyRecordID sets the "idempotency_record" edge to the QuotaIdempotencyRecord entity by id.
+func (m *UserQuotaLedgerEntryMutation) SetIdempotencyRecordID(id int64) {
+	m.idempotency_record = &id
+}
+
+// ClearIdempotencyRecord clears the "idempotency_record" edge to the QuotaIdempotencyRecord entity.
+func (m *UserQuotaLedgerEntryMutation) ClearIdempotencyRecord() {
+	m.clearedidempotency_record = true
+}
+
+// IdempotencyRecordCleared reports if the "idempotency_record" edge to the QuotaIdempotencyRecord entity was cleared.
+func (m *UserQuotaLedgerEntryMutation) IdempotencyRecordCleared() bool {
+	return m.clearedidempotency_record
+}
+
+// IdempotencyRecordID returns the "idempotency_record" edge ID in the mutation.
+func (m *UserQuotaLedgerEntryMutation) IdempotencyRecordID() (id int64, exists bool) {
+	if m.idempotency_record != nil {
+		return *m.idempotency_record, true
+	}
+	return
+}
+
+// IdempotencyRecordIDs returns the "idempotency_record" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// IdempotencyRecordID instead. It exists only for internal usage by the builders.
+func (m *UserQuotaLedgerEntryMutation) IdempotencyRecordIDs() (ids []int64) {
+	if id := m.idempotency_record; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetIdempotencyRecord resets all changes to the "idempotency_record" edge.
+func (m *UserQuotaLedgerEntryMutation) ResetIdempotencyRecord() {
+	m.idempotency_record = nil
+	m.clearedidempotency_record = false
+}
+
+// Where appends a list predicates to the UserQuotaLedgerEntryMutation builder.
+func (m *UserQuotaLedgerEntryMutation) Where(ps ...predicate.UserQuotaLedgerEntry) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UserQuotaLedgerEntryMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UserQuotaLedgerEntryMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UserQuotaLedgerEntry, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UserQuotaLedgerEntryMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UserQuotaLedgerEntryMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UserQuotaLedgerEntry).
+func (m *UserQuotaLedgerEntryMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UserQuotaLedgerEntryMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.user != nil {
+		fields = append(fields, userquotaledgerentry.FieldUserID)
+	}
+	if m.record_type != nil {
+		fields = append(fields, userquotaledgerentry.FieldRecordType)
+	}
+	if m.cash_delta_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashDeltaCny)
+	}
+	if m.paid_quota_delta_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidQuotaDeltaUsd)
+	}
+	if m.gift_quota_delta_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftQuotaDeltaUsd)
+	}
+	if m.cash_before_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashBeforeCny)
+	}
+	if m.cash_after_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashAfterCny)
+	}
+	if m.paid_before_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidBeforeUsd)
+	}
+	if m.paid_after_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidAfterUsd)
+	}
+	if m.gift_before_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftBeforeUsd)
+	}
+	if m.gift_after_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftAfterUsd)
+	}
+	if m.reference_type != nil {
+		fields = append(fields, userquotaledgerentry.FieldReferenceType)
+	}
+	if m.reference_id != nil {
+		fields = append(fields, userquotaledgerentry.FieldReferenceID)
+	}
+	if m.idempotency_key != nil {
+		fields = append(fields, userquotaledgerentry.FieldIdempotencyKey)
+	}
+	if m.note != nil {
+		fields = append(fields, userquotaledgerentry.FieldNote)
+	}
+	if m.operator != nil {
+		fields = append(fields, userquotaledgerentry.FieldOperatorID)
+	}
+	if m.status != nil {
+		fields = append(fields, userquotaledgerentry.FieldStatus)
+	}
+	if m.created_at != nil {
+		fields = append(fields, userquotaledgerentry.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UserQuotaLedgerEntryMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case userquotaledgerentry.FieldUserID:
+		return m.UserID()
+	case userquotaledgerentry.FieldRecordType:
+		return m.RecordType()
+	case userquotaledgerentry.FieldCashDeltaCny:
+		return m.CashDeltaCny()
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		return m.PaidQuotaDeltaUsd()
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		return m.GiftQuotaDeltaUsd()
+	case userquotaledgerentry.FieldCashBeforeCny:
+		return m.CashBeforeCny()
+	case userquotaledgerentry.FieldCashAfterCny:
+		return m.CashAfterCny()
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		return m.PaidBeforeUsd()
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		return m.PaidAfterUsd()
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		return m.GiftBeforeUsd()
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		return m.GiftAfterUsd()
+	case userquotaledgerentry.FieldReferenceType:
+		return m.ReferenceType()
+	case userquotaledgerentry.FieldReferenceID:
+		return m.ReferenceID()
+	case userquotaledgerentry.FieldIdempotencyKey:
+		return m.IdempotencyKey()
+	case userquotaledgerentry.FieldNote:
+		return m.Note()
+	case userquotaledgerentry.FieldOperatorID:
+		return m.OperatorID()
+	case userquotaledgerentry.FieldStatus:
+		return m.Status()
+	case userquotaledgerentry.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UserQuotaLedgerEntryMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case userquotaledgerentry.FieldUserID:
+		return m.OldUserID(ctx)
+	case userquotaledgerentry.FieldRecordType:
+		return m.OldRecordType(ctx)
+	case userquotaledgerentry.FieldCashDeltaCny:
+		return m.OldCashDeltaCny(ctx)
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		return m.OldPaidQuotaDeltaUsd(ctx)
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		return m.OldGiftQuotaDeltaUsd(ctx)
+	case userquotaledgerentry.FieldCashBeforeCny:
+		return m.OldCashBeforeCny(ctx)
+	case userquotaledgerentry.FieldCashAfterCny:
+		return m.OldCashAfterCny(ctx)
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		return m.OldPaidBeforeUsd(ctx)
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		return m.OldPaidAfterUsd(ctx)
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		return m.OldGiftBeforeUsd(ctx)
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		return m.OldGiftAfterUsd(ctx)
+	case userquotaledgerentry.FieldReferenceType:
+		return m.OldReferenceType(ctx)
+	case userquotaledgerentry.FieldReferenceID:
+		return m.OldReferenceID(ctx)
+	case userquotaledgerentry.FieldIdempotencyKey:
+		return m.OldIdempotencyKey(ctx)
+	case userquotaledgerentry.FieldNote:
+		return m.OldNote(ctx)
+	case userquotaledgerentry.FieldOperatorID:
+		return m.OldOperatorID(ctx)
+	case userquotaledgerentry.FieldStatus:
+		return m.OldStatus(ctx)
+	case userquotaledgerentry.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UserQuotaLedgerEntry field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserQuotaLedgerEntryMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case userquotaledgerentry.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case userquotaledgerentry.FieldRecordType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecordType(v)
+		return nil
+	case userquotaledgerentry.FieldCashDeltaCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCashDeltaCny(v)
+		return nil
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidQuotaDeltaUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGiftQuotaDeltaUsd(v)
+		return nil
+	case userquotaledgerentry.FieldCashBeforeCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCashBeforeCny(v)
+		return nil
+	case userquotaledgerentry.FieldCashAfterCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCashAfterCny(v)
+		return nil
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidBeforeUsd(v)
+		return nil
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidAfterUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGiftBeforeUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGiftAfterUsd(v)
+		return nil
+	case userquotaledgerentry.FieldReferenceType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReferenceType(v)
+		return nil
+	case userquotaledgerentry.FieldReferenceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReferenceID(v)
+		return nil
+	case userquotaledgerentry.FieldIdempotencyKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKey(v)
+		return nil
+	case userquotaledgerentry.FieldNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNote(v)
+		return nil
+	case userquotaledgerentry.FieldOperatorID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperatorID(v)
+		return nil
+	case userquotaledgerentry.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case userquotaledgerentry.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedFields() []string {
+	var fields []string
+	if m.addcash_delta_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashDeltaCny)
+	}
+	if m.addpaid_quota_delta_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidQuotaDeltaUsd)
+	}
+	if m.addgift_quota_delta_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftQuotaDeltaUsd)
+	}
+	if m.addcash_before_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashBeforeCny)
+	}
+	if m.addcash_after_cny != nil {
+		fields = append(fields, userquotaledgerentry.FieldCashAfterCny)
+	}
+	if m.addpaid_before_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidBeforeUsd)
+	}
+	if m.addpaid_after_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldPaidAfterUsd)
+	}
+	if m.addgift_before_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftBeforeUsd)
+	}
+	if m.addgift_after_usd != nil {
+		fields = append(fields, userquotaledgerentry.FieldGiftAfterUsd)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UserQuotaLedgerEntryMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case userquotaledgerentry.FieldCashDeltaCny:
+		return m.AddedCashDeltaCny()
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		return m.AddedPaidQuotaDeltaUsd()
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		return m.AddedGiftQuotaDeltaUsd()
+	case userquotaledgerentry.FieldCashBeforeCny:
+		return m.AddedCashBeforeCny()
+	case userquotaledgerentry.FieldCashAfterCny:
+		return m.AddedCashAfterCny()
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		return m.AddedPaidBeforeUsd()
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		return m.AddedPaidAfterUsd()
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		return m.AddedGiftBeforeUsd()
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		return m.AddedGiftAfterUsd()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserQuotaLedgerEntryMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case userquotaledgerentry.FieldCashDeltaCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCashDeltaCny(v)
+		return nil
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPaidQuotaDeltaUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGiftQuotaDeltaUsd(v)
+		return nil
+	case userquotaledgerentry.FieldCashBeforeCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCashBeforeCny(v)
+		return nil
+	case userquotaledgerentry.FieldCashAfterCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCashAfterCny(v)
+		return nil
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPaidBeforeUsd(v)
+		return nil
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPaidAfterUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGiftBeforeUsd(v)
+		return nil
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGiftAfterUsd(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UserQuotaLedgerEntryMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(userquotaledgerentry.FieldReferenceType) {
+		fields = append(fields, userquotaledgerentry.FieldReferenceType)
+	}
+	if m.FieldCleared(userquotaledgerentry.FieldReferenceID) {
+		fields = append(fields, userquotaledgerentry.FieldReferenceID)
+	}
+	if m.FieldCleared(userquotaledgerentry.FieldIdempotencyKey) {
+		fields = append(fields, userquotaledgerentry.FieldIdempotencyKey)
+	}
+	if m.FieldCleared(userquotaledgerentry.FieldOperatorID) {
+		fields = append(fields, userquotaledgerentry.FieldOperatorID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UserQuotaLedgerEntryMutation) ClearField(name string) error {
+	switch name {
+	case userquotaledgerentry.FieldReferenceType:
+		m.ClearReferenceType()
+		return nil
+	case userquotaledgerentry.FieldReferenceID:
+		m.ClearReferenceID()
+		return nil
+	case userquotaledgerentry.FieldIdempotencyKey:
+		m.ClearIdempotencyKey()
+		return nil
+	case userquotaledgerentry.FieldOperatorID:
+		m.ClearOperatorID()
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UserQuotaLedgerEntryMutation) ResetField(name string) error {
+	switch name {
+	case userquotaledgerentry.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case userquotaledgerentry.FieldRecordType:
+		m.ResetRecordType()
+		return nil
+	case userquotaledgerentry.FieldCashDeltaCny:
+		m.ResetCashDeltaCny()
+		return nil
+	case userquotaledgerentry.FieldPaidQuotaDeltaUsd:
+		m.ResetPaidQuotaDeltaUsd()
+		return nil
+	case userquotaledgerentry.FieldGiftQuotaDeltaUsd:
+		m.ResetGiftQuotaDeltaUsd()
+		return nil
+	case userquotaledgerentry.FieldCashBeforeCny:
+		m.ResetCashBeforeCny()
+		return nil
+	case userquotaledgerentry.FieldCashAfterCny:
+		m.ResetCashAfterCny()
+		return nil
+	case userquotaledgerentry.FieldPaidBeforeUsd:
+		m.ResetPaidBeforeUsd()
+		return nil
+	case userquotaledgerentry.FieldPaidAfterUsd:
+		m.ResetPaidAfterUsd()
+		return nil
+	case userquotaledgerentry.FieldGiftBeforeUsd:
+		m.ResetGiftBeforeUsd()
+		return nil
+	case userquotaledgerentry.FieldGiftAfterUsd:
+		m.ResetGiftAfterUsd()
+		return nil
+	case userquotaledgerentry.FieldReferenceType:
+		m.ResetReferenceType()
+		return nil
+	case userquotaledgerentry.FieldReferenceID:
+		m.ResetReferenceID()
+		return nil
+	case userquotaledgerentry.FieldIdempotencyKey:
+		m.ResetIdempotencyKey()
+		return nil
+	case userquotaledgerentry.FieldNote:
+		m.ResetNote()
+		return nil
+	case userquotaledgerentry.FieldOperatorID:
+		m.ResetOperatorID()
+		return nil
+	case userquotaledgerentry.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case userquotaledgerentry.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.user != nil {
+		edges = append(edges, userquotaledgerentry.EdgeUser)
+	}
+	if m.operator != nil {
+		edges = append(edges, userquotaledgerentry.EdgeOperator)
+	}
+	if m.idempotency_record != nil {
+		edges = append(edges, userquotaledgerentry.EdgeIdempotencyRecord)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UserQuotaLedgerEntryMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case userquotaledgerentry.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	case userquotaledgerentry.EdgeOperator:
+		if id := m.operator; id != nil {
+			return []ent.Value{*id}
+		}
+	case userquotaledgerentry.EdgeIdempotencyRecord:
+		if id := m.idempotency_record; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UserQuotaLedgerEntryMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UserQuotaLedgerEntryMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.cleareduser {
+		edges = append(edges, userquotaledgerentry.EdgeUser)
+	}
+	if m.clearedoperator {
+		edges = append(edges, userquotaledgerentry.EdgeOperator)
+	}
+	if m.clearedidempotency_record {
+		edges = append(edges, userquotaledgerentry.EdgeIdempotencyRecord)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UserQuotaLedgerEntryMutation) EdgeCleared(name string) bool {
+	switch name {
+	case userquotaledgerentry.EdgeUser:
+		return m.cleareduser
+	case userquotaledgerentry.EdgeOperator:
+		return m.clearedoperator
+	case userquotaledgerentry.EdgeIdempotencyRecord:
+		return m.clearedidempotency_record
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UserQuotaLedgerEntryMutation) ClearEdge(name string) error {
+	switch name {
+	case userquotaledgerentry.EdgeUser:
+		m.ClearUser()
+		return nil
+	case userquotaledgerentry.EdgeOperator:
+		m.ClearOperator()
+		return nil
+	case userquotaledgerentry.EdgeIdempotencyRecord:
+		m.ClearIdempotencyRecord()
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UserQuotaLedgerEntryMutation) ResetEdge(name string) error {
+	switch name {
+	case userquotaledgerentry.EdgeUser:
+		m.ResetUser()
+		return nil
+	case userquotaledgerentry.EdgeOperator:
+		m.ResetOperator()
+		return nil
+	case userquotaledgerentry.EdgeIdempotencyRecord:
+		m.ResetIdempotencyRecord()
+		return nil
+	}
+	return fmt.Errorf("unknown UserQuotaLedgerEntry edge %s", name)
+}
+
 // UserSubscriptionMutation represents an operation that mutates the UserSubscription nodes in the graph.
 type UserSubscriptionMutation struct {
 	config
@@ -61665,4 +64789,843 @@ func (m *UserSubscriptionMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown UserSubscription edge %s", name)
+}
+
+// UserWalletMutation represents an operation that mutates the UserWallet nodes in the graph.
+type UserWalletMutation struct {
+	config
+	op                        Op
+	typ                       string
+	id                        *int64
+	cash_balance_cny          *float64
+	addcash_balance_cny       *float64
+	paid_quota_balance_usd    *float64
+	addpaid_quota_balance_usd *float64
+	gift_quota_balance_usd    *float64
+	addgift_quota_balance_usd *float64
+	version                   *int64
+	addversion                *int64
+	created_at                *time.Time
+	updated_at                *time.Time
+	clearedFields             map[string]struct{}
+	user                      *int64
+	cleareduser               bool
+	done                      bool
+	oldValue                  func(context.Context) (*UserWallet, error)
+	predicates                []predicate.UserWallet
+}
+
+var _ ent.Mutation = (*UserWalletMutation)(nil)
+
+// userwalletOption allows management of the mutation configuration using functional options.
+type userwalletOption func(*UserWalletMutation)
+
+// newUserWalletMutation creates new mutation for the UserWallet entity.
+func newUserWalletMutation(c config, op Op, opts ...userwalletOption) *UserWalletMutation {
+	m := &UserWalletMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUserWallet,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUserWalletID sets the ID field of the mutation.
+func withUserWalletID(id int64) userwalletOption {
+	return func(m *UserWalletMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UserWallet
+		)
+		m.oldValue = func(ctx context.Context) (*UserWallet, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UserWallet.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUserWallet sets the old UserWallet of the mutation.
+func withUserWallet(node *UserWallet) userwalletOption {
+	return func(m *UserWalletMutation) {
+		m.oldValue = func(context.Context) (*UserWallet, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UserWalletMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UserWalletMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UserWalletMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UserWalletMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UserWallet.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUserID sets the "user_id" field.
+func (m *UserWalletMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *UserWalletMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *UserWalletMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetCashBalanceCny sets the "cash_balance_cny" field.
+func (m *UserWalletMutation) SetCashBalanceCny(f float64) {
+	m.cash_balance_cny = &f
+	m.addcash_balance_cny = nil
+}
+
+// CashBalanceCny returns the value of the "cash_balance_cny" field in the mutation.
+func (m *UserWalletMutation) CashBalanceCny() (r float64, exists bool) {
+	v := m.cash_balance_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCashBalanceCny returns the old "cash_balance_cny" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldCashBalanceCny(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCashBalanceCny is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCashBalanceCny requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCashBalanceCny: %w", err)
+	}
+	return oldValue.CashBalanceCny, nil
+}
+
+// AddCashBalanceCny adds f to the "cash_balance_cny" field.
+func (m *UserWalletMutation) AddCashBalanceCny(f float64) {
+	if m.addcash_balance_cny != nil {
+		*m.addcash_balance_cny += f
+	} else {
+		m.addcash_balance_cny = &f
+	}
+}
+
+// AddedCashBalanceCny returns the value that was added to the "cash_balance_cny" field in this mutation.
+func (m *UserWalletMutation) AddedCashBalanceCny() (r float64, exists bool) {
+	v := m.addcash_balance_cny
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCashBalanceCny resets all changes to the "cash_balance_cny" field.
+func (m *UserWalletMutation) ResetCashBalanceCny() {
+	m.cash_balance_cny = nil
+	m.addcash_balance_cny = nil
+}
+
+// SetPaidQuotaBalanceUsd sets the "paid_quota_balance_usd" field.
+func (m *UserWalletMutation) SetPaidQuotaBalanceUsd(f float64) {
+	m.paid_quota_balance_usd = &f
+	m.addpaid_quota_balance_usd = nil
+}
+
+// PaidQuotaBalanceUsd returns the value of the "paid_quota_balance_usd" field in the mutation.
+func (m *UserWalletMutation) PaidQuotaBalanceUsd() (r float64, exists bool) {
+	v := m.paid_quota_balance_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidQuotaBalanceUsd returns the old "paid_quota_balance_usd" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldPaidQuotaBalanceUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidQuotaBalanceUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidQuotaBalanceUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidQuotaBalanceUsd: %w", err)
+	}
+	return oldValue.PaidQuotaBalanceUsd, nil
+}
+
+// AddPaidQuotaBalanceUsd adds f to the "paid_quota_balance_usd" field.
+func (m *UserWalletMutation) AddPaidQuotaBalanceUsd(f float64) {
+	if m.addpaid_quota_balance_usd != nil {
+		*m.addpaid_quota_balance_usd += f
+	} else {
+		m.addpaid_quota_balance_usd = &f
+	}
+}
+
+// AddedPaidQuotaBalanceUsd returns the value that was added to the "paid_quota_balance_usd" field in this mutation.
+func (m *UserWalletMutation) AddedPaidQuotaBalanceUsd() (r float64, exists bool) {
+	v := m.addpaid_quota_balance_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPaidQuotaBalanceUsd resets all changes to the "paid_quota_balance_usd" field.
+func (m *UserWalletMutation) ResetPaidQuotaBalanceUsd() {
+	m.paid_quota_balance_usd = nil
+	m.addpaid_quota_balance_usd = nil
+}
+
+// SetGiftQuotaBalanceUsd sets the "gift_quota_balance_usd" field.
+func (m *UserWalletMutation) SetGiftQuotaBalanceUsd(f float64) {
+	m.gift_quota_balance_usd = &f
+	m.addgift_quota_balance_usd = nil
+}
+
+// GiftQuotaBalanceUsd returns the value of the "gift_quota_balance_usd" field in the mutation.
+func (m *UserWalletMutation) GiftQuotaBalanceUsd() (r float64, exists bool) {
+	v := m.gift_quota_balance_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGiftQuotaBalanceUsd returns the old "gift_quota_balance_usd" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldGiftQuotaBalanceUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGiftQuotaBalanceUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGiftQuotaBalanceUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGiftQuotaBalanceUsd: %w", err)
+	}
+	return oldValue.GiftQuotaBalanceUsd, nil
+}
+
+// AddGiftQuotaBalanceUsd adds f to the "gift_quota_balance_usd" field.
+func (m *UserWalletMutation) AddGiftQuotaBalanceUsd(f float64) {
+	if m.addgift_quota_balance_usd != nil {
+		*m.addgift_quota_balance_usd += f
+	} else {
+		m.addgift_quota_balance_usd = &f
+	}
+}
+
+// AddedGiftQuotaBalanceUsd returns the value that was added to the "gift_quota_balance_usd" field in this mutation.
+func (m *UserWalletMutation) AddedGiftQuotaBalanceUsd() (r float64, exists bool) {
+	v := m.addgift_quota_balance_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGiftQuotaBalanceUsd resets all changes to the "gift_quota_balance_usd" field.
+func (m *UserWalletMutation) ResetGiftQuotaBalanceUsd() {
+	m.gift_quota_balance_usd = nil
+	m.addgift_quota_balance_usd = nil
+}
+
+// SetVersion sets the "version" field.
+func (m *UserWalletMutation) SetVersion(i int64) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *UserWalletMutation) Version() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *UserWalletMutation) AddVersion(i int64) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *UserWalletMutation) AddedVersion() (r int64, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *UserWalletMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UserWalletMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UserWalletMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UserWalletMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *UserWalletMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *UserWalletMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the UserWallet entity.
+// If the UserWallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserWalletMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *UserWalletMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *UserWalletMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[userwallet.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *UserWalletMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *UserWalletMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *UserWalletMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the UserWalletMutation builder.
+func (m *UserWalletMutation) Where(ps ...predicate.UserWallet) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UserWalletMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UserWalletMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UserWallet, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UserWalletMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UserWalletMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UserWallet).
+func (m *UserWalletMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UserWalletMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.user != nil {
+		fields = append(fields, userwallet.FieldUserID)
+	}
+	if m.cash_balance_cny != nil {
+		fields = append(fields, userwallet.FieldCashBalanceCny)
+	}
+	if m.paid_quota_balance_usd != nil {
+		fields = append(fields, userwallet.FieldPaidQuotaBalanceUsd)
+	}
+	if m.gift_quota_balance_usd != nil {
+		fields = append(fields, userwallet.FieldGiftQuotaBalanceUsd)
+	}
+	if m.version != nil {
+		fields = append(fields, userwallet.FieldVersion)
+	}
+	if m.created_at != nil {
+		fields = append(fields, userwallet.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, userwallet.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UserWalletMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case userwallet.FieldUserID:
+		return m.UserID()
+	case userwallet.FieldCashBalanceCny:
+		return m.CashBalanceCny()
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		return m.PaidQuotaBalanceUsd()
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		return m.GiftQuotaBalanceUsd()
+	case userwallet.FieldVersion:
+		return m.Version()
+	case userwallet.FieldCreatedAt:
+		return m.CreatedAt()
+	case userwallet.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UserWalletMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case userwallet.FieldUserID:
+		return m.OldUserID(ctx)
+	case userwallet.FieldCashBalanceCny:
+		return m.OldCashBalanceCny(ctx)
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		return m.OldPaidQuotaBalanceUsd(ctx)
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		return m.OldGiftQuotaBalanceUsd(ctx)
+	case userwallet.FieldVersion:
+		return m.OldVersion(ctx)
+	case userwallet.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case userwallet.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UserWallet field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserWalletMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case userwallet.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case userwallet.FieldCashBalanceCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCashBalanceCny(v)
+		return nil
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidQuotaBalanceUsd(v)
+		return nil
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGiftQuotaBalanceUsd(v)
+		return nil
+	case userwallet.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	case userwallet.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case userwallet.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UserWallet field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UserWalletMutation) AddedFields() []string {
+	var fields []string
+	if m.addcash_balance_cny != nil {
+		fields = append(fields, userwallet.FieldCashBalanceCny)
+	}
+	if m.addpaid_quota_balance_usd != nil {
+		fields = append(fields, userwallet.FieldPaidQuotaBalanceUsd)
+	}
+	if m.addgift_quota_balance_usd != nil {
+		fields = append(fields, userwallet.FieldGiftQuotaBalanceUsd)
+	}
+	if m.addversion != nil {
+		fields = append(fields, userwallet.FieldVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UserWalletMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case userwallet.FieldCashBalanceCny:
+		return m.AddedCashBalanceCny()
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		return m.AddedPaidQuotaBalanceUsd()
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		return m.AddedGiftQuotaBalanceUsd()
+	case userwallet.FieldVersion:
+		return m.AddedVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserWalletMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case userwallet.FieldCashBalanceCny:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCashBalanceCny(v)
+		return nil
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPaidQuotaBalanceUsd(v)
+		return nil
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGiftQuotaBalanceUsd(v)
+		return nil
+	case userwallet.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UserWallet numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UserWalletMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UserWalletMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UserWalletMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown UserWallet nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UserWalletMutation) ResetField(name string) error {
+	switch name {
+	case userwallet.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case userwallet.FieldCashBalanceCny:
+		m.ResetCashBalanceCny()
+		return nil
+	case userwallet.FieldPaidQuotaBalanceUsd:
+		m.ResetPaidQuotaBalanceUsd()
+		return nil
+	case userwallet.FieldGiftQuotaBalanceUsd:
+		m.ResetGiftQuotaBalanceUsd()
+		return nil
+	case userwallet.FieldVersion:
+		m.ResetVersion()
+		return nil
+	case userwallet.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case userwallet.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UserWallet field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UserWalletMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.user != nil {
+		edges = append(edges, userwallet.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UserWalletMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case userwallet.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UserWalletMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UserWalletMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UserWalletMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.cleareduser {
+		edges = append(edges, userwallet.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UserWalletMutation) EdgeCleared(name string) bool {
+	switch name {
+	case userwallet.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UserWalletMutation) ClearEdge(name string) error {
+	switch name {
+	case userwallet.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown UserWallet unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UserWalletMutation) ResetEdge(name string) error {
+	switch name {
+	case userwallet.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown UserWallet edge %s", name)
 }

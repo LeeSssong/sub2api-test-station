@@ -31,6 +31,8 @@ type OpenAISchedulerGroupPolicyMode string
 const (
 	OpenAISchedulerGroupPolicyModeWeightedOverride OpenAISchedulerGroupPolicyMode = "weighted_override"
 	OpenAISchedulerGroupPolicyModeFair             OpenAISchedulerGroupPolicyMode = "fair"
+	OpenAISchedulerGroupPolicyModeCustom           OpenAISchedulerGroupPolicyMode = "custom"
+	OpenAISchedulerGroupPolicyModePreset           OpenAISchedulerGroupPolicyMode = "preset"
 )
 
 type OpenAISchedulerPreset string
@@ -42,15 +44,127 @@ const (
 )
 
 type OpenAISchedulerPolicyValues struct {
-	TopK                                                                                                        int `json:"top_k,omitempty"`
-	Priority, Load, Queue, ErrorRate, TTFT, Reset, QuotaHeadroom, UpstreamCost, PreviousResponse, SessionSticky float64
-	CandidatePoolMode                                                                                           string `json:"candidate_pool_mode,omitempty"`
-	ExplorationRatio, StarvationThresholdSeconds                                                                int
-	FairnessWeight                                                                                              float64
+	TopK                       int     `json:"top_k"`
+	Priority                   float64 `json:"priority"`
+	Load                       float64 `json:"load"`
+	Queue                      float64 `json:"queue"`
+	ErrorRate                  float64 `json:"error_rate"`
+	TTFT                       float64 `json:"ttft"`
+	Reset                      float64 `json:"reset"`
+	QuotaHeadroom              float64 `json:"quota_headroom"`
+	UpstreamCost               float64 `json:"upstream_cost"`
+	PreviousResponse           float64 `json:"previous_response"`
+	SessionSticky              float64 `json:"session_sticky"`
+	CandidatePoolMode          string  `json:"candidate_pool_mode"`
+	ExplorationRatio           int     `json:"exploration_ratio"`
+	StarvationThresholdSeconds int     `json:"starvation_threshold_seconds"`
+	FairnessWeight             float64 `json:"fairness_weight"`
 }
+
+func (v OpenAISchedulerPolicyValues) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		TopK            int                             `json:"top_k"`
+		WeightOverrides map[string]float64              `json:"weight_overrides"`
+		Fairness        OpenAISchedulerFairnessSettings `json:"fairness"`
+	}{
+		TopK: v.TopK,
+		WeightOverrides: map[string]float64{
+			"priority": v.Priority, "load": v.Load, "queue": v.Queue, "error_rate": v.ErrorRate, "ttft": v.TTFT,
+			"reset": v.Reset, "quota_headroom": v.QuotaHeadroom, "upstream_cost": v.UpstreamCost,
+			"previous_response": v.PreviousResponse, "session_sticky": v.SessionSticky,
+		},
+		Fairness: OpenAISchedulerFairnessSettings{CandidatePoolMode: v.CandidatePoolMode, ExplorationRatio: v.ExplorationRatio, StarvationThresholdSeconds: v.StarvationThresholdSeconds, FairnessWeight: v.FairnessWeight},
+	})
+}
+
+func (v *OpenAISchedulerPolicyValues) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		TopK                       int                `json:"top_k"`
+		Priority                   float64            `json:"priority"`
+		Load                       float64            `json:"load"`
+		Queue                      float64            `json:"queue"`
+		ErrorRate                  float64            `json:"error_rate"`
+		TTFT                       float64            `json:"ttft"`
+		Reset                      float64            `json:"reset"`
+		QuotaHeadroom              float64            `json:"quota_headroom"`
+		UpstreamCost               float64            `json:"upstream_cost"`
+		PreviousResponse           float64            `json:"previous_response"`
+		SessionSticky              float64            `json:"session_sticky"`
+		CandidatePoolMode          string             `json:"candidate_pool_mode"`
+		ExplorationRatio           int                `json:"exploration_ratio"`
+		StarvationThresholdSeconds int                `json:"starvation_threshold_seconds"`
+		FairnessWeight             float64            `json:"fairness_weight"`
+		WeightOverrides            map[string]float64 `json:"weight_overrides"`
+		Fairness                   *struct {
+			CandidatePoolMode          string  `json:"candidate_pool_mode"`
+			ExplorationRatio           int     `json:"exploration_ratio"`
+			StarvationThresholdSeconds int     `json:"starvation_threshold_seconds"`
+			FairnessWeight             float64 `json:"fairness_weight"`
+		} `json:"fairness"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*v = OpenAISchedulerPolicyValues{TopK: raw.TopK, Priority: raw.Priority, Load: raw.Load, Queue: raw.Queue, ErrorRate: raw.ErrorRate, TTFT: raw.TTFT, Reset: raw.Reset, QuotaHeadroom: raw.QuotaHeadroom, UpstreamCost: raw.UpstreamCost, PreviousResponse: raw.PreviousResponse, SessionSticky: raw.SessionSticky, CandidatePoolMode: raw.CandidatePoolMode, ExplorationRatio: raw.ExplorationRatio, StarvationThresholdSeconds: raw.StarvationThresholdSeconds, FairnessWeight: raw.FairnessWeight}
+	if raw.WeightOverrides != nil {
+		for key, value := range raw.WeightOverrides {
+			switch key {
+			case "priority":
+				v.Priority = value
+			case "load":
+				v.Load = value
+			case "queue":
+				v.Queue = value
+			case "error_rate":
+				v.ErrorRate = value
+			case "ttft":
+				v.TTFT = value
+			case "reset":
+				v.Reset = value
+			case "quota_headroom":
+				v.QuotaHeadroom = value
+			case "upstream_cost":
+				v.UpstreamCost = value
+			case "previous_response":
+				v.PreviousResponse = value
+			case "session_sticky":
+				v.SessionSticky = value
+			}
+		}
+	}
+	if raw.Fairness != nil {
+		v.CandidatePoolMode = raw.Fairness.CandidatePoolMode
+		v.ExplorationRatio = raw.Fairness.ExplorationRatio
+		v.StarvationThresholdSeconds = raw.Fairness.StarvationThresholdSeconds
+		v.FairnessWeight = raw.Fairness.FairnessWeight
+	}
+	return nil
+}
+
+type OpenAISchedulerPresetKind string
+
+const (
+	OpenAISchedulerPresetKindBuiltin OpenAISchedulerPresetKind = "builtin"
+	OpenAISchedulerPresetKindCustom  OpenAISchedulerPresetKind = "custom"
+)
+
+type OpenAISchedulerPresetDefinition struct {
+	ID     string                      `json:"id"`
+	Name   string                      `json:"name"`
+	Kind   OpenAISchedulerPresetKind   `json:"kind"`
+	Values OpenAISchedulerPolicyValues `json:"values"`
+}
+
+type OpenAISchedulerCustomPreset struct {
+	ID     string                      `json:"id"`
+	Name   string                      `json:"name"`
+	Values OpenAISchedulerPolicyValues `json:"values"`
+}
+
 type OpenAISchedulerGroupPolicy struct {
 	Mode            OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
 	Preset          OpenAISchedulerPreset            `json:"preset,omitempty"`
+	PresetID        string                           `json:"preset_id,omitempty"`
 	TopK            *int                             `json:"top_k,omitempty"`
 	WeightOverrides map[string]float64               `json:"weight_overrides,omitempty"`
 	Fairness        *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
@@ -67,6 +181,11 @@ func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
 		if v != nil {
 			m[k] = v
 		}
+	}
+	if p.Values.TopK > 0 {
+		m["top_k"] = p.Values.TopK
+		m["weight_overrides"] = map[string]float64{"priority": p.Values.Priority, "load": p.Values.Load, "queue": p.Values.Queue, "error_rate": p.Values.ErrorRate, "ttft": p.Values.TTFT, "reset": p.Values.Reset, "quota_headroom": p.Values.QuotaHeadroom, "upstream_cost": p.Values.UpstreamCost, "previous_response": p.Values.PreviousResponse, "session_sticky": p.Values.SessionSticky}
+		m["fairness"] = map[string]any{"candidate_pool_mode": p.Values.CandidatePoolMode, "exploration_ratio": p.Values.ExplorationRatio, "starvation_threshold_seconds": p.Values.StarvationThresholdSeconds, "fairness_weight": p.Values.FairnessWeight}
 	}
 	return json.Marshal(m)
 }
@@ -359,6 +478,8 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerFairnessWeight                  float64
 	OpenAIAdvancedSchedulerGroupOverrides                  map[int64]OpenAISchedulerFairnessOverride
 	OpenAIAdvancedSchedulerGroupPolicies                   map[int64]OpenAISchedulerGroupPolicy
+	OpenAIAdvancedSchedulerCustomPresets                   map[string]OpenAISchedulerCustomPreset
+	OpenAIAdvancedSchedulerAvailablePresets                []OpenAISchedulerPresetDefinition
 	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
 	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
 	OpenAIAdvancedSchedulerEffectiveWeightLoad             string

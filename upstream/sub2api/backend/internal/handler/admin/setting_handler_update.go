@@ -294,6 +294,7 @@ type UpdateSettingsRequest struct {
 	OpenAIAdvancedSchedulerFairnessWeight              *float64                                           `json:"openai_advanced_scheduler_fairness_weight"`
 	OpenAIAdvancedSchedulerGroupOverrides              *map[int64]service.OpenAISchedulerFairnessOverride `json:"openai_advanced_scheduler_group_overrides"`
 	OpenAIAdvancedSchedulerGroupPolicies               *map[int64]service.OpenAISchedulerGroupPolicy      `json:"openai_advanced_scheduler_group_policies"`
+	OpenAIAdvancedSchedulerCustomPresets               *map[string]service.OpenAISchedulerCustomPreset    `json:"openai_advanced_scheduler_custom_presets"`
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -1886,6 +1887,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerGroupPolicies
 		}(),
+		OpenAIAdvancedSchedulerCustomPresets: func() map[string]service.OpenAISchedulerCustomPreset {
+			if req.OpenAIAdvancedSchedulerCustomPresets != nil {
+				return *req.OpenAIAdvancedSchedulerCustomPresets
+			}
+			return previousSettings.OpenAIAdvancedSchedulerCustomPresets
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2074,6 +2081,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			PlatformQuotas:   platformQuotasValueOrDefault(req.AuthSourceDingTalkPlatformQuotas, previousAuthSourceDefaults.DingTalk.PlatformQuotas),
 		},
 		ForceEmailOnThirdPartySignup: boolValueOrDefault(req.ForceEmailOnThirdPartySignup, previousAuthSourceDefaults.ForceEmailOnThirdPartySignup),
+	}
+	if req.OpenAIAdvancedSchedulerCustomPresets != nil {
+		if err := service.ValidateOpenAISchedulerPresetUpdate(previousSettings.OpenAIAdvancedSchedulerCustomPresets, settings.OpenAIAdvancedSchedulerCustomPresets, settings.OpenAIAdvancedSchedulerGroupPolicies); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
 	if err := h.settingService.UpdateSettingsWithAuthSourceDefaultsOmitting(c.Request.Context(), settings, authSourceDefaults, omitted); err != nil {
 		response.ErrorFrom(c, err)

@@ -24,6 +24,60 @@ func TestNormalizeOpenAISchedulerGroupPoliciesExpandsPresetsAndInheritsGlobal(t 
 	require.Equal(t, global.Load, policies[20].Values.Load)
 }
 
+func TestOpenAISchedulerAvailablePresetsIncludeImmutableBuiltInsAndCustomPresets(t *testing.T) {
+	customID := "custom:550e8400-e29b-41d4-a716-446655440000"
+	presets, err := normalizeOpenAISchedulerCustomPresets(map[string]OpenAISchedulerCustomPreset{
+		customID: {ID: customID, Name: "晚高峰稳态", Values: openAISchedulerPresetValues(OpenAISchedulerPresetPro)},
+	})
+	require.NoError(t, err)
+
+	available := openAISchedulerAvailablePresets(presets)
+	require.Len(t, available, 4)
+	require.Equal(t, "builtin:special_offer", available[0].ID)
+	require.Equal(t, OpenAISchedulerPresetKindBuiltin, available[0].Kind)
+	require.Equal(t, "builtin:balanced", available[1].ID)
+	require.Equal(t, "builtin:pro", available[2].ID)
+	require.Equal(t, customID, available[3].ID)
+	require.Equal(t, OpenAISchedulerPresetKindCustom, available[3].Kind)
+	require.Equal(t, 10, available[3].Values.TopK)
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesConvertsLegacyModesAndPersistsSnapshots(t *testing.T) {
+	global := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
+	policies, err := normalizeOpenAISchedulerGroupPoliciesWithPresets(map[int64]OpenAISchedulerGroupPolicy{
+		10: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": 2}},
+		20: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: OpenAISchedulerPresetPro},
+	}, global, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, OpenAISchedulerGroupPolicyModeCustom, policies[10].Mode)
+	require.Equal(t, 2.0, policies[10].Values.Priority)
+	require.Equal(t, OpenAISchedulerGroupPolicyModePreset, policies[20].Mode)
+	require.Equal(t, "builtin:pro", policies[20].PresetID)
+	require.Equal(t, openAISchedulerPresetValues(OpenAISchedulerPresetPro), policies[20].Values)
+}
+
+func TestNormalizeOpenAISchedulerCustomPresetStateRejectsReferencedDeletionAndNormalizesTemporaryID(t *testing.T) {
+	previousID := "custom:550e8400-e29b-41d4-a716-446655440000"
+	previous := map[string]OpenAISchedulerCustomPreset{
+		previousID: {ID: previousID, Name: "保留", Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)},
+	}
+	policies := map[int64]OpenAISchedulerGroupPolicy{
+		1: {Mode: OpenAISchedulerGroupPolicyModePreset, PresetID: previousID, Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)},
+	}
+	_, _, err := normalizeOpenAISchedulerPresetState(map[string]OpenAISchedulerCustomPreset{}, policies, previous, openAISchedulerPresetValues(OpenAISchedulerPresetBalanced), nil)
+	require.Error(t, err)
+
+	newPresets, _, err := normalizeOpenAISchedulerPresetState(map[string]OpenAISchedulerCustomPreset{
+		"custom:new:browser-1": {ID: "custom:new:browser-1", Name: "新预设", Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)},
+	}, map[int64]OpenAISchedulerGroupPolicy{}, nil, openAISchedulerPresetValues(OpenAISchedulerPresetBalanced), nil)
+	require.NoError(t, err)
+	require.Len(t, newPresets, 1)
+	for id, preset := range newPresets {
+		require.Regexp(t, `^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, id)
+		require.Equal(t, id, preset.ID)
+	}
+}
+
 func TestNormalizeOpenAISchedulerGroupPoliciesLegacyJSON(t *testing.T) {
 	var raw = `{"10":{"candidate_pool_mode":"all_eligible","exploration_ratio":40}}`
 	policies, err := parseOpenAISchedulerGroupPolicies(raw)

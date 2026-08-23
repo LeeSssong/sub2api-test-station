@@ -556,6 +556,7 @@ const (
 	SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds  = "openai_advanced_scheduler_starvation_threshold_seconds"
 	SettingKeyOpenAIAdvancedSchedulerFairnessWeight              = "openai_advanced_scheduler_fairness_weight"
 	SettingKeyOpenAIAdvancedSchedulerGroupOverrides              = "openai_advanced_scheduler_group_overrides"
+	SettingKeyOpenAIAdvancedSchedulerCustomPresets               = "openai_advanced_scheduler_custom_presets"
 
 	// SettingKeyBackendModeEnabled Backend 模式：禁用用户注册和自助服务，仅管理员可登录
 	SettingKeyBackendModeEnabled = "backend_mode_enabled"

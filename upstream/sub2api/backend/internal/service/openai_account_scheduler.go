@@ -2550,6 +2550,9 @@ func parsePositiveIntOverride(raw string) int {
 	if err != nil || value <= 0 {
 		return 0
 	}
+	if value > 32 {
+		return 32
+	}
 	return value
 }
 
@@ -2564,6 +2567,9 @@ func parseOpenAIAdvancedSchedulerWeightOverrides(values map[string]string) map[s
 		if err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 			continue
 		}
+		if value > 10 {
+			value = 10
+		}
 		overrides[spec.name] = value
 	}
 	return overrides
@@ -2577,11 +2583,7 @@ func parseOpenAISchedulerFairnessRuntimeSettings(values map[string]string) OpenA
 		FairnessWeight:             parseFloatSettingOrDefault(values[SettingKeyOpenAIAdvancedSchedulerFairnessWeight], 2),
 		GroupOverrides:             parseOpenAISchedulerFairnessOverrides(values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides]),
 	}
-	settings, err := normalizeOpenAISchedulerFairnessSettings(settings)
-	if err != nil {
-		return defaultOpenAISchedulerFairnessSettings()
-	}
-	return settings
+	return normalizeOpenAISchedulerFairnessSettingsForRead(settings)
 }
 
 func cloneOpenAIAdvancedSchedulerWeightOverrides(in map[string]float64) map[string]float64 {

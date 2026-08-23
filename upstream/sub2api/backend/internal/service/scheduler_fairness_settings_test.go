@@ -2,9 +2,11 @@ package service
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,12 +36,137 @@ func TestOpenAISchedulerAvailablePresetsIncludeImmutableBuiltInsAndCustomPresets
 	available := openAISchedulerAvailablePresets(presets)
 	require.Len(t, available, 4)
 	require.Equal(t, "builtin:special_offer", available[0].ID)
+	require.Equal(t, "体验优先", available[0].Name)
 	require.Equal(t, OpenAISchedulerPresetKindBuiltin, available[0].Kind)
 	require.Equal(t, "builtin:balanced", available[1].ID)
+	require.Equal(t, "体验均衡", available[1].Name)
 	require.Equal(t, "builtin:pro", available[2].ID)
+	require.Equal(t, "利润优先", available[2].Name)
 	require.Equal(t, customID, available[3].ID)
 	require.Equal(t, OpenAISchedulerPresetKindCustom, available[3].Kind)
 	require.Equal(t, 10, available[3].Values.TopK)
+}
+
+func TestNormalizeOpenAISchedulerPresetValuesForReadClampsLegacyValues(t *testing.T) {
+	got := normalizeOpenAISchedulerPresetValuesForRead(OpenAISchedulerPolicyValues{
+		TopK:                       99,
+		Priority:                   -1,
+		Load:                       11,
+		Queue:                      math.NaN(),
+		ErrorRate:                  math.Inf(1),
+		TTFT:                       3,
+		Reset:                      4,
+		QuotaHeadroom:              5,
+		UpstreamCost:               6,
+		PreviousResponse:           7,
+		SessionSticky:              8,
+		CandidatePoolMode:          "invalid",
+		ExplorationRatio:           101,
+		StarvationThresholdSeconds: 60,
+		FairnessWeight:             11,
+	})
+
+	require.Equal(t, 32, got.TopK)
+	require.Equal(t, 0.0, got.Priority)
+	require.Equal(t, 10.0, got.Load)
+	require.Equal(t, 0.7, got.Queue)
+	require.Equal(t, 0.8, got.ErrorRate)
+	require.Equal(t, OpenAISchedulerCandidatePoolModeHybrid, got.CandidatePoolMode)
+	require.Equal(t, 100, got.ExplorationRatio)
+	require.Equal(t, 300, got.StarvationThresholdSeconds)
+	require.Equal(t, 10.0, got.FairnessWeight)
+}
+
+func TestNormalizeOpenAISchedulerPresetValuesForReadPreservesZeroThreshold(t *testing.T) {
+	got := normalizeOpenAISchedulerPresetValuesForRead(OpenAISchedulerPolicyValues{
+		TopK:                       1,
+		Priority:                   1,
+		CandidatePoolMode:          OpenAISchedulerCandidatePoolModeTopK,
+		StarvationThresholdSeconds: 0,
+	})
+	require.Equal(t, 0, got.StarvationThresholdSeconds)
+}
+
+func TestNormalizeOpenAISchedulerPresetValuesRejectsOutOfRangeWrites(t *testing.T) {
+	valid := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
+	for name, mutate := range map[string]func(*OpenAISchedulerPolicyValues){
+		"top_k":     func(v *OpenAISchedulerPolicyValues) { v.TopK = 33 },
+		"weight":    func(v *OpenAISchedulerPolicyValues) { v.Priority = 11 },
+		"ratio":     func(v *OpenAISchedulerPolicyValues) { v.ExplorationRatio = 101 },
+		"threshold": func(v *OpenAISchedulerPolicyValues) { v.StarvationThresholdSeconds = 60 },
+		"fairness":  func(v *OpenAISchedulerPolicyValues) { v.FairnessWeight = 11 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := valid
+			mutate(&value)
+			_, err := normalizeOpenAISchedulerPresetValues(value)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNormalizeOpenAISchedulerOverridesRejectsOutOfRangeWrites(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+	tooLargeTopK := &SystemSettings{OpenAIAdvancedSchedulerLBTopK: "33"}
+	require.Error(t, svc.normalizeOpenAIAdvancedSchedulerOverrides(tooLargeTopK))
+
+	tooLargeWeight := &SystemSettings{OpenAIAdvancedSchedulerWeightPriority: "10.01"}
+	require.Error(t, svc.normalizeOpenAIAdvancedSchedulerOverrides(tooLargeWeight))
+}
+
+func TestNormalizeOpenAISchedulerCustomPresetsForReadKeepsValidIDsAndClampsValues(t *testing.T) {
+	customID := "custom:550e8400-e29b-41d4-a716-446655440000"
+	got := normalizeOpenAISchedulerCustomPresetsForRead(map[string]OpenAISchedulerCustomPreset{
+		customID: {
+			ID:   customID,
+			Name: "旧配置",
+			Values: OpenAISchedulerPolicyValues{
+				TopK:              0,
+				Priority:          99,
+				CandidatePoolMode: OpenAISchedulerCandidatePoolModeHybrid,
+			},
+		},
+	})
+	require.Len(t, got, 1)
+	require.Equal(t, customID, got[customID].ID)
+	require.Equal(t, 1, got[customID].Values.TopK)
+	require.Equal(t, 10.0, got[customID].Values.Priority)
+}
+
+func TestSettingServiceParseSettingsClampsLegacySchedulerValues(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+	got := svc.parseSettings(map[string]string{
+		SettingKeyOpenAIAdvancedSchedulerLBTopK:                     "99",
+		SettingKeyOpenAIAdvancedSchedulerWeightPriority:             "-1",
+		SettingKeyOpenAIAdvancedSchedulerWeightLoad:                 "11",
+		SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode:          "invalid",
+		SettingKeyOpenAIAdvancedSchedulerExplorationRatio:           "101",
+		SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds: "60",
+		SettingKeyOpenAIAdvancedSchedulerFairnessWeight:             "NaN",
+	})
+	require.Equal(t, "32", got.OpenAIAdvancedSchedulerLBTopK)
+	require.Equal(t, "0", got.OpenAIAdvancedSchedulerWeightPriority)
+	require.Equal(t, "10", got.OpenAIAdvancedSchedulerWeightLoad)
+	require.Equal(t, OpenAISchedulerCandidatePoolModeHybrid, got.OpenAIAdvancedSchedulerCandidatePoolMode)
+	require.Equal(t, 100, got.OpenAIAdvancedSchedulerExplorationRatio)
+	require.Equal(t, 300, got.OpenAIAdvancedSchedulerStarvationThresholdSeconds)
+	require.Equal(t, 2.0, got.OpenAIAdvancedSchedulerFairnessWeight)
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesForReadClampsLegacySnapshots(t *testing.T) {
+	topK := 99
+	priority := 11.0
+	ratio := 101
+	policies := normalizeOpenAISchedulerGroupPoliciesForRead(map[int64]OpenAISchedulerGroupPolicy{
+		7: {
+			TopK:            &topK,
+			WeightOverrides: map[string]float64{"priority": priority},
+			Fairness:        &OpenAISchedulerFairnessOverride{ExplorationRatio: &ratio},
+		},
+	})
+	require.Equal(t, 32, *policies[7].TopK)
+	require.Equal(t, 10.0, policies[7].WeightOverrides["priority"])
+	require.Equal(t, 100, *policies[7].Fairness.ExplorationRatio)
 }
 
 func TestNormalizeOpenAISchedulerGroupPoliciesConvertsLegacyModesAndPersistsSnapshots(t *testing.T) {

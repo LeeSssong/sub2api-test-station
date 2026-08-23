@@ -913,18 +913,18 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
 	result.OpenAIAdvancedSchedulerStickyWeightedEnabled = settings[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled] == "true"
 	result.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled = settings[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] == "true"
-	result.OpenAIAdvancedSchedulerLBTopK = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerLBTopK])
-	result.OpenAIAdvancedSchedulerWeightPriority = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightPriority])
-	result.OpenAIAdvancedSchedulerWeightLoad = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightLoad])
-	result.OpenAIAdvancedSchedulerWeightQueue = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightQueue])
-	result.OpenAIAdvancedSchedulerWeightErrorRate = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightErrorRate])
-	result.OpenAIAdvancedSchedulerWeightTTFT = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightTTFT])
-	result.OpenAIAdvancedSchedulerWeightReset = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightReset])
-	result.OpenAIAdvancedSchedulerWeightQuotaHeadroom = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom])
-	result.OpenAIAdvancedSchedulerWeightUpstreamCost = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightUpstreamCost])
-	result.OpenAIAdvancedSchedulerWeightPreviousResponse = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse])
-	result.OpenAIAdvancedSchedulerWeightSessionSticky = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky])
-	fairness, _ := normalizeOpenAISchedulerFairnessSettings(OpenAISchedulerFairnessSettings{
+	result.OpenAIAdvancedSchedulerLBTopK = normalizeOpenAISchedulerTopKForRead(settings[SettingKeyOpenAIAdvancedSchedulerLBTopK])
+	result.OpenAIAdvancedSchedulerWeightPriority = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightPriority])
+	result.OpenAIAdvancedSchedulerWeightLoad = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightLoad])
+	result.OpenAIAdvancedSchedulerWeightQueue = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightQueue])
+	result.OpenAIAdvancedSchedulerWeightErrorRate = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightErrorRate])
+	result.OpenAIAdvancedSchedulerWeightTTFT = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightTTFT])
+	result.OpenAIAdvancedSchedulerWeightReset = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightReset])
+	result.OpenAIAdvancedSchedulerWeightQuotaHeadroom = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom])
+	result.OpenAIAdvancedSchedulerWeightUpstreamCost = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightUpstreamCost])
+	result.OpenAIAdvancedSchedulerWeightPreviousResponse = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse])
+	result.OpenAIAdvancedSchedulerWeightSessionSticky = normalizeOpenAISchedulerWeightForRead(settings[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky])
+	fairness := normalizeOpenAISchedulerFairnessSettingsForRead(OpenAISchedulerFairnessSettings{
 		CandidatePoolMode:          settings[SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode],
 		ExplorationRatio:           parseIntSettingOrDefault(settings[SettingKeyOpenAIAdvancedSchedulerExplorationRatio], 20),
 		StarvationThresholdSeconds: parseIntSettingOrDefault(settings[SettingKeyOpenAIAdvancedSchedulerStarvationThresholdSeconds], 21600),
@@ -934,9 +934,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerExplorationRatio = fairness.ExplorationRatio
 	result.OpenAIAdvancedSchedulerStarvationThresholdSeconds = fairness.StarvationThresholdSeconds
 	result.OpenAIAdvancedSchedulerFairnessWeight = fairness.FairnessWeight
-	result.OpenAIAdvancedSchedulerGroupOverrides = parseOpenAISchedulerFairnessOverrides(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	result.OpenAIAdvancedSchedulerGroupOverrides = normalizeOpenAISchedulerFairnessOverridesForRead(parseOpenAISchedulerFairnessOverrides(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides]))
 	result.OpenAIAdvancedSchedulerCustomPresets, _ = parseOpenAISchedulerCustomPresets(settings[SettingKeyOpenAIAdvancedSchedulerCustomPresets])
 	result.OpenAIAdvancedSchedulerGroupPolicies, _ = parseOpenAISchedulerGroupPolicies(settings[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	result.OpenAIAdvancedSchedulerGroupPolicies = normalizeOpenAISchedulerGroupPoliciesForRead(result.OpenAIAdvancedSchedulerGroupPolicies)
 	global := openAISchedulerPolicyValuesFromSettings(result)
 	if policies, err := normalizeOpenAISchedulerGroupPoliciesWithPresets(result.OpenAIAdvancedSchedulerGroupPolicies, global, nil, result.OpenAIAdvancedSchedulerCustomPresets); err == nil {
 		result.OpenAIAdvancedSchedulerGroupPolicies = policies
@@ -1095,6 +1096,12 @@ func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *Sys
 	if err != nil {
 		return infraerrors.BadRequest("INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K", "openai advanced scheduler TopK must be a positive integer or empty")
 	}
+	if lbTopK != "" {
+		value, _ := strconv.Atoi(lbTopK)
+		if value > 32 {
+			return infraerrors.BadRequest("INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K", "openai advanced scheduler TopK must be between 1 and 32")
+		}
+	}
 	settings.OpenAIAdvancedSchedulerLBTopK = lbTopK
 
 	weights := []*string{
@@ -1113,6 +1120,12 @@ func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *Sys
 		normalized, err := normalizeOptionalNonNegativeFloatString(*target)
 		if err != nil {
 			return infraerrors.BadRequest("INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT", "openai advanced scheduler weights must be non-negative numbers or empty")
+		}
+		if normalized != "" {
+			value, _ := strconv.ParseFloat(normalized, 64)
+			if value > 10 {
+				return infraerrors.BadRequest("INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT", "openai advanced scheduler weights must be between 0 and 10")
+			}
 		}
 		*target = normalized
 	}
@@ -1228,12 +1241,165 @@ func parseIntSettingOrDefault(raw string, fallback int) int {
 	return value
 }
 
+func normalizeOpenAISchedulerTopKForRead(raw string) string {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		return ""
+	}
+	if value > 32 {
+		value = 32
+	}
+	return strconv.Itoa(value)
+}
+
+func normalizeOpenAISchedulerWeightForRead(raw string) string {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return ""
+	}
+	if value < 0 {
+		value = 0
+	} else if value > 10 {
+		value = 10
+	}
+	return formatOpenAIAdvancedSchedulerFloat(value)
+}
+
 func parseFloatSettingOrDefault(raw string, fallback float64) float64 {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return fallback
 	}
 	return value
+}
+
+func normalizeOpenAISchedulerFairnessSettingsForRead(value OpenAISchedulerFairnessSettings) OpenAISchedulerFairnessSettings {
+	defaults := defaultOpenAISchedulerFairnessSettings()
+	mode := strings.TrimSpace(strings.ToLower(value.CandidatePoolMode))
+	if mode != OpenAISchedulerCandidatePoolModeTopK && mode != OpenAISchedulerCandidatePoolModeAllEligible && mode != OpenAISchedulerCandidatePoolModeHybrid {
+		mode = defaults.CandidatePoolMode
+	}
+	ratio := value.ExplorationRatio
+	if ratio < 0 {
+		ratio = 0
+	} else if ratio > 100 {
+		ratio = 100
+	}
+	threshold := value.StarvationThresholdSeconds
+	if threshold != 0 {
+		if threshold < 300 {
+			threshold = 300
+		} else if threshold > 86400 {
+			threshold = 86400
+		}
+	}
+	weight := value.FairnessWeight
+	if math.IsNaN(weight) || math.IsInf(weight, 0) {
+		weight = defaults.FairnessWeight
+	} else if weight < 0 {
+		weight = 0
+	} else if weight > 10 {
+		weight = 10
+	}
+	return OpenAISchedulerFairnessSettings{
+		CandidatePoolMode:          mode,
+		ExplorationRatio:           ratio,
+		StarvationThresholdSeconds: threshold,
+		FairnessWeight:             weight,
+		GroupOverrides:             normalizeOpenAISchedulerFairnessOverridesForRead(value.GroupOverrides),
+	}
+}
+
+func normalizeOpenAISchedulerFairnessOverridesForRead(values map[int64]OpenAISchedulerFairnessOverride) map[int64]OpenAISchedulerFairnessOverride {
+	if len(values) == 0 {
+		return map[int64]OpenAISchedulerFairnessOverride{}
+	}
+	result := make(map[int64]OpenAISchedulerFairnessOverride, len(values))
+	for groupID, value := range values {
+		if groupID <= 0 {
+			continue
+		}
+		override := value
+		if override.CandidatePoolMode != nil {
+			mode := strings.ToLower(strings.TrimSpace(*override.CandidatePoolMode))
+			if mode != OpenAISchedulerCandidatePoolModeTopK && mode != OpenAISchedulerCandidatePoolModeAllEligible && mode != OpenAISchedulerCandidatePoolModeHybrid {
+				override.CandidatePoolMode = nil
+			} else {
+				*override.CandidatePoolMode = mode
+			}
+		}
+		if override.ExplorationRatio != nil {
+			value := *override.ExplorationRatio
+			if value < 0 {
+				value = 0
+			} else if value > 100 {
+				value = 100
+			}
+			*override.ExplorationRatio = value
+		}
+		if override.StarvationThresholdSeconds != nil {
+			value := *override.StarvationThresholdSeconds
+			if value != 0 {
+				if value < 300 {
+					value = 300
+				} else if value > 86400 {
+					value = 86400
+				}
+			}
+			*override.StarvationThresholdSeconds = value
+		}
+		if override.FairnessWeight != nil {
+			value := *override.FairnessWeight
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				override.FairnessWeight = nil
+			} else {
+				if value < 0 {
+					value = 0
+				} else if value > 10 {
+					value = 10
+				}
+				*override.FairnessWeight = value
+			}
+		}
+		result[groupID] = override
+	}
+	return result
+}
+
+func normalizeOpenAISchedulerGroupPoliciesForRead(policies map[int64]OpenAISchedulerGroupPolicy) map[int64]OpenAISchedulerGroupPolicy {
+	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
+	for id, policy := range policies {
+		if policy.TopK != nil {
+			value := *policy.TopK
+			if value < 1 {
+				value = 1
+			} else if value > 32 {
+				value = 32
+			}
+			policy.TopK = &value
+		}
+		if policy.WeightOverrides != nil {
+			weights := make(map[string]float64, len(policy.WeightOverrides))
+			for key, value := range policy.WeightOverrides {
+				if !openAISchedulerPolicyWeightKeys[key] {
+					continue
+				}
+				weights[key] = normalizeOpenAISchedulerWeightValueForRead(value, 0)
+			}
+			policy.WeightOverrides = weights
+		}
+		if policy.Fairness != nil {
+			override := normalizeOpenAISchedulerFairnessOverridesForRead(map[int64]OpenAISchedulerFairnessOverride{id: *policy.Fairness})[id]
+			policy.Fairness = &override
+		}
+		legacy := normalizeOpenAISchedulerFairnessOverridesForRead(map[int64]OpenAISchedulerFairnessOverride{id: policy.LegacyFairness})[id]
+		policy.LegacyFairness = legacy
+		if policy.Values.TopK != 0 || policy.Values.Priority != 0 || policy.Values.CandidatePoolMode != "" {
+			policy.Values = normalizeOpenAISchedulerPresetValuesForRead(policy.Values)
+		}
+		result[id] = policy
+	}
+	return result
 }
 
 func parseOpenAISchedulerFairnessOverrides(raw string) map[int64]OpenAISchedulerFairnessOverride {
@@ -1289,7 +1455,83 @@ func parseOpenAISchedulerCustomPresets(raw string) (map[string]OpenAISchedulerCu
 	if err := json.Unmarshal([]byte(raw), &presets); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_PRESETS", "custom presets must be valid JSON")
 	}
-	return normalizeOpenAISchedulerCustomPresets(presets)
+	return normalizeOpenAISchedulerCustomPresetsForRead(presets), nil
+}
+
+func normalizeOpenAISchedulerPresetValuesForRead(values OpenAISchedulerPolicyValues) OpenAISchedulerPolicyValues {
+	defaults := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
+	if values.TopK < 1 {
+		values.TopK = 1
+	} else if values.TopK > 32 {
+		values.TopK = 32
+	}
+	values.Priority = normalizeOpenAISchedulerWeightValueForRead(values.Priority, defaults.Priority)
+	values.Load = normalizeOpenAISchedulerWeightValueForRead(values.Load, defaults.Load)
+	values.Queue = normalizeOpenAISchedulerWeightValueForRead(values.Queue, defaults.Queue)
+	values.ErrorRate = normalizeOpenAISchedulerWeightValueForRead(values.ErrorRate, defaults.ErrorRate)
+	values.TTFT = normalizeOpenAISchedulerWeightValueForRead(values.TTFT, defaults.TTFT)
+	values.Reset = normalizeOpenAISchedulerWeightValueForRead(values.Reset, defaults.Reset)
+	values.QuotaHeadroom = normalizeOpenAISchedulerWeightValueForRead(values.QuotaHeadroom, defaults.QuotaHeadroom)
+	values.UpstreamCost = normalizeOpenAISchedulerWeightValueForRead(values.UpstreamCost, defaults.UpstreamCost)
+	values.PreviousResponse = normalizeOpenAISchedulerWeightValueForRead(values.PreviousResponse, defaults.PreviousResponse)
+	values.SessionSticky = normalizeOpenAISchedulerWeightValueForRead(values.SessionSticky, defaults.SessionSticky)
+	mode := strings.ToLower(strings.TrimSpace(values.CandidatePoolMode))
+	if mode != OpenAISchedulerCandidatePoolModeTopK && mode != OpenAISchedulerCandidatePoolModeAllEligible && mode != OpenAISchedulerCandidatePoolModeHybrid {
+		mode = defaults.CandidatePoolMode
+	}
+	values.CandidatePoolMode = mode
+	if values.ExplorationRatio < 0 {
+		values.ExplorationRatio = 0
+	} else if values.ExplorationRatio > 100 {
+		values.ExplorationRatio = 100
+	}
+	if values.StarvationThresholdSeconds != 0 {
+		if values.StarvationThresholdSeconds < 300 {
+			values.StarvationThresholdSeconds = 300
+		} else if values.StarvationThresholdSeconds > 86400 {
+			values.StarvationThresholdSeconds = 86400
+		}
+	}
+	values.FairnessWeight = normalizeOpenAISchedulerWeightValueForRead(values.FairnessWeight, defaults.FairnessWeight)
+	return values
+}
+
+func normalizeOpenAISchedulerWeightValueForRead(value, fallback float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fallback
+	}
+	if value < 0 {
+		return 0
+	}
+	if value > 10 {
+		return 10
+	}
+	return value
+}
+
+func normalizeOpenAISchedulerCustomPresetsForRead(presets map[string]OpenAISchedulerCustomPreset) map[string]OpenAISchedulerCustomPreset {
+	result := make(map[string]OpenAISchedulerCustomPreset, len(presets))
+	names := map[string]struct{}{}
+	for key, preset := range presets {
+		id := strings.TrimSpace(preset.ID)
+		if id == "" {
+			id = strings.TrimSpace(key)
+		}
+		parsed, err := uuid.Parse(strings.TrimPrefix(id, "custom:"))
+		if !strings.HasPrefix(id, "custom:") || err != nil || parsed.String() != strings.TrimPrefix(id, "custom:") {
+			continue
+		}
+		name := strings.TrimSpace(preset.Name)
+		if len([]rune(name)) < 1 || len([]rune(name)) > 40 {
+			continue
+		}
+		if _, exists := names[name]; exists {
+			continue
+		}
+		names[name] = struct{}{}
+		result[id] = OpenAISchedulerCustomPreset{ID: id, Name: name, Values: normalizeOpenAISchedulerPresetValuesForRead(preset.Values)}
+	}
+	return result
 }
 
 func normalizeOpenAISchedulerCustomPresets(presets map[string]OpenAISchedulerCustomPreset) (map[string]OpenAISchedulerCustomPreset, error) {
@@ -1349,7 +1591,7 @@ func normalizeOpenAISchedulerPresetValues(values OpenAISchedulerPolicyValues) (O
 }
 
 func openAISchedulerAvailablePresets(custom map[string]OpenAISchedulerCustomPreset) []OpenAISchedulerPresetDefinition {
-	defs := []OpenAISchedulerPresetDefinition{{ID: "builtin:special_offer", Name: "Special offer", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetSpecialOffer)}, {ID: "builtin:balanced", Name: "Balanced", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)}, {ID: "builtin:pro", Name: "Pro", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetPro)}}
+	defs := []OpenAISchedulerPresetDefinition{{ID: "builtin:special_offer", Name: "体验优先", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetSpecialOffer)}, {ID: "builtin:balanced", Name: "体验均衡", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)}, {ID: "builtin:pro", Name: "利润优先", Kind: OpenAISchedulerPresetKindBuiltin, Values: openAISchedulerPresetValues(OpenAISchedulerPresetPro)}}
 	keys := make([]string, 0, len(custom))
 	for key := range custom {
 		keys = append(keys, key)

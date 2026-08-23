@@ -6,7 +6,7 @@
 
 ## 当前暂停任务（2026-08-23，T54-R2 调度预设与参数中文化）
 
-- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `FROZEN`。用户已确认将三个内置预设的管理员展示与语义调整为“体验优先”（连续性第一、延时/耗时第二、利润第三）、“体验均衡”（连续性第一，延时/耗时与利润并列第二）、“利润优先”（利润第一、连续性第二、延时/耗时第三）；保留现有内部 ID 兼容已保存策略。候选 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r2-scheduler-labels`、分支 `codex/t54-r2-scheduler-labels` 已完成规格提交，工作区干净。为把两个并行功能槽明确分配给 T55 与 T57，根总控自 2026-08-24 起冻结本候选；保留全部提交与 worktree，不继续写入、合并、推送、部署或清理，待 T55/T57 任一释放并发槽后再由根总控明确解冻。
+- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `DONE`。三个内置预设已在生产管理员设置 API 中确认展示为“体验优先 / 体验均衡 / 利润优先”，内部 ID `builtin:special_offer / builtin:balanced / builtin:pro` 保持兼容；中文参数标签、区间限制和旧值读取归一化的直接相关测试、后端构建、前端 SettingsView、typecheck/build 与 diff-check 已通过。根 `main@bcc6f8878` 已推送并经既有本地/宿主蓝绿链发布，宿主记录 `/var/lib/sub2api/release-records/20260823T205048Z-production-2811848.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 200，生产管理员 settings API 返回 200。0600 生产证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-bcc6f887-t54-r2-production.json`。候选 worktree 仅作历史证据保留，不再进入发布车道。
 
 ## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
 

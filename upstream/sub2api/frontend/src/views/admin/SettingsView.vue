@@ -5104,7 +5104,7 @@
               </div>
 
               <div
-                v-if="form.openai_advanced_scheduler_enabled"
+                v-if="false"
                 class="border-t border-gray-100 pt-5 dark:border-dark-700"
               >
                 <div>
@@ -5148,15 +5148,15 @@
                 class="border-t border-gray-100 pt-5 dark:border-dark-700"
                 data-testid="openai-scheduler-fairness"
               >
-                <div>
+                <div class="mb-4">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t("admin.settings.openaiExperimentalScheduler.fairnessTitle") }}
+                    {{ t("admin.settings.openaiExperimentalScheduler.title") }}
                   </label>
                   <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.openaiExperimentalScheduler.fairnessDescription") }}
+                    {{ t("admin.settings.openaiExperimentalScheduler.description") }}
                   </p>
                 </div>
-                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div v-if="false" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <label class="block">
                     <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.poolMode") }}</span>
                     <select v-model="form.openai_advanced_scheduler_candidate_pool_mode" class="input mt-1" data-testid="scheduler-pool-mode">
@@ -5186,23 +5186,34 @@
                   <p v-if="schedulerGroupsLoadError" class="mb-3 text-sm text-red-600 dark:text-red-400" data-testid="scheduler-groups-error">
                     {{ t("admin.settings.failedToLoad") }}
                   </p>
-                  <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <label class="block">
+                  <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiExperimentalScheduler.stepGroup") }}
+                  </div>
+                  <label class="block">
                       <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.groupSelect") }}</span>
                       <select v-model="schedulerSelectedGroupId" class="input mt-1" data-testid="scheduler-group-select" @change="selectSchedulerPolicyGroup">
                         <option value="">{{ t("admin.settings.openaiExperimentalScheduler.groupSelectPlaceholder") }}</option>
                         <option v-for="group in schedulerPolicyGroups" :key="group.id" :value="String(group.id)">{{ group.name }}</option>
                       </select>
-                    </label>
-                    <label class="block">
-                      <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.modeSelect") }}</span>
-                      <select v-model="schedulerPolicyDraft.mode" class="input mt-1" data-testid="scheduler-policy-mode" @change="schedulerPolicyDraft.mode === 'preset' ? applySchedulerPreset() : undefined">
-                        <option value="custom">{{ t("admin.settings.openaiExperimentalScheduler.weightedMode") }}</option>
-                        <option value="preset">{{ t("admin.settings.openaiExperimentalScheduler.fairMode") }}</option>
-                      </select>
-                    </label>
+                  </label>
+                  <div class="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiExperimentalScheduler.stepMode") }}
                   </div>
+                  <div class="mt-2 inline-flex rounded border border-gray-200 p-1 dark:border-dark-700" data-testid="scheduler-policy-mode">
+                    <button type="button" class="rounded px-3 py-1.5 text-sm" :class="schedulerPolicyDraft.mode === 'custom' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'" data-testid="scheduler-policy-mode-custom" @click="setSchedulerPolicyMode('custom')">
+                      {{ t("admin.settings.openaiExperimentalScheduler.customMode") }}
+                    </button>
+                    <button type="button" class="rounded px-3 py-1.5 text-sm" :class="schedulerPolicyDraft.mode === 'preset' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'" data-testid="scheduler-policy-mode-preset" @click="setSchedulerPolicyMode('preset')">
+                      {{ t("admin.settings.openaiExperimentalScheduler.presetMode") }}
+                    </button>
+                  </div>
+                  <p v-if="!schedulerSelectedGroupId" class="mt-3 text-sm text-gray-500 dark:text-gray-400" data-testid="scheduler-policy-gate">
+                    {{ t("admin.settings.openaiExperimentalScheduler.selectGroupBeforePolicy") }}
+                  </p>
                   <div v-if="schedulerSelectedGroupId" class="mt-4">
+                    <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiExperimentalScheduler.stepValues") }}
+                    </div>
                     <div v-if="schedulerPolicyDraft.mode === 'preset'" class="grid gap-4 md:grid-cols-2">
                       <label class="block">
                         <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.presetSelect") }}</span>
@@ -5217,22 +5228,34 @@
                     <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                       <label class="block">
                         <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.topKLabel") }}</span>
-                        <input v-model.number="schedulerPolicyDraft.top_k" class="input mt-1" data-testid="scheduler-policy-top-k" min="1" max="32" step="1" type="number" :readonly="schedulerPolicyDraft.mode === 'preset'" />
+                        <input v-model.number="schedulerPolicyDraft.top_k" class="input mt-1" data-testid="scheduler-policy-top-k" min="1" max="32" step="1" type="number" :disabled="schedulerPolicyDraft.mode === 'preset'" />
                       </label>
                       <label v-for="key in schedulerPolicyWeightKeys" :key="key" class="block">
                         <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ key }}</span>
-                        <input v-model.number="schedulerPolicyDraft.weight_overrides[key]" class="input mt-1" data-testid="scheduler-policy-weight" min="0" max="10" step="0.1" type="number" :readonly="schedulerPolicyDraft.mode === 'preset'" />
+                        <input v-model.number="schedulerPolicyDraft.weight_overrides[key]" class="input mt-1" data-testid="scheduler-policy-weight" min="0" max="10" step="0.1" type="number" :disabled="schedulerPolicyDraft.mode === 'preset'" />
                       </label>
                     </div>
                     <div v-if="schedulerPolicyDraft.mode === 'preset'" class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.poolMode") }}</span><select v-model="schedulerPolicyDraft.fairness.candidate_pool_mode" class="input mt-1" data-testid="scheduler-policy-pool-mode" disabled><option value="hybrid">{{ t("admin.settings.openaiExperimentalScheduler.poolModeHybrid") }}</option></select></label>
-                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.explorationRatio") }}</span><input v-model.number="schedulerPolicyDraft.fairness.exploration_ratio" class="input mt-1" data-testid="scheduler-policy-exploration" readonly type="number" /></label>
-                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.starvationThreshold") }}</span><input v-model.number="schedulerPolicyDraft.fairness.starvation_threshold_seconds" class="input mt-1" data-testid="scheduler-policy-starvation" readonly type="number" /></label>
-                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeight") }}</span><input v-model.number="schedulerPolicyDraft.fairness.fairness_weight" class="input mt-1" data-testid="scheduler-policy-fairness" readonly type="number" /></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.explorationRatio") }}</span><input v-model.number="schedulerPolicyDraft.fairness.exploration_ratio" class="input mt-1" data-testid="scheduler-policy-exploration" disabled type="number" /></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.starvationThreshold") }}</span><input v-model.number="schedulerPolicyDraft.fairness.starvation_threshold_seconds" class="input mt-1" data-testid="scheduler-policy-starvation" disabled type="number" /></label>
+                      <label class="block"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.fairnessWeight") }}</span><input v-model.number="schedulerPolicyDraft.fairness.fairness_weight" class="input mt-1" data-testid="scheduler-policy-fairness" disabled type="number" /></label>
                     </div>
-                    <button v-if="schedulerSelectedGroupId" type="button" class="btn btn-secondary btn-sm mt-4" data-testid="scheduler-policy-clear" @click="clearSchedulerPolicy">
+                    <div v-if="schedulerPolicyDraft.mode === 'custom'" class="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 dark:border-dark-700 sm:flex-row sm:items-end">
+                      <label class="block min-w-0 flex-1"><span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ t("admin.settings.openaiExperimentalScheduler.customPresetName") }}</span><input v-model="schedulerPresetNameDraft" class="input mt-1" data-testid="scheduler-preset-name" :placeholder="t('admin.settings.openaiExperimentalScheduler.customPresetNamePlaceholder')" maxlength="40" /></label>
+                      <button type="button" class="btn btn-secondary btn-sm" data-testid="scheduler-save-preset" @click="saveCurrentSchedulerPreset">{{ t("admin.settings.openaiExperimentalScheduler.saveAsPreset") }}</button>
+                    </div>
+                    <p v-if="schedulerPresetActionError" class="mt-2 text-sm text-red-600 dark:text-red-400" data-testid="scheduler-preset-error">{{ schedulerPresetActionError }}</p>
+                  <button v-if="schedulerSelectedGroupId" type="button" class="btn btn-secondary btn-sm mt-4" data-testid="scheduler-policy-clear" @click="clearSchedulerPolicy">
                       {{ t("admin.settings.openaiExperimentalScheduler.clearGroupPolicy") }}
                     </button>
+                  <div v-if="schedulerPresetDefinitions.some((preset) => preset.kind === 'custom')" class="mt-6 border-t border-gray-100 pt-4 dark:border-dark-700" data-testid="scheduler-custom-presets">
+                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.settings.openaiExperimentalScheduler.customPresetTitle") }}</div>
+                    <div v-for="preset in schedulerPresetDefinitions.filter((item) => item.kind === 'custom')" :key="preset.id" class="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <input class="input min-w-[12rem] flex-1" :value="preset.name" :data-testid="`scheduler-preset-name-${preset.id.split(':').join('-')}`" maxlength="40" @change="renameSchedulerCustomPreset(preset.id as OpenAISchedulerPresetID, ($event.target as HTMLInputElement).value)" />
+                      <button type="button" class="btn btn-secondary btn-sm" :data-testid="`scheduler-preset-delete-${preset.id.split(':').join('-')}`" :disabled="isSchedulerPresetReferenced(preset.id)" @click="deleteSchedulerCustomPreset(preset.id as OpenAISchedulerPresetID)">{{ t("admin.settings.openaiExperimentalScheduler.deletePreset") }}</button>
+                    </div>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -9871,6 +9894,8 @@ const schedulerDraftGroupId = ref("");
 const schedulerPolicyDrafts = reactive<Record<string, SchedulerPolicyDraft>>({});
 const schedulerPolicySnapshots = reactive<Record<string, OpenAISchedulerPolicyValues>>({});
 const schedulerCustomPresetDrafts = reactive<Record<string, OpenAISchedulerCustomPreset>>({});
+const schedulerPresetNameDraft = ref("");
+const schedulerPresetActionError = ref("");
 const schedulerPolicyDraft = reactive<SchedulerPolicyDraft>({
   mode: "custom",
   preset_id: "builtin:balanced",
@@ -10036,7 +10061,15 @@ function loadSchedulerPolicyDraft(groupId: string): void {
 
 function selectSchedulerPolicyGroup(): void {
   storeSchedulerPolicyDraft();
+  schedulerPresetActionError.value = "";
   if (schedulerSelectedGroupId.value) loadSchedulerPolicyDraft(schedulerSelectedGroupId.value);
+}
+
+function setSchedulerPolicyMode(mode: OpenAISchedulerGroupPolicyMode): void {
+  if (!schedulerSelectedGroupId.value) return;
+  schedulerPolicyDraft.mode = mode;
+  schedulerPresetActionError.value = "";
+  if (mode === "preset") applySchedulerPreset();
 }
 
 function applySchedulerPreset(): void {
@@ -10059,6 +10092,21 @@ function addSchedulerCustomPreset(name: string): void {
   form.openai_advanced_scheduler_custom_presets = { ...form.openai_advanced_scheduler_custom_presets, [id]: preset };
 }
 
+function saveCurrentSchedulerPreset(): void {
+  const name = schedulerPresetNameDraft.value.trim();
+  if (name.length < 1 || name.length > 40) {
+    schedulerPresetActionError.value = t("admin.settings.openaiExperimentalScheduler.presetNameRequired");
+    return;
+  }
+  if (schedulerPresetDefinitions.value.some((preset) => preset.name.trim().toLowerCase() === name.toLowerCase())) {
+    schedulerPresetActionError.value = t("admin.settings.openaiExperimentalScheduler.presetNameDuplicate");
+    return;
+  }
+  addSchedulerCustomPreset(name);
+  schedulerPresetNameDraft.value = "";
+  schedulerPresetActionError.value = "";
+}
+
 function renameSchedulerCustomPreset(id: OpenAISchedulerPresetID, name: string): void {
   const preset = form.openai_advanced_scheduler_custom_presets[id];
   if (!preset) return;
@@ -10066,10 +10114,18 @@ function renameSchedulerCustomPreset(id: OpenAISchedulerPresetID, name: string):
 }
 
 function deleteSchedulerCustomPreset(id: OpenAISchedulerPresetID): void {
+  if (isSchedulerPresetReferenced(id)) {
+    schedulerPresetActionError.value = t("admin.settings.openaiExperimentalScheduler.presetReferenced");
+    return;
+  }
   const presets = { ...form.openai_advanced_scheduler_custom_presets };
   delete presets[id];
   form.openai_advanced_scheduler_custom_presets = presets;
   delete schedulerCustomPresetDrafts[id];
+}
+
+function isSchedulerPresetReferenced(id: string): boolean {
+  return Object.values(form.openai_advanced_scheduler_group_policies || {}).some((policy) => policy.preset_id === id);
 }
 
 defineExpose({

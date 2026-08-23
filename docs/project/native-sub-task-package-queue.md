@@ -6,7 +6,7 @@
 
 ## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
 
-- **T56 Responses custom-tool ID namespace repair**：状态 `READY_FOR_ROOT_REVIEW`。已用真实任务 rollout 证据确认 Codex 上下文压缩后会把 `custom_tool_call.id` 写成 `fc_*`；现有中转兼容层又在续请求缺少 `tools` 声明时直接跳过 custom history 转换，OpenAI 直通输入过滤还把 custom/function 两类工具统一按 `fc_*` 规则处理。修复已提交并推送 `main@4472401a750d8ee135bb8454fadc7aaa310bc480`：从历史调用推断 custom 工具并执行可逆 lowering；直通与 OAuth 输入按 `custom_tool_call -> ctc_*` 独立校验/归一化；保留 `call_id` 配对，不改历史数据库。定向 RED/GREEN、服务构建与 diff-check 已完成，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4472401a-t56-ctc-fc-repair.json`。生产发布待用户明确授权；预计 `downtime_required=false`，无迁移、无生产业务数据写入。
+- **T56 Responses custom-tool ID namespace repair**：状态 `DONE`。已用真实任务 rollout 证据确认 Codex 上下文压缩后会把 `custom_tool_call.id` 写成 `fc_*`；现有中转兼容层又在续请求缺少 `tools` 声明时直接跳过 custom history 转换，OpenAI 直通输入过滤还把 custom/function 两类工具统一按 `fc_*` 规则处理。修复已提交并推送 `main@be6738b88819152639ce918743739f2a320f3c4a`：从历史调用推断 custom 工具并执行可逆 lowering；直通与 OAuth 输入按 `custom_tool_call -> ctc_*` 独立校验/归一化；保留 `call_id` 配对，不改历史数据库。定向 RED/GREEN、服务构建与 diff-check 已完成，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-be6738b8-t56-ctc-fc-repair.json`。生产授权已获并完成无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260823T164955Z-production-2302751.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`，公网三项健康端点均 200。无迁移、无生产业务数据写入。
 
 ## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
 

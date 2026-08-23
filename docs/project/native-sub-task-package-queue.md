@@ -1,8 +1,12 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
+
+- **T55 原生额度钱包与手动充值退款账本**：状态 `DESIGNING`。用户已确认采用方案 B：新增钱包拆分与额度流水，保留 `users.balance` 作为兼容投影；扣费顺序为付费额度优先、赠送额度其次；历史 `users.balance` 迁移为未拆分付费额度，历史 `cash_balance_cny=0`、`gift_quota_balance_usd=0`，不标记历史用户。范围包含管理员手动充值/退款弹窗、用户额度拆分展示、额度流水、原子事务、幂等与缓存失效；不包含自动支付、支付订单替代、赠送额度有效期、完整收入确认或第二套计费事实源。当前独立 worktree 待创建；规格书完成后停在用户审阅批准门禁，尚未实施、测试、合并、推送或部署。
+
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 
-- **T54-R1 分组调度三步流程与全局命名预设**：状态 `IMPLEMENTING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。正式规格与计划已获用户确认；独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-r1-group-scheduler-preset-workflow`、分支 `codex/t54-r1-group-scheduler-preset-workflow` 已从最新干净 `main@d0b6188f2a0d5bcb756afd147fd6c05e0917c292` 创建，使用 fresh subagent 逐任务实施。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
+- **T54-R1 分组调度三步流程与全局命名预设**：状态 `INTEGRATING`。用户确认按推荐方案返修已上线 T54 设置页：严格执行“选择分组 -> 选择策略模式 -> 配置参数/选择预设”；调度分组直接读取 Sub 原生有效 OpenAI 分组，不再复用默认订阅的 `subscription_type=subscription` 过滤结果；策略模式只保留“自定义参数”和“预设模式”，预设模式最终参数全部禁用；自定义参数可保存为管理员命名预设并跨分组复用。三个内置预设保持既有数值且不可变，管理员预设可重命名、被引用时不可删除，分组策略保存 `preset_id` 与完整生效快照并兼容旧 `weighted_override/fair` 数据。Task 1-4 已完成，候选 handoff 为 `docs/handoffs/2026-08-23-t54-r1-group-scheduler-preset-workflow-handoff.md`，功能已合并到根 `main@3399a4f0c4b57857fb3e57bb2ab5a5eeb667e6cb`；合并后根门禁、推送、发布预检、蓝绿部署和线上专项验收待执行。范围不含调度算法、内置数值、S1/S2、sticky、并发、故障域或 Monitor V2；无迁移、无生产业务数据写入，预计 `downtime_required=false`。
 
 ## 当前生产修复（2026-08-23，T53-R3 隔离站管理员可见性）
 

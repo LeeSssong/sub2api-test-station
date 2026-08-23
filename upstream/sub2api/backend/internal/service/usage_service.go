@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -61,15 +62,21 @@ type UsageService struct {
 	userRepo             UserRepository
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	quotaWallet          QuotaWalletService
 }
 
 // NewUsageService 创建使用统计服务实例
-func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator) *UsageService {
+func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator, wallets ...QuotaWalletService) *UsageService {
+	var wallet QuotaWalletService
+	if len(wallets) > 0 {
+		wallet = wallets[0]
+	}
 	return &UsageService{
 		usageRepo:            usageRepo,
 		userRepo:             userRepo,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
+		quotaWallet:          wallet,
 	}
 }
 
@@ -126,7 +133,13 @@ func (s *UsageService) Create(ctx context.Context, req CreateUsageLogRequest) (*
 	// 扣除用户余额
 	balanceUpdated := false
 	if inserted && req.ActualCost > 0 {
-		if err := s.userRepo.UpdateBalance(txCtx, req.UserID, -req.ActualCost); err != nil {
+		var err error
+		if s.quotaWallet != nil {
+			_, err = s.quotaWallet.ConsumeUsage(txCtx, UsageConsumptionInput{UserID: req.UserID, AmountUSD: decimal.NewFromFloat(req.ActualCost), IdempotencyKey: req.RequestID, ReferenceType: "usage_log", ReferenceID: req.RequestID})
+		} else {
+			err = s.userRepo.UpdateBalance(txCtx, req.UserID, -req.ActualCost)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
 		}
 		balanceUpdated = true

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"strings"
 	"time"
 
@@ -142,6 +143,7 @@ type RedeemService struct {
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	affiliateService     *AffiliateService
+	quotaWallet          QuotaWalletService
 }
 
 // NewRedeemService 创建兑换码服务实例
@@ -153,9 +155,13 @@ func NewRedeemService(
 	billingCacheService *BillingCacheService,
 	entClient *dbent.Client,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
-	affiliateService *AffiliateService,
+	affiliateService *AffiliateService, wallets ...QuotaWalletService,
 ) *RedeemService {
 	redeemUserRepo, _ := userRepo.(RedeemUserAdjustmentRepository)
+	var wallet QuotaWalletService
+	if len(wallets) > 0 {
+		wallet = wallets[0]
+	}
 	return &RedeemService{
 		redeemRepo:           redeemRepo,
 		userRepo:             userRepo,
@@ -166,6 +172,7 @@ func NewRedeemService(
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
 		affiliateService:     affiliateService,
+		quotaWallet:          wallet,
 	}
 }
 
@@ -462,6 +469,10 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 				return nil, errors.New("user repository does not support atomic redeem balance adjustments")
 			}
 			if err := s.redeemUserRepo.ApplyRedeemBalanceAdjustment(txCtx, userID, amount); err != nil {
+				return nil, fmt.Errorf("update user balance: %w", err)
+			}
+		} else if s.quotaWallet != nil {
+			if _, err := s.quotaWallet.LegacyAdjust(txCtx, LegacyBalanceAdjustmentInput{UserID: userID, Mode: "add", AmountUSD: decimal.NewFromFloat(amount), IdempotencyKey: fmt.Sprintf("redeem:%d:%d", redeemCode.ID, userID), ReferenceType: "redeem_credit", ReferenceID: fmt.Sprintf("%d", redeemCode.ID)}); err != nil {
 				return nil, fmt.Errorf("update user balance: %w", err)
 			}
 		} else if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {

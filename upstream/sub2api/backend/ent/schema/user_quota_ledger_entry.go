@@ -63,7 +63,8 @@ func (UserQuotaLedgerEntry) Edges() []ent.Edge {
 			Ref("quota_ledger_entries").
 			Field("user_id").
 			Unique().
-			Required(),
+			Required().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.From("operator", User.Type).
 			Ref("operated_quota_ledger_entries").
 			Field("operator_id").

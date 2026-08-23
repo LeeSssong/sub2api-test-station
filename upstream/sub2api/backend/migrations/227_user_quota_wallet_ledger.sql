@@ -2,8 +2,8 @@
 -- Expand-only: preserve users.balance and do not backfill historical ledger rows.
 
 CREATE TABLE IF NOT EXISTS user_wallets (
-    id                     BIGSERIAL PRIMARY KEY,
-    user_id                BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     cash_balance_cny DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (cash_balance_cny >= 0),
     paid_quota_balance_usd DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (paid_quota_balance_usd >= 0),
     gift_quota_balance_usd DECIMAL(20,8) NOT NULL DEFAULT 0 CHECK (gift_quota_balance_usd >= 0),
@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS quota_idempotency_records (
     expires_at         TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT quota_idempotency_records_user_id_key_key UNIQUE (user_id, idempotency_key)
+    CONSTRAINT quota_idempotency_records_user_id_key_key UNIQUE (user_id, idempotency_key),
+    CONSTRAINT quota_idempotency_records_ledger_entry_id_key UNIQUE (ledger_entry_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_quota_idempotency_records_expires_at
@@ -60,8 +61,6 @@ CREATE INDEX IF NOT EXISTS idx_quota_idempotency_records_expires_at
 
 -- Initialize only active users. Re-running this statement never overwrites a wallet
 -- created by a concurrent request and never creates historical ledger entries.
--- The initialization shape is equivalent to: UPDATE user_wallets SET cash_balance_cny = 0,
--- gift_quota_balance_usd = 0 for a newly-created projection; existing rows are preserved.
 INSERT INTO user_wallets (
     user_id,
     cash_balance_cny,

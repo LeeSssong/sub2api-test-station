@@ -42,11 +42,13 @@ func (QuotaIdempotencyRecord) Edges() []ent.Edge {
 			Ref("quota_idempotency_records").
 			Field("user_id").
 			Unique().
-			Required(),
+			Required().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.From("ledger_entry", UserQuotaLedgerEntry.Type).
 			Ref("idempotency_record").
 			Field("ledger_entry_id").
-			Unique(),
+			Unique().
+			Annotations(entsql.OnDelete(entsql.SetNull)),
 	}
 }
 

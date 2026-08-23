@@ -23,6 +23,8 @@ func (UserWallet) Annotations() []schema.Annotation {
 
 func (UserWallet) Fields() []ent.Field {
 	return []ent.Field{
+		// Ent 0.14.5 only supports field.ID for composite edge schemas; the
+		// SQL migration makes user_id the actual single-column primary key.
 		field.Int64("user_id"),
 		field.Float("cash_balance_cny").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
@@ -45,7 +47,8 @@ func (UserWallet) Edges() []ent.Edge {
 			Ref("wallet").
 			Field("user_id").
 			Unique().
-			Required(),
+			Required().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

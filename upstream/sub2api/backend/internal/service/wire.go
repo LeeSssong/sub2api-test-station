@@ -112,7 +112,7 @@ func ProvideAuthService(
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
-	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	userPlatformQuotaRepo UserPlatformQuotaRepository, wallets ...QuotaWalletService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -128,6 +128,7 @@ func ProvideAuthService(
 		defaultSubAssigner,
 		affiliateService,
 		userPlatformQuotaRepo,
+		wallets...,
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)

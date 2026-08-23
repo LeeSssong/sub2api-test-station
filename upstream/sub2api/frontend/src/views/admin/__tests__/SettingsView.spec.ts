@@ -210,27 +210,51 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.weightsTitle": "调度权值覆盖",
     "admin.settings.openaiExperimentalScheduler.weightsDescription": "留空时使用配置/环境变量值；配置未设置时使用内置默认值。页面非空设置优先。",
     "admin.settings.openaiExperimentalScheduler.defaultPlaceholder": "配置/默认：{value}",
-    "admin.settings.openaiExperimentalScheduler.topKLabel": "TopK",
+    "admin.settings.openaiExperimentalScheduler.topKLabel": "候选数",
     "admin.settings.openaiExperimentalScheduler.priorityWeight": "优先级",
     "admin.settings.openaiExperimentalScheduler.loadWeight": "负载",
     "admin.settings.openaiExperimentalScheduler.queueWeight": "排队",
     "admin.settings.openaiExperimentalScheduler.errorRateWeight": "错误率",
-    "admin.settings.openaiExperimentalScheduler.ttftWeight": "首包延迟",
-    "admin.settings.openaiExperimentalScheduler.resetWeight": "重置窗口",
+    "admin.settings.openaiExperimentalScheduler.ttftWeight": "首字",
+    "admin.settings.openaiExperimentalScheduler.resetWeight": "重置",
     "admin.settings.openaiExperimentalScheduler.quotaHeadroomWeight": "额度余量",
-    "admin.settings.openaiExperimentalScheduler.upstreamCostWeight": "计费倍率",
-    "admin.settings.openaiExperimentalScheduler.previousResponseWeight": "previous_response 粘性",
-    "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
+    "admin.settings.openaiExperimentalScheduler.upstreamCostWeight": "上游成本",
+    "admin.settings.openaiExperimentalScheduler.previousResponseWeight": "响应连续",
+    "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "会话粘性",
     "admin.settings.openaiExperimentalScheduler.fairnessTitle": "公平调度",
     "admin.settings.openaiExperimentalScheduler.fairnessDescription": "控制候选池覆盖和长期未使用账号的探索，减少请求集中在少数上游账号。粘性请求仍遵循原有绑定语义。",
-    "admin.settings.openaiExperimentalScheduler.poolMode": "候选池模式",
-    "admin.settings.openaiExperimentalScheduler.poolModeHybrid": "混合公平（推荐）",
-    "admin.settings.openaiExperimentalScheduler.poolModeTopK": "仅 Top-K",
-    "admin.settings.openaiExperimentalScheduler.poolModeAll": "全部可用账号",
+    "admin.settings.openaiExperimentalScheduler.poolMode": "候选池",
+    "admin.settings.openaiExperimentalScheduler.poolModeHybrid": "混合公平",
+    "admin.settings.openaiExperimentalScheduler.poolModeTopK": "仅优选",
+    "admin.settings.openaiExperimentalScheduler.poolModeAll": "全部可用",
     "admin.settings.openaiExperimentalScheduler.poolModeHint": "top_k 只使用 Top-K；all_eligible 使用全部可用账号；hybrid 保留 Top-K，并在需要时加入最久未使用账号。",
     "admin.settings.openaiExperimentalScheduler.explorationRatio": "探索比例",
     "admin.settings.openaiExperimentalScheduler.explorationRatioHint": "仅 hybrid 生效；没有达到饥饿阈值时，按该百分比抽取最久未用账号。0=关闭，100=每次都探索。",
-    "admin.settings.openaiExperimentalScheduler.starvationThreshold": "饥饿阈值（秒）",
+    "admin.settings.openaiExperimentalScheduler.starvationThreshold": "冷落阈值",
+    "admin.settings.openaiExperimentalScheduler.presetSpecialOffer": "体验优先",
+    "admin.settings.openaiExperimentalScheduler.presetBalanced": "体验均衡",
+    "admin.settings.openaiExperimentalScheduler.presetPro": "利润优先",
+    "admin.settings.openaiExperimentalScheduler.weightRange": "范围：0–10",
+    "admin.settings.openaiExperimentalScheduler.topKRange": "范围：1–32",
+    "admin.settings.openaiExperimentalScheduler.topKShortHint": "每次参与评分的候选账号数。",
+    "admin.settings.openaiExperimentalScheduler.poolModeRange": "范围：三种固定选项",
+    "admin.settings.openaiExperimentalScheduler.poolModeShortHint": "选择参与评分的账号池。",
+    "admin.settings.openaiExperimentalScheduler.explorationRange": "范围：0–100%",
+    "admin.settings.openaiExperimentalScheduler.explorationShortHint": "控制低频账号的探索比例。",
+    "admin.settings.openaiExperimentalScheduler.starvationRange": "范围：0 或 300–86400 秒",
+    "admin.settings.openaiExperimentalScheduler.starvationShortHint": "保护长期未被选中的账号。",
+    "admin.settings.openaiExperimentalScheduler.fairnessRange": "范围：0–10",
+    "admin.settings.openaiExperimentalScheduler.fairnessShortHint": "控制公平保护对排序的影响。",
+    "admin.settings.openaiExperimentalScheduler.priorityShortHint": "账号基础优先级影响。",
+    "admin.settings.openaiExperimentalScheduler.loadShortHint": "当前负载惩罚强度。",
+    "admin.settings.openaiExperimentalScheduler.queueShortHint": "排队等待惩罚强度。",
+    "admin.settings.openaiExperimentalScheduler.errorRateShortHint": "历史错误惩罚强度。",
+    "admin.settings.openaiExperimentalScheduler.ttftShortHint": "首字延迟偏好。",
+    "admin.settings.openaiExperimentalScheduler.resetShortHint": "额度重置接近度偏好。",
+    "admin.settings.openaiExperimentalScheduler.quotaHeadroomShortHint": "可用额度余量偏好。",
+    "admin.settings.openaiExperimentalScheduler.upstreamCostShortHint": "上游成本排序影响。",
+    "admin.settings.openaiExperimentalScheduler.previousResponseShortHint": "延续上一响应账号的偏好。",
+    "admin.settings.openaiExperimentalScheduler.sessionStickyShortHint": "保持会话账号的偏好。",
     "admin.settings.openaiExperimentalScheduler.starvationThresholdHint": "账号超过该时长未使用就进入优先探索；0=关闭阈值，仅按探索比例运行。默认 21600=6 小时。",
     "admin.settings.openaiExperimentalScheduler.fairnessWeight": "公平权重",
     "admin.settings.openaiExperimentalScheduler.fairnessWeightHint": "把“距上次使用时间”加入排序；0=关闭，数值越大越优先长期未使用账号（范围 0-10）。",
@@ -1480,6 +1504,47 @@ describe("admin SettingsView payment visible method controls", () => {
         },
       }),
     );
+  });
+
+  it("shows bounded Chinese scheduler labels and preset names", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "体验组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+
+    const scheduler = wrapper.get('[data-testid="scheduler-group-policy-panel"]');
+    await wrapper.get('[data-testid="scheduler-policy-mode-preset"]').trigger("click");
+    const text = scheduler.text();
+    expect(text).toContain("体验优先");
+    expect(text).toContain("体验均衡");
+    expect(text).toContain("利润优先");
+    expect(text).toContain("候选数");
+    expect(text).toContain("响应连续");
+    expect(text).toContain("每次参与评分的候选账号数");
+    expect(text).toContain("范围：1–32");
+    expect(text).not.toContain("previous_response");
+    expect(text).not.toContain("session_sticky");
+
+    const topK = scheduler.get('[data-testid="scheduler-policy-top-k"]');
+    expect(topK.attributes("min")).toBe("1");
+    expect(topK.attributes("max")).toBe("32");
+    const weightInputs = scheduler.findAll('[data-testid="scheduler-policy-weight"]');
+    expect(weightInputs.length).toBe(10);
+    for (const input of weightInputs) {
+      expect(input.attributes("min")).toBe("0");
+      expect(input.attributes("max")).toBe("10");
+    }
+
+    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("disabled")).toBeDefined();
+    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("min")).toBe("0");
+    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("max")).toBe("100");
+    expect(scheduler.get('[data-testid="scheduler-policy-starvation"]').attributes("min")).toBe("0");
+    expect(scheduler.get('[data-testid="scheduler-policy-starvation"]').attributes("max")).toBe("86400");
+    expect(scheduler.get('[data-testid="scheduler-policy-fairness"]').attributes("min")).toBe("0");
+    expect(scheduler.get('[data-testid="scheduler-policy-fairness"]').attributes("max")).toBe("10");
   });
 
   it("loads native OpenAI scheduler groups separately and leaves selection empty", async () => {

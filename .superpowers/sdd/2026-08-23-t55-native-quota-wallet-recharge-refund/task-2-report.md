@@ -27,3 +27,23 @@ Status: implemented.
 - Existing legacy `UserRepository` methods remain available; Task 3 should wire
   production call sites and the compatibility endpoints to this coordinator.
 - Ent generation and migration/schema files were intentionally not touched.
+
+## Fix round 1
+
+- Idempotency fingerprints now derive from immutable request inputs, so retries
+  replay even when the current paid/gift split or refund gift-clearing delta has
+  changed. Replay restores paid/gift consumption fields from the ledger.
+- Wallet, projection, and ledger DECIMAL values are persisted as exact decimal
+  strings; no `InexactFloat64` conversion is used for wallet writes.
+- Legacy atomic user-repository balance operations now use the quota coordinator
+  when configured by the native repository constructor.
+- Added deterministic repository contract/sqlmock tests for projection reads,
+  idempotency fingerprint stability, rollback/locking contracts, and replay
+  consumption preservation.
+
+Verification:
+
+`go test ./internal/service ./internal/repository -run 'QuotaWallet|UserRepo' -count=1` — passed.
+
+Live PostgreSQL rollback and concurrent-refund integration tests remain pending
+because no PostgreSQL fixture was available in this worktree.

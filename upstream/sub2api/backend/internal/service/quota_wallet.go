@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,14 +40,15 @@ type QuotaSummary struct {
 }
 
 type QuotaMutationResult struct {
-	Summary         QuotaSummary
-	CashDeltaCNY    decimal.Decimal
-	PaidDeltaUSD    decimal.Decimal
-	GiftDeltaUSD    decimal.Decimal
-	PaidConsumedUSD decimal.Decimal
-	GiftConsumedUSD decimal.Decimal
-	LedgerEntryID   int64
-	Idempotent      bool
+	Summary            QuotaSummary
+	CashDeltaCNY       decimal.Decimal
+	PaidDeltaUSD       decimal.Decimal
+	GiftDeltaUSD       decimal.Decimal
+	PaidConsumedUSD    decimal.Decimal
+	GiftConsumedUSD    decimal.Decimal
+	LedgerEntryID      int64
+	Idempotent         bool
+	RequestFingerprint string
 }
 
 type RechargeInput struct {
@@ -151,7 +153,7 @@ func (s *quotaWalletService) GetSummary(ctx context.Context, userID int64) (Quot
 	return s.repo.GetSummary(ctx, userID)
 }
 
-func (s *quotaWalletService) mutate(ctx context.Context, userID int64, key string, fn func(*QuotaWallet) (QuotaMutationResult, error), recordType, refType, refID, note string, operator *int64) (QuotaMutationResult, error) {
+func (s *quotaWalletService) mutate(ctx context.Context, userID int64, key, fingerprint string, fn func(*QuotaWallet) (QuotaMutationResult, error), recordType, refType, refID, note string, operator *int64) (QuotaMutationResult, error) {
 	if userID <= 0 {
 		return QuotaMutationResult{}, ErrQuotaWalletNotFound
 	}
@@ -161,6 +163,7 @@ func (s *quotaWalletService) mutate(ctx context.Context, userID int64, key strin
 		if err != nil {
 			return err
 		}
+		result.RequestFingerprint = fingerprint
 		out, err = s.repo.ApplyMutation(txctx, wallet, result, recordType, key, refType, refID, note, operator)
 		return err
 	})
@@ -174,7 +177,8 @@ func (s *quotaWalletService) Recharge(ctx context.Context, in RechargeInput) (Qu
 	if in.AmountCNY.IsZero() && in.GiftQuotaUSD.IsZero() {
 		return QuotaMutationResult{}, ErrQuotaInvalidAmount
 	}
-	return s.mutate(ctx, in.UserID, in.IdempotencyKey, func(w *QuotaWallet) (QuotaMutationResult, error) {
+	fp := quotaRequestFingerprint(QuotaRecordRecharge, in.AmountCNY, in.GiftQuotaUSD, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+	return s.mutate(ctx, in.UserID, in.IdempotencyKey, fp, func(w *QuotaWallet) (QuotaMutationResult, error) {
 		cash, paid, gift := in.AmountCNY, in.AmountCNY, in.GiftQuotaUSD
 		return mutationResult(w, cash, paid, gift, decimal.Zero, decimal.Zero), nil
 	}, QuotaRecordRecharge, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
@@ -187,7 +191,8 @@ func (s *quotaWalletService) Refund(ctx context.Context, in RefundInput) (QuotaM
 	if in.AmountCNY.IsZero() {
 		return QuotaMutationResult{}, ErrQuotaInvalidAmount
 	}
-	return s.mutate(ctx, in.UserID, in.IdempotencyKey, func(w *QuotaWallet) (QuotaMutationResult, error) {
+	fp := quotaRequestFingerprint(QuotaRecordRefund, in.AmountCNY, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+	return s.mutate(ctx, in.UserID, in.IdempotencyKey, fp, func(w *QuotaWallet) (QuotaMutationResult, error) {
 		if in.AmountCNY.GreaterThan(w.CashBalanceCNY) {
 			return QuotaMutationResult{}, ErrQuotaRefundExceedsCash
 		}
@@ -205,7 +210,8 @@ func (s *quotaWalletService) ConsumeUsage(ctx context.Context, in UsageConsumpti
 	if in.AmountUSD.IsZero() {
 		return QuotaMutationResult{}, ErrQuotaInvalidAmount
 	}
-	return s.mutate(ctx, in.UserID, in.IdempotencyKey, func(w *QuotaWallet) (QuotaMutationResult, error) {
+	fp := quotaRequestFingerprint(QuotaRecordUsageConsumption, in.AmountUSD, in.ReferenceType, in.ReferenceID, in.Note)
+	return s.mutate(ctx, in.UserID, in.IdempotencyKey, fp, func(w *QuotaWallet) (QuotaMutationResult, error) {
 		if in.AmountUSD.GreaterThan(w.PaidQuotaBalanceUSD.Add(w.GiftQuotaBalanceUSD)) {
 			return QuotaMutationResult{}, ErrQuotaInsufficient
 		}
@@ -224,7 +230,8 @@ func (s *quotaWalletService) LegacyAdjust(ctx context.Context, in LegacyBalanceA
 		if in.TargetUSD.IsNegative() {
 			return QuotaMutationResult{}, ErrQuotaNegativeAmount
 		}
-		return s.mutate(ctx, in.UserID, in.IdempotencyKey, func(w *QuotaWallet) (QuotaMutationResult, error) {
+		fp := quotaRequestFingerprint(QuotaRecordLegacyBalanceAdjust, mode, in.TargetUSD, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+		return s.mutate(ctx, in.UserID, in.IdempotencyKey, fp, func(w *QuotaWallet) (QuotaMutationResult, error) {
 			if in.TargetUSD.LessThan(w.GiftQuotaBalanceUSD) {
 				return QuotaMutationResult{}, ErrQuotaLegacySetBelowGift
 			}
@@ -240,12 +247,21 @@ func (s *quotaWalletService) LegacyAdjust(ctx context.Context, in LegacyBalanceA
 	if mode == "subtract" {
 		in.AmountUSD = in.AmountUSD.Neg()
 	}
-	return s.mutate(ctx, in.UserID, in.IdempotencyKey, func(w *QuotaWallet) (QuotaMutationResult, error) {
+	fp := quotaRequestFingerprint(QuotaRecordLegacyBalanceAdjust, mode, in.AmountUSD, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+	return s.mutate(ctx, in.UserID, in.IdempotencyKey, fp, func(w *QuotaWallet) (QuotaMutationResult, error) {
 		if in.AmountUSD.IsNegative() && in.AmountUSD.Abs().GreaterThan(w.PaidQuotaBalanceUSD) {
 			return QuotaMutationResult{}, ErrQuotaInsufficient
 		}
 		return mutationResult(w, decimal.Zero, in.AmountUSD, decimal.Zero, decimal.Zero, decimal.Zero), nil
 	}, QuotaRecordLegacyBalanceAdjust, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+}
+
+func quotaRequestFingerprint(parts ...any) string {
+	h := sha256.New()
+	for _, part := range parts {
+		fmt.Fprintf(h, "%v\x00", part)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func mutationResult(w *QuotaWallet, cashDelta, paidDelta, giftDelta, paidConsumed, giftConsumed decimal.Decimal) QuotaMutationResult {

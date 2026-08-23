@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前优化任务（2026-08-23，T54-R2 调度预设与参数中文化）
+
+- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `DESIGNING`。用户已确认将三个内置预设的管理员展示与语义调整为“体验优先”（连续性第一、延时/耗时第二、利润第三）、“体验均衡”（连续性第一，延时/耗时与利润并列第二）、“利润优先”（利润第一、连续性第二、延时/耗时第三）；保留现有内部 ID 兼容已保存策略。自定义参数和预设只读参数均使用最多 5 个汉字的中文名称，展示明确区间与简短作用说明；数值范围由前后端共同校验，旧超界值读取时有界归一化。范围不改 S1/S2、重试、sticky、故障域、Monitor V2 或生产业务数据；预计无迁移、`downtime_required=false`。独立 worktree 待从当前 `main` 创建；当前发布车道中的 T56 不与本任务合并发布。
+
 ## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
 
 - **T56 Responses custom-tool ID namespace repair**：状态 `READY_FOR_ROOT_REVIEW`。已用真实任务 rollout 证据确认 Codex 上下文压缩后会把 `custom_tool_call.id` 写成 `fc_*`；现有中转兼容层又在续请求缺少 `tools` 声明时直接跳过 custom history 转换，OpenAI 直通输入过滤还把 custom/function 两类工具统一按 `fc_*` 规则处理。修复已提交并推送 `main@4472401a750d8ee135bb8454fadc7aaa310bc480`：从历史调用推断 custom 工具并执行可逆 lowering；直通与 OAuth 输入按 `custom_tool_call -> ctc_*` 独立校验/归一化；保留 `call_id` 配对，不改历史数据库。定向 RED/GREEN、服务构建与 diff-check 已完成，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4472401a-t56-ctc-fc-repair.json`。生产发布待用户明确授权；预计 `downtime_required=false`，无迁移、无生产业务数据写入。

@@ -34,6 +34,8 @@ func ProjectNativeUserError(input NativeUserErrorInput) NativeUserErrorProjectio
 	text := strings.ToLower(strings.Join([]string{input.Type, input.Code, input.Message, input.Stage, input.Ownership}, " "))
 
 	switch {
+	case input.Status == http.StatusRequestEntityTooLarge || containsAnyNativeErrorMarker(text, "body too large", "request too large", "context length", "context window", "max bytes"):
+		result.Message = "请求内容过大，请缩短内容后重试。"
 	case input.AccountSelected || containsAnyNativeErrorMarker(text, "upstream", "provider", "cloudflare", "ray id") ||
 		containsAnyNativeErrorMarker(strings.ToLower(strings.TrimSpace(input.Stage)), "upstream", "network", "account_auth"):
 		if containsAnyNativeErrorMarker(text, "insufficient balance", "account balance", "quota exhausted", "subscription") {
@@ -53,8 +55,6 @@ func ProjectNativeUserError(input NativeUserErrorInput) NativeUserErrorProjectio
 		result.Message = "请求过于频繁，请稍后重试或降低并发。"
 	case input.Type == NativeErrorClassLocalCapacity || containsAnyNativeErrorMarker(text, "local_capacity_exhausted", "no available account", "当前服务资源暂时不可用"):
 		result.Message = "服务暂时繁忙，请稍后重试。"
-	case input.Status == http.StatusRequestEntityTooLarge || containsAnyNativeErrorMarker(text, "body too large", "request too large", "context length", "context window", "max bytes"):
-		result.Message = "请求内容过大，请缩短内容后重试。"
 	case input.Status == http.StatusForbidden || containsAnyNativeErrorMarker(text, "permission", "whitelist", "not allowed", "restricted", "unsupported", "not supported", "group access"):
 		result.Message = "当前模型或分组不可用，请调整后重试。"
 	case input.Status == http.StatusBadRequest || containsAnyNativeErrorMarker(text, "invalid_request", "invalid request", "parse request", "request body", "required field", "model is required"):

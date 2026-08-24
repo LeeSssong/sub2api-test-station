@@ -7,6 +7,29 @@ import (
 )
 
 func TestIsMigrationChecksumCompatible(t *testing.T) {
+	t.Run("227额度钱包历史checksum可兼容当前版本", func(t *testing.T) {
+		for _, dbChecksum := range []string{
+			"64157e946847e46990952e278cca3d68724234b41dd4595f01e89fe8bcacba02",
+			"792a97b17e807035cf55d0929266325ea82fbc8e4fd94f2b7baf5b3e4ba14244",
+		} {
+			ok := isMigrationChecksumCompatible(
+				"227_user_quota_wallet_ledger.sql",
+				dbChecksum,
+				"d951b31e9a294a278f48aa51fd75a5c6cb7c8fed7db2e07fd79b2e0d8be16fec",
+			)
+			require.True(t, ok)
+		}
+	})
+
+	t.Run("227额度钱包未知checksum不兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"227_user_quota_wallet_ledger.sql",
+			"0000000000000000000000000000000000000000000000000000000000000000",
+			"d951b31e9a294a278f48aa51fd75a5c6cb7c8fed7db2e07fd79b2e0d8be16fec",
+		)
+		require.False(t, ok)
+	})
+
 	t.Run("054历史checksum可兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"054_drop_legacy_cache_columns.sql",

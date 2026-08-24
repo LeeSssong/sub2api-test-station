@@ -23,7 +23,7 @@ type NativeUserErrorProjection struct {
 	Message string
 }
 
-var nativeUserErrorSensitivePattern = regexp.MustCompile(`(?i)(?:https?://|cloudflare|ray\s*id|request[_ -]?id|req_[a-z0-9_-]+|upstream|provider|上游)`)
+var nativeUserErrorSensitivePattern = regexp.MustCompile(`(?i)(?:https?://|cloudflare|ray\s*id|request[_ -]?id|req_[a-z0-9_-]+)`)
 
 func ProjectNativeUserError(input NativeUserErrorInput) NativeUserErrorProjection {
 	errType := strings.TrimSpace(input.Type)
@@ -36,6 +36,24 @@ func ProjectNativeUserError(input NativeUserErrorInput) NativeUserErrorProjectio
 	switch {
 	case input.Status == http.StatusRequestEntityTooLarge || containsAnyNativeErrorMarker(text, "body too large", "request too large", "context length", "context window", "max bytes"):
 		result.Message = "请求内容过大，请缩短内容后重试。"
+	case input.Status == 499 || containsAnyNativeErrorMarker(text, "client closed", "client disconnected", "upload interrupted", "broken pipe"):
+		result.Message = "请求上传中断，请检查网络后重试。"
+	case input.Status == http.StatusPaymentRequired || containsAnyNativeErrorMarker(text, "payment required", "payment_required", "billing required"):
+		result.Message = "余额或额度不足，请充值或检查额度后重试。"
+	case input.Status == http.StatusInsufficientStorage || containsAnyNativeErrorMarker(text, "insufficient storage", "storage exhausted", "resource exhausted"):
+		result.Message = "服务资源暂时不足，请稍后重试。"
+	case input.Status == 521 || containsAnyNativeErrorMarker(text, "web server is down", "connection refused"):
+		result.Message = "上游服务暂时不可用，请稍后重试。"
+	case input.Status == 522 || containsAnyNativeErrorMarker(text, "connection timed out", "connection timeout", "origin connection timed out"):
+		result.Message = "连接上游服务超时，请稍后重试。"
+	case input.Status == 523 || containsAnyNativeErrorMarker(text, "origin is unreachable", "origin unreachable"):
+		result.Message = "上游服务暂时不可达，请稍后重试。"
+	case input.Status == 524 || containsAnyNativeErrorMarker(text, "a timeout occurred", "origin timeout", "upstream processing timeout"):
+		result.Message = "上游服务处理超时，请稍后重试。"
+	case input.Status == 525 || containsAnyNativeErrorMarker(text, "ssl handshake failed", "tls handshake failed"):
+		result.Message = "上游安全连接失败，请稍后重试。"
+	case input.Status == 520 || containsAnyNativeErrorMarker(text, "unknown web server error", "web server returned an unknown error"):
+		result.Message = "服务暂时异常，请稍后重试。"
 	case input.AccountSelected || containsAnyNativeErrorMarker(text, "upstream", "provider", "cloudflare", "ray id") ||
 		containsAnyNativeErrorMarker(strings.ToLower(strings.TrimSpace(input.Stage)), "upstream", "network", "account_auth"):
 		if containsAnyNativeErrorMarker(text, "insufficient balance", "account balance", "quota exhausted", "subscription") {

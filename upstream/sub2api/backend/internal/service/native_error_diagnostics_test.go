@@ -84,6 +84,36 @@ func TestProjectNativeErrorDiagnosisFourClasses(t *testing.T) {
 	}
 }
 
+func TestProjectNativeErrorDiagnosisStatusAndClientDisconnectBoundaries(t *testing.T) {
+	accountID := int64(91)
+	for _, tt := range []struct {
+		name, phase, owner, message string
+		status                      int
+		selected                    bool
+		wantClass, wantMeaning      string
+	}{
+		{"client disconnect", "request", "client", "client closed connection", 499, false, NativeErrorClassUploadInterrupted, "请求上传中断"},
+		{"payment before selection", "request", "client", "payment required", 402, false, NativeErrorClassLocalLimit, "额度或订阅不可用"},
+		{"storage upstream", "upstream", "provider", "insufficient storage", 507, true, NativeErrorClassUpstreamFailed, "上游请求失败"},
+		{"cloudflare timeout", "upstream", "provider", "connection timed out", 522, true, NativeErrorClassUpstreamFailed, "上游请求失败"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			id := (*int64)(nil)
+			if tt.selected {
+				id = &accountID
+			}
+			status := tt.status
+			got := ProjectNativeErrorDiagnosis(&OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				Phase: tt.phase, Owner: tt.owner, Message: tt.message, AccountID: id,
+				StatusCode: tt.status, Type: "api_error", IsBusinessLimited: !tt.selected,
+			}, UpstreamStatusCode: &status})
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantClass, got.Class)
+			require.Equal(t, tt.wantMeaning, got.UserMeaning)
+		})
+	}
+}
+
 func TestProjectNativeErrorDiagnosisLocalCapacityExhausted(t *testing.T) {
 	groupID := int64(19)
 	detail := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{

@@ -22,6 +22,7 @@ type DashboardHandler struct {
 	dashboardService            *service.DashboardService
 	aggregationService          *service.DashboardAggregationService
 	accountProfitabilityService *service.AccountProfitabilityService
+	businessOverviewService     service.BusinessOverviewService
 	startTime                   time.Time // Server start time for uptime calculation
 }
 
@@ -43,6 +44,87 @@ func (h *DashboardHandler) SetAccountProfitabilityService(svc *service.AccountPr
 	if h != nil {
 		h.accountProfitabilityService = svc
 	}
+}
+
+// SetBusinessOverviewService attaches the DOCX经营总览 reader without changing
+// the legacy dashboard constructor used by tests and embedders.
+func (h *DashboardHandler) SetBusinessOverviewService(svc service.BusinessOverviewService) {
+	if h != nil {
+		h.businessOverviewService = svc
+	}
+}
+
+// GetBusinessOverview returns the native CNY operating overview.
+func (h *DashboardHandler) GetBusinessOverview(c *gin.Context) {
+	if h == nil || h.businessOverviewService == nil {
+		response.InternalError(c, "business overview service not available")
+		return
+	}
+	query, err := parseBusinessOverviewQuery(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	report, err := h.businessOverviewService.GetReport(c.Request.Context(), query)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, report)
+}
+
+func parseBusinessOverviewQuery(c *gin.Context) (service.BusinessOverviewQuery, error) {
+	loc := timezone.Location()
+	requestedTZ := strings.TrimSpace(c.Query("timezone"))
+	if requestedTZ != "" {
+		loaded, err := time.LoadLocation(requestedTZ)
+		if err != nil {
+			return service.BusinessOverviewQuery{}, errors.New("invalid timezone")
+		}
+		loc = loaded
+	}
+	rangeValue := service.BusinessOverviewRange(strings.TrimSpace(c.DefaultQuery("range", string(service.BusinessOverviewRangeToday))))
+	now := time.Now().In(loc)
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	var start, end time.Time
+	startDate := strings.TrimSpace(c.Query("start_date"))
+	endDate := strings.TrimSpace(c.Query("end_date"))
+	if rangeValue == service.BusinessOverviewRangeCustom || startDate != "" || endDate != "" {
+		if startDate == "" || endDate == "" {
+			return service.BusinessOverviewQuery{}, errors.New("start_date and end_date are required")
+		}
+		var err error
+		start, end, err = service.BusinessOverviewDateRange(startDate, endDate, loc)
+		if err != nil {
+			return service.BusinessOverviewQuery{}, err
+		}
+	} else {
+		switch rangeValue {
+		case service.BusinessOverviewRangeToday:
+			start, end = startOfToday, startOfToday.AddDate(0, 0, 1)
+		case service.BusinessOverviewRange7D:
+			start, end = startOfToday.AddDate(0, 0, -6), startOfToday.AddDate(0, 0, 1)
+		case service.BusinessOverviewRange30D:
+			start, end = startOfToday.AddDate(0, 0, -29), startOfToday.AddDate(0, 0, 1)
+		case service.BusinessOverviewRangeMonth:
+			start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+			end = start.AddDate(0, 1, 0)
+		case service.BusinessOverviewRangePreviousMonth:
+			end = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+			start = end.AddDate(0, -1, 0)
+		default:
+			return service.BusinessOverviewQuery{}, errors.New("invalid range")
+		}
+	}
+	var groupID *int64
+	if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			return service.BusinessOverviewQuery{}, errors.New("invalid group_id")
+		}
+		groupID = &id
+	}
+	return service.BusinessOverviewQuery{Range: rangeValue, Start: start, End: end, GroupID: groupID, Timezone: loc}, nil
 }
 
 // GetAccountProfitability returns per-account revenue, expense, profit, and

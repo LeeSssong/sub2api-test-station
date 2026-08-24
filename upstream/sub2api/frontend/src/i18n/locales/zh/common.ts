@@ -188,6 +188,7 @@ export default {
     ops: '运维监控',
     operations: '经营分析',
     accountProfitability: '账号盈利',
+    businessOverview: '经营总览',
     promoCodes: '优惠码',
     settings: '系统设置',
     myAccount: '我的账户',

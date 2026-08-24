@@ -786,6 +786,7 @@ const adminNavItems = computed((): NavItem[] => {
       expandOnly: true,
       children: [
         { path: '/admin/operations/account-profitability', label: t('nav.accountProfitability'), icon: ChartIcon },
+        { path: '/admin/operations/business-overview', label: t('nav.businessOverview'), icon: ChartIcon },
       ],
     },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },

@@ -20,6 +20,7 @@ func TestProjectNativeUserErrorCategories(t *testing.T) {
 		{"permission", NativeUserErrorInput{Status: 403, Type: "permission_error", Message: "model gpt-x not in whitelist"}, "当前模型或分组不可用，请调整后重试。"},
 		{"bad request", NativeUserErrorInput{Status: 400, Type: "invalid_request_error", Message: "Failed to parse request body"}, "请求参数或格式不正确，请检查后重试。"},
 		{"too large", NativeUserErrorInput{Status: 413, Type: "invalid_request_error", Message: "request body too large"}, "请求内容过大，请缩短内容后重试。"},
+		{"selected account too large", NativeUserErrorInput{Status: 413, Type: "invalid_request_error", Message: "proxy limit secret=must-not-leak", Stage: "upstream", Ownership: "provider", AccountSelected: true}, "请求内容过大，请缩短内容后重试。"},
 		{"local capacity", NativeUserErrorInput{Status: 503, Type: "local_capacity_exhausted", Message: "No available accounts"}, "服务暂时繁忙，请稍后重试。"},
 		{"selected account balance", NativeUserErrorInput{Status: 429, Type: "upstream_error", Message: "insufficient account balance", AccountSelected: true}, "服务暂时异常，请稍后重试。"},
 		{"provider overload", NativeUserErrorInput{Status: 529, Type: "upstream_error", Message: "Upstream overloaded", AccountSelected: true}, "服务暂时繁忙，请稍后重试。"},

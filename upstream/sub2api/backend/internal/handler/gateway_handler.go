@@ -1949,17 +1949,17 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 		// 标记本次流内错误，供 ops_error_logger 补记——否则该中间件按 status>=400 采集，
 		// 这类挂在 200 流上的失败（如并发限流回退）不会进错误看板。
 		service.MarkOpsStreamError(c, errType, message, status)
-		projected := projectNativeUserErrorForContext(c, status, errType, "", message)
-		errType, message = projected.Type, projected.Message
 
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
 		// Anthropic-backed Responses 路径同样会因为通用 error 帧被拒。
 		if inboundIsResponses(c) {
-			if writeResponsesFailedSSE(c, errType, message) {
+			if writeResponsesFailedSSE(c, status, errType, "", message) {
 				return
 			}
 		}
+		projected := projectNativeUserErrorForContext(c, status, errType, "", message)
+		errType, message = projected.Type, projected.Message
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {

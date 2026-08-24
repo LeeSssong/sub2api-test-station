@@ -18,6 +18,7 @@ func TestOpenAIBodyLimitFailoverExhausted_ReturnsRedactedJSON413(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Set(opsAccountIDKey, int64(23))
 
 	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, bodyLimitFailoverTestError(), false)
 
@@ -27,7 +28,7 @@ func TestOpenAIBodyLimitFailoverExhausted_ReturnsRedactedJSON413(t *testing.T) {
 	errBody, ok := envelope["error"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "invalid_request_error", errBody["type"])
-	require.Equal(t, "Request payload is too large", errBody["message"])
+	require.Equal(t, "请求内容过大，请缩短内容后重试。", errBody["message"])
 	require.NotContains(t, rec.Body.String(), "must-not-leak")
 }
 
@@ -36,13 +37,15 @@ func TestOpenAIBodyLimitFailoverExhausted_ReturnsRedactedResponsesSSE(t *testing
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Set(opsAccountIDKey, int64(23))
 
 	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, bodyLimitFailoverTestError(), true)
 
 	body := rec.Body.String()
 	require.True(t, strings.HasPrefix(body, "event: response.failed\n"))
+	require.Equal(t, 1, strings.Count(body, "event: response.failed\n"))
 	require.Contains(t, body, `"code":"invalid_request"`)
-	require.Contains(t, body, `"message":"Request payload is too large"`)
+	require.Contains(t, body, `"message":"请求内容过大，请缩短内容后重试。"`)
 	require.NotContains(t, body, "must-not-leak")
 }
 

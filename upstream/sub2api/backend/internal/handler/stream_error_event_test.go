@@ -162,7 +162,7 @@ func TestGatewayHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(
 
 	_, errObj := parseResponsesFailedSSE(t, w.Body.String())
 	assert.Equal(t, "upstream_error", errObj["code"])
-	assert.Equal(t, "upstream gone", errObj["message"])
+	assert.Equal(t, "服务暂时异常，请稍后重试。", errObj["message"])
 }
 
 // Gateway handler: /v1/messages preserves the legacy data:{type:error,...} format
